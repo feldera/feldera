@@ -207,7 +207,10 @@ export const usePipelineAction = () => {
           predicate: (ps) => {
             const p = ps.find((p) => p.name === pipeline_name)
             if (!p) {
-              throw new Error('Pipeline not found in pipelines list')
+              console.log(
+                `Pipeline ${pipeline_name} not found in pipelines list (probably deleted) while waiting for action "${action}" to complete`
+              )
+              return { value: false }
             }
             if (isDesiredState(p)) {
               return { value: true }
@@ -215,9 +218,10 @@ export const usePipelineAction = () => {
             if (isIntermediateState(p)) {
               return null
             }
-            throw new Error(
-              `Unexpected status ${JSON.stringify(p.status)}/${JSON.stringify(p.storageStatus)} while waiting for pipeline ${pipeline_name} to complete action ${action}`
+            console.log(
+              `Pipeline ${pipeline_name} entered unexpected state ${JSON.stringify(p.status)}/${JSON.stringify(p.storageStatus)} while waiting to complete action "${action}"`
             )
+            return { value: false }
           }
         })
         return waiter.waitFor()

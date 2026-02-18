@@ -60,7 +60,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
   import { getDeploymentStatusLabel, isPipelineShutdown } from '$lib/functions/pipelines/status'
   import { resolve } from '$lib/functions/svelte'
-  import type { ExtendedPipeline, Pipeline, PipelineAction } from '$lib/services/pipelineManager'
+  import type { PipelineAction } from '$lib/services/pipelineManager'
 
   const {
     pipeline,
@@ -420,7 +420,10 @@ groups related actions into multi-action dropdowns when multiple options are ava
       onclick: async () => {
         const pipelineName = pipeline.current.name
         const { waitFor } = await postPipelineAction(pipelineName, 'pause')
-        waitFor().then(() => onActionSuccess?.(pipelineName, 'pause'), toastError)
+        waitFor().then(
+          (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'pause'),
+          toastError
+        )
       },
       disabled: () => false,
       standaloneButton: _pause
@@ -431,7 +434,10 @@ groups related actions into multi-action dropdowns when multiple options are ava
       onclick: async () => {
         const pipelineName = pipeline.current.name
         const { waitFor } = await postPipelineAction(pipelineName, 'standby')
-        waitFor().then(() => onActionSuccess?.(pipelineName, 'standby'), toastError)
+        waitFor().then(
+          (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'standby'),
+          toastError
+        )
       },
       disabled: () => false,
       standaloneButton: _standby
@@ -442,7 +448,10 @@ groups related actions into multi-action dropdowns when multiple options are ava
       onclick: async () => {
         const pipelineName = pipeline.current.name
         const { waitFor } = await postPipelineAction(pipelineName, 'activate')
-        waitFor().then(() => onActionSuccess?.(pipelineName, 'activate'), toastError)
+        waitFor().then(
+          (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'activate'),
+          toastError
+        )
       },
       disabled: () => false,
       standaloneButton: _activate
@@ -457,7 +466,10 @@ groups related actions into multi-action dropdowns when multiple options are ava
       (name) => `Clear ${name} pipeline storage?`,
       async (pipelineName: string) => {
         const { waitFor } = await postPipelineAction(pipelineName, 'clear')
-        waitFor().then(() => {}, toastError)
+        waitFor().then(
+          (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'clear'),
+          toastError
+        )
       },
       'This will delete all checkpoints.'
     )(pipeline.current.name)}
@@ -485,7 +497,10 @@ groups related actions into multi-action dropdowns when multiple options are ava
       (name) => `Force stop ${name} pipeline?`,
       async (pipelineName: string) => {
         const { waitFor } = await postPipelineAction(pipelineName, 'kill')
-        waitFor().then(() => onActionSuccess?.(pipelineName, 'kill'), toastError)
+        waitFor().then(
+          (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'kill'),
+          toastError
+        )
       },
       'The pipeline will stop processing inputs without making a checkpoint, leaving only a previous one, if any.'
     )(pipeline.current.name)}
@@ -500,7 +515,10 @@ groups related actions into multi-action dropdowns when multiple options are ava
       (name) => `Stop ${name} pipeline?`,
       async (pipelineName: string) => {
         const { waitFor } = await postPipelineAction(pipelineName, 'stop')
-        waitFor().then(() => onActionSuccess?.(pipelineName, 'stop'), toastError)
+        waitFor().then(
+          (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'stop'),
+          toastError
+        )
       },
       'The pipeline will stop processing inputs and make a checkpoint of its state.'
     )(pipeline.current.name)}
@@ -729,7 +747,10 @@ groups related actions into multi-action dropdowns when multiple options are ava
     onclick={async () => {
       const pipelineName = pipeline.current.name
       const { waitFor } = await postPipelineAction(pipelineName, 'pause')
-      waitFor().then(() => onActionSuccess?.(pipelineName, 'pause'), toastError)
+      waitFor().then(
+        (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'pause'),
+        toastError
+      )
     }}
   >
     <span class="fd fd-pause {iconClass}"></span>
@@ -741,7 +762,10 @@ groups related actions into multi-action dropdowns when multiple options are ava
     onclick={async () => {
       const pipelineName = pipeline.current.name
       const { waitFor } = await postPipelineAction(pipelineName, 'pause')
-      waitFor().then(() => onActionSuccess?.(pipelineName, 'pause'), toastError)
+      waitFor().then(
+        (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'pause'),
+        toastError
+      )
     }}
   >
     <span class="fd fd-pause {iconClass}"></span>
