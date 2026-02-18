@@ -17,6 +17,8 @@ from .helper import (
     gen_pipeline_name,
 )
 
+from feldera.testutils import single_host_only
+
 
 def _ingest_lines(name: str, table: str, body: str):
     r = http_request(
@@ -47,6 +49,7 @@ def _adhoc_count(name: str, table: str) -> int:
 
 
 @gen_pipeline_name
+@single_host_only
 def test_pipeline_metrics(pipeline_name):
     """
     Tests that circuit metrics can be retrieved from the pipeline.
@@ -83,6 +86,7 @@ def test_pipeline_metrics(pipeline_name):
 
 
 @gen_pipeline_name
+@single_host_only
 def test_pipeline_stats(pipeline_name):
     """
     Tests retrieving pipeline statistics via `/stats`.
