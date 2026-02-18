@@ -362,9 +362,7 @@ class FelderaClient:
             try:
                 result = predicate()
             except Exception as e:  # noqa: BLE001
-                logger.debug(
-                    "Predicate raised %s (attempt %d), continuing", e, attempt
-                )
+                logger.debug("Predicate raised %s (attempt %d), continuing", e, attempt)
                 result = False
             if result:
                 return
