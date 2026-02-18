@@ -1,10 +1,19 @@
 use crate::db::types::program::CompilationProfile;
 use crate::db::types::version::Version;
 use crate::db::{error::DBError, types::pipeline::PipelineId};
+use crate::has_unstable_feature;
 use actix_web::http::header;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
+use openssl::asn1::Asn1Time;
+use openssl::bn::{BigNum, MsbOption};
+use openssl::hash::MessageDigest;
+use openssl::nid::Nid;
+use openssl::pkey::PKey;
+use openssl::rsa::Rsa;
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
+use openssl::x509::extension::SubjectAlternativeName;
+use openssl::x509::{X509NameBuilder, X509};
 use postgres_openssl::MakeTlsConnector;
 use reqwest::Certificate;
 use rustls::pki_types::pem::PemObject;
@@ -14,7 +23,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 use std::{
     env,
-    fs::{canonicalize, create_dir_all},
+    fs::{canonicalize, create_dir_all, write},
     path::{Path, PathBuf},
     sync::Once,
     thread,
@@ -246,7 +255,7 @@ pub struct CommonConfig {
 
     /// Whether to enable TLS on the HTTP servers (API server, compiler, runner, pipelines).
     /// Iff true, is it allowed and required to set `https_tls_cert_path` and `https_tls_key_path`.
-    #[arg(long, default_value_t = false)]
+    #[arg(long, default_value_t = false, env = "FELDERA_ENABLE_HTTPS")]
     pub enable_https: bool,
 
     /// Path to the TLS x509 certificate PEM file (e.g., `/path/to/tls.crt`)
@@ -257,7 +266,7 @@ pub struct CommonConfig {
     /// the entire chain up until the root certificate authority (i.e., it should contain multiple
     /// `-----BEGIN CERTIFICATE----- (...) -----END CERTIFICATE-----` sections, starting with the
     /// leaf certificate and ending with the root certificate).
-    #[arg(long)]
+    #[arg(long, env = "FELDERA_HTTPS_TLS_CERT_PATH")]
     pub https_tls_cert_path: Option<String>,
 
     /// Path to the TLS key PEM file corresponding to the x509 certificate (e.g.,
@@ -266,7 +275,7 @@ pub struct CommonConfig {
     /// Even if the certificate is not self-signed and the entire chain is provided in
     /// `https_tls_cert_path`, this PEM file should only contain the single private key of the leaf
     /// certificate.
-    #[arg(long)]
+    #[arg(long, env = "FELDERA_HTTPS_TLS_KEY_PATH")]
     pub https_tls_key_path: Option<String>,
 
     /// Path to an additional TLS x509 certificate PEM file (e.g.,
@@ -294,13 +303,77 @@ pub struct CommonConfig {
     /// the entire chain up until the root certificate authority (i.e., it should contain multiple
     /// `-----BEGIN CERTIFICATE----- (...) -----END CERTIFICATE-----` sections, starting with the
     /// leaf certificate and ending with the root certificate).
-    #[arg(long)]
+    #[arg(long, env = "FELDERA_CA_CERT_PATH")]
     pub private_ca_cert_path: Option<String>,
 }
 
 impl CommonConfig {
+    fn ensure_testing_https_cert_key(&mut self) -> AnyResult<()> {
+        if !self.enable_https || !has_unstable_feature("testing") {
+            return Ok(());
+        }
+
+        if self.https_tls_cert_path.is_some() || self.https_tls_key_path.is_some() {
+            return Ok(());
+        }
+
+        let private_key = PKey::from_rsa(Rsa::generate(2048)?)?;
+
+        let mut name_builder = X509NameBuilder::new()?;
+        name_builder.append_entry_by_nid(Nid::COMMONNAME, "localhost")?;
+        let name = name_builder.build();
+
+        let mut certificate_builder = X509::builder()?;
+        certificate_builder.set_version(2)?;
+        let mut serial = BigNum::new()?;
+        serial.rand(128, MsbOption::MAYBE_ZERO, false)?;
+        let serial = serial.to_asn1_integer()?;
+        certificate_builder.set_serial_number(&serial)?;
+        certificate_builder.set_subject_name(&name)?;
+        certificate_builder.set_issuer_name(&name)?;
+        certificate_builder.set_pubkey(&private_key)?;
+        let not_before = Asn1Time::days_from_now(0)?;
+        let not_after = Asn1Time::days_from_now(30)?;
+        certificate_builder.set_not_before(not_before.as_ref())?;
+        certificate_builder.set_not_after(not_after.as_ref())?;
+        let san = SubjectAlternativeName::new()
+            .dns("localhost")
+            .ip("127.0.0.1")
+            .build(&certificate_builder.x509v3_context(None, None))?;
+        certificate_builder.append_extension(san)?;
+        certificate_builder.sign(&private_key, MessageDigest::sha256())?;
+
+        let cert_pem = certificate_builder.build().to_pem()?;
+        let key_pem = private_key.private_key_to_pem_pkcs8()?;
+
+        let dir = env::temp_dir().join("feldera-testing-https");
+        create_dir_all(&dir)?;
+        let cert_path = dir.join(format!("tls-{}.crt", std::process::id()));
+        let key_path = dir.join(format!("tls-{}.key", std::process::id()));
+        write(&cert_path, cert_pem)?;
+        write(&key_path, key_pem)?;
+
+        self.https_tls_cert_path = Some(cert_path.to_string_lossy().into_owned());
+        self.https_tls_key_path = Some(key_path.to_string_lossy().into_owned());
+
+        // Avoid rustls SNI warnings in testing mode by preferring
+        // DNS names over IP literals for intra-manager HTTPS requests.
+        if self.api_host == "127.0.0.1" {
+            self.api_host = "localhost".to_string();
+        }
+        if self.compiler_host == "127.0.0.1" {
+            self.compiler_host = "localhost".to_string();
+        }
+        if self.runner_host == "127.0.0.1" {
+            self.runner_host = "localhost".to_string();
+        }
+
+        Ok(())
+    }
+
     /// Converts all paths in the `self` to absolute paths.
     pub fn canonicalize(mut self) -> AnyResult<Self> {
+        self.ensure_testing_https_cert_key()?;
         let _ = self.https_config();
         if let Some(https_tls_cert_path) = self.https_tls_cert_path {
             self.https_tls_cert_path = Some(help_canonicalize_path(&https_tls_cert_path)?);
@@ -1024,6 +1097,7 @@ impl LocalRunnerConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn test_cpu_quantity() {
@@ -1046,5 +1120,38 @@ mod tests {
         assert!(cpu_quantity_to_workers("").is_err());
         assert!(cpu_quantity_to_workers("m500").is_err());
         assert!(cpu_quantity_to_workers("500M").is_err()); // uppercase M is invalid
+    }
+
+    #[test]
+    fn test_https_testing_mode_generates_cert_and_key() {
+        if crate::unstable_features().is_none() {
+            crate::platform_enable_unstable("testing");
+        }
+        let config = CommonConfig {
+            enable_https: true,
+            unstable_features: Some("testing".to_string()),
+            ..CommonConfig::test_config()
+        }
+        .canonicalize()
+        .unwrap();
+
+        let cert_path = config.https_tls_cert_path.as_ref().unwrap();
+        let key_path = config.https_tls_key_path.as_ref().unwrap();
+        assert!(Path::new(&cert_path).exists());
+        assert!(Path::new(&key_path).exists());
+        assert!(config.https_config().is_some());
+        assert_eq!(config.api_host, "localhost");
+        assert_eq!(config.compiler_host, "localhost");
+        assert_eq!(config.runner_host, "localhost");
+    }
+
+    #[test]
+    fn test_https_without_testing_mode_requires_cert_and_key() {
+        let config = CommonConfig {
+            enable_https: true,
+            unstable_features: None,
+            ..CommonConfig::test_config()
+        };
+        assert!(std::panic::catch_unwind(|| config.https_config()).is_err());
     }
 }

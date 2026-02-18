@@ -38,7 +38,11 @@ compare_output() {
   return 0
 }
 
-EDITION=`curl -H "Authorization: Bearer ${FELDERA_API_KEY}" "${FELDERA_HOST%/}/v0/config" | jq .edition | sed s/\"//g`
+curl_opts=()
+if [[ "${FELDERA_TLS_INSECURE:-}" == "1" || "${FELDERA_TLS_INSECURE:-}" == "true" ]]; then
+  curl_opts+=(--insecure)
+fi
+EDITION=`curl "${curl_opts[@]}" -H "Authorization: Bearer ${FELDERA_API_KEY}" "${FELDERA_HOST%/}/v0/config" | jq .edition | sed s/\"//g`
 echo "Edition: $EDITION"
 case $EDITION in
     Enterprise) enterprise=true ;;

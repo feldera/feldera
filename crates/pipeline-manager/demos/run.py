@@ -8,9 +8,10 @@
 
 #!/bin/python3
 
-import time
-import requests
 import argparse
+import time
+
+import requests
 from feldera import FelderaClient, PipelineBuilder
 from feldera.enums import PipelineStatus
 from feldera.testutils import _get_effective_api_key
@@ -48,7 +49,9 @@ def main():
     if effective_api_key:
         headers["Authorization"] = f"Bearer {effective_api_key}"
 
-    demos = requests.get(f"{api_url}/v0/config/demos", headers=headers).json()
+    demos = requests.get(
+        f"{api_url}/v0/config/demos", headers=headers, verify=False
+    ).json()
     print(f"Total {len(demos)} packages demos were found and will be run")
     for demo in demos:
         print(f"Running packaged demo: {demo['name']}...")
