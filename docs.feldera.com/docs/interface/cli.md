@@ -6,24 +6,52 @@ It allows you to create, manage, and monitor pipelines. It also features an inte
 
 ## Installation
 
-In order to install `fda`, you need a working Rust environment. You can install Rust by following the instructions on
-the [Rust website](https://www.rust-lang.org/tools/install).
+### Quick Install (Linux)
 
-### Using Cargo
+```bash
+curl -fsSL https://feldera.com/install | bash
+```
 
-Install `fda` with Cargo by running the following command:
+| Supported platforms |
+|---|
+| linux-x86_64 |
+| linux-aarch64 |
+
+
+### Installing a Specific Version
+
+Since `fda` is a single binary, you can update or install older versions by re-running the installer script.
+
+To install a specific version, pass the release git tag to the install script:
+
+```bash
+curl -fsSL https://feldera.com/install | FDA_VERSION=v0.247.0 bash
+```
+
+To install to a custom directory:
+
+```bash
+curl -fsSL https://feldera.com/install | FDA_VERSION=v0.247.0 FELDERA_INSTALL=/opt/feldera bash
+```
+
+### Using Cargo (Windows, MacOS)
+
+To install `fda` with Cargo, you need a working Rust environment. You can install Rust by following
+the instructions on the [Rust website](https://www.rust-lang.org/tools/install).
+
+Run the following command to install `fda` as a Rust crate:
 
 ```bash
 cargo install fda
 ```
 
-Alternatively, to install the latest `fda` revision from our main git branch, run the following command:
+Alternatively, to build and install the latest `fda` revision from our main git branch, run the following command:
 
 ```bash
 cargo install --git https://github.com/feldera/feldera fda
 ```
 
-To install from the sources in your local feldera repository, you can install `fda` with the
+To build from the sources in your local feldera repository, you can install `fda` with the
 following commands:
 
 ```bash
@@ -31,11 +59,10 @@ cd crates/fda
 cargo install --path .
 ```
 
-### Binary installation
+### From release binaries
 
 We supply pre-built binaries for `fda` as part of our release artifacts. You can find them in the
 `feldera-binaries` ZIP file in the [github release page](https://github.com/feldera/feldera/releases/latest).
-Note that currently only Linux binaries for amd64 and aarch64 architectures are provided.
 
 ### Optional: Shell completion
 

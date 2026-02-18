@@ -76,6 +76,14 @@ jobs:
           if_no_artifact_found: fail
           github_token: ${{ steps.app-token.outputs.token }}
 
+      - name: Extract standalone fda binaries
+        run: |
+          for arch in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            unzip -jo "feldera-binaries-${arch}.zip" fda -d .
+            zip "fda-${arch}.zip" fda
+            rm fda
+          done
+
       - name: Attach version to binaries
         run: |
           mv feldera-binaries-aarch64-unknown-linux-gnu.zip feldera-binaries-v${{ env.CURRENT_VERSION }}-aarch64-unknown-linux-gnu.zip
@@ -112,6 +120,8 @@ jobs:
           files: |
             feldera-binaries-v${{ env.CURRENT_VERSION }}-aarch64-unknown-linux-gnu.zip
             feldera-binaries-v${{ env.CURRENT_VERSION }}-x86_64-unknown-linux-gnu.zip
+            fda-x86_64-unknown-linux-gnu.zip
+            fda-aarch64-unknown-linux-gnu.zip
             sql2dbsp-jar-with-dependencies-v${{ env.CURRENT_VERSION }}.jar
             feldera-sbom-source-v${{ env.CURRENT_VERSION }}.spdx.json
             feldera-sbom-image-v${{ env.CURRENT_VERSION }}.spdx.json
