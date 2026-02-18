@@ -27,7 +27,7 @@ use crate::{AddAssignByRef, AddByRef, HasZero, MulByRef, SizeOf, Tup3};
 use derive_more::Add;
 use num_traits::Zero;
 use rkyv::Fallible;
-use std::ops::{Add, AddAssign};
+use std::ops::AddAssign;
 
 #[derive(Add, Clone, Debug, Default, PartialOrd, Ord, Eq, PartialEq, Hash)]
 pub struct I256Wrapper {

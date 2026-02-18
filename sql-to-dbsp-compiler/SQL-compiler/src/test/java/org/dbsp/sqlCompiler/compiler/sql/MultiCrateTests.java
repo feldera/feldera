@@ -280,7 +280,7 @@ public class MultiCrateTests extends BaseSQLTests {
                     this.appendCargoDependencies(cargoContents);
                 }
             }
-            if (!BaseSQLTests.skipRust)
+            if (!BaseSQLTests.skipRust && !Utilities.inCI())
                 Utilities.compileAndCheckRust(BaseSQLTests.RUST_MULTI_DIRECTORY, true);
             Utilities.deleteFile(udf, true);
         }

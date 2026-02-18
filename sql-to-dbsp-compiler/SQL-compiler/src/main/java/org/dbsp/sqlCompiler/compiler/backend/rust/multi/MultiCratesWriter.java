@@ -75,24 +75,24 @@ public final class MultiCratesWriter extends RustWriter {
 
         String deps = """
                 resolver = "2"
-                
+
                 [profile.unoptimized]
                 inherits = "release"
                 opt-level = 0
                 lto = "off"
                 codegen-units = 256
-        
+
                 [profile.optimized]
                 inherits = "release"
-                
+
                 [profile.optimized_symbols]
                 inherits = "release"
                 debug = "line-tables-only"
-                
+
                 [workspace.dependencies]
                 arcstr = { version = "1.2.0" }
                 paste = { version = "1.0.12" }
-                derive_more = { version = "2.0.1", features = ["add", "not", "from"] }
+                derive_more = { version = "1.0.0", features = ["add", "not", "from"] }
                 dbsp = { path = "$ROOT/crates/dbsp", features = ["backend-mode"] }
                 dbsp_adapters = { path = "$ROOT/crates/adapters"$FEATURES }
                 feldera-macros = { path = "$ROOT/crates/feldera-macros" }

@@ -106,6 +106,7 @@ deadpool-postgres = "0.14.1"
 #deltalake = "0.26.2"
 deltalake = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "06f42db5344f4ad8560af341352572488a4e6e06" }
 deltalake-catalog-unity = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "06f42db5344f4ad8560af341352572488a4e6e06" }
+derive_more = { version = "1.0.0" }
 directories = "6.0"
 dirs = "5.0"
 dyn-clone = "1.0.17"
