@@ -11,6 +11,7 @@ WAIT_TIMEOUT_PROGRAM_COMPILATION_S = 1800.0
 
 # Poll interval defaults (seconds)
 WAIT_POLL_INTERVAL_DEFAULT_S = 2.0
+WAIT_IDLE_INTERVAL_DEFAULT_S = 5.0
 
 # Exponential backoff defaults for completion-token polling
 BACKOFF_INITIAL_WAIT = 0.1

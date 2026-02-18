@@ -368,7 +368,7 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("v0")
         self.pipeline.resume()
         self.pipeline.input_json("tbl", data, update_format="insert_delete")
-        self.pipeline.wait_for_idle(True)
+        self.pipeline.wait_for_idle()
         out_data = out.to_dict()
         expected = [dict(data["insert"], insert_delete=1)]
         assert out_data == expected

@@ -207,12 +207,12 @@ class FelderaClient:
         timeout_s: float | None = None,
         poll_interval_s: float = WAIT_POLL_INTERVAL_DEFAULT_S,
     ) -> Pipeline:
-        wait = {
+        wait = [
             ProgramStatus.Pending,
             ProgramStatus.CompilingSql,
             ProgramStatus.SqlCompiled,
             ProgramStatus.CompilingRust,
-        }
+        ]
         start_time = time.monotonic()
         timeout_s = _normalize_wait_timeout(
             timeout_s,

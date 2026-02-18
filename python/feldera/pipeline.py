@@ -37,6 +37,7 @@ from feldera.runtime_config import RuntimeConfig
 from feldera.stats import PipelineStatistics
 from feldera.types import CheckpointMetadata
 from feldera.wait_constants import (
+    WAIT_IDLE_INTERVAL_DEFAULT_S,
     WAIT_POLL_INTERVAL_DEFAULT_S,
     WAIT_TIMEOUT_HEAVY_OPERATION_S,
     WAIT_TIMEOUT_LONGEST_OPERATION_S,
@@ -96,9 +97,10 @@ class Pipeline:
             timeout = int(WAIT_TIMEOUT_STANDARD_OPERATION_S)
         elif not math.isfinite(timeout) or timeout <= 0:
             logging.warning(
-                "wait_for_status(%s) called with invalid timeout %r; defaulting to 300s",
+                "wait_for_status(%s) called with invalid timeout %r; defaulting to %.1fs",
                 expected_status.name,
                 timeout,
+                WAIT_TIMEOUT_STANDARD_OPERATION_S,
             )
             timeout = int(WAIT_TIMEOUT_STANDARD_OPERATION_S)
 
@@ -357,8 +359,9 @@ class Pipeline:
             timeout_s = WAIT_TIMEOUT_LONGEST_OPERATION_S
         elif not math.isfinite(timeout_s) or timeout_s <= 0:
             logging.warning(
-                "wait_for_completion called with invalid timeout %r; defaulting to 3600s",
+                "wait_for_completion called with invalid timeout %r; defaulting to %.1fs",
                 timeout_s,
+                WAIT_TIMEOUT_LONGEST_OPERATION_S,
             )
             timeout_s = WAIT_TIMEOUT_LONGEST_OPERATION_S
 
@@ -404,7 +407,7 @@ class Pipeline:
 
     def wait_for_idle(
         self,
-        idle_interval_s: float = 5.0,
+        idle_interval_s: float = WAIT_IDLE_INTERVAL_DEFAULT_S,
         timeout_s: float | None = None,
         poll_interval_s: float = WAIT_POLL_INTERVAL_DEFAULT_S,
     ):
@@ -430,8 +433,9 @@ class Pipeline:
             timeout_s = WAIT_TIMEOUT_HEAVY_OPERATION_S
         elif not math.isfinite(timeout_s) or timeout_s <= 0:
             logging.warning(
-                "wait_for_idle called with invalid timeout %r; defaulting to 600s",
+                "wait_for_idle called with invalid timeout %r; defaulting to %.1fs",
                 timeout_s,
+                WAIT_TIMEOUT_HEAVY_OPERATION_S,
             )
             timeout_s = WAIT_TIMEOUT_HEAVY_OPERATION_S
 
@@ -803,8 +807,9 @@ metrics"""
             timeout_s = WAIT_TIMEOUT_STANDARD_OPERATION_S
         elif not math.isfinite(timeout_s) or timeout_s <= 0:
             logging.warning(
-                "checkpoint(wait=True) called with invalid timeout %r; defaulting to 300s",
+                "checkpoint(wait=True) called with invalid timeout %r; defaulting to %.1fs",
                 timeout_s,
+                WAIT_TIMEOUT_STANDARD_OPERATION_S,
             )
             timeout_s = WAIT_TIMEOUT_STANDARD_OPERATION_S
 
@@ -873,8 +878,9 @@ pipeline '{self.name}' to make checkpoint '{seq}'"""
             timeout_s = WAIT_TIMEOUT_STANDARD_OPERATION_S
         elif not math.isfinite(timeout_s) or timeout_s <= 0:
             logging.warning(
-                "sync_checkpoint(wait=True) called with invalid timeout %r; defaulting to 300s",
+                "sync_checkpoint(wait=True) called with invalid timeout %r; defaulting to %.1fs",
                 timeout_s,
+                WAIT_TIMEOUT_STANDARD_OPERATION_S,
             )
             timeout_s = WAIT_TIMEOUT_STANDARD_OPERATION_S
 
