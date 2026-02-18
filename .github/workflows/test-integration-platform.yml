@@ -165,6 +165,8 @@ jobs:
       OIDC_TEST_CLIENT_SECRET: ${{ secrets.OIDC_TEST_CLIENT_SECRET }}
       OIDC_TEST_USERNAME: ${{ secrets.OIDC_TEST_USERNAME }}
       OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
+      FELDERA_TLS_INSECURE: true
+      FELDERA_HOST: https://localhost:8080
 
     container:
       image: ghcr.io/feldera/feldera-dev:sha-db53e1302c944e29edd6d2af516fff7032b90e3b
@@ -178,10 +180,11 @@ jobs:
           FELDERA_AUTH_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
           RUST_LOG: info
           RUST_BACKTRACE: 1
+          FELDERA_ENABLE_HTTPS: true
           # Needed by test_update_runtime.py
           FELDERA_UNSTABLE_FEATURES: "testing"
         options: >-
-          --health-cmd "curl --fail --request GET --url http://localhost:8080/healthz || exit 1"
+          --health-cmd "curl --insecure --fail --request GET --url https://localhost:8080/healthz || exit 1"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -210,23 +213,65 @@ jobs:
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: |
           (cd crates/pipeline-manager/demos && uv run validate-preamble.py sql/*.sql)
-          uv run crates/pipeline-manager/demos/run.py --api-url http://localhost:8080
+          uv run crates/pipeline-manager/demos/run.py --api-url https://localhost:8080
         env:
           PYTHONPATH: ${{ github.workspace }}/python
-          FELDERA_HTTPS_TLS_CERT: ../test-tls/tls_test.crt
 
       - name: Run platform tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/platform --timeout=1500 -vv
         working-directory: python
         env:
-          FELDERA_HOST: http://localhost:8080
           PYTHONPATH: ${{ github.workspace }}/python
           IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
-          FELDERA_HTTPS_TLS_CERT: ../test-tls/tls_test.crt
-          # OIDC environment variables for authentication
-          OIDC_TEST_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
-          OIDC_TEST_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}
-          OIDC_TEST_CLIENT_SECRET: ${{ secrets.OIDC_TEST_CLIENT_SECRET }}
-          OIDC_TEST_USERNAME: ${{ secrets.OIDC_TEST_USERNAME }}
-          OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
+
+      - name: Download fda binary
+        uses: actions/download-artifact@v4
+        with:
+          name: feldera-binaries-${{ matrix.target }}
+          path: build
+
+      # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
+      - name: Make fda binary executable
+        run: chmod +x ./build/fda
+
+      - name: Create API key for CLI tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_KEY=$(uv run --locked python - <<'PY'
+          import os
+          import uuid
+          from feldera import FelderaClient
+          from feldera.testutils_oidc import setup_token_cache
+          import contextlib
+          import io
+
+          host = os.environ.get("FELDERA_HOST", "https://localhost:8080")
+          name = f"ci-fda-cli-{os.environ.get('GITHUB_RUN_ID', 'local')}-{uuid.uuid4().hex[:8]}"
+
+          token = None
+          if os.environ.get("OIDC_TEST_ISSUER") and os.environ.get("OIDC_TEST_CLIENT_ID"):
+              # Suppress auth helper output to keep GITHUB_ENV clean
+              with contextlib.redirect_stdout(io.StringIO()):
+                  token_data = setup_token_cache()
+              if token_data is not None:
+                  token = token_data.get("access_token")
+
+          client = FelderaClient(url=host, api_key=token)
+          resp = client.create_api_key(name)
+          print(resp["api_key"])
+          PY
+          )
+          echo "FELDERA_API_KEY=$API_KEY" >> "$GITHUB_ENV"
+        working-directory: python
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+
+      - name: Run fda CLI tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: bash test.bash
+        working-directory: crates/fda
+        env:
+          FDA_BINARY: ${{ github.workspace }}/build/fda
