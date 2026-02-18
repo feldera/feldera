@@ -6,7 +6,7 @@
 // communication, including 1-to-N and N-to-1.
 
 use crate::{
-    NumEntries,
+    NumEntries, WeakRuntime,
     circuit::{
         Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
         metadata::{
@@ -27,7 +27,7 @@ use std::{
     net::SocketAddr,
     ops::Range,
     sync::{
-        Arc, Mutex, RwLock,
+        Arc, Mutex, OnceLock, RwLock,
         atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant, SystemTime},
@@ -94,26 +94,51 @@ impl ExchangeService for ExchangeServer {
     }
 }
 
-// Maps from a range of worker IDs to the RPC client used to contact those
-// workers.  Only worker IDs for remote workers appear in the map.
-struct Clients(Vec<(Host, TokioOnceCell<ExchangeServiceClient>)>);
+struct Clients {
+    runtime: WeakRuntime,
+
+    /// Listens for connections from other hosts.
+    ///
+    /// We create this lazily upon the first attempt to connect to other hosts.
+    /// If we create it before we've completely initialized the circuit, then we
+    /// might not have created all of the exchanges yet when some other host
+    /// tries to send data to one.
+    listener: OnceLock<Option<ExchangeListener>>,
+
+    /// Maps from a range of worker IDs to the RPC client used to contact those
+    /// workers.  Only worker IDs for remote workers appear in the map.
+    clients: Vec<(Host, TokioOnceCell<ExchangeServiceClient>)>,
+}
 
 impl Clients {
     fn new(runtime: &Runtime) -> Clients {
-        Self(
-            runtime
+        Self {
+            runtime: runtime.downgrade(),
+            listener: Default::default(),
+            clients: runtime
                 .layout()
                 .other_hosts()
                 .map(|host| (host.clone(), TokioOnceCell::new()))
                 .collect(),
-        )
+        }
     }
 
     /// Returns a client for `worker`, which must be a remote worker ID, first
     /// establishing a connection if there isn't one yet.
     async fn connect(&self, worker: usize) -> &ExchangeServiceClient {
+        self.listener.get_or_init(|| {
+            if let Some(runtime) = self.runtime.upgrade()
+                && let Some(local_address) = runtime.layout().local_address()
+            {
+                let directory = runtime.local_store().get(&DirectoryId).unwrap().clone();
+                Some(ExchangeListener::new(local_address, directory))
+            } else {
+                None
+            }
+        });
+
         let (host, cell) = self
-            .0
+            .clients
             .iter()
             .find(|(host, _client)| host.workers.contains(&worker))
             .unwrap();
@@ -477,14 +502,6 @@ where
             .entry(DirectoryId)
             .or_insert_with(|| Arc::new(RwLock::new(HashMap::new())))
             .clone();
-
-        runtime.local_store().entry(ListenerId).or_insert_with(|| {
-            // Create a listener for remote exchange to connect to us.
-            runtime
-                .layout()
-                .local_address()
-                .map(|address| ExchangeListener::new(address, directory.clone()))
-        });
 
         let clients = runtime
             .local_store()
@@ -1166,13 +1183,6 @@ struct ClientsId;
 
 impl TypedMapKey<LocalStoreMarker> for ClientsId {
     type Value = Arc<Clients>;
-}
-
-#[derive(Hash, PartialEq, Eq)]
-struct ListenerId;
-
-impl TypedMapKey<LocalStoreMarker> for ListenerId {
-    type Value = Option<ExchangeListener>;
 }
 
 #[derive(Hash, PartialEq, Eq)]
