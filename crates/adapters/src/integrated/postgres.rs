@@ -3,6 +3,7 @@ mod input;
 mod output;
 mod output_macros;
 mod prepared_statements;
+mod tls;
 
 #[cfg(test)]
 mod test;

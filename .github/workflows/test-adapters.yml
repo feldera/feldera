@@ -98,6 +98,9 @@ jobs:
           ICEBERG_TEST_AWS_SECRET_ACCESS_KEY: ${{ secrets.delta_table_test_aws_secret_access_key }}
           DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID: ${{ secrets.delta_table_test_aws_access_key_id }}
           DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY: ${{ secrets.delta_table_test_aws_secret_access_key }}
+          POSTGRES_SSL_URL: postgres://postgres:${{ secrets.ci_postgres_password }}@ci-postgres-internal.postgres.svc.cluster.local:5432/postgres?sslmode=require
+          POSTGRES_SSL_CA_PEM: ${{ secrets.ci_postgres_tls_crt }}
+          POSTGRES_SSL_VERIFY_HOSTNAME: "false"
 
       - name: Show Kubernetes node
         if: always()
