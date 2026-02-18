@@ -56,6 +56,11 @@ Source edition can be found on github.
   value is a missing value (`None` in `to_dict()`), and `pandas.isna()`
   finds it.
 
+- NATS input connector: the pipeline name is now injected into the JetStream
+  consumer's metadata under the `pipeline` key, so consumer metrics can be
+  correlated with pipeline metrics (e.g. `prometheus-nats-exporter` with
+  `-jsz_consumer_meta_keys=pipeline`).
+
 ## v0.356.0
 
 - Bug fix (SQL): `DATEDIFF(QUARTER, left, right)` mixed whole years with
