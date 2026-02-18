@@ -1599,6 +1599,17 @@ impl TransportConfig {
         }
     }
 
+    /// Returns a mutable reference to the transport's metadata map, if the
+    /// transport supports arbitrary key-value metadata (e.g., NATS consumer
+    /// metadata). The controller uses this to inject pipeline identity into
+    /// transport-level metadata without transport-specific knowledge.
+    pub fn transport_metadata_mut(&mut self) -> Option<&mut HashMap<String, String>> {
+        match self {
+            TransportConfig::NatsInput(cfg) => Some(&mut cfg.consumer_config.metadata),
+            _ => None,
+        }
+    }
+
     /// Returns true if the connector is transient, i.e., is created and destroyed
     /// at runtime on demand, rather than being configured as part of the pipeline.
     pub fn is_transient(&self) -> bool {

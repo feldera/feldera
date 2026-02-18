@@ -158,6 +158,7 @@ impl NatsReader {
             // Note: this is consumer_name from config, not the created name with unique suffix.
             consumer_name = config.consumer_config.name.as_deref().unwrap_or(""),
             consumer_description = config.consumer_config.description.as_deref().unwrap_or(""),
+            pipeline = config.consumer_config.metadata.get("pipeline").map(|s| s.as_str()).unwrap_or(""),
             filter_subjects = ?config.consumer_config.filter_subjects,
         );
         let (command_sender, command_receiver) = unbounded_channel();
