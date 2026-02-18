@@ -443,66 +443,6 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             )
             time.sleep(poll_interval_s)
 
-    def _wait_for_deployment_status(
-        self,
-        pipeline_name: str,
-        desired: str | Callable[[str], bool],
-        timeout_s: float = WAIT_TIMEOUT_LIGHT_OPERATION_S,
-        poll_interval_s: float = WAIT_POLL_INTERVAL_DEFAULT_S,
-    ) -> Pipeline:
-        """
-        Wait until pipeline 'pipeline_name' has 'desired' deployment status:
-
-        - If 'desired' is a string, until that is the status.
-        - If 'desired' is a function, until it returns true when passed
-          the deployment status.
-
-        :param pipeline_name: The name of the pipeline.
-        :param desired: Desired deployment status string or predicate.
-        :param timeout_s: Timeout in seconds. If invalid, defaults to 60 seconds.
-        :param poll_interval_s: Poll interval in seconds.
-        """
-        timeout_s = normalize_wait_timeout(
-            timeout_s,
-            default_timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
-            operation="wait_for_deployment_status",
-        )
-        logger.debug(
-            "Waiting up to %s seconds for %s to transition to %r",
-            timeout_s,
-            pipeline_name,
-            desired,
-        )
-
-        start = time.monotonic()
-        deadline = start + timeout_s
-        last = None
-        latest = None
-
-        while time.monotonic() < deadline:
-            try:
-                latest = self.get_pipeline(pipeline_name, PipelineFieldSelector.STATUS)
-            except FelderaAPIError:
-                time.sleep(poll_interval_s)
-                continue
-
-            status = latest.deployment_status
-            if status != last:
-                logger.debug(
-                    "After %.1f seconds: status is %s",
-                    time.monotonic() - start,
-                    status,
-                )
-            last = status
-            if status == desired if isinstance(desired, str) else desired(status):
-                return latest
-            time.sleep(poll_interval_s)
-
-        raise TimeoutError(
-            f"Timed out waiting for pipeline '{pipeline_name}' deployment_status={desired} (last={last})\n"
-            f"Current pipeline descriptor:\n{latest.__dict__ if latest is not None else None}"
-        )
-
     def create_pipeline(self, pipeline: Pipeline, wait: bool = True) -> Pipeline:
         """
         Create a pipeline if it doesn't exist and wait for it to compile
@@ -708,9 +648,14 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                     default_timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
                     operation="start_pipeline(observe_start=True)",
                 )
-                self._wait_for_deployment_status(
-                    pipeline_name,
-                    lambda status: status != "Stopped",
+                self.wait_for_condition(
+                    f"{pipeline_name} leaves Stopped after start",
+                    lambda: PipelineStatus.from_str(
+                        self.get_pipeline(
+                            pipeline_name, PipelineFieldSelector.STATUS
+                        ).deployment_status
+                    )
+                    != PipelineStatus.STOPPED,
                     timeout_s=observe_timeout_s,
                 )
             return None
