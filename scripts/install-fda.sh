@@ -1,0 +1,208 @@
+#!/bin/sh
+# Feldera fda CLI installer
+# Usage:
+#   curl -fsSL https://feldera.com/install | bash
+#   curl -fsSL https://feldera.com/install | FDA_VERSION=v0.247.0 bash
+#   curl -fsSL https://feldera.com/install | FELDERA_INSTALL=/opt/feldera bash
+
+set -eu
+
+GITHUB_REPO="feldera/feldera"
+
+main() {
+    need_cmd curl
+    need_cmd unzip
+    need_cmd mktemp
+    need_cmd chmod
+    need_cmd mkdir
+    need_cmd mv
+    need_cmd rm
+    need_cmd uname
+
+    FELDERA_INSTALL="${FELDERA_INSTALL:-$HOME/.feldera}"
+    BIN_DIR="$FELDERA_INSTALL/bin"
+
+    detect_platform
+    resolve_version
+    download_and_install
+    setup_path
+    print_success
+}
+
+err() {
+    printf "error: %s\n" "$1" >&2
+    exit 1
+}
+
+info() {
+    printf "%s\n" "$1"
+}
+
+need_cmd() {
+    if ! command -v "$1" > /dev/null 2>&1; then
+        err "need '$1' (command not found)"
+    fi
+}
+
+detect_platform() {
+    OS="$(uname -s)"
+    ARCH="$(uname -m)"
+
+    case "$OS" in
+        Linux)  ;;
+        Darwin)
+            err "MacOS is not currently supported. Install fda with: cargo install fda"
+            ;;
+        MINGW* | MSYS* | CYGWIN*)
+            err "Windows is not currently supported. Install fda with: cargo install fda"
+            ;;
+        *)
+            err "unsupported operating system: $OS"
+            ;;
+    esac
+
+    case "$ARCH" in
+        x86_64 | amd64)
+            TARGET="x86_64-unknown-linux-gnu"
+            ;;
+        aarch64 | arm64)
+            TARGET="aarch64-unknown-linux-gnu"
+            ;;
+        *)
+            err "unsupported architecture: $ARCH. Supported: x86_64, aarch64"
+            ;;
+    esac
+
+    info "Detected platform: Linux $ARCH"
+}
+
+resolve_version() {
+    if [ -n "${FDA_VERSION:-}" ]; then
+        VERSION="$FDA_VERSION"
+        DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/download/${VERSION}/fda-${TARGET}.zip"
+        info "Installing fda ${VERSION}"
+    else
+        # Try to get the latest version from GitHub API
+        VERSION=""
+        API_RESPONSE=$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases/latest" 2>/dev/null) || true
+        if [ -n "$API_RESPONSE" ]; then
+            # Extract tag_name from JSON without jq
+            VERSION=$(printf '%s' "$API_RESPONSE" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+        fi
+
+        if [ -n "$VERSION" ]; then
+            DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/download/${VERSION}/fda-${TARGET}.zip"
+            info "Installing fda ${VERSION} (latest)"
+        else
+            # Fall back to latest/download URL if API call fails
+            DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/latest/download/fda-${TARGET}.zip"
+            info "Installing fda (latest)"
+        fi
+    fi
+}
+
+download_and_install() {
+    TMPDIR=$(mktemp -d)
+    # shellcheck disable=SC2064
+    trap "rm -rf '$TMPDIR'" EXIT
+
+    TMPFILE="$TMPDIR/fda.zip"
+
+    info "Downloading from $DOWNLOAD_URL"
+    HTTP_CODE=$(curl -fSL --progress-bar -o "$TMPFILE" -w "%{http_code}" "$DOWNLOAD_URL") || {
+        case "$HTTP_CODE" in
+            404)
+                if [ -n "${FDA_VERSION:-}" ]; then
+                    err "version ${FDA_VERSION} not found. Check available versions at https://github.com/$GITHUB_REPO/releases"
+                else
+                    err "release asset not found. The latest release may not include standalone fda binaries yet."
+                fi
+                ;;
+            *)
+                err "download failed (HTTP $HTTP_CODE)"
+                ;;
+        esac
+    }
+
+    info "Extracting fda binary"
+    unzip -jo "$TMPFILE" fda -d "$TMPDIR"
+
+    TMPBIN="$TMPDIR/fda"
+    chmod +x "$TMPBIN"
+
+    mkdir -p "$BIN_DIR"
+    mv "$TMPBIN" "$BIN_DIR/fda"
+
+    info "Installed fda to $BIN_DIR/fda"
+}
+
+setup_path() {
+    # Check if bin dir is already in PATH
+    case ":${PATH}:" in
+        *":${BIN_DIR}:"*)
+            return
+            ;;
+    esac
+
+    SHELL_NAME="$(basename "${SHELL:-/bin/sh}")"
+    RC_LINES="export FELDERA_INSTALL=\"$FELDERA_INSTALL\"\nexport PATH=\"\$FELDERA_INSTALL/bin:\$PATH\""
+    UPDATED_RC=""
+
+    case "$SHELL_NAME" in
+        bash)
+            if [ -f "$HOME/.bashrc" ]; then
+                printf '\n# Feldera fda CLI\n%b\n' "$RC_LINES" >> "$HOME/.bashrc"
+                UPDATED_RC="~/.bashrc"
+            elif [ -f "$HOME/.bash_profile" ]; then
+                printf '\n# Feldera fda CLI\n%b\n' "$RC_LINES" >> "$HOME/.bash_profile"
+                UPDATED_RC="~/.bash_profile"
+            fi
+            ;;
+        zsh)
+            if [ -f "$HOME/.zshrc" ] || [ -d "$HOME" ]; then
+                printf '\n# Feldera fda CLI\n%b\n' "$RC_LINES" >> "$HOME/.zshrc"
+                UPDATED_RC="~/.zshrc"
+            fi
+            ;;
+        fish)
+            FISH_CONFIG="$HOME/.config/fish/config.fish"
+            if [ -d "$HOME/.config/fish" ] || mkdir -p "$HOME/.config/fish"; then
+                printf '\n# Feldera fda CLI\nset -gx FELDERA_INSTALL %s\nset -gx PATH $FELDERA_INSTALL/bin $PATH\n' "$FELDERA_INSTALL" >> "$FISH_CONFIG"
+                UPDATED_RC="~/.config/fish/config.fish"
+            fi
+            ;;
+    esac
+
+    if [ -n "$UPDATED_RC" ]; then
+        info "Added $BIN_DIR to PATH in $UPDATED_RC"
+    fi
+}
+
+print_success() {
+    printf '\n'
+    info "fda was installed successfully!"
+
+    # Try to print version
+    if command -v "$BIN_DIR/fda" > /dev/null 2>&1; then
+        info "$("$BIN_DIR/fda" --version 2>/dev/null || echo "fda (version unknown)")"
+    fi
+
+    # PATH instructions
+    case ":${PATH}:" in
+        *":${BIN_DIR}:"*)
+            ;;
+        *)
+            printf '\n'
+            info "To get started, restart your shell or run:"
+            info "  export FELDERA_INSTALL=\"$FELDERA_INSTALL\""
+            info "  export PATH=\"\$FELDERA_INSTALL/bin:\$PATH\""
+            ;;
+    esac
+
+    # Shell completion hint
+    printf '\n'
+    info "To enable shell completions, see:"
+    info "  https://docs.feldera.com/docs/interface/cli#optional-shell-completion"
+}
+
+main
