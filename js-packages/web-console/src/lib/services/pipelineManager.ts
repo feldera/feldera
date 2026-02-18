@@ -297,7 +297,12 @@ const toExtendedPipeline = ({
   compilerOutput: toCompilerOutput(pipeline.program_error),
   deploymentResourcesStatus: pipeline.deployment_resources_status,
   deploymentResourcesStatusSince: new Date(pipeline.deployment_resources_status_since),
-  deploymentRuntimeStatusDetails: pipeline.deployment_runtime_status_details
+  deploymentRuntimeStatusDetails: pipeline.deployment_runtime_status_details,
+  connectors: pipeline.connectors
+    ? {
+        numErrors: pipeline.connectors.num_errors
+      }
+    : undefined
 })
 
 const fromPipeline = <T extends Partial<Pipeline>>(pipeline: T) => ({
