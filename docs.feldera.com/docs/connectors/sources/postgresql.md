@@ -19,6 +19,14 @@ The PostgreSQL connector does not yet support fault tolerance.
 |----------|--------|------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `uri`*   | string |            | A PostgreSQL connection URL, e.g., "postgresql://postgres:1234@127.0.0.1:7373/postgres" (see the tokio-postgres [Config](https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html) struct for a detailed list of options) |
 | `query`* | string |            | A PostgreSQL query which returns a list of rows to be ingested, e.g., "select a, b from table where a = 1 limit 100;" (check the [SELECT](https://www.postgresql.org/docs/current/sql-select.html) documentation in PostgreSQL for the syntax)  |
+| `ssl_ca_pem`            | string  |           | A sequence of CA certificates in PEM format. Required for TLS, and takes precedence over `ssl_ca_location`.                                                                                                                                     |
+| `ssl_ca_location`       | string  |           | Path to a file containing a sequence of CA certificates in PEM format. Required for TLS, takes lower precedence than `ssl_ca_pem`.                                                                                                              |
+| `ssl_client_pem`        | string  |           | The client certificate in PEM format. Takes precedence over `ssl_client_location`.                                                                                                                                                              |
+| `ssl_client_location`   | string  |           | The path to the client certificate file in PEM format. Takes lower precedence than `ssl_client_pem`.                                                                                                                                            |
+| `ssl_client_key`        | string  |           | The client certificate key in PEM format. Takes precedence over `ssl_client_key_location`.                                                                                                                                                      |
+| `ssl_client_key_location` | string  |           | The path to the client certificate key file in PEM format. Takes lower precedence than `ssl_client_key`.                                                                                                                                        |
+| `ssl_certificate_chain_location` | string |    | The path to the certificate chain file (PEM-formatted, leaf first).                                                                                                                                                                             |
+| `verify_hostname`       | boolean | `true`    | True to enable hostname verification when using TLS. True by default.                                                                                                                                                                           |
 
 
 [*]: Required fields
@@ -305,6 +313,40 @@ CREATE TABLE all_types_example (
 
 ## Connecting with TLS/SSL
 
-TBD
+Feldera supports connecting to PostgreSQL over TLS / SSL.
+To enable a secure connection, you **must** provide the following field:
+- `ssl_ca_pem`: The CA certificate in PEM format, used to verify the server certificate.
+
+You can optionally provide the following fields:
+- `ssl_client_pem`: The client certificate in PEM format (if the server requires client authentication).
+- `ssl_client_key`: The private key corresponding to the client certificate.
+- `verify_hostname`: Set to `false` to disable hostname verification (not recommended). Defaults to `true`.
+
+If `ssl_ca_pem` is not specified, the connection will default to **plaintext**.
+
+Example:
+
+```sql
+create table people (
+    id varchar(36),
+    name varchar(36),
+    age bigint
+) WITH (
+    'materialized' = 'true',
+    'connectors' = '[{
+        "transport": {
+            "name": "postgres_input",
+            "config": {
+                "uri": "postgresql://postgres:secret@db.example.com:5432/postgres",
+                "query": "select * from people;",
+                "ssl_client_key": "[REDACTED]",
+                "ssl_client_pem": "[REDACTED]",
+                "ssl_ca_pem": "[REDACTED]",
+                "verify_hostname": false
+            }
+        }
+    }]'
+);
+```
 
 
