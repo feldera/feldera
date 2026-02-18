@@ -15,6 +15,14 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        ### NATS consumer metadata populated with pipeline information
+
+        The NATS input connector now automatically injects the pipeline name into
+        the JetStream consumer's metadata under the `pipeline` key. This enables
+        correlation of NATS consumer metrics with Feldera pipeline metrics in
+        Prometheus when using `prometheus-nats-exporter` with
+        `-jsz_consumer_meta_keys=pipeline`.
+
         ### Python API removed `ignore_deployment_error`
 
         The `ignore_deployment_error` parameter has been removed from the Python

@@ -314,6 +314,52 @@ CREATE MATERIALIZED VIEW summary as
     FROM raw_text
     GROUP BY text_length
 ```
+## Pipeline metadata
+
+When the pipeline configuration includes a `given_name` field, Feldera
+automatically sets `metadata["pipeline"]` on the NATS JetStream consumer to the
+value of `given_name`. If you already set `metadata.pipeline` in your connector
+configuration, your value takes precedence and is not overwritten.
+
+For example, a pipeline named `"my_pipeline"` will produce a consumer whose
+metadata contains `{"pipeline": "my_pipeline"}`:
+
+```sql
+CREATE TABLE events (
+    id BIGINT,
+    payload STRING
+) WITH (
+    'connectors' = '[{
+        "name": "nats_in",
+        "transport": {
+            "name": "nats_input",
+            "config": {
+                "connection_config": {
+                    "server_url": "nats://nats:4222"
+                },
+                "stream_name": "my_stream",
+                "consumer_config": {
+                    "deliver_policy": "All"
+                }
+            }
+        },
+        "format": {
+            "name": "json",
+            "config": {
+                "update_format": "raw"
+            }
+        }
+    }]'
+);
+```
+
+This is useful for correlating NATS consumer metrics with Feldera pipeline
+status in monitoring systems. For example, with
+[`prometheus-nats-exporter`](https://github.com/nats-io/prometheus-nats-exporter),
+use the `-jsz_consumer_meta_keys=pipeline` flag to surface the pipeline name as
+a Prometheus label on all `nats_consumer_*` metrics. This allows alert rules
+that join on the `pipeline` label with `feldera_pipeline_status`.
+
 ## Additional resources
 
 For more information, see:
