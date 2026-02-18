@@ -80,11 +80,11 @@ def test_completion_tokens(pipeline_name):
     - Poll completion_status for each token
     - Validate the row becomes visible exactly once
     """
-    sql = (
-        "CREATE TABLE t1(c1 integer, c2 bool, c3 varchar) "
-        "WITH ('materialized' = 'true'); "
-        "CREATE MATERIALIZED VIEW v1 AS SELECT * FROM t1;"
-    )
+    sql = """\
+CREATE TABLE t1(c1 INTEGER, c2 BOOL, c3 VARCHAR)
+    WITH ('materialized' = 'true');
+CREATE MATERIALIZED VIEW v1 AS SELECT * FROM t1;
+"""
     create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
 
