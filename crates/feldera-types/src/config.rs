@@ -2261,6 +2261,17 @@ impl TransportConfig {
         }
     }
 
+    /// Returns a mutable reference to the transport's metadata map, if the
+    /// transport supports arbitrary key-value metadata (e.g., NATS consumer
+    /// metadata). The controller uses this to inject pipeline identity into
+    /// transport-level metadata without transport-specific knowledge.
+    pub fn transport_metadata_mut(&mut self) -> Option<&mut HashMap<String, String>> {
+        match self {
+            TransportConfig::NatsInput(cfg) => Some(&mut cfg.consumer_config.metadata),
+            _ => None,
+        }
+    }
+
     /// Returns true if the connector is transient, i.e., is created and destroyed
     /// at runtime on demand, rather than being configured as part of the pipeline.
     pub fn is_transient(&self) -> bool {
@@ -2513,5 +2524,54 @@ mod sync_config_tests {
             serde_json::from_str(r#"{"bucket": "ckpts/a", "take_bucket_ownership": true}"#)
                 .unwrap();
         assert!(sync.take_bucket_ownership);
+    }
+}
+
+#[cfg(test)]
+mod transport_metadata_tests {
+    use super::TransportConfig;
+    use serde_json::json;
+
+    fn nats_input(metadata: serde_json::Value) -> TransportConfig {
+        serde_json::from_value(json!({
+            "name": "nats_input",
+            "config": {
+                "connection_config": { "server_url": "nats://127.0.0.1:4222" },
+                "stream_name": "orders",
+                "consumer_config": { "deliver_policy": "All", "metadata": metadata },
+            },
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn nats_input_exposes_consumer_metadata() {
+        let mut transport = nats_input(json!({ "team": "ingest" }));
+        let metadata = transport.transport_metadata_mut().unwrap();
+        assert_eq!(metadata.get("team").map(String::as_str), Some("ingest"));
+
+        metadata.insert("pipeline".to_string(), "orders_pipeline".to_string());
+        let TransportConfig::NatsInput(config) = &transport else {
+            unreachable!()
+        };
+        assert_eq!(
+            config
+                .consumer_config
+                .metadata
+                .get("pipeline")
+                .map(String::as_str),
+            Some("orders_pipeline"),
+            "writes through the returned map must reach the consumer config"
+        );
+    }
+
+    #[test]
+    fn transports_without_metadata_return_none() {
+        let mut transport: TransportConfig = serde_json::from_value(json!({
+            "name": "file_input",
+            "config": { "path": "/tmp/input.csv" },
+        }))
+        .unwrap();
+        assert!(transport.transport_metadata_mut().is_none());
     }
 }
