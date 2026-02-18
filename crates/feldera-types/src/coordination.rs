@@ -167,33 +167,36 @@ pub struct StepRequest {
     /// Otherwise, the pipeline will not start a step.
     pub step: Step,
 
-    /// Input endpoints to consider, based on the `action`:
+    /// Which input endpoints to use.
     ///
-    /// - [Idle][]: Unused.
-    ///
-    /// - [Trigger][]: Only input arriving on the specified endpoints can
-    ///   trigger a step.  If a step is triggered, it will only use input from
-    ///   the specified endpoints.
-    ///
-    /// - [Step][]: The step only uses input from the specified endpoints.
-    ///
-    /// [Idle]: StepAction::Idle
-    /// [Trigger]: StepAction::Trigger
-    /// [Step]: StepAction::Step
-    pub input_connectors: Vec<String>,
+    /// This is not significant for [StepAction::Idle].
+    pub inputs: StepInputs,
 }
 
 impl StepRequest {
-    pub fn new(step: Step, action: StepAction, input_connectors: Vec<String>) -> Self {
+    pub fn new(step: Step, action: StepAction, inputs: StepInputs) -> Self {
         Self {
             step,
             action,
-            input_connectors,
+            inputs,
         }
     }
     pub fn new_idle(step: Step) -> Self {
-        Self::new(step, StepAction::Idle, Vec::new())
+        Self::new(step, StepAction::Idle, StepInputs::All)
     }
+}
+
+/// The input endpoints to consider in a [StepRequest].
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub enum StepInputs {
+    /// Consider input arriving on any input endpoint to trigger a step.  For
+    /// executing a step, use input from all the input endpoints.
+    All,
+
+    /// Consider input arriving only on input endpoints that are blocking a
+    /// checkpoint to trigger a step.  For executing a step, use input only from
+    /// input endpoints that are blocking a checkpoint.
+    CheckpointBarriers,
 }
 
 /// `/coordination/checkpoint/status`, streamed by pipeline to coordinator.

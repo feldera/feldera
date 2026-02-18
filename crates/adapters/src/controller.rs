@@ -84,8 +84,8 @@ use feldera_types::adapter_stats::{
 };
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::coordination::{
-    self, AdHocCatalog, CheckpointCoordination, Completion, StepAction, StepRequest, StepStatus,
-    TransactionCoordination,
+    self, AdHocCatalog, CheckpointCoordination, Completion, StepAction, StepInputs, StepRequest,
+    StepStatus, TransactionCoordination,
 };
 use feldera_types::format::json::JsonLines;
 use feldera_types::pipeline_diff::PipelineDiff;
@@ -2874,9 +2874,17 @@ impl CircuitThread {
         // if the user runs end-to-end transactions. One possible way to solve this
         // in the future is to remove the notion of barriers altogether, making input
         // connectors always checkpointable.
-        let barriers_only = self.checkpoint_requested()
+        let coordination_request = self.controller.coordination_request.lock().unwrap().clone();
+        let inputs = if self.checkpoint_requested()
             && self.ft.is_none()
-            && self.controller.get_transaction_state() == TransactionState::None;
+            && self.controller.get_transaction_state() == TransactionState::None
+        {
+            StepInputs::CheckpointBarriers
+        } else if let Some(coordination_request) = &coordination_request {
+            coordination_request.inputs
+        } else {
+            StepInputs::All
+        };
 
         // Collect the ids of the endpoints that we'll flush to the circuit.
         //
@@ -2886,7 +2894,6 @@ impl CircuitThread {
         // exist when we start flushing input. New ones will be processed in
         // future steps.
         let statuses = self.controller.status.input_status();
-        let coordination_request = self.controller.coordination_request.lock().unwrap();
         let mut waiting = HashMap::with_capacity(statuses.len());
 
         // Connectors that have committed the transaction and should not be queried
@@ -2906,11 +2913,8 @@ impl CircuitThread {
         };
 
         for (&endpoint_id, status) in statuses.iter() {
-            if barriers_only && !status.is_barrier()
+            if inputs == StepInputs::CheckpointBarriers && !status.is_barrier()
                 || committing.contains(&status.endpoint_name)
-                || coordination_request
-                    .as_ref()
-                    .is_some_and(|cr| !cr.input_connectors.contains(&status.endpoint_name))
             {
                 if let Some(resume) = self.input_metadata.remove(&status.endpoint_name) {
                     step_metadata.insert(
@@ -3624,21 +3628,9 @@ impl StepTrigger {
         // whether there is buffered data.
         let result = if let Some(request) = &coordination_request {
             match request.action {
-                StepAction::Idle => Some(Action::Park(None)),
-                StepAction::Step => {
-                    if request.step >= step {
-                        Some(Action::Step)
-                    } else {
-                        Some(Action::Park(None))
-                    }
-                }
-                StepAction::Trigger => {
-                    if request.step >= step {
-                        None
-                    } else {
-                        Some(Action::Park(None))
-                    }
-                }
+                StepAction::Step if request.step >= step => Some(Action::Step),
+                StepAction::Trigger if request.step >= step => None,
+                _ => Some(Action::Park(None)),
             }
         } else if replaying
             || self.controller.transaction_commit_requested()
@@ -3681,16 +3673,17 @@ impl StepTrigger {
             //
             // If we're running under a coordinator, then we only consider input
             // endpoints that the coordinator told us to.
+            let inputs = if let Some(coordination_request) = &coordination_request {
+                coordination_request.inputs
+            } else if checkpoint_requested {
+                StepInputs::CheckpointBarriers
+            } else {
+                StepInputs::All
+            };
             let mut buffered_records = EnumMap::<bool, u64>::default();
             for status in self.controller.status.input_status().values() {
-                if let Some(coordination_request) = &coordination_request
-                    && !coordination_request
-                        .input_connectors
-                        .contains(&status.endpoint_name)
-                {
-                    continue;
-                }
-                buffered_records[checkpoint_requested && status.is_barrier()] +=
+                buffered_records
+                    [inputs == StepInputs::CheckpointBarriers && status.is_barrier()] +=
                     status.metrics.buffered_records.load(Ordering::Relaxed);
             }
             let buffered_records = if buffered_records[true] > 0 {
