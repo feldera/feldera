@@ -176,8 +176,8 @@ groups related actions into multi-action dropdowns when multiple options are ava
         '_delete'
       ])
       .with('Suspending', () => [
-        '_spinner',
         '_kill',
+        '_spinner',
         '_saveFile',
         '_configurations',
         '_storage_indicator',
@@ -223,6 +223,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         '_delete'
       ])
       .with('Stopping', () => [
+        '_kill',
         '_spinner',
         '_saveFile',
         '_configurations',
