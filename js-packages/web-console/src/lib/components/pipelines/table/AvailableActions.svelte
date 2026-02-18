@@ -10,13 +10,13 @@
   import { useToast } from '$lib/compositions/useToastNotification'
   import { intersect2 } from '$lib/functions/common/array'
   import { isPipelineCodeEditable, isPipelineShutdown } from '$lib/functions/pipelines/status'
-  import type { PipelineAction, PipelineStatus, PipelineThumb } from '$lib/services/pipelineManager'
+  import type { PipelineAction, PipelineThumb } from '$lib/services/pipelineManager'
 
   let {
     pipelines,
     selectedPipelines = $bindable()
   }: { pipelines: PipelineThumb[]; selectedPipelines: string[] } = $props()
-  const { updatePipelines, updatePipeline } = useUpdatePipelineList()
+  const { updatePipeline } = useUpdatePipelineList()
   const sortedSelectedPipelines = $derived([...selectedPipelines].sort())
   const availableActions = [
     'start' as const,
