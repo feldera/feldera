@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.StubsWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCratesWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
+import org.dbsp.sqlCompiler.compiler.sql.MultiCrateTests;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
@@ -56,6 +57,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.function.Predicate;
@@ -233,6 +235,34 @@ public class BaseSQLTests {
         return file;
     }
 
+    /** Enumerate the SQL files in the QA repository.
+     * The assumption is that this repository has been checked out in parallel with feldera. */
+    public static List<File> getQATests() {
+        List<File> result = new ArrayList<>();
+        String dir = "../../../feldera-qa";
+        File file = new File(dir);
+        if (file.exists()) {
+            File[] directories = file.listFiles();
+            if (directories == null)
+                return result;
+            Arrays.sort(directories);
+            for (File d: directories) {
+                File[] files = d.listFiles();
+                if (files == null)
+                    continue;
+                for (File c: files) {
+                    // The following eliminate some fda scripts
+                    if (c.getName().contains("adhoc")) continue;
+                    if (c.getName().matches("query.*view.sql")) continue;
+                    if (c.getName().endsWith(".sql")) {
+                        result.add(c);
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
     public static File createInputScript(String contents) throws IOException {
         File result = File.createTempFile("script", ".sql", new File(RUST_DIRECTORY));
         return createInputFile(result, contents);
@@ -314,6 +344,11 @@ public class BaseSQLTests {
             outputStream.close();
         stubsWriter.write(compiler);
         if (!skipRust) {
+            if (Utilities.inCI()) {
+                // In CI we use multi-crate compilation
+                MultiCrateTests.setupCargoLock();
+            }
+
             if (check) {
                 Utilities.compileAndCheckRust(directory, true, testCrate);
             } else {
@@ -353,7 +388,7 @@ public class BaseSQLTests {
 
     public CompilerOptions testOptions() {
         CompilerOptions options = new CompilerOptions();
-        if (System.getenv("CI") != null)
+        if (Utilities.inCI())
             // Set to compile to multiple crates
             options.ioOptions.crates = "x";
         options.languageOptions.throwOnError = true;

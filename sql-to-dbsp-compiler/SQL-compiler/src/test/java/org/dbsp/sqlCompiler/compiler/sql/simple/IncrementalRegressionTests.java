@@ -51,6 +51,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
     @Override
     public CompilerOptions testOptions() {
         CompilerOptions options = super.testOptions();
+        options.languageOptions.throwOnError = false;
         options.languageOptions.incrementalize = true;
         options.languageOptions.optimizationLevel = 2;
         // This will make the generated code use SourceSet operators:
@@ -814,66 +815,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 Assert.assertTrue(depth <= 3);
             }
         });
-    }
-
-    // Tests that are not in the repository; run manually
-    // TODO: Remove this in favor of the qaTests below.
-    @Test @Ignore
-    public void extraTests() throws IOException {
-        // Logger.INSTANCE.setLoggingLevel(CalciteOptimizer.class, 2);
-        // this.showFinal();
-        String dir = "../extra";
-        File file = new File(dir);
-        if (file.exists()) {
-            File[] toCompile = file.listFiles();
-            if (toCompile == null)
-                return;
-            Arrays.sort(toCompile);
-            for (File c: toCompile) {
-                if (!c.getName().contains("temp-program.sql")) continue;
-                if (c.getName().contains("sql")) {
-                    System.out.println("Compiling " + c);
-                    String sql = Utilities.readFile(c.getPath());
-                    this.compileRustTestCase(sql);
-                }
-            }
-        }
-    }
-
-    // Tests that are in the feldera-qa repository.
-    // The assumption is that this repository has been checked out in parallel with feldera.
-    // Note that this test is disabled by default, since it generates a huge rust program,
-    // concatenating all compiled programs.
-    @Test @Ignore
-    public void qaTests() throws IOException {
-        String dir = "../../../feldera-qa";
-        File file = new File(dir);
-        if (file.exists()) {
-            File[] directories = file.listFiles();
-            if (directories == null)
-                return;
-            Arrays.sort(directories);
-            for (File d: directories) {
-                File[] files = d.listFiles();
-                if (files == null)
-                    continue;
-                for (File c: files) {
-                    // The following eliminate some fda scripts
-                    if (c.getName().contains("adhoc")) continue;
-                    if (c.getName().matches("query.*view.sql")) continue;
-                    if (c.getName().endsWith(".sql")) {
-                        System.out.println("Compiling " + c);
-                        String sql = Utilities.readFile(c.getPath());
-                        try {
-                            this.compileRustTestCase(sql);
-                        } catch (UnsupportedException ex) {
-                            // This is probably a file containing an ad-hoc query
-                            System.out.println("Skipped due to unsupported features.");
-                        }
-                    }
-                }
-            }
-        }
     }
 
     @Test

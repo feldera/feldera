@@ -1,0 +1,40 @@
+package org.dbsp.sqlCompiler.compiler.sql;
+
+import org.dbsp.sqlCompiler.CompilerMain;
+import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
+import org.dbsp.util.Utilities;
+import org.junit.Test;
+
+import java.io.File;
+import java.io.IOException;
+import java.sql.SQLException;
+
+/** Compile the SQL programs in the feldera-qa repository, and rust-compile the results. */
+public class QATests {
+    static void compileAndCheck(File file) throws SQLException, IOException, InterruptedException {
+        CompilerMessages messages = CompilerMain.execute(
+                "-i", "--alltables", "-q", "--ignoreOrder",
+                "-o", BaseSQLTests.TEST_FILE_PATH, file.getAbsolutePath());
+        if (messages.errorCount() > 0) {
+            messages.print();
+            throw new RuntimeException("Error during compilation");
+        }
+        if (!BaseSQLTests.skipRust)
+            Utilities.compileAndCheckRust(BaseSQLTests.PROJECT_DIRECTORY, true);
+    }
+
+    @Test
+    public void qaTests() throws IOException, SQLException, InterruptedException {
+        for (File c : BaseSQLTests.getQATests()) {
+            System.out.println("Compiling " + c);
+            try {
+                compileAndCheck(c);
+            } catch (UnsupportedException ex) {
+                // This is probably a file containing an ad-hoc query
+                System.out.println(c.getName() + " skipped due to unsupported features.");
+            }
+        }
+    }
+}

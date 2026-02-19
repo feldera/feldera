@@ -387,7 +387,7 @@ public class Utilities {
         List<String> args = new ArrayList<>();
         args.add("cargo");
         args.add("test");
-        if (System.getenv("CI") == null) {
+        if (Utilities.inCI()) {
             args.add("--jobs");
             args.add("6");
         }
@@ -431,7 +431,7 @@ public class Utilities {
         List<String> args = new ArrayList<>();
         args.add("cargo");
         args.add("check");
-        if (System.getenv("CI") == null) {
+        if (Utilities.inCI()) {
             args.add("--jobs");
             args.add("6");
         }
@@ -587,5 +587,10 @@ public class Utilities {
             expansion = next;
             pattern = tail.substring(close + 1);
         }
+    }
+
+    /** True if the CI environment variable is set */
+    public static boolean inCI() {
+        return System.getenv("CI") != null;
     }
 }

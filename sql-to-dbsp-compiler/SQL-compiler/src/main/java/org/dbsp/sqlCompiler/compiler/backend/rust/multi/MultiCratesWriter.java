@@ -74,6 +74,8 @@ public final class MultiCratesWriter extends RustWriter {
         cargoStream.println("]");
 
         String deps = """
+                resolver = "2"
+                
                 [profile.unoptimized]
                 inherits = "release"
                 opt-level = 0
@@ -90,16 +92,16 @@ public final class MultiCratesWriter extends RustWriter {
                 [workspace.dependencies]
                 arcstr = { version = "1.2.0" }
                 paste = { version = "1.0.12" }
-                derive_more = { version = "0.99.17", features = ["add", "not", "from"] }
+                derive_more = { version = "2.0.1", features = ["add", "not", "from"] }
                 dbsp = { path = "$ROOT/crates/dbsp", features = ["backend-mode"] }
                 dbsp_adapters = { path = "$ROOT/crates/adapters"$FEATURES }
                 feldera-macros = { path = "$ROOT/crates/feldera-macros" }
                 feldera-types = { path = "$ROOT/crates/feldera-types" }
                 feldera-sqllib = { path = "$ROOT/crates/sqllib" }
-                serde = { version = "1.0", features = ["derive"] }
+                serde = { version = "1.0.213", features = ["derive"] }
                 compare = { version = "0.1.0" }
-                size-of = { version = "0.1.5", package = "feldera-size-of" }
-                serde_json = { version = "1.0.127", features = ["arbitrary_precision"] }
+                size-of = { version = "0.1.7", package = "feldera-size-of" }
+                serde_json = { version = "1.0.132", features = ["arbitrary_precision"] }
                 rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64"] }
                 tikv-jemallocator = { version = "0.6.0", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }""";
 
