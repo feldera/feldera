@@ -249,23 +249,6 @@ public class ProfilingTests extends StreamingTestBase {
         }
     }
 
-    @Test @Ignore("Used to generate data for testing the profile visualization tool")
-    public void emptyJsonProfiles() throws SQLException, IOException, InterruptedException {
-        String name = "rec";
-        String profilerData = "../../profiler/data";
-        File file = new File("../extra/" + name + ".sql");
-        String str = this.getEmptyJsonProfile(file);
-        Path target = Paths.get(profilerData, file.getName().replace(".sql", ".json"));
-        Utilities.writeFile(target, str);
-        String df = "dataflow-" + name + ".json";
-
-        target = Paths.get(profilerData, df);
-        // File may not exist, so we don't expect success
-        //noinspection ResultOfMethodCallIgnored
-        target.toFile().delete();
-        Files.move(Paths.get(".", df), target);
-    }
-
     @Test
     public void profileLateness() throws IOException, InterruptedException, SQLException {
         String sql = """

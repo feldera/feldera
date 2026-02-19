@@ -10,6 +10,7 @@ import org.dbsp.util.HashString;
 import org.dbsp.util.NullPrintStream;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.PrintStream;
@@ -260,5 +261,12 @@ public class Regression2Tests extends SqlIoTest {
                 CREATE VIEW v AS SELECT
                 str SIMILAR TO '(abc|def)%' AS str
                 FROM tbl;""", "Function 'SIMILAR TO' not yet implemented");
+    }
+
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-7418")
+    public void issue5637() {
+        this.getCCS("""
+                CREATE MATERIALIZED VIEW v AS SELECT
+                (DATE '2020-06-21', DATE '2020-06-21' + INTERVAL '1' YEAR) CONTAINS TIME '12:00:00' AS res;""");
     }
 }

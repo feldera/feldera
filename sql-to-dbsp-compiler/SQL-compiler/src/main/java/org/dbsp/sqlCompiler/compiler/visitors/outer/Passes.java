@@ -90,6 +90,8 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
             long start = System.currentTimeMillis();
             long startId = DBSPNode.outerId;
             circuit = pass.apply(circuit);
+            if (this.compiler.messages.exitCode != 0)
+                break;
             long endId = DBSPNode.outerId;
             long end = System.currentTimeMillis();
             Logger.INSTANCE.belowLevel(this, 1)
