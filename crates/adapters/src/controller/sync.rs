@@ -128,11 +128,7 @@ pub fn is_pull_necessary(storage: &CircuitStorageConfig) -> Option<&SyncConfig> 
 
 #[cfg(feature = "feldera-enterprise")]
 pub fn pull_once(storage: &CircuitStorageConfig, sync: &SyncConfig) -> Result<(), ControllerError> {
-    if let Err(err) = pull_and_gc(storage.backend.clone(), sync, &mut uuid::Uuid::nil()) {
-        if sync.fail_if_no_checkpoint {
-            return Err(err);
-        }
-    }
+    pull_and_gc(storage.backend.clone(), sync, &mut uuid::Uuid::nil())?;
 
     Ok(())
 }
@@ -200,7 +196,8 @@ where
     loop {
         match pull_and_gc(storage.backend.clone(), sync, &mut prev) {
             Err(err) => {
-                if sync.fail_if_no_checkpoint {
+                // On our final attempt to pull the checkpoint after activation, if we fail, we should error out and not activate with a potentially stale or missing checkpoint.
+                if pull_once_again_after_activation {
                     return Err(err);
                 }
             }

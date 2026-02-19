@@ -3,7 +3,7 @@ import random
 import sys
 import time
 from typing import Optional
-from uuid import uuid4, UUID
+from uuid import UUID, uuid4
 
 from feldera.enums import FaultToleranceModel, PipelineStatus
 from feldera.runtime_config import RuntimeConfig, Storage
@@ -269,7 +269,8 @@ class TestCheckpointSync(SharedTestPipeline):
 
     @enterprise_only
     def test_autherr(self):
-        self.test_checkpoint_sync(auth_err=True, strict=False, expect_empty=True)
+        with self.assertRaisesRegex(RuntimeError, "SignatureDoesNotMatch|Forbidden"):
+            self.test_checkpoint_sync(auth_err=True, strict=False)
 
     @enterprise_only
     def test_nonexistent_checkpoint_fail(self):
@@ -278,7 +279,8 @@ class TestCheckpointSync(SharedTestPipeline):
 
     @enterprise_only
     def test_nonexistent_checkpoint(self):
-        self.test_checkpoint_sync(random_uuid=True, from_uuid=True, expect_empty=True)
+        with self.assertRaisesRegex(RuntimeError, "were not found in source"):
+            self.test_checkpoint_sync(random_uuid=True, from_uuid=True)
 
     @enterprise_only
     def test_standby_activation(self):

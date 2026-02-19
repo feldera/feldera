@@ -38,7 +38,7 @@ Here is a sample configuration:
 ### `sync` configuration fields
 
 | Field                   | Type            | Default     | Description                                                                                                                                                                                                                                                                                                   |
-|-------------------------|-----------------|-------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ----------------------- | --------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `endpoint`              | `string`        |             | The S3-compatible object store endpoint (e.g., `http://localhost:9000` for MinIO).                                                                                                                                                                                                                            |
 | `bucket` \*             | `string`        |             | The bucket name and optional prefix to store checkpoints (e.g., `mybucket/checkpoints`).                                                                                                                                                                                                                      |
 | `region`                | `string`        | `us-east-1` | The region of the bucket. Leave empty for MinIO. If `provider` is AWS, and no region is specified, `us-east-1` is used.                                                                                                                                                                                       |
@@ -46,10 +46,10 @@ Here is a sample configuration:
 | `access_key`            | `string`        |             | S3 access key. Not required if using environment-based auth (e.g., IRSA).                                                                                                                                                                                                                                     |
 | `secret_key`            | `string`        |             | S3 secret key. Not required if using environment-based auth.                                                                                                                                                                                                                                                  |
 | `start_from_checkpoint` | `string`        |             | Checkpoint UUID to resume from, or `latest` to restore from the latest checkpoint.                                                                                                                                                                                                                            |
-| `fail_if_no_checkpoint` | `boolean`       | `false`     | When `true` the pipeline will fail to initialize if fetching the specified checkpoint fails. <p> When `false`, the pipeline will start from scratch instead. Ignored if `start_from_checkpoint` is not set. </p>                                                                                              |
+| `fail_if_no_checkpoint` | `boolean`       | `false`     | Only applies when `start_from_checkpoint` is set to `latest`. <p> When `true`, the pipeline fails to start if no checkpoint exists in remote storage. When `false`, the pipeline starts from scratch instead. </p>                                                                                            |
 | `standby`               | `boolean`       | `false`     | When `true`, the pipeline starts in **standby** mode. <p> To start processing the data the pipeline must be activated (`POST /activate`). </p> <p> If a previously activated pipeline is restarted without clearing storage, it auto-activates. </p> `start_from_checkpoint` must be set to use standby mode. |
 | `pull_interval`         | `integer(u64)`  | `10`        | Interval (in seconds) between fetch attempts for the latest checkpoint while standby.                                                                                                                                                                                                                         |
-| `push_interval`         | `integer(u64)`  |             | Interval (in seconds) between [automatic sync](/pipelines/checkpoint-sync#automatic-checkpoint-synchronization) of a local checkpoint to object store measured from the completion of the previous sync attempt. Disabled by default.                                                                                                                                                                                                                         |
+| `push_interval`         | `integer(u64)`  |             | Interval (in seconds) between [automatic sync](/pipelines/checkpoint-sync#automatic-checkpoint-synchronization) of a local checkpoint to object store measured from the completion of the previous sync attempt. Disabled by default.                                                                         |
 | `transfers`             | `integer (u8)`  | `20`        | Number of concurrent file transfers.                                                                                                                                                                                                                                                                          |
 | `checkers`              | `integer (u8)`  | `20`        | Number of parallel checkers for verification.                                                                                                                                                                                                                                                                 |
 | `ignore_checksum`       | `boolean`       | `false`     | Skip checksum verification after transfer and only check the file size. Might improve throughput.                                                                                                                                                                                                             |
@@ -57,10 +57,10 @@ Here is a sample configuration:
 | `multi_thread_cutoff`   | `string`        | `100M`      | File size threshold to enable multi-threaded downloads (e.g., `100M`, `1G`). Supported suffixes: `k`, `M`, `G`, `T`.                                                                                                                                                                                          |
 | `upload_concurrency`    | `integer (u8)`  | `10`        | Number of concurrent chunks to upload during multipart uploads.                                                                                                                                                                                                                                               |
 | `flags`                 | `array[string]` |             | Extra flags to pass to `rclone`.<p> ⚠️ Incorrect or conflicting flags may break behavior. See [rclone flags](https://rclone.org/flags/) and [S3 flags](https://rclone.org/s3/). </p>                                                                                                                          |
-| `retention_min_count`   | `integer (u32)` | `10`        | The minimum number of checkpoints to retain in object store. No checkpoints will be deleted if the total count is below this threshold.                                |
-| `retention_min_age`     | `integer (u32)` | `30`        | The minimum age (in days) a checkpoint must reach before it becomes eligible for deletion. All younger checkpoints will be preserved.                                  |
+| `retention_min_count`   | `integer (u32)` | `10`        | The minimum number of checkpoints to retain in object store. No checkpoints will be deleted if the total count is below this threshold.                                                                                                                                                                       |
+| `retention_min_age`     | `integer (u32)` | `30`        | The minimum age (in days) a checkpoint must reach before it becomes eligible for deletion. All younger checkpoints will be preserved.                                                                                                                                                                         |
 
-*Fields marked with an asterisk are required.
+\*Fields marked with an asterisk are required.
 
 ## S3 permissions
 
@@ -92,8 +92,8 @@ Example policy:
                 "s3:PutObjectAcl"
             ],
             "Resource": [
-              "arn:aws:s3:::BUCKET_NAME/*",
-              "arn:aws:s3:::BUCKET_NAME"
+                "arn:aws:s3:::BUCKET_NAME/*",
+                "arn:aws:s3:::BUCKET_NAME"
             ]
         },
         {
@@ -137,6 +137,7 @@ than they are created.
 ### Automatic checkpoint synchronization trigger conditions
 
 An automatic checkpoint synchronization is only triggered when all of the following conditions are met:
+
 - The configured `push_interval` has elapsed.
 - No checkpoint sync is currently in progress.
 - Checkpoint sync has not been manually requested.
@@ -172,20 +173,18 @@ When Pipeline **A** fails, you can trigger Pipeline **B** to activate and start 
 the latest checkpoint (Checkpoint 2 in this case).
 
 | Time    | Pipeline A (Primary) | Pipeline B (Standby)          |
-|---------|----------------------|-------------------------------|
+| ------- | -------------------- | ----------------------------- |
 | Step 1  | **Start**            | **Standby Start**             |
-| Step 2  | *Processing*         | *Standby*                     |
-| Step 3  | *Checkpoint 1*       | *Standby*                     |
-| Step 4  | *Sync 1 to S3*       | *Standby*                     |
-| Step 5  | *Processing*         | *Pulls Checkpoint 1*          |
-| Step 6  | *Checkpoint 2*       | *Standby*                     |
-| Step 7  | *Sync 2 to S3*       | *Standby*                     |
-| Step 8  | *Processing*         | *Pulls Checkpoint 2*          |
-| Step 9  | *Failed*             | *Standby*                     |
+| Step 2  | _Processing_         | _Standby_                     |
+| Step 3  | _Checkpoint 1_       | _Standby_                     |
+| Step 4  | _Sync 1 to S3_       | _Standby_                     |
+| Step 5  | _Processing_         | _Pulls Checkpoint 1_          |
+| Step 6  | _Checkpoint 2_       | _Standby_                     |
+| Step 7  | _Sync 2 to S3_       | _Standby_                     |
+| Step 8  | _Processing_         | _Pulls Checkpoint 2_          |
+| Step 9  | _Failed_             | _Standby_                     |
 | Step 10 |                      | **Activate**                  |
 | Step 11 |                      | **Running From Checkpoint 2** |
-
-
 
 ## Buckets with server side encryption
 
@@ -194,6 +193,7 @@ If the bucket has server side encryption enabled, set the flag
 in the `flags` field.
 
 Example:
+
 ```json
       "sync": {
         "bucket": "BUCKET_NAME/DIRECTORY_NAME",
@@ -209,7 +209,7 @@ Sync performance may vary based on configuration and environment. In our testing
 we observed the following average speeds:
 
 | Storage Type | Avg Upload Speed | Avg Download Speed | Avg Download Speed (Ignore Checksum) |
-|--------------|------------------|--------------------|--------------------------------------|
+| ------------ | ---------------- | ------------------ | ------------------------------------ |
 | GP3          | 650 MiB/s        | 650 MiB/s          | 850 MiB/s                            |
 | GP2          | 125 MiB/s        | 125 MiB/s          | 250 MiB/s                            |
 | NVMe         | 1.5 GiB/s        | 2.2 GiB/s          | 2.3 GiB/s                            |
@@ -231,7 +231,7 @@ curl -X POST http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync
 This initiates the sync and returns the UUID of the checkpoint being synced:
 
 ```json
-{"checkpoint_uuid":"019779b4-8760-75f2-bdf0-71b825e63610"}
+{ "checkpoint_uuid": "019779b4-8760-75f2-bdf0-71b825e63610" }
 ```
 
 ## Checking sync status
@@ -247,23 +247,23 @@ curl http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status
 **In Progress:**
 
 ```json
-{"success":null,"failure":null}
+{ "success": null, "failure": null }
 ```
 
 **Success:**
 
 ```json
-{"success":"019779b4-8760-75f2-bdf0-71b825e63610","failure":null}
+{ "success": "019779b4-8760-75f2-bdf0-71b825e63610", "failure": null }
 ```
 
 **Failure:**
 
 ```json
 {
-  "success": null,
-  "failure": {
-    "uuid": "019779c1-8317-7a71-bd78-7b971f4a3c43",
-    "error": "Error pushing checkpoint to object store: ... SignatureDoesNotMatch ..."
-  }
+    "success": null,
+    "failure": {
+        "uuid": "019779c1-8317-7a71-bd78-7b971f4a3c43",
+        "error": "Error pushing checkpoint to object store: ... SignatureDoesNotMatch ..."
+    }
 }
 ```
