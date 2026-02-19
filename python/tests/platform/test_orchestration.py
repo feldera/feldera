@@ -16,8 +16,10 @@ from .helper import (
     connector_action,
     pipeline_stats,
     connector_paused,
+    wait_for_condition,
+    get,
 )
-from feldera.testutils import single_host_only
+from feldera.testutils import single_host_only, FELDERA_TEST_NUM_HOSTS
 
 
 def _basic_orchestration_info(pipeline: str, table: str, connector: str):
@@ -28,7 +30,6 @@ def _basic_orchestration_info(pipeline: str, table: str, connector: str):
 
 
 @gen_pipeline_name
-@single_host_only
 def test_pipeline_orchestration_basic(pipeline_name):
     """
     Tests the orchestration of the pipeline, which means the starting and pausing of the
@@ -66,6 +67,22 @@ def test_pipeline_orchestration_basic(pipeline_name):
 
         create_pipeline(cur_pipeline_name, sql)
         start_pipeline_as_paused(cur_pipeline_name)
+
+        if FELDERA_TEST_NUM_HOSTS > 1:
+            # The multihost coordinator can report that it is ready
+            # before some of the hosts are individually ready, but the
+            # coordinator only reports statistics when all of them are
+            # ready.  This might be a bug in the coordinator; it is
+            # hard to tell.  For now, waiting for statistics to be
+            # available is a compromise that allows this otherwise
+            # valuable test to pass.
+            wait_for_condition(
+                f"pipeline stats for {cur_pipeline_name} are available",
+                lambda: get(
+                    api_url(f"/pipelines/{cur_pipeline_name}/stats")
+                ).status_code
+                == HTTPStatus.OK,
+            )
 
         # Initial: pipeline paused, connector running, processed=0
         p_paused, c_paused, processed = _basic_orchestration_info(
