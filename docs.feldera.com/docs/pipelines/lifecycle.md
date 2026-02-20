@@ -47,8 +47,11 @@ state is tracked by the storage status.
 **Relevant API fields:**
 - `deployment_id` (set becoming `Provisioning`, unset becoming `Stopping`)
 - `deployment_config` (set becoming `Provisioning`, unset becoming `Stopping`)
-- `deployment_error` (set becoming `Stopping` (if error), unset becoming `Provisioning`)
+- `deployment_error` (set becoming `Stopping` (if error), must be unset to have desired status
+   become `Provisioned` (either via `/start?dismiss_error=true` (default) or `/dismiss_error`))
 - `deployment_initial` (set when desired status becomes `Provisioned`, unset becoming `Stopping`
+  or desired status becomes `Stopped` while status is still `Stopped`)
+- `bootstrap_policy` (set when desired status becomes `Provisioned`, unset becoming `Stopping`
   or desired status becomes `Stopped` while status is still `Stopped`)
 - `deployment_resources_status`
 - `deployment_resources_status_details` (unset becoming `Stopped`)
@@ -93,6 +96,8 @@ state is tracked by the storage status.
 - **Graceful stop:** Use `/stop?force=false` (default) to request the pipeline to stop cleanly: shut down the circuit
   and checkpoint before compute is deprovisioned. Only applies when resources are `Provisioned`; the `force` parameter
   is ignored otherwise.
+- **Error dismissal:** the `deployment_error` must be dismissed before starting again. This can be done
+  using `/start?dismiss_error=true` (default) or by calling `/dismiss_error` in advance.
 
 ## Storage status
 

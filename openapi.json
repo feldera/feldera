@@ -3284,6 +3284,74 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/dismiss_error": {
+      "post": {
+        "tags": [
+          "Pipeline Lifecycle"
+        ],
+        "summary": "Dismiss Pipeline Deployment Error",
+        "description": "Clears the `deployment_error` field of the pipeline, such that a subsequent call to\n`/start?dismiss_error=false` succeeds. It will return an error if the pipeline is not fully\nstopped (i.e., both current and desired status must be `Stopped`) AND a deployment error\nis present.",
+        "operationId": "post_pipeline_dismiss_error",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deployment error has been dismissed"
+          },
+          "400": {
+            "description": "Action could not be performed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/egress/{table_name}": {
       "post": {
         "tags": [
@@ -4694,6 +4762,14 @@
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/BootstrapPolicy"
+            }
+          },
+          {
+            "name": "dismiss_error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],

@@ -50,6 +50,7 @@ class Pipeline:
         self.deployment_desired_status_since: Optional[str] = None
         self.deployment_id: Optional[str] = None
         self.deployment_initial: Optional[str] = None
+        self.bootstrap_policy: Optional[str] = None
         self.deployment_error: Optional[dict] = None
         self.deployment_location: Optional[str] = None
         self.program_info: Optional[dict] = (

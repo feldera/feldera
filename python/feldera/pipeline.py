@@ -475,7 +475,7 @@ metrics"""
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
-        ignore_deployment_error: bool = False,
+        dismiss_error: bool = True,
     ):
         """
         .. _start:
@@ -490,9 +490,8 @@ metrics"""
         :param timeout_s: The maximum time (in seconds) to wait for the
             pipeline to start.
         :param wait: Set True to wait for the pipeline to start. True by default
-        :param ignore_deployment_error: Set True to ignore deployment errors while waiting
-            for START transition. False by default.
-
+        :param dismiss_error: Set True to dismiss any deployment error before starting;
+            set False to make it fail in that case. True by default.
         :raises RuntimeError: If the pipeline is not in STOPPED state.
         """
 
@@ -501,7 +500,7 @@ metrics"""
             bootstrap_policy=bootstrap_policy,
             wait=wait,
             timeout_s=timeout_s,
-            ignore_deployment_error=ignore_deployment_error,
+            dismiss_error=dismiss_error,
         )
 
     def start_paused(
@@ -509,13 +508,18 @@ metrics"""
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
+        dismiss_error: bool = True,
     ):
         """
         Starts the pipeline in the paused state.
         """
 
         return self.client.start_pipeline_as_paused(
-            self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s
+            self.name,
+            bootstrap_policy=bootstrap_policy,
+            wait=wait,
+            timeout_s=timeout_s,
+            dismiss_error=dismiss_error,
         )
 
     def start_standby(
@@ -523,19 +527,25 @@ metrics"""
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
+        dismiss_error: bool = True,
     ):
         """
         Starts the pipeline in the standby state.
         """
 
         self.client.start_pipeline_as_standby(
-            self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s
+            self.name,
+            bootstrap_policy=bootstrap_policy,
+            wait=wait,
+            timeout_s=timeout_s,
+            dismiss_error=dismiss_error,
         )
 
     def restart(
         self,
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         timeout_s: Optional[float] = None,
+        dismiss_error: bool = True,
     ):
         """
         Restarts the pipeline.
@@ -547,10 +557,16 @@ metrics"""
         :param bootstrap_policy: The bootstrap policy to use.
         :param timeout_s: The maximum time (in seconds) to wait for the
             pipeline to restart.
+        :param dismiss_error: Set True to dismiss any deployment error before starting;
+            set False to make it fail in that case. True by default.
         """
 
         self.stop(force=True, timeout_s=timeout_s)
-        self.start(bootstrap_policy=bootstrap_policy, timeout_s=timeout_s)
+        self.start(
+            bootstrap_policy=bootstrap_policy,
+            timeout_s=timeout_s,
+            dismiss_error=dismiss_error,
+        )
 
     def pause(self, wait: bool = True, timeout_s: Optional[float] = None):
         """
@@ -584,6 +600,13 @@ metrics"""
         self.client.stop_pipeline(
             self.name, force=force, wait=wait, timeout_s=timeout_s
         )
+
+    def dismiss_error(self):
+        """
+        Dismisses the `deployment_error` of the pipeline.
+        """
+
+        self.client.dismiss_error_pipeline(self.name)
 
     def approve(self):
         """
@@ -1243,6 +1266,17 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         self.refresh(PipelineFieldSelector.ALL)
         return self._inner.deployment_config
+
+    def bootstrap_policy(self) -> Optional[BootstrapPolicy]:
+        """
+        Return the bootstrap policy of the pipeline.
+        """
+
+        self.refresh(PipelineFieldSelector.STATUS)
+        if self._inner.bootstrap_policy is None:
+            return None
+        else:
+            return BootstrapPolicy.from_str(self._inner.bootstrap_policy)
 
     def deployment_desired_status(self) -> DeploymentDesiredStatus:
         """

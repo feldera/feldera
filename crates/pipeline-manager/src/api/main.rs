@@ -194,6 +194,7 @@ It contains the following fields:
         endpoints::pipeline_management::delete_pipeline,
         endpoints::pipeline_management::post_pipeline_start,
         endpoints::pipeline_management::post_pipeline_stop,
+        endpoints::pipeline_management::post_pipeline_dismiss_error,
         endpoints::pipeline_management::post_pipeline_clear,
         endpoints::pipeline_management::get_pipeline_logs,
 
@@ -539,6 +540,7 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_management::delete_pipeline)
         .service(endpoints::pipeline_management::post_pipeline_start)
         .service(endpoints::pipeline_management::post_pipeline_stop)
+        .service(endpoints::pipeline_management::post_pipeline_dismiss_error)
         .service(endpoints::pipeline_management::post_pipeline_clear)
         .service(endpoints::pipeline_management::get_pipeline_logs)
         // Pipeline interaction endpoints

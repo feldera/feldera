@@ -112,7 +112,11 @@ uv run python -m pytest tests/platform/
 # Specific test file
 uv run python -m pytest tests/platform/test_pipeline_crud.py
 
+# Specific test
+uv run python -m pytest tests/platform/test_pipeline_crud.py::test_pipeline_post
+
 # Tip: add argument -x at the end for it to fail fast
+# Tip: add argument -s at the end to show stdout/stderr
 ```
 
 For further information about the tests, please see `tests/README.md`.

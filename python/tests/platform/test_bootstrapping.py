@@ -67,12 +67,9 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
         pass
 
     print(
-        "Starting pipeline with bootstrap_policy='allow' and ignoring expected deployment error from previous reject start"
+        "Starting pipeline with bootstrap_policy='allow' and dismissing deployment error from previous reject start"
     )
-    pipeline.start(
-        bootstrap_policy=BootstrapPolicy.ALLOW,
-        ignore_deployment_error=True,
-    )
+    pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW, dismiss_error=True)
     assert pipeline.status() == PipelineStatus.RUNNING
 
     pipeline.execute("INSERT INTO t1 VALUES (4), (5), (6);")

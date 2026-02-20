@@ -716,6 +716,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             no_wait,
             initial,
             bootstrap_policy,
+            no_dismiss_error,
         } => {
             if initial != "standby" && initial != "paused" && initial != "running" {
                 eprintln!("Unsupported `--initial`: {}", initial);
@@ -815,11 +816,27 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 sleep(Duration::from_millis(500)).await;
             }
 
+            if !no_dismiss_error {
+                let response = client
+                    .post_pipeline_dismiss_error()
+                    .pipeline_name(name.clone())
+                    .send()
+                    .await
+                    .map_err(handle_errors_fatal(
+                        client.baseurl().clone(),
+                        "Failed to dismiss pipeline deployment error",
+                        1,
+                    ))
+                    .unwrap();
+                trace!("{:#?}", response);
+            }
+
             let response = client
                 .post_pipeline_start()
                 .pipeline_name(name.clone())
                 .initial(&initial)
                 .bootstrap_policy(&bootstrap_policy)
+                .dismiss_error(false) // It has already been separately dismissed
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
@@ -986,6 +1003,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             no_wait,
             initial,
             bootstrap_policy,
+            no_dismiss_error,
         } => {
             let current_status = client
                 .get_pipeline()
@@ -1032,6 +1050,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     no_wait,
                     initial,
                     bootstrap_policy,
+                    no_dismiss_error,
                 },
                 client,
             ))
@@ -1618,6 +1637,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             start,
             initial,
             bootstrap_policy,
+            no_dismiss_error,
         } => {
             let client2 = client.clone();
             if start {
@@ -1629,6 +1649,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         no_wait: false,
                         initial,
                         bootstrap_policy,
+                        no_dismiss_error,
                     },
                     client,
                 ))
@@ -1864,6 +1885,21 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             println!("Initiated rebalancing for pipeline {name}.");
         }
         PipelineAction::Bench { args } => bench::bench(client, format, args).await,
+        PipelineAction::DismissError { name } => {
+            let response = client
+                .post_pipeline_dismiss_error()
+                .pipeline_name(name.clone())
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to dismiss pipeline deployment error",
+                    1,
+                ))
+                .unwrap();
+            println!("Pipeline deployment error dismissed successfully.");
+            trace!("{:#?}", response);
+        }
     }
 }
 

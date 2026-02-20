@@ -1124,6 +1124,39 @@ fn check_precondition(condition: bool, info: &str) -> Result<(), DBError> {
     }
 }
 
+/// Dismisses the deployment error.
+pub(crate) async fn dismiss_deployment_error(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_name: &str,
+) -> Result<(), DBError> {
+    let current = get_pipeline(txn, tenant_id, pipeline_name).await?;
+
+    // If an error has to be cleared, then it is only possible if it is fully stopped
+    if (current.deployment_resources_status != ResourcesStatus::Stopped
+        || current.deployment_resources_desired_status != ResourcesDesiredStatus::Stopped)
+        && current.deployment_error.is_some()
+    {
+        return Err(DBError::DismissErrorRestrictedToFullyStopped);
+    }
+
+    let stmt = txn
+        .prepare_cached(
+            "UPDATE pipeline
+             SET deployment_error = NULL
+             WHERE tenant_id = $1 AND id = $2",
+        )
+        .await?;
+    let modified_rows = txn.execute(&stmt, &[&tenant_id.0, &current.id.0]).await?;
+    if modified_rows > 0 {
+        Ok(())
+    } else {
+        Err(DBError::UnknownPipeline {
+            pipeline_id: current.id,
+        })
+    }
+}
+
 /// Sets pipeline desired resources status.
 pub(crate) async fn set_deployment_resources_desired_status(
     txn: &Transaction<'_>,
@@ -1132,13 +1165,22 @@ pub(crate) async fn set_deployment_resources_desired_status(
     new_desired_status: ResourcesDesiredStatus,
     initial_runtime_desired_status: Option<RuntimeDesiredStatus>,
     bootstrap_policy: Option<BootstrapPolicy>,
+    dismiss_error: bool,
 ) -> Result<PipelineId, DBError> {
     let current = get_pipeline(txn, tenant_id, pipeline_name).await?;
+
+    // Deployment error will be automatically dismissed if this is wanted
+    let final_deployment_error = if dismiss_error {
+        None
+    } else {
+        current.deployment_error
+    };
 
     // Check that the desired status can be set
     validate_resources_desired_status_transition(
         current.deployment_resources_status,
         current.deployment_resources_desired_status,
+        final_deployment_error.clone(),
         new_desired_status,
     )?;
 
@@ -1209,8 +1251,9 @@ pub(crate) async fn set_deployment_resources_desired_status(
              SET deployment_resources_desired_status = $1,
                  deployment_resources_desired_status_since = CASE WHEN deployment_resources_desired_status = $1::VARCHAR THEN deployment_resources_desired_status_since ELSE NOW() END,
                  deployment_initial = $2,
-                 bootstrap_policy = $3
-             WHERE tenant_id = $4 AND id = $5",
+                 bootstrap_policy = $3,
+                 deployment_error = $4
+             WHERE tenant_id = $5 AND id = $6",
         )
         .await?;
     let modified_rows = txn
@@ -1220,6 +1263,10 @@ pub(crate) async fn set_deployment_resources_desired_status(
                 &new_desired_status.to_string(),
                 &final_deployment_initial.map(runtime_desired_status_to_string),
                 &final_bootstrap.map(bootstrap_policy_to_string),
+                &match final_deployment_error {
+                    None => None,
+                    Some(v) => Some(serialize_error_response(&v)?),
+                },
                 &tenant_id.0,
                 &current.id.0,
             ],
@@ -1328,6 +1375,7 @@ pub(crate) async fn set_deployment_resources_status_stopped(
         None,
         current.suspend_info,
         None,
+        None,
     )
     .await
 }
@@ -1366,6 +1414,7 @@ pub(crate) async fn set_deployment_resources_status_provisioning(
         None,
         None,
         current.deployment_initial,
+        current.bootstrap_policy,
     )
     .await
 }
@@ -1437,6 +1486,7 @@ pub(crate) async fn set_deployment_resources_status_provisioned(
         Some(new_deployment_location),
         None,
         current.deployment_initial,
+        current.bootstrap_policy,
     )
     .await
 }
@@ -1508,6 +1558,7 @@ pub(crate) async fn set_deployment_resources_status_stopping(
         None,
         new_suspend_info,
         None,
+        None,
     )
     .await
 }
@@ -1562,6 +1613,7 @@ async fn set_deployment_resources_status(
     final_deployment_location: Option<String>,
     final_suspend_info: Option<serde_json::Value>,
     final_deployment_initial: Option<RuntimeDesiredStatus>,
+    final_bootstrap_policy: Option<BootstrapPolicy>,
 ) -> Result<(), DBError> {
     // Validate that the new or existing deployment configuration is valid
     if let Some(deployment_config) = &final_deployment_config {
@@ -1583,16 +1635,17 @@ async fn set_deployment_resources_status(
                      suspend_info = $4,
                      deployment_id = $5,
                      deployment_initial = $6,
-                     deployment_resources_status = $7,
-                     deployment_resources_status_details = $8::VARCHAR,
-                     deployment_resources_status_since = CASE WHEN deployment_resources_status = $7::VARCHAR THEN deployment_resources_status_since ELSE NOW() END,
-                     deployment_runtime_status = $9::VARCHAR,
-                     deployment_runtime_status_details = $10::VARCHAR,
-                     deployment_runtime_status_since = CASE WHEN $9::VARCHAR IS NULL THEN NULL ELSE (CASE WHEN deployment_runtime_status = $9::VARCHAR THEN deployment_runtime_status_since ELSE NOW() END) END,
-                     deployment_runtime_desired_status = $11::VARCHAR,
-                     deployment_runtime_desired_status_since = CASE WHEN $11::VARCHAR IS NULL THEN NULL ELSE (CASE WHEN deployment_runtime_desired_status = $11::VARCHAR THEN deployment_runtime_desired_status_since ELSE NOW() END) END,
+                     bootstrap_policy = $7,
+                     deployment_resources_status = $8,
+                     deployment_resources_status_details = $9::VARCHAR,
+                     deployment_resources_status_since = CASE WHEN deployment_resources_status = $8::VARCHAR THEN deployment_resources_status_since ELSE NOW() END,
+                     deployment_runtime_status = $10::VARCHAR,
+                     deployment_runtime_status_details = $11::VARCHAR,
+                     deployment_runtime_status_since = CASE WHEN $10::VARCHAR IS NULL THEN NULL ELSE (CASE WHEN deployment_runtime_status = $10::VARCHAR THEN deployment_runtime_status_since ELSE NOW() END) END,
+                     deployment_runtime_desired_status = $12::VARCHAR,
+                     deployment_runtime_desired_status_since = CASE WHEN $12::VARCHAR IS NULL THEN NULL ELSE (CASE WHEN deployment_runtime_desired_status = $12::VARCHAR THEN deployment_runtime_desired_status_since ELSE NOW() END) END,
                      refresh_version = refresh_version + 1
-                 WHERE tenant_id = $12 AND id = $13",
+                 WHERE tenant_id = $13 AND id = $14",
         )
         .await?;
     let rows_affected = txn
@@ -1608,13 +1661,14 @@ async fn set_deployment_resources_status(
                 &final_suspend_info.map(|v| v.to_string()),      // $4: suspend_info
                 &final_deployment_id,                            // $5: deployment_id
                 &final_deployment_initial.map(runtime_desired_status_to_string), // $6: deployment_initial
-                &final_deployment_resources_status.to_string(), // $7: deployment_resources_status,
-                &final_deployment_resources_status_details.map(|v| v.to_string()), // $8: deployment_resources_status_details,
-                &final_deployment_runtime_status.map(runtime_status_to_string), // $9: deployment_runtime_status,
-                &final_deployment_runtime_status_details.map(|v| v.to_string()), // $10: deployment_runtime_status_details,
-                &final_deployment_runtime_desired_status.map(runtime_desired_status_to_string), // $11: deployment_runtime_desired_status,
-                &tenant_id.0,   // $12: tenant_id
-                &pipeline_id.0, // $13: id
+                &final_bootstrap_policy.map(bootstrap_policy_to_string), // $7: bootstrap_policy
+                &final_deployment_resources_status.to_string(), // $8: deployment_resources_status,
+                &final_deployment_resources_status_details.map(|v| v.to_string()), // $9: deployment_resources_status_details,
+                &final_deployment_runtime_status.map(runtime_status_to_string), // $10: deployment_runtime_status,
+                &final_deployment_runtime_status_details.map(|v| v.to_string()), // $11: deployment_runtime_status_details,
+                &final_deployment_runtime_desired_status.map(runtime_desired_status_to_string), // $12: deployment_runtime_desired_status,
+                &tenant_id.0,   // $13: tenant_id
+                &pipeline_id.0, // $14: id
             ],
         )
         .await?;

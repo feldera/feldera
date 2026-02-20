@@ -1,6 +1,8 @@
 import time
 from http import HTTPStatus
-
+from feldera import PipelineBuilder
+from feldera.enums import BootstrapPolicy
+from tests import TEST_CLIENT
 from .helper import (
     create_pipeline,
     post_json,
@@ -343,3 +345,19 @@ def test_start_as_standby_fails(pipeline_name):
     )
     assert r.status_code == HTTPStatus.BAD_REQUEST
     assert r.json()["error_code"] == "InitialStandbyNotAllowed"
+
+
+@gen_pipeline_name
+def test_pipeline_bootstrap_policy_is_removed(pipeline_name):
+    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
+    for expectation in [
+        BootstrapPolicy.ALLOW,
+        BootstrapPolicy.REJECT,
+        BootstrapPolicy.AWAIT_APPROVAL,
+    ]:
+        assert pipeline.bootstrap_policy() is None
+        pipeline.start(bootstrap_policy=expectation)
+        assert pipeline.bootstrap_policy() == expectation
+        assert pipeline.bootstrap_policy() is not None
+        pipeline.stop(force=True)
+        assert pipeline.bootstrap_policy() is None
