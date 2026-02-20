@@ -659,6 +659,11 @@ fn default_pipeline_start_desired() -> String {
     "running".to_string()
 }
 
+/// Default for the `dismiss_error` query parameter when POST a pipeline start.
+fn default_pipeline_start_dismiss_error() -> bool {
+    true
+}
+
 /// Query parameters to POST a pipeline start.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct PostStartPipelineParameters {
@@ -668,6 +673,8 @@ pub struct PostStartPipelineParameters {
     initial: String,
     #[serde(default)]
     bootstrap_policy: BootstrapPolicy,
+    #[serde(default = "default_pipeline_start_dismiss_error")]
+    dismiss_error: bool,
 }
 
 /// Default for the `force` query parameter when POST a pipeline stop.
@@ -1339,6 +1346,7 @@ pub(crate) async fn post_pipeline_start(
     let PostStartPipelineParameters {
         initial,
         bootstrap_policy,
+        dismiss_error,
     } = query.into_inner();
 
     let pipeline_id = match initial.as_str() {
@@ -1352,6 +1360,7 @@ pub(crate) async fn post_pipeline_start(
                     &pipeline_name,
                     RuntimeDesiredStatus::Standby,
                     bootstrap_policy,
+                    dismiss_error,
                 )
                 .await?
         }
@@ -1365,6 +1374,7 @@ pub(crate) async fn post_pipeline_start(
                     &pipeline_name,
                     RuntimeDesiredStatus::Paused,
                     bootstrap_policy,
+                    dismiss_error,
                 )
                 .await?
         }
@@ -1378,6 +1388,7 @@ pub(crate) async fn post_pipeline_start(
                     &pipeline_name,
                     RuntimeDesiredStatus::Running,
                     bootstrap_policy,
+                    dismiss_error,
                 )
                 .await?
         }
@@ -1544,6 +1555,48 @@ pub(crate) async fn post_pipeline_stop(
             }
         }
     }
+}
+
+/// Dismiss Pipeline Deployment Error
+///
+/// Clears the `deployment_error` field of the pipeline, such that a subsequent call to
+/// `/start?dismiss_error=false` succeeds. It will return an error if the pipeline is not fully
+/// stopped (i.e., both current and desired status must be `Stopped`) AND a deployment error
+/// is present.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name")
+    ),
+    responses(
+        (status = OK
+            , description = "Deployment error has been dismissed"),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = BAD_REQUEST
+            , description = "Action could not be performed"
+            , body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline Lifecycle"
+)]
+#[post("/pipelines/{pipeline_name}/dismiss_error")]
+pub(crate) async fn post_pipeline_dismiss_error(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    state
+        .db
+        .lock()
+        .await
+        .dismiss_deployment_error(*tenant_id, &pipeline_name)
+        .await?;
+    Ok(HttpResponse::Ok().json(json!("Pipeline deployment error has been dismissed")))
 }
 
 /// Clear Storage

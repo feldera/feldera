@@ -96,6 +96,8 @@ compare_output "fda program get p1 --udf-rs" "fda program get p2 --udf-rs"
 
 fda config p1
 
+fda dismiss-error p1
+fda start p1 --no-dismiss-error
 fda start p1
 fda --format json stats p1 | jq '.metrics'
 fda log p1

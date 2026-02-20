@@ -13,6 +13,18 @@ import TabItem from '@theme/TabItem';
     <TabItem className="changelogItem" value="enterprise"
         label="Enterprise">
 
+        ## Unreleased
+
+        The `ignore_deployment_error` parameter has been removed from the Python
+        `pipeline.start()` method. Instead, make use of the newly added `dismiss_error` parameter.
+        If you do not want the pipeline to start if there is a pre-existing deployment error,
+        you should call `pipeline.start(dismiss_error=False)`. Otherwise call `pipeline.start()`
+        which is by default equivalent to `pipeline.start(dismiss_error=True)` (preserving
+        existing behavior). If the start results in an error occurring, the method will still
+        throw an error as before. A pipeline deployment error can now also be separately dismissed
+        using a dedicated endpoint and the corresponding client functions (e.g.,
+        `pipeline.dismiss_error()` for the Python client).
+
         ## 0.227.0
 
         Loading data from checkpoints made in earlier versions of feldera (0.226.0 and below)

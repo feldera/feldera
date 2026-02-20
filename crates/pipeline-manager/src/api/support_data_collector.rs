@@ -1463,6 +1463,7 @@ mod tests {
                 "test_pipeline",
                 RuntimeDesiredStatus::Running,
                 BootstrapPolicy::default(),
+                false,
             )
             .await
             .unwrap();
@@ -1663,6 +1664,7 @@ mod tests {
                 "test_pipeline",
                 RuntimeDesiredStatus::Running,
                 BootstrapPolicy::default(),
+                false,
             )
             .await
             .unwrap();
@@ -1844,6 +1846,7 @@ mod tests {
                 "test_pipeline",
                 RuntimeDesiredStatus::Running,
                 BootstrapPolicy::default(),
+                false,
             )
             .await
             .unwrap();
@@ -1955,6 +1958,7 @@ mod tests {
                 "test_pipeline",
                 RuntimeDesiredStatus::Running,
                 BootstrapPolicy::default(),
+                false,
             )
             .await
             .unwrap();

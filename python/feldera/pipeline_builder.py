@@ -107,6 +107,7 @@ class PipelineBuilder:
             p = Pipeline.get(self.name, self.client)
             p.stop(force=True)
             p.clear_storage()
+            p.dismiss_error()
 
         except FelderaAPIError:
             # pipeline doesn't exist, no worries

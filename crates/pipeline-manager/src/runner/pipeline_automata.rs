@@ -1825,6 +1825,7 @@ mod test {
                     &pipeline.name,
                     initial,
                     BootstrapPolicy::default(),
+                    true,
                 )
                 .await
                 .unwrap();

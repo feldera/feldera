@@ -198,6 +198,8 @@ pub enum DBError {
     InvalidBootstrap(String),
     NoRuntimeStatusWhileProvisioned,
     PreconditionViolation(String),
+    CannotStartWithUndismissedError,
+    DismissErrorRestrictedToFullyStopped,
     InitialImmutableUnlessStopped,
     InitialStandbyNotAllowed,
     InvalidMonitorStatus(String),
@@ -650,6 +652,20 @@ impl Display for DBError {
                     "Cannot delete pipeline unless its storage is cleared. Clear storage first using `/clear`."
                 )
             }
+            DBError::CannotStartWithUndismissedError => {
+                write!(
+                    f,
+                    "Cannot process `/start?dismiss_error=false` if the `deployment_error` is set. \
+                    You can dismiss the error by calling `/start?dismiss_error=true`, or alternatively \
+                    first call `/dismiss_error`, after which `/start?dismiss_error=false` is again possible."
+                )
+            }
+            DBError::DismissErrorRestrictedToFullyStopped => {
+                write!(
+                    f,
+                    "The pipeline must have both status `Stopped` and desired status `Stopped` to dismiss the `deployment_error` if it is set."
+                )
+            }
             DBError::InitialImmutableUnlessStopped => {
                 write!(
                     f,
@@ -764,6 +780,10 @@ impl DetailedError for DBError {
             Self::NoRuntimeStatusWhileProvisioned => Cow::from("NoRuntimeStatusWhileProvisioned"),
             Self::PreconditionViolation(..) => Cow::from("PreconditionViolation"),
             Self::ResumeWhileNotProvisioned => Cow::from("ResumeWhileNotProvisioned"),
+            Self::CannotStartWithUndismissedError => Cow::from("CannotStartWithUndismissedError"),
+            Self::DismissErrorRestrictedToFullyStopped => {
+                Cow::from("DismissErrorRestrictedToFullyStopped")
+            }
             Self::InitialImmutableUnlessStopped => Cow::from("InitialImmutableUnlessStopped"),
             Self::InitialStandbyNotAllowed => Cow::from("InitialStandbyNotAllowed"),
             Self::InvalidMonitorStatus(..) => Cow::from("InvalidMonitorStatus"),
@@ -834,6 +854,8 @@ impl ResponseError for DBError {
             Self::InvalidBootstrap(..) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::NoRuntimeStatusWhileProvisioned => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PreconditionViolation(..) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::CannotStartWithUndismissedError => StatusCode::BAD_REQUEST,
+            Self::DismissErrorRestrictedToFullyStopped => StatusCode::BAD_REQUEST,
             Self::InitialImmutableUnlessStopped => StatusCode::BAD_REQUEST,
             Self::InitialStandbyNotAllowed => StatusCode::BAD_REQUEST,
             Self::InvalidMonitorStatus(..) => StatusCode::INTERNAL_SERVER_ERROR,

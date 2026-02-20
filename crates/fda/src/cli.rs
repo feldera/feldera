@@ -333,6 +333,9 @@ pub enum PipelineAction {
         // TODO: auto-complete
         #[arg(long, short = 'b', default_value = "await_approval")]
         bootstrap_policy: String,
+        /// Do not dismiss any deployment error before starting.
+        #[arg(long, default_value_t = false)]
+        no_dismiss_error: bool,
     },
     /// Approve pipeline changes. Called in the AwaitingApproval state to allow
     /// the pipeline to proceed with bootstrapping the modified components.
@@ -393,6 +396,9 @@ pub enum PipelineAction {
         /// The bootstrap policy to use.
         #[arg(long, short = 'b', default_value = "await_approval")]
         bootstrap_policy: String,
+        /// Do not dismiss any deployment error before starting.
+        #[arg(long, default_value_t = false)]
+        no_dismiss_error: bool,
     },
     /// Stop a pipeline.
     #[clap(aliases = &["shutdown"])]
@@ -589,6 +595,9 @@ pub enum PipelineAction {
         /// The bootstrap policy to use.
         #[arg(long, short = 'b', default_value = "await_approval")]
         bootstrap_policy: String,
+        /// Do not dismiss any deployment error before starting.
+        #[arg(long, default_value_t = false, requires("start"))]
+        no_dismiss_error: bool,
     },
     /// Execute an ad-hoc query against a pipeline and return the result.
     #[clap(aliases = &["exec"])]
@@ -696,6 +705,12 @@ pub enum PipelineAction {
     Bench {
         #[command(flatten)]
         args: BenchmarkArgs,
+    },
+    /// Dismisses the deployment error of a pipeline.
+    DismissError {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
     },
 }
 

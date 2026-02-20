@@ -1,5 +1,6 @@
 use crate::db::error::DBError;
 use crate::db::types::storage::StorageStatus;
+use feldera_types::error::ErrorResponse;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Display;
@@ -196,6 +197,7 @@ pub fn validate_resources_status_transition(
 pub fn validate_resources_desired_status_transition(
     status: ResourcesStatus,
     current_desired_status: ResourcesDesiredStatus,
+    new_deployment_error: Option<ErrorResponse>,
     new_desired_status: ResourcesDesiredStatus,
 ) -> Result<(), DBError> {
     // Check rules on changing desired resources status
@@ -216,6 +218,10 @@ pub fn validate_resources_desired_status_transition(
                     hint: "Cannot restart the pipeline while it is stopping. Wait until it is stopped before starting the pipeline again.".to_string(),
                 });
             };
+            if new_deployment_error.is_some() {
+                // If it experienced an error, it needs to be dismissed first
+                return Err(DBError::CannotStartWithUndismissedError);
+            }
             Ok(())
         }
     }

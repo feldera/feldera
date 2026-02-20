@@ -358,6 +358,13 @@ class BootstrapPolicy(Enum):
     ALLOW = "allow"
     REJECT = "reject"
 
+    @staticmethod
+    def from_str(value):
+        for member in BootstrapPolicy:
+            if member.name.lower() == value.lower():
+                return member
+        raise ValueError(f"Unknown value '{value}' for enum {BootstrapPolicy.__name__}")
+
 
 class CompletionTokenStatus(Enum):
     COMPLETE = "complete"
