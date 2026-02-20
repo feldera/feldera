@@ -44,6 +44,9 @@ jobs:
       - name: Make binaries executable
         run: chmod +x ./build/*
 
+      - name: List binaries
+        run: ls -l build
+
         # Copy the sql2dbsp-jar-with-dependencies.jar to the target directory
         # This is needed for (pipeline-manager) tests
       - name: Copy feldera-sql-compiler JAR
