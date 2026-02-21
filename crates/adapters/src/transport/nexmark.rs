@@ -383,7 +383,7 @@ fn worker_thread(
                 }
                 let resume = Resume::new_metadata_only(
                     serde_json::to_value(Metadata {
-                        event_ids: events.unwrap_or_else(|| next_event_id..next_event_id),
+                        event_ids: events.unwrap_or(next_event_id..next_event_id),
                     })
                     .unwrap(),
                     hasher.map(|h| h.finish()),

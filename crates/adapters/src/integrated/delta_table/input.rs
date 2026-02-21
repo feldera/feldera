@@ -2,19 +2,17 @@ use crate::catalog::{ArrowStream, InputCollectionHandle};
 use crate::format::InputBuffer;
 use crate::integrated::delta_table::{delta_input_serde_config, register_storage_handlers};
 use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand, IntegratedInputEndpoint};
-use crate::util::{JobQueue, root_cause};
+use crate::util::JobQueue;
 use crate::{ControllerError, InputConsumer, InputReader, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use arrow::array::BooleanArray;
-use arrow::datatypes::Schema;
-use arrow::error::ArrowError;
 use chrono::{DateTime, Utc};
-use datafusion::common::arrow::array::{AsArray, RecordBatch};
+use datafusion::catalog::TableProvider;
+use datafusion::common::arrow::array::RecordBatch;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
-use datafusion::error::DataFusionError;
 use datafusion::logical_expr::LogicalPlan;
 use datafusion::physical_plan::PhysicalExpr;
 use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
@@ -24,14 +22,13 @@ use deltalake::datafusion::dataframe::DataFrame;
 use deltalake::datafusion::execution::context::SQLOptions;
 use deltalake::datafusion::prelude::SessionContext;
 use deltalake::kernel::Action;
-use deltalake::logstore::IORuntime;
-use deltalake::table::PeekCommit;
+use deltalake::logstore::{self, IORuntime};
 use deltalake::table::builder::ensure_table_uri;
 use deltalake::{DeltaTable, DeltaTableBuilder, datafusion};
 use feldera_adapterlib::format::{ParseError, StagedInputBuffer};
 use feldera_adapterlib::transport::{InputQueueEntry, Resume, Watermark, parse_resume_info};
 use feldera_adapterlib::utils::datafusion::{
-    execute_query_collect, execute_singleton_query, timestamp_to_sql_expression,
+    array_to_string, execute_query_collect, execute_singleton_query, timestamp_to_sql_expression,
     validate_sql_expression, validate_timestamp_column,
 };
 use feldera_storage::tokio::TOKIO_DEDICATED_IO;
@@ -627,33 +624,31 @@ impl DeltaTableInputEndpointInner {
                 .collect::<Vec<String>>()
         };
 
-        if let Some(table_schema) = table.schema() {
-            let delta_columns = table_schema
-                .fields()
-                .map(|f| f.name().clone())
-                .collect::<Vec<String>>();
+        let table_schema = table.schema();
+        let delta_columns = table_schema
+            .fields()
+            .iter()
+            .map(|f| f.name().to_string())
+            .collect::<Vec<String>>();
 
-            // We need to be careful in checking whether a Delta column name occurs in
-            // sql_columns.  Delta doesn't seem to include case sensitivity information any
-            // any form in its schema.  So we conservatively check whether column name
-            // occurs in the SQL tables as is or whether a lowercase column name occurs
-            // in the set of SQL columns converted to lowercase.
+        // We need to be careful in checking whether a Delta column name occurs in
+        // sql_columns.  Delta doesn't seem to include case sensitivity information any
+        // any form in its schema.  So we conservatively check whether column name
+        // occurs in the SQL tables as is or whether a lowercase column name occurs
+        // in the set of SQL columns converted to lowercase.
 
-            let sql_columns = sql_columns.iter().cloned().collect::<BTreeSet<_>>();
-            let sql_columns_lowercase = sql_columns
-                .iter()
-                .map(|c| c.to_lowercase())
-                .collect::<BTreeSet<_>>();
+        let sql_columns = sql_columns.iter().cloned().collect::<BTreeSet<_>>();
+        let sql_columns_lowercase = sql_columns
+            .iter()
+            .map(|c| c.to_lowercase())
+            .collect::<BTreeSet<_>>();
 
-            delta_columns
-                .into_iter()
-                .filter(|c| {
-                    sql_columns.contains(c) || sql_columns_lowercase.contains(&c.to_lowercase())
-                })
-                .collect::<Vec<_>>()
-        } else {
-            sql_columns
-        }
+        delta_columns
+            .into_iter()
+            .filter(|c| {
+                sql_columns.contains(c) || sql_columns_lowercase.contains(&c.to_lowercase())
+            })
+            .collect::<Vec<_>>()
     }
 
     fn used_column_list(&self, table: &DeltaTable) -> String {
@@ -696,7 +691,8 @@ impl DeltaTableInputEndpointInner {
             InputQueueEntry::new_with_aux(
                 timestamp,
                 Some(DeltaResumeInfo::follow_mode(
-                    table.version(),
+                    // We verified that the table version is not None in the open_table method.
+                    table.version().unwrap(),
                     !self.config.follow(),
                 )),
             )
@@ -732,7 +728,8 @@ impl DeltaTableInputEndpointInner {
             InputQueueEntry::new_with_aux(
                 timestamp,
                 Some(DeltaResumeInfo::follow_mode(
-                    table.version(),
+                    // We verified that the table version is not None in the open_table method.
+                    table.version().unwrap(),
                     !self.config.follow(),
                 )),
             )
@@ -802,15 +799,15 @@ impl DeltaTableInputEndpointInner {
         }) => {
             snapshot_timestamp.clone()
         } _ => {
-            bounds[0]
-            .column(0)
-            .as_string_opt::<i32>()
-            .ok_or_else(|| anyhow!("internal error: cannot retrieve the output of query '{bounds_query}' as a string"))?
-            .value(0)
-            .to_string()
+            array_to_string(bounds[0].column(0))
+            .ok_or_else(|| anyhow!("internal error: cannot retrieve the first column in the output of query '{bounds_query}' as a string"))?
         }};
 
-        let max = bounds[0].column(1).as_string::<i32>().value(0).to_string();
+        let max = array_to_string(bounds[0].column(1)).ok_or_else(|| {
+            anyhow!(
+                "internal error: cannot retrieve the second column in the output of query '{bounds_query}' as a string"
+            )
+        })?;
 
         let columns = self.used_columns(table);
         let column_names = columns
@@ -864,7 +861,11 @@ impl DeltaTableInputEndpointInner {
             self.queue.push_entry(
                 InputQueueEntry::new_with_aux(
                     Utc::now(),
-                    Some(DeltaResumeInfo::snapshot_mode(table.version(), &start)),
+                    Some(DeltaResumeInfo::snapshot_mode(
+                        // We verified that the table version is not None in the open_table method.
+                        table.version().unwrap(),
+                        &start,
+                    )),
                 )
                 // If we started a transaction while processing the range query, commit it now.
                 .with_commit_transaction(true),
@@ -914,7 +915,8 @@ impl DeltaTableInputEndpointInner {
 
         let last_resume_status = self.last_resume_status.lock().unwrap().clone();
 
-        let mut version = table.version();
+        // We verified that the table version is not None in the open_table method.
+        let mut version = table.version().unwrap();
 
         // We haven't completed a snapshot before the checkpoint was taken if
         // - there is no checkpoint
@@ -956,13 +958,28 @@ impl DeltaTableInputEndpointInner {
 
             loop {
                 wait_running(&mut receiver).await;
-                match table.log_store().peek_next_commit(version).await {
-                    Ok(PeekCommit::UpToDate) => sleep(POLL_INTERVAL).await,
-                    Ok(PeekCommit::New(new_version, actions))
+                let new_version = version + 1;
+
+                match table.log_store().read_commit_entry(new_version).await {
+                    Ok(None) => sleep(POLL_INTERVAL).await,
+                    Ok(Some(bytes))
                         if self.config.end_version.is_none()
                             || self.config.end_version.unwrap() >= new_version =>
                     {
                         retry_count = 0;
+
+                        let actions = match logstore::get_actions(new_version, &bytes) {
+                            Ok(actions) => actions,
+                            Err(e) => {
+                                self.consumer.error(
+                                    true,
+                                    anyhow!("error parsing log entry for table version {new_version}: {e}"),
+                                    Some("delta-parse-log")
+                                );
+                                break;
+                            }
+                        };
+
                         version = new_version;
                         self.process_log_entry(
                             new_version,
@@ -986,7 +1003,7 @@ impl DeltaTableInputEndpointInner {
                             break;
                         }
                     }
-                    Ok(PeekCommit::New(new_version, _actions)) => {
+                    Ok(Some(_bytes)) => {
                         info!(
                             "delta_table {}: reached table version {new_version}, which is greater than the 'end_version' {} specified in connector config: stopping the connector",
                             &self.endpoint_name,
@@ -1045,7 +1062,7 @@ impl DeltaTableInputEndpointInner {
             )
         })?;
 
-        let delta_table = {
+        let delta_table: DeltaTable = {
             let mut retry_count = 0;
             const MAX_RETRIES: u32 = 10;
 
@@ -1060,7 +1077,7 @@ impl DeltaTableInputEndpointInner {
 
             loop {
                 // DeltaTableBuilder doesn't implement Clone, so we need to create a new instance every time.
-                let table_builder = DeltaTableBuilder::from_valid_uri(&url)
+                let table_builder = DeltaTableBuilder::from_url(url.clone())
                     .map_err(|e| {
                         ControllerError::invalid_transport_configuration(
                             &self.endpoint_name,
@@ -1136,11 +1153,7 @@ impl DeltaTableInputEndpointInner {
                         } else {
                             return Err(ControllerError::invalid_transport_configuration(
                                 &self.endpoint_name,
-                                &format!(
-                                    "error opening delta table '{}': {e:?} (root cause: {})",
-                                    &self.config.uri,
-                                    root_cause(&e)
-                                ),
+                                &format!("error opening delta table '{}': {e:?}", &self.config.uri),
                             ));
                         }
                     }
@@ -1168,11 +1181,18 @@ impl DeltaTableInputEndpointInner {
             }
         };
 
+        let version = delta_table.version().ok_or_else(|| {
+            ControllerError::invalid_transport_configuration(
+                &self.endpoint_name,
+                "internal error: table version is not available",
+            )
+        })?;
+
         // If we are about to follow the table, set resume state to the current table version, otherwise
         // the connector will remain in the barrier state until at least one transaction is added to the log.
         if !self.config.snapshot() {
             *self.last_resume_status.lock().unwrap() =
-                Some(DeltaResumeInfo::follow_mode(delta_table.version(), false));
+                Some(DeltaResumeInfo::follow_mode(version, false));
         }
 
         // Register object store with datafusion, so it will recognize individual parquet
@@ -1192,9 +1212,7 @@ impl DeltaTableInputEndpointInner {
 
         info!(
             "delta_table {}: opened delta table '{}' (current table version {})",
-            &self.endpoint_name,
-            &self.config.uri,
-            delta_table.version()
+            &self.endpoint_name, &self.config.uri, version
         );
 
         // TODO: Validate that table schema matches relation schema
@@ -1550,17 +1568,11 @@ impl DeltaTableInputEndpointInner {
             let batch = match batch {
                 Ok(batch) => batch,
                 Err(e) => {
-                    match e {
-                        DataFusionError::ArrowError(ArrowError::ExternalError(error), _) => self.consumer.error(
-                            false,
-                            anyhow!("error retrieving batch {num_batches} of {descr}: external error: {error:?} (root cause: {})", root_cause(error.as_ref()),
-                        ), Some("delta-batch-arrow")),
-                        e => self.consumer.error(
-                            false,
-                            anyhow!("error retrieving batch {num_batches} of {descr}: {e:?}"),
-                            Some("delta-batch")
-                        ),
-                    }
+                    self.consumer.error(
+                        false,
+                        anyhow!("error retrieving batch {num_batches} of {descr}: {e:?}"),
+                        Some("delta-batch"),
+                    );
 
                     continue;
                 }
@@ -1822,14 +1834,7 @@ impl DeltaTableInputEndpointInner {
         files: Vec<String>,
         description: &str,
     ) -> AnyResult<ListingTable> {
-        let Some(schema) = table.schema() else {
-            // At this point the table should have a schema, as it's definitely not empty.
-            return Err(anyhow!(
-                "internal error processing {description}; {REPORT_ERROR}: Delta table has no schema"
-            ));
-        };
-
-        let schema: Schema = schema.try_into().map_err(|e| anyhow!("internal error processing {description}; {REPORT_ERROR}; error converting Delta schema {schema:?} to arrow schema: {e}"))?;
+        let schema = table.schema();
 
         let mut urls = Vec::with_capacity(files.len());
         for file in files.iter() {
@@ -1840,8 +1845,8 @@ impl DeltaTableInputEndpointInner {
             .with_file_extension_opt(Some(".parquet"));
 
         let table_config = ListingTableConfig::new_with_multi_paths(urls)
-            .with_schema(Arc::new(schema))
-            .with_listing_options(listing_options);
+            .with_listing_options(listing_options)
+            .with_schema(schema);
 
         ListingTable::try_new(table_config).map_err(|e| {
             anyhow!("internal error processing {description}; {REPORT_ERROR}; error creating Parquet table: {e}")

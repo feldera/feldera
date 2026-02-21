@@ -47,8 +47,9 @@ fn build_circuit(
     });
     let monthly_totals = subset
         .map_index(|r| {
+            let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
             (
-                Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+                Tup3(r.location.clone(), date.year(), date.month() as u8),
                 r.daily_vaccinations.unwrap_or(0),
             )
         })

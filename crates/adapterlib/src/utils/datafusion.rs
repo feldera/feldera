@@ -1,5 +1,6 @@
 use crate::errors::journal::ControllerError;
 use anyhow::{Error as AnyError, anyhow};
+use arrow::array::Array;
 use datafusion::common::arrow::array::{AsArray, RecordBatch};
 use datafusion::logical_expr::sqlparser::parser::ParserError;
 use datafusion::prelude::{SQLOptions, SessionContext};
@@ -53,7 +54,21 @@ pub async fn execute_singleton_query(
         ));
     }
 
-    Ok(result[0].column(0).as_string::<i32>().value(0).to_string())
+    let column0 = result[0].column(0);
+
+    array_to_string(column0).ok_or_else(|| {
+        anyhow!("internal error: cannot retrieve the output of query '{query}' as a string")
+    })
+}
+
+pub fn array_to_string(array: &dyn Array) -> Option<String> {
+    if let Some(string_view_array) = array.as_string_view_opt() {
+        Some(string_view_array.value(0).to_string())
+    } else {
+        array
+            .as_string_opt::<i32>()
+            .map(|array| array.value(0).to_string())
+    }
 }
 
 /// Parse expression only to validate it.
@@ -141,7 +156,7 @@ pub async fn validate_timestamp_column(
     // which requires storing and sorting the entire collection locally.
     let is_zero = execute_singleton_query(
         datafusion,
-        &format!("select cast(({lateness} + {lateness}) = {lateness} as string)"),
+        &format!("select cast((({lateness} + {lateness}) = {lateness}) as string)"),
     )
     .await
     .map_err(|e| ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string()))?;

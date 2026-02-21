@@ -1,13 +1,12 @@
 use anyhow::Result;
 use csv::Reader;
 use serde::Deserialize;
-use time::Date;
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct Record {
     location: String,
-    date: Date,
+    date: i32,
     daily_vaccinations: Option<u64>,
 }
 

@@ -238,12 +238,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
             JsonFlavor::ParquetConverter => Self {
                 time_format: TimeFormat::Nanos,
                 date_format: DateFormat::String("%Y-%m-%d"),
-                // TODO: This should become TimestampFormat::MillisSinceEpoch otherwise we lose the
-                // millisecond precision that parquet stores e.g., because we call to_json_value on
-                // the parquet row it calls this internally:
-                // https://docs.rs/parquet/50.0.0/src/parquet/record/api.rs.html#858
-                // the right way is probably to use serde_arrow for deserialization and serialization
-                timestamp_format: TimestampFormat::String("%Y-%m-%d %H:%M:%S %:z"), // 2023-11-04 15:33:47 +00:00
+                timestamp_format: TimestampFormat::String("%Y-%m-%d %H:%M:%S.%f %:z"), // 2023-11-04 15:33:47.123 +00:00
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Base64,

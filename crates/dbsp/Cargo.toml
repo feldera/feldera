@@ -49,8 +49,7 @@ rkyv = { workspace = true, features = ["std", "size_64", "validation", "uuid"] }
 size-of = { workspace = true, features = [
     "hashbrown",
     "xxhash-xxh3",
-    "arcstr",
-    "chrono",
+    "arcstr"
 ] }
 tarpc = { workspace = true, features = ["full"] }
 futures = { workspace = true }
@@ -115,7 +114,7 @@ pprof = { workspace = true, features = ["flamegraph", "criterion"] }
 rand_xoshiro = { workspace = true }
 indicatif = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
-chrono = { workspace = true, features = ["rkyv-64", "serde"] }
+chrono = { workspace = true, features = ["serde"] }
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 
 [[bench]]

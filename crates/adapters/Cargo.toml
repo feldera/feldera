@@ -107,7 +107,7 @@ proptest-derive = { workspace = true, optional = true }
 clap = { workspace = true }
 tokio = { workspace = true, features = ["sync", "macros", "fs", "rt"] }
 utoipa = { workspace = true }
-chrono = { workspace = true, features = ["rkyv-64", "serde"] }
+chrono = { workspace = true, features = ["serde"] }
 colored = { workspace = true }
 uuid = { workspace = true, features = ["v4", "std"] }
 rkyv = { workspace = true, features = ["std", "size_64"] }
@@ -198,6 +198,7 @@ backoff = { workspace = true }
 sentry = { workspace = true }
 zip = { workspace = true }
 smallvec = { workspace = true }
+delta_kernel = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["num-traits"]
