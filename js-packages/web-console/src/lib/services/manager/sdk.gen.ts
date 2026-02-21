@@ -30,6 +30,9 @@ import type {
   GetCheckpointSyncStatusData,
   GetCheckpointSyncStatusErrors,
   GetCheckpointSyncStatusResponses,
+  GetCheckpointsData,
+  GetCheckpointsErrors,
+  GetCheckpointsResponses,
   GetClusterEventData,
   GetClusterEventErrors,
   GetClusterEventResponses,
@@ -592,6 +595,20 @@ export const getCheckpointStatus = <ThrowOnError extends boolean = false>(
   >({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/checkpoint_status',
+    ...options
+  })
+
+/**
+ * Get the checkpoints for a pipeline
+ *
+ * Retrieve the current checkpoints made by a pipeline.
+ */
+export const getCheckpoints = <ThrowOnError extends boolean = false>(
+  options: Options<GetCheckpointsData, ThrowOnError>
+) =>
+  (options.client ?? client).get<GetCheckpointsResponses, GetCheckpointsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/checkpoints',
     ...options
   })
 

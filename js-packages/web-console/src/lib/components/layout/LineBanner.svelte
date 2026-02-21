@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  export { bannerButton as BannerButton }
+  export { BannerButton }
 </script>
 
 <script lang="ts">
@@ -27,7 +27,7 @@
   } = $props()
 </script>
 
-{#snippet bannerButton({
+{#snippet BannerButton({
   text,
   ariaLabel,
   href,

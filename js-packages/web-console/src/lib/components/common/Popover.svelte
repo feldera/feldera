@@ -4,7 +4,7 @@
 </script>
 
 <script lang="ts">
-  import FlowbitePopover from 'flowbite-svelte/Popover.svelte'
+  import { Popover as FlowbitePopover } from 'flowbite-svelte'
   import { type PopoverProps } from 'flowbite-svelte'
 
   let { children, ...props }: Omit<PopoverProps, 'isOpen'> = $props()

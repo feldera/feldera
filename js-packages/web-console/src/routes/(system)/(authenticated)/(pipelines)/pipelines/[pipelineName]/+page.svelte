@@ -1,7 +1,10 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import PipelineEditLayout from '$lib/components/layout/pipelines/PipelineEditLayout.svelte'
-  import { usePipelineList, useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte.js'
+  import {
+    usePipelineList,
+    useUpdatePipelineList
+  } from '$lib/compositions/pipelines/usePipelineList.svelte.js'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte.js'
   import {
     useRefreshPipeline,
@@ -21,7 +24,7 @@
 
   let pipelineCache = $state({ current: data.preloadedPipeline })
   const set = (pipeline: ExtendedPipeline) => {
-     // Update both single pipeline cache and pipeline list cache to ensure consistency
+    // Update both single pipeline cache and pipeline list cache to ensure consistency
     pipelineCache.current = pipeline
     updatePipeline(pipeline.name, () => pipeline)
   }

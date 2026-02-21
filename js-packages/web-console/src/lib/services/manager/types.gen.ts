@@ -162,6 +162,39 @@ export type CheckpointFailure = {
 }
 
 /**
+ * Holds meta-data about a checkpoint that was taken for persistent storage
+ * and recovery of a circuit's state.
+ */
+export type CheckpointMetadata = {
+  /**
+   * Fingerprint of the circuit at the time of the checkpoint.
+   */
+  fingerprint: number
+  /**
+   * An optional name for the checkpoint.
+   */
+  identifier?: string | null
+  /**
+   * Total number of records processed.
+   */
+  processed_records?: number | null
+  /**
+   * Total size of the checkpoint files in bytes.
+   */
+  size?: number | null
+  /**
+   * Total number of steps made.
+   */
+  steps?: number | null
+  /**
+   * A unique identifier for the given checkpoint.
+   *
+   * This is used to identify the checkpoint in the file-system hierarchy.
+   */
+  uuid: string
+}
+
+/**
  * Response to a checkpoint request.
  */
 export type CheckpointResponse = {
@@ -320,6 +353,7 @@ export type CombinedStatus =
   | 'Stopped'
   | 'Provisioning'
   | 'Unavailable'
+  | 'Coordination'
   | 'Standby'
   | 'AwaitingApproval'
   | 'Initializing'
@@ -383,6 +417,16 @@ export type CompletionStatusArgs = {
  */
 export type CompletionStatusResponse = {
   status: CompletionStatus
+  /**
+   * If all of the data associated with the token has been processed through
+   * the pipeline, this is the final step that includes at least one record.
+   * When the pipeline's `total_completed_steps` reaches this value, the
+   * token has been completed.
+   *
+   * This is `None` before the data associated with the token has been
+   * processed through the pipeline.
+   */
+  step?: number | null
 }
 
 /**
@@ -446,8 +490,27 @@ export type Configuration = {
   version: string
 }
 
+/**
+ * Options for connecting to a NATS server.
+ */
 export type ConnectOptions = {
   auth?: Auth
+  /**
+   * Connection timeout
+   *
+   * How long to wait when establishing the initial connection to the
+   * NATS server.
+   */
+  connection_timeout_secs?: number
+  /**
+   * Request timeout in seconds.
+   *
+   * How long to wait for responses to requests.
+   */
+  request_timeout_secs?: number
+  /**
+   * NATS server URL (e.g., "nats://localhost:4222").
+   */
   server_url: string
 }
 
@@ -481,22 +544,20 @@ export type ConnectorConfig = OutputBufferConfig & {
    */
   labels?: Array<string>
   /**
-   * Maximum batch size, in records.
+   * Maximum number of records from this connector to process in a single batch.
    *
-   * This is the maximum number of records to process in one batch through
-   * the circuit.  The time and space cost of processing a batch is
-   * asymptotically superlinear in the size of the batch, but very small
-   * batches are less efficient due to constant factors.
+   * When set, this caps how many records are taken from the connector’s input
+   * buffer and pushed through the circuit at once.
    *
-   * This should usually be less than `max_queued_records`, to give the
-   * connector a round-trip time to restart and refill the buffer while
-   * batches are being processed.
+   * This is typically configured lower than `max_queued_records` to allow the
+   * connector time to restart and refill its buffer while a batch is being
+   * processed.
    *
-   * Some input adapters might not honor this setting.
+   * Not all input adapters honor this limit.
    *
-   * The default is 10,000.
+   * If this is not set, the batch size is derived from `max_worker_batch_size`.
    */
-  max_batch_size?: number
+  max_batch_size?: number | null
   /**
    * Backpressure threshold.
    *
@@ -519,6 +580,21 @@ export type ConnectorConfig = OutputBufferConfig & {
    * The default is 1 million.
    */
   max_queued_records?: number
+  /**
+   * Maximum number of records processed per batch, per worker thread.
+   *
+   * When `max_batch_size` is not set, this setting is used to cap
+   * the number of records that can be taken from the connector’s input
+   * buffer and pushed through the circuit at once.  The effective batch size is computed as:
+   * `max_worker_batch_size × workers`.
+   *
+   * This provides an alternative to `max_batch_size` that automatically adjusts batch
+   * size as the number of worker threads changes to maintain constant amount of
+   * work per worker per batch.
+   *
+   * Defaults to 10,000 records per worker.
+   */
+  max_worker_batch_size?: number | null
   /**
    * Create connector in paused state.
    *
@@ -1359,6 +1435,33 @@ export type GlobalControllerMetrics = {
    */
   total_completed_records: number
   /**
+   * Number of steps whose input records have been processed to completion.
+   *
+   * A record is processed to completion if it has been processed by the DBSP engine and
+   * all outputs derived from it have been processed by all output connectors.
+   *
+   * # Interpretation
+   *
+   * This is a count, not a step number.  If `total_completed_steps` is 0, no
+   * steps have been processed to completion.  If `total_completed_steps >
+   * 0`, then the last step whose input records have been processed to
+   * completion is `total_completed_steps - 1`. A record that was ingested
+   * when `total_initiated_steps` was `n` is fully processed when
+   * `total_completed_steps >= n`.
+   */
+  total_completed_steps: number
+  /**
+   * Number of steps that have been initiated.
+   *
+   * # Interpretation
+   *
+   * This is a count, not a step number.  If `total_initiated_steps` is 0, no
+   * steps have been initiated.  If `total_initiated_steps > 0`, then step
+   * `total_initiated_steps - 1` has been started and all steps previous to
+   * that have been completely processed by the circuit.
+   */
+  total_initiated_steps: number
+  /**
    * Total number of bytes received from all endpoints.
    */
   total_input_bytes: number
@@ -1381,7 +1484,10 @@ export type GlobalControllerMetrics = {
   transaction_initiators: TransactionInitiators
   transaction_status: TransactionStatus
   /**
-   * Time since the pipeline process started, in milliseconds.
+   * Time since the pipeline process started, including time that the
+   * pipeline was running or paused.
+   *
+   * This is the elapsed time since `start_time`.
    */
   uptime_msecs: number
 }
@@ -2433,7 +2539,10 @@ export type PipelineConfig = {
   /**
    * Number of DBSP hosts.
    *
-   * The worker threads are evenly divided among the hosts.
+   * The worker threads are evenly divided among the hosts.  For single-host
+   * deployments, this should be 1 (the default).
+   *
+   * Multihost pipelines are an enterprise-only preview feature.
    */
   hosts?: number
   /**
@@ -3437,7 +3546,10 @@ export type RuntimeConfig = {
   /**
    * Number of DBSP hosts.
    *
-   * The worker threads are evenly divided among the hosts.
+   * The worker threads are evenly divided among the hosts.  For single-host
+   * deployments, this should be 1 (the default).
+   *
+   * Multihost pipelines are an enterprise-only preview feature.
    */
   hosts?: number
   /**
@@ -4961,6 +5073,38 @@ export type GetCheckpointStatusResponses = {
 export type GetCheckpointStatusResponse =
   GetCheckpointStatusResponses[keyof GetCheckpointStatusResponses]
 
+export type GetCheckpointsData = {
+  body?: never
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: never
+  url: '/v0/pipelines/{pipeline_name}/checkpoints'
+}
+
+export type GetCheckpointsErrors = {
+  /**
+   * Pipeline with that name does not exist
+   */
+  404: ErrorResponse
+  500: ErrorResponse
+  503: ErrorResponse
+}
+
+export type GetCheckpointsError = GetCheckpointsErrors[keyof GetCheckpointsErrors]
+
+export type GetCheckpointsResponses = {
+  /**
+   * Checkpoints retrieved successfully
+   */
+  200: CheckpointMetadata
+}
+
+export type GetCheckpointsResponse = GetCheckpointsResponses[keyof GetCheckpointsResponses]
+
 export type GetPipelineCircuitJsonProfileData = {
   body?: never
   path: {
@@ -5542,13 +5686,18 @@ export type GetPipelineSamplyProfileData = {
      * Unique pipeline name
      */
     pipeline_name: string
+  }
+  query?: {
     /**
-     * If true, returns 307 redirect if profile collection is in progress.
+     * In a multihost pipeline, the ordinal of the pipeline to sample.
+     */
+    ordinal?: number
+    /**
+     * If true, returns 204 redirect with Retry-After header if profile collection is in progress.
      * If false or not provided, returns the last collected profile.
      */
-    latest: boolean
+    latest?: boolean
   }
-  query?: never
   url: '/v0/pipelines/{pipeline_name}/samply_profile'
 }
 
@@ -5570,13 +5719,9 @@ export type GetPipelineSamplyProfileError =
 
 export type GetPipelineSamplyProfileResponses = {
   /**
-   * Samply profile as a gzip containing the profile that can be inspected by the samply tool
+   * Samply profile as a gzip containing the profile that can be inspected by the samply tool. Note: may return 204 No Content with Retry-After header if latest=true and profiling is in progress.
    */
   200: Blob | File
-  /**
-   * Samply profile collection is in progress. Check the Retry-After header for expected completion time.
-   */
-  204: void
 }
 
 export type GetPipelineSamplyProfileResponse =
@@ -5591,6 +5736,13 @@ export type StartSamplyProfileData = {
     pipeline_name: string
   }
   query?: {
+    /**
+     * In a multihost pipeline, the ordinal of the pipeline to sample.
+     */
+    ordinal?: number
+    /**
+     * The number of seconds to sample for the profile.
+     */
     duration_secs?: number
   }
   url: '/v0/pipelines/{pipeline_name}/samply_profile'

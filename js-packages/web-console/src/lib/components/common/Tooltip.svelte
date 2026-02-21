@@ -4,7 +4,7 @@
 </script>
 
 <script lang="ts">
-  import FlowbiteTooltip from 'flowbite-svelte/Tooltip.svelte'
+  import { Tooltip as FlowbiteTooltip } from 'flowbite-svelte'
   import { type TooltipProps } from 'flowbite-svelte'
 
   let {
