@@ -14,11 +14,12 @@ use chrono::NaiveDate;
 use dbsp::typed_batch::DynBatchReader;
 use dbsp::utils::Tup2;
 use dbsp::{DBData, OrdZSet};
+use delta_kernel::engine::arrow_conversion::TryFromArrow;
 use deltalake::datafusion::prelude::SessionContext;
 use deltalake::kernel::{DataType, StructField};
 use deltalake::operations::create::CreateBuilder;
 use deltalake::protocol::SaveMode;
-use deltalake::{DeltaOps, DeltaTable, DeltaTableBuilder};
+use deltalake::{DeltaTable, DeltaTableBuilder, ensure_table_uri};
 use feldera_sqllib::Variant;
 use feldera_types::config::PipelineConfig;
 use feldera_types::format::json::JsonFlavor;
@@ -231,7 +232,7 @@ where
     .unwrap();
 
     // Write it to the input table.
-    DeltaOps(table)
+    table
         .write(vec![batch])
         .with_save_mode(SaveMode::Append)
         .await
@@ -781,7 +782,7 @@ async fn test_follow(
     let mut struct_fields: Vec<_> = vec![];
 
     for f in arrow_schema.fields.iter() {
-        let data_type = DataType::try_from(f.data_type()).unwrap();
+        let data_type = DataType::try_from_arrow(f.data_type()).unwrap();
         struct_fields.push(StructField::new(f.name(), data_type, f.is_nullable()));
     }
 
@@ -798,7 +799,7 @@ async fn test_follow(
         0
     };
 
-    println!("initial table version: {}", input_table.version());
+    println!("initial table version: {}", input_table.version().unwrap());
 
     // Start parquet-to-parquet pipeline.
     let mut input_config = storage_options
@@ -835,8 +836,10 @@ async fn test_follow(
     .await;
 
     // Connect to `output_table_uri`.
+    println!("connecting to output table: {output_table_uri}");
     let mut output_table = Arc::new(
-        DeltaTableBuilder::from_uri(output_table_uri)
+        DeltaTableBuilder::from_url(ensure_table_uri(output_table_uri).unwrap())
+            .unwrap()
             .with_storage_options(storage_options.clone())
             .load()
             .await
@@ -891,7 +894,7 @@ async fn test_follow(
     wait(
         || {
             if let Some(version) = completed_version(&pipeline) {
-                let expected = input_table.version();
+                let expected = input_table.version().unwrap();
                 debug!(
                     "pipeline completed version {version}, expected (initial version) {expected}, waterlines: {:?}",
                     pipeline
@@ -918,7 +921,7 @@ async fn test_follow(
         total_count += chunk.len();
         input_table = write_data_to_table(input_table, &arrow_schema, chunk).await;
 
-        if !test_end_version || input_table.version() <= end_version {
+        if !test_end_version || input_table.version().unwrap() <= end_version {
             expected_output = data[0..total_count]
                 .iter()
                 .filter_map(|x| {
@@ -953,9 +956,9 @@ async fn test_follow(
                 || {
                     if let Some(version) = completed_version(&pipeline) {
                         let expected = if test_end_version {
-                            min(input_table.version(), end_version)
+                            min(input_table.version().unwrap(), end_version)
                         } else {
-                            input_table.version()
+                            input_table.version().unwrap()
                         };
                         debug!("pipeline completed version {version}, expected {expected}, waterlines: {:?}", pipeline.status().input_status().values().next().unwrap().completed_frontier.debug());
                         version == expected
@@ -969,7 +972,7 @@ async fn test_follow(
             .unwrap();
 
         // Wait a bit to make sure the pipeline doesn't process data beyond end_version.
-        if test_end_version && input_table.version() > end_version {
+        if test_end_version && input_table.version().unwrap() > end_version {
             sleep(Duration::from_millis(1000)).await;
         }
 

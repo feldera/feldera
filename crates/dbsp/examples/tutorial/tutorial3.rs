@@ -1,5 +1,4 @@
 use anyhow::Result;
-use chrono::NaiveDate;
 use csv::Reader;
 use dbsp::utils::Tup2;
 use dbsp::{OrdZSet, OutputHandle, RootCircuit, ZSet, ZSetHandle, ZWeight};
@@ -26,7 +25,7 @@ use size_of::SizeOf;
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 struct Record {
     location: String,
-    date: NaiveDate,
+    date: i32,
     daily_vaccinations: Option<u64>,
 }
 fn build_circuit(

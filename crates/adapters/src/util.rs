@@ -7,7 +7,7 @@ use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, Instant};
 
 #[cfg(feature = "with-deltalake")]
-use std::{error::Error, future::Future, pin::Pin};
+use std::{future::Future, pin::Pin};
 
 use anyhow::{Result as AnyResult, bail};
 use dashmap::DashMap;
@@ -19,14 +19,6 @@ use itertools::Itertools;
 #[cfg(feature = "with-deltalake")]
 use tokio::{spawn, task::JoinHandle};
 use tracing::warn;
-
-#[cfg(feature = "with-deltalake")]
-pub(crate) fn root_cause(mut err: &dyn Error) -> &dyn Error {
-    while let Some(source) = err.source() {
-        err = source;
-    }
-    err
-}
 
 /// Operations over an indexed view.
 #[derive(Debug)]

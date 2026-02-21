@@ -14,6 +14,8 @@ use arrow::array::RecordBatch;
 use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
 use chrono::Utc;
 use dbsp::circuit::tokio::TOKIO;
+use delta_kernel::engine::arrow_conversion::TryFromArrow;
+use delta_kernel::table_properties::DataSkippingNumIndexedCols;
 use deltalake::DeltaTable;
 use deltalake::kernel::transaction::{CommitBuilder, TableReference};
 use deltalake::kernel::{Action, DataType, StructField};
@@ -108,7 +110,7 @@ impl DeltaTableWriter {
         let mut struct_fields: Vec<_> = vec![];
 
         for f in arrow_schema.fields.iter() {
-            let data_type = DataType::try_from(f.data_type()).map_err(|e| {
+            let data_type = DataType::try_from_arrow(f.data_type()).map_err(|e| {
                 ControllerError::output_transport_error(
                     endpoint_name,
                     true,
@@ -343,7 +345,11 @@ impl WriterTask {
             "delta_table {}: opened delta table '{}' (current table version {})",
             &inner.endpoint_name,
             &inner.config.uri,
-            delta_table.version()
+            if let Some(version) = delta_table.version() {
+                version.to_string()
+            } else {
+                "none".to_string()
+            }
         );
 
         Ok(Self {
@@ -369,7 +375,10 @@ impl WriterTask {
             None,
             None,
             None,
-            min(32, self.inner.arrow_schema.fields.len() as i32),
+            DataSkippingNumIndexedCols::NumColumns(min(
+                32,
+                self.inner.arrow_schema.fields.len() as u64,
+            )),
             None,
         );
 
@@ -383,7 +392,11 @@ impl WriterTask {
         trace!(
             "delta_table {}: finished writing output records, committing (current table version: {})",
             &self.inner.endpoint_name,
-            self.delta_table.version()
+            if let Some(version) = self.delta_table.version() {
+                version.to_string()
+            } else {
+                "none".to_string()
+            }
         );
         match self.writer.take() {
             Some(writer) => {

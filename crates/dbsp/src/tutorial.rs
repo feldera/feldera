@@ -89,13 +89,12 @@
 //! use anyhow::Result;
 //! use csv::Reader;
 //! use serde::Deserialize;
-//! use time::Date;
 //!
 //! #[allow(dead_code)]
 //! #[derive(Debug, Deserialize)]
 //! struct Record {
 //!     location: String,
-//!     date: Date,
+//!     date: i32,
 //!     daily_vaccinations: Option<u64>,
 //! }
 //!
@@ -116,11 +115,11 @@
 //! first few:
 //!
 //! ```text
-//! Record { location: "England", date: 2021-01-10, daily_vaccinations: None }
-//! Record { location: "England", date: 2021-01-11, daily_vaccinations: Some(140441) }
-//! Record { location: "England", date: 2021-01-12, daily_vaccinations: Some(164043) }
-//! Record { location: "England", date: 2021-01-13, daily_vaccinations: Some(192088) }
-//! Record { location: "England", date: 2021-01-14, daily_vaccinations: Some(213978) }
+//! Record { location: "England", date: 18637, daily_vaccinations: None }
+//! Record { location: "England", date: 18638, daily_vaccinations: Some(140441) }
+//! Record { location: "England", date: 18639, daily_vaccinations: Some(164043) }
+//! Record { location: "England", date: 18640, daily_vaccinations: Some(192088) }
+//! Record { location: "England", date: 18641, daily_vaccinations: Some(213978) }
 //! ...
 //! ```
 //!
@@ -171,7 +170,7 @@
 //!
 //! ```rust
 //! # use anyhow::Result;
-//! # use chrono::NaiveDate;
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::utils::Tup2;
 //! # use dbsp::{RootCircuit, ZSet, ZSetHandle};
@@ -197,7 +196,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! fn build_circuit(circuit: &mut RootCircuit) -> Result<ZSetHandle<Record>> {
@@ -227,7 +226,7 @@
 //!
 //! ```rust
 //! # use anyhow::Result;
-//! # use chrono::NaiveDate;
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::utils::Tup2;
 //! # use dbsp::{RootCircuit, ZSet, ZSetHandle};
@@ -254,7 +253,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! # fn build_circuit(circuit: &mut RootCircuit) -> Result<ZSetHandle<Record>> {
@@ -304,7 +303,7 @@
 //! ```
 //! use rkyv::{Archive, Serialize};
 //! use size_of::SizeOf;
-//! use chrono::NaiveDate;
+//! use chrono::Datelike;
 //! use dbsp::utils;
 //!
 //! #[derive(
@@ -326,7 +325,7 @@
 //! #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! ```
@@ -344,7 +343,7 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::NaiveDate;
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::algebra::zset::ZWeight;
 //! # use dbsp::utils::Tup2;
@@ -371,7 +370,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! # fn build_circuit(circuit: &mut RootCircuit) -> Result<ZSetHandle<Record>> {
@@ -426,7 +425,7 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::NaiveDate;
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::algebra::zset::ZWeight;
 //! # use dbsp::utils::Tup2;
@@ -453,7 +452,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! # fn build_circuit(
@@ -505,7 +504,7 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::NaiveDate;
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::algebra::zset::ZWeight;
 //! # use dbsp::utils::Tup2;
@@ -532,7 +531,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! fn build_circuit(
@@ -587,7 +586,7 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::NaiveDate;
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::algebra::zset::ZWeight;
 //! # use dbsp::utils::Tup2;
@@ -614,7 +613,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! # fn build_circuit(
@@ -698,8 +697,9 @@
 //! ```ignore
 //!     let monthly_totals = subset
 //!         .map_index(|r| {
+//!             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //!             (
-//!                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//!                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //!                 r.daily_vaccinations.unwrap_or(0),
 //!             )
 //!         })
@@ -723,7 +723,7 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::{Datelike, NaiveDate};
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::utils::{Tup2, Tup3};
 //! # use dbsp::{OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader};
@@ -749,7 +749,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -768,8 +768,9 @@
 //! #     });
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
+//! #             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
@@ -878,7 +879,7 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::{Datelike, NaiveDate};
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
@@ -907,7 +908,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -926,8 +927,9 @@
 //! #     });
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
+//! #             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
@@ -1035,7 +1037,7 @@
 //! print the new kind of output:
 //! ```ignore
 //! # use anyhow::Result;
-//! # use chrono::{Datelike, NaiveDate};
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
@@ -1064,7 +1066,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -1083,8 +1085,9 @@
 //! #     });
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
+//! #             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
@@ -1217,7 +1220,7 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::{Datelike, NaiveDate};
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     utils::{Tup2, Tup3},
@@ -1245,7 +1248,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -1287,8 +1290,9 @@
 //! #     });
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
+//! #             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
@@ -1374,7 +1378,7 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::{Datelike, NaiveDate};
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
@@ -1403,7 +1407,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -1424,8 +1428,9 @@
 //! #     });
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
+//! #             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
@@ -1491,7 +1496,7 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::{Datelike, NaiveDate};
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
@@ -1520,7 +1525,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -1541,8 +1546,9 @@
 //! #     });
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
+//! #             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
@@ -1611,7 +1617,7 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::{Datelike, NaiveDate};
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
@@ -1640,7 +1646,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -1661,8 +1667,9 @@
 //! #     });
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
+//! #             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
@@ -1693,7 +1700,7 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::{Datelike, NaiveDate};
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
@@ -1722,7 +1729,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -1743,8 +1750,9 @@
 //! #     });
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
+//! #             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
@@ -1836,7 +1844,7 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::{Datelike, NaiveDate};
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     utils::{Tup2, Tup3},
@@ -1864,7 +1872,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -1906,8 +1914,9 @@
 //! #     });
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
+//! #             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
