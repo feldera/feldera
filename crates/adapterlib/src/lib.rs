@@ -12,6 +12,7 @@ pub mod utils;
 
 pub use connector_metadata::ConnectorMetadata;
 
+#[doc(hidden)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, FromPrimitive, Serialize, NoUninit)]
 #[repr(u8)]
 pub enum PipelineState {

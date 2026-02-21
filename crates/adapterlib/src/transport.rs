@@ -72,6 +72,7 @@ pub trait TransportInputEndpoint: InputEndpoint {
     ) -> AnyResult<Box<dyn InputReader>>;
 }
 
+#[doc(hidden)]
 pub trait IntegratedInputEndpoint: InputEndpoint {
     fn open(
         self: Box<Self>,
@@ -270,6 +271,7 @@ pub enum NonFtInputReaderCommand {
     Transition(PipelineState),
 }
 
+#[doc(hidden)]
 pub struct InputQueueEntry<A, B> {
     /// Data buffer to push to the circuit.
     buffer: Option<B>,
@@ -290,6 +292,7 @@ pub struct InputQueueEntry<A, B> {
 }
 
 impl<A, B> InputQueueEntry<A, B> {
+    #[doc(hidden)]
     pub fn new_with_aux(timestamp: DateTime<Utc>, aux: A) -> Self {
         Self {
             buffer: None,
@@ -300,6 +303,7 @@ impl<A, B> InputQueueEntry<A, B> {
         }
     }
 
+    #[doc(hidden)]
     pub fn with_buffer(self, buffer: Option<B>) -> Self {
         Self { buffer, ..self }
     }
@@ -920,6 +924,7 @@ where
             .map_err(|e| anyhow::anyhow!("unable to parse checkpointed connector state (checkpointed state: {metadata}; parse error: {e})"))
 }
 
+#[doc(hidden)]
 pub type AsyncErrorCallback = Box<dyn Fn(bool, AnyError, Option<&'static str>) + Send + Sync>;
 
 /// A configured output transport endpoint.
@@ -1071,6 +1076,7 @@ impl<M, D> InputCommandReceiver<M, D> {
         }
     }
 
+    #[doc(hidden)]
     pub fn blocking_recv_replay(&mut self) -> Result<Option<(M, D)>, InputCommandReceiverError>
     where
         M: for<'a> Deserialize<'a>,
@@ -1080,6 +1086,7 @@ impl<M, D> InputCommandReceiver<M, D> {
         self.take_replay(command)
     }
 
+    #[doc(hidden)]
     pub async fn recv_replay(&mut self) -> Result<Option<(M, D)>, InputCommandReceiverError>
     where
         M: for<'a> Deserialize<'a>,
@@ -1109,6 +1116,7 @@ impl<M, D> InputCommandReceiver<M, D> {
         }
     }
 
+    #[doc(hidden)]
     pub async fn recv(&mut self) -> Result<InputReaderCommand, InputCommandReceiverError> {
         match self.buffer.take() {
             Some(value) => Ok(value),
@@ -1120,6 +1128,7 @@ impl<M, D> InputCommandReceiver<M, D> {
         }
     }
 
+    #[doc(hidden)]
     pub fn blocking_recv(&mut self) -> Result<InputReaderCommand, InputCommandReceiverError> {
         match self.buffer.take() {
             Some(value) => Ok(value),
@@ -1130,6 +1139,7 @@ impl<M, D> InputCommandReceiver<M, D> {
         }
     }
 
+    #[doc(hidden)]
     pub fn try_recv(&mut self) -> Result<Option<InputReaderCommand>, InputCommandReceiverError> {
         if let Some(command) = self.buffer.take() {
             Ok(Some(command))
@@ -1142,6 +1152,7 @@ impl<M, D> InputCommandReceiver<M, D> {
         }
     }
 
+    #[doc(hidden)]
     pub fn put_back(&mut self, value: InputReaderCommand) {
         assert!(self.buffer.is_none());
         self.buffer = Some(value);

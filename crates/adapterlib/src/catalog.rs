@@ -357,6 +357,7 @@ pub trait SerTrace: SerBatchReader {
     fn as_batch_reader(&self) -> &dyn SerBatchReader;
 }
 
+#[doc(hidden)]
 pub struct SplitCursorBuilder {
     batch: Arc<dyn SerBatchReader>,
     start_key: Box<DynData>,
@@ -440,6 +441,7 @@ impl SplitCursorBuilder {
     }
 }
 
+#[doc(hidden)]
 pub struct SplitCursor<'a> {
     cursor: Box<dyn SerCursor + 'a>,
     start_key: Box<DynData>,
@@ -888,6 +890,7 @@ pub trait CircuitCatalog: Send + Sync {
     fn output_handles_mut(&mut self, name: &SqlIdentifier) -> Option<&mut OutputCollectionHandles>;
 }
 
+#[doc(hidden)]
 pub struct InputCollectionHandle {
     pub schema: Relation,
     pub handle: Box<dyn DeCollectionHandle>,
@@ -901,6 +904,7 @@ pub struct InputCollectionHandle {
 }
 
 impl InputCollectionHandle {
+    #[doc(hidden)]
     pub fn new<H>(schema: Relation, handle: H, node_id: NodeId) -> Self
     where
         H: DeCollectionHandle + 'static,
