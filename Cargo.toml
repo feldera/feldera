@@ -115,18 +115,18 @@ erased-serde = "0.3.31"
 fake = "2.10"
 fastbloom = "0.14.0"
 fdlimit = "0.3.0"
-feldera-adapterlib = { path = "crates/adapterlib" }
 feldera-cloud1-client = "0.1.2"
 feldera-datagen = { path = "crates/datagen" }
 feldera-fxp = { version = "0.250.0", path = "crates/fxp", features = ["dbsp"] }
 feldera-iceberg = { path = "crates/iceberg" }
 feldera-observability = { version = "0.250.0", path = "crates/feldera-observability" }
 feldera-macros = { version = "0.250.0", path = "crates/feldera-macros" }
-feldera-sqllib = { path = "crates/sqllib" }
+feldera-sqllib = { version = "0.250.0", path = "crates/sqllib" }
 feldera-storage = { version = "0.250.0", path = "crates/storage" }
 feldera-types = { version = "0.250.0", path = "crates/feldera-types" }
 feldera-rest-api = { version = "0.250.0", path = "crates/rest-api" }
 feldera-ir = { version = "0.250.0", path = "crates/ir" }
+feldera-adapterlib = { version = "0.250.0", path = "crates/adapterlib" }
 flate2 = "1.1.0"
 form_urlencoded = "1.2.0"
 futures = "0.3.30"

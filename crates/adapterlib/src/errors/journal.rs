@@ -9,6 +9,7 @@ pub use crate::errors::controller::ControllerError;
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
+#[doc(hidden)]
 pub enum StepError {
     /// Storage error.
     StorageError {
@@ -38,6 +39,7 @@ pub enum StepError {
 }
 
 impl StepError {
+    #[doc(hidden)]
     pub fn kind(&self) -> ErrorKind {
         match self {
             Self::StorageError { error, .. } => error.kind(),
@@ -79,6 +81,7 @@ impl Display for StepError {
 }
 
 impl StepError {
+    #[doc(hidden)]
     pub fn storage_error(path: &StoragePath, error: StorageError) -> StepError {
         StepError::StorageError {
             path: path.as_ref().into(),
