@@ -751,20 +751,20 @@ const getAuthenticatedFetch = (options?: FetchOptions): typeof globalThis.fetch 
 }
 
 function formatValue(details: unknown): string {
-  if (typeof details === "string") {
-    return details;
+  if (typeof details === 'string') {
+    return details
   }
 
   // Pretty‑print objects, arrays, numbers, booleans, etc.
   try {
-    return JSON.stringify(details, null, 2);
+    return JSON.stringify(details, null, 2)
   } catch {
-    return String(details);
+    return String(details)
   }
 }
 
 const apiErrorText = (error: ErrorResponse) => {
-  return `${error.message}${error.details ? `\n${ formatValue(error.details) }` : ''}`
+  return `${error.message}${error.details ? `\n${formatValue(error.details)}` : ''}`
 }
 
 const streamingFetch = (
