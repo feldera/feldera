@@ -554,4 +554,14 @@ public class Regression2Tests extends SqlIoTest {
                 false
                 (1 row)""");
     }
+
+    @Test
+    public void testStdDevPop() {
+        this.qs("""
+                WITH T(x) as (VALUES(CAST(NULL AS DECIMAL(5, 2)))) SELECT STDDEV_POP(x) FROM T;
+                 r
+                ---
+                NULL
+                (1 row)""");
+    }
 }

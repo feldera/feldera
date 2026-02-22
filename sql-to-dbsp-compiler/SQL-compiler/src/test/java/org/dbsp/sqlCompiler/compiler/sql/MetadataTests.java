@@ -45,6 +45,7 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -1472,9 +1473,19 @@ public class MetadataTests extends BaseSQLTests {
         ObjectMapper mapper = new ObjectMapper();
         JsonNode jsonNode = mapper.readTree(json);
         // table t is not used in the calcite plan, so the lineage is an empty "AND" node.
-        Assert.assertEquals("source_multiset",
-                jsonNode.get("mir").get("s1").get("operation").asText());
-        JsonNode node = jsonNode.get("mir").get("s1").get("calcite").get("and");
+        // Locate table t:
+        JsonNode t = null;
+        for (Iterator<JsonNode> it = jsonNode.get("mir").elements(); it.hasNext(); ) {
+            var el = it.next();
+            if (el.get("operation").asText().equalsIgnoreCase("source_multiset") &&
+                    el.get("table").asText().equalsIgnoreCase("t")) {
+                t = el;
+                break;
+            }
+        }
+
+        Assert.assertNotNull(t);
+        JsonNode node = t.get("calcite").get("and");
         Assert.assertTrue(node.isArray());
         Assert.assertTrue(node.isEmpty());
     }

@@ -17,7 +17,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
-import org.dbsp.sqlCompiler.circuit.operator.IJoin;
+import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IStateful;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
@@ -235,32 +236,20 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         if (operator.id > lastCircuit)
             return " style=filled fillcolor=green";
          */
-        if (operator.is(IJoin.class)) {
+        if (operator.is(IGCOperator.class)) {
+            return " style=filled fillcolor=pink";
+        }
+        switch (operator.operation) {
+            case "waterline": return " style=filled fillcolor=lightgreen";
+            case "controlled_filter": return " style=filled fillcolor=cyan";
+            case "apply", "apply2", "apply_n": return " style=filled fillcolor=yellow";
+            default: break;
+        };
+        if (operator.is(IStateful.class)) {
             // There are more of these every day
             return " style=filled fillcolor=orangered";
         }
-        if (operator.operation.contains("retain")) {
-            return " style=filled fillcolor=pink";
-        }
-        return switch (operator.operation) {
-            case "waterline" -> " style=filled fillcolor=lightgreen";
-            case "controlled_filter" -> " style=filled fillcolor=cyan";
-            case "apply", "apply2", "apply_n" -> " style=filled fillcolor=yellow";
-            case "partitioned_rolling_aggregate_with_waterline", "window" -> " style=filled fillcolor=pink";
-            // stateful operators
-            case "distinct", "stream_distinct",
-                 // all aggregates require an upsert, which is stateful, even the ones that are linear
-                 "aggregate", "partitioned_rolling_aggregate",
-                 "stream_aggregate", "chain_aggregate", "linear_aggregate",
-                 // these are not derived from JoinBase
-                 "antijoin", "stream_antijoin",
-                 // delays contain state, but not that much
-                 "accumulate_delay_trace", // "transaction_delay", "differentiate",
-                 // group operators
-                 "topK", "lag_custom_order", "upsert",
-                 "integrate" -> " style=filled fillcolor=orangered";
-            default -> "";
-        };
+        return "";
     }
 
     String shorten(String operation) {
