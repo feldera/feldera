@@ -5141,8 +5141,16 @@ impl ControllerInner {
         endpoint_config: &InputEndpointConfig,
         resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
     ) -> Result<EndpointId, ControllerError> {
+        let mut transport_config = endpoint_config.connector_config.transport.clone();
+        if let Some(metadata) = transport_config.transport_metadata_mut() {
+            if let Some(ref name) = self.status.pipeline_config.given_name {
+                metadata
+                    .entry("pipeline".to_string())
+                    .or_insert_with(|| name.clone());
+            }
+        }
         let endpoint = input_transport_config_to_endpoint(
-            &endpoint_config.connector_config.transport,
+            &transport_config,
             endpoint_name,
             &self.secrets_dir,
         )
