@@ -919,12 +919,12 @@ public class IncrementalRegressionTests extends SqlIoTest {
               SELECT id FROM test_agg;""");
     }
 
-    Set<String> collectHashes(CompilerCircuit cc) {
-        HashSet<String> result = new HashSet<>();
+    Map<String, String> collectHashes(CompilerCircuit cc) {
+        HashMap<String, String> result = new HashMap<>();
         CircuitVisitor vis = new CircuitVisitor(cc.compiler) {
             @Override
-            public void postorder(DBSPOperator ignored) {
-                result.add(ignored.getNodeName(true));
+            public void postorder(DBSPOperator operator) {
+                result.put(operator.getNodeName(true), operator.getNodeName(false));
             }
         };
         cc.getCircuit().accept(vis);
@@ -941,9 +941,9 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
                 CREATE MATERIALIZED VIEW v2 AS SELECT COUNT(*) AS c FROM t1;""");
         // Check that all hashes from cc1 appear unchanged in cc1
-        Set<String> hash0 = this.collectHashes(cc0);
-        Set<String> hash1 = this.collectHashes(cc1);
-        Assert.assertTrue(hash1.containsAll(hash0));
+        Map<String, String> hash0 = this.collectHashes(cc0);
+        Map<String, String> hash1 = this.collectHashes(cc1);
+        Assert.assertTrue(hash1.keySet().containsAll(hash0.keySet()));
         Assert.assertEquals(hash0.size() + 1, hash1.size());
     }
 
@@ -1358,11 +1358,18 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 limit 20;
                 """;
 
-        var cc0 = this.getCC(common);
-        var cc1 = this.getCC(common + extra);
-        Set<String> hash0 = this.collectHashes(cc0);
-        Set<String> hash1 = this.collectHashes(cc1);
-        Assert.assertTrue(hash1.containsAll(hash0));
+        var cc0 = this.getCCS(common);
+        Map<String, String> hash0 = this.collectHashes(cc0);
+        Set<String> hash0keys = new HashSet<>(hash0.keySet());
+
+        var cc1 = this.getCCS(common + extra);
+        Map<String, String> hash1 = this.collectHashes(cc1);
+
+        hash0keys.removeAll(hash1.keySet());
+        for (String k : hash0keys)
+            // Nothing should be printed
+            System.out.println(hash0.get(k));
+        Assert.assertTrue(hash1.keySet().containsAll(hash0.keySet()));
     }
 
     @Test
