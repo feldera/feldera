@@ -27,7 +27,7 @@ use feldera_types::runtime_status::RuntimeStatus;
 /// Max non-streaming decompressed HTTP response body size returned by the pipeline.
 /// The awc default is 2MiB, which is not enough to, for example, retrieve
 /// a large circuit profile.
-const RESPONSE_SIZE_LIMIT: usize = 20 * 1024 * 1024;
+const RESPONSE_SIZE_LIMIT: usize = 50 * 1024 * 1024;
 
 pub(crate) struct CachedPipelineDescr {
     pipeline: ExtendedPipelineDescrMonitoring,

@@ -61,19 +61,26 @@ RUN ARCH=`dpkg --print-architecture`; \
 
 RUN pip3 install --break-system-packages gdown kafka-python-ng
 
+## Prepare directories for non-root user (for Claude Code)
+RUN mkdir -p /home/$USERNAME/.local/share/claude && chown -R $USERNAME /home/$USERNAME/.local/share/claude
+RUN mkdir -p /home/$USERNAME/.local/state/claude && chown -R $USERNAME /home/$USERNAME/.local/state/claude
+RUN mkdir -p /home/$USERNAME/.local/bin/ && chown -R $USERNAME /home/$USERNAME/.local/bin/
+
 ## Switch to non-root user
 
 USER $USERNAME
 
 ## Install rustup and common components
-
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
 ENV PATH="$HOME/.cargo/bin:$PATH"
 
 ## Install Bun.js
 RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.3"
 ENV PATH="$HOME/.bun/bin:$PATH"
-RUN $HOME/.bun/bin/bun install --global @hey-api/openapi-ts @anthropic-ai/claude-code
+RUN $HOME/.bun/bin/bun install --global @hey-api/openapi-ts
+
+## Install Claude Code
+RUN curl -fsSL https://claude.ai/install.sh | bash
 
 RUN \
    rustup install $RUST_VERSION && \
