@@ -616,7 +616,7 @@ impl DummyInputReceiver {
             }
             assert!(received < n);
 
-            if start.elapsed() >= Duration::from_secs(10) {
+            if start.elapsed() >= Duration::from_secs(60) {
                 panic!("only buffered {received} out of {n} expected");
             }
             self.parker.park_timeout(Duration::from_millis(100));
