@@ -27,7 +27,7 @@ pub struct MockInputConsumerState {
     /// Panics on error if `None`.
     error_cb: Option<ErrorCallback>,
 
-    transaction_in_progress: bool,
+    pub transaction_in_progress: bool,
 }
 
 impl MockInputConsumerState {
