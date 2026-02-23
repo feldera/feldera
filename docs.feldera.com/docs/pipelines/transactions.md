@@ -203,8 +203,14 @@ equivalent to initiating a single transaction through the REST API that ingests 
 
 ### Supported Connectors
 
-Automatic transaction orchestration is currently supported only for the **Delta Lake connector**.
-Refer to the [Delta Lake connector documentation](/connectors/sources/delta#transactions) for details.
+The following input connectors support automatic transaction
+orchestration:
+
+- Delta Lake (see [Delta Lake transactions])
+- Data generator (see [Datagen input connector config parameters])
+
+[Delta Lake transactions]: /connectors/sources/delta#transactions
+[Datagen input connector config parameters]: /connectors/sources/datagen#config-parameters
 
 ## Limitations
 

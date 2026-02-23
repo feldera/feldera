@@ -140,6 +140,48 @@ fn wait_for_data(endpoint: &dyn InputReader, consumer: &MockInputConsumer) {
 }
 
 #[test]
+fn test_transaction() {
+    let config = serde_json::from_value(json!({
+        "stream": "test_input",
+        "transport": {
+            "name": "datagen",
+            "config": {
+                "plan": [
+                    {
+                        "limit": 1000,
+                        "rate": 100,
+                        "fields": {}
+                    },
+                ],
+                "transaction_size": 2000
+            }
+        }
+    }))
+    .unwrap();
+    let (endpoint, consumer, _zset) =
+        mk_pipeline::<TestStruct2, TestStruct2>(config, TestStruct2::schema()).unwrap();
+
+    // Sleep for 2 seconds, then queue, then verify that a transaction started.
+    thread::sleep(Duration::from_secs(2));
+    endpoint.queue(false);
+    while consumer.state().n_extended == 0 {
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(consumer.state().transaction_in_progress);
+
+    // Sleep for 10 seconds, then queue, then verify that the transaction committed.
+    thread::sleep(Duration::from_secs(10));
+    assert_eq!(consumer.state().n_extended, 1);
+    endpoint.queue(false);
+    while consumer.state().n_extended == 1 {
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(consumer.state().transaction_in_progress);
+
+    wait_for_data(endpoint.as_ref(), &consumer);
+}
+
+#[test]
 fn test_limit_increment() {
     let config = serde_json::from_value(json!({
         "stream": "test_input",

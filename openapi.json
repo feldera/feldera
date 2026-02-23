@@ -7522,6 +7522,13 @@
             "nullable": true,
             "minimum": 0
           },
+          "transaction_size": {
+            "type": "integer",
+            "description": "By default, the data generator does not request [transactions].  Set\nthis to a nonzero value for the data generator to automatically\norchestrate transactions of approximately the specified number of rows.\n\n[transactions]: https://docs.feldera.com/pipelines/transactions",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
           "workers": {
             "type": "integer",
             "description": "Number of workers to use for generating data.",

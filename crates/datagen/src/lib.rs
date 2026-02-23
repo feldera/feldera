@@ -605,6 +605,7 @@ impl InputGenerator {
         let mut running = false;
         let mut eoi = false;
         let mut completed = VecDeque::new();
+        let mut transaction_size = 0;
         loop {
             match command_receiver.try_recv()? {
                 Some(command @ InputReaderCommand::Replay { .. }) => {
@@ -618,7 +619,7 @@ impl InputGenerator {
                     let n = consumer.max_batch_size();
                     let mut consumed = vec![RowRangeSet::new(); config.plan.len()];
                     let mut watermarks = Vec::new();
-
+                    let mut started_transaction = false;
                     while total.records < n {
                         let Some(Completion {
                             batch: Batch { plan_idx, rows },
@@ -633,6 +634,16 @@ impl InputGenerator {
 
                         let flushed = taken.len();
                         if flushed.records > 0 {
+                            if let Some(goal) = config.transaction_size
+                                && goal > 0
+                            {
+                                if transaction_size == 0 {
+                                    consumer.start_transaction(None);
+                                    started_transaction = true;
+                                }
+                                transaction_size += flushed.records;
+                            }
+
                             total += flushed;
                             if let Some(hasher) = hasher.as_mut() {
                                 taken.hash(hasher);
@@ -674,6 +685,14 @@ impl InputGenerator {
                         serde_json::to_value(metadata).unwrap(),
                         hasher.map(|h| h.finish()),
                     );
+                    if !started_transaction
+                        && let Some(goal) = config.transaction_size
+                        && goal > 0
+                        && transaction_size >= goal
+                    {
+                        consumer.commit_transaction();
+                        transaction_size = 0;
+                    }
                     consumer.extended(total, Some(resume), watermarks);
                 }
                 Some(InputReaderCommand::Disconnect) => break,
@@ -693,6 +712,10 @@ impl InputGenerator {
                 {
                     let _ = work_sender.send_blocking(work);
                 } else if in_flight.iter().all(|set| set.is_empty()) {
+                    if transaction_size > 0 {
+                        consumer.commit_transaction();
+                        transaction_size = 0;
+                    }
                     eoi = true;
                     running = false;
                     consumer.eoi();
