@@ -7,8 +7,6 @@
 
 set -eu
 
-GITHUB_REPO="feldera/feldera"
-
 main() {
     need_cmd curl
     need_cmd unzip
@@ -79,25 +77,11 @@ detect_platform() {
 resolve_version() {
     if [ -n "${FDA_VERSION:-}" ]; then
         VERSION="$FDA_VERSION"
-        DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/download/${VERSION}/fda-${TARGET}.zip"
+        DOWNLOAD_URL="https://github.com/feldera/feldera/releases/download/${VERSION}/fda-${TARGET}.zip"
         info "Installing fda ${VERSION}"
     else
-        # Try to get the latest version from GitHub API
-        VERSION=""
-        API_RESPONSE=$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases/latest" 2>/dev/null) || true
-        if [ -n "$API_RESPONSE" ]; then
-            # Extract tag_name from JSON without jq
-            VERSION=$(printf '%s' "$API_RESPONSE" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-        fi
-
-        if [ -n "$VERSION" ]; then
-            DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/download/${VERSION}/fda-${TARGET}.zip"
-            info "Installing fda ${VERSION} (latest)"
-        else
-            # Fall back to latest/download URL if API call fails
-            DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/latest/download/fda-${TARGET}.zip"
-            info "Installing fda (latest)"
-        fi
+        DOWNLOAD_URL="https://github.com/feldera/feldera/releases/latest/download/fda-${TARGET}.zip"
+        info "Installing fda (latest)"
     fi
 }
 
@@ -113,7 +97,7 @@ download_and_install() {
         case "$HTTP_CODE" in
             404)
                 if [ -n "${FDA_VERSION:-}" ]; then
-                    err "version ${FDA_VERSION} not found. Check available versions at https://github.com/$GITHUB_REPO/releases"
+                    err "version ${FDA_VERSION} not found. Check available versions at https://github.com/feldera/feldera/releases"
                 else
                     err "release asset not found. The latest release may not include standalone fda binaries yet."
                 fi
@@ -150,25 +134,32 @@ setup_path() {
 
     case "$SHELL_NAME" in
         bash)
-            if [ -f "$HOME/.bashrc" ]; then
+            if [ -f "$HOME/.bashrc" ] && ! grep -q FELDERA_INSTALL "$HOME/.bashrc"; then
                 printf '\n# Feldera fda CLI\n%b\n' "$RC_LINES" >> "$HOME/.bashrc"
+                # shellcheck disable=SC2088
                 UPDATED_RC="~/.bashrc"
-            elif [ -f "$HOME/.bash_profile" ]; then
+            elif [ -f "$HOME/.bash_profile" ] && ! grep -q FELDERA_INSTALL "$HOME/.bash_profile"; then
                 printf '\n# Feldera fda CLI\n%b\n' "$RC_LINES" >> "$HOME/.bash_profile"
+                # shellcheck disable=SC2088
                 UPDATED_RC="~/.bash_profile"
             fi
             ;;
         zsh)
-            if [ -f "$HOME/.zshrc" ] || [ -d "$HOME" ]; then
+            if [ -f "$HOME/.zshrc" ] && ! grep -q FELDERA_INSTALL "$HOME/.zshrc"; then
                 printf '\n# Feldera fda CLI\n%b\n' "$RC_LINES" >> "$HOME/.zshrc"
+                # shellcheck disable=SC2088
                 UPDATED_RC="~/.zshrc"
             fi
             ;;
         fish)
             FISH_CONFIG="$HOME/.config/fish/config.fish"
             if [ -d "$HOME/.config/fish" ] || mkdir -p "$HOME/.config/fish"; then
-                printf '\n# Feldera fda CLI\nset -gx FELDERA_INSTALL %s\nset -gx PATH $FELDERA_INSTALL/bin $PATH\n' "$FELDERA_INSTALL" >> "$FISH_CONFIG"
-                UPDATED_RC="~/.config/fish/config.fish"
+                if ! grep -q FELDERA_INSTALL "$FISH_CONFIG" 2>/dev/null; then
+                    # shellcheck disable=SC2016
+                    printf '\n# Feldera fda CLI\nset -gx FELDERA_INSTALL %s\nset -gx PATH $FELDERA_INSTALL/bin $PATH\n' "$FELDERA_INSTALL" >> "$FISH_CONFIG"
+                    # shellcheck disable=SC2088
+                    UPDATED_RC="~/.config/fish/config.fish"
+                fi
             fi
             ;;
     esac

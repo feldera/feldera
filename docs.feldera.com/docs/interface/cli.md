@@ -17,6 +17,8 @@ curl -fsSL https://feldera.com/install | bash
 | linux-x86_64 |
 | linux-aarch64 |
 
+Requires glibc >= 2.39 (Ubuntu 24.04+, Debian 13+, Fedora 40+, RHEL 10+).
+
 
 ### Installing a Specific Version
 
@@ -58,11 +60,6 @@ following commands:
 cd crates/fda
 cargo install --path .
 ```
-
-### From release binaries
-
-We supply pre-built binaries for `fda` as part of our release artifacts. You can find them in the
-`feldera-binaries` ZIP file in the [github release page](https://github.com/feldera/feldera/releases/latest).
 
 ### Optional: Shell completion
 
