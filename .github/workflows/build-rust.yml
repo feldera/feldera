@@ -123,10 +123,16 @@ jobs:
           path: build-artifacts
           retention-days: 7
 
-      # Upload binaries to run the product as another artifact
-      - name: Upload release artifacts
+      - name: Upload fda
         uses: actions/upload-artifact@v4
         with:
-          name: feldera-binaries-${{ matrix.target }}
-          path: build-release-artifacts
+          name: fda-${{ matrix.target }}
+          path: build-release-artifacts/fda
+          retention-days: 7
+
+      - name: Upload pipeline-manager
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-manager-${{ matrix.target }}
+          path: build-release-artifacts/pipeline-manager
           retention-days: 7
