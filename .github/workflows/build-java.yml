@@ -60,7 +60,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v5.1.0
         with:
-          role-to-assume: arn:aws:iam::737834633458:role/GhaSql2DbspJarUpload
+          role-to-assume: ${{ vars.SQL2DBSP_UPLOAD_ROLE }}
           role-session-name: gha-${{ github.run_id }}
           aws-region: ${{ vars.SQL2DBSP_S3_REGION }}
 
