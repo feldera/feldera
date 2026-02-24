@@ -18,7 +18,7 @@ export interface ProfileMetricDescription {
 // Base class for all metric representations in the new profile representation
 interface JsonMetricBase {
     metric_id: string;
-    labels: Array<[string, string]>;
+    labels?: Array<[string, string]>;
     value: JsonMetricValue;
 }
 
@@ -720,9 +720,11 @@ export class Measurement {
     static parseValues(metric: JsonMetricBase): Array<Measurement> {
         let metric_id = metric.metric_id;
         let kind = metric_id.split("_").pop(); // count, bytes, etc
-        let labels = metric.labels.map(e => e.join(":")).join(".");
-        if (metric.labels.length !== 0) {
-            metric_id = metric_id + "." + labels;
+        if (metric.labels) {
+           let labels = metric.labels.map(e => e.join(":")).join(".");
+           if (metric.labels.length !== 0) {
+               metric_id = metric_id + "." + labels;
+           }
         }
         switch (kind) {
             case "bytes": {
