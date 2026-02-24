@@ -619,7 +619,15 @@ impl InputGenerator {
                     let n = consumer.max_batch_size();
                     let mut consumed = vec![RowRangeSet::new(); config.plan.len()];
                     let mut watermarks = Vec::new();
+
+                    // Did we start a transaction for this particular `Queue`
+                    // command?  (We will not both start and commit a
+                    // transaction for a single `Queue` command, because one
+                    // goal of supporting transactions for datagen is to test
+                    // the transactions mechanism, which degenerates into a
+                    // no-op if we do both without another step in between.)
                     let mut started_transaction = false;
+
                     while total.records < n {
                         let Some(Completion {
                             batch: Batch { plan_idx, rows },
