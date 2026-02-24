@@ -195,7 +195,11 @@ static CHECKPOINT_WRITTEN_MEGABYTES: ExponentialHistogram = ExponentialHistogram
 /// checkpoint.
 static CHECKPOINT_PROCESSED_RECORDS: AtomicU64 = AtomicU64::new(0);
 
-static COMMIT_UPDATE_INTERVAL: Duration = Duration::from_secs(10);
+/// Interval between updating statistics for transaction commit.
+static COMMIT_UPDATE_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Interval between logging updates about transaction commit.
+static COMMIT_DISPLAY_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Creates a [Controller].
 pub struct ControllerBuilder {
@@ -1423,6 +1427,44 @@ impl Controller {
             &CHECKPOINT_SYNC_PULL_FAILURES,
         );
 
+        metrics.gauge(
+            "transaction_state",
+            "0 when no transaction is active, 1 when a transaction has started, 2 while a transaction is committing.",
+            labels,
+            match self.inner.get_transaction_state() {
+                TransactionState::None => 0,
+                TransactionState::Started(_) => 1,
+                TransactionState::Committing(_) => 2,
+            }
+        );
+        let commit_progress = self
+            .inner
+            .status
+            .global_metrics
+            .commit_progress
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_default();
+        metrics.gauge(
+            "transaction_completed_operators",
+            "Number of operators that have been fully flushed while the current transaction is committing.  This is 0 if no transaction is active, or if a transaction is running but has not yet started committing.",
+            labels,
+            commit_progress.completed
+        );
+        metrics.gauge(
+            "transaction_in_progress_operators",
+            "Number of operators that are currently being flushed while the current transaction is committing.  This is 0 if no transaction is active, or if a transaction is running but has not yet started committing.",
+            labels,
+            commit_progress.in_progress
+        );
+        metrics.gauge(
+            "transaction_remaining_operators",
+            "Number of operators that have not started flushing while the current transaction is committing.  This is 0 if no transaction is active, or if a transaction is running but has not yet started committing.",
+            labels,
+            commit_progress.remaining
+        );
+
         fn write_input_metric<F, M, T>(
             metrics: &mut MetricsWriter<F>,
             labels: &LabelStack,
@@ -1998,7 +2040,47 @@ struct CircuitThread {
     /// record into an endpoint we first need to seek that endpoint.
     input_metadata: HashMap<String, Option<Resume>>,
 
-    last_commit_progress_update: Instant,
+    commit_updates: Option<CommitUpdates>,
+}
+
+struct CommitUpdates {
+    /// Next time we should update global_status.commit_progress.
+    status_update: Instant,
+
+    /// Next time we should display a progress update.
+    display_update: Instant,
+}
+
+impl Default for CommitUpdates {
+    fn default() -> Self {
+        let now = Instant::now();
+        Self {
+            status_update: now,
+            display_update: now + COMMIT_DISPLAY_INTERVAL,
+        }
+    }
+}
+
+impl CommitUpdates {
+    fn should_update_status(&mut self) -> bool {
+        let now = Instant::now();
+        if now >= self.status_update {
+            self.status_update = now + COMMIT_UPDATE_INTERVAL;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn should_display_status(&mut self) -> bool {
+        let now = Instant::now();
+        if now >= self.display_update {
+            self.display_update = now + COMMIT_DISPLAY_INTERVAL;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 /// Detect the following situation:
@@ -2294,7 +2376,7 @@ impl CircuitThread {
             step_sender,
             checkpoint_sender,
             input_metadata: input_metadata.unwrap_or_default(),
-            last_commit_progress_update: Instant::now(),
+            commit_updates: None,
         })
     }
 
@@ -2513,7 +2595,6 @@ impl CircuitThread {
                     self.controller
                         .set_transaction_state(TransactionState::Started(transaction_id));
                 });
-                self.last_commit_progress_update = Instant::now();
             }
             _ => {}
         }
@@ -2533,24 +2614,36 @@ impl CircuitThread {
             debug!("circuit thread: 'circuit.step' returned");
 
             if let TransactionState::Committing(transaction_id) = transaction_state {
-                // Print transaction commit progress every COMMIT_UPDATE_INTERVAL.
-                // This is temporary until we have API/UI for progress reporting.
-                if self.last_commit_progress_update.elapsed() >= COMMIT_UPDATE_INTERVAL {
-                    self.last_commit_progress_update = Instant::now();
-                    match self.circuit.commit_progress() {
-                        Ok(progress) => {
-                            info!(
-                                "Transaction {transaction_id} commit progress: {}",
-                                progress.summary()
-                            )
+                if !committed {
+                    let commit_updates = self.commit_updates.get_or_insert_default();
+                    if commit_updates.should_update_status() {
+                        match self.circuit.commit_progress() {
+                            Ok(progress) => {
+                                let summary = progress.summary();
+                                if commit_updates.should_display_status() {
+                                    info!(
+                                        "Transaction {transaction_id} commit progress: {summary}"
+                                    );
+                                }
+                                self.controller
+                                    .status
+                                    .global_metrics
+                                    .set_commit_progress(Some(summary));
+                            }
+                            Err(e) => {
+                                error!("Error retrieving transaction commit progress: {e}");
+                            }
                         }
-                        Err(e) => error!("Error retrieving transaction commit progress: {e}"),
-                    }
-                }
-                if committed {
+                    };
+                } else {
                     info!("Transaction {transaction_id} committed");
                     self.controller
                         .set_transaction_state(TransactionState::None);
+                    self.commit_updates = None;
+                    self.controller
+                        .status
+                        .global_metrics
+                        .set_commit_progress(None);
                 }
             }
         } else {

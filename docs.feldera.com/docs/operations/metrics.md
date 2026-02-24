@@ -67,7 +67,7 @@ which Feldera is built.
 | Name | Type | Description |
 | :--- | :--- | :---------- |
 | <a name='compaction_stall_duration_seconds'>`compaction_stall_duration_seconds`</a> |counter | Time in seconds a worker was stalled waiting for more merges to complete. |
-| <a name='dbsp_operator_checkpoint_latency_seconds'>`dbsp_operator_checkpoint_latency_seconds`</a> |histogram | Latency of individual operator checkpoint operations in seconds. (Because checkpoints run in parallel across workers, these will not add to `feldera_checkpoint_latency_seconds`.) |
+| <a name='dbsp_operator_checkpoint_latency_seconds'>`dbsp_operator_checkpoint_latency_seconds`</a> |histogram | The time that individual operator checkpoint operations delayed the pipeline, in seconds. (Because checkpoints run in parallel across workers, these will add up to more than `feldera_checkpoint_delay_seconds`.) |
 | <a name='dbsp_runtime_elapsed_seconds_total'>`dbsp_runtime_elapsed_seconds_total`</a> |counter | Time elapsed while the pipeline is executing a step, multiplied by the number of foreground and background threads, in seconds. |
 | <a name='dbsp_step_latency_seconds'>`dbsp_step_latency_seconds`</a> |histogram | Latency of DBSP steps over the last 60 seconds or 1000 steps, whichever is less, in seconds |
 | <a name='dbsp_steps_total'>`dbsp_steps_total`</a> |counter | Total number of DBSP steps executed. |
@@ -163,6 +163,8 @@ These metrics accumulate across checkpoint and resume.
 | <a name='output_connector_errors_encode_total'>`output_connector_errors_encode_total`</a> |counter | Total number of errors encountered encoding records to send. |
 | <a name='output_connector_errors_transport_total'>`output_connector_errors_transport_total`</a> |counter | Total number of errors encountered at the transport layer sending records. |
 | <a name='output_connector_extra_memory_bytes'>`output_connector_extra_memory_bytes`</a> |gauge | Additional memory used by an output connector beyond that used for buffered records. |
+| <a name='output_connector_queued_batches'>`output_connector_queued_batches`</a> |gauge | Number of batches of records currently queued by the output connector. |
+| <a name='output_connector_queued_records'>`output_connector_queued_records`</a> |gauge | Number of records currently queued by the output connector. |
 | <a name='output_connector_records_total'>`output_connector_records_total`</a> |counter | Total number of records sent by the output connector. |
 
 ## Checkpoint Synchronization
@@ -183,3 +185,16 @@ These metrics report the status of [checkpoint synchronization].
 | <a name='checkpoint_sync_push_success'>`checkpoint_sync_push_success`</a> |counter | Number of checkpoints pushed successfully. |
 | <a name='checkpoint_sync_push_transfer_speed_bytes_per_second'>`checkpoint_sync_push_transfer_speed_bytes_per_second`</a> |histogram | Transfer speed when pushing a checkpoint, in bytes per second. |
 | <a name='checkpoint_sync_push_transferred_bytes'>`checkpoint_sync_push_transferred_bytes`</a> |histogram | Bytes transferred when pushing a checkpoint. |
+
+## Transactions
+
+These metrics report the status of [transactions].
+
+[transactions]: /pipelines/transactions.md
+
+| Name | Type | Description |
+| :--- | :--- | :---------- |
+| <a name='transaction_completed_operators'>`transaction_completed_operators`</a> |gauge | Number of operators that have been fully flushed while the current transaction is committing.  This is 0 if no transaction is active, or if a transaction is running but has not yet started committing. |
+| <a name='transaction_in_progress_operators'>`transaction_in_progress_operators`</a> |gauge | Number of operators that are currently being flushed while the current transaction is committing.  This is 0 if no transaction is active, or if a transaction is running but has not yet started committing. |
+| <a name='transaction_remaining_operators'>`transaction_remaining_operators`</a> |gauge | Number of operators that have not started flushing while the current transaction is committing.  This is 0 if no transaction is active, or if a transaction is running but has not yet started committing. |
+| <a name='transaction_state'>`transaction_state`</a> |gauge | 0 when no transaction is active, 1 when a transaction has started, 2 while a transaction is committing. |

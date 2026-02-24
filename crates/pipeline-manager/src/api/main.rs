@@ -427,6 +427,7 @@ It contains the following fields:
         feldera_types::checkpoint::CheckpointFailure,
         feldera_types::checkpoint::CheckpointMetadata,
         feldera_types::transaction::StartTransactionResponse,
+        feldera_types::transaction::CommitProgressSummary,
         feldera_types::time_series::TimeSeries,
         feldera_types::time_series::SampleStatistics,
         feldera_types::suspend::SuspendError,

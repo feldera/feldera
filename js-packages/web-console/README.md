@@ -84,6 +84,29 @@ bun run generate-openapi
 If you get an error like this:
 
 ```
+error: failed to run custom build command for `feldera-rest-api v0.252.0 (/__w/feldera/feldera/crates/rest-api)`
+
+Caused by:
+  process didn't exit successfully: `/__w/feldera/feldera/target/debug/build/feldera-rest-api-a075935d8e5b212d/build-script-build` (exit status: 101)
+  --- stdout
+  cargo:rerun-if-changed=../../openapi.json
+
+  --- stderr
+
+  thread 'main' (297854) panicked at /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/typify-impl-0.1.0/src/convert.rs:1183:32:
+  $ref #/components/schemas/CommitProgressSummary is missing
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+```
+
+then generate a new `openapi.json` with:
+
+```bash
+bun run build-openapi
+```
+
+If you get an error like this:
+
+```
 🔥 Unexpected error occurred. Token "<SomeNewType>" does not exist.
 ```
 

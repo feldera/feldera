@@ -150,6 +150,11 @@ The user can monitor the transaction handling status of the pipeline using the [
 
 When the status is `TransactionInProgress` or `CommitInProgress`, the `transaction_id` attribute contains the current transaction ID.
 
+When the status is `CommitInProgress`, the `commit_progress` attribute
+contains information about progress of the commit.
+
+Transaction status is also available through [metrics](/operations/metrics.md#transactions).
+
 <Tabs>
     <TabItem value="rest" label="REST API">
     ```shell

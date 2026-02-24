@@ -6,7 +6,11 @@ use std::collections::BTreeMap;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{coordination::Step, suspend::SuspendError, transaction::TransactionId};
+use crate::{
+    coordination::Step,
+    suspend::SuspendError,
+    transaction::{CommitProgressSummary, TransactionId},
+};
 
 /// Pipeline state.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -235,6 +239,8 @@ pub struct ExternalGlobalControllerMetrics {
     /// ID of the current transaction or 0 if no transaction is in progress.
     #[schema(value_type = i64)]
     pub transaction_id: TransactionId,
+    /// Progress of the current transaction commit, if one is in progress.
+    pub commit_progress: Option<CommitProgressSummary>,
     /// Entities that initiated the current transaction.
     #[schema(value_type = TransactionInitiators)]
     pub transaction_initiators: ExternalTransactionInitiators,

@@ -2,7 +2,7 @@ use crate::circuit::GlobalNodeId;
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
 use crate::circuit::runtime::ThreadType;
-use crate::circuit::schedule::{CommitProgress, CommitProgressSummary};
+use crate::circuit::schedule::CommitProgress;
 use crate::monitor::visual_graph::Graph;
 use crate::operator::dynamic::balance::{
     BALANCE_TAX, BalancerHint, KEY_DISTRIBUTION_REFRESH_THRESHOLD,
@@ -21,6 +21,7 @@ use feldera_ir::LirCircuit;
 use feldera_storage::{FileCommitter, StorageBackend, StoragePath};
 use feldera_types::checkpoint::CheckpointMetadata;
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
+use feldera_types::transaction::CommitProgressSummary;
 use itertools::Either;
 use serde::Deserialize;
 use serde_json::Value;
