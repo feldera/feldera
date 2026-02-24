@@ -269,4 +269,32 @@ public class Regression2Tests extends SqlIoTest {
                 CREATE MATERIALIZED VIEW v AS SELECT
                 (DATE '2020-06-21', DATE '2020-06-21' + INTERVAL '1' YEAR) CONTAINS TIME '12:00:00' AS res;""");
     }
+
+    @Test
+    public void issue5677() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x INT) WITH ('connectors' = '[{
+                    "format":{
+                        "name":"avro",
+                        "config": {
+                            "update_format":"raw",
+                            "registry_urls": ["http://localhost:18081/"]
+                        }
+                    },
+                }]');
+                """, """
+                Compilation error: 'connectors' is not legal JSON: Unexpected character ('}' (code 125)): was expecting double-quote to start field name
+                    8|    },
+                    9|}]');
+                      ^""");
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x INT) WITH ('connectors' = '[{
+                    <blah>
+                }]');
+                """, """
+                Compilation error: 'connectors' is not legal JSON: Unexpected character ('<' (code 60)): was expecting double-quote to start field name
+                    2|    <blah>
+                          ^
+                    3|}]');""");
+    }
 }

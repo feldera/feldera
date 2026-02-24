@@ -116,4 +116,10 @@ public class SourcePositionRange implements IHasSourcePositionRange {
     public boolean adjacent(SourcePositionRange p) {
         return this.end.line == p.start.line && this.end.column >= p.start.column - 1;
     }
+
+    /** We have a position described by this.  But the first character should not
+     * have position (1, 0), but rather firstCharPosition.  What is the correct position of this? */
+    public SourcePositionRange relativeTo(SourcePosition start) {
+        return new SourcePositionRange(this.start.relativeTo(start), this.end.relativeTo(start));
+    }
 }
