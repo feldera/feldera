@@ -166,7 +166,7 @@ public class BaseSQLTests {
     }
 
     public void statementsFailingInCompilation(String statements, String substring) {
-        Utilities.enforce(!substring.isEmpty());
+        Utilities.enforce(!substring.isEmpty(), () -> "Missing expected error string in test");
         this.statementsFailingInCompilation(statements, substring, false);
     }
 

@@ -631,6 +631,7 @@ public class MetadataTests extends BaseSQLTests {
         Assert.assertNotNull(circuit);
         TestUtil.assertMessagesContain(compiler.messages, """
                 While compiling:
+                    1|CREATE TABLE T(x INT, y INT);
                     2|CREATE VIEW V as (SELECT * FROM T) UNION ALL (SELECT y, x FROM T);
                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
                 warning: Fields reordered: The input collections of a 'UNION' operation have columns with the same names, but in a different order.  This may be a mistake.

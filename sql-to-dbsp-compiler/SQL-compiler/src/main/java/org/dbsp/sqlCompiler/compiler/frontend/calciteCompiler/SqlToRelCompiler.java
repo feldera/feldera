@@ -171,6 +171,7 @@ import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Properties;
+import org.dbsp.util.Result;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -1921,15 +1922,14 @@ public class SqlToRelCompiler implements IWritesLogs {
 
     void validateConnectorsProperty(CalciteObject ignored, boolean isTable, ProgramIdentifier tableView,
                                     SqlFragment keyIgnored, SqlFragment value) {
-        try {
-            JsonNode jsonNode = Utilities.deterministicObjectMapper().readTree(value.getString());
-            if (!jsonNode.isArray()) {
+        Result<JsonNode> jsonNode = Utilities.validateJson(value.getString());
+        if (jsonNode.isOk()) {
+            if (!jsonNode.ok().isArray())
                 throw new CompilationError("Expected an array value for 'connectors'", value.getSourcePosition());
-            }
             int index = 1;
             Set<String> names = new HashSet<>();
             String objectName = (isTable ? "Table " : "View ") + tableView.singleQuote();
-            for (Iterator<JsonNode> it = jsonNode.elements(); it.hasNext(); index++) {
+            for (Iterator<JsonNode> it = jsonNode.ok().elements(); it.hasNext(); index++) {
                 JsonNode connector = it.next();
                 JsonNode name = connector.get("name");
                 if (name == null) {
@@ -1942,14 +1942,20 @@ public class SqlToRelCompiler implements IWritesLogs {
                                 value.getSourcePosition());
                     }
                     if (names.contains(name.asText())) {
-                        throw new CompilationError("Connector " + Utilities.singleQuote(name.asText())  + " for " +
-                                 objectName + " must have a unique name per table/view", value.getSourcePosition());
+                        throw new CompilationError("Connector " + Utilities.singleQuote(name.asText()) + " for " +
+                                objectName + " must have a unique name per table/view", value.getSourcePosition());
                     }
                     names.add(name.asText());
                 }
             }
-        } catch (JsonProcessingException e) {
-            throw new CompilationError("'connectors' is not legal JSON:" + e.getMessage(), value.getSourcePosition());
+        } else {
+            var error = jsonNode.err();
+            SourcePositionRange range = value.getSourcePosition();
+            if (error.range().isValid()) {
+                SourcePositionRange errRange = error.range();
+                range = errRange.relativeTo(range.start);
+            }
+            throw new CompilationError("'connectors' is not legal JSON: " + error.error(), range);
         }
     }
 

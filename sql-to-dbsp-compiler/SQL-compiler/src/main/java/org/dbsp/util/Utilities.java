@@ -25,7 +25,10 @@
 
 package org.dbsp.util;
 
+import com.fasterxml.jackson.core.JsonLocation;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -34,8 +37,9 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.util.TimeString;
-import org.apache.calcite.util.TimestampString;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.jetbrains.annotations.Contract;
 
@@ -223,10 +227,37 @@ public class Utilities {
      * @param unicodeBraces If true use \\u{} for Unicode, otherwise use \\u. */
     public static String doubleQuote(String value, boolean unicodeBraces) {
          return "\"" + escape(value, unicodeBraces) + "\"";
-     }
+    }
+
+    /** Parse and validate a JSON text string, returning either the parsed object or an error to show to the user */
+    public static Result<JsonNode> validateJson(String body) {
+        try {
+            JsonNode node = Utilities.deterministicObjectMapper().readTree(body);
+            return Result.ok(node);
+        } catch (JsonMappingException e) {
+            throw new RuntimeException(e);
+        } catch (JsonProcessingException e) {
+            JsonLocation location = e.getLocation();
+            if (location != null) {
+                String[] lines = body.split("\\r?\\n");
+                int errorLineIdx = location.getLineNr() - 1; // getLineNr() is 1-based
+                if (errorLineIdx < 0 || errorLineIdx >= lines.length) {
+                    // Check if the position is within the document.
+                    return Result.err(new ErrorWithPosition(e.getMessage(), SourcePositionRange.INVALID));
+                }
+
+                return Result.err(new ErrorWithPosition(e.getOriginalMessage(),
+                        new SourcePositionRange(
+                                new SourcePosition(location.getLineNr(), location.getColumnNr()),
+                                new SourcePosition(location.getLineNr(), location.getColumnNr()))));
+            } else {
+                return Result.err(new ErrorWithPosition(e.getMessage(), SourcePositionRange.INVALID));
+            }
+        }
+    }
 
     /** Just adds single quotes around a string.  No escaping is performed. */
-     public static String singleQuote(@Nullable String other) {
+    public static String singleQuote(@Nullable String other) {
          return "'" + other + "'";
      }
 

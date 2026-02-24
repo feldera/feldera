@@ -67,4 +67,13 @@ public class SourcePosition implements Comparable<SourcePosition> {
             return compare;
         return Integer.compare(this.column, other.column);
     }
+
+    /** We have a position described by this.  But the first character should not
+     * have position (1, 0), but rather firstCharPosition.  What is the correct position of this? */
+    public SourcePosition relativeTo(SourcePosition firstCharPosition) {
+        if (this.line == 1)
+            // For the first line the colum needs to be adjusted
+            return new SourcePosition(this.line + firstCharPosition.line - 1, this.column + firstCharPosition.column);
+        return new SourcePosition(this.line + firstCharPosition.line - 1, this.column);
+    }
 }
