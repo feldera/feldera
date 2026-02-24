@@ -610,6 +610,7 @@ pub struct OperatorMeta {
 #[derive(Serialize)]
 struct MetricReadingRef<'a> {
     metric_id: &'a MetricId,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     labels: &'a MetricLabels,
     value: &'a MetaItem,
 }
