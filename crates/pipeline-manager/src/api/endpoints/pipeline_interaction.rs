@@ -112,6 +112,7 @@ pub(crate) async fn http_input(
             req,
             body,
             Some(Duration::from_secs(30)),
+            false,
         )
         .await
 }
@@ -191,7 +192,8 @@ pub(crate) async fn http_output(
             &endpoint,
             req,
             body,
-            None,
+            Some(Duration::MAX),
+            false,
         )
         .await
 }
@@ -673,7 +675,8 @@ pub(crate) async fn get_pipeline_time_series_stream(
             "time_series_stream",
             request,
             body,
-            None,
+            Some(Duration::MAX),
+            false,
         )
         .await
 }
@@ -716,18 +719,20 @@ pub(crate) async fn get_pipeline_circuit_profile(
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
+    body: web::Payload,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
     state
         .runner
-        .forward_http_request_to_pipeline_by_name(
+        .forward_streaming_http_request_to_pipeline_by_name(
             client.as_ref(),
             *tenant_id,
             &pipeline_name,
-            Method::GET,
             "dump_profile",
-            request.query_string(),
+            request,
+            body,
             Some(Duration::from_secs(120)),
+            false,
         )
         .await
 }
@@ -770,21 +775,24 @@ pub(crate) async fn get_pipeline_circuit_json_profile(
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
+    body: web::Payload,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
 
-    // Get the JSON profile from the pipeline and return it directly
-    // The Compress middleware will automatically compress the response based on Accept-Encoding
+    // Stream the JSON profile from the pipeline with compression passthrough.
+    // The pipeline's Compress middleware compresses the response; we pass the
+    // compressed bytes through directly without buffering.
     state
         .runner
-        .forward_http_request_to_pipeline_by_name(
+        .forward_streaming_http_request_to_pipeline_by_name(
             client.as_ref(),
             *tenant_id,
             &pipeline_name,
-            Method::GET,
             "dump_json_profile",
-            request.query_string(),
+            request,
+            body,
             Some(Duration::from_secs(120)),
+            true,
         )
         .await
 }
@@ -1326,6 +1334,7 @@ pub(crate) async fn get_pipeline_samply_profile(
             request,
             body,
             Some(Duration::MAX),
+            false,
         )
         .await
 }
@@ -1766,6 +1775,7 @@ pub(crate) async fn pipeline_adhoc_sql(
                 request,
                 body,
                 Some(Duration::MAX),
+                false,
             )
             .await
     }

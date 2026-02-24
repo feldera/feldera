@@ -28,7 +28,7 @@ use actix_web::{
     get,
     http::StatusCode,
     http::header,
-    post, rt,
+    middleware, post, rt,
     web::{self, Data as WebData, Payload, Query},
 };
 use arrow::ipc::writer::StreamWriter;
@@ -825,6 +825,7 @@ pub fn run_server(
                         res
                     })
                 })
+                .wrap(middleware::Compress::default())
                 .wrap(observability::actix_middleware());
             build_app(app, state)
         }
