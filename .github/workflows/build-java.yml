@@ -2,6 +2,7 @@ name: Build Java Sources
 
 on:
   workflow_call:
+  workflow_dispatch:
 
 jobs:
   build-jar:
