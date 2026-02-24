@@ -7040,6 +7040,49 @@
           "Stopping"
         ]
       },
+      "CommitProgressSummary": {
+        "type": "object",
+        "description": "Summary of transaction commit progress.",
+        "required": [
+          "completed",
+          "in_progress",
+          "remaining",
+          "in_progress_processed_records",
+          "in_progress_total_records"
+        ],
+        "properties": {
+          "completed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of operators that have been fully flushed.",
+            "minimum": 0
+          },
+          "in_progress": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of operators that are currently being flushed.",
+            "minimum": 0
+          },
+          "in_progress_processed_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of records processed by operators that are currently being flushed.",
+            "minimum": 0
+          },
+          "in_progress_total_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total number of records that operators that are currently being flushed need to process.",
+            "minimum": 0
+          },
+          "remaining": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of operators that haven't started flushing.",
+            "minimum": 0
+          }
+        }
+      },
       "CompilationProfile": {
         "type": "string",
         "description": "Enumeration of possible compilation profiles that can be passed to the Rust compiler\nas an argument via `cargo build --profile <>`. A compilation profile affects among\nother things the compilation speed (how long till the program is ready to be run)\nand runtime speed (the performance while running).",
@@ -8243,6 +8286,14 @@
             "format": "int64",
             "description": "Total number of records currently buffered by all endpoints.",
             "minimum": 0
+          },
+          "commit_progress": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CommitProgressSummary"
+              }
+            ],
+            "nullable": true
           },
           "cpu_msecs": {
             "type": "integer",

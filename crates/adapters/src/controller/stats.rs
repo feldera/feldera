@@ -62,7 +62,7 @@ use feldera_types::{
     coordination::Completion,
     suspend::SuspendError,
     time_series::SampleStatistics,
-    transaction::TransactionId,
+    transaction::{CommitProgressSummary, TransactionId},
 };
 use memory_stats::memory_stats;
 use parking_lot::{RwLock, RwLockReadGuard};
@@ -162,6 +162,9 @@ pub struct GlobalControllerMetrics {
 
     /// Entities that initiated the current transaction.
     pub transaction_initiators: Mutex<TransactionInitiators>,
+
+    /// Transaction commit progress, if a transaction is committing.
+    pub commit_progress: Mutex<Option<CommitProgressSummary>>,
 
     /// Time at which the pipeline process started, in seconds since the epoch.
     pub start_time: DateTime<Utc>,
@@ -278,6 +281,7 @@ impl GlobalControllerMetrics {
             transaction_id: Atomic::new(0),
             transaction_status: Atomic::new(TransactionStatus::NoTransaction),
             transaction_initiators: Mutex::new(TransactionInitiators::default()),
+            commit_progress: Mutex::new(None),
             start_time,
             incarnation_uuid,
             initial_start_time,
@@ -386,6 +390,10 @@ impl GlobalControllerMetrics {
 
     fn set_step_requested(&self) -> bool {
         self.step_requested.swap(true, Ordering::AcqRel)
+    }
+
+    pub fn set_commit_progress(&self, commit_progress: Option<CommitProgressSummary>) {
+        *self.commit_progress.lock().unwrap() = commit_progress;
     }
 }
 
@@ -1132,6 +1140,7 @@ impl ControllerStatus {
                 .transaction_status
                 .load(Ordering::Acquire),
             transaction_id: self.global_metrics.transaction_id.load(Ordering::Acquire),
+            commit_progress: self.global_metrics.commit_progress.lock().unwrap().clone(),
             transaction_initiators: self
                 .global_metrics
                 .transaction_initiators
