@@ -134,7 +134,7 @@
     const success = await processZipBundle(
       new Uint8Array(await supportBundle.data.arrayBuffer()),
       pipelineName,
-      'No suitable profiles found. If you are trying to debug a pipeline of an older version try enabling "Collect new data" option.'
+      'No suitable profiles found - download the support bundle and check if it contains the circuit profile. If you are trying to debug a pipeline of an older version try enabling "Collect new data" option.'
     )
     if (!success) {
       downloadProgress.reset()

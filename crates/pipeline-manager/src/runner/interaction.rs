@@ -24,7 +24,7 @@ use crate::db::types::resources_status::ResourcesStatus;
 use actix_http::encoding::Decoder;
 use feldera_types::runtime_status::RuntimeStatus;
 
-/// Max non-streaming HTTP response body returned by the pipeline.
+/// Max non-streaming decompressed HTTP response body size returned by the pipeline.
 /// The awc default is 2MiB, which is not enough to, for example, retrieve
 /// a large circuit profile.
 const RESPONSE_SIZE_LIMIT: usize = 20 * 1024 * 1024;
@@ -263,14 +263,18 @@ impl RunnerInteraction {
         // Build the HTTP response with the original status
         let mut response_builder = HttpResponse::build(status);
 
-        // Add all the same headers as the original response,
-        // excluding `Connection` as this is proxy, as per:
-        // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection#Directives
-        for (header_name, header_value) in original_response
-            .headers()
-            .iter()
-            .filter(|(h, _)| *h != "connection")
-        {
+        // Add all the same headers as the original response, excluding:
+        // - `connection`: hop-by-hop header, must not be forwarded by proxies
+        //   (https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection#Directives)
+        // - `content-encoding`: awc auto-decompresses the body (response_decompress
+        //   defaults to true), so the body we forward is already decoded — forwarding
+        //   the original `Content-Encoding: br` would make the client try to
+        //   decompress an already-plain body.
+        // - `content-length`: after decompression the body size differs from the
+        //   original Content-Length; let actix-web recompute it.
+        for (header_name, header_value) in original_response.headers().iter().filter(|(h, _)| {
+            *h != "connection" && *h != "content-encoding" && *h != "content-length"
+        }) {
             response_builder.insert_header((header_name.clone(), header_value.clone()));
         }
 
@@ -480,10 +484,9 @@ impl RunnerInteraction {
         request: HttpRequest,
         body: Payload,
         timeout: Option<Duration>, // If no timeout is specified, a default timeout is used
+        compress: bool,            // If true, pass through compressed bytes from the pipeline
     ) -> Result<HttpResponse, ManagerError> {
         let (location, _cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
-
-        // Build new request to pipeline
         let url = format_pipeline_url(
             if self.common_config.enable_https {
                 "https"
@@ -495,62 +498,16 @@ impl RunnerInteraction {
             request.query_string(),
         );
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
-        let mut new_request = client
-            .request(request.method().clone(), &url)
-            .timeout(timeout)
-            .force_close();
-
-        // Add headers of the original request
-        for header in request
-            .headers()
-            .into_iter()
-            .filter(|(h, _)| *h != "connection")
-        {
-            new_request = new_request.append_header(header);
-        }
-
-        let new_request = new_request.with_sentry_tracing();
-        let request_str = Self::format_request(&new_request);
-
-        // Perform request to the pipeline
-        let response = new_request.send_stream(body).await.map_err(|e| match e {
-            SendRequestError::Timeout => RunnerError::PipelineInteractionUnreachable {
-                pipeline_name: pipeline_name.to_string(),
-                request: request_str.to_string(),
-                error: format_timeout_error_message(timeout, e),
-            },
-            SendRequestError::Connect(ConnectError::Disconnected) => {
-                RunnerError::PipelineInteractionUnreachable {
-                    pipeline_name: pipeline_name.to_string(),
-                    request: request_str.to_string(),
-                    error: format_disconnected_error_message(e),
-                }
-            }
-            _ => RunnerError::PipelineInteractionUnreachable {
-                pipeline_name: pipeline_name.to_string(),
-                request: request_str.to_string(),
-                error: format!("{e}"),
-            },
-        })?;
-
-        let status = response.status();
-
-        if !status.is_success() {
-            info!(
-                pipeline = pipeline_name,
-                pipeline_id = "N/A",
-                "HTTP request to pipeline returned status code {status}. Failed request: {request_str}"
-            );
-        }
-
-        // Build the new HTTP response with the same status, headers and streaming body
-        let mut builder = HttpResponseBuilder::new(status);
-        for header in response.headers().into_iter() {
-            builder.append_header(header);
-        }
-        // Disable compression to avoid gzip frame buffering that causes clients to block
-        builder.insert_header(actix_http::ContentEncoding::Identity);
-        Ok(builder.streaming(response))
+        streaming_proxy(
+            client,
+            &url,
+            pipeline_name,
+            &request,
+            body.into_inner(),
+            timeout,
+            compress,
+        )
+        .await
     }
 
     pub(crate) async fn get_logs_from_pipeline(
@@ -628,12 +585,340 @@ impl RunnerInteraction {
     }
 
     /// Format HTTP request for logging.
-    fn format_request(request: &ClientRequest) -> String {
+    pub(crate) fn format_request(request: &ClientRequest) -> String {
         format!(
             "{:?} {} {}",
             request.get_version(),
             request.get_method(),
             request.get_uri()
         )
+    }
+}
+
+/// Core streaming proxy: forwards `request` + `body` to `url` and streams
+/// the response back. Extracted from [`RunnerInteraction`] so it can be
+/// unit-tested without a database.
+///
+/// * `compress = false` — strips the client's `Accept-Encoding` and forces
+///   `Content-Encoding: identity` on the response (prevents gzip frame
+///   buffering that blocks streaming clients).
+/// * `compress = true` — keeps `Accept-Encoding` and lets the upstream's
+///   `Content-Encoding` pass through unchanged (compression passthrough).
+pub(crate) async fn streaming_proxy(
+    client: &awc::Client,
+    url: &str,
+    pipeline_name: &str,
+    request: &HttpRequest,
+    body: actix_http::Payload,
+    timeout: Duration,
+    compress: bool,
+) -> Result<HttpResponse, ManagerError> {
+    let mut new_request = client
+        .request(request.method().clone(), url)
+        .timeout(timeout)
+        .force_close()
+        .no_decompress();
+
+    // When compress is false (streaming ingress/egress/etc.): do not request
+    // compressed responses from the pipeline process — `.no_decompress()` above
+    // suppresses awc's own `Accept-Encoding` header, and we strip the client's
+    // `Accept-Encoding` below.  Compression causes gzip frame buffering that
+    // blocks streaming clients (see the `Content-Encoding: identity` override
+    // below).
+    //
+    // When compress is true (profile endpoints): keep the client's
+    // `Accept-Encoding` so the pipeline can compress, and let the pipeline's
+    // `Content-Encoding` header pass through unchanged.
+    for header in request
+        .headers()
+        .into_iter()
+        .filter(|(h, _)| *h != "connection" && (compress || *h != "accept-encoding"))
+    {
+        new_request = new_request.append_header(header);
+    }
+
+    let new_request = new_request.with_sentry_tracing();
+    let request_str = RunnerInteraction::format_request(&new_request);
+
+    // Perform request to the pipeline
+    let response = new_request.send_stream(body).await.map_err(|e| match e {
+        SendRequestError::Timeout => RunnerError::PipelineInteractionUnreachable {
+            pipeline_name: pipeline_name.to_string(),
+            request: request_str.to_string(),
+            error: format_timeout_error_message(timeout, e),
+        },
+        SendRequestError::Connect(ConnectError::Disconnected) => {
+            RunnerError::PipelineInteractionUnreachable {
+                pipeline_name: pipeline_name.to_string(),
+                request: request_str.to_string(),
+                error: format_disconnected_error_message(e),
+            }
+        }
+        _ => RunnerError::PipelineInteractionUnreachable {
+            pipeline_name: pipeline_name.to_string(),
+            request: request_str.to_string(),
+            error: format!("{e}"),
+        },
+    })?;
+
+    let status = response.status();
+
+    if !status.is_success() {
+        info!(
+            pipeline = pipeline_name,
+            pipeline_id = "N/A",
+            "HTTP request to pipeline returned status code {status}. Failed request: {request_str}"
+        );
+    }
+
+    // Build the new HTTP response with the same status, headers and streaming body
+    let mut builder = HttpResponseBuilder::new(status);
+    for header in response.headers().into_iter() {
+        builder.append_header(header);
+    }
+    if !compress {
+        // Disable compression to avoid gzip frame buffering that causes clients to block
+        builder.insert_header(actix_http::ContentEncoding::Identity);
+    }
+    Ok(builder.streaming(response))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::body::to_bytes;
+    use actix_web::test::TestRequest;
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+    use wiremock::matchers::{header_exists, method, path};
+    use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
+
+    fn setup() {
+        crate::ensure_default_crypto_provider();
+    }
+
+    /// Helper: gzip-compress `data`.
+    fn gzip_compress(data: &[u8]) -> Vec<u8> {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+        encoder.write_all(data).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    /// Build `(HttpRequest, actix_http::Payload)` for a GET with optional headers.
+    fn test_get_request(headers: &[(&str, &str)]) -> (HttpRequest, actix_http::Payload) {
+        let mut builder = TestRequest::get();
+        for &(k, v) in headers {
+            builder = builder.insert_header((k, v));
+        }
+        builder.to_http_parts()
+    }
+
+    /// Read the full body of an HttpResponse returned by `streaming_proxy`.
+    async fn read_body(resp: HttpResponse) -> Vec<u8> {
+        to_bytes(resp.into_body()).await.unwrap().to_vec()
+    }
+
+    /// Test: compress=true forwards Accept-Encoding and passes through
+    /// the upstream's Content-Encoding without overriding.
+
+    /// Custom responder that checks the incoming request for Accept-Encoding
+    /// and returns a gzipped body if present, otherwise plain.
+    struct CompressAwareResponder {
+        plain_body: Vec<u8>,
+        gzipped_body: Vec<u8>,
+    }
+
+    impl Respond for CompressAwareResponder {
+        fn respond(&self, request: &Request) -> ResponseTemplate {
+            let accepts_gzip = request
+                .headers
+                .get("accept-encoding")
+                .and_then(|v| v.to_str().ok())
+                .map_or(false, |v| v.contains("gzip"));
+
+            if accepts_gzip {
+                ResponseTemplate::new(200)
+                    .set_body_bytes(self.gzipped_body.clone())
+                    .insert_header("content-type", "application/json")
+                    .insert_header("content-encoding", "gzip")
+            } else {
+                ResponseTemplate::new(200)
+                    .set_body_bytes(self.plain_body.clone())
+                    .insert_header("content-type", "application/json")
+            }
+        }
+    }
+
+    /// compress=true forwards the client's Accept-Encoding to the upstream
+    /// and passes through the upstream's Content-Encoding (gzip) unchanged.
+    #[actix_web::test]
+    async fn test_streaming_proxy_compress_passthrough() {
+        setup();
+        let mock_server = MockServer::start().await;
+
+        let plain = b"{\"profile\":\"data\"}";
+        let gzipped = gzip_compress(plain);
+
+        Mock::given(method("GET"))
+            .and(path("/dump_json_profile"))
+            .respond_with(CompressAwareResponder {
+                plain_body: plain.to_vec(),
+                gzipped_body: gzipped.clone(),
+            })
+            .mount(&mock_server)
+            .await;
+
+        let url = format!("{}/dump_json_profile", mock_server.uri());
+        let client = awc::Client::default();
+
+        // With compress=true and Accept-Encoding: gzip, the proxy should
+        // forward the header and pass through the gzipped response.
+        let (req, payload) = test_get_request(&[("accept-encoding", "gzip")]);
+        let resp = streaming_proxy(
+            &client,
+            &url,
+            "test-pipeline",
+            &req,
+            payload,
+            Duration::from_secs(10),
+            true,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(resp.status(), 200);
+        assert_eq!(
+            resp.headers().get("content-encoding").unwrap(),
+            "gzip",
+            "compress=true must pass through upstream Content-Encoding"
+        );
+        // Body is the raw gzipped bytes (not decompressed by the proxy)
+        let body = read_body(resp).await;
+        assert_eq!(body, gzipped);
+    }
+
+    /// Test that compress=false strips Accept-Encoding from the forwarded request
+    /// (verified via wiremock expect(0)) and forces Content-Encoding: identity
+    /// on the response.
+    #[actix_web::test]
+    async fn test_streaming_proxy_no_compress() {
+        setup();
+        let mock_server = MockServer::start().await;
+
+        let plain = b"{\"profile\":\"data\"}";
+
+        // Fallback: matches any GET regardless of headers, returns the plain body.
+        // Registered first so wiremock checks it *last*.
+        Mock::given(method("GET"))
+            .and(path("/dump_json_profile"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(plain.to_vec())
+                    .insert_header("content-type", "application/json"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        // Registered second so wiremock checks it *first*: if accept-encoding
+        // is present this more-specific mock matches instead of the fallback.
+        // expect(0) makes the test fail if this mock is ever hit — proving
+        // compress=false stripped the header before it reached the upstream.
+        Mock::given(method("GET"))
+            .and(path("/dump_json_profile"))
+            .and(header_exists("accept-encoding"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(0)
+            .named("should-not-receive-accept-encoding")
+            .mount(&mock_server)
+            .await;
+
+        let url = format!("{}/dump_json_profile", mock_server.uri());
+        let client = awc::Client::default();
+
+        // Even though the original client sends Accept-Encoding, compress=false strips it.
+        let (req, payload) = test_get_request(&[("accept-encoding", "gzip")]);
+        let resp = streaming_proxy(
+            &client,
+            &url,
+            "test-pipeline",
+            &req,
+            payload,
+            Duration::from_secs(10),
+            false,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(resp.status(), 200);
+        assert_eq!(
+            resp.headers().get("content-encoding").unwrap(),
+            "identity",
+            "compress=false must force Content-Encoding: identity"
+        );
+        let body = read_body(resp).await;
+        assert_eq!(body, plain);
+        // Dropping mock_server verifies the expect(0) assertion.
+    }
+
+    /// Test: compress=true with a large gzip-compressed response streams
+    /// through correctly (simulates the circuit_json_profile use case).
+    ///
+    /// The body exceeds RESPONSE_SIZE_LIMIT, which would fail on the
+    /// buffered path (forward_http_request_to_pipeline_by_name). This
+    /// test proves streaming_proxy itself handles it; the pipeline-manager
+    /// endpoints are verified to call streaming_proxy by code inspection
+    /// and the Python integration test `test_circuit_json_profile_streaming`
+    /// in test_shared_pipeline.py.
+    #[actix_web::test]
+    async fn test_streaming_proxy_large_compressed_passthrough() {
+        setup();
+        let mock_server = MockServer::start().await;
+
+        // 25 MiB of uncompressed JSON, gzipped
+        let large_json = format!(
+            r#"{{"data":"{}"}}"#,
+            "x".repeat(RESPONSE_SIZE_LIMIT + 5 * 1024 * 1024)
+        );
+        let gzipped = gzip_compress(large_json.as_bytes());
+
+        Mock::given(method("GET"))
+            .and(path("/dump_json_profile"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(gzipped.clone())
+                    .insert_header("content-type", "application/json")
+                    .insert_header("content-encoding", "gzip"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let url = format!("{}/dump_json_profile", mock_server.uri());
+        let client = awc::Client::default();
+
+        let (req, payload) = test_get_request(&[("accept-encoding", "gzip")]);
+        let resp = streaming_proxy(
+            &client,
+            &url,
+            "test-pipeline",
+            &req,
+            payload,
+            Duration::from_secs(30),
+            true,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(resp.status(), 200);
+        assert_eq!(resp.headers().get("content-encoding").unwrap(), "gzip");
+
+        let body = read_body(resp).await;
+        assert_eq!(body.len(), gzipped.len());
+
+        // Verify the gzipped bytes decompress to the original JSON
+        let mut decoder = flate2::read::GzDecoder::new(&body[..]);
+        let mut decompressed = String::new();
+        std::io::Read::read_to_string(&mut decoder, &mut decompressed).unwrap();
+        assert_eq!(decompressed, large_json);
     }
 }
