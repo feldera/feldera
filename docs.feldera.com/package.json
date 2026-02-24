@@ -15,10 +15,10 @@
     "typecheck": "tsc"
   },
   "dependencies": {
-    "@docusaurus/core": "^3.8.0",
-    "@docusaurus/plugin-client-redirects": "3.8.0",
-    "@docusaurus/plugin-content-docs": "^3.8.0",
-    "@docusaurus/preset-classic": "^3.8.0",
+    "@docusaurus/core": "3.9.2",
+    "@docusaurus/plugin-client-redirects": "3.9.2",
+    "@docusaurus/plugin-content-docs": "3.9.2",
+    "@docusaurus/preset-classic": "3.9.2",
     "@mdx-js/react": "^3.0.0",
     "clsx": "^2.0.0",
     "docusaurus-plugin-hubspot": "^1.0.1",
@@ -51,5 +51,29 @@
   },
   "engines": {
     "node": ">=18.0"
+  },
+  "overrides": {
+    "minimatch": "10.2.1",
+    "redocusaurus": {
+      "fast-xml-parser": "5.3.6"
+    },
+    "@docusaurus/core": {
+      "ajv": "6.14.0"
+    },
+    "@docusaurus/plugin-client-redirects": {
+      "ajv": "6.14.0"
+    },
+    "@docusaurus/plugin-content-docs": {
+      "ajv": "6.14.0"
+    },
+    "@docusaurus/preset-classic": {
+      "ajv": "6.14.0"
+    },
+    "docusaurus-preset-openapi": {
+      "ajv": "6.14.0"
+    },
+    "react-loadable-ssr-addon-v5-slorber": {
+      "ajv": "6.14.0"
+    }
   }
 }

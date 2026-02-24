@@ -10,7 +10,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v1
         with:
-          node-version: 18
+          node-version: 25
 
       - name: Install required-version defined in pyproject.toml
         uses: astral-sh/setup-uv@v5
