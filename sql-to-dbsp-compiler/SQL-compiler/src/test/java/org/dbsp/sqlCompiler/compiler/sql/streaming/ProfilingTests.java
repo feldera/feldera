@@ -8,7 +8,6 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.File;
@@ -38,6 +37,7 @@ public class ProfilingTests extends StreamingTestBase {
             mainFile.print(main);
         }
         try {
+            BaseSQLTests.setupCargoLock();
             Utilities.compileAndTestRust(RUST_DIRECTORY, true, "--release");
             // After executing this Rust program the output is in file "mem.txt"
             // It contains three numbers: time taken (ms), memory used (bytes), and late records.

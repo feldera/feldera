@@ -56,6 +56,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -66,10 +67,18 @@ import java.util.regex.Pattern;
 
 /** Base class for SQL-based tests. */
 public class BaseSQLTests {
+    public static final String CARGO_LOCK = "Cargo.lock";
+
     // Debugging: set to true to only compile SQL
     public static final boolean skipRust = false;
     // Debugging: set to only accept some tests
     public static final Predicate<CompilerCircuitStream> acceptTest = x -> true;
+
+    public static void setupCargoLock() throws IOException {
+        Files.copy(Path.of(BaseSQLTests.PROJECT_DIRECTORY, "..", BaseSQLTests.CARGO_LOCK),
+                Path.of(BaseSQLTests.RUST_DIRECTORY, "..", BaseSQLTests.CARGO_LOCK),
+                StandardCopyOption.REPLACE_EXISTING);
+    }
 
     /** Override this method to prepare the tables on
      * which the tests are built. */
@@ -171,8 +180,10 @@ public class BaseSQLTests {
     }
 
     public static void compileAndTestRust(boolean quiet) throws IOException, InterruptedException {
-        if (!BaseSQLTests.skipRust)
+        if (!BaseSQLTests.skipRust) {
+            BaseSQLTests.setupCargoLock();
             Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, quiet);
+        }
     }
 
     /** Compile a set of statements that are expected to give a warning at compile time.
@@ -349,6 +360,7 @@ public class BaseSQLTests {
                 MultiCrateTests.setupCargoLock();
             }
 
+            BaseSQLTests.setupCargoLock();
             if (check) {
                 Utilities.compileAndCheckRust(directory, true, testCrate);
             } else {

@@ -29,7 +29,6 @@ extra/
 # Compiler-generated test files
 temp/*
 !temp/Cargo.toml
-!temp/Cargo.lock
 !temp/src/udf.rs
 !temp/src/README.md
 multi/*
