@@ -3,7 +3,6 @@ package org.dbsp.sqlCompiler.compiler.frontend.parser;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
-import org.dbsp.util.Utilities;
 
 /** A fragment that contains a SqlIdentifier */
 public class SqlFragmentIdentifier implements SqlFragment {
@@ -47,6 +46,6 @@ public class SqlFragmentIdentifier implements SqlFragment {
     }
 
     public ProgramIdentifier toIdentifier() {
-        return Utilities.toIdentifier(this.identifier);
+        return ProgramIdentifier.fromSqlId(this.identifier);
     }
 }

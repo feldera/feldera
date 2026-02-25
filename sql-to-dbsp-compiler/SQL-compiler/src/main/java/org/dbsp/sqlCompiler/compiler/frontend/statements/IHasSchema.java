@@ -53,7 +53,7 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
 
     /** Return the index of the specified column; -1 if columns is not found */
     default int getColumnIndex(SqlIdentifier id) {
-        ProgramIdentifier ident = Utilities.toIdentifier(id);
+        ProgramIdentifier ident = ProgramIdentifier.fromSqlId(id);
         return this.getColumnIndex(ident);
     }
 

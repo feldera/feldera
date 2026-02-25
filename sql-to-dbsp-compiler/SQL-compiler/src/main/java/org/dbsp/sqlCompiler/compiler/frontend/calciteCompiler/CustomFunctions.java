@@ -619,7 +619,7 @@ public class CustomFunctions {
             CalciteObject node, SqlIdentifier name,
             RelDataType signature, RelDataType returnType, @Nullable RexNode body) {
         List<RelDataTypeField> parameterList = signature.getFieldList();
-        ProgramIdentifier functionName = Utilities.toIdentifier(name);
+        ProgramIdentifier functionName = ProgramIdentifier.fromSqlId(name);
         boolean generated = functionName.name().toLowerCase(Locale.ENGLISH).startsWith("jsonstring_as_") || body != null;
         ExternalFunction result = new ExternalFunction(name, returnType, parameterList, body, generated);
         if (this.udf.containsKey(functionName)) {
@@ -641,7 +641,7 @@ public class CustomFunctions {
     public SqlUserDefinedAggregationFunction createAggregate(
             CalciteObject node, SqlIdentifier name, boolean linear,
             RelDataType signature, RelDataType returnType) {
-        ProgramIdentifier functionName = Utilities.toIdentifier(name);
+        ProgramIdentifier functionName = ProgramIdentifier.fromSqlId(name);
         AggregateFunctionDescription description = new AggregateFunctionDescription(name, returnType, signature.getFieldList(), linear);
         if (this.aggregates.containsKey(functionName)) {
             throw new CompilationError("Aggregate with name " +
