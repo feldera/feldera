@@ -93,4 +93,4 @@ playwright/.cache/
 .vite/
 
 # Claude Code
-/.claude/
+/.claude/settings.local.json
