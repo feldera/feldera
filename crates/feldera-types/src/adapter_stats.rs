@@ -283,6 +283,16 @@ pub struct ExternalGlobalControllerMetrics {
     pub total_processed_bytes: u64,
     /// Total number of input records processed to completion.
     pub total_completed_records: u64,
+    /// If the pipeline is stalled because one or more output connectors' output
+    /// buffers are full, this is the number of milliseconds that the current
+    /// stall has lasted.
+    ///
+    /// If this is nonzero, then the output connectors causing the stall can be
+    /// identified by noticing `ExternalOutputEndpointMetrics::queued_records`
+    /// is greater than or equal to `ConnectorConfig::max_queued_records`.
+    ///
+    /// In the ordinary case, the pipeline is not stalled, and this value is 0.
+    pub output_stall_msecs: u64,
     /// Number of steps that have been initiated.
     ///
     /// # Interpretation

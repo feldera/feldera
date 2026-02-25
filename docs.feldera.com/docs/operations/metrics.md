@@ -71,6 +71,8 @@ which Feldera is built.
 | <a name='dbsp_runtime_elapsed_seconds_total'>`dbsp_runtime_elapsed_seconds_total`</a> |counter | Time elapsed while the pipeline is executing a step, multiplied by the number of foreground and background threads, in seconds. |
 | <a name='dbsp_step_latency_seconds'>`dbsp_step_latency_seconds`</a> |histogram | Latency of DBSP steps over the last 60 seconds or 1000 steps, whichever is less, in seconds |
 | <a name='dbsp_steps_total'>`dbsp_steps_total`</a> |counter | Total number of DBSP steps executed. |
+| <a name='output_stall_seconds'>`output_stall_seconds`</a> |gauge | If the pipeline is currently stalled because one or more output connectors' output buffers were full, this is the time in seconds for which it has been stalled.<br/><br/>If the pipeline is not currently stalled, this is zero.<br/><br/>If this is nonzero, then the output connectors causing the stall can be identified by observing which values of `output_connector_queued_records` are greater than or equal to the configured maximum (which defaults to 1,000,000). |
+| <a name='output_stall_seconds_total'>`output_stall_seconds_total`</a> |counter | Time in seconds that the pipeline was stalled because one or more output connectors' output buffers were full.<br/><br/>This value is greater than or equal to `output_stall_seconds`. |
 
 ## Record Processing
 

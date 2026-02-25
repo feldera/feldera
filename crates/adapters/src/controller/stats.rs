@@ -74,7 +74,7 @@ use std::{
         Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::sync::{broadcast, watch};
 use tracing::{debug, error, info, warn};
@@ -237,6 +237,14 @@ pub struct GlobalControllerMetrics {
     /// all outputs derived from it have been processed by all output connectors.
     pub total_completed_records: AtomicU64,
 
+    /// If the pipeline is stalled because one or more output connectors' output
+    /// buffers are full, this is the time at which the stall began.
+    pub output_stall_start: Mutex<Option<Instant>>,
+
+    /// The amount of time the pipeline has stalled due to output connectors,
+    /// excluding any current stall in `output_stall_start`.
+    pub accumulated_output_stall: Mutex<Duration>,
+
     /// Number of steps that have been initiated.
     ///
     /// # Interpretation
@@ -297,6 +305,8 @@ impl GlobalControllerMetrics {
             total_processed_records: AtomicU64::new(processed_records),
             total_processed_bytes: AtomicU64::new(0),
             total_completed_records: AtomicU64::new(processed_records),
+            output_stall_start: Mutex::new(None),
+            accumulated_output_stall: Mutex::new(Duration::ZERO),
             step_requested: AtomicBool::new(false),
             total_initiated_steps: Atomic::new(0),
             total_completed_steps: Atomic::new(0),
@@ -394,6 +404,28 @@ impl GlobalControllerMetrics {
 
     pub fn set_commit_progress(&self, commit_progress: Option<CommitProgressSummary>) {
         *self.commit_progress.lock().unwrap() = commit_progress;
+    }
+
+    pub fn update_output_stall_start(&self, stalled: bool) {
+        let mut output_stall_start = self.output_stall_start.lock().unwrap();
+        if stalled != output_stall_start.is_some() {
+            if let Some(start) = &*output_stall_start {
+                *self.accumulated_output_stall.lock().unwrap() += start.elapsed();
+            }
+            *output_stall_start = stalled.then(Instant::now);
+        }
+    }
+
+    pub fn current_output_stall_duration(&self) -> Duration {
+        self.output_stall_start
+            .lock()
+            .unwrap()
+            .map(|instant| instant.elapsed())
+            .unwrap_or_default()
+    }
+
+    pub fn total_output_stall_duration(&self) -> Duration {
+        self.current_output_stall_duration() + *self.accumulated_output_stall.lock().unwrap()
     }
 }
 
@@ -1201,6 +1233,12 @@ impl ControllerStatus {
                 .global_metrics
                 .total_completed_records
                 .load(Ordering::Acquire),
+            output_stall_msecs: self
+                .global_metrics
+                .current_output_stall_duration()
+                .as_millis()
+                .try_into()
+                .unwrap_or(u64::MAX),
             total_initiated_steps: self.global_metrics.total_initiated_steps(),
             total_completed_steps: self.global_metrics.total_completed_steps(),
             pipeline_complete,
