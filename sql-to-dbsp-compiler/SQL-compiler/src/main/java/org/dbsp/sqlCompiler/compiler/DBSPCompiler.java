@@ -749,8 +749,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     }
 
     static final Pattern ITEM_ERROR = Pattern.compile("Cannot apply 'ITEM' to arguments of type 'ITEM\\(([^,]+), ([^']+)\\)'(.*)", Pattern.DOTALL);
-    static final Pattern HOP_ERROR = Pattern.compile("Cannot apply 'feldera_hop' to arguments of type (.*)", Pattern.DOTALL);
-    static final Pattern TUMBLE_ERROR = Pattern.compile("Cannot apply 'feldera_tumble' to arguments of type (.*)", Pattern.DOTALL);
 
     /** Rewrite the error message for some Calcite errors which are confusing */
     private CompilationError improveErrorMessage(CalciteContextException e) {
@@ -762,24 +760,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 String index = matcher.group(2);
                 String tail = matcher.group(3);
                 String newMessage = "Cannot apply indexing to arguments of type " + source + "[" + index + "]" + tail;
-                return new CompilationError(
-                        newMessage,
-                        new SourcePositionRange(
-                                new SourcePosition(e.getPosLine(), e.getPosColumn()),
-                                new SourcePosition(e.getEndPosLine(), e.getEndPosColumn())));
-            }
-            matcher = HOP_ERROR.matcher(message);
-            if (matcher.find()) {
-                String newMessage = "Cannot apply 'HOP' to arguments of type " + matcher.group(1);
-                return new CompilationError(
-                        newMessage,
-                        new SourcePositionRange(
-                                new SourcePosition(e.getPosLine(), e.getPosColumn()),
-                                new SourcePosition(e.getEndPosLine(), e.getEndPosColumn())));
-            }
-            matcher = TUMBLE_ERROR.matcher(message);
-            if (matcher.find()) {
-                String newMessage = "Cannot apply 'TUMBLE' to arguments of type " + matcher.group(1);
                 return new CompilationError(
                         newMessage,
                         new SourcePositionRange(

@@ -744,21 +744,6 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
     }
 
-    /** The TUMBLE and HOP functions in Calcite have a hardwired precision for their TIMESTAMP types to 3 */
-    static class ReplaceTumbleHop extends SqlShuttle {
-        @Override
-        public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlCall call) {
-            SqlCall newCall = Objects.requireNonNull((SqlCall) super.visit(call));
-            if (call.getOperator().getName().equals(SqlKind.TUMBLE.lowerName))
-                newCall = new SqlBasicCall(FelderaSqlTumbleTableFunction.INSTANCE,
-                        call.getOperandList(), call.getParserPosition());
-            if (call.getOperator().getName().equals(SqlKind.HOP.lowerName))
-                newCall = new SqlBasicCall(FelderaSqlHopTableFunction.INSTANCE,
-                        call.getOperandList(), call.getParserPosition());
-            return newCall;
-        }
-    }
-
     SqlNode postParsingProcess(SqlNode node, boolean saveLines) {
         node.accept(this.getExtraValidator());
         if (this.options.languageOptions.unaryPlusNoop) {
@@ -767,8 +752,6 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
         ReplacePositions replace = new ReplacePositions(!saveLines);
         node = Objects.requireNonNull(replace.visitNode(node));
-        ReplaceTumbleHop fixWindowOperators = new ReplaceTumbleHop();
-        node = Objects.requireNonNull(fixWindowOperators.visitNode(node));
         return node;
     }
 
