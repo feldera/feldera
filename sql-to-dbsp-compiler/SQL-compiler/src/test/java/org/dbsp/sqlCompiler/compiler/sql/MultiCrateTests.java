@@ -26,11 +26,9 @@ import java.sql.SQLException;
 import java.util.Arrays;
 
 public class MultiCrateTests extends BaseSQLTests {
-    static final String CARGO_LOCK = "Cargo.lock";
-
     public static void setupCargoLock() throws IOException {
-        Files.copy(Path.of(BaseSQLTests.PROJECT_DIRECTORY, "..", CARGO_LOCK),
-                Path.of(BaseSQLTests.RUST_MULTI_DIRECTORY, CARGO_LOCK),
+        Files.copy(Path.of(BaseSQLTests.PROJECT_DIRECTORY, "..", BaseSQLTests.CARGO_LOCK),
+                Path.of(BaseSQLTests.RUST_MULTI_DIRECTORY, BaseSQLTests.CARGO_LOCK),
                 StandardCopyOption.REPLACE_EXISTING);
     }
 
