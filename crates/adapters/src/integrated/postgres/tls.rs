@@ -84,6 +84,8 @@ fn set_certs(builder: &mut SslConnectorBuilder, config: &PostgresTlsConfig) -> A
                 .set_certificate_file(location, SslFiletype::PEM)
                 .context("failed to set client certificate")?;
         }
+        // No client cert — ssl_certificate_chain_location only applies to the
+        // client-side cert chain, so nothing more to configure here.
         (None, None) => return Ok(()),
     }
 
@@ -124,6 +126,19 @@ pub(crate) fn make_tls_connector(
     tls: &PostgresTlsConfig,
     endpoint_name: &str,
 ) -> AnyResult<Option<MakeTlsConnector>> {
+    if !tls.has_tls()
+        && (tls.ssl_client_pem.is_some()
+            || tls.ssl_client_location.is_some()
+            || tls.ssl_client_key.is_some()
+            || tls.ssl_client_key_location.is_some())
+    {
+        tracing::warn!(
+            "postgres: TLS client certificate fields are set but no CA certificate \
+             was provided; connecting without TLS. Set `ssl_ca_pem` or \
+             `ssl_ca_location` to enable TLS."
+        );
+    }
+
     if !tls.has_tls() {
         return Ok(None);
     }
