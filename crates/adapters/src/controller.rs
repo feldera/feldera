@@ -1231,6 +1231,16 @@ impl Controller {
             COMPACTION_STALL_TIME_NANOSECONDS.load(Ordering::Relaxed) as f64 / 1_000_000_000.0,
         );
         metrics.counter(
+            "output_stall_seconds_total",
+            "Time in seconds that the pipeline was stalled because one or more output connectors' output buffers were full.\n\nThis value is greater than or equal to `output_stall_seconds`.",
+            labels,
+            status.global_metrics.total_output_stall_duration().as_secs_f64());
+        metrics.gauge(
+            "output_stall_seconds",
+            "If the pipeline is currently stalled because one or more output connectors' output buffers were full, this is the time in seconds for which it has been stalled.\n\nIf the pipeline is not currently stalled, this is zero.\n\nIf this is nonzero, then the output connectors causing the stall can be identified by observing which values of `output_connector_queued_records` are greater than or equal to the configured maximum (which defaults to 1,000,000).",
+            labels,
+            status.global_metrics.current_output_stall_duration().as_secs_f64());
+        metrics.counter(
             "files_created_total",
             "Total number of files created.",
             labels,
@@ -2440,7 +2450,12 @@ impl CircuitThread {
 
             // Backpressure in the output pipeline: wait for room in output buffers to
             // become available.
-            if self.controller.output_buffers_full() {
+            let stalled = self.controller.output_buffers_full();
+            self.controller
+                .status
+                .global_metrics
+                .update_output_stall_start(stalled);
+            if stalled {
                 debug!("circuit thread: park waiting for output buffer space");
                 let warning = output_backpressure_warning
                     .get_or_insert_with(|| LongOperationWarning::new(Duration::from_secs(1)));
