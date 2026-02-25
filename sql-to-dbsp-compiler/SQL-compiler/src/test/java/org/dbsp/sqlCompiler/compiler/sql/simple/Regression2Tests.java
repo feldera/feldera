@@ -264,11 +264,12 @@ public class Regression2Tests extends SqlIoTest {
                 FROM tbl;""", "Function 'SIMILAR TO' not yet implemented");
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-7418")
+    @Test
     public void issue5637() {
-        this.getCCS("""
+        this.statementsFailingInCompilation("""
                 CREATE MATERIALIZED VIEW v AS SELECT
-                (DATE '2020-06-21', DATE '2020-06-21' + INTERVAL '1' YEAR) CONTAINS TIME '12:00:00' AS res;""");
+                (DATE '2020-06-21', DATE '2020-06-21' + INTERVAL '1' YEAR) CONTAINS TIME '12:00:00' AS res;""",
+                "Cannot apply 'CONTAINS' to arguments of type '<RECORDTYPE(DATE EXPR$0, DATE EXPR$1)> CONTAINS <TIME(0)>'");
     }
 
     @Test
