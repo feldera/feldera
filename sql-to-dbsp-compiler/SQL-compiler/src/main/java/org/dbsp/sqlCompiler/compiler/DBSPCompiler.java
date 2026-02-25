@@ -37,7 +37,6 @@ import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.SqlWriter;
 import org.apache.calcite.sql.SqlWriterConfig;
 import org.apache.calcite.sql.dialect.CalciteSqlDialect;
-import org.apache.calcite.sql.dialect.SnowflakeSqlDialect;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.pretty.SqlPrettyWriter;
 import org.apache.calcite.sql.util.SqlOperatorTables;
@@ -282,6 +281,18 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.messages.setErrorContext(range);
     }
 
+    static final String WARNINGS_ARE_ERRORS = "FELDERA_WARNINGS_ARE_ERRORS";
+
+    boolean warningsAreErrors() {
+        return this.metadata.hasValue(WARNINGS_ARE_ERRORS) && !this.metadata.isFalsy(WARNINGS_ARE_ERRORS);
+    }
+
+    boolean warningIsSilenced(String warning) {
+        String variable = warning.replace(" ", "_");
+        variable = "FELDERA_IGNORE_WARNING_" + variable;
+        return this.metadata.hasValue(variable) && !this.metadata.isFalsy(variable);
+    }
+
     /**
      * Report an error or warning during compilation.
      * @param range      Position in source where error is located.
@@ -292,6 +303,12 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
      */
     public void reportProblem(SourcePositionRange range, boolean warning, boolean continuation,
                               String errorType, String message) {
+        if (warning) {
+            if (this.warningIsSilenced(errorType))
+                return;
+        }
+        if (this.warningsAreErrors())
+            warning = false;
         if (warning)
             this.hasWarnings = true;
         this.messages.reportProblem(range, warning, continuation, errorType, message);
@@ -613,8 +630,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     this.relToDBSPCompiler.compile(stat);
                 }
                 if (node.statement() instanceof SqlLateness lateness) {
-                    ProgramIdentifier view = Utilities.toIdentifier(lateness.getView());
-                    ProgramIdentifier column = Utilities.toIdentifier(lateness.getColumn());
+                    ProgramIdentifier view = ProgramIdentifier.fromSqlId(lateness.getView());
+                    ProgramIdentifier column = ProgramIdentifier.fromSqlId(lateness.getColumn());
                     Map<ProgramIdentifier, SqlLateness> perView = this.viewLateness.computeIfAbsent(view, (k) -> new HashMap<>());
                     if (perView.containsKey(column)) {
                         SourcePositionRange range = new SourcePositionRange(lateness.getParserPosition());
@@ -655,7 +672,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
                 RelStatement fe;
                 if (node.statement() instanceof SqlCreateView cv) {
-                    ProgramIdentifier viewName = Utilities.toIdentifier(cv.name);
+                    ProgramIdentifier viewName = ProgramIdentifier.fromSqlId(cv.name);
                     Map<ProgramIdentifier, SqlLateness> late = this.viewLateness.getOrDefault(viewName, new HashMap<>());
                     fe = this.sqlToRelCompiler.compileCreateView(node, late, this.sources);
                 } else {

@@ -1928,4 +1928,22 @@ public class MetadataTests extends BaseSQLTests {
         Assert.assertEquals(0, execute.exitCode);
         Utilities.deleteFile(input, false);
     }
+
+    @Test
+    public void testWarningsAreErrors() {
+        this.statementsFailingInCompilation("""
+            SET FELDERA_WARNINGS_ARE_ERRORS = ON;
+            CREATE TABLE T(x INT, y INT); -- unused column produces a warning
+            CREATE VIEW V AS SELECT x FROM T;""",
+                "Unused column: Column 'y' of table 't' is unused");
+    }
+
+    @Test
+    public void testSilenceWarning() {
+        var cc = this.getCC("""
+            SET FELDERA_IGNORE_WARNING_UNUSED_COLUMN = ON;
+            CREATE TABLE T(x INT, y INT); -- unused column does NOT produce a warning
+            CREATE VIEW V AS SELECT x FROM T;""");
+        Assert.assertEquals(0, cc.compiler.messages.messages.size());
+    }
 }

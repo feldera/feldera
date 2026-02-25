@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
 import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.SqlSetOption;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
@@ -84,6 +85,15 @@ public class ParserTests {
         Assert.assertNotNull(node);
         Assert.assertTrue(node instanceof SqlCreateView);
         Assert.assertSame(SqlCreateView.ViewKind.MATERIALIZED, ((SqlCreateView) node).viewKind);
+    }
+
+    @Test
+    public void testSetOption() throws SqlParseException {
+        SqlToRelCompiler compiler = this.getCompiler();
+        List<ParsedStatement> node = compiler.parseStatements("SET FELDERA_VARIABLE = 1;");
+        Assert.assertNotNull(node);
+        Assert.assertEquals(1, node.size());
+        Assert.assertTrue(node.get(0).statement() instanceof SqlSetOption);
     }
 
     @Test

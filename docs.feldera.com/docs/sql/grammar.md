@@ -28,6 +28,7 @@ statement
   |   createIndexStatement
   |   createAggregateStatement
   |   latenessStatement
+  |   setOptionStatement
 
 columnDecl
   :   column generalType [ INTERNED ]
@@ -639,3 +640,35 @@ Here is an example:
 ```sql
 SELECT EXISTS(ARRAY[1, -12, 3], x -> x > 0)
 ```
+
+## Setting options
+
+```
+setOptionStatement:
+   'SET' identifier = 'ON' | 'OFF' | literal
+```
+
+The SQL statement `SET VARIABLE = value;` can be used to control
+various options that influence the processing of the program.  The
+`value` can be either a SQL literal, or one of the identifiers `ON` or
+`OFF`.  The case of the variable names is ignored.
+
+These options apply globally across the entire SQL program,
+irrespective of their position in the SQL program.
+
+### Supported options
+
+- `FELDERA_WARNINGS_ARE_ERRORS` - setting this option will convert all
+  warnings into errors
+
+- `FELDERA_IGNORE_WARNING_<name>` - for every type of warning there is
+  a corresponding variable which can silence it.  The variable name is
+  obtained by converting the warning name by replacing all spaces with
+  underscores.  Example `SET FELDERA_IGNORE_WARNING_UNUSED_COLUMN = ON`.
+
+### Experimental options
+
+In addition, various "temporary" variables may be introduced (and
+subsequently removed) to enable or disable compiler features that are
+still considered experimental.  Possible example: `SET
+FELDERA_USE_MULTI_JOINS = OFF`.

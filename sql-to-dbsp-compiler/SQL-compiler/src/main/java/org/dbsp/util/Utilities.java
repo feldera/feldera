@@ -316,15 +316,6 @@ public class Utilities {
         return result;
     }
 
-    public static ProgramIdentifier toIdentifier(SqlIdentifier id) {
-        return new ProgramIdentifier(id.getSimple(), identifierIsQuoted(id));
-    }
-
-    public static ProgramIdentifier toIdentifier(List<String> qualifiedName) {
-        String id = Utilities.last(qualifiedName);
-        return new ProgramIdentifier(id);
-    }
-
     /** True when a simple identifier is quoted. */
     public static boolean identifierIsQuoted(SqlIdentifier id) {
         // Heuristic: the name is quoted if it's shorter than the position would indicate.

@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
+import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.HashString;
@@ -296,5 +297,21 @@ public class Regression2Tests extends SqlIoTest {
                     2|    <blah>
                           ^
                     3|}]');""");
+    }
+
+    @Test
+    public void testSet() {
+        // Check that SET does not affect normal identifier resolution
+        var ccs = this.getCCS("""
+                SET T = 1;
+                CREATE TABLE T(x INT);
+                CREATE VIEW V AS SELECT * FROM t;""");
+        ccs.step("INSERT INTO T VALUES (1)", """
+                 x | weight
+                ------------
+                 1 | 1""");
+        Assert.assertEquals(1, ccs.compiler.messages.messages.size());
+        Assert.assertTrue(ccs.compiler.messages.getMessage(0).toString().contains(
+                "warning: Unknown setting: Variable 't' does not control any known settings"));
     }
 }

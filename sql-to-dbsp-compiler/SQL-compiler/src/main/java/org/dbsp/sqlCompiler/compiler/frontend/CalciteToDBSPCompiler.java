@@ -149,6 +149,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.SetOptionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FieldUseMap;
@@ -986,7 +987,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 tableName = descr.getName();
         }
         if (tableName == null) {
-            tableName = Utilities.toIdentifier(tbl.getQualifiedName());
+            tableName = ProgramIdentifier.fromSqlIdList(tbl.getQualifiedName());
         }
         @Nullable
         IInputOperator source = this.getCircuit().getInput(tableName);
@@ -3112,7 +3113,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // Support for INSERT INTO table (SELECT * FROM otherTable)
             RelOptTable relTbl = scan.getTable();
             Utilities.enforce(relTbl != null);
-            ProgramIdentifier sourceTable = Utilities.toIdentifier(relTbl.getQualifiedName());
+            ProgramIdentifier sourceTable = ProgramIdentifier.fromSqlIdList(relTbl.getQualifiedName());
             result = this.tableContents.getTableContents(sourceTable);
         } else if (modify.rel instanceof LogicalValues) {
             this.go(modify.rel);
@@ -3154,7 +3155,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (typeSpec.getTypeNameSpec() instanceof SqlUserDefinedTypeNameSpec) {
             // Assume it is a reference to another struct
             SqlIdentifier identifier = typeSpec.getTypeNameSpec().getTypeName();
-            ProgramIdentifier referred = Utilities.toIdentifier(identifier);
+            ProgramIdentifier referred = ProgramIdentifier.fromSqlId(identifier);
             fieldType = this.compiler.getStructByName(referred);
             if (typeSpec.getNullable() != null && typeSpec.getNullable() && fieldType != null)
                 fieldType = fieldType.withMayBeNull(true);
@@ -3164,11 +3165,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             RelDataTypeField ft = relFields.get(index);
             fieldType = this.convertType(object.getPositionRange(), ft.getType(), true);
         }
-        return new DBSPTypeStruct.Field(
-                object,
-                Utilities.toIdentifier(name),
-                index,
-                fieldType);
+        return new DBSPTypeStruct.Field(object, ProgramIdentifier.fromSqlId(name), index, fieldType);
     }
 
     @Nullable
@@ -3388,6 +3385,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return null;
     }
 
+    @Nullable
+    public DBSPNode compileSetOption(SetOptionStatement stat) {
+        String variable = stat.identifier.name();
+        ExpressionCompiler compiler = new ExpressionCompiler(null, null, this.compiler);
+        DBSPExpression expression = compiler.compile(stat.value);
+        this.compiler.metadata.set(variable, expression, stat.getPosition(), this.compiler);
+        return null;
+    }
+
     @SuppressWarnings("UnusedReturnValue")
     @Nullable
     public DBSPNode compile(RelStatement statement) {
@@ -3423,6 +3429,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         } else if (statement.is(CreateAggregateStatement.class)) {
             CreateAggregateStatement ca = statement.to(CreateAggregateStatement.class);
             return this.compileCreateAggregate(ca);
+        } else if (statement.is(SetOptionStatement.class)) {
+            SetOptionStatement sos = statement.to(SetOptionStatement.class);
+            return this.compileSetOption(sos);
         }
         throw new UnsupportedException(statement.getCalciteObject());
     }

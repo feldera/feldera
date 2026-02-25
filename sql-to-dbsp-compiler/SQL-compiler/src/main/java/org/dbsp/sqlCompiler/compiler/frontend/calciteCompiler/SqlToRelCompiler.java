@@ -85,6 +85,7 @@ import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlInsert;
 import org.apache.calcite.sql.SqlIntervalQualifier;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlMapTypeNameSpec;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
@@ -92,6 +93,7 @@ import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.SqlRowTypeNameSpec;
 import org.apache.calcite.sql.SqlSelect;
+import org.apache.calcite.sql.SqlSetOption;
 import org.apache.calcite.sql.SqlTypeNameSpec;
 import org.apache.calcite.sql.SqlUserDefinedTypeNameSpec;
 import org.apache.calcite.sql.SqlWriter;
@@ -161,6 +163,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.SetOptionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
@@ -831,7 +834,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         SqlTypeNameSpec typeName = typeSpec.getTypeNameSpec();
         if (typeName instanceof SqlUserDefinedTypeNameSpec udtObject) {
             SqlIdentifier identifier = udtObject.getTypeName();
-            ProgramIdentifier name = Utilities.toIdentifier(identifier);
+            ProgramIdentifier name = ProgramIdentifier.fromSqlId(identifier);
             if (this.udt.containsKey(name)) {
                 RelDataType result = Utilities.getExists(this.udt, name);
                 Boolean nullable = typeSpec.getNullable();
@@ -1106,7 +1109,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             throw new RuntimeException(e);
         }
         throw new CompilationError("Cannot subtract " + value + " from column " +
-                Utilities.toIdentifier(columnName).singleQuote() + " of type " +
+                ProgramIdentifier.fromSqlId(columnName).singleQuote() + " of type " +
                 columnType, CalciteObject.create(value));
     }
 
@@ -1376,7 +1379,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             String actualColumnName = field.getName();
             if (id == null)
                 id = new SqlIdentifier(actualColumnName, SqlParserPos.ZERO);
-            ProgramIdentifier colIdentifier = Utilities.toIdentifier(id);
+            ProgramIdentifier colIdentifier = ProgramIdentifier.fromSqlId(id);
             RexNode lateness = null;
             if (perColumnLateness.containsKey(colIdentifier)) {
                 SqlLateness sqlLateness = Utilities.getExists(perColumnLateness, colIdentifier);
@@ -1587,14 +1590,14 @@ public class SqlToRelCompiler implements IWritesLogs {
         public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlIdentifier id) {
             boolean inFrom = inSelectFrom();
             if (id.isSimple()) {
-                ProgramIdentifier simple = Utilities.toIdentifier(id);
+                ProgramIdentifier simple = ProgramIdentifier.fromSqlId(id);
                 if (inFrom && this.declaredViews.containsKey(simple)) {
                     this.usedViews.add(simple);
                     id = id.setName(0, this.getInputName.apply(simple).name());
                 }
             } else {
                 SqlIdentifier component = id.getComponent(0);
-                ProgramIdentifier simple = Utilities.toIdentifier(component);
+                ProgramIdentifier simple = ProgramIdentifier.fromSqlId(component);
                 if (this.declaredViews.containsKey(simple)) {
                     this.usedViews.add(simple);
                     id = id.setName(0, this.getInputName.apply(simple).name());
@@ -1764,7 +1767,7 @@ public class SqlToRelCompiler implements IWritesLogs {
 
     private DropTableStatement compileDropTable(ParsedStatement node) {
         SqlDropTable dt = (SqlDropTable) node.statement();
-        ProgramIdentifier tableName = Utilities.toIdentifier(dt.name);
+        ProgramIdentifier tableName = ProgramIdentifier.fromSqlId(dt.name);
         this.calciteCatalog.dropTable(tableName);
         return new DropTableStatement(node, tableName);
     }
@@ -1786,7 +1789,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         for (SqlNode col: ci.columns) {
             Utilities.enforce(col instanceof SqlIdentifier);
             SqlIdentifier id = (SqlIdentifier) col;
-            ProgramIdentifier pid = Utilities.toIdentifier(id);
+            ProgramIdentifier pid = ProgramIdentifier.fromSqlId(id);
             if (columns.containsKey(pid)) {
                 SqlIdentifier previous = columns.get(pid);
                 this.errorReporter.reportError(new SourcePositionRange(col.getParserPosition()),
@@ -1801,7 +1804,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
         if (!success)
             return null;
-        var result = new CreateIndexStatement(node, Utilities.toIdentifier(ci.name), ci);
+        var result = new CreateIndexStatement(node, ProgramIdentifier.fromSqlId(ci.name), ci);
         success = this.calciteCatalog.addDefinition(result.indexName, this.errorReporter, result);
         if (!success)
             return null;
@@ -1814,7 +1817,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         SqlCreateTable ct = (SqlCreateTable) node.statement();
         if (ct.ifNotExists)
             throw new UnsupportedException("IF NOT EXISTS not supported for TABLE", object);
-        ProgramIdentifier tableName = Utilities.toIdentifier(ct.name);
+        ProgramIdentifier tableName = ProgramIdentifier.fromSqlId(ct.name);
         if (node.visible() && this.functionExists(tableName.name())) {
             this.errorReporter.reportError(new SourcePositionRange(ct.name.getParserPosition()),
                     "Reserved name",
@@ -1996,7 +1999,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         RelRoot relRoot = this.sqlToRel(query);
         List<RelColumnMetadata> columns = this.createViewColumnsMetadata(CalciteObject.create(node),
                 cv.name, relRoot, cv.columnList, cv.viewKind, lateness, sources);
-        ProgramIdentifier viewName = Utilities.toIdentifier(cv.name);
+        ProgramIdentifier viewName = ProgramIdentifier.fromSqlId(cv.name);
         if (columns == null)
             // error
             return null;
@@ -2137,6 +2140,8 @@ public class SqlToRelCompiler implements IWritesLogs {
                     // Already handled elsewhere
                     return null;
                 break;
+            case SET_OPTION:
+                return this.compileSetOption(node);
             default:
                 break;
         }
@@ -2157,8 +2162,8 @@ public class SqlToRelCompiler implements IWritesLogs {
                     Utilities.identifierIsQuoted(cd.name), null, null, null, null, cd.interned);
             columns.add(meta);
         }
-        var result = new DeclareViewStatement(node, Utilities.toIdentifier(cv.name), columns);
-        Utilities.putNew(this.declaredViews, Utilities.toIdentifier(cv.name), result);
+        var result = new DeclareViewStatement(node, ProgramIdentifier.fromSqlId(cv.name), columns);
+        Utilities.putNew(this.declaredViews, ProgramIdentifier.fromSqlId(cv.name), result);
         boolean success = this.calciteCatalog.addTable(result, this.errorReporter);
         if (!success)
             return null;
@@ -2171,7 +2176,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         if (!(table instanceof SqlIdentifier id))
             throw new UnimplementedException("REMOVE not supported for " + table, CalciteObject.create(table));
         TableModifyStatement stat = new TableModifyStatement(
-                node, false, Utilities.toIdentifier(id), remove.getSource());
+                node, false, ProgramIdentifier.fromSqlId(id), remove.getSource());
         RelRoot values = this.sqlToRel(stat.data);
         values = values.withRel(this.optimize(values.rel, true, this.getRelBuilder()));
         stat.setTranslation(values.rel);
@@ -2182,12 +2187,37 @@ public class SqlToRelCompiler implements IWritesLogs {
         SqlInsert insert = (SqlInsert) node.statement();
         SqlNode table = insert.getTargetTable();
         if (!(table instanceof SqlIdentifier id))
-            throw new UnimplementedException("INSERT NOT SUPPORTED FOR " + table, CalciteObject.create(table));
-        TableModifyStatement stat = new TableModifyStatement(node, true, Utilities.toIdentifier(id), insert.getSource());
+            throw new UnimplementedException("INSERT not supported for " + table, CalciteObject.create(table));
+        TableModifyStatement stat = new TableModifyStatement(node, true, ProgramIdentifier.fromSqlId(id), insert.getSource());
         RelRoot values = this.sqlToRel(stat.data);
         values = values.withRel(this.optimize(values.rel, true, this.getRelBuilder()));
         stat.setTranslation(values.rel);
         return stat;
+    }
+
+    private SetOptionStatement compileSetOption(ParsedStatement node) {
+        SqlSetOption set = (SqlSetOption) node.statement();
+        SqlNode variable = set.name();
+        if (!(variable instanceof SqlIdentifier id))
+            throw new UnimplementedException("SET not supported for " + variable, CalciteObject.create(variable));
+        SqlNode value = set.getValue();
+        try {
+            this.errorReporter.setErrorContext(new SourcePositionRange(node.statement().getParserPosition()));
+            if (value instanceof SqlIdentifier valueId) {
+                if (id.isSimple()) {
+                    String name = Objects.requireNonNull(valueId.getSimple());
+                    if (name.equalsIgnoreCase("on"))
+                        value = SqlLiteral.createBoolean(true, value.getParserPosition());
+                    else if (name.equalsIgnoreCase("off"))
+                        value = SqlLiteral.createBoolean(false, value.getParserPosition());
+                }
+            }
+            RexNode expression = this.getConverter().convertExpression(value);
+            this.errorReporter.setErrorContext(SourcePositionRange.INVALID);
+            return new SetOptionStatement(node, ProgramIdentifier.fromSqlId(id), expression);
+        } catch (Throwable ex) {
+            throw new CompilationError(ex.getMessage());
+        }
     }
 
     @Nullable
@@ -2197,7 +2227,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             if (ct.dataType != null) {
                 return this.specToRel(ct.dataType, false);
             } else {
-                ProgramIdentifier name = Utilities.toIdentifier(ct.name);
+                ProgramIdentifier name = ProgramIdentifier.fromSqlId(ct.name);
                 if (SqlToRelCompiler.this.udt.containsKey(name))
                     return SqlToRelCompiler.this.udt.get(name);
                 final RelDataTypeFactory.Builder builder = typeFactory.builder();
@@ -2219,7 +2249,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 return result;
             }
         };
-        ProgramIdentifier typeName = Utilities.toIdentifier(ct.name);
+        ProgramIdentifier typeName = ProgramIdentifier.fromSqlId(ct.name);
         RelDataType relDataType = proto.apply(this.typeFactory);
         this.rootSchema.add(typeName.name(), proto);
         CreateTypeStatement result = new CreateTypeStatement(node, ct, typeName, relDataType);
