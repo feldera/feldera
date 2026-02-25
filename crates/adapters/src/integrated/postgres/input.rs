@@ -420,43 +420,40 @@ impl PostgresInputEndpointInner {
             )
         })?;
 
+        let make_conn_err = |e: tokio_postgres::Error| {
+            ControllerError::invalid_transport_configuration(
+                &endpoint_name,
+                &format!(
+                    "Unable to connect to postgres instance '{}': {e}",
+                    self.config.uri
+                ),
+            )
+        };
+
+        fn spawn_pg_connection_monitor(
+            name: String,
+            conn: impl Future<Output = Result<(), tokio_postgres::Error>> + Send + 'static,
+        ) {
+            tokio::spawn(async move {
+                if let Err(e) = conn.await {
+                    error!("postgres {name}: connection error: {e}");
+                }
+            });
+        }
+
         let client = if let Some(connector) = connector {
             debug!("postgres {endpoint_name}: CA certificate provided, connecting with TLS");
             let (client, connection) = tokio_postgres::connect(self.config.uri.as_str(), connector)
                 .await
-                .map_err(|e| {
-                    ControllerError::invalid_transport_configuration(
-                        &endpoint_name,
-                        &format!(
-                            "Unable to connect to postgres instance '{}': {e}",
-                            self.config.uri
-                        ),
-                    )
-                })?;
-            tokio::spawn(async move {
-                if let Err(e) = connection.await {
-                    error!("postgres {endpoint_name}: connection error: {e}");
-                }
-            });
+                .map_err(make_conn_err)?;
+            spawn_pg_connection_monitor(endpoint_name.clone(), connection);
             client
         } else {
             debug!("postgres {endpoint_name}: no CA certificates provided, connecting without TLS");
             let (client, connection) = tokio_postgres::connect(self.config.uri.as_str(), NoTls)
                 .await
-                .map_err(|e| {
-                    ControllerError::invalid_transport_configuration(
-                        &endpoint_name,
-                        &format!(
-                            "Unable to connect to postgres instance '{}': {e}",
-                            self.config.uri
-                        ),
-                    )
-                })?;
-            tokio::spawn(async move {
-                if let Err(e) = connection.await {
-                    error!("postgres {endpoint_name}: connection error: {e}");
-                }
-            });
+                .map_err(make_conn_err)?;
+            spawn_pg_connection_monitor(endpoint_name.clone(), connection);
             client
         };
 
