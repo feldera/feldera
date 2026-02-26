@@ -92,7 +92,6 @@ class TestPipeline(SharedTestPipeline):
         assert stats.get("inputs") is not None
         assert stats.get("outputs") is not None
 
-    @single_host_only
     def test_case_sensitive_views_listen(self):
         self.pipeline.start_paused()
 
@@ -210,7 +209,6 @@ class TestPipeline(SharedTestPipeline):
         assert df.shape[0] == 100
         self.pipeline.stop(force=True)
 
-    @single_host_only
     def test_local_listen_after_start(self):
         df_students = pd.read_csv("tests/assets/students.csv")
         df_grades = pd.read_csv("tests/assets/grades.csv")
@@ -743,7 +741,6 @@ class TestPipeline(SharedTestPipeline):
             assert len(file_list) >= 2
             assert "manifest.txt" in file_list
 
-    @single_host_only
     def test_url_encoding_ingress_egress_table_name(self):
         """
         CREATE TABLE "t1#a1" (
@@ -790,13 +787,11 @@ class TestPipeline(SharedTestPipeline):
         ]
         self.assertCountEqual(egress_result, expected_egress)
 
-    @single_host_only
     def test_listen_non_existent_view_paused(self):
         self.pipeline.start_paused()
         with self.assertRaises(ValueError):
             self.pipeline.listen("FrodoBagginsInMordor")
 
-    @single_host_only
     def test_listen_non_existent_view_running(self):
         self.pipeline.start()
         with self.assertRaises(ValueError):
