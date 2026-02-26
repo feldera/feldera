@@ -183,7 +183,7 @@ impl Default for Parameters {
 }
 
 trait IntoBlock {
-    fn into_block(self) -> FBuf;
+    fn into_block(self, expected_capacity: usize) -> FBuf;
     fn overwrite_head(&self, dst: &mut FBuf)
     where
         Self: FixedLen;
@@ -193,8 +193,8 @@ impl<B> IntoBlock for B
 where
     B: for<'a> BinWrite<Args<'a> = ()>,
 {
-    fn into_block(self) -> FBuf {
-        let mut block = NoSeek::new(FBuf::with_capacity(4096));
+    fn into_block(self, expected_capacity: usize) -> FBuf {
+        let mut block = NoSeek::new(FBuf::with_capacity(expected_capacity));
         self.write_le(&mut block).unwrap();
         block.into_inner()
     }
@@ -1201,8 +1201,16 @@ impl Writer {
 
         // Write the Bloom filter.
         let filter_location = if let Some(bloom_filter) = &self.bloom_filter {
+            let filter_block = FilterBlockRef::from(bloom_filter);
+            // std::mem::size_of::<FilterBlockRef>() should be an
+            // upper bound: in-memory struct size + bloom payload bytes.
+            let estimated_block_size = (std::mem::size_of::<FilterBlockRef>()
+                + std::mem::size_of_val(filter_block.data))
+            // our binrw min block size is 512 so we round it up to avoid another
+            // reallocation
+            .next_multiple_of(512);
             self.writer
-                .write_block(FilterBlockRef::from(bloom_filter).into_block(), None)?
+                .write_block(filter_block.into_block(estimated_block_size), None)?
                 .1
         } else {
             BlockLocation { offset: 0, size: 0 }
@@ -1236,7 +1244,7 @@ impl Writer {
         }
         let (_block, location) = self
             .writer
-            .write_block(file_trailer.clone().into_block(), None)?;
+            .write_block(file_trailer.clone().into_block(4096), None)?;
         self.writer
             .insert_cache_entry(location, Arc::new(file_trailer));
 
