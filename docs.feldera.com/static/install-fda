@@ -1,9 +1,9 @@
 #!/bin/sh
 # Feldera fda CLI installer
 # Usage:
-#   curl -fsSL https://feldera.com/install | bash
-#   curl -fsSL https://feldera.com/install | FDA_VERSION=v0.247.0 bash
-#   curl -fsSL https://feldera.com/install | FELDERA_INSTALL=/opt/feldera bash
+#   curl -fsSL https://feldera.com/install-fda | bash
+#   curl -fsSL https://feldera.com/install-fda | FDA_VERSION=v0.247.0 bash
+#   curl -fsSL https://feldera.com/install-fda | FELDERA_INSTALL=/opt/feldera bash
 
 set -eu
 
