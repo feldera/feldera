@@ -156,10 +156,21 @@ pub struct PostgresWriterConfig {
     /// Default: `false`
     #[serde(default)]
     pub on_conflict_do_nothing: bool,
+
+    /// The number of threads to use during encoding.
+    ///
+    /// Default: 4
+    #[serde(default = "default_writer_threads")]
+    #[schema(default = default_writer_threads)]
+    pub threads: usize,
 }
 
 fn default_max_buffer_size() -> usize {
     usize::pow(2, 20)
+}
+
+fn default_writer_threads() -> usize {
+    4
 }
 
 fn default_cdc_op_column() -> String {

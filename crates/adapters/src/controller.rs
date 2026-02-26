@@ -174,7 +174,7 @@ pub use stats::{CompletionToken, ControllerStatus, InputEndpointStatus};
 // TODO: make this configurable.
 pub(crate) const MAX_API_CONNECTIONS: u64 = 100;
 
-pub(crate) type EndpointId = u64;
+pub type EndpointId = u64;
 
 /// Runtime of checkpoint operations, in microseconds, including time that the
 /// pipeline could continue executing while the checkpoint completed.

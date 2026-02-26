@@ -51,6 +51,7 @@ iceberg-tests-fs = []
 iceberg-tests-glue = []
 iceberg-tests-rest = []
 fips = ["rustls/fips"]
+bench-mode = []
 
 [dependencies]
 feldera-types = { workspace = true }
@@ -240,3 +241,8 @@ criterion = { workspace = true }
 name = "avro_encoder"
 harness = false
 required-features = ["with-avro"]
+
+[[bench]]
+name = "postgres_output"
+harness = false
+required-features = ["bench-mode"]
