@@ -59,7 +59,6 @@ pub(crate) async fn get_metrics(
                     "",
                     None,
                     None,
-                    false,
                 )
                 .await
             {
