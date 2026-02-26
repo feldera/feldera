@@ -15,8 +15,6 @@ from .helper import (
     get,
 )
 
-from feldera.testutils import single_host_only
-
 
 def _ingress_and_wait_token(
     pipeline: str,
@@ -408,7 +406,6 @@ def test_primary_keys(pipeline_name):
 
 
 @gen_pipeline_name
-@single_host_only
 def test_case_sensitive_tables(pipeline_name):
     """
     - Distinguish between quoted and unquoted identifiers.
@@ -456,7 +453,6 @@ def test_case_sensitive_tables(pipeline_name):
 
 
 @gen_pipeline_name
-@single_host_only
 def test_duplicate_outputs(pipeline_name):
     """
     multiple inserts producing duplicate output values.
@@ -506,7 +502,6 @@ def test_duplicate_outputs(pipeline_name):
 
 
 @gen_pipeline_name
-@single_host_only
 def test_upsert(pipeline_name):
     """
     - Insert several rows with composite PK.
