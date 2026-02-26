@@ -21,6 +21,9 @@
 -- changes in inventory levels. As Feldera processes these updates, it generates a
 -- stream of changes to the query results in real-time.
 
+SET FELDERA_IGNORE_WARNING_UNUSED_COLUMN = 1;
+SET FELDERA_IGNORE_WARNING_ORDER_BY_IS_IGNORED = 1;
+
 -- Warehouse
 CREATE TABLE warehouse (
     id INT NOT NULL PRIMARY KEY,

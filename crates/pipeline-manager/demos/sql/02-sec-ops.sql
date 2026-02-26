@@ -48,6 +48,8 @@
 --   by breaking them up into multiple views, with more complex views being
 --   defined on top of simpler views.
 
+SET FELDERA_IGNORE_WARNING_UNUSED_COLUMN = 1;
+SET FELDERA_IGNORE_WARNING_UNUSED = 1;
 
 -- CI/CD pipelines.
 create table pipeline (

@@ -38,6 +38,7 @@
 --
 -- See https://feldera.com/fraud_detection for more details.
 
+SET FELDERA_IGNORE_WARNING_UNUSED_COLUMN = 1;
 
 -- Credit card holders.
 CREATE TABLE CUSTOMER (

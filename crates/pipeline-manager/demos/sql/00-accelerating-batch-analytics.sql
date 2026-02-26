@@ -24,6 +24,9 @@
 -- ```
 -- * Re-run the `SELECT` query to see the updated results.
 
+SET FELDERA_IGNORE_WARNING_UNUSED_COLUMN = 1;
+SET FELDERA_IGNORE_WARNING_ORDER_BY_IS_IGNORED = 1;
+
 -- Lineitem
 CREATE TABLE LINEITEM (
         L_ORDERKEY    INTEGER NOT NULL,
