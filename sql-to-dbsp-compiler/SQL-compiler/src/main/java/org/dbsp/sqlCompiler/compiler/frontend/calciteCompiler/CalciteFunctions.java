@@ -37,11 +37,16 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
 
     final Func[] toLoad = {
             // Standard operators from SqlStdOperatorTable
-            new Func(SqlStdOperatorTable.UNION, "UNION", SqlLibrary.STANDARD, "grammar#setop", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.UNION_ALL, "UNION ALL", SqlLibrary.STANDARD, "grammar#setop", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.UNION, "UNION", SqlLibrary.STANDARD, "grammar#setop",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
+            new Func(SqlStdOperatorTable.UNION_ALL, "UNION ALL", SqlLibrary.STANDARD, "grammar#setop",
+                    """
+                    runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py|
+                    runtime_aggtest/asof_tests/test_asof_subq.py""", false),
             new Func(SqlStdOperatorTable.EXCEPT, "EXCEPT", SqlLibrary.STANDARD, "grammar#setop", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.EXCEPT_ALL, "EXCEPT ALL", SqlLibrary.STANDARD, "grammar#setop", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.INTERSECT, "INTERSECT", SqlLibrary.STANDARD, "grammar#setop", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.INTERSECT, "INTERSECT", SqlLibrary.STANDARD, "grammar#setop",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
 
             new Func(SqlStdOperatorTable.AND, "AND", SqlLibrary.STANDARD, "boolean#and", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.AS, "AS", SqlLibrary.STANDARD, "grammar#as", FunctionDocumentation.NO_FILE, false),
@@ -89,7 +94,10 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.IS_UNKNOWN, "IS UNKNOWN", SqlLibrary.STANDARD, "operators#isnull", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.IS_EMPTY, "IS EMPTY", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
 
-            new Func(SqlStdOperatorTable.EXISTS, "EXISTS", SqlLibrary.STANDARD, "comparisons#exists", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.EXISTS, "EXISTS", SqlLibrary.STANDARD, "comparisons#exists",
+                    """
+                    runtime_aggtest/illarg_tests/test_{cmp_operators,arr_map_type_fn}.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py""", false),
             new Func(SqlStdOperatorTable.NOT, "NOT", SqlLibrary.STANDARD, "boolean#not", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.UNARY_MINUS, "-", SqlLibrary.STANDARD, "operators#plusminus", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.UNARY_PLUS, "+", SqlLibrary.STANDARD, "operators#plusminus", FunctionDocumentation.NO_FILE, false),
