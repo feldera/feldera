@@ -206,7 +206,30 @@ pub struct ExternalOutputEndpointMetrics {
     /// Number of transport errors.
     pub num_transport_errors: u64,
     /// The number of input records processed by the circuit.
+    ///
+    /// This metric tracks the end-to-end progress of the pipeline: the output
+    /// of this endpoint is equal to the output of the circuit after
+    /// processing `total_processed_input_records` records.
+    ///
+    /// In a multihost pipeline, this count reflects only the input records
+    /// processed on the same host as the output endpoint, which is not usually
+    /// meaningful.
     pub total_processed_input_records: u64,
+    /// The number of steps whose input records have been processed by the
+    /// endpoint.
+    ///
+    /// This is meaningful in a multihost pipeline because steps are
+    /// synchronized across all of the hosts.
+    ///
+    /// # Interpretation
+    ///
+    /// This is a count, not a step number.  If `total_processed_steps` is 0, no
+    /// steps have been processed to completion.  If `total_processed_steps >
+    /// 0`, then the last step whose input records have been processed to
+    /// completion is `total_processed_steps - 1`. A record that was ingested in
+    /// step `n` is fully processed when `total_processed_steps > n`.
+    #[schema(value_type = u64)]
+    pub total_processed_steps: Step,
     /// Extra memory in use beyond that used for queuing records.
     pub memory: u64,
 }

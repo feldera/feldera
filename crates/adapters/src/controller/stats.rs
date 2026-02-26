@@ -1310,6 +1310,10 @@ impl ControllerStatus {
                         .metrics
                         .total_processed_input_records
                         .load(Ordering::Relaxed),
+                    total_processed_steps: output
+                        .metrics
+                        .total_processed_steps
+                        .load(Ordering::Relaxed),
                     memory: output.metrics.memory.load(Ordering::Relaxed),
                 },
                 fatal_error: output.fatal_error.lock().unwrap().clone(),
@@ -2201,10 +2205,17 @@ pub struct OutputEndpointMetrics {
     /// This metric tracks the end-to-end progress of the pipeline: the output
     /// of this endpoint is equal to the output of the circuit after
     /// processing `total_processed_input_records` records.
+    ///
+    /// In a multihost pipeline, this count reflects only the input records
+    /// processed on the same host as the output endpoint, which is not usually
+    /// meaningful.
     pub total_processed_input_records: AtomicU64,
 
     /// The number of steps whose input records have been processed by the
     /// endpoint.
+    ///
+    /// This is meaningful in a multihost pipeline because steps are
+    /// synchronized across all of the hosts.
     ///
     /// # Interpretation
     ///
@@ -2272,6 +2283,7 @@ impl OutputEndpointMetrics {
             total_processed_input_records: self
                 .total_processed_input_records
                 .load(Ordering::Relaxed),
+            total_processed_steps: self.total_processed_steps.load(Ordering::Relaxed),
             memory: self.memory.load(Ordering::Relaxed),
         }
     }

@@ -18,6 +18,8 @@ from .helper import (
 )
 
 from feldera.testutils import FELDERA_TEST_NUM_HOSTS
+from feldera.stats import PipelineStatistics
+from feldera.enums import PipelineStatus
 
 
 def _ingest_lines(name: str, table: str, body: str):
@@ -83,7 +85,6 @@ def test_pipeline_metrics(pipeline_name):
 
 
 @gen_pipeline_name
-@single_host_only
 def test_pipeline_stats(pipeline_name):
     """
     Tests retrieving pipeline statistics via `/stats`.
@@ -102,11 +103,13 @@ def test_pipeline_stats(pipeline_name):
     """.strip()
 
     create_pipeline(pipeline_name, sql)
-    start_pipeline(pipeline_name)
+    start_pipeline_as_paused(pipeline_name)
 
     # Create output connector on v1 (egress)
     r_out = post_no_body(api_url(f"/pipelines/{pipeline_name}/egress/v1"), stream=True)
     assert r_out.status_code == HTTPStatus.OK, (r_out.status_code, r_out.text)
+
+    resume_pipeline(pipeline_name)
 
     # Wait for datagen completion
     time.sleep(3)
@@ -118,37 +121,48 @@ def test_pipeline_stats(pipeline_name):
         time.sleep(1)
     assert _adhoc_count(pipeline_name, "t1") == 5, "Did not ingest expected 5 rows"
 
+    # Wait for all the steps to be completed.
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        r_stats = get(api_url(f"/pipelines/{pipeline_name}/stats"))
+        assert r_stats.status_code == HTTPStatus.OK, (r_stats.status_code, r_stats.text)
+        stats = PipelineStatistics.from_dict(r_stats.json())
+        gm = stats.global_metrics
+        steps = gm.total_initiated_steps
+        if steps is not None and steps == gm.total_completed_steps:
+            break
+
     r_stats = get(api_url(f"/pipelines/{pipeline_name}/stats"))
     assert r_stats.status_code == HTTPStatus.OK, (r_stats.status_code, r_stats.text)
-    stats = r_stats.json()
-    keys = sorted(stats.keys())
+    r_stats_json = r_stats.json()
+    keys = sorted(r_stats_json.keys())
     assert keys == ["global_metrics", "inputs", "outputs", "suspend_error"]
+    stats = PipelineStatistics.from_dict(r_stats_json)
 
-    gm = stats["global_metrics"]
-    assert gm.get("state") == "Running"
-    assert gm.get("total_input_records") == 5
-    assert gm.get("total_processed_records") == 5
-    assert gm.get("pipeline_complete")
-    assert gm.get("buffered_input_records") == 0
-    assert gm.get("buffered_input_bytes") == 0
+    assert gm.state == PipelineStatus.RUNNING
+    assert gm.total_input_records == 5
+    assert gm.total_processed_records == 5
+    assert gm.pipeline_complete
+    assert gm.buffered_input_records == 0
+    assert gm.buffered_input_bytes == 0
 
-    inputs = stats["inputs"]
-    assert isinstance(inputs, list) and len(inputs) == 1
+    inputs = stats.inputs
+    assert len(inputs) == 1
     inp = inputs[0]
-    assert inp.get("config", {}).get("stream") == "t1"
-    assert inp.get("metrics", {}).get("buffered_bytes") == 0
-    assert inp.get("metrics", {}).get("buffered_records") == 0
-    assert inp.get("metrics", {}).get("end_of_input")
-    assert inp.get("metrics", {}).get("num_parse_errors") == 0
-    assert inp.get("metrics", {}).get("num_transport_errors") == 0
-    assert inp.get("metrics", {}).get("total_bytes") == 40
-    assert inp.get("metrics", {}).get("total_records") == 5
+    assert inp.config["stream"] == "t1"
+    assert inp.metrics.buffered_bytes == 0
+    assert inp.metrics.buffered_records == 0
+    assert inp.metrics.end_of_input
+    assert inp.metrics.num_parse_errors == 0
+    assert inp.metrics.num_transport_errors == 0
+    assert inp.metrics.total_bytes == 40
+    assert inp.metrics.total_records == 5
 
-    outputs = stats["outputs"]
-    assert isinstance(outputs, list) and len(outputs) == 1
+    outputs = stats.outputs
+    assert len(outputs) == 1
     out = outputs[0]
-    assert out.get("config", {}).get("stream") == "v1"
-    assert out.get("metrics", {}).get("total_processed_input_records") == 5
+    assert out.config["stream"] == "v1"
+    assert out.metrics.total_processed_steps == steps
 
     # /time_series
     r_ts = get(api_url(f"/pipelines/{pipeline_name}/time_series"))

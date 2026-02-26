@@ -9398,6 +9398,7 @@
           "num_encode_errors",
           "num_transport_errors",
           "total_processed_input_records",
+          "total_processed_steps",
           "memory"
         ],
         "properties": {
@@ -9446,7 +9447,13 @@
           "total_processed_input_records": {
             "type": "integer",
             "format": "int64",
-            "description": "The number of input records processed by the circuit.",
+            "description": "The number of input records processed by the circuit.\n\nThis metric tracks the end-to-end progress of the pipeline: the output\nof this endpoint is equal to the output of the circuit after\nprocessing `total_processed_input_records` records.\n\nIn a multihost pipeline, this count reflects only the input records\nprocessed on the same host as the output endpoint, which is not usually\nmeaningful.",
+            "minimum": 0
+          },
+          "total_processed_steps": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The number of steps whose input records have been processed by the\nendpoint.\n\nThis is meaningful in a multihost pipeline because steps are\nsynchronized across all of the hosts.\n\n# Interpretation\n\nThis is a count, not a step number.  If `total_processed_steps` is 0, no\nsteps have been processed to completion.  If `total_processed_steps >\n0`, then the last step whose input records have been processed to\ncompletion is `total_processed_steps - 1`. A record that was ingested in\nstep `n` is fully processed when `total_processed_steps > n`.",
             "minimum": 0
           },
           "transmitted_bytes": {
