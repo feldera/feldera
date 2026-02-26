@@ -46,6 +46,8 @@
 -- See https://www.feldera.com/docs/tutorials/basics/ for a detailed
 -- description.
 
+SET FELDERA_IGNORE_WARNING_UNUSED_COLUMN = 1;
+
 -- Vendors.
 CREATE TABLE vendor (
     id BIGINT NOT NULL PRIMARY KEY,

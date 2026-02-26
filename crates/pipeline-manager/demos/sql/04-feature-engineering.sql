@@ -22,6 +22,8 @@ Try it!
    Scroll down to the 'user_stats' view to learn more.
 */
 
+SET FELDERA_IGNORE_WARNING_UNUSED_COLUMN = 1;
+
 -- Customers.
 CREATE TABLE customer (
     id BIGINT NOT NULL,

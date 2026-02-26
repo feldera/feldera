@@ -39,6 +39,9 @@ These relationships are governed by the following rules:
 The SQL program below incrementally evaluates these rules over dynamically changing object graph.
 */
 
+SET FELDERA_IGNORE_WARNING_UNUSED_COLUMN = 1;
+SET FELDERA_IGNORE_WARNING_UNUSED = 1;
+
 create table users (
     id bigint not null primary key,
     name string,
