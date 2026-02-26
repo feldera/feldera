@@ -112,7 +112,6 @@ pub(crate) async fn http_input(
             req,
             body,
             Some(Duration::from_secs(30)),
-            false,
         )
         .await
 }
@@ -193,7 +192,6 @@ pub(crate) async fn http_output(
             req,
             body,
             Some(Duration::MAX),
-            false,
         )
         .await
 }
@@ -299,7 +297,6 @@ pub(crate) async fn post_pipeline_input_connector_action(
             "",
             None,
             None,
-            false,
         )
         .await?;
 
@@ -383,7 +380,6 @@ pub(crate) async fn get_pipeline_input_connector_status(
             "",
             None,
             None,
-            false,
         )
         .await?;
 
@@ -458,7 +454,6 @@ pub(crate) async fn get_pipeline_output_connector_status(
             "",
             None,
             None,
-            false,
         )
         .await?;
 
@@ -515,7 +510,6 @@ pub(crate) async fn get_pipeline_stats(
             request.query_string(),
             None,
             None,
-            false,
         )
         .await
 }
@@ -572,7 +566,6 @@ pub(crate) async fn get_pipeline_metrics(
             request.query_string(),
             None,
             None,
-            false,
         )
         .await
 }
@@ -627,7 +620,6 @@ pub(crate) async fn get_pipeline_time_series(
             request.query_string(),
             None,
             None,
-            false,
         )
         .await
 }
@@ -688,7 +680,6 @@ pub(crate) async fn get_pipeline_time_series_stream(
             request,
             body,
             Some(Duration::MAX),
-            false,
         )
         .await
 }
@@ -744,7 +735,6 @@ pub(crate) async fn get_pipeline_circuit_profile(
             request,
             body,
             Some(Duration::from_secs(120)),
-            false,
         )
         .await
 }
@@ -791,9 +781,6 @@ pub(crate) async fn get_pipeline_circuit_json_profile(
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
 
-    // Stream the JSON profile from the pipeline with compression passthrough.
-    // The pipeline's Compress middleware compresses the response; we pass the
-    // compressed bytes through directly without buffering.
     state
         .runner
         .forward_streaming_http_request_to_pipeline_by_name(
@@ -804,7 +791,6 @@ pub(crate) async fn get_pipeline_circuit_json_profile(
             request,
             body,
             Some(Duration::from_secs(120)),
-            true,
         )
         .await
 }
@@ -933,7 +919,6 @@ pub(crate) async fn post_pipeline_rebalance(
             "",
             Some(Duration::from_secs(120)),
             None,
-            false,
         )
         .await
 }
@@ -999,7 +984,6 @@ pub(crate) async fn sync_checkpoint(
                 request.query_string(),
                 Some(Duration::from_secs(120)),
                 None,
-                false,
             )
             .await
     }
@@ -1069,7 +1053,6 @@ pub(crate) async fn checkpoint_pipeline(
                 request.query_string(),
                 Some(Duration::from_secs(120)),
                 None,
-                false,
             )
             .await
     }
@@ -1126,7 +1109,6 @@ pub(crate) async fn get_checkpoint_status(
             request.query_string(),
             None,
             None,
-            false,
         )
         .await
 }
@@ -1182,7 +1164,6 @@ pub(crate) async fn get_checkpoint_sync_status(
             request.query_string(),
             None,
             None,
-            false,
         )
         .await
 }
@@ -1238,7 +1219,6 @@ pub(crate) async fn get_checkpoints(
             request.query_string(),
             None,
             None,
-            false,
         )
         .await
 }
@@ -1296,7 +1276,6 @@ pub(crate) async fn start_samply_profile(
             request.query_string(),
             None,
             None,
-            false,
         )
         .await
 }
@@ -1360,7 +1339,6 @@ pub(crate) async fn get_pipeline_samply_profile(
             request,
             body,
             Some(Duration::MAX),
-            false,
         )
         .await
 }
@@ -1419,7 +1397,6 @@ pub(crate) async fn get_pipeline_heap_profile(
             request.query_string(),
             None,
             None,
-            false,
         )
         .await
 }
@@ -1469,7 +1446,6 @@ pub(crate) async fn post_pipeline_pause(
             "",
             None,
             None,
-            false,
         )
         .await?;
     state
@@ -1535,7 +1511,6 @@ pub(crate) async fn post_pipeline_resume(
             "",
             None,
             None,
-            false,
         )
         .await?;
     state
@@ -1625,7 +1600,6 @@ pub(crate) async fn post_pipeline_activate(
                 request.query_string(),
                 None,
                 None,
-                false,
             )
             .await?;
         state
@@ -1704,7 +1678,6 @@ pub(crate) async fn post_pipeline_approve(
                 request.query_string(),
                 None,
                 None,
-                false,
             )
             .await?;
         state
@@ -1811,7 +1784,6 @@ pub(crate) async fn pipeline_adhoc_sql(
                 request,
                 body,
                 Some(Duration::MAX),
-                false,
             )
             .await
     }
@@ -1883,7 +1855,6 @@ pub(crate) async fn completion_token(
             "",
             None,
             None,
-            false,
         )
         .await?;
 
@@ -1957,7 +1928,6 @@ pub(crate) async fn completion_status(
             request.query_string(),
             None,
             None,
-            false,
         )
         .await?;
 
@@ -2016,7 +1986,6 @@ pub(crate) async fn start_transaction(
             request.query_string(),
             None,
             None,
-            false,
         )
         .await?;
 
@@ -2074,7 +2043,6 @@ pub(crate) async fn commit_transaction(
             request.query_string(),
             None,
             None,
-            false,
         )
         .await?;
 

@@ -820,7 +820,6 @@ async fn fetch_connector_error_stats(
             "",
             Some(std::time::Duration::from_millis(500)),
             None,
-            false,
         )
         .await
         .ok()?;
@@ -1535,7 +1534,6 @@ pub(crate) async fn post_pipeline_stop(
                         "",
                         Some(Duration::from_secs(120)),
                         None,
-                        false,
                     )
                     .await;
                 state

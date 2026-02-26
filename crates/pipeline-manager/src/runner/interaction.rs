@@ -212,7 +212,6 @@ impl RunnerInteraction {
         query_string: &str,
         timeout: Option<Duration>,
         body_size_limit: Option<usize>,
-        compression_passthrough: bool, // If true, disable awc auto-decompression and preserve Content-Encoding
     ) -> Result<HttpResponse, ManagerError> {
         // Perform request to the pipeline
         let url = format_pipeline_url(
@@ -226,20 +225,11 @@ impl RunnerInteraction {
             query_string,
         );
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
-        let request = {
-            let r = client.request(method, &url).timeout(timeout).force_close();
-            // When compression_passthrough=true: disable awc's auto-decompression and explicitly
-            // request gzip from the pipeline. We request gzip here for pipeline-manager's own
-            // internal use (e.g. support_data_collector) rather than negotiating on behalf of a
-            // client. Content-Encoding is then preserved in the forwarded response headers below.
-            // When compression_passthrough=false: use awc's default (auto-decompress, Content-Encoding stripped).
-            let r = if compression_passthrough {
-                r.no_decompress().insert_header(("accept-encoding", "gzip"))
-            } else {
-                r
-            };
-            r.with_sentry_tracing()
-        };
+        let request = client
+            .request(method, &url)
+            .timeout(timeout)
+            .force_close()
+            .with_sentry_tracing();
         let request_str = Self::format_request(&request);
 
         let mut original_response = request.send().await.map_err(|e| match e {
@@ -277,16 +267,13 @@ impl RunnerInteraction {
         // Add all the same headers as the original response, excluding:
         // - `connection`: hop-by-hop header, must not be forwarded by proxies
         //   (https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection#Directives)
-        // - `content-encoding` (when compression_passthrough=false): awc auto-decompresses the body, so
-        //   the body we forward is already decoded — forwarding the original Content-Encoding
-        //   would make the caller try to decompress an already-plain body. When compression_passthrough=true
-        //   the body bytes are left compressed, so Content-Encoding is preserved.
+        // - `content-encoding`: awc auto-decompresses the body, so the body we forward is already
+        //   decoded — forwarding the original Content-Encoding would make the caller try to
+        //   decompress an already-plain body.
         // - `content-length`: after decompression the body size differs from the
         //   original Content-Length; let actix-web recompute it.
         for (header_name, header_value) in original_response.headers().iter().filter(|(h, _)| {
-            *h != "connection"
-                && *h != "content-length"
-                && (compression_passthrough || *h != "content-encoding")
+            *h != "connection" && *h != "content-length" && *h != "content-encoding"
         }) {
             response_builder.insert_header((header_name.clone(), header_value.clone()));
         }
@@ -319,7 +306,6 @@ impl RunnerInteraction {
         query_string: &str,
         timeout: Option<Duration>,
         body_size_limit: Option<usize>,
-        compression_passthrough: bool,
     ) -> Result<HttpResponse, ManagerError> {
         let (location, cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
         let r = RunnerInteraction::forward_http_request_to_pipeline(
@@ -332,7 +318,6 @@ impl RunnerInteraction {
             query_string,
             timeout,
             body_size_limit,
-            compression_passthrough,
         )
         .await;
 
@@ -361,7 +346,6 @@ impl RunnerInteraction {
                         query_string,
                         timeout,
                         body_size_limit,
-                        compression_passthrough,
                     ))
                     .await
                 }
@@ -503,7 +487,6 @@ impl RunnerInteraction {
         request: HttpRequest,
         body: Payload,
         timeout: Option<Duration>, // If no timeout is specified, a default timeout is used
-        compression_passthrough: bool, // If true, pass through compressed bytes from the pipeline
     ) -> Result<HttpResponse, ManagerError> {
         let (location, _cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
         let url = format_pipeline_url(
@@ -517,16 +500,7 @@ impl RunnerInteraction {
             request.query_string(),
         );
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
-        streaming_proxy(
-            client,
-            &url,
-            pipeline_name,
-            &request,
-            body,
-            timeout,
-            compression_passthrough,
-        )
-        .await
+        streaming_proxy(client, &url, pipeline_name, &request, body, timeout).await
     }
 
     pub(crate) async fn get_logs_from_pipeline(
@@ -618,11 +592,8 @@ impl RunnerInteraction {
 /// the response back. Extracted from [`RunnerInteraction`] so it can be
 /// unit-tested without a database.
 ///
-/// * `compression_passthrough = false` — strips the client's `Accept-Encoding` and forces
-///   `Content-Encoding: identity` on the response (prevents gzip frame
-///   buffering that blocks streaming clients).
-/// * `compression_passthrough = true` — keeps `Accept-Encoding` and lets the upstream's
-///   `Content-Encoding` pass through unchanged (compression passthrough).
+/// Strips the client's `Accept-Encoding` and forces `Content-Encoding: identity`
+/// on the response (prevents gzip frame buffering that blocks streaming clients).
 pub(crate) async fn streaming_proxy(
     client: &awc::Client,
     url: &str,
@@ -630,7 +601,6 @@ pub(crate) async fn streaming_proxy(
     request: &HttpRequest,
     body: Payload,
     timeout: Duration,
-    compression_passthrough: bool,
 ) -> Result<HttpResponse, ManagerError> {
     let mut new_request = client
         .request(request.method().clone(), url)
@@ -638,20 +608,14 @@ pub(crate) async fn streaming_proxy(
         .force_close()
         .no_decompress();
 
-    // When compression_passthrough is false (streaming ingress/egress/etc.): do not request
-    // compressed responses from the pipeline process — `.no_decompress()` above
-    // suppresses awc's own `Accept-Encoding` header, and we strip the client's
-    // `Accept-Encoding` below.  Compression causes gzip frame buffering that
-    // blocks streaming clients (see the `Content-Encoding: identity` override
-    // below).
-    //
-    // When compression_passthrough is true (profile endpoints): keep the client's
-    // `Accept-Encoding` so the pipeline can compression_passthrough, and let the pipeline's
-    // `Content-Encoding` header pass through unchanged.
+    // Strip `Accept-Encoding` to prevent compressed responses from the pipeline —
+    // compression causes gzip frame buffering that blocks streaming clients (see the
+    // `Content-Encoding: identity` override below). `.no_decompress()` above suppresses
+    // awc's own `Accept-Encoding` header; here we also strip the client's.
     for header in request
         .headers()
         .into_iter()
-        .filter(|(h, _)| *h != "connection" && (compression_passthrough || *h != "accept-encoding"))
+        .filter(|(h, _)| *h != "connection" && *h != "accept-encoding")
     {
         new_request = new_request.append_header(header);
     }
@@ -695,10 +659,8 @@ pub(crate) async fn streaming_proxy(
     for header in response.headers().into_iter() {
         builder.append_header(header);
     }
-    if !compression_passthrough {
-        // Disable compression to avoid gzip frame buffering that causes clients to block
-        builder.insert_header(actix_http::ContentEncoding::Identity);
-    }
+    // Disable compression to avoid gzip frame buffering that causes clients to block
+    builder.insert_header(actix_http::ContentEncoding::Identity);
     Ok(builder.streaming(response))
 }
 
@@ -707,21 +669,11 @@ mod tests {
     use super::*;
     use actix_web::body::to_bytes;
     use actix_web::test::TestRequest;
-    use flate2::write::GzEncoder;
-    use flate2::Compression;
-    use std::io::Write;
     use wiremock::matchers::{header_exists, method, path};
-    use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn setup() {
         crate::ensure_default_crypto_provider();
-    }
-
-    /// Helper: gzip-compress `data`.
-    fn gzip_compress(data: &[u8]) -> Vec<u8> {
-        let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
-        encoder.write_all(data).unwrap();
-        encoder.finish().unwrap()
     }
 
     /// Build `(HttpRequest, web::Payload)` for a GET with optional headers.
@@ -745,91 +697,11 @@ mod tests {
         to_bytes(resp.into_body()).await.unwrap().to_vec()
     }
 
-    /// Test: compression_passthrough=true forwards Accept-Encoding and passes through
-    /// the upstream's Content-Encoding without overriding.
-
-    /// Custom responder that checks the incoming request for Accept-Encoding
-    /// and returns a gzipped body if present, otherwise plain.
-    struct CompressAwareResponder {
-        plain_body: Vec<u8>,
-        gzipped_body: Vec<u8>,
-    }
-
-    impl Respond for CompressAwareResponder {
-        fn respond(&self, request: &Request) -> ResponseTemplate {
-            let accepts_gzip = request
-                .headers
-                .get("accept-encoding")
-                .and_then(|v| v.to_str().ok())
-                .map_or(false, |v| v.contains("gzip"));
-
-            if accepts_gzip {
-                ResponseTemplate::new(200)
-                    .set_body_bytes(self.gzipped_body.clone())
-                    .insert_header("content-type", "application/json")
-                    .insert_header("content-encoding", "gzip")
-            } else {
-                ResponseTemplate::new(200)
-                    .set_body_bytes(self.plain_body.clone())
-                    .insert_header("content-type", "application/json")
-            }
-        }
-    }
-
-    /// compression_passthrough=true forwards the client's Accept-Encoding to the upstream
-    /// and passes through the upstream's Content-Encoding (gzip) unchanged.
-    #[ignore = "enable when pipeline server will use middleware::Compress"]
-    #[actix_web::test]
-    async fn test_streaming_proxy_compress_passthrough() {
-        setup();
-        let mock_server = MockServer::start().await;
-
-        let plain = b"{\"profile\":\"data\"}";
-        let gzipped = gzip_compress(plain);
-
-        Mock::given(method("GET"))
-            .and(path("/dump_json_profile"))
-            .respond_with(CompressAwareResponder {
-                plain_body: plain.to_vec(),
-                gzipped_body: gzipped.clone(),
-            })
-            .mount(&mock_server)
-            .await;
-
-        let url = format!("{}/dump_json_profile", mock_server.uri());
-        let client = awc::Client::default();
-
-        // With compression_passthrough=true and Accept-Encoding: gzip, the proxy should
-        // forward the header and pass through the gzipped response.
-        let (req, payload) = test_get_request(&[("accept-encoding", "gzip")]);
-        let resp = streaming_proxy(
-            &client,
-            &url,
-            "test-pipeline",
-            &req,
-            payload,
-            Duration::from_secs(10),
-            true,
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(resp.status(), 200);
-        assert_eq!(
-            resp.headers().get("content-encoding").unwrap(),
-            "gzip",
-            "compression_passthrough=true must pass through upstream Content-Encoding"
-        );
-        // Body is the raw gzipped bytes (not decompressed by the proxy)
-        let body = read_body(resp).await;
-        assert_eq!(body, gzipped);
-    }
-
-    /// Test that compression_passthrough=false strips Accept-Encoding from the forwarded request
+    /// Test that streaming_proxy strips Accept-Encoding from the forwarded request
     /// (verified via wiremock expect(0)) and forces Content-Encoding: identity
     /// on the response.
     #[actix_web::test]
-    async fn test_streaming_proxy_no_compress() {
+    async fn test_streaming_proxy() {
         setup();
         let mock_server = MockServer::start().await;
 
@@ -849,8 +721,8 @@ mod tests {
 
         // Registered second so wiremock checks it *first*: if accept-encoding
         // is present this more-specific mock matches instead of the fallback.
-        // expect(0) makes the test fail if this mock is ever hit — proving
-        // compression_passthrough=false stripped the header before it reached the upstream.
+        // expect(0) makes the test fail if this mock is ever hit — proving the
+        // proxy stripped the header before it reached the upstream.
         Mock::given(method("GET"))
             .and(path("/dump_json_profile"))
             .and(header_exists("accept-encoding"))
@@ -863,7 +735,7 @@ mod tests {
         let url = format!("{}/dump_json_profile", mock_server.uri());
         let client = awc::Client::default();
 
-        // Even though the original client sends Accept-Encoding, compression_passthrough=false strips it.
+        // Even though the original client sends Accept-Encoding, the proxy strips it.
         let (req, payload) = test_get_request(&[("accept-encoding", "gzip")]);
         let resp = streaming_proxy(
             &client,
@@ -872,7 +744,6 @@ mod tests {
             &req,
             payload,
             Duration::from_secs(10),
-            false,
         )
         .await
         .unwrap();
@@ -881,67 +752,10 @@ mod tests {
         assert_eq!(
             resp.headers().get("content-encoding").unwrap(),
             "identity",
-            "compression_passthrough=false must force Content-Encoding: identity"
+            "streaming_proxy must force Content-Encoding: identity"
         );
         let body = read_body(resp).await;
         assert_eq!(body, plain);
         // Dropping mock_server verifies the expect(0) assertion.
-    }
-
-    /// Test: compression_passthrough=true with a large gzip-compressed response streams
-    /// through correctly (simulates the circuit_json_profile use case).
-    ///
-    /// The body exceeds RESPONSE_SIZE_LIMIT. This verifies that streaming_proxy
-    /// handles large compressed responses without buffering limits.
-    #[actix_web::test]
-    async fn test_streaming_proxy_large_compressed_passthrough() {
-        setup();
-        let mock_server = MockServer::start().await;
-
-        // Limit + 5 MiB of uncompressed JSON, gzipped
-        let large_json = format!(
-            r#"{{"data":"{}"}}"#,
-            "x".repeat(RESPONSE_SIZE_LIMIT + 5 * 1024 * 1024)
-        );
-        let gzipped = gzip_compress(large_json.as_bytes());
-
-        Mock::given(method("GET"))
-            .and(path("/dump_json_profile"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_bytes(gzipped.clone())
-                    .insert_header("content-type", "application/json")
-                    .insert_header("content-encoding", "gzip"),
-            )
-            .mount(&mock_server)
-            .await;
-
-        let url = format!("{}/dump_json_profile", mock_server.uri());
-        let client = awc::Client::default();
-
-        let (req, payload) = test_get_request(&[("accept-encoding", "gzip")]);
-        let resp = streaming_proxy(
-            &client,
-            &url,
-            "test-pipeline",
-            &req,
-            payload,
-            Duration::from_secs(30),
-            true,
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(resp.status(), 200);
-        assert_eq!(resp.headers().get("content-encoding").unwrap(), "gzip");
-
-        let body = read_body(resp).await;
-        assert_eq!(body.len(), gzipped.len());
-
-        // Verify the gzipped bytes decompress to the original JSON
-        let mut decoder = flate2::read::GzDecoder::new(&body[..]);
-        let mut decompressed = String::new();
-        std::io::Read::read_to_string(&mut decoder, &mut decompressed).unwrap();
-        assert_eq!(decompressed, large_json);
     }
 }
