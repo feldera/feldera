@@ -298,6 +298,8 @@ pub(crate) async fn post_pipeline_input_connector_action(
             &format!("input_endpoints/{encoded_endpoint_name}/{action}"),
             "",
             None,
+            None,
+            false,
         )
         .await?;
 
@@ -380,6 +382,8 @@ pub(crate) async fn get_pipeline_input_connector_status(
             &format!("input_endpoints/{encoded_endpoint_name}/stats"),
             "",
             None,
+            None,
+            false,
         )
         .await?;
 
@@ -453,6 +457,8 @@ pub(crate) async fn get_pipeline_output_connector_status(
             &format!("output_endpoints/{encoded_endpoint_name}/stats"),
             "",
             None,
+            None,
+            false,
         )
         .await?;
 
@@ -508,6 +514,8 @@ pub(crate) async fn get_pipeline_stats(
             "stats",
             request.query_string(),
             None,
+            None,
+            false,
         )
         .await
 }
@@ -563,6 +571,8 @@ pub(crate) async fn get_pipeline_metrics(
             "metrics",
             request.query_string(),
             None,
+            None,
+            false,
         )
         .await
 }
@@ -616,6 +626,8 @@ pub(crate) async fn get_pipeline_time_series(
             "time_series",
             request.query_string(),
             None,
+            None,
+            false,
         )
         .await
 }
@@ -920,6 +932,8 @@ pub(crate) async fn post_pipeline_rebalance(
             "rebalance",
             "",
             Some(Duration::from_secs(120)),
+            None,
+            false,
         )
         .await
 }
@@ -984,6 +998,8 @@ pub(crate) async fn sync_checkpoint(
                 "checkpoint/sync",
                 request.query_string(),
                 Some(Duration::from_secs(120)),
+                None,
+                false,
             )
             .await
     }
@@ -1052,6 +1068,8 @@ pub(crate) async fn checkpoint_pipeline(
                 "checkpoint",
                 request.query_string(),
                 Some(Duration::from_secs(120)),
+                None,
+                false,
             )
             .await
     }
@@ -1107,6 +1125,8 @@ pub(crate) async fn get_checkpoint_status(
             "checkpoint_status",
             request.query_string(),
             None,
+            None,
+            false,
         )
         .await
 }
@@ -1161,6 +1181,8 @@ pub(crate) async fn get_checkpoint_sync_status(
             "checkpoint/sync_status",
             request.query_string(),
             None,
+            None,
+            false,
         )
         .await
 }
@@ -1215,6 +1237,8 @@ pub(crate) async fn get_checkpoints(
             "checkpoints",
             request.query_string(),
             None,
+            None,
+            false,
         )
         .await
 }
@@ -1271,6 +1295,8 @@ pub(crate) async fn start_samply_profile(
             "samply_profile",
             request.query_string(),
             None,
+            None,
+            false,
         )
         .await
 }
@@ -1392,6 +1418,8 @@ pub(crate) async fn get_pipeline_heap_profile(
             "heap_profile",
             request.query_string(),
             None,
+            None,
+            false,
         )
         .await
 }
@@ -1440,6 +1468,8 @@ pub(crate) async fn post_pipeline_pause(
             "pause",
             "",
             None,
+            None,
+            false,
         )
         .await?;
     state
@@ -1504,6 +1534,8 @@ pub(crate) async fn post_pipeline_resume(
             "start", // For backward compatibility this is not changed
             "",
             None,
+            None,
+            false,
         )
         .await?;
     state
@@ -1592,6 +1624,8 @@ pub(crate) async fn post_pipeline_activate(
                 "activate",
                 request.query_string(),
                 None,
+                None,
+                false,
             )
             .await?;
         state
@@ -1669,6 +1703,8 @@ pub(crate) async fn post_pipeline_approve(
                 "approve",
                 request.query_string(),
                 None,
+                None,
+                false,
             )
             .await?;
         state
@@ -1846,6 +1882,8 @@ pub(crate) async fn completion_token(
             &format!("input_endpoints/{encoded_endpoint_name}/completion_token"),
             "",
             None,
+            None,
+            false,
         )
         .await?;
 
@@ -1918,6 +1956,8 @@ pub(crate) async fn completion_status(
             "completion_status",
             request.query_string(),
             None,
+            None,
+            false,
         )
         .await?;
 
@@ -1975,6 +2015,8 @@ pub(crate) async fn start_transaction(
             "start_transaction",
             request.query_string(),
             None,
+            None,
+            false,
         )
         .await?;
 
@@ -2031,6 +2073,8 @@ pub(crate) async fn commit_transaction(
             "commit_transaction",
             request.query_string(),
             None,
+            None,
+            false,
         )
         .await?;
 

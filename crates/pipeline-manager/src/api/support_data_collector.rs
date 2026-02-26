@@ -105,6 +105,8 @@ async fn fetch_pipeline_data(
     pipeline_name: &str,
     endpoint: &str,
     timeout_duration: Option<Duration>,
+    body_size_limit: Option<usize>,
+    compression_passthrough: bool,
 ) -> Result<HttpResponse, ManagerError> {
     state
         .runner
@@ -116,6 +118,8 @@ async fn fetch_pipeline_data(
             endpoint,
             "",
             timeout_duration,
+            body_size_limit,
+            compression_passthrough,
         )
         .await
 }
@@ -211,20 +215,20 @@ fn extract_from_zip(zip_data: &[u8], filename: &str) -> Result<Vec<u8>, String> 
 async fn response_to_bundle_result(
     response: Result<HttpResponse, ManagerError>,
 ) -> BundleResult<Vec<u8>> {
-    response_to_bundle_result_with_transform(response, |body, _| Ok(body)).await
+    response_to_bundle_result_with_transform(response, |body, _, _| Ok(body)).await
 }
 
 /// Convert the HTTP response from a pipeline to a bundle result,
 /// applying a transformer function to the response body.
 ///
-/// The transformer receives (body_bytes, content_type) and returns
+/// The transformer receives (body_bytes, content_type, content_encoding) and returns
 /// a transformed BundleResult<Vec<u8>>.
 async fn response_to_bundle_result_with_transform<F>(
     response: Result<HttpResponse, ManagerError>,
     transform: F,
 ) -> BundleResult<Vec<u8>>
 where
-    F: FnOnce(Vec<u8>, &str) -> BundleResult<Vec<u8>>,
+    F: FnOnce(Vec<u8>, &str, &str) -> BundleResult<Vec<u8>>,
 {
     match response {
         Ok(response) if response.status().is_success() => {
@@ -235,12 +239,19 @@ where
                 .unwrap_or("")
                 .to_string();
 
+            let content_encoding = response
+                .headers()
+                .get(actix_web::http::header::CONTENT_ENCODING)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_string();
+
             let body_bytes = actix_web::body::to_bytes(response.into_body())
                 .await
                 .map(|bytes| bytes.to_vec())
                 .map_err(|e| e.to_string())?;
 
-            transform(body_bytes, &content_type)
+            transform(body_bytes, &content_type, &content_encoding)
         }
         Ok(response) => {
             let mut error_string = format!("HTTP {}", response.status());
@@ -478,6 +489,8 @@ impl SupportBundleData {
             pipeline_name,
             "dump_profile",
             Some(COLLECTION_TIMEOUT),
+            Some(usize::MAX),
+            true,
         )
         .await;
 
@@ -497,22 +510,31 @@ impl SupportBundleData {
             pipeline_name,
             "dump_json_profile",
             Some(COLLECTION_TIMEOUT),
+            Some(usize::MAX),
+            true,
         )
         .await;
 
-        // Transform the response based on Content-Type:
+        // Transform the response based on Content-Type / Content-Encoding:
         // - Old pipelines return application/zip with profile.json inside
-        // - New pipelines return application/json
-        // Both are normalized to gzip-compressed JSON for storage
-        response_to_bundle_result_with_transform(response, |body_bytes, content_type| {
-            if content_type.contains("application/zip") {
-                // Extract JSON from ZIP, then compress for storage
-                extract_from_zip(&body_bytes, "profile.json").and_then(gz_compress)
-            } else {
-                // Assume JSON, compress for storage
-                gz_compress(body_bytes)
-            }
-        })
+        // - New pipelines return application/json with Content-Encoding: gzip
+        //   (awc decompression disabled, so compressed bytes pass through)
+        // Both are normalized to gzip-compressed JSON for storage.
+        response_to_bundle_result_with_transform(
+            response,
+            |body_bytes, content_type, content_encoding| {
+                if content_type.contains("application/zip") {
+                    // Extract JSON from ZIP, then compress for storage
+                    extract_from_zip(&body_bytes, "profile.json").and_then(gz_compress)
+                } else if content_encoding.contains("gzip") {
+                    // Already gzip-compressed (decompression of pipeline response disabled), store as-is
+                    Ok(body_bytes)
+                } else {
+                    // Plain JSON, compress for storage
+                    gz_compress(body_bytes)
+                }
+            },
+        )
         .await
     }
 
@@ -529,6 +551,8 @@ impl SupportBundleData {
             pipeline_name,
             "heap_profile",
             Some(COLLECTION_TIMEOUT),
+            Some(usize::MAX),
+            true,
         )
         .await;
 
@@ -548,6 +572,8 @@ impl SupportBundleData {
             pipeline_name,
             "metrics",
             Some(COLLECTION_TIMEOUT),
+            None,
+            false,
         )
         .await;
 
@@ -578,6 +604,8 @@ impl SupportBundleData {
             pipeline_name,
             "stats",
             Some(COLLECTION_TIMEOUT),
+            None,
+            false,
         )
         .await;
 
