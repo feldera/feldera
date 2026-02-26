@@ -17,7 +17,7 @@ from .helper import (
     gen_pipeline_name,
 )
 
-from feldera.testutils import single_host_only
+from feldera.testutils import FELDERA_TEST_NUM_HOSTS
 
 
 def _ingest_lines(name: str, table: str, body: str):
@@ -49,7 +49,6 @@ def _adhoc_count(name: str, table: str) -> int:
 
 
 @gen_pipeline_name
-@single_host_only
 def test_pipeline_metrics(pipeline_name):
     """
     Tests that circuit metrics can be retrieved from the pipeline.
@@ -60,29 +59,27 @@ def test_pipeline_metrics(pipeline_name):
     # Default
     r_default = get(api_url(f"/pipelines/{pipeline_name}/metrics"))
     assert r_default.status_code == HTTPStatus.OK
-    text_default = r_default.text
+    assert "# TYPE records_processed_total counter" in r_default.text
 
     # Prometheus
     r_prom = get(api_url(f"/pipelines/{pipeline_name}/metrics?format=prometheus"))
     assert r_prom.status_code == HTTPStatus.OK
-    text_prom = r_prom.text
+    assert "# TYPE records_processed_total counter" in r_prom.text
 
     # JSON
-    r_json = get(api_url(f"/pipelines/{pipeline_name}/metrics?format=json"))
-    assert r_json.status_code == HTTPStatus.OK
-    parsed_json = json.loads(r_json.text)
-    assert isinstance(parsed_json, list), "Expected JSON metrics array"
+    if FELDERA_TEST_NUM_HOSTS == 1:
+        r_json = get(api_url(f"/pipelines/{pipeline_name}/metrics?format=json"))
+        assert r_json.status_code == HTTPStatus.OK
+        parsed_json = json.loads(r_json.text)
+        assert isinstance(parsed_json, list), "Expected JSON metrics array"
+
+        assert any(m.get("key") == "records_processed_total" for m in parsed_json), (
+            "records_processed_total missing in JSON metrics"
+        )
 
     # Invalid
     r_bad = get(api_url(f"/pipelines/{pipeline_name}/metrics?format=does-not-exist"))
     assert r_bad.status_code == HTTPStatus.BAD_REQUEST
-
-    # Minimal checks
-    assert "# TYPE records_processed_total counter" in text_default
-    assert "# TYPE records_processed_total counter" in text_prom
-    assert any(m.get("key") == "records_processed_total" for m in parsed_json), (
-        "records_processed_total missing in JSON metrics"
-    )
 
 
 @gen_pipeline_name
