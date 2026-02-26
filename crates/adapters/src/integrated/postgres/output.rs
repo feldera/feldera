@@ -362,6 +362,8 @@ These statements were successfully prepared before reconnecting. Does the table 
     }
 
     fn batch_start_inner(&mut self) -> Result<(), BackoffError> {
+        // Disable in test mode as it is fine to run without the controller.
+        #[cfg(not(feature = "bench-mode"))]
         if self.controller.upgrade().is_none() {
             tracing::warn!("controller is shutting down: aborting");
             return Ok(());
@@ -685,6 +687,7 @@ mod tests {
             mode: PostgresWriteMode::Materialized,
             cdc_op_column: "__feldera_op".to_owned(),
             cdc_ts_column: "__feldera_ts".to_owned(),
+            threads: 4,
         }
     }
 
