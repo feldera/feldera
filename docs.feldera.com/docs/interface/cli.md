@@ -9,7 +9,7 @@ It allows you to create, manage, and monitor pipelines. It also features an inte
 ### Quick Install (Linux)
 
 ```bash
-curl -fsSL https://feldera.com/install | bash
+curl -fsSL https://feldera.com/install-fda | bash
 ```
 
 | Supported platforms |
@@ -27,13 +27,13 @@ Since `fda` is a single binary, you can update or install older versions by re-r
 To install a specific version, pass the release git tag to the install script:
 
 ```bash
-curl -fsSL https://feldera.com/install | FDA_VERSION=v0.247.0 bash
+curl -fsSL https://feldera.com/install-fda | FDA_VERSION=v0.247.0 bash
 ```
 
 To install to a custom directory:
 
 ```bash
-curl -fsSL https://feldera.com/install | FDA_VERSION=v0.247.0 FELDERA_INSTALL=/opt/feldera bash
+curl -fsSL https://feldera.com/install-fda | FDA_VERSION=v0.247.0 FELDERA_INSTALL=/opt/feldera bash
 ```
 
 ### Using Cargo (Windows, MacOS)
