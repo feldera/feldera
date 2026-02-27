@@ -135,7 +135,7 @@ fn bench_postgres_encode(c: &mut Criterion) {
     drop_bench_table(&mut pg_client);
 }
 
-/// Benchmark Postgres output scaling: 1k/10k/100k records x 1/2/4/8 workers.
+/// Benchmark Postgres output scaling: 100k/1M/2M records x 1/2/4/8 workers.
 fn bench_postgres_encode_scaling(c: &mut Criterion) {
     let mut pg_client = postgres_client();
     create_bench_table(&mut pg_client);
@@ -143,7 +143,7 @@ fn bench_postgres_encode_scaling(c: &mut Criterion) {
     let mut group = c.benchmark_group("postgres_output_encode_scaling");
     group.sample_size(10);
 
-    for num_records in [1_000, 10_000, 100_000] {
+    for num_records in [100_000, 1_000_000, 2_000_000] {
         let data = generate_test_data(num_records);
         let batch = build_indexed_batch(&data);
 

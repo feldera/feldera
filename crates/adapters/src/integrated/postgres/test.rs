@@ -253,6 +253,10 @@ mod pg {
             let pk = if pk { "PRIMARY KEY" } else { "" };
 
             client
+                .execute("DROP TYPE IF EXISTS test_struct", &[])
+                .unwrap();
+
+            client
                 .execute(
                     r#"CREATE TYPE test_struct AS (
     id INTEGER,
@@ -1856,7 +1860,10 @@ fn pg_simple(url: String, tls: Option<PostgresTlsConfig>) {
         ||
             {
                 let rows = client
-                    .query(&format!("SELECT * FROM {table_name}"), &[])
+                    .query(
+                        &format!("SELECT * FROM {table_name} ORDER BY id"),
+                        &[],
+                    )
                     .unwrap();
                 let got: Vec<TestStruct> = rows
                     .into_iter()
