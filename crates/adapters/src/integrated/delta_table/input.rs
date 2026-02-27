@@ -26,6 +26,7 @@ use deltalake::logstore::{self, IORuntime};
 use deltalake::table::builder::ensure_table_uri;
 use deltalake::{DeltaTable, DeltaTableBuilder, datafusion};
 use feldera_adapterlib::format::{ParseError, StagedInputBuffer};
+use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::transport::{InputQueueEntry, Resume, Watermark, parse_resume_info};
 use feldera_adapterlib::utils::datafusion::{
     array_to_string, execute_query_collect, execute_singleton_query, timestamp_to_sql_expression,
@@ -40,10 +41,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::cmp::min;
 use std::collections::{BTreeSet, HashMap};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::select;
 use tokio::sync::watch::{Receiver, Sender, channel};
 use tokio::sync::{Semaphore, mpsc};
@@ -279,6 +280,10 @@ impl DeltaTableInputReader {
         }
 
         if eoi {
+            endpoint
+                .metrics
+                .phase
+                .store(DeltaPhase::Completed as u64, Ordering::Relaxed);
             endpoint.consumer.eoi();
         } else {
             let endpoint_clone = endpoint.clone();
@@ -463,6 +468,66 @@ impl DeltaResumeInfo {
     }
 }
 
+/// Current phase of a delta table input connector.
+// Using repr u64 as we using AtomicU64 to store the phase in metrics
+#[repr(u64)]
+enum DeltaPhase {
+    LoadingSnapshot = 0,
+    Follow = 1,
+    Completed = 2,
+}
+
+struct DeltaTableMetrics {
+    /// Current phase of the connector (see [DeltaPhase]).
+    phase: AtomicU64,
+    /// Unix epoch seconds when snapshot phase finished; 0 if not yet complete.
+    snapshot_completed_ts: AtomicU64,
+    /// Total records loaded during snapshot phase.
+    snapshot_records_total: AtomicU64,
+}
+
+impl DeltaTableMetrics {
+    fn new() -> Self {
+        Self {
+            phase: AtomicU64::new(DeltaPhase::LoadingSnapshot as u64),
+            snapshot_completed_ts: AtomicU64::new(0),
+            snapshot_records_total: AtomicU64::new(0),
+        }
+    }
+}
+
+impl ConnectorMetrics for DeltaTableMetrics {
+    fn metrics(&self) -> Vec<(&'static str, &'static str, ValueType, f64)> {
+        vec![
+            (
+                "input_connector_delta_phase",
+                "Current phase: 0=loading_snapshot, 1=follow/streaming, 2=completed.",
+                ValueType::Gauge,
+                self.phase.load(Ordering::Relaxed) as f64,
+            ),
+            (
+                "input_connector_delta_snapshot_completed_seconds",
+                "Unix epoch seconds when the snapshot phase finished (0 if not yet complete).",
+                ValueType::Gauge,
+                self.snapshot_completed_ts.load(Ordering::Relaxed) as f64,
+            ),
+            (
+                "input_connector_delta_snapshot_records_total",
+                "Total records loaded during the snapshot phase.",
+                ValueType::Counter,
+                self.snapshot_records_total.load(Ordering::Relaxed) as f64,
+            ),
+        ]
+    }
+}
+
+fn now_unix_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
 struct DeltaTableInputEndpointInner {
     endpoint_name: String,
     schema: Relation,
@@ -482,6 +547,7 @@ struct DeltaTableInputEndpointInner {
     ///   in follow mode or after ingesting the initial snapshot.
     last_resume_status: Mutex<Option<DeltaResumeInfo>>,
     queue: Arc<InputQueue<Option<DeltaResumeInfo>, StagedInputBuffer>>,
+    metrics: Arc<DeltaTableMetrics>,
 }
 
 impl DeltaTableInputEndpointInner {
@@ -500,6 +566,9 @@ impl DeltaTableInputEndpointInner {
             false,
         );
 
+        let metrics = Arc::new(DeltaTableMetrics::new());
+        consumer.set_custom_metrics(Arc::clone(&metrics) as Arc<dyn ConnectorMetrics>);
+
         Self {
             endpoint_name: endpoint_name.to_string(),
             schema,
@@ -513,6 +582,7 @@ impl DeltaTableInputEndpointInner {
                 resume_info.unwrap_or_else(DeltaResumeInfo::initial),
             )),
             queue,
+            metrics,
         }
     }
 
@@ -687,6 +757,9 @@ impl DeltaTableInputEndpointInner {
         let record_count = self
             .execute_snapshot_query(&snapshot_query, "initial snapshot", input_stream, receiver)
             .await;
+        self.metrics
+            .snapshot_records_total
+            .fetch_add(record_count as u64, Ordering::Relaxed);
 
         // Empty buffer to indicate checkpointable state.
         self.queue.push_entry(
@@ -865,6 +938,9 @@ impl DeltaTableInputEndpointInner {
             let range_record_count = self
                 .execute_snapshot_query(&range_query, "range", input_stream, receiver)
                 .await;
+            self.metrics
+                .snapshot_records_total
+                .fetch_add(range_record_count as u64, Ordering::Relaxed);
             total_records += range_record_count;
 
             start = end.clone();
@@ -971,12 +1047,21 @@ impl DeltaTableInputEndpointInner {
             // Log the appropriate message based on whether we just completed a snapshot
             if self.config.snapshot() && snapshot_incomplete {
                 // We just completed reading a snapshot, now switching to follow mode
+                self.metrics
+                    .snapshot_completed_ts
+                    .store(now_unix_secs(), Ordering::Relaxed);
+                self.metrics
+                    .phase
+                    .store(DeltaPhase::Follow as u64, Ordering::Relaxed);
                 info!(
                     "delta_table {}: snapshot phase completed, switching to follow mode (records: {}, version: {})",
                     &self.endpoint_name, snapshot_record_count, version
                 );
             } else if !self.config.snapshot() {
                 // Pure CDC follow mode (no snapshot configured)
+                self.metrics
+                    .phase
+                    .store(DeltaPhase::Follow as u64, Ordering::Relaxed);
                 info!(
                     "delta_table {}: CDC follow started (from version: {})",
                     &self.endpoint_name, version
@@ -1041,6 +1126,9 @@ impl DeltaTableInputEndpointInner {
                                 &self.endpoint_name,
                                 self.config.end_version.unwrap()
                             );
+                            self.metrics
+                                .phase
+                                .store(DeltaPhase::Completed as u64, Ordering::Relaxed);
                             self.consumer.eoi();
                             break;
                         }
@@ -1051,6 +1139,9 @@ impl DeltaTableInputEndpointInner {
                             &self.endpoint_name,
                             self.config.end_version.unwrap()
                         );
+                        self.metrics
+                            .phase
+                            .store(DeltaPhase::Completed as u64, Ordering::Relaxed);
                         self.consumer.eoi();
 
                         // Empty buffer to indicate eoi.
@@ -1085,6 +1176,15 @@ impl DeltaTableInputEndpointInner {
                 }
             }
         } else {
+            // Snapshot-only mode: record completion timestamp and transition to Completed.
+            if self.config.snapshot() && snapshot_incomplete {
+                self.metrics
+                    .snapshot_completed_ts
+                    .store(now_unix_secs(), Ordering::Relaxed);
+            }
+            self.metrics
+                .phase
+                .store(DeltaPhase::Completed as u64, Ordering::Relaxed);
             self.consumer.eoi();
         }
     }

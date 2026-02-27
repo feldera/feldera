@@ -31,9 +31,7 @@ use crate::controller::sync::{
     CHECKPOINT_SYNC_PUSH_TRANSFER_SPEED, CHECKPOINT_SYNC_PUSH_TRANSFERRED_BYTES, SYNCHRONIZER,
 };
 use crate::samply::SamplySpan;
-use crate::server::metrics::{
-    HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, Value, ValueType,
-};
+use crate::server::metrics::{HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, Value};
 use crate::server::{InitializationState, ServerState};
 use crate::transport::Step;
 use crate::transport::clock::now_endpoint_config;
@@ -71,6 +69,7 @@ use dbsp::{
 use dbsp::{Runtime, WeakRuntime};
 use enum_map::EnumMap;
 use feldera_adapterlib::format::BufferSize;
+use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::transport::{Resume, Watermark};
 use feldera_ir::LirCircuit;
 use feldera_storage::histogram::{ExponentialHistogram, ExponentialHistogramSnapshot};
@@ -1558,18 +1557,16 @@ impl Controller {
             |s| s.reader.as_ref().map_or(0, |reader| reader.memory()),
         );
 
-        // Export paused state as a metric (1 = paused, 0 = running)
         write_input_metric(
             metrics,
             labels,
             status,
-            "input_connector_paused",
-            "Whether the input connector is paused by the user (1 for true, 0 for false).",
+            "input_connector_running",
+            "Whether the input connector is running (1) or paused by the user (0).",
             ValueType::Gauge,
-            |s| s.is_paused_by_user() as u8,
+            |s| !s.is_paused_by_user(),
         );
 
-        // Export barrier state as a metric (1 = barrier active, 0 = not active)
         write_input_metric(
             metrics,
             labels,
@@ -1577,7 +1574,7 @@ impl Controller {
             "input_connector_barrier",
             "Whether the input connector is currently a barrier for checkpointing/suspend (1 for true, 0 for false).",
             ValueType::Gauge,
-            |s| s.is_barrier() as u8,
+            |s| s.is_barrier(),
         );
 
         write_input_metric(
@@ -1587,7 +1584,7 @@ impl Controller {
             "input_connector_end_of_input",
             "Whether the input connector has reached end of input (1 for true, 0 for false).",
             ValueType::Gauge,
-            |s| s.metrics.end_of_input.load(Ordering::Relaxed) as u8,
+            |s| s.metrics.end_of_input.load(Ordering::Relaxed),
         );
 
         fn write_input_histogram<F, M>(
@@ -1644,6 +1641,10 @@ impl Controller {
                 )
             },
         );
+
+        // Export connector-specific (custom) metrics registered via
+        // `InputConsumer::set_custom_metrics`.
+        write_custom_metrics(status, metrics, labels);
 
         fn write_output_metric<F, M>(
             metrics: &mut MetricsWriter<F>,
@@ -1867,6 +1868,43 @@ impl Controller {
 
     pub fn workers(&self) -> Range<usize> {
         self.inner.workers.clone()
+    }
+}
+
+/// Write connector-specific (custom) metrics registered via
+/// [`InputConsumer::set_custom_metrics`] into `metrics`.
+///
+/// Groups values by `(name, help, ValueType)` so that all endpoints' values
+/// for the same metric are emitted in a single Prometheus block (the
+/// Prometheus exposition format requires that all values for a given metric
+/// appear together under one `# TYPE` header).
+pub(crate) fn write_custom_metrics<F>(
+    status: &ControllerStatus,
+    metrics: &mut MetricsWriter<F>,
+    labels: &LabelStack,
+) where
+    F: MetricsFormatter,
+{
+    type MetricKey = (&'static str, &'static str, ValueType);
+    type EndpointValues = Vec<(String, f64)>;
+
+    let mut grouped: BTreeMap<MetricKey, EndpointValues> = BTreeMap::new();
+    for input in status.input_status().values() {
+        if let Some(cm) = &input.custom_metrics {
+            for (name, help, vtype, value) in cm.metrics() {
+                grouped
+                    .entry((name, help, vtype))
+                    .or_default()
+                    .push((input.endpoint_name.clone(), value));
+            }
+        }
+    }
+    for ((name, help, vtype), entries) in &grouped {
+        metrics.values(name, help, *vtype, |w| {
+            for (endpoint_name, value) in entries {
+                w.write_value(&labels.with("endpoint", endpoint_name), *value);
+            }
+        });
     }
 }
 
@@ -6637,6 +6675,12 @@ impl InputConsumer for InputProbe {
             error,
             tag,
         );
+    }
+
+    fn set_custom_metrics(&self, metrics: Arc<dyn ConnectorMetrics>) {
+        self.controller
+            .status
+            .set_custom_metrics(self.endpoint_id, metrics);
     }
 }
 

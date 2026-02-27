@@ -7,6 +7,7 @@ pub mod catalog;
 mod connector_metadata;
 pub mod errors;
 pub mod format;
+pub mod metrics;
 pub mod transport;
 pub mod utils;
 
