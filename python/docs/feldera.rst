@@ -41,6 +41,14 @@ feldera.runtime\_config module
    :undoc-members:
    :show-inheritance:
 
+feldera.benchmarking module
+---------------------------
+
+.. automodule:: feldera.benchmarking
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Subpackages
 -----------
 

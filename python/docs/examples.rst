@@ -467,3 +467,191 @@ Specifying Data Sources / Sinks
 
 To connect Feldera to various data sources or sinks, you can define them in the SQL code.
 Refer to the connector documentation at: https://docs.feldera.com/connectors/
+
+Benchmarking Pipelines
+======================
+
+The :mod:`feldera.benchmarking` module provides utilities to collect and upload
+benchmark metrics for Feldera pipelines.  It polls :meth:`.Pipeline.stats` in a
+loop, aggregates the snapshots into :class:`.BenchmarkMetrics`, and can
+optionally upload a
+`Bencher Metric Format (BMF) <https://bencher.dev/docs/reference/test-harnesses/>`_
+report to a Bencher-compatible server.
+
+.. note::
+   These utilities only **observe** a running pipeline — they do not start,
+   stop, or otherwise manage pipeline lifetime.  The caller is responsible for
+   starting the pipeline before calling :func:`.bench` or
+   :func:`.collect_metrics`, and for stopping it afterwards.
+
+.. list-table:: Python equivalents of ``fda bench`` flags
+   :header-rows: 1
+   :widths: 40 60
+
+   * - ``fda`` flag
+     - Python equivalent
+   * - ``fda bench <name>``
+     - :func:`.bench` (collects until ``pipeline_complete``)
+   * - ``--duration <secs>``
+     - ``bench(pipeline, duration_secs=<secs>)``
+   * - ``--upload``
+     - :func:`.upload_to_bencher`
+   * - ``--branch <name>``
+     - ``upload_to_bencher(..., branch=<name>)``
+   * - ``--start-point <branch>``
+     - ``upload_to_bencher(..., start_point=<branch>)``
+   * - ``--start-point-clone-thresholds``
+     - ``upload_to_bencher(..., start_point_clone_thresholds=True)``
+
+Collect and Display Metrics
+---------------------------
+
+This is the Python equivalent of ``fda bench <pipeline>``.  Stop any existing
+run, start fresh, wait for all bounded input to be processed, then print a
+human-readable results table.
+
+.. code-block:: python
+
+    from feldera import FelderaClient, PipelineBuilder, bench
+
+    client = FelderaClient("http://localhost:8080")
+
+    sql = """
+    CREATE TABLE events (id INT, value DOUBLE) WITH (
+        'connectors' = '[{
+            "transport": {
+                "name": "datagen",
+                "config": {"plan": [{"limit": 1000000, "rate": 100000}]}
+            }
+        }]'
+    );
+    CREATE MATERIALIZED VIEW totals AS
+        SELECT COUNT(*) AS n, SUM(value) AS total FROM events;
+    """
+
+    pipeline = PipelineBuilder(client, name="my_bench", sql=sql).create_or_replace()
+
+    # Stop any running instance for a reproducible baseline, then start fresh.
+    pipeline.stop()
+    pipeline.start()
+
+    # Poll stats until pipeline_complete is True (all bounded input consumed).
+    result = bench(pipeline)
+
+    # Stop the pipeline now that collection is done.
+    pipeline.stop()
+
+    # Print the results table.
+    print(result.format_table())
+
+    # Or access the BMF dict directly.
+    print(result.to_json())
+
+Collect Metrics for a Fixed Duration
+-------------------------------------
+
+For streaming pipelines whose input never ends naturally, pass
+``duration_secs`` to stop collection after a fixed wall-clock window.
+This is the Python equivalent of ``fda bench --duration <secs>``.
+
+.. code-block:: python
+
+    from feldera import FelderaClient, bench
+
+    client = FelderaClient("http://localhost:8080")
+    pipeline = client.get_pipeline("my_streaming_pipeline")
+
+    pipeline.stop()
+    pipeline.start()
+
+    # Collect for 60 seconds regardless of pipeline_complete.
+    result = bench(pipeline, duration_secs=60)
+
+    pipeline.stop()
+
+    print(result.format_table())
+
+Upload Results to Bencher
+--------------------------
+
+This is the Python equivalent of ``fda bench --upload``.  After collecting
+metrics, call :func:`.upload_to_bencher` to POST the BMF report to a
+Bencher-compatible server.
+
+Passing ``feldera_client`` enriches the run context with the Feldera instance
+edition and revision (the same information ``fda`` derives automatically).
+
+API token and project can be supplied as parameters or via the
+``BENCHER_API_TOKEN`` and ``BENCHER_PROJECT`` environment variables.
+
+.. code-block:: python
+
+    from feldera import FelderaClient, PipelineBuilder, bench, upload_to_bencher
+
+    client = FelderaClient("http://localhost:8080")
+
+    sql = """
+    CREATE TABLE events (id INT, value DOUBLE) WITH (
+        'connectors' = '[{
+            "transport": {
+                "name": "datagen",
+                "config": {"plan": [{"limit": 1000000, "rate": 100000}]}
+            }
+        }]'
+    );
+    CREATE MATERIALIZED VIEW totals AS
+        SELECT COUNT(*) AS n, SUM(value) AS total FROM events;
+    """
+
+    pipeline = PipelineBuilder(client, name="my_bench", sql=sql).create_or_replace()
+
+    pipeline.stop()
+    pipeline.start()
+    result = bench(pipeline)
+    pipeline.stop()
+
+    print(result.format_table())
+
+    # Upload to https://benchmarks.feldera.io (the default host).
+    upload_to_bencher(
+        result,
+        project="my-project",          # or set BENCHER_PROJECT env var
+        token="YOUR_BENCHER_TOKEN",     # or set BENCHER_API_TOKEN env var
+        branch="main",
+        feldera_client=client,          # adds edition/revision to run context
+    )
+
+.. note::
+    The ``host`` parameter (or ``BENCHER_HOST`` environment variable) can point
+    to any Bencher-compatible server.  It defaults to
+    ``https://benchmarks.feldera.io``.
+
+Track Results Against a Baseline Branch
+-----------------------------------------
+
+Use ``start_point`` to initialise a new branch from an existing one and
+optionally inherit its alert thresholds.  This mirrors
+``fda bench --upload --start-point <branch> --start-point-clone-thresholds``.
+
+.. code-block:: python
+
+    from feldera import FelderaClient, bench, upload_to_bencher
+
+    client = FelderaClient("http://localhost:8080")
+    pipeline = client.get_pipeline("my_bench")
+
+    pipeline.stop()
+    pipeline.start()
+    result = bench(pipeline)
+    pipeline.stop()
+
+    upload_to_bencher(
+        result,
+        project="my-project",
+        token="YOUR_BENCHER_TOKEN",
+        branch="feature/my-optimisation",  # the branch being tested
+        start_point="main",                 # branch to branch off from
+        start_point_clone_thresholds=True,  # inherit alert thresholds
+        start_point_max_versions=10,        # how many historical runs to consider
+        feldera_client=client,
+    )
