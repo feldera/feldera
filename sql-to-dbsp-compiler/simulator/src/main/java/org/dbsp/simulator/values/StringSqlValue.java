@@ -2,7 +2,6 @@ package org.dbsp.simulator.values;
 
 import org.dbsp.simulator.types.StringSqlType;
 import org.dbsp.simulator.util.Utilities;
-import org.jetbrains.annotations.NotNull;
 
 import javax.annotation.Nullable;
 import java.util.Comparator;
@@ -48,7 +47,7 @@ public class StringSqlValue extends BaseSqlValue {
     }
 
     @Override
-    public int compareTo(@NotNull DynamicSqlValue dynamicSqlValue) {
+    public int compareTo(DynamicSqlValue dynamicSqlValue) {
         StringSqlValue other = (StringSqlValue) dynamicSqlValue;
         return Comparator.comparing(
                         StringSqlValue::getValue,

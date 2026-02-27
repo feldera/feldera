@@ -299,8 +299,10 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
     public static DBSPClosureExpression lowerJoinFilterMapFunctions(
             DBSPCompiler compiler, DBSPClosureExpression expression,
             @Nullable DBSPClosureExpression filter, @Nullable DBSPClosureExpression map) {
-        if (filter == null)
+        if (filter == null) {
+            Utilities.enforce(map == null);
             return expression;
+        }
         if (map == null) {
             // Generate code of the form
             // let tmp = join(...);
@@ -360,7 +362,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPStarJoinFilterMapOperator node) {
         if (node.filter == null) {
-            // Already lowered
+            // Already lowered, or we will remove them later
             super.postorder(node);
             return;
         }

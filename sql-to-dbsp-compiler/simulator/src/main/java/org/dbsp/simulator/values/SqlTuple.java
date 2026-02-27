@@ -3,7 +3,6 @@ package org.dbsp.simulator.values;
 import org.dbsp.simulator.types.SqlType;
 import org.dbsp.simulator.types.TupleSqlType;
 import org.dbsp.util.Linq;
-import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -75,7 +74,7 @@ public class SqlTuple implements DynamicSqlValue {
     }
 
     @Override
-    public int compareTo(@NotNull DynamicSqlValue dynamicSqlValue) {
+    public int compareTo(DynamicSqlValue dynamicSqlValue) {
         SqlTuple other = (SqlTuple) dynamicSqlValue;
         assert this.size() == other.size();
         for (int i = 0; i < this.size(); i++) {

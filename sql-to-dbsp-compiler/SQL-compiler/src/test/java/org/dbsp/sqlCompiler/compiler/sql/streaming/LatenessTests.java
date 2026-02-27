@@ -213,11 +213,6 @@ public class LatenessTests  extends StreamingTestBase {
             var io = gen.generate();
             if (io.input.isEmpty())
                 break;
-            /*
-            System.out.println(io.input);
-            System.out.println(table);
-            System.out.println("out: " + io.output);
-             */
             ccs.step(new Change("T", io.input), new Change("V", io.output));
         }
     }

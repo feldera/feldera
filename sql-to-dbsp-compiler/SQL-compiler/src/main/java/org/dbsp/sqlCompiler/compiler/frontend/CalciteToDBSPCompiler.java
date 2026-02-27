@@ -800,7 +800,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         final DBSPSimpleOperator result;
         final DBSPTypeIndexedZSet resultType = new DBSPTypeIndexedZSet(node, groupKeyType, resultValueType);
-        if (aggregates.size() > 1) {
+        if (aggregates.size() > 2) {
             // Use a star join
             // Incremental operator; must sandwich with D-I
             List<OutputPort> differentiators = new ArrayList<>();
@@ -1013,27 +1013,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
             } else {
                 if (!create)
                     throw new InternalCompilerError("Could not find operator for table " + tableName, node);
-
-                /*
-                // Create external table
-                JdbcTableScan jscan = (JdbcTableScan) scan;
-                RelDataType tableRowType = jscan.jdbcTable.getRowType(this.compiler.sqlToRelCompiler.typeFactory);
-                DBSPTypeStruct originalRowType = this.convertType(node.getPositionRange(), tableRowType, true)
-                        .to(DBSPTypeStruct.class)
-                        .rename(tableName);
-                DBSPType rowType = originalRowType.toTuple();
-                HasSchema withSchema = new HasSchema(CalciteObject.EMPTY, tableName, tableRowType);
-                this.metadata.addTable(withSchema);
-                TableMetadata tableMeta = new TableMetadata(
-                        tableName, Linq.map(withSchema.getColumns(), this::convertMetadata), Linq.list(),
-                        false, false, false);
-                DBSPSourceMultisetOperator sourceMulti = new DBSPSourceMultisetOperator(
-                        node, CalciteObject.EMPTY,
-                        TypeCompiler.makeZSet(rowType), originalRowType,
-                        tableMeta, tableName, null);
-                this.addOperator(sourceMulti);
-                Utilities.putNew(this.nodeOperator, scan, sourceMulti);
-                 */
             }
         }
     }

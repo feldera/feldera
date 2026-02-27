@@ -66,11 +66,6 @@ public class SqlUserDefinedAggregationFunction extends SqlUserDefinedAggFunction
     }
 
     @Override
-    public @Nullable SqlOperandTypeInference getOperandTypeInference() {
-        return super.getOperandTypeInference();
-    }
-
-    @Override
     public @Nullable SqlOperandMetadata getOperandTypeChecker() {
         return this.operandTypeChecker;
     }

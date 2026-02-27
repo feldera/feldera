@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.base.Charsets;
 import org.apache.calcite.avatica.util.Casing;

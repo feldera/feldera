@@ -567,8 +567,8 @@ public class Lineage extends CircuitVisitor {
         this.intersect(node);
     }
 
-    Set<ColumnSet> emitted = new HashSet<>();
-    Set<ColumnCompared> compared = new HashSet<>();
+    final Set<ColumnSet> emitted = new HashSet<>();
+    final Set<ColumnCompared> compared = new HashSet<>();
 
     @Override
     public void postorder(DBSPJoinBaseOperator node) {

@@ -315,7 +315,8 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testArrayIndexOutOfBounds() {
         String query = "SELECT (ARRAY [2])[3]";
-        DBSPZSetExpression result = new DBSPZSetExpression(new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))));
+        DBSPZSetExpression result = new DBSPZSetExpression(new DBSPTupleExpression(
+                DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))));
         this.testConstantOutput(query, result);
     }
 
