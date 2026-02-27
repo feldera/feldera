@@ -169,8 +169,7 @@ class OutputEndpointMetrics:
 
 
 class CommitProgressSummary:
-    """Progress of a transaction commit.
-    """
+    """Progress of a transaction commit."""
 
     def __init__(self):
         """Initializes an empty status."""
@@ -188,26 +187,28 @@ class CommitProgressSummary:
 
 
 class TransactionInitiators:
-    """Initiators for an ongoing transaction.
-    """
+    """Initiators for an ongoing transaction."""
 
     def __init__(self):
         """Initializes an empty status."""
         self.transaction_id: Optional[int] = None
         self.initiated_by_api: Optional[str] = None
-        self.initiated_by_connectors: Optional[Mapping[str, ConnectorTransactionPhase]] = None
+        self.initiated_by_connectors: Optional[
+            Mapping[str, ConnectorTransactionPhase]
+        ] = None
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]):
         status = cls()
         status.__dict__.update(d)
-        status.initiated_by_connectors = ConnectorTransactionPhase.from_dict(d["initiated_by_connectors"])
+        status.initiated_by_connectors = ConnectorTransactionPhase.from_dict(
+            d["initiated_by_connectors"]
+        )
         return status
 
 
 class ConnectorTransactionPhase:
-    """Connector transaction phase with optional label
-    """
+    """Connector transaction phase with optional label"""
 
     def __init__(self):
         """Initializes an empty status."""
