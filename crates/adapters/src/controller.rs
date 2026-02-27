@@ -3737,7 +3737,14 @@ impl StepTrigger {
         let result = if let Some(request) = &coordination_request {
             match request.action {
                 StepAction::Step if request.step >= step => Some(Action::Step),
-                StepAction::Trigger if request.step >= step => None,
+                StepAction::Trigger if request.step >= step => {
+                    if self.controller.status.unset_step_requested() {
+                        // The `clock` connector requests steps explicitly.
+                        Some(Action::Step)
+                    } else {
+                        None
+                    }
+                }
                 _ => Some(Action::Park(None)),
             }
         } else if replaying
@@ -5143,7 +5150,9 @@ impl ControllerInner {
             controller.status.set_state(PipelineState::Terminated);
         })?;
 
-        let _ = controller.connect_input("now", &now_endpoint_config(&config), None);
+        if controller.workers.start == 0 {
+            let _ = controller.connect_input("now", &now_endpoint_config(&config), None);
+        }
 
         let backpressure_thread =
             BackpressureThread::new(controller.clone(), backpressure_thread_parker);
