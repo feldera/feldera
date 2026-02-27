@@ -672,3 +672,11 @@ In addition, various "temporary" variables may be introduced (and
 subsequently removed) to enable or disable compiler features that are
 still considered experimental.  Possible example: `SET
 FELDERA_USE_MULTI_JOINS = OFF`.
+
+Currently the following options are available:
+
+`FELDERA_AVOID_STAR_JOINS` if set to true the compiler will not
+generate code using the new feature of "star joins", which are a
+simple form of multi-joins.  We expect that option will be removed in
+the near future.
+

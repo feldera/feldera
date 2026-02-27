@@ -68,7 +68,7 @@ public class CircuitOptimizer extends Passes {
     }
 
     void createOptimizer() {
-        CompilerOptions options = this.compiler().options;
+        CompilerOptions options = this.compiler.options;
         // Example dumping circuit to a png file
         // this.dump(3);
         // First part of optimizations may still synthesize some circuit components
@@ -84,7 +84,7 @@ public class CircuitOptimizer extends Passes {
             this.add(new EnsureDistinctOutputs(compiler));
         this.add(new PropagateEmptySources(compiler));
         this.add(new MergeSums(compiler));
-        this.add(new CreateStarJoins(compiler));
+        this.add(new Conditional(compiler, new CreateStarJoins(compiler), () -> !this.compiler.metadata.noStarJoins()));
         this.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
         AnalyzedSet<DBSPOperator> operatorsAnalyzed = new AnalyzedSet<>();
         this.add(new OptimizeWithGraph(compiler,
@@ -95,6 +95,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new CSE(compiler));
         this.add(new ExpandAggregates(compiler, compiler.weightVar));
         this.add(new ExpandAggregateZero(compiler));
+        this.add(new Conditional(compiler, new RemoveStarJoins(compiler), this.compiler.metadata::noStarJoins));
         this.add(new DeadCode(compiler, true));
         this.add(new OptimizeDistinctVisitor(compiler));
         // This is useful even without incrementalization if we have recursion
