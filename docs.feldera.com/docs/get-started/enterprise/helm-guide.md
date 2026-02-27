@@ -93,6 +93,13 @@ on a Kubernetes cluster. It requires a valid Feldera Enterprise license
 
 ## Extra
 
+### Retrieving the Feldera values file
+The `values.yaml` file can be retrieved for an existing Feldera release or from the remote Feldera registry.
+
+Remote Feldera registry: Run `helm show values oci://public.ecr.aws/feldera/feldera-chart --version {version} >> values.yaml` where `version` is the Feldera platform version for which you want to retrieve values.
+
+Existing Feldera release: Run `helm get values {feldera-release-name} --all -o yaml >> values.yaml` where `feldera-release-name` is the name of your release. The value is usually `feldera`, unless the value has been configured during the [installation](./helm-guide#installing-feldera-enterprise) process.
+
 ### Configure custom database credentials
 
 Instead of the insecure default DB credentials, you can supply your own custom database credentials.
