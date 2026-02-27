@@ -7,7 +7,6 @@ from feldera.testutils import (
     unique_pipeline_name,
     FELDERA_TEST_NUM_WORKERS,
     FELDERA_TEST_NUM_HOSTS,
-    single_host_only,
 )
 from tests import TEST_CLIENT
 from feldera.enums import PipelineStatus
@@ -20,7 +19,6 @@ def get_result(pipeline) -> str:
 
 
 class TestNowStream(unittest.TestCase):
-    @single_host_only
     def test_nowstream(self):
         """
         Test the now() function:
