@@ -93,6 +93,33 @@ public class ProgramMetadata implements IJson {
         }
     }
 
+    /** True if a feature is set explicitly to 'true'. */
+    public boolean isExplicitlyOn(String variable) {
+        if (!this.hasValue(variable))
+            return false;
+        return !this.isFalsy(variable);
+    }
+
+    /** True if a feature is set explicitly to 'false' */
+    public boolean isExplicitlyOff(String variable) {
+        if (!this.hasValue(variable))
+            return false;
+        return this.isFalsy(variable);
+    }
+
+    public static final String AVOID_STAR_JOINS = "FELDERA_AVOID_STAR_JOINS";
+
+    public boolean noStarJoins() {
+        return this.isExplicitlyOn(AVOID_STAR_JOINS);
+    }
+
+    /** True if a feature is not set or set to 'false' */
+    public boolean isOffOrMissing(String variable) {
+        if (!this.hasValue(variable))
+            return true;
+        return this.isFalsy(variable);
+    }
+
     public ObjectNode asJson() {
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         ArrayNode inputs = mapper.createArrayNode();
