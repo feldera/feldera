@@ -2405,3 +2405,174 @@ fn test_external_controller_status_serialization() {
         "http_output should have 8 encode errors"
     );
 }
+
+/// Test that custom connector metrics registered via `set_custom_metrics` are
+/// included in the Prometheus output produced by the custom-metrics loop in
+/// `write_metrics`.
+#[test]
+fn test_custom_connector_metrics_prometheus_output() {
+    use crate::{
+        ControllerStatus,
+        controller::{stats::InputEndpointStatus, write_custom_metrics},
+        server::metrics::{LabelStack, MetricsWriter, PrometheusFormatter},
+    };
+    use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    struct MockMetrics;
+
+    impl ConnectorMetrics for MockMetrics {
+        fn metrics(&self) -> Vec<(&'static str, &'static str, ValueType, f64)> {
+            vec![
+                (
+                    "kafka_consumer_lag",
+                    "Consumer lag for the Kafka topic partition.",
+                    ValueType::Gauge,
+                    42.0,
+                ),
+                (
+                    "kafka_messages_fetched_total",
+                    "Total number of messages fetched from Kafka.",
+                    ValueType::Counter,
+                    1000.0,
+                ),
+            ]
+        }
+    }
+
+    let config = serde_json::from_value(json!({
+        "name": "test_custom_metrics",
+        "workers": 1,
+    }))
+    .unwrap();
+
+    let status = ControllerStatus::new(config, 0, None, Uuid::nil());
+
+    let endpoint = InputEndpointStatus::new(
+        "kafka_in",
+        serde_json::from_value(json!({
+            "stream": "s",
+            "transport": { "name": "kafka_input", "config": { "topics": ["t"], "bootstrap.servers": "localhost:9092" } },
+            "format": { "name": "json", "config": {} }
+        }))
+        .unwrap(),
+        None,
+        None,
+    );
+    status.inputs.write().insert(0, endpoint);
+
+    // Register custom metrics on the endpoint.
+    status.set_custom_metrics(0, Arc::new(MockMetrics));
+
+    let mut writer = MetricsWriter::<PrometheusFormatter>::new();
+    let labels = LabelStack::new();
+    write_custom_metrics(&status, &mut writer, &labels);
+    let output = writer.into_output();
+
+    // Verify custom metric names and values appear with the endpoint label.
+    assert!(
+        output.contains("kafka_consumer_lag"),
+        "output missing kafka_consumer_lag:\n{output}"
+    );
+    assert!(
+        output.contains("kafka_messages_fetched_total"),
+        "output missing kafka_messages_fetched_total:\n{output}"
+    );
+    assert!(
+        output.contains(r#"endpoint="kafka_in""#),
+        "output missing endpoint label:\n{output}"
+    );
+    assert!(
+        output.contains("42"),
+        "output missing gauge value 42:\n{output}"
+    );
+    assert!(
+        output.contains("1000"),
+        "output missing counter value 1000:\n{output}"
+    );
+}
+
+/// Test that when two endpoints register the same custom metric name, the
+/// grouping logic emits a single `# TYPE` header for that metric (Prometheus
+/// format violation fix).
+#[test]
+fn test_custom_connector_metrics_prometheus_grouping() {
+    use crate::{
+        ControllerStatus,
+        controller::{stats::InputEndpointStatus, write_custom_metrics},
+        server::metrics::{LabelStack, MetricsWriter, PrometheusFormatter},
+    };
+    use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    struct MockMetrics;
+
+    impl ConnectorMetrics for MockMetrics {
+        fn metrics(&self) -> Vec<(&'static str, &'static str, ValueType, f64)> {
+            vec![(
+                "kafka_consumer_lag",
+                "Consumer lag for the Kafka topic partition.",
+                ValueType::Gauge,
+                42.0,
+            )]
+        }
+    }
+
+    let config = serde_json::from_value(json!({
+        "name": "test_grouping",
+        "workers": 1,
+    }))
+    .unwrap();
+
+    let status = ControllerStatus::new(config, 0, None, Uuid::nil());
+
+    for (id, name) in [(0u64, "kafka_in_1"), (1u64, "kafka_in_2")] {
+        let endpoint = InputEndpointStatus::new(
+            name,
+            serde_json::from_value(json!({
+                "stream": "s",
+                "transport": { "name": "kafka_input", "config": { "topics": ["t"], "bootstrap.servers": "localhost:9092" } },
+                "format": { "name": "json", "config": {} }
+            }))
+            .unwrap(),
+            None,
+            None,
+        );
+        status.inputs.write().insert(id, endpoint);
+        status.set_custom_metrics(id, Arc::new(MockMetrics));
+    }
+
+    let mut writer = MetricsWriter::<PrometheusFormatter>::new();
+    let labels = LabelStack::new();
+    write_custom_metrics(&status, &mut writer, &labels);
+    let output = writer.into_output();
+
+    // `# TYPE kafka_consumer_lag gauge` must appear exactly once.
+    let type_header = "# TYPE kafka_consumer_lag gauge";
+    let occurrences = output.matches(type_header).count();
+    assert_eq!(
+        occurrences, 1,
+        "expected exactly one '# TYPE kafka_consumer_lag gauge', got {occurrences}:\n{output}"
+    );
+
+    // Both endpoint labels must appear in the output.
+    assert!(
+        output.contains(r#"endpoint="kafka_in_1""#),
+        "output missing kafka_in_1 label:\n{output}"
+    );
+    assert!(
+        output.contains(r#"endpoint="kafka_in_2""#),
+        "output missing kafka_in_2 label:\n{output}"
+    );
+
+    // There must be no second `# TYPE` header between the two endpoint values.
+    let first_pos = output.find(r#"endpoint="kafka_in_1""#).unwrap();
+    let second_pos = output.find(r#"endpoint="kafka_in_2""#).unwrap();
+    let between = &output[first_pos.min(second_pos)..first_pos.max(second_pos)];
+    assert!(
+        !between.contains("# TYPE"),
+        "unexpected '# TYPE' header between endpoint values:\n{output}"
+    );
+}

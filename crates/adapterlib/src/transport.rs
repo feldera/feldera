@@ -10,8 +10,8 @@ use serde_json::Value as JsonValue;
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::marker::PhantomData;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::error::TryRecvError;
 use xxhash_rust::xxh3::Xxh3Default;
@@ -19,6 +19,7 @@ use xxhash_rust::xxh3::Xxh3Default;
 use crate::PipelineState;
 use crate::catalog::InputCollectionHandle;
 use crate::format::{BufferSize, InputBuffer, ParseError, Parser};
+use crate::metrics::ConnectorMetrics;
 
 /// Step number for fault-tolerant circuits.
 ///
@@ -753,6 +754,14 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// belong to the the transaction, immediately before calling `extended`. The connector cannot
     /// queue any more updates after this function is invoked, until the next `Queue` command.
     fn commit_transaction(&self);
+
+    /// Register connector-specific metrics for Prometheus export.
+    ///
+    /// A connector may call this once during [`TransportInputEndpoint::open`]
+    /// to provide an [`Arc<dyn ConnectorMetrics>`] whose [`ConnectorMetrics::metrics`]
+    /// will be polled on every scrape.  The default implementation is a no-op,
+    /// so connectors that have no custom metrics need not override it.
+    fn set_custom_metrics(&self, _metrics: Arc<dyn ConnectorMetrics>) {}
 
     /// Endpoint failed.
     ///

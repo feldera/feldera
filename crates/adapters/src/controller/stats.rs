@@ -49,6 +49,7 @@ use crossbeam::sync::Unparker;
 use feldera_adapterlib::{
     errors::journal::ControllerError,
     format::BufferSize,
+    metrics::ConnectorMetrics,
     transport::{InputReader, Resume, Step, Watermark},
 };
 use feldera_storage::histogram::SlidingHistogram;
@@ -71,7 +72,7 @@ use serde_json::Value as JsonValue;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     sync::{
-        Mutex,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
@@ -721,6 +722,13 @@ impl ControllerStatus {
     /// Input endpoint stats.
     pub fn input_status(&self) -> RwLockReadGuard<'_, BTreeMap<EndpointId, InputEndpointStatus>> {
         self.inputs.read_recursive()
+    }
+
+    /// Register connector-specific metrics for an input endpoint.
+    pub fn set_custom_metrics(&self, endpoint_id: EndpointId, metrics: Arc<dyn ConnectorMetrics>) {
+        if let Some(status) = self.inputs.write().get_mut(&endpoint_id) {
+            status.custom_metrics = Some(metrics);
+        }
     }
 
     /// Output endpoint stats.
@@ -1951,6 +1959,10 @@ pub struct InputEndpointStatus {
     /// endpoint or endpoints advance beyond the barriers.
     pub barrier: AtomicBool,
 
+    /// Connector-specific metrics for Prometheus export, registered via
+    /// [`InputConsumer::set_custom_metrics`].
+    pub custom_metrics: Option<Arc<dyn ConnectorMetrics>>,
+
     /// Completion tokens associated with the endpoint.
     completion_tokens: TokenList,
 
@@ -1999,6 +2011,7 @@ impl InputEndpointStatus {
             barrier: AtomicBool::new(false),
             reader: None,
             fault_tolerance,
+            custom_metrics: None,
             completion_tokens: TokenList::new(),
             completed_frontier: WatermarkTracker::new(),
         }
