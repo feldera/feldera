@@ -222,6 +222,10 @@ impl PostgresWriterConfig {
             }
         };
 
+        if self.threads == 0 {
+            return Err("threads must be at least 1".to_string());
+        }
+
         Ok(())
     }
 }

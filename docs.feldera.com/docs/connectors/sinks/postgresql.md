@@ -17,29 +17,30 @@ in the PostgreSQL table.
 
 ## PostgreSQL output configuration
 
-| Property                | Type    | Default   | Description                                                                                                                                                                                                                                        |
-| ----------------------- | ------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `uri`\*                 | string  |           | A PostgreSQL connection URL, e.g., `"postgresql://postgres:1234@127.0.0.1:7373/postgres"` (see the tokio-postgres [Config](https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html) struct for a detailed list of options). |
-| `table`\*               | string  |           | The PostgreSQL table to write the outputs to. The schema of this table should be compatible with the schema of the output view.                                                                                                                    |
-| `mode`                  | string  | `materialized` | [Mode](#write-modes) to run the connector in (`materialized` or `"cdc"`). |
-| `cdc_op_column`         | string  | `__feldera_op` | Name of the operation metadata column in CDC mode. This column in the output row will contain `"i"` (insert), `"u"` (upsert), or `"d"` (delete). Only used when `mode = "cdc"`. This column must exist in the PostgreSQL target table and store character values.                                                                                                    |
-| `cdc_ts_column`         | string  | `__feldera_ts` | Name of the timestamp metadata column in CDC mode. Contains timestamp when the record was output. Only used when `mode = "cdc"`. This column must exist in the PostgreSQL target table, and store **timestamp in microseconds**.                                                                                                                    |
-| `ssl_ca_pem`            | string  |           | A sequence of CA certificates in PEM format. Required for TLS, and takes precedence over `ssl_ca_location`.                                                                                                                                                                                                |
-| `ssl_ca_location`       | string  |           | Path to a file containing a sequence of CA certificates in PEM format. Required for TLS, takes lower precedence than `ssl_ca_pem`.                                                                                                                                                                                                |
-| `ssl_client_pem`        | string  |           | The client certificate in PEM format. Takes precedence over `ssl_client_location`.                                                                                                                                                                                                             |
-| `ssl_client_location`   | string  |           | The path to the client certificate file in PEM format. Takes lower precedence than `ssl_client_pem`.                                                                                                                                                                                                              |
-| `ssl_client_key`        | string  |           | The client certificate key in PEM format. Takes precedence over `ssl_client_key_location`.                                                                                                                                                                                                         |
-| `ssl_client_key_location` | string  |           | The path to the client certificate key file in PEM format. Takes lower precedence than `ssl_client_key`.                                                                                                                                                                                                          |
-| `ssl_certificate_chain_location` | string  |           | The path to the certificate chain file. The file must contain a sequence of PEM-formatted certificates, the first being the leaf certificate, and the remainder forming the chain of certificates up to and including the trusted root certificate.                                                                                                                                                                                                          |
-| `verify_hostname`       | boolean | `true`    | True to enable hostname verification when using TLS. True by default.                                                                                                                                                                              |
-| `max_records_in_buffer` | integer |           | The maximum number of records in a single buffer. If not specified, there is no explicit limit on the number of records, but the buffer may still be constrained by `max_buffer_size_bytes`.                                                       |
-| `max_buffer_size_bytes` | integer | `1048576` | The maximum buffer size (in bytes) for a single operation. Buffers for `INSERT`, `UPDATE`, and `DELETE` queries are maintained separately. Default is 1 MiB (`1048576` bytes).                                                                     |
-| `on_conflict_do_nothing` | bool   | `false`   | Specifies how the connector handles conflicts when executing an `INSERT` into a table with a primary key. By default, an existing row with the same key is overwritten. Setting this flag to `true` preserves the existing row and ignores the new insert. <p> This setting does not affect `UPDATE` statements, which always replace the value associated with the key.</p><p>**This setting has no effect when `mode = "cdc"`, since all operations are performed as append-only `INSERT`s into the target table. Any conflict in CDC mode will result in an error.**</p> |
-
+| Property                         | Type    | Default        | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------- | ------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `uri`\*                          | string  |                | A PostgreSQL connection URL, e.g., `"postgresql://postgres:1234@127.0.0.1:7373/postgres"` (see the tokio-postgres [Config](https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html) struct for a detailed list of options).                                                                                                                                                                                                                                                                                                                          |
+| `table`\*                        | string  |                | The PostgreSQL table to write the outputs to. The schema of this table should be compatible with the schema of the output view.                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `mode`                           | string  | `materialized` | [Mode](#write-modes) to run the connector in (`materialized` or `"cdc"`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `cdc_op_column`                  | string  | `__feldera_op` | Name of the operation metadata column in CDC mode. This column in the output row will contain `"i"` (insert), `"u"` (upsert), or `"d"` (delete). Only used when `mode = "cdc"`. This column must exist in the PostgreSQL target table and store character values.                                                                                                                                                                                                                                                                                                           |
+| `cdc_ts_column`                  | string  | `__feldera_ts` | Name of the timestamp metadata column in CDC mode. Contains timestamp when the record was output. Only used when `mode = "cdc"`. This column must exist in the PostgreSQL target table, and store **timestamp in microseconds**.                                                                                                                                                                                                                                                                                                                                            |
+| `ssl_ca_pem`                     | string  |                | A sequence of CA certificates in PEM format. Required for TLS, and takes precedence over `ssl_ca_location`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `ssl_ca_location`                | string  |                | Path to a file containing a sequence of CA certificates in PEM format. Required for TLS, takes lower precedence than `ssl_ca_pem`.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `ssl_client_pem`                 | string  |                | The client certificate in PEM format. Takes precedence over `ssl_client_location`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `ssl_client_location`            | string  |                | The path to the client certificate file in PEM format. Takes lower precedence than `ssl_client_pem`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `ssl_client_key`                 | string  |                | The client certificate key in PEM format. Takes precedence over `ssl_client_key_location`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `ssl_client_key_location`        | string  |                | The path to the client certificate key file in PEM format. Takes lower precedence than `ssl_client_key`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `ssl_certificate_chain_location` | string  |                | The path to the certificate chain file. The file must contain a sequence of PEM-formatted certificates, the first being the leaf certificate, and the remainder forming the chain of certificates up to and including the trusted root certificate.                                                                                                                                                                                                                                                                                                                         |
+| `verify_hostname`                | boolean | `true`         | True to enable hostname verification when using TLS. True by default.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `max_records_in_buffer`          | integer |                | The maximum number of records in a single buffer. If not specified, there is no explicit limit on the number of records, but the buffer may still be constrained by `max_buffer_size_bytes`.                                                                                                                                                                                                                                                                                                                                                                                |
+| `max_buffer_size_bytes`          | integer | `1048576`      | The maximum buffer size (in bytes) for a single operation. Buffers for `INSERT`, `UPDATE`, and `DELETE` queries are maintained separately. Default is 1 MiB (`1048576` bytes).                                                                                                                                                                                                                                                                                                                                                                                              |
+| `on_conflict_do_nothing`         | bool    | `false`        | Specifies how the connector handles conflicts when executing an `INSERT` into a table with a primary key. By default, an existing row with the same key is overwritten. Setting this flag to `true` preserves the existing row and ignores the new insert. <p> This setting does not affect `UPDATE` statements, which always replace the value associated with the key.</p><p>**This setting has no effect when `mode = "cdc"`, since all operations are performed as append-only `INSERT`s into the target table. Any conflict in CDC mode will result in an error.**</p> |
+| `threads`                        | integer | `4`            | Number of parallel worker threads used to write to PostgreSQL. Each worker opens its own connection and handles a disjoint partition of the data. Increasing this value can improve throughput for large batches. Must be at least 1.                                                                                                                                                                                                                                                                                                                                       |
 
 [*]: Required fields
 
 The schema of the PostgreSQL table should match the schema of the Feldera view, as outlined in the table below, with the following exceptions:
+
 - Narrower Feldera types such as `INT2` and `FLOAT4` can be stored in wider PostgreSQL column types like `INT8` and `FLOAT8` respectively.
 - Columns in the PostgreSQL table that are **nullable** or have **default** values may be omitted from the Feldera view.
 
@@ -50,16 +51,19 @@ The PostgreSQL connector supports two write modes:
 #### Materialized mode (default)
 
 In materialized mode (`"mode": "materialized"`), the connector performs direct `INSERT`, `UPDATE`, and `DELETE` operations on the target table. This mode:
-  - Maintains the target table as a materialized snapshot of the view
-  - Updates existing records in-place and removes deleted records
+
+- Maintains the target table as a materialized snapshot of the view
+- Updates existing records in-place and removes deleted records
 
 #### CDC mode
 
 In CDC mode (`"mode": "cdc"`), the connector writes all operations as `INSERT` operations into an append-only event log. This mode:
-  - Preserves a complete history of all changes
-  - Adds metadata columns to track operation type and timestamp
+
+- Preserves a complete history of all changes
+- Adds metadata columns to track operation type and timestamp
 
 When using CDC mode, you must ensure your PostgreSQL table includes the metadata columns:
+
 - Operation column (default: `__feldera_op`): Contains `"i"` (insert), `"u"` (upsert), or `"d"` (delete)
 - Timestamp column (default: `__feldera_ts`): Contains timestamp when the record was output; in microseconds since January 1, 1970 UTC
 
@@ -69,9 +73,11 @@ You can customize the names of these columns using the `cdc_op_column` and `cdc_
 
 Feldera supports connecting to PostgreSQL over TLS / SSL.
 To enable a secure connection, you **must** provide the following field:
+
 - `ssl_ca_pem`: The CA certificate in PEM format, used to verify the server certificate.
 
 You can optionally provide the following fields:
+
 - `ssl_client_pem`: The client certificate in PEM format (if the server requires client authentication).
 - `ssl_client_key`: The private key corresponding to the client certificate.
 - `verify_hostname`: Set to `false` to disable hostname verification (not recommended). Defaults to `true`.
@@ -107,26 +113,26 @@ The following table lists supported PostgreSQL data types.
 Please [let us know](https://github.com/feldera/feldera/issues) if you need support for a specific type.
 :::
 
-| Feldera Type      | PostgreSQL Type                      | Comments                                               |
-|-------------------|--------------------------------------|--------------------------------------------------------|
-| BOOL              | BOOL                                 |                                                        |
-| TINYINT           | SMALLINT, INT, BIGINT                | No direct equivalent but can be stored in wider types. |
-| SMALLINT          | SMALLINT                             |                                                        |
-| INT               | INT                                  |                                                        |
-| BIGINT            | BIGINT                               |                                                        |
-| DECIMAL           | DECIMAL                              |                                                        |
-| REAL              | FLOAT                                |                                                        |
-| DOUBLE            | DOUBLE PRECISION                     |                                                        |
-| VARCHAR           | VARCHAR                              |                                                        |
-| TIME              | TIME                                 |                                                        |
-| DATE              | DATE                                 |                                                        |
-| TIMESTAMP         | TIMESTAMP                            | Feldera TIMESTAMPs do not have timezone information.   |
-| VARIANT           | JSON, JSONB                          |                                                        |
-| UUID              | UUID                                 |                                                        |
-| VARBINARY         | BYTEA                                |                                                        |
-| ARRAY             | ARRAY                                |                                                        |
-| User Defined Type | Equivalent PostgreSQL Composite Type |                                                        |
-| MAP               | JSON, JSONB                          | No direct equivalent type, but can be stored as JSON / JSONB.             |
+| Feldera Type      | PostgreSQL Type                      | Comments                                                      |
+| ----------------- | ------------------------------------ | ------------------------------------------------------------- |
+| BOOL              | BOOL                                 |                                                               |
+| TINYINT           | SMALLINT, INT, BIGINT                | No direct equivalent but can be stored in wider types.        |
+| SMALLINT          | SMALLINT                             |                                                               |
+| INT               | INT                                  |                                                               |
+| BIGINT            | BIGINT                               |                                                               |
+| DECIMAL           | DECIMAL                              |                                                               |
+| REAL              | FLOAT                                |                                                               |
+| DOUBLE            | DOUBLE PRECISION                     |                                                               |
+| VARCHAR           | VARCHAR                              |                                                               |
+| TIME              | TIME                                 |                                                               |
+| DATE              | DATE                                 |                                                               |
+| TIMESTAMP         | TIMESTAMP                            | Feldera TIMESTAMPs do not have timezone information.          |
+| VARIANT           | JSON, JSONB                          |                                                               |
+| UUID              | UUID                                 |                                                               |
+| VARBINARY         | BYTEA                                |                                                               |
+| ARRAY             | ARRAY                                |                                                               |
+| User Defined Type | Equivalent PostgreSQL Composite Type |                                                               |
+| MAP               | JSON, JSONB                          | No direct equivalent type, but can be stored as JSON / JSONB. |
 
 ## Example
 
@@ -139,7 +145,6 @@ psql postgres://postgres:password@localhost:5432/postgres
 
 Now, let's create a table `feldera_out` with columns `id` and `s` that Feldera
 will write to.
-
 
 ```sql
 -- PostgreSQL
@@ -189,7 +194,6 @@ create index v1_idx on v1(id);
 :::important
 Column names in Feldera SQL view and PostgreSQL table need to match.
 :::
-
 
 ## Example demonstrating all supported types
 
@@ -303,7 +307,6 @@ CREATE TABLE all_types_example (
 
 After the pipeline completes, we can inspect the PostgreSQL table to ensure
 that Feldera has written to it:
-
 
 ```sql
 -- PostgreSQL
