@@ -180,6 +180,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         File file = createInputScript(sql);
         CompilerMain.execute("-TSqlToRelCompiler=2", "-TPasses=2",
                 "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+        BaseSQLTests.compileAndCheckRust(true);
         Logger.INSTANCE.setDebugStream(save);
         String messages = builder.toString();
         Assert.assertTrue(messages.contains("After optimizer"));
@@ -290,8 +291,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
-        if (!BaseSQLTests.skipRust)
-            Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
+        BaseSQLTests.compileAndCheckRust(true);
     }
 
     void compileFile(String file, boolean run) throws SQLException, IOException, InterruptedException {
@@ -299,8 +299,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 "-i", "--alltables", "-q", "--ignoreOrder", "-o", BaseSQLTests.TEST_FILE_PATH, file);
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
-        if (run && !BaseSQLTests.skipRust)
-            Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
+        if (run)
+            BaseSQLTests.compileAndCheckRust(true);
         // cleanup after ourselves
         createEmptyStubs();
     }
@@ -399,8 +399,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         CompilerMessages messages = CompilerMain.execute("-q", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         messages.print();
         Assert.assertEquals(0, messages.exitCode);
-        if (!BaseSQLTests.skipRust)
-            Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
+        BaseSQLTests.compileAndCheckRust(true);
     }
 
     @Test
