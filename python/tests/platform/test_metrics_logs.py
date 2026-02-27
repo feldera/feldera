@@ -9,7 +9,6 @@ from .helper import (
     post_no_body,
     http_request,
     api_url,
-    start_pipeline,
     start_pipeline_as_paused,
     resume_pipeline,
     stop_pipeline,
