@@ -34,6 +34,7 @@ const installation = {
             items: [
                 'get-started/enterprise/quickstart',
                 'get-started/enterprise/helm-guide',
+                'get-started/enterprise/helm-chart-reference',
                 {
                     type: 'category',
                     label: 'Kubernetes guides',
