@@ -186,6 +186,13 @@ public class BaseSQLTests {
         }
     }
 
+    public static void compileAndCheckRust(boolean quiet) throws IOException, InterruptedException {
+        if (!BaseSQLTests.skipRust) {
+            BaseSQLTests.setupCargoLock();
+            Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, quiet);
+        }
+    }
+
     /** Compile a set of statements that are expected to give a warning at compile time.
      * @param statements  Statement to run.
      * @param regex       This regular expression should match the warning message. */
@@ -355,12 +362,11 @@ public class BaseSQLTests {
             outputStream.close();
         stubsWriter.write(compiler);
         if (!skipRust) {
-            if (Utilities.inCI()) {
-                // In CI we use multi-crate compilation
+            if (multiCrates) {
                 MultiCrateTests.setupCargoLock();
+            } else {
+                BaseSQLTests.setupCargoLock();
             }
-
-            BaseSQLTests.setupCargoLock();
             if (check) {
                 Utilities.compileAndCheckRust(directory, true, testCrate);
             } else {

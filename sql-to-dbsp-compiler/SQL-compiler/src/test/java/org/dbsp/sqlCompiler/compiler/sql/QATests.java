@@ -21,8 +21,7 @@ public class QATests {
             messages.print();
             throw new RuntimeException("Error during compilation");
         }
-        if (!BaseSQLTests.skipRust)
-            Utilities.compileAndCheckRust(BaseSQLTests.PROJECT_DIRECTORY, true);
+        BaseSQLTests.compileAndCheckRust(true);
     }
 
     @Test
