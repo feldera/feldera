@@ -128,11 +128,6 @@ public class DBSPInputMapWithWaterlineOperator
     }
 
     @Override
-    public ProgramIdentifier getTableName() {
-        return IInputMapOperator.super.getTableName();
-    }
-
-    @Override
     public DBSPType getDataOutputType() {
         return this.outputType(0);
     }

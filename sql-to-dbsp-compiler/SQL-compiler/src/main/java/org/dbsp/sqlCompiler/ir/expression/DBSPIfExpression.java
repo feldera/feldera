@@ -37,7 +37,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
-import java.util.Objects;
 
 public final class DBSPIfExpression extends DBSPExpression {
     public final DBSPExpression condition;

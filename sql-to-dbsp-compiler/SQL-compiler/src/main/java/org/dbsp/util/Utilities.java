@@ -40,7 +40,6 @@ import org.apache.calcite.util.TimeString;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.jetbrains.annotations.Contract;
 
 import javax.annotation.Nullable;

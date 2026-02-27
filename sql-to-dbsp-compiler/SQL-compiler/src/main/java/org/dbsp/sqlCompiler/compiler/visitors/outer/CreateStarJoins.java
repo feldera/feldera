@@ -167,7 +167,7 @@ public class CreateStarJoins extends Passes {
     }
 
     static class FindJoinTrees extends CircuitWithGraphsVisitor {
-        JoinTrees joinTrees;
+        final JoinTrees joinTrees;
 
         public FindJoinTrees(DBSPCompiler compiler, CircuitGraphs graphs) {
             super(compiler, graphs);

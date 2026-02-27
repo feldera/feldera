@@ -1632,6 +1632,8 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPStarJoinBaseOperator operator) {
+        if (compiler.metadata.noStarJoins())
+            throw new InternalCompilerError("Star join operator were not enabled");
         this.computeHash(operator);
         this.innerVisitor.setOperatorContext(null);
         DBSPType streamType = this.streamType(operator);

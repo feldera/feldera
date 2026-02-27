@@ -73,7 +73,7 @@ public class CircuitStatistics extends CircuitVisitor {
         public void updateDepth(int depth) {
             this.maxDepth = Math.max(depth, this.maxDepth);
         }
-    };
+    }
 
     final Statistics stats;
     final Map<DBSPOperator, Integer> depth;

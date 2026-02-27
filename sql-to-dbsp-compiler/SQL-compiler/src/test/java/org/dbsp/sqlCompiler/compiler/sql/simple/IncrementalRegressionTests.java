@@ -11,7 +11,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
@@ -33,15 +32,10 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
-import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
-import org.junit.Ignore;
 import org.junit.Test;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -2082,6 +2076,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
         // Test waterline propagation through star join.
         // This will fail if propagation is not good enough because of the 'emit_final' view annotation.
         this.getCCS("""
+                SET FELDERA_AVOID_STAR_JOINS = ON;
+                
                 CREATE TABLE T (
                   ts TIMESTAMP NOT NULL LATENESS INTERVAL 5 MINUTE,
                   a VARCHAR NOT NULL
@@ -2095,6 +2091,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 
                 CREATE LOCAL VIEW tumble AS
                     SELECT
+                            window_start,
+                            window_end,
                             MIN(ts) AS ts_min,
                             MAX(ts) AS ts_max,
                             window_end - INTERVAL 5 MINUTE as delayed_window_end,
@@ -2107,14 +2105,14 @@ public class IncrementalRegressionTests extends SqlIoTest {
                             INTERVAL '1' MINUTES
                         )
                     )
-                    GROUP BY window_start, window_end;
+                    GROUP BY src, window_start, window_end;
                 
                 CREATE VIEW final
-                    WITH ('emit_final' = 'window_end')
-                    AS SELECT window_start, window_end
+                    WITH ('emit_final' = 'delayed_window_end')
+                    AS SELECT *
                     FROM tumble
                      LEFT ASOF JOIN T
                         MATCH_CONDITION(tumble.delayed_window_end >= T.ts)
-                        ON tumble.src = T.a;;""");
+                        ON tumble.src = T.a;""");
     }
 }

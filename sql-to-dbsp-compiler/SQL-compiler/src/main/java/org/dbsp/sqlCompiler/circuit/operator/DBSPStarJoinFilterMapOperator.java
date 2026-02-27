@@ -12,7 +12,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -22,7 +21,7 @@ import java.util.List;
  * each input is indexed and all keys must be of the same type;
  * this operator is incremental-only.  When the operator is lowered
  * the synthesized function returns None when filter(function) is false, and Some(map(function))
- * otherwise.  So the type of the function does NOT always match the output type of the operator.*/
+ * otherwise.  So the type of the function does NOT always match the output type of the operator. */
 public class DBSPStarJoinFilterMapOperator extends DBSPStarJoinBaseOperator implements IIncremental {
     // If the following is null, the function represents the combined function/filter
     // and the function returns Option.

@@ -19,7 +19,6 @@ import org.dbsp.simulator.values.IntegerSqlValue;
 import org.dbsp.simulator.values.RuntimeFunction;
 import org.dbsp.simulator.values.SqlTuple;
 import org.dbsp.simulator.values.StringSqlValue;
-import org.jetbrains.annotations.NotNull;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -114,7 +113,7 @@ public class SimulatorTests {
         }
 
         @Override
-        public int compareTo(@NotNull DynamicSqlValue dynamicSqlValue) {
+        public int compareTo(DynamicSqlValue dynamicSqlValue) {
             Person other = (Person) dynamicSqlValue;
             return Comparator.comparing(
                             Person::getName,
@@ -172,7 +171,7 @@ public class SimulatorTests {
         }
 
         @Override
-        public int compareTo(@NotNull DynamicSqlValue dynamicSqlValue) {
+        public int compareTo(DynamicSqlValue dynamicSqlValue) {
             return Integer.compare(this.age, dynamicSqlValue.to(Age.class).age);
         }
     }
@@ -345,7 +344,7 @@ public class SimulatorTests {
         }
 
         @Override
-        public int compareTo(@NotNull DynamicSqlValue dynamicSqlValue) {
+        public int compareTo(DynamicSqlValue dynamicSqlValue) {
             Address other = (Address) dynamicSqlValue;
             return Comparator.comparing(
                             Address::getName,
@@ -423,7 +422,7 @@ public class SimulatorTests {
         }
 
         @Override
-        public int compareTo(@NotNull DynamicSqlValue dynamicSqlValue) {
+        public int compareTo(DynamicSqlValue dynamicSqlValue) {
             NameAddress other = (NameAddress) dynamicSqlValue;
             return Comparator.comparing(
                             NameAddress::getName,
@@ -574,7 +573,7 @@ public class SimulatorTests {
         }
 
         @Override
-        public int compareTo(@NotNull DynamicSqlValue dynamicSqlValue) {
+        public int compareTo(DynamicSqlValue dynamicSqlValue) {
             PersonAddressAge other = (PersonAddressAge) dynamicSqlValue;
             return Comparator.comparing(
                             PersonAddressAge::getName,

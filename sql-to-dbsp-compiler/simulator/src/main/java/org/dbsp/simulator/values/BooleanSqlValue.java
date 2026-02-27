@@ -51,7 +51,7 @@ public class BooleanSqlValue extends BaseSqlValue {
     }
 
     @Override
-    public int compareTo(@NotNull DynamicSqlValue dynamicSqlValue) {
+    public int compareTo(DynamicSqlValue dynamicSqlValue) {
         BooleanSqlValue other = (BooleanSqlValue) dynamicSqlValue;
         return Comparator.comparing(
                         BooleanSqlValue::getValue,

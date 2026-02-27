@@ -14,14 +14,14 @@ public record Result<T>(@Nullable T data, @Nullable ErrorWithPosition error) {
      * Create a Result holding some data
      */
     public static <T> Result<T> ok(T ok) {
-        return new Result<T>(ok, null);
+        return new Result<>(ok, null);
     }
 
     /**
      * Create a result holding an error
      */
     public static <T> Result<T> err(ErrorWithPosition message) {
-        return new Result<T>(null, message);
+        return new Result<>(null, message);
     }
 
     public boolean isOk() {

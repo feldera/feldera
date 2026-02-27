@@ -24,12 +24,9 @@
 package org.dbsp.sqlCompiler.ir;
 
 import org.dbsp.sqlCompiler.compiler.IHasCalciteObject;
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.IHasId;
 import org.dbsp.util.ToIndentableString;
-
-import javax.annotation.Nullable;
 
 /**
  * An IR node that is used to represent DBSP circuits.

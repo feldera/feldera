@@ -23,6 +23,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPrimitiveAggregateOperator;
@@ -30,6 +31,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
@@ -45,7 +47,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.ImplementJoins;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveStarJoins;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.KeyPropagation;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.recursive.SubstituteLeftJoins;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -286,15 +288,16 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
                 leftJoin, rightJoin, deltaJoin, antiJoin, map, sum));
     }
 
-    void processStarJoin(DBSPStarJoinBaseOperator operator) {
-        final List<OutputPort> inputs = Linq.map(operator.inputs, this::mapped);
+    StarJoinDeltaExpansion processStarJoin(DBSPStarJoinBaseOperator operator, @Nullable List<OutputPort> inputs) {
+        if (inputs == null)
+            inputs = Linq.map(operator.inputs, this::mapped);
         final var integrators = Linq.map(inputs,
                 i -> new DBSPDelayedIntegralOperator(operator.getRelNode(), i));
         for (var op: integrators)
             this.addOperator(op);
         final var integratorOutputs = Linq.map(integrators, DBSPSimpleOperator::outputPort);
 
-        List<ImplementJoins.StarJoinImplementation> joins = new ArrayList<>();
+        List<RemoveStarJoins.StarJoinImplementation> joins = new ArrayList<>();
         for (int i = 0; i < inputs.size(); i++) {
             final List<OutputPort> joinInputs = new ArrayList<>(integratorOutputs);
             // Set the delta
@@ -302,7 +305,7 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
             DBSPStarJoinBaseOperator join = operator.with(operator.getClosureFunction(),
                     operator.outputType, joinInputs, false)
                     .to(DBSPStarJoinBaseOperator.class);
-            ImplementJoins.StarJoinImplementation implementation = new ImplementJoins.StarJoinImplementation(
+            RemoveStarJoins.StarJoinImplementation implementation = new RemoveStarJoins.StarJoinImplementation(
                     this.compiler, join, joinInputs, true);
             for (var j: implementation.joins)
                 this.addOperator(j);
@@ -312,18 +315,48 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
 
         var joinOutputs = Linq.map(joins, j -> j.result.outputPort());
         DBSPSumOperator sum = new DBSPSumOperator(operator.getRelNode(), joinOutputs);
-        this.map(operator, sum);
-        this.addExpansion(operator, new StarJoinDeltaExpansion(integrators, joins, sum));
+        return new StarJoinDeltaExpansion(integrators, joins, sum);
     }
 
     @Override
     public void postorder(DBSPStarJoinOperator operator) {
-        this.processStarJoin(operator);
+        StarJoinDeltaExpansion expansion = this.processStarJoin(operator, null);
+        this.map(operator, expansion.sum);
+        this.addExpansion(operator, expansion);
     }
 
     @Override
     public void postorder(DBSPStarJoinIndexOperator operator) {
-        this.processStarJoin(operator);
+        StarJoinDeltaExpansion expansion = this.processStarJoin(operator, null);
+        this.map(operator, expansion.sum);
+        this.addExpansion(operator, expansion);
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinFilterMapOperator operator) {
+        final List<OutputPort> inputs = Linq.map(operator.inputs, this::mapped);
+        // First expand into a star_join -> filter -> map
+        RemoveStarJoins.StarJoinFilterMapImplementation implementation =
+                new RemoveStarJoins.StarJoinFilterMapImplementation(operator, inputs);
+        // Expand the star join itself again
+        StarJoinDeltaExpansion expansion = this.processStarJoin(implementation.join, inputs);
+        this.addOperator(expansion.sum);
+        DBSPFilterOperator newFilter = implementation.filter.withInputs(Linq.list(expansion.sum.outputPort()), false)
+                .to(DBSPFilterOperator.class);
+
+        DBSPSimpleOperator newMap = null;
+        if (implementation.map != null) {
+            this.addOperator(newFilter);
+            newMap = implementation.map.withInputs(Linq.list(newFilter.outputPort()), false)
+                    .to(DBSPSimpleOperator.class);
+            this.map(operator, newMap);
+        } else {
+            this.map(operator, newFilter);
+        }
+
+        StarJoinFilterMapDeltaExpansion result = new StarJoinFilterMapDeltaExpansion(
+                expansion, newFilter, newMap);
+        this.addExpansion(operator, result);
     }
 
     @Override

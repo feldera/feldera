@@ -15,9 +15,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.junit.Assert;
 import org.junit.Test;
 
-import java.io.IOException;
-import java.sql.SQLException;
-
 public class SerdeTest extends SqlIoTest {
     @Test
     public void testJsonString() {

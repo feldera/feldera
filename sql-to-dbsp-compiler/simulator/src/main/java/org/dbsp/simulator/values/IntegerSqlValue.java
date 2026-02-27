@@ -46,7 +46,7 @@ public class IntegerSqlValue extends BaseSqlValue {
     }
 
     @Override
-    public int compareTo(@NotNull DynamicSqlValue dynamicSqlValue) {
+    public int compareTo(DynamicSqlValue dynamicSqlValue) {
         IntegerSqlValue other = (IntegerSqlValue) dynamicSqlValue;
         return Comparator.comparing(
                 IntegerSqlValue::getValue,

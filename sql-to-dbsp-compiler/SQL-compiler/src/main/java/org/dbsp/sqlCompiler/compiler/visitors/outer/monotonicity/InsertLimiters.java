@@ -1,55 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyNOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
+import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.IColumnMetadata;
@@ -82,6 +34,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.LeftJoinDeltaExpan
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.OperatorDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.StarJoinDeltaExpansion;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.StarJoinFilterMapDeltaExpansion;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.circuit.annotation.NoIntegrator;
@@ -1030,6 +983,41 @@ public class InsertLimiters extends CircuitCloneVisitor {
             super.postorder(join);
             this.nonMonotone(join);
         }
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinFilterMapOperator join) {
+        OperatorDeltaExpansion expanded = this.expandedInto.get(join);
+        List<OutputPort> limiters = Linq.map(join.inputs, this.bound::get);
+        if (expanded == null || Linq.all(limiters, Objects::isNull)) {
+            super.postorder(join);
+            this.nonMonotone(join);
+            return;
+        }
+
+        List<OutputPort> newInputs = Linq.map(join.inputs, this::mapped);
+        DBSPSimpleOperator result = join.withInputs(newInputs, false)
+                .to(DBSPSimpleOperator.class);
+
+        StarJoinFilterMapDeltaExpansion expansion = expanded.to(StarJoinFilterMapDeltaExpansion.class);
+        for (var integral: expansion.integrators)
+            this.processIntegral(integral);
+        for (var star: expansion.joins) {
+            for (var op : star.joins)
+                this.processJoin(op);
+            MonotoneExpression monotoneValue = this.expansionMonotoneValues.get(star.result);
+            if (monotoneValue == null || !monotoneValue.mayBeMonotone()) {
+                this.nonMonotone(star.result);
+            } else {
+                this.addBounds(null, star.result, 0);
+            }
+        }
+        this.processSumOrDiff(expansion.sum);
+        this.processFilter(expansion.filter);
+        if (expansion.map != null) {
+            this.addBounds(join, expansion.map, 0);
+        }
+        this.map(join, result);
     }
 
     @Override

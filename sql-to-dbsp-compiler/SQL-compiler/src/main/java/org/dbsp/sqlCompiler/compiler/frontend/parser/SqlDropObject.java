@@ -38,6 +38,4 @@ public abstract class SqlDropObject extends SqlDrop {
         }
         name.unparse(writer, leftPrec, rightPrec);
     }
-
-    public void execute(CalcitePrepare.Context context) { }
 }
