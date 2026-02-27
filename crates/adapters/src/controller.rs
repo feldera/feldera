@@ -1558,6 +1558,38 @@ impl Controller {
             |s| s.reader.as_ref().map_or(0, |reader| reader.memory()),
         );
 
+        // Export paused state as a metric (1 = paused, 0 = running)
+        write_input_metric(
+            metrics,
+            labels,
+            status,
+            "input_connector_paused",
+            "Whether the input connector is paused by the user (1 for true, 0 for false).",
+            ValueType::Gauge,
+            |s| s.is_paused_by_user() as u8,
+        );
+
+        // Export barrier state as a metric (1 = barrier active, 0 = not active)
+        write_input_metric(
+            metrics,
+            labels,
+            status,
+            "input_connector_barrier",
+            "Whether the input connector is currently a barrier for checkpointing/suspend (1 for true, 0 for false).",
+            ValueType::Gauge,
+            |s| s.is_barrier() as u8,
+        );
+
+        write_input_metric(
+            metrics,
+            labels,
+            status,
+            "input_connector_end_of_input",
+            "Whether the input connector has reached end of input (1 for true, 0 for false).",
+            ValueType::Gauge,
+            |s| s.metrics.end_of_input.load(Ordering::Relaxed) as u8,
+        );
+
         fn write_input_histogram<F, M>(
             metrics: &mut MetricsWriter<F>,
             labels: &LabelStack,

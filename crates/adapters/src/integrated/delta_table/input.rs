@@ -662,12 +662,13 @@ impl DeltaTableInputEndpointInner {
     }
 
     /// Load the entire table snapshot as a single "select * where <filter>" query.
+    /// Returns the total number of records processed.
     async fn read_unordered_snapshot(
         &self,
         table: &DeltaTable,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
-    ) {
+    ) -> usize {
         let column_names = self.used_column_list(table);
 
         let mut snapshot_query = format!("select {column_names} from snapshot");
@@ -683,7 +684,8 @@ impl DeltaTableInputEndpointInner {
         // Use the time when we started reading the snapshot as the ingestion timestamp for the snapshot.
         let timestamp = Utc::now();
 
-        self.execute_snapshot_query(&snapshot_query, "initial snapshot", input_stream, receiver)
+        let record_count = self
+            .execute_snapshot_query(&snapshot_query, "initial snapshot", input_stream, receiver)
             .await;
 
         // Empty buffer to indicate checkpointable state.
@@ -703,25 +705,33 @@ impl DeltaTableInputEndpointInner {
 
         //let _ = self.datafusion.deregister_table("snapshot");
         info!(
-            "delta_table {}: finished reading initial snapshot",
+            "delta_table {}: snapshot load completed (records: {}, version: {})",
             &self.endpoint_name,
+            record_count,
+            table.version().unwrap()
         );
+        record_count
     }
 
     /// Load the initial snapshot by issuing a sequence of queries for monotonically
     /// increasing timestamp ranges.
+    /// Returns the total number of records processed.
     async fn read_ordered_snapshot(
         &self,
         table: &DeltaTable,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
-    ) {
+    ) -> usize {
         // Use the time when we started reading the snapshot as the ingestion timestamp for the snapshot.
         let timestamp = Utc::now();
 
-        self.read_ordered_snapshot_inner(table, input_stream, receiver)
+        let total_records = self
+            .read_ordered_snapshot_inner(table, input_stream, receiver)
             .await
-            .unwrap_or_else(|e| self.consumer.error(true, e, None));
+            .unwrap_or_else(|e| {
+                self.consumer.error(true, e, None);
+                0
+            });
 
         // Empty buffer to indicate checkpointable state.
         self.queue.push_entry(
@@ -737,6 +747,14 @@ impl DeltaTableInputEndpointInner {
             .with_commit_transaction(true),
             Vec::new(),
         );
+
+        info!(
+            "delta_table {}: snapshot load completed (records: {}, version: {})",
+            &self.endpoint_name,
+            total_records,
+            table.version().unwrap()
+        );
+        total_records
     }
 
     async fn read_ordered_snapshot_inner(
@@ -744,7 +762,7 @@ impl DeltaTableInputEndpointInner {
         table: &DeltaTable,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
-    ) -> Result<(), AnyError> {
+    ) -> Result<usize, AnyError> {
         let timestamp_column = self.config.timestamp_column.as_ref().unwrap();
 
         let timestamp_field = self.schema.field(timestamp_column).unwrap();
@@ -779,7 +797,7 @@ impl DeltaTableInputEndpointInner {
                     String::new()
                 }
             );
-            return Ok(());
+            return Ok(0);
         }
 
         if bounds[0].num_columns() != 2 {
@@ -825,6 +843,7 @@ impl DeltaTableInputEndpointInner {
         let max = timestamp_to_sql_expression(&timestamp_field.columntype, &max);
 
         let mut start = min.clone();
+        let mut total_records = 0usize;
 
         loop {
             // Evaluate SQL expression for the new end of the interval.
@@ -843,8 +862,10 @@ impl DeltaTableInputEndpointInner {
                 range_query = format!("{range_query} and {filter}");
             }
 
-            self.execute_snapshot_query(&range_query, "range", input_stream, receiver)
+            let range_record_count = self
+                .execute_snapshot_query(&range_query, "range", input_stream, receiver)
                 .await;
+            total_records += range_record_count;
 
             start = end.clone();
 
@@ -873,7 +894,7 @@ impl DeltaTableInputEndpointInner {
             );
         }
 
-        Ok(())
+        Ok(total_records)
     }
 
     async fn worker_task_inner(
@@ -931,18 +952,39 @@ impl DeltaTableInputEndpointInner {
                 })
         );
 
+        let mut snapshot_record_count = 0usize;
+
         if snapshot_incomplete && self.config.snapshot() && self.config.timestamp_column.is_none() {
             // Read snapshot chunk-by-chunk.
-            self.read_unordered_snapshot(&table, input_stream.as_mut(), &mut receiver)
+            snapshot_record_count = self
+                .read_unordered_snapshot(&table, input_stream.as_mut(), &mut receiver)
                 .await;
         } else if snapshot_incomplete && self.config.snapshot() {
             // Read the entire snapshot in one query.
-            self.read_ordered_snapshot(&table, input_stream.as_mut(), &mut receiver)
+            snapshot_record_count = self
+                .read_ordered_snapshot(&table, input_stream.as_mut(), &mut receiver)
                 .await;
         }
 
         // Start following the table if required by the configuration.
         if self.config.follow() {
+            // Log the appropriate message based on whether we just completed a snapshot
+            if self.config.snapshot() && snapshot_incomplete {
+                // We just completed reading a snapshot, now switching to follow mode
+                info!(
+                    "delta_table {}: snapshot phase completed, switching to follow mode (records: {}, version: {})",
+                    &self.endpoint_name, snapshot_record_count, version
+                );
+            } else if !self.config.snapshot() {
+                // Pure CDC follow mode (no snapshot configured)
+                info!(
+                    "delta_table {}: CDC follow started (from version: {})",
+                    &self.endpoint_name, version
+                );
+            }
+            // Note: If self.config.snapshot() && !snapshot_incomplete, we're resuming from a checkpoint
+            // where the snapshot was already completed, so no special log needed
+
             let mut retry_count = 0;
 
             // If we haven't previously read a snapshot of the table, report initial frontier.
@@ -1436,13 +1478,14 @@ impl DeltaTableInputEndpointInner {
     }
 
     /// Execute a SQL query to load a complete or partial snapshot of the DeltaTable.
+    /// Returns the total number of records processed.
     async fn execute_snapshot_query(
         &self,
         query: &str,
         descr: &str,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
-    ) {
+    ) -> usize {
         let descr = format!("{descr} query '{query}'");
         debug!(
             "delta_table {}: retrieving data from the Delta table snapshot using {descr}",
@@ -1458,7 +1501,7 @@ impl DeltaTableInputEndpointInner {
             Err(e) => {
                 self.consumer
                     .error(true, anyhow!("error compiling query '{query}': {e}"), None);
-                return;
+                return 0;
             }
         };
 
@@ -1471,7 +1514,7 @@ impl DeltaTableInputEndpointInner {
             receiver,
             self.allocate_snapshot_transaction_label(),
         )
-        .await;
+        .await
     }
 
     /// Execute a prepared dataframe and push data from it to the circuit.
@@ -1486,6 +1529,8 @@ impl DeltaTableInputEndpointInner {
     /// * `receiver` - used to block the function until the endpoint is unpaused.
     ///
     /// * `transaction` - execute the dataframe as part of a transaction with the given label (is `Some`).
+    ///
+    /// Returns the total number of records processed.
     #[allow(clippy::too_many_arguments)]
     async fn execute_df(
         &self,
@@ -1496,7 +1541,7 @@ impl DeltaTableInputEndpointInner {
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
         transaction: Option<Option<String>>,
-    ) {
+    ) -> usize {
         wait_running(receiver).await;
 
         // Limit the number of connectors simultaneously reading from Delta Lake.
@@ -1506,12 +1551,13 @@ impl DeltaTableInputEndpointInner {
             Err(e) => {
                 self.consumer
                     .error(true, anyhow!("error retrieving {descr}: {e:?}"), None);
-                return;
+                return 0;
             }
             Ok(stream) => stream,
         };
 
         let mut num_batches = 0;
+        let mut total_records = 0usize;
 
         let queue = self.queue.clone();
 
@@ -1579,13 +1625,15 @@ impl DeltaTableInputEndpointInner {
             };
             // info!("schema: {}", batch.schema());
             num_batches += 1;
+            total_records += batch.num_rows();
 
             // Use the timestamp when the batch was retrieved as the ingestion timestamp.
             job_queue.push_job((batch, timestamp)).await;
             timestamp = Utc::now();
         }
 
-        job_queue.flush().await
+        job_queue.flush().await;
+        total_records
     }
 
     async fn parse_record_batch(
@@ -1813,16 +1861,17 @@ impl DeltaTableInputEndpointInner {
             anyhow!("invalid 'cdc_order_by' or 'filter' expression: 'cdc_order_by' and 'filter' (when specified) must be valid SQL expressions that can be used in a 'SELECT * FROM <table> WHERE <filter> ORDER BY <cdc_order_by>' query, but the following error was encountered when compiling '{query}': {e}")
         })?;
 
-        self.execute_df(
-            df,
-            true,
-            cdc_delete_filter,
-            &description,
-            input_stream,
-            receiver,
-            self.allocate_follow_transaction_label(),
-        )
-        .await;
+        let _record_count = self
+            .execute_df(
+                df,
+                true,
+                cdc_delete_filter,
+                &description,
+                input_stream,
+                receiver,
+                self.allocate_follow_transaction_label(),
+            )
+            .await;
 
         Ok(())
     }
@@ -1943,16 +1992,17 @@ impl DeltaTableInputEndpointInner {
             })?
         };
 
-        self.execute_df(
-            df,
-            polarity,
-            None,
-            &description,
-            input_stream,
-            receiver,
-            start_transaction,
-        )
-        .await;
+        let _record_count = self
+            .execute_df(
+                df,
+                polarity,
+                None,
+                &description,
+                input_stream,
+                receiver,
+                start_transaction,
+            )
+            .await;
 
         Ok(())
     }
