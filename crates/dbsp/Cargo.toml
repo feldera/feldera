@@ -137,6 +137,14 @@ harness = false
 name = "cursor_list"
 harness = false
 
+[[bench]]
+name = "list_merger"
+harness = false
+
+[[bench]]
+name = "input_map_ingest"
+harness = false
+
 [[example]]
 name = "orgchart"
 
