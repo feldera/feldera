@@ -258,6 +258,15 @@ pub struct AdHocTable {
     pub materialized: bool,
     pub indexed: bool,
     pub schema: Schema,
+    #[serde(default)]
+    pub table_type: AdHocTableType,
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AdHocTableType {
+    #[default]
+    View,
+    Table,
 }
 
 /// `/coordination/adhoc/scan` request.
