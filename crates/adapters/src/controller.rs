@@ -84,8 +84,8 @@ use feldera_types::adapter_stats::{
 };
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::coordination::{
-    self, AdHocCatalog, CheckpointCoordination, Completion, StepAction, StepInputs, StepRequest,
-    StepStatus, TransactionCoordination,
+    self, AdHocCatalog, AdHocTableType, CheckpointCoordination, Completion, StepAction, StepInputs,
+    StepRequest, StepStatus, TransactionCoordination,
 };
 use feldera_types::format::json::JsonLines;
 use feldera_types::pipeline_diff::PipelineDiff;
@@ -1824,6 +1824,11 @@ impl Controller {
                 materialized: clh.integrate_handle.is_some(),
                 indexed: clh.integrate_handle_is_indexed,
                 schema: Schema::new(relation_to_arrow_fields(&clh.value_schema.fields, false)),
+                table_type: if self.inner.catalog.input_collection_handle(name).is_some() {
+                    AdHocTableType::Table
+                } else {
+                    AdHocTableType::View
+                },
             });
         }
         AdHocCatalog { tables }
