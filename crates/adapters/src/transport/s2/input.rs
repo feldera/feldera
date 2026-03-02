@@ -13,19 +13,26 @@ use feldera_types::{
     transport::s2::{S2InputConfig, S2StartFrom},
 };
 use futures::StreamExt;
-use s2_sdk::{S2, types::{AccountEndpoint, BasinEndpoint, ReadFrom, ReadInput, ReadStart, S2Config, S2Endpoints}};
+use s2_sdk::{
+    S2,
+    types::{
+        AccountEndpoint, BasinEndpoint, ReadFrom, ReadInput, ReadStart, S2Config, S2Endpoints,
+    },
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::hash::Hasher;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use tokio::{
     select,
     sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     task::JoinHandle,
+    time::sleep,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, error, info, info_span};
+use tracing::{Instrument, error, info, info_span, warn};
 use xxhash_rust::xxh3::Xxh3Default;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -97,6 +104,14 @@ fn config_to_read_input(config: &S2InputConfig) -> ReadInput {
     ReadInput::new().with_start(start)
 }
 
+fn read_input_for_position(config: &S2InputConfig, next_seq: u64) -> ReadInput {
+    if next_seq > 0 {
+        make_read_input(next_seq)
+    } else {
+        config_to_read_input(config)
+    }
+}
+
 struct S2Reader {
     command_sender: UnboundedSender<InputReaderCommand>,
 }
@@ -132,7 +147,9 @@ impl S2Reader {
                     };
                     let client = S2::new(s2_config)?;
                     let basin = client.basin(config.basin.parse().map_err(|e| anyhow!("{e}"))?);
-                    Ok::<_, AnyError>(basin.stream(config.stream.parse().map_err(|e| anyhow!("{e}"))?))
+                    Ok::<_, AnyError>(
+                        basin.stream(config.stream.parse().map_err(|e| anyhow!("{e}"))?),
+                    )
                 }
                 .instrument(span.clone()),
             )
@@ -146,10 +163,17 @@ impl S2Reader {
 
         let consumer_clone = consumer.clone();
         TOKIO.spawn(async move {
-            Self::worker_task(config, resume_info, s2_stream, consumer_clone, parser, command_receiver)
-                .instrument(span)
-                .await
-                .unwrap_or_else(|e| consumer.error(true, e, Some("s2-input")));
+            Self::worker_task(
+                config,
+                resume_info,
+                s2_stream,
+                consumer_clone,
+                parser,
+                command_receiver,
+            )
+            .instrument(span)
+            .await
+            .unwrap_or_else(|e| consumer.error(true, e, Some("s2-input")));
         });
 
         Ok(Self { command_sender })
@@ -178,10 +202,9 @@ impl S2Reader {
                 let last = metadata.seq_num_range.end - 1;
 
                 let read_input = make_read_input(first);
-                let mut session = s2_stream
-                    .read_session(read_input)
-                    .await
-                    .with_context(|| format!("Failed to create read session for replay from {first}"))?;
+                let mut session = s2_stream.read_session(read_input).await.with_context(|| {
+                    format!("Failed to create read session for replay from {first}")
+                })?;
 
                 let mut hasher = Xxh3Default::new();
                 let mut buffer_size = BufferSize::default();
@@ -202,7 +225,10 @@ impl S2Reader {
                             buffer.hash(&mut hasher);
                             buffer.flush();
                         }
-                        let amt = BufferSize { records: 1, bytes: data.len() };
+                        let amt = BufferSize {
+                            records: 1,
+                            bytes: data.len(),
+                        };
                         consumer.buffered(amt);
                         buffer_size += amt;
                         if record.seq_num == last {
@@ -238,7 +264,9 @@ impl S2Reader {
                         }
                     };
                     info!("Queued {:?} records ({seq_range:?})", buffer_size);
-                    let metadata_json = serde_json::to_value(&Metadata { seq_num_range: seq_range })?;
+                    let metadata_json = serde_json::to_value(&Metadata {
+                        seq_num_range: seq_range,
+                    })?;
                     let timestamp = batches.last().map(|(ts, _)| *ts).unwrap_or_else(Utc::now);
                     let hash = hasher.map(|h| h.finish()).unwrap_or(0);
                     let resume = Resume::Replay {
@@ -261,19 +289,9 @@ impl S2Reader {
                     let cur_seq = next_seq.load(Ordering::Acquire);
                     info!("Extend from {cur_seq}");
                     if canceller.is_none() {
-                        let read_input = if cur_seq > 0 {
-                            make_read_input(cur_seq)
-                        } else {
-                            config_to_read_input(&config)
-                        };
-
-                        let session = s2_stream
-                            .read_session(read_input)
-                            .await
-                            .with_context(|| format!("Failed to create S2 read session from seq {cur_seq}"))?;
-
                         canceller = Some(spawn_s2_reader(
-                            session,
+                            s2_stream.clone(),
+                            config.clone(),
                             next_seq.clone(),
                             queue.clone(),
                             consumer.clone(),
@@ -292,44 +310,92 @@ impl S2Reader {
 }
 
 fn spawn_s2_reader(
-    mut session: impl futures::Stream<Item = Result<s2_sdk::types::ReadBatch, s2_sdk::types::S2Error>> + Send + Unpin + 'static,
+    s2_stream: Arc<s2_sdk::S2Stream>,
+    config: Arc<S2InputConfig>,
     next_seq: Arc<AtomicU64>,
     queue: Arc<InputQueue<u64>>,
     consumer: Box<dyn InputConsumer>,
     mut parser: Box<dyn Parser>,
 ) -> Canceller {
+    const RETRY_BASE_DELAY: Duration = Duration::from_millis(500);
+    const RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
+
     let cancel_token = CancellationToken::new();
     let join_handle = tokio::spawn({
         let cancel_token_copy = cancel_token.clone();
         async move {
+            let mut retry_delay = RETRY_BASE_DELAY;
             loop {
-                select! {
-                    _ = cancel_token_copy.cancelled() => break,
-                    result = session.next() => {
-                        let Some(result) = result else {
-                            consumer.error(true, anyhow!("Unexpected end of S2 stream"), Some("s2-input"));
-                            return;
-                        };
-                        match result {
-                            Ok(batch) => {
-                                for record in &batch.records {
-                                    info!("Got record #{}", record.seq_num);
-                                    next_seq.store(record.seq_num + 1, Ordering::Release);
-                                    let data = &record.body;
-                                    queue.push_with_aux(parser.parse(data, None), Utc::now(), record.seq_num);
-                                }
-                            }
-                            Err(error) => {
-                                consumer.error(false, anyhow!("S2 error: {error}"), Some("s2-input"));
+                let start_seq = next_seq.load(Ordering::Acquire);
+                let read_input = read_input_for_position(&config, start_seq);
+
+                let mut session = match s2_stream.read_session(read_input).await {
+                    Ok(session) => {
+                        retry_delay = RETRY_BASE_DELAY;
+                        session
+                    }
+                    Err(error) => {
+                        consumer.error(
+                            false,
+                            anyhow!("Failed to create S2 read session: {error}"),
+                            Some("s2-input"),
+                        );
+                        warn!(
+                            next_seq = start_seq,
+                            "S2 session setup failed; retrying in {:?}: {error}", retry_delay
+                        );
+                        select! {
+                            _ = cancel_token_copy.cancelled() => break,
+                            _ = sleep(retry_delay) => {
+                                retry_delay = std::cmp::min(retry_delay.saturating_mul(2), RETRY_MAX_DELAY);
                             }
                         }
+                        continue;
+                    }
+                };
+
+                loop {
+                    select! {
+                        _ = cancel_token_copy.cancelled() => break,
+                        result = session.next() => {
+                            let Some(result) = result else {
+                                consumer.error(false, anyhow!("S2 read session ended; reconnecting"), Some("s2-input"));
+                                warn!("S2 read session ended; reconnecting in {:?}", retry_delay);
+                                break;
+                            };
+                            match result {
+                                Ok(batch) => {
+                                    for record in &batch.records {
+                                        info!("Got record #{}", record.seq_num);
+                                        next_seq.store(record.seq_num + 1, Ordering::Release);
+                                        let data = &record.body;
+                                        queue.push_with_aux(parser.parse(data, None), Utc::now(), record.seq_num);
+                                    }
+                                }
+                                Err(error) => {
+                                    consumer.error(false, anyhow!("S2 error: {error}"), Some("s2-input"));
+                                    warn!("S2 stream error; reconnecting in {:?}: {error}", retry_delay);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                select! {
+                    _ = cancel_token_copy.cancelled() => break,
+                    _ = sleep(retry_delay) => {
+                        retry_delay = std::cmp::min(retry_delay.saturating_mul(2), RETRY_MAX_DELAY);
                     }
                 }
             }
         }
     });
 
-    Canceller { cancel_token, join_handle }
+    Canceller {
+        cancel_token,
+        join_handle,
+    }
 }
 
 struct Canceller {
