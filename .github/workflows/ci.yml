@@ -5,6 +5,8 @@ on:
   workflow_dispatch:
 
 jobs:
+  # NOTE: For every job added here, add a matching cancel-if-<name>-failed
+  # sentinel job in the cancel-if-* section below.
   invoke-build-rust:
     name: Build Rust
     uses: ./.github/workflows/build-rust.yml
