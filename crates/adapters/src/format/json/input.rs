@@ -16,8 +16,8 @@ use feldera_adapterlib::format::Splitter;
 use feldera_sqllib::Variant;
 use feldera_types::format::json::{JsonLines, JsonParserConfig, JsonUpdateFormat};
 use serde::Deserialize;
-use serde_json::json;
 use serde_json::value::RawValue;
+use serde_json::{Value as JsonValue, json};
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::borrow::Cow;
 
@@ -255,6 +255,51 @@ fn validate_parser_config(
     Ok(())
 }
 
+fn is_insert_delete_action_key(key: &str) -> bool {
+    matches!(key, "insert" | "delete" | "update")
+}
+
+fn looks_like_insert_delete_envelope_object(value: &JsonValue) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+
+    let mut action_key = None;
+    for key in object.keys() {
+        if key == "table" {
+            continue;
+        }
+        if is_insert_delete_action_key(key) {
+            if action_key.is_some() {
+                return false;
+            }
+            action_key = Some(key);
+        } else {
+            return false;
+        }
+    }
+
+    let Some(action_key) = action_key else {
+        return false;
+    };
+
+    matches!(
+        object.get(action_key),
+        Some(JsonValue::Object(_) | JsonValue::Array(_))
+    )
+}
+
+fn looks_like_insert_delete_envelope(update: &RawValue) -> bool {
+    let Ok(value) = serde_json::from_str::<JsonValue>(update.get()) else {
+        return false;
+    };
+
+    looks_like_insert_delete_envelope_object(&value)
+        || value.as_array().is_some_and(|array| {
+            !array.is_empty() && array.iter().all(looks_like_insert_delete_envelope_object)
+        })
+}
+
 struct JsonParser {
     /// Input handle to push parsed data to.
     input_stream: Box<dyn DeCollectionStream>,
@@ -263,6 +308,18 @@ struct JsonParser {
 }
 
 impl JsonParser {
+    fn raw_format_insert_delete_mismatch_error(update: &RawValue) -> Option<ParseError> {
+        looks_like_insert_delete_envelope(update).then(|| {
+            ParseError::text_envelope_error(
+                "raw JSON update format expects plain rows, but received an insert/delete/update envelope".to_string(),
+                update.get(),
+                Some(Cow::from(
+                    "Set `format.config.update_format` to `insert_delete` for payloads like {\"insert\": {...}} or {\"delete\": {...}}.",
+                )),
+            )
+        })
+    }
+
     fn new(input_stream: Box<dyn DeCollectionStream>, config: JsonParserConfig) -> Self {
         Self {
             input_stream,
@@ -404,7 +461,12 @@ impl Parser for JsonParser {
                     self.apply_update::<WeightedUpdate<_>>(update, &metadata, &mut errors)
                 }
                 JsonUpdateFormat::Raw => {
-                    self.apply_update::<&RawValue>(update, &metadata, &mut errors)
+                    if let Some(error) = Self::raw_format_insert_delete_mismatch_error(update) {
+                        errors.push(error);
+                        self.last_event_number += 1;
+                    } else {
+                        self.apply_update::<&RawValue>(update, &metadata, &mut errors);
+                    }
                 }
                 JsonUpdateFormat::Redis | JsonUpdateFormat::Snowflake => {
                     panic!("Unexpected update format: {:?}", &self.config.update_format)
@@ -850,6 +912,45 @@ mod test {
                 vec![ (r#"[[true, 0, "e"]]"#.to_string(), Vec::new())
                             , (r#"[[false, 100, "foo"]]"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("e")), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), true)],
+            ),
+            // raw: insert/delete envelope hint.
+            TestCase::new(
+                JsonParserConfig {
+                    update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
+                    array: false,
+                    lines: JsonLines::Single,
+                },
+                vec![(
+                    r#"{"insert": {"b": true, "i": 0}}"#.to_string(),
+                    vec![ParseError::text_envelope_error(
+                        "raw JSON update format expects plain rows, but received an insert/delete/update envelope".to_string(),
+                        "{\"insert\": {\"b\": true, \"i\": 0}}",
+                        Some(Cow::from(
+                            "Set `format.config.update_format` to `insert_delete` for payloads like {\"insert\": {...}} or {\"delete\": {...}}.",
+                        )),
+                    )],
+                )],
+                Vec::new(),
+            ),
+            TestCase::new(
+                JsonParserConfig {
+                    update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
+                    array: true,
+                    lines: JsonLines::Single,
+                },
+                vec![(
+                    r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(),
+                    vec![ParseError::text_envelope_error(
+                        "raw JSON update format expects plain rows, but received an insert/delete/update envelope".to_string(),
+                        "[{\"insert\": {\"b\": true, \"i\": 0}}]",
+                        Some(Cow::from(
+                            "Set `format.config.update_format` to `insert_delete` for payloads like {\"insert\": {...}} or {\"delete\": {...}}.",
+                        )),
+                    )],
+                )],
+                Vec::new(),
             ),
             // raw: invalid json.
             TestCase::new(
