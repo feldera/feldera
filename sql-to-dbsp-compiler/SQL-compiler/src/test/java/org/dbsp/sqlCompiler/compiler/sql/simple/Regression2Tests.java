@@ -532,4 +532,26 @@ public class Regression2Tests extends SqlIoTest {
                 """;
         this.getCCS(sql);
     }
+
+    @Test
+    public void testBetween() {
+        this.qs("""
+                SELECT 1 BETWEEN 2 AND 0;
+                 r
+                ---
+                false
+                (1 row)
+                
+                SELECT 1 BETWEEN SYMMETRIC 2 AND 0;
+                 r
+                ---
+                true
+                (1 row)
+                
+                SELECT 1 BETWEEN ASYMMETRIC 2 AND 0;
+                 r
+                ---
+                false
+                (1 row)""");
+    }
 }
