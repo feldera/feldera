@@ -1,7 +1,13 @@
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
+
+    use feldera_types::config::{
+        ConnectorConfig, FormatConfig, OutputBufferConfig, TransportConfig,
+        default_max_queued_records,
+    };
     use feldera_types::transport::s2::{S2InputConfig, S2StartFrom};
-    use serde_json;
+    use serde_json::{self, json};
 
     #[test]
     fn config_serialization_roundtrip() {
@@ -33,9 +39,8 @@ mod tests {
             (r#""Beginning""#, S2StartFrom::Beginning),
             (r#""Tail""#, S2StartFrom::Tail),
         ] {
-            let json = format!(
-                r#"{{"basin":"b","stream":"s","auth_token":"t","start_from":{variant}}}"#
-            );
+            let json =
+                format!(r#"{{"basin":"b","stream":"s","auth_token":"t","start_from":{variant}}}"#);
             let config: S2InputConfig = serde_json::from_str(&json).unwrap();
             assert_eq!(config.start_from, expected);
         }
@@ -46,13 +51,17 @@ mod tests {
         use crate::transport::s2::S2Metadata as Metadata;
 
         // Empty range (no messages processed)
-        let meta = Metadata { seq_num_range: 0..0 };
+        let meta = Metadata {
+            seq_num_range: 0..0,
+        };
         let json = serde_json::to_value(&meta).unwrap();
         let restored = Metadata::from_resume_info(Some(json)).unwrap();
         assert_eq!(restored.seq_num_range, 0..0);
 
         // Non-empty range
-        let meta = Metadata { seq_num_range: 6..10 };
+        let meta = Metadata {
+            seq_num_range: 6..10,
+        };
         let json = serde_json::to_value(&meta).unwrap();
         let restored = Metadata::from_resume_info(Some(json)).unwrap();
         assert_eq!(restored.seq_num_range, 6..10);
@@ -116,5 +125,36 @@ mod tests {
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("endpoint"));
+    }
+
+    #[test]
+    fn connector_config_insert_delete_format_roundtrip() {
+        let config = ConnectorConfig {
+            transport: TransportConfig::S2Input(S2InputConfig {
+                basin: "test-basin".to_string(),
+                stream: "test-stream".to_string(),
+                auth_token: "tok_test123".to_string(),
+                endpoint: Some("http://localhost:8080".to_string()),
+                start_from: S2StartFrom::Beginning,
+            }),
+            format: Some(FormatConfig {
+                name: Cow::from("json"),
+                config: json!({
+                    "update_format": "insert_delete"
+                }),
+            }),
+            index: None,
+            output_buffer_config: OutputBufferConfig::default(),
+            max_batch_size: None,
+            max_worker_batch_size: None,
+            max_queued_records: default_max_queued_records(),
+            paused: false,
+            labels: Vec::new(),
+            start_after: None,
+        };
+
+        let serialized = serde_json::to_value(&config).unwrap();
+        let deserialized: ConnectorConfig = serde_json::from_value(serialized).unwrap();
+        assert_eq!(config, deserialized);
     }
 }
