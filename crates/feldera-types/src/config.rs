@@ -21,6 +21,7 @@ use crate::transport::nexmark::NexmarkInputConfig;
 use crate::transport::postgres::{PostgresReaderConfig, PostgresWriterConfig};
 use crate::transport::pubsub::PubSubInputConfig;
 use crate::transport::redis::RedisOutputConfig;
+use crate::transport::s2::S2InputConfig;
 use crate::transport::s3::S3InputConfig;
 use crate::transport::url::UrlInputConfig;
 use core::fmt;
@@ -1607,6 +1608,7 @@ pub enum TransportConfig {
     /// Ad hoc input: cannot be instantiated through API
     AdHocInput(AdHocInputConfig),
     ClockInput(ClockConfig),
+    S2Input(S2InputConfig),
 }
 
 impl TransportConfig {
@@ -1632,6 +1634,7 @@ impl TransportConfig {
             TransportConfig::AdHocInput(_) => "adhoc_input".to_string(),
             TransportConfig::RedisOutput(_) => "redis_output".to_string(),
             TransportConfig::ClockInput(_) => "clock".to_string(),
+            TransportConfig::S2Input(_) => "s2_input".to_string(),
         }
     }
 
