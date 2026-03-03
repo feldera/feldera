@@ -12,18 +12,23 @@ No automatic cleanup; pipelines are left in place for inspection after failures.
 
 from __future__ import annotations
 
-import time
 import json
-import logging
+import time
 import pytest
 import requests
-from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Optional, Callable
+import logging
+from typing import Any, Dict, Iterable
 from http import HTTPStatus
 from urllib.parse import quote, quote_plus
 
 from feldera.testutils_oidc import get_oidc_test_helper
-from tests import FELDERA_REQUESTS_VERIFY, API_KEY, BASE_URL, unique_pipeline_name
+from tests import (
+    FELDERA_REQUESTS_VERIFY,
+    API_KEY,
+    BASE_URL,
+    TEST_CLIENT,
+    unique_pipeline_name,
+)
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 API_PREFIX = "/v0"
@@ -116,39 +121,6 @@ def delete(path: str, **kw) -> requests.Response:
     return http_request("DELETE", path, **kw)
 
 
-def wait_for_deployment_status(
-    name: str, desired: str | Callable[[str], bool], timeout_s: float = 60.0
-):
-    """
-    Wait until pipeline 'name' has 'desired' deployment status:
-
-    - If 'desired' is a string, until that is the status.
-
-    - If 'desired' is a function, until it returns true when passed
-      the deployment status.
-    """
-    print(f"Waiting up to {timeout_s} seconds for {name} to transition to {desired}")
-    start = time.time()
-    deadline = start + timeout_s
-    last = None
-    while time.time() < deadline:
-        r = get_pipeline(name, "status")
-        if r.status_code != HTTPStatus.OK:
-            time.sleep(0.25)
-            continue
-        obj = r.json()
-        status = obj.get("deployment_status")
-        if status != last:
-            print(f"After {time.time() - start:.1f} seconds: status is {status}")
-        last = status
-        if last == desired if isinstance(desired, str) else desired(last):
-            return obj
-        time.sleep(0.25)
-    raise TimeoutError(
-        f"Timed out waiting for pipeline '{name}' deployment_status={desired} (last={last})\nCurrent pipeline descriptor:\n{obj}"
-    )
-
-
 def create_pipeline(name: str, sql: str):
     r = post_json(
         api_url("/pipelines"),
@@ -167,78 +139,29 @@ def create_pipeline(name: str, sql: str):
 
 
 def start_pipeline(name: str, wait: bool = True):
-    r = post_no_body(api_url(f"/pipelines/{name}/start"))
-    assert r.status_code == HTTPStatus.ACCEPTED, (
-        f"Unexpected start response: {r.status_code} {r.text}"
-    )
-    if wait:
-        wait_for_deployment_status(name, "Running", 120)
-    return r
+    TEST_CLIENT.start_pipeline(name, wait=wait)
 
 
 def resume_pipeline(name: str, wait: bool = True):
-    r = post_no_body(api_url(f"/pipelines/{name}/resume"))
-    assert r.status_code == HTTPStatus.ACCEPTED, (
-        f"Unexpected resume response: {r.status_code} {r.text}"
-    )
-    if wait:
-        wait_for_deployment_status(name, "Running", 30)
-    return r
+    TEST_CLIENT.resume_pipeline(name, wait=wait)
 
 
 def start_pipeline_as_paused(name: str, wait: bool = True):
-    r = post_no_body(api_url(f"/pipelines/{name}/start"), params={"initial": "paused"})
-    assert r.status_code == HTTPStatus.ACCEPTED, (
-        f"Unexpected pause response: {r.status_code} {r.text}"
-    )
-    if wait:
-        wait_for_deployment_status(name, "Paused", 120)
-    return r
+    TEST_CLIENT.start_pipeline_as_paused(name, wait=wait)
 
 
 def pause_pipeline(name: str, wait: bool = True):
-    r = post_no_body(api_url(f"/pipelines/{name}/pause"))
-    assert r.status_code == HTTPStatus.ACCEPTED, (
-        f"Unexpected pause response: {r.status_code} {r.text}"
-    )
-    if wait:
-        wait_for_deployment_status(name, "Paused", 30)
-    return r
+    TEST_CLIENT.pause_pipeline(name, wait=wait)
 
 
 def stop_pipeline(name: str, force: bool = True, wait: bool = True):
-    r = post_no_body(
-        api_url(f"/pipelines/{name}/stop?force={'true' if force else 'false'}")
-    )
-    assert r.status_code == HTTPStatus.ACCEPTED, (
-        f"Unexpected stop response: {r.status_code} {r.text}"
-    )
-    wait_for_deployment_status(name, "Stopped", 30)
-    return r
-
-
-def wait_for_cleared_storage(name: str, timeout_s: float = 60.0):
-    deadline = time.time() + timeout_s
-    last = None
-    while time.time() < deadline:
-        r = get_pipeline(name, "status")
-        if r.status_code != HTTPStatus.OK:
-            time.sleep(0.25)
-            continue
-        obj = r.json()
-        last = obj.get("storage_status")
-        if last == "Cleared":
-            return obj
-        time.sleep(0.25)
-    raise TimeoutError(
-        f"Timed out waiting for pipeline '{name}' to clear storage (last={last})"
-    )
+    TEST_CLIENT.stop_pipeline(name, force=force, wait=wait)
 
 
 def clear_pipeline(name: str, wait: bool = True):
     r = post_no_body(f"{API_PREFIX}/pipelines/{name}/clear")
     if wait and r.status_code == HTTPStatus.ACCEPTED:
-        wait_for_cleared_storage(name)
+        TEST_CLIENT.clear_storage(name)
     return r
 
 
@@ -303,94 +226,75 @@ def connector_paused(pipeline, table: str, connector: str) -> bool:
     return connector_stats(pipeline, table, connector)["paused"]
 
 
-@dataclass
-class WaitResult:
-    ok: bool
-    last_status: Optional[str]
-    last_object: Optional[Dict[str, Any]]
-    elapsed_s: float
-
-
 def wait_for_program_success(
     pipeline_name: str,
     expected_program_version: int,
     timeout_s: float = 1800.0,
-    sleep_s: float = 0.5,
-) -> WaitResult:
+    poll_interval_s: float = 0.5,
+) -> None:
     """
-    Poll until the pipeline's program_status is Success and program_version
-    >= expected_program_version.
-
-    Mirrors semantics of the Rust `wait_for_compiled_program` helper.
-
-    Returns a WaitResult. Raises AssertionError on compile error, TimeoutError on timeout.
+    Wait until the pipeline's program has compiled successfully and reached
+    `expected_program_version`.
     """
-    deadline = time.time() + timeout_s
-    last_status = None
-    last_obj: Optional[Dict[str, Any]] = None
-
-    while True:
-        if time.time() > deadline:
-            raise TimeoutError(
-                f"Timed out waiting for pipeline '{pipeline_name}' to compile "
-                f"(expected program_version >= {expected_program_version}, "
-                f"last_status={last_status}, last_obj={last_obj})"
-            )
-        resp = get(f"{API_PREFIX}/pipelines/{pipeline_name}")
-        if resp.status_code == HTTPStatus.NOT_FOUND:
-            raise RuntimeError(
-                f"Pipeline '{pipeline_name}' disappeared during compilation wait"
-            )
-        try:
-            obj = resp.json()
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to parse pipeline JSON: {e}; body={resp.text!r}"
-            )
-        last_obj = obj
-        last_status = obj.get("program_status")
-        version = obj.get("program_version") or 0
-
-        if last_status == "Success" and version >= expected_program_version:
-            return WaitResult(
-                True, last_status, last_obj, timeout_s - (deadline - time.time())
-            )
-
-        if last_status in ("SqlError", "RustError"):
-            raise AssertionError(
-                "Compilation failed: " + json.dumps(obj.get("program_error"), indent=2)
-            )
-
-        time.sleep(sleep_s)
+    TEST_CLIENT._wait_for_compilation(
+        pipeline_name,
+        expected_program_version=expected_program_version,
+        timeout_s=timeout_s,
+        poll_interval_s=poll_interval_s,
+    )
 
 
 def wait_for_condition(
     description: str,
-    predicate,
-    timeout_s: float = 30.0,
-    sleep_s: float = 0.2,
+    predicate_func,
+    timeout_s: float | None,
+    poll_interval_s: float,
 ) -> None:
     """
-    Generic polling helper.
-    predicate: callable returning truthy when condition met (can be sync or async).
+    Waits until the condition is met by regularly checking if `predicate_func()` returns `True`.
+
+    :param description: Human-readable description used in timeout/errors.
+    :param predicate_func: Callable function (taking `this` pipeline as argument) returning `True` when condition is met.
+    :param timeout_s: Maximum wait time in seconds. `None` means there is no timeout.
+    :param poll_interval_s: Poll interval in seconds. The timeout is enforced at this granularity.
+
+    :raises TimeoutError: If the condition is not met within the specified timeout.
     """
-    start = time.time()
-    deadline = start + timeout_s
+    # Polling interval should not exceed the timeout
+    if timeout_s is not None and poll_interval_s > timeout_s:
+        raise ValueError(
+            f"poll interval ({poll_interval_s}s) cannot be larger than"
+            f" timeout ({timeout_s}s)"
+        )
+
+    # Waiting constant variables
+    timestamp_start_s = time.monotonic()
+    timestamp_deadline_s = timestamp_start_s + timeout_s
+    if timeout_s is None:
+        timeout_info = "no timeout is enforced"
+    else:
+        timeout_info = f"timeout: {timeout_s:.1}s"
+
+    # Waiting loop: exits either if the predicate function returns a value which evaluates to `True`
+    # or a timeout (if enforced) -- whichever occurs first.
     attempt = 0
     while True:
-        now = time.time()
-        if now > deadline:
-            raise TimeoutError(f"Timeout waiting for condition: {description}")
+        timestamp_now_s = time.monotonic()
+        if timestamp_now_s > timestamp_deadline_s:
+            raise TimeoutError(
+                f"timeout ({timeout_s:.1}s) waiting for condition '{description}'"
+            )
         attempt += 1
-        try:
-            result = predicate()
-        except Exception as e:  # noqa: BLE001
-            logging.debug("Predicate raised %s (attempt %d), continuing", e, attempt)
-            result = False
-
-        if result:
+        if predicate_func():
+            logging.debug(
+                f"condition '{description}' has been met after {timestamp_now_s - timestamp_start_s:.1}s"
+            )
             return
-        time.sleep(sleep_s)
+        else:
+            logging.debug(
+                f"condition '{description}' is not yet met (attempt: {attempt}); {timestamp_now_s - timestamp_start_s:.1}s have passed ({timeout_info})"
+            )
+        time.sleep(poll_interval_s)
 
 
 def extract_object_by_name(

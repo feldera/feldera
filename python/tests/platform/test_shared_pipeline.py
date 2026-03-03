@@ -22,6 +22,7 @@ from feldera.testutils import (
     FELDERA_TEST_NUM_HOSTS,
     single_host_only,
 )
+from .helper import wait_for_condition
 
 
 class TestPipeline(SharedTestPipeline):
@@ -346,12 +347,13 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.start()
         data = [{"id": 2147483647}]
         self.pipeline.input_json("tbl", data, wait=False)
-        while True:
-            status = self.pipeline.status()
-            expected = PipelineStatus.STOPPED
-            if status == expected and len(self.pipeline.deployment_error()) > 0:
-                break
-            time.sleep(1)
+        wait_for_condition(
+            "pipeline stops with deployment error after worker panic",
+            lambda: self.pipeline.status() == PipelineStatus.STOPPED
+            and len(self.pipeline.deployment_error()) > 0,
+            timeout_s=20.0,
+            poll_interval_s=1.0,
+        )
         self.pipeline.stop(force=True)
 
     @single_host_only
@@ -371,7 +373,7 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("v0")
         self.pipeline.resume()
         self.pipeline.input_json("tbl", data, update_format="insert_delete")
-        self.pipeline.wait_for_idle(True)
+        self.pipeline.wait_for_idle()
         out_data = out.to_dict()
         expected = [dict(data["insert"], insert_delete=1)]
         assert out_data == expected
