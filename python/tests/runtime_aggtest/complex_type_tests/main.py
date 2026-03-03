@@ -24,6 +24,8 @@ from test_arr_udt_unnest import *  # noqa: F403
 from test_arr_unnest import *  # noqa: F403
 from test_row_arr_unnest import *  # noqa: F403
 from test_udt_arr_unnest import *  # noqa: F403
+from test_map_var_cmpx import *  # noqa: F403
+from test_map_tbl import *  # noqa: F403
 
 
 def main():
