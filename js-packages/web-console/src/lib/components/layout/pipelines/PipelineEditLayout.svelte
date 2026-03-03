@@ -92,6 +92,7 @@
   )
 
   const { updatePipelines } = useUpdatePipelineList()
+  const api = usePipelineManager()
   const pipelineAction = getPipelineAction()
   const pipelineActionCallbacks = usePipelineActionCallbacks()
   const handleActionSuccess = async (pipelineName: string, action: PipelineAction) => {
@@ -242,7 +243,8 @@ example = "1.0"`
       return {
         header: `The last execution of the pipeline failed with the error code: ${pipeline.current.deploymentError.error_code}`,
         message: pipeline.current.deploymentError.message,
-        style: 'error' as const
+        style: 'error' as const,
+        onClose: () => api.dismissDeploymentError(pipeline.current.name)
       }
     } else if (pipeline.current.status === 'AwaitingApproval') {
       return {
@@ -435,12 +437,7 @@ example = "1.0"`
       <PaneGroup direction="vertical" class="!overflow-visible">
         {#if pipelineBannerMessage}
           <div class="pb-2 md:pb-4">
-            <PipelineBanner
-              header={pipelineBannerMessage.header}
-              message={pipelineBannerMessage.message}
-              actions={pipelineBannerMessage.actions ?? []}
-              style={pipelineBannerMessage.style}
-            ></PipelineBanner>
+            <PipelineBanner {...pipelineBannerMessage}></PipelineBanner>
           </div>
         {/if}
         <CodeEditor

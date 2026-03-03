@@ -365,6 +365,32 @@ export type CombinedStatus =
   | 'Stopping'
 
 /**
+ * Summary of transaction commit progress.
+ */
+export type CommitProgressSummary = {
+  /**
+   * Number of operators that have been fully flushed.
+   */
+  completed: number
+  /**
+   * Number of operators that are currently being flushed.
+   */
+  in_progress: number
+  /**
+   * Number of records processed by operators that are currently being flushed.
+   */
+  in_progress_processed_records: number
+  /**
+   * Total number of records that operators that are currently being flushed need to process.
+   */
+  in_progress_total_records: number
+  /**
+   * Number of operators that haven't started flushing.
+   */
+  remaining: number
+}
+
+/**
  * Enumeration of possible compilation profiles that can be passed to the Rust compiler
  * as an argument via `cargo build --profile <>`. A compilation profile affects among
  * other things the compilation speed (how long till the program is ready to be run)
@@ -726,6 +752,14 @@ export type DatagenInputConfig = {
    * - The input will arrive in non-deterministic order if `workers > 1`.
    */
   seed?: number | null
+  /**
+   * By default, the data generator does not request [transactions].  Set
+   * this to a nonzero value for the data generator to automatically
+   * orchestrate transactions of approximately the specified number of rows.
+   *
+   * [transactions]: https://docs.feldera.com/pipelines/transactions
+   */
+  transaction_size?: number | null
   /**
    * Number of workers to use for generating data.
    */
@@ -1393,6 +1427,7 @@ export type GlobalControllerMetrics = {
    * Total number of records currently buffered by all endpoints.
    */
   buffered_input_records: number
+  commit_progress?: CommitProgressSummary | null
   /**
    * CPU time used by the pipeline across all threads, in milliseconds.
    */
@@ -1405,6 +1440,18 @@ export type GlobalControllerMetrics = {
    * Time at which the pipeline process from which we resumed started, in seconds since the epoch.
    */
   initial_start_time: number
+  /**
+   * If the pipeline is stalled because one or more output connectors' output
+   * buffers are full, this is the number of milliseconds that the current
+   * stall has lasted.
+   *
+   * If this is nonzero, then the output connectors causing the stall can be
+   * identified by noticing `ExternalOutputEndpointMetrics::queued_records`
+   * is greater than or equal to `ConnectorConfig::max_queued_records`.
+   *
+   * In the ordinary case, the pipeline is not stalled, and this value is 0.
+   */
+  output_stall_msecs: number
   /**
    * True if the pipeline has processed all input data to completion.
    */
@@ -1946,6 +1993,57 @@ export type KafkaInputConfig = {
   resume_earliest_if_data_expires: boolean
   start_from?: KafkaStartFromConfig
   /**
+   * When lateness is enabled on a Feldera table, Feldera only produces
+   * correct output if input arrives approximately in order within the bounds
+   * of the lateness.  The Feldera Kafka input connector can reorder input
+   * when there are multiple partitions:
+   *
+   * - If partitions start at different times, then reading all the
+   * partitions in parallel will naturally consume data out of order.
+   *
+   * - Even if they start at the same time, partitions might contain events
+   * at different rates.
+   *
+   * - Even if the partitions start at the same time and have the same number
+   * of events per unit time, if partitions are spread across brokers,
+   * different brokers may fetch data at different rates.
+   *
+   * - Even if all of the partitions are on a single broker, one cannot
+   * expect all of the partitions to naturally remain exactly in sync
+   * forever.
+   *
+   * Setting this option to `true` addresses the issue by synchronizing
+   * ingestion across partitions, ingesting records in order of their Kafka
+   * event timestamps.
+   *
+   * Pitfalls of this solution include:
+   *
+   * - Kafka event timestamps are not necessarily monotonically increasing
+   * even within a single partition.  If timestamps jump backward beyond
+   * the lateness, then this can also cause correctness problems.
+   *
+   * (This can be avoided by keeping clocks on Kafka producers and brokers
+   * synchronized.)
+   *
+   * - If an event with a timestamp far in the future is added to a
+   * partition, that event, and all those that follow it, will never be
+   * processed.
+   *
+   * - If one or a few partitions have timestamps far behind the others, only
+   * those partitions will be processed until all the old events are
+   * processed.  (This is the flip side of the previous pitfall.)
+   *
+   * - One or more empty partitions will prevent any data from being
+   * processed at all, because there is no way to know the timestamp for
+   * the first event that will be added to that partition.
+   *
+   * - In a topic with `N` nonempty partitions, at least `N - 1` events will
+   * always be left unprocessed (one in each of `N - 1` partitions), because
+   * there is no way to know the timestamp for the next event to be added to
+   * the partition whose events have been completely processed.
+   */
+  synchronize_partitions?: boolean
+  /**
    * Topic to subscribe to.
    */
   topic: string
@@ -2416,8 +2514,32 @@ export type OutputEndpointMetrics = {
   queued_records: number
   /**
    * The number of input records processed by the circuit.
+   *
+   * This metric tracks the end-to-end progress of the pipeline: the output
+   * of this endpoint is equal to the output of the circuit after
+   * processing `total_processed_input_records` records.
+   *
+   * In a multihost pipeline, this count reflects only the input records
+   * processed on the same host as the output endpoint, which is not usually
+   * meaningful.
    */
   total_processed_input_records: number
+  /**
+   * The number of steps whose input records have been processed by the
+   * endpoint.
+   *
+   * This is meaningful in a multihost pipeline because steps are
+   * synchronized across all of the hosts.
+   *
+   * # Interpretation
+   *
+   * This is a count, not a step number.  If `total_processed_steps` is 0, no
+   * steps have been processed to completion.  If `total_processed_steps >
+   * 0`, then the last step whose input records have been processed to
+   * completion is `total_processed_steps - 1`. A record that was ingested in
+   * step `n` is fully processed when `total_processed_steps > n`.
+   */
+  total_processed_steps: number
   /**
    * Bytes sent on the underlying transport.
    */
@@ -2874,6 +2996,42 @@ export type PostStopPipelineParameters = {
  */
 export type PostgresReaderConfig = {
   /**
+   * Path to a file containing a sequence of CA certificates in PEM format.
+   */
+  ssl_ca_location?: string | null
+  /**
+   * A sequence of CA certificates in PEM format.
+   */
+  ssl_ca_pem?: string | null
+  /**
+   * The path to the certificate chain file.
+   * The file must contain a sequence of PEM-formatted certificates,
+   * the first being the leaf certificate, and the remainder forming
+   * the chain of certificates up to and including the trusted root certificate.
+   */
+  ssl_certificate_chain_location?: string | null
+  /**
+   * The client certificate key in PEM format.
+   */
+  ssl_client_key?: string | null
+  /**
+   * Path to the client certificate key.
+   */
+  ssl_client_key_location?: string | null
+  /**
+   * Path to the client certificate.
+   */
+  ssl_client_location?: string | null
+  /**
+   * The client certificate in PEM format.
+   */
+  ssl_client_pem?: string | null
+  /**
+   * True to enable hostname verification when using TLS. True by default.
+   */
+  verify_hostname?: boolean | null
+} & {
+  /**
    * Query that specifies what data to fetch from postgres.
    */
   query: string
@@ -2882,6 +3040,47 @@ export type PostgresReaderConfig = {
    * See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>
    */
   uri: string
+}
+
+/**
+ * TLS/SSL configuration for PostgreSQL connectors.
+ */
+export type PostgresTlsConfig = {
+  /**
+   * Path to a file containing a sequence of CA certificates in PEM format.
+   */
+  ssl_ca_location?: string | null
+  /**
+   * A sequence of CA certificates in PEM format.
+   */
+  ssl_ca_pem?: string | null
+  /**
+   * The path to the certificate chain file.
+   * The file must contain a sequence of PEM-formatted certificates,
+   * the first being the leaf certificate, and the remainder forming
+   * the chain of certificates up to and including the trusted root certificate.
+   */
+  ssl_certificate_chain_location?: string | null
+  /**
+   * The client certificate key in PEM format.
+   */
+  ssl_client_key?: string | null
+  /**
+   * Path to the client certificate key.
+   */
+  ssl_client_key_location?: string | null
+  /**
+   * Path to the client certificate.
+   */
+  ssl_client_location?: string | null
+  /**
+   * The client certificate in PEM format.
+   */
+  ssl_client_pem?: string | null
+  /**
+   * True to enable hostname verification when using TLS. True by default.
+   */
+  verify_hostname?: boolean | null
 }
 
 /**
@@ -2895,6 +3094,42 @@ export type PostgresWriteMode = 'materialized' | 'cdc'
  * Postgres output connector configuration.
  */
 export type PostgresWriterConfig = {
+  /**
+   * Path to a file containing a sequence of CA certificates in PEM format.
+   */
+  ssl_ca_location?: string | null
+  /**
+   * A sequence of CA certificates in PEM format.
+   */
+  ssl_ca_pem?: string | null
+  /**
+   * The path to the certificate chain file.
+   * The file must contain a sequence of PEM-formatted certificates,
+   * the first being the leaf certificate, and the remainder forming
+   * the chain of certificates up to and including the trusted root certificate.
+   */
+  ssl_certificate_chain_location?: string | null
+  /**
+   * The client certificate key in PEM format.
+   */
+  ssl_client_key?: string | null
+  /**
+   * Path to the client certificate key.
+   */
+  ssl_client_key_location?: string | null
+  /**
+   * Path to the client certificate.
+   */
+  ssl_client_location?: string | null
+  /**
+   * The client certificate in PEM format.
+   */
+  ssl_client_pem?: string | null
+  /**
+   * True to enable hostname verification when using TLS. True by default.
+   */
+  verify_hostname?: boolean | null
+} & {
   /**
    * Name of the operation metadata column in CDC mode.
    *
@@ -2945,37 +3180,6 @@ export type PostgresWriterConfig = {
    */
   on_conflict_do_nothing?: boolean
   /**
-   * Path to a file containing a sequence of CA certificates in PEM format.
-   */
-  ssl_ca_location?: string | null
-  /**
-   * A sequence of CA certificates in PEM format.
-   */
-  ssl_ca_pem?: string | null
-  /**
-   * The path to the certificate chain file.
-   * The file must contain a sequence of PEM-formatted certificates,
-   * the first being the leaf certificate, and the remainder forming
-   * the chain of certificates up to and including the trusted root certificate.
-   */
-  ssl_certificate_chain_location?: string | null
-  /**
-   * The client certificate key in PEM format.
-   */
-  ssl_client_key?: string | null
-  /**
-   * Path to the client certificate key.
-   */
-  ssl_client_key_location?: string | null
-  /**
-   * Path to the client certificate.
-   */
-  ssl_client_location?: string | null
-  /**
-   * The client certificate in PEM format.
-   */
-  ssl_client_pem?: string | null
-  /**
    * The table to write the output to.
    */
   table: string
@@ -2984,10 +3188,6 @@ export type PostgresWriterConfig = {
    * See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>
    */
   uri: string
-  /**
-   * True to enable hostname verification when using TLS. True by default.
-   */
-  verify_hostname?: boolean | null
 }
 
 /**
@@ -5324,6 +5524,40 @@ export type GetPipelineDataflowGraphResponses = {
 export type GetPipelineDataflowGraphResponse =
   GetPipelineDataflowGraphResponses[keyof GetPipelineDataflowGraphResponses]
 
+export type PostPipelineDismissErrorData = {
+  body?: never
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: never
+  url: '/v0/pipelines/{pipeline_name}/dismiss_error'
+}
+
+export type PostPipelineDismissErrorErrors = {
+  /**
+   * Action could not be performed
+   */
+  400: ErrorResponse
+  /**
+   * Pipeline with that name does not exist
+   */
+  404: ErrorResponse
+  500: ErrorResponse
+}
+
+export type PostPipelineDismissErrorError =
+  PostPipelineDismissErrorErrors[keyof PostPipelineDismissErrorErrors]
+
+export type PostPipelineDismissErrorResponses = {
+  /**
+   * Deployment error has been dismissed
+   */
+  200: unknown
+}
+
 export type HttpOutputData = {
   body?: never
   path: {
@@ -5785,6 +6019,7 @@ export type PostPipelineStartData = {
      */
     initial?: string
     bootstrap_policy?: BootstrapPolicy
+    dismiss_error?: boolean
   }
   url: '/v0/pipelines/{pipeline_name}/start'
 }
