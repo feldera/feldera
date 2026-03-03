@@ -44,6 +44,7 @@ enum WorkerResult {
 
 /// A single postgres worker that owns a connection and runs on a dedicated thread.
 struct PostgresWorker {
+    worker_idx: usize,
     endpoint_id: EndpointId,
     endpoint_name: String,
     table: String,
@@ -94,6 +95,7 @@ fn connect(config: &PostgresWriterConfig, endpoint_name: &str) -> Result<Client,
 
 impl PostgresWorker {
     fn new(
+        idx: usize,
         endpoint_id: EndpointId,
         endpoint_name: &str,
         config: &PostgresWriterConfig,
@@ -108,6 +110,7 @@ impl PostgresWorker {
             PreparedStatements::new(key_schema, value_schema, config, &mut client)?;
 
         Ok(Self {
+            worker_idx: idx,
             endpoint_id,
             endpoint_name: endpoint_name.to_owned(),
             controller,
@@ -304,7 +307,7 @@ These statements were successfully prepared before reconnecting. Does the table 
             ))
         })?;
 
-        tracing::info!("postgres: successfully reconnected to postgres");
+        tracing::info!("postgres: worker-thread-{} successfully reconnected to postgres", self.worker_idx);
 
         Ok(())
     }
@@ -319,7 +322,7 @@ These statements were successfully prepared before reconnecting. Does the table 
         };
 
         loop {
-            tracing::info!("retrying to connect to postgres");
+            tracing::info!("worker-thread-{} retrying to connect to postgres", self.worker_idx);
             match self.retry_connecting() {
                 Ok(_) => return,
                 Err(e) => {
@@ -595,6 +598,7 @@ impl PostgresOutputEndpoint {
 
         for i in 0..num_threads {
             let worker = PostgresWorker::new(
+                i,
                 endpoint_id,
                 endpoint_name,
                 config,
@@ -696,7 +700,7 @@ impl OutputConsumer for PostgresOutputEndpoint {
                     self.endpoint_id,
                     &self.endpoint_name,
                     true,
-                    anyhow!("postgres: failed to start transaction: {err:#}"),
+                    anyhow!("failed to start Postgres transaction(s): {err:#}"),
                     Some("pg_batch_start"),
                 );
             }
@@ -742,7 +746,7 @@ impl OutputConsumer for PostgresOutputEndpoint {
                     self.endpoint_id,
                     &self.endpoint_name,
                     true,
-                    err,
+                    anyhow!("failed to commit changes to Postgres: {err:#}"),
                     Some("pg_batch_end"),
                 );
             }
@@ -774,9 +778,10 @@ impl Encoder for PostgresOutputEndpoint {
                 continue;
             };
 
-            if workers_dispatched >= num_workers {
-                break;
-            }
+            assert!(
+                workers_dispatched <= num_workers,
+                "unreachable: attempting to dispatch more workers than `num_workers` {num_workers}"
+            );
 
             self.handles[workers_dispatched]
                 .cmd_tx
