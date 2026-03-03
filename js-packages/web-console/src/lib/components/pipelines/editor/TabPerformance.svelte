@@ -141,7 +141,7 @@
   <div class="flex justify-between">
     <div>Pipeline is running, but has not reported usage telemetry yet</div>
   </div>
-{:else}<div class="scrollbar flex h-full flex-col gap-4 overflow-x-clip overflow-y-auto">
+{:else}<div class="-mr-2 scrollbar flex h-full flex-col gap-4 overflow-x-clip overflow-y-auto pr-2">
     <div class="flex w-full flex-col gap-4">
       <div class="flex flex-wrap gap-4 pt-2">
         <div class="flex flex-col">

@@ -51,16 +51,11 @@ export default defineConfig(async () => {
     ] as PluginOption[],
     build: {
       minify: false
-      // },
-      // css: {
-      //   preprocessorOptions: {
-      //     scss: {
-      //       api: 'modern-compiler'
-      //     },
-      //     sass: {
-      //       api: 'modern-compiler'
-      //     }
-      //   }
+    },
+    server: {
+      watch: {
+        ignored: ['**/dist/**', '**/node_modules/**']
+      }
     }
   } satisfies UserConfig
 })

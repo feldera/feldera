@@ -30,7 +30,7 @@
   onValueChange={(e) => (currentTab = e.value)}
   class="flex flex-1 flex-col space-y-0! rounded-container bg-surface-50-950 p-4"
 >
-  <Tabs.List class="flex w-full flex-wrap-reverse gap-0 pb-0 text-nowrap lg:flex-nowrap">
+  <Tabs.List class="flex w-full flex-wrap-reverse gap-0 pb-0 text-nowrap">
     {#each tabs as [tabName, tabControl]}
       <Tabs.Trigger
         value={tabName}
