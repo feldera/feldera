@@ -121,8 +121,7 @@ public final class CrateGenerator {
         }
         if (isMain()) {
             stream.println("""
-                    [target.'cfg(not(target_env = "msvc"))'.dependencies]
-                    tikv-jemallocator = { workspace = true }
+                    mimalloc = { workspace = true }
                     """);
         }
         List<CrateGenerator> deps = Linq.list(this.dependencies);

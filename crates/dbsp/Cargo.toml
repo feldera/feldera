@@ -43,7 +43,7 @@ ordered-float = { workspace = true, features = ["rkyv_64"] }
 xxhash-rust = { workspace = true, features = ["xxh3"] }
 crossbeam = { workspace = true }
 arc-swap = { workspace = true }
-mimalloc-rust-sys = { workspace = true }
+mimalloc = { workspace = true }
 rand = { workspace = true }
 rkyv = { workspace = true, features = ["std", "size_64", "validation", "uuid"] }
 size-of = { workspace = true, features = [

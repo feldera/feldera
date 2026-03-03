@@ -77,7 +77,6 @@ pub mod typed_batch;
 pub mod circuit;
 pub mod algebra;
 pub mod ir;
-pub mod mimalloc;
 pub mod monitor;
 pub mod operator;
 pub mod profile;

@@ -50,7 +50,7 @@ ascii_table = { workspace = true }
 num-format = { workspace = true }
 serde_with = { workspace = true }
 indicatif = { workspace = true }
-mimalloc-rust-sys = { workspace = true }
+mimalloc = { workspace = true }
 time = { workspace = true, features = ["formatting", "serde", "serde-human-readable"] }
 
 [[bench]]

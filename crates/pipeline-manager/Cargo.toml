@@ -123,9 +123,6 @@ tempfile = { workspace = true }
 compare = { workspace = true }
 sha2 = { workspace = true }
 
-[target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = { workspace = true, features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
-
 [features]
 default = ["postgresql_embedded"]
 feldera-enterprise = []
@@ -150,4 +147,4 @@ itertools = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 
 [package.metadata.cargo-machete]
-ignored = ["static-files", "compare", "tikv-jemallocator"]
+ignored = ["static-files", "compare"]
