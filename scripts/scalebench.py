@@ -41,7 +41,15 @@ from typing import Any, Dict, Iterable, Tuple
 from feldera import FelderaClient, PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 
-PROGRAMS = ["u64", "u64N", "binary", "string", "binary_primary_key"]
+PROGRAMS = [
+    "u64",
+    "u64N",
+    "u64Nprimary",
+    "u64Njoin-no-match",
+    "binary",
+    "string",
+    "binary_primary_key",
+]
 WORKER_COUNTS = [1, 2, 4, 8, 12, 16, 20]
 DEFAULT_PAYLOAD_BYTES = [8, 128, 512, 4096, 32768]
 BENCH_DURATION_S = 120
@@ -91,12 +99,12 @@ def normalize_payload_bytes(
                 "Program u64 does not support payload sizes other than 8 bytes."
             )
         return [8]
-    if program == "u64N":
+    if program in ("u64N", "u64Nprimary", "u64Njoin-no-match"):
         invalid = [size for size in payload_bytes if size % 8 != 0]
         if invalid:
             invalid_csv = ",".join(str(size) for size in invalid)
             raise SystemExit(
-                "Program u64N requires payload sizes that are multiples of 8 bytes. "
+                f"Program {program} requires payload sizes that are multiples of 8 bytes. "
                 f"Invalid values: {invalid_csv}"
             )
     return payload_bytes
@@ -121,6 +129,123 @@ def make_sql(program: str, datagen_workers: int, payload_bytes: int) -> str:
         )
         table_fields += "\n"
         fields = {f"payload{i}": {"strategy": "uniform"} for i in range(u64_count)}
+    elif program == "u64Nprimary":
+        if payload_bytes % 8 != 0:
+            raise ValueError(
+                "Program u64Nprimary requires payload-bytes to be a multiple of 8, "
+                f"got {payload_bytes}"
+            )
+        u64_count = payload_bytes // 8
+        if u64_count <= 0:
+            raise ValueError(
+                f"Program u64Nprimary requires payload-bytes >= 8, got {payload_bytes}"
+            )
+        table_fields = ",\n".join(
+            (
+                f"    payload{i} BIGINT NOT NULL PRIMARY KEY"
+                if i == 0
+                else f"    payload{i} BIGINT NOT NULL"
+            )
+            for i in range(u64_count)
+        )
+        table_fields += "\n"
+        fields = {
+            f"payload{i}": {"strategy": "uniform"} for i in range(1, u64_count)
+        } or None
+    elif program == "u64Njoin-no-match":
+        if payload_bytes % 8 != 0:
+            raise ValueError(
+                "Program u64Njoin-no-match requires payload-bytes to be a multiple "
+                f"of 8, got {payload_bytes}"
+            )
+        u64_count = payload_bytes // 8
+        if u64_count <= 0:
+            raise ValueError(
+                "Program u64Njoin-no-match requires payload-bytes >= 8, "
+                f"got {payload_bytes}"
+            )
+
+        # Use identical schemas and join on payload0, which is the primary key.
+        # Left and right generate keys from disjoint ranges, so the inner join
+        # never matches.
+        table_fields = ",\n".join(
+            (
+                f"    payload{i} BIGINT NOT NULL PRIMARY KEY"
+                if i == 0
+                else f"    payload{i} BIGINT NOT NULL"
+            )
+            for i in range(u64_count)
+        )
+        table_fields += "\n"
+
+        left_fields = {
+            "payload0": {
+                "strategy": "increment",
+                "range": [0, 1_000_000_000],
+            }
+        }
+        right_fields = {
+            "payload0": {
+                "strategy": "increment",
+                "range": [1_000_000_000, 2_000_000_000],
+            }
+        }
+        for i in range(1, u64_count):
+            left_fields[f"payload{i}"] = {"strategy": "uniform"}
+            right_fields[f"payload{i}"] = {"strategy": "uniform"}
+
+        left_connectors = json.dumps(
+            [
+                {
+                    "name": "data_left",
+                    "labels": ["backfill"],
+                    "transport": {
+                        "name": "datagen",
+                        "config": {
+                            "workers": datagen_workers,
+                            "plan": [{"limit": 50_000_000, "fields": left_fields}],
+                        },
+                    },
+                }
+            ],
+            separators=(",", ":"),
+        )
+        right_connectors = json.dumps(
+            [
+                {
+                    "name": "data_right",
+                    "start_after": "backfill",
+                    "transport": {
+                        "name": "datagen",
+                        "config": {
+                            "workers": datagen_workers,
+                            "plan": [{"fields": right_fields}],
+                        },
+                    },
+                }
+            ],
+            separators=(",", ":"),
+        )
+
+        return (
+            "CREATE TABLE left_table (\n"
+            f"{table_fields}"
+            ") WITH (\n"
+            # "  'materialized' = 'true',\n"
+            f"  'connectors' = '{left_connectors}'\n"
+            ");\n"
+            "CREATE TABLE right_table (\n"
+            f"{table_fields}"
+            ") WITH (\n"
+            # "  'materialized' = 'true',\n"
+            f"  'connectors' = '{right_connectors}'\n"
+            ");\n"
+            "CREATE MATERIALIZED VIEW simple AS\n"
+            "SELECT l.payload0 AS payload0\n"
+            "FROM left_table AS l\n"
+            "INNER JOIN right_table AS r\n"
+            "  ON l.payload0 = r.payload0;"
+        )
     elif program == "binary":
         table_fields = "    payload BINARY NOT NULL\n"
         fields = {
@@ -637,7 +762,7 @@ def main() -> int:
                         f"workers={workers} payload_kib={payload_kib:.3f}"
                     )
 
-                    datagen_workers = max(8, workers + 8)
+                    datagen_workers = max(16, (workers * 3) + 8)
                     sql = make_sql(
                         program=program,
                         datagen_workers=datagen_workers,
