@@ -10575,6 +10575,12 @@
                 "type": "string",
                 "description": "The table to write the output to."
               },
+              "threads": {
+                "type": "integer",
+                "description": "The number of threads to use during encoding.\n\nDefault: 1",
+                "default": 1,
+                "minimum": 0
+              },
               "uri": {
                 "type": "string",
                 "description": "Postgres URI.\nSee: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>"
