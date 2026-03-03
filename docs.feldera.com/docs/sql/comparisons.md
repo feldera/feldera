@@ -76,7 +76,7 @@ but always return a Boolean value (sometimes nullable):
   </tr>
   <tr>
     <td><a id="between"></a><code>BETWEEN SYMMETRIC ... AND ...</code></td>
-    <td><code>x BETWEEN a AND b</code> is the same as <code>(a &lt;= x AND x &lt;= b) OR (b &lt; x AND x &lt; a)</code></td>
+    <td><code>x BETWEEN a AND b</code> is the same as <code>(a &lt;= x AND x &lt;= b) OR (b &lt;= x AND x &lt;= a)</code></td>
     <td>inclusive at both endpoints; order of endpoints does not matter</td>
   </tr>
   <tr>
