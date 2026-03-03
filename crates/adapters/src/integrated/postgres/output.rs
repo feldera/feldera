@@ -307,7 +307,10 @@ These statements were successfully prepared before reconnecting. Does the table 
             ))
         })?;
 
-        tracing::info!("postgres: worker-thread-{} successfully reconnected to postgres", self.worker_idx);
+        tracing::info!(
+            "postgres: worker-thread-{} successfully reconnected to postgres",
+            self.worker_idx
+        );
 
         Ok(())
     }
@@ -322,7 +325,10 @@ These statements were successfully prepared before reconnecting. Does the table 
         };
 
         loop {
-            tracing::info!("worker-thread-{} retrying to connect to postgres", self.worker_idx);
+            tracing::info!(
+                "worker-thread-{} retrying to connect to postgres",
+                self.worker_idx
+            );
             match self.retry_connecting() {
                 Ok(_) => return,
                 Err(e) => {
@@ -690,7 +696,7 @@ impl OutputConsumer for PostgresOutputEndpoint {
         self.txn_start = std::time::Instant::now();
 
         match self.broadcast_and_collect(BroadcastCommand::BatchStart) {
-            Ok(()) => return,
+            Ok(()) => (),
             Err(err) => {
                 let Some(controller) = self.controller.upgrade() else {
                     tracing::warn!("controller is shutting down: aborting");
