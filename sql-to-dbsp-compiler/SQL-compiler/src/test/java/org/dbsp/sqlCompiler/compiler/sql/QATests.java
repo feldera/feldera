@@ -4,7 +4,6 @@ import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
-import org.dbsp.util.Utilities;
 import org.junit.Test;
 
 import java.io.File;
