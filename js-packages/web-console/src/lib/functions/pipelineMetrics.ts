@@ -17,6 +17,9 @@ export type AggregatedMetrics<M> = {
   connectors: {
     endpointName: string
     metrics: M
+    paused?: boolean
+    barrier?: boolean
+    io_active?: boolean
   }[]
 }
 
@@ -55,11 +58,21 @@ export const accumulatePipelineMetrics =
       tables: new Map(
         groupBy(newData.inputs, (i) => normalizeCaseIndependentName({ name: i.config.stream })).map(
           ([relationName, endpoints]) => {
+            const oldRelation = oldData?.tables.get(relationName)
             const metrics: AggregatedMetrics<InputEndpointMetrics> = {
-              connectors: endpoints.map((cur) => ({
-                endpointName: cur.endpoint_name,
-                metrics: cur.metrics
-              })),
+              connectors: endpoints.map((cur) => {
+                const prev = oldRelation?.connectors.find(
+                  (c) => c.endpointName === cur.endpoint_name
+                )
+                return {
+                  endpointName: cur.endpoint_name,
+                  metrics: cur.metrics,
+                  paused: cur.paused,
+                  barrier: cur.barrier,
+                  io_active:
+                    prev !== undefined && cur.metrics.total_records > prev.metrics.total_records
+                }
+              }),
               aggregate: endpoints.reduce(
                 (acc: InputEndpointMetrics, cur) => {
                   const metrics = cur.metrics
@@ -92,11 +105,18 @@ export const accumulatePipelineMetrics =
         groupBy(newData.outputs, (i) =>
           normalizeCaseIndependentName({ name: i.config.stream })
         ).map(([relationName, endpoints]) => {
+          const oldRelation = oldData?.views.get(relationName)
           const metrics: AggregatedMetrics<OutputEndpointMetrics> = {
-            connectors: endpoints.map((cur) => ({
-              endpointName: cur.endpoint_name,
-              metrics: cur.metrics
-            })),
+            connectors: endpoints.map((cur) => {
+              const prev = oldRelation?.connectors.find((c) => c.endpointName === cur.endpoint_name)
+              return {
+                endpointName: cur.endpoint_name,
+                metrics: cur.metrics,
+                io_active:
+                  prev !== undefined &&
+                  cur.metrics.transmitted_records > prev.metrics.transmitted_records
+              }
+            }),
             aggregate: endpoints.reduce(
               (acc: OutputEndpointMetrics, cur) => {
                 const metrics = cur.metrics
