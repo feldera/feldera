@@ -16,6 +16,8 @@ from feldera.rest.errors import FelderaAPIError, FelderaTimeoutError
 from feldera.rest.feldera_config import FelderaConfig
 from feldera.rest.pipeline import Pipeline
 
+logger = logging.getLogger(__name__)
+
 
 def _validate_no_none_keys_in_map(data):
     def validate_no_none_keys(d: Dict[Any, Any]) -> None:
@@ -93,12 +95,12 @@ class FelderaClient:
             client_version = determine_client_version()
             server_config = self.get_config()
             if client_version != server_config.version:
-                logging.warning(
+                logger.warning(
                     f"Feldera client is on version {client_version} while server is at "
                     f"{server_config.version}. There could be incompatibilities."
                 )
         except Exception as e:
-            logging.error(f"Failed to connect to Feldera API: {e}")
+            logger.error(f"Failed to connect to Feldera API: {e}")
             raise e
 
     @staticmethod
@@ -153,15 +155,38 @@ class FelderaClient:
 
         return [Pipeline.from_dict(pipeline) for pipeline in resp]
 
-    def __wait_for_compilation(self, name: str):
+    def _wait_for_compilation(
+        self,
+        name: str,
+        expected_program_version: int | None = None,
+        timeout_s: float | None = None,
+        poll_interval_s: float = 1.0,
+    ) -> Pipeline:
+        """Wait for pipeline compilation -- internal use only."""
         wait = ["Pending", "CompilingSql", "SqlCompiled", "CompilingRust"]
-
+        start_time = time.monotonic()
         while True:
+            elapsed = time.monotonic() - start_time
+            if timeout_s is not None and elapsed > timeout_s:
+                raise TimeoutError(
+                    f"Timed out waiting for pipeline '{name}' to compile "
+                    f"(expected program_version >= {expected_program_version})"
+                )
+
             p = self.get_pipeline(name, PipelineFieldSelector.STATUS)
             status = p.program_status
 
             if status == "Success":
-                return self.get_pipeline(name, PipelineFieldSelector.ALL)
+                if expected_program_version is None:
+                    return self.get_pipeline(name, PipelineFieldSelector.ALL)
+
+                current_version = p.program_version or 0
+                if current_version == expected_program_version:
+                    return self.get_pipeline(name, PipelineFieldSelector.ALL)
+                else:
+                    raise RuntimeError(
+                        f"program version ({current_version}) != expected program version ({expected_program_version})"
+                    )
             elif status not in wait:
                 p = self.get_pipeline(name, PipelineFieldSelector.ALL)
 
@@ -189,8 +214,12 @@ class FelderaClient:
 
                 raise RuntimeError(error_message)
 
-            logging.debug("still compiling %s, waiting for 100 more milliseconds", name)
-            time.sleep(0.1)
+            logger.debug(
+                "still compiling %s, waiting for %.1f more seconds",
+                name,
+                poll_interval_s,
+            )
+            time.sleep(poll_interval_s)
 
     def __wait_for_pipeline_state(
         self,
@@ -198,6 +227,7 @@ class FelderaClient:
         state: str,
         timeout_s: Optional[float] = None,
         start: bool = True,
+        poll_interval_s: float = 0.5,
     ):
         start_time = time.monotonic()
 
@@ -227,10 +257,12 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 {resp.deployment_error.get("message", "")}"""
                 )
 
-            logging.debug(
-                "still starting %s, waiting for 100 more milliseconds", pipeline_name
+            logger.debug(
+                "still starting %s, waiting for %.1f more seconds",
+                pipeline_name,
+                poll_interval_s,
             )
-            time.sleep(0.1)
+            time.sleep(poll_interval_s)
 
     def __wait_for_pipeline_state_one_of(
         self,
@@ -238,9 +270,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         states: list[str],
         timeout_s: float | None = None,
         start: bool = True,
+        poll_interval_s: float = 0.5,
     ) -> PipelineStatus:
         start_time = time.monotonic()
-        poll_interval_s = 0.1
         states = [state.lower() for state in states]
 
         while True:
@@ -268,8 +300,10 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 Reason: The pipeline is in a STOPPED state due to the following error:
 {resp.deployment_error.get("message", "")}"""
                 )
-            logging.debug(
-                "still starting %s, waiting for 100 more milliseconds", pipeline_name
+            logger.debug(
+                "still starting %s, waiting for %.1f more seconds",
+                pipeline_name,
+                poll_interval_s,
             )
             time.sleep(poll_interval_s)
 
@@ -299,7 +333,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         if not wait:
             return pipeline
 
-        return self.__wait_for_compilation(pipeline.name)
+        return self._wait_for_compilation(pipeline.name)
 
     def create_or_update_pipeline(
         self, pipeline: Pipeline, wait: bool = True
@@ -331,7 +365,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         if not wait:
             return pipeline
 
-        return self.__wait_for_compilation(pipeline.name)
+        return self._wait_for_compilation(pipeline.name)
 
     def patch_pipeline(
         self,
@@ -667,7 +701,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             if status == "Stopped":
                 return
 
-            logging.debug(
+            logger.debug(
                 "still stopping %s, waiting for 100 more milliseconds",
                 pipeline_name,
             )
@@ -1021,7 +1055,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 break
 
             elapsed = time.monotonic() - start
-            logging.debug(
+            logger.debug(
                 f"still waiting for inputs represented by {token} to be processed; elapsed: {elapsed}s"
             )
 

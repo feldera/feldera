@@ -92,8 +92,8 @@ def cause_error_and_wait_for_stopped(pipeline):
 
     # It should stop with an error within 60 seconds
     timeout_s = 60
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
         if pipeline.status() == PipelineStatus.STOPPED:
             return
         time.sleep(0.2)

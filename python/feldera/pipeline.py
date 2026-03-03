@@ -84,14 +84,13 @@ class Pipeline:
         :param timeout: Maximum time to wait in seconds. If None, waits forever (default: None)
         :raises TimeoutError: If the expected status is not reached within the timeout
         """
-        start_time = time.time()
-
+        start_time = time.monotonic()
         while True:
             current_status = self.status()
             if current_status == expected_status:
                 return
 
-            if timeout is not None and time.time() - start_time >= timeout:
+            if timeout is not None and time.monotonic() - start_time >= timeout:
                 raise TimeoutError(
                     f"Pipeline did not reach {expected_status.name} status within {timeout} seconds"
                 )
@@ -392,7 +391,7 @@ class Pipeline:
         have been processed).
 
         :param idle_interval_s: Idle interval duration (default is 5.0 seconds).
-        :param timeout_s: Timeout waiting for idle (default is 600.0 seconds).
+        :param timeout_s: Timeout waiting for idle (`None` = no timeout is enforced).
         :param poll_interval_s: Polling interval, should be set substantially
             smaller than the idle interval (default is 0.2 seconds).
         :raises ValueError: If idle interval is larger than timeout, poll interval
@@ -512,6 +511,13 @@ metrics"""
     ):
         """
         Starts the pipeline in the paused state.
+
+        :param bootstrap_policy: The bootstrap policy to use.
+        :param wait: Set True to wait for the pipeline to start. True by default.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            pipeline to start (defaults to `None` = no timeout is enforced).
+        :param dismiss_error: Set True to dismiss any deployment error before starting;
+            set False to make it fail in that case. True by default.
         """
 
         return self.client.start_pipeline_as_paused(
@@ -531,6 +537,13 @@ metrics"""
     ):
         """
         Starts the pipeline in the standby state.
+
+        :param bootstrap_policy: The bootstrap policy to use.
+        :param wait: Set True to wait for the pipeline to start. True by default.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            pipeline to start (defaults to `None` = no timeout is enforced).
+        :param dismiss_error: Set True to dismiss any deployment error before starting;
+            set False to make it fail in that case. True by default.
         """
 
         self.client.start_pipeline_as_standby(
@@ -747,7 +760,7 @@ metrics"""
 
         :param wait: If true, will block until the checkpoint completes.
         :param timeout_s: The maximum time (in seconds) to wait for the
-            checkpoint to complete.
+            checkpoint to complete (defaults to `None` = no timeout is enforced).
 
         :return: The checkpoint sequence number.
 

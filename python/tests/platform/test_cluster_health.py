@@ -18,7 +18,7 @@ def test_cluster_health_check():
 
     interval_s = 2
     timeout_s = 300
-    start = time.time()
+    start = time.monotonic()
 
     while True:
         resp = get(endpoint)
@@ -44,7 +44,7 @@ def test_cluster_health_check():
                 f"Expected 503 while unhealthy; got {status_code}, body={body}"
             )
 
-        if time.time() - start > timeout_s:
+        if time.monotonic() - start > timeout_s:
             raise TimeoutError(
                 f"Timed out waiting for runner and compiler to become healthy (last body={body})"
             )
