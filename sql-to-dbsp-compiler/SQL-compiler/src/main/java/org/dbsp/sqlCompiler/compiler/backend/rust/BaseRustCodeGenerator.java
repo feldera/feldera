@@ -100,7 +100,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
             static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
             #[allow(non_upper_case_globals)]
             #[export_name = "malloc_conf"]
-            pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\\0";""";
+            pub static malloc_conf: &[u8] = b"background_thread:true,metadata_thp:auto,dirty_decay_ms:30000,muzzy_decay_ms:30000\\0";""";
 
     public static final String STANDARD_PREAMBLE = """
             use dbsp::{
