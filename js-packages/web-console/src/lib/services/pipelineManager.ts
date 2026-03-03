@@ -30,6 +30,7 @@ import {
   postPipelineActivate,
   postPipelineApprove,
   postPipelineClear,
+  postPipelineDismissError,
   postPipelinePause,
   postPipelineResume,
   postPipelineStart,
@@ -524,6 +525,9 @@ export const deleteApiKey = (name: string, options?: FetchOptions) =>
       throw new Error(`Failed to delete ${name} API key`)
     }
   )
+
+export const dismissDeploymentError = (pipeline_name: string) =>
+  mapResponse(postPipelineDismissError({ path: { pipeline_name } }), (v) => v)
 
 export const getPipelineDataflowGraph = (pipelineName: string) =>
   mapResponse(_getPipelineDataflowGraph({ path: { pipeline_name: pipelineName } }), (v) => v)

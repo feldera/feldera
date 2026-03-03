@@ -6,7 +6,8 @@
     header,
     message,
     actions = [],
-    style
+    style,
+    onClose
   }: {
     header: string
     message?: string
@@ -14,9 +15,35 @@
       label: string
       onclick: () => void
     }[]
+    onClose?: () => void
     style: 'info' | 'warning' | 'error'
   } = $props()
   let showMore = $state(false)
+  let spanEl: HTMLElement | undefined = $state()
+  let isTruncated = $state(false)
+
+  // Track whether the message overflows its single visible line (line-clamp-1).
+  // Skipped while expanded (showMore) to preserve isTruncated=true for "Show less".
+  // ResizeObserver keeps the check in sync as the viewport width changes.
+  $effect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    message // re-run the effect when message changes
+
+    if (!spanEl || showMore) {
+      return
+    }
+
+    const checkTruncation = () => {
+      isTruncated = spanEl!.scrollHeight > spanEl!.clientHeight
+    }
+
+    const observer = new ResizeObserver(checkTruncation)
+    observer.observe(spanEl)
+    checkTruncation()
+
+    return () => observer.disconnect()
+  })
+
   const textClass = $derived(
     style === 'info'
       ? 'text-surface-950-50'
@@ -45,18 +72,29 @@
     <div class=" flex w-full flex-col">
       <div class="flex justify-between pb-2 font-semibold">
         <span class={textClass}>{header}</span>
-        {#if message}
-          <ClipboardCopyButton value={message} class="-m-2"></ClipboardCopyButton>
-        {/if}
+        <div class="flex flex-nowrap gap-4">
+          {#if message}
+            <ClipboardCopyButton value={message} class="-m-2"></ClipboardCopyButton>
+          {/if}
+          {#if onClose}
+            <button
+              onclick={onClose}
+              class="fd fd-x -m-2 btn-icon text-[24px]"
+              aria-label="Dismiss pipeline deployment error"
+            >
+            </button>
+          {/if}
+        </div>
       </div>
       <span
+        bind:this={spanEl}
         class="{textClass} break-all whitespace-pre-wrap {showMore
           ? 'scrollbar max-h-[30vh] overflow-auto '
           : 'line-clamp-1'}"
       >
         {message}
       </span>
-      {#if message && message.indexOf('\n') !== -1}
+      {#if message && isTruncated}
         <button
           onclick={() => {
             showMore = !showMore
