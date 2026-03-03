@@ -110,27 +110,27 @@ public class BaseSQLTests {
     }
 
     @SuppressWarnings("unused")
-    protected void showPlan() {
+    public static void showPlan() {
         Logger.INSTANCE.setLoggingLevel(SqlToRelCompiler.class, 2);
     }
 
     @SuppressWarnings("unused")
-    protected void instrumentApply() {
+    public static void instrumentApply() {
         Logger.INSTANCE.setLoggingLevel(LowerCircuitVisitor.class, 2);
     }
 
     @SuppressWarnings("unused")
-    protected void showMonotone() {
+    public static void showMonotone() {
         Logger.INSTANCE.setLoggingLevel(MonotoneAnalyzer.class, 2);
     }
 
     @SuppressWarnings("unused")
-    protected void showFinal() {
+    public static void showFinal() {
         Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 1);
     }
 
     @SuppressWarnings("unused")
-    protected void showFinalVerbose(int verbosity) {
+    public static void showFinalVerbose(int verbosity) {
         Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, verbosity);
     }
 
