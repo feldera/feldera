@@ -5,7 +5,7 @@
   import ScrollDownFab from '$lib/components/other/ScrollDownFab.svelte'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
   import { useReverseScrollContainer } from '$lib/compositions/common/useReverseScrollContainer.svelte'
-  import { selectScope, virtualSelect } from '$lib/compositions/common/userSelect'
+  import { virtualSelect } from '$lib/compositions/common/userSelect'
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
   import { humanSize } from '$lib/functions/common/string'
 
@@ -27,32 +27,14 @@
     )} in total.
   </WarningBanner>
 {/if}
-<!-- <ReverseScrollList items={logs.rows} class="bg-white-dark pl-2 scrollbar">
-    {#snippet item(value, i)}
-      <div class="whitespace-pre-wrap" style="font-family: {theme.config.monospaceFontFamily};"> -->
-<!-- TODO: Re-enable line numbers when they get reported by backend -->
-<!-- <span class="select-none font-bold">{(i + 1).toFixed().padStart(5, ' ')}&nbsp;&nbsp;</span> -->
-<!-- {@html value}
-      </div>
-    {/snippet}
-  </ReverseScrollList> -->
 <div
   role="textbox"
   class="bg-white-dark scrollbar h-full w-full overflow-y-auto rounded pl-2 whitespace-pre-wrap"
   style="font-family: {theme.config.monospaceFontFamily}; user-select: contain;"
   tabindex={-1}
   use:reverseScroll.action
-  use:selectScope
   use:virtualSelect={{
     getRoot: (node) => node.firstElementChild!,
-    getRootChildrenOffset: (root) => {
-      const firstChild = root?.children.item(0)?.children.item(0)
-      if (!firstChild) {
-        return 0
-      }
-      const num = parseInt(firstChild.getAttribute('data-rowindex')!)
-      return num
-    },
     getCopyContent(slice) {
       if (slice === 'all') {
         return logs.rows.map(stripANSI).join('')
@@ -70,42 +52,9 @@
   <Virtualizer data={logs.rows} getKey={(_, i) => i + logs.firstRowIndex} bind:this={virtualizer}>
     {#snippet children(value, index)}
       <div data-rowindex={index}>
-        <!-- <span class="select-none font-bold">{(index + 1).toFixed().padStart(5, ' ')}&nbsp;&nbsp;</span> -->
         <AnsiDecoratedText {value}></AnsiDecoratedText>
       </div>
     {/snippet}
   </Virtualizer>
 </div>
-
-<!-- <SvelteVirtualList items={logs.rows} containerClass="scrollbar" viewportClass="virtual-list-viewport bg-white-dark " bufferSize={1000}>
-    {#snippet renderItem(item, i)}
-      <span class="select-none font-bold">{(i + 1).toFixed().padStart(5, ' ')}&nbsp;&nbsp;</span>
-      {@html item}
-    {/snippet}
-  </SvelteVirtualList> -->
-<!-- <div
-    role="textbox"
-    use:reverseScroll.action
-    use:selectScope
-    class="bg-white-dark h-full w-full overflow-auto whitespace-pre-wrap pl-2 scrollbar"
-    style="font-family: {theme.config.monospaceFontFamily}; user-select: contain;"
-    tabindex={99}
-  >
-    {#each logs.rows as value, i}
-    {@const x = console.log('row')}
-      <div>
-        {@html value}
-      </div>
-    {/each}
-  </div> -->
-<!-- <div
-    role="textbox"
-    use:reverseScroll.action
-    use:selectScope
-    class="bg-white-dark h-full w-full overflow-auto whitespace-pre-wrap pl-2 scrollbar"
-    style="font-family: {theme.config.monospaceFontFamily}; user-select: contain;"
-    tabindex={99}
-  >
-    {@html logs.rows}
-  </div> -->
 <ScrollDownFab {reverseScroll}></ScrollDownFab>
