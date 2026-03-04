@@ -2,8 +2,8 @@
   font-family: "feldera-material-icons";
   font-display: block;
   src:
-    url("feldera-material-icons.woff2?4c3909dc70a1c11a0527de502c9f5a92") format("woff2"),
-    url("feldera-material-icons.woff?4c3909dc70a1c11a0527de502c9f5a92") format("woff");
+    url("feldera-material-icons.woff2?415be23e038ee760b279ee35224ed390") format("woff2"),
+    url("feldera-material-icons.woff?415be23e038ee760b279ee35224ed390") format("woff");
 }
 
 .fd {
@@ -170,33 +170,39 @@
 .fd-info:before {
   content: "\f133";
 }
-.fd-rocket:before {
+.fd-construction:before {
   content: "\f134";
 }
-.fd-circle-plus:before {
+.fd-rocket:before {
   content: "\f135";
 }
-.fd-server:before {
+.fd-circle-plus:before {
   content: "\f136";
 }
-.fd-circle-stop-locked:before {
+.fd-server:before {
   content: "\f137";
 }
-.fd-check:before {
+.fd-circle-stop-locked:before {
   content: "\f138";
 }
-.fd-book-open:before {
+.fd-receipt-text:before {
   content: "\f139";
 }
-.fd-user:before {
+.fd-check:before {
   content: "\f13a";
 }
-.fd-sliders-horizontal:before {
+.fd-book-open:before {
   content: "\f13b";
 }
-.fd-mic:before {
+.fd-user:before {
   content: "\f13c";
 }
-.fd-circle-alert:before {
+.fd-sliders-horizontal:before {
   content: "\f13d";
+}
+.fd-mic:before {
+  content: "\f13e";
+}
+.fd-circle-alert:before {
+  content: "\f13f";
 }

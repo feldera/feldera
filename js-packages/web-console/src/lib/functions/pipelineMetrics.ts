@@ -12,23 +12,38 @@ import type {
 import type { GlobalMetricsTimestamp, TimeSeriesEntry } from '$lib/types/pipelineManager'
 import { discreteDerivative } from './common/math'
 
-export type AggregatedMetrics<M> = {
-  aggregate: M
-  connectors: {
+export type AggregatedMetrics<M, Extras = {}> = {
+  aggregate: { metrics: M }
+  connectors: ({
     endpointName: string
     metrics: M
-    paused?: boolean
-    barrier?: boolean
-    io_active?: boolean
-  }[]
+  } & Extras)[]
 }
 
+export type AggregatedInputEndpointMetrics = AggregatedMetrics<
+  InputEndpointMetrics,
+  {
+    paused?: boolean
+    barrier?: boolean
+    io_active: boolean
+    transaction_phase?: 'started' | 'committed'
+  }
+>
+
+export type AggregatedOutputEndpointMetrics = AggregatedMetrics<
+  OutputEndpointMetrics,
+  { io_active: boolean }
+>
+
 export const emptyPipelineMetrics = {
-  tables: new Map<string, AggregatedMetrics<InputEndpointMetrics>>(),
-  views: new Map<string, AggregatedMetrics<OutputEndpointMetrics>>(),
+  tables: new Map<string, AggregatedInputEndpointMetrics>(),
+  views: new Map<string, AggregatedOutputEndpointMetrics>(),
   inputs: [] as InputEndpointStatus[],
   outputs: [] as OutputEndpointStatus[],
-  global: {} as GlobalMetricsTimestamp
+  global: {
+    transaction_status: 'NoTransaction',
+    transaction_initiators: { initiated_by_connectors: {} }
+  } as GlobalMetricsTimestamp
 }
 
 export type PipelineMetrics = typeof emptyPipelineMetrics & { lastTimestamp?: number }
@@ -51,6 +66,8 @@ export const accumulatePipelineMetrics =
       ...newData.global_metrics,
       timeMs: newTimestamp
     }
+    const initiatedByConnectors =
+      newData.global_metrics.transaction_initiators.initiated_by_connectors
     return {
       lastTimestamp: oldData?.lastTimestamp,
       inputs: newData.inputs,
@@ -59,43 +76,48 @@ export const accumulatePipelineMetrics =
         groupBy(newData.inputs, (i) => normalizeCaseIndependentName({ name: i.config.stream })).map(
           ([relationName, endpoints]) => {
             const oldRelation = oldData?.tables.get(relationName)
-            const metrics: AggregatedMetrics<InputEndpointMetrics> = {
-              connectors: endpoints.map((cur) => {
-                const prev = oldRelation?.connectors.find(
-                  (c) => c.endpointName === cur.endpoint_name
-                )
-                return {
-                  endpointName: cur.endpoint_name,
-                  metrics: cur.metrics,
-                  paused: cur.paused,
-                  barrier: cur.barrier,
-                  io_active:
-                    prev !== undefined && cur.metrics.total_records > prev.metrics.total_records
-                }
-              }),
-              aggregate: endpoints.reduce(
-                (acc: InputEndpointMetrics, cur) => {
-                  const metrics = cur.metrics
-                  return {
-                    total_bytes: acc.total_bytes + metrics.total_bytes,
-                    total_records: acc.total_records + metrics.total_records,
-                    buffered_records: acc.buffered_records + metrics.buffered_records,
-                    num_transport_errors: acc.num_transport_errors + metrics.num_transport_errors,
-                    num_parse_errors: acc.num_parse_errors + metrics.num_parse_errors,
-                    end_of_input: acc.end_of_input || metrics.end_of_input,
-                    buffered_bytes: acc.buffered_bytes + metrics.buffered_bytes
+            const connectors = endpoints.map((cur) => {
+              const prev = oldRelation?.connectors.find((c) => c.endpointName === cur.endpoint_name)
+              const connectorPhase = initiatedByConnectors[cur.endpoint_name]?.phase
+              return {
+                endpointName: cur.endpoint_name,
+                metrics: cur.metrics,
+                paused: cur.paused,
+                barrier: cur.barrier,
+                io_active:
+                  prev !== undefined && cur.metrics.total_records > prev.metrics.total_records,
+                transaction_phase: connectorPhase
+                  ? (connectorPhase.toLowerCase() as 'started' | 'committed')
+                  : undefined
+              }
+            })
+            const metrics: AggregatedInputEndpointMetrics = {
+              connectors,
+              aggregate: {
+                metrics: endpoints.reduce(
+                  (acc: InputEndpointMetrics, cur) => {
+                    const metrics = cur.metrics
+                    return {
+                      total_bytes: acc.total_bytes + metrics.total_bytes,
+                      total_records: acc.total_records + metrics.total_records,
+                      buffered_records: acc.buffered_records + metrics.buffered_records,
+                      num_transport_errors: acc.num_transport_errors + metrics.num_transport_errors,
+                      num_parse_errors: acc.num_parse_errors + metrics.num_parse_errors,
+                      end_of_input: acc.end_of_input || metrics.end_of_input,
+                      buffered_bytes: acc.buffered_bytes + metrics.buffered_bytes
+                    }
+                  },
+                  {
+                    total_bytes: 0,
+                    total_records: 0,
+                    buffered_bytes: 0,
+                    buffered_records: 0,
+                    num_transport_errors: 0,
+                    num_parse_errors: 0,
+                    end_of_input: false
                   }
-                },
-                {
-                  total_bytes: 0,
-                  total_records: 0,
-                  buffered_bytes: 0,
-                  buffered_records: 0,
-                  num_transport_errors: 0,
-                  num_parse_errors: 0,
-                  end_of_input: false
-                }
-              )
+                )
+              }
             }
             return tuple(relationName, metrics)
           }
@@ -106,7 +128,7 @@ export const accumulatePipelineMetrics =
           normalizeCaseIndependentName({ name: i.config.stream })
         ).map(([relationName, endpoints]) => {
           const oldRelation = oldData?.views.get(relationName)
-          const metrics: AggregatedMetrics<OutputEndpointMetrics> = {
+          const metrics: AggregatedOutputEndpointMetrics = {
             connectors: endpoints.map((cur) => {
               const prev = oldRelation?.connectors.find((c) => c.endpointName === cur.endpoint_name)
               return {
@@ -117,36 +139,41 @@ export const accumulatePipelineMetrics =
                   cur.metrics.transmitted_records > prev.metrics.transmitted_records
               }
             }),
-            aggregate: endpoints.reduce(
-              (acc: OutputEndpointMetrics, cur) => {
-                const metrics = cur.metrics
-                return {
-                  buffered_batches: acc.buffered_batches + metrics.buffered_batches,
-                  buffered_records: acc.buffered_records + metrics.buffered_records,
-                  num_encode_errors: acc.num_encode_errors + metrics.num_encode_errors,
-                  num_transport_errors: acc.num_transport_errors + metrics.num_transport_errors,
-                  total_processed_input_records:
-                    acc.total_processed_input_records + metrics.total_processed_input_records,
-                  transmitted_bytes: acc.transmitted_bytes + metrics.transmitted_bytes,
-                  transmitted_records: acc.transmitted_records + metrics.transmitted_records,
-                  queued_batches: acc.queued_batches + metrics.queued_batches,
-                  queued_records: acc.queued_records + metrics.queued_records,
-                  memory: acc.memory + metrics.memory
+            aggregate: {
+              metrics: endpoints.reduce(
+                (acc: OutputEndpointMetrics, cur) => {
+                  const metrics = cur.metrics
+                  return {
+                    buffered_batches: acc.buffered_batches + metrics.buffered_batches,
+                    buffered_records: acc.buffered_records + metrics.buffered_records,
+                    num_encode_errors: acc.num_encode_errors + metrics.num_encode_errors,
+                    num_transport_errors: acc.num_transport_errors + metrics.num_transport_errors,
+                    total_processed_input_records:
+                      acc.total_processed_input_records + metrics.total_processed_input_records,
+                    transmitted_bytes: acc.transmitted_bytes + metrics.transmitted_bytes,
+                    transmitted_records: acc.transmitted_records + metrics.transmitted_records,
+                    total_processed_steps:
+                      acc.total_processed_steps + metrics.total_processed_steps,
+                    queued_batches: acc.queued_batches + metrics.queued_batches,
+                    queued_records: acc.queued_records + metrics.queued_records,
+                    memory: acc.memory + metrics.memory
+                  }
+                },
+                {
+                  buffered_batches: 0,
+                  buffered_records: 0,
+                  num_encode_errors: 0,
+                  num_transport_errors: 0,
+                  total_processed_input_records: 0,
+                  transmitted_bytes: 0,
+                  transmitted_records: 0,
+                  total_processed_steps: 0,
+                  queued_batches: 0,
+                  queued_records: 0,
+                  memory: 0
                 }
-              },
-              {
-                buffered_batches: 0,
-                buffered_records: 0,
-                num_encode_errors: 0,
-                num_transport_errors: 0,
-                total_processed_input_records: 0,
-                transmitted_bytes: 0,
-                transmitted_records: 0,
-                queued_batches: 0,
-                queued_records: 0,
-                memory: 0
-              }
-            )
+              )
+            }
           }
           return tuple(relationName, metrics)
         })

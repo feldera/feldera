@@ -10,6 +10,8 @@
   let getProfileFiles: () => [Date, ZipItem[]][] = $state(() => [])
   let selectedProfile: Date | null = $state(null)
 
+  export const id = 'Profile Visualizer' as const
+
   export { label as Label }
 </script>
 

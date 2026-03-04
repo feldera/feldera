@@ -150,11 +150,12 @@
 input:focus {
   outline: none !important;
 }
-
-.text-lg {
-  /* width: calc(2rem * var(--space-scale-factor));
-  height: calc(2rem * var(--space-scale-factor));
-  padding: 0px !important; */
+.chip {
+  &:hover {
+    @media (hover: hover) {
+      filter: brightness(100%);
+    }
+  }
 }
 
 .h3 {
