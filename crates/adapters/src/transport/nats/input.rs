@@ -337,6 +337,7 @@ impl NatsReader {
         let mut state = ReaderLifecycleState::Paused;
         let mut canceller: Option<Canceller> = None;
         let mut next_retry_at: Option<tokio::time::Instant> = None;
+        let mut retry_count: u32 = 0;
         let (mut reader_error_sender, mut reader_error_receiver) =
             unbounded_channel::<ConnectorError>();
         let queue = Arc::new(InputQueue::<u64>::new(consumer.clone()));
@@ -461,8 +462,9 @@ impl NatsReader {
                                     match error.with_context("NATS reader task failed") {
                                         ConnectorError::Retryable(error) => {
                                             state = ReaderLifecycleState::ErrorRetrying;
+                                            retry_count = 1;
                                             next_retry_at = Some(tokio::time::Instant::now() + retry_interval);
-                                            consumer.error(false, anyhow!("NATS input entered ERROR state: {error:#}"), Some("nats-input"));
+                                            consumer.error(false, anyhow!("NATS input entered ERROR state, will retry in {retry_interval:?}: {error:#}"), Some("nats-input"));
                                         }
                                         ConnectorError::Fatal(error) => {
                                             state = ReaderLifecycleState::Stopped;
@@ -479,8 +481,9 @@ impl NatsReader {
                                         canceller.cancel_and_join().await;
                                     }
                                     state = ReaderLifecycleState::ErrorRetrying;
+                                    retry_count = 1;
                                     next_retry_at = Some(tokio::time::Instant::now() + retry_interval);
-                                    consumer.error(false, anyhow!("NATS reader task exited unexpectedly without reporting an error"), Some("nats-input"));
+                                    consumer.error(false, anyhow!("NATS reader task exited unexpectedly without reporting an error, will retry in {retry_interval:?}"), Some("nats-input"));
                                 }
                             }
                             continue;
@@ -524,18 +527,20 @@ impl NatsReader {
                                 reader_error_sender.clone(),
                             ).await {
                                 Ok(new_canceller) => {
-                                    info!("NATS input recovered and resumed from {:?}", next_sequence.load(Ordering::Acquire));
+                                    info!("NATS input recovered after {retry_count} retries, resuming from {:?}", next_sequence.load(Ordering::Acquire));
                                     // Drain stale errors from the previous (failed) reader
                                     // before entering Running with a fresh reader.
                                     while reader_error_receiver.try_recv().is_ok() {}
                                     canceller = Some(new_canceller);
                                     state = ReaderLifecycleState::Running;
+                                    retry_count = 0;
                                     next_retry_at = None;
                                 }
                                 Err(ConnectorError::Retryable(error)) => {
+                                    retry_count += 1;
                                     consumer.error(
                                         false,
-                                        anyhow!("NATS input still in ERROR state, retrying in {:?}: {error:#}", retry_interval),
+                                        anyhow!("NATS input retry #{retry_count} failed, next attempt in {retry_interval:?}: {}", error.root_cause()),
                                         Some("nats-input"),
                                     );
                                     next_retry_at = Some(tokio::time::Instant::now() + retry_interval);
@@ -606,6 +611,7 @@ impl NatsReader {
                     // so they don't leak into the next Extend cycle.
                     while reader_error_receiver.try_recv().is_ok() {}
                     state = ReaderLifecycleState::Paused;
+                    retry_count = 0;
                     next_retry_at = None;
                 }
                 InputReaderCommand::Extend => {
@@ -630,13 +636,15 @@ impl NatsReader {
                     {
                         Ok(new_canceller) => {
                             state = ReaderLifecycleState::Running;
+                            retry_count = 0;
                             canceller = Some(new_canceller);
                             next_retry_at = None;
                         }
                         Err(ConnectorError::Retryable(error)) => {
                             state = ReaderLifecycleState::ErrorRetrying;
+                            retry_count = 1;
                             next_retry_at = Some(tokio::time::Instant::now() + retry_interval);
-                            consumer.error(false, anyhow!("NATS input entered ERROR state: {error:#}"), Some("nats-input"));
+                            consumer.error(false, anyhow!("NATS input entered ERROR state, will retry in {retry_interval:?}: {error:#}"), Some("nats-input"));
                         }
                         Err(ConnectorError::Fatal(error)) => {
                             consumer.error(
