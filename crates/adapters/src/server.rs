@@ -106,7 +106,7 @@ use std::{
 use tokio::spawn;
 use tokio::sync::Notify;
 use tokio::task::spawn_blocking;
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::wrappers::WatchStream;
 use tracing::{Instrument, Level, debug, error, info, info_span, warn};
@@ -2346,7 +2346,19 @@ async fn coordination_status(state: WebData<ServerState>) -> Result<HttpResponse
                 if status != prev {
                     break status;
                 }
-                notify.await;
+
+                // We put a 1-second timeout on this because the status can
+                // change without desired_status_change being notified in two cases:
+                //
+                // - Bootstrapping has completed.
+                //
+                // - Replaying is completed.
+                //
+                // Either of these can only happen at most once per pipeline run
+                // (and they can't both happen), and it's probably OK that the
+                // notification is delayed a bit.  (If it turns out that prompt
+                // notification is important, then we can arrange for that.)
+                let _ = timeout(Duration::from_secs(1), notify).await;
             },
         };
         Some((
