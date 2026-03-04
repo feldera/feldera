@@ -16,8 +16,9 @@ NATS support is still experimental, and it may be substantially modified in the 
 
 The NATS input connector uses JetStream's **ordered pull consumer**, which provides:
 - **Strict ordering**: Messages delivered in exact stream order without gaps.
-- **Automatic recovery**: On gap detection, heartbeat loss, or deletion, the consumer automatically recreates itself and resumes from the last processed position
-- **Exactly-once semantics**: Combined with Feldera's checkpoint mechanism, ensures each message is processed exactly once
+- **Automatic recovery**: On gap detection, heartbeat loss, or deletion, the consumer automatically recreates itself and resumes from the last processed position.
+- **Retry loop with health checks**: On transient startup/runtime failures, the connector enters retry mode and periodically attempts to reconnect.
+- **Exactly-once semantics**: Combined with Feldera's checkpoint mechanism, ensures each message is processed exactly once.
 
 ## NATS Input Connector Configuration
 
@@ -37,6 +38,8 @@ The connector configuration consists of three main sections:
 | Property      | Type   | Required | Description |
 |--------------|--------|----------|-------------|
 | `stream_name` | string | Yes      | The name of the NATS JetStream stream to consume from |
+| `inactivity_timeout_secs` | integer | No | Maximum idle time while waiting for the next message before running a stream/server health check. Must be at least 1. Default: 10 |
+| `retry_interval_secs` | integer | No | Delay between automatic retry attempts while the connector is in retry mode. Must be at least 1. Default: 5 |
 
 ### Consumer Configuration
 
@@ -76,6 +79,22 @@ The `replay_policy` field controls how fast messages are delivered to the consum
   - Debugging scenarios where message timing matters
 
 If not specified, defaults to `"Instant"`.
+
+## Retry, startup and replay behavior
+
+The connector distinguishes between **retryable** and **fatal** errors:
+
+- **Retryable errors** (temporary network/server issues, missing stream during startup, transient message-stream failures) move the connector into retry mode. It reports non-fatal endpoint errors and retries automatically every `retry_interval_secs`.
+- **Fatal errors** stop the connector and report a fatal endpoint error. This is used when checkpoint/replay metadata is incompatible with the current stream sequence space.
+
+Before reading after startup or resume, the connector validates the checkpoint resume cursor against the stream's available sequence range. During replay, it validates that the requested replay range still exists.
+
+Typical fatal scenarios include:
+
+- The stream was deleted/recreated and old checkpoint sequence numbers no longer exist.
+- The stream was purged and required replay messages are gone.
+
+In these cases the connector fails fast instead of looping forever.
 
 ## Authentication
 
