@@ -791,6 +791,20 @@ impl Storage for StoragePostgres {
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
+        // If the pipeline currently is already Stopped and is desired to be Stopped,
+        // then there is no need to transition to Provisioning
+        let pipeline =
+            operations::pipeline::get_pipeline_by_id_for_monitoring(&txn, tenant_id, pipeline_id)
+                .await?;
+        if pipeline.deployment_resources_status == ResourcesStatus::Stopped
+            && pipeline.deployment_resources_desired_status == ResourcesDesiredStatus::Stopped
+        {
+            return Err(DBError::UnnecessaryResourcesStatusTransition {
+                current_status: pipeline.deployment_resources_status,
+                new_status: ResourcesStatus::Provisioning,
+                current_desired_status: pipeline.deployment_resources_desired_status,
+            });
+        }
         operations::pipeline::set_storage_status(
             &txn,
             tenant_id,
@@ -897,6 +911,17 @@ impl Storage for StoragePostgres {
         let pipeline =
             operations::pipeline::get_pipeline_by_id_for_monitoring(&txn, tenant_id, pipeline_id)
                 .await?;
+        // If the pipeline currently is already Stopped and is desired to be Stopped,
+        // then there is no need to transition to Stopping
+        if pipeline.deployment_resources_status == ResourcesStatus::Stopped
+            && pipeline.deployment_resources_desired_status == ResourcesDesiredStatus::Stopped
+        {
+            return Err(DBError::UnnecessaryResourcesStatusTransition {
+                current_status: pipeline.deployment_resources_status,
+                new_status: ResourcesStatus::Stopping,
+                current_desired_status: pipeline.deployment_resources_desired_status,
+            });
+        }
         operations::pipeline::set_deployment_resources_desired_status(
             &txn,
             tenant_id,

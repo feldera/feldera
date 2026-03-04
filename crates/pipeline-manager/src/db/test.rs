@@ -1467,6 +1467,188 @@ async fn pipeline_program_compilation() {
     );
 }
 
+/// Tests the following sequence of events:
+/// - Pipeline is compiled
+/// - User calls /start
+/// - Automaton starts with work to transition from Stopped to Provisioning/Stopping
+/// - User call /stop
+/// - Automaton finishes work to transition from Stopped to Provisioning/Stopping, and tries to
+///   store this in the database
+#[tokio::test]
+async fn pipeline_transition_after_quick_stop() {
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+    let pipeline1 = handle
+        .db
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            "v0",
+            PipelineDescr {
+                name: "example1".to_string(),
+                description: "d1".to_string(),
+                runtime_config: json!({}),
+                program_code: "c1".to_string(),
+                udf_rust: "r1".to_string(),
+                udf_toml: "t2".to_string(),
+                program_config: json!({}),
+            },
+        )
+        .await
+        .unwrap();
+
+    // "Compile" the program of pipeline1
+    assert_eq!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline1.id)
+            .await
+            .unwrap()
+            .refresh_version,
+        Version(1)
+    );
+    handle
+        .db
+        .transit_program_status_to_compiling_sql(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_sql_compiled(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            &SqlCompilationInfo {
+                exit_code: 0,
+                messages: vec![],
+            },
+            &serde_json::to_value(ProgramInfo {
+                schema: ProgramSchema {
+                    inputs: vec![],
+                    outputs: vec![],
+                },
+                main_rust: "".to_string(),
+                udf_stubs: "".to_string(),
+                input_connectors: BTreeMap::new(),
+                output_connectors: BTreeMap::new(),
+                dataflow: None,
+            })
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline1.id)
+            .await
+            .unwrap()
+            .refresh_version,
+        Version(2)
+    );
+    handle
+        .db
+        .transit_program_status_to_compiling_rust(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_success(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            &RustCompilationInfo {
+                exit_code: 0,
+                stdout: "".to_string(),
+                stderr: "".to_string(),
+            },
+            "def",
+            "123",
+            "456",
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline1.id)
+            .await
+            .unwrap()
+            .refresh_version,
+        Version(3)
+    );
+
+    // Start pipeline1
+    handle
+        .db
+        .set_deployment_resources_desired_status_provisioned(
+            tenant_id,
+            "example1",
+            RuntimeDesiredStatus::Paused,
+            BootstrapPolicy::default(),
+            false,
+        )
+        .await
+        .unwrap();
+
+    // Stop pipeline1
+    handle
+        .db
+        .set_deployment_resources_desired_status_stopped_if_not_provisioned(tenant_id, "example1")
+        .await
+        .unwrap();
+
+    // Automaton: attempt to proceed to Provisioning anyway
+    assert!(matches!(
+        handle
+            .db
+            .transit_deployment_resources_status_to_provisioning(
+                tenant_id,
+                pipeline1.id,
+                Version(1),
+                Uuid::nil(),
+                serde_json::to_value(generate_pipeline_config(
+                    pipeline1.id,
+                    &pipeline1.name,
+                    &serde_json::from_value(pipeline1.runtime_config.clone()).unwrap(),
+                    None,
+                ))
+                .unwrap(),
+            )
+            .await
+            .unwrap_err(),
+        DBError::UnnecessaryResourcesStatusTransition {
+            current_status: ResourcesStatus::Stopped,
+            new_status: ResourcesStatus::Provisioning,
+            current_desired_status: ResourcesDesiredStatus::Stopped,
+        }
+    ));
+
+    // Automaton: attempt to proceed to Stopping anyway
+    assert!(matches!(
+        handle
+            .db
+            .transit_deployment_resources_status_to_stopping(
+                tenant_id,
+                pipeline1.id,
+                Version(1),
+                Some(ErrorResponse {
+                    message: "ABC".to_string(),
+                    error_code: Default::default(),
+                    details: Default::default(),
+                }),
+                None
+            )
+            .await
+            .unwrap_err(),
+        DBError::UnnecessaryResourcesStatusTransition {
+            current_status: ResourcesStatus::Stopped,
+            new_status: ResourcesStatus::Stopping,
+            current_desired_status: ResourcesDesiredStatus::Stopped,
+        }
+    ));
+}
+
 /// Deployment of a pipeline by starting it and progressing through various deployment statuses.
 #[tokio::test]
 async fn pipeline_deployment() {
@@ -1986,6 +2168,26 @@ async fn pipeline_provision_version_guard() {
         .await
         .unwrap();
 
+    // Set desired status to `Provisioned`
+    handle
+        .db
+        .set_deployment_resources_desired_status_provisioned(
+            tenant_id,
+            &pipeline.name,
+            RuntimeDesiredStatus::Running,
+            BootstrapPolicy::default(),
+            false,
+        )
+        .await
+        .unwrap();
+
+    // Set desired status to `Stopped`
+    handle
+        .db
+        .set_deployment_resources_desired_status_stopped(tenant_id, &pipeline.name)
+        .await
+        .unwrap();
+
     // Update pipeline to v2
     handle
         .db
@@ -2026,6 +2228,19 @@ async fn pipeline_provision_version_guard() {
             &None,
             &None,
             &None,
+        )
+        .await
+        .unwrap();
+
+    // Set desired status to `Provisioned`
+    handle
+        .db
+        .set_deployment_resources_desired_status_provisioned(
+            tenant_id,
+            &pipeline.name,
+            RuntimeDesiredStatus::Paused,
+            BootstrapPolicy::Allow,
+            false,
         )
         .await
         .unwrap();
@@ -4155,6 +4370,15 @@ impl Storage for Mutex<DbModel> {
     ) -> Result<(), DBError> {
         // Validate
         let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
+        if pipeline.deployment_resources_status == ResourcesStatus::Stopped
+            && pipeline.deployment_resources_desired_status == ResourcesDesiredStatus::Stopped
+        {
+            return Err(DBError::UnnecessaryResourcesStatusTransition {
+                current_status: pipeline.deployment_resources_status,
+                new_status: ResourcesStatus::Provisioning,
+                current_desired_status: pipeline.deployment_resources_desired_status,
+            });
+        }
         validate_storage_status_transition(
             pipeline.deployment_resources_status,
             pipeline.storage_status,
@@ -4318,6 +4542,15 @@ impl Storage for Mutex<DbModel> {
     ) -> Result<(), DBError> {
         // Validate
         let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
+        if pipeline.deployment_resources_status == ResourcesStatus::Stopped
+            && pipeline.deployment_resources_desired_status == ResourcesDesiredStatus::Stopped
+        {
+            return Err(DBError::UnnecessaryResourcesStatusTransition {
+                current_status: pipeline.deployment_resources_status,
+                new_status: ResourcesStatus::Stopping,
+                current_desired_status: pipeline.deployment_resources_desired_status,
+            });
+        }
         let new_resources_status = ResourcesStatus::Stopping;
         validate_new_deployment_resources_status(
             &pipeline,
