@@ -239,10 +239,7 @@ impl NatsReader {
         jetstream: &jetstream::Context,
         stream_name: &str,
     ) -> Result<(), AnyError> {
-        jetstream
-            .get_stream(stream_name)
-            .await
-            .with_context(|| format!("Failed to get stream '{stream_name}'"))?;
+        let _ = fetch_stream_state(jetstream, stream_name).await?;
         Ok(())
     }
 
@@ -296,6 +293,14 @@ impl NatsReader {
                 )
             })
             .map_err(ConnectorError::Retryable)?;
+
+        validate_resume_position(
+            &jetstream,
+            &config.stream_name,
+            resume_cursor.load(Ordering::Acquire),
+        )
+        .await
+        .map_err(ConnectorError::Fatal)?;
 
         let nats_consumer = create_nats_consumer(
             &jetstream,
@@ -366,6 +371,10 @@ impl NatsReader {
                             )
                         })
                         .map_err(ConnectorError::Retryable)?;
+
+                    validate_replay_range(&jetstream, &config.stream_name, &metadata.sequence_numbers)
+                        .await
+                        .map_err(ConnectorError::Fatal)?;
 
                     let nats_consumer = create_nats_consumer(
                         &jetstream,
@@ -906,6 +915,113 @@ async fn fetch_stream_state(
         first_sequence: stream_info.state.first_sequence,
         last_sequence: stream_info.state.last_sequence,
     })
+}
+
+async fn validate_replay_range(
+    jetstream: &jetstream::Context,
+    stream_name: &str,
+    requested_range: &std::ops::Range<u64>,
+) -> AnyResult<()> {
+    validate_sequence_bounds(
+        jetstream,
+        stream_name,
+        SequenceValidationMode::Replay {
+            requested_range: requested_range.clone(),
+        },
+    )
+    .await
+}
+
+async fn validate_resume_position(
+    jetstream: &jetstream::Context,
+    stream_name: &str,
+    resume_cursor: u64,
+) -> AnyResult<()> {
+    validate_sequence_bounds(
+        jetstream,
+        stream_name,
+        SequenceValidationMode::Resume { resume_cursor },
+    )
+    .await
+}
+
+enum SequenceValidationMode {
+    Replay {
+        requested_range: std::ops::Range<u64>,
+    },
+    Resume {
+        resume_cursor: u64,
+    },
+}
+
+async fn validate_sequence_bounds(
+    jetstream: &jetstream::Context,
+    stream_name: &str,
+    mode: SequenceValidationMode,
+) -> AnyResult<()> {
+    match &mode {
+        SequenceValidationMode::Replay { requested_range } if requested_range.is_empty() => {
+            return Ok(());
+        }
+        SequenceValidationMode::Resume { resume_cursor: 0 } => {
+            // Fresh starts use `0` and should always be allowed.
+            return Ok(());
+        }
+        _ => {}
+    }
+
+    let stream_state = fetch_stream_state(jetstream, stream_name).await?;
+    let available_first = stream_state.first_sequence;
+    let available_last = stream_state.last_sequence;
+
+    match mode {
+        SequenceValidationMode::Replay { requested_range } => {
+            if stream_state.messages == 0 {
+                return Err(anyhow!(
+                    "Replay requested sequences {:?} from stream '{stream_name}', but the stream is empty",
+                    requested_range
+                ));
+            }
+
+            let requested_first = requested_range.start;
+            let requested_last = requested_range.end - 1;
+
+            if requested_first < available_first || requested_first > available_last {
+                return Err(anyhow!(
+                    "Replay start sequence {requested_first} is outside available stream range [{available_first}, {available_last}] for stream '{stream_name}'"
+                ));
+            }
+
+            if requested_last > available_last {
+                return Err(anyhow!(
+                    "Replay end sequence {requested_last} exceeds available stream tail {available_last} for stream '{stream_name}'"
+                ));
+            }
+        }
+        SequenceValidationMode::Resume { resume_cursor } => {
+            if stream_state.messages == 0 {
+                return Err(anyhow!(
+                    "Resume sequence {resume_cursor} is invalid for stream '{stream_name}': stream is empty"
+                ));
+            }
+
+            let valid_upper = available_last.saturating_add(1);
+
+            if resume_cursor < available_first {
+                return Err(anyhow!(
+                    "Resume sequence {resume_cursor} is before earliest available sequence {available_first} for stream '{stream_name}'"
+                ));
+            }
+
+            if resume_cursor > valid_upper {
+                return Err(anyhow!(
+                    "Resume sequence {resume_cursor} is after valid upper bound {valid_upper} for stream '{stream_name}'"
+                ));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Used to instruct a task to shut down, and wait for it to end.
