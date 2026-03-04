@@ -73,6 +73,20 @@ use xxhash_rust::xxh3::Xxh3Default;
 type NatsConsumerConfig = nats_consumer::pull::OrderedConfig;
 type NatsConsumer = nats_consumer::Consumer<NatsConsumerConfig>;
 
+enum ConnectorError {
+    Retryable(AnyError),
+    Fatal(AnyError),
+}
+
+impl ConnectorError {
+    fn with_context(self, context: impl std::fmt::Display + Send + Sync + 'static) -> Self {
+        match self {
+            Self::Retryable(error) => Self::Retryable(error.context(context)),
+            Self::Fatal(error) => Self::Fatal(error.context(context)),
+        }
+    }
+}
+
 /// Checkpoint/resume metadata
 ///
 /// The sequence_numbers is a range `[start, end)` where:
@@ -221,6 +235,16 @@ impl NatsReader {
             .get_stream(stream_name)
             .await
             .with_context(|| format!("Failed to get stream '{stream_name}'"))?;
+        Ok(())
+    }
+
+    async fn verify_server_and_stream_health(
+        connection_config: &cfg::ConnectOptions,
+        stream_name: &str,
+    ) -> Result<(), AnyError> {
+        Self::initialize_jetstream(connection_config, stream_name)
+            .await
+            .context("health check failed")?;
         Ok(())
     }
 
@@ -428,6 +452,35 @@ async fn create_nats_consumer(
         })
 }
 
+/// Runs a health check after an inactivity timeout fires.
+///
+/// Returns `Ok(())` if the server and stream are healthy (caller should
+/// continue its loop), or an error describing the stall and the failed check.
+async fn check_inactivity_health(
+    jetstream: &jetstream::Context,
+    connection_config: &cfg::ConnectOptions,
+    stream_name: &str,
+    inactivity_timeout: Duration,
+    context: &str,
+) -> Result<(), AnyError> {
+    // First try a cheap probe against the existing JetStream context.
+    // This avoids reconnect churn on quiet-but-healthy streams.
+    if let Err(primary_error) = fetch_stream_state(jetstream, stream_name).await {
+        // If the in-place probe fails, run a full reconnect + stream lookup as
+        // a fallback check before surfacing a fatal error.
+        NatsReader::verify_server_and_stream_health(connection_config, stream_name)
+            .await
+            .map_err(|fallback_error| {
+                anyhow!(
+                    "NATS {context} stalled for {:?}. Existing connection health check failed: {primary_error:#}; reconnect health check failed: {fallback_error:#}",
+                    inactivity_timeout,
+                )
+            })?;
+    }
+
+    Ok(())
+}
+
 async fn consume_nats_messages_until(
     nats_consumer: NatsConsumer,
     last_message_sequence: u64,
@@ -546,6 +599,31 @@ async fn spawn_nats_reader(
     Ok(Canceller {
         cancel_token,
         join_handle,
+    })
+}
+struct StreamState {
+    messages: u64,
+    first_sequence: u64,
+    last_sequence: u64,
+}
+
+async fn fetch_stream_state(
+    jetstream: &jetstream::Context,
+    stream_name: &str,
+) -> AnyResult<StreamState> {
+    let mut stream = jetstream
+        .get_stream(stream_name)
+        .await
+        .with_context(|| format!("Failed to get stream '{stream_name}'"))?;
+    let stream_info = stream
+        .info()
+        .await
+        .with_context(|| format!("Failed to fetch stream info for '{stream_name}'"))?;
+
+    Ok(StreamState {
+        messages: stream_info.state.messages,
+        first_sequence: stream_info.state.first_sequence,
+        last_sequence: stream_info.state.last_sequence,
     })
 }
 
