@@ -1,12 +1,19 @@
 <script lang="ts" module>
-  const pipelineActionCallbacks = usePipelineActionCallbacks()
+  export type MonitoringTabs =
+    | 'Errors'
+    | 'Performance'
+    | 'Ad-Hoc Queries'
+    | 'Changes Stream'
+    | 'Profile Visualizer'
+    | 'Samply'
+    | 'Logs'
 </script>
 
 <script lang="ts">
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import PanelAdHocQuery from '$lib/components/pipelines/editor/TabAdHocQuery.svelte'
   import PanelChangeStream from '$lib/components/pipelines/editor/TabChangeStream.svelte'
-  import PanelPerformance from '$lib/components/pipelines/editor/TabPerformance.svelte'
+  import * as TabPerformance from '$lib/components/pipelines/editor/TabPerformance.svelte'
   import PanelPipelineErrors from '$lib/components/pipelines/editor/TabPipelineErrors.svelte'
   import * as TabProfileVisualizer from '$lib/components/pipelines/editor/TabProfileVisualizer.svelte'
   import * as TabSamplyProfile from '$lib/components/pipelines/editor/TabSamplyProfile.svelte'
@@ -14,9 +21,9 @@
   import { tuple } from '$lib/functions/common/tuple'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
-  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { count } from '$lib/functions/common/array'
   import { untrack } from 'svelte'
+  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import DownloadSupportBundle from '$lib/components/pipelines/editor/DownloadSupportBundle.svelte'
@@ -30,11 +37,13 @@
   let {
     pipeline,
     metrics,
-    currentInteractionTab
+    hiddenTabs,
+    currentTab = $bindable(null)
   }: {
     pipeline: { current: ExtendedPipeline }
     metrics: { current: PipelineMetrics }
-    currentInteractionTab: string | null
+    hiddenTabs: string[]
+    currentTab: MonitoringTabs | null
   } = $props()
 
   const pipelineName = $derived(pipeline.current.name)
@@ -42,43 +51,38 @@
   let tabs = $derived(
     [
       tuple('Errors' as const, TabControlPipelineErrors, PanelPipelineErrors, false),
-      tuple('Performance' as const, TabControlPerformance, PanelPerformance, false),
+      tuple(TabPerformance.id, TabPerformance.Label, TabPerformance.default, false),
       tuple('Ad-Hoc Queries' as const, TabControlAdhoc, PanelAdHocQuery, false),
       tuple('Changes Stream' as const, TabControlChangeStream, PanelChangeStream, true),
       tuple(
-        'Profile Visualizer' as const,
+        TabProfileVisualizer.id,
         TabProfileVisualizer.Label,
         TabProfileVisualizer.default,
         true
       ),
       tuple('Samply' as const, TabSamplyProfile.Label, TabSamplyProfile.default, false),
       tuple('Logs' as const, TabLogs, PanelLogs, false)
-    ].filter((tab) => tab[0] !== currentInteractionTab)
+    ].filter((tab) => !hiddenTabs.includes(tab[0]))
   )
-  let currentTab = $derived(
-    useLocalStorage<(typeof tabs)[number][0]>(
-      'pipelines/' + pipelineName + '/currentMonitoringTab',
-      'Errors'
-    )
+  const currentTabStorage = $derived(
+    useLocalStorage<MonitoringTabs>('pipelines/' + pipelineName + '/currentMonitoringTab', 'Errors')
   )
   $effect.pre(() => {
-    // Switch to the first available tab if the current tab was opened in another panel
-    if (!tabs.some((tab) => tab[0] === currentTab.value)) currentTab.value = tabs[0][0]
+    // Initialize from storage, or reset to first available tab if current is hidden
+    if (!tabs.some((t) => t[0] === currentTab)) {
+      currentTab = tabs.some((t) => t[0] === currentTabStorage.value)
+        ? currentTabStorage.value
+        : tabs[0][0]
+    }
+  })
+  $effect(() => {
+    if (currentTab !== null) {
+      currentTabStorage.value = currentTab
+    }
   })
 
-  const switchTo = async () => {
-    if (currentTab.value === 'Errors') {
-      currentTab.value = 'Performance'
-    }
-  }
-  $effect(() => {
-    pipelineName
-    untrack(() => pipelineActionCallbacks.add(pipelineName, 'start', switchTo))
-    return () => {
-      pipelineActionCallbacks.remove(pipelineName, 'start', switchTo)
-    }
-  })
-  const forgetCurrentTab = async () => currentTab.remove()
+  const pipelineActionCallbacks = usePipelineActionCallbacks()
+  const forgetCurrentTab = async () => currentTabStorage.remove()
   $effect(() => {
     untrack(() => pipelineActionCallbacks.add('', 'delete', forgetCurrentTab))
     return () => {
@@ -114,11 +118,6 @@
   {/if}
 {/snippet}
 
-{#snippet TabControlPerformance()}
-  <span class="inline sm:hidden"> Perf </span>
-  <span class="hidden sm:inline"> Performance </span>
-{/snippet}
-
 {#snippet TabControlAdhoc()}
   <span class="inline sm:hidden"> Ad-Hoc </span>
   <span class="hidden sm:inline"> Ad-Hoc Queries </span>
@@ -133,9 +132,9 @@
   <span>Logs</span>
 {/snippet}
 
-<TabsPanel {tabs} bind:currentTab={currentTab.value} tabProps={{ metrics, pipeline, errors }}>
+<TabsPanel {tabs} bind:currentTab={currentTab!} tabProps={{ metrics, pipeline, errors }}>
   {#snippet tabBarEnd()}
-    {#if currentTab.value !== 'Errors'}
+    {#if currentTab !== 'Errors'}
       <div class="ml-auto flex">
         <ClipboardCopyButton
           value={pipeline.current.id}

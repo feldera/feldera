@@ -2,7 +2,12 @@
   import { format } from 'd3-format'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import { humanSize } from '$lib/functions/common/string'
-  import type { AggregatedMetrics, PipelineMetrics } from '$lib/functions/pipelineMetrics'
+  import type {
+    AggregatedInputEndpointMetrics,
+    AggregatedMetrics,
+    AggregatedOutputEndpointMetrics,
+    PipelineMetrics
+  } from '$lib/functions/pipelineMetrics'
   import type { InputEndpointMetrics, OutputEndpointMetrics } from '$lib/services/manager'
   import type { Snippet } from '$lib/types/svelte'
 
@@ -31,11 +36,11 @@
     expandedViews = new Set(expandedViews)
   }
 
-  const inputHasErrors = (connector: AggregatedMetrics<InputEndpointMetrics>['connectors'][0]) =>
+  const inputHasErrors = (connector: AggregatedInputEndpointMetrics['connectors'][0]) =>
     (connector.metrics.num_transport_errors ?? 0) > 0 ||
     (connector.metrics.num_parse_errors ?? 0) > 0
 
-  const outputHasErrors = (connector: AggregatedMetrics<OutputEndpointMetrics>['connectors'][0]) =>
+  const outputHasErrors = (connector: AggregatedOutputEndpointMetrics['connectors'][0]) =>
     (connector.metrics.num_transport_errors ?? 0) > 0 ||
     (connector.metrics.num_encode_errors ?? 0) > 0
 </script>
@@ -54,21 +59,28 @@
 {#snippet inputConnectorIcons(
   paused: boolean | undefined,
   hasErrors: boolean,
-  barrier: boolean | undefined
+  barrier: boolean | undefined,
+  transactionPhase: 'started' | 'committed' | undefined
 )}
-  {#if paused}
+  {#if barrier}
+    <span class="fd fd-construction mr-1 text-[16px] text-warning-500"></span>
+    <Tooltip placement="top">Input blocks the commit</Tooltip>
+  {:else if hasErrors}
+    <span class="fd fd-circle-alert mr-1 text-[16px] text-error-500"></span>
+    <Tooltip placement="top">Parse or transport errors occurred</Tooltip>
+  {/if}
+  {#if transactionPhase === 'started'}
+    <span class="fd fd-receipt-text mr-1 text-[16px] text-warning-500"></span>
+    <Tooltip placement="top">Transaction started</Tooltip>
+  {:else if transactionPhase === 'committed'}
+    <span class="fd fd-receipt-text mr-1 text-[16px] text-success-500"></span>
+    <Tooltip placement="top">Transaction committed</Tooltip>
+  {:else if paused}
     <span class="fd fd-circle-pause mr-1 text-[16px] text-surface-700-300"></span>
     <Tooltip placement="top">Paused</Tooltip>
   {:else}
     <span class="fd fd-circle-play mr-1 text-[16px] text-success-500"></span>
     <Tooltip placement="top">Running</Tooltip>
-  {/if}
-  {#if barrier}
-    <span class="fd fd-circle-divide mr-1 text-[16px] text-warning-500"></span>
-    <Tooltip placement="top">Input blocks the checkpoint</Tooltip>
-  {:else if hasErrors}
-    <span class="fd fd-circle-alert mr-1 text-[16px] text-error-500"></span>
-    <Tooltip placement="top">Parse or transport errors occurred</Tooltip>
   {/if}
 {/snippet}
 
@@ -87,16 +99,21 @@
   </span>
 {/snippet}
 
-{#snippet inputConnectorName(connector: AggregatedMetrics<InputEndpointMetrics>['connectors'][0])}
+{#snippet inputConnectorName(connector: AggregatedInputEndpointMetrics['connectors'][0])}
   <div class="flex min-w-0 flex-nowrap">
     <span class="flex w-10 shrink-0 flex-nowrap justify-end">
-      {@render inputConnectorIcons(connector.paused, inputHasErrors(connector), connector.barrier)}
+      {@render inputConnectorIcons(
+        connector.paused,
+        inputHasErrors(connector),
+        connector.barrier,
+        connector.transaction_phase
+      )}
     </span>
     {@render connectorName(connector.endpointName)}
   </div>
 {/snippet}
 
-{#snippet outputConnectorName(connector: AggregatedMetrics<OutputEndpointMetrics>['connectors'][0])}
+{#snippet outputConnectorName(connector: AggregatedOutputEndpointMetrics['connectors'][0])}
   <div class="flex min-w-0 flex-nowrap">
     <span class="flex w-10 shrink-0 flex-nowrap justify-end">
       {@render outputConnectorIcons(outputHasErrors(connector))}
@@ -164,17 +181,24 @@
   <td class="text-end font-dm-mono text-nowrap">{formatQty(m.num_transport_errors)}</td>
 {/snippet}
 
-{#snippet tableMultiConnectorCell(
-  data: AggregatedMetrics<InputEndpointMetrics>,
-  isExpanded: boolean
-)}
+{#snippet tableMultiConnectorCell(data: AggregatedInputEndpointMetrics, isExpanded: boolean)}
   {@const runningCount = data.connectors.filter((c) => c.paused === false).length}
   {@const anyErrors = data.connectors.some(inputHasErrors)}
   {@const anyBarrier = data.connectors.some((c) => c.barrier === true)}
+  {@const aggregateTransactionPhase = data.connectors.some((c) => c.transaction_phase === 'started')
+    ? 'started'
+    : data.connectors.some((c) => c.transaction_phase === 'committed')
+      ? 'committed'
+      : undefined}
   <div class="flex flex-nowrap">
     <span class="flex w-10 flex-nowrap justify-end">
       {#if !isExpanded}
-        {@render inputConnectorIcons(runningCount > 0 ? false : true, anyErrors, anyBarrier)}
+        {@render inputConnectorIcons(
+          runningCount > 0 ? false : true,
+          anyErrors,
+          anyBarrier,
+          aggregateTransactionPhase
+        )}
       {:else}
         <span class="pl-6"></span>
       {/if}
@@ -183,23 +207,20 @@
   </div>
 {/snippet}
 
-{#snippet viewMultiConnectorCell(
-  data: AggregatedMetrics<OutputEndpointMetrics>,
-  isExpanded: boolean
-)}
+{#snippet viewMultiConnectorCell(data: AggregatedOutputEndpointMetrics, isExpanded: boolean)}
   {#if !isExpanded && data.connectors.some(outputHasErrors)}
     <span class="fd fd-circle-alert mr-1 text-[16px] text-error-500"></span>
   {/if}
   {data.connectors.length} connectors
 {/snippet}
 
-{#snippet metricsTable<EndpointMetrics>(
+{#snippet metricsTable<EndpointMetrics, Extra extends { io_active: boolean }>(
   maxWidth: string,
-  tableData: Map<string, AggregatedMetrics<EndpointMetrics>>,
+  tableData: Map<string, AggregatedMetrics<EndpointMetrics, Extra>>,
   expanded: Set<string>,
   toggle: (r: string) => void,
-  connectorName: Snippet<[AggregatedMetrics<EndpointMetrics>['connectors'][0]]>,
-  multiConnectorRelationCell: Snippet<[AggregatedMetrics<EndpointMetrics>, boolean]>,
+  connectorName: Snippet<[AggregatedMetrics<EndpointMetrics, Extra>['connectors'][0]]>,
+  multiConnectorRelationCell: Snippet<[AggregatedMetrics<EndpointMetrics, Extra>, boolean]>,
   columnHeaders: Snippet,
   metricsCells: Snippet<[EndpointMetrics, boolean | undefined]>
 )}
@@ -234,7 +255,7 @@
               {/if}
             </td>
             {@render metricsCells(
-              data.aggregate,
+              data.aggregate.metrics,
               data.connectors.some((c) => c.io_active)
             )}
           </tr>

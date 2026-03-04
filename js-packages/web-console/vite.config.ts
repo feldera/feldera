@@ -54,7 +54,7 @@ export default defineConfig(async () => {
     },
     server: {
       watch: {
-        ignored: ['**/dist/**', '**/node_modules/**']
+        ignored: ['**/dist/**', '**/node_modules/**', '**/.svelte-kit/**', '**/build/**']
       }
     }
   } satisfies UserConfig

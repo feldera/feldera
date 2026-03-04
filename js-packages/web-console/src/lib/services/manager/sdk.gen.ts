@@ -129,6 +129,9 @@ import type {
   PostPipelineClearErrors,
   PostPipelineClearResponses,
   PostPipelineData,
+  PostPipelineDismissErrorData,
+  PostPipelineDismissErrorErrors,
+  PostPipelineDismissErrorResponses,
   PostPipelineErrors,
   PostPipelineInputConnectorActionData,
   PostPipelineInputConnectorActionErrors,
@@ -723,6 +726,27 @@ export const getPipelineDataflowGraph = <ThrowOnError extends boolean = false>(
   >({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/dataflow_graph',
+    ...options
+  })
+
+/**
+ * Dismiss Pipeline Deployment Error
+ *
+ * Clears the `deployment_error` field of the pipeline, such that a subsequent call to
+ * `/start?dismiss_error=false` succeeds. It will return an error if the pipeline is not fully
+ * stopped (i.e., both current and desired status must be `Stopped`) AND a deployment error
+ * is present.
+ */
+export const postPipelineDismissError = <ThrowOnError extends boolean = false>(
+  options: Options<PostPipelineDismissErrorData, ThrowOnError>
+) =>
+  (options.client ?? client).post<
+    PostPipelineDismissErrorResponses,
+    PostPipelineDismissErrorErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/dismiss_error',
     ...options
   })
 

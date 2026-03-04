@@ -11,7 +11,6 @@
 
   let {
     pipeline,
-    metrics,
     currentTab: _currentTab = $bindable()
   }: {
     pipeline: { current: ExtendedPipeline }
@@ -24,12 +23,7 @@
 
   const tabs = $derived([
     tuple('Ad-Hoc Queries' as const, TabControlAdhoc, PanelAdHocQuery, false),
-    tuple(
-      'Profile Visualizer' as const,
-      TabProfileVisualizer.Label,
-      TabProfileVisualizer.default,
-      true
-    ),
+    tuple(TabProfileVisualizer.id, TabProfileVisualizer.Label, TabProfileVisualizer.default, true),
     tuple('Samply' as const, TabSamplyProfile.Label, TabSamplyProfile.default, false)
   ])
 
