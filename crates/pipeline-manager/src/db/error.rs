@@ -207,6 +207,11 @@ pub enum DBError {
         event_id: ClusterMonitorEventId,
     },
     NoClusterMonitorEventsAvailable,
+    UnnecessaryResourcesStatusTransition {
+        current_status: ResourcesStatus,
+        new_status: ResourcesStatus,
+        current_desired_status: ResourcesDesiredStatus,
+    },
 }
 
 impl DBError {
@@ -689,6 +694,16 @@ impl Display for DBError {
             DBError::NoClusterMonitorEventsAvailable => {
                 write!(f, "There are not yet any cluster monitor events recorded")
             }
+            DBError::UnnecessaryResourcesStatusTransition {
+                current_status,
+                new_status,
+                current_desired_status,
+            } => {
+                write!(
+                    f,
+                    "Unnecessary to transition from deployment resources status '{current_status}' to '{new_status}' given desired status is '{current_desired_status}'"
+                )
+            }
         }
     }
 }
@@ -789,6 +804,9 @@ impl DetailedError for DBError {
             Self::InvalidMonitorStatus(..) => Cow::from("InvalidMonitorStatus"),
             Self::UnknownClusterMonitorEvent { .. } => Cow::from("UnknownClusterMonitorEvent"),
             Self::NoClusterMonitorEventsAvailable => Cow::from("NoClusterMonitorEventsAvailable"),
+            Self::UnnecessaryResourcesStatusTransition { .. } => {
+                Cow::from("UnnecessaryResourcesStatusTransition")
+            }
         }
     }
 }
@@ -861,6 +879,7 @@ impl ResponseError for DBError {
             Self::InvalidMonitorStatus(..) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::UnknownClusterMonitorEvent { .. } => StatusCode::NOT_FOUND,
             Self::NoClusterMonitorEventsAvailable => StatusCode::NOT_FOUND,
+            Self::UnnecessaryResourcesStatusTransition { .. } => StatusCode::BAD_REQUEST,
         }
     }
 
