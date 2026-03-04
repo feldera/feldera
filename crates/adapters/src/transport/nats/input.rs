@@ -67,7 +67,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, debug, info, info_span};
+use tracing::{Instrument, debug, info, info_span, trace};
 use xxhash_rust::xxh3::Xxh3Default;
 
 type NatsConsumerConfig = nats_consumer::pull::OrderedConfig;
@@ -573,10 +573,14 @@ impl NatsReader {
                             pos..pos
                         }
                     };
-                    info!(
-                        "Queued {:?} records ({sequence_number_range:?})",
-                        buffer_size
-                    );
+                    if buffer_size.records > 0 {
+                        debug!(
+                            "Queued {:?} records ({sequence_number_range:?})",
+                            buffer_size
+                        );
+                    } else {
+                        trace!("Queued 0 records ({sequence_number_range:?})");
+                    }
                     let metadata_json = serde_json::to_value(&Metadata {
                         sequence_numbers: sequence_number_range,
                     })?;
@@ -792,7 +796,7 @@ async fn consume_nats_messages_until(
                 };
                 consumer.buffered(amt);
                 buffer_size += amt;
-                info!("Got message #{}", info.stream_sequence);
+                debug!("Replay got message #{}", info.stream_sequence);
 
                 match info.stream_sequence.cmp(&last_message_sequence) {
                     cmp::Ordering::Less => (),     // Still more messages to consume
@@ -871,9 +875,8 @@ async fn spawn_nats_reader(
                                         continue;
                                     }
                                 };
-                                info!("Got message #{}", info.stream_sequence);
-                                // Store the *next* sequence to process for resume tracking.
-                                // This is the checkpoint position if we need to restart.
+                                trace!("Got message #{}", info.stream_sequence);
+                                // Store the checkpoint position (the next sequence).
                                 next_sequence.store(info.stream_sequence + 1, Ordering::Release);
                                 let data = &message.payload;
                                 queue.push_with_aux(parser.parse(data, None), Utc::now(), info.stream_sequence);
