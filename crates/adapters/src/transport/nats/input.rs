@@ -729,8 +729,10 @@ async fn check_inactivity_health(
             .await
             .map_err(|fallback_error| {
                 anyhow!(
-                    "NATS {context} stalled for {:?}. Existing connection health check failed: {primary_error:#}; reconnect health check failed: {fallback_error:#}",
+                    "NATS {context} stalled for {:?}. Health check failed: {}; reconnect failed: {}",
                     inactivity_timeout,
+                    primary_error.root_cause(),
+                    fallback_error.root_cause(),
                 )
             })?;
     }
