@@ -332,7 +332,7 @@ struct AdHocQueryExecution {
     indexed: bool,
     table_schema: Arc<Schema>,
     projected_schema: Arc<Schema>,
-    readers: Option<Vec<Arc<dyn SerBatchReader>>>,
+    readers: Vec<Arc<dyn SerBatchReader>>,
     projection: Option<Vec<usize>>,
     plan_properties: PlanProperties,
     children: Vec<Arc<dyn ExecutionPlan>>,
@@ -367,7 +367,7 @@ impl AdHocQueryExecution {
             indexed,
             table_schema,
             projected_schema,
-            readers,
+            readers: readers.unwrap_or_default(),
             projection: projection.cloned(),
             plan_properties,
             children: vec![],
@@ -454,11 +454,10 @@ use `with ('materialized' = 'true')` for tables, or `create materialized view` f
             Ok(())
         }
 
-        if let Some(readers) = &self.readers {
+        if let Some(batch_reader) = self.readers.get(partition).cloned() {
             let mut builder =
                 RecordBatchReceiverStreamBuilder::new(self.projected_schema.clone(), 10);
             // Returns a single batch when the returned stream is polled
-            let batch_reader = readers[partition].clone();
             let schema = self.table_schema.clone();
             let tx = builder.tx();
             let projection = self.projection.clone();
@@ -543,8 +542,18 @@ use `with ('materialized' = 'true')` for tables, or `create materialized view` f
                 builder.build(),
             )))
         } else {
-            // The case of no readers can happen if the table has never received any input &
-            // the circuit has never stepped so the correct response is to send an empty batch
+            // We did not find a reader.  There are two causes:
+            //
+            // - There are no readers at all, because the table has never
+            //   received any input, and the circuit has never stepped.
+            //
+            // - There are some readers but not for every worker, because the
+            //   output operator only produces output for one worker.  (It might
+            //   not even be our worker, it might be on a different host in
+            //   multihost.)
+            //
+            // In either case, the correct thing to do is to produce an empty
+            // batch.
             let fut =
                 futures::future::ready(Ok(RecordBatch::new_empty(self.projected_schema.clone())));
             let stream = futures::stream::once(fut);
