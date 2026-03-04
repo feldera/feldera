@@ -60,13 +60,14 @@ use std::cmp;
 use std::hash::Hasher;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use tokio::{
     select,
     sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, error, info, info_span};
+use tracing::{Instrument, debug, info, info_span};
 use xxhash_rust::xxh3::Xxh3Default;
 
 type NatsConsumerConfig = nats_consumer::pull::OrderedConfig;
@@ -172,47 +173,11 @@ impl NatsReader {
         );
         let (command_sender, command_receiver) = unbounded_channel();
 
-        // Connect to NATS and verify stream exists (early validation).
-        // This ensures we fail fast with a clear error if the server is
-        // unreachable or the stream doesn't exist.
-        let (nats_connection, jetstream) = TOKIO
-            .block_on(
-                async {
-                    let client = Self::connect_nats(&config.connection_config).await?;
-                    let js = jetstream::new(client.clone());
-                    Self::verify_stream_exists(&js, &config.stream_name).await?;
-                    Ok::<_, AnyError>((client, js))
-                }
-                .instrument(span.clone()),
-            )
-            .map_err(|e| {
-                error!(
-                    server_url = %config.connection_config.server_url,
-                    stream_name = %config.stream_name,
-                    connection_timeout_secs = config.connection_config.connection_timeout_secs,
-                    request_timeout_secs = config.connection_config.request_timeout_secs,
-                    "NATS initialization failed: {e:#}"
-                );
-                e.context(format!(
-                    "NATS initialization failed for stream '{}' at server '{}' \
-                (connection_timeout={}s, request_timeout={}s)",
-                    config.stream_name,
-                    config.connection_config.server_url,
-                    config.connection_config.connection_timeout_secs,
-                    config.connection_config.request_timeout_secs,
-                ))
-            })?;
-
-        // The connection is established but we don't need the client reference
-        // in the worker - it stays alive as long as the jetstream context exists.
-        drop(nats_connection);
-
         let consumer_clone = consumer.clone();
         TOKIO.spawn(async move {
             Self::worker_task(
                 config,
                 resume_info,
-                jetstream,
                 consumer_clone,
                 parser,
                 command_receiver,
@@ -259,10 +224,26 @@ impl NatsReader {
         Ok(())
     }
 
+    async fn initialize_jetstream(
+        connection_config: &cfg::ConnectOptions,
+        stream_name: &str,
+    ) -> AnyResult<jetstream::Context> {
+        let init_deadline = Duration::from_secs(
+            connection_config.connection_timeout_secs + connection_config.request_timeout_secs,
+        );
+        tokio::time::timeout(init_deadline, async {
+            let client = Self::connect_nats(connection_config).await?;
+            let js = jetstream::new(client);
+            Self::verify_stream_exists(&js, stream_name).await?;
+            Ok::<_, AnyError>(js)
+        })
+        .await
+        .map_err(|_| anyhow!("NATS initialization timed out after {init_deadline:?}"))?
+    }
+
     async fn worker_task(
         config: Arc<NatsInputConfig>,
         resume_info: Metadata,
-        jetstream: jetstream::Context,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         command_receiver: UnboundedReceiver<InputReaderCommand>,
@@ -277,34 +258,44 @@ impl NatsReader {
         // Handle replay commands
         while let Some((metadata, ())) = command_receiver.recv_replay().await? {
             info!("Attempt to replay: {:?}", metadata);
-            if !metadata.sequence_numbers.is_empty() {
-                let first_message_sequence = metadata.sequence_numbers.start;
-
-                let nats_consumer = create_nats_consumer(
-                    &jetstream,
-                    &nats_consumer_config,
-                    &config.stream_name,
-                    first_message_sequence,
-                )
-                .await?;
-
-                // Since range is exclusive, last message to reply is (end-1).
-                let last_message_sequence = metadata.sequence_numbers.end - 1;
-                let (hasher, buffer_size) = consume_nats_messages_until(
-                    nats_consumer,
-                    last_message_sequence,
-                    consumer.clone(),
-                    parser.fork(),
-                )
-                .await
-                .with_context(|| format!("While attempting to replay sequences {first_message_sequence}..{last_message_sequence}"))?;
-
-                consumer.replayed(buffer_size, hasher.finish());
-
-                next_sequence.store(last_message_sequence + 1, Ordering::Release);
-            } else {
+            if metadata.sequence_numbers.is_empty() {
                 consumer.replayed(BufferSize::default(), Xxh3Default::new().finish());
+                continue;
             }
+
+            let first_message_sequence = metadata.sequence_numbers.start;
+            // Since range is exclusive, last message to replay is (end - 1).
+            let last_message_sequence = metadata.sequence_numbers.end - 1;
+
+            let jetstream = Self::initialize_jetstream(&config.connection_config, &config.stream_name)
+                .await
+                .with_context(|| {
+                    format!(
+                        "NATS replay initialization failed for stream '{}' at server '{}'",
+                        config.stream_name,
+                        config.connection_config.server_url,
+                    )
+                })?;
+
+            let nats_consumer = create_nats_consumer(
+                &jetstream,
+                &nats_consumer_config,
+                &config.stream_name,
+                first_message_sequence,
+            )
+            .await?;
+
+            let (hasher, buffer_size) = consume_nats_messages_until(
+                nats_consumer,
+                last_message_sequence,
+                consumer.clone(),
+                parser.fork(),
+            )
+            .await
+            .with_context(|| format!("While attempting to replay sequences {first_message_sequence}..{last_message_sequence}"))?;
+
+            consumer.replayed(buffer_size, hasher.finish());
+            next_sequence.store(last_message_sequence + 1, Ordering::Release);
         }
 
         loop {
@@ -352,6 +343,22 @@ impl NatsReader {
                 InputReaderCommand::Extend => {
                     info!("Extend from {:?}", next_sequence.load(Ordering::Acquire));
                     if canceller.is_none() {
+                        let jetstream = Self::initialize_jetstream(
+                            &config.connection_config,
+                            &config.stream_name,
+                        )
+                        .await
+                        .with_context(|| {
+                            format!(
+                                "NATS initialization failed for stream '{}' at server '{}' \
+                            (connection_timeout={}s, request_timeout={}s)",
+                                config.stream_name,
+                                config.connection_config.server_url,
+                                config.connection_config.connection_timeout_secs,
+                                config.connection_config.request_timeout_secs,
+                            )
+                        })?;
+
                         let nats_consumer = create_nats_consumer(
                             &jetstream,
                             &nats_consumer_config,
