@@ -105,6 +105,16 @@ pub struct NatsInputEndpoint {
 
 impl NatsInputEndpoint {
     pub fn new(config: NatsInputConfig) -> Result<Self, AnyError> {
+        if config.inactivity_timeout_secs == 0 {
+            return Err(anyhow!(
+                "Invalid NATS input configuration: inactivity_timeout_secs must be at least 1 second"
+            ));
+        }
+        if config.retry_interval_secs == 0 {
+            return Err(anyhow!(
+                "Invalid NATS input configuration: retry_interval_secs must be at least 1 second"
+            ));
+        }
         Ok(Self {
             config: Arc::new(config),
         })
