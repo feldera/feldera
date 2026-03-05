@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
@@ -16,12 +16,12 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
-import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
+import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.util.HashString;
 import org.dbsp.util.NullPrintStream;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.PrintStream;
@@ -491,6 +491,35 @@ public class Regression2Tests extends SqlIoTest {
                 super.endVisit();
             }
         });
+    }
+
+    @Test
+    public void issue2998() {
+        var cc = this.getCC("""
+                CREATE TABLE T(x VARCHAR);
+                CREATE VIEW V AS SELECT regexp_replace(x, '1', '2') FROM T;""");
+
+        boolean[] found = new boolean[1];
+        InnerVisitor hasRegexConstructor = new InnerVisitor(cc.compiler) {
+            @Override
+            public void postorder(DBSPConstructorExpression expression) {
+                if (expression.function.toString().equalsIgnoreCase("Regex::new")) {
+                    found[0] = true;
+                }
+            }
+        };
+
+        cc.visit(new CircuitVisitor(cc.compiler) {
+            @Override
+            public void postorder(DBSPDeclaration decl) {
+                if (decl.item.is(DBSPStaticItem.class)) {
+                    // Check whether there is a static declaration holding the regex constructor
+                    hasRegexConstructor.apply(decl.item);
+                }
+            }
+        });
+
+        Assert.assertTrue(found[0]);
     }
 
     @Test
