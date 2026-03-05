@@ -1,6 +1,7 @@
 <script lang="ts" generics="T extends Record<string, unknown>  ">
   import type { Component } from 'svelte'
   import type { Snippet } from '$lib/types/svelte'
+  import { SvelteSet } from 'svelte/reactivity'
 
   import { Tabs } from '@skeletonlabs/skeleton-svelte'
 
@@ -17,6 +18,11 @@
     tabProps: T
     currentTab: string
   } = $props()
+
+  let visited = $state(new SvelteSet<string>())
+  $effect.pre(() => {
+    visited.add(currentTab)
+  })
 </script>
 
 {#snippet defaultTabContainer(tab: Snippet, hidden: boolean)}
@@ -49,7 +55,7 @@
       {#snippet tab()}
         <TabComponent {...tabProps}></TabComponent>
       {/snippet}
-      {#if keepAlive}
+      {#if keepAlive && visited.has(tabName)}
         {@render tabContainer(tab, currentTab !== tabName)}
       {:else if currentTab === tabName}
         {@render tabContainer(tab, false)}
