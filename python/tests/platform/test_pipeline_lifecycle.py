@@ -25,7 +25,6 @@ from .helper import (
     post_no_body,
 )
 from tests import enterprise_only
-from feldera.testutils import single_host_only
 
 
 def _wait_for_stopped_with_error(name: str, timeout_s: float = 90.0):
@@ -81,7 +80,6 @@ def test_deploy_pipeline(pipeline_name):
 
 
 @gen_pipeline_name
-@single_host_only
 def test_pipeline_panic(pipeline_name):
     """
     Pipeline that panics at runtime. Verify reported error_code == RuntimeError.WorkerPanic.

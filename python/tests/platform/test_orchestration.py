@@ -19,7 +19,7 @@ from .helper import (
     wait_for_condition,
     get,
 )
-from feldera.testutils import single_host_only, FELDERA_TEST_NUM_HOSTS
+from feldera.testutils import FELDERA_TEST_NUM_HOSTS
 
 
 def _basic_orchestration_info(pipeline: str, table: str, connector: str):
@@ -145,7 +145,6 @@ def test_pipeline_orchestration_basic(pipeline_name):
 
 
 @gen_pipeline_name
-@single_host_only
 def test_pipeline_orchestration_errors(pipeline_name):
     """
     Port of Rust pipeline_orchestration_errors:
