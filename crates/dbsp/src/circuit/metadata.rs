@@ -33,6 +33,7 @@ pub enum CircuitMetricCategory {
     Cache,
     Time,
     Balancer,
+    Distribution,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -72,6 +73,14 @@ pub const INPUT_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("input_batches_
 pub const OUTPUT_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("output_batches_stats"));
 pub const EXCHANGE_WAIT_TIME_SECONDS: MetricId =
     MetricId(Cow::Borrowed("exchange_wait_time_seconds"));
+pub const EXCHANGE_SERIALIZATION_TIME_SECONDS: MetricId =
+    MetricId(Cow::Borrowed("exchange_serialization_time_seconds"));
+pub const EXCHANGE_SERIALIZED_BYTES: MetricId =
+    MetricId(Cow::Borrowed("exchange_serialized_bytes"));
+pub const EXCHANGE_DESERIALIZATION_TIME_SECONDS: MetricId =
+    MetricId(Cow::Borrowed("exchange_deserialization_time_seconds"));
+pub const EXCHANGE_DESERIALIZED_BYTES: MetricId =
+    MetricId(Cow::Borrowed("exchange_deserialized_bytes"));
 pub const KEY_DISTRIBUTION: MetricId = MetricId(Cow::Borrowed("key_distribution"));
 pub const SIZE_DISTRIBUTION: MetricId = MetricId(Cow::Borrowed("size_distribution"));
 pub const LOCAL_SHARD_RECORDS_COUNT: MetricId =
@@ -151,7 +160,7 @@ pub const PREFIX_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("prefix_batche
 pub const INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("input_integral_records_count"));
 
-pub const CIRCUIT_METRICS: [CircuitMetric; 61] = [
+pub const CIRCUIT_METRICS: [CircuitMetric; 65] = [
     // State
     CircuitMetric {
         name: USED_MEMORY_BYTES,
@@ -523,6 +532,30 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 61] = [
         category: CircuitMetricCategory::Cache,
         advanced: false,
         description: "Occupancy of the background cache.",
+    },
+    CircuitMetric {
+        name: EXCHANGE_SERIALIZATION_TIME_SECONDS,
+        category: CircuitMetricCategory::Distribution,
+        advanced: false,
+        description: "Time spent serializing data to send to other hosts.",
+    },
+    CircuitMetric {
+        name: EXCHANGE_SERIALIZED_BYTES,
+        category: CircuitMetricCategory::Distribution,
+        advanced: false,
+        description: "Amount of data serialized to send to other hosts.",
+    },
+    CircuitMetric {
+        name: EXCHANGE_DESERIALIZATION_TIME_SECONDS,
+        category: CircuitMetricCategory::Distribution,
+        advanced: false,
+        description: "Time spent deserializing data received from other hosts.",
+    },
+    CircuitMetric {
+        name: EXCHANGE_DESERIALIZED_BYTES,
+        category: CircuitMetricCategory::Distribution,
+        advanced: false,
+        description: "Amount of serialized data received from other hosts.",
     },
 ];
 

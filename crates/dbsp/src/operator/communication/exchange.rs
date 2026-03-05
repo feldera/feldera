@@ -10,8 +10,10 @@ use crate::{
     circuit::{
         Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
         metadata::{
-            BatchSizeStats, EXCHANGE_WAIT_TIME_SECONDS, INPUT_BATCHES_STATS, MetaItem,
-            OUTPUT_BATCHES_STATS, OperatorLocation, OperatorMeta,
+            BatchSizeStats, EXCHANGE_DESERIALIZATION_TIME_SECONDS, EXCHANGE_DESERIALIZED_BYTES,
+            EXCHANGE_SERIALIZATION_TIME_SECONDS, EXCHANGE_SERIALIZED_BYTES,
+            EXCHANGE_WAIT_TIME_SECONDS, INPUT_BATCHES_STATS, MetaItem, OUTPUT_BATCHES_STATS,
+            OperatorLocation, OperatorMeta,
         },
         operator_traits::{Operator, SinkOperator, SourceOperator},
         tokio::TOKIO,
@@ -236,6 +238,10 @@ struct InnerExchange {
     /// A callback that takes the raw data exchanged over RPC and deserializes
     /// and delivers it to the receiver's mailbox.
     deliver: Box<dyn Fn(Vec<u8>, usize, usize) + Send + Sync + 'static>,
+    /// The amount of time spent in `deliver`.
+    delivery_usecs: AtomicU64,
+    /// The number of bytes passed to `deliver`.
+    delivered_bytes: AtomicUsize,
 }
 
 impl InnerExchange {
@@ -264,6 +270,8 @@ impl InnerExchange {
                 .collect(),
             sender_callbacks: (0..npeers).map(|_| Callback::empty()).collect(),
             deliver: Box::new(deliver),
+            delivery_usecs: AtomicU64::new(0),
+            delivered_bytes: AtomicUsize::new(0),
             sent: AtomicUsize::new(0),
         }
     }
@@ -296,12 +304,19 @@ impl InnerExchange {
         let receivers = &self.local_workers;
 
         // Deliver all of the data into the exchange's mailboxes.
+        let start = Instant::now();
+        let mut delivered_bytes = 0;
         for (sender, data) in senders.clone().zip(data.into_iter()) {
             assert_eq!(data.len(), receivers.len());
             for (receiver, data) in receivers.clone().zip(data.into_iter()) {
+                delivered_bytes += data.len();
                 (self.deliver)(data, sender, receiver);
             }
         }
+        self.delivery_usecs
+            .fetch_add(start.elapsed().as_micros() as u64, Ordering::Relaxed);
+        self.delivered_bytes
+            .fetch_add(delivered_bytes, Ordering::Relaxed);
 
         // Increment the receiver counters and deliver callbacks if necessary.
         for receiver in receivers.clone() {
@@ -404,6 +419,12 @@ pub(crate) struct Exchange<T> {
     /// ```
     mailboxes: Arc<Vec<Mutex<Option<T>>>>,
     serialize: Box<dyn Fn(T) -> Vec<u8> + Send + Sync>,
+
+    /// The amount of time we've spent calling `serialize`.
+    serialization_usecs: AtomicU64,
+
+    /// The number of bytes produced by `serialize`.
+    serialized_bytes: AtomicUsize,
 }
 
 async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
@@ -475,6 +496,8 @@ where
             inner,
             mailboxes,
             serialize,
+            serialization_usecs: AtomicU64::new(0),
+            serialized_bytes: AtomicUsize::new(0),
         }
     }
 
@@ -596,8 +619,10 @@ where
             // accumulate all of the data from our local `senders` to all
             // of the `receivers` on that host.
             let senders = &this.inner.local_workers;
+            let start = Instant::now();
             for host in runtime.layout().other_hosts() {
                 let receivers = &host.workers;
+                let mut serialized_bytes = 0;
                 let items: Vec<Vec<_>> = senders
                     .clone()
                     .map(|sender| {
@@ -610,11 +635,17 @@ where
                                     .unwrap()
                                     .take()
                                     .unwrap();
-                                (this.serialize)(item)
+                                let serialized = (this.serialize)(item);
+                                serialized_bytes += serialized.len();
+                                serialized
                             })
                             .collect()
                     })
                     .collect();
+                this.serialization_usecs
+                    .fetch_add(start.elapsed().as_micros() as u64, Ordering::Relaxed);
+                this.serialized_bytes
+                    .fetch_add(serialized_bytes, Ordering::Relaxed);
 
                 let client = this.inner.clients.connect(receivers.start).await;
 
@@ -926,6 +957,8 @@ where
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
             INPUT_BATCHES_STATS => self.input_batch_stats.metadata(),
+            EXCHANGE_SERIALIZATION_TIME_SECONDS => MetaItem::Duration(Duration::from_micros(self.exchange.serialization_usecs.load(Ordering::Acquire))),
+            EXCHANGE_SERIALIZED_BYTES => MetaItem::bytes(self.exchange.serialized_bytes.load(Ordering::Acquire))
         });
     }
 
@@ -1072,7 +1105,9 @@ where
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
             OUTPUT_BATCHES_STATS => self.output_batch_stats.metadata(),
-            EXCHANGE_WAIT_TIME_SECONDS => MetaItem::Duration(Duration::from_micros(self.total_wait_time.load(Ordering::Acquire)))
+            EXCHANGE_WAIT_TIME_SECONDS => MetaItem::Duration(Duration::from_micros(self.total_wait_time.load(Ordering::Acquire))),
+            EXCHANGE_DESERIALIZATION_TIME_SECONDS => MetaItem::Duration(Duration::from_micros(self.exchange.inner.delivery_usecs.load(Ordering::Acquire))),
+            EXCHANGE_DESERIALIZED_BYTES => MetaItem::bytes(self.exchange.inner.delivered_bytes.load(Ordering::Acquire)),
         });
     }
 
