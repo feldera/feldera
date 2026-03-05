@@ -78,7 +78,10 @@ export const accumulatePipelineMetrics =
             const oldRelation = oldData?.tables.get(relationName)
             const connectors = endpoints.map((cur) => {
               const prev = oldRelation?.connectors.find((c) => c.endpointName === cur.endpoint_name)
-              const connectorPhase = initiatedByConnectors[cur.endpoint_name]?.phase
+              const connectorPhase = ((phase) =>
+                phase && (phase === ('started' as const) || phase === ('committed' as const))
+                  ? phase
+                  : undefined)(initiatedByConnectors[cur.endpoint_name]?.phase?.toLowerCase())
               return {
                 endpointName: cur.endpoint_name,
                 metrics: cur.metrics,
@@ -87,8 +90,6 @@ export const accumulatePipelineMetrics =
                 io_active:
                   prev !== undefined && cur.metrics.total_records > prev.metrics.total_records,
                 transaction_phase: connectorPhase
-                  ? (connectorPhase.toLowerCase() as 'started' | 'committed')
-                  : undefined
               }
             })
             const metrics: AggregatedInputEndpointMetrics = {

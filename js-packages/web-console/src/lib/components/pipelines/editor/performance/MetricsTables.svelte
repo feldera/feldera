@@ -15,6 +15,7 @@
 
   let { metrics }: { metrics: { current: PipelineMetrics } } = $props()
 
+  // List of tables and views that have been expanded to view individual connectors
   let expandedTables = $state<Set<string>>(new Set())
   let expandedViews = $state<Set<string>>(new Set())
 
@@ -64,7 +65,7 @@
 )}
   {#if barrier}
     <span class="fd fd-construction mr-1 text-[16px] text-warning-500"></span>
-    <Tooltip placement="top">Input blocks the commit</Tooltip>
+    <Tooltip placement="top">Commit blocked by this input</Tooltip>
   {:else if hasErrors}
     <span class="fd fd-circle-alert mr-1 text-[16px] text-error-500"></span>
     <Tooltip placement="top">Parse or transport errors occurred</Tooltip>

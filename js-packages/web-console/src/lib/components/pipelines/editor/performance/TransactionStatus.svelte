@@ -64,7 +64,6 @@
           <tr>
             <th>Transaction status</th>
             <th colspan={3}>Operators completed / in progress / total </th>
-            <th>Records processed / total</th>
             <th>API-initiated phase</th>
           </tr>
         </thead>
@@ -84,16 +83,7 @@
             {#if commitProgress}
               <td class="text-end font-dm-mono">{formatQty(commitProgress.completed)}</td>
               <td class="text-end font-dm-mono">{formatQty(commitProgress.in_progress)}</td>
-              <td class="text-end font-dm-mono"
-                >{formatQty(
-                  commitProgress.completed + commitProgress.in_progress + commitProgress.remaining
-                )}</td
-              >
-              <td class="text-end font-dm-mono text-nowrap"
-                >{formatQty(commitProgress.in_progress_processed_records)} / {formatQty(
-                  commitProgress.in_progress_total_records
-                )}</td
-              >
+              <td class="text-end font-dm-mono">{formatQty(total)}</td>
             {:else}
               <td class="text-end font-dm-mono text-nowrap">-</td>
               <td class="text-end font-dm-mono text-nowrap">-</td>
