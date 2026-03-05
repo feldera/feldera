@@ -413,25 +413,28 @@ where
         let idle = Arc::new(Condvar::new());
         let no_backpressure = Arc::new(Condvar::new());
         let state = Arc::new(Mutex::new(SharedState::new(factories)));
-        BackgroundThread::add_worker({
-            let state = Arc::clone(&state);
-            let idle = Arc::clone(&idle);
-            let no_backpressure = Arc::clone(&no_backpressure);
-            Box::new(|| {
-                let mut mergers = std::array::from_fn(|_| None);
-                let merger_type = Runtime::with_dev_tweaks(|tweaks| tweaks.merger);
-                Box::new(move |worker_state| {
-                    Self::run(
-                        worker_state,
-                        &mut mergers,
-                        merger_type,
-                        &state,
-                        &idle,
-                        &no_backpressure,
-                    )
+        for level in 0..MAX_LEVELS {
+            BackgroundThread::add_worker({
+                let state = Arc::clone(&state);
+                let idle = Arc::clone(&idle);
+                let no_backpressure = Arc::clone(&no_backpressure);
+                Box::new(move || {
+                    let mut merger = None;
+                    let merger_type = Runtime::with_dev_tweaks(|tweaks| tweaks.merger);
+                    Box::new(move |worker_state| {
+                        Self::run(
+                            worker_state,
+                            level,
+                            &mut merger,
+                            merger_type,
+                            &state,
+                            &idle,
+                            &no_backpressure,
+                        )
+                    })
                 })
-            })
-        });
+            });
+        }
         Self {
             state,
             idle,
@@ -698,7 +701,8 @@ where
 
     fn run(
         worker_state: &mut WorkerState,
-        mergers: &mut [Option<Merge<B>>; MAX_LEVELS],
+        level: usize,
+        opt_merger: &mut Option<Merge<B>>,
         merger_type: MergerType,
         state: &Arc<Mutex<SharedState<B>>>,
         idle: &Arc<Condvar>,
@@ -710,33 +714,31 @@ where
             (shared.get_filters(), shared.frontier.clone())
         };
 
-        for (level, m) in mergers.iter_mut().enumerate() {
-            if let Some(merger) = m.as_mut() {
-                // Run level-0 merges to completion.  For other levels, we
-                // supply as much fuel as the average level-0 merge.  Along with
-                // round-robinning between levels, this means that we invest
-                // about the same amount of effort into merges at each level,
-                // which should ensure that the higher-level merges complete in
-                // time to keep batches from piling up.
-                let fuel = if level == 0 {
-                    isize::MAX
-                } else {
-                    worker_state.avg_slot0_merge_fuel()
-                };
-                merger.merge(&frontier, fuel);
-                if merger.done {
-                    if level == 0 {
-                        worker_state.report_slot0_merge(merger.fuel);
-                    }
-                    let merger = m.take().unwrap();
-                    let new_batch = Arc::new(merger.builder.done());
-                    state.lock().unwrap().merge_complete(
-                        level,
-                        new_batch,
-                        merger.elapsed,
-                        merger.n_steps,
-                    );
+        if let Some(merger) = opt_merger.as_mut() {
+            // Run level-0 merges to completion.  For other levels, we
+            // supply as much fuel as the average level-0 merge.  Along with
+            // round-robinning between levels, this means that we invest
+            // about the same amount of effort into merges at each level,
+            // which should ensure that the higher-level merges complete in
+            // time to keep batches from piling up.
+            let fuel = if level == 0 {
+                isize::MAX
+            } else {
+                worker_state.avg_slot0_merge_fuel()
+            };
+            merger.merge(&frontier, fuel);
+            if merger.done {
+                if level == 0 {
+                    worker_state.report_slot0_merge(merger.fuel);
                 }
+                let merger = opt_merger.take().unwrap();
+                let new_batch = Arc::new(merger.builder.done());
+                state.lock().unwrap().merge_complete(
+                    level,
+                    new_batch,
+                    merger.elapsed,
+                    merger.n_steps,
+                );
             }
         }
 
@@ -745,14 +747,7 @@ where
         // Figuring out what merges to start requires the lock. Then we drop
         // the lock to actually start them, in case that's expensive (it
         // might require creating a file, for example).
-        let start_merges = state
-            .lock()
-            .unwrap()
-            .slots
-            .iter_mut()
-            .enumerate()
-            .filter_map(|(level, slot)| slot.try_start_merge(level).map(|batches| (level, batches)))
-            .collect::<Vec<_>>();
+        let start_merge = state.lock().unwrap().slots[level].try_start_merge(level);
 
         let snapshot = if value_filter
             .as_ref()
@@ -763,8 +758,8 @@ where
         } else {
             None
         };
-        for (level, batches) in start_merges {
-            mergers[level] = Some(Merge::new(
+        if let Some(batches) = start_merge {
+            *opt_merger = Some(Merge::new(
                 merger_type,
                 batches,
                 &key_filter,
@@ -777,9 +772,10 @@ where
         if state.request_exit {
             Self::relieve_backpressure(no_backpressure);
             WorkerStatus::Done
-        } else if mergers.iter().all(|m| m.is_none()) {
-            Self::relieve_backpressure(no_backpressure);
+        } else if opt_merger.is_none() {
+            // Self::relieve_backpressure(no_backpressure);
             idle.notify_all(); // XXX is there a race here?
+            Self::maybe_relieve_backpressure(no_backpressure, &state);
             WorkerStatus::Idle
         } else {
             Self::maybe_relieve_backpressure(no_backpressure, &state);
