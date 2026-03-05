@@ -9304,6 +9304,18 @@
           "consumer_config": {
             "$ref": "#/components/schemas/ConsumerConfig"
           },
+          "inactivity_timeout_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Maximum time in seconds to wait for the next message before running\na stream/server health check. Must be at least 1.",
+            "minimum": 0
+          },
+          "retry_interval_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Delay between automatic reconnect attempts while in retry mode.\nMust be at least 1.",
+            "minimum": 0
+          },
           "stream_name": {
             "type": "string"
           }
