@@ -9,6 +9,7 @@
 use crate::{
     Error, NumEntries, Runtime,
     circuit::{
+        merger_worker_threads,
         metadata::{
             BLOOM_FILTER_BITS_PER_KEY, BLOOM_FILTER_HIT_RATE_PERCENT, BLOOM_FILTER_HITS_COUNT,
             BLOOM_FILTER_MISSES_COUNT, BLOOM_FILTER_SIZE_BYTES, COMPLETED_MERGES,
@@ -38,8 +39,9 @@ use crate::storage::file::{Deserializer, to_bytes};
 use crate::trace::CommittedSpine;
 use dbsp::storage::tracking_bloom_filter::BloomFilterStats;
 use enum_map::EnumMap;
-use feldera_storage::{FileCommitter, StoragePath, tokio::TOKIO};
+use feldera_storage::{FileCommitter, StoragePath};
 use feldera_types::checkpoint::PSpineBatches;
+use once_cell::sync::Lazy;
 use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
@@ -60,7 +62,11 @@ use std::{
 };
 use std::{ops::RangeInclusive, sync::Mutex};
 use textwrap::indent;
-use tokio::{sync::Notify, task::yield_now};
+use tokio::{
+    runtime::Builder as TokioBuilder, runtime::Runtime as TokioRuntime, sync::Notify,
+    task::yield_now,
+};
+use tracing::debug;
 
 mod index_set;
 mod list_merger;
@@ -77,6 +83,27 @@ pub use list_merger::ListMerger;
 
 /// Maximum amount of levels in the spine.
 pub(crate) const MAX_LEVELS: usize = 9;
+
+/// The process running dbsp can share a single Tokio runtime.
+///
+/// This is `pub` so it can be used in dbsp and adapters too for IO.
+pub static TOKIO_MERGER: Lazy<TokioRuntime> = Lazy::new(|| {
+    let num_workers = merger_worker_threads();
+    debug!("starting service dbsp merger tokio runtime, workers: {num_workers}",);
+
+    TokioBuilder::new_multi_thread()
+        .worker_threads(num_workers as usize)
+        .thread_name_fn(|| {
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+            format!("merger-tokio-{}", id)
+        })
+        .thread_stack_size(6 * 1024 * 1024)
+        .enable_all()
+        .build()
+        .unwrap()
+});
 
 impl<B: Batch + Send + Sync> From<(Vec<String>, &Spine<B>)> for CommittedSpine {
     fn from((batches, spine): (Vec<String>, &Spine<B>)) -> Self {
@@ -427,7 +454,7 @@ where
             let idle = idle.clone();
             let no_backpressure = no_backpressure.clone();
 
-            TOKIO.spawn(async move {
+            TOKIO_MERGER.spawn(async move {
                 let state = Arc::clone(&state);
                 let idle = Arc::clone(&idle);
                 let no_backpressure = Arc::clone(&no_backpressure);
