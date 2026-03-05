@@ -38,7 +38,7 @@ use crate::storage::file::{Deserializer, to_bytes};
 use crate::trace::CommittedSpine;
 use dbsp::storage::tracking_bloom_filter::BloomFilterStats;
 use enum_map::EnumMap;
-use feldera_storage::{FileCommitter, StoragePath};
+use feldera_storage::{FileCommitter, StoragePath, tokio::TOKIO};
 use feldera_types::checkpoint::PSpineBatches;
 use ouroboros::self_referencing;
 use rand::Rng;
@@ -46,7 +46,7 @@ use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer}
 use size_of::{Context, SizeOf};
 use std::{
     borrow::Cow,
-    sync::{Arc, MutexGuard},
+    sync::{Arc, MutexGuard, atomic::AtomicIsize},
 };
 use std::{
     collections::BTreeMap,
@@ -60,6 +60,7 @@ use std::{
 };
 use std::{ops::RangeInclusive, sync::Mutex};
 use textwrap::indent;
+use tokio::{sync::Notify, task::yield_now};
 
 mod index_set;
 mod list_merger;
@@ -116,6 +117,9 @@ where
 
     /// Number of merge steps required to complete the merges so far.
     n_steps: usize,
+
+    #[size_of(skip)]
+    notify: Arc<Notify>,
 }
 
 impl<B> Default for Slot<B>
@@ -130,6 +134,7 @@ where
             n_merged: 0,
             n_merged_batches: 0,
             n_steps: 0,
+            notify: Arc::new(Notify::new()),
         }
     }
 }
@@ -243,6 +248,7 @@ where
         debug_assert!(!batch.is_empty());
         let level = Spine::<B>::size_to_level(batch.len());
         self.slots[level].loose_batches.push_back(batch);
+        self.slots[level].notify.notify_one();
     }
 
     fn should_apply_backpressure(&self) -> bool {
@@ -413,28 +419,44 @@ where
         let idle = Arc::new(Condvar::new());
         let no_backpressure = Arc::new(Condvar::new());
         let state = Arc::new(Mutex::new(SharedState::new(factories)));
+        let worker_state = Arc::new(WorkerState::default());
+
         for level in 0..MAX_LEVELS {
-            BackgroundThread::add_worker({
+            let worker_state = worker_state.clone();
+            let state = state.clone();
+            let idle = idle.clone();
+            let no_backpressure = no_backpressure.clone();
+
+            TOKIO.spawn(async move {
                 let state = Arc::clone(&state);
                 let idle = Arc::clone(&idle);
                 let no_backpressure = Arc::clone(&no_backpressure);
-                Box::new(move || {
-                    let mut merger = None;
-                    let merger_type = Runtime::with_dev_tweaks(|tweaks| tweaks.merger);
-                    Box::new(move |worker_state| {
-                        Self::run(
-                            worker_state,
-                            level,
-                            &mut merger,
-                            merger_type,
-                            &state,
-                            &idle,
-                            &no_backpressure,
-                        )
-                    })
-                })
+                let mut merger = None;
+                let merger_type = Runtime::with_dev_tweaks(|tweaks| tweaks.merger);
+                let notify = state.lock().unwrap().slots[level].notify.clone();
+                loop {
+                    let status = Self::run(
+                        &worker_state,
+                        level,
+                        &mut merger,
+                        merger_type,
+                        &state,
+                        &idle,
+                        &no_backpressure,
+                    );
+                    match status {
+                        WorkerStatus::Busy => yield_now().await,
+                        WorkerStatus::Idle => {
+                            notify.notified().await;
+                        }
+                        WorkerStatus::Done => {
+                            break;
+                        }
+                    }
+                }
             });
         }
+
         Self {
             state,
             idle,
@@ -700,7 +722,7 @@ where
     }
 
     fn run(
-        worker_state: &mut WorkerState,
+        worker_state: &Arc<WorkerState>,
         level: usize,
         opt_merger: &mut Option<Merge<B>>,
         merger_type: MergerType,
@@ -798,26 +820,29 @@ where
 #[derive(Debug)]
 struct WorkerState {
     /// Average amount of fuel used for slot-0 merges.
-    avg_slot0_merge_fuel: isize,
+    avg_slot0_merge_fuel: AtomicIsize,
 }
 
 impl Default for WorkerState {
     fn default() -> Self {
         Self {
-            avg_slot0_merge_fuel: 10_000,
+            avg_slot0_merge_fuel: AtomicIsize::new(10_000),
         }
     }
 }
 
 impl WorkerState {
-    fn report_slot0_merge(&mut self, fuel: isize) {
+    fn report_slot0_merge(&self, fuel: isize) {
         // Maintains an exponentially weighted moving average of the amount of
         // fuel used to merge batches in slot 0.
-        self.avg_slot0_merge_fuel = ((127 * self.avg_slot0_merge_fuel + fuel + 64) / 128).max(1);
+        self.avg_slot0_merge_fuel.store(
+            ((127 * self.avg_slot0_merge_fuel.load(Ordering::Relaxed) + fuel + 64) / 128).max(1),
+            Ordering::Relaxed,
+        );
     }
 
     fn avg_slot0_merge_fuel(&self) -> isize {
-        self.avg_slot0_merge_fuel
+        self.avg_slot0_merge_fuel.load(Ordering::Relaxed)
     }
 }
 
