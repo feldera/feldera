@@ -15,6 +15,19 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        ### NATS input connector retry and health check support
+
+        The NATS input connector now supports automatic reconnection with
+        configurable retry behavior. Two new configuration fields have been added:
+        - `inactivity_timeout_secs`: Maximum time in seconds to wait for the
+          next message before running a stream/server health check.
+        - `retry_interval_secs`: Delay between automatic reconnect attempts
+          while in retry mode.
+
+        The connector now supports pause and resume (start) lifecycle
+        operations, validates replay and resume sequence bounds, and
+        provides improved error messages during retries and health checks.
+
         ### Python API removed `ignore_deployment_error`
 
         The `ignore_deployment_error` parameter has been removed from the Python
