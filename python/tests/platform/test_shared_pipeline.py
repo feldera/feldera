@@ -20,7 +20,6 @@ from tests.platform.helper import http_request, API_PREFIX
 from feldera.testutils import (
     FELDERA_TEST_NUM_WORKERS,
     FELDERA_TEST_NUM_HOSTS,
-    single_host_only,
 )
 from .helper import wait_for_condition
 
@@ -338,7 +337,6 @@ class TestPipeline(SharedTestPipeline):
         assert out_data == expected
         self.pipeline.stop(force=True)
 
-    @single_host_only
     def test_failed_pipeline_stop(self):
         """
         CREATE VIEW id_plus_one AS SELECT id + 1 FROM tbl;
@@ -356,7 +354,6 @@ class TestPipeline(SharedTestPipeline):
         )
         self.pipeline.stop(force=True)
 
-    @single_host_only
     def test_adhoc_execute(self):
         self.pipeline.start()
         self.pipeline.execute("INSERT INTO tbl VALUES (1), (2);")

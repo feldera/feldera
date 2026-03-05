@@ -12,7 +12,6 @@ from feldera.testutils import (
 )
 
 
-@single_host_only
 @enterprise_only
 @gen_pipeline_name
 def test_bootstrap_enterprise(pipeline_name):
@@ -279,7 +278,6 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
 
 
 @enterprise_only
-@single_host_only
 @gen_pipeline_name
 def test_bootstrap_non_materialized_table_enterprise(pipeline_name):
     """
@@ -325,7 +323,6 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
 
 
 @enterprise_only
-@single_host_only
 @gen_pipeline_name
 def test_bootstrap_table_lateness_enterprise(pipeline_name):
     """
@@ -370,7 +367,6 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
 
 
 @enterprise_only
-@single_host_only
 @gen_pipeline_name
 def test_bootstrap_view_lateness_enterprise(pipeline_name):
     """
