@@ -189,7 +189,7 @@ fn run_star_join(
             .unwrap();
 
         let start = Instant::now();
-        for (i, mut batches) in data.into_iter().enumerate() {
+        for mut batches in data {
             // println!("step: {}", i);
             h1.append(&mut batches[0]);
             h2.append(&mut batches[1]);
