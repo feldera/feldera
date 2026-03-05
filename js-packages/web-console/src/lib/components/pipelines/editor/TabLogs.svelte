@@ -51,7 +51,7 @@
 
   let pipelineStatusName = $derived(unionName(pipeline.current.status))
 
-  $effect.pre(() => {
+  let pipelineLogs = $derived.by(() => {
     if (!streams[pipelineName]) {
       streams[pipelineName] = {
         firstRowIndex: 0,
@@ -61,6 +61,7 @@
         totalSkippedBytes: 0
       }
     }
+    return getStreams.current[pipelineName]
   })
 
   $effect(() => {
@@ -204,11 +205,6 @@
     }
   }
 
-  // Trigger update to display the latest rows when switching to another pipeline
-  $effect(() => {
-    pipelineName
-    getStreams.current = streams
-  })
   $effect(() => {
     const interval = setInterval(() => {
       getStreams.current = streams
@@ -221,7 +217,7 @@
       pipelineActionCallbacks.remove('', 'delete', dropLogHistory)
     }
   })
-  let stream = $derived(getStreams.current[pipelineName].stream)
+  let stream = $derived(pipelineLogs.stream)
   const now = useInterval(() => new Date(), 1000, 1000 - (Date.now() % 1000))
 </script>
 
@@ -240,7 +236,7 @@
         {/if}
       </WarningBanner>
     {:else if !areLogsExpected(pipelineStatusName)}
-      {#if getStreams.current[pipelineName].rows.length}
+      {#if pipelineLogs.rows.length}
         <WarningBanner variant="info">
           Displaying log history from the last pipeline run. When the pipeline is started again this
           history will be cleared.
@@ -255,6 +251,6 @@
     <WarningBanner>Connecting to logs stream...</WarningBanner>
   {/if}
   {#key pipelineName}
-    <LogsStreamList logs={getStreams.current[pipelineName]}></LogsStreamList>
+    <LogsStreamList logs={pipelineLogs}></LogsStreamList>
   {/key}
 </div>

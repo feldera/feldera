@@ -52,7 +52,7 @@
         true
       ),
       tuple('Samply' as const, TabSamplyProfile.Label, TabSamplyProfile.default, false),
-      tuple('Logs' as const, TabLogs, PanelLogs, false)
+      tuple('Logs' as const, TabLogs, PanelLogs, true)
     ].filter((tab) => tab[0] !== currentInteractionTab)
   )
   let currentTab = $derived(

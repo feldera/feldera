@@ -91,11 +91,25 @@ export const useReverseScrollContainer = (
         })
       }
 
+      // When the container becomes visible after being hidden (e.g. tab switch with keepAlive),
+      // the ResizeObserver fires but the virtualizer may need extra time to lay out content.
+      // Schedule scrollToBottom attempt to catch up.
+      let wasHidden = false
+      const visibilityObserver = new IntersectionObserver((entries) => {
+        const isVisible = entries[0]?.isIntersecting ?? false
+        if (isVisible && wasHidden && stickToBottom) {
+          scrollToBottom()
+        }
+        wasHidden = !isVisible
+      })
+      visibilityObserver.observe(ref)
+
       ref.addEventListener('scroll', onscroll)
       scrollToBottom()
       return {
         destroy: () => {
           resizeObserver?.disconnect()
+          visibilityObserver.disconnect()
           ref.removeEventListener('scroll', onscroll)
         }
       }
