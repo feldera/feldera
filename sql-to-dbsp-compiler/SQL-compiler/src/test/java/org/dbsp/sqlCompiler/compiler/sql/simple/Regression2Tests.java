@@ -22,6 +22,7 @@ import org.dbsp.util.HashString;
 import org.dbsp.util.NullPrintStream;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.PrintStream;
@@ -627,5 +628,118 @@ public class Regression2Tests extends SqlIoTest {
                 ---
                 NULL
                 (1 row)""");
+    }
+
+    @Test
+    public void issue1956() {
+        var ccs = this.getCCS("""
+                CREATE TABLE auctions (
+                  id INT NOT NULL PRIMARY KEY,
+                  seller INT,
+                  item TEXT
+                );
+                
+                CREATE TABLE bids (
+                  id INT NOT NULL PRIMARY KEY,
+                  buyer INT,
+                  auction_id INT,
+                  amount INT
+                );
+                
+                CREATE VIEW V AS SELECT id, (SELECT array_agg(buyer) FROM (
+                  SELECT buyer FROM bids WHERE auction_id = auctions.id
+                  ORDER BY buyer LIMIT 10
+                )) FROM auctions;""");
+        // Output validated using postgres
+        ccs.step("""
+                INSERT INTO auctions (id, seller, item) VALUES
+                  (1, 101, 'Vintage Camera'),
+                  (2, 102, 'Mountain Bike'),
+                  (3, 103, 'Gaming Laptop'),
+                  (4, 101, 'Antique Vase'),
+                  (5, 104, 'Smartphone');
+                INSERT INTO bids (id, buyer, auction_id, amount) VALUES
+                  (1, 201, 1, 120),
+                  (2, 202, 1, 150),
+                  (3, 203, 1, 180),
+                
+                  (4, 204, 2, 300),
+                  (5, 205, 2, 350),
+                
+                  (6, 206, 3, 700),
+                  (7, 207, 3, 720),
+                  (8, 208, 3, 750),
+                  (9, 209, 3, 760),
+                
+                  (10, 210, 4, 90),
+                  (11, 211, 4, 110),
+                
+                  -- Auction 5 intentionally has no bids
+                  (12, 212, 2, 360);  -- extra competing bid on auction 2""", """
+                 id | arr                    | weight
+                ----------------------------------------
+                 1  | { 201, 202, 203 }      | 1
+                 2  | { 204, 205, 212 }      | 1
+                 3  | { 206, 207, 208, 209 } | 1
+                 4  | { 210, 211 }           | 1
+                 5  | NULL                   | 1""");
+    }
+
+    @Test @Ignore("https://github.com/feldera/feldera/issues/2555")
+    public void issue2555() {
+        this.getCC("""
+                create table spreadsheet (
+                    id int64 not null primary key,
+                    cell text not null,
+                    mentions int64 array\s
+                ) with ('materialized' = 'true');
+                
+                create materialized view spreadsheet_view as
+                select
+                    s.id,
+                    s.cell,
+                    array(
+                        select sp.cell
+                            from unnest(s.mentions) as mention_id
+                            join spreadsheet sp on sp.id = mention_id
+                        ) as mentioned_cells
+                from spreadsheet s;""");
+    }
+
+    @Test
+    public void issue2555a() {
+        this.getCCS("""
+                create table a(
+                    col1 text not null,
+                    col2 text not null,
+                    PRIMARY KEY (col1, col2)
+                );
+                
+                create table b(
+                    col1 text not null,
+                    col2 text not null,
+                    PRIMARY KEY (col1, col2)
+                );
+                
+                DECLARE RECURSIVE VIEW foo(
+                    out1 text not null,
+                    out2 text not null
+                );
+                
+                CREATE MATERIALIZED VIEW foo(out1, out2) as (
+                    SELECT a.col1, a.col2
+                    FROM a
+                    WHERE NOT EXISTS (
+                        SELECT true FROM b
+                        WHERE a.col1 = b.col1
+                        UNION
+                        SELECT true FROM b
+                        WHERE a.col2 = b.col2
+                    )
+                    UNION
+                    SELECT foo.out2, a.col1
+                    FROM a, foo
+                    WHERE foo.out1 = a.col2
+                );""");
     }
 }
