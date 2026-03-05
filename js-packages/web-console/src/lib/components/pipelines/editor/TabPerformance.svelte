@@ -188,7 +188,7 @@
             <div class="w-54 pt-2 text-nowrap">
               {getDeploymentStatusLabel(pipeline.current.status)} since {Dayjs(
                 pipeline.current.deploymentStatusSince
-              ).format('MMM D, h:mm A')}
+              ).format('MMM D, YYYY h:mm A')}
             </div>
           {/snippet}
           {#if isXl.current}
