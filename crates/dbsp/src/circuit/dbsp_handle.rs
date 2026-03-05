@@ -461,7 +461,7 @@ pub fn adaptive_joins_enabled() -> bool {
 
 pub fn merger_worker_threads() -> u16 {
     let num_workers = Runtime::num_workers();
-    Runtime::with_dev_tweaks(|d| d.merger_worker_threads.unwrap_or(num_workers as u16))
+    Runtime::with_dev_tweaks(|d| d.merger_worker_threads.unwrap_or((num_workers * 2) as u16))
 }
 
 /// Configuration for storage in a [Runtime]-hosted circuit.
