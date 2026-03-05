@@ -1,8 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
@@ -12,6 +16,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
+import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.util.HashString;
 import org.dbsp.util.NullPrintStream;
 import org.dbsp.util.Utilities;
@@ -456,6 +461,36 @@ public class Regression2Tests extends SqlIoTest {
                   3  | 2 | 1
                   3  | 1 | 1""");
         TestUtil.assertMessagesContain(compiler, "Column 'z' of table 't' is unused");
+    }
+
+    @Test
+    public void issue2234() {
+        var ccs = this.getCCS("""
+                CREATE TABLE transaction_with_customer(id INT, amt INT64, cc_num VARCHAR, unix_time INT64);
+                CREATE VIEW FEATURE AS
+                SELECT
+                    id,
+                    SUM(amt) OVER window_60_minute AS trans500_60min
+                FROM transaction_with_customer as t
+                WINDOW
+                  window_60_minute AS (PARTITION BY cc_num ORDER BY t.unix_time RANGE BETWEEN 3600 PRECEDING AND CURRENT ROW);""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            int aggregates = 0;
+
+            @Override
+            public void postorder(DBSPSimpleOperator operator) {
+                if (operator.is(DBSPAggregateOperatorBase.class)) {
+                    Assert.assertTrue(operator.is(DBSPPartitionedRollingAggregateOperator.class));
+                    this.aggregates++;
+                }
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.aggregates);
+                super.endVisit();
+            }
+        });
     }
 
     @Test
