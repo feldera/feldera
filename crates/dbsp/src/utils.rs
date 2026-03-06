@@ -4,6 +4,7 @@ mod sample;
 pub(crate) mod binary_heap;
 mod consolidation;
 mod graph;
+mod archive_layout;
 mod is_none;
 mod sort;
 pub mod tuple;
@@ -29,6 +30,7 @@ pub use consolidation::{
 };
 pub use graph::components;
 
+pub use archive_layout::{ArchiveLayout, INLINE_SPARSE_MAX_ALIGN};
 pub use is_none::IsNone;
 
 #[allow(unused_imports)]

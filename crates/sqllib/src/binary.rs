@@ -54,6 +54,12 @@ pub struct ByteArray {
     data: CompactVec,
 }
 
+impl dbsp::utils::ArchiveLayout for ByteArray {
+    const IS_FIXED: bool = false;
+    const ARCHIVED_SIZE: usize = 0;
+    const INLINE_ALIGN: usize = 1;
+}
+
 impl SizeOf for ByteArray {
     fn size_of_children(&self, context: &mut size_of::Context) {
         self.data.size_of_children(context);

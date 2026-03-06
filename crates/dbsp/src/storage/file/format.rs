@@ -96,7 +96,7 @@ use size_of::SizeOf;
 /// When a new version is created, make sure to generate new golden
 /// files for it in crate `storage-test-compat` to check for
 /// backwards compatibility.
-pub const VERSION_NUMBER: u32 = 5;
+pub const VERSION_NUMBER: u32 = 6;
 
 /// Magic number for data blocks.
 pub const DATA_BLOCK_MAGIC: [u8; 4] = *b"LFDB";

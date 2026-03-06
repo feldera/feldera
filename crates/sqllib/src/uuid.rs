@@ -37,6 +37,12 @@ impl From<uuid::Uuid> for Uuid {
     }
 }
 
+impl dbsp::utils::ArchiveLayout for Uuid {
+    const IS_FIXED: bool = true;
+    const ARCHIVED_SIZE: usize = 16; // uuid::Uuid is 128 bits
+    const INLINE_ALIGN: usize = 1; // [u8; 16] has align 1
+}
+
 impl SizeOf for Uuid {
     fn size_of_children(&self, _context: &mut Context) {}
 }
