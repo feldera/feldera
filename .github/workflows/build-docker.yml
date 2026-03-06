@@ -2,6 +2,12 @@ name: Build and Publish Docker Image
 
 on:
   workflow_call:
+    inputs:
+      artifacts_run_id:
+        description: "Run ID to download build artifacts from (empty = current run)"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -55,18 +61,24 @@ jobs:
         with:
           name: fda-${{ matrix.rust_target }}
           path: build
+          run-id: ${{ inputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download pipeline-manager
         uses: actions/download-artifact@v4
         with:
           name: pipeline-manager-${{ matrix.rust_target }}
           path: build
+          run-id: ${{ inputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download Compiler Binaries
         uses: actions/download-artifact@v4
         with:
           name: feldera-sql-compiler
           path: build
+          run-id: ${{ inputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
       - name: Make binaries executable
