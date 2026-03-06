@@ -34,6 +34,12 @@
 
 ## Platform capabilities
 
+* Can your incremental compute engine do this?
+  https://www.feldera.com/blog/can-your-incremental-compute-engine-do-this
+
+* Introducing Feldera Health
+  https://www.feldera.com/blog/introducing-feldera-health
+
 * The Babel tower of SQL dialects
   https://www.feldera.com/blog/the-babel-tower-of-sql-dialects
 
@@ -98,6 +104,12 @@
   https://www.feldera.com/blog/communicating-with-dbsp
 
 ## Principles, Implementation, and engineering
+
+* Why incremental aggregates are difficult -- part 1
+  https://www.feldera.com/blog/why-incremental-aggregates-are-difficult---part-1
+
+* Nobody ever got fired for using a struct
+  https://www.feldera.com/blog/nobody-ever-got-fired-for-using-a-struct
 
 * Introducing Feldera's Visual Profiler
   https://www.feldera.com/blog/introducing-feldera's-visual-profiler
