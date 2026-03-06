@@ -2187,6 +2187,7 @@ fn test_external_controller_status_serialization() {
         kafka_endpoint.set_paused_by_user(true);
         kafka_endpoint.transport_error(
             true,
+            None,
             &anyhow!("Connection refused: Unable to connect to Kafka broker"),
         );
         inputs.insert(0, kafka_endpoint);

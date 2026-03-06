@@ -143,6 +143,29 @@ pub struct ExternalCompletedWatermark {
     pub completed_at: String,
 }
 
+#[derive(Debug, Default, Deserialize, Serialize, ToSchema, Clone)]
+pub struct ConnectorError {
+    /// Timestamp when the error occurred in microseconds since the epoch.
+    #[serde(with = "chrono::serde::ts_microseconds")]
+    #[schema(value_type = u64)]
+    pub timestamp_micros: DateTime<Utc>,
+
+    /// Sequence number of the error.
+    ///
+    /// The client can use this field to detect gaps in the error list reported
+    /// by the pipeline. When the connector reports a large number of errors, the
+    /// pipeline will only preserve and report the most recent errors of each kind.
+    pub index: u64,
+
+    /// Optional tag for the error.
+    ///
+    /// The tag is used to group errors by their type.
+    pub tag: Option<String>,
+
+    /// Error message.
+    pub message: String,
+}
+
 /// Performance metrics for an input endpoint.
 #[derive(Debug, Default, Deserialize, Serialize, ToSchema)]
 #[schema(as = InputEndpointMetrics)]
@@ -176,6 +199,12 @@ pub struct ExternalInputEndpointStatus {
     pub metrics: ExternalInputEndpointMetrics,
     /// The first fatal error that occurred at the endpoint.
     pub fatal_error: Option<String>,
+    /// Recent parse errors on this endpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parse_errors: Option<Vec<ConnectorError>>,
+    /// Recent transport errors on this endpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport_errors: Option<Vec<ConnectorError>>,
     /// Endpoint has been paused by the user.
     pub paused: bool,
     /// Endpoint is currently a barrier to checkpointing and suspend.
@@ -247,6 +276,12 @@ pub struct ExternalOutputEndpointStatus {
     pub metrics: ExternalOutputEndpointMetrics,
     /// The first fatal error that occurred at the endpoint.
     pub fatal_error: Option<String>,
+    /// Recent encoding errors on this endpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encode_errors: Option<Vec<ConnectorError>>,
+    /// Recent transport errors on this endpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport_errors: Option<Vec<ConnectorError>>,
 }
 
 /// Global controller metrics.
