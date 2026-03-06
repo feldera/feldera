@@ -3205,6 +3205,19 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return null;
     }
 
+    @SuppressWarnings("UnusedReturnValue")
+    @Nullable
+    DBSPNode compileDropTable(DropTableStatement drop) {
+        ProgramIdentifier tableName = drop.tableName;
+        this.metadata.removeTable(tableName);
+        DBSPCircuit circuit = this.getCircuit();
+        IInputOperator input = circuit.getInput(tableName);
+        Objects.requireNonNull(input);
+        circuit.allOperators.remove(input.asOperator());
+        circuit.sourceOperators.remove(tableName);
+        return null;
+    }
+
     @Nullable
     DBSPNode compileCreateTable(CreateTableStatement create) {
         ProgramIdentifier tableName = create.relationName;
@@ -3395,6 +3408,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
             if (create != null) {
                 // We create an input for the circuit.
                 return this.compileCreateTable(create);
+            } else {
+                DropTableStatement drop = statement.as(DropTableStatement.class);
+                this.compileDropTable(drop);
             }
             return null;
         } else if (statement.is(TableModifyStatement.class)) {
