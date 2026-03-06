@@ -432,7 +432,7 @@ where
             let worker_index = Runtime::worker_index();
 
             TOKIO_MERGER.spawn(async move {
-                println!("{worker_index}: starting merger worker thread level: {level}");
+                //println!("{worker_index}: starting merger worker thread level: {level}");
                 TOKIO_WORKER_INDEX
                     .scope(worker_index, async move {
                         let state = Arc::clone(&state);

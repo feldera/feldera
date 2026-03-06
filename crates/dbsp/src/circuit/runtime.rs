@@ -58,7 +58,7 @@ pub const DEFAULT_REPLAY_STEP_SIZE: usize = 10000;
 /// This is `pub` so it can be used in dbsp and adapters too for IO.
 pub static TOKIO_MERGER: Lazy<TokioRuntime> = Lazy::new(|| {
     let num_workers = merger_worker_threads();
-    println!("starting service dbsp merger tokio runtime, workers: {num_workers}",);
+    info!("starting service dbsp merger tokio runtime, workers: {num_workers}",);
     let runtime = Runtime::runtime().unwrap();
 
     TokioBuilder::new_multi_thread()
@@ -392,7 +392,7 @@ fn map_pin_cpus(layout: &Layout, pin_cpus: &[usize]) -> Vec<EnumMap<ThreadType, 
             enum_map! {
                 ThreadType::Foreground => fg_cpus[i],
                 ThreadType::Background => bg_cpus[i],
-                ThreadType::MergerTokio => bg_cpus[i],
+                ThreadType::MergerTokio => todo!(),
             }
         })
         .collect()
@@ -683,10 +683,6 @@ impl Runtime {
             match ThreadType::current() {
                 None => NO_RUNTIME_CACHE.clone(),
                 Some(ThreadType::MergerTokio) => {
-                    println!(
-                        "getting buffer cache for merger tokio worker index: {}",
-                        TOKIO_WORKER_INDEX.get()
-                    );
                     rt.get_buffer_cache(TOKIO_WORKER_INDEX.get(), ThreadType::MergerTokio)
                 }
                 Some(thread_type) => {
