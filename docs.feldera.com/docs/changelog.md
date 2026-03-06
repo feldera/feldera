@@ -15,6 +15,14 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        Add connector error list to input/output connector stats.
+        [Input](https://docs.feldera.com/api/get-input-status) and
+        [output](https://docs.feldera.com/api/get-output-status)
+        status endpoints now list up to 100 most recent transport, parser, and
+        encoder errors of each type.
+
+        ## v0.252.0
+
         ### Python API removed `ignore_deployment_error`
 
         The `ignore_deployment_error` parameter has been removed from the Python
