@@ -1,17 +1,20 @@
 use anyhow::{Context, Result, anyhow};
 use crossbeam::channel::{Sender, bounded};
+use dbsp::circuit::{CircuitConfig, CircuitStorageConfig, DevTweaks, Layout, Mode};
 use dbsp::{
     Runtime,
     mimalloc::MiMalloc,
     operator::{MapHandle, Update},
     utils::{Tup2, Tup5},
 };
+use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use rand::{Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
+use tempfile::tempdir;
 
 const BATCH_SIZE: usize = 10_000;
 const PROGRESS_EVERY_BATCHES: usize = 100;
@@ -31,6 +34,27 @@ static ALLOC: MiMalloc = MiMalloc;
 
 fn main() -> Result<()> {
     validate_constants()?;
+    let temp = tempdir().context("failed to create temp directory for storage backend")?;
+    let config = CircuitConfig {
+        layout: Layout::new_solo(WORKERS),
+        mode: Mode::Ephemeral,
+        pin_cpus: Vec::new(),
+        storage: Some(
+            CircuitStorageConfig::for_config(
+                StorageConfig {
+                    path: temp.path().to_string_lossy().into_owned(),
+                    cache: StorageCacheConfig::default(),
+                },
+                StorageOptions {
+                    min_storage_bytes: Some(0),
+                    min_step_storage_bytes: Some(0),
+                    ..StorageOptions::default()
+                },
+            )
+            .context("failed to configure POSIX storage backend")?,
+        ),
+        dev_tweaks: DevTweaks::default(),
+    };
 
     let total_batches = (TOTAL_RECORDS / BATCH_SIZE as u64) as usize;
     println!(
@@ -38,7 +62,7 @@ fn main() -> Result<()> {
         WORKERS, DATAGEN_THREADS, TOTAL_RECORDS, total_batches, BATCH_SIZE
     );
 
-    let (mut dbsp, mut input_handle) = Runtime::init_circuit(WORKERS, |circuit| {
+    let (mut dbsp, mut input_handle) = Runtime::init_circuit(config, |circuit| {
         let (stream, handle): (_, MapHandle<u64, Value, Value>) =
             circuit.add_input_map::<u64, Value, Value, _>(|v, u| *v = *u);
 
