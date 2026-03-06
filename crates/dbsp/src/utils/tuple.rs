@@ -19,6 +19,15 @@ impl<const N: usize> Default for TupleBitmap<N> {
     }
 }
 
+impl<const N: usize> PartialEq for TupleBitmap<N> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.bytes == other.bytes
+    }
+}
+
+impl<const N: usize> Eq for TupleBitmap<N> {}
+
 impl<const N: usize> TupleBitmap<N> {
     #[inline]
     pub fn new() -> Self {
@@ -70,6 +79,7 @@ impl<const N: usize> TupleBitmap<N> {
 pub enum TupleFormat {
     Sparse = 0,
     Dense = 1,
+    InlineSparse = 2,
 }
 
 // Make sure to also call `dbsp_adapters::deserialize_without_context!`

@@ -200,6 +200,12 @@ where
     }
 }
 
+impl dbsp::utils::ArchiveLayout for SqlString {
+    const IS_FIXED: bool = false;
+    const ARCHIVED_SIZE: usize = 0;
+    const INLINE_ALIGN: usize = 1;
+}
+
 #[doc(hidden)]
 pub fn concat_s_s(left: SqlString, right: SqlString) -> SqlString {
     SqlString::from_concat(&[left.str(), right.str()])

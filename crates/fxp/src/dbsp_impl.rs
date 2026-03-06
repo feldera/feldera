@@ -38,6 +38,12 @@ impl<const P: usize, const S: usize> IsNone for Fixed<P, S> {
     }
 }
 
+impl<const P: usize, const S: usize> dbsp::utils::ArchiveLayout for Fixed<P, S> {
+    const IS_FIXED: bool = true;
+    const ARCHIVED_SIZE: usize = 16; // i128 internally
+    const INLINE_ALIGN: usize = 16; // align_of::<i128>() on x86_64
+}
+
 impl<const P: usize, const S: usize> OptionWeightType for Fixed<P, S> {}
 impl<const P: usize, const S: usize> OptionWeightType for &Fixed<P, S> {}
 

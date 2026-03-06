@@ -79,6 +79,12 @@ pub enum Variant {
     Map(#[omit_bounds] Map<Variant, Variant>),
 }
 
+impl dbsp::utils::ArchiveLayout for Variant {
+    const IS_FIXED: bool = false;
+    const ARCHIVED_SIZE: usize = 0;
+    const INLINE_ALIGN: usize = 1;
+}
+
 /////////////// Variant index
 
 // Return type is always Option<Variant>, but result is never None, always a Variant

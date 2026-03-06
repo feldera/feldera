@@ -68,6 +68,12 @@ where
     }
 }
 
+impl dbsp::utils::ArchiveLayout for Timestamp {
+    const IS_FIXED: bool = true;
+    const ARCHIVED_SIZE: usize = 8; // i64 microseconds
+    const INLINE_ALIGN: usize = 8;
+}
+
 #[doc(hidden)]
 impl ToInteger<i64> for Timestamp {
     #[doc(hidden)]
@@ -1173,6 +1179,12 @@ pub struct Date {
     days: i32,
 }
 
+impl dbsp::utils::ArchiveLayout for Date {
+    const IS_FIXED: bool = true;
+    const ARCHIVED_SIZE: usize = 4; // i32 days
+    const INLINE_ALIGN: usize = 4;
+}
+
 impl Date {
     /// Create a [Date] from a number of days since the Unix epoch
     /// (January 1st, 1970).
@@ -2026,6 +2038,12 @@ some_polymorphic_function1!(date_trunc_day, Date, Date, Date);
 #[serde(transparent)]
 pub struct Time {
     nanoseconds: u64,
+}
+
+impl dbsp::utils::ArchiveLayout for Time {
+    const IS_FIXED: bool = true;
+    const ARCHIVED_SIZE: usize = 8; // u64 nanoseconds
+    const INLINE_ALIGN: usize = 8;
 }
 
 #[doc(hidden)]

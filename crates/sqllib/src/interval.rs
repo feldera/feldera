@@ -74,6 +74,12 @@ where
     }
 }
 
+impl dbsp::utils::ArchiveLayout for ShortInterval {
+    const IS_FIXED: bool = true;
+    const ARCHIVED_SIZE: usize = 8; // i64 microseconds
+    const INLINE_ALIGN: usize = 8;
+}
+
 impl ShortInterval {
     /// Create a ShortInterval with a length specified in milliseconds.
     pub const fn from_milliseconds(milliseconds: i64) -> Self {
@@ -454,6 +460,12 @@ some_function2!(
 #[serde(transparent)]
 pub struct LongInterval {
     months: i32,
+}
+
+impl dbsp::utils::ArchiveLayout for LongInterval {
+    const IS_FIXED: bool = true;
+    const ARCHIVED_SIZE: usize = 4; // i32 months
+    const INLINE_ALIGN: usize = 4;
 }
 
 impl LongInterval {

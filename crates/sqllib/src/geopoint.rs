@@ -33,6 +33,13 @@ use size_of::*;
 #[archive(compare(PartialEq, PartialOrd))]
 pub struct GeoPoint(F64, F64);
 
+impl dbsp::utils::ArchiveLayout for GeoPoint {
+    const IS_FIXED: bool = true;
+    // GeoPoint(F64, F64), each F64 is 8 bytes archived
+    const ARCHIVED_SIZE: usize = 16;
+    const INLINE_ALIGN: usize = 8;
+}
+
 #[doc(hidden)]
 impl<C> SerializeWithContext<C> for GeoPoint {
     fn serialize_with_context<S>(&self, _serializer: S, _context: &C) -> Result<S::Ok, S::Error>

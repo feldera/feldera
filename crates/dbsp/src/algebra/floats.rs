@@ -396,6 +396,18 @@ serialize_without_context!(F64);
 deserialize_without_context!(F32);
 deserialize_without_context!(F64);
 
+impl crate::utils::ArchiveLayout for F32 {
+    const IS_FIXED: bool = true;
+    const ARCHIVED_SIZE: usize = 4;
+    const INLINE_ALIGN: usize = 4;
+}
+
+impl crate::utils::ArchiveLayout for F64 {
+    const IS_FIXED: bool = true;
+    const ARCHIVED_SIZE: usize = 8;
+    const INLINE_ALIGN: usize = 8;
+}
+
 impl From<F32> for F64 {
     #[inline]
     fn from(float: F32) -> Self {
