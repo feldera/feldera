@@ -8,9 +8,8 @@
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
-  import { intersect2 } from '$lib/functions/common/array'
-  import { isPipelineCodeEditable, isPipelineShutdown } from '$lib/functions/pipelines/status'
-  import type { PipelineAction, PipelineThumb } from '$lib/services/pipelineManager'
+  import { isPipelineCodeEditable } from '$lib/functions/pipelines/status'
+  import type { PipelineThumb } from '$lib/services/pipelineManager'
 
   let {
     pipelines,
@@ -70,49 +69,37 @@
       (_, p) => p
     )
   )
+  const eligibleFor = (action: (typeof availableActions)[number]) =>
+    selected
+      .filter((pipeline) => statusActions(pipeline).includes(action))
+      .map((p) => p.name)
+      .sort()
   const actions = $derived.by(() => {
-    const actions =
-      selected.length === 0
-        ? []
-        : selected.map(statusActions).reduce(
-            (acc, cur) =>
-              intersect2(
-                acc,
-                cur,
-                (e) => e,
-                (e) => e,
-                (a) => a
-              ),
-            availableActions
-          )
-    if (
-      selected.length === pipelines.length &&
-      !actions.includes('kill') &&
-      !actions.includes('start')
-    ) {
-      // Add 'kill' action if every pipeline is selected
-      actions.splice(-2, 0, ...stop, 'kill')
-    }
-
-    return actions.map((action) =>
-      match(action)
-        .with('start', () => btnStart)
-        .with('resume', () => btnResume)
-        .with('pause', () => btnPause)
-        .with('stop', () => btnStop)
-        .with('kill', () => btnKill)
-        .with('delete', () => btnDelete)
-        .with('clear', () => btnClear)
-        .exhaustive()
-    )
+    if (selected.length === 0) return []
+    const supportedByAny = new Set(selected.flatMap(statusActions))
+    return availableActions
+      .filter((action) => supportedByAny.has(action))
+      .map((action) =>
+        match(action)
+          .with('start', () => btnStart)
+          .with('resume', () => btnResume)
+          .with('pause', () => btnPause)
+          .with('stop', () => btnStop)
+          .with('kill', () => btnKill)
+          .with('delete', () => btnDelete)
+          .with('clear', () => btnClear)
+          .exhaustive()
+      )
   })
 
   const globalDialog = useGlobalDialog()
   const api = usePipelineManager()
-  const postPipelinesAction = (action: PipelineAction) => {
-    selectedPipelines.forEach((pipelineName) => {
-      api.postPipelineAction(pipelineName, action)
-    })
+  const postPipelinesAction = (action: Exclude<(typeof availableActions)[number], 'delete'>) => {
+    selected
+      .filter((pipeline) => statusActions(pipeline).includes(action))
+      .forEach((pipeline) => {
+        api.postPipelineAction(pipeline.name, action)
+      })
     selectedPipelines = []
   }
   const { toastError } = useToast()
@@ -207,64 +194,57 @@
 {/snippet}
 
 {#snippet clearDialog()}
+  {@const pipelines = eligibleFor('clear')}
   <DeleteDialog
     {...deleteDialogProps(
       'Clear',
       () =>
-        selectedPipelines.length === 1
+        pipelines.length === 1
           ? 'You are about to clear storage of 1 pipeline:'
-          : 'You are about to clear storage of ' +
-            selectedPipelines.length.toFixed() +
-            ' pipelines:',
+          : 'You are about to clear storage of ' + pipelines.length.toFixed() + ' pipelines:',
       () => postPipelinesAction('clear'),
-      selectedPipelines.length === 1
+      pipelines.length === 1
         ? 'This will delete any checkpoints of this pipeline.'
         : 'This will delete any checkpoints of these pipelines.',
-      sortedSelectedPipelines.join('\n')
+      pipelines.join('\n')
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
 
 {#snippet stopDialog()}
-  {@const stoppablePipelines = sortedSelectedPipelines.filter((name) =>
-    ((status) => !isPipelineShutdown(status))(selected.find((p) => p.name === name)!.status)
-  )}
+  {@const pipelines = eligibleFor('stop')}
   <DeleteDialog
     {...deleteDialogProps(
       'Stop',
       () =>
-        stoppablePipelines.length === 1
+        pipelines.length === 1
           ? 'You are about to stop 1 pipeline:'
-          : 'You are about to stop ' + stoppablePipelines.length.toFixed() + ' pipelines:',
+          : 'You are about to stop ' + pipelines.length.toFixed() + ' pipelines:',
       () => postPipelinesAction('stop'),
-      stoppablePipelines.length === 1
+      pipelines.length === 1
         ? 'The pipeline will stop processing inputs and make a checkpoint of its state.'
         : 'These pipelines will stop processing inputs and make checkpoints of their states.',
-      stoppablePipelines.join('\n')
+      pipelines.join('\n')
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
 
 {#snippet killDialog()}
-  {@const stoppablePipelines = sortedSelectedPipelines.filter((name) =>
-    ((status) => !isPipelineShutdown(status))(selected.find((p) => p.name === name)!.status)
-  )}
+  {@const pipelines = eligibleFor('kill')}
   <DeleteDialog
     {...deleteDialogProps(
       'Force stop',
       () =>
-        stoppablePipelines.length === 1
+        pipelines.length === 1
           ? 'You are about to forcefully stop 1 pipeline:'
-          : 'You are about to forcefully stop ' +
-            stoppablePipelines.length.toFixed() +
-            ' pipelines:',
+          : 'You are about to forcefully stop ' + pipelines.length.toFixed() + ' pipelines:',
       () => postPipelinesAction('kill'),
-      stoppablePipelines.length === 1
+      pipelines.length === 1
         ? 'The pipeline will stop processing inputs without making a checkpoint, leaving only a previous one, if any.'
         : 'These pipelines will stop processing inputs without making checkpoints, leaving only previous ones, if any.',
-      stoppablePipelines.join('\n')
+      pipelines.join('\n')
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
