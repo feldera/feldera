@@ -91,10 +91,19 @@ Before reading after startup or resume, the connector validates the checkpoint r
 
 Typical fatal scenarios include:
 
-- The stream was deleted/recreated and old checkpoint sequence numbers no longer exist.
-- The stream was purged and required replay messages are gone.
+- **Stream deleted or recreated**: The checkpoint references sequence numbers that no longer exist in the current stream. For example, the resume cursor is before the stream's earliest available sequence, or after the stream's latest sequence.
+- **Stream purged**: The stream exists but required replay messages have been removed. The connector detects that the requested replay range falls outside the available sequence range.
+- **Stream emptied**: The checkpoint says to resume from a specific sequence, but the stream now contains zero messages.
+- **Unexpected sequence during replay**: While replaying a checkpoint batch, the connector receives a message with a sequence number beyond the expected replay range, indicating that earlier messages may have been deleted mid-replay.
 
-In these cases the connector fails fast instead of looping forever.
+In all of these cases the connector fails fast with a fatal error instead of retrying
+forever, because the data needed to maintain exactly-once guarantees is permanently gone.
+
+:::tip Recovery from fatal errors
+To recover from a fatal error caused by stream data loss, you typically need to
+reset the pipeline's checkpoint state (e.g., by recreating the pipeline) so it
+starts fresh without referencing the now-invalid sequence numbers.
+:::
 
 ## Authentication
 
