@@ -16,12 +16,14 @@ use futures::StreamExt;
 use s2_sdk::{
     S2,
     types::{
-        AccountEndpoint, BasinEndpoint, ReadFrom, ReadInput, ReadStart, S2Config, S2Endpoints,
+        AccountEndpoint, BasinEndpoint, ReadFrom, ReadInput, ReadStart, RetryConfig, S2Config,
+        S2Endpoints,
     },
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::hash::Hasher;
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -29,10 +31,9 @@ use tokio::{
     select,
     sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     task::JoinHandle,
-    time::sleep,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, error, info, info_span, warn};
+use tracing::{Instrument, error, info, info_span};
 use xxhash_rust::xxh3::Xxh3Default;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -135,16 +136,25 @@ impl S2Reader {
         let s2_stream = TOKIO
             .block_on(
                 async {
-                    let s2_config = S2Config::new(config.auth_token.clone());
-                    let s2_config = if let Some(ref endpoint) = config.endpoint {
+                    // Configure retry policy: more attempts with longer delays than SDK defaults
+                    let retry_config = RetryConfig::new()
+                        .with_max_attempts(NonZeroU32::new(10).unwrap())
+                        .with_min_base_delay(Duration::from_millis(100))
+                        .with_max_base_delay(Duration::from_secs(10));
+
+                    let mut s2_config = S2Config::new(config.auth_token.clone())
+                        .with_connection_timeout(Duration::from_secs(10))
+                        .with_request_timeout(Duration::from_secs(30))
+                        .with_retry(retry_config);
+
+                    if let Some(ref endpoint) = config.endpoint {
                         let endpoints = S2Endpoints::new(
                             AccountEndpoint::new(endpoint)?,
                             BasinEndpoint::new(endpoint)?,
                         )?;
-                        s2_config.with_endpoints(endpoints)
-                    } else {
-                        s2_config
-                    };
+                        s2_config = s2_config.with_endpoints(endpoints);
+                    }
+
                     let client = S2::new(s2_config)?;
                     let basin = client.basin(config.basin.parse().map_err(|e| anyhow!("{e}"))?);
                     Ok::<_, AnyError>(
@@ -317,75 +327,70 @@ fn spawn_s2_reader(
     consumer: Box<dyn InputConsumer>,
     mut parser: Box<dyn Parser>,
 ) -> Canceller {
-    const RETRY_BASE_DELAY: Duration = Duration::from_millis(500);
-    const RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
-
     let cancel_token = CancellationToken::new();
     let join_handle = tokio::spawn({
         let cancel_token_copy = cancel_token.clone();
         async move {
-            let mut retry_delay = RETRY_BASE_DELAY;
-            loop {
-                let start_seq = next_seq.load(Ordering::Acquire);
-                let read_input = read_input_for_position(&config, start_seq);
+            let start_seq = next_seq.load(Ordering::Acquire);
+            let read_input = read_input_for_position(&config, start_seq);
 
-                let mut session = match s2_stream.read_session(read_input).await {
-                    Ok(session) => {
-                        retry_delay = RETRY_BASE_DELAY;
-                        session
-                    }
-                    Err(error) => {
-                        consumer.error(
-                            false,
-                            anyhow!("Failed to create S2 read session: {error}"),
-                            Some("s2-input"),
-                        );
-                        warn!(
-                            next_seq = start_seq,
-                            "S2 session setup failed; retrying in {:?}: {error}", retry_delay
-                        );
-                        select! {
-                            _ = cancel_token_copy.cancelled() => break,
-                            _ = sleep(retry_delay) => {
-                                retry_delay = std::cmp::min(retry_delay.saturating_mul(2), RETRY_MAX_DELAY);
-                            }
-                        }
-                        continue;
-                    }
-                };
-
-                loop {
-                    select! {
-                        _ = cancel_token_copy.cancelled() => break,
-                        result = session.next() => {
-                            let Some(result) = result else {
-                                consumer.error(false, anyhow!("S2 read session ended; reconnecting"), Some("s2-input"));
-                                warn!("S2 read session ended; reconnecting in {:?}", retry_delay);
-                                break;
-                            };
-                            match result {
-                                Ok(batch) => {
-                                    for record in &batch.records {
-                                        info!("Got record #{}", record.seq_num);
-                                        next_seq.store(record.seq_num + 1, Ordering::Release);
-                                        let data = &record.body;
-                                        queue.push_with_aux(parser.parse(data, None), Utc::now(), record.seq_num);
-                                    }
-                                }
-                                Err(error) => {
-                                    consumer.error(false, anyhow!("S2 error: {error}"), Some("s2-input"));
-                                    warn!("S2 stream error; reconnecting in {:?}: {error}", retry_delay);
-                                    break;
-                                }
-                            }
-                        }
-                    }
+            // Create read session. The SDK will automatically retry transient failures
+            // according to the configured RetryConfig (10 attempts, 100ms-10s delays).
+            let mut session = match s2_stream.read_session(read_input).await {
+                Ok(session) => session,
+                Err(error) => {
+                    // SDK has exhausted all retries. This is a fatal error.
+                    consumer.error(
+                        true,
+                        anyhow!("Failed to create S2 read session after retries: {error}"),
+                        Some("s2-input"),
+                    );
+                    error!(
+                        next_seq = start_seq,
+                        "S2 session setup failed after SDK retries: {error}"
+                    );
+                    return;
                 }
+            };
 
+            // Read loop. The SDK's read_session automatically handles:
+            // - Reconnection on transient failures
+            // - Heartbeat timeout detection (20 seconds)
+            // - Automatic retry with exponential backoff
+            loop {
                 select! {
-                    _ = cancel_token_copy.cancelled() => break,
-                    _ = sleep(retry_delay) => {
-                        retry_delay = std::cmp::min(retry_delay.saturating_mul(2), RETRY_MAX_DELAY);
+                    _ = cancel_token_copy.cancelled() => {
+                        info!("S2 reader cancelled");
+                        break;
+                    }
+                    result = session.next() => {
+                        match result {
+                            Some(Ok(batch)) => {
+                                // Successfully received a batch
+                                for record in &batch.records {
+                                    info!("Got record #{}", record.seq_num);
+                                    next_seq.store(record.seq_num + 1, Ordering::Release);
+                                    let data = &record.body;
+                                    queue.push_with_aux(parser.parse(data, None), Utc::now(), record.seq_num);
+                                }
+                            }
+                            Some(Err(error)) => {
+                                // SDK has exhausted all retries for this error.
+                                // This is a fatal error (e.g., auth failure, non-retryable error).
+                                consumer.error(
+                                    true,
+                                    anyhow!("S2 stream error after SDK retries: {error}"),
+                                    Some("s2-input"),
+                                );
+                                error!("S2 stream error after SDK retries: {error}");
+                                break;
+                            }
+                            None => {
+                                // Stream ended normally (reached end of data or end condition)
+                                info!("S2 read session ended normally");
+                                break;
+                            }
+                        }
                     }
                 }
             }
