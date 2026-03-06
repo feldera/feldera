@@ -121,6 +121,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
             checkpoint_during_suspend: false,
             io_workers: None,
             http_workers: None,
+            env: BTreeMap::new(),
             dev_tweaks: BTreeMap::new(),
             logging: None,
             pipeline_template_configmap: None,

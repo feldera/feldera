@@ -871,6 +871,15 @@ pub struct RuntimeConfig {
     /// If not specified, the default is set to `workers`.
     pub io_workers: Option<u64>,
 
+    /// Environment variables for the pipeline process.
+    ///
+    /// These are key-value pairs injected into the pipeline process environment.
+    /// Some variable names are reserved by the platform and cannot be overridden
+    /// (for example `RUST_LOG`, and variables in the `FELDERA_`,
+    /// `KUBERNETES_`, and `TOKIO_` namespaces).
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+
     /// Optional settings for tweaking Feldera internals.
     ///
     /// The available key-value pairs change from one version of Feldera to
@@ -1030,6 +1039,7 @@ impl Default for RuntimeConfig {
             checkpoint_during_suspend: true,
             io_workers: None,
             http_workers: None,
+            env: BTreeMap::default(),
             dev_tweaks: BTreeMap::default(),
             logging: None,
             pipeline_template_configmap: None,

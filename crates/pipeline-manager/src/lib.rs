@@ -14,6 +14,7 @@ pub mod db;
 pub mod error;
 pub mod license;
 pub mod logging;
+pub mod pipeline_env;
 pub mod runner;
 
 /// Feature gate for new/unstable features that aren't rolled out or will change

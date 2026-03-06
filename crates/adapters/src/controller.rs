@@ -4111,6 +4111,7 @@ impl ControllerInit {
                 checkpoint_during_suspend: config.global.checkpoint_during_suspend,
                 http_workers: config.global.http_workers,
                 io_workers: config.global.io_workers,
+                env: config.global.env.clone(),
                 dev_tweaks: config.global.dev_tweaks.clone(),
                 logging: config.global.logging,
                 pipeline_template_configmap: config.global.pipeline_template_configmap.clone(),

@@ -125,27 +125,43 @@ Feldera pipelines primarily use memory for the following purposes:
 
 ### jemalloc Configuration
 
-Users can fine-tune the performance of jemalloc with the `MALLOC_CONF` environment variable. Possible configuration values are detailed in the [jemalloc reference](https://jemalloc.net/jemalloc.3.html#tuning). [Feldera sets default `MALLOC_CONF`](https://github.com/feldera/feldera/blob/5bcdf945525c87cbc22d4036609455d8159e029b/sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/rust/BaseRustCodeGenerator.java#L102) values to collect heap profile data. values to collect heap profile data. These defaults are prof:true,prof_active:true,lg_prof_sample:19. When setting custom configuration, preserve Feldera's defaults by taking the union of both sets of values.
+You can fine-tune jemalloc with the `MALLOC_CONF` environment variable.
+Possible values are documented in the
+[jemalloc reference](https://jemalloc.net/jemalloc.3.html#tuning).
 
-- **With Docker**: [Docker Quickstart](/get-started/docker#docker-quickstart) users can set the `MALLOC_CONF` environment variable by passing `-e MALLOC_CONF='prof:true,prof_active:true,lg_prof_sample:19,custom_config_value:true'` where `'custom_config_value:true'` is replaced with the values the user wants to configure.
+Feldera sets default `MALLOC_CONF` values to collect heap profile data:
+`prof:true,prof_active:true,lg_prof_sample:19`.
+When setting custom configuration, preserve these defaults and add your
+own options.
 
-  If using [Docker Compose](/get-started/docker#optional-docker-compose-quickstart), customize the pipeline manager environment.
-  ```yaml
-  services:
-    pipeline-manager:
-      # ...
-      environment:
-        # prof, prof_active, and lg_prof_sample are Feldera defaults that should be preserved
-        MALLOC_CONF: prof:true,prof_active:true,lg_prof_sample:19,background_thread:true,stats_print:true
-  ```
+Environment variables can be overridden by setting them in the pipeline runtime configuration in `env`:
 
-- **With Helm (Enterprise Users Only)**: Enterprise users can add the `MALLOC_CONF` environment variable to the `values.yaml` file.
+```json
+// ...
+"env": {
+  "MALLOC_CONF": "prof:true,prof_active:true,lg_prof_sample:19,background_thread:true,stats_print:true"
+}
+// ...
+```
 
-  Example usage:
-  ```yaml
-  pipeline:
-    env:
-     - name: MALLOC_CONF
-     # prof, prof_active, and lg_prof_sample are Feldera defaults that should be preserved
-       value: prof:true,prof_active:true,lg_prof_sample:19,background_thread:true,stats_print:true
-  ```
+Some environment variable names are reserved and cannot be overridden through
+`runtime_config.env` (for example names in the `FELDERA_`, `KUBERNETES_`, and
+`TOKIO_` namespaces, plus control variables such as `RUST_LOG`).
+
+Python SDK example:
+
+```python
+from feldera import PipelineBuilder
+from feldera.runtime_config import RuntimeConfig
+
+pipeline = PipelineBuilder(
+    client,
+    name="my-pipeline",
+    sql="CREATE TABLE t(i INT);",
+    runtime_config=RuntimeConfig(
+        env={
+            "MALLOC_CONF": "prof:true,prof_active:true,lg_prof_sample:19,background_thread:true,stats_print:true"
+        }
+    ),
+).create_or_replace()
+```

@@ -620,6 +620,7 @@
                       "checkpoint_during_suspend": true,
                       "http_workers": null,
                       "io_workers": null,
+                      "env": {},
                       "dev_tweaks": {},
                       "logging": null,
                       "pipeline_template_configmap": null
@@ -707,6 +708,7 @@
                       "checkpoint_during_suspend": false,
                       "http_workers": null,
                       "io_workers": null,
+                      "env": {},
                       "dev_tweaks": {},
                       "logging": null,
                       "pipeline_template_configmap": null
@@ -824,6 +826,7 @@
                   "checkpoint_during_suspend": true,
                   "http_workers": null,
                   "io_workers": null,
+                  "env": {},
                   "dev_tweaks": {},
                   "logging": null,
                   "pipeline_template_configmap": null
@@ -895,6 +898,7 @@
                     "checkpoint_during_suspend": true,
                     "http_workers": null,
                     "io_workers": null,
+                    "env": {},
                     "dev_tweaks": {},
                     "logging": null,
                     "pipeline_template_configmap": null
@@ -1075,6 +1079,7 @@
                     "checkpoint_during_suspend": true,
                     "http_workers": null,
                     "io_workers": null,
+                    "env": {},
                     "dev_tweaks": {},
                     "logging": null,
                     "pipeline_template_configmap": null
@@ -1219,6 +1224,7 @@
                   "checkpoint_during_suspend": true,
                   "http_workers": null,
                   "io_workers": null,
+                  "env": {},
                   "dev_tweaks": {},
                   "logging": null,
                   "pipeline_template_configmap": null
@@ -1290,6 +1296,7 @@
                     "checkpoint_during_suspend": true,
                     "http_workers": null,
                     "io_workers": null,
+                    "env": {},
                     "dev_tweaks": {},
                     "logging": null,
                     "pipeline_template_configmap": null
@@ -1387,6 +1394,7 @@
                     "checkpoint_during_suspend": true,
                     "http_workers": null,
                     "io_workers": null,
+                    "env": {},
                     "dev_tweaks": {},
                     "logging": null,
                     "pipeline_template_configmap": null
@@ -1653,6 +1661,7 @@
                     "checkpoint_during_suspend": true,
                     "http_workers": null,
                     "io_workers": null,
+                    "env": {},
                     "dev_tweaks": {},
                     "logging": null,
                     "pipeline_template_configmap": null
@@ -6185,6 +6194,7 @@
                     "checkpoint_during_suspend": true,
                     "http_workers": null,
                     "io_workers": null,
+                    "env": {},
                     "dev_tweaks": {},
                     "logging": null,
                     "pipeline_template_configmap": null
@@ -9629,6 +9639,14 @@
                 "default": {},
                 "additionalProperties": {}
               },
+              "env": {
+                "type": "object",
+                "description": "Environment variables for the pipeline process.\n\nThese are key-value pairs injected into the pipeline process environment.\nSome variable names are reserved by the platform and cannot be overridden\n(for example `RUST_LOG`, and variables in the `FELDERA_`,\n`KUBERNETES_`, and `TOKIO_` namespaces).",
+                "default": {},
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
               "fault_tolerance": {
                 "allOf": [
                   {
@@ -11294,6 +11312,14 @@
             "description": "Optional settings for tweaking Feldera internals.\n\nThe available key-value pairs change from one version of Feldera to\nanother, so users should not depend on particular settings being\navailable, or on their behavior.",
             "default": {},
             "additionalProperties": {}
+          },
+          "env": {
+            "type": "object",
+            "description": "Environment variables for the pipeline process.\n\nThese are key-value pairs injected into the pipeline process environment.\nSome variable names are reserved by the platform and cannot be overridden\n(for example `RUST_LOG`, and variables in the `FELDERA_`,\n`KUBERNETES_`, and `TOKIO_` namespaces).",
+            "default": {},
+            "additionalProperties": {
+              "type": "string"
+            }
           },
           "fault_tolerance": {
             "allOf": [

@@ -21,7 +21,11 @@ const config: Config = {
   projectName: "feldera", // Usually your repo name.
 
   onBrokenLinks: "throw",
-  onBrokenMarkdownLinks: "warn",
+  markdown: {
+    hooks: {
+      onBrokenMarkdownLinks: "warn",
+    },
+  },
 
   // Even if you don't use internationalization, you can use this field to set
   // useful metadata like html lang. For example, if your site is Chinese, you
@@ -35,6 +39,7 @@ const config: Config = {
     [
       "docusaurus-preset-openapi",
       {
+        proxy: false,
         api: {
           path: "../openapi.json",
           routeBasePath: "/api",
