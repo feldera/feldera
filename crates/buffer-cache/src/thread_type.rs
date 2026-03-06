@@ -10,14 +10,14 @@ pub enum ThreadType {
     Foreground,
 
     /// Merger thread.
-    Background,
+    MergerTokio,
 }
 
 impl Display for ThreadType {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             ThreadType::Foreground => write!(f, "foreground"),
-            ThreadType::Background => write!(f, "background"),
+            ThreadType::MergerTokio => write!(f, "merger tokio"),
         }
     }
 }

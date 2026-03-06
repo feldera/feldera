@@ -19,11 +19,11 @@ fn s3_fifo_builder_shares_caches_per_worker_pair_by_default() {
     let caches = TestBuilder::new().build(2, 1024);
     assert!(Arc::ptr_eq(
         &caches[0][ThreadType::Foreground],
-        &caches[0][ThreadType::Background]
+        &caches[0][ThreadType::MergerTokio]
     ));
     assert!(Arc::ptr_eq(
         &caches[1][ThreadType::Foreground],
-        &caches[1][ThreadType::Background]
+        &caches[1][ThreadType::MergerTokio]
     ));
     assert!(!Arc::ptr_eq(
         &caches[0][ThreadType::Foreground],
@@ -38,11 +38,11 @@ fn s3_fifo_builder_can_share_per_worker_pair() {
         .build(2, 1024);
     assert!(Arc::ptr_eq(
         &caches[0][ThreadType::Foreground],
-        &caches[0][ThreadType::Background]
+        &caches[0][ThreadType::MergerTokio]
     ));
     assert!(Arc::ptr_eq(
         &caches[1][ThreadType::Foreground],
-        &caches[1][ThreadType::Background]
+        &caches[1][ThreadType::MergerTokio]
     ));
     assert!(!Arc::ptr_eq(
         &caches[0][ThreadType::Foreground],
@@ -57,7 +57,7 @@ fn s3_fifo_builder_can_share_globally() {
         .build(2, 1024);
     assert!(Arc::ptr_eq(
         &caches[0][ThreadType::Foreground],
-        &caches[0][ThreadType::Background]
+        &caches[0][ThreadType::MergerTokio]
     ));
     assert!(Arc::ptr_eq(
         &caches[0][ThreadType::Foreground],
@@ -65,7 +65,7 @@ fn s3_fifo_builder_can_share_globally() {
     ));
     assert!(Arc::ptr_eq(
         &caches[0][ThreadType::Foreground],
-        &caches[1][ThreadType::Background]
+        &caches[1][ThreadType::MergerTokio]
     ));
 }
 
@@ -78,7 +78,7 @@ fn lru_builder_keeps_separate_caches_even_when_sharing_is_requested() {
         .build(2, 1024);
     assert!(!Arc::ptr_eq(
         &caches[0][ThreadType::Foreground],
-        &caches[0][ThreadType::Background]
+        &caches[0][ThreadType::MergerTokio]
     ));
     assert!(!Arc::ptr_eq(
         &caches[0][ThreadType::Foreground],
@@ -86,7 +86,7 @@ fn lru_builder_keeps_separate_caches_even_when_sharing_is_requested() {
     ));
     assert!(!Arc::ptr_eq(
         &caches[0][ThreadType::Foreground],
-        &caches[1][ThreadType::Background]
+        &caches[1][ThreadType::MergerTokio]
     ));
 }
 
@@ -97,11 +97,11 @@ fn lru_builder_uses_separate_caches_by_default() {
         .build(2, 1024);
     assert!(!Arc::ptr_eq(
         &caches[0][ThreadType::Foreground],
-        &caches[0][ThreadType::Background]
+        &caches[0][ThreadType::MergerTokio]
     ));
     assert!(!Arc::ptr_eq(
         &caches[1][ThreadType::Foreground],
-        &caches[1][ThreadType::Background]
+        &caches[1][ThreadType::MergerTokio]
     ));
     assert!(!Arc::ptr_eq(
         &caches[0][ThreadType::Foreground],

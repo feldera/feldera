@@ -410,6 +410,8 @@ pub struct DevTweaks {
     ///
     /// Values outside the valid range, such as 0.0, disable Bloom filters.
     pub bloom_false_positive_rate: f64,
+
+    pub merger_worker_threads: Option<u16>,
 }
 
 impl Default for DevTweaks {
@@ -430,6 +432,7 @@ impl Default for DevTweaks {
             balancer_balance_tax: BALANCE_TAX,
             balancer_key_distribution_refresh_threshold: KEY_DISTRIBUTION_REFRESH_THRESHOLD,
             adaptive_joins: false,
+            merger_worker_threads: None,
         }
     }
 }
@@ -484,6 +487,11 @@ pub fn balancer_key_distribution_refresh_threshold() -> f64 {
 
 pub fn adaptive_joins_enabled() -> bool {
     Runtime::with_dev_tweaks(|d| d.adaptive_joins)
+}
+
+pub fn merger_worker_threads() -> u16 {
+    let num_workers = Runtime::num_workers();
+    Runtime::with_dev_tweaks(|d| d.merger_worker_threads.unwrap_or((num_workers * 2) as u16))
 }
 
 /// Configuration for storage in a [Runtime]-hosted circuit.

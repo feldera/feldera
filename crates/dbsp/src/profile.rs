@@ -352,12 +352,13 @@ impl Profiler {
                 fn cache_occupancy_metric(thread_type: ThreadType) -> MetricId {
                     match thread_type {
                         ThreadType::Foreground => FOREGROUND_CACHE_OCCUPANCY,
-                        ThreadType::Background => BACKGROUND_CACHE_OCCUPANCY,
+                        //ThreadType::Background => BACKGROUND_CACHE_OCCUPANCY,
+                        ThreadType::MergerTokio => BACKGROUND_CACHE_OCCUPANCY,
                     }
                 }
 
                 let runtime = Runtime::runtime().unwrap();
-                for thread_type in [ThreadType::Foreground, ThreadType::Background] {
+                for thread_type in [ThreadType::Foreground, ThreadType::MergerTokio] {
                     let cache =
                         runtime.get_buffer_cache(Runtime::local_worker_offset(), thread_type);
                     let (cur, max) = cache.occupancy();
