@@ -1387,7 +1387,7 @@ pub mod test {
         #[test]
         fn proptest_aggregate_test_st(inputs in test_input()) {
             let iterations = inputs.len();
-            let circuit = RootCircuit::build(|circuit| aggregate_test_circuit(circuit, inputs)).unwrap().0;
+            let mut circuit = Runtime::init_circuit(1, |circuit| aggregate_test_circuit(circuit, inputs)).unwrap().0;
 
             for _ in 0..iterations {
                 circuit.transaction().unwrap();

@@ -956,7 +956,7 @@ where
 /// builder.push_val(v2);
 /// builder.push_key(k4);
 /// ```
-pub trait Builder<Output>: SizeOf
+pub trait Builder<Output>: Send + SizeOf
 where
     Self: Sized,
     Output: Batch,

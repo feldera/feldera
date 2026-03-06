@@ -329,7 +329,7 @@ where
 mod test {
     use super::super::RadixTreeCursor;
     use crate::{
-        DynZWeight, RootCircuit, Stream, ZWeight,
+        DynZWeight, Runtime, Stream, ZWeight,
         algebra::{AddAssignByRef, DefaultSemigroup},
         dynamic::{DowncastTrait, DynData, DynDataTyped, DynPair, Erase},
         operator::{
@@ -386,7 +386,7 @@ mod test {
         let contents = Arc::new(Mutex::new(BTreeMap::new()));
         let contents_clone = contents.clone();
 
-        let (circuit, input) = RootCircuit::build(move |circuit| {
+        let (mut circuit, input) = Runtime::init_circuit(1, move |circuit| {
             let (input, input_handle) =
                 circuit.dyn_add_input_indexed_zset::<DynDataTyped<u64>, DynData/*u64*/>(&AddInputIndexedZSetFactories::new::<u64, u64>());
 

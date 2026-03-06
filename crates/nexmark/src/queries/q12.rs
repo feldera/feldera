@@ -1,6 +1,6 @@
-use super::{process_time, NexmarkStream};
+use super::{NexmarkStream, process_time};
 use crate::model::Event;
-use dbsp::{utils::Tup4, OrdZSet, RootCircuit, Stream};
+use dbsp::{OrdZSet, RootCircuit, Stream, utils::Tup4};
 
 type Q12Stream = Stream<RootCircuit, OrdZSet<Tup4<u64, u64, u64, u64>>>;
 const TUMBLE_SECONDS: u64 = 10;
@@ -70,7 +70,7 @@ mod tests {
         generator::tests::make_bid,
         model::{Bid, Event},
     };
-    use dbsp::{utils::Tup2, zset, RootCircuit};
+    use dbsp::{utils::Tup2, zset};
     use rstest::rstest;
     use std::cell::RefCell;
 
@@ -104,6 +104,8 @@ mod tests {
         #[case] proc_times: Vec<u64>,
         #[case] expected_zsets: Vec<OrdZSet<Tup4<u64, u64, u64, u64>>>,
     ) {
+        use dbsp::Runtime;
+
         let input_vecs = bidder_bid_batches.into_iter().map(|batch| {
             batch
                 .into_iter()
@@ -123,7 +125,7 @@ mod tests {
         let proc_time_iter = RefCell::new(proc_times.into_iter());
         let process_time = move || -> u64 { proc_time_iter.borrow_mut().next().unwrap() };
 
-        let (circuit, input_handle) = RootCircuit::build(move |circuit| {
+        let (mut circuit, input_handle) = Runtime::init_circuit(1, move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q12_for_process_time(stream, process_time);

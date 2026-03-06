@@ -241,7 +241,7 @@ pub mod tests {
 
     #[test]
     fn test_nexmark_dbsp_source_full_batch() {
-        let (circuit, input_handle) = RootCircuit::build(move |circuit| {
+        let (mut circuit, input_handle) = dbsp::Runtime::init_circuit(1, move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset();
 
             let expected_zset = generate_expected_zset(10);
