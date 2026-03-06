@@ -100,6 +100,7 @@ public class Catalog extends AbstractSchema {
 
     public void dropTable(ProgramIdentifier tableName) {
         this.tableMap.remove(tableName.name());
+        this.definition.remove(tableName.name());
     }
 
     public boolean addType(ProgramIdentifier name, IErrorReporter reporter, RelStatement statement) {
