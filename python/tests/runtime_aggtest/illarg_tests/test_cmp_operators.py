@@ -577,7 +577,7 @@ class illarg_isnot_distinct_illegal(TstView):
         self.expected_error = "Cannot apply 'IS NOT DISTINCT FROM' to arguments of type"
 
 
-# BETWEEN...AND...
+# BETWEEN [ASYMMETRIC]...AND...
 class illarg_between_and_legal(TstView):
     def __init__(self):
         # checked manually
@@ -587,17 +587,17 @@ class illarg_between_and_legal(TstView):
                 "decimall": False,
                 "reall": False,
                 "dbl": False,
-                "str": True,
-                "booll": True,
-                "bin": True,
-                "tmestmp": True,
-                "datee": True,
-                "tme": True,
-                "uuidd": True,
-                "arr": True,
-                "mapp": True,
-                "roww": True,
-                "udt": True,
+                "str": False,
+                "booll": False,
+                "bin": False,
+                "tmestmp": False,
+                "datee": False,
+                "tme": False,
+                "uuidd": False,
+                "arr": False,
+                "mapp": False,
+                "roww": False,
+                "udt": False,
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW between_and_legal AS SELECT
@@ -605,17 +605,17 @@ class illarg_between_and_legal(TstView):
                       decimall BETWEEN -1111.51 AND -1111.53 AS decimall,
                       reall BETWEEN -57681.17 AND -57681.19 AS reall,
                       dbl BETWEEN -38.2711234601245 AND -38.2711234601247 AS dbl,
-                      str BETWEEN 'hello ' AND 'hello ' AS str,
-                      booll BETWEEN True AND True AS booll,
-                      bin BETWEEN X'0B1620' AND X'0B1620' AS bin,
-                      tmestmp BETWEEN TIMESTAMP '2020-06-21 14:23:43.123654' AND TIMESTAMP '2020-06-21 14:23:45.123654' AS tmestmp,
-                      datee BETWEEN DATE '2020-06-20' AND DATE '2020-06-22' AS datee,
-                      tme BETWEEN TIME '14:23:43.456' AND TIME '14:23:45.456' AS tme,
-                      uuidd BETWEEN UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AND UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
-                      ARRAY['bye', '14'] BETWEEN ARRAY['bye', '14'] AND ARRAY['bye', '14'] AS arr,
-                      mapp BETWEEN MAP['a', 12, 'b', 17] AND MAP['a', 12, 'b', 17] AS mapp,
-                      roww BETWEEN ROW(4,'cat') AND ROW(4,'cat') AS roww,
-                      udt BETWEEN (4,'cat') AND (4,'cat') AS udt
+                      str BETWEEN 'i ' AND 'g' AS str,
+                      booll BETWEEN True AND False AS booll,
+                      bin BETWEEN X'0C1620' AND X'0A1620' AS bin,
+                      tmestmp BETWEEN TIMESTAMP '2021-06-21 14:23:43.123655' AND TIMESTAMP '2019-06-21 14:23:45.123653' AS tmestmp,
+                      datee BETWEEN DATE '2020-06-22' AND DATE '2020-06-20' AS datee,
+                      tme BETWEEN TIME '15:23:43.457' AND TIME '13:23:45.455' AS tme,
+                      uuidd BETWEEN UUID '52b8fec7-c7a3-4531-9611-4bde80f9cb4c' AND UUID '32b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
+                      ARRAY['bye'] BETWEEN ARRAY['c'] AND ARRAY['a'] AS arr,
+                      mapp BETWEEN MAP['a', 13] AND MAP['a', 11] AS mapp,
+                      roww BETWEEN ROW(5,'cat') AND ROW(3,'cat') AS roww,
+                      udt BETWEEN (5,'cat') AND (3,'cat') AS udt
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -631,7 +631,60 @@ class illarg_between_and_illegal(TstView):
         self.expected_error = "Cannot apply 'BETWEEN ASYMMETRIC' to arguments of type"
 
 
-# NOT BETWEEN...AND...
+# BETWEEN SYMMETRIC ... AND ...
+class illarg_between_symmetric_and_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "intt": True,
+                "decimall": True,
+                "reall": True,
+                "dbl": True,
+                "str": True,
+                "booll": True,
+                "bin": True,
+                "tmestmp": True,
+                "datee": True,
+                "tme": True,
+                "uuidd": True,
+                "arr": True,
+                "mapp": True,
+                "roww": True,
+                "udt": True,
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW between_symmetric_and_legal AS SELECT
+                      intt BETWEEN SYMMETRIC -11 AND -13 AS intt,
+                      decimall BETWEEN SYMMETRIC -1111.51 AND -1111.53 AS decimall,
+                      reall BETWEEN SYMMETRIC -57681.17 AND -57681.19 AS reall,
+                      dbl BETWEEN SYMMETRIC -38.2711234601245 AND -38.2711234601247 AS dbl,
+                      str BETWEEN SYMMETRIC 'i ' AND 'g' AS str,
+                      booll BETWEEN SYMMETRIC True AND False AS booll,
+                      bin BETWEEN SYMMETRIC X'0C1620' AND X'0A1620' AS bin,
+                      tmestmp BETWEEN SYMMETRIC TIMESTAMP '2021-06-21 14:23:43.123655' AND TIMESTAMP '2019-06-21 14:23:45.123653' AS tmestmp,
+                      datee BETWEEN SYMMETRIC DATE '2020-06-22' AND DATE '2020-06-20' AS datee,
+                      tme BETWEEN SYMMETRIC TIME '15:23:43.457' AND TIME '13:23:45.455' AS tme,
+                      uuidd BETWEEN SYMMETRIC UUID '52b8fec7-c7a3-4531-9611-4bde80f9cb4c' AND UUID '32b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
+                      ARRAY['bye'] BETWEEN SYMMETRIC ARRAY['c'] AND ARRAY['a'] AS arr,
+                      mapp BETWEEN SYMMETRIC MAP['a', 13] AND MAP['a', 11] AS mapp,
+                      roww BETWEEN SYMMETRIC ROW(5,'cat') AND ROW(3,'cat') AS roww,
+                      udt BETWEEN SYMMETRIC (5,'cat') AND (3,'cat') AS udt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_between_symmetric_and_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW between_symmetric_and_illegal AS SELECT
+                      roww BETWEEN SYMMETRIC -38.2711234601245 AND ROW(3,'cat') AS roww
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Cannot apply 'BETWEEN SYMMETRIC' to arguments of type"
+
+
+# NOT BETWEEN [ASYMMETRIC]...AND...
 class illarg_notbetween_and_legal(TstView):
     def __init__(self):
         # checked manually
@@ -641,17 +694,17 @@ class illarg_notbetween_and_legal(TstView):
                 "decimall": True,
                 "reall": True,
                 "dbl": True,
-                "str": False,
-                "bin": False,
-                "booll": False,
-                "tmestmp": False,
-                "datee": False,
-                "tme": False,
-                "uuidd": False,
-                "arr": False,
-                "mapp": False,
-                "roww": False,
-                "udt": False,
+                "str": True,
+                "booll": True,
+                "bin": True,
+                "tmestmp": True,
+                "datee": True,
+                "tme": True,
+                "uuidd": True,
+                "arr": True,
+                "mapp": True,
+                "roww": True,
+                "udt": True,
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW notbetween_and_legal AS SELECT
@@ -659,17 +712,17 @@ class illarg_notbetween_and_legal(TstView):
                       decimall NOT BETWEEN -1111.51 AND -1111.53 AS decimall,
                       reall NOT BETWEEN -57681.17 AND -57681.19 AS reall,
                       dbl NOT BETWEEN -38.2711234601245 AND -38.2711234601247 AS dbl,
-                      str NOT BETWEEN 'hello ' AND 'hello ' AS str,
-                      X'0B1620' NOT BETWEEN X'0B1620' AND X'0B1620' AS bin,
-                      booll NOT BETWEEN True AND True AS booll,
-                      tmestmp NOT BETWEEN TIMESTAMP '2020-06-21 14:23:43.123654' AND TIMESTAMP '2020-06-21 14:23:45.123654' AS tmestmp,
-                      datee NOT BETWEEN DATE '2020-06-20' AND DATE '2020-06-22' AS datee,
-                      tme NOT BETWEEN TIME '14:23:43.456' AND TIME '14:23:45.456' AS tme,
-                      uuidd NOT BETWEEN UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AND UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
-                      arr NOT BETWEEN ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] AND ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] AS arr,
-                      mapp NOT BETWEEN MAP['a', 12, 'b', 17] AND MAP['a', 12, 'b', 17] AS mapp,
-                      roww NOT BETWEEN ROW(4,'cat') AND ROW(4,'cat') AS roww,
-                      udt NOT BETWEEN (4,'cat') AND (4,'cat') AS udt
+                      str NOT BETWEEN 'i ' AND 'g' AS str,
+                      booll NOT BETWEEN True AND False AS booll,
+                      bin NOT BETWEEN X'0C1620' AND X'0A1620' AS bin,
+                      tmestmp NOT BETWEEN TIMESTAMP '2021-06-21 14:23:43.123655' AND TIMESTAMP '2019-06-21 14:23:45.123653' AS tmestmp,
+                      datee NOT BETWEEN DATE '2020-06-22' AND DATE '2020-06-20' AS datee,
+                      tme NOT BETWEEN TIME '15:23:43.457' AND TIME '13:23:45.455' AS tme,
+                      uuidd NOT BETWEEN UUID '52b8fec7-c7a3-4531-9611-4bde80f9cb4c' AND UUID '32b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
+                      ARRAY['bye'] NOT BETWEEN ARRAY['c'] AND ARRAY['a'] AS arr,
+                      mapp NOT BETWEEN MAP['a', 13] AND MAP['a', 11] AS mapp,
+                      roww NOT BETWEEN ROW(5,'cat') AND ROW(3,'cat') AS roww,
+                      udt NOT BETWEEN (5,'cat') AND (3,'cat') AS udt
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -684,6 +737,61 @@ class illarg_notbetween_and_illegal(TstView):
                       WHERE id = 1"""
         self.expected_error = (
             "Cannot apply 'NOT BETWEEN ASYMMETRIC' to arguments of type"
+        )
+
+
+# NOT BETWEEN [SYMMETRIC]...AND...
+class illarg_not_between_symmetric_and_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "intt": False,
+                "decimall": False,
+                "reall": False,
+                "dbl": False,
+                "str": False,
+                "booll": False,
+                "bin": False,
+                "tmestmp": False,
+                "datee": False,
+                "tme": False,
+                "uuidd": False,
+                "arr": False,
+                "mapp": False,
+                "roww": False,
+                "udt": False,
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW not_between_symmetric_and_legal AS SELECT
+                      intt NOT BETWEEN SYMMETRIC -11 AND -13 AS intt,
+                      decimall NOT BETWEEN SYMMETRIC -1111.51 AND -1111.53 AS decimall,
+                      reall NOT BETWEEN SYMMETRIC -57681.17 AND -57681.19 AS reall,
+                      dbl NOT BETWEEN SYMMETRIC -38.2711234601245 AND -38.2711234601247 AS dbl,
+                      str NOT BETWEEN SYMMETRIC 'i ' AND 'g' AS str,
+                      booll NOT BETWEEN SYMMETRIC True AND False AS booll,
+                      bin NOT BETWEEN SYMMETRIC X'0C1620' AND X'0A1620' AS bin,
+                      tmestmp NOT BETWEEN SYMMETRIC TIMESTAMP '2021-06-21 14:23:43.123655' AND TIMESTAMP '2019-06-21 14:23:45.123653' AS tmestmp,
+                      datee NOT BETWEEN SYMMETRIC DATE '2020-06-22' AND DATE '2020-06-20' AS datee,
+                      tme NOT BETWEEN SYMMETRIC TIME '15:23:43.457' AND TIME '13:23:45.455' AS tme,
+                      uuidd NOT BETWEEN SYMMETRIC UUID '52b8fec7-c7a3-4531-9611-4bde80f9cb4c' AND UUID '32b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
+                      ARRAY['bye'] NOT BETWEEN SYMMETRIC ARRAY['c'] AND ARRAY['a'] AS arr,
+                      mapp NOT BETWEEN SYMMETRIC MAP['a', 13] AND MAP['a', 11] AS mapp,
+                      roww NOT BETWEEN SYMMETRIC ROW(5,'cat') AND ROW(3,'cat') AS roww,
+                      udt NOT BETWEEN SYMMETRIC (5,'cat') AND (3,'cat') AS udt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_not_between_symmetric_and_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW not_between_symmetric_and_illegal AS SELECT
+                      reall NOT BETWEEN SYMMETRIC -57681.17 AND X'0A1620' AS reall
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = (
+            "Cannot apply 'NOT BETWEEN SYMMETRIC' to arguments of type"
         )
 
 

@@ -197,10 +197,14 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.COLLECTION_TABLE, "TABLE", SqlLibrary.STANDARD, "grammar", FunctionDocumentation.NO_FILE, false),
 
             new Func(SqlStdOperatorTable.OVERLAPS, "OVERLAPS", SqlLibrary.STANDARD, "operators#between", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.BETWEEN, "BETWEEN", SqlLibrary.STANDARD, "comparisons#between,operators#between", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.NOT_BETWEEN, "NOT BETWEEN", SqlLibrary.STANDARD, "comparisons#notbetween", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.SYMMETRIC_BETWEEN, "BETWEEN", SqlLibrary.STANDARD, "operators#between", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.SYMMETRIC_NOT_BETWEEN, "NOT BETWEEN", SqlLibrary.STANDARD, "operators#between", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.BETWEEN, "BETWEEN", SqlLibrary.STANDARD, "comparisons#between,operators#between",
+                    "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
+            new Func(SqlStdOperatorTable.NOT_BETWEEN, "NOT BETWEEN", SqlLibrary.STANDARD, "comparisons#notbetween",
+                     "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
+            new Func(SqlStdOperatorTable.SYMMETRIC_BETWEEN, "BETWEEN", SqlLibrary.STANDARD, "operators#between",
+                     "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
+            new Func(SqlStdOperatorTable.SYMMETRIC_NOT_BETWEEN, "NOT BETWEEN", SqlLibrary.STANDARD, "operators#between",
+                     "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
             new Func(SqlStdOperatorTable.VALUES, "VALUES", SqlLibrary.STANDARD, "grammar#values", FunctionDocumentation.NO_FILE, false),
 
             new Func(SqlStdOperatorTable.NOT_LIKE, "NOT LIKE", SqlLibrary.STANDARD, "string#like", FunctionDocumentation.NO_FILE, false),
