@@ -8,6 +8,7 @@ use crate::db::types::pipeline::{
 };
 use crate::db::types::version::Version;
 use crate::error::{source_error, ManagerError};
+use crate::pipeline_env::validate_pipeline_env;
 use crate::runner::error::RunnerError;
 use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
 use crate::runner::pipeline_logs::{LogMessage, LogsSender};
@@ -434,6 +435,10 @@ impl PipelineExecutor for LocalRunner {
             .into());
         }
 
+        if let Err(e) = validate_pipeline_env(&deployment_config.global.env) {
+            return Err(RunnerError::RunnerProvisionError { error: e }.into());
+        }
+
         // (Re-)create pipeline working directory (which will contain storage directory)
         let pipeline_dir = self.config.pipeline_dir(self.pipeline_id);
         create_dir_all(&pipeline_dir).await.map_err(|e| {
@@ -556,6 +561,13 @@ impl PipelineExecutor for LocalRunner {
                         .io_workers
                         .unwrap_or(deployment_config.global.workers as u64)
                         .to_string(),
+                )
+                .envs(
+                    deployment_config
+                        .global
+                        .env
+                        .iter()
+                        .map(|(key, value)| (key.as_str(), value.as_str())),
                 )
                 .current_dir(&pipeline_dir)
                 .arg("--config-file")

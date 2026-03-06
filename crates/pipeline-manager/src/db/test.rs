@@ -319,6 +319,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
             checkpoint_during_suspend: val.val17,
             http_workers: val.val18,
             io_workers: val.val19,
+            env: BTreeMap::new(),
             dev_tweaks: BTreeMap::new(),
             logging: None,
             pipeline_template_configmap: None,
@@ -1202,6 +1203,7 @@ async fn pipeline_versioning() {
         checkpoint_during_suspend: true,
         http_workers: None,
         io_workers: None,
+        env: BTreeMap::new(),
         dev_tweaks: BTreeMap::new(),
         logging: None,
         pipeline_template_configmap: None,
@@ -2219,6 +2221,7 @@ async fn pipeline_provision_version_guard() {
                     dev_tweaks: BTreeMap::new(),
                     http_workers: None,
                     io_workers: None,
+                    env: BTreeMap::new(),
                     logging: None,
                     pipeline_template_configmap: None,
                 })
