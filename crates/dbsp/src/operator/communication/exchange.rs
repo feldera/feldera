@@ -22,6 +22,7 @@ use crate::{
 };
 use crossbeam_utils::CachePadded;
 use futures::{future, prelude::*, stream::FuturesUnordered};
+use itertools::Itertools;
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -573,10 +574,11 @@ where
     /// # Panics
     ///
     /// Panics if `data` yields fewer than `self.npeers` items.
-    pub(crate) fn try_send_all<I>(self: &Arc<Self>, sender: usize, data: &mut I) -> bool
-    where
-        I: Iterator<Item = T> + Send,
-    {
+    pub(crate) fn try_send_all(
+        self: &Arc<Self>,
+        sender: usize,
+        data: impl Iterator<Item = T>,
+    ) -> bool {
         let npeers = self.inner.npeers;
         if self.inner.sender_counters[sender]
             .compare_exchange(npeers, 0, Ordering::AcqRel, Ordering::Acquire)
@@ -587,15 +589,13 @@ where
 
         // Deliver all of the data to local mailboxes.
         let local_workers = &self.inner.local_workers;
-        for receiver in 0..npeers {
-            *self.mailbox(sender, receiver).lock().unwrap() = data.next();
-
-            if local_workers.contains(&receiver) {
-                let old_counter =
-                    self.inner.receiver_counters[receiver].fetch_add(1, Ordering::AcqRel);
-                if old_counter >= npeers - 1 {
-                    self.inner.receiver_callbacks[receiver].call();
-                }
+        for (receiver, item) in (0..npeers).zip_eq(data.take(npeers)) {
+            *self.mailbox(sender, receiver).lock().unwrap() = Some(item);
+        }
+        for receiver in local_workers.clone() {
+            let old_counter = self.inner.receiver_counters[receiver].fetch_add(1, Ordering::AcqRel);
+            if old_counter >= npeers - 1 {
+                self.inner.receiver_callbacks[receiver].call();
             }
         }
 
@@ -1015,7 +1015,7 @@ where
 
         let res = self.exchange.try_send_all(
             self.worker_index,
-            &mut self.outputs.drain(..).map(|x| (x, self.flushed)),
+            self.outputs.drain(..).map(|x| (x, self.flushed)),
         );
         self.flushed = false;
         debug_assert!(res);
@@ -1352,9 +1352,8 @@ mod tests {
 
             for round in 0..ROUNDS {
                 let output_data = vec![round; WORKERS];
-                let mut output_iter = output_data.clone().into_iter();
                 loop {
-                    if exchange.try_send_all(Runtime::worker_index(), &mut output_iter) {
+                    if exchange.try_send_all(Runtime::worker_index(), output_data.iter().copied()) {
                         break;
                     }
 

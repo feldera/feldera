@@ -1050,7 +1050,7 @@ impl Consensus {
                 notify_receiver,
                 exchange,
             } => {
-                while !exchange.try_send_all(Runtime::worker_index(), &mut repeat(local)) {
+                while !exchange.try_send_all(Runtime::worker_index(), repeat(local)) {
                     if Runtime::kill_in_progress() {
                         return Err(SchedulerError::Killed);
                     }
@@ -1137,7 +1137,7 @@ where
                 notify_receiver,
                 exchange,
             } => {
-                while !exchange.try_send_all(Runtime::worker_index(), &mut repeat(local.clone())) {
+                while !exchange.try_send_all(Runtime::worker_index(), repeat(local.clone())) {
                     if Runtime::kill_in_progress() {
                         return Err(SchedulerError::Killed);
                     }
