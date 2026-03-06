@@ -7364,6 +7364,36 @@
         ],
         "description": "A data connector's configuration"
       },
+      "ConnectorError": {
+        "type": "object",
+        "required": [
+          "timestamp",
+          "index",
+          "message"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Sequence number of the error.\n\nThe client can use this field to detect gaps in the error list reported\nby the pipeline. When the connector reports a large number of errors, the\npipeline will only preserve and report the most recent errors of each kind.",
+            "minimum": 0
+          },
+          "message": {
+            "type": "string",
+            "description": "Error message."
+          },
+          "tag": {
+            "type": "string",
+            "description": "Optional tag for the error.\n\nThe tag is used to group errors by their type.",
+            "nullable": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the error occurred."
+          }
+        }
+      },
       "ConnectorStats": {
         "type": "object",
         "description": "Aggregated connector error statistics.\n\nThis structure contains the sum of all error counts across all input and output connectors\nfor a pipeline.",
@@ -8692,9 +8722,25 @@
           "metrics": {
             "$ref": "#/components/schemas/InputEndpointMetrics"
           },
+          "parse_errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectorError"
+            },
+            "description": "Recent parse errors on this endpoint.",
+            "nullable": true
+          },
           "paused": {
             "type": "boolean",
             "description": "Endpoint has been paused by the user."
+          },
+          "transport_errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectorError"
+            },
+            "description": "Recent transport errors on this endpoint.",
+            "nullable": true
           }
         }
       },
@@ -9482,6 +9528,14 @@
           "config": {
             "$ref": "#/components/schemas/ShortEndpointConfig"
           },
+          "encode_errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectorError"
+            },
+            "description": "Recent encoding errors on this endpoint.",
+            "nullable": true
+          },
           "endpoint_name": {
             "type": "string",
             "description": "Endpoint name."
@@ -9493,6 +9547,14 @@
           },
           "metrics": {
             "$ref": "#/components/schemas/OutputEndpointMetrics"
+          },
+          "transport_errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectorError"
+            },
+            "description": "Recent transport errors on this endpoint.",
+            "nullable": true
           }
         }
       },

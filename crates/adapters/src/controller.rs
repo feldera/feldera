@@ -6027,7 +6027,7 @@ impl ControllerInner {
         endpoint_name: &str,
     ) -> Result<ExternalInputEndpointStatus, ControllerError> {
         let endpoint_id = self.input_endpoint_id_by_name(endpoint_name)?;
-        Ok(self.status.input_status()[&endpoint_id].to_api_type())
+        Ok(self.status.input_status()[&endpoint_id].to_api_type(true))
     }
 
     fn output_endpoint_status(
@@ -6035,7 +6035,7 @@ impl ControllerInner {
         endpoint_name: &str,
     ) -> Result<ExternalOutputEndpointStatus, ControllerError> {
         let endpoint_id = self.output_endpoint_id_by_name(endpoint_name)?;
-        Ok(self.status.output_status()[&endpoint_id].to_api_type())
+        Ok(self.status.output_status()[&endpoint_id].to_api_type(true))
     }
 
     fn send_command(&self, command: Command) {
@@ -6061,7 +6061,7 @@ impl ControllerInner {
         tag: Option<&'static str>,
     ) {
         self.status
-            .input_transport_error(endpoint_id, fatal, &error);
+            .input_transport_error(endpoint_id, fatal, tag, &error);
         let tag = tag.map(|tag| format!("{endpoint_name}-{tag}"));
         self.error(
             Arc::new(ControllerError::input_transport_error(
@@ -6074,7 +6074,7 @@ impl ControllerInner {
     }
 
     pub fn parse_error(&self, endpoint_id: EndpointId, endpoint_name: &str, error: ParseError) {
-        self.status.parse_error(endpoint_id);
+        self.status.parse_error(endpoint_id, None, &error);
 
         let tag = error
             .get_error_tag()
@@ -6093,7 +6093,7 @@ impl ControllerInner {
         error: AnyError,
         tag: Option<&'static str>,
     ) {
-        self.status.encode_error(endpoint_id);
+        self.status.encode_error(endpoint_id, tag, &error);
         let tag = tag.map(|tag| format!("{endpoint_name}-{tag}"));
         self.error(
             Arc::new(ControllerError::encode_error(endpoint_name, error)),
@@ -6113,7 +6113,7 @@ impl ControllerInner {
         tag: Option<&'static str>,
     ) {
         self.status
-            .output_transport_error(endpoint_id, fatal, &error);
+            .output_transport_error(endpoint_id, fatal, tag, &error);
         let tag = tag.map(|tag| format!("{endpoint_name}-{tag}"));
         self.error(
             Arc::new(ControllerError::output_transport_error(
