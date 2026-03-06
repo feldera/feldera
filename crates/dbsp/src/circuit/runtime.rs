@@ -23,7 +23,7 @@ use crate::{
 };
 use core_affinity::{CoreId, get_core_ids};
 use crossbeam::sync::{Parker, Unparker};
-use enum_map::{Enum, EnumMap, enum_map};
+use enum_map::{Enum, EnumMap};
 use feldera_buffer_cache::ThreadType;
 use feldera_types::config::{StorageCompression, StorageConfig, StorageOptions};
 use indexmap::IndexSet;
@@ -33,7 +33,6 @@ use std::iter::repeat;
 use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{LazyLock, Mutex};
-use std::thread::Thread;
 use std::time::Duration;
 use std::{
     backtrace::Backtrace,
@@ -50,6 +49,8 @@ use std::{
     },
     thread::{Builder, JoinHandle, Result as ThreadResult},
 };
+use tokio::runtime::Builder as TokioBuilder;
+use tokio::runtime::Runtime as TokioRuntime;
 use tokio::sync::Notify;
 use tracing::{debug, error, info, warn};
 use typedmap::TypedDashMap;
@@ -108,20 +109,40 @@ impl Display for Error {
 
 impl StdError for Error {}
 
-// Thread-local variables used to store per-worker context.
+// Thread-local variables set for all threads in the DBSP runtime (foreground and background).
 thread_local! {
-    // Reference to the `Runtime` that manages this worker thread or `None`
-    // if the current thread is not running in a multithreaded runtime.
+    /// Reference to the `Runtime` that manages this worker thread or `None`
+    /// if the current thread is not running in a multithreaded runtime.
     static RUNTIME: RefCell<Option<Runtime>> = const { RefCell::new(None) };
 
-    // 0-based index of the current worker thread within its runtime.
-    // Returns `0` if the current thread in not running in a multithreaded
-    // runtime.
+    /// `None` means that this is an auxiliary thread that runs inside the runtime
+    /// but is neither a DBSP foreground nor a background thread.
+    static CURRENT_THREAD_TYPE: Cell<Option<ThreadType>> = const { Cell::new(None) };
+
+}
+
+// Thread-local variables set for all foreground worker threads.
+thread_local! {
+    /// 0-based index of the current worker thread within its runtime.
+    /// Returns `0` if the current thread in not running in a multithreaded
+    /// runtime.
     static WORKER_INDEX: Cell<usize> = const { Cell::new(0) };
 
-    // `None` means that this is an auxiliary thread that runs inside the runtime
-    // but is neither a DBSP foreground nor a background thread.
-    static CURRENT_THREAD_TYPE: Cell<Option<ThreadType>> = const { Cell::new(None) };
+    /// Buffer cache for this foreground worker thread.
+    static BUFFER_CACHE: RefCell<Option<Arc<BufferCache>>> = const { RefCell::new(None) };
+}
+
+// Task-local variables set for all tasks in the tokio merger runtime.
+tokio::task_local! {
+    /// The WORKER_INDEX of the FOREGROUND worker thread that this task is doing compaction for.
+    ///
+    /// Set for tasks in the tokio merger runtime.
+    pub(crate) static TOKIO_WORKER_INDEX: usize;
+
+    /// The buffer cache for this task (this cache is shared with the foreground worker thread).
+    ///
+    /// Set for tasks in the tokio merger runtime.
+    pub(crate) static TOKIO_BUFFER_CACHE: Arc<BufferCache>;
 }
 
 pub(crate) fn current_thread_type() -> Option<ThreadType> {
@@ -237,16 +258,22 @@ struct RuntimeInner {
     storage: Option<RuntimeStorage>,
     store: LocalStore,
     kill_signal: AtomicBool,
-    // Background threads spawned by this runtime, including for aux threads, in no specific order.
-    background_threads: Mutex<Vec<JoinHandle<()>>>,
     aux_threads: Mutex<Vec<(JoinHandle<()>, Unparker)>>,
     buffer_caches: Vec<EnumMap<ThreadType, Arc<BufferCache>>>,
-    pin_cpus: Vec<EnumMap<ThreadType, CoreId>>,
+
+    /// Core IDs to pin foreground workers to.
+    pin_cpus_fg: Vec<CoreId>,
+
+    /// Core IDs to pin tokio merger background workers to.
+    pin_cpus_bg: Vec<CoreId>,
     worker_sequence_numbers: Vec<AtomicUsize>,
     // Panic info collected from failed worker threads.
     panic_info: Vec<EnumMap<ThreadType, RwLock<Option<WorkerPanicInfo>>>>,
     panicked: AtomicBool,
     replay_step_size: AtomicUsize,
+
+    /// Tokio runtime that runs async merger tasks (see `AsyncMerger`).
+    tokio_merger_runtime: Mutex<Option<TokioRuntime>>,
 }
 
 impl Drop for RuntimeInner {
@@ -271,36 +298,44 @@ fn display_core_ids<'a>(iter: impl Iterator<Item = &'a CoreId>) -> String {
     )
 }
 
-fn map_pin_cpus(layout: &Layout, pin_cpus: &[usize]) -> Vec<EnumMap<ThreadType, CoreId>> {
-    if layout.is_multihost() {
-        if !pin_cpus.is_empty() {
+// Map CPU IDs to core IDs for foreground and background workers.
+//
+// Returns a pair of vectors of core IDs, one for foreground workers and one for background workers.
+fn map_pin_cpus(config: &CircuitConfig) -> (Vec<CoreId>, Vec<CoreId>) {
+    if config.layout.is_multihost() {
+        if !config.pin_cpus.is_empty() {
             warn!("CPU pinning not yet supported with multihost DBSP");
         }
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     }
 
-    let nworkers = layout.n_workers();
-    let pin_cpus = pin_cpus
+    let merger_threads = config.num_merger_threads();
+
+    let nworkers = config.layout.n_workers();
+    let pin_cpus = config
+        .pin_cpus
         .iter()
         .copied()
         .map(|id| CoreId { id })
         .collect::<IndexSet<_>>();
-    if pin_cpus.len() < 2 * nworkers {
+    let expected_cpus = nworkers + merger_threads;
+    if pin_cpus.len() < expected_cpus {
         if !pin_cpus.is_empty() {
             warn!(
-                "ignoring CPU pinning request because {nworkers} workers require {} pinned CPUs but only {} were specified",
-                2 * nworkers,
+                "ignoring CPU pinning request because {nworkers} foreground workers and {} merger workers require {} pinned CPUs but only {} were specified",
+                merger_threads,
+                expected_cpus,
                 pin_cpus.len()
             )
         }
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     }
 
     let Some(core_ids) = get_core_ids() else {
         warn!(
             "ignoring CPU pinning request because this system's core ids list could not be obtained"
         );
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
     let core_ids = core_ids.iter().copied().collect::<IndexSet<_>>();
 
@@ -310,24 +345,21 @@ fn map_pin_cpus(layout: &Layout, pin_cpus: &[usize]) -> Vec<EnumMap<ThreadType, 
             "ignoring CPU pinning request because requested CPUs {missing_cpus:?} are not available (available CPUs are: {})",
             display_core_ids(core_ids.iter())
         );
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     }
 
     let fg_cpus = &pin_cpus[0..nworkers];
-    let bg_cpus = &pin_cpus[nworkers..nworkers * 2];
+    let bg_cpus = &pin_cpus[nworkers..expected_cpus];
     info!(
         "pinning foreground workers to CPUs {} and background workers to CPUs {}",
         display_core_ids(fg_cpus.iter()),
         display_core_ids(bg_cpus.iter())
     );
-    (0..nworkers)
-        .map(|i| {
-            enum_map! {
-                ThreadType::Foreground => fg_cpus[i],
-                ThreadType::Background => bg_cpus[i],
-            }
-        })
-        .collect()
+    let fg_pinning = (0..nworkers).map(|i| fg_cpus[i]).collect();
+
+    let bg_pinning = (0..merger_threads).map(|i| bg_cpus[i]).collect();
+
+    (fg_pinning, bg_pinning)
 }
 
 impl RuntimeInner {
@@ -338,7 +370,7 @@ impl RuntimeInner {
         let buffer_cache_allocation_strategy = config
             .dev_tweaks
             .effective_buffer_cache_allocation_strategy();
-        let storage = if let Some(storage) = config.storage {
+        let storage = if let Some(storage) = config.storage.clone() {
             let locked_directory =
                 LockedDirectory::new_blocking(storage.config.path(), Duration::from_secs(60))?;
             let backend = storage.backend;
@@ -387,15 +419,17 @@ impl RuntimeInner {
             buffer_cache_allocation_strategy,
         );
 
+        let (pin_cpus_fg, pin_cpus_bg) = map_pin_cpus(&config);
+
         Ok(Self {
-            pin_cpus: map_pin_cpus(&config.layout, &config.pin_cpus),
+            pin_cpus_fg,
+            pin_cpus_bg,
             layout: config.layout,
             mode: config.mode,
             dev_tweaks: config.dev_tweaks,
             storage,
             store: TypedDashMap::new(),
             kill_signal: AtomicBool::new(false),
-            background_threads: Mutex::new(Vec::new()),
             aux_threads: Mutex::new(Vec::new()),
             buffer_caches,
             worker_sequence_numbers: (0..nworkers).map(|_| AtomicUsize::new(0)).collect(),
@@ -404,21 +438,38 @@ impl RuntimeInner {
                 .collect(),
             panicked: AtomicBool::new(false),
             replay_step_size: AtomicUsize::new(DEFAULT_REPLAY_STEP_SIZE),
+            tokio_merger_runtime: Mutex::new(None),
         })
     }
 
     fn pin_cpu(&self) {
-        if !self.pin_cpus.is_empty() {
-            let local_worker_offset = Runtime::local_worker_offset();
-            let Some(thread_type) = current_thread_type() else {
+        match current_thread_type() {
+            Some(ThreadType::Foreground) => {
+                if !self.pin_cpus_fg.is_empty() {
+                    let local_worker_offset = Runtime::local_worker_offset();
+                    let core = self.pin_cpus_fg[local_worker_offset];
+                    if !core_affinity::set_for_current(core) {
+                        warn!(
+                            "failed to pin foreground worker {local_worker_offset} to core {}",
+                            core.id
+                        );
+                    }
+                }
+            }
+            Some(ThreadType::Background) => {
+                if !self.pin_cpus_bg.is_empty() {
+                    let local_worker_offset = Runtime::local_worker_offset();
+                    let core = self.pin_cpus_bg[local_worker_offset];
+                    if !core_affinity::set_for_current(core) {
+                        warn!(
+                            "failed to pin background worker {local_worker_offset} to core {}",
+                            core.id
+                        );
+                    }
+                }
+            }
+            None => {
                 panic!("pin_cpu() called outside of a runtime or on an aux thread");
-            };
-            let core = self.pin_cpus[local_worker_offset][thread_type];
-            if !core_affinity::set_for_current(core) {
-                warn!(
-                    "failed to pin worker {local_worker_offset} {thread_type} thread to core {}",
-                    core.id
-                );
             }
         }
     }
@@ -525,6 +576,7 @@ impl Runtime {
         let config: CircuitConfig = config.into();
 
         let workers = config.layout.local_workers();
+        let num_merger_threads = config.num_merger_threads();
 
         let runtime = Self(Arc::new(RuntimeInner::new(config)?));
 
@@ -533,6 +585,36 @@ impl Runtime {
         panic::set_hook(Box::new(move |panic_info| {
             panic_hook(panic_info, default_hook)
         }));
+
+        // Create a tokio runtime for async merger tasks.
+        let runtime_clone = runtime.clone();
+        let tokio_merger_runtime: TokioRuntime = {
+            info!("starting dbsp merger tokio runtime, workers: {num_merger_threads}",);
+
+            TokioBuilder::new_multi_thread()
+                .worker_threads(num_merger_threads)
+                .thread_name_fn(|| {
+                    use std::sync::atomic::{AtomicUsize, Ordering};
+                    static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+                    let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+                    format!("merger-{}", id)
+                })
+                .on_thread_start(move || {
+                    set_current_thread_type(ThreadType::Background);
+                    RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime_clone.clone()));
+                })
+                .thread_stack_size(6 * 1024 * 1024)
+                .enable_all()
+                .build()
+                .unwrap()
+        };
+
+        runtime
+            .inner()
+            .tokio_merger_runtime
+            .lock()
+            .unwrap()
+            .replace(tokio_merger_runtime);
 
         let workers = workers
             .map(|worker_index| {
@@ -606,37 +688,49 @@ impl Runtime {
     ///   storage, but there's no way to know because only [Runtime] makes that
     ///   available at a thread level.)
     pub fn buffer_cache() -> Arc<BufferCache> {
-        // Fast path, look up from TLS
-        thread_local! {
-            static BUFFER_CACHE: RefCell<Option<Arc<BufferCache>>> = const { RefCell::new(None) };
-        }
-        // No `Runtime` means there's only a single worker, so use a single
-        // global cache.
-        // This cache is also used by all auxiliary threads in the runtime.
+        // This cache is shared by all auxiliary threads in the runtime.
+        // In particular, output connector threads use it to maintain their output buffers.
+
         // FIXME: We may need a tunable strategy for aux threads. We cannot simply give each of them the
         // same cache as DBSP worker threads, as there can be dozens of aux threads (currently one per
         // output connector), which do not necessarily need a large cache. OTOH, sharing the same cache
         // across all of them may potentially cause performance issues.
-        static NO_RUNTIME_CACHE: LazyLock<Arc<BufferCache>> =
+        static AUXILIARY_CACHE: LazyLock<Arc<BufferCache>> =
             LazyLock::new(|| Arc::new(BufferCache::new(1024 * 1024 * 256)));
 
-        if let Some(buffer_cache) = BUFFER_CACHE.with(|bc| bc.borrow().clone()) {
+        // Fast path, look up from TLS
+
+        if current_thread_type() == Some(ThreadType::Background) {
+            // The TOKIO_BUFFER_CACHE variable should be set on task startup.
+            return TOKIO_BUFFER_CACHE.get().clone();
+        } else if let Some(buffer_cache) = BUFFER_CACHE.with(|bc| bc.borrow().clone()) {
             return buffer_cache;
         }
 
         // Slow path for initializing the thread-local.
-        let buffer_cache = if let Some(rt) = Runtime::runtime() {
-            if let Some(thread_type) = current_thread_type() {
-                rt.get_buffer_cache(Runtime::local_worker_offset(), thread_type)
-            } else {
-                // Aux thread: use the global cache.
-                NO_RUNTIME_CACHE.clone()
+        if let Some(rt) = Runtime::runtime() {
+            match current_thread_type() {
+                None => {
+                    let buffer_cache = AUXILIARY_CACHE.clone();
+                    BUFFER_CACHE.set(Some(buffer_cache.clone()));
+                    buffer_cache
+                }
+                Some(ThreadType::Background) => {
+                    // The TOKIO_BUFFER_CACHE variable should be set on task startup.
+                    panic!("background thread should not call buffer_cache()");
+                }
+                Some(thread_type) => {
+                    let buffer_cache =
+                        rt.get_buffer_cache(Runtime::local_worker_offset(), thread_type);
+                    BUFFER_CACHE.set(Some(buffer_cache.clone()));
+                    buffer_cache
+                }
             }
         } else {
-            NO_RUNTIME_CACHE.clone()
-        };
-        BUFFER_CACHE.set(Some(buffer_cache.clone()));
-        buffer_cache
+            // TODO: We shouldn't create batches outside of a runtime. This should probably
+            // be converted into a panic.
+            AUXILIARY_CACHE.clone()
+        }
     }
 
     /// Spawn an auxiliary thread inside the runtime.
@@ -706,8 +800,15 @@ impl Runtime {
     /// Returns 0-based index of the current worker thread within its runtime.
     /// For threads that run without a runtime, this method returns `0`.  In a
     /// multihost runtime, this is a global index across all hosts.
+    ///
+    /// For threads that run in the tokio merger runtime, this method returns the
+    /// index of the foreground worker thread that this task is doing compaction for.
     pub fn worker_index() -> usize {
-        WORKER_INDEX.get()
+        match current_thread_type() {
+            Some(ThreadType::Foreground) => WORKER_INDEX.get(),
+            Some(ThreadType::Background) => TOKIO_WORKER_INDEX.get(),
+            None => 0,
+        }
     }
 
     /// Returns the 0-based index of the current worker within its local host.
@@ -775,7 +876,7 @@ impl Runtime {
         });
 
         WORKER_INDEX_STRS
-            .get(WORKER_INDEX.get())
+            .get(Runtime::worker_index())
             .copied()
             .unwrap_or_else(|| {
                 panic!("Limit workers to less than 256 or increase the limit in the code.")
@@ -938,40 +1039,16 @@ impl Runtime {
         self.inner().panicked.store(true, Ordering::Release);
     }
 
-    /// Spawn a new thread using `builder` and `f`. If the current thread is
-    /// associated with a runtime, then the new thread will also be associated
-    /// with the same runtime and worker index.
-    pub(crate) fn spawn_background_thread<F>(builder: Builder, f: F) -> (Thread, Unparker)
-    where
-        F: FnOnce(Parker) + Send + 'static,
-    {
-        let runtime = Self::runtime();
-        let worker_index = Self::worker_index();
-        let parker = Parker::new();
-        let unparker = parker.unparker().clone();
-        let join_handle = builder
-            .spawn(move || {
-                WORKER_INDEX.set(worker_index);
-                set_current_thread_type(ThreadType::Background);
-                if let Some(runtime) = runtime {
-                    runtime.inner().pin_cpu();
-                    RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
-                }
-                f(parker)
-            })
-            .unwrap_or_else(|error| {
-                panic!("failed to spawn background worker thread {worker_index}: {error}");
-            });
-        let thread = join_handle.thread().clone();
-        if let Some(runtime) = Self::runtime() {
-            runtime
-                .inner()
-                .background_threads
-                .lock()
-                .unwrap()
-                .push(join_handle);
-        }
-        (thread, unparker)
+    /// Tokio merger runtime associated with this DBSP runtime.
+    pub(crate) fn tokio_merger_runtime(&self) -> tokio::runtime::Handle {
+        self.inner()
+            .tokio_merger_runtime
+            .lock()
+            .unwrap()
+            .as_ref()
+            .expect("tokio merger runtime has been shut down")
+            .handle()
+            .clone()
     }
 }
 
@@ -1218,19 +1295,6 @@ impl RuntimeHandle {
             .map(|(h, _unparker)| h.join())
             .collect();
 
-        // Wait for the background threads. They will exit automatically without
-        // explicit signaling from us because the worker threads removed all of
-        // their background work.
-        self.runtime
-            .inner()
-            .background_threads
-            .lock()
-            .unwrap()
-            .drain(..)
-            .for_each(|h| {
-                let _ = h.join();
-            });
-
         // Wait for aux threads.
         self.runtime
             .inner()
@@ -1241,6 +1305,19 @@ impl RuntimeHandle {
             .for_each(|(h, _unparker)| {
                 let _ = h.join();
             });
+
+        // Terminate the tokio merger runtime.
+        if let Some(tokio_merger_runtime) = self
+            .runtime
+            .inner()
+            .tokio_merger_runtime
+            .lock()
+            .unwrap()
+            .take()
+        {
+            // Block until all running merger tasks have yielded. At this point, the tokio runtime will have shut down automatically.
+            drop(tokio_merger_runtime);
+        }
 
         // This must happen after we wait for the background threads, because
         // they might try to initiate another merge before they exit, which

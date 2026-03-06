@@ -1730,16 +1730,16 @@ mod test {
 
     #[test]
     fn set_test_st() {
-        let (circuit, mut input_handle) =
-            RootCircuit::build(move |circuit| set_test_circuit(circuit)).unwrap();
+        let (mut circuit, mut input_handle) =
+            Runtime::init_circuit(1, move |circuit| set_test_circuit(circuit)).unwrap();
 
         for mut vec in input_set_updates().into_iter() {
             input_handle.append(&mut vec);
             circuit.transaction().unwrap();
         }
 
-        let (circuit, input_handle) =
-            RootCircuit::build(move |circuit| set_test_circuit(circuit)).unwrap();
+        let (mut circuit, input_handle) =
+            Runtime::init_circuit(1, move |circuit| set_test_circuit(circuit)).unwrap();
 
         for vec in input_set_updates().into_iter() {
             for Tup2(k, b) in vec.into_iter() {
@@ -1958,18 +1958,20 @@ mod test {
     // without filtering.
     #[test]
     fn map_test_st() {
-        let (circuit, mut input_handle) =
-            RootCircuit::build(move |circuit| map_test_circuit(circuit, output_map_updates1))
-                .unwrap();
+        let (mut circuit, mut input_handle) = Runtime::init_circuit(1, move |circuit| {
+            map_test_circuit(circuit, output_map_updates1)
+        })
+        .unwrap();
 
         for mut vec in input_map_updates1().into_iter() {
             input_handle.append(&mut vec);
             circuit.transaction().unwrap();
         }
 
-        let (circuit, input_handle) =
-            RootCircuit::build(move |circuit| map_test_circuit(circuit, output_map_updates1))
-                .unwrap();
+        let (mut circuit, input_handle) = Runtime::init_circuit(1, move |circuit| {
+            map_test_circuit(circuit, output_map_updates1)
+        })
+        .unwrap();
 
         for vec in input_map_updates1().into_iter() {
             for Tup2(k, v) in vec.into_iter() {

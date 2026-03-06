@@ -1529,7 +1529,7 @@ mod test {
     // Test derived from issue #199 (https://github.com/feldera/feldera/issues/199).
     #[test]
     fn test_partitioned_rolling_aggregate2() {
-        let (circuit, (input, expected)) = RootCircuit::build(move |circuit| {
+        let (mut circuit, (input, expected)) = Runtime::init_circuit(1, move |circuit| {
             let (input_stream, input_handle) =
                 circuit.add_input_indexed_zset::<u64, Tup2<u64, i64>>();
 
@@ -1587,7 +1587,7 @@ mod test {
 
     #[test]
     fn test_partitioned_rolling_average() {
-        let (circuit, (input, expected)) = RootCircuit::build(move |circuit| {
+        let (mut circuit, (input, expected)) = Runtime::init_circuit(1, move |circuit| {
             let (input_stream, input_handle) =
                 circuit.add_input_indexed_zset::<u64, Tup2<u64, i64>>();
 
@@ -1635,7 +1635,7 @@ mod test {
 
     #[test]
     fn test_partitioned_rolling_aggregate() {
-        let (circuit, input) = RootCircuit::build(move |circuit| {
+        let (mut circuit, input) = Runtime::init_circuit(1, move |circuit| {
             let (input_stream, input_handle) =
                 circuit.add_input_indexed_zset::<u64, Tup2<u64, i64>>();
 

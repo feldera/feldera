@@ -154,13 +154,13 @@ where
     ///     OrdZSet,
     ///     Circuit, RootCircuit, Stream, zset, zset_set,
     ///     utils::Tup2,
-    ///     Error as DbspError,
+    ///     Error as DbspError, Runtime
     /// };
     ///
     /// const STEPS: usize = 3;
     ///
     /// // Propagate labels along graph edges.
-    /// let (circuit_handle, _output_handle) = RootCircuit::build(move |root_circuit| {
+    /// let (mut circuit_handle, _output_handle) = Runtime::init_circuit(1, move |root_circuit| {
     ///     // Graph topology.
     ///     let mut edges = ([
     ///         // Start with four nodes connected in a cycle.

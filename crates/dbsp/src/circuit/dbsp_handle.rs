@@ -52,6 +52,9 @@ use super::SchedulerError;
 use super::circuit_builder::BootstrapInfo;
 use super::runtime::WorkerPanicInfo;
 
+/// Default ratio of merger threads to worker threads.
+const DEFAULT_MERGER_THREAD_RATIO: usize = 1;
+
 /// A host for some workers in the [`Layout`] for a multi-host DBSP circuit.
 #[allow(clippy::manual_non_exhaustive)]
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -414,6 +417,11 @@ pub struct DevTweaks {
 
     /// Maximum batch size in records for level 0 merges.
     pub max_level0_batch_size_records: u16,
+
+    /// The number of merger threads.
+    ///
+    /// The default value is equal to the number of worker threads.
+    pub merger_threads: Option<u16>,
 }
 
 impl Default for DevTweaks {
@@ -435,6 +443,7 @@ impl Default for DevTweaks {
             balancer_key_distribution_refresh_threshold: KEY_DISTRIBUTION_REFRESH_THRESHOLD,
             adaptive_joins: false,
             max_level0_batch_size_records: MAX_LEVEL0_BATCH_SIZE_RECORDS,
+            merger_threads: None,
         }
     }
 }
@@ -618,6 +627,15 @@ impl CircuitConfig {
                 .unwrap(),
             ),
             ..self
+        }
+    }
+
+    /// The number of merger threads per host.
+    pub(crate) fn num_merger_threads(&self) -> usize {
+        let num_workers = self.layout.local_workers().len();
+        match self.dev_tweaks.merger_threads {
+            Some(threads) => threads as usize,
+            None => num_workers * DEFAULT_MERGER_THREAD_RATIO,
         }
     }
 }
@@ -1788,6 +1806,7 @@ pub(crate) mod tests {
     use super::{CircuitStorageConfig, Mode};
     use crate::circuit::checkpointer::Checkpointer;
     use crate::circuit::dbsp_handle::DevTweaks;
+    use crate::circuit::runtime::TOKIO_WORKER_INDEX;
     use crate::circuit::{CircuitConfig, Layout};
     use crate::dynamic::{ClonableTrait, DowncastTrait, DynData, Erase};
     use crate::operator::Generator;
@@ -1800,6 +1819,7 @@ pub(crate) mod tests {
         OutputHandle, Runtime, RuntimeError, ZSetHandle, ZWeight,
     };
     use anyhow::anyhow;
+    use feldera_buffer_cache::ThreadType;
     use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
     use tempfile::{TempDir, tempdir};
     use uuid::Uuid;
@@ -1886,6 +1906,57 @@ pub(crate) mod tests {
         if let DbspError::Runtime(err) = handle.transaction().unwrap_err() {
             // println!("error: {err}");
             matches!(err, RuntimeError::WorkerPanic { .. });
+        } else {
+            panic!();
+        }
+    }
+
+    /// Check that a panic in the tokio merger runtime is propagated to the client.
+    #[test]
+    fn test_panic_in_tokio_merger_runtime() {
+        let (panic_tx, panic_rx) = std::sync::mpsc::channel();
+        let (mut handle, _) = Runtime::init_circuit(1, move |circuit| {
+            let (_stream, _input_handle) = circuit.add_input_map::<u64, u64, i64, _>(|v, u| {
+                *v = ((*v as i64) + *u) as u64;
+            });
+
+            if Runtime::worker_index() == 0 {
+                let runtime = Runtime::runtime().unwrap();
+                let panic_tx = panic_tx.clone();
+                runtime.tokio_merger_runtime().spawn(async move {
+                    TOKIO_WORKER_INDEX
+                        .scope(0, async move {
+                            let _ = std::panic::catch_unwind(|| {
+                                panic!("panic from tokio merger runtime task");
+                            });
+                            let _ = panic_tx.send(());
+                        })
+                        .await;
+                });
+            }
+
+            Ok(())
+        })
+        .unwrap();
+
+        panic_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("timed out waiting for panic task to complete");
+
+        if let DbspError::Runtime(err) = handle.transaction().unwrap_err() {
+            println!("error: {err}");
+            match err {
+                RuntimeError::WorkerPanic { panic_info } => {
+                    assert!(
+                        panic_info
+                            .iter()
+                            .any(|(_worker, thread_type, _info)| *thread_type
+                                == ThreadType::Background),
+                        "expected WorkerPanic to include background worker panic info"
+                    );
+                }
+                _ => panic!(),
+            }
         } else {
             panic!();
         }

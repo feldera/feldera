@@ -472,56 +472,61 @@ fn test_key_batch_spine<B: ZBatch<Key = DynI32, Val = DynUnit, Time = u32>>(
 proptest! {
     #[test]
     fn test_truncate_key_bounded_memory(batches in kvr_batches_monotone_keys(100, 20, 50, 20, 500)) {
-        let factories = <OrdIndexedZSetFactories<DynI32, DynI32>>::new::<i32, i32, ZWeight>();
+        Runtime::run(CircuitConfig::with_workers(1), move |_parker| {
+            let factories = <OrdIndexedZSetFactories<DynI32, DynI32>>::new::<i32, i32, ZWeight>();
 
-        let mut trace: Spine<OrdIndexedZSet<DynI32, DynI32>> = Spine::new(&factories);
+            let mut trace: Spine<OrdIndexedZSet<DynI32, DynI32>> = Spine::new(&factories);
 
-        for (i, tuples) in batches.into_iter().enumerate() {
-            let mut erased_tuples = indexed_zset_tuples(tuples);
+            for (i, tuples) in batches.into_iter().enumerate() {
+                let mut erased_tuples = indexed_zset_tuples(tuples);
 
-            let batch = <OrdIndexedZSet<DynI32, DynI32>>::dyn_from_tuples(&factories, (), &mut erased_tuples);
+                let batch = <OrdIndexedZSet<DynI32, DynI32>>::dyn_from_tuples(&factories, (), &mut erased_tuples);
 
-            test_batch_sampling(&batch);
+                test_batch_sampling(&batch);
 
-            trace.insert(batch);
-            trace.retain_keys(Filter::new(Box::new(move |x| *x.downcast_checked::<i32>() >= ((i * 20) as i32))));
+                trace.insert(batch);
+                trace.retain_keys(Filter::new(Box::new(move |x| *x.downcast_checked::<i32>() >= ((i * 20) as i32))));
 
-            trace.complete_merges();
-            // FIXME: Change to 20000 after changing vtable types to pointers.
-            let trace_total_bytes = trace.size_of().total_bytes();
-            assert!(trace_total_bytes < /*20000*/ 200000, "total bytes={}", trace_total_bytes);
-        }
+                trace.complete_merges();
+                let trace_total_bytes = trace.size_of().total_bytes();
+                assert!(trace_total_bytes < /*20000*/ 200000, "total bytes={}", trace_total_bytes);
+            }
+        }).unwrap().join().unwrap();
     }
 
     #[test]
     fn test_truncate_value_bounded_memory(batches in kvr_batches_monotone_values(50, 100, 20, 20, 500)) {
-        let factories = <OrdIndexedZSetFactories<DynI32, DynI32>>::new::<i32, i32, ZWeight>();
+        Runtime::run(CircuitConfig::with_workers(1), move |_parker| {
+            let factories = <OrdIndexedZSetFactories<DynI32, DynI32>>::new::<i32, i32, ZWeight>();
 
-        let mut trace: Spine<OrdIndexedZSet<DynI32, DynI32>> = Spine::new(&factories);
+            let mut trace: Spine<OrdIndexedZSet<DynI32, DynI32>> = Spine::new(&factories);
 
-        for (i, tuples) in batches.into_iter().enumerate() {
-            let mut erased_tuples = indexed_zset_tuples(tuples);
+            for (i, tuples) in batches.into_iter().enumerate() {
+                let mut erased_tuples = indexed_zset_tuples(tuples);
 
-            let batch = <OrdIndexedZSet<DynI32, DynI32>>::dyn_from_tuples(&factories, (), &mut erased_tuples);
+                let batch = <OrdIndexedZSet<DynI32, DynI32>>::dyn_from_tuples(&factories, (), &mut erased_tuples);
 
-            test_batch_sampling(&batch);
+                test_batch_sampling(&batch);
 
-            trace.retain_values(GroupFilter::Simple(Filter::new(Box::new(
-                move |x: &DynI32| *x.downcast_checked::<i32>() >= ((i * 20) as i32),
-            ))));
-            trace.insert(batch);
-            trace.complete_merges();
-            // FIXME: Change to 20000 after changing vtable types to pointers.
-            let trace_total_bytes = trace.size_of().total_bytes();
-            assert!(trace_total_bytes < /*20000*/ 200000, "total bytes={}", trace_total_bytes);
-        }
+                trace.retain_values(GroupFilter::Simple(Filter::new(Box::new(
+                    move |x: &DynI32| *x.downcast_checked::<i32>() >= ((i * 20) as i32),
+                ))));
+                trace.insert(batch);
+                trace.complete_merges();
+                // FIXME: Change to 20000 after changing vtable types to pointers.
+                let trace_total_bytes = trace.size_of().total_bytes();
+                assert!(trace_total_bytes < /*20000*/ 200000, "total bytes={}", trace_total_bytes);
+            }
+        }).unwrap().join().unwrap();
     }
 
     #[test]
     fn test_vec_zset_spine(batches in kr_batches(50, 2, 100, 20), seed in 0..u64::MAX) {
         let factories = <OrdZSetFactories<DynI32>>::new::<i32, (), ZWeight>();
 
-        test_zset_spine::<OrdZSet<DynI32>>(&factories, batches, seed)
+        Runtime::run(CircuitConfig::with_workers(1), move |_parker| {
+            test_zset_spine::<OrdZSet<DynI32>>(&factories, batches, seed)
+        }).unwrap().join().unwrap();
     }
 
     #[test]
@@ -536,8 +541,10 @@ proptest! {
 
     #[test]
     fn test_vec_indexed_zset_spine(batches in kvr_batches(100, 5, 2, 500, 20), seed in 0..u64::MAX) {
-        let factories = <OrdIndexedZSetFactories<DynI32, DynI32>>::new::<i32, i32, ZWeight>();
-        test_indexed_zset_spine::<OrdIndexedZSet<DynI32, DynI32>>(&factories, batches, seed)
+        Runtime::run(CircuitConfig::with_workers(1), move |_parker| {
+            let factories = <OrdIndexedZSetFactories<DynI32, DynI32>>::new::<i32, i32, ZWeight>();
+            test_indexed_zset_spine::<OrdIndexedZSet<DynI32, DynI32>>(&factories, batches, seed)
+        }).unwrap().join().unwrap();
     }
 
     #[test]
@@ -552,76 +559,82 @@ proptest! {
     // Like `test_indexed_zset_spine` but keeps even values only.
     #[test]
     fn test_indexed_zset_spine_even_values(batches in kvr_batches(100, 5, 2, 500, 10), seed in 0..u64::MAX) {
-        let factories = <OrdIndexedZSetFactories<DynI32, DynI32>>::new::<i32, i32, ZWeight>();
+        Runtime::run(CircuitConfig::with_workers(1), move |_parker| {
+            let factories = <OrdIndexedZSetFactories<DynI32, DynI32>>::new::<i32, i32, ZWeight>();
 
-        let mut trace: Spine<OrdIndexedZSet<DynI32, DynI32>> = Spine::new(&factories);
-        let mut ref_trace: TestBatch<DynI32, DynI32, (), DynZWeight> = TestBatch::new(&TestBatchFactories::new());
+            let mut trace: Spine<OrdIndexedZSet<DynI32, DynI32>> = Spine::new(&factories);
+            let mut ref_trace: TestBatch<DynI32, DynI32, (), DynZWeight> = TestBatch::new(&TestBatchFactories::new());
 
-        trace.retain_values(GroupFilter::Simple(Filter::new(Box::new(
-            move |val: &DynI32| *val.downcast_checked::<i32>() % 2 == 0,
-        ))));
-        ref_trace.retain_values(GroupFilter::Simple(Filter::new(Box::new(
-            move |val: &DynI32| *val.downcast_checked::<i32>() % 2 == 0,
-        ))));
+            trace.retain_values(GroupFilter::Simple(Filter::new(Box::new(
+                move |val: &DynI32| *val.downcast_checked::<i32>() % 2 == 0,
+            ))));
+            ref_trace.retain_values(GroupFilter::Simple(Filter::new(Box::new(
+                move |val: &DynI32| *val.downcast_checked::<i32>() % 2 == 0,
+            ))));
 
-        for (tuples, _key_bound, _val_bound) in batches.into_iter() {
-            let mut erased_tuples = indexed_zset_tuples(tuples);
+            for (tuples, _key_bound, _val_bound) in batches.into_iter() {
+                let mut erased_tuples = indexed_zset_tuples(tuples);
 
-            let batch = OrdIndexedZSet::dyn_from_tuples(&factories, (), &mut erased_tuples.clone());
-            let ref_batch = TestBatch::dyn_from_tuples(&TestBatchFactories::new(), (), &mut erased_tuples);
+                let batch = OrdIndexedZSet::dyn_from_tuples(&factories, (), &mut erased_tuples.clone());
+                let ref_batch = TestBatch::dyn_from_tuples(&TestBatchFactories::new(), (), &mut erased_tuples);
 
-            test_batch_sampling(&batch);
+                test_batch_sampling(&batch);
 
-            assert_batch_eq(&batch, &ref_batch);
-            assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
+                assert_batch_eq(&batch, &ref_batch);
+                assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
 
-            ref_trace.insert(ref_batch);
-            assert_batch_cursors_eq(CursorPair::new(&mut batch.cursor(), &mut trace.cursor()), &ref_trace, seed);
+                ref_trace.insert(ref_batch);
+                assert_batch_cursors_eq(CursorPair::new(&mut batch.cursor(), &mut trace.cursor()), &ref_trace, seed);
 
-            trace.insert(batch);
-            test_trace_sampling(&trace);
+                trace.insert(batch);
+                test_trace_sampling(&trace);
 
-            assert_trace_eq(&trace, &ref_trace);
-            assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
-        }
+                assert_trace_eq(&trace, &ref_trace);
+                assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
+            }
+        }).unwrap().join().unwrap();
     }
 
     #[test]
     fn test_indexed_zset_spine_even_keys(batches in kvr_batches(100, 5, 2, 500, 10), seed in 0..u64::MAX) {
-        let factories = <OrdIndexedZSetFactories<DynI32, DynI32>>::new::<i32, i32, ZWeight>();
+        Runtime::run(CircuitConfig::with_workers(1), move |_parker| {
+            let factories = <OrdIndexedZSetFactories<DynI32, DynI32>>::new::<i32, i32, ZWeight>();
 
-        let mut trace: Spine<OrdIndexedZSet<DynI32, DynI32>> = Spine::new(&factories);
-        let mut ref_trace: TestBatch<DynI32, DynI32, (), DynZWeight> = TestBatch::new(&TestBatchFactories::new());
+            let mut trace: Spine<OrdIndexedZSet<DynI32, DynI32>> = Spine::new(&factories);
+            let mut ref_trace: TestBatch<DynI32, DynI32, (), DynZWeight> = TestBatch::new(&TestBatchFactories::new());
 
-        trace.retain_keys(Filter::new(Box::new(move |val| *val.downcast_checked::<i32>() % 2 == 0)));
-        ref_trace.retain_keys(Filter::new(Box::new(move |val| *val.downcast_checked::<i32>() % 2 == 0)));
+            trace.retain_keys(Filter::new(Box::new(move |val| *val.downcast_checked::<i32>() % 2 == 0)));
+            ref_trace.retain_keys(Filter::new(Box::new(move |val| *val.downcast_checked::<i32>() % 2 == 0)));
 
-        for (tuples, _key_bound, _val_bound) in batches.into_iter() {
-            let mut erased_tuples = indexed_zset_tuples(tuples);
+            for (tuples, _key_bound, _val_bound) in batches.into_iter() {
+                let mut erased_tuples = indexed_zset_tuples(tuples);
 
-            let batch = OrdIndexedZSet::dyn_from_tuples(&factories, (), &mut erased_tuples.clone());
-            let ref_batch = TestBatch::dyn_from_tuples(&TestBatchFactories::new(), (), &mut erased_tuples);
+                let batch = OrdIndexedZSet::dyn_from_tuples(&factories, (), &mut erased_tuples.clone());
+                let ref_batch = TestBatch::dyn_from_tuples(&TestBatchFactories::new(), (), &mut erased_tuples);
 
-            test_batch_sampling(&batch);
+                test_batch_sampling(&batch);
 
-            assert_batch_eq(&batch, &ref_batch);
-            assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
+                assert_batch_eq(&batch, &ref_batch);
+                assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
 
-            ref_trace.insert(ref_batch);
-            assert_batch_cursors_eq(CursorPair::new(&mut batch.cursor(), &mut trace.cursor()), &ref_trace, seed);
+                ref_trace.insert(ref_batch);
+                assert_batch_cursors_eq(CursorPair::new(&mut batch.cursor(), &mut trace.cursor()), &ref_trace, seed);
 
-            trace.insert(batch);
-            test_trace_sampling(&trace);
+                trace.insert(batch);
+                test_trace_sampling(&trace);
 
-            assert_trace_eq(&trace, &ref_trace);
-            assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
-        }
+                assert_trace_eq(&trace, &ref_trace);
+                assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
+            }
+        }).unwrap().join().unwrap();
     }
 
     #[test]
     fn test_vec_key_batch_trace_spine(batches in kr_batches(100, 2, 500, 20), seed in 0..u64::MAX) {
+        Runtime::run(CircuitConfig::with_workers(1), move |_parker| {
         let factories = <OrdKeyBatchFactories<DynI32, u32, DynZWeight>>::new::<i32, (), ZWeight>();
-        test_key_batch_spine::<OrdKeyBatch<DynI32, u32, DynZWeight>>(&factories, batches, seed)
+            test_key_batch_spine::<OrdKeyBatch<DynI32, u32, DynZWeight>>(&factories, batches, seed)
+        }).unwrap().join().unwrap();
     }
 
     #[test]
@@ -636,7 +649,9 @@ proptest! {
     fn test_vec_val_batch_spine(batches in kvr_batches(100, 5, 2, 300, 20), seed in 0..u64::MAX) {
         let factories = <OrdValBatchFactories<DynI32, DynI32, u32, DynZWeight>>::new::<i32, i32, ZWeight>();
 
-        test_val_batch_trace_spine::<OrdValBatch<DynI32, DynI32, u32, DynZWeight>>(&factories, batches, seed)
+        Runtime::run(CircuitConfig::with_workers(1), move |_parker| {
+            test_val_batch_trace_spine::<OrdValBatch<DynI32, DynI32, u32, DynZWeight>>(&factories, batches, seed)
+        }).unwrap().join().unwrap();
     }
 
     #[test]
@@ -651,68 +666,72 @@ proptest! {
     // Like `test_val_batch_trace_spine` but keeps even values only.
     #[test]
     fn test_val_batch_spine_retain_even_values(batches in kvr_batches(100, 5, 2, 300, 20), seed in 0..u64::MAX) {
-        let factories = <OrdValBatchFactories<DynI32, DynI32, u32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        Runtime::run(CircuitConfig::with_workers(1), move |_parker| {
+            let factories = <OrdValBatchFactories<DynI32, DynI32, u32, DynZWeight>>::new::<i32, i32, ZWeight>();
 
-        // `trace1` uses `truncate_keys_below`.
-        // `trace2` uses `retain_keys`.
-        let mut trace: Spine<OrdValBatch<DynI32, DynI32, u32, DynZWeight>> = Spine::new(&factories);
-        let mut ref_trace: TestBatch<DynI32, DynI32, u32, DynZWeight> = TestBatch::new(&TestBatchFactories::new());
+            // `trace1` uses `truncate_keys_below`.
+            // `trace2` uses `retain_keys`.
+            let mut trace: Spine<OrdValBatch<DynI32, DynI32, u32, DynZWeight>> = Spine::new(&factories);
+            let mut ref_trace: TestBatch<DynI32, DynI32, u32, DynZWeight> = TestBatch::new(&TestBatchFactories::new());
 
-        trace.retain_values(GroupFilter::Simple(Filter::new(Box::new(
-            move |val: &DynI32| *val.downcast_checked::<i32>() % 2 == 0,
-        ))));
-        ref_trace.retain_values(GroupFilter::Simple(Filter::new(Box::new(
-            move |val: &DynI32| *val.downcast_checked::<i32>() % 2 == 0,
-        ))));
+            trace.retain_values(GroupFilter::Simple(Filter::new(Box::new(
+                move |val: &DynI32| *val.downcast_checked::<i32>() % 2 == 0,
+            ))));
+            ref_trace.retain_values(GroupFilter::Simple(Filter::new(Box::new(
+                move |val: &DynI32| *val.downcast_checked::<i32>() % 2 == 0,
+            ))));
 
-        for (time, (tuples, _key_bound, _val_bound)) in batches.into_iter().enumerate() {
-            let mut erased_tuples = indexed_zset_tuples(tuples);
+            for (time, (tuples, _key_bound, _val_bound)) in batches.into_iter().enumerate() {
+                let mut erased_tuples = indexed_zset_tuples(tuples);
 
-            let batch = OrdValBatch::dyn_from_tuples(&factories, time as u32, &mut erased_tuples.clone());
-            let ref_batch = TestBatch::dyn_from_tuples(&TestBatchFactories::new(), time as u32, &mut erased_tuples);
+                let batch = OrdValBatch::dyn_from_tuples(&factories, time as u32, &mut erased_tuples.clone());
+                let ref_batch = TestBatch::dyn_from_tuples(&TestBatchFactories::new(), time as u32, &mut erased_tuples);
 
-            assert_batch_eq(&batch, &ref_batch);
-            assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
+                assert_batch_eq(&batch, &ref_batch);
+                assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
 
-            ref_trace.insert(ref_batch);
-            assert_batch_cursors_eq(CursorPair::new(&mut trace.cursor(), &mut batch.cursor()), &ref_trace, seed);
+                ref_trace.insert(ref_batch);
+                assert_batch_cursors_eq(CursorPair::new(&mut trace.cursor(), &mut batch.cursor()), &ref_trace, seed);
 
-            trace.insert(batch);
+                trace.insert(batch);
 
-            assert_trace_eq(&trace, &ref_trace);
-            assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
-        }
+                assert_trace_eq(&trace, &ref_trace);
+                assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
+            }
+        }).unwrap().join().unwrap();
     }
 
     #[test]
     fn test_val_batch_spine_retain_even_keys(batches in kvr_batches(100, 5, 2, 300, 10), seed in 0..u64::MAX) {
-        let factories = <OrdValBatchFactories<DynI32, DynI32, u32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        Runtime::run(CircuitConfig::with_workers(1), move |_parker| {
+            let factories = <OrdValBatchFactories<DynI32, DynI32, u32, DynZWeight>>::new::<i32, i32, ZWeight>();
 
-        // `trace1` uses `truncate_keys_below`.
-        // `trace2` uses `retain_keys`.
-        let mut trace: Spine<OrdValBatch<DynI32, DynI32, u32, DynZWeight>> = Spine::new(&factories);
-        let mut ref_trace: TestBatch<DynI32, DynI32, u32, DynZWeight> = TestBatch::new(&TestBatchFactories::new());
+            // `trace1` uses `truncate_keys_below`.
+            // `trace2` uses `retain_keys`.
+            let mut trace: Spine<OrdValBatch<DynI32, DynI32, u32, DynZWeight>> = Spine::new(&factories);
+            let mut ref_trace: TestBatch<DynI32, DynI32, u32, DynZWeight> = TestBatch::new(&TestBatchFactories::new());
 
-        trace.retain_keys(Filter::new(Box::new(move |key| *key.downcast_checked::<i32>() % 2 == 0)));
-        ref_trace.retain_keys(Filter::new(Box::new(move |key| *key.downcast_checked::<i32>() % 2 == 0)));
+            trace.retain_keys(Filter::new(Box::new(move |key| *key.downcast_checked::<i32>() % 2 == 0)));
+            ref_trace.retain_keys(Filter::new(Box::new(move |key| *key.downcast_checked::<i32>() % 2 == 0)));
 
-        for (time, (tuples, _key_bound, _val_bound)) in batches.into_iter().enumerate() {
-            let mut erased_tuples = indexed_zset_tuples(tuples);
+            for (time, (tuples, _key_bound, _val_bound)) in batches.into_iter().enumerate() {
+                let mut erased_tuples = indexed_zset_tuples(tuples);
 
-            let batch = OrdValBatch::dyn_from_tuples(&factories, time as u32, &mut erased_tuples.clone());
-            let ref_batch = TestBatch::dyn_from_tuples(&TestBatchFactories::new(), time as u32, &mut erased_tuples);
+                let batch = OrdValBatch::dyn_from_tuples(&factories, time as u32, &mut erased_tuples.clone());
+                let ref_batch = TestBatch::dyn_from_tuples(&TestBatchFactories::new(), time as u32, &mut erased_tuples);
 
-            assert_batch_eq(&batch, &ref_batch);
-            assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
+                assert_batch_eq(&batch, &ref_batch);
+                assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
 
-            ref_trace.insert(ref_batch);
-            assert_batch_cursors_eq(CursorPair::new(&mut trace.cursor(), &mut batch.cursor()), &ref_trace, seed);
+                ref_trace.insert(ref_batch);
+                assert_batch_cursors_eq(CursorPair::new(&mut trace.cursor(), &mut batch.cursor()), &ref_trace, seed);
 
-            trace.insert(batch);
+                trace.insert(batch);
 
-            assert_trace_eq(&trace, &ref_trace);
-            assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
-        }
+                assert_trace_eq(&trace, &ref_trace);
+                assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
+            }
+        }).unwrap().join().unwrap();
     }
 
 }

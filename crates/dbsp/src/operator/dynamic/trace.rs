@@ -1348,10 +1348,10 @@ mod test {
                 *key >= ts.0.saturating_sub(key_lateness)
             });
 
-            // trace1.apply(|trace| {
-            //     // println!("retain_keys: {}bytes", trace.size_of().total_bytes());
-            //     assert!(trace.size_of().total_bytes() < 100_000);
-            // });
+            trace1.apply(|trace| {
+                // println!("retain_keys: {}bytes", trace.size_of().total_bytes());
+                assert!(trace.size_of().total_bytes() < 100_000);
+            });
 
             // Test `integrate_trace_retain_values`.
             let stream2 = stream.map_index(|(k, v)| (*k, *v)).shard();
