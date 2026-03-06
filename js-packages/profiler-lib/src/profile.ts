@@ -6,7 +6,7 @@ import { type MirNode, SourcePositionRanges, SourcePositionRange, Sources, type 
 type JsonMeasurement = Array<any>;
 export type NodeId = string;
 
-export type CircuitMetricCategory = "State" | "Inputs" | "Outputs" | "Cache" | "Time" | "Balancer";
+export type CircuitMetricCategory = string;
 
 export interface ProfileMetricDescription {
     readonly name: string;
