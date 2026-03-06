@@ -1256,40 +1256,7 @@ impl ControllerStatus {
         let mut inputs: Vec<_> = self
             .input_status()
             .values()
-            .map(|input| adapter_stats::ExternalInputEndpointStatus {
-                endpoint_name: input.endpoint_name.clone(),
-                config: ShortEndpointConfig {
-                    stream: input.config.stream.clone().into_owned(),
-                },
-                metrics: adapter_stats::ExternalInputEndpointMetrics {
-                    total_bytes: input.metrics.total_bytes.load(Ordering::Acquire),
-                    total_records: input.metrics.total_records.load(Ordering::Acquire),
-                    buffered_records: input.metrics.buffered_records.load(Ordering::Acquire),
-                    buffered_bytes: input.metrics.buffered_bytes.load(Ordering::Acquire),
-                    num_transport_errors: input
-                        .metrics
-                        .num_transport_errors
-                        .load(Ordering::Acquire),
-                    num_parse_errors: input.metrics.num_parse_errors.load(Ordering::Acquire),
-                    end_of_input: input.metrics.end_of_input.load(Ordering::Acquire),
-                },
-                fatal_error: input.fatal_error(),
-                paused: input.is_paused_by_user(),
-                barrier: input.barrier.load(Ordering::Acquire),
-                completed_frontier: input
-                    .completed_frontier
-                    .0
-                    .lock()
-                    .unwrap()
-                    .completed_watermark
-                    .as_ref()
-                    .map(|wm| adapter_stats::ExternalCompletedWatermark {
-                        metadata: wm.metadata.clone(),
-                        ingested_at: wm.ingested_at.to_rfc3339(),
-                        processed_at: wm.processed_at.to_rfc3339(),
-                        completed_at: wm.completed_at.to_rfc3339(),
-                    }),
-            })
+            .map(|input| input.to_api_type())
             .collect();
         inputs.sort_by(|ep1, ep2| ep1.endpoint_name.cmp(&ep2.endpoint_name));
 
@@ -1297,35 +1264,7 @@ impl ControllerStatus {
         let mut outputs: Vec<_> = self
             .output_status()
             .values()
-            .map(|output| adapter_stats::ExternalOutputEndpointStatus {
-                endpoint_name: output.endpoint_name.clone(),
-                config: ShortEndpointConfig {
-                    stream: output.config.stream.clone().into_owned(),
-                },
-                metrics: adapter_stats::ExternalOutputEndpointMetrics {
-                    transmitted_records: output.metrics.transmitted_records.load(Ordering::Acquire),
-                    transmitted_bytes: output.metrics.transmitted_bytes.load(Ordering::Relaxed),
-                    queued_records: output.metrics.queued_records.load(Ordering::Relaxed),
-                    queued_batches: output.metrics.queued_batches.load(Ordering::Relaxed),
-                    buffered_records: output.metrics.buffered_records.load(Ordering::Relaxed),
-                    buffered_batches: output.metrics.buffered_batches.load(Ordering::Relaxed),
-                    num_encode_errors: output.metrics.num_encode_errors.load(Ordering::Relaxed),
-                    num_transport_errors: output
-                        .metrics
-                        .num_transport_errors
-                        .load(Ordering::Relaxed),
-                    total_processed_input_records: output
-                        .metrics
-                        .total_processed_input_records
-                        .load(Ordering::Relaxed),
-                    total_processed_steps: output
-                        .metrics
-                        .total_processed_steps
-                        .load(Ordering::Relaxed),
-                    memory: output.metrics.memory.load(Ordering::Relaxed),
-                },
-                fatal_error: output.fatal_error.lock().unwrap().clone(),
-            })
+            .map(|output| output.to_api_type())
             .collect();
         outputs.sort_by(|ep1, ep2| ep1.endpoint_name.cmp(&ep2.endpoint_name));
 
