@@ -679,21 +679,26 @@ impl Runtime {
         }
 
         // Slow path for initializing the thread-local.
-        let buffer_cache = if let Some(rt) = Runtime::runtime() {
+        if let Some(rt) = Runtime::runtime() {
             match ThreadType::current() {
-                None => NO_RUNTIME_CACHE.clone(),
+                None => {
+                    let buffer_cache = NO_RUNTIME_CACHE.clone();
+                    BUFFER_CACHE.set(Some(buffer_cache.clone()));
+                    buffer_cache
+                }
                 Some(ThreadType::MergerTokio) => {
                     rt.get_buffer_cache(TOKIO_WORKER_INDEX.get(), ThreadType::MergerTokio)
                 }
                 Some(thread_type) => {
-                    rt.get_buffer_cache(Runtime::local_worker_offset(), thread_type)
+                    let buffer_cache =
+                        rt.get_buffer_cache(Runtime::local_worker_offset(), thread_type);
+                    BUFFER_CACHE.set(Some(buffer_cache.clone()));
+                    buffer_cache
                 }
             }
         } else {
             NO_RUNTIME_CACHE.clone()
-        };
-        BUFFER_CACHE.set(Some(buffer_cache.clone()));
-        buffer_cache
+        }
     }
 
     /// Spawn an auxiliary thread inside the runtime.
