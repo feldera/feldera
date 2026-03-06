@@ -18,7 +18,7 @@ use tempfile::tempdir;
 
 const BATCH_SIZE: usize = 10_000;
 const PROGRESS_EVERY_BATCHES: usize = 100;
-const WORKERS: usize = 8;
+const WORKERS: usize = 2;
 const DATAGEN_THREADS: usize = 8;
 const TOTAL_RECORDS: u64 = 200_000_000;
 const KEY_SPACE: u64 = 100_000_000;
@@ -46,8 +46,8 @@ fn main() -> Result<()> {
                     cache: StorageCacheConfig::default(),
                 },
                 StorageOptions {
-                    min_storage_bytes: Some(0),
-                    min_step_storage_bytes: Some(0),
+                    min_storage_bytes: None,
+                    min_step_storage_bytes: None,
                     ..StorageOptions::default()
                 },
             )
