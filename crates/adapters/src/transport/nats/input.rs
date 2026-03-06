@@ -713,6 +713,11 @@ async fn create_nats_consumer(
 ///
 /// Returns `Ok(())` if the server and stream are healthy (caller should
 /// continue its loop), or an error describing the stall and the failed check.
+///
+/// If the primary probe fails but the fallback reconnect succeeds, we still
+/// return `Ok(())`. This is safe because the ordered consumer will detect the
+/// lost heartbeats and automatically recreate its subscription on the
+/// reconnected client, so messages will resume without intervention.
 async fn check_inactivity_health(
     jetstream: &jetstream::Context,
     connection_config: &cfg::ConnectOptions,
