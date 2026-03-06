@@ -20,7 +20,7 @@ const BATCH_SIZE: usize = 10_000;
 const PROGRESS_EVERY_BATCHES: usize = 100;
 const WORKERS: usize = 2;
 const DATAGEN_THREADS: usize = 8;
-const TOTAL_RECORDS: u64 = 200_000_000;
+const TOTAL_RECORDS: u64 = 70_000_000;
 const KEY_SPACE: u64 = 100_000_000;
 const SEED: u64 = 0;
 const MAX_IN_FLIGHT_BATCHES: usize = 64;
@@ -96,6 +96,9 @@ fn main() -> Result<()> {
             );
         }
     }
+
+    let profile_path = dbsp.dump_profile("profile").unwrap();
+    println!("profile dumped to {profile_path:?}");
 
     for handle in datagen_handles {
         handle
