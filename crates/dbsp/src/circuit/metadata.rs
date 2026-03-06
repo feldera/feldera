@@ -33,7 +33,7 @@ pub enum CircuitMetricCategory {
     Cache,
     Time,
     Balancer,
-    Distribution,
+    Multihost,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -535,25 +535,25 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 65] = [
     },
     CircuitMetric {
         name: EXCHANGE_SERIALIZATION_TIME_SECONDS,
-        category: CircuitMetricCategory::Distribution,
+        category: CircuitMetricCategory::Multihost,
         advanced: false,
         description: "Time spent serializing data to send to other hosts.",
     },
     CircuitMetric {
         name: EXCHANGE_SERIALIZED_BYTES,
-        category: CircuitMetricCategory::Distribution,
+        category: CircuitMetricCategory::Multihost,
         advanced: false,
         description: "Amount of data serialized to send to other hosts.",
     },
     CircuitMetric {
         name: EXCHANGE_DESERIALIZATION_TIME_SECONDS,
-        category: CircuitMetricCategory::Distribution,
+        category: CircuitMetricCategory::Multihost,
         advanced: false,
         description: "Time spent deserializing data received from other hosts.",
     },
     CircuitMetric {
         name: EXCHANGE_DESERIALIZED_BYTES,
-        category: CircuitMetricCategory::Distribution,
+        category: CircuitMetricCategory::Multihost,
         advanced: false,
         description: "Amount of serialized data received from other hosts.",
     },
