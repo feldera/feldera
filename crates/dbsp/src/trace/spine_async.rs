@@ -20,6 +20,7 @@ use crate::{
             SPINE_STORAGE_SIZE_BYTES,
         },
         metrics::COMPACTION_STALL_TIME_NANOSECONDS,
+        runtime::{TOKIO_MERGER, TOKIO_WORKER_INDEX},
     },
     dynamic::{DynVec, Factory, Weight},
     storage::buffer_cache::CacheStats,
@@ -62,12 +63,7 @@ use std::{
 };
 use std::{ops::RangeInclusive, sync::Mutex};
 use textwrap::indent;
-use tokio::{
-    runtime::Builder as TokioBuilder, runtime::Runtime as TokioRuntime, sync::Notify,
-    task::yield_now,
-};
-use tracing::debug;
-
+use tokio::{sync::Notify, task::yield_now};
 mod index_set;
 mod list_merger;
 mod push_merger;
@@ -83,27 +79,6 @@ pub use list_merger::ListMerger;
 
 /// Maximum amount of levels in the spine.
 pub(crate) const MAX_LEVELS: usize = 9;
-
-/// The process running dbsp can share a single Tokio runtime.
-///
-/// This is `pub` so it can be used in dbsp and adapters too for IO.
-pub static TOKIO_MERGER: Lazy<TokioRuntime> = Lazy::new(|| {
-    let num_workers = merger_worker_threads();
-    debug!("starting service dbsp merger tokio runtime, workers: {num_workers}",);
-
-    TokioBuilder::new_multi_thread()
-        .worker_threads(num_workers as usize)
-        .thread_name_fn(|| {
-            use std::sync::atomic::{AtomicUsize, Ordering};
-            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-            format!("merger-tokio-{}", id)
-        })
-        .thread_stack_size(6 * 1024 * 1024)
-        .enable_all()
-        .build()
-        .unwrap()
-});
 
 impl<B: Batch + Send + Sync> From<(Vec<String>, &Spine<B>)> for CommittedSpine {
     fn from((batches, spine): (Vec<String>, &Spine<B>)) -> Self {
@@ -454,33 +429,46 @@ where
             let idle = idle.clone();
             let no_backpressure = no_backpressure.clone();
 
+            let worker_index = Runtime::worker_index();
+
             TOKIO_MERGER.spawn(async move {
-                let state = Arc::clone(&state);
-                let idle = Arc::clone(&idle);
-                let no_backpressure = Arc::clone(&no_backpressure);
-                let mut merger = None;
-                let merger_type = Runtime::with_dev_tweaks(|tweaks| tweaks.merger);
-                let notify = state.lock().unwrap().slots[level].notify.clone();
-                loop {
-                    let status = Self::run(
-                        &worker_state,
-                        level,
-                        &mut merger,
-                        merger_type,
-                        &state,
-                        &idle,
-                        &no_backpressure,
-                    );
-                    match status {
-                        WorkerStatus::Busy => yield_now().await,
-                        WorkerStatus::Idle => {
-                            notify.notified().await;
+                println!("{worker_index}: starting merger worker thread level: {level}");
+                TOKIO_WORKER_INDEX
+                    .scope(worker_index, async move {
+                        let state = Arc::clone(&state);
+                        let idle = Arc::clone(&idle);
+                        let no_backpressure = Arc::clone(&no_backpressure);
+                        let mut merger = None;
+                        let merger_type = Runtime::with_dev_tweaks(|tweaks| tweaks.merger);
+                        let notify = state.lock().unwrap().slots[level].notify.clone();
+                        loop {
+                            let status = Self::run(
+                                &worker_state,
+                                level,
+                                &mut merger,
+                                merger_type,
+                                &state,
+                                &idle,
+                                &no_backpressure,
+                            );
+                            match status {
+                                WorkerStatus::Busy => {
+                                    //println!("{worker_index}: merger level {level} is yielding");
+                                    yield_now().await
+                                }
+                                WorkerStatus::Idle => {
+                                    //println!("{worker_index}: merger level {level} is idle");
+                                    notify.notified().await;
+                                    //println!("{worker_index}: merger level {level} is awake");
+                                }
+                                WorkerStatus::Done => {
+                                    //println!("{worker_index}: merger level {level} is done");
+                                    break;
+                                }
+                            }
                         }
-                        WorkerStatus::Done => {
-                            break;
-                        }
-                    }
-                }
+                    })
+                    .await;
             });
         }
 

@@ -353,6 +353,7 @@ impl Profiler {
                     match thread_type {
                         ThreadType::Foreground => FOREGROUND_CACHE_OCCUPANCY,
                         ThreadType::Background => BACKGROUND_CACHE_OCCUPANCY,
+                        ThreadType::MergerTokio => BACKGROUND_CACHE_OCCUPANCY,
                     }
                 }
 

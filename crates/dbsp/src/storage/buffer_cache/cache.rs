@@ -279,6 +279,8 @@ fn cache_metric(thread_type: ThreadType, access: CacheAccess) -> MetricId {
         (ThreadType::Foreground, CacheAccess::Miss) => CACHE_FOREGROUND_MISSES,
         (ThreadType::Background, CacheAccess::Hit) => CACHE_BACKGROUND_HITS,
         (ThreadType::Background, CacheAccess::Miss) => CACHE_BACKGROUND_MISSES,
+        (ThreadType::MergerTokio, CacheAccess::Hit) => CACHE_BACKGROUND_HITS,
+        (ThreadType::MergerTokio, CacheAccess::Miss) => CACHE_BACKGROUND_MISSES,
     }
 }
 
@@ -286,6 +288,7 @@ fn cache_hit_rate_metric(thread_type: ThreadType) -> MetricId {
     match thread_type {
         ThreadType::Foreground => CACHE_FOREGROUND_HIT_RATE_PERCENT,
         ThreadType::Background => CACHE_BACKGROUND_HIT_RATE_PERCENT,
+        ThreadType::MergerTokio => CACHE_BACKGROUND_HIT_RATE_PERCENT,
     }
 }
 

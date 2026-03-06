@@ -4,8 +4,8 @@
 use super::CircuitConfig;
 use super::dbsp_handle::{Layout, Mode};
 use crate::SchedulerError;
-use crate::circuit::DevTweaks;
 use crate::circuit::checkpointer::Checkpointer;
+use crate::circuit::{DevTweaks, merger_worker_threads};
 use crate::error::Error as DbspError;
 use crate::operator::communication::Exchange;
 use crate::storage::backend::StorageBackend;
@@ -44,12 +44,44 @@ use std::{
     },
     thread::{Builder, JoinHandle, Result as ThreadResult},
 };
+use tokio::runtime::Builder as TokioBuilder;
+use tokio::runtime::Runtime as TokioRuntime;
 use tokio::sync::Notify;
 use tracing::{debug, error, info, warn};
 use typedmap::TypedDashMap;
 
 /// The number of tuples a stateful operator outputs per step during replay.
 pub const DEFAULT_REPLAY_STEP_SIZE: usize = 10000;
+
+/// The process running dbsp can share a single Tokio runtime.
+///
+/// This is `pub` so it can be used in dbsp and adapters too for IO.
+pub static TOKIO_MERGER: Lazy<TokioRuntime> = Lazy::new(|| {
+    let num_workers = merger_worker_threads();
+    println!("starting service dbsp merger tokio runtime, workers: {num_workers}",);
+    let runtime = Runtime::runtime().unwrap();
+
+    TokioBuilder::new_multi_thread()
+        .worker_threads(num_workers as usize)
+        .thread_name_fn(|| {
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+            format!("merger-tokio-{}", id)
+        })
+        .on_thread_start(move || {
+            //ThreadType::set_current(ThreadType::Background);
+            RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime.clone()));
+        })
+        .thread_stack_size(6 * 1024 * 1024)
+        .enable_all()
+        .build()
+        .unwrap()
+});
+
+tokio::task_local! {
+    pub static TOKIO_WORKER_INDEX: usize;
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum Error {
@@ -137,6 +169,9 @@ mod thread_type {
 
         /// Merger thread.
         Background,
+
+        /// Merger tokio thread.
+        MergerTokio,
     }
 
     impl ThreadType {
@@ -157,6 +192,7 @@ mod thread_type {
             match self {
                 ThreadType::Foreground => write!(f, "foreground"),
                 ThreadType::Background => write!(f, "background"),
+                ThreadType::MergerTokio => write!(f, "merger tokio"),
             }
         }
     }
@@ -356,6 +392,7 @@ fn map_pin_cpus(layout: &Layout, pin_cpus: &[usize]) -> Vec<EnumMap<ThreadType, 
             enum_map! {
                 ThreadType::Foreground => fg_cpus[i],
                 ThreadType::Background => bg_cpus[i],
+                ThreadType::MergerTokio => bg_cpus[i],
             }
         })
         .collect()
@@ -643,11 +680,18 @@ impl Runtime {
 
         // Slow path for initializing the thread-local.
         let buffer_cache = if let Some(rt) = Runtime::runtime() {
-            if let Some(thread_type) = ThreadType::current() {
-                rt.get_buffer_cache(Runtime::local_worker_offset(), thread_type)
-            } else {
-                // Aux thread: use the global cache.
-                NO_RUNTIME_CACHE.clone()
+            match ThreadType::current() {
+                None => NO_RUNTIME_CACHE.clone(),
+                Some(ThreadType::MergerTokio) => {
+                    println!(
+                        "getting buffer cache for merger tokio worker index: {}",
+                        TOKIO_WORKER_INDEX.get()
+                    );
+                    rt.get_buffer_cache(TOKIO_WORKER_INDEX.get(), ThreadType::MergerTokio)
+                }
+                Some(thread_type) => {
+                    rt.get_buffer_cache(Runtime::local_worker_offset(), thread_type)
+                }
             }
         } else {
             NO_RUNTIME_CACHE.clone()
