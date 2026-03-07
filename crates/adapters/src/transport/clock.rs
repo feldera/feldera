@@ -57,6 +57,7 @@ pub fn now_endpoint_config(config: &PipelineConfig) -> InputEndpointConfig {
                     .clock_resolution_usecs
                     .unwrap_or(DEFAULT_CLOCK_RESOLUTION_USECS),
             }),
+            preprocessor: None,
             format: Some(FormatConfig {
                 name: Cow::Borrowed("json"),
                 config: serde_json::to_value(JsonParserConfig {

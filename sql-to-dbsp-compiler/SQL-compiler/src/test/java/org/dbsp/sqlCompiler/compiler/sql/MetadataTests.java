@@ -360,7 +360,7 @@ public class MetadataTests extends BaseSQLTests {
         // Force compilation
         compiler.getFinalCircuit(true);
         Assert.assertTrue(compiler.messages.toString().contains(
-                "warning: Unnamed connector: Connector nr. 1 for Table 't' does not have a name.\n" +
+                "warning: Unnamed connector: Connector nr. 1 for table 't' does not have a name.\n" +
                 "It is recommended to name all connectors using the \"name\" property; " +
                         "names will be required in the future."));
 
@@ -371,8 +371,12 @@ public class MetadataTests extends BaseSQLTests {
                     "url": "localhost"
                   }]'
                );""";
-        this.statementsFailingInCompilation(sql,
-                "Expected a string value for the connector \"name\" property");
+        this.statementsFailingInCompilation(sql, """
+               Compilation error: Expected a string value for the connector "name" property
+                   3|     "name": [],
+                                  ^
+                   4|     "url": "localhost"
+               """);
 
         sql = """
                CREATE TABLE T (COL1 INT) WITH (
@@ -384,8 +388,11 @@ public class MetadataTests extends BaseSQLTests {
                     "url": "localhost:8080"
                   }]'
                );""";
-        this.statementsFailingInCompilation(sql,
-                "Connector 'Bob' for Table 't' must have a unique name per table/view");
+        this.statementsFailingInCompilation(sql,"""
+               error: Compilation error: Two connectors for the same table 't' cannot have the same name: 'Bob'
+                   6|     "name": "Bob",
+                                  ^
+                   7|     "url": "localhost:8080\"""");
     }
 
     @Test
@@ -965,6 +972,142 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void testUDPValidation() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x INT) WITH ('connectors' = '[{
+                   "name": "0",
+                   "transport": {
+                     "name": "datagen",
+                     "config": {}
+                   },
+                   "preprocessor": [{
+                      "config": {}
+                   }]
+                }]');""", """
+                Compilation error: Preprocessor must have a field "name"
+                    7|   "preprocessor": [{
+                                          ^
+                    8|      "config": {}""");
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x INT) WITH ('connectors' = '[{
+                   "name": "0",
+                   "transport": {
+                     "name": "datagen",
+                     "config": {}
+                   },
+                   "preprocessor": [{
+                      "name": "Bob",
+                      "config": {}
+                   }]
+                }]');""", """
+                Compilation error: Preprocessor must have a field "message_oriented"
+                    7|   "preprocessor": [{
+                                          ^
+                    8|      "name": "Bob",""");
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x INT) WITH ('connectors' = '[{
+                   "name": "0",
+                   "transport": {
+                     "name": "datagen",
+                     "config": {}
+                   },
+                   "preprocessor": [{
+                      "message_oriented": "streaming",
+                      "name": "Bob",
+                      "config": {}
+                   }]
+                }]');""", """
+                Compilation error: Preprocessor field "message_oriented" must be a Boolean value
+                    8|      "message_oriented": "streaming",
+                                                ^
+                    9|      "name": "Bob",""");
+    }
+
+    @Test
+    public void testUDP() throws IOException, InterruptedException, SQLException {
+        // Test user-defined preprocessor
+        String sql = """
+                CREATE TABLE T(x INT) WITH ('connectors' = '[{
+                   "transport": {
+                      "name": "datagen",
+                      "config": {}
+                   },
+                   "preprocessor": [{
+                      "name": "example",
+                      "message_oriented": true,
+                      "config": {}
+                   }],
+                   "config": {}
+                }]');
+                CREATE MATERIALIZED VIEW V AS SELECT * FROM T;""";
+
+        // Save a copy of cargo.toml
+        Path cargo = Paths.get(RUST_DIRECTORY, "..", "Cargo.toml");
+        Path cargoBackup = Paths.get(RUST_DIRECTORY, "..", "Cargo.toml.bak");
+        File udf = Paths.get(RUST_DIRECTORY, "udf.rs").toFile();
+        try {
+            Files.copy(cargo, cargoBackup, StandardCopyOption.REPLACE_EXISTING);
+            String cargoContents = Utilities.readFile(cargo);
+            cargoContents = cargoContents.replace("[dependencies]",
+                    """
+                            [dependencies]
+                            feldera-adapterlib = { path = "../../crates/adapterlib" }
+                            """);
+            PrintWriter p = new PrintWriter(cargo.toFile(), StandardCharsets.UTF_8);
+            p.write(cargoContents);
+            p.close();
+
+            PrintWriter udfWriter = new PrintWriter(udf, StandardCharsets.UTF_8);
+            udfWriter.println("""
+                    use feldera_adapterlib::format::{ParseError, Splitter};
+                    use feldera_types::preprocess::PreprocessorConfig;
+                    use feldera_adapterlib::preprocess::{
+                        Preprocessor, PreprocessorCreateError, PreprocessorFactory,
+                    };
+
+                    pub struct ExamplePreprocessor;
+
+                    impl Preprocessor for ExamplePreprocessor {
+                        fn process(&mut self, data: &[u8]) -> (Vec<u8>, Vec<ParseError>) {
+                            (data.to_vec(), vec![])
+                        }
+
+                        fn fork(&self) -> Box<dyn Preprocessor> {
+                            Box::new(ExamplePreprocessor)
+                        }
+                    
+                        fn splitter(&self) -> Option<Box<dyn Splitter>> {
+                            None
+                        }
+                    }
+
+                    pub struct ExamplePreprocessorFactory;
+
+                    impl PreprocessorFactory for ExamplePreprocessorFactory {
+                        fn create(
+                            &self,
+                            _config: &PreprocessorConfig,
+                        ) -> Result<Box<dyn Preprocessor>, PreprocessorCreateError> {
+                            Ok(Box::new(ExamplePreprocessor))
+                        }
+                    }""");
+            udfWriter.close();
+            File file = createInputScript(sql);
+            CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+            if (messages.errorCount() > 0)
+                throw new RuntimeException(messages.toString());
+            BaseSQLTests.compileAndTestRust(false);
+            // Truncate udf file to 0 bytes
+            FileWriter writer = new FileWriter(udf);
+            writer.close();
+        } finally {
+            // Restore cargo.toml
+            Files.copy(cargoBackup, cargo, StandardCopyOption.REPLACE_EXISTING);
+            Utilities.deleteFile(cargoBackup.toFile(), true);
+        }
+    }
+
+    @Test
     public void testUDF() throws IOException, InterruptedException, SQLException {
         File file = createInputScript("""
                 CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value DECIMAL(2, 0)) RETURNS BOOLEAN NOT NULL;
@@ -1090,9 +1233,6 @@ public class MetadataTests extends BaseSQLTests {
                     --ignoreOrder
                       Ignore ORDER BY clauses at the end
                       Default: false
-                    --jdbcSource
-                      Connection string to a database that contains table metadata
-                      Default: <empty string>
                     --je, -je
                       Emit error messages as a JSON array to the error output
                       Default: false

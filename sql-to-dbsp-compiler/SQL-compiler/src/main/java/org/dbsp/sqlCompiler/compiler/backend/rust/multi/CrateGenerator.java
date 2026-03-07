@@ -108,6 +108,7 @@ public final class CrateGenerator {
                 dbsp = { workspace = true }
                 dbsp_adapters = { workspace = true }
                 feldera-macros = { workspace = true }
+                feldera-adapterlib = { workspace = true }
                 feldera-types = { workspace = true }
                 feldera-sqllib = { workspace = true }
                 serde = { workspace = true }

@@ -1,5 +1,6 @@
 use crate::{
     Controller, PipelineConfig,
+    preprocess::{DecryptionPreprocessorFactory, PassthroughPreprocessorFactory},
     test::{
         DEFAULT_TIMEOUT_MS, TestStruct, generate_test_batch, init_test_logger, test_circuit, wait,
     },
@@ -29,6 +30,7 @@ use tempfile::{NamedTempFile, TempDir};
 use tokio::sync::oneshot;
 use tracing::info;
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use proptest::prelude::*;
 
 #[test]
@@ -2575,4 +2577,456 @@ fn test_custom_connector_metrics_prometheus_grouping() {
         !between.contains("# TYPE"),
         "unexpected '# TYPE' header between endpoint values:\n{output}"
     );
+}
+
+#[test]
+fn test_preprocessor() {
+    init_test_logger();
+
+    // Create test JSON data with various strings that will be filtered and transformed
+    let temp_input_file = NamedTempFile::new().unwrap();
+    temp_input_file
+        .as_file()
+        .write_all(
+            br#"[
+            {"id": 1, "b": true, "s": "one"},
+            {"id": 2, "b": false, "s": "two"}
+        ]"#,
+        )
+        .unwrap();
+
+    // Controller configuration with a preprocessor :
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test_preprocessor",
+        "workers": 1,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": temp_input_file.path(),
+                        "follow": false
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "array": true,
+                        "update_format": "raw"
+                    }
+                },
+                "preprocessor": [
+                    {
+                        "name": "passthrough",
+                        "message_oriented": true,
+                        "config": {}
+                    }
+                ]
+            }
+        }
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            let (circuit, catalog) =
+                test_circuit::<TestStruct>(circuit_config, &TestStruct::schema(), &[None]);
+            // Register the factory before connectors are initialized.
+            catalog
+                .preprocessor_registry()
+                .lock()
+                .unwrap()
+                .register("passthrough", Box::new(PassthroughPreprocessorFactory));
+            Ok((circuit, catalog))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    controller.start();
+    wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS).unwrap();
+
+    let result = controller
+        .execute_query_text_sync("select * from test_output1 order by id")
+        .unwrap();
+
+    let expected = r#"+----+-------+---+-----+
+| id | b     | i | s   |
++----+-------+---+-----+
+| 1  | true  |   | one |
+| 2  | false |   | two |
++----+-------+---+-----+"#;
+
+    assert_eq!(&result, expected);
+    controller.stop().unwrap();
+}
+
+#[test]
+fn test_decryption_preprocessor() {
+    use crate::preprocess::aes256gcm_encrypt;
+
+    init_test_logger();
+
+    // AES-256 key (32 bytes) and nonce (12 bytes).
+    let key = b"0123456789abcdef0123456789abcdef";
+    let nonce = b"test_nonce_1";
+
+    // Encrypt JSON data that the pipeline will decrypt and parse.
+    let json_input = br#"[
+        {"id": 1, "b": true, "s": "one"},
+        {"id": 2, "b": false, "s": "two"}
+    ]"#;
+    let encrypted = aes256gcm_encrypt(key, nonce, json_input);
+
+    let temp_input_file = NamedTempFile::new().unwrap();
+    temp_input_file.as_file().write_all(&encrypted).unwrap();
+
+    let key_b64 = BASE64.encode(key);
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test_decryption_preprocessor",
+        "workers": 1,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": temp_input_file.path(),
+                        "follow": false
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "array": true,
+                        "update_format": "raw"
+                    }
+                },
+                "preprocessor": [
+                    {
+                        "name": "decryption",
+                        "message_oriented": true,
+                        "config": {
+                            "key": key_b64
+                        }
+                    }
+                ]
+            }
+        }
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            let (circuit, catalog) =
+                test_circuit::<TestStruct>(circuit_config, &TestStruct::schema(), &[None]);
+            // Register the factory before connectors are initialized.
+            catalog
+                .preprocessor_registry()
+                .lock()
+                .unwrap()
+                .register("decryption", Box::new(DecryptionPreprocessorFactory));
+            Ok((circuit, catalog))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    controller.start();
+    wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS).unwrap();
+
+    let result = controller
+        .execute_query_text_sync("select * from test_output1 order by id")
+        .unwrap();
+
+    let expected = r#"+----+-------+---+-----+
+| id | b     | i | s   |
++----+-------+---+-----+
+| 1  | true  |   | one |
+| 2  | false |   | two |
++----+-------+---+-----+"#;
+
+    assert_eq!(&result, expected);
+    controller.stop().unwrap();
+}
+
+// ---------------------------------------------------------------------------
+// Helpers for `test_base64_csv_preprocessor`
+// ---------------------------------------------------------------------------
+
+use crate::format::{LineSplitter, SpongeSplitter};
+use feldera_adapterlib::format::Splitter;
+use feldera_adapterlib::preprocess::{Preprocessor, PreprocessorCreateError, PreprocessorFactory};
+use feldera_types::preprocess::PreprocessorConfig;
+
+/// Preprocessor that base64-decodes each line it receives.
+///
+/// The [`NewlineSplitter`] above ensures that `process` is called with exactly
+/// one base64-encoded line (including the trailing `\n`) at a time.
+/// `process` strips the newline and decodes the rest, returning the original
+/// CSV bytes (e.g. `b"1,true,,one\n"`).
+#[cfg(test)]
+struct Base64LinePreprocessor;
+
+#[cfg(test)]
+impl Preprocessor for Base64LinePreprocessor {
+    fn process(&mut self, data: &[u8]) -> (Vec<u8>, Vec<crate::format::ParseError>) {
+        let without_newline = data.strip_suffix(b"\n").unwrap_or(data);
+        match BASE64.decode(without_newline) {
+            Ok(decoded) => (decoded, vec![]),
+            Err(e) => (
+                vec![],
+                vec![crate::format::ParseError::bin_envelope_error(
+                    format!("base64 decode error: {e}"),
+                    without_newline,
+                    None,
+                )],
+            ),
+        }
+    }
+
+    fn fork(&self) -> Box<dyn Preprocessor> {
+        Box::new(Base64LinePreprocessor)
+    }
+
+    fn splitter(&self) -> Option<Box<dyn Splitter>> {
+        Some(Box::new(LineSplitter))
+    }
+}
+
+#[cfg(test)]
+struct Base64LinePreprocessorFactory;
+
+#[cfg(test)]
+impl PreprocessorFactory for Base64LinePreprocessorFactory {
+    fn create(
+        &self,
+        _config: &PreprocessorConfig,
+    ) -> Result<Box<dyn Preprocessor>, PreprocessorCreateError> {
+        Ok(Box::new(Base64LinePreprocessor))
+    }
+}
+
+/// Verify that [`PreprocessedParser`] exercises both the preprocessor splitter
+/// and the parser splitter in the same pipeline.
+///
+/// **Input format**: the file contains newline-separated base64-encoded CSV rows.
+///
+/// **Preprocessor splitter** (`NewlineSplitter`): the file transport calls
+/// `PreprocessedParser::splitter()`, which returns the preprocessor's splitter.
+/// That splitter finds `\n` boundaries in the raw byte stream so that each
+/// call to `PreprocessedParser::parse` receives exactly one base64-encoded
+/// line.
+///
+/// **Parser splitter** (`CsvSplitter`): inside `PreprocessedParser::parse`,
+/// after `process` decodes a base64 line back to a CSV row (e.g.
+/// `b"1,true,,one\n"`), the result is appended to the internal
+/// `StreamSplitter`, which uses the CSV parser's own splitter to find the
+/// CSV record boundary before forwarding the complete row to `CsvParser`.
+#[test]
+fn test_base64_csv_preprocessor() {
+    init_test_logger();
+
+    // Two CSV rows for `TestStruct { id: u32, b: bool, i: Option<i64>, s: String }`.
+    // `i` is None, which serialises as an empty field in CSV.
+    let rows: &[&[u8]] = &[b"1,true,,one\n", b"2,false,,two\n"];
+
+    // Build the input file: each CSV row is base64-encoded, one per line.
+    let mut file_contents = Vec::new();
+    for row in rows {
+        file_contents.extend_from_slice(BASE64.encode(row).as_bytes());
+        file_contents.push(b'\n');
+    }
+    // skip newline after last row
+    file_contents.pop();
+
+    let temp_input_file = NamedTempFile::new().unwrap();
+    temp_input_file.as_file().write_all(&file_contents).unwrap();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test_base64_csv_preprocessor",
+        "workers": 1,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": temp_input_file.path(),
+                        "follow": false
+                    }
+                },
+                "format": {
+                    "name": "csv",
+                    "config": {}
+                },
+                "preprocessor": [
+                    {
+                        "name": "base64LinePreprocessor",
+                        "message_oriented": true,
+                        "config": {}
+                    }
+                ]
+            }
+        }
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            let (circuit, catalog) =
+                test_circuit::<TestStruct>(circuit_config, &TestStruct::schema(), &[None]);
+            catalog.preprocessor_registry().lock().unwrap().register(
+                "base64LinePreprocessor",
+                Box::new(Base64LinePreprocessorFactory),
+            );
+            Ok((circuit, catalog))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    controller.start();
+    wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS).unwrap();
+
+    let result = controller
+        .execute_query_text_sync("select * from test_output1 order by id")
+        .unwrap();
+
+    let expected = r#"+----+-------+---+-----+
+| id | b     | i | s   |
++----+-------+---+-----+
+| 1  | true  |   | one |
+| 2  | false |   | two |
++----+-------+---+-----+"#;
+
+    assert_eq!(&result, expected);
+    controller.stop().unwrap();
+}
+
+/// Preprocessor that base64-decodes the input it receives.
+#[cfg(test)]
+struct Base64SpongePreprocessor;
+
+#[cfg(test)]
+impl Preprocessor for Base64SpongePreprocessor {
+    fn process(&mut self, data: &[u8]) -> (Vec<u8>, Vec<crate::format::ParseError>) {
+        let without_newline = data.strip_suffix(b"\n").unwrap_or(data);
+        match BASE64.decode(without_newline) {
+            Ok(decoded) => (decoded, vec![]),
+            Err(e) => (
+                vec![],
+                vec![crate::format::ParseError::bin_envelope_error(
+                    format!("base64 decode error: {e}"),
+                    without_newline,
+                    None,
+                )],
+            ),
+        }
+    }
+
+    fn fork(&self) -> Box<dyn Preprocessor> {
+        Box::new(Base64SpongePreprocessor)
+    }
+
+    fn splitter(&self) -> Option<Box<dyn Splitter>> {
+        Some(Box::new(SpongeSplitter))
+    }
+}
+
+#[cfg(test)]
+struct Base64SpongePreprocessorFactory;
+
+#[cfg(test)]
+impl PreprocessorFactory for Base64SpongePreprocessorFactory {
+    fn create(
+        &self,
+        _config: &PreprocessorConfig,
+    ) -> Result<Box<dyn Preprocessor>, PreprocessorCreateError> {
+        Ok(Box::new(Base64SpongePreprocessor))
+    }
+}
+
+/// Like the previous test, but use a SpongeSplitter in the preprocessor and
+/// uudecode everything, not at line boundaries.
+#[test]
+fn test_base64_sponge_csv_preprocessor() {
+    init_test_logger();
+
+    // Two CSV rows for `TestStruct { id: u32, b: bool, i: Option<i64>, s: String }`.
+    // `i` is None, which serialises as an empty field in CSV.
+    let rows: &[u8] = b"1,true,,one\n2,false,,two";
+
+    // Build the input file: each CSV row is base64-encoded, one per line.
+    let mut file_contents = Vec::new();
+    file_contents.extend_from_slice(BASE64.encode(rows).as_bytes());
+
+    let temp_input_file = NamedTempFile::new().unwrap();
+    temp_input_file.as_file().write_all(&file_contents).unwrap();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test_base64_sponge_csv_preprocessor",
+        "workers": 1,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": temp_input_file.path(),
+                        "follow": false
+                    }
+                },
+                "format": {
+                    "name": "csv",
+                    "config": {}
+                },
+                "preprocessor": [
+                    {
+                        "name": "base64SpongePreprocessor",
+                        "message_oriented": true,
+                        "config": {}
+                    }
+                ]
+            }
+        }
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            let (circuit, catalog) =
+                test_circuit::<TestStruct>(circuit_config, &TestStruct::schema(), &[None]);
+            catalog.preprocessor_registry().lock().unwrap().register(
+                "base64SpongePreprocessor",
+                Box::new(Base64SpongePreprocessorFactory),
+            );
+            Ok((circuit, catalog))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    controller.start();
+    wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS).unwrap();
+
+    let result = controller
+        .execute_query_text_sync("select * from test_output1 order by id")
+        .unwrap();
+
+    let expected = r#"+----+-------+---+-----+
+| id | b     | i | s   |
++----+-------+---+-----+
+| 1  | true  |   | one |
+| 2  | false |   | two |
++----+-------+---+-----+"#;
+
+    assert_eq!(&result, expected);
+    controller.stop().unwrap();
 }

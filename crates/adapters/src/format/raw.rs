@@ -24,7 +24,7 @@ use std::{borrow::Cow, fmt::Display};
 
 use crate::catalog::InputCollectionHandle;
 
-use super::{InputBuffer, LineSplitter, Sponge};
+use super::{InputBuffer, LineSplitter, SpongeSplitter};
 
 /// Raw format parser.
 ///
@@ -162,7 +162,7 @@ impl Parser for RawParser {
     fn splitter(&self) -> Box<dyn super::Splitter> {
         match self.config.mode {
             RawParserMode::Lines => Box::new(LineSplitter),
-            RawParserMode::Blob => Box::new(Sponge),
+            RawParserMode::Blob => Box::new(SpongeSplitter),
         }
     }
 

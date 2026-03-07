@@ -73,7 +73,7 @@ public class Properties implements IJson {
         return result;
     }
 
-    /** Serializatino as JSON for reading back the circuit; different
+    /** Serialization as JSON for reading back the circuit; different
      * from the one above. */
     @Override
     public void asJson(ToJsonInnerVisitor visitor) {

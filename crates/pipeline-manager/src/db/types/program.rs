@@ -899,6 +899,7 @@ mod tests {
         let config = ConnectorConfig {
             transport: TransportConfig::Datagen(DatagenInputConfig::default()),
             format: None,
+            preprocessor: None,
             index: None,
             output_buffer_config: Default::default(),
             max_batch_size: Some(0),

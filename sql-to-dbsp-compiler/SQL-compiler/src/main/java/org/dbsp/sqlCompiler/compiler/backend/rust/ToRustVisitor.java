@@ -136,6 +136,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /** This visitor generates a Rust implementation of a circuit. */
@@ -266,6 +267,28 @@ public class ToRustVisitor extends CircuitVisitor {
         return decl.item.is(DBSPStaticItem.class) || decl.item.is(DBSPFunctionItem.class);
     }
 
+    public static void registerPreprocessors(DBSPCompiler compiler, IIndentStream builder) {
+        // Scan the input table connectors to discover preprocessor declarations
+        // Insert a call to the PreprocessorRegistry for each kind of preprocessor.
+        Set<String> preprocessors = compiler.metadata.getPreprocessors();
+        if (!preprocessors.isEmpty()) {
+            builder.append("if Runtime::worker_index() == 0 {").increase();
+            // This code is executed on all worker threads, but only register the preprocessor factory in worker 0
+            for (String pre : preprocessors) {
+                String normalized = pre.substring(0, 1).toUpperCase(Locale.ENGLISH) + pre.substring(1);
+                builder.append("catalog.preprocessor_registry()").newline()
+                        .append(".lock().unwrap().register(\"")
+                        .append(pre.toLowerCase(Locale.ENGLISH))
+                        .append("\", ")
+                        .append("Box::new(")
+                        .append(normalized)
+                        .append("PreprocessorFactory));")
+                        .newline();
+            }
+            builder.decrease().append("}").newline();
+        }
+    }
+
     @Override
     public VisitDecision preorder(DBSPCircuit circuit) {
         IndentStream signature = new IndentStreamBuilder();
@@ -322,6 +345,8 @@ public class ToRustVisitor extends CircuitVisitor {
             this.sourcePositionResource.generateInitializer(this.builder);
             SourcePositionResource.generateReference(this.builder, CircuitWriter.SOURCE_MAP_VARIABLE_NAME);
         }
+
+        registerPreprocessors(this.compiler, this.builder);
 
         for (DBSPDeclaration decl: circuit.declarations) {
             if (this.declareInside(decl)) {

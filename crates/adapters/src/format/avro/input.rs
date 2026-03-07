@@ -2,7 +2,7 @@ use crate::{
     ControllerError, DeCollectionHandle, InputBuffer, InputFormat, ParseError, Parser,
     catalog::{AvroStream, InputCollectionHandle},
     format::{
-        Splitter, Sponge,
+        Splitter, SpongeSplitter,
         avro::schema::{schema_json, validate_struct_schema},
     },
 };
@@ -501,7 +501,7 @@ impl AvroParser {
 
 impl Parser for AvroParser {
     fn splitter(&self) -> Box<dyn Splitter> {
-        Box::new(Sponge)
+        Box::new(SpongeSplitter)
     }
     fn parse(
         &mut self,

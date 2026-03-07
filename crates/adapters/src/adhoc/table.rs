@@ -284,6 +284,7 @@ impl DataSink for AdHocTableSink {
                     name: Cow::from("parquet"),
                     config: serde_json::Value::Null,
                 }),
+                preprocessor: None,
                 index: None,
                 output_buffer_config: Default::default(),
                 max_batch_size: None,
