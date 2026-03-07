@@ -33,6 +33,7 @@ from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.rest.sql_table import SQLTable
 from feldera.rest.sql_view import SQLView
 from feldera.runtime_config import RuntimeConfig
+from feldera.connector_stats import InputConnectorStatus, OutputConnectorStatus
 from feldera.stats import PipelineStatistics
 from feldera.types import CheckpointMetadata
 
@@ -243,6 +244,26 @@ class Pipeline:
         """
 
         self.client.resume_connector(self.name, table_name, connector_name)
+
+    def input_connector_stats(
+        self, table_name: str, connector_name: str
+    ) -> InputConnectorStatus:
+        """
+        Get the status of the specified input connector.
+        """
+        return InputConnectorStatus.from_dict(
+            self.client.input_connector_stats(self.name, table_name, connector_name)
+        )
+
+    def output_connector_stats(
+        self, view_name: str, connector_name: str
+    ) -> OutputConnectorStatus:
+        """
+        Get the status of the specified output connector.
+        """
+        return OutputConnectorStatus.from_dict(
+            self.client.output_connector_stats(self.name, view_name, connector_name)
+        )
 
     def listen(self, view_name: str) -> OutputHandler:
         """
