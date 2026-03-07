@@ -48,16 +48,16 @@ use cpu_time::ProcessTime;
 use crossbeam::sync::Unparker;
 use feldera_adapterlib::{
     errors::journal::ControllerError,
-    format::BufferSize,
+    format::{BufferSize, ParseError},
     metrics::ConnectorMetrics,
     transport::{InputReader, Resume, Step, Watermark},
 };
 use feldera_storage::histogram::SlidingHistogram;
 use feldera_types::{
     adapter_stats::{
-        ExternalCompletedWatermark, ExternalInputEndpointMetrics, ExternalInputEndpointStatus,
-        ExternalOutputEndpointMetrics, ExternalOutputEndpointStatus, ShortEndpointConfig,
-        TransactionStatus,
+        ConnectorError, ExternalCompletedWatermark, ExternalInputEndpointMetrics,
+        ExternalInputEndpointStatus, ExternalOutputEndpointMetrics, ExternalOutputEndpointStatus,
+        ShortEndpointConfig, TransactionStatus,
     },
     config::{FtModel, PipelineConfig},
     coordination::Completion,
@@ -71,6 +71,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
+    fmt::Display,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -82,6 +83,10 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use utoipa::ToSchema;
+
+/// The number of the most recent errors stored for each endpoint as part of the endpoint status.
+/// There are separate counters for parse and transport errors and for every tag.
+const MAX_CONNECTOR_ERRORS: usize = 100;
 
 /// Completion token.
 ///
@@ -1100,27 +1105,49 @@ impl ControllerStatus {
         })
     }
 
-    pub fn parse_error(&self, endpoint_id: EndpointId) {
+    pub fn parse_error(
+        &self,
+        endpoint_id: EndpointId,
+        tag: Option<&'static str>,
+        error: &ParseError,
+    ) {
         if let Some(endpoint_stats) = self.input_status().get(&endpoint_id) {
-            endpoint_stats.parse_error();
+            endpoint_stats.parse_error(tag, error);
         }
     }
 
-    pub fn encode_error(&self, endpoint_id: EndpointId) {
+    pub fn encode_error(
+        &self,
+        endpoint_id: EndpointId,
+        tag: Option<&'static str>,
+        error: &AnyError,
+    ) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
-            endpoint_stats.encode_error();
+            endpoint_stats.encode_error(tag, error);
         }
     }
 
-    pub fn input_transport_error(&self, endpoint_id: EndpointId, fatal: bool, error: &AnyError) {
+    pub fn input_transport_error(
+        &self,
+        endpoint_id: EndpointId,
+        fatal: bool,
+        tag: Option<&'static str>,
+        error: &AnyError,
+    ) {
         if let Some(endpoint_stats) = self.input_status().get(&endpoint_id) {
-            endpoint_stats.transport_error(fatal, error);
+            endpoint_stats.transport_error(fatal, tag, error);
         }
     }
 
-    pub fn output_transport_error(&self, endpoint_id: EndpointId, fatal: bool, error: &AnyError) {
+    pub fn output_transport_error(
+        &self,
+        endpoint_id: EndpointId,
+        fatal: bool,
+        tag: Option<&'static str>,
+        error: &AnyError,
+    ) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
-            endpoint_stats.transport_error(fatal, error);
+            endpoint_stats.transport_error(fatal, tag, error);
         }
     }
 
@@ -1256,40 +1283,7 @@ impl ControllerStatus {
         let mut inputs: Vec<_> = self
             .input_status()
             .values()
-            .map(|input| adapter_stats::ExternalInputEndpointStatus {
-                endpoint_name: input.endpoint_name.clone(),
-                config: ShortEndpointConfig {
-                    stream: input.config.stream.clone().into_owned(),
-                },
-                metrics: adapter_stats::ExternalInputEndpointMetrics {
-                    total_bytes: input.metrics.total_bytes.load(Ordering::Acquire),
-                    total_records: input.metrics.total_records.load(Ordering::Acquire),
-                    buffered_records: input.metrics.buffered_records.load(Ordering::Acquire),
-                    buffered_bytes: input.metrics.buffered_bytes.load(Ordering::Acquire),
-                    num_transport_errors: input
-                        .metrics
-                        .num_transport_errors
-                        .load(Ordering::Acquire),
-                    num_parse_errors: input.metrics.num_parse_errors.load(Ordering::Acquire),
-                    end_of_input: input.metrics.end_of_input.load(Ordering::Acquire),
-                },
-                fatal_error: input.fatal_error(),
-                paused: input.is_paused_by_user(),
-                barrier: input.barrier.load(Ordering::Acquire),
-                completed_frontier: input
-                    .completed_frontier
-                    .0
-                    .lock()
-                    .unwrap()
-                    .completed_watermark
-                    .as_ref()
-                    .map(|wm| adapter_stats::ExternalCompletedWatermark {
-                        metadata: wm.metadata.clone(),
-                        ingested_at: wm.ingested_at.to_rfc3339(),
-                        processed_at: wm.processed_at.to_rfc3339(),
-                        completed_at: wm.completed_at.to_rfc3339(),
-                    }),
-            })
+            .map(|input| input.to_api_type(false))
             .collect();
         inputs.sort_by(|ep1, ep2| ep1.endpoint_name.cmp(&ep2.endpoint_name));
 
@@ -1297,35 +1291,7 @@ impl ControllerStatus {
         let mut outputs: Vec<_> = self
             .output_status()
             .values()
-            .map(|output| adapter_stats::ExternalOutputEndpointStatus {
-                endpoint_name: output.endpoint_name.clone(),
-                config: ShortEndpointConfig {
-                    stream: output.config.stream.clone().into_owned(),
-                },
-                metrics: adapter_stats::ExternalOutputEndpointMetrics {
-                    transmitted_records: output.metrics.transmitted_records.load(Ordering::Acquire),
-                    transmitted_bytes: output.metrics.transmitted_bytes.load(Ordering::Relaxed),
-                    queued_records: output.metrics.queued_records.load(Ordering::Relaxed),
-                    queued_batches: output.metrics.queued_batches.load(Ordering::Relaxed),
-                    buffered_records: output.metrics.buffered_records.load(Ordering::Relaxed),
-                    buffered_batches: output.metrics.buffered_batches.load(Ordering::Relaxed),
-                    num_encode_errors: output.metrics.num_encode_errors.load(Ordering::Relaxed),
-                    num_transport_errors: output
-                        .metrics
-                        .num_transport_errors
-                        .load(Ordering::Relaxed),
-                    total_processed_input_records: output
-                        .metrics
-                        .total_processed_input_records
-                        .load(Ordering::Relaxed),
-                    total_processed_steps: output
-                        .metrics
-                        .total_processed_steps
-                        .load(Ordering::Relaxed),
-                    memory: output.metrics.memory.load(Ordering::Relaxed),
-                },
-                fatal_error: output.fatal_error.lock().unwrap().clone(),
-            })
+            .map(|output| output.to_api_type(false))
             .collect();
         outputs.sort_by(|ep1, ep2| ep1.endpoint_name.cmp(&ep2.endpoint_name));
 
@@ -1931,6 +1897,12 @@ pub struct InputEndpointStatus {
     /// The first fatal error that occurred at the endpoint.
     pub fatal_error: Mutex<Option<String>>,
 
+    /// Recent transport errors.
+    pub transport_errors: Mutex<ConnectorErrorList>,
+
+    /// Recent parse errors.
+    pub parse_errors: Mutex<ConnectorErrorList>,
+
     /// Progress within the latest step.
     pub progress: Mutex<Option<StepResults>>,
 
@@ -1970,7 +1942,16 @@ pub struct InputEndpointStatus {
 }
 
 impl InputEndpointStatus {
-    pub fn to_api_type(&self) -> ExternalInputEndpointStatus {
+    /// Convert the endpoint status to the API type.
+    ///
+    /// If `full` is true, generates a full version of the endpoint status,
+    /// including the list of errors. This status can be returned via the
+    /// `/tables/<table_name>/connectors/<connector_name>/status` endpoint.
+    ///
+    /// If `full` is false, generates a trimmed version of the endpoint status,
+    /// not including the list of errors. This status can be returned via the
+    /// `/stats` endpoint.
+    pub fn to_api_type(&self, full: bool) -> ExternalInputEndpointStatus {
         ExternalInputEndpointStatus {
             endpoint_name: self.endpoint_name.clone(),
             config: feldera_types::adapter_stats::ShortEndpointConfig {
@@ -1978,6 +1959,16 @@ impl InputEndpointStatus {
             },
             metrics: self.metrics.to_api_type(),
             fatal_error: self.fatal_error(),
+            parse_errors: if full {
+                Some(self.parse_errors.lock().unwrap().to_api_type())
+            } else {
+                None
+            },
+            transport_errors: if full {
+                Some(self.transport_errors.lock().unwrap().to_api_type())
+            } else {
+                None
+            },
             paused: self.is_paused_by_user(),
             barrier: self.is_barrier(),
             completed_frontier: self
@@ -2006,6 +1997,8 @@ impl InputEndpointStatus {
                     initial_statistics.into()
                 }),
             fatal_error: Mutex::new(None),
+            transport_errors: Mutex::new(ConnectorErrorList::new()),
+            parse_errors: Mutex::new(ConnectorErrorList::new()),
             progress: Mutex::new(None),
             paused: AtomicBool::new(paused_by_user),
             barrier: AtomicBool::new(false),
@@ -2052,16 +2045,28 @@ impl InputEndpointStatus {
     }
 
     /// Increment parser error counter.
-    fn parse_error(&self) {
-        self.metrics.num_parse_errors.fetch_add(1, Ordering::AcqRel);
+    fn parse_error(&self, tag: Option<&'static str>, error: &ParseError) {
+        let last_error = self.metrics.num_parse_errors.fetch_add(1, Ordering::AcqRel);
+
+        self.parse_errors
+            .lock()
+            .unwrap()
+            .add_error(tag, error, last_error + 1);
     }
 
     /// Increment transport error counter.  If this is the first fatal error,
     /// save it in `self.fatal_error`.
-    pub fn transport_error(&self, fatal: bool, error: &AnyError) {
-        self.metrics
+    pub fn transport_error(&self, fatal: bool, tag: Option<&'static str>, error: &AnyError) {
+        let last_error = self
+            .metrics
             .num_transport_errors
             .fetch_add(1, Ordering::AcqRel);
+
+        self.transport_errors
+            .lock()
+            .unwrap()
+            .add_error(tag, error, last_error + 1);
+
         if fatal {
             let mut fatal_error = self.fatal_error.lock().unwrap();
             if fatal_error.is_none() {
@@ -2323,6 +2328,53 @@ pub struct ProcessedRecords {
     pub total_processed_steps: Step,
 }
 
+/// Recent connector errors.
+///
+/// Stores up to MAX_CONNECTOR_ERRORS most recent errors for each tag.
+/// When the number of errors for a tag exceeds MAX_CONNECTOR_ERRORS, the oldest error is removed.
+#[derive(Debug)]
+pub struct ConnectorErrorList {
+    errors: BTreeMap<Option<&'static str>, VecDeque<ConnectorError>>,
+}
+
+impl Default for ConnectorErrorList {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ConnectorErrorList {
+    pub fn new() -> Self {
+        Self {
+            errors: BTreeMap::new(),
+        }
+    }
+
+    pub fn add_error<E: Display>(&mut self, tag: Option<&'static str>, error: E, index: u64) {
+        let entry = self.errors.entry(tag).or_default();
+
+        entry.push_back(ConnectorError {
+            timestamp: Utc::now(),
+            tag: tag.map(|tag| tag.to_string()),
+            index,
+            message: error.to_string(),
+        });
+        if entry.len() > MAX_CONNECTOR_ERRORS {
+            entry.pop_front();
+        }
+    }
+
+    pub fn to_api_type(&self) -> Vec<ConnectorError> {
+        let mut errors = self
+            .errors
+            .iter()
+            .flat_map(|(_tag, errors)| errors.iter().cloned())
+            .collect::<Vec<_>>();
+        errors.sort_by_key(|error| error.index);
+        errors
+    }
+}
+
 /// Output endpoint status information.
 /// // Keep in sync with feldera_types::ExternalOutputEndpointStatus
 pub struct OutputEndpointStatus {
@@ -2336,10 +2388,25 @@ pub struct OutputEndpointStatus {
 
     /// The first fatal error that occurred at the endpoint.
     pub fatal_error: Mutex<Option<String>>,
+
+    /// Recent encode errors.
+    pub encode_errors: Mutex<ConnectorErrorList>,
+
+    /// Recent transport errors.
+    pub transport_errors: Mutex<ConnectorErrorList>,
 }
 
 impl OutputEndpointStatus {
-    pub fn to_api_type(&self) -> ExternalOutputEndpointStatus {
+    /// Convert the endpoint status to the API type.
+    ///
+    /// If `full` is true, generates a full version of the endpoint status,
+    /// including the list of errors. This status can be returned via the
+    /// `/tables/<table_name>/connectors/<connector_name>/status` endpoint.
+    ///
+    /// If `full` is false, generates a trimmed version of the endpoint status,
+    /// not including the list of errors. This status can be returned via the
+    /// `/stats` endpoint.
+    pub fn to_api_type(&self, full: bool) -> ExternalOutputEndpointStatus {
         ExternalOutputEndpointStatus {
             endpoint_name: self.endpoint_name.clone(),
             config: ShortEndpointConfig {
@@ -2347,6 +2414,16 @@ impl OutputEndpointStatus {
             },
             metrics: self.metrics.to_api_type(),
             fatal_error: self.fatal_error(),
+            encode_errors: if full {
+                Some(self.encode_errors.lock().unwrap().to_api_type())
+            } else {
+                None
+            },
+            transport_errors: if full {
+                Some(self.transport_errors.lock().unwrap().to_api_type())
+            } else {
+                None
+            },
         }
     }
 
@@ -2379,6 +2456,8 @@ impl OutputEndpointStatus {
             config: config.clone(),
             metrics: OutputEndpointMetrics::new(total_processed_records, initial_statistics),
             fatal_error: Mutex::new(None),
+            encode_errors: Mutex::new(ConnectorErrorList::new()),
+            transport_errors: Mutex::new(ConnectorErrorList::new()),
         }
     }
 
@@ -2457,18 +2536,31 @@ impl OutputEndpointStatus {
     }
 
     /// Increment encoder error counter.
-    fn encode_error(&self) {
-        self.metrics
+    fn encode_error(&self, tag: Option<&'static str>, error: &AnyError) {
+        let last_error = self
+            .metrics
             .num_encode_errors
             .fetch_add(1, Ordering::AcqRel);
+
+        self.encode_errors
+            .lock()
+            .unwrap()
+            .add_error(tag, error, last_error + 1);
     }
 
     /// Increment error counter.  If this is the first fatal error,
     /// save it in `self.fatal_error`.
-    fn transport_error(&self, fatal: bool, error: &AnyError) {
-        self.metrics
+    fn transport_error(&self, fatal: bool, tag: Option<&'static str>, error: &AnyError) {
+        let last_error = self
+            .metrics
             .num_transport_errors
             .fetch_add(1, Ordering::AcqRel);
+
+        self.transport_errors
+            .lock()
+            .unwrap()
+            .add_error(tag, error, last_error + 1);
+
         if fatal {
             let mut fatal_error = self.fatal_error.lock().unwrap();
             if fatal_error.is_none() {
