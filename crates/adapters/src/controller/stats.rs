@@ -2337,6 +2337,12 @@ pub struct ConnectorErrorList {
     errors: BTreeMap<Option<&'static str>, VecDeque<ConnectorError>>,
 }
 
+impl Default for ConnectorErrorList {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConnectorErrorList {
     pub fn new() -> Self {
         Self {
@@ -2345,7 +2351,7 @@ impl ConnectorErrorList {
     }
 
     pub fn add_error<E: Display>(&mut self, tag: Option<&'static str>, error: E, index: u64) {
-        let entry = self.errors.entry(tag).or_insert(VecDeque::new());
+        let entry = self.errors.entry(tag).or_default();
 
         entry.push_back(ConnectorError {
             timestamp: Utc::now(),

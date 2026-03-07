@@ -1,6 +1,5 @@
 import json
 import os
-import time
 import uuid
 from datetime import datetime
 from typing import Any
@@ -23,9 +22,8 @@ def env(name: str, default: str) -> str:
 # Example(terminal/shell):
 #   export KAFKA_BOOTSTRAP_SERVERS=localhost:19092
 
-KAFKA_BOOTSTRAP = env(
-    "KAFKA_BOOTSTRAP_SERVERS", "ci-kafka-bootstrap:9092"
-)
+KAFKA_BOOTSTRAP = env("KAFKA_BOOTSTRAP_SERVERS", "ci-kafka-bootstrap:9092")
+
 
 def _random_topic(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
@@ -35,7 +33,9 @@ def _kafka_clients() -> tuple[Any, Any, Any]:
     return Producer, AdminClient, NewTopic
 
 
-def _create_topic(admin: Any, topic: str, new_topic_cls: Any, timeout_s: float = 30.0) -> None:
+def _create_topic(
+    admin: Any, topic: str, new_topic_cls: Any, timeout_s: float = 30.0
+) -> None:
     futures = admin.create_topics(
         [new_topic_cls(topic=topic, num_partitions=1, replication_factor=1)]
     )
@@ -189,7 +189,7 @@ def test_connector_status(pipeline_name):
             "config": {
                 "topic": input_topic,
                 "bootstrap.servers": KAFKA_BOOTSTRAP,
-                "auto.offset.reset": "earliest"
+                "auto.offset.reset": "earliest",
             },
         },
         "format": {
@@ -249,14 +249,17 @@ def test_connector_status(pipeline_name):
 
         wait_for_condition(
             "output connector encode error count reaches 500",
-            lambda: output_connector_status().metrics.num_encode_errors == 500 and len(output_connector_status().encode_errors) == 100,
+            lambda: output_connector_status().metrics.num_encode_errors == 500
+            and len(output_connector_status().encode_errors) == 100,
             timeout_s=100.0,
             poll_interval_s=1.0,
         )
         input_status = input_connector_status()
         output_status = output_connector_status()
 
-        print(f"input_status: {json.dumps(_status_to_primitive(input_status), indent=2)}")
+        print(
+            f"input_status: {json.dumps(_status_to_primitive(input_status), indent=2)}"
+        )
         print(
             f"output_status: {json.dumps(_status_to_primitive(output_status), indent=2)}"
         )
@@ -273,7 +276,8 @@ def test_connector_status(pipeline_name):
 
         wait_for_condition(
             "input connector parse error count reaches 500",
-            lambda: input_connector_status().metrics.num_parse_errors == 500 and len(input_connector_status().parse_errors) == 100 ,
+            lambda: input_connector_status().metrics.num_parse_errors == 500
+            and len(input_connector_status().parse_errors) == 100,
             timeout_s=100.0,
             poll_interval_s=1.0,
         )
