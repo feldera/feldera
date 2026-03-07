@@ -1232,6 +1232,26 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             if chunk:
                 yield json.loads(chunk, parse_float=Decimal)
 
+    def input_connector_stats(
+        self, pipeline_name: str, table_name: str, connector_name: str
+    ) -> dict:
+        """
+        Get the status of the specified input connector.
+        """
+        return self.http.get(
+            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/stats"
+        )
+
+    def output_connector_stats(
+        self, pipeline_name: str, view_name: str, connector_name: str
+    ) -> dict:
+        """
+        Get the status of the specified output connector.
+        """
+        return self.http.get(
+            path=f"/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats"
+        )
+
     def pause_connector(self, pipeline_name, table_name, connector_name):
         """
         Pause the specified input connector.
