@@ -71,6 +71,7 @@
     "prettier-plugin-tailwindcss": "0.7.2",
     "profiler-layout": "workspace:*",
     "profiler-lib": "workspace:*",
+    "triage-types": "workspace:*",
     "runed": "0.37.1",
     "sass-embedded": "1.97.3",
     "semver": "7.7.4",

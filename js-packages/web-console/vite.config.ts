@@ -16,7 +16,11 @@ export default defineConfig(async () => {
       sveltekit(),
       svg(),
       virtual({
-        'virtual:felderaApiJsonSchemas.json': JSON.stringify(felderaApiJsonSchemas)
+        'virtual:felderaApiJsonSchemas.json': JSON.stringify(felderaApiJsonSchemas),
+        // The plugins module is loaded from the cloud repo via package name
+        'virtual:feldera-triage-plugins': process.env.FELDERA_PLUGINS_MODULE
+          ? `export { default, createBundle, TriageResults } from '${process.env.FELDERA_PLUGINS_MODULE}'`
+          : `export default []; export async function createBundle() { return {} }; export class TriageResults { constructor() { this.results = [] } }`
       }),
       // '@bithero/monaco-editor-vite-plugin' is used to only bundle monaco-editor features that are actually used to reduce the total bundle size
       monaco({
