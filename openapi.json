@@ -5568,7 +5568,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/InputEndpointStatus"
                 }
               }
             }
@@ -6345,7 +6345,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/OutputEndpointStatus"
                 }
               }
             }
@@ -7115,10 +7115,12 @@
         "properties": {
           "completed_at": {
             "type": "string",
+            "format": "date-time",
             "description": "Timestamp when all outputs produced from this input have been pushed to all output endpoints."
           },
           "ingested_at": {
             "type": "string",
+            "format": "date-time",
             "description": "Timestamp when the data was ingested from the wire."
           },
           "metadata": {
@@ -7127,6 +7129,7 @@
           },
           "processed_at": {
             "type": "string",
+            "format": "date-time",
             "description": "Timestamp when the data was processed by the circuit."
           }
         }
@@ -7400,7 +7403,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "description": "Timestamp when the error occurred."
+            "description": "Timestamp when the error occurred, serialized as RFC3339 with microseconds."
           }
         }
       },

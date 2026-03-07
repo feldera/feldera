@@ -327,7 +327,7 @@ pub(crate) async fn post_pipeline_input_connector_action(
         (status = OK
             , description = "Input connector status retrieved successfully"
             , content_type = "application/json"
-            , body = Object),
+            , body = InputEndpointStatus),
         (status = NOT_FOUND
             , body = ErrorResponse
             , description = "Pipeline, table and/or input connector with that name does not exist"
@@ -401,7 +401,7 @@ pub(crate) async fn get_pipeline_input_connector_status(
         (status = OK
             , description = "Output connector status retrieved successfully"
             , content_type = "application/json"
-            , body = Object),
+            , body = OutputEndpointStatus),
         (status = NOT_FOUND
             , body = ErrorResponse
             , description = "Pipeline, view and/or output connector with that name does not exist"

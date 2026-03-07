@@ -443,7 +443,7 @@ It contains the following fields:
         feldera_types::adapter_stats::ExternalInputEndpointMetrics,
         feldera_types::adapter_stats::ExternalOutputEndpointStatus,
         feldera_types::adapter_stats::ExternalOutputEndpointMetrics,
-        feldera_types::adapter_stats::ExternalCompletedWatermark,
+        feldera_types::adapter_stats::CompletedWatermark,
         feldera_types::adapter_stats::ExternalTransactionInitiators,
         feldera_types::adapter_stats::ExternalTransactionPhase,
         feldera_types::adapter_stats::ExternalConnectorTransactionPhase,

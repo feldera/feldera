@@ -1,5 +1,5 @@
 use bytemuck::NoUninit;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
@@ -130,25 +130,26 @@ pub struct ExternalTransactionInitiators {
 
 /// A watermark that has been fully processed by the pipeline.
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
-#[schema(as = CompletedWatermark)]
-pub struct ExternalCompletedWatermark {
+pub struct CompletedWatermark {
     /// Metadata that describes the position in the input stream (e.g., Kafka partition/offset pairs).
     #[schema(value_type = Object)]
     pub metadata: JsonValue,
     /// Timestamp when the data was ingested from the wire.
-    pub ingested_at: String,
+    #[serde(serialize_with = "serialize_timestamp_micros")]
+    pub ingested_at: DateTime<Utc>,
     /// Timestamp when the data was processed by the circuit.
-    pub processed_at: String,
+    #[serde(serialize_with = "serialize_timestamp_micros")]
+    pub processed_at: DateTime<Utc>,
     /// Timestamp when all outputs produced from this input have been pushed to all output endpoints.
-    pub completed_at: String,
+    #[serde(serialize_with = "serialize_timestamp_micros")]
+    pub completed_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, ToSchema, Clone)]
 pub struct ConnectorError {
-    /// Timestamp when the error occurred in microseconds since the epoch.
-    #[serde(with = "chrono::serde::ts_microseconds")]
-    #[schema(value_type = u64)]
-    pub timestamp_micros: DateTime<Utc>,
+    /// Timestamp when the error occurred, serialized as RFC3339 with microseconds.
+    #[serde(serialize_with = "serialize_timestamp_micros")]
+    pub timestamp: DateTime<Utc>,
 
     /// Sequence number of the error.
     ///
@@ -211,7 +212,7 @@ pub struct ExternalInputEndpointStatus {
     pub barrier: bool,
     /// The latest completed watermark.
     #[schema(value_type = Option<CompletedWatermark>)]
-    pub completed_frontier: Option<ExternalCompletedWatermark>,
+    pub completed_frontier: Option<CompletedWatermark>,
 }
 
 /// Performance metrics for an output endpoint.
@@ -401,4 +402,35 @@ pub struct ExternalControllerStatus {
     /// Output endpoint configs and metrics.
     #[schema(value_type = Vec<OutputEndpointStatus>)]
     pub outputs: Vec<ExternalOutputEndpointStatus>,
+}
+
+fn serialize_timestamp_micros<S>(
+    timestamp: &DateTime<Utc>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(&timestamp.to_rfc3339_opts(SecondsFormat::Micros, true))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ConnectorError;
+    use chrono::{DateTime, Utc};
+
+    #[test]
+    fn connector_error_timestamp_serializes_with_microsecond_precision() {
+        let error = ConnectorError {
+            timestamp: DateTime::parse_from_rfc3339("2026-03-08T05:26:42.442438448Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            index: 1,
+            tag: None,
+            message: "boom".to_string(),
+        };
+
+        let json = serde_json::to_string(&error).unwrap();
+        assert!(json.contains(r#""timestamp":"2026-03-08T05:26:42.442438Z""#));
+    }
 }

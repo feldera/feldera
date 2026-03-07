@@ -116,6 +116,7 @@ export type {
   Configuration,
   ConnectOptions,
   ConnectorConfig,
+  ConnectorError,
   ConnectorStats,
   ConnectorTransactionPhase,
   ConsumerConfig,
