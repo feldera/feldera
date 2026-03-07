@@ -15,11 +15,14 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
-        Add connector error list to input/output connector stats.
+        Added connector error list to input/output connector stats.
         [Input](https://docs.feldera.com/api/get-input-status) and
         [output](https://docs.feldera.com/api/get-output-status)
         status endpoints now list up to 100 most recent transport, parser, and
         encoder errors of each type.
+
+        In addition, the openapi spec for both endpoints now specifies strongly typed return values
+        of type `InputConnectorStatus` and `OutputConnectorStatus` respectively.
 
         ## v0.252.0
 

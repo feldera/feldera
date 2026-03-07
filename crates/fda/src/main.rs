@@ -1935,7 +1935,9 @@ async fn connector(
         .iter()
         .any(|(name, _c)| *name == full_connector_name);
     if !relation_is_table && !relation_is_view {
-        eprintln!("No connector named {connector} found in pipeline {pipeline_name}");
+        eprintln!(
+            "No connector named {connector} found for relation {relation} in pipeline {pipeline_name}"
+        );
         std::process::exit(1);
     }
 
@@ -1986,40 +1988,26 @@ async fn connector(
                 .unwrap();
             println!("Table {relation} connector {connector} paused successfully.");
         }
-        ConnectorAction::Stats => {
-            let response = if relation_is_table {
-                client
-                    .get_pipeline_input_connector_status()
-                    .pipeline_name(pipeline_name)
-                    .table_name(relation)
-                    .connector_name(connector)
-                    .send()
-                    .await
-                    .map_err(handle_errors_fatal(
-                        client.baseurl().clone(),
-                        "Failed to get table connector stats",
-                        1,
-                    ))
-                    .unwrap()
-            } else {
-                client
-                    .get_pipeline_output_connector_status()
-                    .pipeline_name(pipeline_name)
-                    .view_name(relation)
-                    .connector_name(connector)
-                    .send()
-                    .await
-                    .map_err(handle_errors_fatal(
-                        client.baseurl().clone(),
-                        "Failed to get view connector stats",
-                        1,
-                    ))
-                    .unwrap()
-            };
+        ConnectorAction::Stats if relation_is_table => {
+            let response = client
+                .get_pipeline_input_connector_status()
+                .pipeline_name(pipeline_name)
+                .table_name(relation)
+                .connector_name(connector)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to get table connector stats",
+                    1,
+                ))
+                .unwrap();
 
             match format {
                 OutputFormat::Text => {
-                    let table = json_to_table(&serde_json::Value::Object(response.into_inner()))
+                    let stats_value = serde_json::to_value(response.as_ref())
+                        .expect("Failed to serialize input connector stats");
+                    let table = json_to_table(&stats_value)
                         .collapse()
                         .into_pool_table()
                         .to_string();
@@ -2028,8 +2016,46 @@ async fn connector(
                 OutputFormat::Json => {
                     println!(
                         "{}",
-                        serde_json::to_string_pretty(&response.into_inner())
-                            .expect("Failed to serialize pipeline stats")
+                        serde_json::to_string_pretty(response.as_ref())
+                            .expect("Failed to serialize input connector stats")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
+        ConnectorAction::Stats => {
+            let response = client
+                .get_pipeline_output_connector_status()
+                .pipeline_name(pipeline_name)
+                .view_name(relation)
+                .connector_name(connector)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to get view connector stats",
+                    1,
+                ))
+                .unwrap();
+
+            match format {
+                OutputFormat::Text => {
+                    let stats_value = serde_json::to_value(response.as_ref())
+                        .expect("Failed to serialize output connector stats");
+                    let table = json_to_table(&stats_value)
+                        .collapse()
+                        .into_pool_table()
+                        .to_string();
+                    println!("{}", table);
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(response.as_ref())
+                            .expect("Failed to serialize output connector stats")
                     );
                 }
                 _ => {

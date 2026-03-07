@@ -638,6 +638,31 @@ export type ConnectorConfig = OutputBufferConfig & {
   transport: TransportConfig
 }
 
+export type ConnectorError = {
+  /**
+   * Sequence number of the error.
+   *
+   * The client can use this field to detect gaps in the error list reported
+   * by the pipeline. When the connector reports a large number of errors, the
+   * pipeline will only preserve and report the most recent errors of each kind.
+   */
+  index: number
+  /**
+   * Error message.
+   */
+  message: string
+  /**
+   * Optional tag for the error.
+   *
+   * The tag is used to group errors by their type.
+   */
+  tag?: string | null
+  /**
+   * Timestamp when the error occurred, serialized as RFC3339 with microseconds.
+   */
+  timestamp: string
+}
+
 /**
  * Aggregated connector error statistics.
  *
@@ -1789,9 +1814,17 @@ export type InputEndpointStatus = {
   fatal_error?: string | null
   metrics: InputEndpointMetrics
   /**
+   * Recent parse errors on this endpoint.
+   */
+  parse_errors?: Array<ConnectorError> | null
+  /**
    * Endpoint has been paused by the user.
    */
   paused: boolean
+  /**
+   * Recent transport errors on this endpoint.
+   */
+  transport_errors?: Array<ConnectorError> | null
 }
 
 /**
@@ -2556,6 +2589,10 @@ export type OutputEndpointMetrics = {
 export type OutputEndpointStatus = {
   config: ShortEndpointConfig
   /**
+   * Recent encoding errors on this endpoint.
+   */
+  encode_errors?: Array<ConnectorError> | null
+  /**
    * Endpoint name.
    */
   endpoint_name: string
@@ -2564,6 +2601,10 @@ export type OutputEndpointStatus = {
    */
   fatal_error?: string | null
   metrics: OutputEndpointMetrics
+  /**
+   * Recent transport errors on this endpoint.
+   */
+  transport_errors?: Array<ConnectorError> | null
 }
 
 /**
@@ -2656,6 +2697,17 @@ export type PipelineConfig = {
    */
   dev_tweaks?: {
     [key: string]: unknown
+  }
+  /**
+   * Environment variables for the pipeline process.
+   *
+   * These are key-value pairs injected into the pipeline process environment.
+   * Some variable names are reserved by the platform and cannot be overridden
+   * (for example `RUST_LOG`, and variables in the `FELDERA_`,
+   * `KUBERNETES_`, and `TOKIO_` namespaces).
+   */
+  env?: {
+    [key: string]: string
   }
   fault_tolerance?: FtConfig
   /**
@@ -3183,6 +3235,12 @@ export type PostgresWriterConfig = {
    * The table to write the output to.
    */
   table: string
+  /**
+   * The number of threads to use during encoding.
+   *
+   * Default: 1
+   */
+  threads?: number
   /**
    * Postgres URI.
    * See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>
@@ -3741,6 +3799,17 @@ export type RuntimeConfig = {
    */
   dev_tweaks?: {
     [key: string]: unknown
+  }
+  /**
+   * Environment variables for the pipeline process.
+   *
+   * These are key-value pairs injected into the pipeline process environment.
+   * Some variable names are reserved by the platform and cannot be overridden
+   * (for example `RUST_LOG`, and variables in the `FELDERA_`,
+   * `KUBERNETES_`, and `TOKIO_` namespaces).
+   */
+  env?: {
+    [key: string]: string
   }
   fault_tolerance?: FtConfig
   /**
@@ -6309,9 +6378,7 @@ export type GetPipelineInputConnectorStatusResponses = {
   /**
    * Input connector status retrieved successfully
    */
-  200: {
-    [key: string]: unknown
-  }
+  200: InputEndpointStatus
 }
 
 export type GetPipelineInputConnectorStatusResponse =
@@ -6527,9 +6594,7 @@ export type GetPipelineOutputConnectorStatusResponses = {
   /**
    * Output connector status retrieved successfully
    */
-  200: {
-    [key: string]: unknown
-  }
+  200: OutputEndpointStatus
 }
 
 export type GetPipelineOutputConnectorStatusResponse =
