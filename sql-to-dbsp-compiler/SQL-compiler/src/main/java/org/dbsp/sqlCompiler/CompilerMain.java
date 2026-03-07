@@ -139,18 +139,6 @@ public class CompilerMain {
     CompilerMessages run() throws SQLException {
         DBSPCompiler compiler = new DBSPCompiler(this.options);
         this.options.validate(compiler);
-        String conn = this.options.ioOptions.metadataSource;
-        if (!conn.isEmpty()) {
-            // This requires the JDBC drivers for the respective databases to be loaded
-            DataSource mockDataSource = JdbcSchema.dataSource(conn, null, null, null);
-            Connection executorConnection = DriverManager.getConnection("jdbc:calcite:");
-            CalciteConnection calciteConnection = executorConnection.unwrap(CalciteConnection.class);
-            SchemaPlus rootSchema = calciteConnection.getRootSchema();
-            String schemaName = "schema";
-            JdbcSchema schema = JdbcSchema.create(rootSchema, schemaName, mockDataSource, null, null);
-            compiler.addSchemaSource(schemaName, schema);
-        }
-
         try {
             InputStream input = this.getInputFile(this.options.ioOptions.inputFile);
             compiler.setEntireInput(this.options.ioOptions.inputFile, input);

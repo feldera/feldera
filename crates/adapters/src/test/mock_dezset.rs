@@ -17,13 +17,12 @@ use dbsp::{DBData, operator::StagedBuffers};
 use erased_serde::Deserializer as ErasedDeserializer;
 #[cfg(feature = "with-avro")]
 use feldera_adapterlib::catalog::AvroSchemaRefs;
-use feldera_adapterlib::format::BufferSize;
+use feldera_adapterlib::format::{BufferSize, flatten_nested};
 
 use feldera_sqllib::Variant;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
 use std::{
-    any::Any,
     fmt::Debug,
     hash::{DefaultHasher, Hash, Hasher},
     mem::swap,
@@ -279,14 +278,9 @@ where
 {
     fn new(buffers: Vec<Box<dyn InputBuffer>>, zset: &MockDeZSet<T, U>) -> Self {
         Self {
-            buffers: buffers
+            buffers: flatten_nested::<MockDeZSetStreamBuffer<T, U>>(buffers)
                 .into_iter()
-                .flat_map(|buffer| {
-                    (buffer as Box<dyn Any>)
-                        .downcast::<MockDeZSetStreamBuffer<T, U>>()
-                        .unwrap()
-                        .updates
-                })
+                .flat_map(|buffer| buffer.updates)
                 .collect(),
             handle: zset.clone(),
         }

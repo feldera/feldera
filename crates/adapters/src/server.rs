@@ -2018,6 +2018,7 @@ async fn create_http_input_endpoint(
         connector_config: ConnectorConfig {
             transport: TransportConfig::HttpInput(config),
             format: Some(format),
+            preprocessor: None,
             index: None,
             output_buffer_config: Default::default(),
             max_batch_size: None,
@@ -2199,6 +2200,7 @@ async fn output_endpoint(
                 &args.format,
                 &req,
             )?),
+            preprocessor: None,
             index: None,
             output_buffer_config: Default::default(),
             max_batch_size: None,

@@ -3273,6 +3273,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     }
                 } catch (JsonProcessingException ex) {
                     // This should not happen, since connectors were validated by an earlier stage
+                    throw new InternalCompilerError(ex.getMessage());
                 }
             }
         }

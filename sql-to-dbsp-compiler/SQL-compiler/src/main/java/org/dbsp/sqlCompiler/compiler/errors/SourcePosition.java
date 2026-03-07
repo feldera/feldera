@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.errors;
 
+import com.fasterxml.jackson.core.JsonLocation;
+
 public class SourcePosition implements Comparable<SourcePosition> {
     public static final SourcePosition INVALID = new SourcePosition(0, 0);
 
@@ -9,6 +11,11 @@ public class SourcePosition implements Comparable<SourcePosition> {
     public SourcePosition(int line, int column) {
         this.line = line;
         this.column = column;
+    }
+
+    public SourcePosition(JsonLocation location) {
+        this.line = location.getLineNr();
+        this.column = location.getColumnNr();
     }
 
     public boolean isValid() {
@@ -58,6 +65,10 @@ public class SourcePosition implements Comparable<SourcePosition> {
         if (this.before(other))
             return other;
         return this;
+    }
+
+    public SourcePositionRange asRange() {
+        return new SourcePositionRange(this, this);
     }
 
     @Override

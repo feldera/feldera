@@ -7,6 +7,7 @@ pub mod coordination;
 pub mod error;
 pub mod format;
 pub mod pipeline_diff;
+pub mod preprocess;
 pub mod program_schema;
 pub mod query;
 pub mod query_params;

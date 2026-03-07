@@ -1,4 +1,4 @@
-use crate::format::{Splitter, Sponge};
+use crate::format::{Splitter, SpongeSplitter};
 use crate::test::data::TestStructMetadata;
 use crate::test::kafka::BufferConsumer;
 use crate::test::{
@@ -21,7 +21,7 @@ use crossbeam::sync::{Parker, Unparker};
 use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
 use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::ConnectorMetadata;
-use feldera_adapterlib::format::BufferSize;
+use feldera_adapterlib::format::{BufferSize, flatten_nested};
 use feldera_adapterlib::transport::{Resume, Watermark};
 use feldera_macros::IsNone;
 use feldera_sqllib::{ByteArray, SqlString, Variant};
@@ -44,7 +44,6 @@ use rdkafka::{Message, Timestamp};
 use rmpv::Value as RmpValue;
 use serde_json::{Value as JsonValue, json};
 use size_of::SizeOf;
-use std::any::Any;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fs::create_dir;
@@ -521,7 +520,7 @@ impl Parser for DummyParser {
     }
 
     fn splitter(&self) -> Box<dyn Splitter> {
-        Box::new(Sponge)
+        Box::new(SpongeSplitter)
     }
 
     fn fork(&self) -> Box<dyn Parser> {
@@ -530,14 +529,9 @@ impl Parser for DummyParser {
 
     fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
         Box::new(DummyStagedBuffers {
-            data: buffers
+            data: flatten_nested::<DummyInputBuffer>(buffers)
                 .into_iter()
-                .filter_map(|buffer| {
-                    (buffer as Box<dyn Any>)
-                        .downcast::<DummyInputBuffer>()
-                        .unwrap()
-                        .data
-                })
+                .filter_map(|buffer| buffer.data)
                 .collect(),
             handle: self.0.clone(),
         })
@@ -1538,6 +1532,7 @@ fn test_offset(
     let config = InputEndpointConfig {
         stream: Cow::from("test_input"),
         connector_config: ConnectorConfig {
+            preprocessor: None,
             transport: TransportConfig::KafkaInput(KafkaInputConfig {
                 log_level: Some(KafkaLogLevel::Debug),
                 start_from: match start_from {
@@ -1977,6 +1972,7 @@ fn test_input_partition(
     let config = InputEndpointConfig {
         stream: Cow::from("test_input"),
         connector_config: ConnectorConfig {
+            preprocessor: None,
             transport: TransportConfig::KafkaInput(KafkaInputConfig {
                 log_level: Some(KafkaLogLevel::Debug),
                 start_from: start_from.clone(),
