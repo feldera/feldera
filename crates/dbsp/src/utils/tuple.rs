@@ -72,6 +72,64 @@ impl<const N: usize> TupleBitmap<N> {
     pub fn count_none_before(&self, field_idx: usize) -> usize {
         self.count_none(field_idx)
     }
+
+    /// Calls `f(field_idx)` for each present (non-NULL) field with index < `end`.
+    ///
+    /// Processes the bitmap one byte at a time: all-NULL bytes cost ~2
+    /// instructions to skip. Within each byte, `trailing_zeros` (1 cycle on
+    /// x86 `tzcnt`) locates the next present field directly, and
+    /// `x &= x - 1` clears it — no per-bit iteration over NULL fields.
+    #[inline]
+    pub fn for_each_some(&self, end: usize, mut f: impl FnMut(usize)) {
+        debug_assert!(end <= N * 8);
+        let full_bytes = end / 8;
+        let rem = end & 7;
+        let total_bytes = full_bytes + (rem > 0) as usize;
+        let mut byte_idx = 0usize;
+        while byte_idx < total_bytes {
+            // Last partial byte: mask bits at positions >= end.
+            let mask = if byte_idx == full_bytes { (1u8 << rem) - 1 } else { 0xFF };
+            // Invert: set bits = present (non-NULL) fields.
+            let mut present = (!self.bytes[byte_idx]) & mask;
+            while present != 0 {
+                let bit = present.trailing_zeros() as usize;
+                f(byte_idx * 8 + bit);
+                present &= present - 1; // clear lowest set bit
+            }
+            byte_idx += 1;
+        }
+    }
+
+    /// Like [`for_each_some`](Self::for_each_some), but the callback
+    /// returns [`ControlFlow`](core::ops::ControlFlow) to support early
+    /// exit. Returns `Break(val)` on early exit, `Continue(())` if all
+    /// fields were processed.
+    #[inline]
+    pub fn try_for_each_some<B>(
+        &self,
+        end: usize,
+        mut f: impl FnMut(usize) -> core::ops::ControlFlow<B>,
+    ) -> core::ops::ControlFlow<B> {
+        debug_assert!(end <= N * 8);
+        let full_bytes = end / 8;
+        let rem = end & 7;
+        let total_bytes = full_bytes + (rem > 0) as usize;
+        let mut byte_idx = 0usize;
+        while byte_idx < total_bytes {
+            let mask = if byte_idx == full_bytes { (1u8 << rem) - 1 } else { 0xFF };
+            let mut present = (!self.bytes[byte_idx]) & mask;
+            while present != 0 {
+                let bit = present.trailing_zeros() as usize;
+                match f(byte_idx * 8 + bit) {
+                    core::ops::ControlFlow::Continue(()) => {}
+                    b @ core::ops::ControlFlow::Break(_) => return b,
+                }
+                present &= present - 1;
+            }
+            byte_idx += 1;
+        }
+        core::ops::ControlFlow::Continue(())
+    }
 }
 
 #[repr(u8)]

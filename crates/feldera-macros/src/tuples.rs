@@ -248,6 +248,14 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
 
             fn from_inner(inner: Self::Inner) -> Self { inner }
         }
+
+        // TupN archived forms contain relative pointers, so they are always
+        // variable-size when nested inside a larger InlineSparse tuple.
+        impl<#(#generics),*> ::dbsp::utils::ArchiveLayout for #name<#(#generics),*> {
+            const IS_FIXED: bool = false;
+            const ARCHIVED_SIZE: usize = 0;
+            const INLINE_ALIGN: usize = 1;
+        }
     };
 
     let sparse_get_methods = fields
@@ -304,10 +312,179 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
                 }
             });
 
-    // Generate get methods for the InlineSparse format.
-    // Each accessor walks the inline body to find the field's offset.
-    // Fields are aligned to INLINE_ALIGN within the blob (which itself
-    // starts at INLINE_SPARSE_MAX_ALIGN alignment).
+    // Static const arrays for IS field layout. These replace the O(N²)
+    // unrolled per-field offset computation with a compact loop + thin
+    // wrappers, dramatically reducing generated code size for wide tuples.
+    let is_field_size_entries: Vec<_> = generics
+        .iter()
+        .map(|ty| {
+            quote!(<<#ty as ::dbsp::utils::IsNone>::Inner as ::dbsp::utils::ArchiveLayout>::INLINE_SIZE)
+        })
+        .collect();
+    let is_field_align_entries: Vec<_> = generics
+        .iter()
+        .map(|ty| {
+            quote!(<<#ty as ::dbsp::utils::IsNone>::Inner as ::dbsp::utils::ArchiveLayout>::INLINE_ALIGN)
+        })
+        .collect();
+    let is_field_is_fixed_entries: Vec<_> = generics
+        .iter()
+        .map(|ty| {
+            quote!(<<#ty as ::dbsp::utils::IsNone>::Inner as ::dbsp::utils::ArchiveLayout>::IS_FIXED)
+        })
+        .collect();
+
+    // Function pointer table entries for IS loop-based comparison.
+    // Each entry is a monomorphized associated function pointer that compares
+    // two archived field values at raw byte pointers, handling fixed vs
+    // variable layout internally. Duplicate types share the same function
+    // target, so the branch predictor learns quickly.
+    let is_field_eq_fn_entries: Vec<_> = generics
+        .iter()
+        .map(|ty| {
+            quote!(Self::archived_eq_is::<<#ty as ::dbsp::utils::IsNone>::Inner>)
+        })
+        .collect();
+    let is_field_cmp_fn_entries: Vec<_> = generics
+        .iter()
+        .map(|ty| {
+            quote!(Self::archived_cmp_is::<<#ty as ::dbsp::utils::IsNone>::Inner>)
+        })
+        .collect();
+
+    // Cross-format IS↔Dense function pointer entries.
+    // IS side may need relptr following; Dense side is a direct pointer.
+    let is_dense_eq_fn_entries: Vec<_> = generics
+        .iter()
+        .map(|ty| {
+            quote!(Self::archived_eq_is_dense::<<#ty as ::dbsp::utils::IsNone>::Inner>)
+        })
+        .collect();
+    let is_dense_cmp_fn_entries: Vec<_> = generics
+        .iter()
+        .map(|ty| {
+            quote!(Self::archived_cmp_is_dense::<<#ty as ::dbsp::utils::IsNone>::Inner>)
+        })
+        .collect();
+
+    let is_layout_consts_and_helpers = quote! {
+        const FIELD_SIZES: [usize; #num_elements] = [#(#is_field_size_entries),*];
+        const FIELD_ALIGNS: [usize; #num_elements] = [#(#is_field_align_entries),*];
+        const FIELD_IS_FIXED: [bool; #num_elements] = [#(#is_field_is_fixed_entries),*];
+
+        /// Computes the byte offset of field `idx` within the inline body
+        /// by accumulating alignment + size of preceding non-NULL fields.
+        /// O(idx) per call; for sequential access use walking_read_tN.
+        #[inline]
+        fn field_offset(&self, idx: usize) -> usize {
+            let mut off = #bitmap_bytes;
+            // for_each_some visits present fields < idx in order, using
+            // byte-at-a-time iteration with trailing_zeros to skip NULLs.
+            self.bitmap.for_each_some(idx, |f| {
+                let align = Self::FIELD_ALIGNS[f];
+                if align > 1 { off = (off + align - 1) & !(align - 1); }
+                off += Self::FIELD_SIZES[f];
+            });
+            // Final alignment for the target field itself.
+            let align = Self::FIELD_ALIGNS[idx];
+            if align > 1 { off = (off + align - 1) & !(align - 1); }
+            off
+        }
+
+        /// Returns a raw pointer to the archived value at byte offset
+        /// `off`, using `idx` to determine fixed vs variable layout.
+        #[inline]
+        unsafe fn read_field_at(&self, off: usize, idx: usize) -> *const u8 {
+            let base = self as *const Self as *const u8;
+            if Self::FIELD_IS_FIXED[idx] {
+                base.add(off)
+            } else {
+                let ptr_addr = base.add(off);
+                let rel_offset = core::ptr::read_unaligned(ptr_addr as *const i32);
+                ptr_addr.offset(rel_offset as isize)
+            }
+        }
+
+        // Comparison helpers used as function pointer table entries.
+        // Generic over `Inner`; the IS_FIXED branch is a compile-time constant
+        // per monomorphization, so the dead branch is eliminated.
+
+        /// Compares two IS archived fields for equality. Both pointers are into
+        /// IS blobs: fixed-size types are read directly, variable-size types
+        /// follow an i32 relative pointer first.
+        #[inline]
+        unsafe fn archived_eq_is<Inner>(a: *const u8, b: *const u8) -> bool
+        where
+            Inner: ::dbsp::utils::ArchiveLayout + ::rkyv::Archive,
+            ::rkyv::Archived<Inner>: core::cmp::PartialEq,
+        {
+            unsafe {
+                if Inner::IS_FIXED {
+                    (&*a.cast::<::rkyv::Archived<Inner>>()) == (&*b.cast::<::rkyv::Archived<Inner>>())
+                } else {
+                    let a = a.offset(core::ptr::read_unaligned(a as *const i32) as isize);
+                    let b = b.offset(core::ptr::read_unaligned(b as *const i32) as isize);
+                    (&*a.cast::<::rkyv::Archived<Inner>>()) == (&*b.cast::<::rkyv::Archived<Inner>>())
+                }
+            }
+        }
+
+        /// Like [`archived_eq_is`] but returns an [`Ordering`](core::cmp::Ordering).
+        #[inline]
+        unsafe fn archived_cmp_is<Inner>(a: *const u8, b: *const u8) -> core::cmp::Ordering
+        where
+            Inner: ::dbsp::utils::ArchiveLayout + ::rkyv::Archive,
+            ::rkyv::Archived<Inner>: core::cmp::Ord,
+        {
+            unsafe {
+                if Inner::IS_FIXED {
+                    (&*a.cast::<::rkyv::Archived<Inner>>()).cmp(&*b.cast::<::rkyv::Archived<Inner>>())
+                } else {
+                    let a = a.offset(core::ptr::read_unaligned(a as *const i32) as isize);
+                    let b = b.offset(core::ptr::read_unaligned(b as *const i32) as isize);
+                    (&*a.cast::<::rkyv::Archived<Inner>>()).cmp(&*b.cast::<::rkyv::Archived<Inner>>())
+                }
+            }
+        }
+
+        /// Cross-format IS↔Dense equality. `a` is an IS blob pointer (may need
+        /// relptr following for variable-size types); `b` is a direct Dense
+        /// `MaybeUninit` pointer (always points at the archived value).
+        #[inline]
+        unsafe fn archived_eq_is_dense<Inner>(a: *const u8, b: *const u8) -> bool
+        where
+            Inner: ::dbsp::utils::ArchiveLayout + ::rkyv::Archive,
+            ::rkyv::Archived<Inner>: core::cmp::PartialEq,
+        {
+            unsafe {
+                let a_val: &::rkyv::Archived<Inner> = if Inner::IS_FIXED {
+                    &*a.cast()
+                } else {
+                    &*a.offset(core::ptr::read_unaligned(a as *const i32) as isize).cast()
+                };
+                a_val == &*b.cast::<::rkyv::Archived<Inner>>()
+            }
+        }
+
+        /// Like [`archived_eq_is_dense`] but returns an [`Ordering`](core::cmp::Ordering).
+        #[inline]
+        unsafe fn archived_cmp_is_dense<Inner>(a: *const u8, b: *const u8) -> core::cmp::Ordering
+        where
+            Inner: ::dbsp::utils::ArchiveLayout + ::rkyv::Archive,
+            ::rkyv::Archived<Inner>: core::cmp::Ord,
+        {
+            unsafe {
+                let a_val: &::rkyv::Archived<Inner> = if Inner::IS_FIXED {
+                    &*a.cast()
+                } else {
+                    &*a.offset(core::ptr::read_unaligned(a as *const i32) as isize).cast()
+                };
+                a_val.cmp(&*b.cast::<::rkyv::Archived<Inner>>())
+            }
+        }
+    };
+
+    // Thin get_tN wrappers for IS that delegate to field_offset + read_field_at.
     let inline_sparse_get_methods = fields
         .iter()
         .enumerate()
@@ -315,26 +492,6 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         .map(|((idx, _field), ty)| {
             let get_name = format_ident!("get_t{}", idx);
             let idx_lit = Index::from(idx);
-
-            // Generate code to compute the byte offset of field `idx` by
-            // summing alignment padding + inline sizes of preceding non-NULL
-            // fields.
-            let offset_computation: Vec<_> = (0..idx)
-                .map(|prev| {
-                    let prev_lit = Index::from(prev);
-                    let prev_ty = &generics[prev];
-                    quote! {
-                        if !self.bitmap.is_none(#prev_lit) {
-                            let align = <<#prev_ty as ::dbsp::utils::IsNone>::Inner
-                                as ::dbsp::utils::ArchiveLayout>::INLINE_ALIGN;
-                            if align > 1 { off = (off + align - 1) & !(align - 1); }
-                            off += <<#prev_ty as ::dbsp::utils::IsNone>::Inner
-                                as ::dbsp::utils::ArchiveLayout>::INLINE_SIZE;
-                        }
-                    }
-                })
-                .collect();
-
             quote! {
                 #[inline]
                 pub fn #get_name(
@@ -343,32 +500,11 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
                     if self.bitmap.is_none(#idx_lit) {
                         return None;
                     }
-                    let base = self as *const Self as *const u8;
-                    // Inline body starts right after the bitmap.
-                    let mut off = #bitmap_bytes;
-                    #(#offset_computation)*
-                    // Align for the current field.
-                    let align = <<#ty as ::dbsp::utils::IsNone>::Inner
-                        as ::dbsp::utils::ArchiveLayout>::INLINE_ALIGN;
-                    if align > 1 { off = (off + align - 1) & !(align - 1); }
-                    if <<#ty as ::dbsp::utils::IsNone>::Inner
-                        as ::dbsp::utils::ArchiveLayout>::IS_FIXED
-                    {
-                        // Fixed-size: archived value is stored inline.
-                        Some(unsafe { &*base.add(off).cast() })
-                    } else {
-                        // Variable-size: an i32 relative pointer is stored
-                        // inline, pointing to the archived value elsewhere
-                        // in the rkyv buffer.
-                        unsafe {
-                            let ptr_addr = base.add(off);
-                            let rel_offset = core::ptr::read_unaligned(
-                                ptr_addr as *const i32
-                            );
-                            let target = ptr_addr.offset(rel_offset as isize);
-                            Some(&*target.cast())
-                        }
-                    }
+                    let off = self.field_offset(#idx_lit);
+                    Some(unsafe {
+                        &*(self.read_field_at(off, #idx_lit)
+                            as *const ::rkyv::Archived<<#ty as ::dbsp::utils::IsNone>::Inner>)
+                    })
                 }
             }
         });
@@ -557,88 +693,6 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         &|idx| walking_field(idx, &other_tok, &off_other_id),
     );
 
-    // Both InlineSparse with equal bitmaps: single-offset walk.
-    // Equal bitmaps guarantee identical inline body layout, so both
-    // values sit at the same byte offset. We read both at `off` with
-    // one alignment step and one advance — no save/restore, no double
-    // walking_read_tN. The IS_FIXED branch is resolved at compile time,
-    // so only the relevant read path survives.
-    //
-    // The calling function must compute `self_base` and `other_base`
-    // (raw pointers to the start of each IS struct) before these checks.
-    let same_bitmap_eq_checks: Vec<TokenStream2> = (0..num_elements).map(|idx| {
-        let idx_lit = Index::from(idx);
-        let ty = &generics[idx];
-        quote! {
-            if !self.bitmap.is_none(#idx_lit) {
-                let align = <<#ty as ::dbsp::utils::IsNone>::Inner
-                    as ::dbsp::utils::ArchiveLayout>::INLINE_ALIGN;
-                if align > 1 { off = (off + align - 1) & !(align - 1); }
-
-                let left: &::rkyv::Archived<<#ty as ::dbsp::utils::IsNone>::Inner> =
-                    if <<#ty as ::dbsp::utils::IsNone>::Inner
-                        as ::dbsp::utils::ArchiveLayout>::IS_FIXED
-                    {
-                        &*self_base.add(off).cast()
-                    } else {
-                        let p = self_base.add(off);
-                        &*p.offset(core::ptr::read_unaligned(p as *const i32) as isize).cast()
-                    };
-                let right: &::rkyv::Archived<<#ty as ::dbsp::utils::IsNone>::Inner> =
-                    if <<#ty as ::dbsp::utils::IsNone>::Inner
-                        as ::dbsp::utils::ArchiveLayout>::IS_FIXED
-                    {
-                        &*other_base.add(off).cast()
-                    } else {
-                        let p = other_base.add(off);
-                        &*p.offset(core::ptr::read_unaligned(p as *const i32) as isize).cast()
-                    };
-
-                off += <<#ty as ::dbsp::utils::IsNone>::Inner
-                    as ::dbsp::utils::ArchiveLayout>::INLINE_SIZE;
-
-                if left != right { return false; }
-            }
-        }
-    }).collect();
-
-    let same_bitmap_cmp_checks: Vec<TokenStream2> = (0..num_elements).map(|idx| {
-        let idx_lit = Index::from(idx);
-        let ty = &generics[idx];
-        quote! {
-            if !self.bitmap.is_none(#idx_lit) {
-                let align = <<#ty as ::dbsp::utils::IsNone>::Inner
-                    as ::dbsp::utils::ArchiveLayout>::INLINE_ALIGN;
-                if align > 1 { off = (off + align - 1) & !(align - 1); }
-
-                let left: &::rkyv::Archived<<#ty as ::dbsp::utils::IsNone>::Inner> =
-                    if <<#ty as ::dbsp::utils::IsNone>::Inner
-                        as ::dbsp::utils::ArchiveLayout>::IS_FIXED
-                    {
-                        &*self_base.add(off).cast()
-                    } else {
-                        let p = self_base.add(off);
-                        &*p.offset(core::ptr::read_unaligned(p as *const i32) as isize).cast()
-                    };
-                let right: &::rkyv::Archived<<#ty as ::dbsp::utils::IsNone>::Inner> =
-                    if <<#ty as ::dbsp::utils::IsNone>::Inner
-                        as ::dbsp::utils::ArchiveLayout>::IS_FIXED
-                    {
-                        &*other_base.add(off).cast()
-                    } else {
-                        let p = other_base.add(off);
-                        &*p.offset(core::ptr::read_unaligned(p as *const i32) as isize).cast()
-                    };
-
-                off += <<#ty as ::dbsp::utils::IsNone>::Inner
-                    as ::dbsp::utils::ArchiveLayout>::INLINE_SIZE;
-
-                let cmp = left.cmp(right);
-                if cmp != core::cmp::Ordering::Equal { return cmp; }
-            }
-        }
-    }).collect();
-
     // Sparse same-format walking comparisons.
     // Uses walking_read_tN with running ptr_idx instead of O(n²) get_tN.
     let sparse_self_tok: TokenStream2 = quote!(self);
@@ -666,20 +720,16 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         &|idx| { let g = format_ident!("get_t{}", idx); quote!(#dense_other_tok.#g()) },
     );
 
-    // IS↔Dense cross-format comparisons. IS walking_read on `self`, Dense
-    // get_tN on `other`. Implemented as methods on the IS struct; the
-    // envelope normalizes IS to the left and reverses cmp if swapped.
-    let is_dense_off = format_ident!("is_off");
-    let is_dense_self: TokenStream2 = quote!(self);
-    let is_dense_other: TokenStream2 = quote!(other);
-    let is_dense_eq_checks = gen_eq(
-        &|idx| { let m = &walking_read_names[idx]; quote!(unsafe { #is_dense_self.#m(&mut #is_dense_off) }) },
-        &|idx| { let g = format_ident!("get_t{}", idx); quote!(#is_dense_other.#g()) },
-    );
-    let is_dense_cmp_checks = gen_cmp(
-        &|idx| { let m = &walking_read_names[idx]; quote!(unsafe { #is_dense_self.#m(&mut #is_dense_off) }) },
-        &|idx| { let g = format_ident!("get_t{}", idx); quote!(#is_dense_other.#g()) },
-    );
+    // Dense field_ptr match arms: each arm returns a raw pointer to the
+    // archived value in the Dense struct's MaybeUninit slot at field index N.
+    // Used by cross-format IS↔Dense comparisons via function pointer tables.
+    let dense_field_ptr_arms: Vec<_> = (0..num_elements)
+        .map(|idx| {
+            let idx_lit = Index::from(idx);
+            let field = format_ident!("t{}", idx);
+            quote!(#idx_lit => self.#field.as_ptr() as *const u8)
+        })
+        .collect();
 
     // Envelope walking_read_tN methods: dispatch to each format's walking
     // reader. All three formats accept `off: &mut usize` but interpret it
@@ -1029,6 +1079,19 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
 
             #(#dense_get_methods)*
             #(#dense_walking_methods)*
+
+            /// Returns a raw pointer to the archived value in the `MaybeUninit`
+            /// slot at field index `idx`. Used by cross-format comparisons to
+            /// avoid N typed `get_tN` calls in an unrolled sequence.
+            #[inline]
+            fn field_ptr(&self, idx: usize) -> *const u8 {
+                unsafe {
+                    match idx {
+                        #(#dense_field_ptr_arms,)*
+                        _ => core::hint::unreachable_unchecked(),
+                    }
+                }
+            }
         }
 
         // InlineSparse archived struct.
@@ -1053,89 +1116,173 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
             #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
             #(<#generics as ::dbsp::utils::IsNone>::Inner: ::dbsp::utils::ArchiveLayout,)*
         {
+            #is_layout_consts_and_helpers
             #(#inline_sparse_get_methods)*
             #(#inline_sparse_walking_methods)*
         }
 
-        // Walking equality comparison for InlineSparse (PartialEq bound).
+        // InlineSparse equality comparisons (PartialEq bound).
+        // Function pointer tables avoid N unrolled typed blocks — the loop
+        // body stays ~50 insns regardless of field count.
+        //
+        // `same_bitmap_eq_with` is the shared helper: walks the IS left side
+        // and calls `right_ptr(field_idx, byte_offset)` for each present
+        // field to get the right-side pointer.
         impl<#(#generics),*> #archived_inline_sparse_name<#(#generics),*>
         where
             #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
             #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive + ::dbsp::utils::ArchiveLayout,)*
             #(::rkyv::Archived<<#generics as ::dbsp::utils::IsNone>::Inner>: core::cmp::PartialEq,)*
         {
+            const FIELD_EQ_FNS: [unsafe fn(*const u8, *const u8) -> bool; #num_elements] = [
+                #(#is_field_eq_fn_entries),*
+            ];
+            const FIELD_CROSS_EQ_FNS: [unsafe fn(*const u8, *const u8) -> bool; #num_elements] = [
+                #(#is_dense_eq_fn_entries),*
+            ];
+
+            #[inline]
+            fn same_bitmap_eq_with(
+                &self,
+                fns: &[unsafe fn(*const u8, *const u8) -> bool],
+                mut right_ptr: impl FnMut(usize, usize) -> *const u8,
+            ) -> bool {
+                let self_base = self as *const Self as *const u8;
+                let mut off = #bitmap_bytes;
+                let result = self.bitmap.try_for_each_some(#num_elements, |f| {
+                    let align = Self::FIELD_ALIGNS[f];
+                    if align > 1 { off = (off + align - 1) & !(align - 1); }
+                    let eq = unsafe { fns[f](self_base.add(off), right_ptr(f, off)) };
+                    off += Self::FIELD_SIZES[f];
+                    if eq {
+                        core::ops::ControlFlow::Continue(())
+                    } else {
+                        core::ops::ControlFlow::Break(())
+                    }
+                });
+                result.is_continue()
+            }
+
             #[inline]
             fn walking_eq(&self, other: &Self) -> bool {
-                if self.bitmap != other.bitmap {
-                    return false;
-                }
-                // Same bitmap → identical inline body layout. Read both
-                // sides at the same offset with a single walk.
-                let mut off = #bitmap_bytes;
-                let self_base = self as *const Self as *const u8;
+                if self.bitmap != other.bitmap { return false; }
                 let other_base = other as *const Self as *const u8;
-                unsafe {
-                    #(#same_bitmap_eq_checks)*
-                }
-                true
+                self.same_bitmap_eq_with(&Self::FIELD_EQ_FNS, |_f, off| unsafe { other_base.add(off) })
             }
-        }
 
-        // Walking ordering comparison for InlineSparse (Ord bound).
-        impl<#(#generics),*> #archived_inline_sparse_name<#(#generics),*>
-        where
-            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
-            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive + ::dbsp::utils::ArchiveLayout,)*
-            #(::rkyv::Archived<<#generics as ::dbsp::utils::IsNone>::Inner>: core::cmp::Ord,)*
-        {
-            #[inline]
-            fn walking_cmp(&self, other: &Self) -> core::cmp::Ordering {
-                if self.bitmap == other.bitmap {
-                    let mut off = #bitmap_bytes;
-                    let self_base = self as *const Self as *const u8;
-                    let other_base = other as *const Self as *const u8;
-                    unsafe {
-                        #(#same_bitmap_cmp_checks)*
-                    }
-                    return core::cmp::Ordering::Equal;
-                }
-                // Different bitmaps: two-offset walk needed.
-                let mut off_self = #bitmap_bytes;
-                let mut off_other = #bitmap_bytes;
-                unsafe {
-                    #(#general_cmp_checks)*
-                }
-                core::cmp::Ordering::Equal
-            }
-        }
-
-        // Cross-format IS↔Dense comparisons.
-        // IS is always `self`; the envelope normalizes and reverses cmp if needed.
-        impl<#(#generics),*> #archived_inline_sparse_name<#(#generics),*>
-        where
-            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
-            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive + ::dbsp::utils::ArchiveLayout,)*
-            #(::rkyv::Archived<<#generics as ::dbsp::utils::IsNone>::Inner>: core::cmp::PartialEq,)*
-        {
             #[inline]
             fn eq_with_dense(&self, other: &#archived_dense_name<#(#generics),*>) -> bool {
-                let mut is_off = #bitmap_bytes;
-                #(#is_dense_eq_checks)*
-                true
+                if self.bitmap != other.bitmap { return false; }
+                self.same_bitmap_eq_with(&Self::FIELD_CROSS_EQ_FNS, |f, _off| other.field_ptr(f))
             }
         }
 
+        // InlineSparse ordering comparisons (Ord bound).
+        //
+        // Two shared helpers:
+        // - `same_bitmap_cmp_with`: both sides have identical NULL pattern,
+        //   single offset walk via try_for_each_some.
+        // - `diff_bitmap_cmp_with`: different NULL patterns, per-field loop
+        //   with None < Some semantics. The `right_ptr` closure returns the
+        //   right-side pointer and handles its own offset tracking if needed.
         impl<#(#generics),*> #archived_inline_sparse_name<#(#generics),*>
         where
             #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
             #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive + ::dbsp::utils::ArchiveLayout,)*
             #(::rkyv::Archived<<#generics as ::dbsp::utils::IsNone>::Inner>: core::cmp::Ord,)*
         {
+            const FIELD_CMP_FNS: [unsafe fn(*const u8, *const u8) -> core::cmp::Ordering; #num_elements] = [
+                #(#is_field_cmp_fn_entries),*
+            ];
+            const FIELD_CROSS_CMP_FNS: [unsafe fn(*const u8, *const u8) -> core::cmp::Ordering; #num_elements] = [
+                #(#is_dense_cmp_fn_entries),*
+            ];
+
+            #[inline]
+            fn same_bitmap_cmp_with(
+                &self,
+                fns: &[unsafe fn(*const u8, *const u8) -> core::cmp::Ordering],
+                mut right_ptr: impl FnMut(usize, usize) -> *const u8,
+            ) -> core::cmp::Ordering {
+                let self_base = self as *const Self as *const u8;
+                let mut off = #bitmap_bytes;
+                let result = self.bitmap.try_for_each_some(#num_elements, |f| {
+                    let align = Self::FIELD_ALIGNS[f];
+                    if align > 1 { off = (off + align - 1) & !(align - 1); }
+                    let cmp = unsafe { fns[f](self_base.add(off), right_ptr(f, off)) };
+                    off += Self::FIELD_SIZES[f];
+                    if cmp == core::cmp::Ordering::Equal {
+                        core::ops::ControlFlow::Continue(())
+                    } else {
+                        core::ops::ControlFlow::Break(cmp)
+                    }
+                });
+                match result {
+                    core::ops::ControlFlow::Continue(()) => core::cmp::Ordering::Equal,
+                    core::ops::ControlFlow::Break(cmp) => cmp,
+                }
+            }
+
+            #[inline]
+            fn diff_bitmap_cmp_with(
+                &self,
+                other_bitmap: &#bitmap_ty,
+                fns: &[unsafe fn(*const u8, *const u8) -> core::cmp::Ordering],
+                mut right_ptr: impl FnMut(usize) -> *const u8,
+            ) -> core::cmp::Ordering {
+                let self_base = self as *const Self as *const u8;
+                let mut off = #bitmap_bytes;
+                let mut f = 0usize;
+                while f < #num_elements {
+                    let left_null = self.bitmap.is_none(f);
+                    let right_null = other_bitmap.is_none(f);
+                    if !left_null {
+                        let align = Self::FIELD_ALIGNS[f];
+                        if align > 1 { off = (off + align - 1) & !(align - 1); }
+                    }
+                    match (left_null, right_null) {
+                        (true, true) => {},
+                        (false, true) => return core::cmp::Ordering::Greater,
+                        (true, false) => return core::cmp::Ordering::Less,
+                        (false, false) => {
+                            let cmp = unsafe {
+                                fns[f](self_base.add(off), right_ptr(f))
+                            };
+                            if cmp != core::cmp::Ordering::Equal { return cmp; }
+                        },
+                    }
+                    if !left_null { off += Self::FIELD_SIZES[f]; }
+                    f += 1;
+                }
+                core::cmp::Ordering::Equal
+            }
+
+            #[inline]
+            fn walking_cmp(&self, other: &Self) -> core::cmp::Ordering {
+                let other_base = other as *const Self as *const u8;
+                if self.bitmap == other.bitmap {
+                    self.same_bitmap_cmp_with(&Self::FIELD_CMP_FNS, |_f, off| unsafe { other_base.add(off) })
+                } else {
+                    let mut off_other = #bitmap_bytes;
+                    self.diff_bitmap_cmp_with(&other.bitmap, &Self::FIELD_CMP_FNS, |f| {
+                        let align = Self::FIELD_ALIGNS[f];
+                        if align > 1 { off_other = (off_other + align - 1) & !(align - 1); }
+                        let ptr = unsafe { other_base.add(off_other) };
+                        off_other += Self::FIELD_SIZES[f];
+                        ptr
+                    })
+                }
+            }
+
             #[inline]
             fn cmp_with_dense(&self, other: &#archived_dense_name<#(#generics),*>) -> core::cmp::Ordering {
-                let mut is_off = #bitmap_bytes;
-                #(#is_dense_cmp_checks)*
-                core::cmp::Ordering::Equal
+                if self.bitmap == other.bitmap {
+                    self.same_bitmap_cmp_with(&Self::FIELD_CROSS_CMP_FNS, |f, _off| other.field_ptr(f))
+                } else {
+                    self.diff_bitmap_cmp_with(&other.bitmap, &Self::FIELD_CROSS_CMP_FNS, |f| {
+                        other.field_ptr(f)
+                    })
+                }
             }
         }
 
