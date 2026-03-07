@@ -72,9 +72,6 @@ Usage: sql-to-dbsp [options] Input file to compile
     --ignoreOrder
       Ignore ORDER BY clauses at the end
       Default: false
-    --jdbcSource
-      Connection string to a database that contains table metadata
-      Default: <empty string>
     --je, -je
       Emit error messages as a JSON array to the error output
       Default: false

@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.google.common.base.Charsets;
 import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.config.CalciteConnectionConfig;
@@ -128,6 +129,7 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourceFileContents;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -1921,32 +1923,94 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
     }
 
+    static SourcePositionRange elementPositionRange(SqlFragment value, String path, boolean toValue) {
+        String json = value.getString();
+        SourcePosition pos = Utilities.jsonPointerLocation(json, path, toValue);
+        if (pos == null)
+            return value.getSourcePosition();
+        else
+            return pos.asRange().relativeTo(value.getSourcePosition().start);
+    }
+
+    @SuppressWarnings("unused")
     void validateConnectorsProperty(CalciteObject ignored, boolean isTable, ProgramIdentifier tableView,
                                     SqlFragment keyIgnored, SqlFragment value) {
-        Result<JsonNode> jsonNode = Utilities.validateJson(value.getString());
+        final String json = value.getString();
+        final Result<JsonNode> jsonNode = Utilities.validateJson(json);
         if (jsonNode.isOk()) {
             if (!jsonNode.ok().isArray())
                 throw new CompilationError("Expected an array value for 'connectors'", value.getSourcePosition());
             int index = 1;
-            Set<String> names = new HashSet<>();
-            String objectName = (isTable ? "Table " : "View ") + tableView.singleQuote();
+            final Set<String> names = new HashSet<>();
+            final String objectName = (isTable ? "table " : "view ") + tableView.singleQuote();
             for (Iterator<JsonNode> it = jsonNode.ok().elements(); it.hasNext(); index++) {
-                JsonNode connector = it.next();
-                JsonNode name = connector.get("name");
+                final String path = "/" + (index-1);
+                final JsonNode connector = it.next();
+                final JsonNode name = connector.get("name");
                 if (name == null) {
-                    this.errorReporter.reportWarning(value.getSourcePosition(), "Unnamed connector",
+                    SourcePositionRange pos = elementPositionRange(value, path, false);
+                    this.errorReporter.reportWarning(pos, "Unnamed connector",
                             "Connector nr. " + index + " for " + objectName + " does not have a name.\n" +
                                     "It is recommended to name all connectors using the \"name\" property; names will be required in the future.");
                 } else {
                     if (!name.isTextual()) {
+                        SourcePositionRange pos = elementPositionRange(value, "/" + (index-1) + "/name", true);
                         throw new CompilationError("Expected a string value for the connector \"name\" property",
-                                value.getSourcePosition());
+                                pos);
                     }
                     if (names.contains(name.asText())) {
-                        throw new CompilationError("Connector " + Utilities.singleQuote(name.asText()) + " for " +
-                                objectName + " must have a unique name per table/view", value.getSourcePosition());
+                        SourcePositionRange pos = elementPositionRange(value, path + "/name", true);
+                        throw new CompilationError("Two connectors for the same " + objectName +
+                                " cannot have the same name: " + Utilities.singleQuote(name.asText()), pos);
                     }
                     names.add(name.asText());
+                }
+                JsonNode preprocessor = connector.get(CreateTableStatement.PREPROCESSOR);
+                if (preprocessor != null) {
+                    String pp = path + "/preprocessor";
+                    if (!preprocessor.isArray()) {
+                        SourcePositionRange pos = elementPositionRange(value, pp, false);
+                        throw new CompilationError("Preprocessor property for " +
+                                objectName + " must be an array", pos);
+                    }
+                    ArrayNode preprocessors = (ArrayNode) preprocessor;
+                    if (preprocessors.size() != 1) {
+                        SourcePositionRange pos = elementPositionRange(value, pp, false);
+                        throw new CompilationError("Preprocessor property for " +
+                                objectName + " must be an array with exactly 1 element", pos);
+                    }
+                    JsonNode preConf = preprocessors.get(0);
+                    String pp0 = pp + "/0";
+                    if (!preConf.has("name")) {
+                        SourcePositionRange pos = elementPositionRange(value, pp0, false);
+                        throw new CompilationError("Preprocessor must have a field \"name\"", pos);
+                    }
+                    if (!preConf.get("name").isTextual()) {
+                        SourcePositionRange pos = elementPositionRange(value, pp0 + "/name", true);
+                        throw new CompilationError("Preprocessor field \"name\" must be a string", pos);
+                    }
+                    String preName = preConf.get("name").asText();
+                    if (!Utilities.isLegalRustIdentifier(preName)) {
+                        SourcePositionRange pos = elementPositionRange(value, pp0 + "/name", true);
+                        throw new CompilationError("The value of preprocessor field \"name\": "
+                                + Utilities.doubleQuote(preName, false) + " must be a legal Rust identifier", pos);
+                    }
+                    if (!preConf.has(CreateTableStatement.MESSAGE_ORIENTED)) {
+                        SourcePositionRange pos = elementPositionRange(value, pp0, false);
+                        throw new CompilationError("Preprocessor must have a field " +
+                                Utilities.doubleQuote(CreateTableStatement.MESSAGE_ORIENTED, false), pos);
+                    }
+                    if (!preConf.get(CreateTableStatement.MESSAGE_ORIENTED).isBoolean()) {
+                        SourcePositionRange pos = elementPositionRange(value, pp0 + "/" +
+                                CreateTableStatement.MESSAGE_ORIENTED, true);
+                        throw new CompilationError("Preprocessor field " +
+                                Utilities.doubleQuote(CreateTableStatement.MESSAGE_ORIENTED, false) +
+                                " must be a Boolean value", pos);
+                    }
+                    if (!preConf.has("config") || !preConf.get("config").isObject()) {
+                        SourcePositionRange pos = elementPositionRange(value, pp0 + "/config", true);
+                        throw new CompilationError("Preprocessor field \"config\" must be a JSON object", pos);
+                    }
                 }
             }
         } else {

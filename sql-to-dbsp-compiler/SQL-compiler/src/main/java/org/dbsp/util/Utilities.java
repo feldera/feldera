@@ -25,7 +25,9 @@
 
 package org.dbsp.util;
 
+import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonLocation;
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonMappingException;
@@ -245,14 +247,45 @@ public class Utilities {
                     return Result.err(new ErrorWithPosition(e.getMessage(), SourcePositionRange.INVALID));
                 }
 
-                return Result.err(new ErrorWithPosition(e.getOriginalMessage(),
-                        new SourcePositionRange(
-                                new SourcePosition(location.getLineNr(), location.getColumnNr()),
-                                new SourcePosition(location.getLineNr(), location.getColumnNr()))));
+                SourcePosition pos = new SourcePosition(location);
+                return Result.err(new ErrorWithPosition(e.getOriginalMessage(), pos.asRange()));
             } else {
                 return Result.err(new ErrorWithPosition(e.getMessage(), SourcePositionRange.INVALID));
             }
         }
+    }
+
+    /**
+     * Given a Json document as a text string, find the position of a specific JSON element
+     * specified using a JSON pointer.
+     *
+     * @param json          The raw JSON source string to scan.
+     * @param targetPointer A standard JSON Pointer string (e.g., "/users/0/email")
+     *                      representing the path to the element.
+     * @param toValue       If true, advance the pointer to the value associated with the key found.
+     * @return A {@link JsonLocation} containing the line and column number of the
+     * start of the target token, or {@code null} if the path is not found or the document is invalid.
+     * @see <a href="https://datatracker.ietf.org/doc/html/rfc6901">RFC 6901 (JSON Pointer)</a>
+     */
+    @Nullable
+    public static SourcePosition jsonPointerLocation(String json, String targetPointer, boolean toValue) {
+        // Unfortunately the Jackson library does not keep track of source positions after parsing JSON,
+        // so we need to reparse it to find out where something is when we need to provide good error messages.
+        JsonFactory factory = new JsonFactory();
+        try (JsonParser parser = factory.createParser(json)) {
+            while (parser.nextToken() != null) {
+                String currentPath = parser.getParsingContext().pathAsPointer().toString();
+                if (currentPath.equals(targetPointer)) {
+                    if (toValue) {
+                        parser.nextToken();
+                    }
+                    return new SourcePosition(parser.currentTokenLocation());
+                }
+            }
+        } catch (IOException e) {
+            return null;
+        }
+        return null;
     }
 
     /** Just adds single quotes around a string.  No escaping is performed. */

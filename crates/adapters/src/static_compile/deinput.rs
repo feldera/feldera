@@ -23,13 +23,12 @@ use dbsp::{
 use erased_serde::Deserializer as ErasedDeserializer;
 #[cfg(feature = "with-avro")]
 use feldera_adapterlib::catalog::AvroSchemaRefs;
-use feldera_adapterlib::format::BufferSize;
+use feldera_adapterlib::format::{BufferSize, flatten_nested};
 use feldera_sqllib::Variant;
 use feldera_types::format::csv::CsvParserConfig;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
 use serde_json::de::SliceRead;
-use std::any::Any;
 use std::hash::Hasher;
 use std::iter::zip;
 use std::{collections::VecDeque, marker::PhantomData, ops::Neg};
@@ -582,12 +581,13 @@ where
     }
 
     fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
-        Box::new(self.buffer.handle.stage(buffers.into_iter().map(|b| {
-            (b as Box<dyn Any>)
-                .downcast::<DeZSetStreamBuffer<K>>()
-                .unwrap()
-                .updates
-        })))
+        Box::new(
+            self.buffer.handle.stage(
+                flatten_nested::<DeZSetStreamBuffer<K>>(buffers)
+                    .into_iter()
+                    .map(|buffer| buffer.updates),
+            ),
+        )
     }
 }
 
@@ -723,12 +723,13 @@ where
     }
 
     fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
-        Box::new(self.buffer.handle.stage(buffers.into_iter().map(|b| {
-            (b as Box<dyn Any>)
-                .downcast::<DeZSetStreamBuffer<K>>()
-                .unwrap()
-                .updates
-        })))
+        Box::new(
+            self.buffer.handle.stage(
+                flatten_nested::<DeZSetStreamBuffer<K>>(buffers)
+                    .into_iter()
+                    .map(|buffer| buffer.updates),
+            ),
+        )
     }
 }
 
@@ -825,12 +826,13 @@ where
     }
 
     fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
-        Box::new(self.buffer.handle.stage(buffers.into_iter().map(|b| {
-            (b as Box<dyn Any>)
-                .downcast::<DeZSetStreamBuffer<K>>()
-                .unwrap()
-                .updates
-        })))
+        Box::new(
+            self.buffer.handle.stage(
+                flatten_nested::<DeZSetStreamBuffer<K>>(buffers)
+                    .into_iter()
+                    .map(|buffer| buffer.updates),
+            ),
+        )
     }
 }
 
@@ -1070,12 +1072,13 @@ where
     }
 
     fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
-        Box::new(self.buffer.handle.stage(buffers.into_iter().map(|b| {
-            (b as Box<dyn Any>)
-                .downcast::<DeSetStreamBuffer<K>>()
-                .unwrap()
-                .updates
-        })))
+        Box::new(
+            self.buffer.handle.stage(
+                flatten_nested::<DeSetStreamBuffer<K>>(buffers)
+                    .into_iter()
+                    .map(|buffer| buffer.updates),
+            ),
+        )
     }
 }
 
@@ -1181,12 +1184,13 @@ where
     }
 
     fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
-        Box::new(self.buffer.handle.stage(buffers.into_iter().map(|b| {
-            (b as Box<dyn Any>)
-                .downcast::<DeSetStreamBuffer<K>>()
-                .unwrap()
-                .updates
-        })))
+        Box::new(
+            self.buffer.handle.stage(
+                flatten_nested::<DeSetStreamBuffer<K>>(buffers)
+                    .into_iter()
+                    .map(|buffer| buffer.updates),
+            ),
+        )
     }
 }
 
@@ -1283,12 +1287,13 @@ where
     }
 
     fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
-        Box::new(self.buffer.handle.stage(buffers.into_iter().map(|b| {
-            (b as Box<dyn Any>)
-                .downcast::<DeSetStreamBuffer<K>>()
-                .unwrap()
-                .updates
-        })))
+        Box::new(
+            self.buffer.handle.stage(
+                flatten_nested::<DeSetStreamBuffer<K>>(buffers)
+                    .into_iter()
+                    .map(|buffer| buffer.updates),
+            ),
+        )
     }
 }
 
@@ -1641,12 +1646,13 @@ where
     }
 
     fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
-        Box::new(self.buffer.handle.stage(buffers.into_iter().map(|b| {
-            (b as Box<dyn Any>)
-                .downcast::<DeMapStreamBuffer<K, V, U>>()
-                .unwrap()
-                .updates
-        })))
+        Box::new(
+            self.buffer.handle.stage(
+                flatten_nested::<DeMapStreamBuffer<K, V, U>>(buffers)
+                    .into_iter()
+                    .map(|buffer| buffer.updates),
+            ),
+        )
     }
 }
 
@@ -1795,12 +1801,13 @@ where
     }
 
     fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
-        Box::new(self.buffer.handle.stage(buffers.into_iter().map(|b| {
-            (b as Box<dyn Any>)
-                .downcast::<DeMapStreamBuffer<K, V, U>>()
-                .unwrap()
-                .updates
-        })))
+        Box::new(
+            self.buffer.handle.stage(
+                flatten_nested::<DeMapStreamBuffer<K, V, U>>(buffers)
+                    .into_iter()
+                    .map(|buffer| buffer.updates),
+            ),
+        )
     }
 }
 
@@ -1929,12 +1936,13 @@ where
     }
 
     fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
-        Box::new(self.buffer.handle.stage(buffers.into_iter().map(|b| {
-            (b as Box<dyn Any>)
-                .downcast::<DeMapStreamBuffer<K, V, U>>()
-                .unwrap()
-                .updates
-        })))
+        Box::new(
+            self.buffer.handle.stage(
+                flatten_nested::<DeMapStreamBuffer<K, V, U>>(buffers)
+                    .into_iter()
+                    .map(|buffer| buffer.updates),
+            ),
+        )
     }
 }
 

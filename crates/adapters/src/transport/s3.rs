@@ -521,7 +521,7 @@ impl S3InputReader {
             let partially_processed_keys = partially_processed_keys.clone();
 
             let handle = tokio::task::spawn(async move {
-                let mut splitter = StreamSplitter::new(parser.splitter());
+                let mut splitter: StreamSplitter = StreamSplitter::new(parser.splitter());
 
                 'outer: loop {
                     let msg = { rx.recv().await };

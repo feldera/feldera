@@ -1,8 +1,8 @@
 use std::any::Any;
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter};
-use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result as AnyResult;
 #[cfg(feature = "with-avro")]
@@ -27,6 +27,7 @@ use std::collections::HashMap;
 
 use crate::errors::controller::ControllerError;
 use crate::format::InputBuffer;
+use crate::preprocess::PreprocessorRegistry;
 
 /// Descriptor that specifies the format in which records are received
 /// or into which they should be encoded before sending.
@@ -888,6 +889,9 @@ pub trait CircuitCatalog: Send + Sync {
     fn output_handles(&self, name: &SqlIdentifier) -> Option<&OutputCollectionHandles>;
 
     fn output_handles_mut(&mut self, name: &SqlIdentifier) -> Option<&mut OutputCollectionHandles>;
+
+    /// The registry used to insert new user-defined preprocessors
+    fn preprocessor_registry(&self) -> Arc<Mutex<PreprocessorRegistry>>;
 }
 
 #[doc(hidden)]

@@ -8,6 +8,7 @@ mod connector_metadata;
 pub mod errors;
 pub mod format;
 pub mod metrics;
+pub mod preprocess;
 pub mod transport;
 pub mod utils;
 

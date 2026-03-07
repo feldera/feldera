@@ -43,6 +43,8 @@ public class CreateTableStatement extends CreateRelationStatement {
     public static final String SKIP_UNUSED_COLUMNS = "skip_unused_columns";
     public static final String CONNECTORS = "connectors";
     public static final String EXPECTED_SIZE = "expected_size";
+    public static final String PREPROCESSOR = "preprocessor";
+    public static final String MESSAGE_ORIENTED = "message_oriented";
 
     public final List<ForeignKey> foreignKeys;
 

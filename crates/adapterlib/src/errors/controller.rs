@@ -679,6 +679,12 @@ pub enum ControllerError {
         endpoint_name: String,
     },
 
+    /// Error creating a user-defined preprocessor
+    PreprocessorCreateError {
+        endpoint_name: String,
+        error: String,
+    },
+
     /// Unknown output endpoint name.
     UnknownOutputEndpoint {
         endpoint_name: String,
@@ -937,6 +943,7 @@ impl DbspDetailedError for ControllerError {
     // TODO: attempts to cast `AnyError` to `DetailedError`.
     fn error_code(&self) -> Cow<'static, str> {
         match self {
+            Self::PreprocessorCreateError { .. } => Cow::from("PreprocessorCreateError"),
             Self::IoError { .. } => Cow::from("ControllerIoError"),
             Self::NotSupported { .. } => Cow::from("NotSupported"),
             Self::SchemaParseError { .. } => Cow::from("SchemaParseError"),
@@ -999,6 +1006,15 @@ impl StdError for ControllerError {}
 impl Display for ControllerError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         match self {
+            Self::PreprocessorCreateError {
+                endpoint_name,
+                error,
+            } => {
+                write!(
+                    f,
+                    "Error creating preprocessor for endpoint {endpoint_name}: {error}"
+                )
+            }
             Self::IoError {
                 context, io_error, ..
             } => {
@@ -1567,6 +1583,7 @@ impl ControllerError {
             | Self::UnexpectedBootstrap { .. }
             | Self::InvalidStandby(_)
             | Self::InvalidStartupTransition { .. }
+            | Self::PreprocessorCreateError { .. }
             | Self::UnexpectedRuntimeVersion { .. } => ErrorKind::Other,
         }
     }
