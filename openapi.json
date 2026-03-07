@@ -7358,6 +7358,13 @@
                 "type": "boolean",
                 "description": "Create connector in paused state.\n\nThe default is `false`."
               },
+              "preprocessor": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PreprocessorConfig"
+                },
+                "nullable": true
+              },
               "start_after": {
                 "type": "array",
                 "items": {

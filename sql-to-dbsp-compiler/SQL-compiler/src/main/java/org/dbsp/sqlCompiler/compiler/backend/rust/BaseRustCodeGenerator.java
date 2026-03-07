@@ -138,7 +138,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
                 dynamic::{DynData,DynDataTyped},
                 typed_batch::SpineSnapshot,
             };
-            use dbsp_adapters::Catalog;
+            use dbsp_adapters::{Catalog, CircuitCatalog};
             use feldera_types::{
                 program_schema::SqlIdentifier,
                 deserialize_table_record, serialize_table_record,

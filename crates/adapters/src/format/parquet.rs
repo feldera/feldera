@@ -38,7 +38,7 @@ use crate::{
 use feldera_types::format::parquet::{ParquetEncoderConfig, ParquetParserConfig};
 use feldera_types::program_schema::{ColumnType, Field, IntervalUnit, Relation, SqlType};
 
-use super::{InputBuffer, Sponge};
+use super::{InputBuffer, SpongeSplitter};
 
 #[cfg(test)]
 pub mod test;
@@ -166,7 +166,7 @@ impl Parser for ParquetParser {
     }
 
     fn splitter(&self) -> Box<dyn super::Splitter> {
-        Box::new(Sponge)
+        Box::new(SpongeSplitter)
     }
 
     fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {

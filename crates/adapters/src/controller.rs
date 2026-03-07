@@ -151,6 +151,7 @@ use crate::adhoc::table::AdHocTable;
 use crate::adhoc::{create_session_context, execute_sql};
 use crate::catalog::{SerBatchReader, SerTrace};
 use crate::format::parquet::relation_to_arrow_fields;
+use crate::format::{MessageOrientedPreprocessedParser, StreamingPreprocessedParser};
 use crate::format::{get_input_format, get_output_format};
 use crate::integrated::create_integrated_input_endpoint;
 pub use error::{ConfigError, ControllerError};
@@ -5397,6 +5398,51 @@ impl ControllerInner {
         )
         .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
 
+        // Create preprocessor if specified by the configuration
+        let mut preprocessor = None;
+        let mut streaming_preprocessor = false;
+        if let Some(vec) = &endpoint_config.connector_config.preprocessor {
+            if vec.len() != 1 {
+                return Err(ControllerError::PreprocessorCreateError {
+                    endpoint_name: endpoint_name.to_string(),
+                    error: "Currently exactly one preprocessor can be specified".to_string(),
+                });
+            }
+            let config = &vec[0];
+            if let Some(factory) = self
+                .catalog
+                .preprocessor_registry()
+                .lock()
+                .unwrap()
+                .get(&config.name)
+            {
+                debug!(
+                    "Endpoint {0} creating preprocessor for {1}",
+                    endpoint_name, config.name
+                );
+                match factory.create(config) {
+                    Err(e) => {
+                        return Err(ControllerError::PreprocessorCreateError {
+                            endpoint_name: endpoint_name.to_string(),
+                            error: format!("Error parsing preprocessor configuration: {e}"),
+                        });
+                    }
+                    Ok(pre) => {
+                        preprocessor = Some(pre);
+                        streaming_preprocessor = !config.message_oriented;
+                    }
+                }
+            } else {
+                return Err(ControllerError::PreprocessorCreateError {
+                    endpoint_name: endpoint_name.to_string(),
+                    error: format!(
+                        "Could not locate factory for preprocessor named '{}'",
+                        config.name
+                    ),
+                });
+            }
+        }
+
         // Create input pipeline, consisting of a transport endpoint and parser.
 
         let input_handle = self
@@ -5447,8 +5493,21 @@ impl ControllerInner {
                     ControllerError::unknown_input_format(endpoint_name, &format_config.name)
                 })?;
 
-                let parser =
+                let mut parser =
                     format.new_parser(endpoint_name, input_handle, &format_config.config)?;
+
+                // If a preprocessor exists, combine it with the parser
+                if let Some(pre) = preprocessor {
+                    if streaming_preprocessor {
+                        warn!(
+                            "Preprocessor is not message-oriented; fault tolerance unavailable for {}",
+                            endpoint_name
+                        );
+                        parser = Box::new(StreamingPreprocessedParser::new(pre, parser));
+                    } else {
+                        parser = Box::new(MessageOrientedPreprocessedParser::new(pre, parser));
+                    }
+                }
 
                 let fault_tolerance = endpoint.fault_tolerance();
 
@@ -5485,6 +5544,13 @@ impl ControllerInner {
                 fault_tolerance
             }
             None => {
+                if preprocessor.is_some() {
+                    return Err(ControllerError::PreprocessorCreateError {
+                        endpoint_name: endpoint_name.to_string(),
+                        error: "Preprocessors cannot be used with integrated input endpoints"
+                            .to_string(),
+                    });
+                }
                 let endpoint = create_integrated_input_endpoint(
                     endpoint_name,
                     &resolved_connector_config,

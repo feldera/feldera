@@ -196,9 +196,6 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Parameter(names = "--handles",
                 description = "Use handles (true) or Catalog (false) in the emitted Rust code")
         public boolean emitHandles = false;
-        @Parameter(names = "--jdbcSource",
-                description = "Connection string to a database that contains table metadata")
-        public String metadataSource = "";
         // This option is ignored; it is here just for backward compatibility, and it will be removed.
         @Parameter(names = "--nowstream", hidden = true,
                 description = "Implement NOW as a stream (true) or as an internal operator (false)")
@@ -265,7 +262,6 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                     ",\n\temitPng=" + this.emitPng +
                     ",\n\terrorFile=" + Utilities.singleQuote(this.errorFile) +
                     ",\n\tinputFile=" + Utilities.singleQuote(this.inputFile) +
-                    ",\n\tmetadataSource=" + this.metadataSource +
                     ",\n\tnoRust=" + this.noRust +
                     ",\n\toutputFile=" + Utilities.singleQuote(this.outputFile) +
                     ",\n\tquiet=" + this.quiet +

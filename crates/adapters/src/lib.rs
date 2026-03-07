@@ -155,6 +155,7 @@ mod catalog;
 mod controller;
 pub mod format;
 pub mod integrated;
+pub mod preprocess;
 pub mod server;
 pub mod static_compile;
 pub mod transport;

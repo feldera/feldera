@@ -21,6 +21,7 @@ import org.dbsp.util.Utilities;
 import java.math.BigInteger;
 import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.HashSet;
 import java.util.Set;
 
 /** Represents metadata about the compiled program.
@@ -42,7 +43,9 @@ public class ProgramMetadata implements IJson {
         return variable.toLowerCase(Locale.ENGLISH);
     }
 
-    static final Set<String> reserved = Set.of(DBSPCompiler.WARNINGS_ARE_ERRORS.toLowerCase(Locale.ENGLISH));
+    static final Set<String> reserved = Set.of(
+            DBSPCompiler.WARNINGS_ARE_ERRORS.toLowerCase(Locale.ENGLISH)
+    );
 
     private boolean known(String variable) {
         if (reserved.contains(variable))
@@ -185,5 +188,14 @@ public class ProgramMetadata implements IJson {
     @Override
     public void asJson(ToJsonInnerVisitor visitor) {
         IJson.toJsonStream(this.asJson(), visitor.stream);
+    }
+
+    /** Find all the preprocessors mentioned in all connectors */
+    public Set<String> getPreprocessors() {
+        Set<String> result = new HashSet<>();
+        for (var meta: this.inputTables.values()) {
+            meta.collectPreprocessors(result);
+        }
+        return result;
     }
 }
