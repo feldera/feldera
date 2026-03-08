@@ -41,6 +41,7 @@ incorporate these change log into another Delta table, using the SQL `MERGE INTO
 |            | - `append`: New updates will be appended to the existing table at the target location. |
 |            | - `truncate`: Existing table at the specified location will be truncated. The connector achieves this by outputting delete actions for all files in the latest snapshot of the table. |
 |            | - `error_if_exists`: If a table exists at the specified location, the operation will fail. |
+| `max_retries`|<p>Maximum number of retries for failed Delta Lake operations like writing Parquet files and committing transactions.</p><p>The connector performs retries on several levels: individual S3 operations, Delta Lake transaction commits, and overall operation retries. This setting controls the overall operation retries. When a write to the table fails, because of an S3 timeout or any other reason that was not resolved by lower-level retries, the connector will retry the entire operation.</p><p>When not specified, the connector performs infinite retries. When set to 0, the connector doesn't retry failed operations.</p>|
 
 [*]: Required fields
 

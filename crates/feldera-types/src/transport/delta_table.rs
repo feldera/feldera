@@ -15,7 +15,7 @@ pub enum DeltaTableWriteMode {
 
     /// Existing table at the specified location will get truncated.
     ///
-    /// The connector truncates the table by outputing delete actions for all
+    /// The connector truncates the table by outputting delete actions for all
     /// files in the latest snapshot of the table.
     #[serde(rename = "truncate")]
     Truncate,
@@ -34,6 +34,18 @@ pub struct DeltaTableWriterConfig {
     /// Determines how the Delta table connector handles an existing table at the target location.
     #[serde(default)]
     pub mode: DeltaTableWriteMode,
+
+    /// Maximum number of retries for failed operations.
+    ///
+    /// The connector performs retries on several levels: individual S3 operations, Delta Lake transaction commits,
+    /// and overall operation retries. This setting controls the overall operation retries. When a write to the table
+    /// fails, because of an S3 timeout or any other reason that was not resolved by lower-level retries, the connector
+    /// will retry the entire operation.
+    ///
+    /// When not specified, the connector performs infinite retries. When set to 0, the connector doesn't
+    /// retry failed operations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_retries: Option<u32>,
 
     /// Storage options for configuring backend object store.
     ///

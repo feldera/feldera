@@ -78,8 +78,8 @@ use feldera_storage::metrics::{
     WRITE_LATENCY_MICROSECONDS,
 };
 use feldera_types::adapter_stats::{
-    ExternalControllerStatus, ExternalInputEndpointStatus, ExternalOutputEndpointStatus,
-    TransactionStatus,
+    ConnectorHealth, ExternalControllerStatus, ExternalInputEndpointStatus,
+    ExternalOutputEndpointStatus, TransactionStatus,
 };
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::coordination::{
@@ -6191,6 +6191,16 @@ impl ControllerInner {
             )),
             tag,
         );
+    }
+
+    pub fn update_input_connector_health(&self, endpoint_id: EndpointId, health: ConnectorHealth) {
+        self.status
+            .update_input_connector_health(endpoint_id, health);
+    }
+
+    pub fn update_output_connector_health(&self, endpoint_id: EndpointId, health: ConnectorHealth) {
+        self.status
+            .update_output_connector_health(endpoint_id, health);
     }
 
     /// Update counters after receiving a new input batch.

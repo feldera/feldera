@@ -55,7 +55,7 @@ use feldera_adapterlib::{
 use feldera_storage::histogram::SlidingHistogram;
 use feldera_types::{
     adapter_stats::{
-        CompletedWatermark, ConnectorError, ExternalInputEndpointMetrics,
+        CompletedWatermark, ConnectorError, ConnectorHealth, ExternalInputEndpointMetrics,
         ExternalInputEndpointStatus, ExternalOutputEndpointMetrics, ExternalOutputEndpointStatus,
         ShortEndpointConfig, TransactionStatus,
     },
@@ -1140,6 +1140,18 @@ impl ControllerStatus {
         }
     }
 
+    pub fn update_input_connector_health(&self, endpoint_id: EndpointId, health: ConnectorHealth) {
+        if let Some(endpoint_stats) = self.input_status().get(&endpoint_id) {
+            endpoint_stats.update_health(health);
+        }
+    }
+
+    pub fn update_output_connector_health(&self, endpoint_id: EndpointId, health: ConnectorHealth) {
+        if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
+            endpoint_stats.update_health(health);
+        }
+    }
+
     /// True if the pipeline has processed all inputs to completion.
     pub fn pipeline_complete(&self) -> bool {
         // All input endpoints (if any) are at end of input.
@@ -1863,6 +1875,9 @@ pub struct InputEndpointStatus {
     /// Recent parse errors.
     pub parse_errors: Mutex<ConnectorErrorList>,
 
+    /// Health status of the connector.
+    pub health: Mutex<Option<ConnectorHealth>>,
+
     /// Progress within the latest step.
     pub progress: Mutex<Option<StepResults>>,
 
@@ -1929,6 +1944,7 @@ impl InputEndpointStatus {
             } else {
                 None
             },
+            health: self.health.lock().unwrap().clone(),
             paused: self.is_paused_by_user(),
             barrier: self.is_barrier(),
             completed_frontier: self.completed_frontier.completed_watermark(),
@@ -1956,6 +1972,7 @@ impl InputEndpointStatus {
             fatal_error: Mutex::new(None),
             transport_errors: Mutex::new(ConnectorErrorList::new()),
             parse_errors: Mutex::new(ConnectorErrorList::new()),
+            health: Mutex::new(None),
             progress: Mutex::new(None),
             paused: AtomicBool::new(paused_by_user),
             barrier: AtomicBool::new(false),
@@ -2030,6 +2047,10 @@ impl InputEndpointStatus {
                 *fatal_error = Some(error.to_string());
             }
         }
+    }
+
+    pub fn update_health(&self, health: ConnectorHealth) {
+        *self.health.lock().unwrap() = Some(health);
     }
 
     /// True if the endpoint's `paused_by_user` flag is set to `true`.
@@ -2352,6 +2373,8 @@ pub struct OutputEndpointStatus {
 
     /// Recent transport errors.
     pub transport_errors: Mutex<ConnectorErrorList>,
+
+    pub health: Mutex<Option<ConnectorHealth>>,
 }
 
 impl OutputEndpointStatus {
@@ -2382,6 +2405,7 @@ impl OutputEndpointStatus {
             } else {
                 None
             },
+            health: self.health.lock().unwrap().clone(),
         }
     }
 
@@ -2416,6 +2440,7 @@ impl OutputEndpointStatus {
             fatal_error: Mutex::new(None),
             encode_errors: Mutex::new(ConnectorErrorList::new()),
             transport_errors: Mutex::new(ConnectorErrorList::new()),
+            health: Mutex::new(None),
         }
     }
 
@@ -2525,6 +2550,10 @@ impl OutputEndpointStatus {
                 *fatal_error = Some(error.to_string());
             }
         }
+    }
+
+    fn update_health(&self, health: ConnectorHealth) {
+        *self.health.lock().unwrap() = Some(health);
     }
 
     fn num_total_processed_input_records(&self) -> u64 {

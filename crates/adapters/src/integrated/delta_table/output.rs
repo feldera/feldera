@@ -18,7 +18,7 @@ use delta_kernel::engine::arrow_conversion::TryFromArrow;
 use delta_kernel::table_properties::DataSkippingNumIndexedCols;
 use deltalake::DeltaTable;
 use deltalake::kernel::transaction::{CommitBuilder, TableReference};
-use deltalake::kernel::{Action, DataType, StructField};
+use deltalake::kernel::{Action, Add, DataType, StructField};
 use deltalake::operations::create::CreateBuilder;
 use deltalake::operations::write::writer::{DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
@@ -28,7 +28,10 @@ use feldera_types::serde_with_context::serde_config::{
 };
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 use feldera_types::transport::delta_table::DeltaTableWriteMode;
-use feldera_types::{program_schema::Relation, transport::delta_table::DeltaTableWriterConfig};
+use feldera_types::{
+    adapter_stats::ConnectorHealth, program_schema::Relation,
+    transport::delta_table::DeltaTableWriterConfig,
+};
 use serde::Serialize;
 use serde_arrow::ArrayBuilder;
 use serde_arrow::schema::SerdeArrowSchema;
@@ -253,7 +256,73 @@ struct WriterTask {
     num_rows: usize,
 }
 
+/// Retry `op` with exponential backoff  of up to 10 seconds until it succeeds or config.max_retries is reached.
+///
+/// `warn!` and set health status to unhealthy on each failure, clear the health status on success.
+macro_rules! retry {
+    ($self:ident, $description:expr, $op:expr) => {{
+        let mut retry_count = 0;
+        let mut backoff = Duration::from_secs(1);
+        let max_backoff = Duration::from_secs(10);
+        loop {
+            match $op {
+                Ok(result) => {
+                    if let Some(controller) = $self.inner.controller.upgrade() {
+                        controller.update_output_connector_health(
+                            $self.inner.endpoint_id,
+                            ConnectorHealth::healthy(),
+                        );
+                    }
+                    if retry_count > 0 {
+                        info!(
+                            "delta_table {}: {description} succeeded after {retry_count} attempts",
+                            &$self.inner.endpoint_name,
+                            description = $description
+                        );
+                    }
+                    break Ok(result);
+                }
+                Err(e) if $self.inner.config.max_retries.is_none() || retry_count < $self.inner.config.max_retries.unwrap() => {
+                    retry_count += 1;
+                    let message = format!(
+                        "{description} failed after {retry_count} attempts (retrying in {backoff:?}): {e:?}",
+                        description = $description
+                    );
+
+                    if let Some(controller) = $self.inner.controller.upgrade() {
+                        controller.update_output_connector_health(
+                            $self.inner.endpoint_id,
+                            ConnectorHealth::unhealthy(&message),
+                        );
+                    }
+                    warn!("delta_table {}: {message}", &$self.inner.endpoint_name);
+                    sleep(backoff).await;
+                    backoff = std::cmp::min(backoff * 2, max_backoff);
+                }
+                Err(e) => {
+                    retry_count += 1;
+
+                    let message = format!(
+                        "{description} failed after {retry_count} attempts: {e:?}",
+                        description = $description
+                    );
+
+                    break Err(anyhow!(message));
+                }
+            }
+        }
+    }};
+}
+
 impl WriterTask {
+    fn current_version(&self) -> String {
+        if let Some(version) = self.delta_table.version() {
+            version.to_string()
+        } else {
+            "none".to_string()
+        }
+    }
+
     async fn create(inner: Arc<DeltaTableWriterInner>) -> AnyResult<Self> {
         let mut storage_options = inner.config.object_store_config.clone();
 
@@ -359,6 +428,7 @@ impl WriterTask {
             num_rows: 0,
         })
     }
+
     async fn batch_start(&mut self) {
         trace!(
             "delta_table {}: starting a new output batch",
@@ -388,18 +458,61 @@ impl WriterTask {
         ));
     }
 
+    async fn commit(&mut self, actions: &[Add]) -> AnyResult<()> {
+        // The snapshot version for the next commit is computed as the current version + 1.
+        // We need to update the current version manually, since it doesn't happen automatically.
+        self.delta_table
+            .update_incremental(None)
+            .await
+            .map_err(|e| {
+                anyhow!(format!(
+                    "updating Delta table version before commit (current version: {}): {e:?}",
+                    self.current_version()
+                ))
+            })?;
+
+        CommitBuilder::default()
+            .with_actions(
+                actions
+                    .iter()
+                    .map(|add| Action::Add(add.clone()))
+                    .collect::<Vec<_>>(),
+            )
+            .build(
+                self.delta_table
+                    .state
+                    .as_ref()
+                    .map(|state| state as &dyn TableReference),
+                self.delta_table.log_store(),
+                DeltaOperation::Write {
+                    mode: SaveMode::Append,
+                    partition_by: None,
+                    predicate: None,
+                },
+            )
+            .await
+            .map_err(|e| {
+                anyhow!(format!(
+                    "error committing changes to the Delta table (current version: {}): {e:?}",
+                    self.current_version()
+                ))
+            })?;
+
+        Ok(())
+    }
+
     async fn batch_end(&mut self) -> AnyResult<()> {
         trace!(
             "delta_table {}: finished writing output records, committing (current table version: {})",
             &self.inner.endpoint_name,
-            if let Some(version) = self.delta_table.version() {
-                version.to_string()
-            } else {
-                "none".to_string()
-            }
+            self.current_version()
         );
         match self.writer.take() {
             Some(writer) => {
+                // TODO: this is currently not retryable.
+                // See: https://github.com/delta-io/delta-rs/issues/4265
+                // Another option is to retry the entire transaction, since it just happens that there's always exactly one
+                // insert between batch_start and batch_end, so we can hold on to it and retry the whole thing.
                 let actions = writer
                     .close()
                     .await
@@ -411,31 +524,11 @@ impl WriterTask {
 
                 let num_bytes = actions.iter().map(|action| action.size as usize).sum();
 
-                // The snapshot version for the next commit is computed as the current version + 1.
-                // We need to update the current version manually, since it doesn't happen automatically.
-                self.delta_table
-                    .update_incremental(None)
-                    .await
-                    .map_err(|e| {
-                        anyhow!("error updating delta table version before commit: {e:?}")
-                    })?;
-
-                CommitBuilder::default()
-                    .with_actions(actions.into_iter().map(Action::Add).collect::<Vec<_>>())
-                    .build(
-                        self.delta_table
-                            .state
-                            .as_ref()
-                            .map(|state| state as &dyn TableReference),
-                        self.delta_table.log_store(),
-                        DeltaOperation::Write {
-                            mode: SaveMode::Append,
-                            partition_by: None,
-                            predicate: None,
-                        },
-                    )
-                    .await
-                    .map_err(|e| anyhow!("error committing changes to the delta table: {e:?}"))?;
+                retry!(
+                    self,
+                    "committing Delta table transaction",
+                    self.commit(&actions).await
+                )?;
 
                 if let Some(controller) = self.inner.controller.upgrade() {
                     controller.status.output_buffer(
@@ -456,6 +549,8 @@ impl WriterTask {
     }
 
     async fn insert(&mut self, batch: RecordBatch) -> AnyResult<()> {
+        let current_version = self.current_version();
+
         if let Some(writer) = &mut self.writer {
             self.num_rows += batch.num_rows();
             trace!(
@@ -463,11 +558,13 @@ impl WriterTask {
                 &self.inner.endpoint_name, self.num_rows,
             );
 
-            // TODO: add logic to retry failed writes.
-            writer
-                .write(&batch)
-                .await
-                .map_err(|e| anyhow!("error writing batch with {} rows: {e:?}", batch.num_rows()))
+            let description = format!(
+                "writing {} records to Delta table (current version: {current_version})",
+                batch.num_rows(),
+            );
+            retry!(self, description, { writer.write(&batch).await })?;
+
+            Ok(())
         } else {
             bail!(
                 "delta_table {}: received Data without a matching BatchStart",
