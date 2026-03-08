@@ -175,11 +175,22 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                 runtime_aggtest/aggregate_tests/test_{stddev_samp,decimal_stddev_samp,empty_set}.py|
                 runtime_aggtest/aggregate_tests3/test_un_int_stddev.py""", true),
             // window
-            new Func(SqlStdOperatorTable.DENSE_RANK, "DENSE_RANK", SqlLibrary.STANDARD, "aggregates#dense_rank", FunctionDocumentation.NO_FILE, true),
-            new Func(SqlStdOperatorTable.LAG, "LAG", SqlLibrary.STANDARD, "aggregates#lag", FunctionDocumentation.NO_FILE, true),
-            new Func(SqlStdOperatorTable.LEAD, "LEAD", SqlLibrary.STANDARD, "aggregates#lead", FunctionDocumentation.NO_FILE, true),
-            new Func(SqlStdOperatorTable.RANK, "RANK", SqlLibrary.STANDARD, "aggregates#rank", FunctionDocumentation.NO_FILE, true),
-            new Func(SqlStdOperatorTable.ROW_NUMBER, "ROW_NUMBER", SqlLibrary.STANDARD, "aggregates#row_number", FunctionDocumentation.NO_FILE, true),
+            new Func(SqlStdOperatorTable.DENSE_RANK, "DENSE_RANK", SqlLibrary.STANDARD, "aggregates#dense_rank",
+                """
+                runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py|
+                runtime_aggtest/illarg_tests2/test_window_agg.py""", true),
+            new Func(SqlStdOperatorTable.LAG, "LAG", SqlLibrary.STANDARD, "aggregates#lag",
+                "runtime_aggtest/illarg_tests2/test_window_agg.py", true),
+            new Func(SqlStdOperatorTable.LEAD, "LEAD", SqlLibrary.STANDARD, "aggregates#lead",
+                "runtime_aggtest/illarg_tests2/test_window_agg.py", true),
+            new Func(SqlStdOperatorTable.RANK, "RANK", SqlLibrary.STANDARD, "aggregates#rank",
+                """
+                runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py|
+                runtime_aggtest/illarg_tests2/test_window_agg.py""", true),
+            new Func(SqlStdOperatorTable.ROW_NUMBER, "ROW_NUMBER", SqlLibrary.STANDARD, "aggregates#row_number",
+                """
+                runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py|
+                runtime_aggtest/illarg_tests2/test_window_agg.py""", true),
             // constructors from subqueries
             new Func(SqlStdOperatorTable.ARRAY_QUERY, "ARRAY", SqlLibrary.STANDARD, "aggregates#array", FunctionDocumentation.NO_FILE, true),
             new Func(SqlStdOperatorTable.MAP_QUERY, "MAP", SqlLibrary.STANDARD, "aggregates#map", FunctionDocumentation.NO_FILE, true),
