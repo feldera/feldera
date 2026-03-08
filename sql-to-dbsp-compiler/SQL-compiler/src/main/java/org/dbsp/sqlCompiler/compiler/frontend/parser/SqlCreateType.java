@@ -19,6 +19,8 @@ import org.dbsp.util.Utilities;
 import java.util.List;
 import java.util.Objects;
 
+import static java.util.Objects.requireNonNull;
+
 public class SqlCreateType extends SqlCreate {
     public final SqlIdentifier name;
     public final @Nullable SqlNodeList attributeDefs;
@@ -27,11 +29,12 @@ public class SqlCreateType extends SqlCreate {
         @Override
         public SqlCall createCall(
                 @Nullable SqlLiteral functionQualifier, SqlParserPos pos, @Nullable SqlNode... operands) {
-            Utilities.enforce(operands.length == 3);
-            return new SqlCreateType(pos, false,
-                    (SqlIdentifier) Objects.requireNonNull(operands[0]),
-                    (SqlNodeList) operands[1],
-                    (SqlDataTypeSpec) operands[2]);
+            Utilities.enforce(operands.length == 4);
+            return new SqlCreateType(pos,
+                    ((SqlLiteral) requireNonNull(operands[0], "replace")).booleanValue(),
+                    (SqlIdentifier) Objects.requireNonNull(operands[1]),
+                    (SqlNodeList) operands[2],
+                    (SqlDataTypeSpec) operands[3]);
         }
     };
 
@@ -44,7 +47,9 @@ public class SqlCreateType extends SqlCreate {
     }
 
     public List<SqlNode> getOperandList() {
-        return ImmutableNullableList.of(this.name, this.attributeDefs, this.dataType);
+        return ImmutableNullableList.of(
+                SqlLiteral.createBoolean(getReplace(), SqlParserPos.ZERO),
+                this.name, this.attributeDefs, this.dataType);
     }
 
     public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {

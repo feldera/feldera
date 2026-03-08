@@ -28,9 +28,11 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 
 public class DropTableStatement extends RelStatement {
     public final ProgramIdentifier tableName;
+    public final boolean ifExists;
 
-    public DropTableStatement(ParsedStatement node, ProgramIdentifier tableName) {
+    public DropTableStatement(ParsedStatement node, ProgramIdentifier tableName, boolean ifExists) {
         super(node);
         this.tableName = tableName;
+        this.ifExists = ifExists;
     }
 }

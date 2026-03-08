@@ -18,6 +18,8 @@ import org.dbsp.util.Utilities;
 import java.util.List;
 import java.util.Objects;
 
+import static java.util.Objects.requireNonNull;
+
 /** Parse tree for {@code CREATE INDEX} statement. */
 public class SqlCreateIndex extends SqlCreate {
     public final SqlIdentifier name;
@@ -29,16 +31,19 @@ public class SqlCreateIndex extends SqlCreate {
                 @Override
                 public SqlCall createCall(
                         @Nullable SqlLiteral functionQualifier, SqlParserPos pos, @Nullable SqlNode... operands) {
-                    Utilities.enforce(operands.length == 3);
+                    Utilities.enforce(operands.length == 5);
                     return new SqlCreateIndex(pos,
                             (SqlIdentifier) Objects.requireNonNull(operands[0]),
                             (SqlIdentifier) Objects.requireNonNull(operands[1]),
-                            (SqlNodeList) Objects.requireNonNull(operands[2]));
+                            (SqlNodeList) Objects.requireNonNull(operands[2]),
+                            ((SqlLiteral) requireNonNull(operands[3], "replace")).booleanValue(),
+                            ((SqlLiteral) requireNonNull(operands[4], "ifNotExists")).booleanValue());
                 }
             };
 
-    public SqlCreateIndex(SqlParserPos pos, SqlIdentifier name, SqlIdentifier indexed, SqlNodeList columns) {
-        super(OPERATOR, pos, false, false);
+    public SqlCreateIndex(SqlParserPos pos, SqlIdentifier name, SqlIdentifier indexed, SqlNodeList columns,
+                          boolean replace, boolean ifNotExists) {
+        super(OPERATOR, pos, replace, ifNotExists);
         this.name = Objects.requireNonNull(name, "name");
         this.indexed = indexed;
         this.columns = columns;
@@ -46,7 +51,10 @@ public class SqlCreateIndex extends SqlCreate {
 
     @SuppressWarnings("nullness")
     @Override public List<SqlNode> getOperandList() {
-        return ImmutableNullableList.of(this.name, this.indexed, this.columns);
+        return ImmutableNullableList.of(
+                this.name, this.indexed, this.columns,
+                SqlLiteral.createBoolean(getReplace(), SqlParserPos.ZERO),
+                SqlLiteral.createBoolean(ifNotExists, SqlParserPos.ZERO));
     }
 
     @Override public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {

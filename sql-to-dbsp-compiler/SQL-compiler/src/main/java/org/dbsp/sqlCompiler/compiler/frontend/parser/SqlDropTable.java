@@ -14,6 +14,8 @@ import org.dbsp.util.Utilities;
 import java.util.List;
 import java.util.Objects;
 
+import static java.util.Objects.requireNonNull;
+
 /**
  * Parse tree for {@code DROP TABLE} statement.
  */
@@ -23,9 +25,10 @@ public class SqlDropTable extends SqlDropObject {
                 @Override
                 public SqlCall createCall(
                         @Nullable SqlLiteral functionQualifier, SqlParserPos pos, @Nullable SqlNode... operands) {
-                    Utilities.enforce(operands.length == 1);
-                    return new SqlDropTable(pos, false,
-                            (SqlIdentifier) Objects.requireNonNull(operands[0]));
+                    Utilities.enforce(operands.length == 2);
+                    return new SqlDropTable(pos,
+                            ((SqlLiteral) requireNonNull(operands[0], "ifExists")).booleanValue(),
+                            (SqlIdentifier) Objects.requireNonNull(operands[1]));
                 }
             };
 
@@ -36,6 +39,6 @@ public class SqlDropTable extends SqlDropObject {
 
     @Override
     public List<SqlNode> getOperandList() {
-        return List.of(this.name);
+        return List.of(SqlLiteral.createBoolean(ifExists, SqlParserPos.ZERO), this.name);
     }
 }

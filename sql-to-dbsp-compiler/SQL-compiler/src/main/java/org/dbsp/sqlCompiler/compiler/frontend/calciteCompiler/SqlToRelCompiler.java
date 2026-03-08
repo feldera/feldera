@@ -1750,8 +1750,10 @@ public class SqlToRelCompiler implements IWritesLogs {
     private DropTableStatement compileDropTable(ParsedStatement node) {
         SqlDropTable dt = (SqlDropTable) node.statement();
         ProgramIdentifier tableName = ProgramIdentifier.fromSqlId(dt.name);
-        this.calciteCatalog.dropTable(tableName);
-        return new DropTableStatement(node, tableName);
+        boolean dropped = this.calciteCatalog.dropTable(tableName);
+        if (!dt.ifExists && dropped)
+            throw new CompilationError("DROPping table " + tableName.singleQuote() + " which does not exist");
+        return new DropTableStatement(node, tableName, dt.ifExists);
     }
 
     @Nullable
@@ -1759,7 +1761,9 @@ public class SqlToRelCompiler implements IWritesLogs {
         CalciteObject object = CalciteObject.create(node);
         SqlCreateIndex ci = (SqlCreateIndex) node.statement();
         if (ci.ifNotExists)
-            throw new UnsupportedException("IF NOT EXISTS not supported for INDEX", object);
+            throw new UnsupportedException("IF NOT EXISTS not supported for CREATE INDEX", object);
+        if (ci.getReplace())
+            throw new UnsupportedException("OR REPLACE not supported for CREATE INDEX", object);
         Map<ProgramIdentifier, SqlIdentifier> columns = new HashMap<>();
         if (ci.columns.isEmpty()) {
             this.errorReporter.reportError(new SourcePositionRange(ci.getParserPosition()),
@@ -1798,7 +1802,9 @@ public class SqlToRelCompiler implements IWritesLogs {
         CalciteObject object = CalciteObject.create(node);
         SqlCreateTable ct = (SqlCreateTable) node.statement();
         if (ct.ifNotExists)
-            throw new UnsupportedException("IF NOT EXISTS not supported for TABLE", object);
+            throw new UnsupportedException("IF NOT EXISTS not supported for CREATE TABLE", object);
+        if (ct.getReplace())
+            throw new UnsupportedException("REPLACE not supported for CREATE TABLE", object);
         ProgramIdentifier tableName = ProgramIdentifier.fromSqlId(ct.name);
         if (node.visible() && this.functionExists(tableName.name())) {
             this.errorReporter.reportError(new SourcePositionRange(ct.name.getParserPosition()),
@@ -1827,6 +1833,11 @@ public class SqlToRelCompiler implements IWritesLogs {
 
     public CreateAggregateStatement compileCreateAggregate(ParsedStatement node, SourceFileContents ignoredSources) {
         SqlCreateAggregate decl = (SqlCreateAggregate) node.statement();
+        CalciteObject object = CalciteObject.create(node);
+        if (decl.ifNotExists)
+            throw new UnsupportedException("IF NOT EXISTS not supported for CREATE AGGREGATE", object);
+        if (decl.getReplace())
+            throw new UnsupportedException("REPLACE not supported for CREATE AGGREGATE", object);
         List<Map.Entry<String, RelDataType>> parameters = Linq.map(
                 decl.getParameters(), param -> {
                     SqlAttributeDefinition attr = (SqlAttributeDefinition) param;
@@ -1841,12 +1852,17 @@ public class SqlToRelCompiler implements IWritesLogs {
         if (nullableResult != null && nullableResult)
             returnType = this.createNullableType(returnType);
         SqlUserDefinedAggregationFunction function = this.customFunctions.createAggregate(
-                CalciteObject.create(node), decl.getName(), decl.isLinear(), structType, returnType);
+                object, decl.getName(), decl.isLinear(), structType, returnType);
         return new CreateAggregateStatement(node, function);
     }
 
     public CreateFunctionStatement compileCreateFunction(ParsedStatement node, SourceFileContents sources) {
         SqlCreateFunctionDeclaration decl = (SqlCreateFunctionDeclaration) node.statement();
+        CalciteObject object = CalciteObject.create(node);
+        if (decl.ifNotExists)
+            throw new UnsupportedException("IF NOT EXISTS not supported for CREATE FUNCTION", object);
+        if (decl.getReplace())
+            throw new UnsupportedException("OR REPLACE not supported for CREATE FUNCTION", object);
         List<Map.Entry<String, RelDataType>> parameters = Linq.map(
                 decl.getParameters(), param -> {
                     SqlAttributeDefinition attr = (SqlAttributeDefinition) param;
@@ -1972,7 +1988,9 @@ public class SqlToRelCompiler implements IWritesLogs {
         SqlCreateView cv = (SqlCreateView) node.statement();
         SqlNode query = cv.query;
         if (cv.getReplace())
-            throw new UnsupportedException("OR REPLACE not supported", object);
+            throw new UnsupportedException("OR REPLACE not supported for CREATE VIEW", object);
+        if (cv.ifNotExists)
+            throw new UnsupportedException("IF NOT EXISTS not supported for CREATE VIEW", object);
         if (node.visible())
             Logger.INSTANCE.belowLevel(this, 2)
                 .appendSupplier(node.statement()::toString)
@@ -2205,6 +2223,11 @@ public class SqlToRelCompiler implements IWritesLogs {
     @Nullable
     public CreateTypeStatement compileCreateType(ParsedStatement node) {
         SqlCreateType ct = (SqlCreateType) node.statement();
+        CalciteObject object = CalciteObject.create(node);
+        if (ct.ifNotExists)
+            throw new UnsupportedException("IF NOT EXISTS not supported for CREATE TYPE", object);
+        if (ct.getReplace())
+            throw new UnsupportedException("REPLACE not supported for CREATE TYPE", object);
         RelProtoDataType proto = typeFactory -> {
             if (ct.dataType != null) {
                 return this.specToRel(ct.dataType, false);
