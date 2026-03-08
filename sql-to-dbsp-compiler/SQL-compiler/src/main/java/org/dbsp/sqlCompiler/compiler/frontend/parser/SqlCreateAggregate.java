@@ -19,6 +19,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
+import static java.util.Objects.requireNonNull;
+
 /** Result produced by a CREATE AGGREGATE statement */
 public class SqlCreateAggregate extends SqlCreate {
     private final SqlIdentifier name;
@@ -31,12 +33,14 @@ public class SqlCreateAggregate extends SqlCreate {
                 @Override
                 public SqlCall createCall(@Nullable SqlLiteral functionQualifier, SqlParserPos pos,
                                           @Nullable SqlNode... operands) {
-                    Utilities.enforce(operands.length == 4);
-                    return new SqlCreateAggregate(pos, false, false,
-                            ((SqlLiteral) Objects.requireNonNull(operands[0])).booleanValue(),
-                            (SqlIdentifier) Objects.requireNonNull(operands[1]),
-                            (SqlNodeList) Objects.requireNonNull(operands[2]),
-                            (SqlDataTypeSpec) Objects.requireNonNull(operands[3]));
+                    Utilities.enforce(operands.length == 6);
+                    return new SqlCreateAggregate(pos,
+                            ((SqlLiteral) requireNonNull(operands[0], "replace")).booleanValue(),
+                            ((SqlLiteral) requireNonNull(operands[1], "ifNotExists")).booleanValue(),
+                            ((SqlLiteral) Objects.requireNonNull(operands[2])).booleanValue(),
+                            (SqlIdentifier) Objects.requireNonNull(operands[3]),
+                            (SqlNodeList) Objects.requireNonNull(operands[4]),
+                            (SqlDataTypeSpec) Objects.requireNonNull(operands[5]));
                 }
             };
 
@@ -92,6 +96,8 @@ public class SqlCreateAggregate extends SqlCreate {
 
     @Override public List<SqlNode> getOperandList() {
         return Arrays.asList(
+                SqlLiteral.createBoolean(this.getReplace(), SqlParserPos.ZERO),
+                SqlLiteral.createBoolean(this.ifNotExists, SqlParserPos.ZERO),
                 SqlLiteral.createBoolean(this.linear, SqlParserPos.ZERO),
                 this.name, this.parameters, this.returnType);
     }

@@ -157,8 +157,9 @@ public class ProgramMetadata implements IJson {
         this.inputTables.put(description.getName(), description);
     }
 
-    public void removeTable(ProgramIdentifier name) {
-        this.inputTables.remove(name);
+    public boolean removeTable(ProgramIdentifier name) {
+        IHasSchema removed = this.inputTables.remove(name);
+        return removed != null;
     }
 
     public void addView(IHasSchema description) {

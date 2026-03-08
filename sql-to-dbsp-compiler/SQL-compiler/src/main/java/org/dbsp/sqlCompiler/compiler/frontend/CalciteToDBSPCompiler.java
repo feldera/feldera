@@ -3209,12 +3209,16 @@ public class CalciteToDBSPCompiler extends RelVisitor
     @Nullable
     DBSPNode compileDropTable(DropTableStatement drop) {
         ProgramIdentifier tableName = drop.tableName;
-        this.metadata.removeTable(tableName);
+        boolean removed = this.metadata.removeTable(tableName);
+        if (!drop.ifExists && !removed)
+            throw new CompilationError("DROPping table " + tableName.singleQuote() + " which does not exist");
         DBSPCircuit circuit = this.getCircuit();
         IInputOperator input = circuit.getInput(tableName);
-        Objects.requireNonNull(input);
-        circuit.allOperators.remove(input.asOperator());
-        circuit.sourceOperators.remove(tableName);
+        if (removed) {
+            Objects.requireNonNull(input);
+            circuit.allOperators.remove(input.asOperator());
+            circuit.sourceOperators.remove(tableName);
+        }
         return null;
     }
 
