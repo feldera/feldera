@@ -5,6 +5,7 @@ from feldera.rest._helpers import determine_client_version
 from feldera.benchmarking import (
     BenchmarkResult as BenchmarkResult,
     BenchmarkMetrics as BenchmarkMetrics,
+    CompletionCondition as CompletionCondition,
     collect_metrics as collect_metrics,
     bench as bench,
     upload_to_bencher as upload_to_bencher,

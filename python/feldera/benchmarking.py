@@ -14,6 +14,7 @@ import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
 from typing import TYPE_CHECKING, Optional
 from urllib.parse import urlparse
 
@@ -24,6 +25,24 @@ if TYPE_CHECKING:
     from feldera.rest.feldera_client import FelderaClient
 
 logger = logging.getLogger(__name__)
+
+POLL_INTERVAL_S = 0.25
+
+
+class CompletionCondition(Enum):
+    """Strategy for determining when benchmark collection should stop.
+
+    :cvar PIPELINE_COMPLETE: Stop when the pipeline's ``pipeline_complete``
+        flag becomes ``True``.  This is the default and works for finite input
+        connectors (e.g. files, HTTP) that signal end-of-input to the pipeline.
+    :cvar IDLE: Stop when ``total_processed_records`` has been stable (unchanged)
+        for a configurable idle interval **and** at least one record has been
+        processed.  Use this for streaming connectors like Kafka that never
+        signal end-of-input even after all available data has been consumed.
+    """
+
+    PIPELINE_COMPLETE = "pipeline_complete"
+    IDLE = "idle"
 
 
 def _human_readable_bytes(n: int) -> str:
@@ -303,13 +322,20 @@ class BenchmarkResult:
 def collect_metrics(
     pipeline: "Pipeline",
     duration_secs: Optional[float] = None,
+    completion_condition: CompletionCondition = CompletionCondition.PIPELINE_COMPLETE,
+    idle_interval_s: float = 1.0,
 ) -> tuple:
     """
     Poll pipeline stats until completion or ``duration_secs`` elapses.
 
     :param pipeline: A running :class:`~feldera.pipeline.Pipeline`.
     :param duration_secs: Optional maximum collection duration in seconds.
-        If ``None``, polling continues until the pipeline reports completion.
+        If ``None``, polling continues until the completion condition is met.
+    :param completion_condition: Strategy for detecting completion.
+        See :class:`CompletionCondition`.
+    :param idle_interval_s: When using :attr:`CompletionCondition.IDLE`,
+        the number of seconds ``total_processed_records`` must remain unchanged
+        before collection stops.  Ignored for other conditions.
     :returns: ``(samples, start_time, end_time)`` where *samples* is a list
         of :class:`RawSample` objects.
     :raises RuntimeError: If any input connector reported errors during collection.
@@ -318,6 +344,10 @@ def collect_metrics(
     start_time = datetime.now(timezone.utc).replace(tzinfo=None)
     loop_start = time.monotonic()
     first_uuid: Optional[str] = None
+
+    # State for IDLE completion tracking
+    idle_started_at: Optional[float] = None
+    prev_processed: Optional[int] = None
 
     while True:
         stats = pipeline.stats()
@@ -337,17 +367,35 @@ def collect_metrics(
                 sample.incarnation_uuid,
             )
 
-        # Stop when pipeline has finished processing all input
-        if stats.global_metrics.pipeline_complete:
-            logger.info("Pipeline completed, stopping benchmark collection.")
-            break
+        # Check completion based on the chosen strategy
+        if completion_condition == CompletionCondition.PIPELINE_COMPLETE:
+            if stats.global_metrics.pipeline_complete:
+                logger.info("Pipeline completed, stopping benchmark collection.")
+                break
+        elif completion_condition == CompletionCondition.IDLE:
+            now = time.monotonic()
+            cur_processed = sample.total_processed_records
+            if prev_processed is not None and cur_processed == prev_processed and cur_processed > 0:
+                if idle_started_at is None:
+                    idle_started_at = now
+                elif now - idle_started_at >= idle_interval_s:
+                    logger.info(
+                        "Pipeline idle for %.1fs at %d records processed, "
+                        "stopping benchmark collection.",
+                        idle_interval_s,
+                        cur_processed,
+                    )
+                    break
+            else:
+                idle_started_at = None
+            prev_processed = cur_processed
 
         # Stop when duration limit reached
         if duration_secs is not None and time.monotonic() - loop_start >= duration_secs:
             logger.info("Reached duration limit of %.1fs.", duration_secs)
             break
 
-        time.sleep(1)
+        time.sleep(POLL_INTERVAL_S)
 
     end_time = datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -364,6 +412,8 @@ def bench(
     pipeline: "Pipeline",
     name: Optional[str] = None,
     duration_secs: Optional[float] = None,
+    completion_condition: CompletionCondition = CompletionCondition.PIPELINE_COMPLETE,
+    idle_interval_s: float = 5.0,
 ) -> BenchmarkResult:
     """
     Collect benchmark metrics from a running pipeline and return a result.
@@ -371,10 +421,17 @@ def bench(
     :param pipeline: A running :class:`~feldera.pipeline.Pipeline`.
     :param name: Benchmark name. Defaults to the pipeline name.
     :param duration_secs: Optional maximum collection duration in seconds.
+        Acts as an upper bound regardless of *completion_condition*.
+    :param completion_condition: Strategy for detecting completion.
+        See :class:`CompletionCondition`.
+    :param idle_interval_s: Seconds of stable ``total_processed_records``
+        before :attr:`CompletionCondition.IDLE` triggers.  Ignored otherwise.
     :returns: A :class:`BenchmarkResult` with collected metrics.
     """
     benchmark_name = name if name is not None else pipeline.name
-    samples, start_time, end_time = collect_metrics(pipeline, duration_secs)
+    samples, start_time, end_time = collect_metrics(
+        pipeline, duration_secs, completion_condition, idle_interval_s
+    )
     metrics = BenchmarkMetrics.from_samples(samples)
     return BenchmarkResult(
         name=benchmark_name,
