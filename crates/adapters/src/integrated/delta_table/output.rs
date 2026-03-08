@@ -403,7 +403,7 @@ impl WriterTask {
                 let actions = writer
                     .close()
                     .await
-                    .map_err(|e| anyhow!("error flushing {} Parquet rows: {e}", self.num_rows))?;
+                    .map_err(|e| anyhow!("error flushing {} Parquet rows: {e:?}", self.num_rows))?;
 
                 if actions.is_empty() {
                     return Ok(());
@@ -417,7 +417,7 @@ impl WriterTask {
                     .update_incremental(None)
                     .await
                     .map_err(|e| {
-                        anyhow!("error updating delta table version before commit: {e}")
+                        anyhow!("error updating delta table version before commit: {e:?}")
                     })?;
 
                 CommitBuilder::default()
@@ -435,7 +435,7 @@ impl WriterTask {
                         },
                     )
                     .await
-                    .map_err(|e| anyhow!("error committing changes to the delta table: {e}"))?;
+                    .map_err(|e| anyhow!("error committing changes to the delta table: {e:?}"))?;
 
                 if let Some(controller) = self.inner.controller.upgrade() {
                     controller.status.output_buffer(
@@ -467,7 +467,7 @@ impl WriterTask {
             writer
                 .write(&batch)
                 .await
-                .map_err(|e| anyhow!("error writing batch with {} rows: {e}", batch.num_rows()))
+                .map_err(|e| anyhow!("error writing batch with {} rows: {e:?}", batch.num_rows()))
         } else {
             bail!(
                 "delta_table {}: received Data without a matching BatchStart",
