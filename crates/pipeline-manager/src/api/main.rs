@@ -439,6 +439,8 @@ It contains the following fields:
         feldera_types::adapter_stats::ExternalControllerStatus,
         feldera_types::adapter_stats::ExternalGlobalControllerMetrics,
         feldera_types::adapter_stats::ConnectorError,
+        feldera_types::adapter_stats::ConnectorHealth,
+        feldera_types::adapter_stats::ConnectorHealthStatus,
         feldera_types::adapter_stats::ExternalInputEndpointStatus,
         feldera_types::adapter_stats::ExternalInputEndpointMetrics,
         feldera_types::adapter_stats::ExternalOutputEndpointStatus,

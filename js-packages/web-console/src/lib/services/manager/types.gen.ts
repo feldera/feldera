@@ -663,6 +663,13 @@ export type ConnectorError = {
   timestamp: string
 }
 
+export type ConnectorHealth = {
+  description?: string | null
+  status: ConnectorHealthStatus
+}
+
+export type ConnectorHealthStatus = 'Healthy' | 'Unhealthy'
+
 /**
  * Aggregated connector error statistics.
  *
@@ -1140,12 +1147,24 @@ export type DeltaTableWriteMode = 'append' | 'truncate' | 'error_if_exists'
  * Delta table output connector configuration.
  */
 export type DeltaTableWriterConfig = {
+  /**
+   * Maximum number of retries for failed operations.
+   *
+   * The connector performs retries on several levels: individual S3 operations, Delta Lake transaction commits,
+   * and overall operation retries. This setting controls the overall operation retries. When a write to the table
+   * fails, because of an S3 timeout or any other reason that was not resolved by lower-level retries, the connector
+   * will retry the entire operation.
+   *
+   * When not specified, the connector performs infinite retries. When set to 0, the connector doesn't
+   * retry failed operations.
+   */
+  max_retries?: number | null
   mode?: DeltaTableWriteMode
   /**
    * Table URI.
    */
   uri: string
-  [key: string]: string | DeltaTableWriteMode | undefined
+  [key: string]: string | number | null | DeltaTableWriteMode | undefined
 }
 
 export type Demo = {
@@ -1812,6 +1831,7 @@ export type InputEndpointStatus = {
    * The first fatal error that occurred at the endpoint.
    */
   fatal_error?: string | null
+  health?: ConnectorHealth | null
   metrics: InputEndpointMetrics
   /**
    * Recent parse errors on this endpoint.
@@ -2600,6 +2620,7 @@ export type OutputEndpointStatus = {
    * The first fatal error that occurred at the endpoint.
    */
   fatal_error?: string | null
+  health?: ConnectorHealth | null
   metrics: OutputEndpointMetrics
   /**
    * Recent transport errors on this endpoint.

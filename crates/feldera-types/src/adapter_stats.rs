@@ -146,6 +146,34 @@ pub struct CompletedWatermark {
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, ToSchema, Clone)]
+pub enum ConnectorHealthStatus {
+    #[default]
+    Healthy,
+    Unhealthy,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, ToSchema, Clone)]
+pub struct ConnectorHealth {
+    pub status: ConnectorHealthStatus,
+    pub description: Option<String>,
+}
+
+impl ConnectorHealth {
+    pub fn healthy() -> Self {
+        Self {
+            status: ConnectorHealthStatus::Healthy,
+            description: None,
+        }
+    }
+    pub fn unhealthy(description: &str) -> Self {
+        Self {
+            status: ConnectorHealthStatus::Unhealthy,
+            description: Some(description.to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, ToSchema, Clone)]
 pub struct ConnectorError {
     /// Timestamp when the error occurred, serialized as RFC3339 with microseconds.
     #[serde(serialize_with = "serialize_timestamp_micros")]
@@ -206,6 +234,9 @@ pub struct ExternalInputEndpointStatus {
     /// Recent transport errors on this endpoint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport_errors: Option<Vec<ConnectorError>>,
+    /// Health status of the connector.
+    #[serde(default)]
+    pub health: Option<ConnectorHealth>,
     /// Endpoint has been paused by the user.
     pub paused: bool,
     /// Endpoint is currently a barrier to checkpointing and suspend.
@@ -283,6 +314,9 @@ pub struct ExternalOutputEndpointStatus {
     /// Recent transport errors on this endpoint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport_errors: Option<Vec<ConnectorError>>,
+    /// Health status of the connector.
+    #[serde(default)]
+    pub health: Option<ConnectorHealth>,
 }
 
 /// Global controller metrics.

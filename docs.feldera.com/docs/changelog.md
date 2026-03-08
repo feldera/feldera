@@ -13,7 +13,15 @@ import TabItem from '@theme/TabItem';
     <TabItem className="changelogItem" value="enterprise"
         label="Enterprise">
 
+
         ## Unreleased
+
+        Backward-incompatible Delta Lake output connector change. The new `max_retries` setting configures
+        the number of times the connector retries failed Delta Lake operations like writing Parquet files
+        and committing transactions. The setting is unset by default, causing the connector to retry
+        indefinitely.  This behavior prevents data loss due to transient or permanent write errors.
+
+        ## v0.263.0
 
         Added connector error list to input/output connector stats.
         [Input](https://docs.feldera.com/api/get-input-status) and

@@ -7414,6 +7414,28 @@
           }
         }
       },
+      "ConnectorHealth": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/ConnectorHealthStatus"
+          }
+        }
+      },
+      "ConnectorHealthStatus": {
+        "type": "string",
+        "enum": [
+          "Healthy",
+          "Unhealthy"
+        ]
+      },
       "ConnectorStats": {
         "type": "object",
         "description": "Aggregated connector error statistics.\n\nThis structure contains the sum of all error counts across all input and output connectors\nfor a pipeline.",
@@ -7903,6 +7925,13 @@
           "uri"
         ],
         "properties": {
+          "max_retries": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum number of retries for failed operations.\n\nThe connector performs retries on several levels: individual S3 operations, Delta Lake transaction commits,\nand overall operation retries. This setting controls the overall operation retries. When a write to the table\nfails, because of an S3 timeout or any other reason that was not resolved by lower-level retries, the connector\nwill retry the entire operation.\n\nWhen not specified, the connector performs infinite retries. When set to 0, the connector doesn't\nretry failed operations.",
+            "nullable": true,
+            "minimum": 0
+          },
           "mode": {
             "$ref": "#/components/schemas/DeltaTableWriteMode"
           },
@@ -8739,6 +8768,14 @@
             "description": "The first fatal error that occurred at the endpoint.",
             "nullable": true
           },
+          "health": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConnectorHealth"
+              }
+            ],
+            "nullable": true
+          },
           "metrics": {
             "$ref": "#/components/schemas/InputEndpointMetrics"
           },
@@ -9563,6 +9600,14 @@
           "fatal_error": {
             "type": "string",
             "description": "The first fatal error that occurred at the endpoint.",
+            "nullable": true
+          },
+          "health": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConnectorHealth"
+              }
+            ],
             "nullable": true
           },
           "metrics": {
