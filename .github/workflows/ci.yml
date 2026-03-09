@@ -42,11 +42,10 @@ jobs:
             "feldera-test-binaries-aarch64-unknown-linux-gnu"
             "feldera-sql-compiler"
           )
-          # These tiny (~244B) digest artifacts are uploaded when each platform
-          # Docker build completes. Checking them is faster than docker manifest inspect.
+          # This artifact is uploaded by merge-manifests only after the image is
+          # verified in GHCR, so its presence guarantees the sha-{sha} tag exists.
           docker_required=(
-            "digests-linux-amd64"
-            "digests-linux-arm64"
+            "docker-image-ready"
           )
 
           run_ids=$(curl -fsSL \
@@ -60,7 +59,7 @@ jobs:
             names=$(curl -fsSL \
               -H "Authorization: Bearer $GH_TOKEN" \
               -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${{ github.repository }}/actions/runs/${run_id}/artifacts?per_page=100" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/runs/${run_id}/artifacts?per_page=200" \
               | jq -r '.artifacts[] | select(.expired == false) | .name') || continue
 
             all_rust_java=true

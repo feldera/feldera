@@ -13,6 +13,10 @@ on:
 env:
   RUST_BACKTRACE: 1
 
+permissions:
+  actions: read
+  contents: read
+
 jobs:
   rust-unit-tests:
     name: Rust Unit Tests
