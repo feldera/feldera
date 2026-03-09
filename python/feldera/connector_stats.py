@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Mapping, Optional
 
 from feldera._helpers import (
@@ -22,9 +22,7 @@ class ConnectorError:
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]):
         error = cls()
-        error.timestamp = parse_datetime(
-            expect_str(d, "timestamp"), "timestamp"
-        )
+        error.timestamp = parse_datetime(expect_str(d, "timestamp"), "timestamp")
         error.index = expect_int(d, "index")
         tag = d.get("tag")
         if tag is not None and not isinstance(tag, str):
