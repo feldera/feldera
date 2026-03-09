@@ -581,6 +581,18 @@ pub struct SyncConfig {
     #[schema(default = default_retention_min_age)]
     #[serde(default = "default_retention_min_age")]
     pub retention_min_age: u32,
+
+    /// A read-only bucket used as a fallback checkpoint source.
+    ///
+    /// When the pipeline has no local checkpoint and `bucket` contains no
+    /// checkpoint either, it will attempt to fetch the checkpoint from this
+    /// location instead.  All connection settings (`endpoint`, `region`,
+    /// `provider`, `access_key`, `secret_key`) are shared with `bucket`.
+    ///
+    /// The pipeline **never writes** to `read_bucket`.
+    ///
+    /// Must point to a different location than `bucket`.
+    pub read_bucket: Option<String>,
 }
 
 fn default_pull_interval() -> u64 {
@@ -601,6 +613,14 @@ impl SyncConfig {
             return Err(r#"invalid sync config: `standby` set to `true` but `start_from_checkpoint` not set.
 Standby mode requires `start_from_checkpoint` to be set.
 Consider setting `start_from_checkpoint` to `"latest"`."#.to_owned());
+        }
+
+        if let Some(ref rb) = self.read_bucket {
+            if rb == &self.bucket {
+                return Err(
+                    "invalid sync config: `read_bucket` and `bucket` must point to different locations".to_owned()
+                );
+            }
         }
 
         Ok(())

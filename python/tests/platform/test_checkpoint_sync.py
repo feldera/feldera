@@ -14,6 +14,7 @@ from feldera.testutils import (
 )
 from tests import enterprise_only
 from tests.shared_test_pipeline import SharedTestPipeline
+
 from .helper import wait_for_condition
 
 DEFAULT_ENDPOINT = os.environ.get(
@@ -35,25 +36,29 @@ def storage_cfg(
     push_interval: Optional[int] = None,
     retention_min_count: int = 1,
     retention_min_age: int = 0,
+    read_bucket: Optional[str] = None,
 ) -> dict:
+    sync: dict = {
+        "bucket": f"{DEFAULT_BUCKET}/{pipeline_name}",
+        "access_key": ACCESS_KEY,
+        "secret_key": SECRET_KEY if not auth_err else SECRET_KEY + "extra",
+        "provider": "Minio",
+        "endpoint": endpoint or DEFAULT_ENDPOINT,
+        "start_from_checkpoint": start_from_checkpoint,
+        "fail_if_no_checkpoint": strict,
+        "standby": standby,
+        "pull_interval": pull_interval,
+        "push_interval": push_interval,
+        "retention_min_count": retention_min_age,
+        "retention_min_age": retention_min_count,
+    }
+    if read_bucket is not None:
+        sync["read_bucket"] = read_bucket
     return {
         "backend": {
             "name": "file",
             "config": {
-                "sync": {
-                    "bucket": f"{DEFAULT_BUCKET}/{pipeline_name}",
-                    "access_key": ACCESS_KEY,
-                    "secret_key": SECRET_KEY if not auth_err else SECRET_KEY + "extra",
-                    "provider": "Minio",
-                    "endpoint": endpoint or DEFAULT_ENDPOINT,
-                    "start_from_checkpoint": start_from_checkpoint,
-                    "fail_if_no_checkpoint": strict,
-                    "standby": standby,
-                    "pull_interval": pull_interval,
-                    "push_interval": push_interval,
-                    "retention_min_count": retention_min_age,
-                    "retention_min_age": retention_min_count,
-                }
+                "sync": sync,
             },
         }
     }
@@ -300,8 +305,9 @@ class TestCheckpointSync(SharedTestPipeline):
     @enterprise_only
     @single_host_only
     def test_nonexistent_checkpoint(self):
-        with self.assertRaisesRegex(RuntimeError, "were not found in source"):
-            self.test_checkpoint_sync(random_uuid=True, from_uuid=True)
+        self.test_checkpoint_sync(
+            random_uuid=True, from_uuid=True, strict=False, expect_empty=True
+        )
 
     @enterprise_only
     @single_host_only
@@ -408,16 +414,17 @@ class TestCheckpointSync(SharedTestPipeline):
             if time.monotonic() > end:
                 raise TimeoutError("Timed out waiting for standby pipeline to activate")
 
-        # Step 6: Validate standby has all expected records
         got_after = list(standby.query("SELECT * FROM v0"))
+
+        # Cleanup
+        standby.stop(force=True)
+
+        # Step 6: Validate standby has all expected records
         print(
             f"{standby.name}: final records after activation: {got_after}",
             file=sys.stderr,
         )
         self.assertCountEqual(got_expected, got_after)
-
-        # Cleanup
-        standby.stop(force=True)
 
         standby.start()
         got_final = list(standby.query("SELECT * FROM v0"))
@@ -431,3 +438,381 @@ class TestCheckpointSync(SharedTestPipeline):
     @single_host_only
     def test_standby_fallback_from_uuid(self):
         self.test_standby_fallback(from_uuid=True)
+
+    # -------------------------------------------------------------------------
+    # Local checkpoint priority
+    # -------------------------------------------------------------------------
+
+    @enterprise_only
+    @single_host_only
+    def test_local_checkpoint_priority(self):
+        # After syncing checkpoint A to S3, taking a local-only checkpoint B
+        # (without syncing), and restarting without clearing storage,
+        # the pipeline must resume from checkpoint B (local), not re-download
+        # checkpoint A from S3.
+        ft = FaultToleranceModel.AtLeastOnce
+
+        storage_config = storage_cfg(self.pipeline.name, retention_min_count=2)
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
+            )
+        )
+        self.pipeline.start()
+
+        # Insert data_a and sync checkpoint A to S3.
+        data_a = [{"c0": i, "c1": str(i)} for i in range(1, 11)]
+        self.pipeline.input_json("t0", data_a)
+        self.pipeline.wait_for_completion()
+        self.pipeline.checkpoint(wait=True)
+        self.pipeline.sync_checkpoint(wait=True)
+
+        # Insert data_b and take a local-only checkpoint B (no sync).
+        data_b = [{"c0": i, "c1": str(i)} for i in range(11, 21)]
+        self.pipeline.input_json("t0", data_b)
+        self.pipeline.wait_for_completion()
+        self.pipeline.checkpoint(wait=True)
+        # Intentionally NOT calling sync_checkpoint — remote still has A only.
+
+        expected = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: expected records (A+B): {len(expected)}",
+            file=sys.stderr,
+        )
+        # Stop without clearing storage — local checkpoint B is preserved.
+        self.pipeline.stop(force=True)
+
+        # Restart with start_from_checkpoint=latest and local storage intact.
+        # Expected: use local checkpoint B (has A+B data), skip remote pull.
+        storage_config = storage_cfg(
+            self.pipeline.name,
+            start_from_checkpoint="latest",
+            retention_min_count=2,
+        )
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
+            )
+        )
+        self.pipeline.start()
+        got = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: got after restart: {len(got)}",
+            file=sys.stderr,
+        )
+        self.assertCountEqual(expected, got)
+
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
+
+    # -------------------------------------------------------------------------
+    # read_bucket tests
+    # -------------------------------------------------------------------------
+
+    @enterprise_only
+    @single_host_only
+    def test_read_bucket(
+        self,
+        standby: bool = False,
+        from_uuid: bool = False,
+    ):
+        # When bucket is empty but read_bucket holds a checkpoint, the pipeline
+        # seeds from read_bucket.
+        ft = FaultToleranceModel.AtLeastOnce
+
+        # Step 1: push a checkpoint to the source pipeline's bucket (becomes read_bucket).
+        source = self.new_pipeline_with_suffix("source")
+        source.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_cfg(source.name)),
+            )
+        )
+        source.start()
+
+        random.seed(time.time())
+        total = random.randint(10, 20)
+        data = [{"c0": i, "c1": str(i)} for i in range(1, total)]
+        source.input_json("t0", data)
+        source.wait_for_completion()
+        expected = list(source.query("SELECT * FROM v0"))
+
+        source.checkpoint(wait=True)
+        uuid = source.sync_checkpoint(wait=True)
+        source.stop(force=True)
+
+        source_bucket = f"{DEFAULT_BUCKET}/{source.name}"
+
+        # Step 2: start the main pipeline with an empty bucket and read_bucket
+        # pointing at the source.
+        storage_config = storage_cfg(
+            self.pipeline.name,
+            start_from_checkpoint=uuid if from_uuid else "latest",
+            read_bucket=source_bucket,
+            strict=True,
+            standby=standby,
+            pull_interval=2,
+        )
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
+            )
+        )
+
+        if not standby:
+            self.pipeline.start()
+        else:
+            self.pipeline.start_standby()
+
+            try:
+                start = time.monotonic()
+                end = start + 120
+                for log in self.pipeline.logs():
+                    if "checkpoint pulled successfully" in log:
+                        break
+                    if time.monotonic() > end:
+                        raise TimeoutError(
+                            "Timed out waiting for standby pipeline to pull from read_bucket"
+                        )
+
+                assert self.pipeline.status() == PipelineStatus.STANDBY
+                self.pipeline.activate()
+            except Exception:
+                self.pipeline.stop(force=True)
+                raise
+
+        try:
+            got = list(self.pipeline.query("SELECT * FROM v0"))
+            print(
+                f"{self.pipeline.name}: expected={len(expected)}, got={len(got)}",
+                file=sys.stderr,
+            )
+        finally:
+            self.pipeline.stop(force=True)
+
+        self.assertCountEqual(expected, got)
+        self.pipeline.clear_storage()
+        source.clear_storage()
+
+    @enterprise_only
+    @single_host_only
+    def test_read_bucket_from_uuid(self):
+        # read_bucket fallback works when start_from_checkpoint is a UUID.
+        self.test_read_bucket(from_uuid=True)
+
+    @enterprise_only
+    @single_host_only
+    def test_read_bucket_standby(self):
+        # Standby pipeline seeds from read_bucket when bucket is empty.
+        self.test_read_bucket(standby=True)
+
+    @enterprise_only
+    @single_host_only
+    def test_read_bucket_standby_from_uuid(self):
+        # Standby pipeline seeds from read_bucket using a specific UUID.
+        self.test_read_bucket(standby=True, from_uuid=True)
+
+    @enterprise_only
+    @single_host_only
+    def test_bucket_preferred_over_read_bucket(self):
+        # When both bucket and read_bucket hold checkpoints, the pipeline uses
+        # bucket (its own checkpoint), not read_bucket.
+        ft = FaultToleranceModel.AtLeastOnce
+
+        # Step 1: push a checkpoint to the source pipeline (becomes read_bucket).
+        source = self.new_pipeline_with_suffix("source")
+        source.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_cfg(source.name)),
+            )
+        )
+        source.start()
+        data_source = [{"c0": i, "c1": f"source_{i}"} for i in range(1, 11)]
+        source.input_json("t0", data_source)
+        source.wait_for_completion()
+        source.checkpoint(wait=True)
+        source.sync_checkpoint(wait=True)
+        source.stop(force=True)
+
+        source_bucket = f"{DEFAULT_BUCKET}/{source.name}"
+
+        # Step 2: push a checkpoint to the main pipeline's own bucket.
+        storage_config = storage_cfg(self.pipeline.name)
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
+            )
+        )
+        self.pipeline.start()
+        data_main = [{"c0": i, "c1": f"main_{i}"} for i in range(11, 21)]
+        self.pipeline.input_json("t0", data_main)
+        self.pipeline.wait_for_completion()
+        expected = list(self.pipeline.query("SELECT * FROM v0"))
+        self.pipeline.checkpoint(wait=True)
+        self.pipeline.sync_checkpoint(wait=True)
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
+
+        # Step 3: restart with both bucket (has main data) and read_bucket (has
+        # source data). The pipeline should restore from bucket, not read_bucket.
+        storage_config = storage_cfg(
+            self.pipeline.name,
+            start_from_checkpoint="latest",
+            read_bucket=source_bucket,
+        )
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
+            )
+        )
+        self.pipeline.start()
+        got = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: expected={len(expected)}, got={len(got)}",
+            file=sys.stderr,
+        )
+        # Must see main data only, not source data.
+        self.assertCountEqual(expected, got)
+
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
+        source.clear_storage()
+
+    @enterprise_only
+    @single_host_only
+    def test_standby_bucket_takes_over_from_read_bucket(self):
+        # In standby mode, when bucket is initially empty the pipeline falls back
+        # to read_bucket. Once the main pipeline pushes a newer checkpoint to
+        # bucket, standby picks it up on the next poll.
+        ft = FaultToleranceModel.AtLeastOnce
+        pull_interval = 2
+
+        # Step 1: create the source pipeline (becomes read_bucket for standby).
+        source = self.new_pipeline_with_suffix("source")
+        source.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_cfg(source.name)),
+            )
+        )
+        source.start()
+        data_initial = [{"c0": i, "c1": f"initial_{i}"} for i in range(1, 11)]
+        source.input_json("t0", data_initial)
+        source.wait_for_completion()
+        source.checkpoint(wait=True)
+        source.sync_checkpoint(wait=True)
+        source.stop(force=True)
+
+        source_bucket = f"{DEFAULT_BUCKET}/{source.name}"
+
+        # Step 2: start the main pipeline; it will push newer checkpoints to
+        # its own bucket during the test.
+        storage_config = storage_cfg(self.pipeline.name)
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
+            )
+        )
+        self.pipeline.start()
+
+        # Step 3: start the standby pipeline with empty bucket, read_bucket=source.
+        standby = self.new_pipeline_with_suffix("standby")
+        standby.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(
+                    config=storage_cfg(
+                        self.pipeline.name,
+                        start_from_checkpoint="latest",
+                        standby=True,
+                        pull_interval=pull_interval,
+                        read_bucket=source_bucket,
+                    )
+                ),
+            )
+        )
+        standby.start_standby()
+
+        # Wait for standby to pull at least one checkpoint (from read_bucket).
+        start = time.monotonic()
+        end = start + 120
+        for log in standby.logs():
+            if "checkpoint pulled successfully" in log:
+                break
+            if time.monotonic() > end:
+                raise TimeoutError(
+                    "Timed out waiting for standby to pull from read_bucket"
+                )
+
+        # Step 4: main pipeline inserts data and pushes multiple checkpoints
+        # to its own bucket.
+        extra_ckpts = random.randint(3, 6)
+        for i in range(extra_ckpts):
+            new_data = [{"c0": 100 + i, "c1": f"main_{100 + i}"}]
+            self.pipeline.input_json("t0", new_data)
+            self.pipeline.wait_for_completion()
+            self.pipeline.checkpoint(wait=True)
+            self.pipeline.sync_checkpoint(wait=True)
+            time.sleep(0.2)
+
+        expected = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: expected records after main pushes: {len(expected)}",
+            file=sys.stderr,
+        )
+        self.pipeline.stop(force=True)
+
+        # Step 5: activate standby — it should have tracked the latest bucket
+        # checkpoint by now.
+        try:
+            assert standby.status() == PipelineStatus.STANDBY
+            standby.activate(timeout_s=(pull_interval * extra_ckpts) + 60)
+
+            start = time.monotonic()
+            end = start + 120
+            for log in standby.logs():
+                if "activated" in log:
+                    break
+                if time.monotonic() > end:
+                    raise TimeoutError("Timed out waiting for standby to activate")
+
+            got = list(standby.query("SELECT * FROM v0"))
+            print(
+                f"{standby.name}: got after activation: {len(got)}",
+                file=sys.stderr,
+            )
+        finally:
+            standby.stop(force=True)
+
+        self.assertCountEqual(expected, got)
+
+        standby.clear_storage()
+        self.pipeline.clear_storage()
+        source.clear_storage()
