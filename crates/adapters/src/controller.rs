@@ -30,7 +30,6 @@ use crate::controller::sync::{
     CHECKPOINT_SYNC_PUSH_FAILURES, CHECKPOINT_SYNC_PUSH_SUCCESS,
     CHECKPOINT_SYNC_PUSH_TRANSFER_SPEED, CHECKPOINT_SYNC_PUSH_TRANSFERRED_BYTES, SYNCHRONIZER,
 };
-use crate::samply::SamplySpan;
 use crate::server::metrics::{HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, Value};
 use crate::server::{InitializationState, ServerState};
 use crate::transport::Step;
@@ -60,6 +59,7 @@ use dbsp::circuit::metrics::{
 };
 use dbsp::circuit::tokio::TOKIO;
 use dbsp::circuit::{CheckpointCommitter, CircuitStorageConfig, DevTweaks, Mode};
+use dbsp::samply::{MARKER_BYTES, Markers, SamplySpan};
 use dbsp::storage::backend::{StorageBackend, StoragePath};
 use dbsp::utils::process_rss_bytes;
 use dbsp::{
@@ -103,6 +103,7 @@ use journal::StepMetadata;
 use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
 use serde_json::Value as JsonValue;
+use size_of::HumanBytes;
 use stats::StepResults;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -133,7 +134,7 @@ use tokio::{
     },
     task::spawn_blocking,
 };
-use tracing::{debug, debug_span, error, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
 use validate::validate_config;
 
@@ -994,56 +995,71 @@ impl Controller {
             .context("failed to convert path to samply profile to str")?;
 
         let mut cmd = tokio::process::Command::new("samply");
-        let mut child = cmd
-            .args([
-                "record",
-                "-p",
-                &std::process::id().to_string(),
-                "-o",
-                profile_file,
-                "--save-only",
-                "--presymbolicate",
-            ])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .context("failed to spawn samply process")?;
 
-        let child_pid = child.id().context("failed to get samply process id")?;
+        // Calculate a maximum memory consumption for markers.
+        //
+        // In experiments, a busy worker thread can emit over 1,000 markers per
+        // second.  Round that up to 2,000 to allow for expansion, then double
+        // it to allow for other threads.
+        let markers_per_second = self.layout().local_workers().len().saturating_mul(2000 * 2);
+        let memory_limit = markers_per_second
+            .saturating_mul(MARKER_BYTES)
+            .saturating_mul(duration as usize);
 
-        // Workaround as samply's `--duration` flag doesn't seem to work.
-        // See: https://github.com/mstange/samply/issues/716
-        //
-        // As the duration flag doesn't work, we have to send a SIGINT to
-        // tell samply to stop recording.
-        //
-        // If samply returns before the specified duration, it is likely due
-        // to an error, and in such cases, we want to report it immediately.
-        tokio::select! {
-            _ = child.wait() => {}
-            _ = tokio::time::sleep(Duration::from_secs(duration)) => {
-                // Send SIGINT to the samply process to stop recording.
-                nix::sys::signal::kill(
-                    nix::unistd::Pid::from_raw(child_pid as i32),
-                    nix::sys::signal::Signal::SIGINT,
-                )
-                .context("failed to send SIGINT to samply process")?;
+        let markers = Markers::capture(Some(memory_limit),
+            async {
+            let mut child = cmd
+                .args([
+                    "record",
+                    "-p",
+                    &std::process::id().to_string(),
+                    "-o",
+                    profile_file,
+                    "--save-only",
+                    "--presymbolicate",
+                ])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .context("failed to spawn samply process")?;
+
+            let child_pid = child.id().context("failed to get samply process id")?;
+
+            // Workaround as samply's `--duration` flag doesn't seem to work.
+            // See: https://github.com/mstange/samply/issues/716
+            //
+            // As the duration flag doesn't work, we have to send a SIGINT to
+            // tell samply to stop recording.
+            //
+            // If samply returns before the specified duration, it is likely due
+            // to an error, and in such cases, we want to report it immediately.
+            tokio::select! {
+                _ = child.wait() => {}
+                _ = tokio::time::sleep(Duration::from_secs(duration)) => {
+                    // Send SIGINT to the samply process to stop recording.
+                    nix::sys::signal::kill(
+                        nix::unistd::Pid::from_raw(child_pid as i32),
+                        nix::sys::signal::Signal::SIGINT,
+                    )
+                        .context("failed to send SIGINT to samply process")?;
+                }
             }
-        }
 
-        let output = child
-            .wait_with_output()
-            .await
-            .context("failed when waiting for samply process")?;
+            let output = child
+                .wait_with_output()
+                .await
+                .context("failed when waiting for samply process")?;
 
-        if !output.status.success() {
-            anyhow::bail!(
-                "samply process failed with status: `{}`, samply stdout: `{}`, samply stderr: `{}`",
-                output.status,
-                String::from_utf8_lossy(&output.stdout).trim(),
-                String::from_utf8_lossy(&output.stderr).trim(),
-            );
-        }
+            if !output.status.success() {
+                anyhow::bail!(
+                    "samply process failed with status: `{}`, samply stdout: `{}`, samply stderr: `{}`",
+                    output.status,
+                    String::from_utf8_lossy(&output.stdout).trim(),
+                    String::from_utf8_lossy(&output.stderr).trim(),
+                );
+            }
+            Ok(())
+        }).await?;
 
         let buf = tokio::fs::read(profile_file)
             .await
@@ -1055,9 +1071,21 @@ impl Controller {
             );
         }
 
-        tracing::info!("collected samply profile ({} bytes)", buf.len());
+        let output = match markers.annotate_profile(
+            &buf,
+            self.inner.status.pipeline_config.given_name.as_deref(),
+            None,
+        ) {
+            Ok(output) => output,
+            Err(error) => {
+                warn!("profile annotation failed ({error})");
+                buf
+            }
+        };
 
-        Ok(buf)
+        tracing::info!("collected samply profile ({} bytes)", output.len());
+
+        Ok(output)
     }
 
     /// Triggers a sync checkpoint operation. `cb` will be called when it
@@ -2102,7 +2130,7 @@ enum RunningCheckpointSync {
 
 impl RunningCheckpointSync {
     fn new(circuit: &mut CircuitThread, uuid: uuid::Uuid) -> Self {
-        SamplySpan::new(debug_span!("fg-checkpoint-sync", uuid = %uuid))
+        SamplySpan::new("fg-checkpoint-sync")
             .in_scope(|| Self::start(circuit, uuid))
             .unwrap_or_else(|e| Self::Error(uuid, e))
     }
@@ -2160,8 +2188,7 @@ impl RunningCheckpointSync {
         let join_handle = std::thread::Builder::new()
             .name(String::from("feldera-checkpoint-sync"))
             .spawn(move || {
-                let result = SamplySpan::new(debug_span!("bg-checkpoint-sync", uuid = %uuid))
-                    .in_scope(|| thread.run());
+                let result = SamplySpan::new("bg-checkpoint-sync").in_scope(|| thread.run());
                 let _ = sender.send(result);
                 unparker.unpark();
             })
@@ -2742,11 +2769,14 @@ impl CircuitThread {
 
         self.step_sender
             .send_replace(StepStatus::new(self.step, StepAction::Step));
-        let total_consumed =
-            match SamplySpan::new(debug_span!("input")).in_scope(|| self.input_step())? {
-                Some(total_consumed) => total_consumed,
-                None => return Ok(false),
-            };
+        let total_consumed = match SamplySpan::new("input")
+            .with_category("Step")
+            .with_tooltip(|| format!("supply input before step {}", self.step + 1))
+            .in_scope(|| self.input_step())?
+        {
+            Some(total_consumed) => total_consumed,
+            None => return Ok(false),
+        };
 
         self.step += 1;
 
@@ -2768,7 +2798,10 @@ impl CircuitThread {
         // query results always reflect all data that we have reported
         // processing; otherwise, there is a race for any code that runs a query
         // as soon as input has been processed.
-        SamplySpan::new(debug_span!("update")).in_scope(|| self.update_snapshot());
+        SamplySpan::new("update")
+            .with_category("Step")
+            .with_tooltip(|| format!("update ad-hoc tables after step {}", self.step))
+            .in_scope(|| self.update_snapshot());
 
         // Record that we've processed the records, unless there is a transaction in progress,
         // in which case records are ingested by the circuit but are not fully processed.
@@ -2834,7 +2867,9 @@ impl CircuitThread {
         if transaction_state != TransactionState::None {
             debug!("circuit thread: calling 'circuit.step'");
 
-            let committed = SamplySpan::new(debug_span!("step"))
+            let committed = SamplySpan::new("step")
+                .with_category("Step")
+                .with_tooltip(|| format!("step {}", self.step))
                 .in_scope(|| self.circuit.step())
                 .unwrap_or_else(|e| {
                     self.controller.error(Arc::new(e.into()), None);
@@ -2882,6 +2917,11 @@ impl CircuitThread {
                         "Transaction {tid}: Finished committing {n} records in {:.1} seconds",
                         duration.as_secs_f64()
                     );
+                    SamplySpan::new("commit")
+                        .with_category("Transaction")
+                        .with_tooltip(|| format!("transaction {tid} committed {n} records"))
+                        .with_start(start)
+                        .record();
                     TRANSACTION_COMMIT_TIME.record_duration(duration);
 
                     let mut transaction_info = self.controller.transaction_info.lock().unwrap();
@@ -2900,7 +2940,7 @@ impl CircuitThread {
             debug!("circuit thread: calling 'circuit.transaction'");
             self.controller.increment_transaction_number();
             // FIXME: we're using "span" for both step() (above) and transaction() (here).
-            SamplySpan::new(debug_span!("step"))
+            SamplySpan::new("step")
                 .in_scope(|| self.circuit.transaction())
                 .unwrap_or_else(|e| self.controller.error(Arc::new(e.into()), None));
             debug!("circuit thread: 'circuit.transaction' returned");
@@ -6778,6 +6818,11 @@ impl ControllerInner {
                         "Transaction {tid}: Starting commit of {n} records after {:.1} seconds",
                         duration.as_secs_f64()
                     );
+                    SamplySpan::new("ingested")
+                        .with_category("Transaction")
+                        .with_tooltip(|| format!("transaction {tid} ingested {n} records"))
+                        .with_start(start)
+                        .record();
                     transaction_info.transaction_state = TransactionState::Committing {
                         tid,
                         start: Instant::now(),
@@ -7141,7 +7186,7 @@ impl RunningCheckpoint {
     /// can't checkpoint) or after a long time (e.g. if it takes a long time to
     /// write out the checkpoint).
     fn new(circuit: &mut CircuitThread) -> Self {
-        SamplySpan::new(debug_span!("fg-checkpoint"))
+        SamplySpan::new("fg-checkpoint")
             .in_scope(|| Self::start(circuit))
             .unwrap_or_else(Self::Error)
     }
@@ -7231,6 +7276,13 @@ impl RunningCheckpoint {
             input_statistics,
             output_statistics,
         };
+        SamplySpan::new("blocking")
+            .with_category("Checkpoint")
+            .with_start(start_checkpoint)
+            .with_tooltip(|| {
+                String::from("Time during which checkpointing blocked pipeline execution")
+            })
+            .record();
         let delay = start_checkpoint.elapsed();
 
         let (sender, receiver) = oneshot::channel();
@@ -7247,8 +7299,7 @@ impl RunningCheckpoint {
         let join_handle = std::thread::Builder::new()
             .name(String::from("feldera-checkpoint"))
             .spawn(move || {
-                let result =
-                    SamplySpan::new(debug_span!("bg-checkpoint")).in_scope(|| thread.run());
+                let result = SamplySpan::new("bg-checkpoint").in_scope(|| thread.run());
                 let _ = sender.send(result);
                 unparker.unpark();
             })
@@ -7292,7 +7343,7 @@ impl RunningCheckpoint {
                 Ok(result) => {
                     join_handle.join().unwrap();
                     Some(result.and_then(|checkpoint| {
-                        SamplySpan::new(debug_span!("end-checkpoint"))
+                        SamplySpan::new("end-checkpoint")
                             .in_scope(|| Self::finish(checkpoint, circuit))
                     }))
                 }
@@ -7390,6 +7441,11 @@ impl CheckpointThread {
             .write(&*self.storage, &StoragePath::from(STATE_FILE))?;
 
         // Record statistics.
+        SamplySpan::new("runtime")
+            .with_category("Checkpoint")
+            .with_tooltip(|| format!("Wrote {} checkpoint", HumanBytes::from(bytes_written)))
+            .with_start(self.start_checkpoint)
+            .record();
         CHECKPOINT_RUNTIME.record_elapsed(self.start_checkpoint);
         CHECKPOINT_DELAY.record(self.delay.as_micros());
         CHECKPOINT_WRITTEN_MEGABYTES.record(bytes_written / 1_000_000);

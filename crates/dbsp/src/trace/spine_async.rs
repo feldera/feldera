@@ -23,6 +23,7 @@ use crate::{
         runtime::{TOKIO_BUFFER_CACHE, TOKIO_WORKER_INDEX},
     },
     dynamic::{DynVec, Factory, Weight},
+    samply::SamplySpan,
     storage::buffer_cache::{BufferCache, CacheStats},
     time::Timestamp,
     trace::{
@@ -50,7 +51,7 @@ use feldera_types::memory_pressure::MemoryPressure;
 use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
-use size_of::{Context, SizeOf};
+use size_of::{Context, HumanBytes, SizeOf};
 use std::{
     borrow::Cow,
     future::Future,
@@ -81,6 +82,11 @@ pub use list_merger::ListMerger;
 
 /// Maximum amount of levels in the spine.
 pub(crate) const MAX_LEVELS: usize = 9;
+
+static LEVEL_NAMES: [&str; MAX_LEVELS] = [
+    "merge-0", "merge-1", "merge-2", "merge-3", "merge-4", "merge-5", "merge-6", "merge-7",
+    "merge-8",
+];
 
 /// Default maximum batch size in records for level 0 merges.
 ///
@@ -375,6 +381,7 @@ where
         &mut self,
         level: usize,
         new_batch: Arc<B>,
+        start: Instant,
         elapsed: Duration,
         n_steps: usize,
     ) {
@@ -387,11 +394,21 @@ where
         let cache_stats = batches.iter().fold(CacheStats::default(), |stats, batch| {
             stats + batch.cache_stats()
         });
-        self.spine_stats.report_merge(
-            batches.iter().map(|b| b.len()).sum(),
-            new_batch.len(),
-            cache_stats,
-        );
+        let pre_len = batches.iter().map(|b| b.len()).sum();
+        let post_len = new_batch.len();
+        self.spine_stats
+            .report_merge(pre_len, post_len, cache_stats);
+        SamplySpan::new(LEVEL_NAMES[level])
+            .with_category("Spine")
+            .with_start(start)
+            .with_tooltip(|| {
+                format!(
+                    "Merged {} batches ({pre_len} -> {post_len}) in {n_steps} steps using {:.1} ms CPU",
+                    batches.len(),
+                    elapsed.as_secs_f64() * 1000.0
+                )
+            })
+            .record();
         self.add_batches([new_batch]);
     }
 
@@ -591,6 +608,10 @@ where
             state.spine_stats.backpressure_wait += start.elapsed();
             COMPACTION_STALL_TIME_NANOSECONDS
                 .fetch_add(start.elapsed().as_nanos() as u64, Ordering::Relaxed);
+            SamplySpan::new("backpressure-wait")
+                .with_category("Spine")
+                .with_start(start)
+                .record();
         }
     }
 
@@ -862,6 +883,7 @@ where
                 state.lock().unwrap().merge_complete(
                     level,
                     new_batch,
+                    merger.start,
                     merger.elapsed,
                     merger.n_steps,
                 );
@@ -980,6 +1002,7 @@ where
     /// Done?
     done: bool,
 
+    start: Instant,
     elapsed: Duration,
 
     n_steps: usize,
@@ -1012,6 +1035,7 @@ where
         Self {
             builder,
             fuel: 0,
+            start: Instant::now(),
             elapsed: Duration::ZERO,
             n_steps: 0,
             done: false,
@@ -1590,6 +1614,16 @@ where
             let batch = if batch.location() == BatchLocation::Memory
                 && pick_insert_destination(&batch) == BatchLocation::Storage
             {
+                let _span = SamplySpan::new("eager spill")
+                    .with_category("Spine")
+                    .with_tooltip(|| {
+                        format!(
+                            "Eagerly spilling {} batch with {} keys and {} values",
+                            HumanBytes::from(batch.approximate_byte_size()),
+                            batch.key_count(),
+                            batch.len()
+                        )
+                    });
                 let factories = batch.factories();
                 let builder =
                     B::Builder::for_merge(&factories, [&batch], Some(BatchLocation::Storage));
