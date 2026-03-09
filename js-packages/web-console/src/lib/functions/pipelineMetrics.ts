@@ -104,7 +104,7 @@ export const accumulatePipelineMetrics =
                       buffered_records: acc.buffered_records + metrics.buffered_records,
                       num_transport_errors: acc.num_transport_errors + metrics.num_transport_errors,
                       num_parse_errors: acc.num_parse_errors + metrics.num_parse_errors,
-                      end_of_input: acc.end_of_input || metrics.end_of_input,
+                      end_of_input: acc.end_of_input && metrics.end_of_input,
                       buffered_bytes: acc.buffered_bytes + metrics.buffered_bytes
                     }
                   },
@@ -115,7 +115,7 @@ export const accumulatePipelineMetrics =
                     buffered_records: 0,
                     num_transport_errors: 0,
                     num_parse_errors: 0,
-                    end_of_input: false
+                    end_of_input: true
                   }
                 )
               }

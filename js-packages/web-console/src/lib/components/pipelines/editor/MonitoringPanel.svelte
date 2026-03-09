@@ -28,9 +28,8 @@
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import DownloadSupportBundle from '$lib/components/pipelines/editor/DownloadSupportBundle.svelte'
   import {
-    extractPipelineErrors,
-    extractPipelineXgressErrors,
-    extractProgramErrors
+    extractProgramErrors,
+    numConnectorsWithErrors
   } from '$lib/compositions/health/systemErrors'
   import TabsPanel from './TabsPanel.svelte'
 
@@ -51,7 +50,7 @@
   let tabs = $derived(
     [
       tuple('Errors' as const, TabControlPipelineErrors, PanelPipelineErrors, false),
-      tuple(TabPerformance.id, TabPerformance.Label, TabPerformance.default, false),
+      tuple(TabPerformance.id, TabControlPerformance, TabPerformance.default, false),
       tuple('Ad-Hoc Queries' as const, TabControlAdhoc, PanelAdHocQuery, false),
       tuple('Changes Stream' as const, TabControlChangeStream, PanelChangeStream, true),
       tuple(
@@ -91,28 +90,35 @@
   })
 
   let programErrors = $derived(extractProgramErrors(() => pipeline.current)(pipeline.current))
-  let pipelineErrors = $derived(extractPipelineErrors(pipeline.current))
-  let xgressErrors = $derived(
-    extractPipelineXgressErrors({ pipelineName, status: metrics.current })
-  )
   let errors = $derived(
-    [...programErrors, ...pipelineErrors, ...xgressErrors].sort((a, b) =>
+    programErrors.sort((a, b) =>
       a.cause.warning === b.cause.warning ? 0 : a.cause.warning ? 1 : -1
     )
   )
+
+  const connectorsWithErrorsCount = $derived(numConnectorsWithErrors(metrics.current))
 </script>
+
+{#snippet TabControlPerformance()}
+  {@render TabPerformance.Label()}
+  {#if connectorsWithErrorsCount > 0}
+    <span class="ml-1 inline-block min-w-6 rounded preset-filled-error-50-950 px-1 font-medium">
+      {connectorsWithErrorsCount}
+    </span>
+  {/if}
+{/snippet}
 
 {#snippet TabControlPipelineErrors()}
   {@const warningCount = count(errors, (w) => w.cause.warning)}
   {@const errorCount = errors.length - warningCount}
-  <span class="pr-1">Errors</span>
+  <span class="">Compiler</span>
   {#if warningCount !== 0}
-    <span class="inline-block min-w-6 rounded preset-filled-warning-200-800 px-1 font-medium">
+    <span class="ml-1 inline-block min-w-6 rounded preset-filled-warning-200-800 px-1 font-medium">
       {warningCount}
     </span>
   {/if}
   {#if errorCount !== 0}
-    <span class="inline-block min-w-6 rounded preset-filled-error-50-950 px-1 font-medium">
+    <span class="ml-1 inline-block min-w-6 rounded preset-filled-error-50-950 px-1 font-medium">
       {errorCount}
     </span>
   {/if}

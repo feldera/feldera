@@ -8,6 +8,8 @@ import {
   getConfigSession as _getConfigSession,
   getPipeline as _getPipeline,
   getPipelineDataflowGraph as _getPipelineDataflowGraph,
+  getPipelineInputConnectorStatus as _getPipelineInputConnectorStatus,
+  getPipelineOutputConnectorStatus as _getPipelineOutputConnectorStatus,
   getPipelineStats as _getPipelineStats,
   type ProgramStatus as _ProgramStatus,
   patchPipeline as _patchPipeline,
@@ -40,7 +42,9 @@ import {
 
 export type {
   InputEndpointConfig,
+  InputEndpointStatus,
   OutputEndpointConfig,
+  OutputEndpointStatus,
   RuntimeConfig,
   SqlCompilerMessage
 } from '$lib/services/manager'
@@ -465,6 +469,34 @@ export const getPipelineStats = async (pipeline_name: string, options?: FetchOpt
     }
   )
 }
+
+export const getInputConnectorStatus = (
+  pipeline_name: string,
+  table_name: string,
+  connector_name: string,
+  options?: FetchOptions
+) =>
+  mapResponse(
+    _getPipelineInputConnectorStatus({
+      path: { pipeline_name, table_name, connector_name },
+      ...options
+    }),
+    (v) => v
+  )
+
+export const getOutputConnectorStatus = (
+  pipeline_name: string,
+  view_name: string,
+  connector_name: string,
+  options?: FetchOptions
+) =>
+  mapResponse(
+    _getPipelineOutputConnectorStatus({
+      path: { pipeline_name, view_name, connector_name },
+      ...options
+    }),
+    (v) => v
+  )
 
 export const deletePipeline = async (pipeline_name: string, options?: FetchOptions) => {
   await mapResponse(_deletePipeline({ path: { pipeline_name }, ...options }), (v) => v)
