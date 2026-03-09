@@ -6,6 +6,13 @@ Bencher Metric Format (BMF), and upload results to a Bencher-compatible server.
 
 This mirrors the `fda bench --upload` CLI functionality so Python-based benchmark
 workloads can collect and upload results programmatically.
+
+**Differences from** ``fda bench``: throughput, uptime, and state-amplification
+are computed as deltas between the first and last collected sample (i.e. over the
+observation window), whereas ``fda bench`` uses absolute values since pipeline
+start.  This means the two tools will report different numbers for the same run,
+but the Python SDK approach is more appropriate when benchmarking a pipeline that
+may have been running before collection started.
 """
 
 import json
@@ -368,35 +375,54 @@ class BenchmarkResult:
 
         rows: list[tuple[str, str]] = [
             ("Metric", "Value"),
-            ("Throughput (records/s)", _val_with_stddev(
-                m.throughput,
-                [r.metrics.throughput for r in self.runs] if is_multi else [],
-            )),
-            ("Memory", _bytes_with_stddev(
-                m.memory_bytes_max,
-                [r.metrics.memory_bytes_max for r in self.runs] if is_multi else [],
-            )),
-            ("Storage", _bytes_with_stddev(
-                m.storage_bytes_max,
-                [r.metrics.storage_bytes_max for r in self.runs] if is_multi else [],
-            )),
-            ("Uptime [ms]", _val_with_stddev(
-                m.uptime_ms,
-                [r.metrics.uptime_ms for r in self.runs] if is_multi else [],
-            )),
+            (
+                "Throughput (records/s)",
+                _val_with_stddev(
+                    m.throughput,
+                    [r.metrics.throughput for r in self.runs] if is_multi else [],
+                ),
+            ),
+            (
+                "Memory",
+                _bytes_with_stddev(
+                    m.memory_bytes_max,
+                    [r.metrics.memory_bytes_max for r in self.runs] if is_multi else [],
+                ),
+            ),
+            (
+                "Storage",
+                _bytes_with_stddev(
+                    m.storage_bytes_max,
+                    [r.metrics.storage_bytes_max for r in self.runs]
+                    if is_multi
+                    else [],
+                ),
+            ),
+            (
+                "Uptime [ms]",
+                _val_with_stddev(
+                    m.uptime_ms,
+                    [r.metrics.uptime_ms for r in self.runs] if is_multi else [],
+                ),
+            ),
         ]
         if m.state_amplification is not None:
-            rows.append(("State Amplification", _val_with_stddev(
-                m.state_amplification,
-                [
-                    r.metrics.state_amplification
-                    for r in self.runs
-                    if r.metrics.state_amplification is not None
-                ]
-                if is_multi
-                else [],
-                fmt=".2f",
-            )))
+            rows.append(
+                (
+                    "State Amplification",
+                    _val_with_stddev(
+                        m.state_amplification,
+                        [
+                            r.metrics.state_amplification
+                            for r in self.runs
+                            if r.metrics.state_amplification is not None
+                        ]
+                        if is_multi
+                        else [],
+                        fmt=".2f",
+                    ),
+                )
+            )
 
         col_widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
         sep = "+-" + "-+-".join("-" * w for w in col_widths) + "-+"
@@ -631,6 +657,12 @@ def upload_to_bencher(
                 logger.warning(
                     "Unknown Feldera edition '%s'; not setting repo hash.", edition
                 )
+
+            # Auto-resolve git_hash from runtime_revision if not provided by caller,
+            # mirroring the fda bench logic (runtime_version takes precedence, then
+            # runtime_revision).
+            if git_hash is None and config.runtime_revision:
+                git_hash = config.runtime_revision
         except Exception as exc:
             logger.warning("Failed to fetch Feldera instance config: %s", exc)
 

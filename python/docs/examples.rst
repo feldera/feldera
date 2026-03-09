@@ -484,31 +484,11 @@ report to a Bencher-compatible server.
    starting the pipeline before calling :func:`.bench` or
    :func:`.collect_metrics`, and for stopping it afterwards.
 
-.. list-table:: Python equivalents of ``fda bench`` flags
-   :header-rows: 1
-   :widths: 40 60
-
-   * - ``fda`` flag
-     - Python equivalent
-   * - ``fda bench <name>``
-     - :func:`.bench` (collects until ``pipeline_complete``)
-   * - ``--duration <secs>``
-     - ``bench(pipeline, duration_secs=<secs>)``
-   * - ``--upload``
-     - :func:`.upload_to_bencher`
-   * - ``--branch <name>``
-     - ``upload_to_bencher(..., branch=<name>)``
-   * - ``--start-point <branch>``
-     - ``upload_to_bencher(..., start_point=<branch>)``
-   * - ``--start-point-clone-thresholds``
-     - ``upload_to_bencher(..., start_point_clone_thresholds=True)``
-
 Collect and Display Metrics
 ---------------------------
 
-This is the Python equivalent of ``fda bench <pipeline>``.  Stop any existing
-run, start fresh, wait for all bounded input to be processed, then print a
-human-readable results table.
+Stop any existing run, start fresh, wait for all bounded input to be processed,
+then print a human-readable results table.
 
 .. code-block:: python
 
@@ -552,7 +532,6 @@ Collect Metrics for a Fixed Duration
 
 For streaming pipelines whose input never ends naturally, pass
 ``duration_secs`` to stop collection after a fixed wall-clock window.
-This is the Python equivalent of ``fda bench --duration <secs>``.
 
 .. code-block:: python
 
@@ -571,15 +550,42 @@ This is the Python equivalent of ``fda bench --duration <secs>``.
 
     print(result.format_table())
 
+Aggregate Metrics Across Multiple Runs
+---------------------------------------
+
+Run the benchmark several times and combine the results with
+:meth:`.BenchmarkResult.aggregate`.  The aggregated result averages throughput,
+uptime, and state-amplification across runs, takes the min-of-mins and
+max-of-maxes for memory and storage, and can be passed directly to
+:func:`.upload_to_bencher` just like a single-run result.
+
+.. code-block:: python
+
+    from feldera import FelderaClient, bench
+    from feldera.benchmarking import BenchmarkResult
+
+    client = FelderaClient("http://localhost:8080")
+    pipeline = client.get_pipeline("my_bench")
+
+    runs = []
+    for _ in range(3):
+        pipeline.stop()
+        pipeline.start()
+        runs.append(bench(pipeline))
+
+    pipeline.stop()
+
+    result = BenchmarkResult.aggregate(runs)
+    print(result.format_table())   # shows avg with stddev %
+
 Upload Results to Bencher
 --------------------------
 
-This is the Python equivalent of ``fda bench --upload``.  After collecting
-metrics, call :func:`.upload_to_bencher` to POST the BMF report to a
-Bencher-compatible server.
+After collecting metrics, call :func:`.upload_to_bencher` to POST the BMF
+report to a Bencher-compatible server.
 
 Passing ``feldera_client`` enriches the run context with the Feldera instance
-edition and revision (the same information ``fda`` derives automatically).
+edition and revision.
 
 API token and project can be supplied as parameters or via the
 ``BENCHER_API_TOKEN`` and ``BENCHER_PROJECT`` environment variables.
@@ -630,8 +636,7 @@ Track Results Against a Baseline Branch
 -----------------------------------------
 
 Use ``start_point`` to initialise a new branch from an existing one and
-optionally inherit its alert thresholds.  This mirrors
-``fda bench --upload --start-point <branch> --start-point-clone-thresholds``.
+optionally inherit its alert thresholds.
 
 .. code-block:: python
 
