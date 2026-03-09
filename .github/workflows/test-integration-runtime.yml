@@ -62,3 +62,5 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/python
           FELDERA_TLS_INSECURE: true
+          KAFKA_BOOTSTRAP_SERVERS: ${{ vars.CI_KAFKA_BOOTSTRAP }}
+          SCHEMA_REGISTRY_URL: ${{ vars.CI_SCHEMA_REGISTRY }}

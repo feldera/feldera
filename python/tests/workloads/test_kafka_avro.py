@@ -16,8 +16,8 @@ def env(name: str, default: str) -> str:
 
 # Set these before running the test:
 # Example(terminal/shell):
-#   export KAFKA_BOOTSTRAP_SERVERS = localhost:9092
-#   export SCHEMA_REGISTRY_URL = http://localhost:8081
+#   export KAFKA_BOOTSTRAP_SERVERS= localhost:9092
+#   export SCHEMA_REGISTRY_URL= http://localhost:8081
 
 KAFKA_BOOTSTRAP = env(
     "KAFKA_BOOTSTRAP_SERVERS", "ci-kafka-bootstrap.korat-vibes.ts.net:9094"
