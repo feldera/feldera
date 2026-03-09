@@ -126,5 +126,6 @@ tracing = { version = "0.1.40" }
         pipeline.stop(force=True)
         pipeline.delete(True)
 
+
 if __name__ == "__main__":
     unittest.main()
