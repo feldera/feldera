@@ -263,7 +263,7 @@ threadpool = "1.8.1"
 thread-id = "5.0.0"
 tikv-jemallocator = "0.6.0"
 time = { version = "0.3.47", features = ["serde", "serde-well-known"] }
-tokio = "1.44.2"
+tokio = "1.50.0"
 tokio-postgres = "0.7"
 tokio-stream = "0.1.15"
 tokio-util = "0.7.11"

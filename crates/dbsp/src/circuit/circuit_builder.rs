@@ -44,6 +44,7 @@ use crate::{
     circuit_cache_key,
     ir::LABEL_MIR_NODE_ID,
     operator::dynamic::balance::{Balancer, BalancerError, BalancerHint, PartitioningPolicy},
+    samply::SamplySpan,
     time::{Timestamp, UnitTimestamp},
 };
 #[cfg(doc)]
@@ -3630,7 +3631,15 @@ where
             circuit.nodes.borrow()[id.0].borrow().as_ref(),
         ));
 
+        let span = SamplySpan::new("eval")
+            .with_category("Operator")
+            .with_tooltip(|| {
+                let nodes = circuit.nodes.borrow();
+                let node = nodes[id.0].borrow();
+                format!("{} {}", node.name(), node.global_id())
+            });
         let progress = circuit.nodes.borrow()[id.0].borrow_mut().eval().await?;
+        span.record();
 
         circuit.log_scheduler_event(&SchedulerEvent::eval_end(
             circuit.nodes.borrow()[id.0].borrow().as_ref(),
@@ -6998,6 +7007,9 @@ impl CircuitHandle {
 
         self.circuit
             .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
+                let _span = SamplySpan::new("operator")
+                    .with_category("Checkpoint")
+                    .with_tooltip(|| format!("{} {}", node.name(), node.global_id()));
                 DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS
                     .record_callback(|| node.checkpoint(base, files))
             })
