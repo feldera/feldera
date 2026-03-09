@@ -13,7 +13,20 @@
 
   const formatQty = (v: number) => format(',.0f')(v)
 
-  let { metrics }: { metrics: { current: PipelineMetrics } } = $props()
+  import type { ConnectorErrorFilter } from './ConnectorErrors.svelte'
+
+  let {
+    metrics,
+    onConnectorSelect
+  }: {
+    metrics: { current: PipelineMetrics }
+    onConnectorSelect: (
+      relationName: string,
+      connectorName: string,
+      direction: 'input' | 'output',
+      filter: ConnectorErrorFilter
+    ) => void
+  } = $props()
 
   // List of tables and views that have been expanded to view individual connectors
   let expandedTables = $state<Set<string>>(new Set())
@@ -61,14 +74,25 @@
   paused: boolean | undefined,
   hasErrors: boolean,
   barrier: boolean | undefined,
-  transactionPhase: 'started' | 'committed' | undefined
+  transactionPhase: 'started' | 'committed' | undefined,
+  endOfInput: boolean,
+  onErrorClick?: (e: Event) => void
 )}
   {#if barrier}
     <span class="fd fd-construction mr-1 text-[16px] text-warning-500"></span>
     <Tooltip placement="top">Commit blocked by this input</Tooltip>
   {:else if hasErrors}
-    <span class="fd fd-circle-alert mr-1 text-[16px] text-error-500"></span>
-    <Tooltip placement="top">Parse or transport errors occurred</Tooltip>
+    <span
+      class="fd fd-circle-alert mr-1 cursor-pointer text-[16px] text-error-500"
+      onclick={(e) => {
+        e.stopPropagation()
+        onErrorClick?.(e)
+      }}
+      role="button"
+      tabindex="0"
+      onkeydown={(e) => e.key === 'Enter' && onErrorClick?.(e)}
+    ></span>
+    <Tooltip placement="top">Parse or transport errors occurred — click to view</Tooltip>
   {/if}
   {#if transactionPhase === 'started'}
     <span class="fd fd-receipt-text mr-1 text-[16px] text-warning-500"></span>
@@ -76,6 +100,9 @@
   {:else if transactionPhase === 'committed'}
     <span class="fd fd-receipt-text mr-1 text-[16px] text-success-500"></span>
     <Tooltip placement="top">Transaction committed</Tooltip>
+  {:else if endOfInput}
+    <span class="fd fd-circle-dot mr-1 text-[16px] text-surface-700-300"></span>
+    <Tooltip placement="top">End of input</Tooltip>
   {:else if paused}
     <span class="fd fd-circle-pause mr-1 text-[16px] text-surface-700-300"></span>
     <Tooltip placement="top">Paused</Tooltip>
@@ -85,10 +112,19 @@
   {/if}
 {/snippet}
 
-{#snippet outputConnectorIcons(hasErrors: boolean)}
+{#snippet outputConnectorIcons(hasErrors: boolean, onErrorClick?: (e: Event) => void)}
   {#if hasErrors}
-    <span class="fd fd-circle-alert mr-1 text-[16px] text-error-500"></span>
-    <Tooltip placement="top">Encode or transport errors occurred</Tooltip>
+    <span
+      class="fd fd-circle-alert mr-1 cursor-pointer text-[16px] text-error-500"
+      onclick={(e) => {
+        e.stopPropagation()
+        onErrorClick?.(e)
+      }}
+      role="button"
+      tabindex="0"
+      onkeydown={(e) => e.key === 'Enter' && onErrorClick?.(e)}
+    ></span>
+    <Tooltip placement="top">Encode or transport errors occurred — click to view</Tooltip>
   {/if}
 {/snippet}
 
@@ -100,24 +136,34 @@
   </span>
 {/snippet}
 
-{#snippet inputConnectorName(connector: AggregatedInputEndpointMetrics['connectors'][0])}
+{#snippet inputConnectorName(
+  connector: AggregatedInputEndpointMetrics['connectors'][0],
+  relation: string
+)}
   <div class="flex min-w-0 flex-nowrap">
     <span class="flex w-10 shrink-0 flex-nowrap justify-end">
       {@render inputConnectorIcons(
         connector.paused,
         inputHasErrors(connector),
         connector.barrier,
-        connector.transaction_phase
+        connector.transaction_phase,
+        connector.metrics.end_of_input,
+        () => onConnectorSelect(relation, connector.endpointName, 'input', 'all')
       )}
     </span>
     {@render connectorName(connector.endpointName)}
   </div>
 {/snippet}
 
-{#snippet outputConnectorName(connector: AggregatedOutputEndpointMetrics['connectors'][0])}
+{#snippet outputConnectorName(
+  connector: AggregatedOutputEndpointMetrics['connectors'][0],
+  relation: string
+)}
   <div class="flex min-w-0 flex-nowrap">
     <span class="flex w-10 shrink-0 flex-nowrap justify-end">
-      {@render outputConnectorIcons(outputHasErrors(connector))}
+      {@render outputConnectorIcons(outputHasErrors(connector), () =>
+        onConnectorSelect(relation, connector.endpointName, 'output', 'all')
+      )}
     </span>
     {@render connectorName(connector.endpointName)}
   </div>
@@ -125,24 +171,61 @@
 
 {#snippet tableColumnHeaders()}
   <tr>
-    <th class="font-normal">Table</th>
-    <th class="w-full font-normal"><span class="pl-10">Connector</span></th>
-    <th class="!text-end font-normal 2xl:text-nowrap">Ingested records</th>
-    <th class="!text-end font-normal 2xl:text-nowrap">Ingested bytes</th>
-    <th class="!text-end font-normal 2xl:text-nowrap">Parse errors</th>
-    <th class="!text-end font-normal 2xl:text-nowrap">Transport errors</th>
+    <th class="font-normal" rowspan="2">Table</th>
+    <th class="w-full pb-0! font-normal" rowspan="2"><span class="pl-10">Connector</span></th>
+    <th class="pb-0! text-center! font-normal" colspan="2">Ingested</th>
+    <th class="pb-0! text-center! font-normal" colspan="2">Buffered</th>
+    <th class="font-normal 2xl:text-nowrap" rowspan="2">Parse errors</th>
+    <th class="font-normal 2xl:text-nowrap" rowspan="2">Transport errors</th>
+  </tr>
+  <tr>
+    <th class="pt-0! !text-end font-normal">records</th>
+    <th class="pt-0! !text-end font-normal">bytes</th>
+    <th class="pt-0! !text-end font-normal">records</th>
+    <th class="pt-0! !text-end font-normal">bytes</th>
   </tr>
 {/snippet}
 
-{#snippet inputMetricsCells(m: InputEndpointMetrics, ioActive?: boolean)}
+{#snippet inputMetricsCells(
+  m: InputEndpointMetrics,
+  ioActive?: boolean,
+  relation?: string,
+  connectorEndpointName?: string
+)}
   <td class="text-end font-dm-mono text-nowrap"
     ><span class={ioActive ? 'text-success-600-400' : ''}>{formatQty(m.total_records)}</span></td
   >
   <td class="text-end font-dm-mono text-nowrap"
     ><span class={ioActive ? 'text-success-600-400' : ''}>{humanSize(m.total_bytes)}</span></td
   >
-  <td class="text-end font-dm-mono text-nowrap">{formatQty(m.num_parse_errors)}</td>
-  <td class="text-end font-dm-mono text-nowrap">{formatQty(m.num_transport_errors)}</td>
+  <td class="text-end font-dm-mono text-nowrap">{formatQty(m.buffered_records)}</td>
+  <td class="text-end font-dm-mono text-nowrap">{humanSize(m.buffered_bytes)}</td>
+  <td class="text-end font-dm-mono text-nowrap">
+    {#if m.num_parse_errors > 0 && relation && connectorEndpointName}
+      <button
+        class="cursor-pointer font-dm-mono text-error-500 hover:underline p-2 -m-2"
+        onclick={(e) => {
+          e.stopPropagation()
+          onConnectorSelect(relation, connectorEndpointName, 'input', 'parse')
+        }}>{formatQty(m.num_parse_errors)}</button
+      >
+    {:else}
+      {formatQty(m.num_parse_errors)}
+    {/if}
+  </td>
+  <td class="text-end font-dm-mono text-nowrap">
+    {#if m.num_transport_errors > 0 && relation && connectorEndpointName}
+      <button
+        class="cursor-pointer font-dm-mono text-error-500 hover:underline p-2 -m-2"
+        onclick={(e) => {
+          e.stopPropagation()
+          onConnectorSelect(relation, connectorEndpointName, 'input', 'transport')
+        }}>{formatQty(m.num_transport_errors)}</button
+      >
+    {:else}
+      {formatQty(m.num_transport_errors)}
+    {/if}
+  </td>
 {/snippet}
 
 {#snippet viewColumnHeaders()}
@@ -165,7 +248,12 @@
   </tr>
 {/snippet}
 
-{#snippet outputMetricsCells(m: OutputEndpointMetrics, ioActive?: boolean)}
+{#snippet outputMetricsCells(
+  m: OutputEndpointMetrics,
+  ioActive?: boolean,
+  relation?: string,
+  connectorEndpointName?: string
+)}
   <td class="text-end font-dm-mono text-nowrap"
     ><span class={ioActive ? 'text-success-600-400' : ''}>{formatQty(m.transmitted_records)}</span
     ></td
@@ -178,8 +266,32 @@
   <td class="text-end font-dm-mono text-nowrap">{formatQty(m.buffered_batches)}</td>
   <td class="text-end font-dm-mono text-nowrap">{formatQty(m.queued_records)}</td>
   <td class="text-end font-dm-mono text-nowrap">{formatQty(m.queued_batches)}</td>
-  <td class="text-end font-dm-mono text-nowrap">{formatQty(m.num_encode_errors)}</td>
-  <td class="text-end font-dm-mono text-nowrap">{formatQty(m.num_transport_errors)}</td>
+  <td class="text-end font-dm-mono text-nowrap">
+    {#if m.num_encode_errors > 0 && relation && connectorEndpointName}
+      <button
+        class="cursor-pointer font-dm-mono text-error-500 hover:underline p-2 -m-2"
+        onclick={(e) => {
+          e.stopPropagation()
+          onConnectorSelect(relation, connectorEndpointName, 'output', 'encode')
+        }}>{formatQty(m.num_encode_errors)}</button
+      >
+    {:else}
+      {formatQty(m.num_encode_errors)}
+    {/if}
+  </td>
+  <td class="text-end font-dm-mono text-nowrap">
+    {#if m.num_transport_errors > 0 && relation && connectorEndpointName}
+      <button
+        class="cursor-pointer font-dm-mono text-error-500 hover:underline p-2 -m-2"
+        onclick={(e) => {
+          e.stopPropagation()
+          onConnectorSelect(relation, connectorEndpointName, 'output', 'transport')
+        }}>{formatQty(m.num_transport_errors)}</button
+      >
+    {:else}
+      {formatQty(m.num_transport_errors)}
+    {/if}
+  </td>
 {/snippet}
 
 {#snippet tableMultiConnectorCell(data: AggregatedInputEndpointMetrics, isExpanded: boolean)}
@@ -198,7 +310,8 @@
           runningCount > 0 ? false : true,
           anyErrors,
           anyBarrier,
-          aggregateTransactionPhase
+          aggregateTransactionPhase,
+          data.aggregate.metrics.end_of_input
         )}
       {:else}
         <span class="pl-6"></span>
@@ -220,10 +333,12 @@
   tableData: Map<string, AggregatedMetrics<EndpointMetrics, Extra>>,
   expanded: Set<string>,
   toggle: (r: string) => void,
-  connectorName: Snippet<[AggregatedMetrics<EndpointMetrics, Extra>['connectors'][0]]>,
+  connectorNameSnippet: Snippet<
+    [AggregatedMetrics<EndpointMetrics, Extra>['connectors'][0], string]
+  >,
   multiConnectorRelationCell: Snippet<[AggregatedMetrics<EndpointMetrics, Extra>, boolean]>,
   columnHeaders: Snippet,
-  metricsCells: Snippet<[EndpointMetrics, boolean | undefined]>
+  metricsCells: Snippet<[EndpointMetrics, boolean | undefined, string?, string?]>
 )}
   <div class="scrollbar w-full overflow-x-auto {maxWidth}">
     <table class="bg-white-dark table h-min rounded text-base">
@@ -252,20 +367,27 @@
               {#if hasMultipleConnectors}
                 {@render multiConnectorRelationCell(data, isExpanded)}
               {:else if data.connectors.length === 1}
-                {@render connectorName(data.connectors[0])}
+                {@render connectorNameSnippet(data.connectors[0], relation)}
               {/if}
             </td>
             {@render metricsCells(
               data.aggregate.metrics,
-              data.connectors.some((c) => c.io_active)
+              data.connectors.some((c) => c.io_active),
+              hasMultipleConnectors ? undefined : relation,
+              hasMultipleConnectors ? undefined : data.connectors[0]?.endpointName
             )}
           </tr>
           {#if isExpanded && hasMultipleConnectors}
             {#each data.connectors as connector}
               <tr>
                 <td></td>
-                <td>{@render connectorName(connector)}</td>
-                {@render metricsCells(connector.metrics, connector.io_active)}
+                <td>{@render connectorNameSnippet(connector, relation)}</td>
+                {@render metricsCells(
+                  connector.metrics,
+                  connector.io_active,
+                  relation,
+                  connector.endpointName
+                )}
               </tr>
             {/each}
           {/if}
@@ -277,7 +399,7 @@
 
 {#if metrics.current.tables.size}
   {@render metricsTable(
-    'max-w-[1345px]',
+    'max-w-[1540px]',
     metrics.current.tables,
     expandedTables,
     toggleTable,
