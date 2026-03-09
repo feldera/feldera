@@ -1751,7 +1751,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         SqlDropTable dt = (SqlDropTable) node.statement();
         ProgramIdentifier tableName = ProgramIdentifier.fromSqlId(dt.name);
         boolean dropped = this.calciteCatalog.dropTable(tableName);
-        if (!dt.ifExists && dropped)
+        if (!dt.ifExists && !dropped)
             throw new CompilationError("DROPping table " + tableName.singleQuote() + " which does not exist");
         return new DropTableStatement(node, tableName, dt.ifExists);
     }
