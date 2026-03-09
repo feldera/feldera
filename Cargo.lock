@@ -1872,7 +1872,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -1890,7 +1890,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -1908,7 +1908,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -3785,6 +3785,7 @@ dependencies = [
  "feldera-size-of",
  "feldera-storage",
  "feldera-types",
+ "flate2",
  "futures",
  "futures-util",
  "hashbrown 0.14.5",
@@ -3796,6 +3797,7 @@ dependencies = [
  "libc",
  "metrics",
  "mimalloc-rust-sys",
+ "nix 0.29.0",
  "num",
  "num-derive",
  "num-format",
@@ -3821,6 +3823,7 @@ dependencies = [
  "seq-macro",
  "serde",
  "serde_json",
+ "serde_json_path_to_error",
  "smallvec",
  "snap",
  "static_assertions",
@@ -3903,6 +3906,7 @@ dependencies = [
  "feldera-storage",
  "feldera-types",
  "feldera_rust_decimal",
+ "flate2",
  "form_urlencoded",
  "futures",
  "futures-timer",
@@ -6803,7 +6807,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.53.5",
 ]
 
 [[package]]
@@ -11603,9 +11607,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.48.0"
+version = "1.50.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff360e02eab121e0bc37a2d3b4d4dc622e6eda3a8e5253d5435ecf5bd4c68408"
+checksum = "27ad5e34374e03cfffefc301becb44e9dc3c17584f414349ebe29ed26661822d"
 dependencies = [
  "bytes",
  "libc",

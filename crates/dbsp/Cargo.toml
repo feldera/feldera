@@ -99,6 +99,9 @@ async-stream = { workspace = true }
 futures-util = { workspace = true }
 rmp-serde = { workspace = true }
 feldera-buffer-cache = { workspace = true }
+serde_json_path_to_error = { workspace = true }
+flate2 = { workspace = true }
+nix = { workspace = true, features = ["process", "time"] }
 
 [dev-dependencies]
 rand = { workspace = true }
