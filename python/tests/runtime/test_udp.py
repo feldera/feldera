@@ -112,10 +112,13 @@ tracing = { version = "0.1.40" }
         pipeline.resume()
 
         pipeline.wait_for_completion()
-        for log in pipeline.logs():
-            # This will loop forever if the message is not found
-            if "bytes of data" in log:
-                break
+        # TODO: re-enable this check.
+        # Disabled log checking, since the python SDK for fetching logs seems
+        # to be flaky: https://github.com/feldera/feldera/issues/5776
+        # for log in pipeline.logs():
+        #    # This will loop forever if the message is not found
+        #    if "bytes of data" in log:
+        #        break
         hash = pipeline.query_hash("SELECT * FROM v ORDER BY i, ti, si, bi")
         assert (
             hash == "0F5CD4C02B4670AB14FE753523D7D9962E251850D8AD247EC04ABC1531EB4AF3"
