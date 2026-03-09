@@ -7,7 +7,7 @@ from typing import Any
 from confluent_kafka import Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 from feldera import Pipeline, PipelineBuilder
-from feldera.connector_stats import InputConnectorStatus, OutputConnectorStatus
+from feldera.stats import InputEndpointStatus, OutputEndpointStatus
 from tests import TEST_CLIENT
 from tests.platform.helper import gen_pipeline_name, wait_for_condition
 
@@ -80,10 +80,6 @@ def _assert_input_status_fields(status, expected_stream: str) -> None:
     assert isinstance(status.paused, bool)
     assert isinstance(status.barrier, bool)
 
-    # Config
-    assert isinstance(status.config.stream, str)
-    assert status.config.stream == expected_stream
-
     # Metrics
     metrics = status.metrics
     assert isinstance(metrics.total_bytes, int)
@@ -109,10 +105,6 @@ def _assert_output_status_fields(status, expected_stream: str) -> None:
     assert isinstance(status.endpoint_name, str)
     assert status.endpoint_name
     assert isinstance(status.fatal_error, str) or status.fatal_error is None
-
-    # Config
-    assert isinstance(status.config.stream, str)
-    assert status.config.stream == expected_stream
 
     # Metrics
     metrics = status.metrics
@@ -229,14 +221,14 @@ def test_connector_status(pipeline_name):
     ).create_or_replace()
     pipeline.start()
 
-    def input_connector_status() -> InputConnectorStatus:
+    def input_connector_status() -> InputEndpointStatus:
         status = pipeline.input_connector_stats(
             table_name="input_t", connector_name="kafka_in"
         )
         _assert_input_status_fields(status, expected_stream="input_t")
         return status
 
-    def output_connector_status() -> OutputConnectorStatus:
+    def output_connector_status() -> OutputEndpointStatus:
         status = pipeline.output_connector_stats(
             view_name="output_v", connector_name="kafka_out"
         )
@@ -291,12 +283,14 @@ def test_connector_status(pipeline_name):
         assert not input_status.metrics.end_of_input
         assert input_status.fatal_error is None
         assert input_status.metrics.total_records == 500
+        assert input_status.health is None
 
         assert output_status.encode_errors is not None
         assert len(output_status.encode_errors) == 100
         assert output_status.metrics.num_encode_errors == 500
         assert output_status.metrics.num_transport_errors == 0
         assert output_status.fatal_error is None
+        assert output_status.health is None
 
     finally:
         _delete_topic_best_effort(admin, input_topic)
