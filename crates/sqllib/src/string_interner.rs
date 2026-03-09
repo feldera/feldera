@@ -10,8 +10,7 @@ use dbsp::{
     Circuit, DynZWeight, OrdZSet, RootCircuit, Runtime, Stream, ZWeight,
     circuit::LocalStoreMarker,
     dynamic::{DowncastTrait, DynData},
-    operator::communication::new_exchange_operators,
-    storage::file::to_bytes,
+    operator::communication::{Mailbox, new_exchange_operators},
     trace::{
         BatchReader, BatchReaderFactories, Cursor, OrdIndexedWSet as DynOrdIndexedWSet,
         OrdIndexedWSetFactories, SpineSnapshot, unaligned_deserialize,
@@ -294,13 +293,12 @@ pub fn build_string_interner(
     let exchange = new_exchange_operators(
         Some(Location::caller()),
         empty_by_id,
-        move |spine: SpineSnapshot<_>, outputs| {
-            outputs.push(spine.clone());
+        move |spine: SpineSnapshot<_>, outputs, flushed| {
+            outputs.push(Mailbox::Plain((spine.clone(), flushed)));
             for _ in 1..Runtime::num_workers() {
-                outputs.push(empty_by_id());
+                outputs.push(Mailbox::Plain((empty_by_id(), flushed)));
             }
         },
-        |value| to_bytes(&value).unwrap().into_vec(),
         |data| unaligned_deserialize(&data[..]),
         |snapshot, remote_snapshot| {
             if Runtime::worker_index() == 0 {

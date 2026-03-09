@@ -11,7 +11,6 @@ use crate::{
         Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
         metadata::{
             BatchSizeStats, EXCHANGE_DESERIALIZATION_TIME_SECONDS, EXCHANGE_DESERIALIZED_BYTES,
-            EXCHANGE_SERIALIZATION_TIME_SECONDS, EXCHANGE_SERIALIZED_BYTES,
             EXCHANGE_WAIT_TIME_SECONDS, INPUT_BATCHES_STATS, MetaItem, OUTPUT_BATCHES_STATS,
             OperatorLocation, OperatorMeta,
         },
@@ -358,7 +357,8 @@ impl InnerExchange {
     }
 }
 
-enum Mailbox<T> {
+#[derive(Clone, Debug)]
+pub enum Mailbox<T> {
     Serialized(Vec<u8>),
     Plain(T),
 }
@@ -420,14 +420,7 @@ pub(crate) struct Exchange<T> {
     /// v         |-----|-----|-----|-----|
     /// ```
     mailboxes: Arc<Vec<Mutex<Option<Mailbox<T>>>>>,
-    serialize: Box<dyn Fn(T) -> Vec<u8> + Send + Sync>,
     deserialize: Box<dyn Fn(Vec<u8>) -> T + Send + Sync>,
-
-    /// The amount of time we've spent calling `serialize`.
-    serialization_usecs: AtomicU64,
-
-    /// The number of bytes produced by `serialize`.
-    serialized_bytes: AtomicUsize,
 
     /// The amount of time spent calling `deserialize`.
     deserialization_usecs: AtomicU64,
@@ -479,7 +472,6 @@ where
         exchange_id: ExchangeId,
         clients: Arc<Clients>,
         directory: ExchangeDirectory,
-        serialize: Box<dyn Fn(T) -> Vec<u8> + Send + Sync>,
         deserialize: Box<dyn Fn(Vec<u8>) -> T + Send + Sync>,
     ) -> Self {
         let npeers = Runtime::num_workers();
@@ -503,10 +495,7 @@ where
         Self {
             inner,
             mailboxes,
-            serialize,
             deserialize,
-            serialization_usecs: AtomicU64::new(0),
-            serialized_bytes: AtomicUsize::new(0),
             deserialization_usecs: AtomicU64::new(0),
             deserialized_bytes: AtomicUsize::new(0),
         }
@@ -528,7 +517,6 @@ where
     pub(crate) fn with_runtime(
         runtime: &Runtime,
         exchange_id: ExchangeId,
-        serialize: Box<dyn Fn(T) -> Vec<u8> + Send + Sync>,
         deserialize: Box<dyn Fn(Vec<u8>) -> T + Send + Sync>,
     ) -> Arc<Self> {
         let directory = runtime
@@ -554,7 +542,6 @@ where
                     exchange_id,
                     clients.clone(),
                     directory,
-                    serialize,
                     deserialize,
                 ))
             })
@@ -587,7 +574,7 @@ where
     pub(crate) fn try_send_all(
         self: &Arc<Self>,
         sender: usize,
-        data: impl Iterator<Item = T>,
+        data: impl Iterator<Item = Mailbox<T>>,
     ) -> bool {
         let npeers = self.inner.npeers;
         if self.inner.sender_counters[sender]
@@ -601,19 +588,9 @@ where
         let local_workers = &self.inner.local_workers;
         for (receiver, item) in (0..npeers).zip_eq(data.take(npeers)) {
             let is_local = local_workers.contains(&receiver);
-            let mailbox = if is_local {
-                Mailbox::Plain(item)
-            } else {
-                let start = Instant::now();
-                let serialized = (self.serialize)(item);
-                self.serialization_usecs
-                    .fetch_add(start.elapsed().as_micros() as u64, Ordering::Relaxed);
-                self.serialized_bytes
-                    .fetch_add(serialized.len(), Ordering::Relaxed);
-
-                Mailbox::Serialized(serialized)
-            };
-            *self.mailbox(sender, receiver).lock().unwrap() = Some(mailbox);
+            let mailbox_is_local = matches!(&item, Mailbox::Plain(_));
+            assert_eq!(is_local, mailbox_is_local);
+            *self.mailbox(sender, receiver).lock().unwrap() = Some(item);
 
             if is_local {
                 let old_counter =
@@ -935,7 +912,7 @@ where
     worker_index: usize,
     location: OperatorLocation,
     partition: L,
-    outputs: Vec<T>,
+    outputs: Vec<Mailbox<(T, bool)>>,
     exchange: Arc<Exchange<(T, bool)>>,
 
     // Input batch sizes.
@@ -990,8 +967,6 @@ where
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
             INPUT_BATCHES_STATS => self.input_batch_stats.metadata(),
-            EXCHANGE_SERIALIZATION_TIME_SECONDS => MetaItem::Duration(Duration::from_micros(self.exchange.serialization_usecs.load(Ordering::Acquire))),
-            EXCHANGE_SERIALIZED_BYTES => MetaItem::bytes(self.exchange.serialized_bytes.load(Ordering::Acquire))
         });
     }
 
@@ -1031,7 +1006,7 @@ impl<D, T, L> SinkOperator<D> for ExchangeSender<D, T, L>
 where
     D: Clone + NumEntries + 'static,
     T: Clone + Send + 'static,
-    L: FnMut(D, &mut Vec<T>) + 'static,
+    L: FnMut(D, &mut Vec<Mailbox<(T, bool)>>, bool) + 'static,
 {
     async fn eval(&mut self, input: &D) {
         self.eval_owned(input.clone()).await
@@ -1042,14 +1017,13 @@ where
 
         debug_assert!(self.ready());
         self.outputs.clear();
-        (self.partition)(input, &mut self.outputs);
+        (self.partition)(input, &mut self.outputs, self.flushed);
         self.start_wait_usecs
             .store(current_time_usecs(), Ordering::Release);
 
-        let res = self.exchange.try_send_all(
-            self.worker_index,
-            self.outputs.drain(..).map(|x| (x, self.flushed)),
-        );
+        let res = self
+            .exchange
+            .try_send_all(self.worker_index, self.outputs.drain(..));
         self.flushed = false;
         debug_assert!(res);
     }
@@ -1286,11 +1260,10 @@ impl TypedMapKey<LocalStoreMarker> for DirectoryId {
 /// * `IF` - Type of closure used to initialize the output value of type `TO`.
 /// * `CL` - Type of closure that folds `num_workers` values of type `TE` into a
 ///   value of type `TO`.
-pub fn new_exchange_operators<TI, TO, TE, IF, PL, CL, S, D>(
+pub fn new_exchange_operators<TI, TO, TE, IF, PL, CL, D>(
     location: OperatorLocation,
     init: IF,
     partition: PL,
-    serialize: S,
     deserialize: D,
     combine: CL,
 ) -> Option<(ExchangeSender<TI, TE, PL>, ExchangeReceiver<IF, TE, CL>)>
@@ -1298,8 +1271,7 @@ where
     TO: Clone,
     TE: Send + 'static + Clone,
     IF: Fn() -> TO + 'static,
-    PL: FnMut(TI, &mut Vec<TE>) + 'static,
-    S: Fn(TE) -> Vec<u8> + Send + Sync + 'static,
+    PL: FnMut(TI, &mut Vec<Mailbox<(TE, bool)>>, bool) + 'static,
     D: Fn(Vec<u8>) -> TE + Send + Sync + 'static,
     CL: Fn(&mut TO, TE) + 'static,
 {
@@ -1314,11 +1286,6 @@ where
     let exchange = Exchange::with_runtime(
         &runtime,
         exchange_id,
-        Box::new(move |(value, flush)| {
-            let mut vec = serialize(value);
-            vec.push(flush as u8);
-            vec
-        }),
         Box::new(move |mut vec| {
             let flush = match vec.pop().unwrap() {
                 0 => false,
@@ -1355,11 +1322,13 @@ mod tests {
             Runtime,
             schedule::{DynamicScheduler, Scheduler},
         },
-        operator::{Generator, communication::new_exchange_operators},
-        storage::file::{to_bytes, to_bytes_dyn},
+        operator::{
+            Generator,
+            communication::{Mailbox, new_exchange_operators},
+        },
         trace::unaligned_deserialize,
     };
-    use std::thread::yield_now;
+    use std::{iter::repeat, thread::yield_now};
 
     // We decrease the number of rounds we do when we're running under miri,
     // otherwise it'll run forever
@@ -1379,14 +1348,14 @@ mod tests {
             let exchange = Exchange::with_runtime(
                 &Runtime::runtime().unwrap(),
                 0,
-                Box::new(|value| to_bytes(&value).unwrap().into_vec()),
                 Box::new(|data| unaligned_deserialize(&data[..])),
             );
 
             for round in 0..ROUNDS {
                 let output_data = vec![round; WORKERS];
                 loop {
-                    if exchange.try_send_all(Runtime::worker_index(), output_data.iter().copied()) {
+                    if exchange.try_send_all(Runtime::worker_index(), repeat(Mailbox::Plain(round)))
+                    {
                         break;
                     }
 
@@ -1442,12 +1411,11 @@ mod tests {
                     let (sender, receiver) = new_exchange_operators(
                         None,
                         Vec::new,
-                        move |n, vals| {
+                        move |n, vals, flushed| {
                             for _ in 0..workers {
-                                vals.push(n)
+                                vals.push(Mailbox::Plain((n, flushed)));
                             }
                         },
-                        |value| to_bytes_dyn(&value).unwrap().into_vec(),
                         |data| unaligned_deserialize(&data[..]),
                         |v: &mut Vec<usize>, n| v.push(n),
                     )

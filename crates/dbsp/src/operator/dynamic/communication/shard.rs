@@ -4,18 +4,15 @@
 // TODOs:
 // - different sharding modes.
 
-use rkyv::{archived_root, ser::Serializer as _};
+use rkyv::archived_root;
 
 use crate::{
     Circuit, Runtime, Stream,
     circuit::circuit_builder::StreamId,
     circuit_cache_key,
     dynamic::{Data, DataTrait, DynPairs, Factory},
-    operator::communication::new_exchange_operators,
-    trace::{
-        Batch, BatchReader, Builder, Serializer, deserialize_indexed_wset, merge_batches,
-        serialize_indexed_wset,
-    },
+    operator::communication::{Mailbox, new_exchange_operators},
+    trace::{Batch, BatchReader, Builder, deserialize_indexed_wset, merge_batches},
 };
 
 use std::{ops::Range, panic::Location};
@@ -114,16 +111,16 @@ where
                         let (sender, receiver) = new_exchange_operators(
                             Some(location),
                             || Vec::new(),
-                            move |batch: IB, batches: &mut Vec<OB>| {
+                            move |batch: IB, batches: &mut Vec<Mailbox<(OB, bool)>>, flushed| {
                                 shard_batch(
                                     batch,
+                                    flushed,
                                     &workers_clone,
                                     &mut builders,
                                     batches,
                                     &factories_clone3,
                                 );
                             },
-                            |batch| serialize_indexed_wset(&batch),
                             move |data| deserialize_indexed_wset(&factories_clone4, &data),
                             |batches: &mut Vec<OB>, batch: OB| batches.push(batch),
                         )
@@ -178,14 +175,15 @@ where
             Some(location),
             Vec::new,
             move |input_pairs: Vec<Box<DynPairs<K, V>>>,
-                  output_pairs: &mut Vec<Box<DynPairs<K, V>>>| {
-                shard_pairs(input_pairs, &all_workers(), output_pairs, pairs_factory);
-            },
-            |batch| {
-                let mut s = Serializer::default();
-                let offset = batch.serialize(&mut s).unwrap();
-                s.serialize_value(&offset).unwrap();
-                s.into_serializer().into_inner().into_vec()
+                  output_pairs: &mut Vec<Mailbox<(Box<DynPairs<K, V>>, bool)>>,
+                  flushed| {
+                shard_pairs(
+                    input_pairs,
+                    flushed,
+                    &all_workers(),
+                    output_pairs,
+                    pairs_factory,
+                );
             },
             move |data| {
                 let offset = unsafe { archived_root::<usize>(&data) };
@@ -215,9 +213,10 @@ where
 // `all_workers()`), based on the hash of the key.
 pub fn shard_batch<IB, OB>(
     mut batch: IB,
+    flushed: bool,
     workers: &Range<usize>,
     builders: &mut Vec<OB::Builder>,
-    outputs: &mut Vec<OB>,
+    outputs: &mut Vec<Mailbox<(OB, bool)>>,
     factories: &OB::Factories,
 ) where
     IB: BatchReader<Time = ()>,
@@ -264,13 +263,13 @@ pub fn shard_batch<IB, OB>(
         }
     }
     for _ in 0..workers.start {
-        outputs.push(OB::dyn_empty(factories));
+        outputs.push(Mailbox::Plain((OB::dyn_empty(factories), flushed)));
     }
     for builder in builders.drain(..) {
-        outputs.push(builder.done());
+        outputs.push(Mailbox::Plain((builder.done(), flushed)));
     }
     for _ in workers.end..Runtime::num_workers() {
-        outputs.push(OB::dyn_empty(factories));
+        outputs.push(Mailbox::Plain((OB::dyn_empty(factories), flushed)));
     }
 }
 
@@ -278,23 +277,27 @@ pub fn shard_batch<IB, OB>(
 // `all_workers()`), based on the hash of the key.
 pub fn shard_pairs<K, V>(
     input_pairs: Vec<Box<DynPairs<K, V>>>,
+    flushed: bool,
     workers: &Range<usize>,
-    output_pairs: &mut Vec<Box<DynPairs<K, V>>>,
+    output_pairs: &mut Vec<Mailbox<(Box<DynPairs<K, V>>, bool)>>,
     pairs_factory: &'static dyn Factory<DynPairs<K, V>>,
 ) where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
 {
-    output_pairs.clear();
-    output_pairs.resize(workers.len(), pairs_factory.default_box());
-
+    let mut output = vec![pairs_factory.default_box(); workers.len()];
     for mut pairs in input_pairs {
         for pair in pairs.dyn_iter_mut() {
             let k = pair.fst();
             let shard_index = k.default_hash() as usize % workers.len();
-            output_pairs[shard_index].push_val(pair);
+            output[shard_index].push_val(pair);
         }
     }
+    output_pairs.extend(
+        output
+            .into_iter()
+            .map(|pairs| Mailbox::Plain((pairs, flushed))),
+    );
 }
 
 impl<C, T> Stream<C, T>

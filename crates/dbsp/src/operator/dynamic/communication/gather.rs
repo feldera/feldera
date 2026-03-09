@@ -7,8 +7,8 @@ use crate::{
         operator_traits::{Operator, SinkOperator, SourceOperator},
     },
     circuit_cache_key,
-    operator::communication::new_exchange_operators,
-    trace::{Batch, deserialize_indexed_wset, merge_batches, serialize_indexed_wset},
+    operator::communication::{Mailbox, new_exchange_operators},
+    trace::{Batch, deserialize_indexed_wset, merge_batches},
 };
 use arc_swap::ArcSwap;
 use crossbeam::atomic::AtomicConsume;
@@ -126,13 +126,15 @@ where
                         let (sender, receiver) = new_exchange_operators(
                             Some(location),
                             || Vec::new(),
-                            move |batch: B, batches: &mut Vec<B>| {
+                            move |batch: B, batches: &mut Vec<Mailbox<(B, bool)>>, flushed| {
                                 for _ in 0..Runtime::num_workers() {
-                                    batches.push(B::dyn_empty(&factories_clone3));
+                                    batches.push(Mailbox::Plain((
+                                        B::dyn_empty(&factories_clone3),
+                                        flushed,
+                                    )));
                                 }
-                                batches[receiver_worker] = batch;
+                                batches[receiver_worker] = Mailbox::Plain((batch, flushed));
                             },
-                            |batch| serialize_indexed_wset(&batch),
                             move |data| deserialize_indexed_wset(&factories_clone, &data),
                             |batches: &mut Vec<B>, batch: B| batches.push(batch),
                         )

@@ -7,10 +7,9 @@ use crate::SchedulerError;
 use crate::circuit::DevTweaks;
 use crate::circuit::checkpointer::Checkpointer;
 use crate::error::Error as DbspError;
-use crate::operator::communication::Exchange;
+use crate::operator::communication::{Exchange, Mailbox};
 use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
-use crate::storage::file::to_bytes;
 use crate::storage::file::writer::Parameters;
 use crate::trace::unaligned_deserialize;
 use crate::{
@@ -1010,7 +1009,6 @@ impl Consensus {
                 let exchange = Exchange::with_runtime(
                     &runtime,
                     exchange_id,
-                    Box::new(|vote| to_bytes(&vote).unwrap().into_vec()),
                     Box::new(|data| unaligned_deserialize(&data[..])),
                 );
 
@@ -1050,7 +1048,8 @@ impl Consensus {
                 notify_receiver,
                 exchange,
             } => {
-                while !exchange.try_send_all(Runtime::worker_index(), repeat(local)) {
+                while !exchange.try_send_all(Runtime::worker_index(), repeat(Mailbox::Plain(local)))
+                {
                     if Runtime::kill_in_progress() {
                         return Err(SchedulerError::Killed);
                     }
@@ -1097,7 +1096,6 @@ where
                     &runtime,
                     exchange_id,
                     // TODO: handle serialization/deserialization errors better.
-                    Box::new(|x| rmp_serde::to_vec(&x).unwrap()),
                     Box::new(|data| rmp_serde::from_slice(&data).unwrap()),
                 );
 
@@ -1137,7 +1135,10 @@ where
                 notify_receiver,
                 exchange,
             } => {
-                while !exchange.try_send_all(Runtime::worker_index(), repeat(local.clone())) {
+                while !exchange.try_send_all(
+                    Runtime::worker_index(),
+                    repeat(Mailbox::Plain(local.clone())),
+                ) {
                     if Runtime::kill_in_progress() {
                         return Err(SchedulerError::Killed);
                     }

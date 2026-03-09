@@ -20,7 +20,7 @@ use crate::{
     operator::{
         Z1,
         async_stream_operators::{StreamingTernarySinkOperator, StreamingTernarySinkWrapper},
-        communication::{Exchange, ExchangeReceiver},
+        communication::{Exchange, ExchangeReceiver, Mailbox},
         dynamic::{
             accumulate_trace::{AccumulateBoundsId, AccumulateTraceAppend, AccumulateZ1Trace},
             balance::{
@@ -33,7 +33,7 @@ use crate::{
     trace::{
         Batch, BatchReader, BatchReaderFactories, Builder, Cursor, MergeCursor, Spine,
         SpineSnapshot, TupleBuilder, WithSnapshot, deserialize_indexed_wset, merge_batches,
-        serialize_indexed_wset, spine_async::SpineCursor,
+        spine_async::SpineCursor,
     },
 };
 use async_stream::stream;
@@ -142,11 +142,6 @@ where
                     let exchange: Arc<Exchange<(B, bool)>> = Exchange::with_runtime(
                         &runtime,
                         exchange_id,
-                        Box::new(move |(batch, flush)| {
-                            let mut vec = serialize_indexed_wset(&batch);
-                            vec.push(flush as u8);
-                            vec
-                        }),
                         Box::new(move |mut vec| {
                             let flush = match vec.pop().unwrap() {
                                 0 => false,
@@ -1245,7 +1240,7 @@ where
                 // ExchangeReceiver expects precisely one flush per transaction.
                 assert!(self.exchange.try_send_all(
                     self.worker_index,
-                    std::iter::repeat((B::dyn_empty(&batch_factories), false)),
+                    std::iter::repeat(Mailbox::Plain((B::dyn_empty(&batch_factories), false))),
                 ));
 
                 self.update_exchange_metadata();
@@ -1278,7 +1273,7 @@ where
 
             assert!(self.exchange.try_send_all(
                 self.worker_index,
-                batches.into_iter().map(|batch| (batch, flush_complete)),
+                batches.into_iter().map(|batch| Mailbox::Plain((batch, flush_complete))),
             ));
 
             if !rebalance {
@@ -1318,7 +1313,7 @@ where
             while integral_cursor.key_valid() {
                 self.process_retractions(&mut integral_cursor, &mut builders[self.worker_index], chunk_size);
 
-                let batches = builders.into_iter().map(|builder| (builder.done(), false));
+                let batches = builders.into_iter().map(|builder| Mailbox::Plain((builder.done(), false)));
                 // println!("{}: integral retractions: {:?}", Runtime::worker_index(), batches);
                 assert!(self.exchange.try_send_all(self.worker_index, batches));
                 builders = self.create_builders(chunk_size);
@@ -1336,7 +1331,7 @@ where
             while accumulator_cursor.key_valid() {
                 self.repartition_after_unicast(&mut accumulator_cursor, &mut builders, chunk_size);
 
-                let batches = builders.into_iter().map(|builder| (builder.done(), false));
+                let batches = builders.into_iter().map(|builder| Mailbox::Plain((builder.done(), false)));
                 // println!("{}: acc insertions: {:?}", Runtime::worker_index(), batches);
                 assert!(self.exchange.try_send_all(self.worker_index, batches));
                 builders = self.create_builders(chunk_size);
@@ -1350,7 +1345,7 @@ where
             while integral_cursor.key_valid() {
                 self.repartition(trace_policy, &mut integral_cursor, &mut builders, chunk_size);
 
-                let batches = builders.into_iter().map(|builder| (builder.done(), !integral_cursor.key_valid()));
+                let batches = builders.into_iter().map(|builder| Mailbox::Plain((builder.done(), !integral_cursor.key_valid())));
                 // println!("{}: integral insertions: {:?}", Runtime::worker_index(), batches);
                 assert!(self.exchange.try_send_all(self.worker_index, batches));
                 builders = self.create_builders(chunk_size);
@@ -1376,7 +1371,7 @@ where
                 }
             }
 
-            let batches = builders.into_iter().map(|builder| (builder.done(), true));
+            let batches = builders.into_iter().map(|builder| Mailbox::Plain((builder.done(), true)));
             // println!("{}: final batches: {:?}", Runtime::worker_index(), batches);
             assert!(self.exchange.try_send_all(self.worker_index, batches));
 
