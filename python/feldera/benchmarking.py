@@ -10,9 +10,10 @@ workloads can collect and upload results programmatically.
 
 import json
 import logging
+import math
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
@@ -56,13 +57,56 @@ def _human_readable_bytes(n: int) -> str:
     return f"{value:.2f} {units[exp]}"
 
 
+def _stddev(values: list[float]) -> float:
+    """Population standard deviation."""
+    n = len(values)
+    if n < 2:
+        return 0.0
+    mean = sum(values) / n
+    return math.sqrt(sum((x - mean) ** 2 for x in values) / n)
+
+
+def _averaged_metrics(runs: list["BenchmarkResult"]) -> "BenchmarkMetrics":
+    """Compute averaged BenchmarkMetrics from a list of runs.
+
+    Averages: throughput, uptime_ms, buffered_input_records_avg, state_amplification
+    Min-of-mins: memory_bytes_min, storage_bytes_min, buffered_input_records_min
+    Max-of-maxes: memory_bytes_max, storage_bytes_max, buffered_input_records_max
+    """
+    n = len(runs)
+    metrics_list = [r.metrics for r in runs]
+
+    sa_values = [
+        m.state_amplification for m in metrics_list if m.state_amplification is not None
+    ]
+
+    return BenchmarkMetrics(
+        throughput=int(sum(m.throughput for m in metrics_list) / n),
+        memory_bytes_max=max(m.memory_bytes_max for m in metrics_list),
+        memory_bytes_min=min(m.memory_bytes_min for m in metrics_list),
+        storage_bytes_max=max(m.storage_bytes_max for m in metrics_list),
+        storage_bytes_min=min(m.storage_bytes_min for m in metrics_list),
+        uptime_ms=int(sum(m.uptime_ms for m in metrics_list) / n),
+        buffered_input_records_avg=int(
+            sum(m.buffered_input_records_avg for m in metrics_list) / n
+        ),
+        buffered_input_records_min=min(
+            m.buffered_input_records_min for m in metrics_list
+        ),
+        buffered_input_records_max=max(
+            m.buffered_input_records_max for m in metrics_list
+        ),
+        state_amplification=sum(sa_values) / len(sa_values) if sa_values else None,
+    )
+
+
 @dataclass
 class RawSample:
     """One stats snapshot from ``pipeline.stats()``.
 
     :param rss_bytes: Resident set size of the pipeline process in bytes.
-    :param runtime_elapsed_msecs: Pipeline uptime in milliseconds at the time
-        of the snapshot.
+    :param uptime_msecs: Real-world elapsed milliseconds since the pipeline
+        process started (wall-clock time, not aggregated CPU time).
     :param incarnation_uuid: UUID identifying the current pipeline incarnation.
         Changes if the pipeline restarts.
     :param storage_bytes: Bytes currently stored by the pipeline.
@@ -75,7 +119,7 @@ class RawSample:
     """
 
     rss_bytes: int
-    runtime_elapsed_msecs: int
+    uptime_msecs: int
     incarnation_uuid: str
     storage_bytes: int
     buffered_input_records: int
@@ -109,7 +153,7 @@ class RawSample:
 
         return cls(
             rss_bytes=gm.rss_bytes or 0,
-            runtime_elapsed_msecs=gm.runtime_elapsed_msecs or 0,
+            uptime_msecs=int(gm.uptime_msecs or 0),
             incarnation_uuid=str(gm.incarnation_uuid),
             storage_bytes=gm.storage_bytes or 0,
             buffered_input_records=gm.buffered_input_records or 0,
@@ -123,21 +167,23 @@ class RawSample:
 class BenchmarkMetrics:
     """Aggregated benchmark metrics derived from a list of :class:`RawSample`.
 
-    :param throughput: Records processed per second, computed from the last
-        sample's ``total_processed_records`` and ``runtime_elapsed_msecs``.
+    :param throughput: Records processed per second during the measurement
+        window, computed as a delta between the first and last samples.
     :param memory_bytes_max: Peak RSS memory usage in bytes across all samples.
     :param memory_bytes_min: Minimum RSS memory usage in bytes across all samples.
     :param storage_bytes_max: Peak storage usage in bytes across all samples.
     :param storage_bytes_min: Minimum storage usage in bytes across all samples.
-    :param uptime_ms: Pipeline uptime in milliseconds from the last sample.
+    :param uptime_ms: Real-world elapsed milliseconds of the measurement window
+        (delta of ``uptime_msecs`` between first and last sample).
     :param buffered_input_records_avg: Average buffered input record count across
         all samples (integer division).
     :param buffered_input_records_min: Minimum buffered input record count across
         all samples.
     :param buffered_input_records_max: Maximum buffered input record count across
         all samples.
-    :param state_amplification: Ratio of peak storage bytes to total input bytes
-        from the last sample. ``None`` when total input bytes is zero.
+    :param state_amplification: Ratio of peak storage bytes to input bytes
+        received during the measurement window. ``None`` when delta input
+        bytes is zero.
     """
 
     throughput: int
@@ -165,10 +211,14 @@ class BenchmarkMetrics:
                 "No measurements were recorded. Maybe try to increase `duration`."
             )
 
+        first = samples[0]
         last = samples[-1]
 
-        uptime_s = last.runtime_elapsed_msecs / 1000.0
-        throughput = int(last.total_processed_records / uptime_s) if uptime_s > 0 else 0
+        # Delta-based: measure only the records and time within the window
+        delta_records = last.total_processed_records - first.total_processed_records
+        delta_ms = last.uptime_msecs - first.uptime_msecs
+        delta_s = delta_ms / 1000.0
+        throughput = int(delta_records / delta_s) if delta_s > 0 else 0
 
         memory_bytes_max = max(s.rss_bytes for s in samples)
         memory_bytes_min = min(s.rss_bytes for s in samples)
@@ -189,9 +239,9 @@ class BenchmarkMetrics:
                 zero_count,
             )
 
-        input_bytes = last.input_bytes
+        delta_input_bytes = last.input_bytes - first.input_bytes
         state_amplification = (
-            storage_bytes_max / input_bytes if input_bytes > 0 else None
+            storage_bytes_max / delta_input_bytes if delta_input_bytes > 0 else None
         )
 
         return cls(
@@ -200,7 +250,7 @@ class BenchmarkMetrics:
             memory_bytes_min=memory_bytes_min,
             storage_bytes_max=storage_bytes_max,
             storage_bytes_min=storage_bytes_min,
-            uptime_ms=last.runtime_elapsed_msecs,
+            uptime_ms=delta_ms,
             buffered_input_records_avg=buffered_input_records_avg,
             buffered_input_records_min=buffered_input_records_min,
             buffered_input_records_max=buffered_input_records_max,
@@ -212,16 +262,48 @@ class BenchmarkMetrics:
 class BenchmarkResult:
     """A named benchmark result with timing information.
 
+    For a single run, ``_metrics`` is set directly. For multi-run aggregation,
+    ``runs`` holds the individual results and ``metrics`` computes averages
+    on the fly.
+
     :param name: Benchmark name, used as the top-level key in BMF output.
-    :param metrics: Aggregated performance metrics.
     :param start_time: UTC timestamp when metric collection began.
     :param end_time: UTC timestamp when metric collection ended.
+    :param runs: List of individual run results (multi-run aggregation).
+    :param _metrics: Aggregated performance metrics (single run).
     """
 
     name: str
-    metrics: BenchmarkMetrics
     start_time: datetime
     end_time: datetime
+    runs: list["BenchmarkResult"] | None = None
+    _metrics: BenchmarkMetrics | None = field(default=None, repr=False)
+
+    @property
+    def metrics(self) -> BenchmarkMetrics:
+        """Return metrics — stored for single run, computed for multi-run."""
+        if self._metrics is not None:
+            return self._metrics
+        if self.runs:
+            return _averaged_metrics(self.runs)
+        raise ValueError("BenchmarkResult has no metrics and no runs")
+
+    @classmethod
+    def aggregate(
+        cls, results: list["BenchmarkResult"], name: str | None = None
+    ) -> "BenchmarkResult":
+        """Create an aggregated result from multiple runs.
+
+        :param results: Non-empty list of individual run results.
+        :param name: Optional name override; defaults to the first result's name.
+        :returns: A new :class:`BenchmarkResult` with ``runs`` set.
+        """
+        return cls(
+            name=name or results[0].name,
+            start_time=min(r.start_time for r in results),
+            end_time=max(r.end_time for r in results),
+            runs=results,
+        )
 
     def to_bmf(self) -> dict:
         """Return the result as a Bencher Metric Format (BMF) dict.
@@ -261,51 +343,67 @@ class BenchmarkResult:
     def format_table(self) -> str:
         """Return a human-readable tabular display of the benchmark results.
 
+        For multi-run results (``self.runs is not None``), value cells show
+        ``avg (stddev X.Y%)`` computed from per-run metrics.
+
         :returns: A multi-line string containing an ASCII table with one row
-            per metric showing its value, lower bound, and upper bound.
+            per metric.
         """
         m = self.metrics
-        rows = [
-            ("Metric", "Value", "Lower", "Upper"),
-            (
-                "Throughput (records/s)",
-                str(m.throughput),
-                "-",
-                "-",
-            ),
-            (
-                "Memory",
-                _human_readable_bytes(m.memory_bytes_max),
-                _human_readable_bytes(m.memory_bytes_min),
-                "-",
-            ),
-            (
-                "Storage",
-                _human_readable_bytes(m.storage_bytes_max),
-                _human_readable_bytes(m.storage_bytes_min),
-                "-",
-            ),
-            (
-                "Uptime [ms]",
-                str(m.uptime_ms),
-                "-",
-                "-",
-            ),
+        is_multi = self.runs is not None and len(self.runs) > 1
+
+        def _val_with_stddev(avg: float, values: list[float], fmt: str = ".0f") -> str:
+            if not is_multi:
+                return f"{avg:{fmt}}"
+            sd = _stddev(values)
+            pct = (sd / avg * 100) if avg != 0 else 0.0
+            return f"{avg:{fmt}} (stddev {pct:.1f}%)"
+
+        def _bytes_with_stddev(avg: int, values: list[int]) -> str:
+            if not is_multi:
+                return _human_readable_bytes(avg)
+            sd = _stddev([float(v) for v in values])
+            pct = (sd / avg * 100) if avg != 0 else 0.0
+            return f"{_human_readable_bytes(avg)} (stddev {pct:.1f}%)"
+
+        rows: list[tuple[str, str]] = [
+            ("Metric", "Value"),
+            ("Throughput (records/s)", _val_with_stddev(
+                m.throughput,
+                [r.metrics.throughput for r in self.runs] if is_multi else [],
+            )),
+            ("Memory", _bytes_with_stddev(
+                m.memory_bytes_max,
+                [r.metrics.memory_bytes_max for r in self.runs] if is_multi else [],
+            )),
+            ("Storage", _bytes_with_stddev(
+                m.storage_bytes_max,
+                [r.metrics.storage_bytes_max for r in self.runs] if is_multi else [],
+            )),
+            ("Uptime [ms]", _val_with_stddev(
+                m.uptime_ms,
+                [r.metrics.uptime_ms for r in self.runs] if is_multi else [],
+            )),
         ]
         if m.state_amplification is not None:
-            rows.append(
-                (
-                    "State Amplification",
-                    f"{m.state_amplification:.2f}",
-                    "-",
-                    "-",
-                )
-            )
+            rows.append(("State Amplification", _val_with_stddev(
+                m.state_amplification,
+                [
+                    r.metrics.state_amplification
+                    for r in self.runs
+                    if r.metrics.state_amplification is not None
+                ]
+                if is_multi
+                else [],
+                fmt=".2f",
+            )))
 
         col_widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
         sep = "+-" + "-+-".join("-" * w for w in col_widths) + "-+"
 
-        lines = ["Benchmark Results:", sep]
+        n_runs = len(self.runs) if self.runs else 1
+        header = f"Benchmark Results ({n_runs} run{'s' if n_runs != 1 else ''}):"
+        lines = [header, sep]
         for i, row in enumerate(rows):
             line = (
                 "| "
@@ -375,7 +473,11 @@ def collect_metrics(
         elif completion_condition == CompletionCondition.IDLE:
             now = time.monotonic()
             cur_processed = sample.total_processed_records
-            if prev_processed is not None and cur_processed == prev_processed and cur_processed > 0:
+            if (
+                prev_processed is not None
+                and cur_processed == prev_processed
+                and cur_processed > 0
+            ):
                 if idle_started_at is None:
                     idle_started_at = now
                 elif now - idle_started_at >= idle_interval_s:
@@ -435,9 +537,9 @@ def bench(
     metrics = BenchmarkMetrics.from_samples(samples)
     return BenchmarkResult(
         name=benchmark_name,
-        metrics=metrics,
         start_time=start_time,
         end_time=end_time,
+        _metrics=metrics,
     )
 
 
