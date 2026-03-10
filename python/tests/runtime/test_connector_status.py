@@ -201,10 +201,7 @@ def test_connector_status(pipeline_name):
         "name": "kafka_out",
         "transport": {
             "name": "kafka_output",
-            "config": {
-                "topic": output_topic,
-                "bootstrap.servers": KAFKA_BOOTSTRAP
-            },
+            "config": {"topic": output_topic, "bootstrap.servers": KAFKA_BOOTSTRAP},
         },
         "format": {
             "name": "avro",
