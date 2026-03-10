@@ -77,12 +77,11 @@ jobs:
           pre-commit run --show-diff-on-failure --color=always --all-files
         shell: bash
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        continue-on-error: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
       - name: Print sccache stats
         run: sccache --show-stats
       - uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403
         # Only attempt auto-fix commits for branches in this repo (forks can't be pushed to)
-        if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        if: ${{ always() && github.event.pull_request.head.repo.full_name == github.repository }}
         with:
           commit_message: "[ci] apply automatic fixes"
           commit_user_name: feldera-bot
