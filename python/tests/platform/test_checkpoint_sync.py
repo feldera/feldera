@@ -816,3 +816,358 @@ class TestCheckpointSync(SharedTestPipeline):
         standby.clear_storage()
         self.pipeline.clear_storage()
         source.clear_storage()
+
+    # -------------------------------------------------------------------------
+    # Additional local-priority and read_bucket tests
+    # -------------------------------------------------------------------------
+
+    @enterprise_only
+    @single_host_only
+    def test_local_checkpoint_priority_from_uuid(self):
+        # The local-first code path for UUID differs from `latest`; verify it
+        # independently.  When start_from_checkpoint is a UUID that exists only
+        # in local storage (never synced to remote), the pipeline must restore
+        # from that local checkpoint without attempting a remote pull.
+        ft = FaultToleranceModel.AtLeastOnce
+
+        storage_config = storage_cfg(self.pipeline.name, retention_min_count=2)
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
+            )
+        )
+        self.pipeline.start()
+
+        # Insert data_a and sync checkpoint A to remote.
+        data_a = [{"c0": i, "c1": str(i)} for i in range(1, 11)]
+        self.pipeline.input_json("t0", data_a)
+        self.pipeline.wait_for_completion()
+        self.pipeline.checkpoint(wait=True)
+        self.pipeline.sync_checkpoint(wait=True)
+
+        # Insert data_b and take a local-only checkpoint B (no remote sync).
+        data_b = [{"c0": i, "c1": str(i)} for i in range(11, 21)]
+        self.pipeline.input_json("t0", data_b)
+        self.pipeline.wait_for_completion()
+        self.pipeline.checkpoint(wait=True)
+        # Intentionally NOT calling sync_checkpoint — remote only has checkpoint A.
+
+        # UUID of checkpoint B (the newest local checkpoint, not in remote).
+        chks = self.pipeline.checkpoints()
+        local_uuid = max(chks, key=lambda c: c.uuid).uuid
+
+        expected = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: expected (A+B): {len(expected)}",
+            file=sys.stderr,
+        )
+        # Stop without clearing storage so checkpoint B remains on disk.
+        self.pipeline.stop(force=True)
+
+        # Restart specifying the UUID of the local-only checkpoint B.
+        # If local-first is broken the pipeline would try remote, fail (strict=False),
+        # and start fresh — the assertCountEqual below would then catch the regression.
+        storage_config = storage_cfg(
+            self.pipeline.name,
+            start_from_checkpoint=local_uuid,
+            retention_min_count=2,
+        )
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
+            )
+        )
+        self.pipeline.start()
+        got = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: got after restart: {len(got)}",
+            file=sys.stderr,
+        )
+        self.pipeline.stop(force=True)
+
+        self.assertCountEqual(expected, got)
+        self.pipeline.clear_storage()
+
+    @enterprise_only
+    @single_host_only
+    def test_local_priority_over_read_bucket(self):
+        # Local checkpoint wins over read_bucket even when the primary S3 bucket
+        # is empty.  Priority order: local > bucket > read_bucket.
+        ft = FaultToleranceModel.AtLeastOnce
+
+        # Step 1: source pipeline creates a checkpoint (will become read_bucket).
+        source = self.new_pipeline_with_suffix("source")
+        source.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_cfg(source.name)),
+            )
+        )
+        source.start()
+        data_source = [{"c0": i, "c1": f"source_{i}"} for i in range(1, 11)]
+        source.input_json("t0", data_source)
+        source.wait_for_completion()
+        source.checkpoint(wait=True)
+        source.sync_checkpoint(wait=True)
+        source.stop(force=True)
+
+        source_bucket = f"{DEFAULT_BUCKET}/{source.name}"
+
+        # Step 2: main pipeline takes a LOCAL-ONLY checkpoint (never synced).
+        # Its own S3 bucket stays empty, ensuring the only remote source of data
+        # is read_bucket.
+        storage_config = storage_cfg(self.pipeline.name)
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
+            )
+        )
+        self.pipeline.start()
+        data_main = [{"c0": i, "c1": f"main_{i}"} for i in range(11, 21)]
+        self.pipeline.input_json("t0", data_main)
+        self.pipeline.wait_for_completion()
+        expected = list(self.pipeline.query("SELECT * FROM v0"))
+        self.pipeline.checkpoint(wait=True)
+        # Intentionally NOT syncing — main bucket stays empty.
+        self.pipeline.stop(force=True)
+
+        print(
+            f"{self.pipeline.name}: expected (main data only): {len(expected)}",
+            file=sys.stderr,
+        )
+
+        # Step 3: restart with start_from=latest, empty bucket, read_bucket=source.
+        # Local storage has main's checkpoint.  Local must win over read_bucket.
+        # If local-first is broken, read_bucket would be used and we'd see
+        # source data instead of main data.
+        storage_config = storage_cfg(
+            self.pipeline.name,
+            start_from_checkpoint="latest",
+            read_bucket=source_bucket,
+        )
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
+            )
+        )
+        self.pipeline.start()
+        got = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: got after restart: {len(got)}",
+            file=sys.stderr,
+        )
+        self.pipeline.stop(force=True)
+
+        self.assertCountEqual(expected, got)
+        self.pipeline.clear_storage()
+        source.clear_storage()
+
+    @enterprise_only
+    @single_host_only
+    def test_local_priority_over_read_bucket_from_uuid(self):
+        # UUID variant of test_local_priority_over_read_bucket.
+        # When a specific UUID exists only in local storage (bucket empty,
+        # read_bucket has a different checkpoint), local must win.
+        # Exercises read_local_checkpoint_by_uuid rather than
+        # read_local_latest_checkpoint.
+        ft = FaultToleranceModel.AtLeastOnce
+
+        # Step 1: source pipeline creates a checkpoint (will become read_bucket).
+        source = self.new_pipeline_with_suffix("source")
+        source.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_cfg(source.name)),
+            )
+        )
+        source.start()
+        data_source = [{"c0": i, "c1": f"source_{i}"} for i in range(1, 11)]
+        source.input_json("t0", data_source)
+        source.wait_for_completion()
+        source.checkpoint(wait=True)
+        source.sync_checkpoint(wait=True)
+        source.stop(force=True)
+
+        source_bucket = f"{DEFAULT_BUCKET}/{source.name}"
+
+        # Step 2: main pipeline takes a LOCAL-ONLY checkpoint (never synced).
+        # Main bucket stays empty; source_bucket (read_bucket) has a checkpoint
+        # with a different UUID.
+        storage_config = storage_cfg(self.pipeline.name, retention_min_count=2)
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
+            )
+        )
+        self.pipeline.start()
+        data_main = [{"c0": i, "c1": f"main_{i}"} for i in range(11, 21)]
+        self.pipeline.input_json("t0", data_main)
+        self.pipeline.wait_for_completion()
+        self.pipeline.checkpoint(wait=True)
+        # Intentionally NOT syncing — main bucket stays empty.
+
+        # UUID of the local-only checkpoint (not in bucket, not in read_bucket).
+        chks = self.pipeline.checkpoints()
+        local_uuid = max(chks, key=lambda c: c.uuid).uuid
+
+        expected = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: expected (main data only): {len(expected)}",
+            file=sys.stderr,
+        )
+        self.pipeline.stop(force=True)
+
+        # Step 3: restart with the local UUID and read_bucket configured.
+        # If local-first breaks: bucket has no such UUID, read_bucket has no such
+        # UUID, strict=False → starts fresh.  assertCountEqual catches the regression.
+        storage_config = storage_cfg(
+            self.pipeline.name,
+            start_from_checkpoint=local_uuid,
+            read_bucket=source_bucket,
+            retention_min_count=2,
+        )
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
+            )
+        )
+        self.pipeline.start()
+        got = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: got after restart: {len(got)}",
+            file=sys.stderr,
+        )
+        self.pipeline.stop(force=True)
+
+        self.assertCountEqual(expected, got)
+        self.pipeline.clear_storage()
+        source.clear_storage()
+
+    @enterprise_only
+    @single_host_only
+    def test_read_bucket_strict_fail(self):
+        # When fail_if_no_checkpoint=True and both the primary bucket and
+        # read_bucket are empty, the pipeline must fail to start.
+        ft = FaultToleranceModel.AtLeastOnce
+
+        # A bucket path with no checkpoints.
+        empty_read_bucket = f"{DEFAULT_BUCKET}/{self.pipeline.name}_read_bucket_empty"
+
+        storage_config = storage_cfg(
+            self.pipeline.name,
+            start_from_checkpoint="latest",
+            read_bucket=empty_read_bucket,
+            strict=True,
+        )
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
+            )
+        )
+        with self.assertRaisesRegex(RuntimeError, r"not found"):
+            self.pipeline.start()
+
+    @enterprise_only
+    @single_host_only
+    def test_bucket_preferred_over_read_bucket_from_uuid(self):
+        # When start_from_checkpoint is a specific UUID, the primary bucket is
+        # still preferred over read_bucket.
+        ft = FaultToleranceModel.AtLeastOnce
+
+        # Step 1: source pipeline creates a checkpoint (will become read_bucket).
+        source = self.new_pipeline_with_suffix("source")
+        source.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_cfg(source.name)),
+            )
+        )
+        source.start()
+        data_source = [{"c0": i, "c1": f"source_{i}"} for i in range(1, 11)]
+        source.input_json("t0", data_source)
+        source.wait_for_completion()
+        source.checkpoint(wait=True)
+        source.sync_checkpoint(wait=True)
+        source.stop(force=True)
+
+        source_bucket = f"{DEFAULT_BUCKET}/{source.name}"
+
+        # Step 2: main pipeline creates and syncs its own checkpoint.
+        storage_config = storage_cfg(self.pipeline.name)
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
+            )
+        )
+        self.pipeline.start()
+        data_main = [{"c0": i, "c1": f"main_{i}"} for i in range(11, 21)]
+        self.pipeline.input_json("t0", data_main)
+        self.pipeline.wait_for_completion()
+        expected = list(self.pipeline.query("SELECT * FROM v0"))
+        self.pipeline.checkpoint(wait=True)
+        uuid = self.pipeline.sync_checkpoint(wait=True)
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
+
+        print(
+            f"{self.pipeline.name}: expected (main data only): {len(expected)}",
+            file=sys.stderr,
+        )
+
+        # Step 3: restart specifying uuid from main's bucket, with read_bucket=source.
+        # The pipeline must restore from main's bucket (uuid), not source (read_bucket).
+        # If read_bucket were incorrectly preferred, we'd get source data instead.
+        storage_config = storage_cfg(
+            self.pipeline.name,
+            start_from_checkpoint=uuid,
+            read_bucket=source_bucket,
+        )
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
+            )
+        )
+        self.pipeline.start()
+        got = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: got after restart: {len(got)}",
+            file=sys.stderr,
+        )
+        self.pipeline.stop(force=True)
+
+        self.assertCountEqual(expected, got)
+        self.pipeline.clear_storage()
+        source.clear_storage()
