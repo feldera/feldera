@@ -592,6 +592,7 @@ pub struct SyncConfig {
     /// The pipeline **never writes** to `read_bucket`.
     ///
     /// Must point to a different location than `bucket`.
+    #[serde(default)]
     pub read_bucket: Option<String>,
 }
 
@@ -615,12 +616,13 @@ Standby mode requires `start_from_checkpoint` to be set.
 Consider setting `start_from_checkpoint` to `"latest"`."#.to_owned());
         }
 
-        if let Some(ref rb) = self.read_bucket {
-            if rb == &self.bucket {
-                return Err(
-                    "invalid sync config: `read_bucket` and `bucket` must point to different locations".to_owned()
-                );
-            }
+        if let Some(ref rb) = self.read_bucket
+            && rb == &self.bucket
+        {
+            return Err(
+                "invalid sync config: `read_bucket` and `bucket` must point to different locations"
+                    .to_owned(),
+            );
         }
 
         Ok(())

@@ -8,13 +8,14 @@
 
 import os
 import sys
+from importlib.metadata import version as _pkg_version
 
 sys.path.insert(0, os.path.abspath(".."))
 
 project = "Feldera Python SDK"
 copyright = "2024, Feldera"
 author = "Feldera"
-release = "0.0.1"
+release = _pkg_version("feldera")
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
