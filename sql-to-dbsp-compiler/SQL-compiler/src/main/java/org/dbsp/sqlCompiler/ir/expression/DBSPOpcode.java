@@ -19,6 +19,12 @@ public enum DBSPOpcode {
     IS_NOT_TRUE("is_not_true", false),
     IS_NOT_FALSE("is_not_false", false),
     TYPEDBOX("TypedBox::new", false),
+    // Lossless conversion between decimal and integer, used for range aggregates
+    DECIMAL_TO_INTEGER("decimal_to_integer", false),
+    INTEGER_TO_DECIMAL("integer_to_decimal", false),
+    // Lossless, order-preserving conversion between short interval and INTEGER, used for range aggregates
+    SHORT_INTERVAL_TO_INTEGER("short_interval_to_integer", false),
+    INTEGER_TO_SHORT_INTERVAL("integer_to_short_interval", false),
 
     // Binary operations
     ADD("+", false),
@@ -53,10 +59,6 @@ public enum DBSPOpcode {
     // map index in a variant value
     VARIANT_INDEX("indexV", false),
     RUST_INDEX("[]", false),
-
-    // Lossless conversion between decimal and integer, used for range aggregates
-    DECIMAL_TO_INTEGER("decimal_to_integer", false),
-    INTEGER_TO_DECIMAL("integer_to_decimal", false),
     // Interval-based operations
     INTERVAL_MUL("*", false),
     INTERVAL_DIV("/", false),
@@ -128,6 +130,7 @@ public enum DBSPOpcode {
                  AGG_MAX, AGG_XOR, AGG_OR, AGG_AND, IS_DISTINCT, CONCAT, MIN, MAX, OR, AND, IS_NOT_FALSE, IS_NOT_TRUE,
                  AGG_MAX1, AGG_MIN1, INDICATOR -> false;
             case NEG, INTERVAL_DIV, INTERVAL_MUL, DECIMAL_TO_INTEGER, INTEGER_TO_DECIMAL,
+                 SHORT_INTERVAL_TO_INTEGER, INTEGER_TO_SHORT_INTERVAL,
                  RUST_INDEX, VARIANT_INDEX, MAP_INDEX,
                  SQL_INDEX, XOR, BW_OR, MUL_WEIGHT, BW_AND, GTE, LTE, GT, LT, NEQ, EQ, MOD, DIV_NULL, DIV, MUL, SUB,
                  ADD, TYPEDBOX, IS_TRUE, IS_FALSE, NOT, UNARY_PLUS -> true;

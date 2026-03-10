@@ -123,6 +123,13 @@ some_polymorphic_function1!(abs, ShortInterval, ShortInterval, ShortInterval);
 #[doc(hidden)]
 /// This function is used in rolling window computations, which require all
 /// values to be expressed using unsigned types.
+pub fn to_bound_ShortInterval_ShortInterval_u128(value: &ShortInterval) -> u128 {
+    value.microseconds as u128
+}
+
+#[doc(hidden)]
+/// This function is used in rolling window computations, which require all
+/// values to be expressed using unsigned types.
 pub fn to_bound_ShortInterval_Date_u128(value: &ShortInterval) -> u128 {
     // express value in days
     (value.microseconds / 1_000_000_i64 / 86400) as u128
@@ -814,6 +821,16 @@ pub fn extract_hour_LongInterval(_value: LongInterval) -> i64 {
 }
 
 ///////////
+
+#[doc(hidden)]
+pub fn short_interval_to_integer(value: ShortInterval) -> i64 {
+    value.microseconds
+}
+
+#[doc(hidden)]
+pub fn integer_to_short_interval(value: i64) -> ShortInterval {
+    ShortInterval::from_microseconds(value)
+}
 
 #[doc(hidden)]
 pub fn extract_day_ShortInterval(value: ShortInterval) -> i64 {

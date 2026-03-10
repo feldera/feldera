@@ -740,21 +740,25 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         this.set(expression, result);
     }
 
+    static final Set<DBSPOpcode> monotoneUnary = Set.of(
+            DBSPOpcode.UNARY_PLUS, DBSPOpcode.TYPEDBOX,
+            DBSPOpcode.DECIMAL_TO_INTEGER, DBSPOpcode.INTEGER_TO_DECIMAL,
+            DBSPOpcode.SHORT_INTERVAL_TO_INTEGER, DBSPOpcode.INTEGER_TO_SHORT_INTERVAL);
+
     @Override
     public void postorder(DBSPUnaryExpression expression) {
         MonotoneExpression source = this.get(expression.source);
         DBSPExpression reduced = null;
-        if ((expression.opcode == DBSPOpcode.UNARY_PLUS ||
-                expression.opcode == DBSPOpcode.TYPEDBOX) &&
-            source.mayBeMonotone()) {
+        IMaybeMonotoneType resultType = NonMonotoneType.nonMonotone(expression.getType());
+        if (monotoneUnary.contains(expression.opcode) && source.mayBeMonotone()) {
             reduced = expression.replaceSource(source.getReducedExpression());
             if (this.positiveExpressions.contains(expression.source))
                 this.positiveExpressions.add(expression);
+            resultType = source.copyMonotonicity(expression.getType());
         }
         if (this.constantExpressions.contains(expression.source))
             this.constantExpressions.add(expression);
-        MonotoneExpression result = new MonotoneExpression(
-                expression, source.copyMonotonicity(expression.getType()), reduced);
+        MonotoneExpression result = new MonotoneExpression(expression, resultType, reduced);
         this.set(expression, result);
     }
 

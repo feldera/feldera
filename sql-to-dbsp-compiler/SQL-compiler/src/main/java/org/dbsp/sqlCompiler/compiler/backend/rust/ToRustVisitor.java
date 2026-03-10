@@ -1392,6 +1392,14 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
+    void emitWindowBounds(DBSPWindowBoundExpression lower, DBSPWindowBoundExpression upper) {
+        this.builder.append("RelRange::new(").increase();
+        this.emitWindowBound(lower);
+        this.builder.append(",").newline();
+        this.emitWindowBound(upper);
+        this.builder.newline().decrease().append(")");
+    }
+
     void emitWindowBound(DBSPWindowBoundExpression bound) {
         String beforeAfter = bound.isPreceding ? "Before" : "After";
         this.builder.append("RelOffset::")
@@ -1424,12 +1432,8 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(", ").newline();
         operator.getFunction().accept(this.innerVisitor);
         this.builder.append(", ").newline();
-        this.builder.append("RelRange::new(").increase();
-        this.emitWindowBound(operator.lower);
-        this.builder.append(",").newline();
-        this.emitWindowBound(operator.upper);
-        this.builder.decrease().append(")")
-                .newline()
+        this.emitWindowBounds(operator.lower, operator.upper);
+        this.builder
                 .decrease()
                 .append(")")
                 .append(this.markDistinct(operator))
@@ -1461,12 +1465,8 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(", ").newline();
         operator.getFunction().accept(this.innerVisitor);
         this.builder.append(", ").newline();
-        this.builder.append("RelRange::new(");
-        this.emitWindowBound(operator.lower);
-        this.builder.append(", ").newline();
-        this.emitWindowBound(operator.upper);
-        this.builder.append(")")
-                .newline()
+        this.emitWindowBounds(operator.lower, operator.upper);
+        this.builder
                 .decrease()
                 .append(")")
                 .append(this.markDistinct(operator))
