@@ -44,6 +44,7 @@ class FelderaConfig:
         self.edition = FelderaEdition.from_value(cfg.get("edition"))
         self.license_validity = cfg.get("license_validity")
         self.revision = cfg.get("revision")
+        self.runtime_revision = cfg.get("runtime_revision", "")
         self.telemetry = cfg.get("telemetry")
         self.update_info = cfg.get("update_info")
         self.version = cfg.get("version")
