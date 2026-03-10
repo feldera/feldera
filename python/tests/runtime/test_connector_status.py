@@ -189,7 +189,7 @@ def test_connector_status(pipeline_name):
             "config": {
                 "topic": input_topic,
                 "bootstrap.servers": KAFKA_BOOTSTRAP,
-                "auto.offset.reset": "earliest",
+                "start_from": "earliest",
             },
         },
         "format": {
@@ -203,8 +203,7 @@ def test_connector_status(pipeline_name):
             "name": "kafka_output",
             "config": {
                 "topic": output_topic,
-                "bootstrap.servers": KAFKA_BOOTSTRAP,
-                "auto.offset.reset": "earliest",
+                "bootstrap.servers": KAFKA_BOOTSTRAP
             },
         },
         "format": {
