@@ -12365,6 +12365,11 @@
             "nullable": true,
             "minimum": 0
           },
+          "read_bucket": {
+            "type": "string",
+            "description": "A read-only bucket used as a fallback checkpoint source.\n\nWhen the pipeline has no local checkpoint and `bucket` contains no\ncheckpoint either, it will attempt to fetch the checkpoint from this\nlocation instead.  All connection settings (`endpoint`, `region`,\n`provider`, `access_key`, `secret_key`) are shared with `bucket`.\n\nThe pipeline **never writes** to `read_bucket`.\n\nMust point to a different location than `bucket`.",
+            "nullable": true
+          },
           "region": {
             "type": "string",
             "description": "The region that this bucket is in.\n\nLeave empty for Minio or the default region (`us-east-1` for AWS).",
