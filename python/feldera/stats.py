@@ -138,6 +138,7 @@ class ConnectorHealth:
         health.description = description
         return health
 
+
 class CompletedWatermark:
     """Latest completed watermark reported by input connector status."""
 
