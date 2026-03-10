@@ -18,9 +18,9 @@ impl ValueType {
 
 /// Connector-specific metrics exported via the Prometheus `/metrics` endpoint.
 ///
-/// Connectors that have metrics beyond the standard [`InputEndpointMetrics`]
+/// Connectors that have metrics beyond the standard `InputEndpointMetrics`
 /// should implement this trait and register themselves via
-/// [`InputConsumer::set_custom_metrics`] during [`TransportInputEndpoint::open`].
+/// `InputConsumer::set_custom_metrics` during `TransportInputEndpoint::open`.
 pub trait ConnectorMetrics: Send + Sync {
     /// Return a list of `(name, help, value_type, value)` tuples.
     ///

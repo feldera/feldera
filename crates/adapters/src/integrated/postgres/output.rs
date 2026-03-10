@@ -550,7 +550,7 @@ struct WorkerHandle {
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
-/// Coordinates N parallel [`PostgresWorker`]s, each on its own thread.
+/// Coordinates N parallel `PostgresWorker`s, each on its own thread.
 ///
 /// Incoming batches are partitioned by key range so each worker handles
 /// a disjoint slice of the data.
