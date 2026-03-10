@@ -76,11 +76,21 @@ public final class DBSPUnaryExpression extends DBSPExpression {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append("(")
-                .append(this.opcode.toString())
-                .append(this.source.getType().mayBeNull ? "? " : " ")
-                .append(this.source)
-                .append(")");
+        if (this.opcode == DBSPOpcode.DECIMAL_TO_INTEGER ||
+                this.opcode == DBSPOpcode.INTEGER_TO_DECIMAL ||
+                this.opcode == DBSPOpcode.SHORT_INTERVAL_TO_INTEGER ||
+                this.opcode == DBSPOpcode.INTEGER_TO_SHORT_INTERVAL) {
+            return builder.append(this.opcode.toString())
+                    .append("(")
+                    .append(this.source)
+                    .append(")");
+        } else {
+            return builder.append("(")
+                    .append(this.opcode.toString())
+                    .append(this.source.getType().mayBeNull ? "? " : " ")
+                    .append(this.source)
+                    .append(")");
+        }
     }
 
     @Override

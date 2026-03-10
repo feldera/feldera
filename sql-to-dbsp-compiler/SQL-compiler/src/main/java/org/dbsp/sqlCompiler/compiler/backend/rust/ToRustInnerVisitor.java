@@ -1868,6 +1868,14 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(")");
             this.pop(expression);
             return VisitDecision.STOP;
+        } else if (expression.opcode == DBSPOpcode.INTEGER_TO_SHORT_INTERVAL ||
+                expression.opcode == DBSPOpcode.SHORT_INTERVAL_TO_INTEGER) {
+            this.builder.append(expression.opcode.toString())
+                    .append("(");
+            expression.source.accept(this);
+            this.builder.append(")");
+            this.pop(expression);
+            return VisitDecision.STOP;
         }
         if (expression.source.getType().mayBeNull) {
             this.builder.append("(")

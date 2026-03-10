@@ -130,28 +130,6 @@ public class RustSqlRuntimeLibrary {
         }
     }
 
-    public static FunctionDescription getWindowBound(CalciteObject node,
-            DBSPType unsignedType, DBSPType sortType, DBSPType boundType) {
-        // we ignore nullability because window bounds are constants and cannot be null
-        if (boundType.is(DBSPTypeLongInterval.class)) {
-            throw new UnsupportedException("""
-                    Currently the compiler only supports constant OVER window bounds.
-                    Intervals such as 'INTERVAL 1 MONTH' or 'INTERVAL 1 YEAR' are not constant.
-                    Can you rephrase the query using an interval such as 'INTERVAL 30 DAYS' instead?""", node);
-        }
-
-        Function<DBSPType, String> boundFunction;
-        if (boundType.is(IsIntervalType.class))
-            boundFunction = t -> t.withMayBeNull(false).to(DBSPTypeBaseType.class).shortName();
-        else
-            boundFunction = t -> t.withMayBeNull(false).baseTypeWithSuffix();
-
-        return new FunctionDescription("to_bound_" +
-                boundFunction.apply(boundType) + "_" +
-                boundFunction.apply(sortType) + "_" +
-                unsignedType.baseTypeWithSuffix(), unsignedType);
-    }
-
     /**
      * The name of the Rust function in the sqllib which implements a specific operation
      *

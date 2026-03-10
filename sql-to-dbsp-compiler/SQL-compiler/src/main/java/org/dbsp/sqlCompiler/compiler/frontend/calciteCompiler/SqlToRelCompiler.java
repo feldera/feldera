@@ -1071,6 +1071,9 @@ public class SqlToRelCompiler implements IWritesLogs {
                 List<RexNode> projects = project.getProjects();
                 if (projects.size() == 1) {
                     RexNode subtract = projects.get(0);
+                    if (subtract.getKind() == SqlKind.CAST) {
+                        subtract = ((RexCall) subtract).getOperands().get(0);
+                    }
                     if (subtract instanceof RexCall call) {
                         if (call.getKind() == SqlKind.MINUS || call.getKind() == SqlKind.CHECKED_MINUS) {
                             RexNode left = call.getOperands().get(0);
