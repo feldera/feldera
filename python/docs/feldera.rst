@@ -41,6 +41,14 @@ feldera.runtime\_config module
    :undoc-members:
    :show-inheritance:
 
+feldera.stats module
+------------------------------
+
+.. automodule:: feldera.stats
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Subpackages
 -----------
 
