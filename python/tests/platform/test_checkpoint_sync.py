@@ -49,8 +49,8 @@ def storage_cfg(
         "standby": standby,
         "pull_interval": pull_interval,
         "push_interval": push_interval,
-        "retention_min_count": retention_min_age,
-        "retention_min_age": retention_min_count,
+        "retention_min_count": retention_min_count,
+        "retention_min_age": retention_min_age,
     }
     if read_bucket is not None:
         sync["read_bucket"] = read_bucket
@@ -323,7 +323,7 @@ class TestCheckpointSync(SharedTestPipeline):
     @single_host_only
     def test_standby_fallback(self, from_uuid: bool = False):
         # Step 1: Start main pipeline
-        storage_config = storage_cfg(self.pipeline.name)
+        storage_config = storage_cfg(self.pipeline.name, retention_min_age=1)
         ft = FaultToleranceModel.AtLeastOnce
         self.pipeline.set_runtime_config(
             RuntimeConfig(
