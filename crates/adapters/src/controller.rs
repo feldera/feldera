@@ -6195,7 +6195,7 @@ impl ControllerInner {
 
     /// Update counters after receiving a new input batch.
     ///
-    /// See [ControllerStatus::input_batch].
+    /// See `ControllerStatus::input_batch`.
     pub fn input_batch(&self, endpoint_id: Option<EndpointId>, amt: BufferSize) {
         // We update the individual endpoint metrics, then the global metrics.
         // The order is important because global metrics updates can unpark the

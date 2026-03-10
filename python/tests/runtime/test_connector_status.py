@@ -288,7 +288,7 @@ def test_connector_status(pipeline_name):
         assert len(input_status.parse_errors) == 100
         assert input_status.metrics.num_parse_errors == 500
         assert input_status.metrics.num_transport_errors == 0
-        assert input_status.metrics.end_of_input == False
+        assert not input_status.metrics.end_of_input
         assert input_status.fatal_error is None
         assert input_status.metrics.total_records == 500
 

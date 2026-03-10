@@ -59,7 +59,7 @@ struct DecryptionPreprocessorConfig {
 /// A preprocessor that decrypts each chunk of data using AES-256-GCM.
 ///
 /// The transport delivers the entire encrypted blob in a single [Preprocessor::process]
-/// call (enforced by [WholeBlobSplitter]).  The blob format is:
+/// call (enforced by [`SpongeSplitter`]).  The blob format is:
 ///
 /// ```text
 /// [ 12-byte nonce ][ ciphertext ][ 16-byte GCM authentication tag ]

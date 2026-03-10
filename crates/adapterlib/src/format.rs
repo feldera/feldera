@@ -248,7 +248,7 @@ impl InputBuffer for Vec<Box<dyn InputBuffer>> {
         // Index of first buffer that should be preserved
         let mut index = 0;
         for v in self.iter_mut() {
-            if remaining <= 0 {
+            if remaining == 0 {
                 break;
             }
             let buf = v.take_some(remaining);
@@ -395,15 +395,11 @@ impl Parser for StreamingPreprocessedParser {
         let (pre_data, mut pre_errors) = self.preprocessor.process(data);
         self.stream_splitter.append(&pre_data);
         let mut parsed: Vec<Box<dyn InputBuffer>> = Vec::new();
-        loop {
-            if let Some(chunk) = self.stream_splitter.next(true) {
-                let (parsed_data, mut parse_errors) = self.parser.parse(chunk, metadata.clone());
-                pre_errors.append(&mut parse_errors);
-                if let Some(data) = parsed_data {
-                    parsed.push(data);
-                }
-            } else {
-                break;
+        while let Some(chunk) = self.stream_splitter.next(true) {
+            let (parsed_data, mut parse_errors) = self.parser.parse(chunk, metadata.clone());
+            pre_errors.append(&mut parse_errors);
+            if let Some(data) = parsed_data {
+                parsed.push(data);
             }
         }
         if parsed.is_empty() {
