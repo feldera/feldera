@@ -113,9 +113,9 @@ tracing = { version = "0.1.40" }
 
         pipeline.wait_for_completion()
         for log in pipeline.logs():
-           # This will loop forever if the message is not found
-           if "bytes of data" in log:
-               break
+            # This will loop forever if the message is not found
+            if "bytes of data" in log:
+                break
         hash = pipeline.query_hash("SELECT * FROM v ORDER BY i, ti, si, bi")
         assert (
             hash == "0F5CD4C02B4670AB14FE753523D7D9962E251850D8AD247EC04ABC1531EB4AF3"
