@@ -23,6 +23,34 @@ on a Kubernetes cluster. It requires a valid Feldera Enterprise license
   We will use the chart and multi-arch images by referring to their online repository
   naming `public.ecr.aws/feldera/<image>:<version>`.
 
+## Kubernetes Cluster Configuration
+
+### Node Sizing
+
+| Resource | Recommendation |
+|---|---|
+| **CPU** | 32–48 CPUs per node |
+| **RAM** | At least 32 GiB per node |
+
+By default, the Feldera control plane and pipelines run on the same nodes.
+Use [nodeSelectors](/get-started/enterprise/helm-chart-reference#node-selectors) to run them on different nodes or node types.
+
+RAM requirements vary by workload. See the [memory usage](/operations/memory) documentation for detailed guidance.
+
+### Persistent Volume Sizing
+Persistent volumes should meet the following specifications:
+1. **Volume Size:** At least the size of the input data. Feldera stores state to perform incremental computations, so the volume must be large enough to hold it. Users can [expand pipeline storage](/operations/guide/#expand-existing-pipeline-storage) on demand.
+2. **IOPS:** At least 16,000
+3. **Throughput:** At least 1,000 MB/s
+
+Recommended disk types by cloud provider:
+
+| Cloud Provider | Disk Type |
+|---|---|
+| AWS | **gp3** |
+| Azure | **Ultra Disk** |
+| GCP | **Hyperdisk Balanced** |
+
 ## Installing Feldera Enterprise
 
 1. **Kubernetes access:** check that your `kubectl` is configured
