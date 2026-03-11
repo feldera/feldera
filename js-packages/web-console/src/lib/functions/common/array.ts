@@ -197,14 +197,36 @@ export function chunkIndices(min: number, max: number, size: number): number[] {
   return result
 }
 
-export function count<T>(arr: T[], pred: (v: T) => boolean | number | null | undefined) {
+export function count<T>(
+  collection: T[],
+  pred: (v: T) => boolean | number | null | undefined
+): number
+export function count<K, V>(
+  collection: Map<K, V>,
+  pred: (v: V, k: K) => boolean | number | null | undefined
+): number
+export function count(
+  collection: any[] | Map<any, any>,
+  pred: (v: any, k?: any) => boolean | number | null | undefined
+): number {
   let count = 0
-  for (const e of arr) {
-    const result = pred(e)
-    if (typeof result === 'number') {
-      count += result
-    } else if (result) {
-      ++count
+  if (collection instanceof Map) {
+    collection.forEach((v, k) => {
+      const result = pred(v, k)
+      if (typeof result === 'number') {
+        count += result
+      } else if (result) {
+        ++count
+      }
+    })
+  } else {
+    for (const e of collection) {
+      const result = pred(e)
+      if (typeof result === 'number') {
+        count += result
+      } else if (result) {
+        ++count
+      }
     }
   }
   return count
