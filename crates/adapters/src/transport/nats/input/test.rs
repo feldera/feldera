@@ -1,3 +1,4 @@
+use crate::controller::TransactionInfo;
 use crate::test::{
     DEFAULT_TIMEOUT_MS, TestStruct, init_test_logger, mock_input_pipeline, test_circuit, wait,
 };
@@ -340,8 +341,12 @@ outputs:
         if let Err(()) = result {
             println!(
                 "Controller status:\n{}",
-                serde_json::to_string_pretty(&controller.status().to_api_type(Ok(()), false))
-                    .unwrap()
+                serde_json::to_string_pretty(&controller.status().to_api_type(
+                    Ok(()),
+                    false,
+                    TransactionInfo::default(),
+                ))
+                .unwrap()
             );
             panic!("Failed to receive expected records within timeout");
         }

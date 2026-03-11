@@ -202,7 +202,9 @@ These metrics report the status of [transactions].
 
 | Name | Type | Description |
 | :--- | :--- | :---------- |
+| <a name='transaction_commit_seconds'>`transaction_commit_seconds`</a> |histogram | Transaction commit time, that is, from starting commit to finishing commit. |
 | <a name='transaction_completed_operators'>`transaction_completed_operators`</a> |gauge | Number of operators that have been fully flushed while the current transaction is committing.  This is 0 if no transaction is active, or if a transaction is running but has not yet started committing. |
 | <a name='transaction_in_progress_operators'>`transaction_in_progress_operators`</a> |gauge | Number of operators that are currently being flushed while the current transaction is committing.  This is 0 if no transaction is active, or if a transaction is running but has not yet started committing. |
+| <a name='transaction_ingest_seconds'>`transaction_ingest_seconds`</a> |histogram | Transaction ingestion time, that is, from transaction start to start of commit. |
 | <a name='transaction_remaining_operators'>`transaction_remaining_operators`</a> |gauge | Number of operators that have not started flushing while the current transaction is committing.  This is 0 if no transaction is active, or if a transaction is running but has not yet started committing. |
 | <a name='transaction_state'>`transaction_state`</a> |gauge | 0 when no transaction is active, 1 when a transaction has started, 2 while a transaction is committing. |
