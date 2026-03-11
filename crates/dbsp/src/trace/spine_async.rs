@@ -23,7 +23,7 @@ use crate::{
         runtime::{TOKIO_BUFFER_CACHE, TOKIO_WORKER_INDEX},
     },
     dynamic::{DynVec, Factory, Weight},
-    storage::buffer_cache::CacheStats,
+    storage::buffer_cache::{BufferCache, CacheStats},
     time::Timestamp,
     trace::{
         Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, GroupFilter, Trace,
@@ -41,7 +41,10 @@ use crate::trace::CommittedSpine;
 use dbsp::storage::tracking_bloom_filter::BloomFilterStats;
 use enum_map::EnumMap;
 use feldera_buffer_cache::ThreadType;
-use feldera_storage::{FileCommitter, StoragePath};
+use feldera_storage::{
+    FileCommitter, StoragePath,
+    fbuf::slab::{FBufSlabs, TOKIO_FBUF_SLABS},
+};
 use feldera_types::checkpoint::PSpineBatches;
 use ouroboros::self_referencing;
 use rand::Rng;
@@ -49,6 +52,7 @@ use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer}
 use size_of::{Context, SizeOf};
 use std::{
     borrow::Cow,
+    future::Future,
     sync::{Arc, MutexGuard, atomic::AtomicIsize},
 };
 use std::{
@@ -87,6 +91,21 @@ pub(crate) const MAX_LEVELS: usize = 9;
 ///
 /// Configurable via `dev_tweaks.max_level0_batch_size_records`.
 pub(crate) const MAX_LEVEL0_BATCH_SIZE_RECORDS: u16 = 14_999;
+
+fn scope_tokio_merger_locals<F>(
+    worker_index: usize,
+    buffer_cache: Arc<BufferCache>,
+    slab_allocator: Arc<FBufSlabs>,
+    future: F,
+) -> impl Future<Output = F::Output>
+where
+    F: Future,
+{
+    TOKIO_WORKER_INDEX.scope(
+        worker_index,
+        TOKIO_BUFFER_CACHE.scope(buffer_cache, TOKIO_FBUF_SLABS.scope(slab_allocator, future)),
+    )
+}
 
 impl<B: Batch + Send + Sync> From<(Vec<String>, &Spine<B>)> for CommittedSpine {
     fn from((batches, spine): (Vec<String>, &Spine<B>)) -> Self {
@@ -475,48 +494,45 @@ where
 
             let buffer_cache =
                 runtime.get_buffer_cache(Runtime::local_worker_offset(), ThreadType::Background);
+            let slab_allocator = runtime
+                .get_fbuf_slab_allocator(Runtime::local_worker_offset(), ThreadType::Background);
 
             runtime.tokio_merger_runtime().spawn(async move {
                 // Setup task-local variables for the tokio merger runtime.
-                TOKIO_WORKER_INDEX
-                    .scope(worker_index, async move {
-                        TOKIO_BUFFER_CACHE
-                            .scope(buffer_cache.clone(), async move {
-                                let state = Arc::clone(&state);
-                                let idle = Arc::clone(&idle);
-                                let no_backpressure = Arc::clone(&no_backpressure);
-                                let mut merger = None;
-                                let merger_type = Runtime::with_dev_tweaks(|tweaks| tweaks.merger);
-                                let notify = state.lock().unwrap().slots[level].notify.clone();
+                scope_tokio_merger_locals(worker_index, buffer_cache, slab_allocator, async move {
+                    let state = Arc::clone(&state);
+                    let idle = Arc::clone(&idle);
+                    let no_backpressure = Arc::clone(&no_backpressure);
+                    let mut merger = None;
+                    let merger_type = Runtime::with_dev_tweaks(|tweaks| tweaks.merger);
+                    let notify = state.lock().unwrap().slots[level].notify.clone();
 
-                                loop {
-                                    let status = Self::run(
-                                        &worker_state,
-                                        level,
-                                        &mut merger,
-                                        merger_type,
-                                        &state,
-                                        &idle,
-                                        &no_backpressure,
-                                    );
-                                    match status {
-                                        // Fuel has been spent, but there's still work to do for the ongoing merge.
-                                        // Yield control to the tokio runtime, which will put the task in the end of the run queue.
-                                        WorkerStatus::Yield => yield_now().await,
-                                        // No more merge work currently available -- wait for the next merges to be started.
-                                        WorkerStatus::Idle => {
-                                            notify.notified().await;
-                                        }
-                                        // The spine is being dropped -- exit the task.
-                                        WorkerStatus::Done => {
-                                            break;
-                                        }
-                                    }
-                                }
-                            })
-                            .await;
-                    })
-                    .await;
+                    loop {
+                        let status = Self::run(
+                            &worker_state,
+                            level,
+                            &mut merger,
+                            merger_type,
+                            &state,
+                            &idle,
+                            &no_backpressure,
+                        );
+                        match status {
+                            // Fuel has been spent, but there's still work to do for the ongoing merge.
+                            // Yield control to the tokio runtime, which will put the task in the end of the run queue.
+                            WorkerStatus::Yield => yield_now().await,
+                            // No more merge work currently available -- wait for the next merges to be started.
+                            WorkerStatus::Idle => {
+                                notify.notified().await;
+                            }
+                            // The spine is being dropped -- exit the task.
+                            WorkerStatus::Done => {
+                                break;
+                            }
+                        }
+                    }
+                })
+                .await;
             });
         }
 

@@ -72,6 +72,7 @@ use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::transport::{Resume, Watermark};
 use feldera_ir::LirCircuit;
+use feldera_storage::fbuf::slab::FBufSlabsStats;
 use feldera_storage::histogram::{ExponentialHistogram, ExponentialHistogramSnapshot};
 use feldera_storage::metrics::{
     READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS, SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES,
@@ -1343,6 +1344,8 @@ impl Controller {
                 labels,
                 cache_max,
             );
+
+            write_fbuf_slab_metrics(metrics, labels, &runtime.fbuf_slabs_stats());
         }
 
         metrics.counter(
@@ -1898,6 +1901,103 @@ impl Controller {
     pub fn workers(&self) -> Range<usize> {
         self.inner.workers.clone()
     }
+}
+
+fn slab_served_percent(served_by_slab: u64, total: u64) -> f64 {
+    if total == 0 {
+        0.0
+    } else {
+        100.0 * (served_by_slab as f64) / (total as f64)
+    }
+}
+
+fn write_fbuf_slab_metrics<F>(
+    metrics: &mut MetricsWriter<F>,
+    labels: &LabelStack,
+    stats: &FBufSlabsStats,
+) where
+    F: MetricsFormatter,
+{
+    let alloc_total = stats.alloc_requests();
+    let free_total = stats.recycle_requests();
+
+    metrics.counter(
+        "storage_fbuf_slab_alloc_total",
+        "The total number of `FBuf` allocation requests across all slab size classes and fallbacks.",
+        labels,
+        alloc_total,
+    );
+    metrics.gauge(
+        "storage_fbuf_slab_alloc_served_by_slab_percent",
+        "The percentage of `FBuf` allocation requests served by slab pools.",
+        labels,
+        slab_served_percent(stats.mallocs_saved(), alloc_total),
+    );
+    metrics.counter(
+        "storage_fbuf_slab_free_total",
+        "The total number of `FBuf` deallocation requests across all slab size classes and fallbacks.",
+        labels,
+        free_total,
+    );
+    metrics.gauge(
+        "storage_fbuf_slab_free_served_by_slab_percent",
+        "The percentage of `FBuf` deallocation requests served by slab pools.",
+        labels,
+        slab_served_percent(stats.frees_saved(), free_total),
+    );
+
+    metrics.counters(
+        "storage_fbuf_slab_size_class_alloc_total",
+        "The total number of `FBuf` allocation requests for each slab size class.",
+        |w| {
+            for class in &stats.classes {
+                let size_class = class.size.to_string();
+                w.write_value(
+                    &labels.with("size_class_bytes", &size_class),
+                    class.alloc_requests,
+                );
+            }
+        },
+    );
+    metrics.gauges(
+        "storage_fbuf_slab_size_class_alloc_served_by_slab_percent",
+        "The percentage of `FBuf` allocation requests served by each slab size class.",
+        |w| {
+            for class in &stats.classes {
+                let size_class = class.size.to_string();
+                w.write_value(
+                    &labels.with("size_class_bytes", &size_class),
+                    slab_served_percent(class.alloc_hits, class.alloc_requests),
+                );
+            }
+        },
+    );
+    metrics.counters(
+        "storage_fbuf_slab_size_class_free_total",
+        "The total number of `FBuf` deallocation requests for each slab size class.",
+        |w| {
+            for class in &stats.classes {
+                let size_class = class.size.to_string();
+                w.write_value(
+                    &labels.with("size_class_bytes", &size_class),
+                    class.recycle_requests,
+                );
+            }
+        },
+    );
+    metrics.gauges(
+        "storage_fbuf_slab_size_class_free_served_by_slab_percent",
+        "The percentage of `FBuf` deallocation requests served by each slab size class.",
+        |w| {
+            for class in &stats.classes {
+                let size_class = class.size.to_string();
+                w.write_value(
+                    &labels.with("size_class_bytes", &size_class),
+                    slab_served_percent(class.recycle_hits, class.recycle_requests),
+                );
+            }
+        },
+    );
 }
 
 /// Write connector-specific (custom) metrics registered via
