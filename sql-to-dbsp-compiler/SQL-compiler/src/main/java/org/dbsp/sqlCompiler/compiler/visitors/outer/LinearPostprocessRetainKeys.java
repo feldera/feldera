@@ -90,11 +90,11 @@ public class LinearPostprocessRetainKeys implements CircuitTransform, IWritesLog
             }
         }
 
+        if (toAdd.isEmpty())
+            return circuit;
+
         for (var p: toAdd)
             graph.addEdge(p.left, p.right, 0);
-        // Note: this may reorder the graph dramatically.  We should probably avoid doing this
-        // altogether if the circuit will not change, but this would change dramatically the output
-        // of the compiler for many programs, preventing bootstrapping.
         circuit.resort(graph);
 
         graphs.apply(circuit);

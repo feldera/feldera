@@ -23,9 +23,10 @@ public class DFSOrder<Node> {
         this.postorder = new ArrayList<>();
         this.preorder = new ArrayList<>();
         this.marked = new HashSet<>();
-        for (Node v: graph.getNodes())
+        for (Node v: graph.getNodes()) {
             if (!this.marked.contains(v))
                 this.dfs(graph, v);
+        }
     }
 
     // run DFS in digraph G from vertex v and compute preorder/postorder
