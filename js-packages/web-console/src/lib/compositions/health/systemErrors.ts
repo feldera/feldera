@@ -1,5 +1,4 @@
-import JSONbig from 'true-json-bigint'
-import { groupBy } from '$lib/functions/common/array'
+import { count, groupBy } from '$lib/functions/common/array'
 import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
 import { resolve } from '$lib/functions/svelte'
 import { defaultGithubReportSections, type ReportDetails } from '$lib/services/githubReport'
@@ -27,18 +26,20 @@ const limitMessage = (text: string | null | undefined, max: number, prefix: stri
 
 export const numConnectorsWithProblems = (metrics: PipelineMetrics) => {
   return (
-    metrics.inputs.filter(
+    count(
+      metrics.inputs,
       (i) =>
         (i.metrics.num_parse_errors ?? 0) > 0 ||
         (i.metrics.num_transport_errors ?? 0) > 0 ||
         i.health?.status === 'Unhealthy'
-    ).length +
-    metrics.outputs.filter(
+    ) +
+    count(
+      metrics.outputs,
       (o) =>
         (o.metrics.num_encode_errors ?? 0) > 0 ||
         (o.metrics.num_transport_errors ?? 0) > 0 ||
         o.health?.status === 'Unhealthy'
-    ).length
+    )
   )
 }
 

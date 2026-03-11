@@ -4,6 +4,7 @@
   import Popover from '$lib/components/common/Popover.svelte'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
+  import { count } from '$lib/functions/common/array'
   import { humanSize } from '$lib/functions/common/string'
   import type {
     AggregatedInputEndpointMetrics,
@@ -13,10 +14,9 @@
   } from '$lib/functions/pipelineMetrics'
   import type { InputEndpointMetrics, OutputEndpointMetrics } from '$lib/services/manager'
   import type { Snippet } from '$lib/types/svelte'
+  import type { ConnectorErrorFilter } from './ConnectorErrors.svelte'
 
   const formatQty = (v: number) => format(',.0f')(v)
-
-  import type { ConnectorErrorFilter } from './ConnectorErrors.svelte'
 
   let {
     metrics,
@@ -32,25 +32,24 @@
   } = $props()
 
   type HealthFilter = 'all' | 'unhealthy'
-  let healthFilter = $state<HealthFilter>('all')
+  let tableHealthFilter = $state<HealthFilter>('all')
+  let viewHealthFilter = $state<HealthFilter>('all')
   const healthFilterModes: HealthFilter[] = ['all', 'unhealthy']
 
   const isUnhealthy = (connector: { health?: { status: string } | null }) =>
     connector.health?.status === 'Unhealthy'
 
-  const unhealthyCount = $derived.by(() => {
-    let count = 0
-    for (const [, data] of metrics.current.tables) {
-      count += data.connectors.filter(isUnhealthy).length
-    }
-    for (const [, data] of metrics.current.views) {
-      count += data.connectors.filter(isUnhealthy).length
-    }
-    return count
-  })
+  const unhealthyInputCount = $derived(
+    count(metrics.current.tables, (data) => count(data.connectors, isUnhealthy))
+  )
+  const unhealthyOutputCount = $derived(
+    count(metrics.current.views, (data) => count(data.connectors, isUnhealthy))
+  )
 
   const filteredTables = $derived.by(() => {
-    if (healthFilter === 'all') return metrics.current.tables
+    if (tableHealthFilter === 'all') {
+      return metrics.current.tables
+    }
     const filtered = new Map<string, AggregatedInputEndpointMetrics>()
     for (const [relation, data] of metrics.current.tables) {
       const unhealthyConnectors = data.connectors.filter(isUnhealthy)
@@ -62,7 +61,9 @@
   })
 
   const filteredViews = $derived.by(() => {
-    if (healthFilter === 'all') return metrics.current.views
+    if (viewHealthFilter === 'all') {
+      return metrics.current.views
+    }
     const filtered = new Map<string, AggregatedOutputEndpointMetrics>()
     for (const [relation, data] of metrics.current.views) {
       const unhealthyConnectors = data.connectors.filter(isUnhealthy)
@@ -244,10 +245,14 @@
   </div>
 {/snippet}
 
-{#snippet connectorHealthFilterControl()}
+{#snippet connectorHealthFilterControl(
+  unhealthyCount: number,
+  filter: HealthFilter,
+  setFilter: (v: HealthFilter) => void
+)}
   <SegmentedControl
-    value={healthFilter}
-    onValueChange={(e) => (healthFilter = e.value as HealthFilter)}
+    value={filter}
+    onValueChange={(e) => setFilter(e.value as HealthFilter)}
     class="-mt-2"
   >
     <SegmentedControl.Label />
@@ -273,7 +278,11 @@
     <th class="w-full font-normal" rowspan="2">
       <div class="flex items-center gap-4 pl-10">
         <span>Connectors</span>
-        {@render connectorHealthFilterControl()}
+        {@render connectorHealthFilterControl(
+          unhealthyInputCount,
+          tableHealthFilter,
+          (v) => (tableHealthFilter = v)
+        )}
       </div>
     </th>
     <th class="pb-0! text-center! font-normal" colspan="2">Ingested</th>
@@ -337,7 +346,11 @@
     <th class="w-full font-normal" rowspan="2">
       <div class="flex items-center gap-4 pl-10">
         <span>Connectors</span>
-        {@render connectorHealthFilterControl()}
+        {@render connectorHealthFilterControl(
+          unhealthyOutputCount,
+          viewHealthFilter,
+          (v) => (viewHealthFilter = v)
+        )}
       </div>
     </th>
     <th class="pb-0! text-center! font-normal" colspan="2">Transmitted</th>
@@ -432,7 +445,7 @@
         data.connectors
           .filter(isUnhealthy)
           .map((c) => c.health?.description)
-          .filter(Boolean)
+          .filter(Boolean) // Filter out missing and empty descriptions to avoid large gaps in the combined text
           .join('\n\n') || ''
       )}
     {/if}
@@ -451,7 +464,7 @@
         data.connectors
           .filter(isUnhealthy)
           .map((c) => c.health?.description)
-          .filter(Boolean)
+          .filter(Boolean) // Filter out missing and empty descriptions to avoid large gaps in the combined text
           .join('\n\n') || ''
       )}
     {/if}
