@@ -25,13 +25,19 @@ export type SystemError<T = any, Report = ReportDetails> = Error & {
 const limitMessage = (text: string | null | undefined, max: number, prefix: string) =>
   ((t) => (t.length > max ? prefix : '') + t.slice(Math.max(0, t.length - max)))(text || '')
 
-export const numConnectorsWithErrors = (metrics: PipelineMetrics) => {
+export const numConnectorsWithProblems = (metrics: PipelineMetrics) => {
   return (
     metrics.inputs.filter(
-      (i) => (i.metrics.num_parse_errors ?? 0) > 0 || (i.metrics.num_transport_errors ?? 0) > 0
+      (i) =>
+        (i.metrics.num_parse_errors ?? 0) > 0 ||
+        (i.metrics.num_transport_errors ?? 0) > 0 ||
+        i.health?.status === 'Unhealthy'
     ).length +
     metrics.outputs.filter(
-      (o) => (o.metrics.num_encode_errors ?? 0) > 0 || (o.metrics.num_transport_errors ?? 0) > 0
+      (o) =>
+        (o.metrics.num_encode_errors ?? 0) > 0 ||
+        (o.metrics.num_transport_errors ?? 0) > 0 ||
+        o.health?.status === 'Unhealthy'
     ).length
   )
 }
