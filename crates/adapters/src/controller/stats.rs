@@ -34,7 +34,7 @@ use super::{EndpointId, InputEndpointConfig, OutputEndpointConfig};
 use crate::{
     PipelineState,
     controller::{
-        TransactionInitiators,
+        TransactionInfo, TransactionState,
         checkpoint::{CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics},
         journal::{InputChecksums, InputLog},
     },
@@ -57,13 +57,13 @@ use feldera_types::{
     adapter_stats::{
         CompletedWatermark, ConnectorError, ConnectorHealth, ExternalInputEndpointMetrics,
         ExternalInputEndpointStatus, ExternalOutputEndpointMetrics, ExternalOutputEndpointStatus,
-        ShortEndpointConfig, TransactionStatus,
+        ShortEndpointConfig,
     },
     config::{FtModel, PipelineConfig},
     coordination::Completion,
     suspend::SuspendError,
     time_series::SampleStatistics,
-    transaction::{CommitProgressSummary, TransactionId},
+    transaction::CommitProgressSummary,
 };
 use memory_stats::memory_stats;
 use parking_lot::{RwLock, RwLockReadGuard};
@@ -158,15 +158,6 @@ pub struct GlobalControllerMetrics {
     /// The pipeline has been resumed from a checkpoint and is currently bootstrapping
     /// new and modified views.
     bootstrap_in_progress: AtomicBool,
-
-    /// Status of the current transaction.
-    pub transaction_status: Atomic<TransactionStatus>,
-
-    /// ID of the current transaction or 0 if no transaction is in progress.
-    pub transaction_id: Atomic<TransactionId>,
-
-    /// Entities that initiated the current transaction.
-    pub transaction_initiators: Mutex<TransactionInitiators>,
 
     /// Transaction commit progress, if a transaction is committing.
     pub commit_progress: Mutex<Option<CommitProgressSummary>>,
@@ -291,9 +282,6 @@ impl GlobalControllerMetrics {
         Self {
             state: Atomic::new(PipelineState::Paused),
             bootstrap_in_progress: AtomicBool::new(false),
-            transaction_id: Atomic::new(0),
-            transaction_status: Atomic::new(TransactionStatus::NoTransaction),
-            transaction_initiators: Mutex::new(TransactionInitiators::default()),
             commit_progress: Mutex::new(None),
             start_time,
             incarnation_uuid,
@@ -707,13 +695,6 @@ impl ControllerStatus {
     pub fn set_bootstrap_in_progress(&self, bootstrap_in_progress: bool) {
         self.global_metrics
             .set_bootstrap_in_progress(bootstrap_in_progress);
-    }
-
-    pub fn transaction_in_progress(&self) -> bool {
-        self.global_metrics
-            .transaction_status
-            .load(Ordering::Acquire)
-            != TransactionStatus::NoTransaction
     }
 
     pub fn request_step(&self, circuit_thread_unparker: &Unparker) {
@@ -1189,10 +1170,17 @@ impl ControllerStatus {
         &self,
         suspend_error: Result<(), SuspendError>,
         pipeline_complete: bool,
+        transaction_info: TransactionInfo,
     ) -> feldera_types::adapter_stats::ExternalControllerStatus {
         use feldera_types::adapter_stats;
 
-        // Convert global metrics
+        let total_processed_records = self
+            .global_metrics
+            .total_processed_records
+            .load(Ordering::Acquire);
+
+        #[allow(clippy::manual_unwrap_or_default)]
+        #[allow(clippy::manual_unwrap_or)]
         let global_metrics = adapter_stats::ExternalGlobalControllerMetrics {
             state: match self.global_metrics.state.load(Ordering::Acquire) {
                 PipelineState::Paused => adapter_stats::PipelineState::Paused,
@@ -1203,18 +1191,35 @@ impl ControllerStatus {
                 .global_metrics
                 .bootstrap_in_progress
                 .load(Ordering::Acquire),
-            transaction_status: self
-                .global_metrics
-                .transaction_status
-                .load(Ordering::Acquire),
-            transaction_id: self.global_metrics.transaction_id.load(Ordering::Acquire),
+            transaction_status: match transaction_info.transaction_state {
+                TransactionState::None => adapter_stats::TransactionStatus::NoTransaction,
+                TransactionState::Started { .. } => {
+                    adapter_stats::TransactionStatus::TransactionInProgress
+                }
+                TransactionState::Committing { .. } => {
+                    adapter_stats::TransactionStatus::CommitInProgress
+                }
+            },
+            transaction_msecs: transaction_info
+                .transaction_state
+                .start_time()
+                .and_then(|start| start.elapsed().as_millis().try_into().ok()),
+            transaction_records: transaction_info
+                .transaction_state
+                .processed_records()
+                .map(|n| total_processed_records - n),
+            transaction_id: if let Some(tid) = transaction_info.transaction_state.tid() {
+                // The current transaction ID.
+                tid
+            } else if let Some(tid) = transaction_info.initiators.transaction_id {
+                // The transaction that will start when we execute a step.
+                tid
+            } else {
+                // No transaction
+                0
+            },
             commit_progress: self.global_metrics.commit_progress.lock().unwrap().clone(),
-            transaction_initiators: self
-                .global_metrics
-                .transaction_initiators
-                .lock()
-                .unwrap()
-                .to_api_type(),
+            transaction_initiators: transaction_info.initiators.to_api_type(),
             start_time: self.global_metrics.start_time,
             incarnation_uuid: self.global_metrics.incarnation_uuid,
             initial_start_time: self.global_metrics.initial_start_time,
@@ -1257,10 +1262,7 @@ impl ControllerStatus {
                 .global_metrics
                 .total_input_bytes
                 .load(Ordering::Acquire),
-            total_processed_records: self
-                .global_metrics
-                .total_processed_records
-                .load(Ordering::Acquire),
+            total_processed_records,
             total_processed_bytes: self
                 .global_metrics
                 .total_processed_bytes

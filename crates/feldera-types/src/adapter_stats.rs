@@ -332,6 +332,22 @@ pub struct ExternalGlobalControllerMetrics {
     /// ID of the current transaction or 0 if no transaction is in progress.
     #[schema(value_type = i64)]
     pub transaction_id: TransactionId,
+    /// Elapsed time in milliseconds, according to `transaction_status`:
+    ///
+    /// - [TransactionStatus::TransactionInProgress]: Time that this transaction
+    ///   has been in progress.
+    ///
+    /// - [TransactionStatus::CommitInProgress]: Time that this transaction has
+    ///   been committing.
+    pub transaction_msecs: Option<u64>,
+    /// Number of records in this transaction, according to
+    /// `transaction_status`:
+    ///
+    /// - [TransactionStatus::TransactionInProgress]: Number of records added so
+    ///   far.  More records might be added.
+    ///
+    /// - [TransactionStatus::CommitInProgress]: Final number of records.
+    pub transaction_records: Option<u64>,
     /// Progress of the current transaction commit, if one is in progress.
     pub commit_progress: Option<CommitProgressSummary>,
     /// Entities that initiated the current transaction.

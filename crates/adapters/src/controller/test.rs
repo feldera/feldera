@@ -1,5 +1,6 @@
 use crate::{
     Controller, PipelineConfig,
+    controller::TransactionInfo,
     preprocess::{DecryptionPreprocessorFactory, PassthroughPreprocessorFactory},
     test::{
         DEFAULT_TIMEOUT_MS, TestStruct, generate_test_batch, init_test_logger, test_circuit, wait,
@@ -2303,6 +2304,7 @@ fn test_external_controller_status_serialization() {
             PermanentSuspendError::UnsupportedInputEndpoint("kafka_input".to_string()),
         ])),
         false,
+        TransactionInfo::default(),
     );
     external_status.global_metrics.rss_bytes = 1024 * 1024 * 512; // 512 MB
     external_status.global_metrics.cpu_msecs = 45_000;

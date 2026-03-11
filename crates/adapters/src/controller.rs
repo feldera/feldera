@@ -79,7 +79,7 @@ use feldera_storage::metrics::{
 };
 use feldera_types::adapter_stats::{
     ConnectorHealth, ExternalControllerStatus, ExternalInputEndpointStatus,
-    ExternalOutputEndpointStatus, TransactionStatus,
+    ExternalOutputEndpointStatus,
 };
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::coordination::{
@@ -190,6 +190,14 @@ static CHECKPOINT_DELAY: ExponentialHistogram = ExponentialHistogram::new();
 /// checkpoint is being written, which means that they include writes from
 /// ongoing background merges.
 static CHECKPOINT_WRITTEN_MEGABYTES: ExponentialHistogram = ExponentialHistogram::new();
+
+/// Duration of transaction ingest time, that is, from transaction start to
+/// start of commit.
+static TRANSACTION_INGEST_TIME: ExponentialHistogram = ExponentialHistogram::new();
+
+/// Duration of transaction commit time, that is, from starting commit to
+/// finishing commit.
+static TRANSACTION_COMMIT_TIME: ExponentialHistogram = ExponentialHistogram::new();
 
 /// Number of records successfully processed at the time of the last successful
 /// checkpoint.
@@ -801,8 +809,11 @@ impl Controller {
     /// Returns the current controller status in the form used by the external
     /// API.
     pub fn api_status(&self) -> ExternalControllerStatus {
-        self.status()
-            .to_api_type(self.can_suspend(), self.pipeline_complete())
+        self.status().to_api_type(
+            self.can_suspend(),
+            self.pipeline_complete(),
+            self.inner.transaction_info.lock().unwrap().clone(),
+        )
     }
 
     /// Returns the pipeline state.
@@ -1443,8 +1454,8 @@ impl Controller {
             labels,
             match self.inner.get_transaction_state() {
                 TransactionState::None => 0,
-                TransactionState::Started(_) => 1,
-                TransactionState::Committing(_) => 2,
+                TransactionState::Started { .. } => 1,
+                TransactionState::Committing { .. } => 2,
             }
         );
         let commit_progress = self
@@ -1473,6 +1484,18 @@ impl Controller {
             "Number of operators that have not started flushing while the current transaction is committing.  This is 0 if no transaction is active, or if a transaction is running but has not yet started committing.",
             labels,
             commit_progress.remaining
+        );
+        metrics.histogram(
+            "transaction_ingest_seconds",
+            "Transaction ingestion time, that is, from transaction start to start of commit.",
+            labels,
+            &TRANSACTION_INGEST_TIME.snapshot(),
+        );
+        metrics.histogram(
+            "transaction_commit_seconds",
+            "Transaction commit time, that is, from starting commit to finishing commit.",
+            labels,
+            &TRANSACTION_COMMIT_TIME.snapshot(),
         );
 
         fn write_input_metric<F, M, T>(
@@ -2670,28 +2693,21 @@ impl CircuitThread {
     /// instantly commit a transaction.
     fn step_circuit(&mut self) {
         match self.controller.advance_transaction_state() {
-            Some(TransactionState::Started(transaction_id)) => {
-                info!("Starting transaction {transaction_id}");
+            Some(AdvanceTransaction::Start) => {
                 self.controller.increment_transaction_number();
-                self.circuit.start_transaction().unwrap_or_else(|e| {
-                    self.controller.error(Arc::new(e.into()), None);
-                    self.controller
-                        .set_transaction_state(TransactionState::None);
-                });
+                self.circuit
+                    .start_transaction()
+                    .expect("should have been able to start transaction");
             }
-            Some(TransactionState::Committing(transaction_id)) => {
-                info!("Committing transaction {transaction_id}");
-                self.circuit.start_commit_transaction().unwrap_or_else(|e| {
-                    self.controller.error(Arc::new(e.into()), None);
-                    self.controller
-                        .set_transaction_state(TransactionState::Started(transaction_id));
-                });
+            Some(AdvanceTransaction::Commit) => {
+                self.circuit
+                    .start_commit_transaction()
+                    .expect("should have been able to start transaction commit");
             }
-            _ => {}
+            None => (),
         }
 
         let transaction_state = self.controller.get_transaction_state();
-
         if transaction_state != TransactionState::None {
             debug!("circuit thread: calling 'circuit.step'");
 
@@ -2704,7 +2720,18 @@ impl CircuitThread {
 
             debug!("circuit thread: 'circuit.step' returned");
 
-            if let TransactionState::Committing(transaction_id) = transaction_state {
+            if let TransactionState::Committing {
+                tid,
+                start,
+                processed_records,
+            } = transaction_state
+            {
+                let n = self
+                    .controller
+                    .status
+                    .global_metrics
+                    .num_total_processed_records()
+                    - processed_records;
                 if !committed {
                     let commit_updates = self.commit_updates.get_or_insert_default();
                     if commit_updates.should_update_status() {
@@ -2713,7 +2740,7 @@ impl CircuitThread {
                                 let summary = progress.summary();
                                 if commit_updates.should_display_status() {
                                     info!(
-                                        "Transaction {transaction_id} commit progress: {summary}"
+                                        "Transaction {tid}: Commit of {n} records in progress ({summary})"
                                     );
                                 }
                                 self.controller
@@ -2722,14 +2749,23 @@ impl CircuitThread {
                                     .set_commit_progress(Some(summary));
                             }
                             Err(e) => {
-                                error!("Error retrieving transaction commit progress: {e}");
+                                error!("Transaction {tid}: Error retrieving commit progress ({e})");
                             }
                         }
                     };
                 } else {
-                    info!("Transaction {transaction_id} committed");
-                    self.controller
-                        .set_transaction_state(TransactionState::None);
+                    let duration = start.elapsed();
+                    info!(
+                        "Transaction {tid}: Finished committing {n} records in {:.1} seconds",
+                        duration.as_secs_f64()
+                    );
+                    TRANSACTION_COMMIT_TIME.record_duration(duration);
+
+                    let mut transaction_info = self.controller.transaction_info.lock().unwrap();
+                    transaction_info.transaction_state = TransactionState::None;
+                    transaction_info.update_transaction_status();
+                    drop(transaction_info);
+
                     self.commit_updates = None;
                     self.controller
                         .status
@@ -4666,17 +4702,67 @@ pub enum TransactionState {
 
     /// A transaction is running. New inputs ingested in this state become part of the transaction.
     /// No outputs are produced until the state changes to committing.
-    Started(TransactionId),
+    Started {
+        /// Transaction ID of the ongoing transaction.
+        tid: TransactionId,
+        /// When the transaction started.
+        start: Instant,
+        /// Number of records processed when this transaction started.
+        processed_records: u64,
+    },
 
     /// A transaction is committing. In this state the pipeline doesn't accept new inputs from
     /// connectors and computes all outputs for the inputs received in the Started state.
-    Committing(TransactionId),
+    Committing {
+        /// Transaction ID of the committing transaction.
+        tid: TransactionId,
+        /// When the commit started.
+        start: Instant,
+        /// Number of records processed when this transaction started.
+        processed_records: u64,
+    },
 }
 
 impl TransactionState {
     fn is_committing(&self) -> bool {
-        matches!(self, TransactionState::Committing(_))
+        matches!(self, TransactionState::Committing { .. })
     }
+
+    pub fn tid(&self) -> Option<TransactionId> {
+        match self {
+            TransactionState::None => None,
+            TransactionState::Started { tid, .. } | TransactionState::Committing { tid, .. } => {
+                Some(*tid)
+            }
+        }
+    }
+
+    /// Returns when this phase of the transaction started.
+    pub fn start_time(&self) -> Option<Instant> {
+        match self {
+            TransactionState::None => None,
+            TransactionState::Started { start, .. }
+            | TransactionState::Committing { start, .. } => Some(*start),
+        }
+    }
+
+    /// Returns the number of processed records when the transaction started.
+    pub fn processed_records(&self) -> Option<u64> {
+        match self {
+            TransactionState::None => None,
+            TransactionState::Started {
+                processed_records, ..
+            }
+            | TransactionState::Committing {
+                processed_records, ..
+            } => Some(*processed_records),
+        }
+    }
+}
+
+enum AdvanceTransaction {
+    Start,
+    Commit,
 }
 
 /// Phase of a transaction.
@@ -4834,8 +4920,8 @@ impl TransactionInitiators {
     }
 }
 
-#[derive(Default, Clone)]
-struct TransactionInfo {
+#[derive(Clone, Default, Debug)]
+pub struct TransactionInfo {
     /// Is this a multihost pipeline?
     ///
     /// In a single-host pipeline, connectors can initiate and commit
@@ -4855,15 +4941,22 @@ struct TransactionInfo {
 
     /// Actual pipeline state, set by the circuit thread.
     transaction_state: TransactionState,
+
+    /// For sending updates to the coordination status to the coordinator.
+    sender: tokio::sync::watch::Sender<TransactionCoordination>,
 }
 
 impl TransactionInfo {
-    fn new(is_multihost: bool) -> Self {
+    fn new(
+        is_multihost: bool,
+        sender: tokio::sync::watch::Sender<TransactionCoordination>,
+    ) -> Self {
         TransactionInfo {
             is_multihost,
             last_transaction_id: 0,
             initiators: TransactionInitiators::default(),
             transaction_state: TransactionState::None,
+            sender,
         }
     }
 
@@ -5036,6 +5129,44 @@ impl TransactionInfo {
     fn clear_initiators(&mut self) {
         self.initiators.clear(self.is_multihost);
     }
+
+    /// Sends an update to the transaction coordination status, if it has
+    /// changed.
+    fn update_transaction_status(&self) {
+        let coordination = TransactionCoordination {
+            status: match (
+                self.transaction_state,
+                self.initiators.is_ongoing(self.is_multihost),
+            ) {
+                (TransactionState::None, false) => None,
+                (TransactionState::Started { .. } | TransactionState::Committing { .. }, false) => {
+                    Some(false)
+                }
+                (TransactionState::None | TransactionState::Started { .. }, true) => Some(true),
+                (TransactionState::Committing { .. }, true) => {
+                    error!(
+                        "Invalid transaction state: actual state: {:?}; desired state {:?}",
+                        self.transaction_state, self.initiators
+                    );
+                    return;
+                }
+            },
+            requests: self
+                .initiators
+                .initiated_by_connectors
+                .iter()
+                .filter_map(
+                    |(name, phase)| match phase.phase == TransactionPhase::Started {
+                        true => Some((name.clone(), phase.label.clone())),
+                        false => None,
+                    },
+                )
+                .collect(),
+        };
+        if *self.sender.borrow() != coordination {
+            self.sender.send_replace(coordination);
+        }
+    }
 }
 
 /// Controller state sharable across threads.
@@ -5068,7 +5199,6 @@ pub struct ControllerInner {
     step_receiver: tokio::sync::watch::Receiver<StepStatus>,
     checkpoint_receiver: tokio::sync::watch::Receiver<Option<CheckpointCoordination>>,
     transaction_receiver: tokio::sync::watch::Receiver<TransactionCoordination>,
-    transaction_sender: tokio::sync::watch::Sender<TransactionCoordination>,
     coordination_request: Mutex<Option<StepRequest>>,
     coordination_prepare_checkpoint: AtomicBool,
     input_completion_notify: Arc<Notify>,
@@ -5150,12 +5280,14 @@ impl ControllerInner {
                 session_ctxt,
                 adhoc_tables,
                 fault_tolerance: config.global.fault_tolerance.model,
-                transaction_info: Mutex::new(TransactionInfo::new(is_multihost)),
+                transaction_info: Mutex::new(TransactionInfo::new(
+                    is_multihost,
+                    transaction_sender,
+                )),
                 restoring: AtomicBool::new(config.global.fault_tolerance.is_enabled()),
                 transaction_number: AtomicU64::new(0),
                 step_receiver,
                 checkpoint_receiver,
-                transaction_sender,
                 transaction_receiver,
                 coordination_request: Mutex::new(is_multihost.then_some(StepRequest::new_idle(0))),
                 coordination_prepare_checkpoint: AtomicBool::new(false),
@@ -6314,7 +6446,7 @@ impl ControllerInner {
         if self.status.bootstrap_in_progress() {
             temporary.push(TemporarySuspendError::Bootstrapping);
         }
-        if self.status.transaction_in_progress() {
+        if self.get_transaction_state() != TransactionState::None {
             temporary.push(TemporarySuspendError::TransactionInProgress);
         }
         for endpoint_stats in self.status.input_status().values() {
@@ -6334,79 +6466,6 @@ impl ControllerInner {
         }
     }
 
-    /// Update transaction status in GlobalControllerMetrics given the current value of TransactionInfo.
-    fn update_transaction_status(&self, transaction_info: &TransactionInfo) {
-        let tid_status = match (
-            transaction_info.transaction_state,
-            transaction_info
-                .initiators
-                .is_ongoing(transaction_info.is_multihost),
-        ) {
-            (TransactionState::None, false) => Some((0, TransactionStatus::NoTransaction)),
-            (TransactionState::Started(tid), false)
-            | (TransactionState::Committing(tid), false) => {
-                Some((tid, TransactionStatus::CommitInProgress))
-            }
-            (TransactionState::None, true) => Some((
-                transaction_info.initiators.transaction_id.unwrap(),
-                TransactionStatus::TransactionInProgress,
-            )),
-            (TransactionState::Started(tid), true) => {
-                Some((tid, TransactionStatus::TransactionInProgress))
-            }
-            (TransactionState::Committing(_), true) => {
-                error!(
-                    "Invalid transaction state: actual state: {:?}; desired state {:?}",
-                    transaction_info.transaction_state, transaction_info.initiators
-                );
-                None
-            }
-        };
-        if let Some((tid, status)) = tid_status {
-            if status != TransactionStatus::NoTransaction {
-                assert!(tid != 0);
-            }
-
-            self.status
-                .global_metrics
-                .transaction_id
-                .store(tid, Ordering::Release);
-            self.status
-                .global_metrics
-                .transaction_status
-                .store(status, Ordering::Release);
-
-            let coordination = TransactionCoordination {
-                status: match status {
-                    TransactionStatus::NoTransaction => None,
-                    TransactionStatus::TransactionInProgress => Some(true),
-                    TransactionStatus::CommitInProgress => Some(false),
-                },
-                requests: transaction_info
-                    .initiators
-                    .initiated_by_connectors
-                    .iter()
-                    .filter_map(
-                        |(name, phase)| match phase.phase == TransactionPhase::Started {
-                            true => Some((name.clone(), phase.label.clone())),
-                            false => None,
-                        },
-                    )
-                    .collect(),
-            };
-            if *self.transaction_sender.borrow() != coordination {
-                self.transaction_sender.send_replace(coordination);
-            }
-        }
-
-        *self
-            .status
-            .global_metrics
-            .transaction_initiators
-            .lock()
-            .unwrap() = transaction_info.initiators.clone();
-    }
-
     /// Initiate a new transaction.
     ///
     /// Fails if there is already a transaction in progress.
@@ -6416,7 +6475,7 @@ impl ControllerInner {
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
         let transaction_id = transaction_info.start_transaction_from_api()?;
-        self.update_transaction_status(transaction_info);
+        transaction_info.update_transaction_status();
 
         Ok(transaction_id)
     }
@@ -6431,6 +6490,10 @@ impl ControllerInner {
         transaction_info.start_commit_transaction_from_api()?;
 
         // All initiators have committed the transaction before it even started.
+        //
+        // This isn't just a momentary race: it can happen across an arbitrary
+        // amount of time because we only transition `transaction_state` when we
+        // take a step, which we will only do when input arrives.
         if transaction_info
             .initiators
             .is_ready_to_commit(transaction_info.is_multihost)
@@ -6438,8 +6501,7 @@ impl ControllerInner {
         {
             transaction_info.clear_initiators();
         }
-
-        self.update_transaction_status(transaction_info);
+        transaction_info.update_transaction_status();
         self.unpark_circuit();
 
         Ok(())
@@ -6453,8 +6515,7 @@ impl ControllerInner {
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
         transaction_info.start_transaction_from_connector(endpoint_name, label)?;
-
-        self.update_transaction_status(transaction_info);
+        transaction_info.update_transaction_status();
 
         Ok(())
     }
@@ -6476,18 +6537,10 @@ impl ControllerInner {
             transaction_info.clear_initiators();
         }
 
-        self.update_transaction_status(transaction_info);
+        transaction_info.update_transaction_status();
 
         self.unpark_circuit();
         Ok(())
-    }
-
-    /// Update transaction_info.transaction_state.
-    pub fn set_transaction_state(&self, transaction_state: TransactionState) {
-        let transaction_info = &mut *self.transaction_info.lock().unwrap();
-
-        transaction_info.transaction_state = transaction_state;
-        self.update_transaction_status(transaction_info);
     }
 
     /// Read the current value of transaction_info.transaction_state.
@@ -6506,7 +6559,7 @@ impl ControllerInner {
             initiators: transaction_requested,
             transaction_state,
             ..
-        } = &mut *self.transaction_info.lock().unwrap();
+        } = &*self.transaction_info.lock().unwrap();
 
         *transaction_state != TransactionState::None
             && !transaction_requested.is_ongoing(*is_multihost)
@@ -6516,18 +6569,18 @@ impl ControllerInner {
     ///
     /// Used to prevent the pipeline from ingesting new inputs while committing a transaction.
     pub fn transaction_commit_in_progress(&self) -> bool {
-        let TransactionInfo {
-            transaction_state, ..
-        } = &mut *self.transaction_info.lock().unwrap();
-
-        matches!(transaction_state, TransactionState::Committing(_))
+        self.transaction_info
+            .lock()
+            .unwrap()
+            .transaction_state
+            .is_committing()
     }
 
     /// Advance transaction state from None to Started or from Started to committing in response
     /// to desired state changes.
     ///
-    /// Returns the new state if it's different from the previous state or `None` otherwise.
-    pub fn advance_transaction_state(&self) -> Option<TransactionState> {
+    /// Returns how the transaction is advancing (if it is).
+    fn advance_transaction_state(&self) -> Option<AdvanceTransaction> {
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
         let is_multihost = transaction_info.is_multihost;
@@ -6537,16 +6590,20 @@ impl ControllerInner {
             match transaction_info.transaction_state {
                 TransactionState::None => {
                     // Start a new transaction.
-                    transaction_info.transaction_state = TransactionState::Started(
-                        transaction_info.initiators.transaction_id.unwrap(),
-                    );
-                    Some(transaction_info.transaction_state)
+                    let transaction_id = transaction_info.initiators.transaction_id.unwrap();
+                    info!("Transaction {transaction_id}: Starting");
+                    transaction_info.transaction_state = TransactionState::Started {
+                        tid: transaction_id,
+                        start: Instant::now(),
+                        processed_records: self.status.global_metrics.num_total_processed_records(),
+                    };
+                    Some(AdvanceTransaction::Start)
                 }
-                TransactionState::Started(_) => {
+                TransactionState::Started { .. } => {
                     // We are already in a transaction, so there is nothing to do.
                     None
                 }
-                TransactionState::Committing(_) => unreachable!(
+                TransactionState::Committing { .. } => unreachable!(
                     "Requests to initiate a transaction are rejected while a transaction is committing but somehow one slipped through anyhow"
                 ),
             }
@@ -6554,14 +6611,29 @@ impl ControllerInner {
             // The API and connectors want us to not be in a transaction, so
             // start committing one if we are.
             match transaction_info.transaction_state {
-                TransactionState::Started(transaction_id) => {
+                TransactionState::Started {
+                    tid,
+                    start,
+                    processed_records,
+                } => {
                     // Commit the running transaction.
-                    transaction_info.transaction_state =
-                        TransactionState::Committing(transaction_id);
+                    let duration = start.elapsed();
+                    TRANSACTION_INGEST_TIME.record_duration(duration);
+                    let n = self.status.global_metrics.num_total_processed_records()
+                        - processed_records;
+                    info!(
+                        "Transaction {tid}: Starting commit of {n} records after {:.1} seconds",
+                        duration.as_secs_f64()
+                    );
+                    transaction_info.transaction_state = TransactionState::Committing {
+                        tid,
+                        start: Instant::now(),
+                        processed_records,
+                    };
                     transaction_info.clear_initiators();
-                    Some(transaction_info.transaction_state)
+                    Some(AdvanceTransaction::Commit)
                 }
-                TransactionState::Committing(_) => {
+                TransactionState::Committing { .. } => {
                     // Nothing to do.
                     //
                     // We know that there must not be any active initiators
@@ -6593,7 +6665,7 @@ impl ControllerInner {
             }
         };
 
-        self.update_transaction_status(transaction_info);
+        transaction_info.update_transaction_status();
         result
     }
 }

@@ -8485,6 +8485,20 @@
           "transaction_initiators": {
             "$ref": "#/components/schemas/TransactionInitiators"
           },
+          "transaction_msecs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Elapsed time in milliseconds, according to `transaction_status`:\n\n- [TransactionStatus::TransactionInProgress]: Time that this transaction\nhas been in progress.\n\n- [TransactionStatus::CommitInProgress]: Time that this transaction has\nbeen committing.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "transaction_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of records in this transaction, according to\n`transaction_status`:\n\n- [TransactionStatus::TransactionInProgress]: Number of records added so\nfar.  More records might be added.\n\n- [TransactionStatus::CommitInProgress]: Final number of records.",
+            "nullable": true,
+            "minimum": 0
+          },
           "transaction_status": {
             "$ref": "#/components/schemas/TransactionStatus"
           },

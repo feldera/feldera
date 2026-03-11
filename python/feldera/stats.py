@@ -52,6 +52,8 @@ class GlobalPipelineMetrics:
         self.bootstrap_in_progress: Optional[bool] = None
         self.transaction_status: Optional[TransactionStatus] = None
         self.transaction_id: Optional[int] = None
+        self.transaction_msecs: Optional[int] = None
+        self.transaction_records: Optional[int] = None
         self.commit_progress: Optional[CommitProgressSummary] = None
         self.transaction_initiators: Optional[TransactionInitiators] = None
         self.rss_bytes: Optional[int] = None
