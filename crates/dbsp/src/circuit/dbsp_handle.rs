@@ -19,6 +19,7 @@ use anyhow::Error as AnyError;
 use crossbeam::channel::{Receiver, Select, Sender, TryRecvError, bounded};
 use feldera_buffer_cache::{BufferCacheAllocationStrategy, BufferCacheStrategy, ThreadType};
 use feldera_ir::LirCircuit;
+use feldera_storage::fbuf::slab::FBufSlabs;
 use feldera_storage::{FileCommitter, StorageBackend, StoragePath};
 use feldera_types::checkpoint::CheckpointMetadata;
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
@@ -303,6 +304,11 @@ pub struct DevTweaks {
     /// default is `shared_per_worker_pair`; LRU always uses `per_thread`.
     pub buffer_cache_allocation_strategy: BufferCacheAllocationStrategy,
 
+    /// Target number of cached bytes retained in each `FBuf` slab size class.
+    ///
+    /// The default value is [`FBufSlabs::DEFAULT_BYTES_PER_CLASS`].
+    pub fbuf_slab_bytes_per_class: usize,
+
     /// Whether to asynchronously fetch keys needed for the join operator from
     /// storage.  Asynchronous fetching should be faster for high-latency
     /// storage, such as object storage, but it could use excessive amounts of
@@ -430,6 +436,7 @@ impl Default for DevTweaks {
             buffer_cache_strategy: BufferCacheStrategy::default(),
             buffer_max_buckets: None,
             buffer_cache_allocation_strategy: BufferCacheAllocationStrategy::default(),
+            fbuf_slab_bytes_per_class: FBufSlabs::DEFAULT_BYTES_PER_CLASS,
             fetch_join: false,
             fetch_distinct: false,
             merger: MergerType::default(),
@@ -595,6 +602,12 @@ impl CircuitConfig {
         strategy: BufferCacheAllocationStrategy,
     ) -> Self {
         self.dev_tweaks.buffer_cache_allocation_strategy = strategy;
+        self
+    }
+
+    #[cfg(test)]
+    pub fn with_fbuf_slab_bytes_per_class(mut self, bytes_per_class: usize) -> Self {
+        self.dev_tweaks.fbuf_slab_bytes_per_class = bytes_per_class;
         self
     }
 

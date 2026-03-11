@@ -23,8 +23,9 @@ use crate::{
 };
 use core_affinity::{CoreId, get_core_ids};
 use crossbeam::sync::{Parker, Unparker};
-use enum_map::{Enum, EnumMap};
+use enum_map::{Enum, EnumMap, enum_map};
 use feldera_buffer_cache::ThreadType;
+use feldera_storage::fbuf::slab::{FBufSlabs, FBufSlabsStats, set_thread_slab_pool};
 use feldera_types::config::{StorageCompression, StorageConfig, StorageOptions};
 use indexmap::IndexSet;
 use once_cell::sync::Lazy;
@@ -266,6 +267,7 @@ struct RuntimeInner {
 
     /// Core IDs to pin tokio merger background workers to.
     pin_cpus_bg: Vec<CoreId>,
+    fbuf_slab_allocators: Vec<EnumMap<ThreadType, Arc<FBufSlabs>>>,
     worker_sequence_numbers: Vec<AtomicUsize>,
     // Panic info collected from failed worker threads.
     panic_info: Vec<EnumMap<ThreadType, RwLock<Option<WorkerPanicInfo>>>>,
@@ -370,6 +372,7 @@ impl RuntimeInner {
         let buffer_cache_allocation_strategy = config
             .dev_tweaks
             .effective_buffer_cache_allocation_strategy();
+        let fbuf_slab_bytes_per_class = config.dev_tweaks.fbuf_slab_bytes_per_class;
         let storage = if let Some(storage) = config.storage.clone() {
             let locked_directory =
                 LockedDirectory::new_blocking(storage.config.path(), Duration::from_secs(60))?;
@@ -419,6 +422,17 @@ impl RuntimeInner {
             buffer_cache_allocation_strategy,
         );
 
+        info!("Setting up FBuf slab allocators: bytes_per_class={fbuf_slab_bytes_per_class}");
+        let fbuf_slab_allocators = (0..nworkers)
+            .map(|_| {
+                let allocator = Arc::new(FBufSlabs::new(fbuf_slab_bytes_per_class));
+                enum_map! {
+                    ThreadType::Foreground => allocator.clone(),
+                    ThreadType::Background => allocator.clone(),
+                }
+            })
+            .collect();
+
         let (pin_cpus_fg, pin_cpus_bg) = map_pin_cpus(&config);
 
         Ok(Self {
@@ -432,6 +446,7 @@ impl RuntimeInner {
             kill_signal: AtomicBool::new(false),
             aux_threads: Mutex::new(Vec::new()),
             buffer_caches,
+            fbuf_slab_allocators,
             worker_sequence_numbers: (0..nworkers).map(|_| AtomicUsize::new(0)).collect(),
             panic_info: (0..nworkers)
                 .map(|_| EnumMap::from_fn(|_| RwLock::new(None)))
@@ -622,12 +637,17 @@ impl Runtime {
                 let build_circuit = circuit.clone();
                 let parker = Parker::new();
                 let unparker = parker.unparker().clone();
+                let local_worker_offset =
+                    worker_index - runtime.inner().layout.local_workers().start;
+                let fbuf_slab_allocator =
+                    runtime.get_fbuf_slab_allocator(local_worker_offset, ThreadType::Foreground);
                 let handle = Builder::new()
                     .name(format!("dbsp-worker-{worker_index}"))
                     .spawn(move || {
                         // Set the worker's runtime handle and index
                         WORKER_INDEX.set(worker_index);
                         set_current_thread_type(ThreadType::Foreground);
+                        set_thread_slab_pool(Some(fbuf_slab_allocator));
                         runtime.inner().pin_cpu();
                         RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
 
@@ -778,6 +798,14 @@ impl Runtime {
         self.0.buffer_caches[local_worker_offset][thread_type].clone()
     }
 
+    pub(crate) fn get_fbuf_slab_allocator(
+        &self,
+        local_worker_offset: usize,
+        thread_type: ThreadType,
+    ) -> Arc<FBufSlabs> {
+        self.0.fbuf_slab_allocators[local_worker_offset][thread_type].clone()
+    }
+
     /// Returns `(current, max)`, reporting the amount of the buffer cache
     /// that is currently used and its maximum size, both in bytes.
     pub fn cache_occupancy(&self) -> (usize, usize) {
@@ -794,6 +822,25 @@ impl Runtime {
                 })
         } else {
             (0, 0)
+        }
+    }
+
+    /// Returns aggregate statistics for the `FBuf` slab pools used by storage.
+    pub fn fbuf_slabs_stats(&self) -> FBufSlabsStats {
+        if self.0.storage.is_some() {
+            let mut seen = HashSet::new();
+            self.0
+                .fbuf_slab_allocators
+                .iter()
+                .flat_map(|map| map.values())
+                .filter(|allocator| seen.insert(allocator.backend_id()))
+                .map(|allocator| allocator.stats())
+                .fold(FBufSlabsStats::default(), |mut stats, pool_stats| {
+                    stats += pool_stats;
+                    stats
+                })
+        } else {
+            FBufSlabsStats::default()
         }
     }
 
@@ -1374,6 +1421,7 @@ mod tests {
     use feldera_buffer_cache::{
         BufferCacheAllocationStrategy, BufferCacheStrategy, CacheEntry, ThreadType,
     };
+    use feldera_storage::fbuf::{FBuf, slab::set_thread_slab_pool};
     use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
     use std::{cell::RefCell, rc::Rc, sync::Arc, thread::sleep, time::Duration};
 
@@ -1509,7 +1557,42 @@ mod tests {
     }
 
     #[test]
-    fn s3_fifo_cache_can_share_one_global_cache_when_requested() {
+    fn fbuf_slabs_are_shared_per_worker_pair() {
+        let inner = RuntimeInner::new(CircuitConfig::with_workers(2)).unwrap();
+        assert!(Arc::ptr_eq(
+            &inner.fbuf_slab_allocators[0][ThreadType::Foreground],
+            &inner.fbuf_slab_allocators[0][ThreadType::Background],
+        ));
+        assert!(Arc::ptr_eq(
+            &inner.fbuf_slab_allocators[1][ThreadType::Foreground],
+            &inner.fbuf_slab_allocators[1][ThreadType::Background],
+        ));
+        assert!(!Arc::ptr_eq(
+            &inner.fbuf_slab_allocators[0][ThreadType::Foreground],
+            &inner.fbuf_slab_allocators[1][ThreadType::Foreground],
+        ));
+    }
+
+    #[test]
+    fn fbuf_slabs_honor_bytes_per_class_dev_tweak() {
+        let inner =
+            RuntimeInner::new(CircuitConfig::with_workers(1).with_fbuf_slab_bytes_per_class(4096))
+                .unwrap();
+        let allocator = inner.fbuf_slab_allocators[0][ThreadType::Foreground].clone();
+        let previous = set_thread_slab_pool(Some(allocator.clone()));
+
+        let first = FBuf::with_capacity(4096);
+        let second = FBuf::with_capacity(4096);
+        drop(first);
+        drop(second);
+
+        set_thread_slab_pool(previous);
+
+        assert_eq!(allocator.stats().cached_buffers, 1);
+    }
+
+    #[test]
+    fn sieve_can_share_one_global_cache_when_requested() {
         let config = CircuitConfig::with_workers(2)
             .with_buffer_cache_allocation_strategy(BufferCacheAllocationStrategy::Global);
         let inner = RuntimeInner::new(config).unwrap();
@@ -1601,6 +1684,49 @@ mod tests {
         );
 
         assert_eq!(runtime.cache_occupancy(), (1024, 8 * 1024 * 1024));
+    }
+
+    #[test]
+    fn shared_fbuf_slab_stats_are_not_double_counted() {
+        let path = tempfile::tempdir().unwrap();
+        let storage = CircuitStorageConfig::for_config(
+            StorageConfig {
+                path: path.path().to_string_lossy().into_owned(),
+                cache: StorageCacheConfig::default(),
+            },
+            StorageOptions::default(),
+        )
+        .unwrap();
+        let runtime = Runtime(Arc::new(
+            RuntimeInner::new(CircuitConfig::with_workers(1).with_storage(storage)).unwrap(),
+        ));
+
+        let previous = set_thread_slab_pool(Some(
+            runtime.get_fbuf_slab_allocator(0, ThreadType::Foreground),
+        ));
+
+        let first = FBuf::with_capacity(4096);
+        drop(first);
+        let second = FBuf::with_capacity(3000);
+        drop(second);
+
+        set_thread_slab_pool(previous);
+
+        let stats = runtime.fbuf_slabs_stats();
+        let class = stats
+            .classes
+            .iter()
+            .find(|class| class.size == 4096)
+            .unwrap();
+
+        assert_eq!(stats.alloc_requests(), 2);
+        assert_eq!(stats.mallocs_saved(), 1);
+        assert_eq!(stats.frees_saved(), 2);
+        assert_eq!(stats.cached_buffers, 1);
+        assert_eq!(class.alloc_requests, 2);
+        assert_eq!(class.alloc_hits, 1);
+        assert_eq!(class.recycle_requests, 2);
+        assert_eq!(class.recycle_hits, 2);
     }
 
     fn test_runtime<S>()

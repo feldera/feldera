@@ -5145,6 +5145,7 @@ name = "feldera-storage"
 version = "0.271.0"
 dependencies = [
  "anyhow",
+ "crossbeam",
  "feldera-size-of",
  "feldera-types",
  "inventory",
