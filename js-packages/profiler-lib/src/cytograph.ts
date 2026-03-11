@@ -987,6 +987,7 @@ export class CytographRendering {
         let visible = false;
 
         const tooltipData: NodeAttributes = {
+            title: "",
             columns: [],
             rows: [],
             attributes: new Map()
@@ -1040,7 +1041,13 @@ export class CytographRendering {
         if (attributes.kv.size !== 0) {
             visible = true;
             for (const [key, value] of attributes.kv.entries()) {
-                tooltipData.attributes.set(key, value);
+                if (key == "id") {
+                    tooltipData.title = value + tooltipData.title;
+                } else if (key == "operation") {
+                    tooltipData.title = tooltipData.title + " " + value;
+                } else {
+                    tooltipData.attributes.set(key, value);
+                }
             }
         }
 
