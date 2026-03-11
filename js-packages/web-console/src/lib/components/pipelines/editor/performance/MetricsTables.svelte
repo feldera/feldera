@@ -1,6 +1,9 @@
 <script lang="ts">
+  import { SegmentedControl } from '@skeletonlabs/skeleton-svelte'
   import { format } from 'd3-format'
+  import Popover from '$lib/components/common/Popover.svelte'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import { humanSize } from '$lib/functions/common/string'
   import type {
     AggregatedInputEndpointMetrics,
@@ -27,6 +30,48 @@
       filter: ConnectorErrorFilter
     ) => void
   } = $props()
+
+  type HealthFilter = 'all' | 'unhealthy'
+  let healthFilter = $state<HealthFilter>('all')
+  const healthFilterModes: HealthFilter[] = ['all', 'unhealthy']
+
+  const isUnhealthy = (connector: { health?: { status: string } | null }) =>
+    connector.health?.status === 'Unhealthy'
+
+  const unhealthyCount = $derived.by(() => {
+    let count = 0
+    for (const [, data] of metrics.current.tables) {
+      count += data.connectors.filter(isUnhealthy).length
+    }
+    for (const [, data] of metrics.current.views) {
+      count += data.connectors.filter(isUnhealthy).length
+    }
+    return count
+  })
+
+  const filteredTables = $derived.by(() => {
+    if (healthFilter === 'all') return metrics.current.tables
+    const filtered = new Map<string, AggregatedInputEndpointMetrics>()
+    for (const [relation, data] of metrics.current.tables) {
+      const unhealthyConnectors = data.connectors.filter(isUnhealthy)
+      if (unhealthyConnectors.length > 0) {
+        filtered.set(relation, { ...data, connectors: unhealthyConnectors })
+      }
+    }
+    return filtered
+  })
+
+  const filteredViews = $derived.by(() => {
+    if (healthFilter === 'all') return metrics.current.views
+    const filtered = new Map<string, AggregatedOutputEndpointMetrics>()
+    for (const [relation, data] of metrics.current.views) {
+      const unhealthyConnectors = data.connectors.filter(isUnhealthy)
+      if (unhealthyConnectors.length > 0) {
+        filtered.set(relation, { ...data, connectors: unhealthyConnectors })
+      }
+    }
+    return filtered
+  })
 
   // List of tables and views that have been expanded to view individual connectors
   let expandedTables = $state<Set<string>>(new Set())
@@ -128,19 +173,37 @@
   {/if}
 {/snippet}
 
-{#snippet connectorName(name: string)}
-  <span class="relative h-5 min-w-0 flex-1 overflow-hidden">
+{#snippet connectorName(name: string, end?: Snippet)}
+  <span class="relative -mb-1 h-6 min-w-0 flex-1 overflow-hidden">
     <span class="absolute inset-0 overflow-hidden text-left text-nowrap text-ellipsis" dir="rtl">
+      {@render end?.()}
       {name}
     </span>
   </span>
 {/snippet}
 
+{#snippet unhealthyChip(description: string)}
+  <span class="-my-1 ml-2 chip preset-filled-error-50-950 uppercase">unhealthy</span>
+  <Popover class="z-20 max-w-lg">
+    <div class="flex flex-row-reverse flex-nowrap items-start gap-4">
+      {#if description}
+        <span class="min-w-0 flex-1 wrap-break-word whitespace-pre-wrap">
+          {description}
+        </span>
+        <ClipboardCopyButton class="-m-2" value={description}></ClipboardCopyButton>
+      {:else}
+        <i>Connector is unhealthy. Details are not available.</i>
+      {/if}
+    </div>
+  </Popover>
+{/snippet}
+
 {#snippet inputConnectorName(
   connector: AggregatedInputEndpointMetrics['connectors'][0],
-  relation: string
+  relation: string,
+  showHealthChip?: boolean
 )}
-  <div class="flex min-w-0 flex-nowrap">
+  <div class="flex min-w-0 flex-nowrap items-center">
     <span class="flex w-10 shrink-0 flex-nowrap justify-end">
       {@render inputConnectorIcons(
         connector.paused,
@@ -151,28 +214,68 @@
         () => onConnectorSelect(relation, connector.endpointName, 'input', 'all')
       )}
     </span>
-    {@render connectorName(connector.endpointName)}
+    {#snippet end()}
+      {#if showHealthChip && connector.health?.status === 'Unhealthy'}
+        {@render unhealthyChip(connector.health.description ?? '')}
+      {/if}
+    {/snippet}
+    {@render connectorName(connector.endpointName, end)}
   </div>
 {/snippet}
 
 {#snippet outputConnectorName(
   connector: AggregatedOutputEndpointMetrics['connectors'][0],
-  relation: string
+  relation: string,
+  showHealthChip?: boolean
 )}
-  <div class="flex min-w-0 flex-nowrap">
+  <div class="flex min-w-0 flex-nowrap items-center">
     <span class="flex w-10 shrink-0 flex-nowrap justify-end">
       {@render outputConnectorIcons(outputHasErrors(connector), () =>
         onConnectorSelect(relation, connector.endpointName, 'output', 'all')
       )}
     </span>
-    {@render connectorName(connector.endpointName)}
+
+    {#snippet end()}
+      {#if showHealthChip && connector.health?.status === 'Unhealthy'}
+        {@render unhealthyChip(connector.health.description ?? '')}
+      {/if}
+    {/snippet}
+    {@render connectorName(connector.endpointName, end)}
   </div>
+{/snippet}
+
+{#snippet connectorHealthFilterControl()}
+  <SegmentedControl
+    value={healthFilter}
+    onValueChange={(e) => (healthFilter = e.value as HealthFilter)}
+    class="-mt-2"
+  >
+    <SegmentedControl.Label />
+    <SegmentedControl.Control class="w-fit flex-none rounded preset-filled-surface-50-950 p-1">
+      <SegmentedControl.Indicator class="bg-white-dark shadow" />
+      {#each healthFilterModes as mode}
+        <SegmentedControl.Item value={mode} class="btn h-6 cursor-pointer px-3">
+          <SegmentedControl.ItemText class="text-surface-950-50 capitalize">
+            {mode}{#if mode === 'unhealthy' && unhealthyCount > 0}<span
+                class="ml-2 rounded bg-error-50-950 px-2">{unhealthyCount}</span
+              >{/if}
+          </SegmentedControl.ItemText>
+          <SegmentedControl.ItemHiddenInput />
+        </SegmentedControl.Item>
+      {/each}
+    </SegmentedControl.Control>
+  </SegmentedControl>
 {/snippet}
 
 {#snippet tableColumnHeaders()}
   <tr>
     <th class="font-normal" rowspan="2">Table</th>
-    <th class="w-full pb-0! font-normal" rowspan="2"><span class="pl-10">Connector</span></th>
+    <th class="w-full font-normal" rowspan="2">
+      <div class="flex items-center gap-4 pl-10">
+        <span>Connectors</span>
+        {@render connectorHealthFilterControl()}
+      </div>
+    </th>
     <th class="pb-0! text-center! font-normal" colspan="2">Ingested</th>
     <th class="pb-0! text-center! font-normal" colspan="2">Buffered</th>
     <th class="font-normal 2xl:text-nowrap" rowspan="2">Parse errors</th>
@@ -203,7 +306,7 @@
   <td class="text-end font-dm-mono text-nowrap">
     {#if m.num_parse_errors > 0 && relation && connectorEndpointName}
       <button
-        class="cursor-pointer font-dm-mono text-error-500 hover:underline p-2 -m-2"
+        class="-m-2 cursor-pointer p-2 font-dm-mono text-error-500 hover:underline"
         onclick={(e) => {
           e.stopPropagation()
           onConnectorSelect(relation, connectorEndpointName, 'input', 'parse')
@@ -216,7 +319,7 @@
   <td class="text-end font-dm-mono text-nowrap">
     {#if m.num_transport_errors > 0 && relation && connectorEndpointName}
       <button
-        class="cursor-pointer font-dm-mono text-error-500 hover:underline p-2 -m-2"
+        class="-m-2 cursor-pointer p-2 font-dm-mono text-error-500 hover:underline"
         onclick={(e) => {
           e.stopPropagation()
           onConnectorSelect(relation, connectorEndpointName, 'input', 'transport')
@@ -231,7 +334,12 @@
 {#snippet viewColumnHeaders()}
   <tr>
     <th class="font-normal" rowspan="2">View</th>
-    <th class="w-full pb-0! font-normal" rowspan="2"><span class="pl-10">Connector</span></th>
+    <th class="w-full font-normal" rowspan="2">
+      <div class="flex items-center gap-4 pl-10">
+        <span>Connectors</span>
+        {@render connectorHealthFilterControl()}
+      </div>
+    </th>
     <th class="pb-0! text-center! font-normal" colspan="2">Transmitted</th>
     <th class="pb-0! text-center! font-normal" colspan="2">Buffered</th>
     <th class="pb-0! text-center! font-normal" colspan="2">Queued</th>
@@ -269,7 +377,7 @@
   <td class="text-end font-dm-mono text-nowrap">
     {#if m.num_encode_errors > 0 && relation && connectorEndpointName}
       <button
-        class="cursor-pointer font-dm-mono text-error-500 hover:underline p-2 -m-2"
+        class="-m-2 cursor-pointer p-2 font-dm-mono text-error-500 hover:underline"
         onclick={(e) => {
           e.stopPropagation()
           onConnectorSelect(relation, connectorEndpointName, 'output', 'encode')
@@ -282,7 +390,7 @@
   <td class="text-end font-dm-mono text-nowrap">
     {#if m.num_transport_errors > 0 && relation && connectorEndpointName}
       <button
-        class="cursor-pointer font-dm-mono text-error-500 hover:underline p-2 -m-2"
+        class="-m-2 cursor-pointer p-2 font-dm-mono text-error-500 hover:underline"
         onclick={(e) => {
           e.stopPropagation()
           onConnectorSelect(relation, connectorEndpointName, 'output', 'transport')
@@ -298,12 +406,13 @@
   {@const runningCount = data.connectors.filter((c) => c.paused === false).length}
   {@const anyErrors = data.connectors.some(inputHasErrors)}
   {@const anyBarrier = data.connectors.some((c) => c.barrier === true)}
+  {@const anyUnhealthy = data.connectors.some(isUnhealthy)}
   {@const aggregateTransactionPhase = data.connectors.some((c) => c.transaction_phase === 'started')
     ? 'started'
     : data.connectors.some((c) => c.transaction_phase === 'committed')
       ? 'committed'
       : undefined}
-  <div class="flex flex-nowrap">
+  <div class="flex flex-nowrap items-center">
     <span class="flex w-10 flex-nowrap justify-end">
       {#if !isExpanded}
         {@render inputConnectorIcons(
@@ -318,14 +427,35 @@
       {/if}
     </span>
     {runningCount} / {data.connectors.length} running
+    {#if !isExpanded && anyUnhealthy}
+      {@render unhealthyChip(
+        data.connectors
+          .filter(isUnhealthy)
+          .map((c) => c.health?.description)
+          .filter(Boolean)
+          .join('\n\n') || ''
+      )}
+    {/if}
   </div>
 {/snippet}
 
 {#snippet viewMultiConnectorCell(data: AggregatedOutputEndpointMetrics, isExpanded: boolean)}
-  {#if !isExpanded && data.connectors.some(outputHasErrors)}
-    <span class="fd fd-circle-alert mr-1 text-[16px] text-error-500"></span>
-  {/if}
-  {data.connectors.length} connectors
+  {@const anyUnhealthy = data.connectors.some(isUnhealthy)}
+  <div class="flex flex-nowrap items-center">
+    {#if !isExpanded && data.connectors.some(outputHasErrors)}
+      <span class="fd fd-circle-alert mr-1 text-[16px] text-error-500"></span>
+    {/if}
+    {data.connectors.length} connectors
+    {#if !isExpanded && anyUnhealthy}
+      {@render unhealthyChip(
+        data.connectors
+          .filter(isUnhealthy)
+          .map((c) => c.health?.description)
+          .filter(Boolean)
+          .join('\n\n') || ''
+      )}
+    {/if}
+  </div>
 {/snippet}
 
 {#snippet metricsTable<EndpointMetrics, Extra extends { io_active: boolean }>(
@@ -334,7 +464,7 @@
   expanded: Set<string>,
   toggle: (r: string) => void,
   connectorNameSnippet: Snippet<
-    [AggregatedMetrics<EndpointMetrics, Extra>['connectors'][0], string]
+    [AggregatedMetrics<EndpointMetrics, Extra>['connectors'][0], string, boolean?]
   >,
   multiConnectorRelationCell: Snippet<[AggregatedMetrics<EndpointMetrics, Extra>, boolean]>,
   columnHeaders: Snippet,
@@ -367,7 +497,7 @@
               {#if hasMultipleConnectors}
                 {@render multiConnectorRelationCell(data, isExpanded)}
               {:else if data.connectors.length === 1}
-                {@render connectorNameSnippet(data.connectors[0], relation)}
+                {@render connectorNameSnippet(data.connectors[0], relation, true)}
               {/if}
             </td>
             {@render metricsCells(
@@ -381,7 +511,7 @@
             {#each data.connectors as connector}
               <tr>
                 <td></td>
-                <td>{@render connectorNameSnippet(connector, relation)}</td>
+                <td>{@render connectorNameSnippet(connector, relation, true)}</td>
                 {@render metricsCells(
                   connector.metrics,
                   connector.io_active,
@@ -400,7 +530,7 @@
 {#if metrics.current.tables.size}
   {@render metricsTable(
     'max-w-[1540px]',
-    metrics.current.tables,
+    filteredTables,
     expandedTables,
     toggleTable,
     inputConnectorName,
@@ -412,7 +542,7 @@
 {#if metrics.current.views.size}
   {@render metricsTable(
     'max-w-[1540px]',
-    metrics.current.views,
+    filteredViews,
     expandedViews,
     toggleView,
     outputConnectorName,

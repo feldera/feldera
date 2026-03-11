@@ -627,6 +627,7 @@ export type ConnectorConfig = OutputBufferConfig & {
    * The default is `false`.
    */
   paused?: boolean
+  preprocessor?: Array<PreprocessorConfig> | null
   /**
    * Start the connector after all connectors with specified labels.
    *
@@ -3267,6 +3268,26 @@ export type PostgresWriterConfig = {
    * See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>
    */
   uri: string
+}
+
+/**
+ * Configuration for describing a preprocessor
+ */
+export type PreprocessorConfig = {
+  /**
+   * Arbitrary additional configuration.
+   */
+  config: unknown
+  /**
+   * True if the preprocessor is message-oriented: true if each preprocessor
+   * output record corresponds to a whole number of of parser records.
+   */
+  message_oriented: boolean
+  /**
+   * Name of the preprocessor.
+   * All preprocessors with the same name will perform the same task.
+   */
+  name: string
 }
 
 /**
