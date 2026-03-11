@@ -70,34 +70,13 @@ impl Checkpointer {
     }
 
     fn init_storage(&self) -> Result<(), Error> {
-        let usage = if !self.checkpoint_list.is_empty() {
-            self.gc_startup()?
-        } else {
-            // There's no checkpoint file, or we couldn't read it. Don't run GC,
-            // to ensure that we don't accidentally remove everything.
-            //
-            // We still know the amount of storage in use.
-            self.measure_storage_use()?
-        };
+        let usage = self.gc_startup()?;
 
         // We measured the amount of storage in use. Give it to the backend as
         // the initial value.
         self.backend.usage().store(usage as i64, Ordering::Relaxed);
 
         Ok(())
-    }
-
-    fn measure_storage_use(&self) -> Result<u64, Error> {
-        let mut usage = 0;
-        StorageError::ignore_notfound(self.backend.list(
-            &StoragePath::default(),
-            &mut |_path, file_type| {
-                if let StorageFileType::File { size } = file_type {
-                    usage += size;
-                }
-            },
-        ))?;
-        Ok(usage)
     }
 
     pub(super) fn measure_checkpoint_storage_use(&self, uuid: uuid::Uuid) -> Result<u64, Error> {
