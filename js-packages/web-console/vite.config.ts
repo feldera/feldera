@@ -56,6 +56,12 @@ export default defineConfig(async () => {
     build: {
       minify: false
     },
+    resolve: {
+      // When support-bundle-triage is symlinked into node_modules, vite dereferences
+      // the symlink and resolves its imports from the real path outside this workspace.
+      // dedupe forces these packages to always resolve from this workspace root.
+      dedupe: ['profiler-lib', 'triage-types', 'but-unzip']
+    },
     server: {
       watch: {
         ignored: ['**/dist/**', '**/node_modules/**', '**/.svelte-kit/**', '**/build/**']
