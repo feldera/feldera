@@ -29,7 +29,7 @@
   import DownloadSupportBundle from '$lib/components/pipelines/editor/DownloadSupportBundle.svelte'
   import {
     extractProgramErrors,
-    numConnectorsWithErrors
+    numConnectorsWithProblems
   } from '$lib/compositions/health/systemErrors'
   import TabsPanel from './TabsPanel.svelte'
 
@@ -96,7 +96,7 @@
     )
   )
 
-  const connectorsWithErrorsCount = $derived(numConnectorsWithErrors(metrics.current))
+  const connectorsWithErrorsCount = $derived(numConnectorsWithProblems(metrics.current))
 </script>
 
 {#snippet TabControlPerformance()}

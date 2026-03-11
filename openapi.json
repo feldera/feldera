@@ -10751,6 +10751,28 @@
         ],
         "description": "Postgres output connector configuration."
       },
+      "PreprocessorConfig": {
+        "type": "object",
+        "description": "Configuration for describing a preprocessor",
+        "required": [
+          "name",
+          "message_oriented",
+          "config"
+        ],
+        "properties": {
+          "config": {
+            "description": "Arbitrary additional configuration."
+          },
+          "message_oriented": {
+            "type": "boolean",
+            "description": "True if the preprocessor is message-oriented: true if each preprocessor\noutput record corresponds to a whole number of of parser records."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the preprocessor.\nAll preprocessors with the same name will perform the same task."
+          }
+        }
+      },
       "ProgramConfig": {
         "type": "object",
         "description": "Program configuration.",

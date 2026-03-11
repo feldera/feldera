@@ -407,6 +407,7 @@ It contains the following fields:
         feldera_types::query::AdHocResultFormat,
         feldera_types::format::json::JsonUpdateFormat,
         feldera_types::format::json::JsonLines,
+        feldera_types::preprocess::PreprocessorConfig,
         feldera_types::program_schema::ProgramSchema,
         feldera_types::program_schema::Relation,
         feldera_types::program_schema::SqlType,
