@@ -1,4 +1,6 @@
+from unittest import skip
 from feldera.enums import PipelineStatus, ProgramStatus, StorageStatus
+from feldera.rest.errors import FelderaAPIError
 import time
 from http import HTTPStatus
 from feldera import PipelineBuilder, Pipeline
@@ -326,6 +328,92 @@ def test_pipeline_clear(pipeline_name):
             get_pipeline(pipeline_name, "status").json().get("storage_status")
         )
         == StorageStatus.CLEARED
+    )
+
+
+@gen_pipeline_name
+def test_pipeline_clear_using_api(pipeline_name):
+    """
+    Validate storage_status transitions and clear behavior using the Python API.
+    """
+    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
+
+    # Initially should be cleared
+    assert pipeline.storage_status() == StorageStatus.CLEARED
+
+    # Clearing should not fail or have an effect while cleared
+    pipeline.clear_storage()
+    assert pipeline.storage_status() == StorageStatus.CLEARED
+
+    # Starting should make it in-use
+    pipeline.start()
+    assert pipeline.storage_status() == StorageStatus.INUSE
+
+    # While running, clear is not possible, and it should still be in-use
+    error_code = None
+    try:
+        pipeline.clear_storage()
+    except FelderaAPIError as e:
+        error_code = e.error_code
+    assert error_code == "StorageStatusImmutableUnlessStopped"
+    assert pipeline.storage_status() == StorageStatus.INUSE
+
+    # The same for non-blocking clear
+    error_code = None
+    try:
+        pipeline.clear_storage(wait=False)
+    except FelderaAPIError as e:
+        error_code = e.error_code
+    assert error_code == "StorageStatusImmutableUnlessStopped"
+    assert pipeline.storage_status() == StorageStatus.INUSE
+
+    # After stopping, it should still be in-use
+    pipeline.stop(force=True)
+    assert pipeline.storage_status() == StorageStatus.INUSE
+
+    # Starting again makes it remain in use
+    pipeline.start()
+    assert pipeline.storage_status() == StorageStatus.INUSE
+    pipeline.stop(force=True)
+
+    # Clearing it should work when stopped
+    assert pipeline.storage_status() == StorageStatus.INUSE
+    pipeline.clear_storage()
+    assert pipeline.storage_status() == StorageStatus.CLEARED
+
+    # Non-blocking clear should work as well
+    pipeline.start()
+    pipeline.stop(force=True)
+    pipeline.clear_storage(wait=False)
+    assert pipeline.storage_status() in [StorageStatus.CLEARING, StorageStatus.CLEARED]
+
+
+@skip  # Passing this test requires denying clearing when desired resources status is provisioned.
+@gen_pipeline_name
+def test_pipeline_clear_while_desired_provisioned(pipeline_name):
+    """
+    This tests the following scenario:
+    - There is a pipeline that is stopped (`resources_status=Stopped`) and has
+      state in storage (`storage_status=InUse`).
+    - The pipeline is started (`resources_desired_status=Provisioned`) without
+      waiting. It does not transition yet its `resources_status`. In order to make
+      sure this fact is not based solely on quick timing, the test first started
+      recompiling the program which takes a few seconds.
+    - Before it transitions to `Provisioning` the user attempts to clear the pipeline.
+      This should fail.
+    """
+    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
+    pipeline.start()
+    pipeline.stop(force=True)
+    TEST_CLIENT.patch_pipeline(name=pipeline_name, sql="CREATE TABLE t1 (c1 INT);")
+    pipeline.start(wait=False)
+    error_code = None
+    try:
+        pipeline.clear_storage(wait=False)
+    except FelderaAPIError as e:
+        error_code = e.error_code
+    assert error_code == "StorageStatusImmutableUnlessStopped", (
+        f"User was able to clear storage without error or got the wrong error (error={error_code}), which shouldn't happen"
     )
 
 

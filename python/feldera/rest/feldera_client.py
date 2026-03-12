@@ -718,21 +718,33 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         """
         self.http.post(path=f"/pipelines/{pipeline_name}/dismiss_error")
 
-    def clear_storage(self, pipeline_name: str, timeout_s: Optional[float] = None):
+    def clear_storage(
+        self,
+        pipeline_name: str,
+        wait: bool = True,
+        timeout_s: float | None = None,
+        poll_interval_s: float = 0.25,
+    ):
         """
-        Clears the storage from the pipeline.
-        This operation cannot be canceled.
+        Clears the storage of the pipeline.
+        Once started, this action cannot be canceled, and will delete all the pipeline storage.
 
-        :param pipeline_name: The name of the pipeline
-        :param timeout_s: The amount of time in seconds to wait for the storage
-            to clear.
+        :param pipeline_name: Name of the pipeline.
+        :param wait: Set `True` to wait for the pipeline storage to become cleared,
+            or set `False` to immediately return. Default is `True`.
+        :param timeout_s: Timeout waiting for storage to become cleared.
+            `None` = no timeout is enforced (default). Not used if `wait=False`.
+        :param poll_interval_s: Polling interval at which to check while waiting
+            if storage is cleared (default is every 0.25 seconds). Not used if `wait=False`.
         """
         self.http.post(
             path=f"/pipelines/{pipeline_name}/clear",
         )
 
-        start = time.monotonic()
+        if not wait:
+            return
 
+        start = time.monotonic()
         while True:
             if timeout_s is not None and time.monotonic() - start > timeout_s:
                 raise FelderaTimeoutError(
@@ -745,11 +757,12 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             if status == "Cleared":
                 return
 
-            logging.debug(
-                "still clearing %s, waiting for 100 more milliseconds",
+            logger.debug(
+                "still clearing %s, waiting for %.1f more seconds",
                 pipeline_name,
+                poll_interval_s,
             )
-            time.sleep(0.1)
+            time.sleep(poll_interval_s)
 
     def start_transaction(self, pipeline_name: str) -> int:
         """
