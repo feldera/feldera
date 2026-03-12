@@ -28,12 +28,9 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator implements ICon
     public final boolean lowerInclusive;
     public final boolean upperInclusive;
 
-    public DBSPWindowOperator(
-            CalciteRelNode node, CalciteObject object,
-            boolean lowerInclusive, boolean upperInclusive,
+    public DBSPWindowOperator(CalciteRelNode node, boolean lowerInclusive, boolean upperInclusive,
             OutputPort data, OutputPort control) {
-        super(node, "window", new NoExpression(DBSPTypeVoid.INSTANCE), data.outputType(),
-                data.isMultiset(), data, control);
+        super(node, "window", null, data.outputType(), data.isMultiset(), data, control);
         // Check that the left input and output are indexed ZSets
         this.getOutputIndexedZSetType();
         this.lowerInclusive = lowerInclusive;
@@ -48,7 +45,7 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator implements ICon
             Utilities.enforce(newInputs.size() == 2, () -> "Expected 2 inputs, got " + newInputs.size());
             if (force || this.inputsDiffer(newInputs))
                 return new DBSPWindowOperator(
-                        this.getRelNode(), this.getFunction().getNode(), this.lowerInclusive, this.upperInclusive,
+                        this.getRelNode(), this.lowerInclusive, this.upperInclusive,
                         newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         }
         return this;
@@ -68,7 +65,7 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator implements ICon
         DBSPSimpleOperator.CommonInfo info = commonInfoFromJson(node, decoder);
         boolean lowerInclusive = Utilities.getBooleanProperty(node, "lowerInclusive");
         boolean upperInclusive = Utilities.getBooleanProperty(node, "upperInclusive");
-        return new DBSPWindowOperator(CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY,
+        return new DBSPWindowOperator(CalciteEmptyRel.INSTANCE,
                 lowerInclusive, upperInclusive, info.getInput(0), info.getInput(1))
                 .addAnnotations(info.annotations(), DBSPWindowOperator.class);
     }

@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
@@ -55,6 +56,14 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         if (outputNumber < 0 || outputNumber >= this.internalOutputs.size())
             return false;
         return this.internalOutputs.get(outputNumber) != null;
+    }
+
+    @Override
+    public List<SourcePositionRange> getSourcePositions() {
+        ArrayList<SourcePositionRange> result = new ArrayList<>();
+        for (DBSPOperator op: this.allOperators)
+            result.addAll(op.getSourcePositions());
+        return result;
     }
 
     public boolean contains(DBSPOperator operator) {

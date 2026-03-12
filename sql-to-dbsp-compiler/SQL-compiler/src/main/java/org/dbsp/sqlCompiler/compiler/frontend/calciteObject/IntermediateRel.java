@@ -40,6 +40,11 @@ public class IntermediateRel extends CalciteRelNode {
     }
 
     @Override
+    public CalciteRelNode copy() {
+        return new IntermediateRel(this.relNode).addSourcePositions(this.positions);
+    }
+
+    @Override
     public IIndentStream asJson(IIndentStream stream, Map<RelNode, Integer> idRemap) {
         return stream.append("{").increase()
                 .appendJsonLabelAndColon("partial")

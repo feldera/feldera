@@ -1,43 +1,39 @@
 <script lang="ts" module>
-    import type { NodeAttributes, TooltipRow } from "profiler-lib";
-    import {
-        measurementCategory,
-        measurementDescription,
-        shadeOfRed,
-    } from "profiler-lib";
-    import { SvelteSet } from "svelte/reactivity";
-    import { groupBy } from "$lib/functions/array";
+  import type { NodeAttributes, TooltipRow } from 'profiler-lib'
+  import { measurementCategory, measurementDescription, shadeOfRed } from 'profiler-lib'
+  import { SvelteSet } from 'svelte/reactivity'
+  import { groupBy } from '$lib/functions/array'
 
-    export type TooltipData =
-        | { nodeAttributes: NodeAttributes }
-        | {
-              genericTable: {
-                  header: string;
-                  columns: string[];
-                  rows: {
-                      stub: { text: string; onclick?: () => void };
-                      cells: {
-                          text: string;
-                          operation: string;
-                          normalizedValue: number;
-                      }[];
-                  }[];
-              };
-          };
-
-    // Track which metric categories are collapsed (true = collapsed, false = expanded)
-    let collapsedCategories = $state(new SvelteSet<string>());
-    // If true show the advanced categories
-    let showAdvanced = $state(false);
-
-    // Toggle category collapse state
-    function toggleCategory(category: string) {
-        if (collapsedCategories.has(category)) {
-            collapsedCategories.delete(category);
-        } else {
-            collapsedCategories.add(category);
+  export type TooltipData =
+    | { nodeAttributes: NodeAttributes }
+    | {
+        genericTable: {
+          header: string
+          columns: string[]
+          rows: {
+            stub: { text: string; onclick?: () => void }
+            cells: {
+              text: string
+              operation: string
+              normalizedValue: number
+            }[]
+          }[]
         }
+      }
+
+  // Track which metric categories are collapsed (true = collapsed, false = expanded)
+  let collapsedCategories = $state(new SvelteSet<string>())
+  // If true show the advanced categories
+  let showAdvanced = $state(false)
+
+  // Toggle category collapse state
+  function toggleCategory(category: string) {
+    if (collapsedCategories.has(category)) {
+      collapsedCategories.delete(category)
+    } else {
+      collapsedCategories.add(category)
     }
+  }
 </script>
 
 <script lang="ts">
@@ -73,7 +69,7 @@
                                         type="checkbox"
                                         id="show-advanced"
                                         bind:checked={showAdvanced}
-                                    /> show advanced</label
+                                    />show advanced&nbsp;</label
                                 ></th
                             >
                         </tr>
