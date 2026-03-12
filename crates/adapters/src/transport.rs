@@ -76,7 +76,7 @@ use crate::transport::null::NullOutputEndpoint;
 use crate::transport::nats::NatsInputEndpoint;
 
 #[cfg(feature = "with-s2")]
-use crate::transport::s2::S2InputEndpoint;
+use crate::transport::s2::{S2InputEndpoint, S2OutputEndpoint};
 
 #[cfg(feature = "with-nexmark")]
 use crate::transport::nexmark::NexmarkEndpoint;
@@ -138,6 +138,7 @@ pub fn input_transport_config_to_endpoint(
         | TransportConfig::HttpOutput(_)
         | TransportConfig::RedisOutput(_)
         | TransportConfig::IcebergInput(_)
+        | TransportConfig::S2Output(_)
         | TransportConfig::NullOutput => return Ok(None),
     };
     Ok(Some(endpoint))
@@ -173,6 +174,10 @@ pub fn output_transport_config_to_endpoint(
         #[cfg(feature = "with-redis")]
         TransportConfig::RedisOutput(config) => {
             Ok(Some(Box::new(RedisOutputEndpoint::new(config)?)))
+        }
+        #[cfg(feature = "with-s2")]
+        TransportConfig::S2Output(config) => {
+            Ok(Some(Box::new(S2OutputEndpoint::new(config)?)))
         }
         TransportConfig::NullOutput => Ok(Some(Box::new(NullOutputEndpoint))),
         _ => Ok(None),

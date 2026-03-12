@@ -781,6 +781,7 @@ pub fn generate_program_info(
                 | TransportConfig::DeltaTableOutput(_)
                 | TransportConfig::DynamoDBOutput(_)
                 | TransportConfig::RedisOutput(_)
+                | TransportConfig::S2Output(_)
                 | TransportConfig::NullOutput => {}
                 _ => {
                     return Err(ConnectorGenerationError::ExpectedOutputConnector {
