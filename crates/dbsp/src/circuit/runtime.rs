@@ -7,7 +7,7 @@ use crate::SchedulerError;
 use crate::circuit::DevTweaks;
 use crate::circuit::checkpointer::Checkpointer;
 use crate::error::Error as DbspError;
-use crate::operator::communication::{Exchange, Mailbox};
+use crate::operator::communication::Exchange;
 use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
 use crate::storage::file::writer::Parameters;
@@ -1305,15 +1305,6 @@ impl RuntimeHandle {
 pub enum WorkerLocation {
     Local,
     Remote,
-}
-
-impl WorkerLocation {
-    pub fn is_local(&self) -> bool {
-        *self == Self::Local
-    }
-    pub fn is_remote(&self) -> bool {
-        *self == Self::Remote
-    }
 }
 
 #[derive(Clone, Debug)]

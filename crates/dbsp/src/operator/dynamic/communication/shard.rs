@@ -111,10 +111,9 @@ where
                         let (sender, receiver) = new_exchange_operators(
                             Some(location),
                             || Vec::new(),
-                            move |batch: IB, batches: &mut Vec<Mailbox<(OB, bool)>>, flushed| {
+                            move |batch: IB, batches: &mut Vec<Mailbox<OB>>| {
                                 shard_batch(
                                     batch,
-                                    flushed,
                                     &workers_clone,
                                     &mut builders,
                                     batches,
@@ -175,15 +174,8 @@ where
             Some(location),
             Vec::new,
             move |input_pairs: Vec<Box<DynPairs<K, V>>>,
-                  output_pairs: &mut Vec<Mailbox<(Box<DynPairs<K, V>>, bool)>>,
-                  flushed| {
-                shard_pairs(
-                    input_pairs,
-                    flushed,
-                    &all_workers(),
-                    output_pairs,
-                    pairs_factory,
-                );
+                  output_pairs: &mut Vec<Mailbox<Box<DynPairs<K, V>>>>| {
+                shard_pairs(input_pairs, &all_workers(), output_pairs, pairs_factory);
             },
             move |data| {
                 let offset = unsafe { archived_root::<usize>(&data) };
@@ -213,10 +205,9 @@ where
 // `all_workers()`), based on the hash of the key.
 pub fn shard_batch<IB, OB>(
     mut batch: IB,
-    flushed: bool,
     workers: &Range<usize>,
     builders: &mut Vec<OB::Builder>,
-    outputs: &mut Vec<Mailbox<(OB, bool)>>,
+    outputs: &mut Vec<Mailbox<OB>>,
     factories: &OB::Factories,
 ) where
     IB: BatchReader<Time = ()>,
@@ -263,13 +254,13 @@ pub fn shard_batch<IB, OB>(
         }
     }
     for _ in 0..workers.start {
-        outputs.push(Mailbox::Plain((OB::dyn_empty(factories), flushed)));
+        outputs.push(Mailbox::Plain(OB::dyn_empty(factories)));
     }
     for builder in builders.drain(..) {
-        outputs.push(Mailbox::Plain((builder.done(), flushed)));
+        outputs.push(Mailbox::Plain(builder.done()));
     }
     for _ in workers.end..Runtime::num_workers() {
-        outputs.push(Mailbox::Plain((OB::dyn_empty(factories), flushed)));
+        outputs.push(Mailbox::Plain(OB::dyn_empty(factories)));
     }
 }
 
@@ -277,9 +268,8 @@ pub fn shard_batch<IB, OB>(
 // `all_workers()`), based on the hash of the key.
 pub fn shard_pairs<K, V>(
     input_pairs: Vec<Box<DynPairs<K, V>>>,
-    flushed: bool,
     workers: &Range<usize>,
-    output_pairs: &mut Vec<Mailbox<(Box<DynPairs<K, V>>, bool)>>,
+    output_pairs: &mut Vec<Mailbox<Box<DynPairs<K, V>>>>,
     pairs_factory: &'static dyn Factory<DynPairs<K, V>>,
 ) where
     K: DataTrait + ?Sized,
@@ -293,11 +283,7 @@ pub fn shard_pairs<K, V>(
             output[shard_index].push_val(pair);
         }
     }
-    output_pairs.extend(
-        output
-            .into_iter()
-            .map(|pairs| Mailbox::Plain((pairs, flushed))),
-    );
+    output_pairs.extend(output.into_iter().map(|pairs| Mailbox::Plain(pairs)));
 }
 
 impl<C, T> Stream<C, T>

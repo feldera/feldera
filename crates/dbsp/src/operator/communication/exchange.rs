@@ -932,7 +932,7 @@ where
     worker_index: usize,
     location: OperatorLocation,
     partition: L,
-    outputs: Vec<Mailbox<(T, bool)>>,
+    outputs: Vec<Mailbox<T>>,
     exchange: Arc<Exchange<(T, bool)>>,
 
     // Input batch sizes.
@@ -1026,7 +1026,7 @@ impl<D, T, L> SinkOperator<D> for ExchangeSender<D, T, L>
 where
     D: Clone + NumEntries + 'static,
     T: Clone + Send + 'static,
-    L: FnMut(D, &mut Vec<Mailbox<(T, bool)>>, bool) + 'static,
+    L: FnMut(D, &mut Vec<Mailbox<T>>) + 'static,
 {
     async fn eval(&mut self, input: &D) {
         self.eval_owned(input.clone()).await
@@ -1037,13 +1037,20 @@ where
 
         debug_assert!(self.ready());
         self.outputs.clear();
-        (self.partition)(input, &mut self.outputs, self.flushed);
+        (self.partition)(input, &mut self.outputs);
         self.start_wait_usecs
             .store(current_time_usecs(), Ordering::Release);
 
-        let res = self
-            .exchange
-            .try_send_all(self.worker_index, self.outputs.drain(..));
+        let res = self.exchange.try_send_all(
+            self.worker_index,
+            self.outputs.drain(..).map(|mailbox| match mailbox {
+                Mailbox::Serialized(mut data) => {
+                    data.push(self.flushed as u8);
+                    Mailbox::Serialized(data)
+                }
+                Mailbox::Plain(item) => Mailbox::Plain((item, self.flushed)),
+            }),
+        );
         self.flushed = false;
         debug_assert!(res);
     }
@@ -1291,7 +1298,7 @@ where
     TO: Clone,
     TE: Send + 'static + Clone,
     IF: Fn() -> TO + 'static,
-    PL: FnMut(TI, &mut Vec<Mailbox<(TE, bool)>>, bool) + 'static,
+    PL: FnMut(TI, &mut Vec<Mailbox<TE>>) + 'static,
     D: Fn(Vec<u8>) -> TE + Send + Sync + 'static,
     CL: Fn(&mut TO, TE) + 'static,
 {
@@ -1340,7 +1347,6 @@ mod tests {
         Circuit, RootCircuit,
         circuit::{
             Runtime,
-            runtime::{WorkerLocation, WorkerLocations},
             schedule::{DynamicScheduler, Scheduler},
         },
         operator::{
@@ -1436,9 +1442,9 @@ mod tests {
                     let (sender, receiver) = new_exchange_operators(
                         None,
                         Vec::new,
-                        move |n, vals, flushed| {
+                        move |n, vals| {
                             for _ in 0..workers {
-                                vals.push(Mailbox::Plain((n, flushed)));
+                                vals.push(Mailbox::Plain(n));
                             }
                         },
                         |data| unaligned_deserialize(&data[..]),

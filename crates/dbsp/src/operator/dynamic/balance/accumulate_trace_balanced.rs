@@ -13,7 +13,6 @@ use crate::{
             TOTAL_REBALANCING_TIME_SECONDS,
         },
         operator_traits::Operator,
-        runtime::{WorkerLocation, WorkerLocations},
         splitter_output_chunk_size,
     },
     circuit_cache_key, default_hasher,
@@ -21,7 +20,7 @@ use crate::{
     operator::{
         Z1,
         async_stream_operators::{StreamingTernarySinkOperator, StreamingTernarySinkWrapper},
-        communication::{Exchange, ExchangeReceiver, Mailbox},
+        communication::{Exchange, ExchangeReceiver},
         dynamic::{
             accumulate_trace::{AccumulateBoundsId, AccumulateTraceAppend, AccumulateZ1Trace},
             balance::{

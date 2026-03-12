@@ -87,11 +87,9 @@ where
             let exchange = new_exchange_operators(
                 Some(Location::caller()),
                 init,
-                move |waterline: Box<TS>,
-                      waterlines: &mut Vec<Mailbox<(Box<TS>, bool)>>,
-                      flushed| {
+                move |waterline: Box<TS>, waterlines: &mut Vec<Mailbox<Box<TS>>>| {
                     for _ in 0..Runtime::num_workers() {
-                        waterlines.push(Mailbox::Plain((clone_box(waterline.as_ref()), flushed)));
+                        waterlines.push(Mailbox::Plain(clone_box(waterline.as_ref())));
                     }
                 },
                 move |data| {
@@ -163,11 +161,9 @@ where
             let exchange = new_exchange_operators(
                 Some(Location::caller()),
                 init,
-                move |waterline: Box<TS>,
-                      waterlines: &mut Vec<Mailbox<(Box<TS>, bool)>>,
-                      flushed| {
+                move |waterline: Box<TS>, waterlines: &mut Vec<Mailbox<Box<TS>>>| {
                     for _ in 0..Runtime::num_workers() {
-                        waterlines.push(Mailbox::Plain((waterline.clone(), flushed)));
+                        waterlines.push(Mailbox::Plain(waterline.clone()));
                     }
                 },
                 move |data| {

@@ -293,10 +293,10 @@ pub fn build_string_interner(
     let exchange = new_exchange_operators(
         Some(Location::caller()),
         empty_by_id,
-        move |spine: SpineSnapshot<_>, outputs, flushed| {
-            outputs.push(Mailbox::Plain((spine.clone(), flushed)));
+        move |spine: SpineSnapshot<_>, outputs| {
+            outputs.push(Mailbox::Plain(spine.clone()));
             for _ in 1..Runtime::num_workers() {
-                outputs.push(Mailbox::Plain((empty_by_id(), flushed)));
+                outputs.push(Mailbox::Plain(empty_by_id()));
             }
         },
         |data| unaligned_deserialize(&data[..]),
