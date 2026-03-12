@@ -8,11 +8,9 @@ import TabItem from '@theme/TabItem';
 
 # Changelog
 
-
 <Tabs>
     <TabItem className="changelogItem" value="enterprise"
         label="Enterprise">
-
 
         ## Unreleased
 
@@ -20,6 +18,24 @@ import TabItem from '@theme/TabItem';
         the number of times the connector retries failed Delta Lake operations like writing Parquet files
         and committing transactions. The setting is unset by default, causing the connector to retry
         indefinitely.  This behavior prevents data loss due to transient or permanent write errors.
+
+        ### Checkpoint sync: `read_bucket` and checkpoint loading priority
+
+        The checkpoint sync configuration now supports a `read_bucket` field — a read-only
+        fallback bucket used to seed a pipeline's initial state. The pipeline **never writes**
+        to `read_bucket`.
+
+        Checkpoint sources are now resolved in priority order:
+        1. **Local checkpoint** — if the pipeline already has a local checkpoint, it resumes
+           from that without contacting any remote bucket.
+        2. **`bucket`** — the pipeline's own S3-compatible bucket. If a checkpoint is found
+           here, it is used and `read_bucket` is ignored.
+        3. **`read_bucket`** — consulted only when both local storage and `bucket` are empty.
+           This allows a new pipeline to seed from another pipeline's checkpoint, avoiding
+           a full backfill. `read_bucket` must point to a different location than `bucket`.
+
+        Refer to the [checkpoint sync documentation](/pipelines/checkpoint-sync#checkpoint-resolution-priority) for details.
+
 
         ## v0.263.0
 
@@ -334,4 +350,5 @@ import TabItem from '@theme/TabItem';
     <TabItem className="changelogItem" value="oss" label="Open Source">
      [Release notes](https://github.com/feldera/feldera/releases/) for the Open Source edition can be found on github.
     </TabItem>
+
 </Tabs>
