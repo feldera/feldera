@@ -1,0 +1,22 @@
+[package]
+name = "feldera-buffer-cache"
+version = { workspace = true }
+edition = "2024"
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+rust-version = { workspace = true }
+publish = true
+description = "Weighted in-memory buffer caches with LRU and S3-FIFO eviction"
+
+[dependencies]
+crossbeam-utils = { workspace = true }
+enum-map = { workspace = true }
+quick_cache = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = { workspace = true }

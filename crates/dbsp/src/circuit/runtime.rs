@@ -15,11 +15,16 @@ use crate::storage::file::writer::Parameters;
 use crate::trace::unaligned_deserialize;
 use crate::{
     DetailedError,
-    storage::{backend::StorageError, buffer_cache::BufferCache, dirlock::LockedDirectory},
+    storage::{
+        backend::StorageError,
+        buffer_cache::{BufferCache, build_buffer_caches},
+        dirlock::LockedDirectory,
+    },
 };
 use core_affinity::{CoreId, get_core_ids};
 use crossbeam::sync::{Parker, Unparker};
 use enum_map::{Enum, EnumMap, enum_map};
+use feldera_buffer_cache::ThreadType;
 use feldera_types::config::{StorageCompression, StorageConfig, StorageOptions};
 use indexmap::IndexSet;
 use once_cell::sync::Lazy;
@@ -34,6 +39,7 @@ use std::{
     backtrace::Backtrace,
     borrow::Cow,
     cell::{Cell, RefCell},
+    collections::HashSet,
     error::Error as StdError,
     fmt,
     fmt::{Debug, Display, Error as FmtError, Formatter},
@@ -112,56 +118,19 @@ thread_local! {
     // Returns `0` if the current thread in not running in a multithreaded
     // runtime.
     static WORKER_INDEX: Cell<usize> = const { Cell::new(0) };
+
+    // `None` means that this is an auxiliary thread that runs inside the runtime
+    // but is neither a DBSP foreground nor a background thread.
+    static CURRENT_THREAD_TYPE: Cell<Option<ThreadType>> = const { Cell::new(None) };
 }
 
-mod thread_type {
-    use std::{cell::Cell, fmt::Display};
-
-    #[cfg(doc)]
-    use super::Runtime;
-    use enum_map::Enum;
-    use serde::Serialize;
-
-    thread_local! {
-        /// `None` means that this is an auxiliary thread that runs inside the runtime
-        /// but is neither a DBSP foreground nor a background thread.
-        static CURRENT: Cell<Option<ThreadType>> = const { Cell::new(None) };
-    }
-
-    /// Type of a thread running in a [Runtime].
-    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Enum, Serialize)]
-    #[serde(rename_all = "snake_case")]
-    pub enum ThreadType {
-        /// Circuit thread.
-        Foreground,
-
-        /// Merger thread.
-        Background,
-    }
-
-    impl ThreadType {
-        /// Returns the kind of thread we're currently running in, if we're in a
-        /// [Runtime].  Outside of a [Runtime], this returns
-        /// [ThreadType::Foreground].
-        pub fn current() -> Option<Self> {
-            CURRENT.get()
-        }
-
-        pub(super) fn set_current(thread_type: Self) {
-            CURRENT.set(Some(thread_type));
-        }
-    }
-
-    impl Display for ThreadType {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            match self {
-                ThreadType::Foreground => write!(f, "foreground"),
-                ThreadType::Background => write!(f, "background"),
-            }
-        }
-    }
+pub(crate) fn current_thread_type() -> Option<ThreadType> {
+    CURRENT_THREAD_TYPE.get()
 }
-pub use thread_type::ThreadType;
+
+fn set_current_thread_type(thread_type: ThreadType) {
+    CURRENT_THREAD_TYPE.set(Some(thread_type));
+}
 
 pub struct LocalStoreMarker;
 
@@ -364,7 +333,11 @@ fn map_pin_cpus(layout: &Layout, pin_cpus: &[usize]) -> Vec<EnumMap<ThreadType, 
 impl RuntimeInner {
     fn new(config: CircuitConfig) -> Result<Self, DbspError> {
         let nworkers = config.layout.local_workers().len();
-
+        let buffer_cache_strategy = config.dev_tweaks.buffer_cache_strategy;
+        let buffer_max_buckets = config.dev_tweaks.buffer_max_buckets;
+        let buffer_cache_allocation_strategy = config
+            .dev_tweaks
+            .effective_buffer_cache_allocation_strategy();
         let storage = if let Some(storage) = config.storage {
             let locked_directory =
                 LockedDirectory::new_blocking(storage.config.path(), Duration::from_secs(60))?;
@@ -389,17 +362,30 @@ impl RuntimeInner {
             None
         };
 
-        let cache_size_bytes = if let Some(storage) = &storage {
-            storage
-                .options
-                .cache_mib
-                .map_or(256 * 1024 * 1024, |cache_mib| {
-                    cache_mib.saturating_mul(1024 * 1024) / nworkers / ThreadType::LENGTH
-                })
+        let total_cache_bytes = if let Some(storage) = &storage {
+            match storage.options.cache_mib {
+                Some(cache_mib) => cache_mib.saturating_mul(1024 * 1024),
+                None => 256usize
+                    .saturating_mul(1024 * 1024)
+                    .saturating_mul(nworkers)
+                    .saturating_mul(ThreadType::LENGTH),
+            }
         } else {
             // Dummy buffer cache.
             1
         };
+
+        info!(
+            "Setting up buffer caches: {buffer_cache_strategy:?} {buffer_cache_allocation_strategy:?} buckets={buffer_max_buckets:?} total_size={:?} MiB",
+            total_cache_bytes / (1024 * 1024)
+        );
+        let buffer_caches = build_buffer_caches(
+            nworkers,
+            total_cache_bytes,
+            buffer_cache_strategy,
+            buffer_max_buckets,
+            buffer_cache_allocation_strategy,
+        );
 
         Ok(Self {
             pin_cpus: map_pin_cpus(&config.layout, &config.pin_cpus),
@@ -411,9 +397,7 @@ impl RuntimeInner {
             kill_signal: AtomicBool::new(false),
             background_threads: Mutex::new(Vec::new()),
             aux_threads: Mutex::new(Vec::new()),
-            buffer_caches: (0..nworkers)
-                .map(|_| EnumMap::from_fn(|_| Arc::new(BufferCache::new(cache_size_bytes))))
-                .collect(),
+            buffer_caches,
             worker_sequence_numbers: (0..nworkers).map(|_| AtomicUsize::new(0)).collect(),
             panic_info: (0..nworkers)
                 .map(|_| EnumMap::from_fn(|_| RwLock::new(None)))
@@ -426,7 +410,7 @@ impl RuntimeInner {
     fn pin_cpu(&self) {
         if !self.pin_cpus.is_empty() {
             let local_worker_offset = Runtime::local_worker_offset();
-            let Some(thread_type) = ThreadType::current() else {
+            let Some(thread_type) = current_thread_type() else {
                 panic!("pin_cpu() called outside of a runtime or on an aux thread");
             };
             let core = self.pin_cpus[local_worker_offset][thread_type];
@@ -561,7 +545,7 @@ impl Runtime {
                     .spawn(move || {
                         // Set the worker's runtime handle and index
                         WORKER_INDEX.set(worker_index);
-                        ThreadType::set_current(ThreadType::Foreground);
+                        set_current_thread_type(ThreadType::Foreground);
                         runtime.inner().pin_cpu();
                         RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
 
@@ -612,8 +596,7 @@ impl Runtime {
             })
     }
 
-    /// Returns this thread's buffer cache.  Every thread has a buffer cache,
-    /// but:
+    /// Returns this thread's buffer-cache handle, but:
     ///
     /// - If the thread's [Runtime] does not have storage configured, the cache
     ///   size is trivially small.
@@ -643,7 +626,7 @@ impl Runtime {
 
         // Slow path for initializing the thread-local.
         let buffer_cache = if let Some(rt) = Runtime::runtime() {
-            if let Some(thread_type) = ThreadType::current() {
+            if let Some(thread_type) = current_thread_type() {
                 rt.get_buffer_cache(Runtime::local_worker_offset(), thread_type)
             } else {
                 // Aux thread: use the global cache.
@@ -689,8 +672,8 @@ impl Runtime {
             .push((handle, unparker))
     }
 
-    /// Returns this runtime's buffer cache for thread type `thread_type` in
-    /// worker with local offset `local_worker_offset`.
+    /// Returns this runtime's buffer-cache handle for thread type `thread_type`
+    /// in worker with local offset `local_worker_offset`.
     ///
     /// Usually it's easier and faster to call [Runtime::buffer_cache] instead.
     pub fn get_buffer_cache(
@@ -705,10 +688,12 @@ impl Runtime {
     /// that is currently used and its maximum size, both in bytes.
     pub fn cache_occupancy(&self) -> (usize, usize) {
         if self.0.storage.is_some() {
+            let mut seen = HashSet::new();
             self.0
                 .buffer_caches
                 .iter()
                 .flat_map(|map| map.values())
+                .filter(|cache| seen.insert(cache.backend_id()))
                 .map(|cache| cache.occupancy())
                 .fold((0, 0), |(a_cur, a_max), (b_cur, b_max)| {
                     (a_cur + b_cur, a_max + b_max)
@@ -940,7 +925,7 @@ impl Runtime {
     // Record information about a worker thread panic in `panic_info`
     fn panic(&self, panic_info: &PanicHookInfo) {
         let local_worker_offset = Self::local_worker_offset();
-        let Some(thread_type) = ThreadType::current() else {
+        let Some(thread_type) = current_thread_type() else {
             // We only install panic hooks on foreground and background threads,
             // so this shouldn't happen, but we cannot panic here.
             error!("panic hook called outside of a runtime or on an aux thread");
@@ -967,7 +952,7 @@ impl Runtime {
         let join_handle = builder
             .spawn(move || {
                 WORKER_INDEX.set(worker_index);
-                ThreadType::set_current(ThreadType::Background);
+                set_current_thread_type(ThreadType::Background);
                 if let Some(runtime) = runtime {
                     runtime.inner().pin_cpu();
                     RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
@@ -1297,7 +1282,7 @@ impl RuntimeHandle {
 
 #[cfg(test)]
 mod tests {
-    use super::Runtime;
+    use super::{Runtime, RuntimeInner};
     use crate::{
         Circuit, RootCircuit,
         circuit::{
@@ -1306,9 +1291,22 @@ mod tests {
             schedule::{DynamicScheduler, Scheduler},
         },
         operator::Generator,
+        storage::backend::FileId,
+    };
+    use enum_map::Enum;
+    use feldera_buffer_cache::{
+        BufferCacheAllocationStrategy, BufferCacheStrategy, CacheEntry, ThreadType,
     };
     use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
-    use std::{cell::RefCell, rc::Rc, thread::sleep, time::Duration};
+    use std::{cell::RefCell, rc::Rc, sync::Arc, thread::sleep, time::Duration};
+
+    struct TestCacheEntry(usize);
+
+    impl CacheEntry for TestCacheEntry {
+        fn cost(&self) -> usize {
+            self.0
+        }
+    }
 
     #[test]
     #[cfg_attr(miri, ignore)]
@@ -1346,6 +1344,186 @@ mod tests {
         .expect("failed to start runtime");
         hruntime.join().unwrap();
         assert!(path.exists(), "persistent storage is not cleaned up");
+    }
+
+    #[test]
+    fn s3_fifo_is_the_default_buffer_cache_strategy() {
+        let inner = RuntimeInner::new(CircuitConfig::with_workers(1)).unwrap();
+        assert_eq!(
+            inner.buffer_caches[0][ThreadType::Foreground].strategy(),
+            BufferCacheStrategy::S3Fifo
+        );
+    }
+
+    #[test]
+    fn default_s3_fifo_cache_shares_backend_per_worker_pair() {
+        let inner = RuntimeInner::new(CircuitConfig::with_workers(2)).unwrap();
+        assert!(
+            inner.buffer_caches[0][ThreadType::Foreground]
+                .shares_backend_with(&inner.buffer_caches[0][ThreadType::Background])
+        );
+        assert!(
+            inner.buffer_caches[1][ThreadType::Foreground]
+                .shares_backend_with(&inner.buffer_caches[1][ThreadType::Background])
+        );
+        assert!(
+            !inner.buffer_caches[0][ThreadType::Foreground]
+                .shares_backend_with(&inner.buffer_caches[1][ThreadType::Foreground])
+        );
+    }
+
+    #[test]
+    fn lru_can_still_be_selected_explicitly() {
+        let inner = RuntimeInner::new(
+            CircuitConfig::with_workers(1).with_buffer_cache_strategy(BufferCacheStrategy::Lru),
+        )
+        .unwrap();
+        assert_eq!(
+            inner.buffer_caches[0][ThreadType::Foreground].strategy(),
+            BufferCacheStrategy::Lru
+        );
+        assert!(
+            !inner.buffer_caches[0][ThreadType::Foreground]
+                .shares_backend_with(&inner.buffer_caches[0][ThreadType::Background])
+        );
+    }
+
+    #[test]
+    fn lru_uses_default_total_cache_capacity_when_cache_mib_is_unset() {
+        let workers = 3usize;
+        let path = tempfile::tempdir().unwrap();
+        let storage = CircuitStorageConfig::for_config(
+            StorageConfig {
+                path: path.path().to_string_lossy().into_owned(),
+                cache: StorageCacheConfig::default(),
+            },
+            StorageOptions::default(),
+        )
+        .unwrap();
+        let runtime = Runtime(Arc::new(
+            RuntimeInner::new(
+                CircuitConfig::with_workers(workers)
+                    .with_storage(storage)
+                    .with_buffer_cache_strategy(BufferCacheStrategy::Lru),
+            )
+            .unwrap(),
+        ));
+
+        assert_eq!(
+            runtime.cache_occupancy(),
+            (0, workers * ThreadType::LENGTH * 256usize * 1024 * 1024)
+        );
+    }
+
+    #[test]
+    fn s3_fifo_cache_can_share_cache_per_worker_pair_when_requested() {
+        let config = CircuitConfig::with_workers(2).with_buffer_cache_allocation_strategy(
+            BufferCacheAllocationStrategy::SharedPerWorkerPair,
+        );
+        let inner = RuntimeInner::new(config).unwrap();
+        assert!(
+            inner.buffer_caches[0][ThreadType::Foreground]
+                .shares_backend_with(&inner.buffer_caches[0][ThreadType::Background])
+        );
+        assert!(
+            inner.buffer_caches[1][ThreadType::Foreground]
+                .shares_backend_with(&inner.buffer_caches[1][ThreadType::Background])
+        );
+    }
+
+    #[test]
+    fn s3_fifo_cache_can_share_one_global_cache_when_requested() {
+        let config = CircuitConfig::with_workers(2)
+            .with_buffer_cache_allocation_strategy(BufferCacheAllocationStrategy::Global);
+        let inner = RuntimeInner::new(config).unwrap();
+        let global = inner.buffer_caches[0][ThreadType::Foreground].clone();
+        assert!(global.shares_backend_with(&inner.buffer_caches[0][ThreadType::Background]));
+        assert!(global.shares_backend_with(&inner.buffer_caches[1][ThreadType::Foreground]));
+        assert!(global.shares_backend_with(&inner.buffer_caches[1][ThreadType::Background]));
+    }
+
+    #[test]
+    fn lru_keeps_separate_foreground_and_background_caches() {
+        let config = CircuitConfig::with_workers(2)
+            .with_buffer_cache_strategy(BufferCacheStrategy::Lru)
+            .with_buffer_cache_allocation_strategy(
+                BufferCacheAllocationStrategy::SharedPerWorkerPair,
+            );
+        let inner = RuntimeInner::new(config).unwrap();
+        assert!(
+            !inner.buffer_caches[0][ThreadType::Foreground]
+                .shares_backend_with(&inner.buffer_caches[0][ThreadType::Background])
+        );
+        assert!(
+            !inner.buffer_caches[1][ThreadType::Foreground]
+                .shares_backend_with(&inner.buffer_caches[1][ThreadType::Background])
+        );
+    }
+
+    #[test]
+    fn shared_sharded_cache_occupancy_is_not_double_counted() {
+        let path = tempfile::tempdir().unwrap();
+        let storage = CircuitStorageConfig::for_config(
+            StorageConfig {
+                path: path.path().to_string_lossy().into_owned(),
+                cache: StorageCacheConfig::default(),
+            },
+            StorageOptions {
+                cache_mib: Some(8),
+                ..StorageOptions::default()
+            },
+        )
+        .unwrap();
+        let runtime = Runtime(Arc::new(
+            RuntimeInner::new(
+                CircuitConfig::with_workers(1)
+                    .with_storage(storage)
+                    .with_buffer_cache_allocation_strategy(
+                        BufferCacheAllocationStrategy::SharedPerWorkerPair,
+                    ),
+            )
+            .unwrap(),
+        ));
+
+        runtime.get_buffer_cache(0, ThreadType::Foreground).insert(
+            FileId::new(),
+            0,
+            Arc::new(TestCacheEntry(1024)),
+        );
+
+        assert_eq!(runtime.cache_occupancy(), (1024, 8 * 1024 * 1024));
+    }
+
+    #[test]
+    fn global_sharded_cache_occupancy_is_not_double_counted() {
+        let path = tempfile::tempdir().unwrap();
+        let storage = CircuitStorageConfig::for_config(
+            StorageConfig {
+                path: path.path().to_string_lossy().into_owned(),
+                cache: StorageCacheConfig::default(),
+            },
+            StorageOptions {
+                cache_mib: Some(8),
+                ..StorageOptions::default()
+            },
+        )
+        .unwrap();
+        let runtime = Runtime(Arc::new(
+            RuntimeInner::new(
+                CircuitConfig::with_workers(2)
+                    .with_storage(storage)
+                    .with_buffer_cache_allocation_strategy(BufferCacheAllocationStrategy::Global),
+            )
+            .unwrap(),
+        ));
+
+        runtime.get_buffer_cache(1, ThreadType::Background).insert(
+            FileId::new(),
+            0,
+            Arc::new(TestCacheEntry(1024)),
+        );
+
+        assert_eq!(runtime.cache_occupancy(), (1024, 8 * 1024 * 1024));
     }
 
     fn test_runtime<S>()
