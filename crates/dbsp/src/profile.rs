@@ -12,10 +12,10 @@ use crate::{
             MetricReading, OperatorMeta, RUNTIME_PERCENT, RUNTIME_SECONDS,
             SPINE_STORAGE_SIZE_BYTES, STEPS_COUNT, USED_MEMORY_BYTES,
         },
-        runtime::ThreadType,
     },
     monitor::{TraceMonitor, visual_graph::Graph},
 };
+use feldera_buffer_cache::ThreadType;
 use serde::Serialize;
 use size_of::HumanBytes;
 use std::{

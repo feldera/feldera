@@ -6,7 +6,7 @@
 //! `pub`.
 use crate::storage::{
     backend::{BlockLocation, FileReader, FileWriter, StorageBackend, StorageError},
-    buffer_cache::{BufferCache, CacheEntry, FBuf, FBufSerializer, LimitExceeded},
+    buffer_cache::{BufferCache, FBuf, FBufSerializer, LimitExceeded},
     file::{
         BLOOM_FILTER_SEED,
         format::{
@@ -26,6 +26,7 @@ use crc32c::crc32c;
 #[cfg(debug_assertions)]
 use dyn_clone::clone_box;
 use fastbloom::BloomFilter;
+use feldera_buffer_cache::CacheEntry;
 use feldera_storage::StoragePath;
 use snap::raw::{Encoder, max_compress_len};
 use std::{
