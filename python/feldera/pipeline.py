@@ -1043,15 +1043,27 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         gen = self.query_tabular(query)
         deque(gen, maxlen=0)
 
-    def clear_storage(self):
+    def clear_storage(
+        self,
+        wait: bool = True,
+        timeout_s: float | None = None,
+        poll_interval_s: float = 0.25,
+    ):
         """
-        Clears the storage of the pipeline if it is currently in use.
-        This action cannot be canceled, and will delete all the pipeline
-        storage.
+        Clears the storage of the pipeline.
+        Once started, this action cannot be canceled, and will delete all the pipeline storage.
+
+        :param wait: Set `True` to wait for the pipeline storage to become cleared,
+            or set `False` to immediately return. Default is `True`.
+        :param timeout_s: Timeout waiting for storage to become cleared.
+            `None` = no timeout is enforced (default). Not used if `wait=False`.
+        :param poll_interval_s: Polling interval at which to check while waiting
+            if storage is cleared (default is every 0.25 seconds). Not used if `wait=False`.
         """
 
-        if self.storage_status() == StorageStatus.INUSE:
-            self.client.clear_storage(self.name)
+        self.client.clear_storage(
+            self.name, wait=wait, timeout_s=timeout_s, poll_interval_s=poll_interval_s
+        )
 
     @property
     def name(self) -> str:
