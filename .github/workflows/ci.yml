@@ -26,86 +26,47 @@ jobs:
       artifacts_run_id: ${{ steps.result.outputs.artifacts_run_id }}
       skip_docker: ${{ steps.result.outputs.skip_docker }}
     steps:
-      - name: Find prior run with all build artifacts for this commit
-        id: find
+      - uses: actions/checkout@v4
+
+      # Finds the first prior run for this commit that has all Rust/Java build
+      # artifacts. If found, its run ID is used by downstream jobs to download
+      # artifacts instead of rebuilding.
+      - name: Find prior run with all Rust/Java build artifacts
+        id: find-builds
         continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set +e
-          rust_java_required=(
-            "fda-x86_64-unknown-linux-gnu"
-            "fda-aarch64-unknown-linux-gnu"
-            "pipeline-manager-x86_64-unknown-linux-gnu"
-            "pipeline-manager-aarch64-unknown-linux-gnu"
-            "feldera-test-binaries-x86_64-unknown-linux-gnu"
-            "feldera-test-binaries-aarch64-unknown-linux-gnu"
-            "feldera-sql-compiler"
-          )
-          # These tiny (~244B) digest artifacts are uploaded when each platform
-          # Docker build completes. Checking them is faster than docker manifest inspect.
-          docker_required=(
-            "digests-linux-amd64"
-            "digests-linux-arm64"
-          )
+        uses: ./.github/actions/find-artifacts-run
+        with:
+          required-artifacts: |
+            fda-x86_64-unknown-linux-gnu
+            fda-aarch64-unknown-linux-gnu
+            pipeline-manager-x86_64-unknown-linux-gnu
+            pipeline-manager-aarch64-unknown-linux-gnu
+            feldera-test-binaries-x86_64-unknown-linux-gnu
+            feldera-test-binaries-aarch64-unknown-linux-gnu
+            feldera-sql-compiler
+          token: ${{ github.token }}
 
-          run_ids=$(curl -fsSL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=${{ github.sha }}&per_page=20" \
-            | jq -r --argjson cur '${{ github.run_id }}' \
-              '.workflow_runs[] | select(.id != $cur) | .id') || true
+      # Checks whether the run found above also has the Docker image artifact.
+      # This artifact is uploaded by merge-manifests only after the image is
+      # verified in GHCR, so its presence guarantees the sha-{sha} tag exists.
+      - name: Check if Docker image artifact also present
+        id: find-docker
+        if: steps.find-builds.outputs.run-id != ''
+        continue-on-error: true
+        uses: ./.github/actions/find-artifacts-run
+        with:
+          required-artifacts: docker-image-ready
+          token: ${{ github.token }}
+          run-id: ${{ steps.find-builds.outputs.run-id }}
 
-          for run_id in $run_ids; do
-            names=$(curl -fsSL \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${{ github.repository }}/actions/runs/${run_id}/artifacts?per_page=100" \
-              | jq -r '.artifacts[] | select(.expired == false) | .name') || continue
-
-            all_rust_java=true
-            for artifact in "${rust_java_required[@]}"; do
-              if ! printf '%s\n' $names | grep -qx "$artifact"; then
-                all_rust_java=false
-                break
-              fi
-            done
-
-            if $all_rust_java; then
-              echo "Found all Rust/Java build artifacts in prior run $run_id"
-              echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-
-              all_docker=true
-              for artifact in "${docker_required[@]}"; do
-                if ! printf '%s\n' $names | grep -qx "$artifact"; then
-                  all_docker=false
-                  break
-                fi
-              done
-
-              if $all_docker; then
-                echo "Docker digest artifacts also found, Docker build will be skipped"
-                echo "skip_docker=true" >> "$GITHUB_OUTPUT"
-              else
-                echo "Docker digest artifacts not found, Docker build will run"
-                echo "skip_docker=false" >> "$GITHUB_OUTPUT"
-              fi
-              exit 0
-            fi
-          done
-
-          echo "No prior run found with all build artifacts, builds will run"
-          echo "run_id=" >> "$GITHUB_OUTPUT"
-          echo "skip_docker=false" >> "$GITHUB_OUTPUT"
-
-      # Consolidates outputs so both are always set even if the find step failed.
+      # Consolidates outputs so both are always set even if a find step failed.
       # Defaults: artifacts_run_id='' (run builds), skip_docker=false (run Docker build).
       - name: Consolidate outputs
         id: result
         if: always()
         run: |
-          echo "artifacts_run_id=${{ steps.find.outputs.run_id }}" >> "$GITHUB_OUTPUT"
-          echo "skip_docker=${{ steps.find.outputs.skip_docker || 'false' }}" >> "$GITHUB_OUTPUT"
+          echo "artifacts_run_id=${{ steps.find-builds.outputs.run-id }}" >> "$GITHUB_OUTPUT"
+          echo "skip_docker=${{ steps.find-docker.outputs.run-id != '' && 'true' || 'false' }}" >> "$GITHUB_OUTPUT"
 
   invoke-build-rust:
     name: Build Rust

@@ -14,6 +14,10 @@ on:
         description: "ID of the workflow run that uploaded the artifact"
         required: true
 
+permissions:
+  actions: read
+  contents: read
+
 jobs:
   adapter-tests:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'adapter-tests') }}

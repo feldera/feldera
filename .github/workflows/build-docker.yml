@@ -12,6 +12,7 @@ on:
 permissions:
   contents: read
   packages: write
+  actions: read
 
 env:
   REGISTRY: ghcr.io
@@ -200,3 +201,15 @@ jobs:
             "${{ vars.FELDERA_IMAGE_NAME }}" \
             "${{ steps.meta.outputs.version }}" \
             "amd64,arm64"
+
+      # Upload after the image is verified so check-prior-build knows the
+      # sha-{sha} tag actually exists in GHCR (not just that digests were pushed).
+      - name: Signal docker image ready
+        run: echo "${{ steps.meta.outputs.version }}" > /tmp/docker-image-ready.txt
+
+      - name: Upload docker-image-ready artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-ready
+          path: /tmp/docker-image-ready.txt
+          retention-days: 7
