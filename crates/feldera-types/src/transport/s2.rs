@@ -39,3 +39,18 @@ pub struct S2InputConfig {
     #[serde(default)]
     pub start_from: S2StartFrom,
 }
+
+/// Configuration for writing to an S2 stream.
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+pub struct S2OutputConfig {
+    /// S2 basin name.
+    pub basin: String,
+    /// S2 stream name.
+    pub stream: String,
+    /// S2 authentication token.
+    pub auth_token: String,
+    /// Custom S2 endpoint URL (e.g., "http://localhost:8080").
+    /// If not set, uses the default S2 cloud endpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+}
