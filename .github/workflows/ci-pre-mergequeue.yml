@@ -26,13 +26,13 @@ jobs:
         run: |
           echo "K8S node: ${K8S_NODE_NAME}"
 
-      - name: Disable sccache for fork PRs (secrets unavailable)
-        if: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+      - name: Disable sccache for fork/dependabot PRs (secrets unavailable)
+        if: ${{ github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]' }}
         run: |
           echo "RUSTC_WRAPPER=" >> "$GITHUB_ENV"
 
       - name: Generate GitHub App token
-        if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        if: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
         id: app-token
         uses: actions/create-github-app-token@v2
         with:
@@ -41,15 +41,15 @@ jobs:
           permission-contents: write
 
       - name: Checkout (internal PRs)
-        if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        if: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
         uses: actions/checkout@v4
         with:
           # This needs to be set to a token to trigger a follow-up workflow
           # in case some changes were corrected.
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Checkout (fork PRs)
-        if: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+      - name: Checkout (fork/dependabot PRs)
+        if: ${{ github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]' }}
         uses: actions/checkout@v4
 
       - name: Cache uv pre-commit environments
@@ -80,8 +80,8 @@ jobs:
       - name: Print sccache stats
         run: sccache --show-stats
       - uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403
-        # Only attempt auto-fix commits for branches in this repo (forks can't be pushed to)
-        if: ${{ always() && github.event.pull_request.head.repo.full_name == github.repository }}
+        # Only attempt auto-fix commits for internal branches (forks and dependabot can't be pushed to)
+        if: ${{ always() && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
         with:
           commit_message: "[ci] apply automatic fixes"
           commit_user_name: feldera-bot
