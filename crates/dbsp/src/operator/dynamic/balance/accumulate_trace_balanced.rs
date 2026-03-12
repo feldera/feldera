@@ -1245,7 +1245,7 @@ where
                 // ExchangeReceiver expects precisely one flush per transaction.
                 assert!(self.exchange.try_send_all(
                     self.worker_index,
-                    &mut std::iter::repeat_with(move || (B::dyn_empty(&batch_factories), false)).take(Runtime::num_workers()),
+                    std::iter::repeat((B::dyn_empty(&batch_factories), false)),
                 ));
 
                 self.update_exchange_metadata();
@@ -1278,7 +1278,7 @@ where
 
             assert!(self.exchange.try_send_all(
                 self.worker_index,
-                &mut batches.into_iter().map(|batch| (batch, flush_complete)),
+                batches.into_iter().map(|batch| (batch, flush_complete)),
             ));
 
             if !rebalance {
@@ -1318,12 +1318,9 @@ where
             while integral_cursor.key_valid() {
                 self.process_retractions(&mut integral_cursor, &mut builders[self.worker_index], chunk_size);
 
-                let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
+                let batches = builders.into_iter().map(|builder| (builder.done(), false));
                 // println!("{}: integral retractions: {:?}", Runtime::worker_index(), batches);
-                assert!(self.exchange.try_send_all(
-                    self.worker_index,
-                    &mut batches.into_iter(),
-                ));
+                assert!(self.exchange.try_send_all(self.worker_index, batches));
                 builders = self.create_builders(chunk_size);
                 self.update_exchange_metadata();
                 self.update_total_rebalancing_time(&step_start_time);
@@ -1339,12 +1336,9 @@ where
             while accumulator_cursor.key_valid() {
                 self.repartition_after_unicast(&mut accumulator_cursor, &mut builders, chunk_size);
 
-                let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
+                let batches = builders.into_iter().map(|builder| (builder.done(), false));
                 // println!("{}: acc insertions: {:?}", Runtime::worker_index(), batches);
-                assert!(self.exchange.try_send_all(
-                    self.worker_index,
-                    &mut batches.into_iter(),
-                ));
+                assert!(self.exchange.try_send_all(self.worker_index, batches));
                 builders = self.create_builders(chunk_size);
                 self.update_exchange_metadata();
                 self.update_total_rebalancing_time(&step_start_time);
@@ -1356,12 +1350,9 @@ where
             while integral_cursor.key_valid() {
                 self.repartition(trace_policy, &mut integral_cursor, &mut builders, chunk_size);
 
-                let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), !integral_cursor.key_valid())).collect();
+                let batches = builders.into_iter().map(|builder| (builder.done(), !integral_cursor.key_valid()));
                 // println!("{}: integral insertions: {:?}", Runtime::worker_index(), batches);
-                assert!(self.exchange.try_send_all(
-                    self.worker_index,
-                    &mut batches.into_iter(),
-                ));
+                assert!(self.exchange.try_send_all(self.worker_index, batches));
                 builders = self.create_builders(chunk_size);
                 self.update_exchange_metadata();
 
@@ -1386,12 +1377,9 @@ where
                 }
             }
 
-            let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), true)).collect();
+            let batches = builders.into_iter().map(|builder| (builder.done(), true));
             // println!("{}: final batches: {:?}", Runtime::worker_index(), batches);
-            assert!(self.exchange.try_send_all(
-                self.worker_index,
-                &mut batches.into_iter(),
-            ));
+            assert!(self.exchange.try_send_all(self.worker_index, batches));
 
             // if Runtime::worker_index() == 0 {
             //     println!("{}: flush complete 3 ({:?})", self.input_node_id, *self.current_policy.borrow());
