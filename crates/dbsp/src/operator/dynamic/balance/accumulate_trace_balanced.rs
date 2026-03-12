@@ -13,10 +13,11 @@ use crate::{
             TOTAL_REBALANCING_TIME_SECONDS,
         },
         operator_traits::Operator,
+        runtime::{WorkerLocation, WorkerLocations},
         splitter_output_chunk_size,
     },
     circuit_cache_key, default_hasher,
-    dynamic::{ClonableTrait, Data as _, Erase},
+    dynamic::{ClonableTrait, Data as _, DataTrait, Erase, WeightTrait},
     operator::{
         Z1,
         async_stream_operators::{StreamingTernarySinkOperator, StreamingTernarySinkWrapper},
@@ -33,7 +34,7 @@ use crate::{
     trace::{
         Batch, BatchReader, BatchReaderFactories, Builder, Cursor, MergeCursor, Spine,
         SpineSnapshot, TupleBuilder, WithSnapshot, deserialize_indexed_wset, merge_batches,
-        spine_async::SpineCursor,
+        serialize_indexed_wset, spine_async::SpineCursor,
     },
 };
 use async_stream::stream;
@@ -44,6 +45,7 @@ use std::{
     cell::RefCell,
     fmt::{Display, Formatter},
     hash::Hasher,
+    iter::repeat,
     marker::PhantomData,
     panic::Location,
     rc::Rc,
@@ -1225,6 +1227,18 @@ where
         // Why not clear integral state instantly on rebalancing instead of producing and merging relatively expensive
         // retractions? Because otherwise retractions will not appear in the output of the accumulator, which is in turn
         // used as input to other operators such as join (see `accumulator_stream` in the diagram above).
+        fn serialize_with_flush<B, K, V, R>((batch, flush): (B, bool)) -> Vec<u8>
+        where
+            B: BatchReader<Key = K, Val = V, Time = (), R = R>,
+            K: DataTrait + ?Sized,
+            V: DataTrait + ?Sized,
+            R: WeightTrait + ?Sized,
+        {
+            let mut vec = serialize_indexed_wset(&batch);
+            vec.push(flush as u8);
+            vec
+        }
+
         stream! {
             // Policy change? Update rebalancing state.
             let new_policy = self.balancer.get_optimal_policy(self.input_node_id).unwrap();
@@ -1238,10 +1252,10 @@ where
                 // }
                 assert_eq!(*self.current_policy.borrow(), new_policy);
                 // ExchangeReceiver expects precisely one flush per transaction.
-                assert!(self.exchange.try_send_all(
+                assert!(self.exchange.try_send_all_with_serializer(
                     self.worker_index,
-                    std::iter::repeat(Mailbox::Plain((B::dyn_empty(&batch_factories), false))),
-                ));
+                    repeat((B::dyn_empty(&batch_factories), false)),
+                    serialize_with_flush));
 
                 self.update_exchange_metadata();
                 yield (true, None);
@@ -1271,9 +1285,10 @@ where
 
             let flush_complete = ready_to_commit && self.rebalance_state.borrow().is_none();
 
-            assert!(self.exchange.try_send_all(
+            assert!(self.exchange.try_send_all_with_serializer(
                 self.worker_index,
-                batches.into_iter().map(|batch| Mailbox::Plain((batch, flush_complete))),
+                batches.into_iter().map(|batch| (batch, flush_complete)),
+                serialize_with_flush
             ));
 
             if !rebalance {
@@ -1313,9 +1328,9 @@ where
             while integral_cursor.key_valid() {
                 self.process_retractions(&mut integral_cursor, &mut builders[self.worker_index], chunk_size);
 
-                let batches = builders.into_iter().map(|builder| Mailbox::Plain((builder.done(), false)));
+                let batches = builders.into_iter().map(|builder| (builder.done(), false));
                 // println!("{}: integral retractions: {:?}", Runtime::worker_index(), batches);
-                assert!(self.exchange.try_send_all(self.worker_index, batches));
+                assert!(self.exchange.try_send_all_with_serializer(self.worker_index, batches, serialize_with_flush));
                 builders = self.create_builders(chunk_size);
                 self.update_exchange_metadata();
                 self.update_total_rebalancing_time(&step_start_time);
@@ -1331,9 +1346,9 @@ where
             while accumulator_cursor.key_valid() {
                 self.repartition_after_unicast(&mut accumulator_cursor, &mut builders, chunk_size);
 
-                let batches = builders.into_iter().map(|builder| Mailbox::Plain((builder.done(), false)));
+                let batches = builders.into_iter().map(|builder| (builder.done(), false));
                 // println!("{}: acc insertions: {:?}", Runtime::worker_index(), batches);
-                assert!(self.exchange.try_send_all(self.worker_index, batches));
+                assert!(self.exchange.try_send_all_with_serializer(self.worker_index, batches, serialize_with_flush));
                 builders = self.create_builders(chunk_size);
                 self.update_exchange_metadata();
                 self.update_total_rebalancing_time(&step_start_time);
@@ -1345,9 +1360,9 @@ where
             while integral_cursor.key_valid() {
                 self.repartition(trace_policy, &mut integral_cursor, &mut builders, chunk_size);
 
-                let batches = builders.into_iter().map(|builder| Mailbox::Plain((builder.done(), !integral_cursor.key_valid())));
+                let batches = builders.into_iter().map(|builder| (builder.done(), !integral_cursor.key_valid()));
                 // println!("{}: integral insertions: {:?}", Runtime::worker_index(), batches);
-                assert!(self.exchange.try_send_all(self.worker_index, batches));
+                assert!(self.exchange.try_send_all_with_serializer(self.worker_index, batches, serialize_with_flush));
                 builders = self.create_builders(chunk_size);
                 self.update_exchange_metadata();
 
@@ -1371,9 +1386,9 @@ where
                 }
             }
 
-            let batches = builders.into_iter().map(|builder| Mailbox::Plain((builder.done(), true)));
+            let batches = builders.into_iter().map(|builder| (builder.done(), true));
             // println!("{}: final batches: {:?}", Runtime::worker_index(), batches);
-            assert!(self.exchange.try_send_all(self.worker_index, batches));
+            assert!(self.exchange.try_send_all_with_serializer(self.worker_index, batches, serialize_with_flush));
 
             // if Runtime::worker_index() == 0 {
             //     println!("{}: flush complete 3 ({:?})", self.input_node_id, *self.current_policy.borrow());

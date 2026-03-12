@@ -24,6 +24,7 @@ use indexmap::IndexSet;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::iter::repeat;
+use std::ops::Range;
 use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{LazyLock, Mutex};
@@ -1048,8 +1049,11 @@ impl Consensus {
                 notify_receiver,
                 exchange,
             } => {
-                while !exchange.try_send_all(Runtime::worker_index(), repeat(Mailbox::Plain(local)))
-                {
+                while !exchange.try_send_all_with_serializer(
+                    Runtime::worker_index(),
+                    repeat(local),
+                    |local| vec![local as u8],
+                ) {
                     if Runtime::kill_in_progress() {
                         return Err(SchedulerError::Killed);
                     }
@@ -1135,9 +1139,10 @@ where
                 notify_receiver,
                 exchange,
             } => {
-                while !exchange.try_send_all(
+                while !exchange.try_send_all_with_serializer(
                     Runtime::worker_index(),
-                    repeat(Mailbox::Plain(local.clone())),
+                    repeat(local.clone()),
+                    |local| rmp_serde::to_vec(&local).unwrap(),
                 ) {
                     if Runtime::kill_in_progress() {
                         return Err(SchedulerError::Killed);
@@ -1295,6 +1300,64 @@ impl RuntimeHandle {
         self.runtime.inner().panicked.load(Ordering::Acquire)
     }
 }
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum WorkerLocation {
+    Local,
+    Remote,
+}
+
+impl WorkerLocation {
+    pub fn is_local(&self) -> bool {
+        *self == Self::Local
+    }
+    pub fn is_remote(&self) -> bool {
+        *self == Self::Remote
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct WorkerLocations {
+    workers: Range<usize>,
+    local_workers: Range<usize>,
+}
+
+impl WorkerLocations {
+    pub fn new() -> Self {
+        if let Some(runtime) = Runtime::runtime() {
+            let layout = runtime.layout();
+            Self {
+                workers: 0..layout.n_workers(),
+                local_workers: layout.local_workers(),
+            }
+        } else {
+            Self {
+                workers: 0..1,
+                local_workers: 0..1,
+            }
+        }
+    }
+}
+
+impl Iterator for WorkerLocations {
+    type Item = WorkerLocation;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let worker = self.workers.next()?;
+        if self.local_workers.contains(&worker) {
+            Some(WorkerLocation::Local)
+        } else {
+            Some(WorkerLocation::Remote)
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.workers.len();
+        (len, Some(len))
+    }
+}
+
+impl ExactSizeIterator for WorkerLocations {}
 
 #[cfg(test)]
 mod tests {

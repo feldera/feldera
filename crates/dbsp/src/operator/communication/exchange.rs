@@ -15,6 +15,7 @@ use crate::{
             OperatorLocation, OperatorMeta,
         },
         operator_traits::{Operator, SinkOperator, SourceOperator},
+        runtime::{WorkerLocation, WorkerLocations},
         tokio::TOKIO,
     },
     circuit_cache_key,
@@ -556,6 +557,25 @@ where
     /// is guaranteed to succeed for `sender`.
     pub fn ready_to_send(&self, sender: usize) -> bool {
         self.inner.ready_to_send(sender)
+    }
+
+    pub(crate) fn try_send_all_with_serializer<F>(
+        self: &Arc<Self>,
+        sender: usize,
+        data: impl Iterator<Item = T>,
+        serialize: F,
+    ) -> bool
+    where
+        F: Fn(T) -> Vec<u8> + Send + Sync,
+    {
+        self.try_send_all(
+            sender,
+            data.zip(WorkerLocations::new())
+                .map(|(data, location)| match location {
+                    WorkerLocation::Local => Mailbox::Plain(data),
+                    WorkerLocation::Remote => Mailbox::Serialized(serialize(data)),
+                }),
+        )
     }
 
     /// Write all outgoing messages for `sender` to mailboxes.
@@ -1320,12 +1340,14 @@ mod tests {
         Circuit, RootCircuit,
         circuit::{
             Runtime,
+            runtime::{WorkerLocation, WorkerLocations},
             schedule::{DynamicScheduler, Scheduler},
         },
         operator::{
             Generator,
             communication::{Mailbox, new_exchange_operators},
         },
+        storage::file::to_bytes,
         trace::unaligned_deserialize,
     };
     use std::{iter::repeat, thread::yield_now};
@@ -1354,8 +1376,11 @@ mod tests {
             for round in 0..ROUNDS {
                 let output_data = vec![round; WORKERS];
                 loop {
-                    if exchange.try_send_all(Runtime::worker_index(), repeat(Mailbox::Plain(round)))
-                    {
+                    if exchange.try_send_all_with_serializer(
+                        Runtime::worker_index(),
+                        repeat(round),
+                        |round| to_bytes(&round).unwrap().into_vec(),
+                    ) {
                         break;
                     }
 
