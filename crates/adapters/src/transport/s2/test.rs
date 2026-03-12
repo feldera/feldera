@@ -6,7 +6,7 @@ mod tests {
         ConnectorConfig, FormatConfig, OutputBufferConfig, TransportConfig,
         default_max_queued_records,
     };
-    use feldera_types::transport::s2::{S2InputConfig, S2StartFrom};
+    use feldera_types::transport::s2::{S2InputConfig, S2OutputConfig, S2StartFrom};
     use serde_json::{self, json};
 
     #[test]
@@ -156,5 +156,70 @@ mod tests {
         let serialized = serde_json::to_value(&config).unwrap();
         let deserialized: ConnectorConfig = serde_json::from_value(serialized).unwrap();
         assert_eq!(config, deserialized);
+    }
+
+    // --- S2 Output Config tests ---
+
+    #[test]
+    fn config_output_serialization_roundtrip() {
+        let config = S2OutputConfig {
+            basin: "my-basin".to_string(),
+            stream: "my-stream".to_string(),
+            auth_token: "tok_test123".to_string(),
+            endpoint: None,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: S2OutputConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn transport_config_s2_output_name() {
+        let config = TransportConfig::S2Output(S2OutputConfig {
+            basin: "b".to_string(),
+            stream: "s".to_string(),
+            auth_token: "t".to_string(),
+            endpoint: None,
+        });
+        assert_eq!(config.name(), "s2_output");
+    }
+
+    #[test]
+    fn transport_config_s2_output_serde_roundtrip() {
+        let config = TransportConfig::S2Output(S2OutputConfig {
+            basin: "test-basin".to_string(),
+            stream: "test-stream".to_string(),
+            auth_token: "tok_abc".to_string(),
+            endpoint: None,
+        });
+        let json = serde_json::to_value(&config).unwrap();
+        let deserialized: TransportConfig = serde_json::from_value(json).unwrap();
+        assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn config_output_with_endpoint() {
+        let config = S2OutputConfig {
+            basin: "b".to_string(),
+            stream: "s".to_string(),
+            auth_token: "t".to_string(),
+            endpoint: Some("http://localhost:8080".to_string()),
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("localhost:8080"));
+        let deserialized: S2OutputConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn config_output_endpoint_omitted_when_none() {
+        let config = S2OutputConfig {
+            basin: "b".to_string(),
+            stream: "s".to_string(),
+            auth_token: "t".to_string(),
+            endpoint: None,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(!json.contains("endpoint"));
     }
 }
