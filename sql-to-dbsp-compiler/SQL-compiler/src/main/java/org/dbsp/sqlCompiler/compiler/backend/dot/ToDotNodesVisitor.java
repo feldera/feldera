@@ -203,8 +203,16 @@ public class ToDotNodesVisitor extends CircuitVisitor {
             String chain = node.to(DBSPChainOperator.class).chain.toString();
             return rustToDot(chain);
         }
-        if (expression == null)
-            return "";
+        if (expression == null) {
+            if (this.details >= 3) {
+                StringBuilder builder = new StringBuilder();
+                for (SourcePositionRange pos: node.getSourcePositions())
+                    builder.append(pos.toShortString());
+                return builder.toString();
+            } else {
+                return "";
+            }
+        }
         if (node.is(DBSPFlatMapOperator.class)) {
             if (expression.is(DBSPFlatmap.class)) {
                 expression = LowerCircuitVisitor.rewriteFlatmap(

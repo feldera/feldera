@@ -14,16 +14,34 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.util.IHasId;
 import org.dbsp.util.IIndentStream;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 public abstract class CalciteRelNode extends CalciteObject implements IHasId {
     // Not clear these should be here
     public static final SqlDialect DIALECT = SqlDialect.DatabaseProduct.UNKNOWN.getDialect();
     static final RelToSqlConverter CONVERTER = new RelToSqlConverter(DIALECT);
+    final List<SourcePositionRange> positions = new ArrayList<>();
+
+    public List<SourcePositionRange> getSourcePositions() {
+        return this.positions;
+    }
 
     protected CalciteRelNode(SourcePositionRange pos) {
         super(pos);
+        if (pos.isValid())
+            this.positions.add(pos);
     }
+
+    public CalciteRelNode addSourcePositions(Iterable<SourcePositionRange> positions) {
+        for (var pos: positions)
+            if (pos.isValid())
+                this.positions.add(pos);
+        return this;
+    }
+
+    public abstract CalciteRelNode copy();
 
     protected CalciteRelNode() { this(SourcePositionRange.INVALID); }
 

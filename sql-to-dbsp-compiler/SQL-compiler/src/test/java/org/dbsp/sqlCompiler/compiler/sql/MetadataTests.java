@@ -170,6 +170,33 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void windowPositionTest() throws SQLException, IOException {
+        // Check that the window operator carries position information
+        String sql = """
+                CREATE TABLE T(x TIMESTAMP);
+                CREATE VIEW V AS SELECT * FROM T WHERE x < NOW() - INTERVAL 1 MINUTE;
+                """;
+        File file = createInputScript(sql);
+        File json = this.createTempJsonFile();
+        CompilerMain.execute("--dataflow", json.getPath(), "--noRust", file.getPath());
+        ObjectMapper mapper = Utilities.deterministicObjectMapper();
+        JsonNode parsed = mapper.readTree(json);
+        ObjectNode df = (ObjectNode)parsed.get("mir");
+        boolean found = false;
+        for (var prop: df.properties()) {
+            var node = prop.getValue();
+            JsonNode op = node.get("operation");
+            if (op != null && op.isTextual() && op.asText().equalsIgnoreCase("window")) {
+                found = true;
+                Assert.assertTrue(node.get("positions").isArray());
+                // At least one position exists
+                Assert.assertTrue(node.get("positions").elements().hasNext());
+            }
+        }
+        Assert.assertTrue(found);
+    }
+
+    @Test
     public void issue3341() {
         String sql = """
                 CREATE FUNCTION F(x INTEGER NOT NULL) RETURNS INTEGER;

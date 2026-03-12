@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ReferenceMap;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.ToJsonVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.InsertLimiters;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
@@ -318,6 +319,7 @@ public class RewriteNow extends CircuitCloneVisitor {
                                                DBSPSimpleOperator source,
                                                TemporalFilterList comparisons) {
         // Now input comes from here
+        CalciteRelNode relNode = operator.getRelNode();
         DBSPSimpleOperator scalarNow = this.scalarNow();
         WindowBounds bounds = comparisons.getWindowBounds(this.compiler());
         DBSPClosureExpression makeWindow = bounds.makeWindow();
@@ -333,7 +335,7 @@ public class RewriteNow extends CircuitCloneVisitor {
         if (bounds.common().getType().mayBeNull) {
             DBSPClosureExpression nonNull =
                     bounds.common().is_null().not().closure(param);
-            DBSPFilterOperator filter = new DBSPFilterOperator(operator.getRelNode(), nonNull, source.outputPort());
+            DBSPFilterOperator filter = new DBSPFilterOperator(relNode, nonNull, source.outputPort());
             this.addOperator(filter);
             source = filter;
         }
@@ -352,19 +354,22 @@ public class RewriteNow extends CircuitCloneVisitor {
         this.addOperator(index);
 
         // Apply window function.  Operator is incremental, so add D & I around it
-        DBSPDifferentiateOperator diffIndex = new DBSPDifferentiateOperator(operator.getRelNode(), index.outputPort());
+        DBSPDifferentiateOperator diffIndex = new DBSPDifferentiateOperator(relNode, index.outputPort());
         this.addOperator(diffIndex);
         boolean lowerInclusive = bounds.lower() == null || bounds.lower().inclusive();
         boolean upperInclusive = bounds.upper() == null || bounds.upper().inclusive();
+        CalciteRelNode windowNode = relNode.copy();
+        ToJsonVisitor.FindSourcePositions finder = new ToJsonVisitor.FindSourcePositions(this.compiler, false);
+        finder.apply(makeWindow);
+        windowNode.addSourcePositions(finder.positions);
         DBSPSimpleOperator window = new DBSPWindowOperator(
-                operator.getRelNode(), makeWindow.getNode(),
-                lowerInclusive, upperInclusive, diffIndex.outputPort(), windowBounds.outputPort());
+                windowNode, lowerInclusive, upperInclusive, diffIndex.outputPort(), windowBounds.outputPort());
         this.addOperator(window);
-        DBSPSimpleOperator winInt = new DBSPIntegrateOperator(operator.getRelNode(), window.outputPort());
+        DBSPSimpleOperator winInt = new DBSPIntegrateOperator(relNode, window.outputPort());
         this.addOperator(winInt);
 
         // Deindex result of window
-        DBSPSimpleOperator deindex = new DBSPDeindexOperator(operator.getRelNode(), window.getFunctionNode(),
+        DBSPSimpleOperator deindex = new DBSPDeindexOperator(relNode, window.getFunctionNode(),
                 winInt.outputPort());
         this.addOperator(deindex);
         return deindex;
