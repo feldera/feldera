@@ -92,7 +92,9 @@ impl OutputEndpoint for S2OutputEndpoint {
     }
 
     fn max_buffer_size_bytes(&self) -> usize {
-        usize::MAX
+        // S2 enforces a 1MB limit per AppendRecord.
+        // Use a conservative limit to leave room for framing overhead.
+        1_000_000
     }
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
