@@ -153,6 +153,10 @@ jobs:
   oss-platform-tests:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'oss-platform-tests') }}
     name: Platform Integration Tests (OSS Docker Image)
+    permissions:
+      actions: read
+      contents: read
+      packages: read
     strategy:
       matrix:
         include:
@@ -194,7 +198,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-          --cap-add=PERFMON
 
     steps:
       - name: Show Kubernetes node
