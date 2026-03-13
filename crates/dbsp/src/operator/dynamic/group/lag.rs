@@ -1,4 +1,5 @@
 use super::{GroupTransformer, Monotonicity};
+use crate::Circuit;
 use crate::algebra::{OrdIndexedZSetFactories, ZRingValue};
 use crate::operator::dynamic::filter_map::DynFilterMap;
 use crate::{
@@ -151,29 +152,37 @@ where
         OV: DataTrait + ?Sized,
         B: for<'a> DynFilterMap<DynItemRef<'a> = (&'a K, &'a V)>,
     {
-        self.dyn_map_index(
-            &factories.lag_factories.input_factories,
-            Box::new(move |(k, v), kv| {
-                let (out_k, out_v) = kv.split_mut();
-                k.clone_to(out_k);
-                encode(v, out_v);
-            }),
-        )
-        .set_persistent_id(
-            persistent_id
-                .map(|name| format!("{name}-ordered"))
-                .as_deref(),
-        )
-        .dyn_lag(persistent_id, &factories.lag_factories, offset, project)
-        .dyn_map_index(
-            &factories.output_factories,
-            Box::new(move |(k, v), kv| {
-                let (out_k, out_v) = kv.split_mut();
-                let (v1, v2) = v.split();
-                k.clone_to(out_k);
-                decode(v1, v2, out_v);
-            }),
-        )
+        let name = if offset > 0 {
+            format!("lag_custom_order_{offset}")
+        } else {
+            format!("lead_custom_order_{}", -offset)
+        };
+
+        self.circuit().region(&name, || {
+            self.dyn_map_index(
+                &factories.lag_factories.input_factories,
+                Box::new(move |(k, v), kv| {
+                    let (out_k, out_v) = kv.split_mut();
+                    k.clone_to(out_k);
+                    encode(v, out_v);
+                }),
+            )
+            .set_persistent_id(
+                persistent_id
+                    .map(|name| format!("{name}-ordered"))
+                    .as_deref(),
+            )
+            .dyn_lag(persistent_id, &factories.lag_factories, offset, project)
+            .dyn_map_index(
+                &factories.output_factories,
+                Box::new(move |(k, v), kv| {
+                    let (out_k, out_v) = kv.split_mut();
+                    let (v1, v2) = v.split();
+                    k.clone_to(out_k);
+                    decode(v1, v2, out_v);
+                }),
+            )
+        })
     }
 }
 
