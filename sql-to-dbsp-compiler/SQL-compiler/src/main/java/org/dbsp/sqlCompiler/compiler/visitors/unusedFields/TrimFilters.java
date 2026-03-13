@@ -50,32 +50,32 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
             DBSPClosureExpression filterFunction = filter.getClosureFunction();
             Utilities.enforce(filterFunction.parameters.length == 1);
             DBSPParameter filterParam = filterFunction.parameters[0];
-            FindUnusedFields mapFinder = new FindUnusedFields(this.compiler);
-            mapFunction = mapFinder.findUnusedFields(mapFunction);
+            FindUsedFields mapFinder = new FindUsedFields(this.compiler);
+            var mapUse = mapFinder.findUsedFields(mapFunction);
             final int depth;
             if (filter.input().outputType().is(DBSPTypeIndexedZSet.class))
                 depth = 2;
             else
                 depth = 1;
 
-            if (mapFinder.foundUnusedFields(depth)) {
-                FieldUseMap mapUsed = mapFinder.parameterFieldMap.get(mapParam);
+            if (mapUse.hasUnusedFields(depth)) {
+                FieldUseMap mapUsed = mapUse.get(mapParam);
 
-                FindUnusedFields filterFinder = new FindUnusedFields(this.compiler);
-                filterFinder.findUnusedFields(filterFunction);
-                if (filterFinder.foundUnusedFields(depth)) {
-                    FieldUseMap filterUsed = filterFinder.parameterFieldMap.get(filterParam);
+                FindUsedFields filterFinder = new FindUsedFields(this.compiler);
+                var filterUse = filterFinder.findUsedFields(filterFunction);
+                if (filterUse.hasUnusedFields(depth)) {
+                    FieldUseMap filterUsed = filterUse.get(filterParam);
                     FieldUseMap reduced = mapUsed.reduce(filterUsed);
                     if (reduced.hasUnusedFields(depth)) {
-                        filterFinder.setParameterUseMap(filterParam, reduced);
-                        RewriteFields filterRewriter = filterFinder.getFieldRewriter(depth);
+                        filterUse.updateParameterValue(filterParam, reduced);
+                        RewriteFields filterRewriter = filterUse.getFieldRewriter(this.compiler, depth);
                         DBSPClosureExpression newFilterFunc = filterRewriter.apply(filterFunction)
                                 .to(DBSPClosureExpression.class);
                         DBSPClosureExpression preProjection = reduced.getProjection(depth);
                         Utilities.enforce(preProjection != null);
 
-                        mapFinder.setParameterUseMap(mapParam, reduced);
-                        RewriteFields mapRewriter = mapFinder.getFieldRewriter(depth);
+                        mapUse.updateParameterValue(mapParam, reduced);
+                        RewriteFields mapRewriter = mapUse.getFieldRewriter(this.compiler, depth);
                         DBSPClosureExpression post = mapRewriter.rewriteClosure(mapFunction);
 
                         DBSPMapOperator pre = new DBSPMapOperator(filter.getRelNode(),

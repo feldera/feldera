@@ -6,9 +6,9 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FieldUseMap;
-import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindUnusedFields;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindUsedFields;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ParameterFieldUse;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.RewriteFields;
-import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -70,17 +70,14 @@ public class UnusedFieldsTest {
         DBSPExpression body1 = new DBSPTupleExpression(var1.deref().field(0));
         DBSPClosureExpression closure1 = body1.closure(var1.asParameter());
 
-        FindUnusedFields fu = new FindUnusedFields(compiler);
-        fu.findUnusedFields(closure0);
-        Assert.assertTrue(fu.foundUnusedFields(2));
-        DBSPParameter param0 = fu.parameterFieldMap.getParameters().iterator().next();
-        FieldUseMap fieldMap0 = fu.parameterFieldMap.get(param0);
+        FindUsedFields fuf = new FindUsedFields(compiler);
+        ParameterFieldUse fum = fuf.findUsedFields(closure0);
+        FieldUseMap fieldMap0 = fum.getUse();
         Assert.assertEquals("Ref([_, X, _, [X, _]])", fieldMap0.toString());
 
-        fu.findUnusedFields(closure1);
-        Assert.assertTrue(fu.foundUnusedFields(2));
-        DBSPParameter param1 = fu.parameterFieldMap.getParameters().iterator().next();
-        FieldUseMap fieldMap1 = fu.parameterFieldMap.get(param1);
+        fum = fuf.findUsedFields(closure1);
+        Assert.assertTrue(fum.hasUnusedFields(2));
+        FieldUseMap fieldMap1 = fum.getUse();
         Assert.assertEquals("Ref([X, _, _, [_, _]])", fieldMap1.toString());
 
         FieldUseMap reduced = fieldMap0.reduce(fieldMap1);
@@ -106,11 +103,11 @@ public class UnusedFieldsTest {
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
         CanonicalForm cf = new CanonicalForm(compiler);
 
-        FindUnusedFields fu = new FindUnusedFields(compiler);
-        closure = fu.findUnusedFields(closure);
-        Assert.assertTrue(fu.foundUnusedFields(2));
+        FindUsedFields fu = new FindUsedFields(compiler);
+        var used = fu.findUsedFields(closure);
+        Assert.assertTrue(used.hasUnusedFields(2));
 
-        RewriteFields rw = fu.getFieldRewriter(1);
+        RewriteFields rw = used.getFieldRewriter(compiler, 1);
         DBSPClosureExpression rewritten = rw.rewriteClosure(closure);
         DBSPClosureExpression result = cf.apply(rewritten).to(DBSPClosureExpression.class);
         Assert.assertEquals("""

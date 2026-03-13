@@ -241,6 +241,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         DBSPTypeTuple type = this.inputRow.getType().deref().to(DBSPTypeTuple.class);
         if (index < type.size()) {
             DBSPExpression field = this.inputRow.deref().field(index);
+            if (field.getType().is(DBSPTypeNull.class)) {
+                // Optimize away field accesses in ROW members which have null types.
+                return field.getType().none();
+            }
             return field.applyCloneIfNeeded();
         }
         if (index - type.size() < this.constants.size())

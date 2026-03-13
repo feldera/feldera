@@ -261,6 +261,8 @@ public abstract class DBSPExpression
             return this;
         if (this.is(IConstructor.class))
             return this;
+        if (this.is(DBSPIfExpression.class))
+            return this;
         return this.applyClone();
     }
 
