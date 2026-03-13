@@ -42,7 +42,7 @@ pub use dbsp_handle::{
     LayoutError, Mode, StorageCacheConfig, StorageConfig, StorageOptions, adaptive_joins_enabled,
     balancer_balance_tax, balancer_key_distribution_refresh_threshold,
     balancer_min_absolute_improvement_threshold, balancer_min_relative_improvement_threshold,
-    splitter_output_chunk_size,
+    max_level0_batch_size_records, splitter_output_chunk_size,
 };
 pub use runtime::{
     Error as RuntimeError, LocalStore, LocalStoreMarker, Runtime, RuntimeHandle, WeakRuntime,
