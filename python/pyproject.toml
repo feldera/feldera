@@ -29,6 +29,12 @@ dependencies = [
     "ruff>=0.6.9",
     "PyJWT>=2.12.0",
 ]
+
+[project.optional-dependencies]
+arrow = [
+    "pyarrow>=14.0",
+]
+
 [project.urls]
 Homepage = "https://www.feldera.com"
 Documentation = "https://docs.feldera.com/python"
@@ -43,7 +49,8 @@ dev = [
     "sphinx-rtd-theme==2.0.0",
     "sphinx==7.3.7",
     "simplejson==3.20.1",
-    "confluent-kafka>=2.2.0"
+    "confluent-kafka>=2.2.0",
+    "pyarrow>=14.0",
 ]
 
 [tool.pytest.ini_options]
