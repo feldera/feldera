@@ -1,4 +1,3 @@
-from unittest import skip
 from feldera.enums import PipelineStatus, ProgramStatus, StorageStatus
 from feldera.rest.errors import FelderaAPIError
 import time
@@ -387,8 +386,15 @@ def test_pipeline_clear_using_api(pipeline_name):
     pipeline.clear_storage(wait=False)
     assert pipeline.storage_status() in [StorageStatus.CLEARING, StorageStatus.CLEARED]
 
+    # Start just after might yield an error if it is still clearing
+    try:
+        pipeline.start()
+    except FelderaAPIError as e:
+        assert e.error_code == "CannotStartWhileClearingStorage"
+    pipeline.stop(force=True)
+    pipeline.clear_storage()
 
-@skip  # Passing this test requires denying clearing when desired resources status is provisioned.
+
 @gen_pipeline_name
 def test_pipeline_clear_while_desired_provisioned(pipeline_name):
     """

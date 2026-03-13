@@ -1,5 +1,5 @@
 use crate::db::error::DBError;
-use crate::db::types::resources_status::ResourcesStatus;
+use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::fmt;
@@ -79,12 +79,35 @@ impl Display for StorageStatus {
 /// Validates the storage status transition from current status to a new one.
 pub fn validate_storage_status_transition(
     resources_status: ResourcesStatus,
+    resources_desired_status: ResourcesDesiredStatus,
     current_status: StorageStatus,
     new_status: StorageStatus,
 ) -> Result<(), DBError> {
     if resources_status != ResourcesStatus::Stopped {
         return Err(DBError::StorageStatusImmutableUnlessStopped {
             resources_status,
+            resources_desired_status,
+            current_status,
+            new_status,
+        });
+    }
+    if resources_desired_status != ResourcesDesiredStatus::Stopped
+        && !matches!(
+            (resources_desired_status, current_status, new_status),
+            (
+                ResourcesDesiredStatus::Provisioned,
+                StorageStatus::Cleared,
+                StorageStatus::InUse
+            ) | (
+                ResourcesDesiredStatus::Provisioned,
+                StorageStatus::InUse,
+                StorageStatus::InUse
+            )
+        )
+    {
+        return Err(DBError::StorageStatusImmutableUnlessStopped {
+            resources_status,
+            resources_desired_status,
             current_status,
             new_status,
         });

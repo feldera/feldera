@@ -175,6 +175,7 @@ pub enum DBError {
     },
     StorageStatusImmutableUnlessStopped {
         resources_status: ResourcesStatus,
+        resources_desired_status: ResourcesDesiredStatus,
         current_status: StorageStatus,
         new_status: StorageStatus,
     },
@@ -199,6 +200,7 @@ pub enum DBError {
     NoRuntimeStatusWhileProvisioned,
     PreconditionViolation(String),
     CannotStartWithUndismissedError,
+    CannotStartWhileClearingStorage,
     DismissErrorRestrictedToFullyStopped,
     InitialImmutableUnlessStopped,
     InitialStandbyNotAllowed,
@@ -592,13 +594,14 @@ impl Display for DBError {
             }
             DBError::StorageStatusImmutableUnlessStopped {
                 resources_status,
+                resources_desired_status,
                 current_status,
                 new_status,
             } => {
                 write!(
                     f,
-                    "Cannot transition storage status from '{current_status}' to '{new_status}' with resources status '{resources_status}'. \
-                    Storage status cannot be changed unless the pipeline is stopped."
+                    "Cannot transition storage status from '{current_status}' to '{new_status}' with resources status '{resources_status}' and desired status '{resources_desired_status}'. \
+                    Storage status cannot be changed unless the pipeline is fully stopped."
                 )
             }
             DBError::IllegalPipelineAction {
@@ -663,6 +666,13 @@ impl Display for DBError {
                     "Cannot process `/start?dismiss_error=false` if the `deployment_error` is set. \
                     You can dismiss the error by calling `/start?dismiss_error=true`, or alternatively \
                     first call `/dismiss_error`, after which `/start?dismiss_error=false` is again possible."
+                )
+            }
+            DBError::CannotStartWhileClearingStorage => {
+                write!(
+                    f,
+                    "Cannot process `/start` if the `storage_status` is `Clearing`. \
+                    Wait for the storage to become cleared before trying again."
                 )
             }
             DBError::DismissErrorRestrictedToFullyStopped => {
@@ -796,6 +806,7 @@ impl DetailedError for DBError {
             Self::PreconditionViolation(..) => Cow::from("PreconditionViolation"),
             Self::ResumeWhileNotProvisioned => Cow::from("ResumeWhileNotProvisioned"),
             Self::CannotStartWithUndismissedError => Cow::from("CannotStartWithUndismissedError"),
+            Self::CannotStartWhileClearingStorage => Cow::from("CannotStartWhileClearingStorage"),
             Self::DismissErrorRestrictedToFullyStopped => {
                 Cow::from("DismissErrorRestrictedToFullyStopped")
             }
@@ -873,6 +884,7 @@ impl ResponseError for DBError {
             Self::NoRuntimeStatusWhileProvisioned => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PreconditionViolation(..) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::CannotStartWithUndismissedError => StatusCode::BAD_REQUEST,
+            Self::CannotStartWhileClearingStorage => StatusCode::BAD_REQUEST,
             Self::DismissErrorRestrictedToFullyStopped => StatusCode::BAD_REQUEST,
             Self::InitialImmutableUnlessStopped => StatusCode::BAD_REQUEST,
             Self::InitialStandbyNotAllowed => StatusCode::BAD_REQUEST,
