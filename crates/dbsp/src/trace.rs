@@ -1435,6 +1435,7 @@ impl IndexedWSetSerializer {
     }
 
     pub fn done(mut self) -> Vec<u8> {
+        #[cfg(debug_assertions)]
         debug_assert_eq!(self.state, State::Key);
         self.offsets[0] = self.n_keys;
         self.offsets[1] = self.n_values;
