@@ -4,7 +4,7 @@ import time
 from collections import deque
 from datetime import datetime
 from threading import Event
-from typing import Any, Callable, Dict, Generator, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, List, Mapping, Optional
 from uuid import UUID
 
 import pandas
@@ -35,6 +35,9 @@ from feldera.rest.sql_view import SQLView
 from feldera.runtime_config import RuntimeConfig
 from feldera.stats import InputEndpointStatus, OutputEndpointStatus, PipelineStatistics
 from feldera.types import CheckpointMetadata
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 
 class Pipeline:
@@ -974,6 +977,25 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         """
 
         self.client.query_as_parquet(self.name, query, path)
+
+    def query_arrow(self, query: str) -> Generator["pa.RecordBatch", None, None]:
+        """
+        Executes an ad-hoc SQL query on this pipeline and returns a generator
+        that yields the result as PyArrow RecordBatches.
+
+        Note:
+            You can only ``SELECT`` from materialized tables and views.
+
+        :param query: The SQL query to be executed.
+
+        :raises FelderaAPIError: If the pipeline is not in a RUNNING or PAUSED
+            state.
+        :raises FelderaAPIError: If querying a non materialized table or view.
+        :raises FelderaAPIError: If the query is invalid.
+
+        :return: A generator that yields ``pyarrow.RecordBatch`` objects.
+        """
+        return self.client.query_as_arrow(self.name, query)
 
     def query_tabular(self, query: str) -> Generator[str, None, None]:
         """
