@@ -1434,7 +1434,7 @@ impl IndexedWSetSerializer {
             .push(key.serialize(&mut self.serializer).unwrap());
     }
 
-    pub fn finish(mut self) -> Vec<u8> {
+    pub fn done(mut self) -> Vec<u8> {
         debug_assert_eq!(self.state, State::Key);
         self.offsets[0] = self.n_keys;
         self.offsets[1] = self.n_values;
@@ -1462,7 +1462,7 @@ where
         serializer.push_key(cursor.key());
         cursor.step_key();
     }
-    serializer.finish()
+    serializer.done()
 }
 
 pub fn deserialize_indexed_wset<B, K, V, R>(factories: &B::Factories, data: &[u8]) -> B

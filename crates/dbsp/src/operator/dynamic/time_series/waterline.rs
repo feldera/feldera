@@ -2,11 +2,12 @@ use dyn_clone::clone_box;
 use size_of::SizeOf;
 
 use crate::circuit::checkpointer::Checkpoint;
+use crate::circuit::runtime::{WorkerLocation, WorkerLocations};
 use crate::dynamic::{DynData, DynUnit};
 use crate::operator::communication::Mailbox;
 use crate::operator::dynamic::{MonoIndexedZSet, MonoZSet};
 use crate::{
-    Circuit, NumEntries, RootCircuit, Runtime, Stream,
+    Circuit, NumEntries, RootCircuit, Stream,
     dynamic::DataTrait,
     operator::communication::new_exchange_operators,
     trace::{BatchReader, Cursor, Rkyv},
@@ -88,8 +89,14 @@ where
                 Some(Location::caller()),
                 init,
                 move |waterline: Box<TS>, waterlines: &mut Vec<Mailbox<Box<TS>>>| {
-                    for _ in 0..Runtime::num_workers() {
-                        waterlines.push(Mailbox::Plain(clone_box(waterline.as_ref())));
+                    for location in WorkerLocations::new() {
+                        match location {
+                            WorkerLocation::Local => {
+                                waterlines.push(Mailbox::Plain(clone_box(waterline.as_ref())))
+                            }
+                            WorkerLocation::Remote => waterlines
+                                .push(Mailbox::Serialized(waterline.checkpoint().unwrap())),
+                        };
                     }
                 },
                 move |data| {
@@ -162,8 +169,14 @@ where
                 Some(Location::caller()),
                 init,
                 move |waterline: Box<TS>, waterlines: &mut Vec<Mailbox<Box<TS>>>| {
-                    for _ in 0..Runtime::num_workers() {
-                        waterlines.push(Mailbox::Plain(waterline.clone()));
+                    for location in WorkerLocations::new() {
+                        match location {
+                            WorkerLocation::Local => {
+                                waterlines.push(Mailbox::Plain(clone_box(waterline.as_ref())))
+                            }
+                            WorkerLocation::Remote => waterlines
+                                .push(Mailbox::Serialized(waterline.checkpoint().unwrap())),
+                        };
                     }
                 },
                 move |data| {

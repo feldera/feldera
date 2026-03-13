@@ -1330,7 +1330,7 @@ impl WorkerLocations {
     }
 
     pub fn get(&self, worker: usize) -> WorkerLocation {
-        debug_assert!(self.workers.contains(&worker));
+        debug_assert!(worker < self.workers.end);
         if self.local_workers.contains(&worker) {
             WorkerLocation::Local
         } else {

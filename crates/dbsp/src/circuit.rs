@@ -46,6 +46,7 @@ pub use dbsp_handle::{
 };
 pub use runtime::{
     Error as RuntimeError, LocalStore, LocalStoreMarker, Runtime, RuntimeHandle, WeakRuntime,
+    WorkerLocation, WorkerLocations,
 };
 
 pub use schedule::Error as SchedulerError;
