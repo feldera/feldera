@@ -905,11 +905,11 @@ impl BalancerInner {
         // println!("fixed_policy: {:?}, hints: {:?}", fixed_policy, hints);
 
         if fixed_policy.is_some()
-            && hints.policy_hint.is_some()
+            && let Some(policy_hint) = hints.policy_hint
             && fixed_policy != hints.policy_hint
         {
             return Err(BalancerError::InvalidPolicyHint(
-                hints.policy_hint.unwrap(),
+                policy_hint,
                 format!(
                     "the current policy {fixed_policy:?} can no longer be changed during the current transaction"
                 ),
