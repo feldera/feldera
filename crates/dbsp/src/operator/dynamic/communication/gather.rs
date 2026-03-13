@@ -5,9 +5,10 @@ use crate::{
         circuit_builder::StreamId,
         metadata::OperatorLocation,
         operator_traits::{Operator, SinkOperator, SourceOperator},
+        runtime::{WorkerLocation, WorkerLocations},
     },
     circuit_cache_key,
-    operator::communication::new_exchange_operators,
+    operator::communication::{Mailbox, new_exchange_operators},
     trace::{Batch, deserialize_indexed_wset, merge_batches, serialize_indexed_wset},
 };
 use arc_swap::ArcSwap;
@@ -126,13 +127,30 @@ where
                         let (sender, receiver) = new_exchange_operators(
                             Some(location),
                             || Vec::new(),
-                            move |batch: B, batches: &mut Vec<B>| {
-                                for _ in 0..Runtime::num_workers() {
-                                    batches.push(B::dyn_empty(&factories_clone3));
+                            move |batch: B, batches: &mut Vec<Mailbox<B>>| {
+                                let empty = B::dyn_empty(&factories_clone3);
+                                for location in WorkerLocations::new() {
+                                    match location {
+                                        WorkerLocation::Local => {
+                                            batches.push(Mailbox::Plain(empty.clone()))
+                                        }
+                                        WorkerLocation::Remote => batches.push(
+                                            Mailbox::Serialized(serialize_indexed_wset(&empty)),
+                                        ),
+                                    }
                                 }
-                                batches[receiver_worker] = batch;
+                                if Runtime::runtime()
+                                    .unwrap()
+                                    .layout()
+                                    .local_workers()
+                                    .contains(&receiver_worker)
+                                {
+                                    batches[receiver_worker] = Mailbox::Plain(batch);
+                                } else {
+                                    batches[receiver_worker] =
+                                        Mailbox::Serialized(serialize_indexed_wset(&batch));
+                                }
                             },
-                            |batch| serialize_indexed_wset(&batch),
                             move |data| deserialize_indexed_wset(&factories_clone, &data),
                             |batches: &mut Vec<B>, batch: B| batches.push(batch),
                         )
