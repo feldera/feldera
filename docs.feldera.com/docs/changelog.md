@@ -14,6 +14,11 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        Starting a pipeline while storage is still clearing (`storage_status=Clearing`) now returns
+        `CannotStartWhileClearingStorage` instead of succeeding. Clearing storage while a start
+        is in progress but hasn't yet transitioned to `Provisioning` now returns
+        `StorageStatusImmutableUnlessStopped` instead of succeeding.
+
         Backward-incompatible Delta Lake output connector change. The new `max_retries` setting configures
         the number of times the connector retries failed Delta Lake operations like writing Parquet files
         and committing transactions. The setting is unset by default, causing the connector to retry

@@ -1178,6 +1178,7 @@ pub(crate) async fn set_deployment_resources_desired_status(
 
     // Check that the desired status can be set
     validate_resources_desired_status_transition(
+        current.storage_status,
         current.deployment_resources_status,
         current.deployment_resources_desired_status,
         final_deployment_error.clone(),
@@ -1738,6 +1739,7 @@ pub(crate) async fn set_storage_status(
     // Check that the transition is permitted
     validate_storage_status_transition(
         current.deployment_resources_status,
+        current.deployment_resources_desired_status,
         current.storage_status,
         new_storage_status,
     )?;

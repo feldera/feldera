@@ -1893,6 +1893,14 @@ async fn pipeline_deployment() {
         )
         .await
         .unwrap();
+    assert!(matches!(
+        handle
+            .db
+            .transit_storage_status_to_clearing_if_not_cleared(tenant_id, "example1",)
+            .await
+            .unwrap_err(),
+        DBError::StorageStatusImmutableUnlessStopped { .. }
+    ));
     handle
         .db
         .transit_deployment_resources_status_to_provisioning(
@@ -1960,6 +1968,30 @@ async fn pipeline_deployment() {
     handle
         .db
         .transit_deployment_resources_status_to_stopped(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_storage_status_to_clearing_if_not_cleared(tenant_id, &pipeline1.name)
+        .await
+        .unwrap();
+    assert!(matches!(
+        handle
+            .db
+            .set_deployment_resources_desired_status_provisioned(
+                tenant_id,
+                "example1",
+                RuntimeDesiredStatus::Paused,
+                BootstrapPolicy::default(),
+                false,
+            )
+            .await
+            .unwrap_err(),
+        DBError::CannotStartWhileClearingStorage { .. }
+    ));
+    handle
+        .db
+        .transit_storage_status_to_cleared(tenant_id, pipeline1.id)
         .await
         .unwrap();
     handle
@@ -4256,6 +4288,7 @@ impl Storage for Mutex<DbModel> {
         };
         let new_resources_desired_status = ResourcesDesiredStatus::Provisioned;
         validate_resources_desired_status_transition(
+            pipeline.storage_status,
             pipeline.deployment_resources_status,
             pipeline.deployment_resources_desired_status,
             new_deployment_error.clone(),
@@ -4306,6 +4339,7 @@ impl Storage for Mutex<DbModel> {
         if pipeline.deployment_resources_status != ResourcesStatus::Provisioned {
             let new_resources_desired_status = ResourcesDesiredStatus::Stopped;
             validate_resources_desired_status_transition(
+                pipeline.storage_status,
                 pipeline.deployment_resources_status,
                 pipeline.deployment_resources_desired_status,
                 pipeline.deployment_error.clone(),
@@ -4340,6 +4374,7 @@ impl Storage for Mutex<DbModel> {
         let mut pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
         let new_resources_desired_status = ResourcesDesiredStatus::Stopped;
         validate_resources_desired_status_transition(
+            pipeline.storage_status,
             pipeline.deployment_resources_status,
             pipeline.deployment_resources_desired_status,
             pipeline.deployment_error.clone(),
@@ -4384,6 +4419,7 @@ impl Storage for Mutex<DbModel> {
         }
         validate_storage_status_transition(
             pipeline.deployment_resources_status,
+            pipeline.deployment_resources_desired_status,
             pipeline.storage_status,
             StorageStatus::InUse,
         )?;
@@ -4666,6 +4702,7 @@ impl Storage for Mutex<DbModel> {
             let new_status = StorageStatus::Clearing;
             validate_storage_status_transition(
                 pipeline.deployment_resources_status,
+                pipeline.deployment_resources_desired_status,
                 pipeline.storage_status,
                 new_status,
             )?;
@@ -4690,6 +4727,7 @@ impl Storage for Mutex<DbModel> {
         let new_status = StorageStatus::Cleared;
         validate_storage_status_transition(
             pipeline.deployment_resources_status,
+            pipeline.deployment_resources_desired_status,
             pipeline.storage_status,
             new_status,
         )?;
