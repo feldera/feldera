@@ -1347,13 +1347,14 @@ mod tests {
         Circuit, RootCircuit,
         circuit::{
             Runtime,
+            runtime::{WorkerLocation, WorkerLocations},
             schedule::{DynamicScheduler, Scheduler},
         },
         operator::{
             Generator,
             communication::{Mailbox, new_exchange_operators},
         },
-        storage::file::to_bytes,
+        storage::file::{to_bytes, to_bytes_dyn},
         trace::unaligned_deserialize,
     };
     use std::{iter::repeat, thread::yield_now};
@@ -1443,8 +1444,13 @@ mod tests {
                         None,
                         Vec::new,
                         move |n, vals| {
-                            for _ in 0..workers {
-                                vals.push(Mailbox::Plain(n));
+                            for location in WorkerLocations::new() {
+                                match location {
+                                    WorkerLocation::Local => vals.push(Mailbox::Plain(n)),
+                                    WorkerLocation::Remote => vals.push(Mailbox::Serialized(
+                                        to_bytes_dyn(&n).unwrap().into_vec(),
+                                    )),
+                                }
                             }
                         },
                         |data| unaligned_deserialize(&data[..]),

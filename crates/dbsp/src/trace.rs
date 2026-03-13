@@ -1366,6 +1366,83 @@ where
 /// Separator that identifies the end of values for a key.
 const SEPARATOR: u64 = u64::MAX;
 
+#[cfg(debug_assertions)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum State {
+    Key,
+    Val,
+    Diff,
+}
+
+pub struct IndexedWSetSerializer {
+    serializer: Serializer,
+    offsets: Vec<usize>,
+    n_keys: usize,
+    n_values: usize,
+    #[cfg(debug_assertions)]
+    state: State,
+}
+
+impl IndexedWSetSerializer {
+    pub fn with_capacity(estimated_keys: usize, estimated_values: usize) -> Self {
+        let mut offsets = Vec::with_capacity(2 + 2 * estimated_keys + 2 * estimated_values);
+        offsets.push(0);
+        offsets.push(0);
+        Self {
+            serializer: Serializer::default(),
+            offsets,
+            n_keys: 0,
+            n_values: 0,
+            #[cfg(debug_assertions)]
+            state: State::Key,
+        }
+    }
+
+    pub fn push_diff<R: WeightTrait + ?Sized>(&mut self, weight: &R) {
+        #[cfg(debug_assertions)]
+        {
+            debug_assert_eq!(self.state, State::Key);
+            self.state = State::Diff;
+        }
+
+        self.offsets
+            .push(weight.serialize(&mut self.serializer).unwrap());
+    }
+
+    pub fn push_val<V: DataTrait + ?Sized>(&mut self, val: &V) {
+        #[cfg(debug_assertions)]
+        {
+            debug_assert_eq!(self.state, State::Diff);
+            self.state = State::Val;
+        }
+
+        self.n_values += 1;
+        self.offsets
+            .push(val.serialize(&mut self.serializer).unwrap());
+    }
+
+    pub fn push_key<K: DataTrait + ?Sized>(&mut self, key: &K) {
+        #[cfg(debug_assertions)]
+        {
+            debug_assert_eq!(self.state, State::Val);
+            self.state = State::Key;
+        }
+
+        self.offsets.push(SEPARATOR as usize);
+        self.n_keys += 1;
+        self.offsets
+            .push(key.serialize(&mut self.serializer).unwrap());
+    }
+
+    pub fn finish(mut self) -> Vec<u8> {
+        debug_assert_eq!(self.state, State::Key);
+        self.offsets[0] = self.n_keys;
+        self.offsets[1] = self.n_values;
+        let _offset = self.serializer.serialize_value(&self.offsets).unwrap();
+        self.serializer.into_serializer().into_inner().into_vec()
+    }
+}
+
 pub fn serialize_indexed_wset<B, K, V, R>(batch: &B) -> Vec<u8>
 where
     B: BatchReader<Key = K, Val = V, Time = (), R = R>,
@@ -1373,24 +1450,19 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    let mut s = Serializer::default();
-    let mut offsets = Vec::with_capacity(2 * batch.len());
+    let mut serializer = IndexedWSetSerializer::with_capacity(batch.key_count(), batch.len());
     let mut cursor = batch.cursor();
-    offsets.push(batch.len());
 
     while cursor.key_valid() {
-        offsets.push(cursor.key().serialize(&mut s).unwrap());
         while cursor.val_valid() {
-            offsets.push(cursor.val().serialize(&mut s).unwrap());
-            offsets.push(cursor.weight().serialize(&mut s).unwrap());
-
+            serializer.push_diff(cursor.weight());
+            serializer.push_val(cursor.val());
             cursor.step_val();
         }
+        serializer.push_key(cursor.key());
         cursor.step_key();
-        offsets.push(SEPARATOR as usize);
     }
-    let _offset = s.serialize_value(&offsets).unwrap();
-    s.into_serializer().into_inner().into_vec()
+    serializer.finish()
 }
 
 pub fn deserialize_indexed_wset<B, K, V, R>(factories: &B::Factories, data: &[u8]) -> B
@@ -1401,28 +1473,30 @@ where
     R: WeightTrait + ?Sized,
 {
     let offsets = unsafe { archived_root::<Vec<usize>>(data) };
-    let len = offsets[0];
+    let n_keys = offsets[0] as usize;
+    let n_values = offsets[1] as usize;
 
-    let mut builder = B::Builder::with_capacity(factories, len as usize, len as usize);
+    let mut builder = B::Builder::with_capacity(factories, n_keys, n_values);
     let mut key = factories.key_factory().default_box();
     let mut val = factories.val_factory().default_box();
     let mut diff = factories.weight_factory().default_box();
 
-    let mut current_offset = 1;
+    let mut current_offset = 2;
 
     while current_offset < offsets.len() {
-        unsafe { key.deserialize_from_bytes(data, offsets[current_offset] as usize) };
-        current_offset += 1;
         while offsets[current_offset] != SEPARATOR {
+            unsafe { diff.deserialize_from_bytes(data, offsets[current_offset] as usize) };
+            current_offset += 1;
             unsafe { val.deserialize_from_bytes(data, offsets[current_offset] as usize) };
             current_offset += 1;
-            unsafe { diff.deserialize_from_bytes(data, offsets[current_offset] as usize) };
 
             builder.push_val_diff(&val, &diff);
-            current_offset += 1;
         }
-
         current_offset += 1;
+
+        unsafe { key.deserialize_from_bytes(data, offsets[current_offset] as usize) };
+        current_offset += 1;
+
         builder.push_key(&key);
     }
     builder.done()

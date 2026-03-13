@@ -8,11 +8,16 @@ use rkyv::archived_root;
 
 use crate::{
     Circuit, Runtime, Stream,
-    circuit::circuit_builder::StreamId,
+    circuit::{
+        circuit_builder::StreamId,
+        runtime::{WorkerLocation, WorkerLocations},
+    },
     circuit_cache_key,
     dynamic::{Data, DataTrait, DynPairs, Factory},
     operator::communication::{Mailbox, new_exchange_operators},
-    trace::{Batch, BatchReader, Builder, deserialize_indexed_wset, merge_batches},
+    trace::{
+        Batch, BatchReader, Builder, IndexedWSetSerializer, deserialize_indexed_wset, merge_batches,
+    },
 };
 
 use std::{ops::Range, panic::Location};
@@ -201,6 +206,80 @@ where
     }
 }
 
+enum ShardBuilder<OB>
+where
+    OB: Batch<Time = ()>,
+{
+    Local(OB::Builder),
+    Remote(IndexedWSetSerializer),
+}
+
+impl<OB> ShardBuilder<OB>
+where
+    OB: Batch<Time = ()>,
+{
+    fn new(
+        location: WorkerLocation,
+        factories: &OB::Factories,
+        estimated_keys: usize,
+        estimated_values: usize,
+    ) -> Self {
+        match location {
+            WorkerLocation::Local => Self::Local(OB::Builder::with_capacity(
+                factories,
+                estimated_keys,
+                estimated_values,
+            )),
+            WorkerLocation::Remote => Self::Remote(IndexedWSetSerializer::with_capacity(
+                estimated_keys,
+                estimated_values,
+            )),
+        }
+    }
+
+    fn push_diff(&mut self, weight: &OB::R) {
+        match self {
+            ShardBuilder::Local(builder) => builder.push_diff(weight),
+            ShardBuilder::Remote(serializer) => serializer.push_diff(weight),
+        }
+    }
+
+    fn push_diff_mut(&mut self, weight: &mut OB::R) {
+        match self {
+            ShardBuilder::Local(builder) => builder.push_diff_mut(weight),
+            ShardBuilder::Remote(serializer) => serializer.push_diff(weight),
+        }
+    }
+
+    fn push_val(&mut self, val: &OB::Val) {
+        match self {
+            ShardBuilder::Local(builder) => builder.push_val(val),
+            ShardBuilder::Remote(serializer) => serializer.push_val(val),
+        }
+    }
+
+    fn push_val_mut(&mut self, val: &mut OB::Val) {
+        match self {
+            ShardBuilder::Local(builder) => builder.push_val_mut(val),
+            ShardBuilder::Remote(serializer) => serializer.push_val(val),
+        }
+    }
+
+    fn push_key(&mut self, key: &OB::Key) {
+        match self {
+            ShardBuilder::Local(builder) => builder.push_key(key),
+            ShardBuilder::Remote(serializer) => serializer.push_key(key),
+        }
+    }
+
+    fn push_key_mut(&mut self, key: &mut OB::Key) {
+        match self {
+            ShardBuilder::Local(builder) => builder.push_key_mut(key),
+            ShardBuilder::Remote(serializer) => serializer.push_key(key),
+        }
+    }
+}
+
 // Partitions the batch into shards covering `workers` (out of
 // `all_workers()`), based on the hash of the key.
 pub fn shard_batch<IB, OB>(
@@ -218,11 +297,14 @@ pub fn shard_batch<IB, OB>(
     // XXX If `shards == 1` and `OB` and `IB` are the same, then we could
     // implement this more efficiently, without copying.
     let shards = workers.len();
-    for _ in 0..shards {
+    let mut builders = Vec::with_capacity(shards);
+    let locations = WorkerLocations::new();
+    for worker in workers.clone() {
         // We iterate over tuples in the batch in order; hence tuples added
         // to each shard are also ordered, so we can use the more efficient
         // `Builder` API (instead of `Batcher`) to construct output batches.
-        builders.push(OB::Builder::with_capacity(
+        builders.push(ShardBuilder::new(
+            locations.get(worker),
             factories,
             batch.key_count() / shards,
             batch.len() / shards,

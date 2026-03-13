@@ -1328,6 +1328,15 @@ impl WorkerLocations {
             }
         }
     }
+
+    pub fn get(&self, worker: usize) -> WorkerLocation {
+        debug_assert!(self.workers.contains(&worker));
+        if self.local_workers.contains(&worker) {
+            WorkerLocation::Local
+        } else {
+            WorkerLocation::Remote
+        }
+    }
 }
 
 impl Iterator for WorkerLocations {
@@ -1335,11 +1344,7 @@ impl Iterator for WorkerLocations {
 
     fn next(&mut self) -> Option<Self::Item> {
         let worker = self.workers.next()?;
-        if self.local_workers.contains(&worker) {
-            Some(WorkerLocation::Local)
-        } else {
-            Some(WorkerLocation::Remote)
-        }
+        Some(self.get(worker))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
