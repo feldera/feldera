@@ -61,15 +61,15 @@ import java.util.Objects;
  * Such functions are decomposed into two functions such that f = g(h),
  * where h is a projection which removes the unused field h = |x| x.1 in this case
  * and g is a compressed version of the function f, g = |x| x.0 in this case.
- * Most of this work is done by the {@link FindUnusedFields} visitor.
+ * Most of this work is done by the {@link FindUsedFields} visitor.
  */
 public class RemoveUnusedFields extends CircuitCloneVisitor {
-    public final FindUnusedFields find;
+    public final FindUsedFields find;
     final AnalyzedSet<DBSPOperator> operatorsAnalyzed;
 
     public RemoveUnusedFields(DBSPCompiler compiler, AnalyzedSet<DBSPOperator> operatorsAnalyzed) {
         super(compiler, false);
-        this.find = new FindUnusedFields(compiler);
+        this.find = new FindUsedFields(compiler);
         this.operatorsAnalyzed = operatorsAnalyzed;
     }
 
@@ -106,9 +106,9 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPClosureExpression joinFunction = join.getClosureFunction();
         if (this.done(join))
             return false;
-        joinFunction = this.find.findUnusedFields(joinFunction);
+        var useMap = this.find.findUsedFields(joinFunction);
 
-        RewriteFields rw = this.find.getFieldRewriter(1);
+        RewriteFields rw = useMap.getFieldRewriter(this.compiler, 1);
         List<FieldUseMap> useMaps = new ArrayList<>();
         boolean anyUnused = false;
         for (int i = 1; i < joinFunction.parameters.length; i++) {
@@ -140,13 +140,13 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPClosureExpression joinFunction = join.getClosureFunction();
         if (this.done(join))
             return false;
-        joinFunction = this.find.findUnusedFields(joinFunction);
+        var useMap = this.find.findUsedFields(joinFunction);
 
         Utilities.enforce(joinFunction.parameters.length == 3);
         DBSPParameter left = joinFunction.parameters[1];
         DBSPParameter right = joinFunction.parameters[2];
 
-        RewriteFields rw = this.find.getFieldRewriter(1);
+        RewriteFields rw = useMap.getFieldRewriter(this.compiler, 1);
         FieldUseMap leftRemap = rw.getUseMap(left);
         FieldUseMap rightRemap = rw.getUseMap(right);
         if (!leftRemap.hasUnusedFields(1) && !rightRemap.hasUnusedFields(1))
@@ -180,8 +180,8 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             extra[tuple.size()] = left.asVariable().deref().field(join.leftTimestampIndex);
             extra[tuple.size() + 1] = right.asVariable().deref().field(join.rightTimestampIndex);
             DBSPClosureExpression fakeFunction = new DBSPTupleExpression(extra).closure(joinFunction.parameters);
-            this.find.findUnusedFields(fakeFunction);
-            RewriteFields rw = this.find.getFieldRewriter(1);
+            var useMap = this.find.findUsedFields(fakeFunction);
+            RewriteFields rw = useMap.getFieldRewriter(this.compiler, 1);
             FieldUseMap leftRemap = rw.getUseMap(left);
             FieldUseMap rightRemap = rw.getUseMap(right);
             if (leftRemap.hasUnusedFields(1) || rightRemap.hasUnusedFields(1)) {
@@ -305,14 +305,14 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         }
         DBSPClosureExpression closure = operator.getClosureFunction();
         Utilities.enforce(closure.parameters.length == 1);
-        closure = this.find.findUnusedFields(closure);
+        var useMap = this.find.findUsedFields(closure);
 
-        if (!this.find.foundUnusedFields(1)) {
+        if (!useMap.hasUnusedFields(1)) {
             super.postorder(operator);
             return;
         }
         // closure = compressed \circ projection
-        RewriteFields rw = this.find.getFieldRewriter(1);
+        RewriteFields rw = useMap.getFieldRewriter(this.compiler, 1);
         FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
         DBSPClosureExpression compressed = rw.rewriteClosure(closure);
         if (EquivalenceContext.equiv(closure, compressed)) {
@@ -341,9 +341,9 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
         // Search for unused fields in the DBSPFlatmap expression
         DBSPTypeTuple inputTuple = operator.input().getOutputZSetElementType().to(DBSPTypeTuple.class);
-        FindUnusedFields find = new FindUnusedFields(this.compiler);
-        find.findUnusedFields(flatmap.collectionExpression);
-        FieldUseMap map = find.parameterFieldMap.get(flatmap.collectionExpression.parameters[0]).deref();
+        FindUsedFields find = new FindUsedFields(this.compiler);
+        var useMap = find.findUsedFields(flatmap.collectionExpression);
+        FieldUseMap map = useMap.get(flatmap.collectionExpression.parameters[0]).deref();
         for (int index: flatmap.leftInputIndexes) {
             map.setUsed(index);
         }
@@ -359,7 +359,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPSimpleOperator adjust = new DBSPMapOperator(operator.getRelNode(), projection, source)
                 .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
         this.addOperator(adjust);
-        RewriteFields fieldRewriter = find.getFieldRewriter(1);
+        RewriteFields fieldRewriter = useMap.getFieldRewriter(this.compiler, 1);
         DBSPClosureExpression collectionExpression = fieldRewriter.rewriteClosure(flatmap.collectionExpression);
 
         // Correct the DBSPFLatmap to account for the removed fields
@@ -387,16 +387,16 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             return;
         }
 
-        Map<IAggregate, FindUnusedFields> finders = new HashMap<>();
+        Map<IAggregate, ParameterFieldUse> useMaps = new HashMap<>();
         FieldUseMap fum = new FieldUseMap(list.rowVar.getType(), false);
         // FindUnusedFields converts closures to trees, so it allocates new aggregates
         List<IAggregate> treeified = new ArrayList<>();
         for (IAggregate aggregate: list.aggregates) {
-            FindUnusedFields finder = new FindUnusedFields(this.compiler);
-            FindUnusedFields.AggregateUseMap used = finder.computeUnusedFields(aggregate);
-            Utilities.putNew(finders, used.aggregate(), finder);
+            FindUsedFields finder = new FindUsedFields(this.compiler);
+            FindUsedFields.AggregateUseMap used = finder.computeUsedFields(aggregate);
+            Utilities.putNew(useMaps, used.aggregate(), used.useMap());
             treeified.add(used.aggregate());
-            fum = fum.reduce(used.useMap());
+            fum = fum.reduce(used.useMap().get(used.parameter()));
         }
 
         if (!fum.hasUnusedFields(1)) {
@@ -406,12 +406,13 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
         List<IAggregate> results = new ArrayList<>();
         for (IAggregate aggregate: treeified) {
-            FindUnusedFields finder = Utilities.getExists(finders, aggregate);
+            ParameterFieldUse useMap = Utilities.getExists(useMaps, aggregate);
             for (DBSPParameter param: aggregate.getRowVariableReferences()) {
-                finder.setParameterUseMap(param, fum);
+                useMap.updateParameterValue(param, fum);
             }
-            RewriteFields fieldRewriter = finder.getFieldRewriter(1);
-            IAggregate rewritten = fieldRewriter.apply(aggregate).to(IAggregate.class);
+            RewriteFields fieldRewriter = useMap.getFieldRewriter(this.compiler, 1);
+            IAggregate rewritten = fieldRewriter.apply(aggregate)
+                    .to(IAggregate.class);
             results.add(rewritten);
         }
 
@@ -437,15 +438,15 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
         DBSPClosureExpression closure = operator.getClosureFunction();
         Utilities.enforce(closure.parameters.length == 1);
-        closure = this.find.findUnusedFields(closure);
+        var useMap = this.find.findUsedFields(closure);
         int size = closure.getType().getToplevelFieldCount();
 
         if (operator.input().outputType().is(DBSPTypeZSet.class)) {
-            if (!this.find.foundUnusedFields(1)) {
+            if (!useMap.hasUnusedFields(1)) {
                 super.postorder(operator);
                 return;
             }
-            RewriteFields rw = this.find.getFieldRewriter(1);
+            RewriteFields rw = useMap.getFieldRewriter(this.compiler, 1);
             FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
             DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(1));
             DBSPClosureExpression compressed = rw.rewriteClosure(closure);
@@ -465,12 +466,12 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                     operator.getRelNode(), compressed, operator.getOutputZSetType(), adjust.outputPort());
             this.map(operator, result);
         } else {
-            if (!this.find.foundUnusedFields(2)) {
+            if (!useMap.hasUnusedFields(2)) {
                 super.postorder(operator);
                 return;
             }
             // closure = compressed \circ projection
-            RewriteFields rw = this.find.getFieldRewriter(2);
+            RewriteFields rw = useMap.getFieldRewriter(this.compiler, 2);
             FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
             DBSPClosureExpression compressed = rw.rewriteClosure(closure);
             if (EquivalenceContext.equiv(closure, compressed)) {
@@ -501,15 +502,15 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
         DBSPClosureExpression closure = operator.getClosureFunction();
         Utilities.enforce(closure.parameters.length == 1);
-        closure = this.find.findUnusedFields(closure);
+        var useMap = this.find.findUsedFields(closure);
         int size = closure.getType().getToplevelFieldCount();
 
         if (operator.input().outputType().is(DBSPTypeZSet.class)) {
-            if (!this.find.foundUnusedFields(1)) {
+            if (!useMap.hasUnusedFields(1)) {
                 super.postorder(operator);
                 return;
             }
-            RewriteFields rw = this.find.getFieldRewriter(1);
+            RewriteFields rw = useMap.getFieldRewriter(this.compiler, 1);
             FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
             DBSPClosureExpression compressed = rw.rewriteClosure(closure);
             OutputPort source = this.mapped(operator.input());
@@ -527,12 +528,12 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                     operator.getRelNode(), compressed, operator.getOutputIndexedZSetType(), adjust.outputPort());
             this.map(operator, result);
         } else {
-            if (!this.find.foundUnusedFields(2)) {
+            if (!useMap.hasUnusedFields(2)) {
                 super.postorder(operator);
                 return;
             }
             // closure = compressed \circ projection
-            RewriteFields rw = this.find.getFieldRewriter(2);
+            RewriteFields rw = useMap.getFieldRewriter(this.compiler, 2);
             FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
             DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(2));
             if (EquivalenceContext.equiv(closure, projection) ||

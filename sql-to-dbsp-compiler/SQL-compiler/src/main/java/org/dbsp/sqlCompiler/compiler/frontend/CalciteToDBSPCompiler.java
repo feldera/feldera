@@ -152,7 +152,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.SetOptionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FieldUseMap;
-import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindUnusedFields;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindUsedFields;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
@@ -1070,8 +1070,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPType inputElementType = operator.getOutputZSetElementType();
         if (inputElementType.sameType(outputElementType))
             return operator;
-        DBSPExpression function = inputElementType.caster(outputElementType, DBSPCastExpression.CastType.SqlUnsafe)
-                .reduce(this.compiler);
+        DBSPClosureExpression caster = inputElementType.caster(outputElementType, DBSPCastExpression.CastType.SqlUnsafe);
+        DBSPExpression function = caster.reduce(this.compiler);
         DBSPSimpleOperator map = new DBSPMapOperator(
                 node, function, TypeCompiler.makeZSet(outputElementType), operator.outputPort());
         this.addOperator(map);
@@ -1557,7 +1557,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPExpression result = makeAnd(pullLeft);
             DBSPClosureExpression clo = result.closure(t);
             leftPulled = new DBSPFilterOperator(node, clo, left.outputPort());
-            leftPulledFields = FindUnusedFields.computeUsedFields(clo, this.compiler);
+            leftPulledFields = FindUsedFields.computeUsedFields(clo, this.compiler);
             this.addOperator(leftPulled);
         }
         if (!decomposition.rightPredicates.isEmpty()) {
@@ -1568,7 +1568,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPExpression result = makeAnd(pullRight);
             DBSPClosureExpression clo = result.closure(t);
             rightPulled = new DBSPFilterOperator(node, clo, right.outputPort());
-            rightPulledFields = FindUnusedFields.computeUsedFields(clo, this.compiler);
+            rightPulledFields = FindUsedFields.computeUsedFields(clo, this.compiler);
             this.addOperator(rightPulled);
         }
 
@@ -1735,7 +1735,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.addOperator(joinResult);
                 inner = new DBSPFilterOperator(node, postJoinCondition, joinResult.outputPort());
                 joinResult = inner;
-                conditionFields = FindUnusedFields.computeUsedFields(postJoinCondition, this.compiler);
+                conditionFields = FindUsedFields.computeUsedFields(postJoinCondition, this.compiler);
             }
         }
 

@@ -121,7 +121,7 @@ public class CircuitOptimizer extends Passes {
 
         this.add(new OptimizeWithGraph(compiler, g -> new CloneOperatorsWithFanout(compiler, g)));
         this.add(new LinearPostprocessRetainKeys(compiler));
-        this.add(new IndexedInputs(compiler));
+        this.add(new ExpandIndexedInputs(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
         this.add(new DeadCode(compiler, true));
         this.add(new Simplify(compiler).circuitRewriter(true));
