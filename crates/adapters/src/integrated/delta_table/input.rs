@@ -1118,13 +1118,12 @@ impl DeltaTableInputEndpointInner {
                         )
                         .await;
 
-                        if self.config.end_version.is_some()
-                            && self.config.end_version <= Some(new_version)
+                        if let Some(end_version) = self.config.end_version
+                            && end_version <= new_version
                         {
                             info!(
                                 "delta_table {}: reached table version {} specified as 'end_version' in connector config: stopping the connector",
-                                &self.endpoint_name,
-                                self.config.end_version.unwrap()
+                                &self.endpoint_name, end_version
                             );
                             self.metrics
                                 .phase

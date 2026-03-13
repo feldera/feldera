@@ -423,8 +423,8 @@ async fn collect_metrics(
                         tokio::select! {
                             res = fut => {
                                 // Transaction committed within the window
-                                if res.is_err() {
-                                    eprintln!("Failed to commit transaction: {}", res.unwrap_err());
+                                if let Err(e) = res {
+                                    eprintln!("Failed to commit transaction: {e}");
                                     std::process::exit(1);
                                 }
                                 break;

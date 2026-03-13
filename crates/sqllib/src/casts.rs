@@ -1073,7 +1073,7 @@ macro_rules! cast_to_string {
 
             #[doc(hidden)]
             pub fn [<cast_to_sN_ $type_name >] $(< $( const $var : $ty ),* >)? ( value: $arg_type, size: i32, fixed: bool ) -> SqlResult<Option<SqlString>> {
-                r2o(([< cast_to_s_ $type_name >] $(:: < $($var),* >)? (value, size, fixed)))
+                r2o([< cast_to_s_ $type_name >] $(:: < $($var),* >)? (value, size, fixed))
             }
 
             #[doc(hidden)]
