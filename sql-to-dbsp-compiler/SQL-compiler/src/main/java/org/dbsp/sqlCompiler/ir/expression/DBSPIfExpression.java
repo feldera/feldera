@@ -105,7 +105,7 @@ public final class DBSPIfExpression extends DBSPExpression {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        builder.append("if ")
+        builder.append("(if ")
                 .append(this.condition)
                 .append(" ");
         if (this.positive.is(DBSPBlockExpression.class))
@@ -131,6 +131,7 @@ public final class DBSPIfExpression extends DBSPExpression {
                         .append("}");
             }
         }
+        builder.append(")");
         return builder;
     }
 

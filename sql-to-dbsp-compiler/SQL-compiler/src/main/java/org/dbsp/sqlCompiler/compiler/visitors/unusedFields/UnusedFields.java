@@ -75,7 +75,7 @@ public class UnusedFields extends Passes {
     }
 
     static class FindUnusedInputFields extends CircuitWithGraphsVisitor {
-        final Map<DBSPSourceMultisetOperator, FindUnusedFields> finders;
+        final Map<DBSPSourceMultisetOperator, ParameterFieldUse> finders;
         final Map<DBSPSourceMultisetOperator, FieldUseMap> fieldsUsed;
         final Map<DBSPSourceMultisetOperator, DBSPUnaryOperator> successor;
 
@@ -103,14 +103,14 @@ public class UnusedFields extends Passes {
                 return;
             if (source.node().is(DBSPSourceMultisetOperator.class)) {
                 DBSPSourceMultisetOperator src = source.node().to(DBSPSourceMultisetOperator.class);
-                FindUnusedFields unused = new FindUnusedFields(this.compiler);
+                FindUsedFields unused = new FindUsedFields(this.compiler);
                 DBSPClosureExpression function = operator.getClosureFunction();
                 Utilities.enforce(function.parameters.length == 1);
-                unused.findUnusedFields(function);
+                var useMap = unused.findUsedFields(function);
 
-                if (unused.foundUnusedFields(1)) {
-                    FieldUseMap map = unused.parameterFieldMap.get(function.parameters[0]).deref();
-                    Utilities.putNew(this.finders, src, unused);
+                if (useMap.hasUnusedFields(1)) {
+                    FieldUseMap map = useMap.get(function.parameters[0]).deref();
+                    Utilities.putNew(this.finders, src, useMap);
                     Utilities.putNew(this.fieldsUsed, src, map);
 
                     if (map.hasUnusedFields(1)) {
@@ -201,8 +201,8 @@ public class UnusedFields extends Passes {
                 return;
             }
 
-            FindUnusedFields finder = this.data.finders.get(src);
-            RewriteFields rw = finder.getFieldRewriter(1);
+            var finder = this.data.finders.get(src);
+            RewriteFields rw = finder.getFieldRewriter(this.compiler, 1);
             DBSPClosureExpression newMap = rw.rewriteClosure(map.getClosureFunction());
             DBSPSimpleOperator result = new DBSPMapOperator(map.getRelNode(), newMap, newSource.outputPort());
             this.map(map, result);
@@ -223,8 +223,8 @@ public class UnusedFields extends Passes {
                 return;
             }
 
-            FindUnusedFields finder = this.data.finders.get(src);
-            RewriteFields rw = finder.getFieldRewriter(1);
+            var finder = this.data.finders.get(src);
+            RewriteFields rw = finder.getFieldRewriter(this.compiler, 1);
             DBSPClosureExpression newMap = rw.rewriteClosure(map.getClosureFunction());
             DBSPSimpleOperator result = new DBSPMapIndexOperator(map.getRelNode(), newMap, newSource.outputPort());
             this.map(map, result);
