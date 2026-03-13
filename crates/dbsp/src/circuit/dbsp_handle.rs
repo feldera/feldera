@@ -11,6 +11,7 @@ use crate::operator::dynamic::balance::{
 use crate::storage::backend::StorageError;
 use crate::storage::file::BLOOM_FILTER_FALSE_POSITIVE_RATE;
 use crate::trace::MergerType;
+use crate::trace::spine_async::MAX_LEVEL0_BATCH_SIZE_RECORDS;
 use crate::{
     Error as DbspError, RootCircuit, Runtime, RuntimeError, circuit::runtime::RuntimeHandle,
     profile::Profiler,
@@ -392,6 +393,9 @@ pub struct DevTweaks {
     ///
     /// Values outside the valid range, such as 0.0, disable Bloom filters.
     pub bloom_false_positive_rate: f64,
+
+    /// Maximum batch size in records for level 0 merges.
+    pub max_level0_batch_size_records: u16,
 }
 
 impl Default for DevTweaks {
@@ -409,6 +413,7 @@ impl Default for DevTweaks {
             balancer_balance_tax: BALANCE_TAX,
             balancer_key_distribution_refresh_threshold: KEY_DISTRIBUTION_REFRESH_THRESHOLD,
             adaptive_joins: false,
+            max_level0_batch_size_records: MAX_LEVEL0_BATCH_SIZE_RECORDS,
         }
     }
 }
@@ -454,6 +459,10 @@ pub fn balancer_key_distribution_refresh_threshold() -> f64 {
 
 pub fn adaptive_joins_enabled() -> bool {
     Runtime::with_dev_tweaks(|d| d.adaptive_joins)
+}
+
+pub fn max_level0_batch_size_records() -> u16 {
+    Runtime::with_dev_tweaks(|d| d.max_level0_batch_size_records)
 }
 
 /// Configuration for storage in a [Runtime]-hosted circuit.
