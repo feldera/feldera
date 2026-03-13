@@ -1313,6 +1313,12 @@ pub struct WorkerLocations {
     local_workers: Range<usize>,
 }
 
+impl Default for WorkerLocations {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WorkerLocations {
     pub fn new() -> Self {
         if let Some(runtime) = Runtime::runtime() {
