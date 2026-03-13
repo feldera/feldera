@@ -46,7 +46,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Substitution;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FieldUseMap;
-import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindUnusedFields;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindUsedFields;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ParameterFieldUse;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -423,11 +424,11 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
      * required changes, false if they are unchanged.  When the operator requires change,
      * it is inserted in the circuit and map is remapped to the new operator. */
     boolean processAggregate(DBSPStreamAggregateOperator aggregate, DBSPMapIndexOperator map) {
-        FindUnusedFields unused = new FindUnusedFields(this.compiler);
+        FindUsedFields unused = new FindUsedFields(this.compiler);
         DBSPClosureExpression function = map.getClosureFunction();
         Utilities.enforce(function.parameters.length == 1);
-        unused.findUnusedFields(function);
-        FieldUseMap useMap = unused.parameterFieldMap.get(function.parameters[0]);
+        ParameterFieldUse uses = unused.findUsedFields(function);
+        FieldUseMap useMap = uses.get(function.parameters[0]);
         FieldUseMap valueUse = useMap.field(1);
         DBSPTypeIndexedZSet ix = aggregate.getOutputIndexedZSetType();
 

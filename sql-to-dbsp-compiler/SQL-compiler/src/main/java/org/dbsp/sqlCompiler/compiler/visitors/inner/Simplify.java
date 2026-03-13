@@ -449,6 +449,8 @@ public class Simplify extends ExpressionTranslator {
         DBSPExpression result = source.field(expression.fieldNo);
         if (source.is(DBSPBaseTupleExpression.class)) {
             result = source.to(DBSPBaseTupleExpression.class).get(expression.fieldNo);
+            if (source.getType().mayBeNull && !result.getType().mayBeNull)
+                result = result.some();
         } if (source.is(DBSPBlockExpression.class)) {
             DBSPBlockExpression block = source.to(DBSPBlockExpression.class);
             Utilities.enforce(block.lastExpression != null);
