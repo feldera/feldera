@@ -46,7 +46,7 @@ pub const fn default_request_timeout_secs() -> u64 {
 }
 
 pub const fn default_inactivity_timeout_secs() -> u64 {
-    10
+    60
 }
 
 pub const fn default_retry_interval_secs() -> u64 {
