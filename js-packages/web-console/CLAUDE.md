@@ -19,11 +19,8 @@ bun run format     # Format code with Prettier
 bun run lint       # Lint with ESLint
 bun run check      # Type check with svelte-check
 
-# Testing
-bun run test-e2e      # End-to-end tests with Playwright
-bun run test-e2e-ui   # E2E tests with UI
-bun run test-ct       # Component tests
-bun run test-ct-ui    # Component tests with UI
+# Run unit tests
+bun run test
 
 # OpenAPI generation (important for API updates)
 bun run build-openapi     # Generate new openapi.json from Rust backend
@@ -110,17 +107,40 @@ Web Console is a dasboard UI app deployed as a static website that is served by 
 - Use Svelte 5 runes syntax (`$state`, `$derived`, `$effect`)
 - Implement proper TypeScript typing
 
-#### Testing Strategy
+## Testing Strategy
 
-- E2E tests for critical user workflows
-- Component tests for isolated UI testing
-- Use Playwright for both E2E and component testing
-- Tests expect pipeline manager backend to be running on localhost:8080
+- **vitest** for unit tests and UI component tests (vitest-browser-svelte renders Svelte components in a real browser via Playwright)
+- **Playwright** for e2e tests (expect pipeline-manager backend running on localhost:8080)
+- Snapshots (visual screenshots) are stored in `playwright-snapshots/` which is gitignored — they live in a separate repo
 
-### Configuration Files
+### Test Commands
+
+- `bun run test` — run vitest unit + component tests (single run)
+- `bun run test-unit` — run vitest in watch mode
+- `bun run test-e2e` — run Playwright e2e tests
+
+### Snapshot Workflow
+
+1. `bun run test-prepare` — clones the snapshot repo (or creates empty dirs)
+2. `bun run test` — vitest reads/writes component snapshots from `playwright-snapshots/component/`
+3. `bun run test-e2e` — Playwright reads/writes e2e snapshots from `playwright-snapshots/e2e/`
+4. `bun run test-update-snapshots` — regenerates all snapshots
+
+### Test ID Conventions
+
+Svelte markup uses `data-testid` attributes: `[btn|input|box]-[element id]`
+
+- **btn** — any clickable element (`<button/>`, `<a/>`, element with `onclick={}`)
+- **input** — any other input element
+- **box** — any other element or area
+- Element id should be concise but not abbreviated
+
+Most interactions and checks in the tests should be performed through data-testid attributes. The exception is locating an icon based on it's webfont class name (e.g. fd-circle-alert)
+
+## Configuration Files
 
 - `svelte.config.js` - SvelteKit configuration with static adapter
 - `vite.config.ts` - Build configuration with plugins for SVG and virtual modules
 - `tailwind.config.ts` - Custom theme configuration with Skeleton integration
 - `eslint.config.js` - Flat config with TypeScript and Svelte support
-- `playwright.config.ts` - Test configuration
+- `playwright.config.ts` - e2e test configuration
