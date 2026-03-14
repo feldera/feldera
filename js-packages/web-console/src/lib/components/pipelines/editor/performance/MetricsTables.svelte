@@ -125,10 +125,14 @@
   onErrorClick?: (e: Event) => void
 )}
   {#if barrier}
-    <span class="fd fd-construction mr-1 text-[16px] text-warning-500"></span>
+    <span
+      data-testid="box-icon-barrier"
+      class="fd fd-construction mr-1 text-[16px] text-warning-500"
+    ></span>
     <Tooltip placement="top">Commit blocked by this input</Tooltip>
   {:else if hasErrors}
     <span
+      data-testid="btn-icon-errors"
       class="fd fd-circle-alert mr-1 cursor-pointer text-[16px] text-error-500"
       onclick={(e) => {
         e.stopPropagation()
@@ -141,19 +145,32 @@
     <Tooltip placement="top">Parse or transport errors occurred — click to view</Tooltip>
   {/if}
   {#if transactionPhase === 'started'}
-    <span class="fd fd-receipt-text mr-1 text-[16px] text-warning-500"></span>
+    <span
+      data-testid="box-icon-transaction-started"
+      class="fd fd-receipt-text mr-1 text-[16px] text-warning-500"
+    ></span>
     <Tooltip placement="top">Transaction started</Tooltip>
   {:else if transactionPhase === 'committed'}
-    <span class="fd fd-receipt-text mr-1 text-[16px] text-success-500"></span>
+    <span
+      data-testid="box-icon-transaction-committed"
+      class="fd fd-receipt-text mr-1 text-[16px] text-success-500"
+    ></span>
     <Tooltip placement="top">Transaction committed</Tooltip>
   {:else if endOfInput}
-    <span class="fd fd-circle-dot mr-1 text-[16px] text-surface-700-300"></span>
+    <span
+      data-testid="box-icon-end-of-input"
+      class="fd fd-circle-dot mr-1 text-[16px] text-surface-700-300"
+    ></span>
     <Tooltip placement="top">End of input</Tooltip>
   {:else if paused}
-    <span class="fd fd-circle-pause mr-1 text-[16px] text-surface-700-300"></span>
+    <span
+      data-testid="box-icon-paused"
+      class="fd fd-circle-pause mr-1 text-[16px] text-surface-700-300"
+    ></span>
     <Tooltip placement="top">Paused</Tooltip>
   {:else}
-    <span class="fd fd-circle-play mr-1 text-[16px] text-success-500"></span>
+    <span data-testid="box-icon-running" class="fd fd-circle-play mr-1 text-[16px] text-success-500"
+    ></span>
     <Tooltip placement="top">Running</Tooltip>
   {/if}
 {/snippet}
@@ -161,6 +178,7 @@
 {#snippet outputConnectorIcons(hasErrors: boolean, onErrorClick?: (e: Event) => void)}
   {#if hasErrors}
     <span
+      data-testid="btn-icon-output-errors"
       class="fd fd-circle-alert mr-1 cursor-pointer text-[16px] text-error-500"
       onclick={(e) => {
         e.stopPropagation()
@@ -184,7 +202,10 @@
 {/snippet}
 
 {#snippet unhealthyChip(description: string)}
-  <span class="-my-1 ml-2 chip preset-filled-error-50-950 uppercase">unhealthy</span>
+  <span
+    data-testid="box-unhealthy-chip"
+    class="-my-1 ml-2 chip preset-filled-error-50-950 uppercase">unhealthy</span
+  >
   <Popover class="z-20 max-w-lg">
     <div class="flex flex-row-reverse flex-nowrap items-start gap-4">
       {#if description}
@@ -259,7 +280,11 @@
     <SegmentedControl.Control class="w-fit flex-none rounded preset-filled-surface-50-950 p-1">
       <SegmentedControl.Indicator class="bg-white-dark shadow" />
       {#each healthFilterModes as mode}
-        <SegmentedControl.Item value={mode} class="btn h-6 cursor-pointer px-3">
+        <SegmentedControl.Item
+          value={mode}
+          class="btn h-6 cursor-pointer px-3"
+          data-testid="btn-select-{mode}"
+        >
           <SegmentedControl.ItemText class="text-surface-950-50 capitalize">
             {mode}{#if mode === 'unhealthy' && unhealthyCount > 0}<span
                 class="ml-2 rounded bg-error-50-950 px-2">{unhealthyCount}</span
@@ -315,6 +340,7 @@
   <td class="text-end font-dm-mono text-nowrap">
     {#if m.num_parse_errors > 0 && relation && connectorEndpointName}
       <button
+        data-testid="btn-parse-errors"
         class="-m-2 cursor-pointer p-2 font-dm-mono text-error-500 hover:underline"
         onclick={(e) => {
           e.stopPropagation()
@@ -328,6 +354,7 @@
   <td class="text-end font-dm-mono text-nowrap">
     {#if m.num_transport_errors > 0 && relation && connectorEndpointName}
       <button
+        data-testid="btn-input-transport-errors"
         class="-m-2 cursor-pointer p-2 font-dm-mono text-error-500 hover:underline"
         onclick={(e) => {
           e.stopPropagation()
@@ -390,6 +417,7 @@
   <td class="text-end font-dm-mono text-nowrap">
     {#if m.num_encode_errors > 0 && relation && connectorEndpointName}
       <button
+        data-testid="btn-encode-errors"
         class="-m-2 cursor-pointer p-2 font-dm-mono text-error-500 hover:underline"
         onclick={(e) => {
           e.stopPropagation()
@@ -403,6 +431,7 @@
   <td class="text-end font-dm-mono text-nowrap">
     {#if m.num_transport_errors > 0 && relation && connectorEndpointName}
       <button
+        data-testid="btn-output-transport-errors"
         class="-m-2 cursor-pointer p-2 font-dm-mono text-error-500 hover:underline"
         onclick={(e) => {
           e.stopPropagation()
@@ -425,7 +454,7 @@
     : data.connectors.some((c) => c.transaction_phase === 'committed')
       ? 'committed'
       : undefined}
-  <div class="flex flex-nowrap items-center">
+  <div data-testid="box-multi-connector-summary" class="flex flex-nowrap items-center">
     <span class="flex w-10 flex-nowrap justify-end">
       {#if !isExpanded}
         {@render inputConnectorIcons(
@@ -454,7 +483,7 @@
 
 {#snippet viewMultiConnectorCell(data: AggregatedOutputEndpointMetrics, isExpanded: boolean)}
   {@const anyUnhealthy = data.connectors.some(isUnhealthy)}
-  <div class="flex flex-nowrap items-center">
+  <div data-testid="box-multi-connector-summary" class="flex flex-nowrap items-center">
     {#if !isExpanded && data.connectors.some(outputHasErrors)}
       <span class="fd fd-circle-alert mr-1 text-[16px] text-error-500"></span>
     {/if}
@@ -481,9 +510,10 @@
   >,
   multiConnectorRelationCell: Snippet<[AggregatedMetrics<EndpointMetrics, Extra>, boolean]>,
   columnHeaders: Snippet,
-  metricsCells: Snippet<[EndpointMetrics, boolean | undefined, string?, string?]>
+  metricsCells: Snippet<[EndpointMetrics, boolean | undefined, string?, string?]>,
+  testId: string
 )}
-  <div class="scrollbar w-full overflow-x-auto {maxWidth}">
+  <div class="scrollbar w-full overflow-x-auto {maxWidth}" data-testid={testId}>
     <table class="bg-white-dark table h-min rounded text-base">
       <thead>
         {@render columnHeaders()}
@@ -493,6 +523,7 @@
           {@const isExpanded = expanded.has(relation)}
           {@const hasMultipleConnectors = data.connectors.length > 1}
           <tr
+            data-testid="box-relation-row-{relation}"
             class={hasMultipleConnectors ? 'cursor-pointer hover:bg-surface-50-950' : ''}
             onclick={() => hasMultipleConnectors && toggle(relation)}
           >
@@ -522,7 +553,7 @@
           </tr>
           {#if isExpanded && hasMultipleConnectors}
             {#each data.connectors as connector}
-              <tr>
+              <tr data-testid="box-connector-row-{connector.endpointName}">
                 <td></td>
                 <td>{@render connectorNameSnippet(connector, relation, true)}</td>
                 {@render metricsCells(
@@ -549,7 +580,8 @@
     inputConnectorName,
     tableMultiConnectorCell,
     tableColumnHeaders,
-    inputMetricsCells
+    inputMetricsCells,
+    'box-input-tables'
   )}
 {/if}
 {#if metrics.current.views.size}
@@ -561,6 +593,7 @@
     outputConnectorName,
     viewMultiConnectorCell,
     viewColumnHeaders,
-    outputMetricsCells
+    outputMetricsCells,
+    'box-output-views'
   )}
 {/if}

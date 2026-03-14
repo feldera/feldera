@@ -57,10 +57,11 @@ const addZeroMetrics = (previous: PipelineMetrics) => ({
 })
 
 export const accumulatePipelineMetrics =
-  (newTimestamp: number, refetchMs: number, keepMs?: number) => (oldData: any, x: any) => {
-    const { status: newData } = x
-    invariant(((v: any): v is PipelineMetrics | undefined => true)(oldData))
-    invariant(((v: any): v is ControllerStatus | null => true)(newData))
+  (newTimestamp: number) =>
+  (
+    oldData: PipelineMetrics | undefined,
+    { status: newData }: { status: ControllerStatus | null }
+  ): PipelineMetrics | undefined => {
     if (!newData) {
       return oldData ? addZeroMetrics(oldData) : oldData
     }
@@ -184,7 +185,7 @@ export const accumulatePipelineMetrics =
         })
       ),
       global: globalWithTimestamp
-    } as any
+    }
   }
 
 /**
