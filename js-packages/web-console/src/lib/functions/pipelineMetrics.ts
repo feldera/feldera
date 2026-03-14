@@ -3,6 +3,7 @@ import { groupBy } from '$lib/functions/common/array'
 import { tuple } from '$lib/functions/common/tuple'
 import { normalizeCaseIndependentName } from '$lib/functions/felderaRelation'
 import type {
+  ConnectorHealth,
   ControllerStatus,
   InputEndpointMetrics,
   InputEndpointStatus,
@@ -27,12 +28,13 @@ export type AggregatedInputEndpointMetrics = AggregatedMetrics<
     barrier?: boolean
     io_active: boolean
     transaction_phase?: 'started' | 'committed'
+    health?: ConnectorHealth | null
   }
 >
 
 export type AggregatedOutputEndpointMetrics = AggregatedMetrics<
   OutputEndpointMetrics,
-  { io_active: boolean }
+  { io_active: boolean; health?: ConnectorHealth | null }
 >
 
 export const emptyPipelineMetrics = {
@@ -55,10 +57,11 @@ const addZeroMetrics = (previous: PipelineMetrics) => ({
 })
 
 export const accumulatePipelineMetrics =
-  (newTimestamp: number, refetchMs: number, keepMs?: number) => (oldData: any, x: any) => {
-    const { status: newData } = x
-    invariant(((v: any): v is PipelineMetrics | undefined => true)(oldData))
-    invariant(((v: any): v is ControllerStatus | null => true)(newData))
+  (newTimestamp: number) =>
+  (
+    oldData: PipelineMetrics | undefined,
+    { status: newData }: { status: ControllerStatus | null }
+  ): PipelineMetrics | undefined => {
     if (!newData) {
       return oldData ? addZeroMetrics(oldData) : oldData
     }
@@ -89,7 +92,8 @@ export const accumulatePipelineMetrics =
                 barrier: cur.barrier,
                 io_active:
                   prev !== undefined && cur.metrics.total_records > prev.metrics.total_records,
-                transaction_phase: connectorPhase
+                transaction_phase: connectorPhase,
+                health: cur.health
               }
             })
             const metrics: AggregatedInputEndpointMetrics = {
@@ -137,7 +141,8 @@ export const accumulatePipelineMetrics =
                 metrics: cur.metrics,
                 io_active:
                   prev !== undefined &&
-                  cur.metrics.transmitted_records > prev.metrics.transmitted_records
+                  cur.metrics.transmitted_records > prev.metrics.transmitted_records,
+                health: cur.health
               }
             }),
             aggregate: {
@@ -180,7 +185,7 @@ export const accumulatePipelineMetrics =
         })
       ),
       global: globalWithTimestamp
-    } as any
+    }
   }
 
 /**

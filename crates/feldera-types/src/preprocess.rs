@@ -2,9 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use utoipa::ToSchema;
 
 /// Configuration for describing a preprocessor
-#[derive(Debug, Deserialize, Clone, Eq, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq, Serialize, ToSchema)]
 pub struct PreprocessorConfig {
     /// Name of the preprocessor.
     /// All preprocessors with the same name will perform the same task.
