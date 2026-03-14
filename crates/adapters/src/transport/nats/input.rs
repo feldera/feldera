@@ -938,14 +938,11 @@ async fn fetch_stream_state(
     jetstream: &jetstream::Context,
     stream_name: &str,
 ) -> AnyResult<StreamState> {
-    let mut stream = jetstream
+    let stream = jetstream
         .get_stream(stream_name)
         .await
         .with_context(|| format!("Failed to get stream '{stream_name}'"))?;
-    let stream_info = stream
-        .info()
-        .await
-        .with_context(|| format!("Failed to fetch stream info for '{stream_name}'"))?;
+    let stream_info = stream.cached_info();
 
     Ok(StreamState {
         messages: stream_info.state.messages,
