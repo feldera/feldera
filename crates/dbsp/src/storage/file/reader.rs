@@ -5,7 +5,7 @@
 use super::format::{Compression, FileTrailer};
 use super::{AnyFactories, Deserializer, Factories};
 use crate::dynamic::{DynVec, WeightTrait};
-use crate::storage::buffer_cache::{CacheAccess, CacheEntry};
+use crate::storage::buffer_cache::CacheAccess;
 use crate::storage::file::format::FilterBlock;
 use crate::storage::tracking_bloom_filter::{BloomFilterStats, TrackingBloomFilter};
 use crate::storage::{
@@ -29,6 +29,7 @@ use binrw::{
 };
 use crc32c::crc32c;
 use dyn_clone::clone_box;
+use feldera_buffer_cache::CacheEntry;
 use feldera_storage::StoragePath;
 use feldera_storage::file::FileId;
 use size_of::SizeOf;

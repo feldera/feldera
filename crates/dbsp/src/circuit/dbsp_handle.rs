@@ -1,7 +1,6 @@
 use crate::circuit::GlobalNodeId;
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
-use crate::circuit::runtime::ThreadType;
 use crate::circuit::schedule::CommitProgress;
 use crate::monitor::visual_graph::Graph;
 use crate::operator::dynamic::balance::{
@@ -17,6 +16,7 @@ use crate::{
 };
 use anyhow::Error as AnyError;
 use crossbeam::channel::{Receiver, Select, Sender, TryRecvError, bounded};
+use feldera_buffer_cache::{BufferCacheAllocationStrategy, BufferCacheStrategy, ThreadType};
 use feldera_ir::LirCircuit;
 use feldera_storage::{FileCommitter, StorageBackend, StoragePath};
 use feldera_types::checkpoint::CheckpointMetadata;
@@ -281,6 +281,24 @@ pub struct CircuitConfig {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct DevTweaks {
+    /// Buffer-cache implementation to use for storage reads.
+    ///
+    /// The default is `s3_fifo`.
+    pub buffer_cache_strategy: BufferCacheStrategy,
+
+    /// Override the number of buckets/shards used by sharded buffer caches.
+    ///
+    /// This only applies when `buffer_cache_strategy = "s3_fifo"`. Values are
+    /// rounded up to the next power of two because the current implementation
+    /// shards by `hash(key) & (n - 1)`.
+    pub buffer_max_buckets: Option<usize>,
+
+    /// How S3-FIFO caches are assigned to foreground/background workers.
+    ///
+    /// This only applies when `buffer_cache_strategy = "s3_fifo"`. The
+    /// default is `shared_per_worker_pair`; LRU always uses `per_thread`.
+    pub buffer_cache_allocation_strategy: BufferCacheAllocationStrategy,
+
     /// Whether to asynchronously fetch keys needed for the join operator from
     /// storage.  Asynchronous fetching should be faster for high-latency
     /// storage, such as object storage, but it could use excessive amounts of
@@ -397,6 +415,9 @@ pub struct DevTweaks {
 impl Default for DevTweaks {
     fn default() -> Self {
         Self {
+            buffer_cache_strategy: BufferCacheStrategy::default(),
+            buffer_max_buckets: None,
+            buffer_cache_allocation_strategy: BufferCacheAllocationStrategy::default(),
             fetch_join: false,
             fetch_distinct: false,
             merger: MergerType::default(),
@@ -415,7 +436,7 @@ impl Default for DevTweaks {
 
 impl DevTweaks {
     pub fn from_config(config: &BTreeMap<String, Value>) -> Self {
-        let tweaks = serde_json::to_value(config)
+        let tweaks: Self = serde_json::to_value(config)
             .and_then(serde_json::from_value)
             .inspect_err(|error| {
                 tracing::error!("falling back to default `dev_tweaks` due to error ({error}) with configuration: {config:#?}")
@@ -425,6 +446,15 @@ impl DevTweaks {
             info!("using non-default `dev_tweaks`: {tweaks:#?}")
         }
         tweaks
+    }
+
+    pub(crate) fn effective_buffer_cache_allocation_strategy(
+        &self,
+    ) -> BufferCacheAllocationStrategy {
+        match self.buffer_cache_strategy {
+            BufferCacheStrategy::S3Fifo => self.buffer_cache_allocation_strategy,
+            BufferCacheStrategy::Lru => BufferCacheAllocationStrategy::PerThread,
+        }
     }
 }
 
@@ -529,6 +559,24 @@ impl CircuitConfig {
 
     pub fn with_splitter_chunk_size_records(mut self, records: u64) -> Self {
         self.dev_tweaks.splitter_chunk_size_records = records;
+        self
+    }
+
+    pub fn with_buffer_cache_strategy(mut self, strategy: BufferCacheStrategy) -> Self {
+        self.dev_tweaks.buffer_cache_strategy = strategy;
+        self
+    }
+
+    pub fn with_buffer_max_buckets(mut self, max_buckets: Option<usize>) -> Self {
+        self.dev_tweaks.buffer_max_buckets = max_buckets;
+        self
+    }
+
+    pub fn with_buffer_cache_allocation_strategy(
+        mut self,
+        strategy: BufferCacheAllocationStrategy,
+    ) -> Self {
+        self.dev_tweaks.buffer_cache_allocation_strategy = strategy;
         self
     }
 

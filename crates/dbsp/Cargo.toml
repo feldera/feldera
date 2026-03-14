@@ -98,9 +98,11 @@ smallvec = { workspace = true }
 async-stream = { workspace = true }
 futures-util = { workspace = true }
 rmp-serde = { workspace = true }
+feldera-buffer-cache = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }
+rand_distr = { workspace = true }
 proptest-derive = { workspace = true }
 proptest = { workspace = true }
 proptest-state-machine = { workspace = true }
@@ -143,6 +145,10 @@ harness = false
 
 [[bench]]
 name = "input_map_ingest"
+harness = false
+
+[[bench]]
+name = "buffer_cache"
 harness = false
 
 [[bench]]

@@ -1908,7 +1908,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2519,7 +2519,7 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fde0e0ec90c9dfb3b4b1a0891a7dcd0e2bffde2f7efed5fe7c9bb00e5bfb915e"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3779,6 +3779,7 @@ dependencies = [
  "enum-map",
  "fastbloom",
  "fdlimit",
+ "feldera-buffer-cache",
  "feldera-ir",
  "feldera-macros",
  "feldera-size-of",
@@ -3812,6 +3813,7 @@ dependencies = [
  "ptr_meta 0.2.0",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
+ "rand_distr",
  "rand_xoshiro",
  "reqwest 0.12.24",
  "rkyv",
@@ -4931,6 +4933,19 @@ dependencies = [
  "tokio",
  "tracing",
  "xxhash-rust",
+]
+
+[[package]]
+name = "feldera-buffer-cache"
+version = "0.266.0"
+dependencies = [
+ "crossbeam-utils",
+ "enum-map",
+ "proptest",
+ "quick_cache",
+ "rand 0.8.5",
+ "serde",
+ "tracing",
 ]
 
 [[package]]
@@ -6788,7 +6803,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.53.5",
 ]
 
 [[package]]
@@ -8897,13 +8912,13 @@ dependencies = [
 
 [[package]]
 name = "quick_cache"
-version = "0.6.14"
+version = "0.6.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b450dad8382b1b95061d5ca1eb792081fb082adf48c678791fe917509596d5f"
+checksum = "530e84778a55de0f52645a51d4e3b9554978acd6a1e7cd50b6a6784692b3029e"
 dependencies = [
  "ahash 0.8.12",
  "equivalent",
- "hashbrown 0.15.3",
+ "hashbrown 0.16.1",
  "parking_lot 0.12.4",
 ]
 
@@ -10788,7 +10803,7 @@ version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1961e2ef424c1424204d3a5d6975f934f56b6d50ff5732382d84ebf460e147f7"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -12769,7 +12784,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
