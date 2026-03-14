@@ -1,9 +1,10 @@
+import io
 import json
 import logging
 import pathlib
 import time
 from decimal import Decimal
-from typing import Any, Dict, Generator, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Dict, Generator, Mapping, Optional
 from urllib.parse import quote
 
 import requests
@@ -17,6 +18,9 @@ from feldera.rest.feldera_config import FelderaConfig
 from feldera.rest.pipeline import Pipeline
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 
 def _validate_no_none_keys_in_map(data):
@@ -36,6 +40,17 @@ def _validate_no_none_keys_in_map(data):
 
 def _prepare_boolean_input(value: bool) -> str:
     return "true" if value else "false"
+
+
+def _import_pyarrow_ipc():
+    try:
+        import pyarrow.ipc as ipc
+    except ImportError as exc:
+        raise ImportError(
+            "pyarrow is required for Arrow IPC queries. Install it with `pip install feldera[arrow]`."
+        ) from exc
+
+    return ipc
 
 
 class FelderaClient:
@@ -1216,6 +1231,51 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             if chunk:
                 file.write(chunk)
         file.close()
+
+    def query_as_arrow_ipc(self, pipeline_name: str, query: str) -> "pa.Table":
+        """
+        Executes an ad-hoc query on the specified pipeline and returns the result
+        as a PyArrow Table.
+
+        The server streams an Arrow IPC response (``application/octet-stream``).
+        This method buffers the full stream in memory and deserialises it via
+        ``pyarrow.ipc.open_stream``. Zero-row results preserve the correct schema.
+
+        Note:
+            For very large result sets the entire stream is held in memory before
+            the table is returned. A lazy/streaming variant may be added in a
+            future release.
+
+            You can only ``SELECT`` from materialized tables and views.
+
+        :param pipeline_name: The name of the pipeline to query.
+        :param query: The SQL query to be executed.
+
+        :raises FelderaAPIError: If the pipeline is not in a RUNNING or PAUSED state.
+        :raises FelderaAPIError: If querying a non-materialized table or view.
+        :raises FelderaAPIError: If the query is invalid.
+
+        :return: A ``pyarrow.Table`` containing the query results.
+        """
+        ipc = _import_pyarrow_ipc()
+
+        params = {
+            "pipeline_name": pipeline_name,
+            "sql": query,
+            "format": "arrow_ipc",
+        }
+        resp = self.http.get(
+            path=f"/pipelines/{pipeline_name}/query",
+            params=params,
+            stream=True,
+        )
+        buf = io.BytesIO()
+        for chunk in resp.iter_content(chunk_size=1024):
+            if chunk:
+                buf.write(chunk)
+        buf.seek(0)
+        with ipc.open_stream(buf) as reader:
+            return reader.read_all()
 
     def query_as_json(
         self, pipeline_name: str, query: str
