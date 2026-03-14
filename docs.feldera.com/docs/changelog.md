@@ -54,6 +54,13 @@ import TabItem from '@theme/TabItem';
         operations, validates replay and resume sequence bounds, and
         provides improved error messages during retries and health checks.
 
+        ### NATS input connector timeout and probe updates
+
+        - The default value for `inactivity_timeout_secs` has been increased
+          from `10` to `60` seconds.
+        - Health probes now avoid duplicate JetStream stream-info requests,
+          reducing API pressure during retry and recovery loops.
+
         ## v0.263.0
 
         Added connector error list to input/output connector stats.
