@@ -70,6 +70,9 @@ gh-pages
 # JavaScript
 node_modules/
 
+# Vitest
+.vitest-attachments/
+
 # Playwright
 playwright-artifacts/
 playwright-snapshots/
