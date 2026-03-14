@@ -38,7 +38,7 @@ The connector configuration consists of three main sections:
 | Property      | Type   | Required | Description |
 |--------------|--------|----------|-------------|
 | `stream_name` | string | Yes      | The name of the NATS JetStream stream to consume from |
-| `inactivity_timeout_secs` | integer | No | Maximum idle time while waiting for the next message before running a stream/server health check. Must be at least 1. Default: 10 |
+| `inactivity_timeout_secs` | integer | No | Maximum idle time while waiting for the next message before running a stream/server health check. Must be at least 1. Default: 60 |
 | `retry_interval_secs` | integer | No | Delay between automatic retry attempts while the connector is in retry mode. Must be at least 1. Default: 5 |
 
 ### Consumer Configuration
