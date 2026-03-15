@@ -1,10 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
@@ -741,5 +743,83 @@ public class Regression2Tests extends SqlIoTest {
                     FROM a, foo
                     WHERE foo.out1 = a.col2
                 );""");
+    }
+
+    @Test
+    public void issue5815() {
+        var ccs = this.getCCS("""
+                CREATE TABLE orders1 (
+                    order_id     INT NOT NULL PRIMARY KEY,
+                    customer_id  INT,
+                    amount       DECIMAL(10,2)
+                );
+                
+                CREATE TABLE orders2 (
+                    order_id     INT NOT NULL PRIMARY KEY,
+                    customer_id  INT,
+                    amount       DECIMAL(10,2)
+                );
+                
+                CREATE TABLE customers (
+                    customer_id  INT NOT NULL PRIMARY KEY,
+                    name         TEXT,
+                    first        TEXT
+                );
+                
+                CREATE LOCAL VIEW V1 AS SELECT
+                    o.order_id,
+                    o.amount,
+                    c.name
+                FROM orders1 AS o
+                LEFT JOIN customers AS c
+                    ON o.customer_id = c.customer_id;
+
+                CREATE LOCAL VIEW V2 AS SELECT
+                    o.order_id,
+                    o.amount,
+                    c.first
+                FROM orders2 AS o
+                LEFT JOIN customers AS c
+                    ON o.customer_id = c.customer_id;
+                
+                CREATE VIEW V AS (SELECT * FROM V1) UNION ALL (SELECT * FROM V2);""");
+        // Validated on Postgres
+        ccs.step("""
+                INSERT INTO customers (customer_id, name, first) VALUES
+                  (1, 'Johnson', 'Alice'),
+                  (2, 'Smith',   'Bob'),
+                  (3, 'White',   'Carol');
+                INSERT INTO orders1 (order_id, customer_id, amount) VALUES
+                  (101, 1, 120.50),   -- matches Alice
+                  (102, 2,  75.00),   -- matches Bob
+                  (103, 9,  33.33);   -- no matching customer
+                INSERT INTO orders2 (order_id, customer_id, amount) VALUES
+                  (201, 2,  88.00),   -- matches Bob
+                  (202, 3, 150.00),   -- matches Carol
+                  (203, 8,  42.42);   -- no matching customer
+                """, """
+                 order_id | amount | name    | weight
+                ---------------------------------------
+                 101      | 120.50 | Johnson|  1
+                 102      | 75.00  | Smith|    1
+                 103      | 33.33  |NULL     | 1
+                 201      | 88.00  | Bob|      1
+                 202      | 150.00 | Carol|    1
+                 203      | 42.42  |NULL     | 1""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            int mapIndexCount = 0;
+
+            @Override
+            public void postorder(DBSPMapIndexOperator unused) {
+                this.mapIndexCount++;
+            }
+
+            @Override
+            public void endVisit() {
+                // If sharing of map-index operators works, there are 3,
+                // otherwise there are 4
+                Assert.assertEquals(3, this.mapIndexCount);
+            }
+        });
     }
 }
