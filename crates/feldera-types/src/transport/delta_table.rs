@@ -47,6 +47,11 @@ pub struct DeltaTableWriterConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
 
+    /// Number of threads for parallel encoding. Default: 4.
+    #[serde(default = "default_writer_threads")]
+    #[schema(default = default_writer_threads)]
+    pub threads: usize,
+
     /// Storage options for configuring backend object store.
     ///
     /// For specific options available for different storage backends, see:
@@ -55,6 +60,15 @@ pub struct DeltaTableWriterConfig {
     /// * [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)
     #[serde(flatten)]
     pub object_store_config: HashMap<String, String>,
+}
+
+impl DeltaTableWriterConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.threads == 0 {
+            return Err("threads must be greater than 0".to_string());
+        }
+        Ok(())
+    }
 }
 
 /// Delta table read mode.
@@ -108,6 +122,10 @@ impl Display for DeltaTableIngestMode {
 }
 
 fn default_num_parsers() -> u32 {
+    4
+}
+
+fn default_writer_threads() -> usize {
     4
 }
 

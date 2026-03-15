@@ -1,4 +1,4 @@
-use crate::catalog::{CursorWithPolarity, SerBatchReader};
+use crate::catalog::{CursorWithPolarity, SerBatchReader, SplitCursorBuilder};
 use crate::controller::{ControllerInner, EndpointId};
 use crate::format::MAX_DUPLICATES;
 use crate::format::parquet::relation_to_arrow_fields;
@@ -9,8 +9,7 @@ use crate::{
     AsyncErrorCallback, ControllerError, Encoder, OutputConsumer, OutputEndpoint, RecordFormat,
     SerCursor,
 };
-use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
-use arrow::array::RecordBatch;
+use anyhow::{Result as AnyResult, anyhow, bail};
 use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
 use chrono::Utc;
 use dbsp::circuit::tokio::TOKIO;
@@ -19,10 +18,10 @@ use delta_kernel::table_properties::DataSkippingNumIndexedCols;
 use deltalake::DeltaTable;
 use deltalake::kernel::transaction::{CommitBuilder, TableReference};
 use deltalake::kernel::{Action, Add, DataType, StructField};
+use deltalake::logstore::ObjectStoreRef;
 use deltalake::operations::create::CreateBuilder;
 use deltalake::operations::write::writer::{DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
-use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::serde_with_context::serde_config::{
     BinaryFormat, DecimalFormat, UuidFormat, VariantFormat,
 };
@@ -37,10 +36,8 @@ use serde_arrow::ArrayBuilder;
 use serde_arrow::schema::SerdeArrowSchema;
 use std::cmp::min;
 use std::sync::{Arc, Weak};
-use std::thread;
-use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::time::{Duration, sleep};
-use tracing::{info, trace, warn};
+use tracing::{info, info_span, warn};
 
 /// Arrow serde config for reading/writing Delta tables.
 pub const fn delta_arrow_serde_config() -> &'static SqlSerdeConfig {
@@ -69,20 +66,15 @@ struct DeltaTableWriterInner {
 
 pub struct DeltaTableWriter {
     inner: Arc<DeltaTableWriterInner>,
-    command_sender: Sender<Command>,
-    response_receiver: Receiver<Result<(), (AnyError, bool)>>,
+    object_store: ObjectStoreRef,
+    task: WriterTask,
+    threads: usize,
+    pending_actions: Vec<Add>,
+    num_rows: usize,
 }
 
 /// Limit on the number of records buffered in memory in the encoder.
 static CHUNK_SIZE: usize = 100_000;
-
-/// Commands sent to the tokio runtime that performs the actual
-/// delta table operations.
-enum Command {
-    BatchStart,
-    Insert(RecordBatch),
-    BatchEnd,
-}
 
 impl DeltaTableWriter {
     pub fn new(
@@ -93,6 +85,10 @@ impl DeltaTableWriter {
         value_schema: &Relation,
         controller: Weak<ControllerInner>,
     ) -> Result<Self, ControllerError> {
+        config.validate().map_err(|e| {
+            ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string())
+        })?;
+
         register_storage_handlers();
 
         // Create arrow schema
@@ -134,126 +130,38 @@ impl DeltaTableWriter {
             value_schema: value_schema.clone(),
             controller,
         });
-        let inner_clone = inner.clone();
-
-        let (command_sender, command_receiver) = channel::<Command>(1);
-        let (response_sender, mut response_receiver) = channel::<Result<(), (AnyError, bool)>>(1);
-
-        // Start tokio runtime.
-        thread::Builder::new()
-            .name(format!("{endpoint_name}-delta-output-tokio-wrapper"))
-            .spawn(move || {
-                TOKIO.block_on(async {
-                    let _ = Self::worker_task(inner_clone, command_receiver, response_sender).await;
-                })
-            })
-            .expect("failed to spawn output delta connector tokio wrapper thread");
-
-        response_receiver
-            .blocking_recv()
-            .ok_or_else(|| {
+        // Create or open the delta table.
+        // Safety: new() is called from sync controller code (connect_output),
+        // never from within a tokio async context.
+        let task = TOKIO
+            .block_on(WriterTask::create(inner.clone()))
+            .map_err(|e| {
                 ControllerError::output_transport_error(
                     endpoint_name,
                     true,
-                    anyhow!("worker thread terminated unexpectedly during initialization"),
+                    anyhow!(
+                        "error creating or opening delta table '{}': {e}",
+                        &config.uri
+                    ),
                 )
-            })?
-            .map_err(|(e, _)| ControllerError::output_transport_error(endpoint_name, true, e))?;
+            })?;
 
-        let writer = Self {
+        let object_store = task.delta_table.object_store();
+
+        Ok(Self {
             inner,
-            command_sender,
-            response_receiver,
-        };
-
-        Ok(writer)
-    }
-
-    fn view_name(&self) -> &SqlIdentifier {
-        &self.inner.value_schema.name
-    }
-
-    fn command(&mut self, command: Command) -> Result<(), (AnyError, bool)> {
-        self.command_sender
-            .blocking_send(command)
-            .map_err(|_| (anyhow!("worker thread terminated unexpectedly"), true))?;
-        self.response_receiver
-            .blocking_recv()
-            .ok_or_else(|| (anyhow!("worker thread terminated unexpectedly"), true))?
-    }
-
-    fn insert_record_batch(&mut self, builder: &mut ArrayBuilder) -> AnyResult<()> {
-        let batch = builder
-            .to_record_batch()
-            .map_err(|e| anyhow!("error generating arrow arrays: {e}"))?;
-        self.command(Command::Insert(batch))
-            .map_err(|(e, _fatal)| e)
-    }
-
-    async fn worker_task(
-        inner: Arc<DeltaTableWriterInner>,
-        mut command_receiver: Receiver<Command>,
-        response_sender: Sender<Result<(), (AnyError, bool)>>,
-    ) {
-        let mut task = match WriterTask::create(inner.clone()).await {
-            Ok(task) => {
-                let _ = response_sender.send(Ok(())).await;
-                task
-            }
-            Err(e) => {
-                let _ = response_sender
-                    .send(Err((
-                        anyhow!(
-                            "error creating or opening delta table '{}': {e}",
-                            &inner.config.uri
-                        ),
-                        false,
-                    )))
-                    .await;
-                return;
-            }
-        };
-
-        loop {
-            match command_receiver.recv().await {
-                Some(Command::BatchStart) => {
-                    task.batch_start().await;
-                    // Ignore closed channel, we'll handle it at the next loop iteration.
-                    let _ = response_sender.send(Ok(())).await;
-                }
-                Some(Command::BatchEnd) => match task.batch_end().await {
-                    Ok(()) => {
-                        let _ = response_sender.send(Ok(())).await;
-                    }
-                    Err(e) => {
-                        let _ = response_sender.send(Err((e, false))).await;
-                    }
-                },
-                Some(Command::Insert(batch)) => match task.insert(batch).await {
-                    Ok(()) => {
-                        let _ = response_sender.send(Ok(())).await;
-                    }
-                    Err(e) => {
-                        let _ = response_sender.send(Err((e, false))).await;
-                    }
-                },
-                None => {
-                    trace!(
-                        "delta_table {}: endpoint is shutting down",
-                        &inner.endpoint_name
-                    );
-                    return;
-                }
-            }
-        }
+            object_store,
+            task,
+            threads: config.threads,
+            pending_actions: Vec::new(),
+            num_rows: 0,
+        })
     }
 }
 
 struct WriterTask {
     inner: Arc<DeltaTableWriterInner>,
     delta_table: DeltaTable,
-    writer: Option<DeltaWriter>,
-    num_rows: usize,
 }
 
 /// Retry `op` with exponential backoff  of up to 10 seconds until it succeeds or config.max_retries is reached.
@@ -421,41 +329,7 @@ impl WriterTask {
             }
         );
 
-        Ok(Self {
-            inner,
-            delta_table,
-            writer: None,
-            num_rows: 0,
-        })
-    }
-
-    async fn batch_start(&mut self) {
-        trace!(
-            "delta_table {}: starting a new output batch",
-            &self.inner.endpoint_name,
-        );
-
-        self.num_rows = 0;
-
-        // TODO: make target_file_size configurable.
-        // TODO: configure WriterProperties, e.g., do we want to set WriterProperties::sorting_columns?
-        let writer_config = WriterConfig::new(
-            self.inner.arrow_schema.clone(),
-            vec![],
-            None,
-            None,
-            None,
-            DataSkippingNumIndexedCols::NumColumns(min(
-                32,
-                self.inner.arrow_schema.fields.len() as u64,
-            )),
-            None,
-        );
-
-        self.writer = Some(DeltaWriter::new(
-            self.delta_table.object_store(),
-            writer_config,
-        ));
+        Ok(Self { inner, delta_table })
     }
 
     async fn commit(&mut self, actions: &[Add]) -> AnyResult<()> {
@@ -501,77 +375,210 @@ impl WriterTask {
         Ok(())
     }
 
-    async fn batch_end(&mut self) -> AnyResult<()> {
-        trace!(
-            "delta_table {}: finished writing output records, committing (current table version: {})",
-            &self.inner.endpoint_name,
-            self.current_version()
-        );
-        match self.writer.take() {
-            Some(writer) => {
-                // TODO: this is currently not retryable.
-                // See: https://github.com/delta-io/delta-rs/issues/4265
-                // Another option is to retry the entire transaction, since it just happens that there's always exactly one
-                // insert between batch_start and batch_end, so we can hold on to it and retry the whole thing.
-                let actions = writer
-                    .close()
-                    .await
-                    .map_err(|e| anyhow!("error flushing {} Parquet rows: {e:?}", self.num_rows))?;
+    async fn commit_with_retry(&mut self, actions: &[Add]) -> AnyResult<()> {
+        retry!(
+            self,
+            "committing Delta table transaction",
+            self.commit(actions).await
+        )
+    }
+}
 
-                if actions.is_empty() {
-                    return Ok(());
+/// Encode a partition and stream-write it to a `DeltaWriter`, retrying on failure.
+///
+/// On retry, a fresh cursor is rebuilt from `cursor_builder` (which takes `&self`)
+/// and a new `DeltaWriter` is created. Any Parquet files written by a failed attempt
+/// become orphans that Delta `VACUUM` will clean up.
+///
+/// Re-encoding on retry is acceptable because retries are rare (transient I/O failures only).
+async fn encode_and_write_partition(
+    cursor_builder: SplitCursorBuilder,
+    inner: Arc<DeltaTableWriterInner>,
+    object_store: ObjectStoreRef,
+    micros: i64,
+) -> AnyResult<(Vec<Add>, usize)> {
+    let mut retry_count: u32 = 0;
+    let mut backoff = Duration::from_secs(1);
+    let max_backoff = Duration::from_secs(10);
+
+    loop {
+        match stream_encode_and_write(&cursor_builder, &inner, object_store.clone(), micros).await {
+            Ok(result) => {
+                if retry_count > 0 {
+                    info!(
+                        "delta_table {}: partition encode+write succeeded after {retry_count} retries ({} rows, {} files)",
+                        inner.endpoint_name,
+                        result.1,
+                        result.0.len(),
+                    );
                 }
+                return Ok(result);
+            }
+            Err(e)
+                if inner.config.max_retries.is_none()
+                    || retry_count < inner.config.max_retries.unwrap() =>
+            {
+                retry_count += 1;
+                warn!(
+                    "delta_table {}: encode+write failed (attempt {retry_count}, \
+                     retrying in {backoff:?}): {e:?}",
+                    inner.endpoint_name
+                );
+                sleep(backoff).await;
+                backoff = std::cmp::min(backoff * 2, max_backoff);
+            }
+            Err(e) => {
+                return Err(anyhow!(
+                    "encode+write failed after {retry_count} retries: {e}"
+                ));
+            }
+        }
+    }
+}
 
-                let num_bytes = actions.iter().map(|action| action.size as usize).sum();
+/// Single-attempt streaming encode + write for one partition.
+///
+/// Encodes records from the cursor in chunks of `CHUNK_SIZE` and writes each chunk
+/// to the `DeltaWriter` immediately, avoiding buffering all `RecordBatch`es in memory.
+async fn stream_encode_and_write(
+    cursor_builder: &SplitCursorBuilder,
+    inner: &DeltaTableWriterInner,
+    object_store: ObjectStoreRef,
+    micros: i64,
+) -> AnyResult<(Vec<Add>, usize)> {
+    let num_indexed_cols = min(32, inner.arrow_schema.fields.len() as u64);
+    let writer_config = WriterConfig::new(
+        inner.arrow_schema.clone(),
+        vec![],
+        None,
+        None,
+        None,
+        DataSkippingNumIndexedCols::NumColumns(num_indexed_cols),
+        None,
+    );
+    let mut writer = DeltaWriter::new(object_store, writer_config);
+    let mut insert_builder = ArrayBuilder::new(inner.serde_arrow_schema.clone())
+        .map_err(|e| anyhow!("error creating array builder: {e}"))?;
+    let mut num_records = 0;
+    let mut total_rows = 0;
+    let index_name = inner.key_schema.as_ref().map(|s| &s.name);
 
-                retry!(
-                    self,
-                    "committing Delta table transaction",
-                    self.commit(&actions).await
-                )?;
+    if let Some(index_name) = index_name {
+        let mut cursor = cursor_builder.build();
 
-                if let Some(controller) = self.inner.controller.upgrade() {
-                    controller.status.output_buffer(
-                        self.inner.endpoint_id,
-                        num_bytes,
-                        self.num_rows,
-                    )
+        while cursor.key_valid() {
+            if let Some(op) =
+                indexed_operation_type(&inner.value_schema.name, index_name, &mut cursor)?
+            {
+                cursor.rewind_vals();
+
+                match op {
+                    IndexedOperationType::Insert => cursor.serialize_val_to_arrow_with_metadata(
+                        &Meta::new("i", micros),
+                        &mut insert_builder,
+                    )?,
+                    IndexedOperationType::Delete => cursor.serialize_val_to_arrow_with_metadata(
+                        &Meta::new("d", micros),
+                        &mut insert_builder,
+                    )?,
+                    IndexedOperationType::Upsert => {
+                        assert!(cursor.val_valid());
+
+                        if cursor.weight() < 0 {
+                            cursor.step_val();
+                        }
+                        assert!(cursor.val_valid());
+
+                        cursor.serialize_val_to_arrow_with_metadata(
+                            &Meta::new("u", micros),
+                            &mut insert_builder,
+                        )?;
+                    }
                 };
-                Ok(())
+
+                num_records += 1;
+
+                if num_records >= CHUNK_SIZE {
+                    let batch = insert_builder
+                        .to_record_batch()
+                        .map_err(|e| anyhow!("error generating arrow arrays: {e}"))?;
+                    total_rows += batch.num_rows();
+                    writer.write(&batch).await.map_err(|e| {
+                        anyhow!("error writing {} records: {e:?}", batch.num_rows())
+                    })?;
+                    num_records = 0;
+                }
+            };
+
+            cursor.step_key();
+        }
+    } else {
+        let cursor = cursor_builder.build();
+        let mut cursor = CursorWithPolarity::new(Box::new(cursor));
+
+        while cursor.key_valid() {
+            if !cursor.val_valid() {
+                cursor.step_key();
+                continue;
             }
-            _ => {
+
+            let mut w = cursor.weight();
+            if !(-MAX_DUPLICATES..=MAX_DUPLICATES).contains(&w) {
                 bail!(
-                    "delta_table {}: received a BatchEnd without a matching BatchStart",
-                    &self.inner.endpoint_name
-                )
+                    "Unable to output record with very large weight {w}. \
+                     Consider adjusting your SQL queries to avoid duplicate output records, \
+                     e.g., using 'SELECT DISTINCT'."
+                );
             }
+
+            while w != 0 {
+                if w > 0 {
+                    cursor.serialize_key_to_arrow_with_metadata(
+                        &Meta::new("i", micros),
+                        &mut insert_builder,
+                    )?;
+                    w -= 1;
+                } else {
+                    cursor.serialize_key_to_arrow_with_metadata(
+                        &Meta::new("d", micros),
+                        &mut insert_builder,
+                    )?;
+                    w += 1;
+                }
+                num_records += 1;
+
+                if num_records >= CHUNK_SIZE {
+                    let batch = insert_builder
+                        .to_record_batch()
+                        .map_err(|e| anyhow!("error generating arrow arrays: {e}"))?;
+                    total_rows += batch.num_rows();
+                    writer.write(&batch).await.map_err(|e| {
+                        anyhow!("error writing {} records: {e:?}", batch.num_rows())
+                    })?;
+                    num_records = 0;
+                }
+            }
+            cursor.step_key();
         }
     }
 
-    async fn insert(&mut self, batch: RecordBatch) -> AnyResult<()> {
-        let current_version = self.current_version();
-
-        if let Some(writer) = &mut self.writer {
-            self.num_rows += batch.num_rows();
-            trace!(
-                "delta_table {}: writing {} records",
-                &self.inner.endpoint_name, self.num_rows,
-            );
-
-            let description = format!(
-                "writing {} records to Delta table (current version: {current_version})",
-                batch.num_rows(),
-            );
-            retry!(self, description, { writer.write(&batch).await })?;
-
-            Ok(())
-        } else {
-            bail!(
-                "delta_table {}: received Data without a matching BatchStart",
-                &self.inner.endpoint_name
-            );
-        }
+    // Flush remaining records.
+    if num_records > 0 {
+        let batch = insert_builder
+            .to_record_batch()
+            .map_err(|e| anyhow!("error generating arrow arrays: {e}"))?;
+        total_rows += batch.num_rows();
+        writer
+            .write(&batch)
+            .await
+            .map_err(|e| anyhow!("error writing {} records: {e:?}", batch.num_rows()))?;
     }
+
+    let actions = writer
+        .close()
+        .await
+        .map_err(|e| anyhow!("error closing writer: {e:?}"))?;
+    Ok((actions, total_rows))
 }
 
 impl OutputConsumer for DeltaTableWriter {
@@ -580,18 +587,8 @@ impl OutputConsumer for DeltaTableWriter {
     }
 
     fn batch_start(&mut self, _step: Step) {
-        self.command(Command::BatchStart)
-            .unwrap_or_else(|(e, fatal)| {
-                if let Some(controller) = self.inner.controller.upgrade() {
-                    controller.output_transport_error(
-                        self.inner.endpoint_id,
-                        &self.inner.endpoint_name,
-                        fatal,
-                        e,
-                        Some("delta_batch_start"),
-                    )
-                };
-            });
+        self.pending_actions.clear();
+        self.num_rows = 0;
     }
 
     fn push_buffer(&mut self, _buffer: &[u8], _num_records: usize) {
@@ -609,18 +606,43 @@ impl OutputConsumer for DeltaTableWriter {
     }
 
     fn batch_end(&mut self) {
-        self.command(Command::BatchEnd)
-            .unwrap_or_else(|(e, fatal)| {
-                if let Some(controller) = self.inner.controller.upgrade() {
-                    controller.output_transport_error(
-                        self.inner.endpoint_id,
-                        &self.inner.endpoint_name,
-                        fatal,
-                        e,
-                        Some("delta_batch_end"),
-                    )
-                };
-            });
+        if self.pending_actions.is_empty() {
+            return;
+        }
+
+        let _span = info_span!(
+            "delta_output",
+            endpoint = &*self.inner.endpoint_name,
+            table = &*self.inner.config.uri,
+        )
+        .entered();
+
+        let num_bytes: usize = self.pending_actions.iter().map(|a| a.size as usize).sum();
+        let num_rows = self.num_rows;
+        let actions = std::mem::take(&mut self.pending_actions);
+        self.num_rows = 0;
+
+        // Safety: batch_end() is called from the dedicated output thread
+        // (output_thread_func), never from a tokio async context.
+        if let Err(e) = TOKIO.block_on(self.task.commit_with_retry(&actions)) {
+            if let Some(controller) = self.inner.controller.upgrade() {
+                controller.output_transport_error(
+                    self.inner.endpoint_id,
+                    &self.inner.endpoint_name,
+                    false,
+                    e,
+                    Some("delta_batch_end"),
+                )
+            };
+            return;
+        }
+
+        // Report stats after successful commit.
+        if let Some(controller) = self.inner.controller.upgrade() {
+            controller
+                .status
+                .output_buffer(self.inner.endpoint_id, num_bytes, num_rows);
+        }
     }
 }
 
@@ -650,108 +672,74 @@ impl Encoder for DeltaTableWriter {
     }
 
     fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
-        let micros = Utc::now().timestamp_micros();
-        let mut insert_builder = ArrayBuilder::new(self.inner.serde_arrow_schema.clone())?;
+        let threads = self.threads;
+        let mut bounds = batch.keys_factory().default_box();
+        batch.partition_keys(threads, &mut *bounds);
 
-        let mut num_insert_records = 0;
-
-        let index_name = &self.inner.key_schema.as_ref().map(|s| s.name.to_owned());
-
-        if let Some(index_name) = &index_name {
-            let mut cursor =
-                batch.cursor(RecordFormat::Parquet(delta_arrow_serde_config().clone()))?;
-
-            while cursor.key_valid() {
-                if let Some(op) =
-                    indexed_operation_type(self.view_name(), index_name, cursor.as_mut())?
-                {
-                    cursor.rewind_vals();
-
-                    match op {
-                        IndexedOperationType::Insert => cursor
-                            .serialize_val_to_arrow_with_metadata(
-                                &Meta::new("i", micros),
-                                &mut insert_builder,
-                            )?,
-                        IndexedOperationType::Delete => cursor
-                            .serialize_val_to_arrow_with_metadata(
-                                &Meta::new("d", micros),
-                                &mut insert_builder,
-                            )?,
-                        IndexedOperationType::Upsert => {
-                            assert!(cursor.val_valid());
-
-                            if cursor.weight() < 0 {
-                                cursor.step_val();
-                            }
-                            assert!(cursor.val_valid());
-
-                            cursor.serialize_val_to_arrow_with_metadata(
-                                &Meta::new("u", micros),
-                                &mut insert_builder,
-                            )?;
-                        }
-                    };
-
-                    num_insert_records += 1;
-
-                    // Split batch into chunks.  This does not affect the number or size of generated
-                    // parquet files, since that is controlled by the `DeltaWriter`, but it limits
-                    // the amount of memory used by `builder`.
-                    if num_insert_records >= CHUNK_SIZE {
-                        self.insert_record_batch(&mut insert_builder)?;
-                        num_insert_records = 0;
-                    }
-                };
-
-                cursor.step_key();
-            }
-        } else {
-            let mut cursor = CursorWithPolarity::new(
-                batch.cursor(RecordFormat::Parquet(delta_arrow_serde_config().clone()))?,
-            );
-            while cursor.key_valid() {
-                if !cursor.val_valid() {
-                    cursor.step_key();
-                    continue;
-                }
-
-                let mut w = cursor.weight();
-                if !(-MAX_DUPLICATES..=MAX_DUPLICATES).contains(&w) {
-                    bail!(
-                        "Unable to output record with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'."
-                    );
-                }
-
-                while w != 0 {
-                    if w > 0 {
-                        cursor.serialize_key_to_arrow_with_metadata(
-                            &Meta::new("i", micros),
-                            &mut insert_builder,
-                        )?;
-                        w -= 1;
-                    } else {
-                        cursor.serialize_key_to_arrow_with_metadata(
-                            &Meta::new("d", micros),
-                            &mut insert_builder,
-                        )?;
-                        w += 1;
-                    }
-                    num_insert_records += 1;
-                    // Split batch into chunks.  This does not affect the number or size of generated
-                    // parquet files, since that is controlled by the `DeltaWriter`, but it limits
-                    // the amount of memory used by `builder`.
-                    if num_insert_records >= CHUNK_SIZE {
-                        self.insert_record_batch(&mut insert_builder)?;
-                        num_insert_records = 0;
-                    }
-                }
-                cursor.step_key();
-            }
+        // Build one SplitCursorBuilder per partition.
+        let mut cursor_builders = Vec::new();
+        for i in 0..=bounds.len() {
+            let Some(cb) = SplitCursorBuilder::from_bounds(
+                batch.clone(),
+                &*bounds,
+                i,
+                RecordFormat::Parquet(delta_arrow_serde_config().clone()),
+            ) else {
+                break;
+            };
+            cursor_builders.push(cb);
+        }
+        if cursor_builders.is_empty() {
+            return Ok(());
         }
 
-        if num_insert_records > 0 {
-            self.insert_record_batch(&mut insert_builder)?;
+        let micros = Utc::now().timestamp_micros();
+
+        // Safety: encode() is called from a dedicated OS thread (output_thread_func),
+        // never from within a tokio async context, so block_on will not panic.
+        let results = TOKIO.block_on(async {
+            let mut handles = Vec::with_capacity(cursor_builders.len());
+            for cursor_builder in cursor_builders {
+                let inner = self.inner.clone();
+                let object_store = self.object_store.clone();
+                handles.push(tokio::spawn(encode_and_write_partition(
+                    cursor_builder,
+                    inner,
+                    object_store,
+                    micros,
+                )));
+            }
+            let mut results = Vec::with_capacity(handles.len());
+            for handle in handles {
+                results.push(
+                    handle
+                        .await
+                        .unwrap_or_else(|e| Err(anyhow!("encoder task panicked: {e}"))),
+                );
+            }
+            results
+        });
+
+        // Collect results.
+        let mut errors = Vec::new();
+        for result in results {
+            match result {
+                Ok((mut actions, rows)) => {
+                    self.pending_actions.append(&mut actions);
+                    self.num_rows += rows;
+                }
+                Err(e) => errors.push(e),
+            }
+        }
+        if !errors.is_empty() {
+            self.pending_actions.clear();
+            self.num_rows = 0;
+            let msg = errors
+                .iter()
+                .map(|e| format!("{e:#}"))
+                .collect::<Vec<_>>()
+                .join("; ");
+            bail!("{} encoder task(s) failed: {msg}", errors.len());
         }
 
         Ok(())
@@ -793,5 +781,519 @@ impl OutputEndpoint for DeltaTableWriter {
         // TODO: make this connector fault tolerant.  Delta tables already allow atomic
         // updates, we just need to record the step-to-table-snapshot mapping somewhere.
         false
+    }
+}
+
+#[cfg(test)]
+mod parallel {
+    use std::collections::BTreeMap;
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::Path;
+    use std::sync::{Arc, Weak};
+
+    use dbsp::utils::Tup2;
+    use dbsp::{OrdIndexedZSet, OrdZSet};
+    use feldera_macros::IsNone;
+    use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
+    use feldera_types::transport::delta_table::{DeltaTableWriteMode, DeltaTableWriterConfig};
+    use feldera_types::{deserialize_without_context, serialize_struct};
+    use size_of::SizeOf;
+    use tempfile::TempDir;
+
+    use crate::catalog::SerBatch;
+    use crate::controller::EndpointId;
+    use crate::format::Encoder;
+    use crate::format::parquet::test::load_parquet_file;
+    use crate::static_compile::seroutput::SerBatchImpl;
+    use crate::test::list_files_recursive;
+
+    use super::DeltaTableWriter;
+
+    // ── Test record types ──────────────────────────────────────────
+
+    #[derive(
+        Debug,
+        Default,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        serde::Serialize,
+        serde::Deserialize,
+        Clone,
+        Hash,
+        SizeOf,
+        rkyv::Archive,
+        rkyv::Serialize,
+        rkyv::Deserialize,
+        IsNone,
+    )]
+    #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    struct TestRecord {
+        id: i32,
+        b: bool,
+        i: Option<i64>,
+        s: String,
+    }
+
+    deserialize_without_context!(TestRecord);
+
+    serialize_struct!(TestRecord()[4]{
+        id["id"]: i32,
+        b["b"]: bool,
+        i["i"]: Option<i64>,
+        s["s"]: String
+    });
+
+    #[derive(
+        Debug,
+        Default,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        serde::Serialize,
+        serde::Deserialize,
+        Clone,
+        Hash,
+        SizeOf,
+        rkyv::Archive,
+        rkyv::Serialize,
+        rkyv::Deserialize,
+        IsNone,
+    )]
+    #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    struct TestKey {
+        id: i32,
+    }
+
+    deserialize_without_context!(TestKey);
+
+    serialize_struct!(TestKey()[1]{
+        id["id"]: i32
+    });
+
+    /// Record type including the metadata columns written by the delta output encoder.
+    #[derive(
+        Debug,
+        Default,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        serde::Serialize,
+        serde::Deserialize,
+        Clone,
+        Hash,
+        SizeOf,
+        rkyv::Archive,
+        rkyv::Serialize,
+        rkyv::Deserialize,
+        IsNone,
+    )]
+    #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    struct OutputRecord {
+        id: i32,
+        b: bool,
+        i: Option<i64>,
+        s: String,
+        __feldera_op: String,
+        __feldera_ts: i64,
+    }
+
+    deserialize_without_context!(OutputRecord);
+
+    serialize_struct!(OutputRecord()[6]{
+        id["id"]: i32,
+        b["b"]: bool,
+        i["i"]: Option<i64>,
+        s["s"]: String,
+        __feldera_op["__feldera_op"]: String,
+        __feldera_ts["__feldera_ts"]: i64
+    });
+
+    // ── Helpers ────────────────────────────────────────────────────
+
+    fn key_relation() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("test_idx", false),
+            fields: vec![Field::new("id".into(), ColumnType::int(false))],
+            materialized: false,
+            properties: BTreeMap::new(),
+        }
+    }
+
+    fn value_relation() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("test_view", false),
+            fields: vec![
+                Field::new("id".into(), ColumnType::int(false)),
+                Field::new("b".into(), ColumnType::boolean(false)),
+                Field::new("i".into(), ColumnType::bigint(true)),
+                Field::new("s".into(), ColumnType::varchar(false)),
+            ],
+            materialized: true,
+            properties: BTreeMap::new(),
+        }
+    }
+
+    fn make_endpoint(threads: usize, table_uri: &str, indexed: bool) -> DeltaTableWriter {
+        let key_schema = if indexed { Some(key_relation()) } else { None };
+        DeltaTableWriter::new(
+            EndpointId::default(),
+            "test_endpoint",
+            &DeltaTableWriterConfig {
+                uri: table_uri.to_string(),
+                mode: DeltaTableWriteMode::Truncate,
+                max_retries: Some(0),
+                threads,
+                object_store_config: Default::default(),
+            },
+            &key_schema,
+            &value_relation(),
+            Weak::new(),
+        )
+        .expect("failed to create endpoint")
+    }
+
+    fn build_insert_batch(records: &[TestRecord]) -> Arc<dyn SerBatch> {
+        let tuples: Vec<_> = records
+            .iter()
+            .map(|r| Tup2(Tup2(TestKey { id: r.id }, r.clone()), 1i64))
+            .collect();
+        let zset = OrdIndexedZSet::from_tuples((), tuples);
+        Arc::new(SerBatchImpl::<_, TestKey, TestRecord>::new(zset))
+    }
+
+    fn build_delete_batch(records: &[TestRecord]) -> Arc<dyn SerBatch> {
+        let tuples: Vec<_> = records
+            .iter()
+            .map(|r| Tup2(Tup2(TestKey { id: r.id }, r.clone()), -1i64))
+            .collect();
+        let zset = OrdIndexedZSet::from_tuples((), tuples);
+        Arc::new(SerBatchImpl::<_, TestKey, TestRecord>::new(zset))
+    }
+
+    fn build_upsert_batch(updates: &[(TestRecord, TestRecord)]) -> Arc<dyn SerBatch> {
+        let mut tuples = Vec::new();
+        for (old, new) in updates {
+            assert_eq!(old.id, new.id);
+            tuples.push(Tup2(Tup2(TestKey { id: old.id }, old.clone()), -1i64));
+            tuples.push(Tup2(Tup2(TestKey { id: new.id }, new.clone()), 1i64));
+        }
+        let zset = OrdIndexedZSet::from_tuples((), tuples);
+        Arc::new(SerBatchImpl::<_, TestKey, TestRecord>::new(zset))
+    }
+
+    fn build_non_indexed_batch(records: &[TestRecord], weight: i64) -> Arc<dyn SerBatch> {
+        let tuples: Vec<_> = records.iter().map(|r| Tup2(r.clone(), weight)).collect();
+        let zset = OrdZSet::from_keys((), tuples);
+        Arc::new(SerBatchImpl::<_, TestRecord, ()>::new(zset))
+    }
+
+    fn encode_batch(endpoint: &mut DeltaTableWriter, batch: &Arc<dyn SerBatch>) {
+        endpoint.consumer().batch_start(0);
+        endpoint
+            .encode(batch.clone().arc_as_batch_reader())
+            .unwrap();
+        endpoint.consumer().batch_end();
+    }
+
+    fn read_output(table_uri: &str) -> Vec<OutputRecord> {
+        let parquet_files =
+            list_files_recursive(Path::new(table_uri), OsStr::from_bytes(b"parquet")).unwrap();
+        let mut records = Vec::new();
+        for path in parquet_files {
+            let mut batch: Vec<OutputRecord> = load_parquet_file(&path);
+            records.append(&mut batch);
+        }
+        records
+    }
+
+    fn make_records(n: usize) -> Vec<TestRecord> {
+        (0..n)
+            .map(|i| TestRecord {
+                id: i as i32,
+                b: i % 2 == 0,
+                i: if i % 3 == 0 {
+                    None
+                } else {
+                    Some(i as i64 * 10)
+                },
+                s: format!("record_{i}"),
+            })
+            .collect()
+    }
+
+    // ── Tests ──────────────────────────────────────────────────────
+
+    fn insert_test(threads: usize) {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        let records = make_records(100);
+        let batch = build_insert_batch(&records);
+        let mut endpoint = make_endpoint(threads, &table_uri, true);
+
+        encode_batch(&mut endpoint, &batch);
+
+        let output = read_output(&table_uri);
+        assert_eq!(output.len(), 100);
+        for rec in &output {
+            assert_eq!(rec.__feldera_op, "i");
+        }
+        // Verify data fields match
+        let mut output_data: Vec<TestRecord> = output
+            .iter()
+            .map(|r| TestRecord {
+                id: r.id,
+                b: r.b,
+                i: r.i,
+                s: r.s.clone(),
+            })
+            .collect();
+        output_data.sort();
+        let mut expected = records.clone();
+        expected.sort();
+        assert_eq!(output_data, expected);
+    }
+
+    #[test]
+    fn test_insert_single_thread() {
+        insert_test(1);
+    }
+
+    #[test]
+    fn test_insert_multi_thread() {
+        insert_test(4);
+    }
+
+    fn upsert_test(threads: usize) {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        let records = make_records(50);
+        let insert_batch = build_insert_batch(&records);
+        let mut endpoint = make_endpoint(threads, &table_uri, true);
+
+        encode_batch(&mut endpoint, &insert_batch);
+
+        // Upsert: update records 0..10
+        let updates: Vec<_> = (0..10)
+            .map(|i| {
+                let old = records[i].clone();
+                let new = TestRecord {
+                    id: old.id,
+                    b: !old.b,
+                    i: Some(old.id as i64 * 100),
+                    s: format!("updated_{}", old.id),
+                };
+                (old, new)
+            })
+            .collect();
+        let upsert_batch = build_upsert_batch(&updates);
+        encode_batch(&mut endpoint, &upsert_batch);
+
+        let output = read_output(&table_uri);
+        // First batch: 50 inserts, second batch: 10 upserts
+        let inserts: Vec<_> = output.iter().filter(|r| r.__feldera_op == "i").collect();
+        let upserts: Vec<_> = output.iter().filter(|r| r.__feldera_op == "u").collect();
+        assert_eq!(inserts.len(), 50);
+        assert_eq!(upserts.len(), 10);
+    }
+
+    #[test]
+    fn test_upsert_single_thread() {
+        upsert_test(1);
+    }
+
+    #[test]
+    fn test_upsert_multi_thread() {
+        upsert_test(4);
+    }
+
+    fn delete_test(threads: usize) {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        let records = make_records(50);
+        let insert_batch = build_insert_batch(&records);
+        let mut endpoint = make_endpoint(threads, &table_uri, true);
+
+        encode_batch(&mut endpoint, &insert_batch);
+
+        // Delete records 0..10
+        let to_delete: Vec<_> = records[0..10].to_vec();
+        let delete_batch = build_delete_batch(&to_delete);
+        encode_batch(&mut endpoint, &delete_batch);
+
+        let output = read_output(&table_uri);
+        let inserts: Vec<_> = output.iter().filter(|r| r.__feldera_op == "i").collect();
+        let deletes: Vec<_> = output.iter().filter(|r| r.__feldera_op == "d").collect();
+        assert_eq!(inserts.len(), 50);
+        assert_eq!(deletes.len(), 10);
+    }
+
+    #[test]
+    fn test_delete_single_thread() {
+        delete_test(1);
+    }
+
+    #[test]
+    fn test_delete_multi_thread() {
+        delete_test(4);
+    }
+
+    fn non_indexed_insert_test(threads: usize) {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        let records = make_records(100);
+        let batch = build_non_indexed_batch(&records, 1);
+        let mut endpoint = make_endpoint(threads, &table_uri, false);
+
+        encode_batch(&mut endpoint, &batch);
+
+        let output = read_output(&table_uri);
+        assert_eq!(output.len(), 100);
+        for rec in &output {
+            assert_eq!(rec.__feldera_op, "i");
+        }
+        let mut output_data: Vec<TestRecord> = output
+            .iter()
+            .map(|r| TestRecord {
+                id: r.id,
+                b: r.b,
+                i: r.i,
+                s: r.s.clone(),
+            })
+            .collect();
+        output_data.sort();
+        let mut expected = records;
+        expected.sort();
+        assert_eq!(output_data, expected);
+    }
+
+    #[test]
+    fn test_non_indexed_insert_single_thread() {
+        non_indexed_insert_test(1);
+    }
+
+    #[test]
+    fn test_non_indexed_insert_multi_thread() {
+        non_indexed_insert_test(4);
+    }
+
+    fn empty_batch_test(threads: usize) {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        let batch = build_insert_batch(&[]);
+        let mut endpoint = make_endpoint(threads, &table_uri, true);
+
+        // Should not crash on empty batch.
+        encode_batch(&mut endpoint, &batch);
+
+        let output = read_output(&table_uri);
+        assert_eq!(output.len(), 0);
+    }
+
+    #[test]
+    fn test_empty_batch_single_thread() {
+        empty_batch_test(1);
+    }
+
+    #[test]
+    fn test_empty_batch_multi_thread() {
+        empty_batch_test(4);
+    }
+
+    fn multiple_batches_test(threads: usize) {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        let mut endpoint = make_endpoint(threads, &table_uri, true);
+
+        // Batch 1: insert 50 records
+        let records = make_records(50);
+        let insert_batch = build_insert_batch(&records);
+        encode_batch(&mut endpoint, &insert_batch);
+
+        // Batch 2: insert 50 more records (ids 50..100)
+        let more_records: Vec<_> = (50..100)
+            .map(|i| TestRecord {
+                id: i,
+                b: i % 2 == 0,
+                i: Some(i as i64),
+                s: format!("record_{i}"),
+            })
+            .collect();
+        let insert_batch2 = build_insert_batch(&more_records);
+        encode_batch(&mut endpoint, &insert_batch2);
+
+        // Batch 3: upsert records 0..5
+        let updates: Vec<_> = (0..5)
+            .map(|i| {
+                let old = records[i].clone();
+                let new = TestRecord {
+                    id: old.id,
+                    b: !old.b,
+                    i: Some(999),
+                    s: format!("updated_{}", old.id),
+                };
+                (old, new)
+            })
+            .collect();
+        let upsert_batch = build_upsert_batch(&updates);
+        encode_batch(&mut endpoint, &upsert_batch);
+
+        // Batch 4: delete records 90..100
+        let to_delete: Vec<_> = more_records[40..50].to_vec();
+        let delete_batch = build_delete_batch(&to_delete);
+        encode_batch(&mut endpoint, &delete_batch);
+
+        let output = read_output(&table_uri);
+        let inserts = output.iter().filter(|r| r.__feldera_op == "i").count();
+        let upserts = output.iter().filter(|r| r.__feldera_op == "u").count();
+        let deletes = output.iter().filter(|r| r.__feldera_op == "d").count();
+
+        assert_eq!(inserts, 100); // 50 + 50
+        assert_eq!(upserts, 5);
+        assert_eq!(deletes, 10);
+    }
+
+    #[test]
+    fn test_multiple_batches_single_thread() {
+        multiple_batches_test(1);
+    }
+
+    #[test]
+    fn test_multiple_batches_multi_thread() {
+        multiple_batches_test(4);
+    }
+
+    // prints timing for manual comparison, and asserts output correctness
+    #[test]
+    fn bench_parallel_encoding() {
+        let records = make_records(100_000);
+
+        for threads in [8, 1, 4, 2] {
+            let table_dir = TempDir::new().unwrap();
+            let table_uri = table_dir.path().display().to_string();
+            let batch = build_non_indexed_batch(&records, 1);
+            let mut endpoint = make_endpoint(threads, &table_uri, false);
+
+            let start = std::time::Instant::now();
+            encode_batch(&mut endpoint, &batch);
+            let elapsed = start.elapsed();
+
+            let output = read_output(&table_uri);
+            println!(
+                "threads={threads}: {elapsed:?}, {} output records",
+                output.len()
+            );
+            assert_eq!(output.len(), 100_000);
+        }
     }
 }
