@@ -367,38 +367,30 @@
       "operation": "constant",
       "inputs": [],
       "calcite": {
-        "partial": 0
-      },
-      "positions": [],
-      "persistent_id": "dabdc0517fb639de8ebd480cb4350e3b2054b584a8c9c42515f268f99294f72c"
-    }, "s1": {
-      "operation": "constant",
-      "inputs": [],
-      "calcite": {
         "final": 1
       },
       "positions": [],
       "persistent_id": "62ce603a01af7e712aaebdd9b81c3691b1293c14071e805d8aabe46b3d659d74"
-    }, "s2": {
+    }, "s1": {
       "operation": "nested",
       "outputs": [
-        { "node": "s8", "output": 0 }
+        { "node": "s7", "output": 0 }
       ],
-      "s3": {
+      "s2": {
         "operation": "Z",
         "inputs": [],
         "table": "fibonacci-decl",
-        "backedges": [{ "node": "s8", "output": 0 }],
+        "backedges": [{ "node": "s7", "output": 0 }],
         "calcite": {
           "final": 2
         },
         "positions": [],
         "persistent_id": "1cad9022fb9400950c4b4a4d9aaf96ca4433f989b896a5147b0e3335d900fe21"
       },
-      "s4": {
+      "s3": {
         "operation": "flat_map_index",
         "inputs": [
-          { "node": "s3", "output": 0 }
+          { "node": "s2", "output": 0 }
         ],
         "calcite": {
           "seq": [
@@ -414,10 +406,10 @@
         ],
         "persistent_id": "eea1fb749f276517f2ad1171fc00a889b629d190a675d1cff0ad8f04db1e6a22"
       },
-      "s5": {
+      "s4": {
         "operation": "flat_map_index",
         "inputs": [
-          { "node": "s3", "output": 0 }
+          { "node": "s2", "output": 0 }
         ],
         "calcite": {
           "seq": [
@@ -435,10 +427,10 @@
         ],
         "persistent_id": "532b61244e3f6ecac6e439489956f24fb4bdfedc3708b4dd7601e06c20c5ffc2"
       },
-      "s6": {
+      "s5": {
         "operation": "delta0",
         "inputs": [
-          { "node": "s1", "output": 0 }
+          { "node": "s0", "output": 0 }
         ],
         "calcite": {
           "final": 10
@@ -446,11 +438,11 @@
         "positions": [],
         "persistent_id": "af7a20a52ece7365a3b1440e05c39292ac5a55c6c641581b350a01ef95f65dc8"
       },
-      "s7": {
+      "s6": {
         "operation": "join",
         "inputs": [
-          { "node": "s4", "output": 0 },
-          { "node": "s5", "output": 0 }
+          { "node": "s3", "output": 0 },
+          { "node": "s4", "output": 0 }
         ],
         "calcite": {
           "partial": 6
@@ -462,11 +454,11 @@
         ],
         "persistent_id": "d2d417d4519df7cdda5f1b3418fbfdb6b8fd0a9bd9f9b890d0631e73a66cca5a"
       },
-      "s8": {
+      "s7": {
         "operation": "sum",
         "inputs": [
-          { "node": "s6", "output": 0 },
-          { "node": "s7", "output": 0 }
+          { "node": "s5", "output": 0 },
+          { "node": "s6", "output": 0 }
         ],
         "calcite": {
           "final": 10
@@ -474,10 +466,10 @@
         "positions": [],
         "persistent_id": "2f8076b543c6c81cf65784aee26bc1ce6ea646ada4c0be4625030c4f561b1413"
       }
-    }, "s9": {
+    }, "s8": {
       "operation": "inspect",
       "inputs": [
-        { "node": "s2", "output": 0 }
+        { "node": "s1", "output": 0 }
       ],
       "view": "fibonacci",
       "calcite": {
@@ -487,11 +479,19 @@
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1},
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1}
       ],
-      "persistent_id": "54fa67f4bb42d34f5476863b19a23ce73c84d18ce7911f8c9f59d056e5d9c994"
+      "persistent_id": "b5b3b1df28ef92eb861bfe6cefdd8e57ff39d2d8bee21303fcc12e07d8c9a266"
+    }, "s9": {
+      "operation": "constant",
+      "inputs": [],
+      "calcite": {
+        "partial": 0
+      },
+      "positions": [],
+      "persistent_id": "dabdc0517fb639de8ebd480cb4350e3b2054b584a8c9c42515f268f99294f72c"
     }, "s10": {
       "operation": "inspect",
       "inputs": [
-        { "node": "s0", "output": 0 }
+        { "node": "s9", "output": 0 }
       ],
       "view": "error_view",
       "calcite": {
