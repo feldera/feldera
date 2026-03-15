@@ -323,7 +323,6 @@ public class KeyPropagation extends CircuitVisitor {
                 this.map(operator, result);
             }
         }
-
     }
 
     void processJoin(DBSPJoinBaseOperator join) {

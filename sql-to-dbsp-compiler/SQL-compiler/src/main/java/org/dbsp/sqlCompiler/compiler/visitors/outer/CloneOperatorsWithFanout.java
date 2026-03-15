@@ -32,9 +32,7 @@ public class CloneOperatorsWithFanout extends CircuitCloneWithGraphsVisitor {
                 input.is(DBSPFilterOperator.class)))
             return false;
         DBSPClosureExpression function = input.to(DBSPSimpleOperator.class).getClosureFunction();
-        Expensive expensive = new Expensive(this.compiler);
-        expensive.apply(function);
-        return !expensive.isExpensive();
+        return !Expensive.isExpensive(this.compiler, function);
     }
 
     void cloneInput(DBSPUnaryOperator operator) {

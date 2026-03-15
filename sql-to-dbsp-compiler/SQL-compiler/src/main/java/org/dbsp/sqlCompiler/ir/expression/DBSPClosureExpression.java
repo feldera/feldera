@@ -169,9 +169,7 @@ public final class DBSPClosureExpression extends DBSPExpression {
         } else {
             // TODO: this could be refined by checking how many times the source expression
             // is substituted in the result.
-            Expensive expensive = new Expensive(compiler);
-            expensive.apply(before);
-            return !expensive.isExpensive();
+            return !Expensive.isExpensive(compiler, before);
         }
     }
 

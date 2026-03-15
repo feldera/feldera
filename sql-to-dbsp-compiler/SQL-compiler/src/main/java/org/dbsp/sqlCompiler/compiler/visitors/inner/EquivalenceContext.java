@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 
+import javax.annotation.CheckReturnValue;
 import javax.annotation.Nullable;
 import java.util.List;
 
@@ -31,10 +32,12 @@ public class EquivalenceContext {
         this.leftToRight = new Substitution<>();
     }
 
+    @CheckReturnValue
     public static boolean equiv(@Nullable DBSPExpression left, @Nullable DBSPExpression right) {
         return new EquivalenceContext().equivalent(left, right);
     }
 
+    @CheckReturnValue
     public static boolean equiv(@Nullable DBSPAggregateList left, @Nullable DBSPAggregateList right) {
         if (left == null)
             return right == null;
@@ -43,6 +46,7 @@ public class EquivalenceContext {
         return left.equivalent(right);
     }
 
+    @CheckReturnValue
     public boolean equivalent(@Nullable DBSPExpression left, @Nullable DBSPExpression right) {
         if (left == null)
             return right == null;
@@ -51,6 +55,7 @@ public class EquivalenceContext {
         return left.equivalent(this, right);
     }
 
+    @CheckReturnValue
     public boolean equivalent(@Nullable DBSPExpression[] left, @Nullable DBSPExpression[] right) {
         if (left == null)
             return right == null;
@@ -64,6 +69,7 @@ public class EquivalenceContext {
         return true;
     }
 
+    @CheckReturnValue
     public <T extends DBSPExpression> boolean equivalent(@Nullable List<T> left, @Nullable List<T> right) {
         if (left == null)
             return right == null;

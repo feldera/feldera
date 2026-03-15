@@ -71,7 +71,10 @@ public final class DBSPFieldExpression extends DBSPExpression {
 
     public DBSPExpression simplify() {
         if (this.expression.is(DBSPBaseTupleExpression.class)) {
-            return this.expression.to(DBSPBaseTupleExpression.class).get(this.fieldNo);
+            DBSPExpression result = this.expression.to(DBSPBaseTupleExpression.class).get(this.fieldNo);
+            if (this.expression.getType().mayBeNull && !result.getType().mayBeNull)
+                result = result.some();
+            return result;
         }
         if (this.expression.is(DBSPUnwrapExpression.class)) {
             DBSPUnwrapExpression unwrap = this.expression.to(DBSPUnwrapExpression.class);

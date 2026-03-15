@@ -520,7 +520,6 @@ public class AggregateCompiler implements ICompilerComponent {
         final DBSPExpression increment = this.incrementOperation(
                 node, opcode, accumulatorType, accumulator, aggregatedValue, this.filterArgument());
         final DBSPTypeUser semigroup = new DBSPTypeUser(node, SEMIGROUP, semigroupName, false, accumulatorType);
-
         var acc2 = accumulatorType.var();
         DBSPClosureExpression postProcessing = ExpressionCompiler.expandTuple(node, acc2.field(1))
                 .closure(acc2);

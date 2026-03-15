@@ -129,7 +129,9 @@ public class ExpandUnsafeCasts extends ExpressionTranslator {
         for (int i = 0; i < type.size(); i++) {
             DBSPType fieldType = type.getFieldType(i);
             DBSPExpression field;
-            if (sourceType.is(DBSPTypeTupleBase.class)) {
+            if (sourceType.is(DBSPTypeNull.class)) {
+                field = fieldType.none();
+            } else if (sourceType.is(DBSPTypeTupleBase.class)) {
                 field = source.field(i);
             } else if (sourceType.is(DBSPTypeVariant.class)) {
                 if (struct == null) {

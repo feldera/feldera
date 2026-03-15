@@ -16,10 +16,9 @@ public class QATests {
         CompilerMessages messages = CompilerMain.execute(
                 "-i", "--alltables", "--ignoreOrder",
                 "-o", BaseSQLTests.TEST_FILE_PATH, file.getAbsolutePath());
-        if (messages.errorCount() > 0 || messages.warningCount() > 0) {
+        if (messages.errorCount() > 0) {
             messages.print();
-            if (messages.errorCount() > 0)
-                throw new RuntimeException("Error during compilation");
+            throw new RuntimeException("Error during compilation");
         }
         BaseSQLTests.compileAndCheckRust(true);
     }

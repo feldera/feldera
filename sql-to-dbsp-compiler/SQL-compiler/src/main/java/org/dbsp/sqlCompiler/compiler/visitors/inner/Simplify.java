@@ -458,9 +458,9 @@ public class Simplify extends ExpressionTranslator {
                     block.lastExpression.field(expression.fieldNo));
         } else if (source.is(DBSPIfExpression.class)) {
             DBSPIfExpression conditional = source.to(DBSPIfExpression.class);
+            DBSPExpression negative = conditional.negative != null ? conditional.negative.field(expression.fieldNo) : null;
             result = new DBSPIfExpression(source.getNode(), conditional.condition,
-                    conditional.positive.field(expression.fieldNo),
-                    conditional.negative != null ? conditional.negative.field(expression.fieldNo) : null);
+                    conditional.positive.field(expression.fieldNo), negative);
         } else if (source.is(DBSPCloneExpression.class)) {
             result = new DBSPFieldExpression(expression.getNode(),
                     source.to(DBSPCloneExpression.class).expression,
@@ -520,7 +520,7 @@ public class Simplify extends ExpressionTranslator {
                 } else {
                     result = negative;
                     if (result == null)
-                        result = DBSPVoidLiteral.INSTANCE;
+                        result = new DBSPVoidLiteral();
                 }
             }
         } else if (negative != null &&
