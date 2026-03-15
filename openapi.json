@@ -8007,6 +8007,12 @@
           "mode": {
             "$ref": "#/components/schemas/DeltaTableWriteMode"
           },
+          "threads": {
+            "type": "integer",
+            "description": "Number of parallel threads used by the connector.\n\nIncreasing this value can improve Delta Lake write throughput\nby enabling concurrent writes.\n\nDefault: 1.",
+            "nullable": true,
+            "minimum": 1
+          },
           "uri": {
             "type": "string",
             "description": "Table URI."

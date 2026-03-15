@@ -6,7 +6,7 @@ use feldera_types::program_schema::Relation;
 use std::sync::Weak;
 
 #[cfg(feature = "with-deltalake")]
-mod delta_table;
+pub mod delta_table;
 mod postgres;
 
 use crate::integrated::postgres::PostgresInputEndpoint;
