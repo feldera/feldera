@@ -1,18 +1,41 @@
+import unittest
+
+from feldera import PipelineBuilder
+from feldera.testutils import unique_pipeline_name
 from tests import TEST_CLIENT
 import time
 import os
-from confluent_kafka.admin import AdminClient
+from confluent_kafka.admin import AdminClient, NewTopic
 import requests
 import re
 import json
+import socket
 
-from tests.shared_test_pipeline import SharedTestPipeline, sql
 
+def env(name: str, default: str, check_http: bool = False) -> str:
+    """Get environment variables used to configure the Kafka broker or Schema Registry endpoint.
+    If the environment variables are not set, the default values are used; intended for internal development only.
+    External users are expected to explicitly configure these variables."""
+    value = os.getenv(name, default)
 
-def env(name: str, default: str) -> str:
-    """Get environment variables for the Kafka broker and Schema registry.
-    The default values are only meant for internal development; external users must set them."""
-    return os.getenv(name, default)
+    if value == default:
+        try:
+            if check_http:
+                # Check if Schema Registry is available
+                requests.get(value, timeout=2).raise_for_status()
+            else:
+                # Check if Kafka broker is available
+                if "://" in value:
+                    # Remove protocol prefix if present (e.g., "kafka://host:port")
+                    value = value.split("://", 1)[1]
+                host, port = value.split(":")
+                socket.create_connection((host, int(port)), timeout=2)
+        except Exception as e:
+            raise RuntimeError(
+                f"{name} is set to default '{default}', but cannot connect to it! ({e})"
+            )
+
+    return value
 
 
 # Set these before running the test:
@@ -20,15 +43,20 @@ def env(name: str, default: str) -> str:
 #   export KAFKA_BOOTSTRAP_SERVERS= localhost:9092
 #   export SCHEMA_REGISTRY_URL= http://localhost:8081
 
+
 KAFKA_BOOTSTRAP = env(
     "KAFKA_BOOTSTRAP_SERVERS", "ci-kafka-bootstrap.korat-vibes.ts.net:9094"
 )
 SCHEMA_REGISTRY = env(
-    "SCHEMA_REGISTRY_URL", "http://ci-schema-registry.korat-vibes.ts.net"
+    "SCHEMA_REGISTRY_URL",
+    "http://ci-schema-registry.korat-vibes.ts.net",
+    check_http=True,
 )
 
+KAFKA_ADMIN = AdminClient({"bootstrap.servers": KAFKA_BOOTSTRAP})
 
-def extract_kafka_avro_artifacts(sql: str) -> tuple[list[str], list[str]]:
+
+def extract_kafka_schema_artifacts(sql: str) -> tuple[list[str], list[str]]:
     """Extract Kafka topic and schema subjects from the SQL query"""
     topics = re.findall(r'"topic"\s*:\s*"([^"]+)"', sql)
 
@@ -39,8 +67,7 @@ def extract_kafka_avro_artifacts(sql: str) -> tuple[list[str], list[str]]:
     return list(set(topics)), list(set(subjects))
 
 
-def delete_kafka_topics(bootstrap_servers: str, topics: list[str]):
-    admin = AdminClient({"bootstrap.servers": bootstrap_servers})
+def delete_kafka_topics(admin: AdminClient, topics: list[str]):
     tpcs = admin.delete_topics(topics)
 
     for topic, tpcs in tpcs.items():
@@ -61,12 +88,32 @@ def delete_schema_subjects(registry_url: str, subjects: list[str]):
         )
 
 
-def cleanup_kafka(sql: str, bootstrap_servers: str, registry_url: str):
+def cleanup_kafka_schema_artifacts(sql: str, admin: AdminClient, registry_url: str):
     """Clean up Kafka topics and Schema Subjects after each test run.
     Each run produces new records. So, rerunning without cleanup will append data to the same topic(s)."""
-    topics, subjects = extract_kafka_avro_artifacts(sql)
-    delete_kafka_topics(bootstrap_servers, topics)
+    topics, subjects = extract_kafka_schema_artifacts(sql)
+    delete_kafka_topics(admin, topics)
     delete_schema_subjects(registry_url, subjects)
+
+
+def create_kafka_topic(
+    topic_name: str, num_partitions: int = 1, replication_factor: int = 1
+):
+    """Create new topics when multiple partitions are required, since the Kafka output connector does not support
+    specifying the number of partitions during topic creation."""
+    new_topic = NewTopic(
+        topic_name, num_partitions=num_partitions, replication_factor=replication_factor
+    )
+    futures = KAFKA_ADMIN.create_topics([new_topic])
+    for t, f in futures.items():
+        try:
+            f.result()
+            print(f"Topic {t} created with {num_partitions} partitions")
+        except Exception as e:
+            if "already exists" in str(e):
+                print(f"Topic {t} already exists")
+            else:
+                raise
 
 
 class Variant:
@@ -79,6 +126,8 @@ class Variant:
         self.partitions = cfg.get("partitions")
         self.sync = cfg.get("sync")
         self.start_from = cfg.get("start_from")
+        self.create_topic = cfg.get("create_topic", False)
+        self.num_partitions = cfg.get("num_partitions", 1)
 
         self.topic1 = f"my_topic_avro_{self.id}"
         self.topic2 = f"my_topic_avro2_{self.id}"
@@ -202,17 +251,9 @@ create table {v.loopback} (
 """
 
 
-def build_sql(configs) -> str:
+def build_sql(v: Variant) -> str:
     """Generate SQL for the pipeline by combining all tables and view for each variant"""
-    variants = [Variant(c) for c in configs]
-    parts = []
-
-    for v in variants:
-        parts.append(sql_source_table(v))
-        parts.append(sql_view(v))
-        parts.append(sql_loopback_table(v))
-
-    return "\n".join(parts)
+    return "\n".join([sql_source_table(v), sql_view(v), sql_loopback_table(v)])
 
 
 def wait_for_rows(pipeline, expected_rows, timeout_s=1800, poll_interval_s=5):
@@ -233,14 +274,14 @@ def wait_for_rows(pipeline, expected_rows, timeout_s=1800, poll_interval_s=5):
         time.sleep(poll_interval_s)
 
 
-def validate_loopback(self, variant: Variant):
+def validate_loopback(pipeline, variant: Variant):
     """Validation: once finished, the loopback table should contain all generated values
     Validate by comparing the hash of the source table 't' and loopback table"""
-    src_tbl_hash = self.pipeline.query_hash(
+    src_tbl_hash = pipeline.query_hash(
         f"SELECT * FROM {variant.source} ORDER BY id, str"
     )
 
-    loopback_tbl_hash = self.pipeline.query_hash(
+    loopback_tbl_hash = pipeline.query_hash(
         f"SELECT * FROM {variant.loopback} ORDER BY id, str"
     )
 
@@ -255,45 +296,64 @@ def validate_loopback(self, variant: Variant):
     print(f"Loopback table validated successfully for variant {variant.id}")
 
 
-class TestKafkaAvro(SharedTestPipeline):
+def create_and_run_pipeline_variant(cfg):
+    """Create and run multiple pipelines based on configurations defined for each pipeline variant"""
+    v = Variant(cfg)
+
+    # Pre-create topics if specified
+    if v.create_topic:
+        create_kafka_topic(v.topic1, v.num_partitions)
+        create_kafka_topic(v.topic2, v.num_partitions)
+
+    sql = build_sql(v)
+    pipeline_name = unique_pipeline_name(f"test_kafka_avro_{v.id}")
+    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, sql).create_or_replace()
+
+    try:
+        pipeline.start()
+        # NOTE => total_completed_records counts all rows that are processed through each output as follows:
+        # 1. Written by the view<v> -> Kafka
+        # 2. Ingested into loopback table from Kafka
+        # Thus, expected_records = generated_rows * number_of_outputs (in this case 2)
+        expected_rows = v.limit * 2
+        wait_for_rows(pipeline, expected_rows)
+        validate_loopback(pipeline, v)
+    finally:
+        pipeline.stop(force=True)
+        cleanup_kafka_schema_artifacts(sql, KAFKA_ADMIN, SCHEMA_REGISTRY)
+
+
+class TestKafkaAvro(unittest.TestCase):
     """Each test method uses its own SQL snippet and processes only its own variant."""
 
     TEST_CONFIGS = [
-        {"id": 0, "limit": 10},
-        {"id": 1, "limit": 20},
-        # {
-        #     "id": 2,
-        #     "limit": 1000000,
-        #     "partitions": [0],
-        #     "sync": True,
-        #     "start_from": "earliest",
-        # },
+        {"id": 0, "limit": 10, "partitions": [0], "sync": False},
+        {
+            "id": 1,
+            "limit": 1000000,
+            "partitions": [0, 1, 2],
+            "sync": False,
+            "create_topic": True,
+            "num_partitions": 3,  # pre-create topic with 3 partitions
+        },
     ]
 
-    @sql(build_sql([TEST_CONFIGS[0]]))
-    def test_kafka_avro_config_0(self):
-        cfg = self.TEST_CONFIGS[0]
-        variant = Variant(cfg)
+    def test_kafka_avro_variants(self):
+        # If a run ID is specified, only the test with the specified run ID is ran
+        run_id = os.getenv("RUN_ID")
+        configs_to_run = (
+            [cfg for cfg in self.TEST_CONFIGS if cfg["id"] == int(run_id)]
+            if run_id is not None
+            else self.TEST_CONFIGS
+        )
 
-        self.pipeline.start()
-        try:
-            expected_rows = variant.limit * 2  # view->Kafka + Kafka->loopback
-            wait_for_rows(self.pipeline, expected_rows)
-            validate_loopback(self, variant)
-        finally:
-            self.pipeline.stop(force=True)
-            cleanup_kafka(build_sql([cfg]), KAFKA_BOOTSTRAP, SCHEMA_REGISTRY)
+        for cfg in configs_to_run:
+            print(f"\n Running pipeline variant id = {cfg['id']}")
+            create_and_run_pipeline_variant(cfg)
 
-    @sql(build_sql([TEST_CONFIGS[1]]))
-    def test_kafka_avro_config_1(self):
-        cfg = self.TEST_CONFIGS[1]
-        variant = Variant(cfg)
 
-        self.pipeline.start()
-        try:
-            expected_rows = variant.limit * 2
-            wait_for_rows(self.pipeline, expected_rows)
-            validate_loopback(self, variant)
-        finally:
-            self.pipeline.stop(force=True)
-            cleanup_kafka(build_sql([cfg]), KAFKA_BOOTSTRAP, SCHEMA_REGISTRY)
+# To run all pipelines in this test file:
+#   python -m pytest ./tests/workloads/test_kafka_avro.py
+
+# To run a specific pipeline variant by its ID:
+#   RUN_ID=0 python -m pytest ./tests/workloads/test_kafka_avro.py
