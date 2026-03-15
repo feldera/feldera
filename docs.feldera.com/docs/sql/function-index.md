@@ -190,7 +190,6 @@
 * `RESPECT NULLS`: [grammar](grammar.md#window-aggregates)
 * `RIGHT`: [string](string.md#right), [binary](binary.md#right)
 * `RLIKE`: [string](string.md#rlike)
-* `RLIKE`: [string](string.md#rlike)
 * `ROLLUP`: [grammar](grammar.md#cube)
 * `ROUND`: [float](float.md#round), [float](float.md#round2), [decimal](decimal.md#round), [decimal](decimal.md#round2)
 * `ROW`: [types](types.md#row_constructor)
