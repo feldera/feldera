@@ -648,7 +648,7 @@ public abstract class InnerRewriteVisitor
     public VisitDecision preorder(DBSPNullLiteral expression) {
         this.push(expression);
         this.pop(expression);
-        DBSPExpression result = DBSPNullLiteral.INSTANCE;
+        DBSPExpression result = new DBSPNullLiteral();
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -657,7 +657,7 @@ public abstract class InnerRewriteVisitor
     public VisitDecision preorder(DBSPVoidLiteral expression) {
         this.push(expression);
         this.pop(expression);
-        DBSPExpression result = DBSPVoidLiteral.INSTANCE;
+        DBSPExpression result = new DBSPVoidLiteral();
         this.map(expression, result);
         return VisitDecision.STOP;
     }

@@ -108,10 +108,11 @@ public class CircuitOptimizer extends Passes {
         this.add(new RemoveIAfterD(compiler));
         this.add(new DeadCode(compiler, true));
         this.add(new Simplify(compiler).circuitRewriter(true));
-        this.add(new RemoveFilters(compiler));
+        this.add(new RemoveConstantFilters(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new OptimizeProjectionVisitor(compiler, g)));
         this.add(new OptimizeWithGraph(compiler,
                 g -> new OptimizeProjections(compiler, true, g, operatorsAnalyzed)));
+        this.add(new ShareIndexes(compiler));
         // Combining Joins with subsequent filters can improve the precision of the monotonicity analysis
         this.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
         this.add(new MonotoneAnalyzer(compiler));

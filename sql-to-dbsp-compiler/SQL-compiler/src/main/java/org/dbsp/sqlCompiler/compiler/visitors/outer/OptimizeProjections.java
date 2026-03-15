@@ -40,6 +40,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.DetectShuffle;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Expensive;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
@@ -77,7 +78,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/** Optimizes projections (Map or MapIndex) following various other operators. */
+/** Optimizes projections (Map or MapIndex) following various other operators.
+ * TODO: unify this with OptimizeProjectionsVisitor */
 public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
     /** If true only optimize projections after joins */
     final boolean onlyProjections;
@@ -141,13 +143,21 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 throw new InternalCompilerError("Expected closure with 1 parameter", operator);
 
             final DBSPClosureExpression newFunction;
-            if (sourceFunction.body.is(DBSPBaseTupleExpression.class)) {
+            boolean isExpensive = Expensive.isExpensive(compiler, sourceFunction);
+            Projection projection = new Projection(compiler);
+            projection.apply(thisFunction);
+            if ((sourceFunction.body.is(DBSPBaseTupleExpression.class) && projection.isProjection)
+                    || !isExpensive) {
                 DBSPExpression argument = new DBSPRawTupleExpression(
                         sourceFunction.body.field(0).borrow(),
                         sourceFunction.body.field(1).borrow());
                 DBSPExpression apply = thisFunction.call(argument).reduce(this.compiler());
                 newFunction = apply.closure(sourceFunction.parameters);
             } else {
+                if (this.onlyProjections) {
+                    super.postorder(operator);
+                    return;
+                }
                 DBSPVariablePath var = sourceFunction.body.type.var();
                 DBSPLetExpression let = new DBSPLetExpression(var,
                         sourceFunction.body,
@@ -541,7 +551,6 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             }
         } else if ((source.node().is(DBSPStreamJoinOperator.class)
                 || source.node().is(DBSPLeftJoinOperator.class)
-                || source.node().is(DBSPAsofJoinOperator.class)
                 || source.node().is(DBSPJoinOperator.class)
                 || source.node().is(DBSPStarJoinOperator.class)) &&
                 inputFanout == 1) {
@@ -551,6 +560,19 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             Projection projection = new Projection(this.compiler());
             projection.apply(operator.getFunction());
             if (!this.onlyProjections || projection.isProjection) {
+                DBSPSimpleOperator result = OptimizeProjectionVisitor.mapAfterJoin(
+                        this.compiler(), source.simpleNode(), operator);
+                this.map(operator, result);
+                return;
+            }
+        } else if (source.node().is(DBSPAsofJoinOperator.class) && inputFanout == 1) {
+            Logger.INSTANCE.belowLevel(this, 2)
+                    .appendSupplier(() -> source.simpleNode().operation + " -> Map")
+                    .newline();
+            Projection projection = new Projection(this.compiler());
+            projection.apply(operator.getFunction());
+            if (projection.isProjection) {
+                // Only combine with pure projections
                 DBSPSimpleOperator result = OptimizeProjectionVisitor.mapAfterJoin(
                         this.compiler(), source.simpleNode(), operator);
                 this.map(operator, result);

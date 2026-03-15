@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.intern.InternInner;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 /** Visitor which detects whether an expression contains "expensive" subexpressions.
@@ -63,5 +64,11 @@ public class Expensive extends InnerVisitor {
     public VisitDecision preorder(DBSPApplyMethodExpression unused) {
         this.expensive = true;
         return VisitDecision.STOP;
+    }
+
+    public static boolean isExpensive(DBSPCompiler compiler, DBSPExpression expression) {
+        Expensive expensive = new Expensive(compiler);
+        expensive.apply(expression);
+        return expensive.isExpensive();
     }
 }

@@ -41,7 +41,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-/** Regression tests that failed in incremental mode using the Catalog API */
+/** Regression tests that executed in incremental mode */
 public class IncrementalRegressionTests extends SqlIoTest {
     @Override
     public CompilerOptions testOptions() {

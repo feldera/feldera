@@ -42,7 +42,7 @@ public class DBSPTypeVoid extends DBSPTypeBaseType {
 
     @Override
     public DBSPExpression defaultValue() {
-        return DBSPVoidLiteral.INSTANCE;
+        return new DBSPVoidLiteral();
     }
 
     @SuppressWarnings("unused")

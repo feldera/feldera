@@ -936,7 +936,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         DBSPType type = this.typeCompiler.convertType(node.getPositionRange(), call.getType(), false);
         // If type is NULL we can skip the call altogether...
         if (type.is(DBSPTypeNull.class))
-            return DBSPNullLiteral.INSTANCE;
+            return new DBSPNullLiteral();
         Utilities.enforce(!type.is(DBSPTypeStruct.class));
 
         final RexCall finalCall = call;

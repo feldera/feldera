@@ -96,7 +96,7 @@ public final class DBSPAggregateList extends DBSPNode
             DBSPTypeUser semigroup = new DBSPTypeUser(node, USER, "EmptySemigroup", false);
             return new DBSPFold(CalciteObject.EMPTY, semigroup,
                     new DBSPTupleExpression(),
-                    DBSPVoidLiteral.INSTANCE.closure(accumulator, this.rowVar, weight),
+                    new DBSPVoidLiteral().closure(accumulator, this.rowVar, weight),
                     new DBSPTupleExpression().closure(var));
         }
         NonLinearAggregate combined = this.combine(compiler).to(NonLinearAggregate.class);
