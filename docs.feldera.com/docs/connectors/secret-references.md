@@ -4,19 +4,28 @@ Rather than directly supplying a secret (e.g., passwords, PEM, etc.) in the conn
 configuration as a string, it is possible to refer to (externalize) them. This mechanism
 in Feldera is called a **secret reference**.
 
-A secret reference is a string in the connector configuration JSON which takes a specific format:
+Feldera supports two types of references in connector configuration strings:
 
-```
-${secret:<provider>:<identifier>}
-```
+- **Secret references** — resolved from an external secret provider (e.g., Kubernetes):
+    ```
+    ${secret:<provider>:<identifier>}
+    ```
 
 It refers to an identifiable secret provided by a provider. Feldera's control plane mounts the secret
 into the pipeline. When the pipeline initializes, it will replace the secret references in the
 configuration with their values. We currently only support a single secret provider, Kubernetes.
 
-Feldera resolves secrets when a pipeline starts, as well as each time
-it resumes.  Feldera does not write resolved values of secrets to
-checkpoints or journals.
+- **Environment variable references** — resolved from the pipeline process environment:
+    ```
+    ${env:<name>}
+    ```
+
+When the pipeline initializes, it replaces all references in the connector configuration
+with their resolved values. Feldera resolves references when a pipeline starts, as well as
+each time it resumes. Feldera does not write resolved values to checkpoints or journals.
+
+Use environment variables for non-sensitive deployment configuration only. 
+Storing secrets in environment variables is generally discouraged; use a dedicated secret manager or secret store instead.
 
 ## Kubernetes
 
@@ -80,7 +89,47 @@ We can then specify a connector configuration that refers to it using `${secret:
 }
 ```
 
-## Restrictions
+## Environment variables
+
+### Usage
+
+```
+${env:<name>}
+```
+
+Here, `<name>` is the name of an environment variable following POSIX naming
+rules (letters, digits, and underscores, must start with a letter or underscore).
+
+The reference is resolved at pipeline startup by reading the named variable from the pipeline
+process environment. This is useful for injecting configuration values (e.g., hostnames,
+credentials) via environment variables set in the `env` field of
+[`RuntimeConfig`](/api/patch-pipeline#body-runtime_config) or through the deployment environment.
+
+### Example
+
+```json
+{
+    "transport": {
+        "name": "kafka_input",
+        "config": {
+            "bootstrap.servers": "${env:KAFKA_BOOTSTRAP_SERVERS}",
+            "sasl.password": "${env:KAFKA_SASL_PASSWORD}"
+        }
+    },
+    "format": ...
+}
+```
+
+### Restrictions
+
+- The environment variable name must follow POSIX rules: only letters (`a`–`z`, `A`–`Z`),
+  digits (`0`–`9`), and underscores (`_`), and must start with a letter or underscore
+- If the referenced environment variable is not set when the pipeline starts, the pipeline
+  will fail to initialize with an error
+- It is not possible to have string values starting with `${env:` and ending with `}`
+  without them being identified as an environment variable reference
+
+## Restrictions (secret references)
 
 - The secret name may only contain lowercase alphanumeric characters or hyphens, must start and end
   with a lowercase alphanumeric character and can be at most 63 characters long
@@ -89,51 +138,51 @@ We can then specify a connector configuration that refers to it using `${secret:
 - It is not possible to have any plain string value which starts with `${secret:` and ends with `}`
   without it being identified to be a secret reference.
 - Only string values in the connector configuration JSON under `transport.config` and `format.config`
-  can be identified to be secret references (this excludes keys), for example (secret named `a` at
-  data key `b` has value `value`):
-  ```
-  {
-    "transport": {
-      "name": "some_transport",
-      "config": {
-        "${secret:kubernetes:a/b}": "${secret:kubernetes:a/b}",
-        "v1": "${secret:kubernetes:a/b}",
-        "v2": [ "${secret:kubernetes:a/b}" ]
-      }
-    },
-    "format": {
-      "name": "some_format",
-      "config": {
-        "v3": "${secret:kubernetes:a/b}"
-      }
-    },
-    "index": "${secret:kubernetes:a/b}"
-  }
-  ```
-  ... will be resolved to:
-  ```
-  {
-    "transport": {
-      "name": "some_transport",
-      "config": {
-        "${secret:kubernetes:a/b}": "value",
-        "v1": "value",
-        "v2": [ "value" ]
-      }
-    },
-    "format": {
-      "name": "some_format",
-      "config": {
-        "v3": "value"
-      }
-    },
-    "index": "${secret:kubernetes:a/b}"
-  }
-  ```
+  can be identified to be secret or environment variable references (this excludes keys), for example
+  (secret named `a` at data key `b` has value `value`):
+    ```
+    {
+      "transport": {
+        "name": "some_transport",
+        "config": {
+          "${secret:kubernetes:a/b}": "${secret:kubernetes:a/b}",
+          "v1": "${secret:kubernetes:a/b}",
+          "v2": [ "${secret:kubernetes:a/b}" ]
+        }
+      },
+      "format": {
+        "name": "some_format",
+        "config": {
+          "v3": "${secret:kubernetes:a/b}"
+        }
+      },
+      "index": "${secret:kubernetes:a/b}"
+    }
+    ```
+    ... will be resolved to:
+    ```
+    {
+      "transport": {
+        "name": "some_transport",
+        "config": {
+          "${secret:kubernetes:a/b}": "value",
+          "v1": "value",
+          "v2": [ "value" ]
+        }
+      },
+      "format": {
+        "name": "some_format",
+        "config": {
+          "v3": "value"
+        }
+      },
+      "index": "${secret:kubernetes:a/b}"
+    }
+    ```
 - Because connector configuration is validated during SQL compilation without secret
   resolution, string values that require certain format for the connector configuration
   to be valid will not allow secret references (enumerations in particular, such as for
   the datagen connector `strategy` field)
-- It is not possible to specify a secret value type other than string
-- It is not possible to specify a secret as a substring, for example
-  `abc${secret:kubernetes:a/b}def` does not work
+- It is not possible to specify a reference value type other than string
+- It is not possible to specify a reference as a substring, for example
+  `abc${secret:kubernetes:a/b}def` and `abc${env:MY_VAR}def` do not work
