@@ -38,7 +38,7 @@ jobs:
         shell: bash
         working-directory: ./python
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install uv
         uses: astral-sh/setup-uv@v2
         with:
@@ -87,7 +87,7 @@ jobs:
           private-key: ${{ secrets.CI_ACCESS_APP_PKEY }}
           permission-contents: write
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           # This runs on main because we make the commit on main at the end of the workflow,
           # we use the token so it can circument push to main protection rules

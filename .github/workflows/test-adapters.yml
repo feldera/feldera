@@ -63,10 +63,10 @@ jobs:
           --health-retries 5
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download Test Binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: feldera-test-binaries-${{ matrix.target }}
           path: build
@@ -142,10 +142,10 @@ jobs:
           echo "K8S node: ${K8S_NODE_NAME}"
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download Test Binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: feldera-test-binaries-x86_64-unknown-linux-gnu
           path: build

@@ -58,7 +58,7 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-tags: true
           ref: ${{ env.SHA_TO_RELEASE }}
