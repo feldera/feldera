@@ -5,8 +5,22 @@ on:
   workflow_dispatch:
 
 jobs:
-  # NOTE: For every job added here, add a matching cancel-if-<name>-failed
-  # sentinel job in the cancel-if-* section below.
+  # HOW JOBS ARE STRUCTURED IN THIS FILE
+  #
+  # Each substantive job (build, test, etc.) must have a matching
+  # cancel-if-<name>-failed sentinel job in the cancel-if-* section below.
+  # GitHub Actions does not cancel sibling jobs when one job fails — they keep
+  # running and waste runner time. The sentinels work around this: each one
+  # watches a single upstream job and immediately cancels the entire run on
+  # failure.
+  #
+  # IMPORTANT: The sentinel cancel is asynchronous. Any job that must not run
+  # when a prior job fails MUST also list that job in its `needs:` field and
+  # check its result in its `if:` condition — do not rely on the cancel alone.
+  # Example: invoke-tests-web-console-unit runs in parallel with the build
+  # jobs, so invoke-build-docker lists it in `needs:` and checks its result in
+  # `if:`. Without that explicit gate, the Docker build can start before the
+  # cancel propagates and waste expensive runner time.
 
   # Checks whether all build artifacts already exist in a prior run for this
   # commit. If so, downstream build jobs are skipped and tests download
@@ -117,12 +131,13 @@ jobs:
 
   invoke-build-docker:
     name: Build Docker
-    needs: [check-prior-build, invoke-build-rust, invoke-build-java]
+    needs: [check-prior-build, invoke-build-rust, invoke-build-java, invoke-tests-web-console-unit]
     if: |
       always() &&
       needs.check-prior-build.outputs.skip_docker != 'true' &&
       (needs.invoke-build-rust.result == 'success' || needs.invoke-build-rust.result == 'skipped') &&
-      (needs.invoke-build-java.result == 'success' || needs.invoke-build-java.result == 'skipped')
+      (needs.invoke-build-java.result == 'success' || needs.invoke-build-java.result == 'skipped') &&
+      (needs.invoke-tests-web-console-unit.result == 'success' || needs.invoke-tests-web-console-unit.result == 'skipped')
     uses: ./.github/workflows/build-docker.yml
     with:
       artifacts_run_id: ${{ needs.check-prior-build.outputs.artifacts_run_id }}
@@ -176,11 +191,6 @@ jobs:
     with:
       environment: ci
     secrets: inherit
-
-  # GitHub doesn't cancel in-progress sibling jobs when one job fails — they keep running
-  # until they finish, which wastes runner time when a build or test fails early.
-  # The jobs below work around this: each one watches a single upstream job and, if that
-  # job fails, immediately cancels the entire workflow run so everything else stops too.
 
   cancel-if-tests-web-console-unit-failed:
     name: Cancel if Web Console Unit Tests Failed
