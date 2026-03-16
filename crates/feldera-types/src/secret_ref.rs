@@ -177,9 +177,7 @@ pub enum MaybeSecretRefParseError {
         name: String,
         e: EnvVarNameParseError,
     },
-    #[error(
-        "environment variable reference '{env_ref_str}' is not valid: name cannot be empty"
-    )]
+    #[error("environment variable reference '{env_ref_str}' is not valid: name cannot be empty")]
     EmptyEnvVarName { env_ref_str: String },
 }
 
@@ -209,6 +207,7 @@ impl MaybeSecretRef {
     ///
     /// Note that here is not checked whether the reference can actually be resolved.
     pub fn new(value: String) -> Result<MaybeSecretRef, MaybeSecretRefParseError> {
+        let env_prefix = "${env:";
         if value.starts_with("${secret:") && value.ends_with('}') {
             // Because the pattern only has ASCII characters, they are encoded as single bytes.
             // The secret reference is extracted by slicing away the first 9 bytes and the last byte.
@@ -245,16 +244,15 @@ impl MaybeSecretRef {
                     secret_ref_str: value,
                 })
             }
-        } else if value.starts_with("${env:") && value.ends_with('}') {
+        } else if value.starts_with(env_prefix) && value.ends_with('}') {
             // Environment variable reference: `${env:<name>}`
             // The content is extracted by slicing away the first 6 bytes ("${env:") and the last byte ("}").
-            let from_idx_incl = 6;
-            let till_idx_excl = value.len() - 1;
-            let name = value[from_idx_incl..till_idx_excl].to_string();
+            let name = value
+                .trim_start_matches(env_prefix)
+                .trim_end_matches("}")
+                .to_string();
             if name.is_empty() {
-                Err(MaybeSecretRefParseError::EmptyEnvVarName {
-                    env_ref_str: value,
-                })
+                Err(MaybeSecretRefParseError::EmptyEnvVarName { env_ref_str: value })
             } else if let Err(e) = validate_env_var_name(&name) {
                 Err(MaybeSecretRefParseError::InvalidEnvVarName {
                     env_ref_str: value,
