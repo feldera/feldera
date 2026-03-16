@@ -107,6 +107,15 @@ enum ConnectorError {
     Fatal(AnyError),
 }
 
+impl std::fmt::Debug for ConnectorError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Retryable(e) => write!(f, "Retryable({e:#})"),
+            Self::Fatal(e) => write!(f, "Fatal({e:#})"),
+        }
+    }
+}
+
 impl ConnectorError {
     fn with_context(self, context: impl std::fmt::Display + Send + Sync + 'static) -> Self {
         match self {
@@ -318,8 +327,7 @@ impl NatsReader {
             &stream_ctx.stream_name,
             state.next_sequence.load(Ordering::Acquire),
         )
-        .await
-        .map_err(ConnectorError::Fatal)?;
+        .await?;
 
         let nats_consumer = create_nats_consumer(
             &jetstream,
@@ -398,8 +406,7 @@ impl NatsReader {
                         .map_err(ConnectorError::Retryable)?;
 
                     validate_replay_range(&jetstream, &stream_ctx.stream_name, &metadata.sequence_numbers)
-                        .await
-                        .map_err(ConnectorError::Fatal)?;
+                        .await?;
 
                     let nats_consumer = create_nats_consumer(
                         &jetstream,
@@ -955,7 +962,7 @@ async fn validate_replay_range(
     jetstream: &jetstream::Context,
     stream_name: &str,
     requested_range: &std::ops::Range<u64>,
-) -> AnyResult<()> {
+) -> Result<(), ConnectorError> {
     validate_sequence_bounds(
         jetstream,
         stream_name,
@@ -970,7 +977,7 @@ async fn validate_resume_position(
     jetstream: &jetstream::Context,
     stream_name: &str,
     resume_cursor: u64,
-) -> AnyResult<()> {
+) -> Result<(), ConnectorError> {
     validate_sequence_bounds(
         jetstream,
         stream_name,
@@ -992,7 +999,7 @@ async fn validate_sequence_bounds(
     jetstream: &jetstream::Context,
     stream_name: &str,
     mode: SequenceValidationMode,
-) -> AnyResult<()> {
+) -> Result<(), ConnectorError> {
     match &mode {
         SequenceValidationMode::Replay { requested_range } if requested_range.is_empty() => {
             return Ok(());
@@ -1004,53 +1011,59 @@ async fn validate_sequence_bounds(
         _ => {}
     }
 
-    let stream_state = fetch_stream_state(jetstream, stream_name).await?;
+    // Fetching stream state is an I/O operation that can fail transiently
+    // (e.g., timeout, temporary network issues). These should be retryable.
+    let stream_state = fetch_stream_state(jetstream, stream_name)
+        .await
+        .map_err(ConnectorError::Retryable)?;
     let available_first = stream_state.first_sequence;
     let available_last = stream_state.last_sequence;
 
+    // Logical validation errors (data out of bounds, stream empty) are fatal
+    // because retrying won't change the outcome.
     match mode {
         SequenceValidationMode::Replay { requested_range } => {
             if stream_state.messages == 0 {
-                return Err(anyhow!(
+                return Err(ConnectorError::Fatal(anyhow!(
                     "Replay requested sequences {:?} from stream '{stream_name}', but the stream is empty",
                     requested_range
-                ));
+                )));
             }
 
             let requested_first = requested_range.start;
             let requested_last = requested_range.end - 1;
 
             if requested_first < available_first || requested_first > available_last {
-                return Err(anyhow!(
+                return Err(ConnectorError::Fatal(anyhow!(
                     "Replay start sequence {requested_first} is outside available stream range [{available_first}, {available_last}] for stream '{stream_name}'"
-                ));
+                )));
             }
 
             if requested_last > available_last {
-                return Err(anyhow!(
+                return Err(ConnectorError::Fatal(anyhow!(
                     "Replay end sequence {requested_last} exceeds available stream tail {available_last} for stream '{stream_name}'"
-                ));
+                )));
             }
         }
         SequenceValidationMode::Resume { resume_cursor } => {
             if stream_state.messages == 0 {
-                return Err(anyhow!(
+                return Err(ConnectorError::Fatal(anyhow!(
                     "Resume sequence {resume_cursor} is invalid for stream '{stream_name}': stream is empty"
-                ));
+                )));
             }
 
             let valid_upper = available_last.saturating_add(1);
 
             if resume_cursor < available_first {
-                return Err(anyhow!(
+                return Err(ConnectorError::Fatal(anyhow!(
                     "Resume sequence {resume_cursor} is before earliest available sequence {available_first} for stream '{stream_name}'"
-                ));
+                )));
             }
 
             if resume_cursor > valid_upper {
-                return Err(anyhow!(
+                return Err(ConnectorError::Fatal(anyhow!(
                     "Resume sequence {resume_cursor} is after valid upper bound {valid_upper} for stream '{stream_name}'"
-                ));
+                )));
             }
         }
     }
