@@ -4,6 +4,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
+use std::env;
 use std::fmt::Debug;
 use std::fs;
 use std::io::ErrorKind;
@@ -102,6 +103,10 @@ pub enum SecretRefResolutionError {
         path: String,
         error_kind: ErrorKind,
     },
+    #[error(
+        "environment variable reference '{env_ref}' resolution failed: environment variable '{name}' is not set"
+    )]
+    EnvVarNotSet { env_ref: SecretRef, name: String },
     #[error("secret resolution led to a duplicate key in the mapping, which should not happen")]
     DuplicateKeyInMapping,
     #[error("unable to serialize connector configuration: {error}")]
@@ -171,7 +176,7 @@ fn resolve_secret_references_in_json(
     })
 }
 
-/// Resolves a string which can potentially be a secret reference.
+/// Resolves a string which can potentially be a secret reference or an environment variable reference.
 fn resolve_potential_secret_reference_string(
     secrets_dir: &Path,
     s: String,
@@ -179,8 +184,11 @@ fn resolve_potential_secret_reference_string(
     match MaybeSecretRef::new(s) {
         Ok(maybe_secret_ref) => match maybe_secret_ref {
             MaybeSecretRef::String(plain_str) => Ok(plain_str),
-            MaybeSecretRef::SecretRef(secret_ref) => match &secret_ref {
-                SecretRef::Kubernetes { name, data_key } => {
+            MaybeSecretRef::SecretRef(secret_ref) => match secret_ref {
+                SecretRef::Kubernetes {
+                    ref name,
+                    ref data_key,
+                } => {
                     // Secret reference: `${secret:kubernetes:<name>/<data key>}`
                     // File location: `<secrets dir>/kubernetes/<name>/<data key>`
                     let path = Path::new(secrets_dir)
@@ -221,6 +229,20 @@ fn resolve_potential_secret_reference_string(
                                 path: path.display().to_string(),
                                 error_kind: e.kind(), // Only error kind to prevent displaying any of the secret content
                             }),
+                        }
+                    }
+                }
+                SecretRef::EnvVar { ref name } => {
+                    // Environment variable reference: `${env:<name>}`
+                    // Resolved by reading the named environment variable from the process.
+                    let name = name.clone();
+                    match env::var(&name) {
+                        Ok(value) => Ok(value),
+                        Err(env::VarError::NotPresent) | Err(env::VarError::NotUnicode(_)) => {
+                            Err(SecretRefResolutionError::EnvVarNotSet {
+                                env_ref: secret_ref,
+                                name,
+                            })
                         }
                     }
                 }
@@ -564,5 +586,108 @@ mod tests {
             connector_config.index,
             Some("${secret:kubernetes:e/f}".to_string())
         );
+    }
+
+    #[test]
+    fn resolve_env_var_success() {
+        // Set the environment variable
+        unsafe {
+            std::env::set_var("FELDERA_TEST_ENV_VAR_ABC123", "my_value");
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            resolve_potential_secret_reference_string(
+                dir.path(),
+                "${env:FELDERA_TEST_ENV_VAR_ABC123}".to_string()
+            )
+            .unwrap(),
+            "my_value"
+        );
+
+        unsafe {
+            std::env::remove_var("FELDERA_TEST_ENV_VAR_ABC123");
+        }
+    }
+
+    #[test]
+    fn resolve_env_var_not_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let env_ref_str = "${env:FELDERA_TEST_ENV_VAR_NOT_SET_XYZ}";
+        unsafe {
+            std::env::remove_var("FELDERA_TEST_ENV_VAR_NOT_SET_XYZ");
+        }
+
+        let MaybeSecretRef::SecretRef(expected_ref) =
+            crate::secret_ref::MaybeSecretRef::new(env_ref_str.to_string()).unwrap()
+        else {
+            unreachable!();
+        };
+
+        assert_eq!(
+            resolve_potential_secret_reference_string(dir.path(), env_ref_str.to_string())
+                .unwrap_err(),
+            SecretRefResolutionError::EnvVarNotSet {
+                env_ref: expected_ref,
+                name: "FELDERA_TEST_ENV_VAR_NOT_SET_XYZ".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_env_var_in_connector_config() {
+        unsafe {
+            std::env::set_var("FELDERA_TEST_CONN_VAR_A", "resolved_value_a");
+            std::env::set_var("FELDERA_TEST_CONN_VAR_B", "resolved_value_b");
+        }
+
+        let connector_config_json = json!({
+            "transport": {
+              "name": "datagen",
+              "config": {
+                "plan": [{
+                    "limit": 2,
+                    "fields": {
+                        "col1": { "values": [1, 2] },
+                        "col2": { "values": ["${env:FELDERA_TEST_CONN_VAR_A}", "${env:FELDERA_TEST_CONN_VAR_B}"] }
+                    }
+                }]
+              }
+            },
+            "format": {
+              "name": "json",
+              "config": {
+                "example": "${env:FELDERA_TEST_CONN_VAR_A}"
+              }
+            }
+        });
+
+        let connector_config: ConnectorConfig =
+            serde_json::from_value(connector_config_json).unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let resolved =
+            resolve_secret_references_in_connector_config(dir.path(), &connector_config).unwrap();
+
+        let TransportConfig::Datagen(datagen_input_config) = resolved.transport else {
+            unreachable!();
+        };
+        assert_eq!(
+            datagen_input_config.plan[0].fields["col2"]
+                .values
+                .as_ref()
+                .unwrap(),
+            &vec![json!("resolved_value_a"), json!("resolved_value_b")]
+        );
+
+        let Some(format_config) = resolved.format else {
+            unreachable!();
+        };
+        assert_eq!(format_config.config, json!({"example": "resolved_value_a"}));
+
+        unsafe {
+            std::env::remove_var("FELDERA_TEST_CONN_VAR_A");
+            std::env::remove_var("FELDERA_TEST_CONN_VAR_B");
+        }
     }
 }
