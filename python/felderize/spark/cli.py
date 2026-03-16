@@ -22,14 +22,20 @@ def cli():
 @click.option("--validate", is_flag=True, help="Validate against Feldera instance")
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
-def translate(schema_file: str, query_file: str, validate: bool, json_output: bool, no_docs: bool):
+def translate(
+    schema_file: str, query_file: str, validate: bool, json_output: bool, no_docs: bool
+):
     """Translate a single Spark SQL schema + query pair to Feldera SQL."""
     config = Config.from_env()
     schema_sql = Path(schema_file).read_text()
     query_sql = Path(query_file).read_text()
 
     result = translate_spark_to_feldera(
-        schema_sql, query_sql, config, validate=validate, include_docs=not no_docs,
+        schema_sql,
+        query_sql,
+        config,
+        validate=validate,
+        include_docs=not no_docs,
     )
 
     if json_output:
@@ -70,7 +76,11 @@ def batch(data_dir: str, validate: bool, output_dir: str | None, no_docs: bool):
 
         click.echo(f"Translating {name}...", err=True)
         result = translate_spark_to_feldera(
-            schema_sql, query_sql, config, validate=validate, include_docs=not no_docs,
+            schema_sql,
+            query_sql,
+            config,
+            validate=validate,
+            include_docs=not no_docs,
         )
         results[name] = result.to_dict()
 
@@ -98,7 +108,11 @@ _EXAMPLES_DIR = Path(__file__).resolve().parent / "data" / "demo"
 
 @cli.command()
 @click.argument("name", required=False)
-@click.option("--validate/--no-validate", default=True, help="Validate against Feldera instance (default: on)")
+@click.option(
+    "--validate/--no-validate",
+    default=True,
+    help="Validate against Feldera instance (default: on)",
+)
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
 def example(name: str | None, validate: bool, json_output: bool, no_docs: bool):
@@ -124,7 +138,7 @@ def example(name: str | None, validate: bool, json_output: bool, no_docs: bool):
         for ex_name, (sf, qf) in pairs.items():
             schema_preview = sf.read_text().strip().split("\n")[0]
             click.echo(f"  {ex_name:20s} {schema_preview}")
-        click.echo(f"\nRun one with: felderize example <name>")
+        click.echo("\nRun one with: felderize example <name>")
         return
 
     if name not in pairs:
@@ -143,7 +157,11 @@ def example(name: str | None, validate: bool, json_output: bool, no_docs: bool):
 
     config = Config.from_env()
     result = translate_spark_to_feldera(
-        schema_sql, query_sql, config, validate=validate, include_docs=not no_docs,
+        schema_sql,
+        query_sql,
+        config,
+        validate=validate,
+        include_docs=not no_docs,
     )
 
     if json_output:

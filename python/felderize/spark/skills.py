@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import yaml
@@ -77,8 +76,7 @@ def build_system_prompt(
             prompt += (
                 "\n\n## Validated Translation Examples\n\n"
                 "These examples were validated against the Feldera compiler. "
-                "Follow the same patterns.\n\n"
-                + examples_text
+                "Follow the same patterns.\n\n" + examples_text
             )
         if with_docs:
             docs_text = load_docs(spark_sql, docs_dir)

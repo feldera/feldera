@@ -127,14 +127,22 @@ def _translate_once(
         raw = client.translate(system_prompt, repair_prompt)
         try:
             data = _parse_response(raw)
-            result.feldera_schema = _as_str(data.get("feldera_schema", result.feldera_schema))
-            result.feldera_query = _as_str(data.get("feldera_query", result.feldera_query))
+            result.feldera_schema = _as_str(
+                data.get("feldera_schema", result.feldera_schema)
+            )
+            result.feldera_query = _as_str(
+                data.get("feldera_query", result.feldera_query)
+            )
             result.unsupported = _as_list(data.get("unsupported", result.unsupported))
             result.warnings = _as_list(data.get("warnings", result.warnings))
-            result.explanations = _as_list(data.get("explanations", result.explanations))
+            result.explanations = _as_list(
+                data.get("explanations", result.explanations)
+            )
             full_sql = result.feldera_schema + "\n\n" + result.feldera_query
         except (json.JSONDecodeError, KeyError):
-            result.warnings.append(f"Repair attempt {attempt + 1} produced invalid JSON")
+            result.warnings.append(
+                f"Repair attempt {attempt + 1} produced invalid JSON"
+            )
 
     # Final validation after all retries
     errors = validate_sql(full_sql, config.feldera_compiler or None)
@@ -143,7 +151,9 @@ def _translate_once(
         result.status = Status.UNSUPPORTED if result.unsupported else Status.SUCCESS
     else:
         result.status = Status.ERROR
-        result.warnings.extend([f"Still failing after {max_retries} repairs: {e}" for e in errors])
+        result.warnings.extend(
+            [f"Still failing after {max_retries} repairs: {e}" for e in errors]
+        )
 
     return result
 
@@ -164,21 +174,38 @@ def translate_spark_to_feldera(
 
     # First pass: skills + examples only (no docs)
     system_prompt = build_system_prompt(
-        skills_dir, docs_dir=docs_dir_path, spark_sql=combined_sql, with_docs=False,
+        skills_dir,
+        docs_dir=docs_dir_path,
+        spark_sql=combined_sql,
+        with_docs=False,
     )
     result = _translate_once(
-        schema_sql, query_sql, config, client, system_prompt, validate, max_retries,
+        schema_sql,
+        query_sql,
+        config,
+        client,
+        system_prompt,
+        validate,
+        max_retries,
     )
 
     # If first pass failed and docs are enabled, retry with docs
     if result.status == Status.ERROR and include_docs:
         print("Retrying with Feldera docs...", file=sys.stderr)
         system_prompt_with_docs = build_system_prompt(
-            skills_dir, docs_dir=docs_dir_path, spark_sql=combined_sql, with_docs=True,
+            skills_dir,
+            docs_dir=docs_dir_path,
+            spark_sql=combined_sql,
+            with_docs=True,
         )
         result = _translate_once(
-            schema_sql, query_sql, config, client, system_prompt_with_docs,
-            validate, max_retries,
+            schema_sql,
+            query_sql,
+            config,
+            client,
+            system_prompt_with_docs,
+            validate,
+            max_retries,
         )
         if result.status != Status.ERROR:
             result.warnings.append("Resolved with docs fallback")
