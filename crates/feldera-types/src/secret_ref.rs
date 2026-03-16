@@ -177,9 +177,7 @@ pub enum MaybeSecretRefParseError {
         name: String,
         e: EnvVarNameParseError,
     },
-    #[error(
-        "environment variable reference '{env_ref_str}' is not valid: name cannot be empty"
-    )]
+    #[error("environment variable reference '{env_ref_str}' is not valid: name cannot be empty")]
     EmptyEnvVarName { env_ref_str: String },
 }
 
@@ -252,9 +250,7 @@ impl MaybeSecretRef {
             let till_idx_excl = value.len() - 1;
             let name = value[from_idx_incl..till_idx_excl].to_string();
             if name.is_empty() {
-                Err(MaybeSecretRefParseError::EmptyEnvVarName {
-                    env_ref_str: value,
-                })
+                Err(MaybeSecretRefParseError::EmptyEnvVarName { env_ref_str: value })
             } else if let Err(e) = validate_env_var_name(&name) {
                 Err(MaybeSecretRefParseError::InvalidEnvVarName {
                     env_ref_str: value,
