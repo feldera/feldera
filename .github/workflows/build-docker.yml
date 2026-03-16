@@ -50,7 +50,7 @@ jobs:
           echo "K8S node: ${K8S_NODE_NAME}"
 
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -58,7 +58,7 @@ jobs:
 
       - name: Download fda
         id: binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: fda-${{ matrix.rust_target }}
           path: build
@@ -66,7 +66,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download pipeline-manager
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: pipeline-manager-${{ matrix.rust_target }}
           path: build
@@ -74,7 +74,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download Compiler Binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: feldera-sql-compiler
           path: build
@@ -137,7 +137,7 @@ jobs:
           touch "$RUNNER_TEMP/digests/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digests-${{ env.PLATFORM_PAIR }}
           path: ${{ runner.temp }}/digests/*
@@ -153,7 +153,7 @@ jobs:
     needs: build-docker
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: ${{ runner.temp }}/digests
           pattern: digests-*
@@ -191,7 +191,7 @@ jobs:
         run: |
           docker buildx imagetools inspect ${{ vars.FELDERA_IMAGE_NAME }}:${{ steps.meta.outputs.version }}
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
@@ -208,7 +208,7 @@ jobs:
         run: echo "${{ steps.meta.outputs.version }}" > /tmp/docker-image-ready.txt
 
       - name: Upload docker-image-ready artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: docker-image-ready
           path: /tmp/docker-image-ready.txt

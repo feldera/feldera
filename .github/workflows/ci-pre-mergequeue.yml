@@ -42,7 +42,7 @@ jobs:
 
       - name: Checkout (internal PRs)
         if: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           # This needs to be set to a token to trigger a follow-up workflow
           # in case some changes were corrected.
@@ -50,10 +50,10 @@ jobs:
 
       - name: Checkout (fork/dependabot PRs)
         if: ${{ github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Cache uv pre-commit environments
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/pre-commit
@@ -61,7 +61,7 @@ jobs:
           key: pre-commit-uv-1|${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Cache Cargo registry and index
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry

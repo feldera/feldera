@@ -42,10 +42,10 @@ jobs:
           echo "K8S node: ${K8S_NODE_NAME}"
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Cache Cargo registry and index
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -117,21 +117,21 @@ jobs:
 
       # Upload test binaries as one artifact
       - name: Upload test artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: feldera-test-binaries-${{ matrix.target }}
           path: build-artifacts
           retention-days: 7
 
       - name: Upload fda
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fda-${{ matrix.target }}
           path: build-release-artifacts/fda
           retention-days: 7
 
       - name: Upload pipeline-manager
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pipeline-manager-${{ matrix.target }}
           path: build-release-artifacts/pipeline-manager

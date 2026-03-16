@@ -46,7 +46,7 @@ jobs:
         run: |
           echo "K8S node: ${K8S_NODE_NAME}"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.tag || github.ref }}
 

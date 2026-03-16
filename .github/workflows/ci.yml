@@ -26,7 +26,7 @@ jobs:
       artifacts_run_id: ${{ steps.result.outputs.artifacts_run_id }}
       skip_docker: ${{ steps.result.outputs.skip_docker }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Finds the first prior run for this commit that has all Rust/Java build
       # artifacts. If found, its run ID is used by downstream jobs to download
