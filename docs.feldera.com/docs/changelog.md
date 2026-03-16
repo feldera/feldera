@@ -61,6 +61,10 @@ import TabItem from '@theme/TabItem';
         - Health probes now avoid duplicate JetStream stream-info requests,
           reducing API pressure during retry and recovery loops.
 
+        NATS retry classification during resume and replay validation has also been refined:
+        transient failures while fetching JetStream stream metadata are now treated as retryable,
+        while logical sequence-range validation failures remain fatal.
+
         ## v0.263.0
 
         Added connector error list to input/output connector stats.
