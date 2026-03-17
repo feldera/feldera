@@ -118,9 +118,6 @@ where
 
     /// Creates a new merger for `cursors`.
     pub fn new(factories: &B::Factories, cursors: Vec<C>) -> Self {
-        // [IndexSet] supports a maximum of 64 batches.
-        assert!(cursors.len() <= 64);
-
         let time_diffs = factories.time_diffs_factory().map(|f| f.default_box());
         let has_mut = cursors.iter().map(|c| c.has_mut()).collect();
         let num_cursors = cursors.len();
@@ -261,8 +258,6 @@ where
     ///
     /// When the function returns and fuel > 0, the batches should be guaranteed to be fully merged.
     pub fn work(&mut self, builder: &mut B::Builder, frontier: &B::Time, fuel: &mut isize) {
-        assert!(self.cursors.len() <= 64);
-
         let advance_func = |t: &mut DynDataTyped<B::Time>| t.join_assign(frontier);
 
         let time_map_func = if frontier == &B::Time::minimum() {

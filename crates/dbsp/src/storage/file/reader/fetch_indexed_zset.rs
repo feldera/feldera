@@ -531,7 +531,7 @@ where
 
     fn results(self, factories: VecIndexedWSetFactories<K0, K1, A1>) -> VecIndexedWSet<K0, K1, A1> {
         assert!(self.is_done());
-        VecIndexedWSet::from_parts(factories, self.keys, self.offs, self.vals, self.diffs)
+        VecIndexedWSet::from_parts(factories, self.keys, self.offs, self.vals, self.diffs, 0)
     }
 
     async fn async_results(

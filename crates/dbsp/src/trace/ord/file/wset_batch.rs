@@ -1,3 +1,4 @@
+use crate::storage::file::format::BatchMetadata;
 use crate::storage::tracking_bloom_filter::BloomFilterStats;
 use crate::{
     DBData, DBWeight, NumEntries, Runtime,
@@ -22,11 +23,13 @@ use crate::{
         ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
     },
 };
+use crate::{DynZWeight, ZWeight};
 use dyn_clone::clone_box;
 use feldera_storage::{FileReader, StoragePath};
 use rand::{Rng, seq::index::sample};
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
+use std::any::TypeId;
 use std::{
     fmt::{self, Debug},
     ops::Neg,
@@ -186,6 +189,10 @@ where
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    fn stats(&self) -> &BatchMetadata {
+        &self.file.metadata
+    }
 }
 
 // This is `#[cfg(test)]` only because it would be surprisingly expensive in
@@ -247,9 +254,13 @@ where
             writer.write0((cursor.key(), diff.erase())).unwrap_storage();
             cursor.step_key();
         }
+        let stats = BatchMetadata {
+            negative_weight_count: (self.len() as u64)
+                .saturating_sub(self.stats().negative_weight_count),
+        };
         Self {
             factories: self.factories.clone(),
-            file: Arc::new(writer.into_reader().unwrap_storage()),
+            file: Arc::new(writer.into_reader(stats).unwrap_storage()),
         }
     }
 }
@@ -464,6 +475,10 @@ where
             factories: factories.clone(),
             file,
         })
+    }
+
+    fn negative_weight_count(&self) -> Option<u64> {
+        Some(self.stats().negative_weight_count)
     }
 }
 
@@ -763,6 +778,22 @@ where
     writer: Writer1<K, R>,
     weight: Box<R>,
     num_tuples: usize,
+    #[size_of(skip)]
+    stats: BatchMetadata,
+}
+
+impl<K, R> FileWSetBuilder<K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn update_stats(&mut self, weight: &R) {
+        if TypeId::of::<R>() == TypeId::of::<DynZWeight>()
+            && unsafe { *weight.downcast::<ZWeight>() } < 0
+        {
+            self.stats.negative_weight_count += 1;
+        }
+    }
 }
 
 impl<K, R> Builder<FileWSet<K, R>> for FileWSetBuilder<K, R>
@@ -788,13 +819,14 @@ where
             .unwrap_storage(),
             weight: factories.weight_factory().default_box(),
             num_tuples: 0,
+            stats: BatchMetadata::default(),
         }
     }
 
     fn done(self) -> FileWSet<K, R> {
         FileWSet {
             factories: self.factories,
-            file: Arc::new(self.writer.into_reader().unwrap_storage()),
+            file: Arc::new(self.writer.into_reader(self.stats).unwrap_storage()),
         }
     }
 
@@ -806,6 +838,7 @@ where
 
     fn push_time_diff(&mut self, _time: &(), weight: &R) {
         debug_assert!(!weight.is_zero());
+        self.update_stats(weight);
         weight.clone_to(&mut self.weight);
         self.num_tuples += 1;
     }

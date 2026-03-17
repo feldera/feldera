@@ -21,10 +21,12 @@ use crate::{
     },
     utils::Tup2,
 };
+use crate::{DynZWeight, ZWeight};
 use itertools::{EitherOrBoth, Itertools};
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
+use std::any::TypeId;
 use std::fmt::{self, Debug, Display};
 
 pub struct VecIndexedWSetFactories<K, V, R>
@@ -169,6 +171,8 @@ where
     pub layer: Layers<K, V, R, O>,
     #[size_of(skip)]
     factories: VecIndexedWSetFactories<K, V, R>,
+    #[size_of(skip)]
+    negative_weight_count: u64,
 }
 
 impl<K, V, R, O> VecIndexedWSet<K, V, R, O>
@@ -184,6 +188,7 @@ where
         offs: Vec<O>,
         vals: Box<DynVec<V>>,
         diffs: Box<DynVec<R>>,
+        negative_weight_count: u64,
     ) -> Self {
         Self {
             layer: Layer::from_parts(
@@ -193,6 +198,7 @@ where
                 Leaf::from_parts(&factories.layer_factories.child, vals, diffs),
             ),
             factories,
+            negative_weight_count,
         }
     }
 }
@@ -242,6 +248,7 @@ where
         Self {
             layer: self.layer.clone(),
             factories: self.factories.clone(),
+            negative_weight_count: self.negative_weight_count,
         }
     }
 }
@@ -328,6 +335,7 @@ where
         Self {
             layer: self.layer.neg_by_ref(),
             factories: self.factories.clone(),
+            negative_weight_count: self.negative_weight_count,
         }
     }
 }
@@ -476,6 +484,10 @@ where
     type Timed<T: crate::Timestamp> = VecValBatch<K, V, T, R, O>;
     type Batcher = MergeBatcher<Self>;
     type Builder = VecIndexedWSetBuilder<K, V, R, O>;
+
+    fn negative_weight_count(&self) -> Option<u64> {
+        Some(self.negative_weight_count)
+    }
 }
 
 /// A cursor for navigating a single layer.
@@ -676,6 +688,7 @@ where
     offs: Vec<O>,
     vals: Box<DynVec<V>>,
     diffs: Box<DynVec<R>>,
+    negative_weight_count: u64,
 }
 
 impl<K, V, R, O> VecIndexedWSetBuilder<K, V, R, O>
@@ -733,6 +746,15 @@ where
             self.diffs.len(),
             "every value must have exactly one diff"
         );
+    }
+
+    fn update_total_weight(&mut self, weight: &R) {
+        if TypeId::of::<R>() == TypeId::of::<DynZWeight>() {
+            let weight = unsafe { weight.downcast::<ZWeight>() };
+            if !weight.ge0() {
+                self.negative_weight_count += 1;
+            }
+        }
     }
 
     /// Copies the contents of this in-progress [Builder] to `dst`.
@@ -802,6 +824,7 @@ where
             offs,
             vals,
             diffs,
+            negative_weight_count: 0,
         }
     }
 
@@ -834,18 +857,21 @@ where
 
     fn push_time_diff(&mut self, _time: &(), weight: &R) {
         debug_assert!(!weight.is_zero());
+        self.update_total_weight(weight);
         self.diffs.push_ref(weight);
         self.pushed_diff();
     }
 
     fn push_time_diff_mut(&mut self, _time: &mut (), weight: &mut R) {
         debug_assert!(!weight.is_zero());
+        self.update_total_weight(weight);
         self.diffs.push_val(weight);
         self.pushed_diff();
     }
 
     fn push_val_diff(&mut self, val: &V, weight: &R) {
         debug_assert!(!weight.is_zero());
+        self.update_total_weight(weight);
         self.vals.push_ref(val);
         self.diffs.push_ref(weight);
         self.pushed_val();
@@ -853,13 +879,21 @@ where
 
     fn push_val_diff_mut(&mut self, val: &mut V, weight: &mut R) {
         debug_assert!(!weight.is_zero());
+        self.update_total_weight(weight);
         self.vals.push_val(val);
         self.diffs.push_val(weight);
         self.pushed_val();
     }
 
     fn done(self) -> VecIndexedWSet<K, V, R, O> {
-        VecIndexedWSet::from_parts(self.factories, self.keys, self.offs, self.vals, self.diffs)
+        VecIndexedWSet::from_parts(
+            self.factories,
+            self.keys,
+            self.offs,
+            self.vals,
+            self.diffs,
+            self.negative_weight_count,
+        )
     }
 
     fn num_keys(&self) -> usize {

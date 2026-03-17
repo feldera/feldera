@@ -446,6 +446,15 @@ pub struct DevTweaks {
     ///
     /// The default value is equal to the number of worker threads.
     pub merger_threads: Option<u16>,
+
+    /// Additional bias the merger assigns to records with negative weights
+    /// (retractions) in order to promote them to higher levels of the LSM tree sooner.
+    ///
+    /// Reasonable values for this parameter are in the range [0, 10].
+    ///
+    /// The default value is 0, which means that retractions are not given
+    /// any additional bias.
+    pub negative_weight_multiplier: u16,
 }
 
 impl Default for DevTweaks {
@@ -469,6 +478,7 @@ impl Default for DevTweaks {
             adaptive_joins: false,
             max_level0_batch_size_records: MAX_LEVEL0_BATCH_SIZE_RECORDS,
             merger_threads: None,
+            negative_weight_multiplier: 0,
         }
     }
 }
@@ -527,6 +537,10 @@ pub fn adaptive_joins_enabled() -> bool {
 
 pub fn max_level0_batch_size_records() -> u16 {
     Runtime::with_dev_tweaks(|d| d.max_level0_batch_size_records)
+}
+
+pub fn negative_weight_multiplier() -> u16 {
+    Runtime::with_dev_tweaks(|d| d.negative_weight_multiplier)
 }
 
 /// Configuration for storage in a [Runtime]-hosted circuit.

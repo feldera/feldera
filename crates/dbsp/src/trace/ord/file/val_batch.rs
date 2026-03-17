@@ -11,6 +11,7 @@ use crate::{
     },
     storage::file::{
         Factories as FileFactories,
+        format::BatchMetadata,
         reader::{Cursor as FileCursor, Error as ReaderError, Reader},
         writer::Writer2,
     },
@@ -368,6 +369,10 @@ where
             file,
         })
     }
+
+    fn negative_weight_count(&self) -> Option<u64> {
+        None
+    }
 }
 
 #[derive(SizeOf)]
@@ -663,6 +668,8 @@ where
     writer: Writer2<K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
     time_diffs: Box<DynWeightedPairs<DynDataTyped<T>, R>>,
     num_tuples: usize,
+    #[size_of(skip)]
+    stats: BatchMetadata,
 }
 
 impl<K, V, T, R> Builder<FileValBatch<K, V, T, R>> for FileValBuilder<K, V, T, R>
@@ -691,13 +698,14 @@ where
             .unwrap_storage(),
             time_diffs: factories.timediff_factory.default_box(),
             num_tuples: 0,
+            stats: BatchMetadata::default(),
         }
     }
 
     fn done(self) -> FileValBatch<K, V, T, R> {
         FileValBatch {
             factories: self.factories,
-            file: Arc::new(self.writer.into_reader().unwrap_storage()),
+            file: Arc::new(self.writer.into_reader(self.stats).unwrap_storage()),
         }
     }
 

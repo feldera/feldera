@@ -18,10 +18,12 @@ use crate::{
     },
     utils::Tup2,
 };
+use crate::{DynZWeight, ZWeight};
 use itertools::{EitherOrBoth, Itertools};
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
+use std::any::TypeId;
 use std::fmt::{self, Debug, Display};
 
 pub struct VecWSetFactories<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> {
@@ -121,10 +123,7 @@ where
     pub layer: Leaf<K, R>,
     #[size_of(skip)]
     factories: VecWSetFactories<K, R>,
-    // #[size_of(skip)]
-    // weighted_item_factory: &'static WeightedFactory<K, R>,
-    // #[size_of(skip)]
-    // batch_item_factory: &'static BatchItemFactory<K, (), K, R>,
+    negative_weight_count: u64,
 }
 
 impl<K, R> VecWSet<K, R>
@@ -140,6 +139,7 @@ where
         Self {
             layer: Leaf::from_parts(&factories.layer_factories, keys, diffs),
             factories,
+            negative_weight_count: 0,
         }
     }
 }
@@ -189,8 +189,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Clone for VecWSet<K, R> {
         Self {
             layer: self.layer.clone(),
             factories: self.factories.clone(),
-            //weighted_item_factory: self.weighted_item_factory,
-            //batch_item_factory: self.batch_item_factory,
+            negative_weight_count: self.negative_weight_count,
         }
     }
 }
@@ -297,8 +296,7 @@ where
         Self {
             layer: self.layer.neg_by_ref(),
             factories: self.factories.clone(),
-            //weighted_item_factory: self.weighted_item_factory,
-            //batch_item_factory: self.batch_item_factory,
+            negative_weight_count: self.negative_weight_count,
         }
     }
 }
@@ -382,9 +380,9 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Batch for VecWSet<K, R> {
     type Batcher = MergeBatcher<Self>;
     type Builder = VecWSetBuilder<K, R>;
 
-    /*fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self {
-        Self::from_tuples(time, keys)
-    }*/
+    fn negative_weight_count(&self) -> Option<u64> {
+        Some(self.negative_weight_count)
+    }
 }
 
 /// A cursor for navigating a single layer.
@@ -560,6 +558,7 @@ where
     keys: Box<DynVec<K>>,
     val: bool,
     diffs: Box<DynVec<R>>,
+    negative_weight_count: u64,
 }
 
 impl<K, R> VecWSetBuilder<K, R>
@@ -626,6 +625,15 @@ where
             }
         }
     }
+
+    fn update_total_weight(&mut self, weight: &R) {
+        if TypeId::of::<R>() == TypeId::of::<DynZWeight>() {
+            let weight = unsafe { weight.downcast::<ZWeight>() };
+            if !weight.ge0() {
+                self.negative_weight_count += 1;
+            }
+        }
+    }
 }
 
 impl<K, R> Builder<VecWSet<K, R>> for VecWSetBuilder<K, R>
@@ -649,6 +657,7 @@ where
             keys,
             val: false,
             diffs,
+            negative_weight_count: 0,
         }
     }
 
@@ -683,12 +692,14 @@ where
 
     fn push_time_diff(&mut self, _time: &(), weight: &R) {
         debug_assert!(!weight.is_zero());
+        self.update_total_weight(weight);
         self.diffs.push_ref(weight);
         self.pushed_diff();
     }
 
     fn push_time_diff_mut(&mut self, _time: &mut (), weight: &mut R) {
         debug_assert!(!weight.is_zero());
+        self.update_total_weight(weight);
         self.diffs.push_val(weight);
         self.pushed_diff();
     }
@@ -698,6 +709,7 @@ where
         VecWSet {
             layer: Leaf::from_parts(&self.factories.layer_factories, self.keys, self.diffs),
             factories: self.factories,
+            negative_weight_count: self.negative_weight_count,
         }
     }
 

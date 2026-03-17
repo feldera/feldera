@@ -7,7 +7,10 @@ use dbsp::dynamic::{DynData, Erase};
 use dbsp::storage::backend::memory_impl::MemoryBackend;
 use dbsp::storage::buffer_cache::BufferCache;
 use dbsp::storage::file::Factories;
-use dbsp::storage::file::writer::{Parameters, Writer1};
+use dbsp::storage::file::{
+    format::BatchMetadata,
+    writer::{Parameters, Writer1},
+};
 use feldera_sqllib::{
     Array, ByteArray, Date, GeoPoint, LongInterval, Map, ShortInterval, SqlDecimal, SqlString,
     Time, Timestamp, Uuid, Variant, to_array, to_map,
@@ -313,7 +316,7 @@ where
     }
 
     let reader = writer
-        .into_reader()
+        .into_reader(BatchMetadata::default())
         .map_err(|err| TestCaseError::fail(format!("reader init failed: {err:?}")))?;
     prop_assert_eq!(reader.n_rows(0) as usize, values.len());
 

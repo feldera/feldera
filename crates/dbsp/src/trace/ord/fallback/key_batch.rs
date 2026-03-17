@@ -346,6 +346,13 @@ where
             inner: Inner::File(FileKeyBatch::<K, T, R>::from_path(&factories.file, path)?),
         })
     }
+
+    fn negative_weight_count(&self) -> Option<u64> {
+        match &self.inner {
+            Inner::File(file) => file.negative_weight_count(),
+            Inner::Vec(vec) => vec.negative_weight_count(),
+        }
+    }
 }
 
 /// A builder for creating layers from unsorted update tuples.
