@@ -189,15 +189,13 @@
   {#if transactionPhase === 'started'}
     <span
       data-testid="box-icon-transaction-started"
-      class="fd fd-receipt-text text-[16px] text-warning-500"
-    ></span>
-    <Tooltip placement="top">Transaction started</Tooltip>
+      class="-my-1 chip preset-filled-warning-50-950 uppercase text-xs"
+    >Started</span>
   {:else if transactionPhase === 'committed'}
     <span
       data-testid="box-icon-transaction-committed"
-      class="fd fd-receipt-text text-[16px] text-success-500"
-    ></span>
-    <Tooltip placement="top">Ready to commit transaction</Tooltip>
+      class="-my-1 chip preset-filled-success-50-950 uppercase text-xs"
+    >Ready to commit</span>
   {/if}
 {/snippet}
 
