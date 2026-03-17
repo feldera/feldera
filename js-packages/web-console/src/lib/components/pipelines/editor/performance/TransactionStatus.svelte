@@ -97,7 +97,7 @@
                 Started
               {:else if initiatedByApi === 'Committed'}
                 <span class="fd fd-receipt-text mr-1 text-[16px] text-success-500"></span>
-                <Tooltip placement="top">Transaction committed</Tooltip>
+                <Tooltip placement="top">Ready to commit transaction</Tooltip>
                 Committed
               {:else}
                 None

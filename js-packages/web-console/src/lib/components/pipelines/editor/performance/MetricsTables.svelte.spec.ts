@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
 import type {
@@ -292,7 +293,7 @@ describe('MetricsTables.svelte', () => {
         { state: { barrier: true }, testId: 'box-icon-barrier' },
         {
           state: { metrics: makeInputMetrics({ num_parse_errors: 5 }) },
-          testId: 'btn-icon-errors'
+          testId: 'btn-icon-input-errors'
         },
         { state: { transaction_phase: 'started' }, testId: 'box-icon-transaction-started' },
         { state: { transaction_phase: 'committed' }, testId: 'box-icon-transaction-committed' },
@@ -301,6 +302,7 @@ describe('MetricsTables.svelte', () => {
           testId: 'box-icon-end-of-input'
         },
         { state: { paused: true }, testId: 'box-icon-paused' },
+        { state: { fatal_error: 'err' }, testId: 'btn-icon-input-fatal-error' },
         { state: {}, testId: 'box-icon-running' }
       ]
 
@@ -373,12 +375,12 @@ describe('MetricsTables.svelte', () => {
       await expect.element(page.getByTestId('box-connector-row-alpha')).not.toBeInTheDocument()
 
       // Click to expand
-      await page.getByTestId('box-relation-row-t1').click()
+      await page.getByTestId('box-relation-row-t1').click({ position: { x: 1, y: 0 } })
       await expect.element(page.getByTestId('box-connector-row-alpha')).toBeInTheDocument()
       await expect.element(page.getByTestId('box-connector-row-beta')).toBeInTheDocument()
 
       // Click again to collapse
-      await page.getByTestId('box-relation-row-t1').click()
+      await page.getByTestId('box-relation-row-t1').click({ position: { x: 1, y: 0 } })
       await expect.element(page.getByTestId('box-connector-row-alpha')).not.toBeInTheDocument()
     })
 
@@ -494,7 +496,7 @@ describe('MetricsTables.svelte', () => {
       await renderComponent(makeMetricsProp(tables, views), onConnectorSelect)
 
       // Input error icon
-      const inputIcon = page.getByTestId('btn-icon-errors')
+      const inputIcon = page.getByTestId('btn-icon-input-errors')
       await expect.element(inputIcon).toBeInTheDocument()
       ;(inputIcon.element() as HTMLElement).click()
       expect(onConnectorSelect).toHaveBeenCalledWith('tbl', 'ep1', 'input', 'all')
@@ -542,7 +544,7 @@ describe('MetricsTables.svelte', () => {
       await expect.element(page.getByTestId('box-unhealthy-chip')).toBeInTheDocument()
 
       // Expand
-      await page.getByTestId('box-relation-row-t1').click()
+      await page.getByTestId('box-relation-row-t1').click({ position: { x: 1, y: 0 } })
 
       // Chip still exists somewhere (in the connector row)
       await expect.element(page.getByTestId('box-unhealthy-chip')).toBeInTheDocument()
@@ -568,11 +570,237 @@ describe('MetricsTables.svelte', () => {
         ]
       ])
       await renderComponent(makeMetricsProp(tables))
-      await page.getByTestId('box-relation-row-t1').click()
+      await page.getByTestId('box-relation-row-t1').click({ position: { x: 1, y: 0 } })
       await expect.element(page.getByTestId('box-connector-row-c1')).toBeInTheDocument()
       await expect.element(page.getByTestId('box-connector-row-c2')).toBeInTheDocument()
       const allChips = page.getByTestId('box-unhealthy-chip').all()
       expect(allChips.length).toBeGreaterThanOrEqual(2)
+    })
+  })
+
+  describe('J. Fatal error icon', () => {
+    it('input single connector: fatal_error shows fd-circle-x alongside fd-circle-alert when both errors exist', async () => {
+      const withFatal = new Map([
+        [
+          't1',
+          makeAggregatedInput([
+            makeInputConnector({
+              fatal_error: 'Connection refused',
+              metrics: makeInputMetrics({ num_transport_errors: 1 })
+            })
+          ])
+        ]
+      ])
+      const { unmount } = await renderComponent(makeMetricsProp(withFatal))
+      // Alert icon for transport errors
+      const alertIcon = page.getByTestId('btn-icon-input-errors')
+      await expect.element(alertIcon).toBeInTheDocument()
+      expect(alertIcon.element().classList.contains('fd-circle-alert')).toBe(true)
+      // Fatal error icon replaces running
+      const fatalIcon = page.getByTestId('btn-icon-input-fatal-error')
+      await expect.element(fatalIcon).toBeInTheDocument()
+      expect(fatalIcon.element().classList.contains('fd-circle-x')).toBe(true)
+      unmount()
+
+      const withoutFatal = new Map([
+        [
+          't1',
+          makeAggregatedInput([
+            makeInputConnector({ metrics: makeInputMetrics({ num_transport_errors: 1 }) })
+          ])
+        ]
+      ])
+      await renderComponent(makeMetricsProp(withoutFatal))
+      const icon = page.getByTestId('btn-icon-input-errors')
+      await expect.element(icon).toBeInTheDocument()
+      expect(icon.element().classList.contains('fd-circle-alert')).toBe(true)
+      expect(icon.element().classList.contains('fd-circle-x')).toBe(false)
+      await expect.element(page.getByTestId('btn-icon-input-fatal-error')).not.toBeInTheDocument()
+      await expect.element(page.getByTestId('box-icon-running')).toBeInTheDocument()
+    })
+
+    it('output single connector: fatal_error shows fd-circle-x, absent shows fd-circle-alert', async () => {
+      const withFatal = new Map([
+        [
+          'v1',
+          makeAggregatedOutput([
+            makeOutputConnector({
+              fatal_error: 'Write failed',
+              metrics: makeOutputMetrics({ num_encode_errors: 1 })
+            })
+          ])
+        ]
+      ])
+      const { unmount } = await renderComponent(makeMetricsProp(undefined, withFatal))
+      let icon = page.getByTestId('btn-icon-output-errors')
+      await expect.element(icon).toBeInTheDocument()
+      expect(icon.element().classList.contains('fd-circle-x')).toBe(true)
+      expect(icon.element().classList.contains('fd-circle-alert')).toBe(false)
+      unmount()
+
+      const withoutFatal = new Map([
+        [
+          'v1',
+          makeAggregatedOutput([
+            makeOutputConnector({ metrics: makeOutputMetrics({ num_encode_errors: 1 }) })
+          ])
+        ]
+      ])
+      await renderComponent(makeMetricsProp(undefined, withoutFatal))
+      icon = page.getByTestId('btn-icon-output-errors')
+      await expect.element(icon).toBeInTheDocument()
+      expect(icon.element().classList.contains('fd-circle-alert')).toBe(true)
+      expect(icon.element().classList.contains('fd-circle-x')).toBe(false)
+    })
+
+    it('single input connector error icon is interactive (role=button), composite is not', async () => {
+      const singleTables = new Map([
+        [
+          't1',
+          makeAggregatedInput([
+            makeInputConnector({ metrics: makeInputMetrics({ num_transport_errors: 1 }) })
+          ])
+        ]
+      ])
+      const { unmount } = await renderComponent(makeMetricsProp(singleTables))
+      const singleIcon = page.getByTestId('btn-icon-input-errors').element()
+      expect(singleIcon.getAttribute('role')).toBe('button')
+      expect(singleIcon.getAttribute('tabindex')).toBe('0')
+      unmount()
+
+      const multiTables = new Map([
+        [
+          't1',
+          makeAggregatedInput([
+            makeInputConnector({
+              endpointName: 'c1',
+              metrics: makeInputMetrics({ num_transport_errors: 1 })
+            }),
+            makeInputConnector({ endpointName: 'c2' })
+          ])
+        ]
+      ])
+      await renderComponent(makeMetricsProp(multiTables))
+      const compositeIcon = page.getByTestId('btn-icon-input-errors').element()
+      expect(compositeIcon.getAttribute('role')).toBeNull()
+    })
+
+    it('single output connector error icon is interactive (role=button)', async () => {
+      const singleViews = new Map([
+        [
+          'v1',
+          makeAggregatedOutput([
+            makeOutputConnector({ metrics: makeOutputMetrics({ num_encode_errors: 1 }) })
+          ])
+        ]
+      ])
+      await renderComponent(makeMetricsProp(undefined, singleViews))
+      const singleIcon = page.getByTestId('btn-icon-output-errors').element()
+      expect(singleIcon.getAttribute('role')).toBe('button')
+      expect(singleIcon.getAttribute('tabindex')).toBe('0')
+    })
+
+    it('multi-connector output summary error icon is not interactive', async () => {
+      const multiViews = new Map([
+        [
+          'v1',
+          makeAggregatedOutput([
+            makeOutputConnector({
+              endpointName: 'o1',
+              metrics: makeOutputMetrics({ num_encode_errors: 1 })
+            }),
+            makeOutputConnector({ endpointName: 'o2' })
+          ])
+        ]
+      ])
+      await renderComponent(makeMetricsProp(undefined, multiViews))
+      const compositeIcon = page.getByTestId('btn-icon-output-errors').element()
+      expect(compositeIcon.getAttribute('role')).toBeNull()
+    })
+
+    it('multi-connector input row: fatal_error on any connector shows fd-circle-x alongside fd-circle-alert in collapsed summary', async () => {
+      const withFatal = new Map([
+        [
+          't1',
+          makeAggregatedInput([
+            makeInputConnector({
+              endpointName: 'c1',
+              fatal_error: 'Disk full',
+              metrics: makeInputMetrics({ num_transport_errors: 1 })
+            }),
+            makeInputConnector({ endpointName: 'c2' })
+          ])
+        ]
+      ])
+      const { unmount } = await renderComponent(makeMetricsProp(withFatal))
+      // Alert icon for transport errors
+      const alertIcon = page.getByTestId('btn-icon-input-errors')
+      await expect.element(alertIcon).toBeInTheDocument()
+      expect(alertIcon.element().classList.contains('fd-circle-alert')).toBe(true)
+      // Fatal error icon replaces running
+      const fatalIcon = page.getByTestId('btn-icon-input-fatal-error')
+      await expect.element(fatalIcon).toBeInTheDocument()
+      expect(fatalIcon.element().classList.contains('fd-circle-x')).toBe(true)
+      unmount()
+
+      const withoutFatal = new Map([
+        [
+          't1',
+          makeAggregatedInput([
+            makeInputConnector({
+              endpointName: 'c1',
+              metrics: makeInputMetrics({ num_transport_errors: 1 })
+            }),
+            makeInputConnector({ endpointName: 'c2' })
+          ])
+        ]
+      ])
+      await renderComponent(makeMetricsProp(withoutFatal))
+      const icon = page.getByTestId('btn-icon-input-errors')
+      await expect.element(icon).toBeInTheDocument()
+      expect(icon.element().classList.contains('fd-circle-alert')).toBe(true)
+      expect(icon.element().classList.contains('fd-circle-x')).toBe(false)
+      await expect.element(page.getByTestId('btn-icon-input-fatal-error')).not.toBeInTheDocument()
+    })
+
+    it('multi-connector output row: fatal_error on any connector shows fd-circle-x in collapsed summary', async () => {
+      const withFatal = new Map([
+        [
+          'v1',
+          makeAggregatedOutput([
+            makeOutputConnector({
+              endpointName: 'o1',
+              fatal_error: 'Pipe broken',
+              metrics: makeOutputMetrics({ num_transport_errors: 1 })
+            }),
+            makeOutputConnector({ endpointName: 'o2' })
+          ])
+        ]
+      ])
+      const { unmount } = await renderComponent(makeMetricsProp(undefined, withFatal))
+      let icon = page.getByTestId('btn-icon-output-errors')
+      await expect.element(icon).toBeInTheDocument()
+      expect(icon.element().classList.contains('fd-circle-x')).toBe(true)
+      expect(icon.element().classList.contains('fd-circle-alert')).toBe(false)
+      unmount()
+
+      const withoutFatal = new Map([
+        [
+          'v1',
+          makeAggregatedOutput([
+            makeOutputConnector({
+              endpointName: 'o1',
+              metrics: makeOutputMetrics({ num_transport_errors: 1 })
+            }),
+            makeOutputConnector({ endpointName: 'o2' })
+          ])
+        ]
+      ])
+      await renderComponent(makeMetricsProp(undefined, withoutFatal))
+      icon = page.getByTestId('btn-icon-output-errors')
+      await expect.element(icon).toBeInTheDocument()
+      expect(icon.element().classList.contains('fd-circle-alert')).toBe(true)
+      expect(icon.element().classList.contains('fd-circle-x')).toBe(false)
     })
   })
 
