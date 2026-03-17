@@ -13,28 +13,25 @@ import type {
 import type { GlobalMetricsTimestamp, TimeSeriesEntry } from '$lib/types/pipelineManager'
 import { discreteDerivative } from './common/math'
 
-export type AggregatedMetrics<M, Extras = {}> = {
+export type AggregatedMetrics<M, EndpointStatus = {}> = {
   aggregate: { metrics: M }
   connectors: ({
     endpointName: string
     metrics: M
-  } & Extras)[]
+  } & EndpointStatus)[]
 }
 
 export type AggregatedInputEndpointMetrics = AggregatedMetrics<
   InputEndpointMetrics,
-  {
-    paused?: boolean
-    barrier?: boolean
+  Pick<InputEndpointStatus, 'paused' | 'barrier' | 'health' | 'fatal_error'> & {
     io_active: boolean
     transaction_phase?: 'started' | 'committed'
-    health?: ConnectorHealth | null
   }
 >
 
 export type AggregatedOutputEndpointMetrics = AggregatedMetrics<
   OutputEndpointMetrics,
-  { io_active: boolean; health?: ConnectorHealth | null }
+  Pick<OutputEndpointStatus, 'health' | 'fatal_error'> & { io_active: boolean }
 >
 
 export const emptyPipelineMetrics = {
@@ -93,7 +90,8 @@ export const accumulatePipelineMetrics =
                 io_active:
                   prev !== undefined && cur.metrics.total_records > prev.metrics.total_records,
                 transaction_phase: connectorPhase,
-                health: cur.health
+                health: cur.health,
+                fatal_error: cur.fatal_error
               }
             })
             const metrics: AggregatedInputEndpointMetrics = {
@@ -142,7 +140,8 @@ export const accumulatePipelineMetrics =
                 io_active:
                   prev !== undefined &&
                   cur.metrics.transmitted_records > prev.metrics.transmitted_records,
-                health: cur.health
+                health: cur.health,
+                fatal_error: cur.fatal_error
               }
             }),
             aggregate: {
