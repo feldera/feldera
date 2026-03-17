@@ -43,7 +43,7 @@ MERGE INTO {target_table} AS target
                      ORDER BY __feldera_ts DESC
                    ) as rn
             FROM {source_table}
-            -- Only consider new updates since the last merge. 
+            -- Only consider new updates since the last merge.
             WHERE __feldera_ts >= (
               SELECT COALESCE(MAX(__feldera_ts), 0)
               FROM {target_table}
