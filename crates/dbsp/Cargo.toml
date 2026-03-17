@@ -161,6 +161,10 @@ harness = false
 name = "star_join"
 harness = false
 
+[[bench]]
+name = "window_min"
+harness = false
+
 [[example]]
 name = "orgchart"
 
