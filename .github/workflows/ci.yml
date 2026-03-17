@@ -53,6 +53,7 @@ jobs:
           required-artifacts: |
             fda-x86_64-unknown-linux-gnu
             fda-aarch64-unknown-linux-gnu
+            fda-x86_64-pc-windows-msvc
             pipeline-manager-x86_64-unknown-linux-gnu
             pipeline-manager-aarch64-unknown-linux-gnu
             feldera-test-binaries-x86_64-unknown-linux-gnu
