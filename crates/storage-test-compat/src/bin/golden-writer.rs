@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 use dbsp::dynamic::DynData;
 use dbsp::storage::backend::StorageBackend;
+use dbsp::storage::file::format::BatchMetadata;
 use dbsp::storage::file::format::Compression;
 use dbsp::storage::file::format::VERSION_NUMBER;
 use dbsp::storage::file::writer::{Parameters, Writer1};
@@ -111,7 +112,7 @@ where
     }
 
     let tmp_path = writer.path().clone();
-    let (_file_handle, _bloom_filter) = writer.close()?;
+    let (_file_handle, _bloom_filter) = writer.close(BatchMetadata::default())?;
     let content = storage_backend.read(&tmp_path)?;
     storage_backend.write(&output_storage_path, (*content).clone())?;
     storage_backend.delete(&tmp_path)?;

@@ -1,3 +1,4 @@
+use crate::ZWeight;
 use crate::storage::tracking_bloom_filter::BloomFilterStats;
 use crate::trace::cursor::Position;
 use crate::trace::ord::merge_batcher::MergeBatcher;
@@ -405,17 +406,9 @@ where
         unimplemented!()
     }
 
-    /*fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self
-    where
-        Self::Val: From<()>,
-    {
-        Self::from_tuples(
-            time,
-            keys.into_iter()
-                .map(|(k, w)| ((k, From::from(())), w))
-                .collect(),
-        )
-    }*/
+    fn negative_weight_count(&self) -> Option<u64> {
+        None
+    }
 }
 
 /// A cursor for navigating a single layer.
@@ -607,6 +600,8 @@ where
     val_offs: Vec<O>,
     times: Box<DynVec<DynDataTyped<T>>>,
     diffs: Box<DynVec<R>>,
+    total_positive_weight: ZWeight,
+    total_negative_weight: ZWeight,
 }
 
 impl<K, V, T, R, O> VecValBuilder<K, V, T, R, O>
@@ -669,6 +664,8 @@ where
             val_offs,
             times,
             diffs,
+            total_positive_weight: 0,
+            total_negative_weight: 0,
         }
     }
 

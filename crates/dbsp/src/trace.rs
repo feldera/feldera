@@ -879,6 +879,18 @@ where
     fn from_path(_factories: &Self::Factories, _path: &StoragePath) -> Result<Self, ReaderError> {
         Err(ReaderError::Unsupported)
     }
+
+    /// The number of tuples with negative weights in the batch.
+    ///
+    /// This metric is used in merger heuristics. Negative weights are likely to cancel out
+    /// with positive weights when merging the batch with other batches in the spine; therefore the
+    /// merger will merge such batches more aggressively than it otherwise would based on the batch
+    /// size only.
+    ///
+    /// This heuristic is not useful for all batch types, in particular negative weights in batches
+    /// produced by recursive queries do not generally cancel out. For such batches we don't track
+    /// negative weights, and this method returns `None`.
+    fn negative_weight_count(&self) -> Option<u64>;
 }
 
 /// Functionality for collecting and batching updates.

@@ -377,6 +377,13 @@ where
             inner: Inner::File(FileIndexedWSet::from_path(factories, path)?),
         })
     }
+
+    fn negative_weight_count(&self) -> Option<u64> {
+        match &self.inner {
+            Inner::File(file) => file.negative_weight_count(),
+            Inner::Vec(vec) => vec.negative_weight_count(),
+        }
+    }
 }
 
 /// A builder for batches from ordered update tuples.

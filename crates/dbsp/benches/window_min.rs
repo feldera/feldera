@@ -4,15 +4,13 @@
 //! Effectively the O(1) min computation becomes O(n), where n is the number of zero-weight tuples in the trace.
 
 use anyhow::{Context, Result, anyhow};
+use dbsp::circuit::CircuitConfig;
 use dbsp::operator::Min;
 use dbsp::utils::Tup2;
-use dbsp::{Runtime, TypedBox, ZWeight, mimalloc::MiMalloc};
+use dbsp::{Runtime, TypedBox, ZWeight, circuit::DevTweaks};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::time::{Duration, Instant};
-
-#[global_allocator]
-static ALLOC: MiMalloc = MiMalloc;
 
 const WORKERS: usize = 1;
 const TOTAL_RECORDS: u64 = 10_000_000;
@@ -23,26 +21,45 @@ const SEED: u64 = 0xD15E_A5E5_1A5A_B1E0;
 const PROGRESS_EVERY_BATCHES: usize = 50;
 const PROGRESS_EVERY_CLOCK_STEPS: usize = 50;
 const PROFILE_OUTPUT_DIR: &str = "window_min_file_storage.profile";
+const NEGATIVE_WEIGHT_MULTIPLIERS: &[u16] = &[0, 1, 2, 4, 6, 8];
+
+struct RunSummary {
+    negative_weight_multiplier: u16,
+    total_step_duration_secs: f64,
+    overall_throughput_records_per_sec: f64,
+    wall_clock_secs: f64,
+}
 
 fn main() -> Result<()> {
     validate_constants()?;
+    let mut summaries = Vec::with_capacity(NEGATIVE_WEIGHT_MULTIPLIERS.len());
+    for &negative_weight_multiplier in NEGATIVE_WEIGHT_MULTIPLIERS {
+        summaries.push(run_workload(negative_weight_multiplier)?);
+    }
+    print_summary_table(&summaries);
+    Ok(())
+}
+
+fn run_workload(negative_weight_multiplier: u16) -> Result<RunSummary> {
+    let mut config = CircuitConfig::from(WORKERS);
+    config.dev_tweaks = DevTweaks {
+        negative_weight_multiplier,
+        ..DevTweaks::default()
+    };
 
     let total_batches = TOTAL_RECORDS / BATCH_SIZE as u64;
     println!(
         "Running window_min_file_storage benchmark with {WORKERS} worker, file backend, {TOTAL_RECORDS} records ({} batches of {BATCH_SIZE})",
         total_batches
     );
+    println!("negative_weight_multiplier={negative_weight_multiplier}");
 
-    let (mut dbsp, (clock_handle, data_handle)) = Runtime::init_circuit(1, |circuit| {
+    let (mut dbsp, (clock_handle, data_handle)) = Runtime::init_circuit(config, |circuit| {
         let (clock, clock_handle) = circuit.add_input_stream::<u64>();
         let (data, data_handle) = circuit.add_input_indexed_zset::<u64, u64>();
 
-        let bounds = clock.apply(|ts| {
-            (
-                TypedBox::new(ts.saturating_add(1)),
-                TypedBox::new(u64::MAX),
-            )
-        });
+        let bounds =
+            clock.apply(|ts| (TypedBox::new(ts.saturating_add(1)), TypedBox::new(u64::MAX)));
 
         data.window((true, true), &bounds)
             .map_index(|(ts, value)| (*value, *ts))
@@ -90,7 +107,9 @@ fn main() -> Result<()> {
             let processed_records = processed_batches as u64 * BATCH_SIZE as u64;
             let elapsed = benchmark_start.elapsed().as_secs_f64();
             let percent = (processed_batches as f64 / total_batches as f64) * 100.0;
-            println!("pass1 progress: {processed_batches}/{total_batches} batches ({processed_records}/{TOTAL_RECORDS} records, {percent:.2}%), wall_clock_secs={elapsed:.3}");
+            println!(
+                "pass1 progress: {processed_batches}/{total_batches} batches ({processed_records}/{TOTAL_RECORDS} records, {percent:.2}%), wall_clock_secs={elapsed:.3}"
+            );
         }
     }
 
@@ -157,7 +176,30 @@ fn main() -> Result<()> {
     println!("total_storage_size={total_storage_size}");
     println!("profile_dump_path={}", profile_dump_path.display());
 
-    Ok(())
+    Ok(RunSummary {
+        negative_weight_multiplier,
+        total_step_duration_secs: step_seconds,
+        overall_throughput_records_per_sec: overall_throughput,
+        wall_clock_secs: wall_clock.as_secs_f64(),
+    })
+}
+
+fn print_summary_table(summaries: &[RunSummary]) {
+    println!();
+    println!("## window_min summary");
+    println!(
+        "| negative_weight_multiplier | total_step_duration_secs | overall_throughput_records_per_sec | wall_clock_secs |"
+    );
+    println!("|---:|---:|---:|---:|");
+    for summary in summaries {
+        println!(
+            "| {} | {:.9} | {:.9} | {:.9} |",
+            summary.negative_weight_multiplier,
+            summary.total_step_duration_secs,
+            summary.overall_throughput_records_per_sec,
+            summary.wall_clock_secs
+        );
+    }
 }
 
 fn validate_constants() -> Result<()> {

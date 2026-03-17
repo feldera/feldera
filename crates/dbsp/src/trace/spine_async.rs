@@ -16,10 +16,11 @@ use crate::{
             LOOSE_BATCHES_COUNT, LOOSE_MEMORY_RECORDS_COUNT, LOOSE_STORAGE_RECORDS_COUNT,
             MERGE_BACKPRESSURE_WAIT_TIME_SECONDS, MERGE_REDUCTION_PERCENT, MERGING_BATCHES_COUNT,
             MERGING_MEMORY_RECORDS_COUNT, MERGING_SIZE_BYTES, MERGING_STORAGE_RECORDS_COUNT,
-            MetaItem, MetricId, MetricReading, OperatorMeta, SPINE_BATCHES_COUNT,
-            SPINE_STORAGE_SIZE_BYTES,
+            MetaItem, MetricId, MetricReading, NEGATIVE_WEIGHT_COUNT, OperatorMeta,
+            SPINE_BATCHES_COUNT, SPINE_STORAGE_SIZE_BYTES,
         },
         metrics::COMPACTION_STALL_TIME_NANOSECONDS,
+        negative_weight_multiplier,
         runtime::{TOKIO_BUFFER_CACHE, TOKIO_WORKER_INDEX},
     },
     dynamic::{DynVec, Factory, Weight},
@@ -304,19 +305,25 @@ where
 
     /// Adds all of `batches` as (initially) loose batches.  They will be merged
     /// when the merger thread has a chance (although it might not be awake).
-    fn add_batches(&mut self, batches: impl IntoIterator<Item = Arc<B>>) {
+    ///
+    /// # Arguments
+    ///
+    /// * `batches` - The batches to add.
+    /// * `merge` - `true` if the batches were produced by a merge; `false` if
+    ///   these are freshly added batches.
+    fn add_batches(&mut self, batches: impl IntoIterator<Item = Arc<B>>, merge: bool) {
         for batch in batches {
             if !batch.is_empty() {
-                self.add_batch(batch);
+                self.add_batch(batch, merge);
             }
         }
     }
 
     /// Add `batch` as an (initially) loose batch, which will be merged when
     /// the merger thread has a chance (although it might not be awake).
-    fn add_batch(&mut self, batch: Arc<B>) {
+    fn add_batch(&mut self, batch: Arc<B>, merge: bool) {
         debug_assert!(!batch.is_empty());
-        let level = Spine::<B>::size_to_level(batch.len(), self.max_level0_batch_size_records);
+        let level = Spine::<B>::size_to_level(&batch, self.max_level0_batch_size_records, merge);
         self.slots[level].loose_batches.push_back(batch);
         self.slots[level].notify.notify_one();
     }
@@ -409,7 +416,7 @@ where
                 )
             })
             .record();
-        self.add_batches([new_batch]);
+        self.add_batches([new_batch], true);
     }
 
     /// Returns a copy of the data that the caller can use to construct a
@@ -598,10 +605,10 @@ where
     }
 
     /// Adds `batch` to the shared merging state and wakes up the merger.
-    fn add_batch(&self, batch: Arc<B>) {
+    fn add_batch(&self, batch: Arc<B>, merge: bool) {
         debug_assert!(!batch.is_empty());
         let mut state = self.state.lock().unwrap();
-        state.add_batch(batch);
+        state.add_batch(batch, merge);
         if state.should_apply_backpressure() {
             let start = Instant::now();
             let mut state = self.no_backpressure.wait(state).unwrap();
@@ -616,8 +623,8 @@ where
     }
 
     /// Adds `batches` to the shared merging state and wakes up the merger.
-    fn add_batches(&self, batches: impl IntoIterator<Item = Arc<B>>) {
-        self.state.lock().unwrap().add_batches(batches);
+    fn add_batches(&self, batches: impl IntoIterator<Item = Arc<B>>, merge: bool) {
+        self.state.lock().unwrap().add_batches(batches, merge);
     }
 
     /// Gets the complete set of batches to include in the spine.
@@ -656,7 +663,7 @@ where
     /// Starts merging again with `batches`, which are presumably what
     /// [Self::pause] or [Self::pause_new_merges] returned.
     fn resume(&self, batches: impl IntoIterator<Item = Arc<B>>) {
-        self.add_batches(batches);
+        self.add_batches(batches, false);
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
@@ -732,6 +739,24 @@ where
                             MetaItem::Duration(slot.elapsed / slot.n_steps as u32),
                         ),
                     ])),
+                )]);
+            }
+
+            let mut negative_weight_count = 0;
+            let mut has_negative_weight_counts = false;
+
+            for batch in slot.all_batches() {
+                if let Some(count) = batch.negative_weight_count() {
+                    negative_weight_count += count;
+                    has_negative_weight_counts = true;
+                }
+            }
+
+            if has_negative_weight_counts {
+                meta.extend([MetricReading::new(
+                    NEGATIVE_WEIGHT_COUNT,
+                    vec![(Cow::Borrowed("slot"), index.to_string().into())],
+                    MetaItem::Count(negative_weight_count as usize),
                 )]);
             }
         }
@@ -1638,7 +1663,7 @@ where
             };
 
             self.dirty = true;
-            self.merger.add_batch(Arc::new(batch));
+            self.merger.add_batch(Arc::new(batch), false);
         }
     }
 
@@ -1661,7 +1686,7 @@ where
             };
 
             self.dirty = true;
-            self.merger.add_batch(batch);
+            self.merger.add_batch(batch, false);
         }
     }
 
@@ -1785,14 +1810,35 @@ where
     B: Batch,
 {
     /// Given a batch size figure out which level it should reside in.
-    fn size_to_level(len: usize, max_level0_batch_size_records: usize) -> usize {
+    fn size_to_level(batch: &B, max_level0_batch_size_records: usize, merge: bool) -> usize {
         debug_assert_eq!(MAX_LEVELS, 9);
         debug_assert!(max_level0_batch_size_records > 0 && max_level0_batch_size_records <= 99_999);
 
-        if len <= max_level0_batch_size_records {
+        let len = batch.len();
+
+        let effective_len = if merge {
+            // Merge batches with many negative weights more aggressively. Negative updates are likely to cancel
+            // out during merging. Every time this happens, two records are eliminated from the spine, speeding
+            // up lookups and reducing the spine's storage footprint. Furthermore, this avoids performance anomalies
+            // where an operator spends a lot of time skipping over 0-weight records.
+            //
+            // We implement this heuristic by accounting each record with a negative weight as N records when calculating
+            // the batch's effective length (N is equal to negative_weight_multiplier() + 1). This should push such batches
+            // to the next level more eagerly, until they get merged with batches that contain matching positive-weight
+            // records.
+            //
+            // We only apply this heuristic to merged batches to avoid reordering insertions and deletions by pushing
+            // deletions to higher levels than the insertions they correspond to.
+            let negative_weight_count = batch.negative_weight_count().unwrap_or(0) as usize;
+            len + negative_weight_count * (negative_weight_multiplier() as usize)
+        } else {
+            len
+        };
+
+        if effective_len <= max_level0_batch_size_records {
             return 0;
         }
-        match len {
+        match effective_len {
             0..=99_999 => 1,
             100_000..=999_999 => 2,
             1_000_000..=9_999_999 => 3,

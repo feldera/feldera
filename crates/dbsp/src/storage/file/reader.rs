@@ -6,7 +6,7 @@ use super::format::{Compression, FileTrailer};
 use super::{AnyFactories, Deserializer, Factories};
 use crate::dynamic::{DynVec, WeightTrait};
 use crate::storage::buffer_cache::CacheAccess;
-use crate::storage::file::format::FilterBlock;
+use crate::storage::file::format::{BatchMetadata, FilterBlock};
 use crate::storage::tracking_bloom_filter::{BloomFilterStats, TrackingBloomFilter};
 use crate::storage::{
     backend::StorageError,
@@ -1501,6 +1501,9 @@ pub struct Reader<T> {
     bloom_filter: Option<TrackingBloomFilter>,
     columns: Vec<Column>,
 
+    /// Additional metadata added to the file by the writer.
+    pub(crate) metadata: BatchMetadata,
+
     /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
     /// <https://doc.rust-lang.org/nomicon/phantom-data.html>.
     _phantom: PhantomData<fn() -> T>,
@@ -1633,6 +1636,7 @@ where
             ),
             columns,
             bloom_filter,
+            metadata: file_trailer.metadata.clone(),
             _phantom: PhantomData,
         })
     }
