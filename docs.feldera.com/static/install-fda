@@ -62,15 +62,7 @@ detect_platform() {
             info "Detected platform: Linux $ARCH"
             ;;
         Darwin)
-            case "$ARCH" in
-                arm64 | aarch64)
-                    TARGET="aarch64-apple-darwin"
-                    ;;
-                *)
-                    err "unsupported macOS architecture: $ARCH. Only arm64 (Apple Silicon) is supported. Install fda with: cargo install fda"
-                    ;;
-            esac
-            info "Detected platform: macOS $ARCH"
+            err "macOS is not currently supported. Install fda with: cargo install fda"
             ;;
         MINGW* | MSYS* | CYGWIN*)
             err "Windows is not currently supported by this installer. Download fda from https://github.com/feldera/feldera/releases or install with: cargo install fda"
