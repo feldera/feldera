@@ -10,6 +10,17 @@ import requests
 import re
 import json
 import socket
+import uuid
+
+_KAFKA_BOOTSTRAP = None
+_SCHEMA_REGISTRY = None
+_KAFKA_ADMIN = None
+
+
+# Set these before running the test:
+# Example(terminal/shell):
+#   export KAFKA_BOOTSTRAP_SERVERS= localhost:9092
+#   export SCHEMA_REGISTRY_URL= http://localhost:8081
 
 
 def env(name: str, default: str, check_http: bool = False) -> str:
@@ -29,7 +40,8 @@ def env(name: str, default: str, check_http: bool = False) -> str:
                     # Remove protocol prefix if present (e.g., "kafka://host:port")
                     value = value.split("://", 1)[1]
                 host, port = value.split(":")
-                socket.create_connection((host, int(port)), timeout=2)
+                with socket.create_connection((host, int(port)), timeout=2):
+                    pass  # just testing connectivity
         except Exception as e:
             raise RuntimeError(
                 f"{name} is set to default '{default}', but cannot connect to it! ({e})"
@@ -38,22 +50,36 @@ def env(name: str, default: str, check_http: bool = False) -> str:
     return value
 
 
-# Set these before running the test:
-# Example(terminal/shell):
-#   export KAFKA_BOOTSTRAP_SERVERS= localhost:9092
-#   export SCHEMA_REGISTRY_URL= http://localhost:8081
+"""Kafka bootstrap, schema registry, and Kafka admin client are lazy-initialized to avoid triggering live
+HTTP/socket connections when importing this file. Connections are only created when the test calls the
+respective getter functions at runtime."""
 
 
-KAFKA_BOOTSTRAP = env(
-    "KAFKA_BOOTSTRAP_SERVERS", "ci-kafka-bootstrap.korat-vibes.ts.net:9094"
-)
-SCHEMA_REGISTRY = env(
-    "SCHEMA_REGISTRY_URL",
-    "http://ci-schema-registry.korat-vibes.ts.net",
-    check_http=True,
-)
+def get_kafka_bootstrap() -> str:
+    global _KAFKA_BOOTSTRAP
+    if _KAFKA_BOOTSTRAP is None:
+        _KAFKA_BOOTSTRAP = env(
+            "KAFKA_BOOTSTRAP_SERVERS", "ci-kafka-bootstrap.korat-vibes.ts.net:9094"
+        )
+    return _KAFKA_BOOTSTRAP
 
-KAFKA_ADMIN = AdminClient({"bootstrap.servers": KAFKA_BOOTSTRAP})
+
+def get_schema_registry() -> str:
+    global _SCHEMA_REGISTRY
+    if _SCHEMA_REGISTRY is None:
+        _SCHEMA_REGISTRY = env(
+            "SCHEMA_REGISTRY_URL",
+            "http://ci-schema-registry.korat-vibes.ts.net",
+            check_http=True,
+        )
+    return _SCHEMA_REGISTRY
+
+
+def get_kafka_admin() -> AdminClient:
+    global _KAFKA_ADMIN
+    if _KAFKA_ADMIN is None:
+        _KAFKA_ADMIN = AdminClient({"bootstrap.servers": get_kafka_bootstrap()})
+    return _KAFKA_ADMIN
 
 
 def extract_kafka_schema_artifacts(sql: str) -> tuple[list[str], list[str]]:
@@ -104,7 +130,7 @@ def create_kafka_topic(
     new_topic = NewTopic(
         topic_name, num_partitions=num_partitions, replication_factor=replication_factor
     )
-    futures = KAFKA_ADMIN.create_topics([new_topic])
+    futures = get_kafka_admin().create_topics([new_topic])
     for t, f in futures.items():
         try:
             f.result()
@@ -129,8 +155,10 @@ class Variant:
         self.create_topic = cfg.get("create_topic", False)
         self.num_partitions = cfg.get("num_partitions", 1)
 
-        self.topic1 = f"my_topic_avro_{self.id}"
-        self.topic2 = f"my_topic_avro2_{self.id}"
+        suffix = uuid.uuid4().hex[:8]
+
+        self.topic1 = f"my_topic_avro{suffix}"
+        self.topic2 = f"my_topic_avro2{suffix}"
         self.source = f"t_{self.id}"
         self.view = f"v_{self.id}"
         self.loopback = f"loopback_{self.id}"
@@ -168,7 +196,7 @@ with (
     "transport": {{
       "name": "kafka_output",
       "config": {{
-        "bootstrap.servers": "{KAFKA_BOOTSTRAP}",
+        "bootstrap.servers": "{get_kafka_bootstrap()}",
         "topic": "{v.topic1}"
       }}
     }},
@@ -176,7 +204,7 @@ with (
       "name": "avro",
       "config": {{
         "update_format": "raw",
-        "registry_urls": ["{SCHEMA_REGISTRY}"]
+        "registry_urls": ["{get_schema_registry()}"]
       }}
     }}
   }},
@@ -185,7 +213,7 @@ with (
     "transport": {{
       "name": "kafka_output",
       "config": {{
-        "bootstrap.servers": "{KAFKA_BOOTSTRAP}",
+        "bootstrap.servers": "{get_kafka_bootstrap()}",
         "topic": "{v.topic2}"
       }}
     }},
@@ -193,7 +221,7 @@ with (
       "name": "avro",
       "config": {{
         "update_format": "raw",
-        "registry_urls": ["{SCHEMA_REGISTRY}"]
+        "registry_urls": ["{get_schema_registry()}"]
       }}
     }}
   }}]'
@@ -207,7 +235,7 @@ create index idx_{v.id} on {v.view}(id);
 def sql_loopback_table(v: Variant) -> str:
     # Optional configurations that will use connector defaults if not specified
     config = {
-        "bootstrap.servers": KAFKA_BOOTSTRAP,
+        "bootstrap.servers": get_kafka_bootstrap(),
         "topic": v.topic2,
     }
 
@@ -243,7 +271,7 @@ create table {v.loopback} (
       "name": "avro",
       "config": {{
         "update_format": "raw",
-        "registry_urls": ["{SCHEMA_REGISTRY}"]
+        "registry_urls": ["{get_schema_registry()}"]
       }}
     }}
   }}]'
@@ -320,7 +348,7 @@ def create_and_run_pipeline_variant(cfg):
         validate_loopback(pipeline, v)
     finally:
         pipeline.stop(force=True)
-        cleanup_kafka_schema_artifacts(sql, KAFKA_ADMIN, SCHEMA_REGISTRY)
+        cleanup_kafka_schema_artifacts(sql, get_kafka_admin(), get_schema_registry())
 
 
 class TestKafkaAvro(unittest.TestCase):
