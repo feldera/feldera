@@ -289,14 +289,15 @@ describe('MetricsTables.svelte', () => {
       const cases: {
         state: Partial<AggregatedInputEndpointMetrics['connectors'][0]>
         testId: string
+        text?: string
       }[] = [
         { state: { barrier: true }, testId: 'box-icon-barrier' },
         {
           state: { metrics: makeInputMetrics({ num_parse_errors: 5 }) },
           testId: 'btn-icon-input-errors'
         },
-        { state: { transaction_phase: 'started' }, testId: 'box-icon-transaction-started' },
-        { state: { transaction_phase: 'committed' }, testId: 'box-icon-transaction-committed' },
+        { state: { transaction_phase: 'started' }, testId: 'box-icon-transaction-started', text: 'Started' },
+        { state: { transaction_phase: 'committed' }, testId: 'box-icon-transaction-committed', text: 'Ready to commit' },
         {
           state: { metrics: makeInputMetrics({ end_of_input: true }) },
           testId: 'box-icon-end-of-input'
@@ -306,10 +307,14 @@ describe('MetricsTables.svelte', () => {
         { state: {}, testId: 'box-icon-running' }
       ]
 
-      for (const { state, testId } of cases) {
+      for (const { state, testId, text } of cases) {
         const tables = new Map([['t1', makeAggregatedInput([makeInputConnector(state)])]])
         const { unmount } = await renderComponent(makeMetricsProp(tables))
-        await expect.element(page.getByTestId(testId)).toBeInTheDocument()
+        const el = page.getByTestId(testId)
+        await expect.element(el).toBeInTheDocument()
+        if (text) {
+          expect(el.element().textContent?.trim()).toBe(text)
+        }
         unmount()
       }
     })
