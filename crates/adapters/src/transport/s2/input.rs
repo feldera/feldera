@@ -33,7 +33,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, error, info, info_span};
+use tracing::{Instrument, error, info, info_span, trace};
 use xxhash_rust::xxh3::Xxh3Default;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -368,7 +368,7 @@ fn spawn_s2_reader(
                             Some(Ok(batch)) => {
                                 // Successfully received a batch
                                 for record in &batch.records {
-                                    info!("Got record #{}", record.seq_num);
+                                    trace!("Got record #{}", record.seq_num);
                                     next_seq.store(record.seq_num + 1, Ordering::Release);
                                     let data = &record.body;
                                     queue.push_with_aux(parser.parse(data, None), Utc::now(), record.seq_num);
