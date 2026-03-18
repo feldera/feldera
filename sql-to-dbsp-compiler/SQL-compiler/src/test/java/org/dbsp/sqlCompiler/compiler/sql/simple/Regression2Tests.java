@@ -742,4 +742,53 @@ public class Regression2Tests extends SqlIoTest {
                     WHERE foo.out1 = a.col2
                 );""");
     }
+
+    @Test
+    public void issue5821() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE shipments (
+                  shipment_id BIGINT,
+                  warehouse_id BIGINT,
+                  shipped_at TIMESTAMP,
+                  expected_at TIMESTAMP,
+                  delivered_at TIMESTAMP,
+                  shipping_mode VARCHAR
+                );
+                
+                CREATE MATERIALIZED VIEW bm07_shipping_performance AS
+                SELECT
+                  warehouse_id,
+                  MAX(DATEDIFF(delivered_at, shipped_at)) AS max_days_in_transit
+                FROM shipments
+                GROUP BY
+                  warehouse_id,
+                  TIMESTAMP_TRUNC(shipped_at, WEEK);
+                """, "Invalid number of arguments to function 'DATEDIFF'.");
+    }
+
+    @Test
+    public void issue5822() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE payments (
+                  payment_id BIGINT,
+                  customer_id BIGINT,
+                  payment_time TIMESTAMP,
+                  amount DECIMAL(12, 2),
+                  payment_method VARCHAR
+                );
+                
+                CREATE VIEW bm06_customer_payment_windows AS
+                SELECT
+                  customer_id,
+                  payment_time,
+                  amount,
+                  ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY payment_time) AS payment_number,
+                  LAG(amount) OVER (PARTITION BY customer_id ORDER BY payment_time) AS previous_amount,
+                  SUM(amount) OVER (
+                    PARTITION BY customer_id
+                    ORDER BY payment_time
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                  ) AS running_amount
+                FROM payments""", "Not yet implemented: ROW_NUMBER only supported in a TopK pattern");
+    }
 }

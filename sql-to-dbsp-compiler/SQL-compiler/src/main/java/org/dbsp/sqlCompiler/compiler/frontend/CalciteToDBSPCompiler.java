@@ -2661,21 +2661,21 @@ public class CalciteToDBSPCompiler extends RelVisitor
             RankAggregate first = topKAggregates.get(0);
             if (this.ancestors.isEmpty())
                 throw new UnimplementedException(first.call.getAggregation() + " only supported in a TopK pattern",
-                        first.getNode());
+                        3934, first.getNode());
             RelNode parent = this.getParent();
             if (!(parent instanceof LogicalFilter filter))
                 throw new UnimplementedException(first.call.getAggregation() + " only supported in a TopK pattern",
-                        first.getNode());
+                        3934, first.getNode());
             RexNode condition = filter.getCondition();
 
             for (RankAggregate aggregate: topKAggregates) {
                 if (condition == null)
                     throw new UnimplementedException(first.call.getAggregation() + " only supported in a TopK pattern",
-                            first.getNode());
+                            3934, first.getNode());
                 WindowCondition winCondition = this.findTopKCondition(condition, aggregate.windowFieldIndex);
                 if (winCondition == null)
                     throw new UnimplementedException(first.call.getAggregation() + " only supported in a TopK pattern",
-                            first.getNode());
+                            3934, first.getNode());
                 condition = winCondition.remaining;
                 if (lastOperator != input)
                     this.addOperator(lastOperator);
