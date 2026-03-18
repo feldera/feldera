@@ -721,10 +721,9 @@ const streamToDownload = (
     response.headers.get('content-length')
   )
 
-  const streamWithProgress =
-    nonNull(totalBytes) && onProgress
-      ? response.body!.pipeThrough(progressTransform(totalBytes, onProgress))
-      : response.body
+  const streamWithProgress = onProgress
+    ? response.body!.pipeThrough(progressTransform(totalBytes ?? 0, onProgress))
+    : response.body
 
   // Extract filename from Content-Disposition header
   const contentDisposition = response.headers.get('Content-Disposition')
