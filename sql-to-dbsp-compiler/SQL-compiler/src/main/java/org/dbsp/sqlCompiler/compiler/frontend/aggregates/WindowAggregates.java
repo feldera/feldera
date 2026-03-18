@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.aggregates;
 
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.core.Window;
+import org.apache.calcite.sql.SqlKind;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
@@ -119,7 +120,10 @@ public abstract class WindowAggregates implements ICastable {
                                             int windowFieldIndex, AggregateCall call) {
         WindowAggregates result = switch (call.getAggregation().getKind()) {
             case RANK, DENSE_RANK, ROW_NUMBER -> {
-                if (group.getAggregateCalls(window).size() > 1) {
+                var allCalls = group.getAggregateCalls(window);
+                var rankCalls = Linq.where(Linq.map(allCalls, c -> c.getAggregation().getKind()),
+                            k -> k == SqlKind.RANK || k == SqlKind.DENSE_RANK || k == SqlKind.ROW_NUMBER);
+                if (rankCalls.size() > 1) {
                     throw new UnimplementedException("Multiple RANK aggregates per window",
                             CalciteObject.create(window, new SourcePositionRange(call.getParserPosition())));
                 }
