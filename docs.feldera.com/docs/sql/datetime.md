@@ -376,14 +376,14 @@ We support the following time period predicate operators:
 
 | Operation                | Syntax                                               | Semantics                           | Example                                                                                                     |
 | ------------------------ | ---------------------------------------------------- |-------------------------------------| ----------------------------------------------------------------------------------------------------------- |
-| **CONTAINS (value)**     | `(Start1, End1) CONTAINS V`                          | `start1 <= V AND end1 >= V`         | `(DATE '2020-06-24', DATE '2020-06-22') CONTAINS DATE '2020-06-21'` => FALSE                               |
-| **CONTAINS (period)**    | `(Start1, End1) CONTAINS (Start2, End2)`             | `start1 <= start2 AND end1 >= end2` | `(DATE '2020-06-21', DATE '2020-06-25') CONTAINS (DATE '2020-06-22', DATE '2020-06-23')` => TRUE          |
-| **OVERLAPS**             | `(Start1, End1) OVERLAPS (Start2, End2)`             | `start1 <= end2 AND end1 >= start2` | `(DATE '2020-06-21', DATE '2020-06-23') OVERLAPS (DATE '2020-06-22', DATE '2020-06-24')` => TRUE          |
-| **EQUALS**               | `(Start1, End1) EQUALS (Start2, End2)`               | `start1 = start2 AND end1 = end2`   | `(DATE '2020-06-21', DATE '2020-06-23') EQUALS (DATE '2020-06-21', DATE '2020-06-23')` => TRUE            |
-| **PRECEDES**             | `(Start1, End1) PRECEDES (Start2, End2)`             | `end1 <= start2`                    | `(DATE '2020-06-21', DATE '2020-06-22') PRECEDES (DATE '2020-06-24', DATE '2020-06-25')` => TRUE          |
-| **IMMEDIATELY PRECEDES** | `(Start1, End1) IMMEDIATELY PRECEDES (Start2, End2)` | `end1 = start2`                     | `(DATE '2020-06-21', DATE '2020-06-22') IMMEDIATELY PRECEDES (DATE '2020-06-22', DATE '2020-06-23')` => TRUE |
-| **SUCCEEDS**             | `(Start1, End1) SUCCEEDS (Start2, End2)`             | `start1 >= end2`                    | `(DATE '2020-06-24', DATE '2020-06-25') SUCCEEDS (DATE '2020-06-21', DATE '2020-06-22')` => TRUE          |
-| **IMMEDIATELY SUCCEEDS** | `(Start1, End1) IMMEDIATELY SUCCEEDS (Start2, End2)` | `start1 = end2`                     | `(DATE '2020-06-24', DATE '2020-06-25') IMMEDIATELY SUCCEEDS (DATE '2020-06-23', DATE '2020-06-24')` => TRUE |
+| <a id="contains"></a>**CONTAINS (value)**     | `(Start1, End1) CONTAINS V`                          | `start1 <= V AND end1 >= V`         | `(DATE '2020-06-24', DATE '2020-06-22') CONTAINS DATE '2020-06-21'` => FALSE                               |
+|                      **CONTAINS (period)**    | `(Start1, End1) CONTAINS (Start2, End2)`             | `start1 <= start2 AND end1 >= end2` | `(DATE '2020-06-21', DATE '2020-06-25') CONTAINS (DATE '2020-06-22', DATE '2020-06-23')` => TRUE          |
+| <a id="overlaps"></a>**OVERLAPS**             | `(Start1, End1) OVERLAPS (Start2, End2)`             | `start1 <= end2 AND end1 >= start2` | `(DATE '2020-06-21', DATE '2020-06-23') OVERLAPS (DATE '2020-06-22', DATE '2020-06-24')` => TRUE          |
+| <a id="equals"></a>  **EQUALS**               | `(Start1, End1) EQUALS (Start2, End2)`               | `start1 = start2 AND end1 = end2`   | `(DATE '2020-06-21', DATE '2020-06-23') EQUALS (DATE '2020-06-21', DATE '2020-06-23')` => TRUE            |
+| <a id="precedes"></a>**PRECEDES**             | `(Start1, End1) PRECEDES (Start2, End2)`             | `end1 <= start2`                    | `(DATE '2020-06-21', DATE '2020-06-22') PRECEDES (DATE '2020-06-24', DATE '2020-06-25')` => TRUE          |
+| <a id="immediately-precedes"></a>**IMMEDIATELY PRECEDES** | `(Start1, End1) IMMEDIATELY PRECEDES (Start2, End2)` | `end1 = start2`         | `(DATE '2020-06-21', DATE '2020-06-22') IMMEDIATELY PRECEDES (DATE '2020-06-22', DATE '2020-06-23')` => TRUE |
+| <a id="succeeds"></a>**SUCCEEDS**             | `(Start1, End1) SUCCEEDS (Start2, End2)`             | `start1 >= end2`                    | `(DATE '2020-06-24', DATE '2020-06-25') SUCCEEDS (DATE '2020-06-21', DATE '2020-06-22')` => TRUE          |
+| <a id="immediately-succeeds"></a>**IMMEDIATELY SUCCEEDS** | `(Start1, End1) IMMEDIATELY SUCCEEDS (Start2, End2)` | `start1 = end2`         | `(DATE '2020-06-24', DATE '2020-06-25') IMMEDIATELY SUCCEEDS (DATE '2020-06-23', DATE '2020-06-24')` => TRUE |
 
 
 ## Timezones

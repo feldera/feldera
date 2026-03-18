@@ -202,7 +202,7 @@ example.
     <td><code>right('abcde', 2)</code> => <code>de</code></td>
   </tr>
   <tr>
-    <td><code>RLIKE(string, pattern)</code></td>
+    <td><a id="rlike-function"></a><code>RLIKE(string, pattern)</code></td>
     <td>A function equivalent to the <code>RLIKE</code> operator above.</td>
     <td><code>RLIKE('string', 's..i.*')</code> => <code>TRUE</code></td>
   </tr>
