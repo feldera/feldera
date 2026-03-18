@@ -1402,7 +1402,7 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript(sql);
         File json = this.createTempJsonFile();
         CompilerMessages msg = CompilerMain.execute(
-                "--dataflow", json.getPath(), "--noRust", file.getPath());
+                "-v", "1", "--dataflow", json.getPath(), "--noRust", file.getPath());
         Assert.assertEquals(0, msg.exitCode);
         String jsonContents = Utilities.readFile(json.toPath());
         String expected = TestUtil.readStringFromResourceFile("metadataTests-generateDFRecursive.json");

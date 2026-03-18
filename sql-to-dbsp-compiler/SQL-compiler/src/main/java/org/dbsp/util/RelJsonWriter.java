@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.UnaryOperator;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelWriter;
@@ -37,24 +38,29 @@ public class RelJsonWriter implements RelWriter {
     protected final RelJson relJson;
     protected final List<@Nullable Object> relList;
     private final List<Pair<String, @Nullable Object>> values;
+    public final int verbosity;
 
-    public RelJsonWriter(Map<RelNode, Integer> relIdMap) {
-        this(new JsonBuilder(), relIdMap);
+    public RelJsonWriter(Map<RelNode, Integer> relIdMap, int verbosity) {
+        this(new JsonBuilder(), relIdMap, verbosity);
     }
 
-    public RelJsonWriter(JsonBuilder jsonBuilder, Map<RelNode, Integer> relIdMap) {
-        this(jsonBuilder, UnaryOperator.identity(), relIdMap);
+    public RelJsonWriter(JsonBuilder jsonBuilder, Map<RelNode, Integer> relIdMap, int verbosity) {
+        this(jsonBuilder, UnaryOperator.identity(), relIdMap, verbosity);
     }
 
     public RelJsonWriter(JsonBuilder jsonBuilder,
                          UnaryOperator<RelJson> relJsonTransform,
-                         Map<RelNode, Integer> relIdMap) {
+                         Map<RelNode, Integer> relIdMap,
+                         int verbosity) {
         this.values = new ArrayList<>();
         this.jsonBuilder = Objects.requireNonNull(jsonBuilder, "jsonBuilder");
         this.relList = this.jsonBuilder.list();
         this.relJson = relJsonTransform.apply(RelJson.create().withJsonBuilder(jsonBuilder));
         this.relIdMap = relIdMap;
+        this.verbosity = verbosity;
     }
+
+    final Set<String> highVerbosity = Set.of("exprs", "aggs", "condition");
 
     protected void explain_(RelNode rel, List<Pair<String, Object>> values) {
         Map<String, Object> map = this.jsonBuilder.map();
@@ -62,6 +68,8 @@ public class RelJsonWriter implements RelWriter {
         map.put("relOp", this.relJson.classToTypeName(rel.getClass()));
 
         for(Pair<String, Object> value : values) {
+            if (this.verbosity < 1 && highVerbosity.contains(value.left))
+                continue;
             if (!(value.right instanceof RelNode)) {
                 this.put(map, value.left, value.right);
             }
