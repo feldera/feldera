@@ -207,14 +207,20 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.LATERAL, "LATERAL", SqlLibrary.STANDARD, "grammar#lateral", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.COLLECTION_TABLE, "TABLE", SqlLibrary.STANDARD, "grammar", FunctionDocumentation.NO_FILE, false),
 
-            new Func(SqlStdOperatorTable.OVERLAPS, "OVERLAPS", SqlLibrary.STANDARD, "operators#between", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.OVERLAPS, "OVERLAPS", SqlLibrary.STANDARD, "datetime#overlaps", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.PRECEDES, "PRECEDES", SqlLibrary.STANDARD, "datetime#precedes", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.SUCCEEDS, "SUCCEEDS", SqlLibrary.STANDARD, "datetime#succeeds", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.CONTAINS, "CONTAINS", SqlLibrary.STANDARD, "datetime#contains", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.PERIOD_EQUALS, "EQUALS", SqlLibrary.STANDARD, "datetime#equals", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.IMMEDIATELY_PRECEDES, "IMMEDIATELY PRECEDES", SqlLibrary.STANDARD, "datetime#immediately-precedes", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.IMMEDIATELY_SUCCEEDS, "IMMEDIATELY SUCCEEDS", SqlLibrary.STANDARD, "datetime#immediately-succeeds", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.BETWEEN, "BETWEEN", SqlLibrary.STANDARD, "comparisons#between,operators#between",
                     "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
             new Func(SqlStdOperatorTable.NOT_BETWEEN, "NOT BETWEEN", SqlLibrary.STANDARD, "comparisons#notbetween",
                      "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
-            new Func(SqlStdOperatorTable.SYMMETRIC_BETWEEN, "BETWEEN", SqlLibrary.STANDARD, "operators#between",
+            new Func(SqlStdOperatorTable.SYMMETRIC_BETWEEN, "BETWEEN SYMMETRIC", SqlLibrary.STANDARD, "comparisons#symmetric-between",
                      "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
-            new Func(SqlStdOperatorTable.SYMMETRIC_NOT_BETWEEN, "NOT BETWEEN", SqlLibrary.STANDARD, "operators#between",
+            new Func(SqlStdOperatorTable.SYMMETRIC_NOT_BETWEEN, "NOT BETWEEN SYMMETRIC", SqlLibrary.STANDARD, "comparisons#symmetric-notbetween",
                      "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
             new Func(SqlStdOperatorTable.VALUES, "VALUES", SqlLibrary.STANDARD, "grammar#values", FunctionDocumentation.NO_FILE, false),
 
@@ -311,6 +317,8 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.SCALAR_QUERY, "$SCALAR_QUERY", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.STRUCT_ACCESS, "$STRUCT_ACCESS", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.CARDINALITY, "CARDINALITY", SqlLibrary.STANDARD, "array#cardinality,map#cardinality", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.TUMBLE, "TUMBLE", SqlLibrary.STANDARD, "table#tumble", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.HOP, "HOP", SqlLibrary.STANDARD, "table#hop", FunctionDocumentation.NO_FILE, false),
 
             // SqlLibraryOperators operators
             // DATEADD is not implemented, but give a better error message

@@ -484,7 +484,7 @@ public class CustomFunctions {
                     SqlKind.RLIKE,
                     ReturnTypes.BOOLEAN_NULLABLE,
                     OperandTypes.STRING_STRING,
-                    SqlFunctionCategory.STRING, "string#rlike", FunctionDocumentation.NO_FILE);
+                    SqlFunctionCategory.STRING, "string#rlike-function", FunctionDocumentation.NO_FILE);
         }
     }
 
