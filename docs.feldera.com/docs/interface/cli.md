@@ -1,3 +1,6 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # Command line tool (fda)
 
 `fda` is a command line utility for interacting with the Feldera Manager's REST API.
@@ -6,7 +9,10 @@ It allows you to create, manage, and monitor pipelines. It also features an inte
 
 ## Installation
 
-### Quick Install (Linux)
+### Quick Install
+
+<Tabs groupId="os">
+  <TabItem value="linux" label="Linux">
 
 ```bash
 curl -fsSL https://feldera.com/install-fda | bash
@@ -19,6 +25,29 @@ curl -fsSL https://feldera.com/install-fda | bash
 
 Requires glibc >= 2.39 (Ubuntu 24.04+, Debian 13+, Fedora 40+, RHEL 10+).
 
+  </TabItem>
+  <TabItem value="windows" label="Windows">
+
+```powershell
+powershell -ExecutionPolicy Bypass -NoProfile -c "irm https://feldera.com/install-fda.ps1 | iex"
+```
+
+| Supported platforms |
+|---|
+| windows-x86_64 |
+| windows-arm64 (via emulation) |
+
+Requires Windows 10 or later with PowerShell 5.1+.
+Installs `fda.exe` to `%USERPROFILE%\.feldera\bin` and adds it to user's `PATH`.
+
+:::note
+Corporate environments may block `irm | iex` via network or execution policy restrictions.
+In that case, download the zip directly from the
+[GitHub releases page](https://github.com/feldera/feldera/releases) and extract `fda.exe` manually.
+:::
+
+  </TabItem>
+</Tabs>
 
 ### Installing a Specific Version
 
@@ -26,17 +55,43 @@ Since `fda` is a single binary, you can update or install older versions by re-r
 
 To install a specific version, pass the release git tag to the install script:
 
+<Tabs groupId="os">
+  <TabItem value="linux" label="Linux">
+
 ```bash
-curl -fsSL https://feldera.com/install-fda | FDA_VERSION=v0.247.0 bash
+curl -fsSL https://feldera.com/install-fda | FDA_VERSION=v0.270.0 bash
 ```
+
+  </TabItem>
+  <TabItem value="windows" label="Windows">
+
+```powershell
+powershell -c "$env:FDA_VERSION='v0.270.0'; irm https://feldera.com/install-fda.ps1 | iex"
+```
+
+  </TabItem>
+</Tabs>
 
 To install to a custom directory:
 
+<Tabs groupId="os">
+  <TabItem value="linux" label="Linux">
+
 ```bash
-curl -fsSL https://feldera.com/install-fda | FDA_VERSION=v0.247.0 FELDERA_INSTALL=/opt/feldera bash
+curl -fsSL https://feldera.com/install-fda | FDA_VERSION=v0.270.0 FELDERA_INSTALL=/opt/feldera bash
 ```
 
-### Using Cargo (Windows, MacOS)
+  </TabItem>
+  <TabItem value="windows" label="Windows">
+
+```powershell
+powershell -c "$env:FELDERA_INSTALL='C:\tools\feldera'; irm https://feldera.com/install-fda.ps1 | iex"
+```
+
+  </TabItem>
+</Tabs>
+
+### Using Cargo (macOS, other platforms)
 
 To install `fda` with Cargo, you need a working Rust environment. You can install Rust by following
 the instructions on the [Rust website](https://www.rust-lang.org/tools/install).
@@ -66,35 +121,36 @@ cargo install --path .
 Once the `fda` binary is installed, you can enable shell command completion for `fda`
 by adding the following line to your shell init script.
 
-* Bash
+<Tabs groupId="os">
+  <TabItem value="linux" label="Linux">
 
 ```bash
+# Bash
 echo "source <(COMPLETE=bash fda)" >> ~/.bashrc
-```
 
-* Elvish
-
-```bash
+# Elvish
 echo "eval (COMPLETE=elvish fda)" >> ~/.elvish/rc.elv
-```
 
-* Fish
-
-```bash
+# Fish
 echo "source (COMPLETE=fish fda | psub)" >> ~/.config/fish/config.fish
-```
 
-* Powershell
-
-```bash
-echo "COMPLETE=powershell fda | Invoke-Expression" >> $PROFILE
-```
-
-* Zsh
-
-```bash
+# Zsh
 echo "source <(COMPLETE=zsh fda)" >> ~/.zshrc
 ```
+
+  </TabItem>
+  <TabItem value="windows" label="Windows">
+
+```powershell
+# Powershell
+mkdir -Force (Split-Path $PROFILE)
+'$env:COMPLETE="powershell"; (fda | Out-String) | Invoke-Expression; Remove-Item Env:\COMPLETE -ErrorAction SilentlyContinue' >> $PROFILE
+# To activate autocomplete without restarting the terminal:
+. $PROFILE
+```
+
+  </TabItem>
+</Tabs>
 
 ## Connecting & Authentication
 
