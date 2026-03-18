@@ -138,7 +138,7 @@ jobs:
 
       - name: Deploy docs.feldera.com
         if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
-        uses: JamesIves/github-pages-deploy-action@6c2d9db40f9296374acc17b90404b6e8864128c8
+        uses: JamesIves/github-pages-deploy-action@4ef313c6a410f0883308623d45510e4a11625465 # v4.7.5
         with:
           folder: docs
           token: ${{ steps.app-token.outputs.token }}
