@@ -579,6 +579,10 @@ public class Simplify extends ExpressionTranslator {
                     !cast.source.getType().mayBeNull) {
                     result = cast.source;
                 }
+            } else if (source.is(DBSPBoolLiteral.class)) {
+                DBSPBoolLiteral b = source.to(DBSPBoolLiteral.class);
+                boolean r = b.value != null && b.value;
+                result = new DBSPBoolLiteral(expression.getNode(), expression.getType(), r);
             } else {
                 result = this.pushIntoConditional(source, expression, result);
             }
