@@ -600,7 +600,7 @@ public class WinAggPostTests extends PostBaseTests {
                 (6 rows)""");
     }
 
-    @Test @Ignore("MAP not yet supported")
+    @Test
     public void testWindows3() {
         this.qs("""
                 -- [CALCITE-2271] Two windows under a JOIN 2
@@ -608,19 +608,23 @@ public class WinAggPostTests extends PostBaseTests {
                  t1.l, t1.key as key1, t2.key as key2
                 from
                  (
-                  select
-                   dense_rank() over (order by key) l,
-                   key
-                  from
-                   unnest(map[1,1,2,2]) k
+                   select * FROM (
+                    select
+                     dense_rank() over (order by key) AS l,
+                     key
+                    from
+                     unnest(map[1,1,2,2]) k(key, value))
+                   WHERE l <= 10
                  ) t1
                  join
                  (
-                  select
-                   dense_rank() over(order by key) l,
-                   key
-                  from
-                   unnest(map[2,2]) k
+                   select * FROM (
+                    select
+                     dense_rank() over(order by key) AS l,
+                     key
+                    from
+                     unnest(map[2,2]) k(key, value))
+                   WHERE l <= 10
                  ) t2 on (t1.l = t2.l and t1.key + 1 = t2.key);
                 +---+------+------+
                 | L | KEY1 | KEY2 |

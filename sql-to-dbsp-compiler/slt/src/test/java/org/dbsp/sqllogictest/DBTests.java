@@ -68,16 +68,4 @@ public class DBTests {
             Assert.assertEquals(direct.toString(), throughCalcite.toString());
         }
     }
-
-    @Test @Ignore("Fails due to a bug in HSQLDB")
-    public void HSQLDBDoubleNegTest() throws SQLException {
-        // Reproduction for https://sourceforge.net/p/hsqldb/bugs/1680/
-        // and https://sourceforge.net/p/hsqldb/bugs/1681/
-        String jdbcUrl = "jdbc:hsqldb:mem:db";
-        Connection connection = DriverManager.getConnection(jdbcUrl, "", "");
-        try (Statement s = connection.createStatement()) {
-            s.execute("SELECT +2;");
-            s.execute("SELECT - -2;");
-        }
-    }
 }

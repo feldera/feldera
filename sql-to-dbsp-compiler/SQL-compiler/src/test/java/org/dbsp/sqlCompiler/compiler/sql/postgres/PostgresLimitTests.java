@@ -76,7 +76,7 @@ public class PostgresLimitTests extends SqlIoTest {
                 (2 rows)""");
     }
 
-    @Test @Ignore("OFFSET not yet implemented")
+    @Test
     public void testOffset() {
         this.qs("""
                 SELECT unique1, unique2, stringu1

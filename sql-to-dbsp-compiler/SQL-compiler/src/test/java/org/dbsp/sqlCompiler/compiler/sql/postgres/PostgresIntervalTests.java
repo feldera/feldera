@@ -217,9 +217,11 @@ public class PostgresIntervalTests extends SqlIoTest {
     public void testLimits() {
         this.qf("SELECT -(INTERVAL -2147483648 months)",
                 "Overflow during LongInterval negation");
-        this.qf("SELECT -(INTERVAL -9223372036854775.808 SECONDS)", "");
-        this.qf("SELECT -(INTERVAL -2147483648 days)", "");
-        this.qf("SELECT INTERVAL 2147483647 years", "Out of range");
+        this.qf("SELECT -(INTERVAL -9223372036854775.808 SECONDS)",
+                "overflow in short interval multiplication: result too large: OutOfRange");
+        this.qf("SELECT -(INTERVAL -2147483648 days)", "attempt to multiply with overflow");
+        // Last one is simplified to -1 by Calcite
+        this.qf("SELECT INTERVAL 2147483647 years", "attempt to multiply with overflow");
     }
 
     @Test
