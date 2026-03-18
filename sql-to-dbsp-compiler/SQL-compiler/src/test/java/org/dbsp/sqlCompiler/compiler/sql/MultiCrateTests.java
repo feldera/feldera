@@ -67,7 +67,9 @@ public class MultiCrateTests extends BaseSQLTests {
         compileToMultiCrate(file, check, true);
     }
 
-    static void compileProgramToMultiCrate(String sql, boolean check) throws IOException, SQLException, InterruptedException {
+    @SuppressWarnings("SameParameterValue")
+    static void compileProgramToMultiCrate(String sql, boolean check)
+            throws IOException, SQLException, InterruptedException {
         File file = createInputScript(sql);
         compileToMultiCrate(file.getAbsolutePath(), check);
     }
@@ -201,12 +203,6 @@ public class MultiCrateTests extends BaseSQLTests {
         compileProgramToMultiCrate(sql, true);
     }
    
-    @Test @Ignore
-    public void testMultiCrateLarge() throws IOException, SQLException, InterruptedException {
-        File file = new File("../extra/current_pipeline.sql");
-        compileToMultiCrate(file.getAbsolutePath(), true);
-    }
-
     @Test
     public void testJoin() throws IOException, SQLException, InterruptedException {
         String sql = """

@@ -373,7 +373,7 @@ public class PostgresStringTests extends SqlIoTest {
                  bubba""");
     }
 
-    @Test @Ignore("Not yet implemented")
+    @Test @Ignore("regexp_replace with 4 arguments not implemented")
     public void testRegexpReplace() {
         this.qs("""
                 SELECT regexp_replace('1112223333', E'(\\\\d{3})(\\\\d{3})(\\\\d{4})', E'(\\\\1) \\\\2-\\\\3');
@@ -774,61 +774,6 @@ public class PostgresStringTests extends SqlIoTest {
                  false
                 -------
                  f""");
-    }
-
-    @Test @Ignore("We do not allow escape characters that are % or _")
-    public void testLike3Pattern() {
-        // -- escape character same as pattern character\n"
-        this.q("""
-                SELECT 'maca' LIKE 'm%aca' ESCAPE '%' AS "true";
-                 true
-                ------
-                 t""");
-        this.q("""
-                SELECT 'maca' NOT LIKE 'm%aca' ESCAPE '%' AS "false";
-                 false
-                -------
-                 f""");
-        this.q("""
-                SELECT 'ma%a' LIKE 'm%a%%a' ESCAPE '%' AS "true";
-                 true
-                ------
-                 t""");
-        this.q("""
-                SELECT 'ma%a' NOT LIKE 'm%a%%a' ESCAPE '%' AS "false";
-                 false
-                -------
-                 f""");
-        this.q("""
-                SELECT 'bear' LIKE 'b_ear' ESCAPE '_' AS "true";
-                 true
-                ------
-                 t""");
-        this.q("""
-                SELECT 'bear' NOT LIKE 'b_ear' ESCAPE '_' AS "false";
-                 false
-                -------
-                 f""");
-        this.q("""
-                SELECT 'be_r' LIKE 'b_e__r' ESCAPE '_' AS "true";
-                 true
-                ------
-                 t""");
-        this.q("""
-                SELECT 'be_r' NOT LIKE 'b_e__r' ESCAPE '_' AS "false";
-                 false
-                -------
-                 f""");
-        this.q("""
-                SELECT 'be_r' LIKE '__e__r' ESCAPE '_' AS "false";
-                 false
-                -------
-                 f""");
-        this.q("""
-                SELECT 'be_r' NOT LIKE '__e__r' ESCAPE '_' AS "true";
-                 true
-                ------
-                 t""");
     }
 
     @Test
