@@ -127,8 +127,6 @@ use std::{
 };
 use tokio::sync::Notify;
 use tokio::{
-    fs::File,
-    io::{AsyncReadExt, BufReader},
     sync::{
         Mutex as TokioMutex,
         oneshot::{self, error::TryRecvError},
@@ -1035,15 +1033,9 @@ impl Controller {
             );
         }
 
-        let mut file = BufReader::new(File::open(profile_file).await.context(format!(
-            "failed to open samply profile file `{profile_file}`"
-        ))?);
-
-        let mut buf = Vec::with_capacity(10 * 1024 * 1024); // 10 MB
-
-        file.read_to_end(&mut buf).await.context(format!(
-            "failed to read samply profile file `{profile_file}`"
-        ))?;
+        let buf = tokio::fs::read(profile_file)
+            .await
+            .with_context(|| format!("failed to read samply profile file `{profile_file}`"))?;
 
         if buf.is_empty() {
             anyhow::bail!(
