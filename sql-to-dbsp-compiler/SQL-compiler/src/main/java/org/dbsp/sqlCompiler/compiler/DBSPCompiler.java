@@ -206,7 +206,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             stream.append("\"").append(Utilities.escapeDoubleQuotes(e.name())).append("\"");
             stream.append(": ");
             RelNode rel = cv.getRel();
-            RelJsonWriter planWriter = new RelJsonWriter(result);
+            RelJsonWriter planWriter = new RelJsonWriter(result, options.ioOptions.verbosity);
             rel.explain(planWriter);
             String json = planWriter.asString();
             stream.appendIndentedStrings(json);
