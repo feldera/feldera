@@ -2079,7 +2079,7 @@ async fn input_endpoint(
     let table_name = path.into_inner();
 
     // Generate deterministic endpoint name per (table_name, FormatConfig).
-    let parser_endpoint_name = format!("api-ingress-{table_name}-{}", args.format);
+    let parser_endpoint_name = format!("{table_name}.api-ingress-{}", args.format);
     let format = parser_config_from_http_request(&parser_endpoint_name, &args.format, &req)?;
 
     let mut endpoint_hasher = DefaultHasher::new();
@@ -2087,7 +2087,7 @@ async fn input_endpoint(
     format.hash(&mut endpoint_hasher);
     let endpoint_hash = endpoint_hasher.finish();
 
-    let endpoint_name = format!("api-ingress-{table_name}-{endpoint_hash:016x}");
+    let endpoint_name = format!("{table_name}.api-ingress-{endpoint_hash:016x}");
 
     let cached_endpoint =
         TABLE_ENDPOINTS.with(|endpoints| endpoints.borrow().get(&endpoint_name).cloned());
@@ -2195,7 +2195,7 @@ async fn output_endpoint(
     let table_name = path.into_inner();
 
     // Generate endpoint name depending on the query and output mode.
-    let endpoint_name = format!("api-{}-{table_name}", Uuid::new_v4());
+    let endpoint_name = format!("{table_name}.api-{}", Uuid::new_v4());
 
     // debug!("Endpoint name: '{endpoint_name}'");
 
