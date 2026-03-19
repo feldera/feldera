@@ -149,6 +149,10 @@ impl IcebergInputReader {
 }
 
 impl InputReader for IcebergInputReader {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
     fn request(&self, command: InputReaderCommand) {
         match command.as_nonft().unwrap() {
             NonFtInputReaderCommand::Queue => self.inner.queue.queue(),

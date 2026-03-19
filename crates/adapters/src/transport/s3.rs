@@ -342,6 +342,10 @@ struct S3InputReader {
 }
 
 impl InputReader for S3InputReader {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
     fn request(&self, command: InputReaderCommand) {
         let _ = self.sender.send_blocking(command);
     }

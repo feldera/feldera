@@ -1085,6 +1085,10 @@ impl Canceller {
 }
 
 impl InputReader for NatsReader {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
     fn request(&self, command: InputReaderCommand) {
         let _ = self.command_sender.send(command);
     }
