@@ -95,7 +95,7 @@ export const usePipelineManager = (options?: FetchOptions) => {
     return error.cause === 'cancelled'
   }
 
-  const reportError = _reportError(toastError, options, doNotReportIfCancelled)
+  const reportError = _reportError(toastError('API request'), options, doNotReportIfCancelled)
   const trackHealth = _trackHealth(options)
 
   const getPipelineSupportBundle = (

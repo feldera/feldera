@@ -287,7 +287,7 @@ example = "1.0"`
       if (e instanceof Error) {
         setTimeout(() => {
           contextDrawer.content = null
-          toast.toastError(e)
+          toast.toastError('Parsing pipeline diff')(e)
         })
       }
       return undefined
