@@ -65,7 +65,8 @@ export default defineConfig(async () => {
       // Exclude svelte internals from dep optimization — rolldown's @__PURE__
       // inlining can reorder get_first_child() ahead of init_operations(),
       // causing "Cannot read properties of undefined (reading 'call')".
-      exclude: ['svelte']
+      exclude: ['svelte'],
+      include: ['@svelte-bin/clipboard', 'flowbite-svelte', '@skeletonlabs/skeleton-svelte', 'd3-format', 'tiny-invariant']
     },
     resolve: {
       // When support-bundle-triage is symlinked into node_modules, vite dereferences
