@@ -68,9 +68,7 @@ import java.util.Objects;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.*;
 
-/**
- * Implements a window aggregate with a RANGE
- */
+/** Implements a window aggregate with a RANGE */
 public class RangeAggregates extends WindowAggregates {
     final int orderColumnIndex;
     final RelFieldCollation collation;
@@ -78,13 +76,16 @@ public class RangeAggregates extends WindowAggregates {
     protected RangeAggregates(CalciteToDBSPCompiler compiler, Window window, Window.Group group, int windowFieldIndex) {
         super(compiler, window, group, windowFieldIndex);
 
+        CalciteObject object = CalciteObject.create(group.aggCalls.get(0).pos);
         List<RelFieldCollation> orderKeys = this.group.orderKeys.getFieldCollations();
+        if (group.isRows)
+            throw new UnimplementedException("Window aggregates with ROWS", 457, object);
         if (orderKeys.isEmpty())
-            throw new CompilationError("Missing ORDER BY in OVER", node);
+            throw new CompilationError("Missing ORDER BY in OVER", object);
         if (orderKeys.size() > 1)
-            throw new UnimplementedException("ORDER BY in OVER requires exactly 1 column", 457, node);
+            throw new UnimplementedException("ORDER BY in OVER requires exactly 1 column", 457, object);
         if (group.exclude != RexWindowExclusion.EXCLUDE_NO_OTHER)
-            throw new UnimplementedException("EXCLUDE BY in OVER", 457, node);
+            throw new UnimplementedException("EXCLUDE BY in OVER", 457, object);
 
         this.collation = orderKeys.get(0);
         this.orderColumnIndex = this.collation.getFieldIndex();
