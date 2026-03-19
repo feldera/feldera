@@ -1,8 +1,8 @@
 use super::NexmarkStream;
 use crate::model::Event;
 use dbsp::{
-    utils::{Tup3, Tup4},
     OrdZSet, RootCircuit, Stream,
+    utils::{Tup3, Tup4},
 };
 
 const STATES_OF_INTEREST: &[&str] = &["OR", "ID", "CA"];
@@ -71,7 +71,7 @@ mod tests {
         generator::tests::{make_auction, make_person},
         model::{Auction, Person},
     };
-    use dbsp::{utils::Tup2, OrdZSet, ZWeight};
+    use dbsp::{OrdZSet, ZWeight, utils::Tup2};
 
     #[test]
     fn test_q3_people() {

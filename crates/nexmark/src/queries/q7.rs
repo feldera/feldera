@@ -1,11 +1,11 @@
 use super::{NexmarkStream, WATERMARK_INTERVAL_SECONDS};
 use crate::model::Event;
 use dbsp::{
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
     dynamic::DynData,
     operator::Max,
     typed_batch::TypedBox,
     utils::{Tup4, Tup5},
-    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
 
 type Q7Output = Tup5<u64, u64, u64, u64, String>;

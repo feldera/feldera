@@ -1,9 +1,9 @@
 use super::NexmarkStream;
 use crate::model::Event;
 use dbsp::{
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream, ZWeight,
     operator::Max,
     utils::{Tup2, Tup3},
-    OrdIndexedZSet, OrdZSet, RootCircuit, Stream, ZWeight,
 };
 
 type Q4Stream = Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>>;
