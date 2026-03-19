@@ -1,8 +1,8 @@
 use super::{NexmarkStream, WATERMARK_INTERVAL_SECONDS};
 use crate::model::Event;
 use dbsp::{
-    dynamic::DynData, operator::Max, typed_batch::TypedBox, utils::Tup2, OrdIndexedZSet, OrdZSet,
-    RootCircuit, Stream,
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream, dynamic::DynData, operator::Max,
+    typed_batch::TypedBox, utils::Tup2,
 };
 
 type Q5Stream = Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>>;

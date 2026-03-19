@@ -1,6 +1,6 @@
 use super::NexmarkStream;
 use crate::model::Event;
-use dbsp::{utils::Tup2, OrdZSet, RootCircuit, Stream};
+use dbsp::{OrdZSet, RootCircuit, Stream, utils::Tup2};
 
 const AUCTION_ID_MODULO: u64 = 123;
 

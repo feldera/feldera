@@ -1,10 +1,10 @@
 use super::NexmarkStream;
 use crate::model::Event;
 use dbsp::{
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
     dynamic::DynData,
     typed_batch::TypedBox,
     utils::{Tup2, Tup3},
-    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
 
 type Q8Stream = Stream<RootCircuit, OrdZSet<Tup3<u64, String, u64>>>;

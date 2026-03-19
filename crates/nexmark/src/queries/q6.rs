@@ -1,10 +1,10 @@
 use super::NexmarkStream;
 use crate::model::Event;
 use dbsp::{
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
     algebra::UnimplementedSemigroup,
     operator::{Fold, Max},
     utils::Tup2,
-    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
 
 type Q6Stream = Stream<RootCircuit, OrdIndexedZSet<u64, u64>>;
