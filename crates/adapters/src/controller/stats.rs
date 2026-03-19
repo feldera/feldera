@@ -1086,6 +1086,31 @@ impl ControllerStatus {
         })
     }
 
+    /// Returns details about output endpoints whose buffers are full.
+    ///
+    /// For each full endpoint, returns `(connector_name, transmitted_records)`.
+    pub fn output_buffers_full_details(&self) -> Vec<(String, u64)> {
+        self.output_status()
+            .values()
+            .filter_map(|endpoint_stats| {
+                let num_buffered_records = endpoint_stats
+                    .metrics
+                    .queued_records
+                    .load(Ordering::Acquire);
+                if num_buffered_records >= endpoint_stats.config.connector_config.max_queued_records
+                {
+                    let transmitted = endpoint_stats
+                        .metrics
+                        .transmitted_records
+                        .load(Ordering::Acquire);
+                    Some((endpoint_stats.endpoint_name.clone(), transmitted))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     pub fn parse_error(&self, endpoint_id: EndpointId, tag: Option<&str>, error: &ParseError) {
         if let Some(endpoint_stats) = self.input_status().get(&endpoint_id) {
             endpoint_stats.parse_error(tag, error);
