@@ -2119,4 +2119,48 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         MATCH_CONDITION(tumble.delayed_window_end >= T.ts)
                         ON tumble.src = T.a;""");
     }
+
+    @Test
+    public void issue5811() {
+        var ccs = this.getCCS("""
+                CREATE TABLE purchase (
+                  ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR,
+                  amount BIGINT
+                ) WITH ('append_only' = 'true');
+                
+                CREATE MATERIALIZED VIEW join_lateness_view
+                AS SELECT
+                  a.ts AS a_ts,
+                  a.amount + b.amount AS total
+                FROM purchase a
+                JOIN purchase b
+                ON a.ts = b.ts;""");
+        ccs.step("INSERT INTO purchase VALUES(TIMESTAMP '2020-01-01 10:00:00', 10)", """
+                  ts                  | amount | weight
+                 ----------------------------------------
+                  2020-01-01 10:00:00 | 20     | 1""");
+        // Insert late value, no change
+        ccs.step("INSERT INTO purchase VALUES(TIMESTAMP '2020-01-01 8:00:00', 10)", """
+                  ts                  | amount | weight
+                 ----------------------------------------""");
+        ccs.step("REMOVE FROM purchase VALUES(TIMESTAMP '2020-01-01 10:00:00', 10)", """
+                  ts                  | amount | weight
+                 ----------------------------------------
+                  2020-01-01 10:00:00 | 20     | -1""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            int gc = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator node) {
+                this.gc++;
+            }
+
+            @Override
+            public void endVisit() {
+                // If MergeGC didn't work, this would return 2 --
+                // but we wouldn't get to this point anyway.
+                Assert.assertEquals(1, this.gc);
+            }
+        });
+    }
 }
