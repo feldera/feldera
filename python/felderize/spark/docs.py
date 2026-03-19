@@ -5,97 +5,6 @@ from pathlib import Path
 
 import yaml
 
-# Categories used for selecting relevant examples and docs.
-_CATEGORIES: dict[str, list[str]] = {
-    "types": [],  # Always matched
-    "string": [
-        r"\bUPPER\b",
-        r"\bLOWER\b",
-        r"\bTRIM\b",
-        r"\bCONCAT\b",
-        r"\bSUBSTRING\b",
-        r"\bREPLACE\b",
-        r"\bLIKE\b",
-        r"\bREGEXP\b",
-        r"\bLENGTH\b",
-        r"\bINITCAP\b",
-        r"\bREVERSE\b",
-        r"\bREPEAT\b",
-        r"\bSPLIT\b",
-        r"\bLPAD\b",
-        r"\bRPAD\b",
-    ],
-    "datetime": [
-        r"\bDATE\b",
-        r"\bTIMESTAMP\b",
-        r"\bINTERVAL\b",
-        r"\bYEAR\b",
-        r"\bMONTH\b",
-        r"\bDAY\b",
-        r"\bHOUR\b",
-        r"\bEXTRACT\b",
-        r"\bDATE_ADD\b",
-        r"\bDATE_SUB\b",
-        r"\bDATEDIFF\b",
-        r"\bDATE_TRUNC\b",
-        r"\bCURRENT_DATE\b",
-        r"\bCURRENT_TIMESTAMP\b",
-    ],
-    "json": [
-        r"\bJSON\b",
-        r"\bPARSE_JSON\b",
-        r"\bVARIANT\b",
-        r"\bget_json_object\b",
-        r"\bfrom_json\b",
-        r"\bjson_tuple\b",
-        r"\bTO_JSON\b",
-    ],
-    "aggregates": [
-        r"\bCOUNT\b",
-        r"\bSUM\b",
-        r"\bAVG\b",
-        r"\bGROUP\s+BY\b",
-        r"\bHAVING\b",
-        r"\bOVER\s*\(",
-        r"\bROW_NUMBER\b",
-        r"\bRANK\b",
-        r"\bLAG\b",
-        r"\bLEAD\b",
-        r"\bWINDOW\b",
-    ],
-    "array": [
-        r"\bARRAY\b",
-        r"\bEXPLODE\b",
-        r"\bUNNEST\b",
-        r"\barray_contains\b",
-        r"\bsort_array\b",
-        r"\barray_distinct\b",
-        r"\bCARDINALITY\b",
-        r"\bsize\s*\(",
-    ],
-    "map": [r"\bMAP\s*<", r"\bMAP\s*\(", r"\bmap_keys\b", r"\bmap_values\b"],
-    "decimal": [
-        r"\bDECIMAL\b",
-        r"\bNUMERIC\b",
-        r"\bROUND\b",
-        r"\bCEIL\b",
-        r"\bFLOOR\b",
-        r"\bTRUNCATE\b",
-    ],
-    "float": [
-        r"\bFLOAT\b",
-        r"\bDOUBLE\b",
-        r"\bPOWER\b",
-        r"\bSQRT\b",
-        r"\bLOG\b",
-        r"\bLN\b",
-        r"\bSIN\b",
-        r"\bCOS\b",
-    ],
-    "casts": [r"\bCAST\s*\(", r"::"],
-    "comparisons": [r"\bBETWEEN\b", r"\bCASE\s+WHEN\b", r"\bCOALESCE\b", r"\bNULLIF\b"],
-}
-
 # Map each category to its doc file.
 _DOC_FILES: dict[str, str] = {
     "types": "types.md",
@@ -111,7 +20,81 @@ _DOC_FILES: dict[str, str] = {
     "comparisons": "comparisons.md",
 }
 
-_doc_cache: dict[str, str] = {}
+# SQL construct patterns that cannot be derived from the function index
+# (keywords, operators, syntax forms rather than named functions).
+_EXTRA_PATTERNS: dict[str, list[str]] = {
+    "types":       [],                              # always matched — no keywords needed
+    "datetime":    [r"\bDATE\b", r"\bTIMESTAMP\b", r"\bINTERVAL\b"],
+    "aggregates":  [r"\bGROUP\s+BY\b", r"\bHAVING\b", r"\bOVER\s*\("],
+    "array":       [r"\bARRAY\b", r"\bEXPLODE\b", r"\bUNNEST\b", r"\bsize\s*\("],
+    "map":         [r"\bMAP\s*<", r"\bMAP\s*\("],
+    "json":        [r"\bJSON\b", r"\bVARIANT\b"],
+    "casts":       [r"\bCAST\s*\(", r"::"],
+    "comparisons": [r"\bCASE\s+WHEN\b"],
+}
+
+# Spark function names that appear in SQL but are not in the Feldera index.
+_SPARK_ALIASES: dict[str, list[str]] = {
+    "json":    [r"\bget_json_object\b", r"\bfrom_json\b", r"\bjson_tuple\b"],
+    "array":   [r"\barray_contains\b", r"\bsort_array\b", r"\barray_distinct\b"],
+    "decimal": [r"\bNUMERIC\b"],
+    "float":   [r"\bFLOAT\b"],
+}
+
+
+def _build_categories_from_index(index_path: Path) -> dict[str, list[str]]:
+    """Parse function-index.md and return category → \\bFUNC\\b pattern lists.
+
+    Only populates categories that appear in _DOC_FILES.  Falls back to an
+    empty dict if the index file is not found.
+    """
+    known = set(_DOC_FILES) - {"types"}
+    cats: dict[str, list[str]] = {cat: [] for cat in _DOC_FILES}
+
+    if not index_path.is_file():
+        return cats
+
+    func_re = re.compile(r"^\* `([A-Z_][A-Z_0-9 ]*)`", re.IGNORECASE)
+    link_re = re.compile(r"\[([a-z]+)\]\([^)]+\)")
+
+    for line in index_path.read_text().splitlines():
+        m = func_re.match(line)
+        if not m:
+            continue
+        func_name = m.group(1).strip()
+        for link_m in link_re.finditer(line):
+            cat = link_m.group(1)
+            if cat in known:
+                keyword = rf"\b{re.escape(func_name)}\b"
+                if keyword not in cats[cat]:
+                    cats[cat].append(keyword)
+
+    return cats
+
+
+def _make_categories() -> dict[str, list[str]]:
+    index_path = (
+        Path(__file__).resolve().parents[3]
+        / "docs.feldera.com" / "docs" / "sql" / "function-index.md"
+    )
+    cats = _build_categories_from_index(index_path)
+    for source in (_EXTRA_PATTERNS, _SPARK_ALIASES):
+        for cat, patterns in source.items():
+            seen = set(cats.get(cat, []))
+            for p in patterns:
+                if p not in seen:
+                    cats.setdefault(cat, []).append(p)
+                    seen.add(p)
+    return cats
+
+
+# Categories used for selecting relevant docs and examples.
+# Built automatically from the Feldera function index, supplemented by
+# _EXTRA_PATTERNS (SQL construct keywords) and _SPARK_ALIASES (Spark names
+# not in the Feldera index).
+_CATEGORIES: dict[str, list[str]] = _make_categories()
+
+_doc_cache: dict[Path, str] = {}
 
 
 def _detect_categories(sql: str) -> set[str]:
@@ -128,10 +111,7 @@ def _detect_categories(sql: str) -> set[str]:
 
 
 def load_docs(sql: str, docs_dir: Path | None = None) -> str:
-    """Load relevant Feldera doc files based on SQL content.
-
-    Only loads docs not already covered by skills (currently just types.md).
-    """
+    """Load relevant Feldera doc files based on SQL content."""
     if docs_dir is None:
         # Use the canonical docs from the repo root (docs.feldera.com/docs/sql/).
         docs_dir = Path(__file__).resolve().parents[3] / "docs.feldera.com" / "docs" / "sql"
