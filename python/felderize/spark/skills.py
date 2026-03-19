@@ -56,7 +56,7 @@ equivalent, list it under "unsupported" rather than guessing.
 
 Respond ONLY with a JSON object (no markdown fences) with these keys:
 - "feldera_schema": the translated CREATE TABLE / CREATE VIEW DDL statements
-- "feldera_query": the translated query as a CREATE VIEW statement
+- "feldera_query": the translated query as one or more CREATE VIEW statements
 - "unsupported": list of Spark constructs that cannot be translated
 - "warnings": list of translation notes or approximations made
 - "explanations": list of transformations applied (e.g., "Rewrote LPAD(...) as CONCAT(REPEAT(...), ...)")
@@ -70,17 +70,22 @@ def build_system_prompt(
     docs_dir: Path | None = None,
     spark_sql: str = "",
     with_docs: bool = False,
+    with_examples: bool = True,
+    with_skills: bool = True,
 ) -> str:
-    skills_text = load_skills(skills_dir)
-    prompt = SYSTEM_PROMPT_PREFIX + "\n\n" + skills_text
+    prompt = SYSTEM_PROMPT_PREFIX
+    if with_skills:
+        skills_text = load_skills(skills_dir)
+        prompt += "\n\n" + skills_text
     if spark_sql:
-        examples_text = load_examples(spark_sql)
-        if examples_text:
-            prompt += (
-                "\n\n## Validated Translation Examples\n\n"
-                "These examples were validated against the Feldera compiler. "
-                "Follow the same patterns.\n\n" + examples_text
-            )
+        if with_examples:
+            examples_text = load_examples(spark_sql)
+            if examples_text:
+                prompt += (
+                    "\n\n## Validated Translation Examples\n\n"
+                    "These examples were validated against the Feldera compiler. "
+                    "Follow the same patterns.\n\n" + examples_text
+                )
         if with_docs:
             docs_text = load_docs(spark_sql, docs_dir)
             if docs_text:

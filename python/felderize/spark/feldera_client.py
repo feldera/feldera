@@ -21,7 +21,7 @@ def validate_sql(sql: str, compiler_path: str | Path | None = None) -> list[str]
 
         try:
             result = subprocess.run(
-                [str(compiler), "-i", f.name],
+                [str(compiler), "-i", "--ignoreOrder", "--alltables", "--noRust", f.name],
                 capture_output=True,
                 text=True,
                 timeout=60,
@@ -45,4 +45,4 @@ def validate_sql(sql: str, compiler_path: str | Path | None = None) -> list[str]
     if not errors and stderr.strip():
         errors.append(stderr.strip())
 
-    return errors if errors else ["Compilation failed with unknown error"]
+    return errors if errors else [f"Compilation failed with exit code {result.returncode}"]

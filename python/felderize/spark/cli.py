@@ -8,7 +8,7 @@ import click
 
 from felderize.config import Config
 from felderize.models import TranslationResult
-from felderize.translator import translate_spark_to_feldera
+from felderize.translator import split_combined_sql, translate_spark_to_feldera
 
 
 @click.group()
@@ -29,6 +29,31 @@ def translate(
     config = Config.from_env()
     schema_sql = Path(schema_file).read_text()
     query_sql = Path(query_file).read_text()
+
+    result = translate_spark_to_feldera(
+        schema_sql,
+        query_sql,
+        config,
+        validate=validate,
+        include_docs=not no_docs,
+    )
+
+    if json_output:
+        click.echo(json.dumps(result.to_dict(), indent=2))
+    else:
+        _print_result(result)
+
+
+@cli.command("translate-file")
+@click.argument("sql_file", type=click.Path(exists=True))
+@click.option("--validate", is_flag=True, help="Validate against Feldera instance")
+@click.option("--json-output", is_flag=True, help="Output as JSON")
+@click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
+def translate_file(sql_file: str, validate: bool, json_output: bool, no_docs: bool):
+    """Translate a single combined Spark SQL file (schema + views) to Feldera SQL."""
+    config = Config.from_env()
+    combined_sql = Path(sql_file).read_text()
+    schema_sql, query_sql = split_combined_sql(combined_sql)
 
     result = translate_spark_to_feldera(
         schema_sql,
