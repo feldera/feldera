@@ -18,15 +18,18 @@ def load_skills(skills_dir: str | Path | None = None) -> str:
         return ""
 
     sections: list[str] = []
+    md_files: list[Path] = sorted(skills_dir.glob("*.md"))
     for skill_path in sorted(skills_dir.iterdir()):
-        md_file = skill_path / "SKILL.md"
-        if not md_file.is_file():
-            continue
+        if skill_path.is_dir():
+            sub = skill_path / "SKILL.md"
+            if sub.is_file():
+                md_files.append(sub)
 
+    for md_file in sorted(md_files):
         raw = md_file.read_text()
 
         # Parse YAML frontmatter
-        name = skill_path.name
+        name = md_file.stem
         body = raw
         if raw.startswith("---"):
             parts = raw.split("---", 2)
