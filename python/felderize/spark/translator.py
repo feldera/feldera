@@ -91,6 +91,7 @@ def _translate_with_repair(
     system_prompt: str,
     validate: bool,
     max_retries: int,
+    verbose: bool = False,
 ) -> TranslationResult:
     """Run one translation attempt with optional validation + repair loop."""
     user_prompt = _build_user_prompt(schema_sql, query_sql)
@@ -112,6 +113,10 @@ def _translate_with_repair(
     # Validation + repair loop
     full_sql = result.feldera_schema + "\n\n" + result.feldera_query
     for attempt in range(max_retries):
+        if verbose:
+            print(f"\n--- SQL submitted to validator (attempt {attempt + 1}) ---", file=sys.stderr)
+            print(full_sql, file=sys.stderr)
+            print("---", file=sys.stderr)
         errors = validate_sql(full_sql, config.feldera_compiler or None)
         if not errors:
             result.warnings.append(f"Validated successfully (attempt {attempt + 1})")
@@ -147,6 +152,10 @@ def _translate_with_repair(
             )
 
     # Final validation after all retries
+    if verbose:
+        print(f"\n--- SQL submitted to validator (attempt {max_retries + 1}) ---", file=sys.stderr)
+        print(full_sql, file=sys.stderr)
+        print("---", file=sys.stderr)
     errors = validate_sql(full_sql, config.feldera_compiler or None)
     if not errors:
         result.warnings.append(f"Validated successfully (attempt {max_retries + 1})")
@@ -205,6 +214,7 @@ def translate_spark_to_feldera(
     skills_dir: str | None = None,
     docs_dir: str | None = None,
     include_docs: bool = True,
+    verbose: bool = False,
 ) -> TranslationResult:
     combined_sql = schema_sql + "\n" + query_sql
     docs_dir_path = Path(docs_dir) if docs_dir else None
@@ -218,7 +228,7 @@ def translate_spark_to_feldera(
         with_docs=False,
     )
     result = _translate_with_repair(
-        schema_sql, query_sql, config, client, system_prompt_skills, validate, max_retries,
+        schema_sql, query_sql, config, client, system_prompt_skills, validate, max_retries, verbose,
     )
 
     if result.status != Status.ERROR:
@@ -236,7 +246,7 @@ def translate_spark_to_feldera(
             with_skills=False,
         )
         result = _translate_with_repair(
-            schema_sql, query_sql, config, client, system_prompt_docs, validate, max_retries,
+            schema_sql, query_sql, config, client, system_prompt_docs, validate, max_retries, verbose,
         )
         if result.status != Status.ERROR:
             result.warnings.append("Resolved with docs-only fallback")

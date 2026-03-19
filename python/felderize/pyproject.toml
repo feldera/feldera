@@ -25,7 +25,6 @@ felderize = [
     "data/skills/**/*.md",
     "data/samples/*.md",
     "data/demo/*.sql",
-    "data/demo/expected/*.sql",
 ]
 
 [project.scripts]

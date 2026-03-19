@@ -52,6 +52,64 @@ If the compiler reports `Encountered "<" ... ARRAY<VARCHAR>`: rewrite ALL `ARRAY
 | `CREATE TEMPORARY VIEW` | → `CREATE VIEW` |
 | `USING parquet` / `delta` / `csv` | Remove clause |
 | `PARTITIONED BY (...)` | Remove clause |
+| `CONSTRAINT name PRIMARY KEY (cols)` | → `PRIMARY KEY (cols)` — drop the `CONSTRAINT name` wrapper; Feldera rejects the named constraint syntax |
+| PK column without `NOT NULL` | Add `NOT NULL` — Feldera requires all PRIMARY KEY columns to be NOT NULL |
+
+### PRIMARY KEY rules
+
+Two constraints Feldera enforces that Spark does not:
+
+1. **No `CONSTRAINT name` wrapper** — Feldera rejects `CONSTRAINT pk PRIMARY KEY (col)`. Use bare `PRIMARY KEY (col)`.
+2. **All PK columns must be `NOT NULL`** — Feldera rejects nullable PK columns:
+
+```
+error: PRIMARY KEY cannot be nullable: PRIMARY KEY column 'borrowerid' has type VARCHAR, which is nullable
+```
+
+```sql
+-- Spark (both issues)
+CREATE TABLE orders (
+  order_id STRING,
+  item_id STRING,
+  CONSTRAINT orders_pk PRIMARY KEY (order_id, item_id)
+);
+
+-- Feldera (fixed)
+CREATE TABLE orders (
+  order_id VARCHAR NOT NULL,
+  item_id VARCHAR NOT NULL,
+  PRIMARY KEY (order_id, item_id)
+);
+```
+
+### Reserved words as column names must be quoted
+
+**Only quote column names that are SQL reserved words** — do not quote ordinary identifiers. Quoting non reserved words is wrong: it makes identifiers case-sensitive and adds unnecessary noise.
+
+Quote a column name only when the compiler rejects it unquoted:
+```
+error: Error parsing SQL: Encountered ", TimeStamp" at line 33, column 25.
+```
+
+When quoting is needed, apply it consistently in both `CREATE TABLE` and every query reference:
+
+```sql
+-- Schema: only "TimeStamp" is quoted — it clashes with the TIMESTAMP type keyword
+CREATE TABLE events (
+  id BIGINT NOT NULL,
+  source VARCHAR,
+  "TimeStamp" TIMESTAMP,
+  PRIMARY KEY (id)
+);
+
+-- Query: quote "TimeStamp" everywhere it appears, leave other columns unquoted
+SELECT e.source, e."TimeStamp" as ts,
+       MAX(e."TimeStamp") OVER (PARTITION BY e.id) as max_ts
+FROM events e
+WHERE e."TimeStamp" >= TIMESTAMP '2024-01-01 00:00:00'
+```
+
+Known column names that clash with SQL keywords: `TimeStamp`, `Date`, `Time`, `Value`, `Type`, `Name`, `Language`.
 
 ### DDL Examples
 
@@ -578,6 +636,8 @@ When the Feldera compiler rejects translated SQL, check these common causes firs
 | `No match found for function signature day(<TIMESTAMP>)` | Used `DAY(ts)` on a TIMESTAMP | Use `DAYOFMONTH(ts)` or `EXTRACT(DAY FROM ts)` |
 | `No match found for function signature X` | Function is unsupported | Check this reference; if listed as unsupported, return immediately — do NOT retry |
 | `Encountered "<" ... ARRAY<VARCHAR>` | Used Spark array syntax | Rewrite ALL `ARRAY<T>` to `T ARRAY` suffix form |
+| `Error parsing SQL: Encountered ", ColumnName"` | Column name is a SQL reserved word | Double-quote the column name in schema and all query references, e.g. `"TimeStamp"` |
+| `PRIMARY KEY cannot be nullable: column 'x' has type T, which is nullable` | PK column missing `NOT NULL` | Add `NOT NULL` to every column listed in the PRIMARY KEY |
 
 ## Important rules
 

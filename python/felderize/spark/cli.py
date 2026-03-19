@@ -22,10 +22,13 @@ def cli():
 @click.option("--validate", is_flag=True, help="Validate against Feldera instance")
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
+@click.option("--verbose", is_flag=True, help="Log SQL submitted to validator at each attempt")
 def translate(
-    schema_file: str, query_file: str, validate: bool, json_output: bool, no_docs: bool
+    schema_file: str, query_file: str, validate: bool, json_output: bool, no_docs: bool, verbose: bool
 ):
     """Translate a single Spark SQL schema + query pair to Feldera SQL."""
+    if not validate:
+        click.echo("Warning: running without validation — output SQL is not verified against the Feldera compiler.", err=True)
     config = Config.from_env()
     schema_sql = Path(schema_file).read_text()
     query_sql = Path(query_file).read_text()
@@ -36,6 +39,7 @@ def translate(
         config,
         validate=validate,
         include_docs=not no_docs,
+        verbose=verbose,
     )
 
     if json_output:
@@ -49,8 +53,11 @@ def translate(
 @click.option("--validate", is_flag=True, help="Validate against Feldera instance")
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
-def translate_file(sql_file: str, validate: bool, json_output: bool, no_docs: bool):
+@click.option("--verbose", is_flag=True, help="Log SQL submitted to validator at each attempt")
+def translate_file(sql_file: str, validate: bool, json_output: bool, no_docs: bool, verbose: bool):
     """Translate a single combined Spark SQL file (schema + views) to Feldera SQL."""
+    if not validate:
+        click.echo("Warning: running without validation — output SQL is not verified against the Feldera compiler.", err=True)
     config = Config.from_env()
     combined_sql = Path(sql_file).read_text()
     schema_sql, query_sql = split_combined_sql(combined_sql)
@@ -61,6 +68,7 @@ def translate_file(sql_file: str, validate: bool, json_output: bool, no_docs: bo
         config,
         validate=validate,
         include_docs=not no_docs,
+        verbose=verbose,
     )
 
     if json_output:
@@ -140,7 +148,8 @@ _EXAMPLES_DIR = Path(__file__).resolve().parent / "data" / "demo"
 )
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
-def example(name: str | None, validate: bool, json_output: bool, no_docs: bool):
+@click.option("--verbose", is_flag=True, help="Log SQL submitted to validator at each attempt")
+def example(name: str | None, validate: bool, json_output: bool, no_docs: bool, verbose: bool):
     """Run a built-in example translation.
 
     Without NAME, lists available examples. With NAME, translates that example.
@@ -150,19 +159,26 @@ def example(name: str | None, validate: bool, json_output: bool, no_docs: bool):
       felderize example              # list available examples
       felderize example simple       # translate the 'simple' example
     """
-    # Discover available examples
-    pairs: dict[str, tuple[Path, Path]] = {}
+    # Discover available examples: schema+query pairs and combined files
+    pairs: dict[str, tuple[Path, Path] | Path] = {}
     for schema_file in sorted(_EXAMPLES_DIR.glob("*_schema.sql")):
         example_name = schema_file.name.replace("_schema.sql", "")
         query_file = _EXAMPLES_DIR / f"{example_name}_query.sql"
         if query_file.is_file():
             pairs[example_name] = (schema_file, query_file)
+    for combined_file in sorted(_EXAMPLES_DIR.glob("*_combined.sql")):
+        example_name = combined_file.name.replace("_combined.sql", "")
+        pairs[example_name] = combined_file
 
     if not name:
         click.echo("Available examples:\n")
-        for ex_name, (sf, qf) in pairs.items():
-            schema_preview = sf.read_text().strip().split("\n")[0]
-            click.echo(f"  {ex_name:20s} {schema_preview}")
+        for ex_name, files in pairs.items():
+            if isinstance(files, Path):
+                preview = files.read_text().strip().split("\n")[0]
+                click.echo(f"  {ex_name:20s} {preview}  [combined]")
+            else:
+                preview = files[0].read_text().strip().split("\n")[0]
+                click.echo(f"  {ex_name:20s} {preview}")
         click.echo("\nRun one with: felderize example <name>")
         return
 
@@ -170,16 +186,24 @@ def example(name: str | None, validate: bool, json_output: bool, no_docs: bool):
         click.echo(f"Unknown example '{name}'. Available: {', '.join(pairs)}", err=True)
         sys.exit(1)
 
-    schema_file, query_file = pairs[name]
-    schema_sql = schema_file.read_text()
-    query_sql = query_file.read_text()
-
-    click.echo(f"-- Spark Schema ({name}) --", err=True)
-    click.echo(schema_sql.strip(), err=True)
-    click.echo(f"\n-- Spark Query ({name}) --", err=True)
-    click.echo(query_sql.strip(), err=True)
+    files = pairs[name]
+    if isinstance(files, Path):
+        combined_sql = files.read_text()
+        schema_sql, query_sql = split_combined_sql(combined_sql)
+        click.echo(f"-- Spark SQL ({name}) --", err=True)
+        click.echo(combined_sql.strip(), err=True)
+    else:
+        schema_file, query_file = files
+        schema_sql = schema_file.read_text()
+        query_sql = query_file.read_text()
+        click.echo(f"-- Spark Schema ({name}) --", err=True)
+        click.echo(schema_sql.strip(), err=True)
+        click.echo(f"\n-- Spark Query ({name}) --", err=True)
+        click.echo(query_sql.strip(), err=True)
     click.echo("\nTranslating...\n", err=True)
 
+    if not validate:
+        click.echo("Warning: running without validation — output SQL is not verified against the Feldera compiler.", err=True)
     config = Config.from_env()
     result = translate_spark_to_feldera(
         schema_sql,
@@ -187,6 +211,7 @@ def example(name: str | None, validate: bool, json_output: bool, no_docs: bool):
         config,
         validate=validate,
         include_docs=not no_docs,
+        verbose=verbose,
     )
 
     if json_output:

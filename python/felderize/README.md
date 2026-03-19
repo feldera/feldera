@@ -27,15 +27,31 @@ echo 'ANTHROPIC_API_KEY=your-key-here' > .env
 # List available examples
 felderize example
 
-# Attempts to translate an example
+# Translate an example (validates by default)
 felderize example simple
 
-# With compiler validation
-felderize example simple --validate
+# Without compiler validation
+felderize example simple --no-validate
 
-# Output translation result as JSON
+# Log SQL submitted to the validator at each attempt
+felderize example json --verbose
+
+# Output as JSON
 felderize example simple --json-output
 ```
+
+Available examples:
+
+| Name | Description |
+|------|-------------|
+| `simple` | Date truncation, GROUP BY |
+| `strings` | INITCAP, LPAD, NVL, CONCAT_WS |
+| `arrays` | array_contains, size, element_at |
+| `joins` | Null-safe equality (`<=>`) |
+| `windows` | LAG, running SUM OVER |
+| `aggregations` | COUNT DISTINCT, HAVING (includes unsupported: COLLECT_LIST, PERCENTILE_APPROX) |
+| `json` | get_json_object → PARSE_JSON + VARIANT access *(combined file)* |
+| `topk` | ROW_NUMBER TopK, QUALIFY, DATEDIFF → TIMESTAMPDIFF *(combined file)* |
 
 The JSON output contains:
 
@@ -52,10 +68,23 @@ The JSON output contains:
 
 ### Translate your own SQL
 
+Two input formats are supported:
+
+**Separate schema and query files:**
 ```bash
 felderize translate path/to/schema.sql path/to/query.sql
 felderize translate path/to/schema.sql path/to/query.sql --validate
 ```
+
+**Single combined file** (CREATE TABLE and CREATE VIEW statements in one file):
+```bash
+felderize translate-file path/to/combined.sql
+felderize translate-file path/to/combined.sql --validate
+```
+
+> **Note:** Running without `--validate` prints a warning — the output SQL has not been verified against the Feldera compiler.
+
+Both commands accept `--verbose` to log the SQL submitted to the validator at each repair attempt.
 
 ### Batch translation
 
