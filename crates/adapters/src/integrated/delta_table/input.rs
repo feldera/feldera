@@ -35,7 +35,9 @@ use feldera_adapterlib::utils::datafusion::{
 use feldera_storage::tokio::TOKIO_DEDICATED_IO;
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
-use feldera_types::transport::delta_table::{DeltaTableReaderConfig, DeltaTableTransactionMode};
+use feldera_types::transport::delta_table::{
+    DeltaTableReaderConfig, DeltaTableSnapshotErrorMode, DeltaTableTransactionMode,
+};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -1713,8 +1715,10 @@ impl DeltaTableInputEndpointInner {
             let batch = match batch {
                 Ok(batch) => batch,
                 Err(e) => {
+                    let is_fatal =
+                        self.config.snapshot_error_mode == DeltaTableSnapshotErrorMode::Fail;
                     self.consumer.error(
-                        false,
+                        is_fatal,
                         anyhow!("error retrieving batch {num_batches} of {descr}: {e:?}"),
                         Some("delta-batch"),
                     );
