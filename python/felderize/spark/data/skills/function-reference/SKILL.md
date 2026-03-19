@@ -89,7 +89,7 @@ These Spark functions exist in Feldera — translate directly:
 |-------|---------|-------|
 | `YEAR(d)` | Same | |
 | `MONTH(d)` | Same | |
-| `DAY(d)` | `DAYOFMONTH(d)` | Use EXTRACT for timestamps |
+| `DAY(d)` | `DAYOFMONTH(d)` | |
 | `HOUR(ts)` | Same | |
 | `MINUTE(ts)` | Same | |
 | `SECOND(ts)` | Same | |
@@ -185,7 +185,8 @@ These require translation but ARE supported:
 | `CUBE(a, b)` | Same | |
 | `date_add(d, n)` | `d + INTERVAL 'n' DAY` | time-converter |
 | `date_sub(d, n)` | `d - INTERVAL 'n' DAY` | time-converter |
-| `datediff(end, start)` | `TIMESTAMPDIFF(DAY, start, end)` | time-converter |
+| `datediff(end, start)` | `DATEDIFF(DAY, start, end)` | Feldera DATEDIFF takes 3 args (unit, start, end); Spark takes 2 |
+| `months_between(end, start)` | `DATEDIFF(MONTH, start, end)` | Spark returns fractional months; Feldera returns integer months |
 | `date_trunc('MONTH', d)` | `DATE_TRUNC(d, MONTH)` | time-converter |
 | `date_trunc('MONTH', ts)` | `TIMESTAMP_TRUNC(ts, MONTH)` | time-converter |
 | `LPAD(s, n, pad)` | `CASE WHEN LENGTH(s) >= n THEN SUBSTRING(s,1,n) ELSE CONCAT(REPEAT(pad, n-LENGTH(s)), s) END` | query-rewrite |
@@ -199,10 +200,11 @@ These require translation but ARE supported:
 | `weekofyear(d)` | `EXTRACT(WEEK FROM d)` | query-rewrite |
 | `add_months(d, n)` | `d + INTERVAL 'n' MONTH` | |
 | `last_day(d)` | `DATE_TRUNC(d, MONTH) + INTERVAL '1' MONTH - INTERVAL '1' DAY` | |
+| `MAKE_DATE(y, m, d)` | `PARSE_DATE('%Y-%m-%d', CONCAT(CAST(y AS VARCHAR), '-', RIGHT(CONCAT('0', CAST(m AS VARCHAR)), 2), '-', RIGHT(CONCAT('0', CAST(d AS VARCHAR)), 2)))` | Zero-pads month/day; years < 1000 may produce wrong results |
 | `unix_timestamp(ts)` | `EXTRACT(EPOCH FROM ts)` | |
 | `unix_millis(ts)` | `CAST(EXTRACT(EPOCH FROM ts) * 1000 AS BIGINT)` | |
 | `unix_micros(ts)` | `CAST(EXTRACT(EPOCH FROM ts) * 1000000 AS BIGINT)` | |
-| `from_unixtime(n)` | `TIMESTAMPADD(SECOND, n, DATE '1970-01-01')` | Returns TIMESTAMP; Spark returns STRING in yyyy-MM-dd HH:mm:ss — Feldera has no FORMAT_TIMESTAMP, use CONCAT with YEAR/MONTH/DAY/HOUR/MINUTE/SECOND to match |
+| `from_unixtime(n)` | `MAKE_TIMESTAMP(n)` | Define UDF first: `CREATE FUNCTION MAKE_TIMESTAMP(SECONDS BIGINT) RETURNS TIMESTAMP AS TIMESTAMPADD(SECOND, SECONDS, DATE '1970-01-01')` |
 | `to_timestamp(n)` (numeric) | `TIMESTAMPADD(SECOND, n, DATE '1970-01-01')` | |
 | `to_timestamp(s[, fmt])` | `PARSE_TIMESTAMP(fmt, s)` | Argument order reversed; default fmt is `%Y-%m-%d %H:%M:%S`; translate Java fmt to strftime |
 | `map_entries(m)` | `CROSS JOIN UNNEST(m) AS t(k, v)` | Flatten map to rows |
@@ -225,8 +227,6 @@ Do NOT attempt to translate these. Return as unsupported immediately.
 | `parse_url` | URL parsing |
 | `SHA`, `SHA2`, `SHA256` | Hashing |
 | `next_day` | Date |
-| `MAKE_DATE` | Date constructor |
-| `months_between` | Date diff |
 | `sequence()` for date ranges | Date generation |
 | `CORR` | Statistical aggregate |
 | `approx_count_distinct`, `APPROX_DISTINCT` | Approximate aggregate |

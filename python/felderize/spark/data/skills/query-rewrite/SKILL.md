@@ -1,6 +1,6 @@
 ---
 name: query-rewrite
-description: Rewrites Spark SQL query patterns that have no direct Feldera equivalent into semantically equivalent Feldera SQL. Covers PIVOT, GROUPING SETS, ROLLUP, CUBE, and get_json_object.
+description: Rewrites Spark SQL query patterns that have no direct Feldera equivalent into semantically equivalent Feldera SQL. Covers named_struct, nvl2, pmod, LPAD/RPAD, LEFT ANTI JOIN, and weekofyear.
 ---
 
 # Query Rewrite
@@ -8,113 +8,6 @@ description: Rewrites Spark SQL query patterns that have no direct Feldera equiv
 ## Purpose
 
 Use this skill when Spark SQL contains query constructs that Feldera does not support directly but can be rewritten to equivalent SQL.
-
-## PIVOT
-
-Feldera does not support `PIVOT` syntax. Rewrite to conditional aggregation with `CASE WHEN`.
-
-### Pattern
-
-Spark:
-```sql
-SELECT * FROM source
-PIVOT (
-  agg_func(value_col)
-  FOR pivot_col IN ('val1', 'val2', 'val3')
-)
-```
-
-Feldera:
-```sql
-SELECT
-  <non-pivot columns>,
-  agg_func(CASE WHEN pivot_col = 'val1' THEN value_col END) AS val1,
-  agg_func(CASE WHEN pivot_col = 'val2' THEN value_col END) AS val2,
-  agg_func(CASE WHEN pivot_col = 'val3' THEN value_col END) AS val3
-FROM source
-GROUP BY <non-pivot columns>
-```
-
-### Rules
-- Preserve the aggregation function (COUNT, SUM, AVG, etc.).
-- Each PIVOT value becomes a separate `CASE WHEN` expression.
-- The non-pivot, non-value columns become the GROUP BY columns.
-- Column aliases come from the IN list values.
-- Double-check GROUP BY spelling — do not introduce typos.
-
-### Example
-
-Input:
-```sql
-SELECT * FROM (
-  SELECT team_name, status, ticket_id
-  FROM support_tickets
-) src
-PIVOT (
-  COUNT(ticket_id)
-  FOR status IN ('OPEN', 'IN_PROGRESS', 'CLOSED')
-)
-```
-
-Output:
-```sql
-CREATE VIEW result AS
-SELECT
-  team_name,
-  COUNT(CASE WHEN status = 'OPEN' THEN ticket_id END) AS OPEN,
-  COUNT(CASE WHEN status = 'IN_PROGRESS' THEN ticket_id END) AS IN_PROGRESS,
-  COUNT(CASE WHEN status = 'CLOSED' THEN ticket_id END) AS CLOSED
-FROM support_tickets
-GROUP BY team_name
-```
-
-## GROUPING SETS
-
-Feldera does not support `GROUPING SETS`. Rewrite to `UNION ALL` of separate `GROUP BY` queries.
-
-### Pattern
-
-Spark:
-```sql
-SELECT a, b, SUM(x) AS total
-FROM t
-GROUP BY GROUPING SETS ((a, b), (a), ())
-```
-
-Feldera:
-```sql
-SELECT a, b, SUM(x) AS total FROM t GROUP BY a, b
-UNION ALL
-SELECT a, CAST(NULL AS <type_of_b>) AS b, SUM(x) AS total FROM t GROUP BY a
-UNION ALL
-SELECT CAST(NULL AS <type_of_a>) AS a, CAST(NULL AS <type_of_b>) AS b, SUM(x) AS total FROM t
-```
-
-### Rules
-- Each grouping set becomes a separate SELECT with its own GROUP BY.
-- Columns not in a grouping set must be NULL with proper CAST to match types.
-- All branches must have identical column names, types, and order.
-- Use CAST(NULL AS type) rather than bare NULL to avoid type mismatches in UNION ALL.
-
-## ROLLUP
-
-Feldera does not support `ROLLUP`. Expand to equivalent UNION ALL.
-
-`GROUP BY ROLLUP(a, b, c)` is equivalent to:
-```
-GROUPING SETS ((a, b, c), (a, b), (a), ())
-```
-
-Then apply the GROUPING SETS rewrite above.
-
-## CUBE
-
-`GROUP BY CUBE(a, b)` is equivalent to:
-```
-GROUPING SETS ((a, b), (a), (b), ())
-```
-
-Then apply the GROUPING SETS → UNION ALL rewrite above.
 
 Note: `grouping_id()` function is NOT available in Feldera. If the query uses `grouping_id()`, mark it as unsupported.
 
@@ -124,7 +17,7 @@ Spark's `named_struct('field1', val1, 'field2', val2, ...)` creates a struct wit
 
 ### Feldera equivalent
 
-Use `ROW(val1, val2, ...)` constructor.
+Use `ROW(val1, val2, ...)` constructor, or `CAST(ROW(val1, val2) AS ROW(field1 T1, field2 T2))` to preserve field names, or a user-defined type.
 
 ```sql
 -- Spark
@@ -138,7 +31,7 @@ ROW(left_id, right_id)
 - Drop the field name strings — Feldera ROW constructors are positional.
 - Preserve the value expressions in order.
 - `ROW(x, y, z)` creates an anonymous struct.
-- Field access on ROW values uses dot notation: `row_val.field_name`.
+- Field access on named ROW values uses dot notation: `row_val.field_name`. For anonymous structs (no field names), use 1-based index access: `row_val[1]`.
 
 ### Example
 
@@ -148,9 +41,15 @@ SELECT source, COUNT(DISTINCT named_struct('l', left_id, 'r', right_id)) AS uniq
 FROM pair_events GROUP BY source
 ```
 
-Output:
+Output (anonymous ROW):
 ```sql
 SELECT source, COUNT(DISTINCT ROW(left_id, right_id)) AS unique_pair_count
+FROM pair_events GROUP BY source
+```
+
+Output (named fields via CAST):
+```sql
+SELECT source, COUNT(DISTINCT CAST(ROW(left_id, right_id) AS ROW(l BIGINT, r BIGINT))) AS unique_pair_count
 FROM pair_events GROUP BY source
 ```
 
@@ -184,9 +83,7 @@ This ensures the result is always non-negative. Do NOT mark as unsupported.
 
 ## from_unixtime / to_timestamp from epoch
 
-Spark's `from_unixtime(unix_seconds)` and `to_timestamp(unix_seconds)` convert unix epoch seconds to timestamp.
-
-Mark as unsupported — Feldera does not support `to_timestamp(<NUMERIC>)` or `from_unixtime`.
+See function-reference skill for rewrites using `TIMESTAMPADD`.
 
 ## LPAD / RPAD
 

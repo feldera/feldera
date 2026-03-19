@@ -1,6 +1,6 @@
 ---
 name: type-converter
-description: Converts Spark SQL DDL to Feldera-compatible DDL. Covers type mappings (STRING→VARCHAR), DDL clause removal (USING parquet, TEMP VIEW), and schema-level rewrites.
+description: Converts Spark SQL DDL to Feldera-compatible DDL. Covers type mappings, DDL clause removal (USING parquet, TEMP VIEW), and schema-level rewrites.
 ---
 
 # Type Converter
@@ -9,13 +9,13 @@ description: Converts Spark SQL DDL to Feldera-compatible DDL. Covers type mappi
 
 | Spark | Feldera | Notes |
 |-------|---------|-------|
-| `STRING` | `VARCHAR` | |
-| `TEXT` | `VARCHAR` | |
+| `STRING` | `STRING` or `VARCHAR` | Both supported natively |
+| `TEXT` | `TEXT` or `VARCHAR` | Both supported natively |
 | `INT` / `INTEGER` | `INT` | Same |
 | `BIGINT` | `BIGINT` | Same |
 | `BOOLEAN` | `BOOLEAN` | Same |
 | `DECIMAL(p,s)` | `DECIMAL(p,s)` | Same |
-| `FLOAT` | `FLOAT` | Same |
+| `FLOAT` | `REAL` | Feldera uses REAL instead of FLOAT |
 | `DOUBLE` | `DOUBLE` | Same |
 | `DATE` | `DATE` | Same |
 | `TIMESTAMP` | `TIMESTAMP` | Same |
