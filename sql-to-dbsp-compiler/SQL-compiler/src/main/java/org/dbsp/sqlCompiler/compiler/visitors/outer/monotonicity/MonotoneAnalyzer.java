@@ -163,7 +163,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         if (debug)
             ToDot.dump(compiler, "limited.png", details, "png", result);
 
-        CircuitTransform merger = new OptimizeWithGraph(this.compiler, g -> new MergeGC(this.compiler, g));
+        CircuitTransform merger = new MergeGC(this.compiler);
         result = merger.apply(result);
         graph.apply(result);
         CheckRetain check = new CheckRetain(this.compiler, graph.getGraphs());
