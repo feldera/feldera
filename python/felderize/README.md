@@ -27,14 +27,27 @@ echo 'ANTHROPIC_API_KEY=your-key-here' > .env
 # List available examples
 felderize example
 
-# Translate an example
+# Attempts to translate an example
 felderize example simple
 
 # With compiler validation
 felderize example simple --validate
 
-# JSON output
+# Output translation result as JSON
 felderize example simple --json-output
+```
+
+The JSON output contains:
+
+```json
+{
+  "feldera_schema": "...",   // translated DDL (CREATE TABLE statements)
+  "feldera_query": "...",    // translated query (CREATE VIEW statements)
+  "unsupported": [...],      // unsupported Spark features found
+  "warnings": [...],         // non-fatal issues
+  "explanations": [...],     // explanations for translation decisions
+  "status": "success|unsupported|error"
+}
 ```
 
 ### Translate your own SQL
