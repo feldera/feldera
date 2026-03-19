@@ -11,7 +11,7 @@ resolved in future releases.
 ### `ROW_NUMBER`, `RANK`, and `DENSE_RANK` require TopK pattern
 
 `ROW_NUMBER()`, `RANK()`, and `DENSE_RANK()` are **only supported when
-the compiler detects a TopK pattern**.  A TopK pattern requires that
+the compiler detects a TopK pattern**.  Feldera supports **one** TopK pattern per OVER query. A TopK pattern requires that
 the window function result is filtered using a `WHERE` clause:
 
 ```sql
@@ -32,9 +32,9 @@ General-purpose `RANK`, `DENSE_RANK`, and `ROW_NUMBER` outside of TopK
 detection are not yet implemented.
 See [#3934](https://github.com/feldera/feldera/issues/3934).
 
-### `NTILE` is not supported
+### `NTILE` and `NTH_VALUE` are not supported
 
-The `NTILE()` window function is not yet implemented.
+The `NTILE()` and `NTH_VALUE()` window functions are not yet implemented.
 
 ### `FIRST_VALUE` and `LAST_VALUE` limited to unbounded range
 
@@ -67,6 +67,9 @@ See [#457](https://github.com/feldera/feldera/issues/457).
 Window functions with `ORDER BY` on multiple columns are not yet
 supported.
 See [#457](https://github.com/feldera/feldera/issues/457).
+
+### Constant Window Boundaries
+Window boundaries must be constant expressions. For example, `RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW` is valid. But `RANGE BETWEEN INTERVAL 1 MONTH PRECEDING AND CURRENT ROW` is not, because a month is a not a constant time interval.
 
 ## Correlated subqueries
 
@@ -108,6 +111,16 @@ See [#1907](https://github.com/feldera/feldera/issues/1907).
 The `MATCH_RECOGNIZE` clause for pattern matching over rows is not yet
 supported.
 
+## `PIVOT` & `UNPIVOT`
+`PIVOT` is supported if the user provides a fixed set of columns. Refer to [PIVOT documentation](./aggregates.md#pivots) for example usage. Dynamic `PIVOT` is not yet supported. `UNPIVOT` is not yet supported.
+
+
+## `INTERSECT ALL` and `EXCEPT ALL`
+`INTERSECT ALL` and `EXCEPT ALL` operations are not yet supported.
+
+## `MULTISET` Data Type
+The `MULTISET` data type is not currently supported.
+
 ## Session windows
 
 Session windows (grouping events into sessions based on a gap in
@@ -115,7 +128,7 @@ activity) are not yet supported.
 
 ## Timezone support
 
-`DATE`, `TIME`, and `TIMESTAMP` types have no time zone.  There is no
+`TIME`, and `TIMESTAMP` types have no time zone.  There is no
 `TIMESTAMP WITH TIME ZONE` type, and timezone conversion functions are
 not available.  See the [datetime documentation](datetime.md#timezones)
 for details.
