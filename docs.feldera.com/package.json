@@ -52,32 +52,12 @@
   "engines": {
     "node": ">=18.0"
   },
-  "overrides": {
-    "minimatch": "3.1.5",
-    "js-yaml": "4.1.1",
-    "svgo": "3.3.3",
-    "fast-xml-parser": "5.5.6",
-    "lodash": "4.17.23",
-    "serialize-javascript": "7.0.3",
-    "dompurify": "3.3.2",
-    "ajv": "8.18.0",
-    "@docusaurus/core": {
-      "ajv": "6.14.0"
-    },
-    "@docusaurus/plugin-client-redirects": {
-      "ajv": "6.14.0"
-    },
-    "@docusaurus/plugin-content-docs": {
-      "ajv": "6.14.0"
-    },
-    "@docusaurus/preset-classic": {
-      "ajv": "6.14.0"
-    },
-    "docusaurus-preset-openapi": {
-      "ajv": "6.14.0"
-    },
-    "react-loadable-ssr-addon-v5-slorber": {
-      "ajv": "6.14.0"
-    }
+  "resolutions": {
+    "openapi-to-postmanv2": "^5.4.0",
+    "lodash": "^4.17.23",
+    "serialize-javascript": "^7.0.3",
+    "gray-matter/js-yaml": "3.13.1",
+    "json-refs/js-yaml": "3.13.1",
+    "*/js-yaml": "4.1.1"
   }
 }
