@@ -1140,7 +1140,7 @@ impl ControllerStatus {
         if !self
             .input_status()
             .values()
-            .filter(|endpoint_stats| !endpoint_stats.endpoint_name.starts_with("api-ingress"))
+            .filter(|endpoint_stats| !endpoint_stats.endpoint_name.contains(".api-ingress-"))
             .all(|endpoint_stats| endpoint_stats.is_eoi())
         {
             return false;
