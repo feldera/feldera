@@ -70,7 +70,7 @@ use dbsp::{Runtime, WeakRuntime};
 use enum_map::EnumMap;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
-use feldera_adapterlib::transport::{Resume, Watermark};
+use feldera_adapterlib::transport::{InputReader, Resume, Watermark};
 use feldera_ir::LirCircuit;
 use feldera_storage::histogram::{ExponentialHistogram, ExponentialHistogramSnapshot};
 use feldera_storage::metrics::{
@@ -663,6 +663,10 @@ impl Controller {
         self.inner.fail_if_bootstrapping_or_restoring()?;
         self.inner
             .add_input_endpoint(endpoint_name, endpoint_config, Some(endpoint), resume_info)
+    }
+
+    pub fn get_input_endpoint(&self, endpoint_name: &str) -> Option<Arc<dyn InputReader>> {
+        self.inner.get_input_endpoint(endpoint_name)
     }
 
     /// Disconnect an existing output endpoint.
@@ -4104,6 +4108,20 @@ impl ControllerInit {
             )
         }
 
+        // Transfer HTTP input endpoints that are not affected by the program diff from the checkpoint to the new configuration.
+        checkpoint_config
+            .inputs
+            .iter()
+            .filter(|(_connector_name, connector_config)| {
+                connector_config.connector_config.transport.is_http_input()
+                    && !pipeline_diff.is_affected_relation(&connector_config.stream)
+            })
+            .for_each(|(connector_name, connector_config)| {
+                config
+                    .inputs
+                    .insert(connector_name.clone(), connector_config.clone());
+            });
+
         // Merge `config` (the configuration provided by the pipeline manager)
         // with `checkpoint_config` (the configuration read from the
         // checkpoint).
@@ -5665,7 +5683,7 @@ impl ControllerInner {
                             .write()
                             .get_mut(&endpoint_id)
                             .unwrap()
-                            .reader = Some(reader);
+                            .reader = Some(Arc::from(reader));
                     }
                     Err(e) => {
                         self.status.inputs.write().remove(&endpoint_id);
@@ -5711,7 +5729,7 @@ impl ControllerInner {
                             .write()
                             .get_mut(&endpoint_id)
                             .unwrap()
-                            .reader = Some(reader);
+                            .reader = Some(Arc::from(reader));
                     }
                     Err(e) => {
                         self.status.inputs.write().remove(&endpoint_id);
@@ -5736,6 +5754,15 @@ impl ControllerInner {
 
         self.unpark_backpressure();
         Ok(endpoint_id)
+    }
+
+    fn get_input_endpoint(&self, endpoint_name: &str) -> Option<Arc<dyn InputReader>> {
+        let endpoint_id = self.status.input_endpoint_id_by_name(endpoint_name).ok()?;
+        self.status
+            .inputs
+            .read()
+            .get(&endpoint_id)
+            .and_then(|ep| ep.reader.as_ref().cloned())
     }
 
     fn register_api_connection(&self) -> Result<(), u64> {

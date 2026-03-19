@@ -1884,7 +1884,7 @@ pub struct InputEndpointStatus {
     pub progress: Mutex<Option<StepResults>>,
 
     /// May be None during endpoint initialization.
-    pub reader: Option<Box<dyn InputReader>>,
+    pub reader: Option<Arc<dyn InputReader>>,
 
     /// Endpoint support for fault tolerance.
     pub fault_tolerance: Option<FtModel>,
