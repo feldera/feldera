@@ -1669,6 +1669,10 @@ impl TransportConfig {
                 | TransportConfig::ClockInput(_)
         )
     }
+
+    pub fn is_http_input(&self) -> bool {
+        matches!(self, TransportConfig::HttpInput(_))
+    }
 }
 
 /// Data format specification used to parse raw data received from the

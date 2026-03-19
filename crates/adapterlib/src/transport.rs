@@ -593,6 +593,8 @@ impl InputQueue<(), Box<dyn InputBuffer>> {
 ///
 /// Use [`TransportInputEndpoint::open`] to obtain an [`InputReader`].
 pub trait InputReader: Send + Sync {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync>;
+
     /// Requests the input reader to execute `command`.
     fn request(&self, command: InputReaderCommand);
 

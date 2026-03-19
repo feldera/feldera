@@ -104,6 +104,10 @@ impl InputGenerator {
 }
 
 impl InputReader for InputGenerator {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
     fn request(&self, command: InputReaderCommand) {
         match self.table {
             NexmarkTable::Bid => {
