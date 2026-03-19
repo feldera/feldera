@@ -191,15 +191,14 @@ public class InsertLimiters extends CircuitCloneVisitor {
      * <p>
      * |param0, param1|
      *    (param0.0 && param1.0,
-     *     if param0.0 && param1.0 {
-     *       function(param0.1, param1.1)
+     *     if *param0.0 && *param1.0 {
+     *       function(*param0.1, *param1.1)
      *     } else {
      *       min
      *     })
      * where 'min' is the minimum constant value with the appropriate type.
      * Inserts the operator in the circuit.  'param0.0' is true when param0.1 is
      * not the minimum legal value - i.e., the waterline has seen some data
-     * (same on the other side).
      *
      * @param left     Left input operator.
      * @param right    Right input operator
@@ -225,24 +224,23 @@ public class InsertLimiters extends CircuitCloneVisitor {
         return result.outputPort();
     }
 
-    /** Given a function for an apply2 operator, synthesizes an operator that performs
+    /** Given a function for an applyN operator, synthesizes an operator that performs
      * the following computation:
      * <p>
      * |param0, param1, ..., paramN|
-     *    (param0.0 && param1.0 ... & paramN.0,
-     *     if param0.0 && param1.0 ... && param1.0 {
-     *       function(param0.1, param1.1, ..., param1.1)
+     *    (*param0.0 && *param1.0 ... & *paramN.0,
+     *     if *param0.0 && *param1.0 ... && *param1.0 {
+     *       function(*param0.1, *param1.1, ..., *param1.1)
      *     } else {
      *       min
      *     })
      * where 'min' is the minimum constant value with the appropriate type.
-     * Inserts the operator in the circuit.  'param0.0' is true when param0.1 is
-     * not the minimum legal value - i.e., the waterline has seen some data
-     * (same on the other side).
+     * 'param0.0' is true when param0.1 is not the minimum legal value - i.e.,
+     * the waterline has seen some data.
      *
      * @param function Function to apply to the data.
      */
-    OutputPort createApplyN(List<OutputPort> inputs, DBSPClosureExpression function) {
+    public static OutputPort createApplyN(DBSPCompiler compiler, List<OutputPort> inputs, DBSPClosureExpression function) {
         Utilities.enforce(!inputs.isEmpty());
         OutputPort first = inputs.get(0);
         CalciteRelNode relNode = first.node().getRelNode();
@@ -253,11 +251,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPExpression and = ExpressionCompiler.makeBinaryExpressions(relNode, v0.get(0).getType(), DBSPOpcode.AND, v0);
         DBSPExpression min = function.getResultType().minimumValue();
         DBSPExpression cond = new DBSPTupleExpression(and,
-                new DBSPIfExpression(relNode, and, function.call(v1), min).reduce(this.compiler));
+                new DBSPIfExpression(relNode, and, function.call(v1), min).reduce(compiler));
         DBSPVariablePath[] params = vars.toArray(new DBSPVariablePath[0]);
         DBSPApplyNOperator result = new DBSPApplyNOperator(relNode, cond.closure(params), inputs);
         result.addAnnotation(Waterline.INSTANCE, DBSPApplyNOperator.class);
-        this.addOperator(result);
         return result.outputPort();
     }
 
@@ -1897,7 +1894,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
     }
 
     /** Apply MIN pointwise to two expressions */
-    DBSPExpression min(DBSPExpression left, DBSPExpression right) {
+    static DBSPExpression min(DBSPExpression left, DBSPExpression right) {
         Utilities.enforce(left.getType().sameTypeIgnoringNullability(right.getType()));
         if (left.getType().is(DBSPTypeBaseType.class)) {
             return ExpressionCompiler.makeBinaryExpression(
@@ -1930,7 +1927,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
     }
 
     /** Given a list of expressions, combine them by applying this.min() to them pairwise */
-    private DBSPExpression combineMin(List<DBSPExpression> inputs) {
+    public static DBSPExpression combineMin(List<DBSPExpression> inputs) {
         if (inputs.size() == 1)
             return inputs.get(0);
 
@@ -1939,12 +1936,12 @@ public class InsertLimiters extends CircuitCloneVisitor {
             if (i == inputs.size() - 1) {
                 pairs.add(inputs.get(i));
             } else {
-                DBSPExpression combine = this.min(inputs.get(i), inputs.get(i + 1));
+                DBSPExpression combine = min(inputs.get(i), inputs.get(i + 1));
                 pairs.add(combine);
             }
         }
         // Recursive call with ~1/2 the number of elements
-        return this.combineMin(pairs);
+        return combineMin(pairs);
     }
 
     @Nullable
@@ -1984,9 +1981,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         List<DBSPExpression> inputs = Linq.map(variables, DBSPExpression::deref);
         DBSPVariablePath[] vars = variables.toArray(new DBSPVariablePath[0]);
-        DBSPClosureExpression min = this.combineMin(inputs).closure(vars);
+        DBSPClosureExpression min = combineMin(inputs).closure(vars);
 
-        OutputPort apply = this.createApplyN(projected, min);
+        OutputPort apply = createApplyN(compiler, projected, min);
+        this.addOperator(apply.node());
         this.markBound(expanded.outputPort(), apply);
         return apply;
     }
