@@ -88,6 +88,8 @@ SELECT s.id, ARRAY(
 FROM spreadsheet s;
 ```
 
+In some instances, Feldera cannot decorrelate complex nested subqueries. In these cases, we recommend users refactor the query.
+
 See [#2555](https://github.com/feldera/feldera/issues/2555).
 
 ## Map functions
