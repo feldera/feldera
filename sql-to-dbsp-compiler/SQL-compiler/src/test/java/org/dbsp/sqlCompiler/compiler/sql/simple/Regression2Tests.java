@@ -787,8 +787,23 @@ public class Regression2Tests extends SqlIoTest {
                   SUM(amount) OVER (
                     PARTITION BY customer_id
                     ORDER BY payment_time
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                    RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                   ) AS running_amount
                 FROM payments""", "Not yet implemented: ROW_NUMBER only supported in a TopK pattern");
+    }
+
+    @Test
+    public void rowsTest() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE purchase (
+                    ts TIMESTAMP NOT NULL,
+                    amount BIGINT,
+                    value BIGINT LATENESS 5
+                );
+                
+                CREATE MATERIALIZED VIEW rolling_sum AS
+                SELECT ts,
+                    SUM(value) OVER (ORDER BY ts ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS rolling_sum
+                    FROM purchase;""", "Not yet implemented: Window aggregates with ROWS");
     }
 }
