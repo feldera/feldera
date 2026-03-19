@@ -6,7 +6,6 @@ from pathlib import Path
 import yaml
 
 # Categories used for selecting relevant examples and docs.
-# Most doc files are redundant with skills — only types.md is included as a doc.
 _CATEGORIES: dict[str, list[str]] = {
     "types": [],  # Always matched
     "string": [
@@ -97,9 +96,19 @@ _CATEGORIES: dict[str, list[str]] = {
     "comparisons": [r"\bBETWEEN\b", r"\bCASE\s+WHEN\b", r"\bCOALESCE\b", r"\bNULLIF\b"],
 }
 
-# Only these categories load a doc file (the rest are covered by skills).
+# Map each category to its doc file.
 _DOC_FILES: dict[str, str] = {
     "types": "types.md",
+    "string": "string.md",
+    "datetime": "datetime.md",
+    "json": "json.md",
+    "aggregates": "aggregates.md",
+    "array": "array.md",
+    "map": "map.md",
+    "decimal": "decimal.md",
+    "float": "float.md",
+    "casts": "casts.md",
+    "comparisons": "comparisons.md",
 }
 
 _doc_cache: dict[str, str] = {}
@@ -124,7 +133,8 @@ def load_docs(sql: str, docs_dir: Path | None = None) -> str:
     Only loads docs not already covered by skills (currently just types.md).
     """
     if docs_dir is None:
-        docs_dir = Path(__file__).resolve().parent / "data" / "docs" / "sql"
+        # Use the canonical docs from the repo root (docs.feldera.com/docs/sql/).
+        docs_dir = Path(__file__).resolve().parents[3] / "docs.feldera.com" / "docs" / "sql"
 
     if not docs_dir.is_dir():
         return ""

@@ -19,5 +19,5 @@ SELECT
   p.country
 FROM crm_profiles p
 JOIN identity_events e
-  ON (p.email IS NOT DISTINCT FROM e.email)
- AND (p.phone IS NOT DISTINCT FROM e.phone);
+  ON p.email <=> e.email
+ AND p.phone <=> e.phone;

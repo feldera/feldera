@@ -47,6 +47,7 @@ These Spark functions exist in Feldera — translate directly:
 | `CHR(n)` | Same | Returns character for numeric code |
 | `LEFT(s, n)` | Same | |
 | `RIGHT(s, n)` | Same | |
+| `MD5(s)` | Same | |
 
 ### Array functions
 
@@ -65,7 +66,8 @@ These Spark functions exist in Feldera — translate directly:
 | `array_except(a, b)` | `ARRAY_EXCEPT(a, b)` | |
 | `array_join(arr, sep)` | `ARRAY_JOIN(arr, sep)` | Alias for ARRAY_TO_STRING |
 | `size(arr)` | `CARDINALITY(arr)` | Different name |
-| `array(v1, v2)` | `ARRAY[v1, v2]` | Different syntax |
+| `array(v1, v2)` | `ARRAY(v1, v2)`|
+| `array[v1, v2]` | `ARRAY[v1, v2]`|
 
 ### Higher-order array functions
 
@@ -87,12 +89,11 @@ These Spark functions exist in Feldera — translate directly:
 |-------|---------|-------|
 | `YEAR(d)` | Same | |
 | `MONTH(d)` | Same | |
-| `DAY(d)` | `EXTRACT(DAY FROM d)` | Use EXTRACT for timestamps |
+| `DAY(d)` | `DAYOFMONTH(d)` | Use EXTRACT for timestamps |
 | `HOUR(ts)` | Same | |
 | `MINUTE(ts)` | Same | |
 | `SECOND(ts)` | Same | |
-| `CURRENT_DATE` | Same | |
-| `CURRENT_TIMESTAMP` | Same | |
+| `CURRENT_TIMESTAMP` | `NOW()` | |
 
 ### JSON functions
 
@@ -106,23 +107,25 @@ These Spark functions exist in Feldera — translate directly:
 | Spark | Feldera | Notes |
 |-------|---------|-------|
 | `ABS(x)` | Same | |
-| `CEIL(x)` | Same | |
-| `FLOOR(x)` | Same | |
-| `ROUND(x, d)` | Same | |
-| `MOD(a, b)` | Same | |
+| `CEIL(x)` | Same | For float/double input: Spark returns BIGINT, Feldera returns DOUBLE |
+| `FLOOR(x)` | Same | For float/double input: Spark returns BIGINT, Feldera returns DOUBLE |
+| `ROUND(x, d)` | Same | Rounding differs: Spark rounds half-up (0.5 → 1), Feldera rounds half-to-even (0.5 → 0, 1.5 → 2) |
+| `BROUND(x, d)` | Same | Banker's rounding (half-to-even); Feldera supports decimal only |
+| `MOD(a, b)` | Same | Feldera supports integer only; Spark also supports DECIMAL |
 | `POWER(x, y)` | Same | |
 | `SQRT(x)` | Same | |
-| `LN(x)` | Same | |
-| `LOG10(x)` | Same | |
+| `LN(x)` | Same | Spark returns NULL for negative input; Feldera returns -inf for 0 and runtime error for negative |
+| `LOG10(x)` | Same | Spark returns NULL for negative input; Feldera returns -inf for 0 and runtime error for negative |
 
 ### Null handling
 
 | Spark | Feldera | Notes |
 |-------|---------|-------|
 | `COALESCE(a, b)` | Same | |
-| `NVL(a, b)` | Same | |
+| `NVL(a, b)` | `COALESCE(a, b)` | NVL not supported in Feldera |
 | `NULLIF(a, b)` | Same | |
-| `IFNULL(a, b)` | Same | |
+| `IFNULL(a, b)` | Same | Equivalent to COALESCE(left, right) |
+| `a <=> b` | Same | Null-safe equality — returns true when both sides are NULL |
 
 ### Window functions (unrestricted)
 
@@ -135,8 +138,8 @@ These Spark functions exist in Feldera — translate directly:
 | `COUNT(expr) OVER (...)` | Same | |
 | `MIN(expr) OVER (...)` | Same | |
 | `MAX(expr) OVER (...)` | Same | |
-| `FIRST_VALUE(expr) OVER (...)` | Same | IGNORE NULLS not supported |
-| `LAST_VALUE(expr) OVER (...)` | Same | IGNORE NULLS not supported |
+| `FIRST_VALUE(expr) OVER (...)` | Same | IGNORE NULLS not supported; no custom RANGE/ROWS — only whole-partition windows |
+| `LAST_VALUE(expr) OVER (...)` | Same | IGNORE NULLS not supported; no custom RANGE/ROWS — only whole-partition windows |
 
 These can be freely combined in the same query.
 
@@ -165,36 +168,33 @@ These require translation but ARE supported:
 
 | Spark | Feldera | See skill |
 |-------|---------|-----------|
+| `CURRENT_DATE` | `CAST(NOW() AS DATE)` | time-converter |
 | `EXPLODE` / `LATERAL VIEW explode(arr)` | `UNNEST(arr) AS t(col)` | unnest |
 | `LATERAL VIEW explode(map)` | `CROSS JOIN UNNEST(map) AS t(k, v)` | unnest |
-| `posexplode(arr)` | `UNNEST(arr) WITH ORDINALITY AS t(val, pos)` | unnest |
+| `posexplode(arr)` | `SELECT pos, val FROM UNNEST(arr) WITH ORDINALITY AS t(val, pos)` | unnest; Feldera returns (val, pos), reorder in SELECT to match Spark |
 | `inline(arr_of_structs)` | `UNNEST(arr) AS t(f1, f2, ...)` | unnest |
 | `get_json_object(s, '$.a.b')` | `PARSE_JSON(s)['a']['b']` | json-operations |
 | `from_json(s, schema)` | `PARSE_JSON(s)` + CAST or bracket access | json-operations |
 | `json_tuple(s, k1, k2)` | Multiple `PARSE_JSON(s)['k']` | json-operations |
-| `named_struct('a', v1, 'b', v2)` | `ROW(v1, v2)` | query-rewrite |
+| `named_struct('a', v1, 'b', v2)` | `CAST(ROW(v1, v2) AS ROW(a T, b S))` | query-rewrite; use CAST to preserve field names |
 | `nvl2(x, a, b)` | `CASE WHEN x IS NOT NULL THEN a ELSE b END` | query-rewrite |
 | `pmod(a, b)` | `MOD(MOD(a, b) + b, b)` | query-rewrite |
-| `PIVOT(...)` | `CASE WHEN` aggregation | query-rewrite |
-| `GROUPING SETS` | `UNION ALL` expansion | query-rewrite |
-| `ROLLUP(a, b)` | `UNION ALL` expansion | query-rewrite |
-| `CUBE(a, b)` | `UNION ALL` expansion | query-rewrite |
+| `PIVOT(...)` | Same or `CASE WHEN` aggregation | Feldera supports PIVOT with static columns only; use CASE WHEN for dynamic pivots |
+| `GROUPING SETS` | Same | |
+| `ROLLUP(a, b)` | Same | |
+| `CUBE(a, b)` | Same | |
 | `date_add(d, n)` | `d + INTERVAL 'n' DAY` | time-converter |
 | `date_sub(d, n)` | `d - INTERVAL 'n' DAY` | time-converter |
 | `datediff(end, start)` | `TIMESTAMPDIFF(DAY, start, end)` | time-converter |
 | `date_trunc('MONTH', d)` | `DATE_TRUNC(d, MONTH)` | time-converter |
 | `date_trunc('MONTH', ts)` | `TIMESTAMP_TRUNC(ts, MONTH)` | time-converter |
-| `STRING` / `TEXT` type | `VARCHAR` | type-converter |
-| `ARRAY<T>` type | `T ARRAY` | array-translation |
-| `CREATE OR REPLACE TEMP VIEW` | `CREATE VIEW` | type-converter |
-| `USING parquet/delta/csv` | Remove clause | type-converter |
 | `LPAD(s, n, pad)` | `CASE WHEN LENGTH(s) >= n THEN SUBSTRING(s,1,n) ELSE CONCAT(REPEAT(pad, n-LENGTH(s)), s) END` | query-rewrite |
 | `RPAD(s, n, pad)` | `CASE WHEN LENGTH(s) >= n THEN SUBSTRING(s,1,n) ELSE CONCAT(s, REPEAT(pad, n-LENGTH(s))) END` | query-rewrite |
 | `LOCATE(substr, str)` | `POSITION(substr IN str)` | |
 | `LOCATE(substr, str, pos)` | `POSITION(substr IN SUBSTRING(str, pos)) + pos - 1` | |
-| `startswith(s, prefix)` | `SUBSTRING(s, 1, LENGTH(prefix)) = prefix` | |
+| `startswith(s, prefix)` | `LEFT(s, LENGTH(prefix)) = prefix` | |
 | `endswith(s, suffix)` | `RIGHT(s, LENGTH(suffix)) = suffix` | |
-| `isnan(x)` | `x <> x` | NaN is the only value not equal to itself |
+| `isnan(x)` | `IS_NAN(x)` | |
 | `LEFT ANTI JOIN ... ON cond` | `WHERE NOT EXISTS (SELECT 1 FROM ... WHERE cond)` | query-rewrite |
 | `weekofyear(d)` | `EXTRACT(WEEK FROM d)` | query-rewrite |
 | `add_months(d, n)` | `d + INTERVAL 'n' MONTH` | |
@@ -202,12 +202,14 @@ These require translation but ARE supported:
 | `unix_timestamp(ts)` | `EXTRACT(EPOCH FROM ts)` | |
 | `unix_millis(ts)` | `CAST(EXTRACT(EPOCH FROM ts) * 1000 AS BIGINT)` | |
 | `unix_micros(ts)` | `CAST(EXTRACT(EPOCH FROM ts) * 1000000 AS BIGINT)` | |
+| `from_unixtime(n)` | `TIMESTAMPADD(SECOND, n, DATE '1970-01-01')` | Returns TIMESTAMP; Spark returns STRING in yyyy-MM-dd HH:mm:ss — Feldera has no FORMAT_TIMESTAMP, use CONCAT with YEAR/MONTH/DAY/HOUR/MINUTE/SECOND to match |
+| `to_timestamp(n)` (numeric) | `TIMESTAMPADD(SECOND, n, DATE '1970-01-01')` | |
+| `to_timestamp(s[, fmt])` | `PARSE_TIMESTAMP(fmt, s)` | Argument order reversed; default fmt is `%Y-%m-%d %H:%M:%S`; translate Java fmt to strftime |
 | `map_entries(m)` | `CROSS JOIN UNNEST(m) AS t(k, v)` | Flatten map to rows |
 | `translate(s, from, to)` | Chain of `REGEXP_REPLACE` per character | |
 | `to_date(ts)` / `to_date(ts, fmt)` | `CAST(ts AS DATE)` | Format param ignored |
 | `try_divide(a, b)` | `CASE WHEN b = 0 OR b IS NULL THEN NULL ELSE a / b END` | |
-| `substring_index(s, delim, n)` | `REGEXP_REPLACE(s, pattern, replacement)` | Use regex to extract |
-| `date_format(ts, fmt)` | Manual `CONCAT` with `YEAR()`, `MONTH()`, etc. | Build string from parts |
+| `date_format(d, fmt)` | `FORMAT_DATE(fmt, d)` | DATE only; argument order reversed; Spark uses Java patterns (yyyy-MM-dd), Feldera uses strftime (%Y-%m-%d); no TIMESTAMP equivalent |
 
 ## Unsupported (no Feldera equivalent)
 
@@ -216,12 +218,12 @@ Do NOT attempt to translate these. Return as unsupported immediately.
 ### Functions
 | Function | Category |
 |----------|----------|
+| `substring_index` | String |
 | `REGEXP_EXTRACT` | Regex |
 | `SOUNDEX` | String phonetic |
 | `find_in_set` | String search |
 | `parse_url` | URL parsing |
-| `SHA`, `SHA2`, `SHA256`, `MD5` | Hashing |
-| `from_unixtime`, `to_timestamp(<NUMERIC>)` | Epoch conversion |
+| `SHA`, `SHA2`, `SHA256` | Hashing |
 | `next_day` | Date |
 | `MAKE_DATE` | Date constructor |
 | `months_between` | Date diff |

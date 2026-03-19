@@ -25,7 +25,6 @@ felderize = [
     "data/samples/*.md",
     "data/demo/*.sql",
     "data/demo/expected/*.sql",
-    "data/docs/sql/*.md",
     "data/compiler/sql-to-dbsp",
     "data/compiler/*.jar",
 ]

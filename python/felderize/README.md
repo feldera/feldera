@@ -67,7 +67,7 @@ Environment variables (set in `.env`):
 ## How it works
 
 1. Loads translation rules from skill files (`spark/data/skills/`)
-2. Sends Spark SQL to the LLM with rules and validated examples
+2. Sends Spark SQL to the LLM with rules, validated examples, and relevant Feldera SQL documentation (from `docs.feldera.com/docs/sql/`)
 3. Parses the translated Feldera SQL from the LLM response
 4. Optionally validates output against the Feldera compiler, retrying with error feedback if needed
 

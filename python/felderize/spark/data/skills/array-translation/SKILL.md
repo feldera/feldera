@@ -11,8 +11,8 @@ Rewrite Spark/Trino-style `ARRAY<T>` type declarations to Feldera's suffix synta
 
 ## Rules
 
-- Feldera uses suffix syntax: `T ARRAY`, not `ARRAY<T>`.
-- Array literals use `ARRAY[...]` (square brackets).
+- Feldera uses suffix syntax for writing array types: `T ARRAY`, not `ARRAY<T>`.
+- Array literals use `ARRAY[...]` or  `ARRAY(...)`.
 - Array indexes are 1-based.
 - Never emit `ARRAY<...>` in Feldera DDL.
 

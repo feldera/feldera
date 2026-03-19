@@ -23,7 +23,7 @@ Translate Spark JSON and semi-structured data patterns to Feldera's `VARIANT` mo
 |---------|--------|---------|
 | Object field | `variant['key']` | `v['name']` |
 | Nested field | Chain brackets | `v['user']['id']` |
-| Array element | `variant[index]` | `v['items'][0]` |
+| Array element | `variant[index]` | `v[0]` |
 | Dot syntax | `variant.field` | `v.name` |
 | Case-sensitive | Quote field name | `v."lastName"` |
 
@@ -81,10 +81,11 @@ Spark's `json_tuple(json_string, key1, key2, ...)` extracts multiple keys.
 -- Spark
 SELECT j.k1, j.k2 FROM data LATERAL VIEW json_tuple(json_col, 'key1', 'key2') j AS k1, k2
 
--- Feldera
+-- Feldera (parse once, reuse alias)
 SELECT
-  CAST(PARSE_JSON(json_col)['key1'] AS VARCHAR) AS k1,
-  CAST(PARSE_JSON(json_col)['key2'] AS VARCHAR) AS k2
+  PARSE_JSON(json_col) AS parsed,
+  CAST(parsed['key1'] AS VARCHAR) AS k1,
+  CAST(parsed['key2'] AS VARCHAR) AS k2
 FROM data
 ```
 
@@ -99,14 +100,23 @@ to_json(struct_col)
 TO_JSON(struct_col)
 ```
 
+### json_array_length
+
+```sql
+-- Spark
+json_array_length(json_col)
+
+-- Feldera
+CARDINALITY(CAST(PARSE_JSON(json_col) AS VARIANT ARRAY))
+```
+
 ## Unsupported JSON Functions
 
-- `json_array_length` — no direct equivalent
 - `json_object_keys` — no direct equivalent
 - `schema_of_json` — schema inference not available
 
 ## Notes
 
-- All three translations above (`get_json_object`, `from_json`, `json_tuple`) are supported — do NOT mark as unsupported.
-- Prefer `PARSE_JSON` + bracket access over `CREATE TYPE` + `jsonstring_as_<type>` — it's simpler and avoids missing type definitions.
-- Call `PARSE_JSON` once and reuse the result when accessing multiple fields from the same column.
+- Do NOT mark `get_json_object`, `from_json`, `json_tuple`, or `json_array_length` as unsupported — all have rewrites.
+- Parse once, reuse: `SELECT PARSE_JSON(col) AS v, CAST(v['key'] AS VARCHAR) AS k` — Feldera supports lateral column aliases.
+- For performance-critical paths, `CREATE TYPE` + `jsonstring_as_<type>` is more efficient than `PARSE_JSON` + bracket access.
