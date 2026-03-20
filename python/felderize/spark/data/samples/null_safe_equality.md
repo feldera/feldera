@@ -14,4 +14,3 @@ Feldera:
 ON p.email <=> e.email AND p.phone <=> e.phone
 ```
 
-Rewrites: none — `<=>` is supported in Feldera.

@@ -173,12 +173,8 @@ def example(name: str | None, validate: bool, json_output: bool, no_docs: bool, 
     if not name:
         click.echo("Available examples:\n")
         for ex_name, files in pairs.items():
-            if isinstance(files, Path):
-                preview = files.read_text().strip().split("\n")[0]
-                click.echo(f"  {ex_name:20s} {preview}  [combined]")
-            else:
-                preview = files[0].read_text().strip().split("\n")[0]
-                click.echo(f"  {ex_name:20s} {preview}")
+            tag = "[combined]" if isinstance(files, Path) else "[schema+query]"
+            click.echo(f"  {ex_name:20s} {tag}")
         click.echo("\nRun one with: felderize example <name>")
         return
 

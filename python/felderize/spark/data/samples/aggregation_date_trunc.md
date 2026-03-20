@@ -32,4 +32,3 @@ FROM orders WHERE status IN ('PAID', 'SHIPPED')
 GROUP BY region, TIMESTAMP_TRUNC(created_at, MONTH);
 ```
 
-Rewrites: `STRING`→`VARCHAR`, remove `USING parquet`, `CREATE OR REPLACE TEMP VIEW`→`CREATE VIEW`, `date_trunc('MONTH', x)`→`TIMESTAMP_TRUNC(x, MONTH)`.

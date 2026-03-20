@@ -20,4 +20,3 @@ INNER JOIN order_facts o ON c.customer_id = o.customer_id
 WHERE o.amount >= 500;
 ```
 
-Rewrites: `LEFT SEMI JOIN`→`INNER JOIN` + `SELECT DISTINCT`.

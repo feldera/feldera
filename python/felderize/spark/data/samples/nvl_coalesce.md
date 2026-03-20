@@ -16,4 +16,3 @@ SELECT row_id, grp, COALESCE(amount, discount) AS resolved_amount
 FROM scalar_function_rows;
 ```
 
-Rewrites: `nvl(a, b)`→`COALESCE(a, b)`. Same for `ifnull(a, b)`.

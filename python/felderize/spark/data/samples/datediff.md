@@ -14,4 +14,3 @@ Feldera:
 MAX(TIMESTAMPDIFF(DAY, shipped_at, delivered_at)) AS max_days
 ```
 
-Rewrites: `datediff(end, start)`→`TIMESTAMPDIFF(DAY, start, end)` (argument order reversed).

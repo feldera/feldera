@@ -16,4 +16,3 @@ SELECT row_id, TRANSFORM(nums, x -> x + 1) AS nums_plus_one
 FROM collection_events;
 ```
 
-Rewrites: `ARRAY<INT>`→`INT ARRAY`. Lambda syntax preserved.

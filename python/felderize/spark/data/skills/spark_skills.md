@@ -255,7 +255,32 @@ Results are always `VARIANT` — cast to get a concrete type: `CAST(v['age'] AS 
 | `json_array_length(s)` | `CARDINALITY(CAST(PARSE_JSON(s) AS VARIANT ARRAY))` | |
 
 Notes:
-- Parse once, reuse: `SELECT PARSE_JSON(col) AS v, CAST(v['key'] AS VARCHAR) AS k` — lateral column aliases supported.
+- **Parse once, reuse — for simple SELECT (no GROUP BY).** When extracting multiple fields from the same JSON column without aggregation, call `PARSE_JSON` once as a lateral alias:
+
+```sql
+-- Simple SELECT: parse once, reuse alias
+SELECT
+  PARSE_JSON(payload) AS v,
+  CAST(v['user_id'] AS VARCHAR)  AS user_id,
+  CAST(v['amount'] AS DOUBLE)    AS amount,
+  CAST(v['currency'] AS VARCHAR) AS currency
+FROM raw_events;
+```
+
+- **With GROUP BY: use a CTE to pre-parse.** The lateral alias pattern breaks with GROUP BY because `payload` must be in the GROUP BY or an aggregate. Pre-parse in a CTE instead. The CTE goes *inside* `CREATE VIEW ... AS`, not before it:
+
+```sql
+CREATE VIEW summary AS
+WITH parsed AS (
+  SELECT *, PARSE_JSON(payload) AS v FROM raw_events
+)
+SELECT
+  CAST(v['user_id'] AS VARCHAR) AS user_id,
+  COUNT(*) AS cnt
+FROM parsed
+GROUP BY CAST(v['user_id'] AS VARCHAR);
+```
+
 - For performance-critical paths, `CREATE TYPE` + `jsonstring_as_<type>` is more efficient than `PARSE_JSON` + bracket access.
 
 #### Math functions
@@ -590,10 +615,12 @@ SELECT id, UPPER(name) AS name, SOUNDEX(name) AS sound FROM users
 
 #### Bitwise (scalar)
 
-| Function | Notes |
-|----------|-------|
-| `bit_and(a, b)`, `bit_or(a, b)`, `bit_xor(a, b)` | Scalar 2-arg form not supported; only aggregate `BIT_AND/OR/XOR(col)` exists |
-| `shiftleft`, `shiftright`, `shiftrightunsigned` | No bitwise shift syntax in Feldera |
+| Spark | Feldera | Notes |
+|-------|---------|-------|
+| `bit_and(a, b)` | `a & b` | Use bitwise operator |
+| `bit_or(a, b)` | `a \| b` | Use bitwise operator |
+| `bit_xor(a, b)` | `a ^ b` | Use bitwise operator |
+| `shiftleft`, `shiftright`, `shiftrightunsigned` | — | No bitwise shift syntax in Feldera |
 
 #### Math
 

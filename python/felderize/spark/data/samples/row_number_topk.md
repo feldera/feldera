@@ -21,4 +21,3 @@ SELECT category, product_id, revenue FROM (
 ) ranked WHERE rn <= 3;
 ```
 
-ROW_NUMBER with TopK filter (`WHERE rn <= N`) passes through directly.

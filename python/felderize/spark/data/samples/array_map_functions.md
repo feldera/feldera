@@ -32,4 +32,3 @@ SELECT user_id, CARDINALITY(tags) AS tag_count,
 FROM session_profiles;
 ```
 
-Rewrites: `ARRAY<STRING>`→`VARCHAR ARRAY`, `size()`→`CARDINALITY()`, `element_at(map, key)`→`map[key]`.
