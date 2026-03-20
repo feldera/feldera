@@ -72,7 +72,12 @@ def translate(
     "--verbose", is_flag=True, help="Log SQL submitted to validator at each attempt"
 )
 def translate_file(
-    sql_file: str, validate: bool, compiler: str | None, json_output: bool, no_docs: bool, verbose: bool
+    sql_file: str,
+    validate: bool,
+    compiler: str | None,
+    json_output: bool,
+    no_docs: bool,
+    verbose: bool,
 ):
     """Translate a single combined Spark SQL file (schema + views) to Feldera SQL."""
     if not validate:
@@ -177,7 +182,12 @@ _EXAMPLES_DIR = Path(__file__).resolve().parent / "data" / "demo"
     "--verbose", is_flag=True, help="Log SQL submitted to validator at each attempt"
 )
 def example(
-    name: str | None, validate: bool, compiler: str | None, json_output: bool, no_docs: bool, verbose: bool
+    name: str | None,
+    validate: bool,
+    compiler: str | None,
+    json_output: bool,
+    no_docs: bool,
+    verbose: bool,
 ):
     """Run a built-in example translation.
 

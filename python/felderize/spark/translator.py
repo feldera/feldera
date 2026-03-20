@@ -122,7 +122,10 @@ def _translate_with_repair(
             print("---", file=sys.stderr)
         errors = validate_sql(full_sql, config.feldera_compiler or None)
         if errors and any("Compiler not found" in e for e in errors):
-            print("Warning: Feldera compiler not found — skipping validation.", file=sys.stderr)
+            print(
+                "Warning: Feldera compiler not found — skipping validation.",
+                file=sys.stderr,
+            )
             result.warnings.append("Compiler not found — output SQL is not validated")
             result.status = Status.UNSUPPORTED if result.unsupported else Status.SUCCESS
             return result
