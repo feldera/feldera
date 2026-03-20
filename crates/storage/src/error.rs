@@ -37,8 +37,8 @@ pub enum StorageError {
     /// Cannot perform operation because storage is not enabled.
     #[error("Cannot perform operation because storage is not enabled.")]
     StorageDisabled,
-    /// Error while creating a bloom filter.
-    #[error("Failed to serialize/deserialize bloom filter.")]
+    /// Error while creating a batch key filter.
+    #[error("Failed to serialize/deserialize batch key filter.")]
     BloomFilter,
 
     /// Path is not valid in storage.

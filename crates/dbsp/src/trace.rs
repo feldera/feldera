@@ -34,7 +34,7 @@ use crate::trace::cursor::{
     DefaultPushCursor, FilteredMergeCursor, FilteredMergeCursorWithSnapshot, PushCursor,
     UnfilteredMergeCursor,
 };
-use crate::utils::IsNone;
+use crate::utils::{IsNone, RoaringU32Key};
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::CursorFactory;
 use enum_map::Enum;
@@ -102,6 +102,7 @@ pub trait DBData:
     + Debug
     + ArchivedDBData
     + IsNone<Inner: ArchivedDBData>
+    + RoaringU32Key
     + 'static
 {
 }
@@ -119,6 +120,7 @@ impl<T> DBData for T where
         + Debug
         + ArchivedDBData
         + IsNone<Inner: ArchivedDBData>
+        + RoaringU32Key
         + 'static
 {
 }
@@ -467,8 +469,8 @@ where
     /// the implementation need not attempt to cache the return value.
     fn approximate_byte_size(&self) -> usize;
 
-    /// Statistics of the Bloom filter used by [Cursor::seek_key_exact].
-    /// The Bloom filter (kept in memory) is used there to quickly check
+    /// Statistics of the batch key filter used by [Cursor::seek_key_exact].
+    /// The filter (kept in memory) is used there to quickly check
     /// whether a key might be present in the batch, before doing a
     /// binary tree lookup within the batch to be exactly sure.
     /// The statistics include for example the size in bytes and the hit rate.
@@ -493,8 +495,8 @@ where
         self.len() == 0
     }
 
-    /// A method that returns either true (possibly in the batch) or false
-    /// (definitely not in the batch).
+    /// A hash-based filter probe that returns either true (possibly in the
+    /// batch) or false (definitely not in the batch).
     fn maybe_contains_key(&self, _hash: u64) -> bool {
         true
     }

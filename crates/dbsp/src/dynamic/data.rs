@@ -12,6 +12,7 @@ use crate::{
         rkyv::SerializeDyn,
     },
     hash::default_hash,
+    utils::RoaringU32Key,
 };
 
 /// Defines the minimal set of operations that must be supported by
@@ -19,7 +20,16 @@ use crate::{
 ///
 /// This trait is object safe and can be invoked via dynamic dispatch.
 pub trait Data:
-    Comparable + Clonable + SerializeDyn + DeserializableDyn + Send + Sync + Debug + AsAny + SizeOf
+    Comparable
+    + Clonable
+    + SerializeDyn
+    + DeserializableDyn
+    + Send
+    + Sync
+    + Debug
+    + AsAny
+    + SizeOf
+    + RoaringU32Key
 {
     /// Compute a hash of the object using default hasher and seed.
     fn default_hash(&self) -> u64;

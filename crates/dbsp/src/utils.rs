@@ -5,6 +5,7 @@ pub(crate) mod binary_heap;
 mod consolidation;
 mod graph;
 mod is_none;
+mod roaring_u32_key;
 mod sort;
 pub mod tuple;
 
@@ -30,6 +31,7 @@ pub use consolidation::{
 pub use graph::components;
 
 pub use is_none::IsNone;
+pub use roaring_u32_key::RoaringU32Key;
 
 #[allow(unused_imports)]
 pub use dot::{DotEdgeAttributes, DotNodeAttributes};

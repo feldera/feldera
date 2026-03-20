@@ -750,8 +750,7 @@ where
     }
 
     fn seek_key_exact(&mut self, key: &K, hash: Option<u64>) -> bool {
-        let hash = hash.unwrap_or_else(|| key.default_hash());
-        if !self.wset.maybe_contains_key(hash) {
+        if !self.wset.file.probe_key_filter(key, hash).may_contain() {
             return false;
         }
         self.seek_key(key);

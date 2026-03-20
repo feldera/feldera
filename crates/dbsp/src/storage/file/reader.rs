@@ -3,11 +3,13 @@
 //! [`Reader`] is the top-level interface for reading layer files.
 
 use super::format::{Compression, FileTrailer};
-use super::{AnyFactories, Deserializer, Factories};
+use super::{
+    AnyFactories, BatchKeyFilter, BatchKeyFilterKind, BatchKeyFilterProbe, Deserializer, Factories,
+};
 use crate::dynamic::{DynVec, WeightTrait};
 use crate::storage::buffer_cache::CacheAccess;
-use crate::storage::file::format::FilterBlock;
-use crate::storage::tracking_bloom_filter::{BloomFilterStats, TrackingBloomFilter};
+use crate::storage::file::format::{BloomFilterBlock, RoaringBitmapFilterBlock};
+use crate::storage::tracking_bloom_filter::BloomFilterStats;
 use crate::storage::{
     backend::StorageError,
     buffer_cache::{BufferCache, FBuf},
@@ -137,6 +139,29 @@ pub enum CorruptionError {
         block_type: &'static str,
 
         /// Underlying error.
+        inner: String,
+    },
+
+    /// Filter block has an unknown magic number.
+    #[error("Filter block ({location}) has unknown magic {magic:?}")]
+    UnknownFilterBlockMagic {
+        /// Block location.
+        location: BlockLocation,
+
+        /// Unexpected magic number.
+        magic: [u8; 4],
+    },
+
+    /// Filter block contents are malformed.
+    #[error("Invalid {kind} filter block ({location}): {inner}")]
+    InvalidFilterEncoding {
+        /// Block location.
+        location: BlockLocation,
+
+        /// Filter kind being decoded.
+        kind: &'static str,
+
+        /// Underlying decode error.
         inner: String,
     },
 
@@ -1299,16 +1324,57 @@ struct Column {
     n_rows: u64,
 }
 
-impl FilterBlock {
-    fn new(file_handle: &dyn FileReader, location: BlockLocation) -> Result<Self, Error> {
-        let block = file_handle.read_block(location)?;
-        Self::read_le(&mut io::Cursor::new(block.as_slice())).map_err(|e| {
-            Error::Corruption(CorruptionError::Binrw {
-                location,
-                block_type: "filter",
-                inner: e.to_string(),
-            })
+fn parse_filter_block<T: for<'a> BinRead<Args<'a> = ()>>(
+    block: &FBuf,
+    location: BlockLocation,
+    block_type: &'static str,
+) -> Result<T, Error> {
+    T::read_le(&mut io::Cursor::new(block.as_slice())).map_err(|e| {
+        Error::Corruption(CorruptionError::Binrw {
+            location,
+            block_type,
+            inner: e.to_string(),
         })
+    })
+}
+
+fn read_filter_block(
+    file_handle: &dyn FileReader,
+    location: BlockLocation,
+) -> Result<BatchKeyFilter, Error> {
+    let block = file_handle.read_block(location)?;
+    if block.len() < 8 {
+        return Err(Error::Corruption(CorruptionError::InvalidFilterEncoding {
+            location,
+            kind: "unknown",
+            inner: format!("block too short: {} bytes", block.len()),
+        }));
+    }
+    let mut magic = [0u8; 4];
+    magic.copy_from_slice(&block[4..8]);
+
+    match magic {
+        crate::storage::file::format::BLOOM_FILTER_BLOCK_MAGIC => {
+            let block: BloomFilterBlock = parse_filter_block(&block, location, "bloom filter")?;
+            Ok(BatchKeyFilter::from_bloom_parts(
+                block.num_hashes,
+                block.data,
+            ))
+        }
+        crate::storage::file::format::ROARING_FILTER_BLOCK_MAGIC => {
+            let block: RoaringBitmapFilterBlock =
+                parse_filter_block(&block, location, "roaring filter")?;
+            BatchKeyFilter::from_roaring_bytes(&block.data).map_err(|e| {
+                Error::Corruption(CorruptionError::InvalidFilterEncoding {
+                    location,
+                    kind: "roaring",
+                    inner: e.to_string(),
+                })
+            })
+        }
+        magic => Err(Error::Corruption(
+            CorruptionError::UnknownFilterBlockMagic { location, magic },
+        )),
     }
 }
 
@@ -1498,7 +1564,7 @@ where
 #[derive(Debug)]
 pub struct Reader<T> {
     file: ImmutableFileRef,
-    bloom_filter: Option<TrackingBloomFilter>,
+    key_filter: Option<BatchKeyFilter>,
     columns: Vec<Column>,
 
     /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
@@ -1526,7 +1592,7 @@ where
         factories: &[&AnyFactories],
         cache: fn() -> Arc<BufferCache>,
         file: Arc<dyn FileReader>,
-        bloom_filter: Option<TrackingBloomFilter>,
+        key_filter: Option<BatchKeyFilter>,
     ) -> Result<Self, Error> {
         let file_size = file.get_size()?;
         if file_size < 512 || (file_size % 512) != 0 {
@@ -1595,27 +1661,26 @@ where
             }
         }
 
-        fn read_filter_block(
+        fn read_filter_block_at(
             file_handle: &dyn FileReader,
             offset: u64,
             size: usize,
-        ) -> Result<TrackingBloomFilter, Error> {
-            Ok(FilterBlock::new(
+        ) -> Result<BatchKeyFilter, Error> {
+            read_filter_block(
                 file_handle,
                 BlockLocation::new(offset, size).map_err(|error: InvalidBlockLocation| {
                     Error::Corruption(CorruptionError::InvalidFilterLocation(error))
                 })?,
-            )?
-            .into())
+            )
         }
-        let bloom_filter = match bloom_filter {
-            Some(bloom_filter) => Some(bloom_filter),
-            None if file_trailer.has_filter64() => Some(read_filter_block(
+        let key_filter = match key_filter {
+            Some(key_filter) => Some(key_filter),
+            None if file_trailer.has_filter64() => Some(read_filter_block_at(
                 &*file,
                 file_trailer.filter_offset64,
                 file_trailer.filter_size64 as usize,
             )?),
-            None if file_trailer.filter_offset != 0 => Some(read_filter_block(
+            None if file_trailer.filter_offset != 0 => Some(read_filter_block_at(
                 &*file,
                 file_trailer.filter_offset,
                 file_trailer.filter_size as usize,
@@ -1632,7 +1697,7 @@ where
                 file_trailer.version,
             ),
             columns,
-            bloom_filter,
+            key_filter,
             _phantom: PhantomData,
         })
     }
@@ -1679,15 +1744,20 @@ where
         Ok(self.file.file_handle.get_size()?)
     }
 
-    /// Returns statistics of the Bloom filter, including its size in bytes.
+    /// Returns statistics of the batch key filter, including its size in bytes.
     ///
-    /// If the file doesn't have a Bloom filter, returns a default of zeros.
+    /// If the file doesn't have a filter, returns a default of zeros.
     pub fn filter_stats(&self) -> BloomFilterStats {
-        if let Some(bloom_filter) = &self.bloom_filter {
-            bloom_filter.stats()
+        if let Some(key_filter) = &self.key_filter {
+            key_filter.stats()
         } else {
             BloomFilterStats::default()
         }
+    }
+
+    /// Returns the kind of batch key filter loaded for this file, if any.
+    pub fn filter_kind(&self) -> Option<BatchKeyFilterKind> {
+        self.key_filter.as_ref().map(BatchKeyFilter::kind)
     }
 
     /// Evict this file from the cache.
@@ -1714,11 +1784,23 @@ where
     A: DataTrait + ?Sized,
     (&'static K, &'static A, N): ColumnSpec,
 {
-    /// Asks the bloom filter of the reader if we have the key.
-    pub fn maybe_contains_key(&self, hash: u64) -> bool {
-        self.bloom_filter
+    /// Probes the batch key filter using the original key value.
+    ///
+    /// Exact filters can return [`BatchKeyFilterProbe::Present`] or
+    /// [`BatchKeyFilterProbe::Absent`].
+    pub fn probe_key_filter(&self, key: &K, hash: Option<u64>) -> BatchKeyFilterProbe {
+        self.key_filter
             .as_ref()
-            .is_none_or(|b| b.contains_hash(hash))
+            .map_or(BatchKeyFilterProbe::MaybePresent, |filter| {
+                filter.probe_key(key, hash)
+            })
+    }
+
+    /// Asks the batch key filter whether the hashed key may be present.
+    pub fn maybe_contains_key(&self, hash: u64) -> bool {
+        self.key_filter
+            .as_ref()
+            .is_none_or(|filter| filter.maybe_contains_hash(hash))
     }
 
     /// Returns a [`RowGroup`] for all of the rows in column 0.
@@ -3043,7 +3125,7 @@ where
     }
 }
 
-/// A `DynVec`, possibly filtered by a Bloom filter.
+/// A `DynVec`, possibly filtered by a batch key filter.
 struct FilteredKeys<'b, K>
 where
     K: ?Sized,
@@ -3051,17 +3133,17 @@ where
     /// Sorted array to keys to retrieve.
     queried_keys: &'b DynVec<K>,
 
-    /// Indexes into `queried_keys` of the keys that pass the Bloom filter.  If
-    /// this is `None`, then enough of the keys passed the Bloom filter that we
+    /// Indexes into `queried_keys` of the keys that pass the filter. If this
+    /// is `None`, then enough of the keys passed an approximate filter that we
     /// just take all of them.
-    bloom_keys: Option<Vec<usize>>,
+    filtered_keys: Option<Vec<usize>>,
 }
 
 impl<'b, K> FilteredKeys<'b, K>
 where
     K: DataTrait + ?Sized,
 {
-    /// Returns `keys`, filtered using `reader.maybe_contains_key()`.
+    /// Returns `keys`, filtered using the reader's batch key filter.
     fn new<'a, A, N>(reader: &'a Reader<(&'static K, &'static A, N)>, keys: &'b DynVec<K>) -> Self
     where
         A: DataTrait + ?Sized,
@@ -3069,34 +3151,35 @@ where
     {
         debug_assert!(keys.is_sorted_by(&|a, b| a.cmp(b)));
 
-        // Pass keys into the Bloom filter until 1/300th of them pass the Bloom
-        // filter.  Empirically, this seems to good enough for the common case
-        // where the data passed into a "distinct" operator is actually distinct
-        // but we get some false positives from the Bloom filter.  Because the
-        // keys that go into a "distinct" operator are often large, we don't
-        // want to pass all of them into the Bloom filter if we're going to have
-        // to deserialize them anyhow later.
-        let mut bloom_keys = SmallVec::<[_; 50]>::new();
+        let exact_filter = reader
+            .key_filter
+            .as_ref()
+            .is_some_and(BatchKeyFilter::is_exact);
+
+        // Pass keys into the filter until 1/300th of them pass an approximate
+        // filter.  Exact filters don't have false positives, so they are always
+        // worth applying to the full key set.
+        let mut filtered_keys = SmallVec::<[_; 50]>::new();
         for (index, key) in keys.dyn_iter().enumerate() {
-            if reader.maybe_contains_key(key.default_hash()) {
-                bloom_keys.push(index);
-                if bloom_keys.len() >= keys.len() / 300 {
+            if reader.probe_key_filter(key, None).may_contain() {
+                filtered_keys.push(index);
+                if !exact_filter && filtered_keys.len() >= keys.len() / 300 {
                     return Self {
                         queried_keys: keys,
-                        bloom_keys: None,
+                        filtered_keys: None,
                     };
                 }
             }
         }
         Self {
             queried_keys: keys,
-            bloom_keys: Some(bloom_keys.into_vec()),
+            filtered_keys: Some(filtered_keys.into_vec()),
         }
     }
 
     fn len(&self) -> usize {
-        match &self.bloom_keys {
-            Some(bloom_keys) => bloom_keys.len(),
+        match &self.filtered_keys {
+            Some(filtered_keys) => filtered_keys.len(),
             None => self.queried_keys.len(),
         }
     }
@@ -3113,8 +3196,8 @@ where
     type Output = K;
 
     fn index(&self, index: usize) -> &Self::Output {
-        match &self.bloom_keys {
-            Some(bloom_keys) => &self.queried_keys[bloom_keys[index]],
+        match &self.filtered_keys {
+            Some(filtered_keys) => &self.queried_keys[filtered_keys[index]],
             None => &self.queried_keys[index],
         }
     }

@@ -8,11 +8,11 @@ use crate::storage::{
     backend::{BlockLocation, FileReader, FileWriter, StorageBackend, StorageError},
     buffer_cache::{BufferCache, FBuf, FBufSerializer, LimitExceeded},
     file::{
-        BLOOM_FILTER_SEED,
         format::{
-            BlockHeader, COMPATIBLE_FEATURE_FILTER64, DATA_BLOCK_MAGIC, DataBlockHeader,
-            FILE_TRAILER_BLOCK_MAGIC, FileTrailer, FileTrailerColumn, FilterBlockRef, FixedLen,
-            INDEX_BLOCK_MAGIC, IndexBlockHeader, NodeType, VERSION_NUMBER, Varint,
+            BlockHeader, BloomFilterBlockRef, COMPATIBLE_FEATURE_FILTER64, DATA_BLOCK_MAGIC,
+            DataBlockHeader, FILE_TRAILER_BLOCK_MAGIC, FileTrailer, FileTrailerColumn, FixedLen,
+            INDEX_BLOCK_MAGIC, IndexBlockHeader, NodeType, ROARING_FILTER_BLOCK_MAGIC,
+            RoaringBitmapFilterBlockRef, VERSION_NUMBER, Varint,
         },
         reader::TreeNode,
         with_serializer,
@@ -25,7 +25,6 @@ use binrw::{
 use crc32c::crc32c;
 #[cfg(debug_assertions)]
 use dyn_clone::clone_box;
-use fastbloom::BloomFilter;
 use feldera_buffer_cache::CacheEntry;
 use feldera_storage::StoragePath;
 use snap::raw::{Encoder, max_compress_len};
@@ -41,8 +40,7 @@ use std::{
 use tracing::info;
 
 use super::format::Compression;
-use super::{AnyFactories, Factories, reader::Reader};
-use crate::storage::tracking_bloom_filter::TrackingBloomFilter;
+use super::{AnyFactories, BatchKeyFilter, BatchKeyFilterKind, Factories, reader::Reader};
 use crate::{
     Runtime,
     dynamic::{DataTrait, DeserializeDyn, SerializeDyn},
@@ -139,6 +137,11 @@ pub struct Parameters {
 
     /// How to compress input and data blocks in the output file.
     pub compression: Option<Compression>,
+
+    /// Optional override for the per-batch key filter implementation.
+    ///
+    /// If unset, the writer uses the runtime `DevTweaks` selection.
+    pub filter_kind: Option<BatchKeyFilterKind>,
 }
 
 impl Parameters {
@@ -168,6 +171,15 @@ impl Parameters {
             ..self
         }
     }
+
+    /// Returns these parameters with the batch key filter implementation
+    /// overridden.
+    pub fn with_filter_kind(self, filter_kind: BatchKeyFilterKind) -> Self {
+        Self {
+            filter_kind: Some(filter_kind),
+            ..self
+        }
+    }
 }
 
 impl Default for Parameters {
@@ -179,6 +191,7 @@ impl Default for Parameters {
             #[cfg(test)]
             max_branch: usize::MAX,
             compression: Some(Compression::Snappy),
+            filter_kind: None,
         }
     }
 }
@@ -1095,12 +1108,52 @@ impl BlockWriter {
 struct Writer {
     cache: fn() -> Arc<BufferCache>,
     writer: BlockWriter,
-    bloom_filter: Option<TrackingBloomFilter>,
+    key_filter: Option<BatchKeyFilter>,
     cws: Vec<ColumnWriter>,
     finished_columns: Vec<FileTrailerColumn>,
 }
 
 impl Writer {
+    fn filter_kind(parameters: &Parameters) -> BatchKeyFilterKind {
+        parameters
+            .filter_kind
+            .unwrap_or_else(|| Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.batch_key_filter))
+    }
+
+    fn log_filter_selection(
+        requested_filter_kind: BatchKeyFilterKind,
+        key_type_name: &'static str,
+        key_filter: Option<&BatchKeyFilter>,
+    ) {
+        match key_filter.map(BatchKeyFilter::kind) {
+            Some(BatchKeyFilterKind::RoaringU32) => {
+                static ONCE: Once = Once::new();
+                ONCE.call_once(|| {
+                    info!("Using exact roaring_u32 batch key filter for key type {key_type_name}");
+                });
+            }
+            Some(BatchKeyFilterKind::Bloom)
+                if requested_filter_kind == BatchKeyFilterKind::RoaringU32 =>
+            {
+                static ONCE: Once = Once::new();
+                ONCE.call_once(|| {
+                    info!(
+                        "Requested roaring_u32 batch key filter for key type {key_type_name}; falling back to Bloom filter"
+                    );
+                });
+            }
+            None if requested_filter_kind == BatchKeyFilterKind::RoaringU32 => {
+                static ONCE: Once = Once::new();
+                ONCE.call_once(|| {
+                    info!(
+                        "Requested roaring_u32 batch key filter for key type {key_type_name}, but Bloom filters are disabled; batch key filtering disabled"
+                    );
+                });
+            }
+            _ => {}
+        }
+    }
+
     fn bloom_false_positive_rate() -> Option<f64> {
         let rate = Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.bloom_false_positive_rate);
         let rate = (rate > 0.0 && rate < 1.0).then_some(rate);
@@ -1126,18 +1179,23 @@ impl Writer {
     ) -> Result<Self, StorageError> {
         assert_eq!(factories.len(), n_columns);
 
-        let bloom_filter = Self::bloom_false_positive_rate().map(|bloom_false_positive_rate| {
-            TrackingBloomFilter::new(
-                BloomFilter::with_false_pos(bloom_false_positive_rate)
-                    .seed(&BLOOM_FILTER_SEED)
-                    .expected_items({
-                        // `.max(64)` works around a fastbloom bug that hangs when the
-                        // expected number of items is zero (see
-                        // https://github.com/tomtomwombat/fastbloom/issues/17).
-                        estimated_keys.max(64)
-                    }),
-            )
-        });
+        let requested_filter_kind = Self::filter_kind(&parameters);
+        let bloom_false_positive_rate = match requested_filter_kind {
+            BatchKeyFilterKind::Bloom => Self::bloom_false_positive_rate(),
+            BatchKeyFilterKind::RoaringU32 if factories[0].supports_roaring_u32() => None,
+            BatchKeyFilterKind::RoaringU32 => Self::bloom_false_positive_rate(),
+        };
+        let key_filter = BatchKeyFilter::new(
+            requested_filter_kind,
+            estimated_keys,
+            factories[0],
+            bloom_false_positive_rate,
+        );
+        Self::log_filter_selection(
+            requested_filter_kind,
+            factories[0].key_type_name(),
+            key_filter.as_ref(),
+        );
         let parameters = Arc::new(parameters);
         let cws = factories
             .iter()
@@ -1148,7 +1206,7 @@ impl Writer {
         let writer = Self {
             cache,
             writer: BlockWriter::new(cache(), storage_backend.create_with_prefix(&worker.into())?),
-            bloom_filter,
+            key_filter,
             cws,
             finished_columns,
         };
@@ -1169,9 +1227,8 @@ impl Writer {
         };
 
         if column == 0 {
-            // Add `key` to bloom filter.
-            if let Some(bloom_filter) = &mut self.bloom_filter {
-                bloom_filter.insert_hash(item.0.default_hash());
+            if let Some(key_filter) = &mut self.key_filter {
+                key_filter.insert_key(item.0);
             }
         }
 
@@ -1195,24 +1252,44 @@ impl Writer {
         Ok(())
     }
 
-    pub fn close(
-        mut self,
-    ) -> Result<(Arc<dyn FileReader>, Option<TrackingBloomFilter>), StorageError> {
+    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, Option<BatchKeyFilter>), StorageError> {
         debug_assert_eq!(self.cws.len(), self.finished_columns.len());
 
-        // Write the Bloom filter.
-        let filter_location = if let Some(bloom_filter) = &self.bloom_filter {
-            let filter_block = FilterBlockRef::from(bloom_filter);
-            // std::mem::size_of::<FilterBlockRef>() should be an
-            // upper bound: in-memory struct size + bloom payload bytes.
-            let estimated_block_size = (std::mem::size_of::<FilterBlockRef>()
-                + std::mem::size_of_val(filter_block.data))
-            // our binrw min block size is 512 so we round it up to avoid another
-            // reallocation
-            .next_multiple_of(512);
-            self.writer
-                .write_block(filter_block.into_block(estimated_block_size), None)?
-                .1
+        // Write the batch key filter.
+        let filter_location = if let Some(key_filter) = &self.key_filter {
+            match key_filter {
+                BatchKeyFilter::Bloom(filter) => {
+                    let filter_block = BloomFilterBlockRef {
+                        header: BlockHeader::new(
+                            &crate::storage::file::format::BLOOM_FILTER_BLOCK_MAGIC,
+                        ),
+                        num_hashes: filter.num_hashes(),
+                        data: filter.as_slice(),
+                    };
+                    let estimated_block_size = (std::mem::size_of::<BloomFilterBlockRef>()
+                        + std::mem::size_of_val(filter_block.data))
+                    .next_multiple_of(512);
+                    self.writer
+                        .write_block(filter_block.into_block(estimated_block_size), None)?
+                        .1
+                }
+                BatchKeyFilter::RoaringU32(filter) => {
+                    let mut data = Vec::with_capacity(filter.serialized_size());
+                    filter
+                        .serialize_into(&mut data)
+                        .map_err(|_| StorageError::BloomFilter)?;
+                    let filter_block = RoaringBitmapFilterBlockRef {
+                        header: BlockHeader::new(&ROARING_FILTER_BLOCK_MAGIC),
+                        data: &data,
+                    };
+                    let estimated_block_size = (std::mem::size_of::<RoaringBitmapFilterBlockRef>()
+                        + data.len())
+                    .next_multiple_of(512);
+                    self.writer
+                        .write_block(filter_block.into_block(estimated_block_size), None)?
+                        .1
+                }
+            }
         } else {
             BlockLocation { offset: 0, size: 0 }
         };
@@ -1249,7 +1326,7 @@ impl Writer {
         self.writer
             .insert_cache_entry(location, Arc::new(file_trailer));
 
-        Ok((self.writer.complete()?, self.bloom_filter))
+        Ok((self.writer.complete()?, self.key_filter))
     }
 
     pub fn n_columns(&self) -> usize {
@@ -1368,9 +1445,7 @@ where
 
     /// Finishes writing the layer file and returns the writer passed to
     /// [`new`](Self::new).
-    pub fn close(
-        mut self,
-    ) -> Result<(Arc<dyn FileReader>, Option<TrackingBloomFilter>), StorageError> {
+    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, Option<BatchKeyFilter>), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.close()
     }
@@ -1392,9 +1467,9 @@ where
         let any_factories = self.factories.any_factories();
 
         let cache = self.inner.cache;
-        let (file_handle, bloom_filter) = self.close()?;
+        let (file_handle, key_filter) = self.close()?;
 
-        Reader::new(&[&any_factories], cache, file_handle, bloom_filter)
+        Reader::new(&[&any_factories], cache, file_handle, key_filter)
     }
 }
 
@@ -1545,9 +1620,7 @@ where
     ///
     /// This function will panic if [`write1`](Self::write1) has been called
     /// without a subsequent call to [`write0`](Self::write0).
-    pub fn close(
-        mut self,
-    ) -> Result<(Arc<dyn FileReader>, Option<TrackingBloomFilter>), StorageError> {
+    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, Option<BatchKeyFilter>), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.finish_column::<K1, A1>(1)?;
         self.inner.close()
@@ -1574,12 +1647,12 @@ where
         let any_factories0 = self.factories0.any_factories();
         let any_factories1 = self.factories1.any_factories();
         let cache = self.inner.cache;
-        let (file_handle, bloom_filter) = self.close()?;
+        let (file_handle, key_filter) = self.close()?;
         Reader::new(
             &[&any_factories0, &any_factories1],
             cache,
             file_handle,
-            bloom_filter,
+            key_filter,
         )
     }
 }

@@ -36,8 +36,10 @@
 //! value and for sequential reads.  It should be possible to disable indexing
 //! by data value for workloads that don't require it.
 //!
-//! Layer files support approximate set membership query in `~O(1)` time using
-//! [a filter block](format::FilterBlock).
+//! Layer files support cheap key-membership tests using a per-batch filter
+//! block. The default filter is Bloom-based; key types that can be mapped
+//! exactly into a `u32` filter domain can alternatively use an exact roaring
+//! bitmap filter.
 //!
 //! Layer files should support 1 TB data size.
 //!
@@ -87,6 +89,7 @@ use std::cell::RefCell;
 use std::fmt::Debug;
 use std::{any::Any, sync::Arc};
 
+mod filter;
 pub mod format;
 mod item;
 pub mod reader;
@@ -97,6 +100,7 @@ use crate::{
     dynamic::{DataTrait, Erase, Factory, WithFactory},
     storage::file::item::RefTup2Factory,
 };
+pub use filter::{BatchKeyFilter, BatchKeyFilterKind, BatchKeyFilterProbe, TrackingRoaringBitmap};
 pub use item::{ArchivedItem, Item, ItemFactory, WithItemFactory};
 
 const BLOOM_FILTER_SEED: u128 = 42;
@@ -112,6 +116,9 @@ where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
 {
+    key_type_name: &'static str,
+    supports_roaring_u32: bool,
+
     /// Factory for creating instances of `K`.
     pub key_factory: &'static dyn Factory<K>,
 
@@ -132,6 +139,8 @@ where
 {
     fn clone(&self) -> Self {
         Self {
+            key_type_name: self.key_type_name,
+            supports_roaring_u32: self.supports_roaring_u32,
             key_factory: self.key_factory,
             item_factory: self.item_factory,
             keys_factory: self.keys_factory,
@@ -153,6 +162,8 @@ where
         AType: DBData + Erase<A>,
     {
         Self {
+            key_type_name: std::any::type_name::<KType>(),
+            supports_roaring_u32: KType::can_use_roaring_u32(),
             key_factory: WithFactory::<KType>::FACTORY,
             item_factory: <RefTup2Factory<KType, AType> as WithItemFactory<K, A>>::ITEM_FACTORY,
             keys_factory: WithFactory::<LeanVec<KType>>::FACTORY,
@@ -171,6 +182,8 @@ where
             item_factory: Arc::new(self.item_factory),
             keys_factory: Arc::new(self.keys_factory),
             auxes_factory: Arc::new(self.auxes_factory),
+            key_type_name: self.key_type_name,
+            supports_roaring_u32: self.supports_roaring_u32,
         }
     }
 }
@@ -189,6 +202,8 @@ pub struct AnyFactories {
     item_factory: Arc<dyn Any + Send + Sync + 'static>,
     keys_factory: Arc<dyn Any + Send + Sync + 'static>,
     auxes_factory: Arc<dyn Any + Send + Sync + 'static>,
+    key_type_name: &'static str,
+    supports_roaring_u32: bool,
 }
 
 impl Debug for AnyFactories {
@@ -249,11 +264,21 @@ impl AnyFactories {
         A: DataTrait + ?Sized,
     {
         Factories {
+            key_type_name: self.key_type_name,
+            supports_roaring_u32: self.supports_roaring_u32,
             key_factory: self.key_factory(),
             item_factory: self.item_factory(),
             keys_factory: self.keys_factory(),
             auxes_factory: self.auxes_factory(),
         }
+    }
+
+    pub(crate) fn key_type_name(&self) -> &'static str {
+        self.key_type_name
+    }
+
+    pub(crate) fn supports_roaring_u32(&self) -> bool {
+        self.supports_roaring_u32
     }
 }
 

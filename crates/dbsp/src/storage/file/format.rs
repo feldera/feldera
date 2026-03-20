@@ -75,12 +75,10 @@
 //!
 //! Decompressing a compressed block yields the regular index or data block
 //! format starting with a [`BlockHeader`].
-use crate::storage::tracking_bloom_filter::TrackingBloomFilter;
-use crate::storage::{buffer_cache::FBuf, file::BLOOM_FILTER_SEED};
+use crate::storage::buffer_cache::FBuf;
 use binrw::{BinRead, BinResult, BinWrite, Error as BinError, binrw, binwrite};
 #[cfg(doc)]
 use crc32c;
-use fastbloom::BloomFilter;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use size_of::SizeOf;
@@ -107,8 +105,11 @@ pub const INDEX_BLOCK_MAGIC: [u8; 4] = *b"LFIB";
 /// Magic number for the file trailer block.
 pub const FILE_TRAILER_BLOCK_MAGIC: [u8; 4] = *b"LFFT";
 
-/// Magic number for filter blocks.
-pub const FILTER_BLOCK_MAGIC: [u8; 4] = *b"LFFB";
+/// Magic number for Bloom filter blocks.
+pub const BLOOM_FILTER_BLOCK_MAGIC: [u8; 4] = *b"LFFB";
+
+/// Magic number for roaring bitmap filter blocks.
+pub const ROARING_FILTER_BLOCK_MAGIC: [u8; 4] = *b"LFFR";
 
 /// 8-byte header at the beginning of each block.
 ///
@@ -163,13 +164,13 @@ pub struct FileTrailer {
     #[br(count = n_columns)]
     pub columns: Vec<FileTrailerColumn>,
 
-    /// File offset in bytes of the [FilterBlock].
+    /// File offset in bytes of the filter block.
     ///
     /// This is 0 if there is no filter block, or if the filter block size is
     /// bigger than `i32::MAX`.
     pub filter_offset: u64,
 
-    /// Size in bytes of the [FilterBlock].
+    /// Size in bytes of the filter block.
     ///
     /// This is 0 if there is no filter block, or if the filter block size is
     /// bigger than `i32::MAX`.
@@ -197,7 +198,7 @@ pub struct FileTrailer {
     /// future expansion.
     pub incompatible_features: u64,
 
-    /// File offset in bytes of the [FilterBlock].
+    /// File offset in bytes of the filter block.
     ///
     /// This is 0 if there is no filter block, or if the filter block size is
     /// less than `i32::MAX`.  If this is nonzero, then
@@ -205,7 +206,7 @@ pub struct FileTrailer {
     /// [FileTrailer::compatible_features].
     pub filter_offset64: u64,
 
-    /// Size in bytes of the [FilterBlock].
+    /// Size in bytes of the filter block.
     ///
     /// This is 0 if there is no filter block, or if the filter block size is
     /// less than `i32::MAX`.  If this is nonzero, then
@@ -537,12 +538,15 @@ impl Compression {
 ///
 /// The Bloom filter contains a member for each key in column 0.
 #[binrw]
-pub struct FilterBlock {
+pub struct BloomFilterBlock {
     /// Block header with "LFFB" magic.
-    #[brw(assert(header.magic == FILTER_BLOCK_MAGIC, "filter block has bad magic"))]
+    #[brw(assert(
+        header.magic == BLOOM_FILTER_BLOCK_MAGIC,
+        "bloom filter block has bad magic"
+    ))]
     pub header: BlockHeader,
 
-    /// [BloomFilter::num_hashes].
+    /// Number of hashes used by the Bloom filter.
     pub num_hashes: u32,
 
     /// Number of elements in `data`.
@@ -554,24 +558,17 @@ pub struct FilterBlock {
     pub data: Vec<u64>,
 }
 
-impl From<FilterBlock> for TrackingBloomFilter {
-    fn from(block: FilterBlock) -> Self {
-        TrackingBloomFilter::new(
-            BloomFilter::from_vec(block.data)
-                .seed(&BLOOM_FILTER_SEED)
-                .hashes(block.num_hashes),
-        )
-    }
-}
-
 /// A block representing a Bloom filter (with data by reference).
 #[binwrite]
-pub struct FilterBlockRef<'a> {
+pub struct BloomFilterBlockRef<'a> {
     /// Block header with "LFFB" magic.
-    #[bw(assert(header.magic == FILTER_BLOCK_MAGIC, "filter block has bad magic"))]
+    #[bw(assert(
+        header.magic == BLOOM_FILTER_BLOCK_MAGIC,
+        "bloom filter block has bad magic"
+    ))]
     pub header: BlockHeader,
 
-    /// [BloomFilter::num_hashes].
+    /// Number of hashes used by the Bloom filter.
     pub num_hashes: u32,
 
     /// Number of elements in `data`.
@@ -582,12 +579,39 @@ pub struct FilterBlockRef<'a> {
     pub data: &'a [u64],
 }
 
-impl<'a> From<&'a TrackingBloomFilter> for FilterBlockRef<'a> {
-    fn from(value: &'a TrackingBloomFilter) -> Self {
-        FilterBlockRef {
-            header: BlockHeader::new(&FILTER_BLOCK_MAGIC),
-            num_hashes: value.num_hashes(),
-            data: value.as_slice(),
-        }
-    }
+/// A block representing a roaring bitmap filter.
+#[binrw]
+pub struct RoaringBitmapFilterBlock {
+    /// Block header with "LFFR" magic.
+    #[brw(assert(
+        header.magic == ROARING_FILTER_BLOCK_MAGIC,
+        "roaring filter block has bad magic"
+    ))]
+    pub header: BlockHeader,
+
+    /// Number of bytes in `data`.
+    #[bw(try_calc(u64::try_from(data.len())))]
+    pub len: u64,
+
+    /// Serialized roaring bitmap contents.
+    #[br(count = len)]
+    pub data: Vec<u8>,
+}
+
+/// A block representing a roaring bitmap filter (with data by reference).
+#[binwrite]
+pub struct RoaringBitmapFilterBlockRef<'a> {
+    /// Block header with "LFFR" magic.
+    #[bw(assert(
+        header.magic == ROARING_FILTER_BLOCK_MAGIC,
+        "roaring filter block has bad magic"
+    ))]
+    pub header: BlockHeader,
+
+    /// Number of bytes in `data`.
+    #[bw(try_calc(u64::try_from(data.len())))]
+    pub len: u64,
+
+    /// Serialized roaring bitmap contents.
+    pub data: &'a [u8],
 }

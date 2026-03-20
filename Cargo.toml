@@ -120,6 +120,7 @@ enum-map = "2.7.3"
 erased-serde = "0.3.31"
 fake = "2.10"
 fastbloom = "0.14.0"
+roaring = "0.11.3"
 fdlimit = "0.3.0"
 feldera-buffer-cache = { version = "0.271.0", path = "crates/buffer-cache" }
 feldera-cloud1-client = "0.1.2"

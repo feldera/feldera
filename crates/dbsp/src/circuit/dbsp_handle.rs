@@ -8,7 +8,7 @@ use crate::operator::dynamic::balance::{
     MIN_ABSOLUTE_IMPROVEMENT_THRESHOLD, MIN_RELATIVE_IMPROVEMENT_THRESHOLD, PartitioningPolicy,
 };
 use crate::storage::backend::StorageError;
-use crate::storage::file::BLOOM_FILTER_FALSE_POSITIVE_RATE;
+use crate::storage::file::{BLOOM_FILTER_FALSE_POSITIVE_RATE, BatchKeyFilterKind};
 use crate::trace::MergerType;
 use crate::trace::spine_async::MAX_LEVEL0_BATCH_SIZE_RECORDS;
 use crate::{
@@ -415,6 +415,13 @@ pub struct DevTweaks {
     /// Values outside the valid range, such as 0.0, disable Bloom filters.
     pub bloom_false_positive_rate: f64,
 
+    /// Per-batch key filter implementation to use for storage batches.
+    ///
+    /// `roaring_u32` uses an exact roaring bitmap for key types that can be
+    /// mapped exactly into a `u32` filter domain, and falls back to the
+    /// existing Bloom filter path for other key types.
+    pub batch_key_filter: BatchKeyFilterKind,
+
     /// Maximum batch size in records for level 0 merges.
     pub max_level0_batch_size_records: u16,
 
@@ -437,6 +444,7 @@ impl Default for DevTweaks {
             stack_overflow_backtrace: false,
             splitter_chunk_size_records: 10_000,
             bloom_false_positive_rate: BLOOM_FILTER_FALSE_POSITIVE_RATE,
+            batch_key_filter: BatchKeyFilterKind::Bloom,
             balancer_min_relative_improvement_threshold: MIN_RELATIVE_IMPROVEMENT_THRESHOLD,
             balancer_min_absolute_improvement_threshold: MIN_ABSOLUTE_IMPROVEMENT_THRESHOLD,
             balancer_balance_tax: BALANCE_TAX,
