@@ -203,7 +203,8 @@ def test_suspend_enterprise(pipeline_name):
 
     wait_for_condition(
         "9 total records after c2/c3",
-        lambda: _adhoc_count(pipeline_name) == 9,
+        lambda: _adhoc_count(pipeline_name) == 9
+        ,
         timeout_s=15.0,
         poll_interval_s=1.0,
     )
