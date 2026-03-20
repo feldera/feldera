@@ -6,6 +6,7 @@ pub mod constants;
 pub mod coordination;
 pub mod error;
 pub mod format;
+pub mod memory_pressure;
 pub mod pipeline_diff;
 pub mod preprocess;
 pub mod program_schema;

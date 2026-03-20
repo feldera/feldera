@@ -130,7 +130,7 @@ mod tests {
         generator::tests::make_bid,
         model::{Bid, Event},
     };
-    use dbsp::{utils::Tup2, zset, RootCircuit};
+    use dbsp::{utils::Tup2, zset};
     use rstest::rstest;
 
     #[rstest]

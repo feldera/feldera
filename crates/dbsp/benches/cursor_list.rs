@@ -85,6 +85,7 @@ fn bench(storage: bool) {
     let temp = tempdir().expect("failed to create temp dir for storage");
     let config = CircuitConfig {
         layout: Layout::new_solo(1),
+        max_rss_bytes: None,
         mode: Mode::Ephemeral,
         pin_cpus: Vec::new(),
         storage: Some(

@@ -37,6 +37,7 @@ fn main() -> Result<()> {
     let temp = tempdir().context("failed to create temp directory for storage backend")?;
     let config = CircuitConfig {
         layout: Layout::new_solo(WORKERS),
+        max_rss_bytes: None,
         mode: Mode::Ephemeral,
         pin_cpus: Vec::new(),
         storage: Some(

@@ -16,7 +16,7 @@ mod tests {
         generator::tests::{make_auction, make_bid},
         model::{Auction, Bid, Event},
     };
-    use dbsp::{utils::Tup2, OrdZSet, RootCircuit, ZWeight};
+    use dbsp::{utils::Tup2, OrdZSet, ZWeight};
 
     #[test]
     fn test_q0() {

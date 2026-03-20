@@ -12,6 +12,7 @@ use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
 use feldera_types::{
     config::{InputEndpointConfig, OutputEndpointConfig},
     constants::STATE_FILE,
+    memory_pressure::MemoryPressure,
 };
 use serde_json::json;
 use std::{
@@ -2305,6 +2306,8 @@ fn test_external_controller_status_serialization() {
         ])),
         false,
         TransactionInfo::default(),
+        MemoryPressure::default(),
+        0,
     );
     external_status.global_metrics.rss_bytes = 1024 * 1024 * 512; // 512 MB
     external_status.global_metrics.cpu_msecs = 45_000;

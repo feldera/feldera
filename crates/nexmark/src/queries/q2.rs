@@ -39,7 +39,7 @@ mod tests {
         generator::tests::make_bid,
         model::{Bid, Event},
     };
-    use dbsp::{OrdZSet, RootCircuit, ZWeight};
+    use dbsp::{OrdZSet, ZWeight};
 
     #[test]
     fn test_q2() {

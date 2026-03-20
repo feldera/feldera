@@ -272,6 +272,7 @@ struct RuntimeConfigPropVal {
     val18: Option<u64>,
     val19: Option<u64>,
     val20: usize,
+    val21: Option<u64>,
 }
 type ProgramConfigPropVal = (u8, bool, bool, bool);
 type ProgramInfoPropVal = (u8, u8, u8);
@@ -293,6 +294,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
     } else {
         serde_json::to_value(RuntimeConfig {
             workers: val.val0,
+            max_rss_mb: val.val21,
             hosts: val.val20,
             cpu_profiler: val.val1,
             min_batch_size_records: val.val2,
@@ -1177,6 +1179,7 @@ async fn pipeline_versioning() {
     // Edit runtime configuration -> increment version and refresh_version
     let new_runtime_config = serde_json::to_value(RuntimeConfig {
         workers: 100,
+        max_rss_mb: None,
         hosts: 1,
         storage: None,
         fault_tolerance: FtConfig::default(),
@@ -2235,6 +2238,7 @@ async fn pipeline_provision_version_guard() {
             &Some(
                 serde_json::to_value(RuntimeConfig {
                     workers: 10,
+                    max_rss_mb: None,
                     hosts: 1,
                     storage: None,
                     fault_tolerance: FtConfig::default(),

@@ -776,6 +776,28 @@ pub struct RuntimeConfig {
     /// used during a step.
     pub workers: u16,
 
+    /// The maximum amount of memory, in Megabytes, that the pipeline is allowed to use
+    /// on each host.
+    ///
+    /// Setting this property activates memory pressure monitoring and backpressure
+    /// mechanisms. The pipeline will track the amount of remaining memory and
+    /// report the memory pressure level via the `memory_pressure` metric.
+    ///
+    /// As the memory pressure increases, the system will apply increasing backpressure
+    /// to push state cached in memory to storage, preventing the pipeline from running
+    /// out of memory at the cost of some performance degradation.
+    ///
+    /// It is strongly recommended to set this property to prevent the pipeline from
+    /// running out of memory. The setting should not exceed the memory limit of the pipeline
+    /// instance.
+    ///
+    /// When `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the
+    /// latter is used as the effective memory cap for the pipeline.
+    ///
+    /// See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
+    /// for more details.
+    pub max_rss_mb: Option<u64>,
+
     /// Number of DBSP hosts.
     ///
     /// The worker threads are evenly divided among the hosts.  For single-host
@@ -1041,6 +1063,7 @@ impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
             workers: 8,
+            max_rss_mb: None,
             hosts: 1,
             storage: Some(StorageOptions::default()),
             fault_tolerance: FtConfig::default(),

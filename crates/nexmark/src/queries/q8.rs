@@ -104,7 +104,7 @@ mod tests {
         generator::tests::{make_auction, make_person},
         model::{Auction, Event, Person},
     };
-    use dbsp::{zset, RootCircuit};
+    use dbsp::zset;
     use rstest::rstest;
 
     #[rstest]

@@ -98,7 +98,7 @@ mod tests {
         generator::tests::make_bid,
         model::{Bid, Event},
     };
-    use dbsp::{utils::Tup2, zset, RootCircuit};
+    use dbsp::{utils::Tup2, zset};
     use rstest::rstest;
 
     type Q7Tuple = Tup5<u64, u64, u64, u64, String>;
