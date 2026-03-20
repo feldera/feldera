@@ -21,6 +21,7 @@ def cli():
 @click.argument("query_file", type=click.Path(exists=True))
 @click.option("--validate", is_flag=True, help="Validate against Feldera instance")
 @click.option("--compiler", type=click.Path(), help="Path to Feldera compiler binary")
+@click.option("--model", help="LLM model to use (overrides FELDERIZE_MODEL env var)")
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
 @click.option(
@@ -31,6 +32,7 @@ def translate(
     query_file: str,
     validate: bool,
     compiler: str | None,
+    model: str | None,
     json_output: bool,
     no_docs: bool,
     verbose: bool,
@@ -44,6 +46,8 @@ def translate(
     config = Config.from_env()
     if compiler:
         config.feldera_compiler = compiler
+    if model:
+        config.model = model
     schema_sql = Path(schema_file).read_text()
     query_sql = Path(query_file).read_text()
 
@@ -66,6 +70,7 @@ def translate(
 @click.argument("sql_file", type=click.Path(exists=True))
 @click.option("--validate", is_flag=True, help="Validate against Feldera instance")
 @click.option("--compiler", type=click.Path(), help="Path to Feldera compiler binary")
+@click.option("--model", help="LLM model to use (overrides FELDERIZE_MODEL env var)")
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
 @click.option(
@@ -75,6 +80,7 @@ def translate_file(
     sql_file: str,
     validate: bool,
     compiler: str | None,
+    model: str | None,
     json_output: bool,
     no_docs: bool,
     verbose: bool,
@@ -88,6 +94,8 @@ def translate_file(
     config = Config.from_env()
     if compiler:
         config.feldera_compiler = compiler
+    if model:
+        config.model = model
     combined_sql = Path(sql_file).read_text()
     schema_sql, query_sql = split_combined_sql(combined_sql)
 
@@ -176,6 +184,7 @@ _EXAMPLES_DIR = Path(__file__).resolve().parent / "data" / "demo"
     help="Validate against Feldera instance (default: on)",
 )
 @click.option("--compiler", type=click.Path(), help="Path to Feldera compiler binary")
+@click.option("--model", help="LLM model to use (overrides FELDERIZE_MODEL env var)")
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
 @click.option(
@@ -185,6 +194,7 @@ def example(
     name: str | None,
     validate: bool,
     compiler: str | None,
+    model: str | None,
     json_output: bool,
     no_docs: bool,
     verbose: bool,
@@ -245,6 +255,8 @@ def example(
     config = Config.from_env()
     if compiler:
         config.feldera_compiler = compiler
+    if model:
+        config.model = model
     result = translate_spark_to_feldera(
         schema_sql,
         query_sql,

@@ -13,11 +13,12 @@ pip install -e .
 
 > **Note:** `pip install -e .` is required before running `felderize`. It registers the package and CLI command.
 
-Create a `.env` file with your API key and optionally the compiler path:
+Create a `.env` file:
 
 ```bash
 ANTHROPIC_API_KEY=your-key-here
-FELDERA_COMPILER=/path/to/sql-to-dbsp  # default: sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp inside the Feldera repo
+FELDERA_COMPILER=/path/to/sql-to-dbsp  # default: ../../sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
+FELDERIZE_MODEL=claude-sonnet-4-5
 ```
 
 The `FELDERA_COMPILER` path is required for validation. Without it, translation still works but output SQL is not verified. You can also pass it per-command with `--compiler PATH`.
@@ -100,6 +101,7 @@ felderize translate-file path/to/combined.sql --validate
 Both commands accept:
 - `--verbose` to log the SQL submitted to the validator at each repair attempt
 - `--compiler PATH` to specify the path to the Feldera compiler binary (overrides `FELDERA_COMPILER` env var)
+- `--model` to specify the LLM model (overrides `FELDERIZE_MODEL` env var)
 
 ### Batch translation
 
@@ -116,10 +118,8 @@ Environment variables (set in `.env`):
 | Variable | Description | Default |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | Anthropic API key | (required) |
-| `FELDERIZE_LLM_PROVIDER` | `anthropic` or `openai` | `anthropic` |
-| `FELDERIZE_MODEL` | LLM model to use | `claude-sonnet-4-20250514` |
-| `OPENAI_API_KEY` | OpenAI API key (if using openai provider) | — |
-| `FELDERA_COMPILER` | Path to sql-to-dbsp compiler (can also be set with `--compiler`) | `<repo-root>/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp` |
+| `FELDERIZE_MODEL` | LLM model to use (can also be set with `--model`) | (required, set in `.env`) |
+| `FELDERA_COMPILER` | Path to sql-to-dbsp compiler (can also be set with `--compiler`) | (required for validation) |
 
 ## How it works
 
