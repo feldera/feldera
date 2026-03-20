@@ -17,7 +17,7 @@ Create a `.env` file:
 
 ```bash
 ANTHROPIC_API_KEY=your-key-here
-FELDERA_COMPILER=/path/to/sql-to-dbsp  # default: ../../sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
+FELDERA_COMPILER=/path/to/sql-to-dbsp  # in Feldera repo: ../../sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
 FELDERIZE_MODEL=claude-sonnet-4-5
 ```
 

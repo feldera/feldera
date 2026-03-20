@@ -193,8 +193,9 @@ def split_combined_sql(sql: str) -> tuple[str, str]:
     """
     import re as _re
 
-    # Split on statement boundaries (semicolon at end of line or followed by whitespace).
-    raw_stmts = _re.split(r";\s*", sql)
+    import sqlparse
+
+    raw_stmts = [s.strip() for s in sqlparse.split(sql) if s.strip()]
 
     schema_parts: list[str] = []
     query_parts: list[str] = []
