@@ -1763,8 +1763,14 @@ async fn samply_profile(
         .unwrap()
         .start_profiling(expected_after);
 
+    let layout = controller.layout();
+    let os_cpu = layout
+        .is_multihost()
+        .then(|| format!("host {} of {}", layout.local_host_idx(), layout.n_hosts()));
     spawn(async move {
-        let result = controller.async_samply_profile(duration).await;
+        let result = controller
+            .async_samply_profile(duration, os_cpu.as_deref())
+            .await;
         state_samply_state
             .lock()
             .unwrap()
