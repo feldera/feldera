@@ -269,7 +269,7 @@ where
 {
     let bytes = dbsp::storage::file::to_bytes(value)
         .map_err(|err| TestCaseError::fail(format!("serialize failed: {err:?}")))?;
-    let restored: T = dbsp::trace::unaligned_deserialize(&bytes[..]);
+    let restored: T = dbsp::trace::aligned_deserialize(&bytes[..]);
     prop_assert_eq!(value, &restored);
     Ok(())
 }
