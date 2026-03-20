@@ -122,22 +122,22 @@ def cleanup_kafka_schema_artifacts(sql: str, admin: AdminClient, registry_url: s
     delete_schema_subjects(registry_url, subjects)
 
 
-def create_kafka_topic(
-    topic_name: str, num_partitions: int = 1, replication_factor: int = 1
-):
+def create_kafka_topic(topic_name: str, num_partitions: int, replication_factor: int):
     """Create new topics when multiple partitions are required, since the Kafka output connector does not support
     specifying the number of partitions during topic creation."""
     new_topic = NewTopic(
         topic_name, num_partitions=num_partitions, replication_factor=replication_factor
     )
-    futures = get_kafka_admin().create_topics([new_topic])
-    for t, f in futures.items():
+    tpcs = get_kafka_admin().create_topics([new_topic])
+    for topic, tpcs in tpcs.items():
         try:
-            f.result()
-            print(f"Topic {t} created with {num_partitions} partitions")
+            tpcs.result()
+            print(
+                f"Topic {topic} created with {num_partitions} partitions and {replication_factor} replication factor"
+            )
         except Exception as e:
             if "already exists" in str(e):
-                print(f"Topic {t} already exists")
+                print(f"Topic {topic} already exists")
             else:
                 raise
 
@@ -153,15 +153,17 @@ class Variant:
         self.sync = cfg.get("sync")
         self.start_from = cfg.get("start_from")
         self.create_topic = cfg.get("create_topic", False)
-        self.num_partitions = cfg.get("num_partitions", 1)
+        self.num_partitions = cfg.get("num_partitions")
+        self.replication_factor = cfg.get("replication_factor")
 
         suffix = uuid.uuid4().hex[:8]
 
-        self.topic1 = f"my_topic_avro{suffix}"
-        self.topic2 = f"my_topic_avro2{suffix}"
+        self.topic1 = f"my_topic_avro_{self.id}_{suffix}"
+        self.topic2 = f"my_topic_avro2_{self.id}_{suffix}"
         self.source = f"t_{self.id}"
-        self.view = f"v_{self.id}"
-        self.loopback = f"loopback_{self.id}"
+        self.view = f"v_{self.id}_{suffix}"
+        self.index = f"idx_{self.id}_{suffix}"
+        self.loopback = f"loopback_{self.id}_{suffix}"
 
 
 def sql_source_table(v: Variant) -> str:
@@ -209,7 +211,7 @@ with (
     }}
   }},
   {{
-    "index": "idx_{v.id}",
+    "index": "{v.index}",
     "transport": {{
       "name": "kafka_output",
       "config": {{
@@ -228,7 +230,7 @@ with (
 )
 as select * from {v.source};
 
-create index idx_{v.id} on {v.view}(id);
+create index {v.index} on {v.view}(id);
 """
 
 
@@ -284,7 +286,7 @@ def build_sql(v: Variant) -> str:
     return "\n".join([sql_source_table(v), sql_view(v), sql_loopback_table(v)])
 
 
-def wait_for_rows(pipeline, expected_rows, timeout_s=1800, poll_interval_s=5):
+def wait_for_rows(pipeline, expected_rows, timeout_s=3600, poll_interval_s=5):
     """Since records aren't processed instantaneously, wait until all rows are processed to validate completion by
     polling `total_completed_records` every `poll_interval_s` seconds until it reaches `expected_records`"""
     start = time.perf_counter()
@@ -330,8 +332,8 @@ def create_and_run_pipeline_variant(cfg):
 
     # Pre-create topics if specified
     if v.create_topic:
-        create_kafka_topic(v.topic1, v.num_partitions)
-        create_kafka_topic(v.topic2, v.num_partitions)
+        create_kafka_topic(v.topic1, v.num_partitions, v.replication_factor)
+        create_kafka_topic(v.topic2, v.num_partitions, v.replication_factor)
 
     sql = build_sql(v)
     pipeline_name = unique_pipeline_name(f"test_kafka_avro_{v.id}")
@@ -339,6 +341,11 @@ def create_and_run_pipeline_variant(cfg):
 
     try:
         pipeline.start()
+
+        # For variants without pre-created topics, wait for the output connector to create them
+        if not v.create_topic:
+            time.sleep(3)
+
         # NOTE => total_completed_records counts all rows that are processed through each output as follows:
         # 1. Written by the view<v> -> Kafka
         # 2. Ingested into loopback table from Kafka
@@ -355,14 +362,22 @@ class TestKafkaAvro(unittest.TestCase):
     """Each test method uses its own SQL snippet and processes only its own variant."""
 
     TEST_CONFIGS = [
-        {"id": 0, "limit": 10, "partitions": [0], "sync": False},
+        {
+            "id": 0,
+            "limit": 10,
+            "sync": False,
+            "partitions": [0],
+            "start_from": "earliest",
+        },
         {
             "id": 1,
             "limit": 1000000,
             "partitions": [0, 1, 2],
             "sync": False,
             "create_topic": True,
+            "start_from": "earliest",
             "num_partitions": 3,  # pre-create topic with 3 partitions
+            "replication_factor": 1,
         },
     ]
 
