@@ -73,6 +73,7 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
                     return;
 
                 JsonNode json = validation.data();
+                Utilities.enforce(json != null);
                 // None of these "if" statements should "fail" after validation
                 if (json.isArray()) {
                     for (Iterator<JsonNode> it = json.elements(); it.hasNext(); ) {

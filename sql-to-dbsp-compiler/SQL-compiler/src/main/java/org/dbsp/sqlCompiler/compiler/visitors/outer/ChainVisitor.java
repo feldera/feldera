@@ -20,7 +20,7 @@ public class ChainVisitor extends CircuitCloneWithGraphsVisitor {
     }
 
     @Nullable
-    static DBSPChainOperator.Computation getComputation(DBSPSimpleOperator operator) {
+    public static DBSPChainOperator.Computation getComputation(DBSPSimpleOperator operator) {
         if (operator.is(DBSPMapOperator.class)) {
             if (!operator.getFunction().is(DBSPClosureExpression.class))
                 return null;

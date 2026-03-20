@@ -39,6 +39,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.ImplementStatics;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CreateRuntimeErrorWrappers;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareIndexes;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareInputIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.intern.Intern;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.recursive.RecursiveComponents;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.recursive.ValidateRecursiveOperators;
@@ -133,6 +135,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new RemoveDeindexOperators(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
         this.add(new RemoveIdentityOperators(compiler));
+        this.add(new ShareInputIndexes(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
         this.add(new OptimizeWithGraph(compiler,
                 g -> new OptimizeProjections(compiler, false, g, operatorsAnalyzed)));

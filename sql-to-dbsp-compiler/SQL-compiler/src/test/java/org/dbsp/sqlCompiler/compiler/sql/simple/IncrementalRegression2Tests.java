@@ -168,14 +168,14 @@ public class IncrementalRegression2Tests extends SqlIoTest {
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(1, this.mapIndexCount);
+                Assert.assertEquals(0, this.mapIndexCount);
             }
         });
     }
 
     @Test
     public void issue5815b() {
-        // Same as before, but one inne join and one left join,
+        // Same as before, but one inner join and one left join,
         // where customers is on the left side of the left join
         var ccs = this.getCCS("""
                 CREATE TABLE orders1 (
@@ -245,7 +245,7 @@ public class IncrementalRegression2Tests extends SqlIoTest {
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(1, this.mapIndexCount);
+                Assert.assertEquals(0, this.mapIndexCount);
             }
         });
     }
@@ -288,7 +288,7 @@ public class IncrementalRegression2Tests extends SqlIoTest {
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(1, this.mapIndexCount);
+                Assert.assertEquals(0, this.mapIndexCount);
             }
         });
     }
@@ -439,6 +439,11 @@ public class IncrementalRegression2Tests extends SqlIoTest {
             }
 
             @Override
+            public void postorder(DBSPFlatMapIndexOperator unused) {
+                this.mapIndexCount++;
+            }
+
+            @Override
             public void endVisit() {
                 // If sharing of map-index operators works, there are 3,
                 // otherwise there are 4.  LATENESS prevents sharing
@@ -501,5 +506,61 @@ public class IncrementalRegression2Tests extends SqlIoTest {
                   103     | 2024-01-12 |NULL          |                | Dave|           3
                   104     | 2024-01-13 |NULL          |                |NULL           |
                   105     | 2024-01-14 | Bob|           1              | Bob|            1""");
+    }
+
+    @Test
+    public void issue5842() {
+        var cc = this.getCC("""
+                CREATE TABLE T(x INT, y INT NOT NULL PRIMARY KEY);
+                CREATE TABLE S1(w INT);
+                CREATE VIEW V1 AS SELECT * FROM T JOIN S1 ON T.y = S1.w;""");
+        cc.visit(new CircuitVisitor(cc.compiler) {
+            int mapIndexCount = 0;
+
+            @Override
+            public void postorder(DBSPMapIndexOperator unused) {
+                this.mapIndexCount++;
+            }
+
+            @Override
+            public void postorder(DBSPFlatMapIndexOperator unused) {
+                this.mapIndexCount++;
+            }
+
+            @Override
+            public void endVisit() {
+                // Check that one of the 2 MapIndex operators has been removed
+                Assert.assertEquals(1, this.mapIndexCount);
+            }
+        });
+    }
+
+    @Test
+    public void issue5842a() {
+        var cc = this.getCC("""
+                CREATE TABLE T(x INT, y INT NOT NULL PRIMARY KEY);
+                CREATE TABLE S1(w INT);
+                CREATE TABLE S2(w INT);
+                CREATE VIEW V1 AS SELECT * FROM T JOIN S1 ON T.y = S1.w;
+                CREATE VIEW V2 AS SELECT * FROM T JOIN S2 ON T.y = S2.w;""");
+        cc.visit(new CircuitVisitor(cc.compiler) {
+            int mapIndexCount = 0;
+
+            @Override
+            public void postorder(DBSPMapIndexOperator unused) {
+                this.mapIndexCount++;
+            }
+
+            @Override
+            public void postorder(DBSPFlatMapIndexOperator unused) {
+                this.mapIndexCount++;
+            }
+
+            @Override
+            public void endVisit() {
+                // One for each S input, none for T
+                Assert.assertEquals(2, this.mapIndexCount);
+            }
+        });
     }
 }

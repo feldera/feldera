@@ -11,7 +11,6 @@ import org.apache.calcite.tools.RelRunner;
 import org.dbsp.util.StringPrintStream;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import javax.sql.DataSource;

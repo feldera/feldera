@@ -252,7 +252,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
             case "controlled_filter": return " style=filled fillcolor=cyan";
             case "apply", "apply2", "apply_n": return " style=filled fillcolor=yellow";
             default: break;
-        };
+        }
         if (operator.is(IStateful.class)) {
             // There are more of these every day
             return " style=filled fillcolor=orangered";

@@ -26,9 +26,6 @@ package org.dbsp.sqlCompiler;
 import com.beust.jcommander.JCommander;
 import com.beust.jcommander.ParameterException;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.apache.calcite.adapter.jdbc.JdbcSchema;
-import org.apache.calcite.jdbc.CalciteConnection;
-import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.util.Pair;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -50,7 +47,6 @@ import org.dbsp.util.NullPrintStream;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
-import javax.sql.DataSource;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -59,8 +55,6 @@ import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.Map;
 
@@ -136,7 +130,7 @@ public class CompilerMain {
     }
 
     /** Run compiler, return exit code. */
-    CompilerMessages run() throws SQLException {
+    CompilerMessages run() {
         DBSPCompiler compiler = new DBSPCompiler(this.options);
         this.options.validate(compiler);
         try {
