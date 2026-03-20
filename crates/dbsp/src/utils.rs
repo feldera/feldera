@@ -16,6 +16,7 @@ pub(crate) mod test;
 
 mod dot;
 
+use memory_stats::memory_stats;
 use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::{fmt::Display, hint::unreachable_unchecked};
@@ -101,4 +102,16 @@ pub fn indent(s: &str, indent: usize) -> String {
     s.lines()
         .map(|line| format!("{:indent$}{line}", "", indent = indent))
         .join("\n")
+}
+
+/// Returns the current process RSS in bytes.
+pub fn process_rss_bytes() -> Option<u64> {
+    #[cfg(test)]
+    if let Ok(mock_rss_bytes) = std::env::var("MOCK_PROCESS_RSS_BYTES")
+        && let Ok(mock_rss_bytes) = mock_rss_bytes.parse::<u64>()
+    {
+        return Some(mock_rss_bytes);
+    }
+
+    memory_stats().map(|usage| usage.physical_mem as u64)
 }

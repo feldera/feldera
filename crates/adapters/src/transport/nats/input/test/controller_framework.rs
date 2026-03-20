@@ -5,6 +5,7 @@ use crate::test::{TestStruct, init_test_logger, test_circuit, wait};
 use crate::{Controller, PipelineConfig};
 use anyhow::Result as AnyResult;
 use csv::ReaderBuilder as CsvReaderBuilder;
+use feldera_types::memory_pressure::MemoryPressure;
 use serde_json;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -268,6 +269,8 @@ outputs:
                     Ok(()),
                     false,
                     TransactionInfo::default(),
+                    MemoryPressure::default(),
+                    0,
                 ))
                 .unwrap()
             );

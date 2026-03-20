@@ -271,6 +271,10 @@ pub struct CircuitConfig {
     /// How the circuit is laid out across one or multiple machines.
     pub layout: Layout,
 
+    /// The maximum amount of memory, in bytes, that the process is allowed to use.
+    /// Used to calculate the memory pressure level.
+    pub max_rss_bytes: Option<u64>,
+
     /// Optionally, CPU numbers for pinning the worker threads.
     pub pin_cpus: Vec<usize>,
 
@@ -565,11 +569,17 @@ impl CircuitConfig {
     pub fn with_workers(n: usize) -> Self {
         Self {
             layout: Layout::new_solo(n),
+            max_rss_bytes: None,
             pin_cpus: Vec::new(),
             mode: Mode::Ephemeral,
             storage: None,
             dev_tweaks: DevTweaks::default(),
         }
+    }
+
+    pub fn with_max_rss_bytes(mut self, max_rss: Option<u64>) -> Self {
+        self.max_rss_bytes = max_rss;
+        self
     }
 
     pub fn with_mode(mut self, mode: Mode) -> Self {
@@ -2130,6 +2140,7 @@ pub(crate) mod tests {
         let temp = tempdir().expect("Can't create temp dir for storage");
         let cconf = CircuitConfig {
             layout: Layout::new_solo(1),
+            max_rss_bytes: None,
             mode: Mode::Ephemeral,
             pin_cpus: Vec::new(),
             storage: Some(

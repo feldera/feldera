@@ -776,6 +776,21 @@ pub struct RuntimeConfig {
     /// used during a step.
     pub workers: u16,
 
+    /// The maximum amount of memory, in MiB, that the process is allowed to use.
+    ///
+    /// Setting this property activates memory pressure monitoring and backpressure
+    /// mechanisms. The pipeline will track the amount of remaining memory and
+    /// report the memory pressure level via the `memory_pressure` metric.
+    ///
+    /// As the memory pressure increases, the system will apply increasing backpressure
+    /// to push state cached in memory to storage, preventing the pipeline from running
+    /// out of memory at the cost of some performance degradation.
+    ///
+    /// It is strongly recommended to set this property to prevent the pipeline from
+    /// running out of memory. The setting should not exceed the memory limit of the pipeline
+    /// instance.
+    pub max_rss_mib: Option<u64>,
+
     /// Number of DBSP hosts.
     ///
     /// The worker threads are evenly divided among the hosts.  For single-host
@@ -1041,6 +1056,7 @@ impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
             workers: 8,
+            max_rss_mib: None,
             hosts: 1,
             storage: Some(StorageOptions::default()),
             fault_tolerance: FtConfig::default(),

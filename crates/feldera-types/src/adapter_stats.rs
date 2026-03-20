@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::{
     coordination::Step,
+    memory_pressure::MemoryPressure,
     suspend::SuspendError,
     transaction::{CommitProgressSummary, TransactionId},
 };
@@ -355,6 +356,10 @@ pub struct ExternalGlobalControllerMetrics {
     pub transaction_initiators: ExternalTransactionInitiators,
     /// Resident set size of the pipeline process, in bytes.
     pub rss_bytes: u64,
+    /// Memory pressure.
+    pub memory_pressure: MemoryPressure,
+    /// Memory pressure epoch.
+    pub memory_pressure_epoch: u64,
     /// CPU time used by the pipeline across all threads, in milliseconds.
     pub cpu_msecs: u64,
     /// Time since the pipeline process started, including time that the

@@ -105,6 +105,28 @@ impl WorkerProfile {
         ))
     }
 
+    /// Returns the sum of values of an attribute of type [`MetaItem::Count`]
+    /// across all nodes, including entries with labels.
+    ///
+    /// Fails if the profile contains an attribute with the specified name and a
+    /// type that is different from [`MetaItem::Count`].  On error, returns
+    /// the value of the attribute that caused the failure.
+    pub fn attribute_total_as_count(&self, attr: &MetricId) -> Result<usize, MetaItem> {
+        let mut acc = 0;
+        for meta in self.metadata.values() {
+            for ((metric_id, _labels), value) in meta.iter() {
+                if metric_id == attr {
+                    if let MetaItem::Count(count) = value {
+                        acc += *count;
+                    } else {
+                        return Err(value.clone());
+                    }
+                }
+            }
+        }
+        Ok(acc)
+    }
+
     /// Returns the total number of bytes used by all stateful operators.
     pub fn total_used_bytes(&self) -> Result<HumanBytes, MetaItem> {
         self.attribute_total_as_bytes(&USED_MEMORY_BYTES)
@@ -250,6 +272,20 @@ impl DbspProfile {
     /// Returns the total spine storage size in bytes across all operators.
     pub fn total_storage_size(&self) -> Result<HumanBytes, MetaItem> {
         self.attribute_total_as_bytes(&SPINE_STORAGE_SIZE_BYTES)
+    }
+
+    /// Returns the sum of values of an attribute of type [`MetaItem::Count`]
+    /// across all nodes and all worker threads, including entries with labels.
+    ///
+    /// Fails if the profile contains an attribute with the specified name and a
+    /// type that is different from [`MetaItem::Count`].  On error, returns
+    /// the value of the attribute that caused the failure.
+    pub fn attribute_total_as_count(&self, attr: &MetricId) -> Result<usize, MetaItem> {
+        let mut acc = 0;
+        for profile in self.worker_profiles.iter() {
+            acc += profile.attribute_total_as_count(attr)?;
+        }
+        Ok(acc)
     }
 }
 

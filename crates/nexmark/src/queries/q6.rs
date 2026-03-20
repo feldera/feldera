@@ -117,7 +117,7 @@ mod tests {
         generator::tests::{make_auction, make_bid},
         model::{Auction, Bid, Event},
     };
-    use dbsp::{indexed_zset, RootCircuit};
+    use dbsp::indexed_zset;
 
     #[test]
     fn test_q6_single_seller_single_auction() {

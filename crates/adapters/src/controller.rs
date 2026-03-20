@@ -61,6 +61,7 @@ use dbsp::circuit::metrics::{
 use dbsp::circuit::tokio::TOKIO;
 use dbsp::circuit::{CheckpointCommitter, CircuitStorageConfig, DevTweaks, Mode};
 use dbsp::storage::backend::{StorageBackend, StoragePath};
+use dbsp::utils::process_rss_bytes;
 use dbsp::{
     DBSPHandle,
     circuit::{CircuitConfig, Layout},
@@ -99,7 +100,6 @@ use governor::Quota;
 use governor::RateLimiter;
 use itertools::Itertools;
 use journal::StepMetadata;
-use memory_stats::memory_stats;
 use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
 use serde_json::Value as JsonValue;
@@ -810,10 +810,22 @@ impl Controller {
     /// Returns the current controller status in the form used by the external
     /// API.
     pub fn api_status(&self) -> ExternalControllerStatus {
+        let runtime = self.inner.runtime.upgrade();
+        let memory_pressure = runtime
+            .as_ref()
+            .map(|runtime| runtime.current_memory_pressure())
+            .unwrap_or_default();
+        let memory_pressure_epoch = runtime
+            .as_ref()
+            .map(|runtime| runtime.memory_pressure_epoch())
+            .unwrap_or_default();
+
         self.status().to_api_type(
             self.can_suspend(),
             self.pipeline_complete(),
             self.inner.transaction_info.lock().unwrap().clone(),
+            memory_pressure,
+            memory_pressure_epoch,
         )
     }
 
@@ -1188,6 +1200,7 @@ impl Controller {
         F: MetricsFormatter,
     {
         metrics.process_metrics(labels);
+
         metrics.gauge(
             "records_input_buffered",
             "Total amount of data currently buffered by all endpoints, in records.",
@@ -1346,6 +1359,25 @@ impl Controller {
             );
 
             write_fbuf_slab_metrics(metrics, labels, &runtime.fbuf_slabs_stats());
+
+            metrics.gauge(
+                "max_rss_bytes",
+                "Configured maximum process RSS in bytes. A value of 0 means no limit is configured.",
+                labels,
+                runtime.max_rss_bytes().unwrap_or(0),
+            );
+            metrics.gauge(
+                "memory_pressure",
+                "Current memory pressure level in [0..3]: low=0, moderate=1, high=2, critical=3.",
+                labels,
+                runtime.current_memory_pressure() as u8,
+            );
+            metrics.gauge(
+                "memory_pressure_epoch",
+                "Monotonic counter incremented whenever memory pressure transitions to high/critical.",
+                labels,
+                runtime.memory_pressure_epoch(),
+            );
         }
 
         metrics.counter(
@@ -4220,6 +4252,7 @@ impl ControllerInit {
                 // Can't change number of workers or hosts yet.
                 hosts: checkpoint_config.global.hosts,
                 workers: checkpoint_config.global.workers,
+                max_rss_mib: checkpoint_config.global.max_rss_mib,
 
                 // The checkpoint determines the fault tolerance model, but the
                 // pipeline manager can override the details of the
@@ -4293,7 +4326,7 @@ impl ControllerInit {
     }
 
     pub fn set_incarnation_uuid(&mut self, incarnation_uuid: Uuid) {
-        self.incarnation_uuid = incarnation_uuid;
+        self.incarnation_uuid = incarnation_uuid
     }
 
     fn circuit_config(
@@ -4304,6 +4337,10 @@ impl ControllerInit {
         Ok(CircuitConfig {
             layout: layout
                 .unwrap_or_else(|| Layout::new_solo(pipeline_config.global.workers as usize)),
+            max_rss_bytes: pipeline_config
+                .global
+                .max_rss_mib
+                .map(|mb| mb * 1024 * 1024),
             pin_cpus: pipeline_config.global.pin_cpus.clone(),
             storage,
             mode: Mode::Persistent,
@@ -4513,7 +4550,7 @@ impl StatisticsThread {
                 total_processed_records: controller_status
                     .global_metrics
                     .num_total_processed_records(),
-                memory_bytes: memory_stats().map_or(0, |stats| stats.physical_mem as u64),
+                memory_bytes: process_rss_bytes().unwrap_or_default(),
                 storage_bytes,
             };
             let mut time_series = controller_status.time_series.lock().unwrap();

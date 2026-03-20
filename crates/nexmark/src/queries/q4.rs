@@ -89,7 +89,7 @@ mod tests {
         generator::tests::{make_auction, make_bid},
         model::{Auction, Bid, Event},
     };
-    use dbsp::{OrdZSet, RootCircuit};
+    use dbsp::OrdZSet;
 
     #[test]
     fn test_q4_average_final_bids_per_category() {

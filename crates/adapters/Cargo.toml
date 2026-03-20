@@ -178,7 +178,6 @@ postgres = { workspace = true }
 postgres-openssl = { workspace = true }
 dyn-clone = { workspace = true }
 cpu-time = "1.0.0"
-memory-stats = { version = "1.2.0", features = ["always_use_statm"] }
 feldera-ir = { workspace = true }
 base64 = { workspace = true }
 aws-msk-iam-sasl-signer = "1.0.1"

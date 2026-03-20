@@ -13,6 +13,7 @@ use crate::storage::file::format::Compression;
 use crate::storage::file::to_bytes;
 use crate::storage::file::writer::Parameters;
 use crate::trace::unaligned_deserialize;
+use crate::utils::process_rss_bytes;
 use crate::{
     DetailedError,
     storage::{
@@ -27,12 +28,16 @@ use enum_map::{Enum, EnumMap, enum_map};
 use feldera_buffer_cache::ThreadType;
 use feldera_storage::fbuf::slab::{FBufSlabs, FBufSlabsStats, set_thread_slab_pool};
 use feldera_types::config::{StorageCompression, StorageConfig, StorageOptions};
+use feldera_types::memory_pressure::{
+    CRITICAL_MEMORY_PRESSURE_THRESHOLD, HIGH_MEMORY_PRESSURE_THRESHOLD,
+    MODERATE_MEMORY_PRESSURE_THRESHOLD, MemoryPressure,
+};
 use indexmap::IndexSet;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::iter::repeat;
 use std::path::Path;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize};
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 use std::{
@@ -256,6 +261,22 @@ struct RuntimeInner {
     mode: Mode,
     dev_tweaks: DevTweaks,
 
+    /// User-configured process memory limit.
+    max_rss: Option<u64>,
+
+    /// Current process RSS.
+    process_rss: AtomicU64,
+
+    /// Current memory pressure updated every second as a function of process_rss, max_rss,
+    /// and previous memory pressure.
+    memory_pressure: AtomicU8,
+
+    /// Monotonic counter incremented whenever memory pressure transitions to high/critical.
+    memory_pressure_epoch: AtomicU64,
+
+    /// Used to notify merger threads when memory pressure changes.
+    memory_pressure_notify: Arc<Notify>,
+
     storage: Option<RuntimeStorage>,
     store: LocalStore,
     kill_signal: AtomicBool,
@@ -441,6 +462,11 @@ impl RuntimeInner {
             layout: config.layout,
             mode: config.mode,
             dev_tweaks: config.dev_tweaks,
+            max_rss: config.max_rss_bytes,
+            process_rss: AtomicU64::new(process_rss_bytes().unwrap_or_default()),
+            memory_pressure: AtomicU8::new(MemoryPressure::Low as u8),
+            memory_pressure_epoch: AtomicU64::new(0),
+            memory_pressure_notify: Arc::new(Notify::new()),
             storage,
             store: TypedDashMap::new(),
             kill_signal: AtomicBool::new(false),
@@ -487,6 +513,35 @@ impl RuntimeInner {
                 panic!("pin_cpu() called outside of a runtime or on an aux thread");
             }
         }
+    }
+
+    fn memory_pressure(&self) -> MemoryPressure {
+        MemoryPressure::try_from(self.memory_pressure.load(Ordering::Relaxed)).unwrap()
+    }
+
+    /// Compute memory pressure based on the current process RSS.
+    ///
+    /// Final memory pressure is computed taking into account the previous memory pressure level as well.
+    fn _memory_pressure(&self, process_rss: u64) -> MemoryPressure {
+        let process_rss = process_rss as f64;
+
+        let Some(max_rss) = self.max_rss else {
+            return MemoryPressure::Low;
+        };
+
+        if process_rss >= (CRITICAL_MEMORY_PRESSURE_THRESHOLD * max_rss as f64) {
+            return MemoryPressure::Critical;
+        }
+
+        if process_rss >= (HIGH_MEMORY_PRESSURE_THRESHOLD * max_rss as f64) {
+            return MemoryPressure::High;
+        }
+
+        if process_rss >= (MODERATE_MEMORY_PRESSURE_THRESHOLD * max_rss as f64) {
+            return MemoryPressure::Moderate;
+        }
+
+        MemoryPressure::Low
     }
 }
 
@@ -630,6 +685,64 @@ impl Runtime {
             .lock()
             .unwrap()
             .replace(tokio_merger_runtime);
+
+        // Monitor process RSS and update memory pressure.
+        runtime.spawn_aux_thread("rss-monitor", Parker::new(), |parker| {
+            let runtime = Runtime::runtime().unwrap();
+
+            while !Runtime::kill_in_progress() {
+                let process_rss = process_rss_bytes().unwrap_or_default();
+                runtime
+                    .inner()
+                    .process_rss
+                    .store(process_rss, Ordering::Relaxed);
+
+                let previous_pressure = runtime.inner().memory_pressure();
+                let current_memory_pressure = runtime.inner()._memory_pressure(process_rss);
+
+                // Update effective memory pressure based on the previous and current memory pressure levels.
+                //
+                // Current memory pressure is computed based on the current process RSS.
+                // Effective memory pressure determines how aggressively the circuit pushes batches to disk.
+                // We introduce a delay between the current memory pressure decreases past the threshold of the
+                // current level, and the effective memory pressure follows.
+                //
+                // - When memory pressure is low or medium, the effective memory pressure follows the current memory pressure.
+                // - When memory pressure is high or critical, we keep the effective memory pressure at the previous level until
+                //   the current memory pressure goes two levels down: high -> low or critical -> moderate.
+                let new_memory_pressure = match (previous_pressure, current_memory_pressure) {
+                    (MemoryPressure::Low | MemoryPressure::Moderate, _) => current_memory_pressure,
+                    (MemoryPressure::High, MemoryPressure::Critical) => MemoryPressure::Critical,
+                    (MemoryPressure::High, MemoryPressure::High | MemoryPressure::Moderate) => {
+                        MemoryPressure::High
+                    }
+                    (MemoryPressure::High, MemoryPressure::Low) => MemoryPressure::Low,
+                    (MemoryPressure::Critical, MemoryPressure::Critical | MemoryPressure::High) => {
+                        MemoryPressure::Critical
+                    }
+                    (MemoryPressure::Critical, MemoryPressure::Moderate | MemoryPressure::Low) => {
+                        current_memory_pressure
+                    }
+                };
+
+                runtime
+                    .inner()
+                    .memory_pressure
+                    .store(new_memory_pressure as u8, Ordering::Relaxed);
+
+                // At high and critical levels, wakeup merger threads to push all in-memory batches to disk.
+                if previous_pressure < MemoryPressure::High
+                    && new_memory_pressure >= MemoryPressure::High
+                {
+                    runtime
+                        .inner()
+                        .memory_pressure_epoch
+                        .fetch_add(1, Ordering::Relaxed);
+                    runtime.inner().memory_pressure_notify.notify_waiters();
+                }
+                parker.park_timeout(Duration::from_secs(1));
+            }
+        });
 
         let workers = workers
             .map(|worker_index| {
@@ -930,45 +1043,107 @@ impl Runtime {
             })
     }
 
-    /// Returns the minimum number of bytes in a batch (one that persists from
-    /// step to step) to spill it to storage. Returns `None` if this thread doesn't
-    /// have storage configured or a default value (1MiB) if it runs without a
-    /// [Runtime].
-    pub fn min_index_storage_bytes() -> Option<usize> {
-        RUNTIME.with(|rt| {
-            Some(
-                rt.borrow()
-                    .as_ref()?
-                    .inner()
-                    .storage
-                    .as_ref()?
-                    .options
-                    .min_storage_bytes
-                    .unwrap_or({
-                        // This reduces the files stored on disk to a reasonable number.
+    pub fn memory_pressure() -> Option<MemoryPressure> {
+        RUNTIME.with(|rt| Some(rt.borrow().as_ref()?.inner().memory_pressure()))
+    }
 
-                        10 * 1024 * 1024
-                    }),
-            )
+    pub fn current_memory_pressure(&self) -> MemoryPressure {
+        self.inner().memory_pressure()
+    }
+
+    pub fn max_rss_bytes(&self) -> Option<u64> {
+        self.inner().max_rss
+    }
+
+    pub fn memory_pressure_epoch(&self) -> u64 {
+        self.inner().memory_pressure_epoch.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn memory_pressure_notify(&self) -> Arc<Notify> {
+        self.inner().memory_pressure_notify.clone()
+    }
+
+    /// Returns the minimum number of bytes in a batch produced by a merge operator to spill it to storage.
+    ///
+    /// The output is determined by the current memory pressure level and the user-configured `min_storage_bytes` option.
+    /// When memory pressure is low, the output is `min_storage_bytes`; when memory pressure is moderate, high or critical,
+    /// the output is `0`, meaning all batches are spilled to storage.
+    ///
+    /// # Returns
+    ///
+    /// - `None` - if this thread doesn't have a Runtime or if it doesn't have storage configured.
+    /// - `Some(0)` - spill all batches to storage.
+    /// - `Some(N)` - spill batches with size >= N to storage.
+    pub fn min_merge_storage_bytes() -> Option<usize> {
+        RUNTIME.with(|rt| {
+            let rt = rt.borrow();
+            let inner = rt.as_ref()?.inner();
+            let storage = inner.storage.as_ref()?;
+
+            if inner.memory_pressure() >= MemoryPressure::Moderate {
+                Some(0)
+            } else {
+                Some(storage.options.min_storage_bytes.unwrap_or({
+                    // This reduces the files stored on disk to a reasonable number.
+
+                    10 * 1024 * 1024
+                }))
+            }
         })
     }
 
-    /// Returns the minimum number of bytes in a batch (one that does not
-    /// persist from step to step) to spill it to storage, or `None` if this
-    /// thread doesn't have a [Runtime] or if it doesn't have storage
-    /// configured.
+    /// Returns the minimum number of bytes in a batch inserted into a spine by a foreground worker to spill it to storage.
+    ///
+    /// The output is determined by the current memory pressure level and the user-configured `min_storage_bytes` option.
+    /// When memory pressure is low or moderate, the output is `min_storage_bytes`, when memory pressure is high or critical,
+    /// the output is `0`, meaning all batches are spilled to storage.
+    ///
+    /// # Returns
+    ///
+    /// - `None` - if this thread doesn't have a Runtime or if it doesn't have storage configured.
+    /// - `Some(0)` - spill all batches to storage.
+    /// - `Some(N)` - spill batches with size >= N to storage.
+    pub fn min_insert_storage_bytes() -> Option<usize> {
+        RUNTIME.with(|rt| {
+            let rt = rt.borrow();
+            let inner = rt.as_ref()?.inner();
+            let storage = inner.storage.as_ref()?;
+
+            if inner.memory_pressure() >= MemoryPressure::High {
+                Some(0)
+            } else {
+                Some(storage.options.min_storage_bytes.unwrap_or({
+                    // This reduces the files stored on disk to a reasonable number.
+
+                    10 * 1024 * 1024
+                }))
+            }
+        })
+    }
+
+    /// Returns the minimum number of bytes in a transient batch exchanged between DBSP operators during a step of the
+    /// circuitto spill it to storage.
+    ///
+    /// The output is determined by the current memory pressure level and the user-configured `min_step_storage_bytes` option.
+    /// When memory pressure is below critical, the output is `min_step_storage_bytes`, when memory pressure is critical,
+    /// the output is `0`, meaning all batches are spilled to storage.
+    ///
+    /// # Returns
+    ///
+    /// - `None` - if this thread doesn't have a Runtime or if it doesn't have storage configured.
+    /// - `Some(0)` - spill all batches to storage.
+    /// - `Some(N)` - spill batches with size >= N to storage.
     pub fn min_step_storage_bytes() -> Option<usize> {
         RUNTIME.with(|rt| {
-            Some(
-                rt.borrow()
-                    .as_ref()?
-                    .inner()
-                    .storage
-                    .as_ref()?
-                    .options
-                    .min_step_storage_bytes
-                    .unwrap_or(usize::MAX),
-            )
+            let rt = rt.borrow();
+            let inner = rt.as_ref()?.inner();
+            let storage = inner.storage.as_ref()?;
+
+            if inner.memory_pressure() >= MemoryPressure::Critical {
+                Some(0)
+            } else {
+                Some(storage.options.min_step_storage_bytes.unwrap_or(usize::MAX))
+            }
         })
     }
 
@@ -1342,6 +1517,25 @@ impl RuntimeHandle {
             .map(|(h, _unparker)| h.join())
             .collect();
 
+        // Once all fg threads have terminated, signal the aux threads to terminate as well.
+        // Normally this is not needed, since this function is usually called from `kill_async`,
+        // which already signals the aux threads to terminate, but it is useful when it is called
+        // directly, e.g., in some tests.
+        self.runtime
+            .inner()
+            .kill_signal
+            .store(true, Ordering::SeqCst);
+
+        self.runtime
+            .inner()
+            .aux_threads
+            .lock()
+            .unwrap()
+            .iter()
+            .for_each(|(_h, unparker)| {
+                unparker.unpark();
+            });
+
         // Wait for aux threads.
         self.runtime
             .inner()
@@ -1412,9 +1606,11 @@ mod tests {
         circuit::{
             CircuitConfig, Layout,
             dbsp_handle::{CircuitStorageConfig, DevTweaks, Mode},
+            metadata::{LOOSE_MEMORY_RECORDS_COUNT, MERGING_MEMORY_RECORDS_COUNT},
             schedule::{DynamicScheduler, Scheduler},
         },
         operator::Generator,
+        profile::DbspProfile,
         storage::backend::FileId,
     };
     use enum_map::Enum;
@@ -1423,7 +1619,14 @@ mod tests {
     };
     use feldera_storage::fbuf::{FBuf, slab::set_thread_slab_pool};
     use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
-    use std::{cell::RefCell, rc::Rc, sync::Arc, thread::sleep, time::Duration};
+    use feldera_types::memory_pressure::MemoryPressure;
+    use std::{
+        cell::RefCell,
+        rc::Rc,
+        sync::{Arc, LazyLock, Mutex},
+        thread::sleep,
+        time::{Duration, Instant},
+    };
 
     struct TestCacheEntry(usize);
 
@@ -1431,6 +1634,82 @@ mod tests {
         fn cost(&self) -> usize {
             self.0
         }
+    }
+
+    static MOCK_RSS_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    fn set_mock_process_rss_bytes(bytes: u64) {
+        // Safety: tests serialize all updates to process env using `MOCK_RSS_LOCK`.
+        unsafe {
+            std::env::set_var("MOCK_PROCESS_RSS_BYTES", bytes.to_string());
+        }
+    }
+
+    struct MockRssVarGuard;
+
+    impl Drop for MockRssVarGuard {
+        fn drop(&mut self) {
+            // Safety: tests serialize all updates to process env using `MOCK_RSS_LOCK`.
+            unsafe {
+                std::env::remove_var("MOCK_PROCESS_RSS_BYTES");
+            }
+        }
+    }
+
+    fn query_runtime_memory_state(runtime: &Runtime) -> (MemoryPressure, usize, usize, usize) {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        runtime.spawn_aux_thread(
+            "memory-pressure-test-query",
+            super::Parker::new(),
+            move |_parker| {
+                let _ = sender.send((
+                    Runtime::memory_pressure().expect("query thread should run inside runtime"),
+                    Runtime::min_merge_storage_bytes().expect("runtime has storage configured"),
+                    Runtime::min_insert_storage_bytes().expect("runtime has storage configured"),
+                    Runtime::min_step_storage_bytes().expect("runtime has storage configured"),
+                ));
+            },
+        );
+        receiver
+            .recv_timeout(Duration::from_secs(5))
+            .expect("failed to query memory state from runtime thread")
+    }
+
+    fn count_metric(
+        profile: &DbspProfile,
+        metric: &'static crate::circuit::metadata::MetricId,
+    ) -> usize {
+        let root_node = crate::circuit::GlobalNodeId::root();
+        profile
+            .worker_profiles
+            .iter()
+            .map(|worker| {
+                worker
+                    .get_node_profile(&root_node)
+                    .map(|meta| {
+                        meta.iter()
+                            .filter_map(|((metric_id, _labels), value)| {
+                                if metric_id == metric {
+                                    match value {
+                                        crate::circuit::metadata::MetaItem::Count(count) => {
+                                            Some(*count)
+                                        }
+                                        _ => None,
+                                    }
+                                } else {
+                                    None
+                                }
+                            })
+                            .sum::<usize>()
+                    })
+                    .unwrap_or(0)
+            })
+            .sum()
+    }
+
+    fn in_memory_spine_records(profile: &DbspProfile) -> usize {
+        count_metric(profile, &LOOSE_MEMORY_RECORDS_COUNT)
+            + count_metric(profile, &MERGING_MEMORY_RECORDS_COUNT)
     }
 
     #[test]
@@ -1447,6 +1726,7 @@ mod tests {
         let path_clone = path.clone();
         let cconf = CircuitConfig {
             layout: Layout::new_solo(4),
+            max_rss_bytes: None,
             mode: Mode::Ephemeral,
             pin_cpus: Vec::new(),
             storage: Some(
@@ -1760,7 +2040,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(miri, ignore)]
     fn test_kill_dynamic() {
         test_kill::<DynamicScheduler>();
     }
@@ -1800,5 +2079,102 @@ mod tests {
 
         sleep(Duration::from_millis(100));
         hruntime.kill().unwrap();
+    }
+
+    // Test the memory pressure thresholds and how merger threads behave under different memory pressure levels.
+    #[test]
+    fn memory_pressure_thresholds_and_spill_behavior() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+        const MIB: u64 = 1024 * 1024;
+        const TEN_MIB: usize = 10 * 1024 * 1024;
+
+        let _mock_guard = MOCK_RSS_LOCK.lock().unwrap();
+        let _clear_mock_rss = MockRssVarGuard;
+        set_mock_process_rss_bytes(0);
+
+        let storage_dir = tempfile::tempdir().unwrap();
+        let config = CircuitConfig::with_workers(1)
+            .with_temporary_storage(storage_dir.path())
+            .with_max_rss_bytes(Some(10 * GIB));
+
+        // Create a circuit with a single spine.
+        let (mut circuit, input_handle) = Runtime::init_circuit(config, move |circuit| {
+            let (stream, input_handle) = circuit.add_input_zset::<u64>();
+            stream.accumulate_integrate_trace();
+            Ok(input_handle)
+        })
+        .unwrap();
+
+        // Push 7 batches. This is below the merge threshold, so no batches should get merged,
+        // and al of them should live in memory.
+        for key in 0..7 {
+            input_handle.push(key, 1);
+            circuit.transaction().unwrap();
+        }
+
+        // Baseline (mock RSS = 0): no pressure and default spill thresholds.
+        let (pressure, min_merge, min_insert, min_step) =
+            query_runtime_memory_state(circuit.runtime());
+        assert_eq!(pressure, MemoryPressure::Low);
+
+        // Verify the spill thresholds: at low pressure, all thresholds are set to the user-configured `min_storage_bytes`
+        // and `min_step_storage_bytes` values.
+        assert_eq!(min_merge, TEN_MIB);
+        assert_eq!(min_insert, TEN_MIB);
+        assert_eq!(min_step, usize::MAX);
+
+        // Verify the spine currently holds in-memory tuples before pressure rises.
+        let profile = circuit.retrieve_profile().unwrap();
+        assert!(in_memory_spine_records(&profile) == 7);
+
+        // Moderate pressure (8.8/10 GiB): merge threshold drops to 0, insert/step stay unchanged.
+        set_mock_process_rss_bytes(8800 * MIB);
+        sleep(Duration::from_secs(5));
+
+        let (pressure, min_merge, min_insert, min_step) =
+            query_runtime_memory_state(circuit.runtime());
+        assert_eq!(pressure, MemoryPressure::Moderate);
+        assert_eq!(min_merge, 0);
+        assert_eq!(min_insert, TEN_MIB);
+        assert_eq!(min_step, usize::MAX);
+
+        // High pressure (9.4/10 GiB): insert threshold drops to 0 as well.
+        set_mock_process_rss_bytes(9400 * MIB);
+        sleep(Duration::from_secs(5));
+
+        let (pressure, min_merge, min_insert, min_step) =
+            query_runtime_memory_state(circuit.runtime());
+        assert_eq!(pressure, MemoryPressure::High);
+        assert_eq!(min_merge, 0);
+        assert_eq!(min_insert, 0);
+        assert_eq!(min_step, usize::MAX);
+
+        // Under high pressure, merges should eventually spill all in-memory tuples to storage.
+        // Poll profile until this converges to 0.
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let profile = circuit.retrieve_profile().unwrap();
+            if in_memory_spine_records(&profile) == 0 {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "in-memory spine records did not drain to zero under high memory pressure"
+            );
+            sleep(Duration::from_millis(250));
+        }
+
+        // Critical pressure (9.8/10 GiB): all spill thresholds must be 0.
+        set_mock_process_rss_bytes(9800 * MIB);
+        sleep(Duration::from_secs(3));
+
+        let (pressure, min_merge, min_insert, min_step) =
+            query_runtime_memory_state(circuit.runtime());
+        assert_eq!(pressure, MemoryPressure::Critical);
+        assert_eq!(min_merge, 0);
+        assert_eq!(min_insert, 0);
+        assert_eq!(min_step, 0);
+
+        circuit.kill().unwrap();
     }
 }
