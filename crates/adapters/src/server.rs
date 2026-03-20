@@ -1763,8 +1763,14 @@ async fn samply_profile(
         .unwrap()
         .start_profiling(expected_after);
 
+    let layout = controller.layout();
+    let os_cpu = layout
+        .is_multihost()
+        .then(|| format!("host {} of {}", layout.local_host_idx(), layout.n_hosts()));
     spawn(async move {
-        let result = controller.async_samply_profile(duration).await;
+        let result = controller
+            .async_samply_profile(duration, os_cpu.as_deref())
+            .await;
         state_samply_state
             .lock()
             .unwrap()
@@ -2563,7 +2569,7 @@ async fn coordination_adhoc_scan(
         .scan(&session_state, scan.projection.as_ref(), &[], None)
         .await?;
     let mut stream = execution.execute(
-        scan.worker - controller.workers().start,
+        scan.worker - controller.layout().local_workers().start,
         session_state.task_ctx(),
     )?;
 
