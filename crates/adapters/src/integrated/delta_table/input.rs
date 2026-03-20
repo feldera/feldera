@@ -328,6 +328,10 @@ impl DeltaTableInputReader {
 }
 
 impl InputReader for DeltaTableInputReader {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
     fn request(&self, command: InputReaderCommand) {
         match command {
             InputReaderCommand::Replay { .. } => panic!(

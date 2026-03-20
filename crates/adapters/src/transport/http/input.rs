@@ -328,6 +328,10 @@ impl TransportInputEndpoint for HttpInputEndpoint {
 }
 
 impl InputReader for HttpInputEndpoint {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
     fn request(&self, command: InputReaderCommand) {
         let _ = self.sender.send(command);
     }

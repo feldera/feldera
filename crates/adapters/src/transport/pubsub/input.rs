@@ -196,6 +196,10 @@ impl PubSubReader {
 }
 
 impl InputReader for PubSubReader {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
     fn request(&self, command: InputReaderCommand) {
         let _ = self.state_sender.send(command.as_nonft().unwrap());
     }
