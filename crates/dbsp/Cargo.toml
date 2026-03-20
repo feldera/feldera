@@ -51,7 +51,7 @@ size-of = { workspace = true, features = [
     "xxhash-xxh3",
     "arcstr"
 ] }
-tarpc = { workspace = true, features = ["full"] }
+tokio-util = { workspace = true }
 futures = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
 paste = { workspace = true }
@@ -122,6 +122,7 @@ indicatif = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
 chrono = { workspace = true, features = ["serde"] }
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+tarpc = { workspace = true, features = ["full"] }
 
 [[bench]]
 name = "galen"

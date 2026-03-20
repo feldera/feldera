@@ -10,9 +10,8 @@ use crate::error::Error as DbspError;
 use crate::operator::communication::Exchange;
 use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
-use crate::storage::file::to_bytes;
 use crate::storage::file::writer::Parameters;
-use crate::trace::unaligned_deserialize;
+use crate::trace::aligned_deserialize;
 use crate::utils::process_rss_bytes;
 use crate::{
     DetailedError,
@@ -36,6 +35,7 @@ use indexmap::IndexSet;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::iter::repeat;
+use std::ops::Range;
 use std::path::Path;
 use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize};
 use std::sync::{LazyLock, Mutex};
@@ -1290,12 +1290,11 @@ impl Consensus {
         match Runtime::runtime() {
             Some(runtime) if Runtime::num_workers() > 1 => {
                 let worker_index = Runtime::worker_index();
-                let exchange_id = runtime.sequence_next();
+                let exchange_id = runtime.sequence_next().try_into().unwrap();
                 let exchange = Exchange::with_runtime(
                     &runtime,
                     exchange_id,
-                    Box::new(|vote| to_bytes(&vote).unwrap().into_vec()),
-                    Box::new(|data| unaligned_deserialize(&data[..])),
+                    Box::new(|data| aligned_deserialize(&data[..])),
                 );
 
                 let notify_sender = Arc::new(Notify::new());
@@ -1334,7 +1333,11 @@ impl Consensus {
                 notify_receiver,
                 exchange,
             } => {
-                while !exchange.try_send_all(Runtime::worker_index(), repeat(local)) {
+                while !exchange.try_send_all_with_serializer(
+                    Runtime::worker_index(),
+                    repeat(local),
+                    |local| vec![local as u8],
+                ) {
                     if Runtime::kill_in_progress() {
                         return Err(SchedulerError::Killed);
                     }
@@ -1376,12 +1379,11 @@ where
         match Runtime::runtime() {
             Some(runtime) if Runtime::num_workers() > 1 => {
                 let worker_index = Runtime::worker_index();
-                let exchange_id = runtime.sequence_next();
+                let exchange_id = runtime.sequence_next().try_into().unwrap();
                 let exchange = Exchange::with_runtime(
                     &runtime,
                     exchange_id,
                     // TODO: handle serialization/deserialization errors better.
-                    Box::new(|x| rmp_serde::to_vec(&x).unwrap()),
                     Box::new(|data| rmp_serde::from_slice(&data).unwrap()),
                 );
 
@@ -1421,7 +1423,11 @@ where
                 notify_receiver,
                 exchange,
             } => {
-                while !exchange.try_send_all(Runtime::worker_index(), repeat(local.clone())) {
+                while !exchange.try_send_all_with_serializer(
+                    Runtime::worker_index(),
+                    repeat(local.clone()),
+                    |local| rmp_serde::to_vec(&local).unwrap(),
+                ) {
                     if Runtime::kill_in_progress() {
                         return Err(SchedulerError::Killed);
                     }
@@ -1597,6 +1603,76 @@ impl RuntimeHandle {
         self.runtime.inner().panicked.load(Ordering::Acquire)
     }
 }
+
+/// Where a worker thread is.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum WorkerLocation {
+    /// In this process.
+    Local,
+    /// Across the network.
+    Remote,
+}
+
+/// An iterator for all of the workers in a runtime.
+///
+/// For every worker in a [Runtime], this iterator yields its [WorkerLocation].
+#[derive(Clone, Debug)]
+pub struct WorkerLocations {
+    workers: Range<usize>,
+    local_workers: Range<usize>,
+}
+
+impl Default for WorkerLocations {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl WorkerLocations {
+    /// Constructs a new iterator for all the worker locations in the current
+    /// [Runtime].  Use [Iterator::enumerate] to also obtain the associated
+    /// worker indexes.
+    pub fn new() -> Self {
+        if let Some(runtime) = Runtime::runtime() {
+            let layout = runtime.layout();
+            Self {
+                workers: 0..layout.n_workers(),
+                local_workers: layout.local_workers(),
+            }
+        } else {
+            Self {
+                workers: 0..1,
+                local_workers: 0..1,
+            }
+        }
+    }
+
+    /// Returns the location of the worker with the given index.
+    pub fn get(&self, worker: usize) -> WorkerLocation {
+        debug_assert!(worker < self.workers.end);
+        if self.local_workers.contains(&worker) {
+            WorkerLocation::Local
+        } else {
+            WorkerLocation::Remote
+        }
+    }
+}
+
+impl Iterator for WorkerLocations {
+    type Item = WorkerLocation;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let worker = self.workers.next()?;
+        Some(self.get(worker))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.workers.len();
+        (len, Some(len))
+    }
+}
+
+impl ExactSizeIterator for WorkerLocations {}
 
 #[cfg(test)]
 mod tests {
