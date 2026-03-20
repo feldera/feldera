@@ -41,6 +41,7 @@ import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimeString;
 import org.apache.calcite.util.TimestampString;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
@@ -930,6 +931,54 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         return false;
     }
 
+    void checkFormatArg(List<DBSPExpression> args, int formatPosition) {
+        if (formatPosition >= args.size())
+            return;
+        DBSPExpression formatArg = args.get(formatPosition);
+        DBSPType formatArgType = formatArg.getType();
+        if (!formatArgType.is(DBSPTypeString.class)) {
+            this.compiler.reportWarning(formatArg.getSourcePosition(),
+                    "Suspicious argument",
+                    "Format argument is expected to be a string, but the type is " + formatArgType.asSqlString());
+            return;
+        }
+        if (formatArg.is(DBSPStringLiteral.class)) {
+            String str = formatArg.to(DBSPStringLiteral.class).value;
+            if (str == null) {
+                this.compiler.reportWarning(formatArg.getSourcePosition(),
+                        "Suspicious argument",
+                        "Format argument is NULL.");
+                return;
+            }
+            if (!str.contains("%")) {
+                this.compiler.reportWarning(formatArg.getSourcePosition(),
+                        "Suspicious argument",
+                        "Format argument does not look like a format string.");
+                return;
+            }
+        } else if (formatArg.is(DBSPCastExpression.class)) {
+            // This may be a sign that the format string is
+            DBSPCastExpression cast = formatArg.to(DBSPCastExpression.class);
+            if (!cast.source.getType().is(DBSPTypeString.class)) {
+                this.compiler.reportWarning(formatArg.getSourcePosition(),
+                        "Suspicious argument",
+                        "Format argument does not look like a format string.");
+                return;
+            }
+        }
+        if (args.size() == 2) {
+            DBSPExpression otherArg = args.get(1 - formatPosition);
+            if (otherArg.is(DBSPStringLiteral.class)) {
+                String strData = otherArg.to(DBSPStringLiteral.class).value;
+                if (strData != null && strData.contains("%")) {
+                    this.compiler.reportWarning(otherArg.getSourcePosition(),
+                            "Suspicious argument",
+                            "Are the two arguments swapped?");
+                }
+            }
+        }
+    }
+
     @Override
     public DBSPExpression visitCall(RexCall call) {
         CalciteObject node = CalciteObject.create(this.context, call);
@@ -1377,6 +1426,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return compilePolymorphicFunction(false, call, node, type, ops, 2);
                     }
                     case "format_date":
+                        this.checkFormatArg(ops, 0);
                         return compileFunction(call, node, type, ops, 2);
                     case "bround": {
                         validateArgCount(node, opName, ops.size(), 2);
@@ -1486,6 +1536,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "parse_time":
                     case "parse_timestamp": {
                         validateArgCount(node, operationName, ops.size(), 2);
+                        this.checkFormatArg(ops, 0);
                         ensureString(ops, 0);
                         ensureString(ops, 1);
                         return compileStrictFunction(call, node, type, ops, 2);
