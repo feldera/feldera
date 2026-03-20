@@ -1380,6 +1380,7 @@ where
                     *self.rebalance_accumulator_size.borrow_mut() = 0;
                     *self.rebalance_integral_size.borrow_mut() = 0;
                     self.update_total_rebalancing_time(&step_start_time);
+                    *self.rebalance_start_time.borrow_mut() = None;
                     yield (true, None);
                     return;
                 }
@@ -1401,6 +1402,7 @@ where
             *self.rebalance_accumulator_size.borrow_mut() = 0;
             *self.rebalance_integral_size.borrow_mut() = 0;
             self.update_total_rebalancing_time(&step_start_time);
+            *self.rebalance_start_time.borrow_mut() = None;
             yield (true, None);
         }
     }
