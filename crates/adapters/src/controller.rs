@@ -944,7 +944,11 @@ impl Controller {
         receiver.await.unwrap()
     }
 
-    pub async fn async_samply_profile(&self, duration: u64) -> Result<Vec<u8>, AnyError> {
+    pub async fn async_samply_profile(
+        &self,
+        duration: u64,
+        os_cpu: Option<&str>,
+    ) -> Result<Vec<u8>, AnyError> {
         #[cfg(not(unix))]
         {
             anyhow::bail!(
@@ -1074,7 +1078,7 @@ impl Controller {
         let output = match markers.annotate_profile(
             &buf,
             self.inner.status.pipeline_config.given_name.as_deref(),
-            None,
+            os_cpu,
         ) {
             Ok(output) => output,
             Err(error) => {
