@@ -69,6 +69,8 @@ public class CustomFunctions {
         this.functions.add(new BlackboxFunction());
         this.functions.add(new BroundFunction());
         this.functions.add(new FormatDateFunction());
+        this.functions.add(new FormatTimestampFunction());
+        this.functions.add(new FormatTimeFunction());
         this.functions.add(new GreatestNonNullsFunction());
         this.functions.add(new GunzipFunction());
         this.functions.add(new InitcapSpacesFunction());
@@ -174,7 +176,26 @@ public class CustomFunctions {
 
     static class FormatDateFunction extends CalciteFunctionClone {
         private FormatDateFunction() {
-            super(SqlLibraryOperators.FORMAT_DATE, "datetime#date-parsing-and-formatting", FunctionDocumentation.NO_FILE);
+            super(SqlLibraryOperators.FORMAT_DATE, "datetime#format_date", FunctionDocumentation.NO_FILE);
+        }
+    }
+
+    static class FormatTimestampFunction extends NonOptimizedFunction {
+        private FormatTimestampFunction() {
+            super("FORMAT_TIMESTAMP",
+                    ReturnTypes.VARCHAR.andThen(SqlTypeTransforms.TO_NULLABLE),
+                    OperandTypes.sequence("FORMAT_TIMESTAMP(<CHARACTER>, <TIMESTAMP>)",
+                            OperandTypes.CHARACTER, OperandTypes.TIMESTAMP),
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION,
+                    "datetime#format_timestamp",
+                    FunctionDocumentation.NO_FILE
+            );
+        }
+    }
+
+    static class FormatTimeFunction extends CalciteFunctionClone {
+        private FormatTimeFunction() {
+            super(SqlLibraryOperators.FORMAT_TIME, "datetime#format_time", FunctionDocumentation.NO_FILE);
         }
     }
 

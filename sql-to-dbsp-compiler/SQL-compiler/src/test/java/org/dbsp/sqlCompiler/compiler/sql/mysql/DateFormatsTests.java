@@ -136,6 +136,188 @@ public class DateFormatsTests extends SqlIoTest {
                 (1 row)""");
     }
 
+    record R(int year, int month, int day, String format, String expected) {
+        @Override
+        public String toString() {
+            return this.year + "-" + String.format("%02d", this.month) + "-" + String.format("%02d", this.day);
+        }
+    }
+
+    @Test
+    public void testFormatDate() {
+        R[] tests = {
+                new R(2024, 3, 5, "%Y", "2024"),
+                new R(2024, 3, 5, "%C", "20"),
+                new R(2024, 3, 5, "%y", "24"),
+                new R(2024, 3, 5, "%m", "03"),
+                new R(2024, 3, 5, "%b", "Mar"),
+                new R(2024, 3, 5, "%B", "March"),
+                new R(2024, 3, 5, "%h", "Mar"),
+                new R(2024, 3, 5, "%d", "05"),
+                new R(2024, 3, 5, "%e", " 5"),
+                new R(2024, 3, 5, "%a", "Tue"),
+                new R(2024, 3, 5, "%A", "Tuesday"),
+                new R(2024, 3, 5, "%u", "2"),
+                new R(2024, 3, 5, "%w", "2"),
+                new R(2024, 1, 1, "%U", "00"),
+                new R(2024, 1, 1, "%W", "01"),
+                new R(2024, 1, 1, "%G", "2024"),
+                new R(2024, 1, 1, "%g", "24"),
+                new R(2024, 1, 1, "%V", "01"),
+                new R(2024, 12, 31, "%j", "366"),
+                new R(2024, 3, 5, "%D", "03/05/24"),
+                new R(2024, 3, 5, "%F", "2024-03-05"),
+                new R(2024, 3, 5, "%x", "03/05/24"), // Chrono uses US locale
+                new R(2024, 3, 5, "%%", "%"),
+                new R(2024, 3, 5, "%q", "1")
+        };
+
+        StringBuilder builder = new StringBuilder();
+        for (R r: tests) {
+            builder.append("SELECT format_date('")
+                    .append(r.format)
+                    .append("', '")
+                    .append(r).append("');\n")
+                    .append(" r\n")
+                    .append("------\n")
+                    .append(" ").append(r.expected).append("\n")
+                    .append("(1 row)\n\n");
+        }
+        this.qs(builder.toString());
+    }
+
+    record T(int hour, int minute, int second, int microsec) {
+        @Override
+        public String toString() {
+            return String.format("%02d", this.hour) + ":" + String.format("%02d", this.minute) + ":" + String.format("%02d", this.second)
+                    + "." + String.format("%06d", this.microsec);
+        }
+    }
+
+    record FE(String format, String expected) {}
+
+    @Test
+    public void testFormatTime() {
+        FE[] tests = {
+                new FE("%H", "13"),
+                new FE("%k", "13"),
+                new FE("%-H", "13"),
+                new FE("%_H", "13"),
+                new FE("%I", "01"),
+                new FE("%l", " 1"),
+                new FE("%-I", "1"),
+                new FE("%M", "05"),
+                new FE("%-M", "5"),
+                new FE("%S", "09"),
+                new FE("%-S", "9"),
+                new FE("%.f", ".123456"),
+                new FE("%.3f", ".123"),
+                new FE("%.6f", ".123456"),
+                new FE("%.9f", ".123456000"),
+                new FE("%p", "PM"),
+                new FE("%P", "pm"),
+                new FE("%T", "13:05:09"),
+                new FE("%R", "13:05"),
+                new FE("%X", "13:05:09"),
+                new FE("%r", "01:05:09 PM"),
+                new FE("%%", "%"),
+                new FE("%H%%%M", "13%05"),
+        };
+    
+        StringBuilder builder = new StringBuilder();
+        T time = new T(13, 5, 9, 123456);
+        for (FE r: tests) {
+            builder.append("SELECT format_time('")
+                    .append(r.format)
+                    .append("', '")
+                    .append(time).append("');\n")
+                    .append(" r\n")
+                    .append("------\n")
+                    .append(" ").append(r.expected).append("\n")
+                    .append("(1 row)\n\n");
+        }
+        this.qs(builder.toString());
+    }
+
+    @Test
+    public void testFormatTimestamp() {
+        FE[] tests = {
+                new FE("%Y", "2024"),
+                new FE("%y", "24"),
+                new FE("%C", "20"),
+                // --- Month ---
+                new FE("%m", "03"),
+                new FE("%-m", "3"),
+                new FE("%b", "Mar"),
+                new FE("%B", "March"),
+                // --- Day ---
+                new FE("%d", "05"),
+                new FE("%-d", "5"),
+                new FE("%e", " 5"),
+                new FE("%j", "065"), // ordinal day
+                // --- Weekday ---
+                new FE("%a", "Tue"),
+                new FE("%A", "Tuesday"),
+                new FE("%u", "2"), // ISO weekday (Mon=1)
+                new FE("%w", "2"), // Sunday=0
+                // --- ISO week date ---
+                new FE("%G", "2024"),
+                new FE("%g", "24"),
+                new FE("%V", "10"),
+                // --- Hour (24h) ---
+                new FE("%H", "13"),
+                new FE("%k", "13"),
+                new FE("%-H", "13"),
+                new FE("%_H", "13"),
+                // --- Hour (12h) ---
+                new FE("%I", "01"),
+                new FE("%l", " 1"),
+                new FE("%-I", "1"),
+                // --- Minute ---
+                new FE("%M", "05"),
+                new FE("%-M", "5"),
+                // --- Second ---
+                new FE("%S", "09"),
+                new FE("%-S", "9"),
+                new FE("%f", "123456000"),
+                new FE("%.f", ".123456"),
+                new FE("%.3f", ".123"),
+                new FE("%.6f", ".123456"),
+                new FE("%.9f", ".123456000"),
+                // --- AM/PM ---
+                new FE("%p", "PM"),
+                new FE("%P", "pm"),
+                // --- Unix timestamp ---
+                // 2024‑03‑05 13:05:09 UTC → 1709643909
+                new FE("%s", "1709643909"),
+                // --- Composite formats ---
+                new FE("%F", "2024-03-05"),
+                new FE("%D", "03/05/24"),
+                new FE("%x", "03/05/24"),
+                new FE("%T", "13:05:09"),
+                new FE("%R", "13:05"),
+                new FE("%X", "13:05:09"),
+                new FE("%r", "01:05:09 PM"),
+                // --- Literal percent ---
+                new FE("%%", "%"),
+                new FE("%Y%%%m", "2024%03"),
+                new FE("%H%%%M", "13%05"),
+                new FE("%H%%M", "13%M"),
+        };
+
+        StringBuilder builder = new StringBuilder();
+        for (FE r: tests) {
+            builder.append("SELECT format_timestamp('")
+                    .append(r.format)
+                    .append("', TIMESTAMP '2024-03-05 13:05:09.123456');\n")
+                    .append(" r\n")
+                    .append("------\n")
+                    .append(" ").append(r.expected).append("\n")
+                    .append("(1 row)\n\n");
+        }
+        this.qs(builder.toString());
+    }
+
     @Test
     public void testAllFormat() {
         // Test all format flags that can be applied to a DATE.
