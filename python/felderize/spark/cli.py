@@ -20,6 +20,7 @@ def cli():
 @click.argument("schema_file", type=click.Path(exists=True))
 @click.argument("query_file", type=click.Path(exists=True))
 @click.option("--validate", is_flag=True, help="Validate against Feldera instance")
+@click.option("--compiler", type=click.Path(), help="Path to Feldera compiler binary")
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
 @click.option(
@@ -29,6 +30,7 @@ def translate(
     schema_file: str,
     query_file: str,
     validate: bool,
+    compiler: str | None,
     json_output: bool,
     no_docs: bool,
     verbose: bool,
@@ -40,6 +42,8 @@ def translate(
             err=True,
         )
     config = Config.from_env()
+    if compiler:
+        config.feldera_compiler = compiler
     schema_sql = Path(schema_file).read_text()
     query_sql = Path(query_file).read_text()
 
@@ -61,13 +65,14 @@ def translate(
 @cli.command("translate-file")
 @click.argument("sql_file", type=click.Path(exists=True))
 @click.option("--validate", is_flag=True, help="Validate against Feldera instance")
+@click.option("--compiler", type=click.Path(), help="Path to Feldera compiler binary")
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
 @click.option(
     "--verbose", is_flag=True, help="Log SQL submitted to validator at each attempt"
 )
 def translate_file(
-    sql_file: str, validate: bool, json_output: bool, no_docs: bool, verbose: bool
+    sql_file: str, validate: bool, compiler: str | None, json_output: bool, no_docs: bool, verbose: bool
 ):
     """Translate a single combined Spark SQL file (schema + views) to Feldera SQL."""
     if not validate:
@@ -76,6 +81,8 @@ def translate_file(
             err=True,
         )
     config = Config.from_env()
+    if compiler:
+        config.feldera_compiler = compiler
     combined_sql = Path(sql_file).read_text()
     schema_sql, query_sql = split_combined_sql(combined_sql)
 
@@ -163,13 +170,14 @@ _EXAMPLES_DIR = Path(__file__).resolve().parent / "data" / "demo"
     default=True,
     help="Validate against Feldera instance (default: on)",
 )
+@click.option("--compiler", type=click.Path(), help="Path to Feldera compiler binary")
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
 @click.option(
     "--verbose", is_flag=True, help="Log SQL submitted to validator at each attempt"
 )
 def example(
-    name: str | None, validate: bool, json_output: bool, no_docs: bool, verbose: bool
+    name: str | None, validate: bool, compiler: str | None, json_output: bool, no_docs: bool, verbose: bool
 ):
     """Run a built-in example translation.
 
@@ -225,6 +233,8 @@ def example(
             err=True,
         )
     config = Config.from_env()
+    if compiler:
+        config.feldera_compiler = compiler
     result = translate_spark_to_feldera(
         schema_sql,
         query_sql,

@@ -36,6 +36,9 @@ felderize example simple --no-validate
 # Log SQL submitted to the validator at each attempt
 felderize example json --verbose
 
+# Use a specific compiler binary
+felderize example simple --compiler /path/to/sql-to-dbsp
+
 # Output as JSON
 felderize example simple --json-output
 ```
@@ -84,7 +87,9 @@ felderize translate-file path/to/combined.sql --validate
 
 > **Note:** Running without `--validate` prints a warning — the output SQL has not been verified against the Feldera compiler.
 
-Both commands accept `--verbose` to log the SQL submitted to the validator at each repair attempt.
+Both commands accept:
+- `--verbose` to log the SQL submitted to the validator at each repair attempt
+- `--compiler PATH` to specify the path to the Feldera compiler binary (overrides `FELDERA_COMPILER` env var)
 
 ### Batch translation
 
@@ -104,7 +109,7 @@ Environment variables (set in `.env`):
 | `FELDERIZE_LLM_PROVIDER` | `anthropic` or `openai` | `anthropic` |
 | `FELDERIZE_MODEL` | LLM model to use | `claude-sonnet-4-20250514` |
 | `OPENAI_API_KEY` | OpenAI API key (if using openai provider) | — |
-| `FELDERA_COMPILER` | Path to sql-to-dbsp compiler | `<repo-root>/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp` |
+| `FELDERA_COMPILER` | Path to sql-to-dbsp compiler (can also be set with `--compiler`) | `<repo-root>/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp` |
 
 ## How it works
 
