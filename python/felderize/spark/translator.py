@@ -239,12 +239,13 @@ def translate_spark_to_feldera(
     docs_dir_path = Path(docs_dir) if docs_dir else None
     client = create_client(config)
 
-    # First pass: skills + examples (no docs).
+    # First pass: skills only (no examples, no docs).
     system_prompt_skills = build_system_prompt(
         skills_dir,
         docs_dir=docs_dir_path,
         spark_sql=combined_sql,
         with_docs=False,
+        with_examples=False,
     )
     result = _translate_with_repair(
         schema_sql,
