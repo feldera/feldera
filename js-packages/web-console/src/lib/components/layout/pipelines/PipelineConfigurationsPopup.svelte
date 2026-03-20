@@ -24,7 +24,7 @@
       patch.programConfig = JSONbig.parse(json.programConfig)
       await pipeline.patch(patch)
     } catch (e) {
-      toastError(e as any)
+      toastError('Applying pipeline config')(e as any)
       throw e
     }
   }

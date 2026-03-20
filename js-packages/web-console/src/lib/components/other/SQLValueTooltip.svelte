@@ -25,12 +25,12 @@
 >
   <div class="flex flex-nowrap justify-between gap-2">
     <span class="flex-1">
-      {(tooltipData && toast.catchError(displaySQLValue)(tooltipData.value)) || ''}
+      {(tooltipData && toast.catchError('Displaying SQL value', displaySQLValue)(tooltipData.value)) || ''}
     </span>
     {#if tooltipData}
       <ClipboardCopyButton
         class="flex-none p-0"
-        value={() => toast.catchError(serializeSQLValue)(tooltipData.value) ?? ''}
+        value={() => toast.catchError('Serializing SQL value', serializeSQLValue)(tooltipData.value) ?? ''}
       ></ClipboardCopyButton>
     {/if}
   </div>
