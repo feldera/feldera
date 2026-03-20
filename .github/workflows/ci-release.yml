@@ -62,6 +62,7 @@ jobs:
         with:
           fetch-tags: true
           ref: ${{ env.SHA_TO_RELEASE }}
+          persist-credentials: false
 
       - name: Download artifact
         id: download-artifact
