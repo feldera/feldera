@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+
 def validate_sql(sql: str, compiler_path: str | Path | None = None) -> list[str]:
     """Validate SQL using the local sql-to-dbsp compiler. Returns compiler errors."""
     if not compiler_path:
