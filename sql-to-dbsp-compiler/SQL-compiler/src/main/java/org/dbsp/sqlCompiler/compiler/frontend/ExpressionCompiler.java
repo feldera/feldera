@@ -1426,6 +1426,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return compilePolymorphicFunction(false, call, node, type, ops, 2);
                     }
                     case "format_date":
+                    case "format_timestamp":
+                    case "format_time":
                         this.checkFormatArg(ops, 0);
                         return compileFunction(call, node, type, ops, 2);
                     case "bround": {
