@@ -13,10 +13,20 @@ pip install -e .
 
 > **Note:** `pip install -e .` is required before running `felderize`. It registers the package and CLI command.
 
-Create a `.env` file with your API key:
+Create a `.env` file with your API key and optionally the compiler path:
 
 ```bash
-echo 'ANTHROPIC_API_KEY=your-key-here' > .env
+ANTHROPIC_API_KEY=your-key-here
+FELDERA_COMPILER=/path/to/sql-to-dbsp  # default: sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp inside the Feldera repo
+```
+
+The `FELDERA_COMPILER` path is required for validation. Without it, translation still works but output SQL is not verified. You can also pass it per-command with `--compiler PATH`.
+
+The compiler must be built before use (requires Java 19–21 and Maven):
+
+```bash
+cd sql-to-dbsp-compiler
+./build.sh
 ```
 
 ## Usage

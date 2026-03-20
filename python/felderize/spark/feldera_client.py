@@ -4,13 +4,11 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-_DEFAULT_COMPILER = _REPO_ROOT / "sql-to-dbsp-compiler" / "SQL-compiler" / "sql-to-dbsp"
-
-
 def validate_sql(sql: str, compiler_path: str | Path | None = None) -> list[str]:
     """Validate SQL using the local sql-to-dbsp compiler. Returns compiler errors."""
-    compiler = Path(compiler_path) if compiler_path else _DEFAULT_COMPILER
+    if not compiler_path:
+        return ["Compiler not found: set FELDERA_COMPILER in .env or use --compiler"]
+    compiler = Path(compiler_path)
 
     if not compiler.is_file():
         return [f"Compiler not found at {compiler}"]
