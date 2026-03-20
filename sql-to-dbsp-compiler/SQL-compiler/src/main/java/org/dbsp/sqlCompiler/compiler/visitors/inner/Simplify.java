@@ -252,9 +252,9 @@ public class Simplify extends ExpressionTranslator {
                         LocalDate.parse(str.value, dateFormatter); // executed for exception
                         result = new DBSPDateLiteral(lit.getNode(), type, new DateString(str.value));
                     } catch (DateTimeParseException ex) {
-                        this.compiler.reportWarning(expression.getSourcePosition(), "Not a DATE",
-                                " String " + Utilities.singleQuote(str.value) +
-                                        " cannot be interpreted as a date");
+                        this.compiler.reportWarning(expression.getSourcePosition(), "Suspicious argument",
+                                "String " + Utilities.singleQuote(str.value) +
+                                        " cannot be interpreted as a DATE");
                     }
                 } else if (type.is(DBSPTypeTime.class)) {
                     try {
