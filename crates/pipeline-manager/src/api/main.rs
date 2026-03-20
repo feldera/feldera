@@ -438,6 +438,7 @@ It contains the following fields:
 
         // Adapter statistics
         feldera_types::adapter_stats::ExternalControllerStatus,
+        feldera_types::memory_pressure::MemoryPressure,
         feldera_types::adapter_stats::ExternalGlobalControllerMetrics,
         feldera_types::adapter_stats::ConnectorError,
         feldera_types::adapter_stats::ConnectorHealth,

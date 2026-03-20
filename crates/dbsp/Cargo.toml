@@ -99,6 +99,7 @@ async-stream = { workspace = true }
 futures-util = { workspace = true }
 rmp-serde = { workspace = true }
 feldera-buffer-cache = { workspace = true }
+memory-stats = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }

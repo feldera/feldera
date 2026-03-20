@@ -29,7 +29,7 @@ use crate::{
         Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, GroupFilter, Trace,
         cursor::{CursorList, Position},
         merge_batches,
-        ord::fallback::pick_merge_destination,
+        ord::fallback::pick_insert_destination,
         spine_async::{
             list_merger::ArcListMerger, push_merger::ArcPushMerger, snapshot::FetchList,
         },
@@ -46,6 +46,7 @@ use feldera_storage::{
     fbuf::slab::{FBufSlabs, TOKIO_FBUF_SLABS},
 };
 use feldera_types::checkpoint::PSpineBatches;
+use feldera_types::memory_pressure::MemoryPressure;
 use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
@@ -198,13 +199,34 @@ where
         ];
 
         let merge_counts = &MERGE_COUNTS[level];
-        if self.merging_batches.is_none() && self.loose_batches.len() >= *merge_counts.start() {
+
+        // Start a merge if there is no ongoing merge and there are either enough loose batches to start a merge,
+        // or we are under high memory pressure and there's at least one in-memory batch in this slot.
+        if self.merging_batches.is_none()
+            && (self.loose_batches.len() >= *merge_counts.start()
+                || self.must_relieve_memory_pressure())
+        {
             let n = std::cmp::min(*merge_counts.end(), self.loose_batches.len());
             let batches = self.loose_batches.drain(..n).collect::<Vec<_>>();
             self.merging_batches = Some(batches.clone());
             Some(batches)
         } else {
             None
+        }
+    }
+
+    /// Returns true if the slot must relieve memory pressure, i.e., if the memory pressure level is >=high
+    /// and there's at least one in-memory batch in this slot.
+    /// In this case, we will initiate a new merge regardless of the number of loose batches.
+    fn must_relieve_memory_pressure(&self) -> bool {
+        if let Some(memory_pressure) = Runtime::memory_pressure() {
+            memory_pressure >= MemoryPressure::High
+                && self
+                    .loose_batches
+                    .iter()
+                    .any(|batch| batch.location() == BatchLocation::Memory)
+        } else {
+            false
         }
     }
 
@@ -496,6 +518,7 @@ where
                 runtime.get_buffer_cache(Runtime::local_worker_offset(), ThreadType::Background);
             let slab_allocator = runtime
                 .get_fbuf_slab_allocator(Runtime::local_worker_offset(), ThreadType::Background);
+            let memory_pressure_notify = runtime.memory_pressure_notify();
 
             runtime.tokio_merger_runtime().spawn(async move {
                 // Setup task-local variables for the tokio merger runtime.
@@ -521,9 +544,13 @@ where
                             // Fuel has been spent, but there's still work to do for the ongoing merge.
                             // Yield control to the tokio runtime, which will put the task in the end of the run queue.
                             WorkerStatus::Yield => yield_now().await,
-                            // No more merge work currently available -- wait for the next merges to be started.
+                            // No more merge work currently available -- wait for the next merges to be started
+                            // of for a global memory pressure notification.
                             WorkerStatus::Idle => {
-                                notify.notified().await;
+                                tokio::select! {
+                                    _ = notify.notified() => {}
+                                    _ = memory_pressure_notify.notified() => {}
+                                }
                             }
                             // The spine is being dropped -- exit the task.
                             WorkerStatus::Done => {
@@ -1558,36 +1585,10 @@ where
 
     fn insert(&mut self, mut batch: Self::Batch) {
         if !batch.is_empty() {
-            // If `batch` is in memory and we'll write it to storage on first
-            // merge, then write it to storage right away.
-            //
-            // This addresses a problem with very large in-memory batches being
-            // added to a spine and using too much memory.  This should not
-            // happen in normal operation, because we do not feed such very
-            // large batches into the circuit.  But intermediate joins, etc. can
-            // sometimes produce them, and in that case we want to get them out
-            // of memory as quickly as we can.
-            //
-            // This approach is a stopgap.  It is still a problem to generate
-            // very large in-memory batches, because if they every exist at all
-            // then they can OOM the process.  There are better ways to avoid
-            // them that we should implement instead or in addition:
-            //
-            // - One of the sources of these large batches is the Batcher, which
-            //   is currently in-memory.  It could fall back to an external sort
-            //   if the result or the inputs are large.
-            //
-            // - We can allow an operator to split its output across many steps
-            //   (see the huge step RFC).
-            //
-            // - We can have operators output mini-spines instead of batches.
-            //
-            // We already have the ability to write very large batches to
-            // storage at build time, using `min_step_storage_bytes`.  This only
-            // addresses individual large batches; it does not help with the
-            // Batcher, which should be separately addressed.
+            // Push in-memory batches to storage if they exceed the user-configured `min_storage_bytes` or
+            // we're under high memory pressure.
             let batch = if batch.location() == BatchLocation::Memory
-                && pick_merge_destination([&batch], None) == BatchLocation::Storage
+                && pick_insert_destination(&batch) == BatchLocation::Storage
             {
                 let factories = batch.factories();
                 let builder =
@@ -1610,7 +1611,7 @@ where
     fn insert_arc(&mut self, batch: Arc<Self::Batch>) {
         if !batch.is_empty() {
             let batch = if batch.location() == BatchLocation::Memory
-                && pick_merge_destination([&batch], None) == BatchLocation::Storage
+                && pick_insert_destination(&batch) == BatchLocation::Storage
             {
                 let factories = batch.factories();
                 let builder =
