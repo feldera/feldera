@@ -1781,6 +1781,20 @@ pub fn format_date__(format: SqlString, date: Date) -> SqlString {
 some_function2!(format_date, SqlString, Date, SqlString);
 
 #[doc(hidden)]
+pub fn format_time__(format: SqlString, date: Time) -> SqlString {
+    SqlString::from(date.to_time().format(format.str()).to_string())
+}
+
+some_function2!(format_time, SqlString, Time, SqlString);
+
+#[doc(hidden)]
+pub fn format_timestamp__(format: SqlString, date: Timestamp) -> SqlString {
+    SqlString::from(date.to_naiveDateTime().format(format.str()).to_string())
+}
+
+some_function2!(format_timestamp, SqlString, Timestamp, SqlString);
+
+#[doc(hidden)]
 pub fn parse_date__(format: SqlString, st: SqlString) -> Option<Date> {
     let nd = NaiveDate::parse_from_str(st.str(), format.str());
     match nd {
