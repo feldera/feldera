@@ -24,22 +24,22 @@ _DOC_FILES: dict[str, str] = {
 # (keywords, operators, syntax forms rather than named functions).
 # Keep these specific — broad patterns like \bDATE\b match almost every query.
 _EXTRA_PATTERNS: dict[str, list[str]] = {
-    "types":       [],                        # always matched — no keywords needed
-    "datetime":    [r"\bINTERVAL\b"],         # DATE/TIMESTAMP covered by index function names
-    "aggregates":  [r"\bGROUP\s+BY\b", r"\bHAVING\b", r"\bOVER\s*\("],
-    "array":       [r"\bEXPLODE\b", r"\bUNNEST\b", r"\bsize\s*\("],
-    "map":         [r"\bMAP\s*<"],            # MAP( covered by index; MAP< is type syntax
-    "json":        [r"\bVARIANT\b"],          # JSON covered by index function names
-    "casts":       [r"::"],                   # CAST covered by index; :: is operator syntax
+    "types": [],  # always matched — no keywords needed
+    "datetime": [r"\bINTERVAL\b"],  # DATE/TIMESTAMP covered by index function names
+    "aggregates": [r"\bGROUP\s+BY\b", r"\bHAVING\b", r"\bOVER\s*\("],
+    "array": [r"\bEXPLODE\b", r"\bUNNEST\b", r"\bsize\s*\("],
+    "map": [r"\bMAP\s*<"],  # MAP( covered by index; MAP< is type syntax
+    "json": [r"\bVARIANT\b"],  # JSON covered by index function names
+    "casts": [r"::"],  # CAST covered by index; :: is operator syntax
     "comparisons": [r"\bCASE\s+WHEN\b"],
 }
 
 # Spark function names that appear in SQL but are not in the Feldera index.
 _SPARK_ALIASES: dict[str, list[str]] = {
-    "json":    [r"\bget_json_object\b", r"\bfrom_json\b", r"\bjson_tuple\b"],
-    "array":   [r"\barray_contains\b", r"\bsort_array\b", r"\barray_distinct\b"],
+    "json": [r"\bget_json_object\b", r"\bfrom_json\b", r"\bjson_tuple\b"],
+    "array": [r"\barray_contains\b", r"\bsort_array\b", r"\barray_distinct\b"],
     "decimal": [r"\bNUMERIC\b"],
-    "float":   [r"\bFLOAT\b"],
+    "float": [r"\bFLOAT\b"],
 }
 
 # Regex to find HTML anchor IDs embedded in doc files: <a id="name">
@@ -76,8 +76,8 @@ def _build_categories_from_index(
         func_upper = func_name.upper()
         for link_m in link_re.finditer(line):
             cat = link_m.group(1)
-            doc_file = link_m.group(2)   # e.g. "string.md"
-            anchor = link_m.group(3)     # e.g. "upper" (may be None)
+            doc_file = link_m.group(2)  # e.g. "string.md"
+            anchor = link_m.group(3)  # e.g. "upper" (may be None)
             if cat in known:
                 keyword = rf"\b{re.escape(func_name)}\b"
                 if keyword not in cats[cat]:
@@ -91,7 +91,10 @@ def _build_categories_from_index(
 def _make_categories() -> tuple[dict[str, list[str]], dict[str, list[tuple[str, str]]]]:
     index_path = (
         Path(__file__).resolve().parents[3]
-        / "docs.feldera.com" / "docs" / "sql" / "function-index.md"
+        / "docs.feldera.com"
+        / "docs"
+        / "sql"
+        / "function-index.md"
     )
     cats, func_anchors = _build_categories_from_index(index_path)
     for source in (_EXTRA_PATTERNS, _SPARK_ALIASES):
@@ -230,7 +233,9 @@ def load_docs(sql: str, docs_dir: Path | None = None) -> str:
     matched by keyword patterns (e.g., GROUP BY) with no specific function match.
     """
     if docs_dir is None:
-        docs_dir = Path(__file__).resolve().parents[3] / "docs.feldera.com" / "docs" / "sql"
+        docs_dir = (
+            Path(__file__).resolve().parents[3] / "docs.feldera.com" / "docs" / "sql"
+        )
 
     if not docs_dir.is_dir():
         return ""

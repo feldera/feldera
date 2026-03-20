@@ -22,13 +22,23 @@ def cli():
 @click.option("--validate", is_flag=True, help="Validate against Feldera instance")
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
-@click.option("--verbose", is_flag=True, help="Log SQL submitted to validator at each attempt")
+@click.option(
+    "--verbose", is_flag=True, help="Log SQL submitted to validator at each attempt"
+)
 def translate(
-    schema_file: str, query_file: str, validate: bool, json_output: bool, no_docs: bool, verbose: bool
+    schema_file: str,
+    query_file: str,
+    validate: bool,
+    json_output: bool,
+    no_docs: bool,
+    verbose: bool,
 ):
     """Translate a single Spark SQL schema + query pair to Feldera SQL."""
     if not validate:
-        click.echo("Warning: running without validation — output SQL is not verified against the Feldera compiler.", err=True)
+        click.echo(
+            "Warning: running without validation — output SQL is not verified against the Feldera compiler.",
+            err=True,
+        )
     config = Config.from_env()
     schema_sql = Path(schema_file).read_text()
     query_sql = Path(query_file).read_text()
@@ -53,11 +63,18 @@ def translate(
 @click.option("--validate", is_flag=True, help="Validate against Feldera instance")
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
-@click.option("--verbose", is_flag=True, help="Log SQL submitted to validator at each attempt")
-def translate_file(sql_file: str, validate: bool, json_output: bool, no_docs: bool, verbose: bool):
+@click.option(
+    "--verbose", is_flag=True, help="Log SQL submitted to validator at each attempt"
+)
+def translate_file(
+    sql_file: str, validate: bool, json_output: bool, no_docs: bool, verbose: bool
+):
     """Translate a single combined Spark SQL file (schema + views) to Feldera SQL."""
     if not validate:
-        click.echo("Warning: running without validation — output SQL is not verified against the Feldera compiler.", err=True)
+        click.echo(
+            "Warning: running without validation — output SQL is not verified against the Feldera compiler.",
+            err=True,
+        )
     config = Config.from_env()
     combined_sql = Path(sql_file).read_text()
     schema_sql, query_sql = split_combined_sql(combined_sql)
@@ -148,8 +165,12 @@ _EXAMPLES_DIR = Path(__file__).resolve().parent / "data" / "demo"
 )
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
-@click.option("--verbose", is_flag=True, help="Log SQL submitted to validator at each attempt")
-def example(name: str | None, validate: bool, json_output: bool, no_docs: bool, verbose: bool):
+@click.option(
+    "--verbose", is_flag=True, help="Log SQL submitted to validator at each attempt"
+)
+def example(
+    name: str | None, validate: bool, json_output: bool, no_docs: bool, verbose: bool
+):
     """Run a built-in example translation.
 
     Without NAME, lists available examples. With NAME, translates that example.
@@ -199,7 +220,10 @@ def example(name: str | None, validate: bool, json_output: bool, no_docs: bool, 
     click.echo("\nTranslating...\n", err=True)
 
     if not validate:
-        click.echo("Warning: running without validation — output SQL is not verified against the Feldera compiler.", err=True)
+        click.echo(
+            "Warning: running without validation — output SQL is not verified against the Feldera compiler.",
+            err=True,
+        )
     config = Config.from_env()
     result = translate_spark_to_feldera(
         schema_sql,

@@ -114,7 +114,10 @@ def _translate_with_repair(
     full_sql = result.feldera_schema + "\n\n" + result.feldera_query
     for attempt in range(max_retries):
         if verbose:
-            print(f"\n--- SQL submitted to validator (attempt {attempt + 1}) ---", file=sys.stderr)
+            print(
+                f"\n--- SQL submitted to validator (attempt {attempt + 1}) ---",
+                file=sys.stderr,
+            )
             print(full_sql, file=sys.stderr)
             print("---", file=sys.stderr)
         errors = validate_sql(full_sql, config.feldera_compiler or None)
@@ -153,7 +156,10 @@ def _translate_with_repair(
 
     # Final validation after all retries
     if verbose:
-        print(f"\n--- SQL submitted to validator (attempt {max_retries + 1}) ---", file=sys.stderr)
+        print(
+            f"\n--- SQL submitted to validator (attempt {max_retries + 1}) ---",
+            file=sys.stderr,
+        )
         print(full_sql, file=sys.stderr)
         print("---", file=sys.stderr)
     errors = validate_sql(full_sql, config.feldera_compiler or None)
@@ -191,7 +197,11 @@ def split_combined_sql(sql: str) -> tuple[str, str]:
             continue
         # Find first non-comment, non-blank line to identify statement type.
         first_kw = next(
-            (ln.strip() for ln in stripped.splitlines() if ln.strip() and not ln.strip().startswith("--")),
+            (
+                ln.strip()
+                for ln in stripped.splitlines()
+                if ln.strip() and not ln.strip().startswith("--")
+            ),
             "",
         ).upper()
         if not first_kw:
@@ -228,7 +238,14 @@ def translate_spark_to_feldera(
         with_docs=False,
     )
     result = _translate_with_repair(
-        schema_sql, query_sql, config, client, system_prompt_skills, validate, max_retries, verbose,
+        schema_sql,
+        query_sql,
+        config,
+        client,
+        system_prompt_skills,
+        validate,
+        max_retries,
+        verbose,
     )
 
     if result.status != Status.ERROR:
@@ -246,7 +263,14 @@ def translate_spark_to_feldera(
             with_skills=False,
         )
         result = _translate_with_repair(
-            schema_sql, query_sql, config, client, system_prompt_docs, validate, max_retries, verbose,
+            schema_sql,
+            query_sql,
+            config,
+            client,
+            system_prompt_docs,
+            validate,
+            max_retries,
+            verbose,
         )
         if result.status != Status.ERROR:
             result.warnings.append("Resolved with docs-only fallback")
