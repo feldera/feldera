@@ -99,17 +99,13 @@ felderize translate-file path/to/combined.sql --validate
 > **Note:** Running without `--validate` prints a warning — the output SQL has not been verified against the Feldera compiler.
 
 Both commands accept:
-- `--verbose` to log the SQL submitted to the validator at each repair attempt
+- `--validate` to validate output against the Feldera compiler (opt-in; `example` validates by default, use `--no-validate` to skip)
 - `--compiler PATH` to specify the path to the Feldera compiler binary (overrides `FELDERA_COMPILER` env var)
-- `--model` to specify the LLM model (overrides `FELDERIZE_MODEL` env var)
-
-### Batch translation
-
-```bash
-felderize batch path/to/data_dir/ --output-dir results/
-```
-
-Each subdirectory should contain `*_schema.sql` and `*_query.sql` files.
+- `--model MODEL` to specify the LLM model (overrides `FELDERIZE_MODEL` env var)
+- `--no-docs` to disable Feldera SQL reference docs in the prompt
+- `--force-docs` to include docs on the first pass instead of only as a fallback
+- `--verbose` to log the SQL submitted to the validator at each repair attempt
+- `--json-output` to output results as JSON
 
 ## Configuration
 

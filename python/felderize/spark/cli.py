@@ -7,7 +7,7 @@ from pathlib import Path
 import click
 
 from felderize.config import Config
-from felderize.models import TranslationResult
+from felderize.models import Status, TranslationResult
 from felderize.translator import split_combined_sql, translate_spark_to_feldera
 
 
@@ -24,6 +24,7 @@ def cli():
 @click.option("--model", help="LLM model to use (overrides FELDERIZE_MODEL env var)")
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
+@click.option("--force-docs", is_flag=True, help="Include docs on the first pass instead of only as fallback")
 @click.option(
     "--verbose", is_flag=True, help="Log SQL submitted to validator at each attempt"
 )
@@ -35,9 +36,10 @@ def translate(
     model: str | None,
     json_output: bool,
     no_docs: bool,
+    force_docs: bool,
     verbose: bool,
 ):
-    """Translate a single Spark SQL schema + query pair to Feldera SQL."""
+    """Translate a single Spark SQL schema + query/views pair to Feldera SQL."""
     if not validate:
         click.echo(
             "Warning: running without validation — output SQL is not verified against the Feldera compiler.",
@@ -57,6 +59,7 @@ def translate(
         config,
         validate=validate,
         include_docs=not no_docs,
+        force_docs=force_docs,
         verbose=verbose,
     )
 
@@ -73,6 +76,7 @@ def translate(
 @click.option("--model", help="LLM model to use (overrides FELDERIZE_MODEL env var)")
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
+@click.option("--force-docs", is_flag=True, help="Include docs on the first pass instead of only as fallback")
 @click.option(
     "--verbose", is_flag=True, help="Log SQL submitted to validator at each attempt"
 )
@@ -83,6 +87,7 @@ def translate_file(
     model: str | None,
     json_output: bool,
     no_docs: bool,
+    force_docs: bool,
     verbose: bool,
 ):
     """Translate a single combined Spark SQL file (schema + views) to Feldera SQL."""
@@ -105,6 +110,7 @@ def translate_file(
         config,
         validate=validate,
         include_docs=not no_docs,
+        force_docs=force_docs,
         verbose=verbose,
     )
 
@@ -112,65 +118,6 @@ def translate_file(
         click.echo(json.dumps(result.to_dict(), indent=2))
     else:
         _print_result(result)
-
-
-@cli.command()
-@click.argument("data_dir", type=click.Path(exists=True))
-@click.option("--validate", is_flag=True, help="Validate against Feldera instance")
-@click.option("--output-dir", type=click.Path(), help="Write results to directory")
-@click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
-def batch(data_dir: str, validate: bool, output_dir: str | None, no_docs: bool):
-    """Translate all Spark SQL pairs in a directory."""
-    config = Config.from_env()
-    data_path = Path(data_dir)
-    results: dict[str, dict] = {}
-
-    # Find all benchmark directories
-    dirs = sorted(d for d in data_path.iterdir() if d.is_dir())
-
-    if not dirs:
-        click.echo("No benchmark directories found.", err=True)
-        sys.exit(1)
-
-    for bm_dir in dirs:
-        name = bm_dir.name
-        schema_files = list(bm_dir.glob("*_schema.sql"))
-        query_files = list(bm_dir.glob("*_query.sql"))
-
-        if not schema_files or not query_files:
-            click.echo(f"Skipping {name}: missing schema or query file", err=True)
-            continue
-
-        schema_sql = schema_files[0].read_text()
-        query_sql = query_files[0].read_text()
-
-        click.echo(f"Translating {name}...", err=True)
-        result = translate_spark_to_feldera(
-            schema_sql,
-            query_sql,
-            config,
-            validate=validate,
-            include_docs=not no_docs,
-        )
-        results[name] = result.to_dict()
-
-        if output_dir:
-            out_path = Path(output_dir)
-            out_path.mkdir(parents=True, exist_ok=True)
-            (out_path / f"{name}.sql").write_text(
-                result.feldera_schema + "\n\n" + result.feldera_query
-            )
-            (out_path / f"{name}.json").write_text(
-                json.dumps(result.to_dict(), indent=2)
-            )
-
-    # Summary
-    total = len(results)
-    success = sum(1 for r in results.values() if r["status"] == "success")
-    click.echo(f"\nResults: {success}/{total} successful", err=True)
-
-    # Print full results as JSON to stdout
-    click.echo(json.dumps(results, indent=2))
 
 
 _EXAMPLES_DIR = Path(__file__).resolve().parent / "data" / "demo"
@@ -208,7 +155,7 @@ def example(
       felderize example              # list available examples
       felderize example simple       # translate the 'simple' example
     """
-    # Discover available examples: schema+query pairs and combined files
+    # Discover available examples: schema+views pairs and combined files
     pairs: dict[str, tuple[Path, Path] | Path] = {}
     for schema_file in sorted(_EXAMPLES_DIR.glob("*_schema.sql")):
         example_name = schema_file.name.replace("_schema.sql", "")
@@ -282,8 +229,6 @@ _ERROR_CONTACT_MESSAGE = "\n  Contact us at support@feldera.com for assistance."
 
 def _print_result(result: TranslationResult):
     """Pretty-print a translation result."""
-    from felderize.models import Status
-
     if result.status == Status.ERROR:
         click.echo("-- Translation Failed --", err=True)
         click.echo(

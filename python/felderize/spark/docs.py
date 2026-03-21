@@ -24,7 +24,6 @@ _DOC_FILES: dict[str, str] = {
 # (keywords, operators, syntax forms rather than named functions).
 # Keep these specific — broad patterns like \bDATE\b match almost every query.
 _EXTRA_PATTERNS: dict[str, list[str]] = {
-    "types": [],  # always matched — no keywords needed
     "datetime": [r"\bINTERVAL\b"],  # DATE/TIMESTAMP covered by index function names
     "aggregates": [r"\bGROUP\s+BY\b", r"\bHAVING\b", r"\bOVER\s*\("],
     "array": [r"\bEXPLODE\b", r"\bUNNEST\b", r"\bsize\s*\("],
@@ -88,30 +87,34 @@ def _build_categories_from_index(
     return cats, func_anchors
 
 
-def _make_categories() -> tuple[dict[str, list[str]], dict[str, list[tuple[str, str]]]]:
-    index_path = (
-        Path(__file__).resolve().parents[3]
-        / "docs.feldera.com"
-        / "docs"
-        / "sql"
-        / "function-index.md"
-    )
-    cats, func_anchors = _build_categories_from_index(index_path)
-    for source in (_EXTRA_PATTERNS, _SPARK_ALIASES):
-        for cat, patterns in source.items():
-            seen = set(cats.get(cat, []))
-            for p in patterns:
-                if p not in seen:
-                    cats.setdefault(cat, []).append(p)
-                    seen.add(p)
-    return cats, func_anchors
+_DEFAULT_DOCS_DIR = (
+    Path(__file__).resolve().parents[3] / "docs.feldera.com" / "docs" / "sql"
+)
+
+# Cache: docs_dir → (categories, func_anchors)
+_cats_cache: dict[Path, tuple[dict[str, list[str]], dict[str, list[tuple[str, str]]]]] = {}
 
 
-# Categories used for selecting relevant docs and examples.
-# Built automatically from the Feldera function index, supplemented by
-# _EXTRA_PATTERNS (SQL construct keywords) and _SPARK_ALIASES (Spark names
-# not in the Feldera index).
-_CATEGORIES, _FUNC_ANCHORS = _make_categories()
+def _get_cats_and_anchors(
+    docs_dir: Path,
+) -> tuple[dict[str, list[str]], dict[str, list[tuple[str, str]]]]:
+    """Return (categories, func_anchors) for the given docs_dir, cached per path."""
+    if docs_dir not in _cats_cache:
+        cats, func_anchors = _build_categories_from_index(docs_dir / "function-index.md")
+        for source in (_EXTRA_PATTERNS, _SPARK_ALIASES):
+            for cat, patterns in source.items():
+                seen = set(cats.get(cat, []))
+                for p in patterns:
+                    if p not in seen:
+                        cats.setdefault(cat, []).append(p)
+                        seen.add(p)
+        _cats_cache[docs_dir] = (cats, func_anchors)
+    return _cats_cache[docs_dir]
+
+
+# Module-level categories for load_examples() (which has no docs_dir).
+# Built from the default docs location; func_anchors not needed for examples.
+_CATEGORIES, _ = _get_cats_and_anchors(_DEFAULT_DOCS_DIR)
 
 # ── Section-level doc parsing ────────────────────────────────────────────────
 
@@ -204,10 +207,13 @@ def _load_relevant_sections(doc_path: Path, relevant_anchors: set[str]) -> str:
 # ── Category detection ───────────────────────────────────────────────────────
 
 
-def _detect_categories(sql: str) -> set[str]:
+def _detect_categories(
+    sql: str,
+    cats: dict[str, list[str]] | None = None,
+) -> set[str]:
     """Return set of category names whose trigger patterns match the SQL."""
     matched = {"types"}  # Always include types
-    for category, patterns in _CATEGORIES.items():
+    for category, patterns in (cats if cats is not None else _CATEGORIES).items():
         if not patterns:
             continue
         for pattern in patterns:
@@ -233,14 +239,13 @@ def load_docs(sql: str, docs_dir: Path | None = None) -> str:
     matched by keyword patterns (e.g., GROUP BY) with no specific function match.
     """
     if docs_dir is None:
-        docs_dir = (
-            Path(__file__).resolve().parents[3] / "docs.feldera.com" / "docs" / "sql"
-        )
+        docs_dir = _DEFAULT_DOCS_DIR
 
     if not docs_dir.is_dir():
         return ""
 
-    categories = _detect_categories(sql)
+    cats, func_anchors = _get_cats_and_anchors(docs_dir)
+    categories = _detect_categories(sql, cats)
     sql_funcs = _detect_sql_functions(sql)
 
     result_sections: list[str] = []
@@ -254,7 +259,7 @@ def load_docs(sql: str, docs_dir: Path | None = None) -> str:
         # Collect anchors for functions in this doc file that appear in the SQL.
         relevant_anchors: set[str] = set()
         for func in sql_funcs:
-            for fname, anchor in _FUNC_ANCHORS.get(func, []):
+            for fname, anchor in func_anchors.get(func, []):
                 if fname == doc_filename:
                     relevant_anchors.add(anchor)
 

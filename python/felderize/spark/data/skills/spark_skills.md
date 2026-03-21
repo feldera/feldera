@@ -146,6 +146,10 @@ These Spark functions exist in Feldera — translate directly:
 | `STDDEV_POP(col)` | Same | |
 | `bool_or(col)` | Same | |
 | `bool_and(col)` | Same | |
+| `every(col)` | Same | Alias for `bool_and` — supported in Feldera |
+| `some(col)` | Same | Supported in Feldera |
+| `any(col)` | `bool_or(col)` | `any` is a reserved keyword in Feldera — rewrite as `bool_or` |
+| `collect_list(col)` | `array_agg(col) FILTER (WHERE col IS NOT NULL)` | `collect_list` ignores NULLs; use `array_agg` with FILTER to match semantics |
 | `bit_and(col)` — aggregate | `BIT_AND(col)` | Aggregate: bitwise AND over all rows in group |
 | `bit_or(col)` — aggregate | `BIT_OR(col)` | Aggregate: bitwise OR over all rows in group |
 | `bit_xor(col)` — aggregate | `BIT_XOR(col)` | Aggregate: bitwise XOR over all rows in group |
@@ -157,7 +161,8 @@ These Spark functions exist in Feldera — translate directly:
 | `UPPER(s)` | Same | |
 | `LOWER(s)` | Same | |
 | `TRIM(s)` | Same | |
-| `LTRIM(s)`, `RTRIM(s)` | Same | |
+| `LTRIM(s)` | `TRIM(LEADING FROM s)` | Feldera does not support single-arg `LTRIM` |
+| `RTRIM(s)` | `TRIM(TRAILING FROM s)` | Feldera does not support single-arg `RTRIM` |
 | `LENGTH(s)` | Same | |
 | `SUBSTRING(s, pos, len)` | Same | |
 | `CONCAT(a, b)` | Same | |
@@ -307,6 +312,8 @@ GROUP BY CAST(v['user_id'] AS VARCHAR);
 | `COALESCE(a, b)` | Same | |
 | `NVL(a, b)` | `COALESCE(a, b)` | NVL not supported in Feldera |
 | `NULLIF(a, b)` | Same | |
+| `ZEROIFNULL(x)` | `COALESCE(x, 0)` | |
+| `NULLIFZERO(x)` | `NULLIF(x, 0)` | |
 | `IFNULL(a, b)` | Same | Equivalent to COALESCE(left, right) |
 | `a <=> b` | Same | Null-safe equality — returns true when both sides are NULL |
 
@@ -411,6 +418,19 @@ These require translation but ARE supported.
 | `to_date(ts)` / `to_date(ts, fmt)` | `CAST(ts AS DATE)` | Format param ignored |
 | `date_format(d, fmt)` | `FORMAT_DATE(fmt, d)` | DATE only; argument order reversed; Spark uses Java patterns (yyyy-MM-dd), Feldera uses strftime (%Y-%m-%d); no TIMESTAMP equivalent |
 
+### CAST
+
+#### Supported / rewritable
+
+| Spark | Feldera | Notes |
+|-------|---------|-------|
+| `CAST(string AS DATE)` | `CAST(string AS DATE)` | Pass through unchanged — Feldera accepts this syntax even for invalid strings. Spark returns NULL for invalid inputs; Feldera may throw at runtime, but the translation is valid. |
+| `CAST(string AS TIMESTAMP)` | `CAST(string AS TIMESTAMP)` | Pass through unchanged — same rules as CAST to DATE. |
+| `CAST(numeric AS TIMESTAMP)` | `CAST(numeric AS TIMESTAMP)` | Pass through unchanged — Feldera compiler accepts this syntax including edge cases like `CAST(CAST('inf' AS DOUBLE) AS TIMESTAMP)`. Do not mark as unsupported based on runtime semantics — if it compiles, translate it. |
+| `CAST('<value>' AS INTERVAL <unit>)` | `INTERVAL '<value>' <unit>` | **Constant strings only** — drop the CAST, use interval literal directly. Works for single-unit (`INTERVAL '<n>' DAY`) and compound (`INTERVAL '<n>' YEAR TO MONTH`). Spark sometimes wraps the value: `CAST("interval '3-1' year to month" AS interval year to month)` — extract just the numeric part: `INTERVAL '3-1' YEAR TO MONTH`. Never works for columns or expressions — mark those unsupported. |
+| `CAST(interval <n> unit1 <m> unit2 AS string)` | `CAST(INTERVAL '<n>-<m>' UNIT1 TO UNIT2 AS VARCHAR)` | Spark compound interval literal: `interval 3 year 1 month` → `INTERVAL '3-1' YEAR TO MONTH`; `interval 3 day 1 second` → `INTERVAL '3 00:00:01' DAY TO SECOND`. Use `VARCHAR` not `STRING`. **Supported** — view column is `VARCHAR`, not `INTERVAL`. |
+| `CAST(INTERVAL '...' <unit> AS <numeric>)` | Same | **SUPPORTED — do not mark unsupported.** Single-unit interval → numeric; pass through unchanged. Feldera compiler accepts this. Works for any single time unit (SECOND, MINUTE, HOUR, DAY, MONTH, YEAR) and any numeric target (DECIMAL, TINYINT, SMALLINT, INT, BIGINT). Examples: `CAST(INTERVAL '1' YEAR AS TINYINT)` ✓, `CAST(INTERVAL '10.5' SECOND AS DECIMAL)` ✓, `CAST(INTERVAL -'10.5' SECOND AS DOUBLE)` ✓. **YEAR is a single unit** — `INTERVAL '1' YEAR` is single-unit, not compound. Only compound intervals (`YEAR TO MONTH`, `DAY TO SECOND`) to numeric are unsupported. |
+
 ### String
 
 | Spark | Feldera | Notes |
@@ -421,7 +441,11 @@ These require translation but ARE supported.
 | `LOCATE(substr, str, pos)` | `CASE WHEN POSITION(substr IN SUBSTRING(str, pos)) = 0 THEN 0 ELSE POSITION(substr IN SUBSTRING(str, pos)) + pos - 1 END` | |
 | `startswith(s, prefix)` | `LEFT(s, LENGTH(prefix)) = prefix` | |
 | `endswith(s, suffix)` | `RIGHT(s, LENGTH(suffix)) = suffix` | |
+| `contains(s, sub)` | `POSITION(sub IN s) > 0` | Returns NULL if either arg is NULL. Works with `x'...'` binary literals too — `contains(x'aa', x'bb')` → `POSITION(x'bb' IN x'aa') > 0` |
+| `OCTET_LENGTH(s)` | Same | Returns byte length of string |
+| `BIT_LENGTH(s)` | `OCTET_LENGTH(s) * 8` | Returns bit length; Feldera has OCTET_LENGTH (bytes) |
 | `translate(s, from, to)` | Chain of `REGEXP_REPLACE` per character | e.g. `translate(s, 'aei', '123')` → `REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(s, 'a', '1'), 'e', '2'), 'i', '3')` |
+| `DECODE(expr, s1, r1, s2, r2, ..., default)` | `CASE WHEN expr = s1 THEN r1 WHEN expr = s2 THEN r2 ... ELSE default END` | Oracle-style DECODE — rewrite as CASE WHEN. Note: `DECODE(expr, s1, r1, s2, r2)` with no default produces NULL when no match (same as CASE with no ELSE). |
 
 ### Math
 
@@ -432,6 +456,14 @@ These require translation but ARE supported.
 | `log2(x)` | `LOG(x, 2)` | |
 | `log(base, x)` | `LOG(x, base)` | **Arg order reversed**: Spark `log(base, value)` → Feldera `LOG(value, base)` |
 | `try_divide(a, b)` | `CASE WHEN b = 0 OR b IS NULL THEN NULL ELSE a / b END` | |
+| `try_add(a, b)` | `a + b` | Overflow returns NULL in Spark, may throw in Feldera — add a warning |
+| `try_subtract(a, b)` | `a - b` | Same as try_add |
+| `try_multiply(a, b)` | `a * b` | Same as try_add |
+| `sec(x)` | `CASE WHEN x IS NULL THEN NULL ELSE 1.0 / COS(x) END` | Secant |
+| `csc(x)` | `CASE WHEN x IS NULL THEN NULL ELSE 1.0 / SIN(x) END` | Cosecant |
+| `cot(x)` | `CASE WHEN x IS NULL THEN NULL ELSE 1.0 / TAN(x) END` | Cotangent |
+| `positive(x)` | `x` | Unary no-op |
+| `negative(x)` | `-x` | Unary negation |
 
 ### Null handling
 
@@ -522,7 +554,7 @@ FROM pair_events GROUP BY source
 
 When an unsupported construct is found:
 
-1. Translate the rest of the query if possible (schema, other supported expressions).
+1. If any part of a query is unsupported, treat the entire query as unsupported.
 2. List each unsupported construct in the `unsupported` array with a brief explanation.
 3. If the entire query depends on the unsupported construct, set `feldera_query` to an empty string.
 4. Do NOT enter the repair loop for known-unsupported functions.
@@ -534,17 +566,9 @@ Do NOT:
 
 ### Partial translation
 
-If a query has both supported and unsupported parts, translate what you can:
+If any part of a query is unsupported, treat the **entire query as unsupported**. Do not emit a partial view — return the schema only (no `CREATE VIEW`) and list the unsupported constructs.
 
-- Schema (`CREATE TABLE`) can almost always be translated.
-- If only one expression in a SELECT is unsupported, note it but translate the rest.
-- If the unsupported construct is central (e.g., the main aggregation), return the schema only.
-
-```sql
--- Only UPPER is translatable; SOUNDEX is unsupported
-SELECT id, UPPER(name) AS name, SOUNDEX(name) AS sound FROM users
--- → translate UPPER(name), mark SOUNDEX as unsupported
-```
+Rationale: a partial translation produces incorrect results, which is worse than no result.
 
 ### Unsupported function list
 
@@ -553,6 +577,18 @@ SELECT id, UPPER(name) AS name, SOUNDEX(name) AS sound FROM users
 | Function | Notes |
 |----------|-------|
 | `substring_index` | No equivalent |
+| `uuid()` | Non-deterministic — not supported in Feldera |
+| `contains(bool, ...)` / `contains(binary, ...)` | `contains()` only works on strings in Feldera; boolean or binary args not supported |
+| `to_number(str, fmt)` | Numeric parsing with format string — not supported in Feldera |
+| `to_binary(str, fmt)` | Binary conversion function — not supported in Feldera |
+| `luhn_check(str)` | Luhn algorithm check — not supported in Feldera |
+| `is_valid_utf8(str)` | UTF-8 validation — not supported in Feldera |
+| `validate_utf8(str)` / `try_validate_utf8(str)` / `make_valid_utf8(str)` | UTF-8 validation/repair — not supported in Feldera |
+| `quote(str)` | SQL quoting function — not supported in Feldera |
+| `split(str, delim, limit)` | 3-argument form with limit returns array — not supported; 2-argument `split(str, delim)` may be supported |
+| `hex(x)` | Binary hex encoding — not supported in Feldera |
+| `unhex(s)` | Binary hex decoding — not supported in Feldera |
+| `encode(str, charset)` / `decode(bytes, charset)` | Binary encode/decode — not supported in Feldera. Note: `decode(expr, s1,r1, s2,r2)` is the Oracle-style conditional which IS rewritable as CASE WHEN |
 | `REGEXP_EXTRACT` | Do NOT approximate with REGEXP_REPLACE |
 | `SOUNDEX` | Phonetic function — not supported |
 | `find_in_set` | No equivalent |
@@ -566,8 +602,22 @@ SELECT id, UPPER(name) AS name, SOUNDEX(name) AS sound FROM users
 | Function | Notes |
 |----------|-------|
 | `next_day(d, dayOfWeek)` | No equivalent |
+| `quarter(d)` | QUARTER extraction — not supported in Feldera |
 | `sequence(start, stop)` | Date/array range generation — not supported |
 | `make_timestamp(y,mo,d,h,mi,s)` | No built-in; rewrite as `CAST(CONCAT(y,'-',mo,'-',d,' ',h,':',mi,':',s) AS TIMESTAMP)` or `PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CONCAT(...))` |
+| `TIMESTAMP_NTZ` | Timezone-naive timestamp type not supported; use `TIMESTAMP` |
+| Spark type suffix literals: `1Y`, `122S`, `10L`, `100BD` | Spark shorthand type suffixes (Y=tinyint, S=smallint, L=bigint, BD=decimal) not valid syntax in Feldera |
+
+#### CAST
+
+| Spark | Notes |
+|-------|-------|
+| `CAST(x AS INTERVAL)` | Bare `INTERVAL` without a unit — parse error, always unsupported |
+| `CAST(column AS INTERVAL ...)` | Column/expression-to-interval — not supported; only constant string literals can be rewritten (see CAST section above) |
+| `SELECT CAST(... AS INTERVAL ...)` as final output | `INTERVAL` cannot be a view column output type — mark unsupported even if the literal rewrite applies. Do NOT use `CREATE LOCAL VIEW` as a workaround — it changes semantics. |
+| `CAST(INTERVAL 'x-y' YEAR TO MONTH AS numeric)` | Compound interval (YEAR TO MONTH, DAY TO SECOND, HOUR TO SECOND) to numeric — not supported |
+| `CAST(numeric AS INTERVAL ...)` | Numeric-to-interval — not supported |
+| `CAST(TIME '...' AS numeric/decimal)` | TIME to numeric or decimal — not supported |
 
 #### Aggregate
 
@@ -592,6 +642,8 @@ SELECT id, UPPER(name) AS name, SOUNDEX(name) AS sound FROM users
 | Function | Notes |
 |----------|-------|
 | `filter(arr, lambda)` | Compiler rejects — no equivalent |
+| `transform(arr, lambda)` | No equivalent |
+| `exists(arr, lambda)` | No equivalent |
 | `aggregate(arr, init, lambda)` | No equivalent |
 | `forall(arr, lambda)` | No equivalent |
 | `zip_with(a, b, lambda)` | No equivalent |
@@ -612,6 +664,7 @@ SELECT id, UPPER(name) AS name, SOUNDEX(name) AS sound FROM users
 | Function | Notes |
 |----------|-------|
 | `map_concat(m1, m2)` | No equivalent |
+| `map_contains_key(m, k)` | No equivalent |
 
 #### Bitwise (scalar)
 
@@ -626,8 +679,9 @@ SELECT id, UPPER(name) AS name, SOUNDEX(name) AS sound FROM users
 
 | Function | Notes |
 |----------|-------|
-| `width_bucket(v, min, max, n)` | No equivalent |
-| `try_add(a, b)`, `try_multiply(a, b)` | No equivalent; use `CASE WHEN` for overflow-safe patterns |
+| `width_bucket(v, min, max, n)` | No equivalent | Not supported in Feldera |
+| `a DIV b` | No equivalent; integer division operator not supported — use `FLOOR(a / b)` as a suggestion only, semantics differ for negatives |
+| `RAND()` | No equivalent; random number function not supported |
 
 #### Hashing / Encoding
 
@@ -635,12 +689,14 @@ SELECT id, UPPER(name) AS name, SOUNDEX(name) AS sound FROM users
 |----------|-------|
 | `SHA`, `SHA2`, `SHA256` | Not supported; MD5 is the only supported hash function |
 | `base64`, `unbase64` | Not built-in; can be implemented as a Rust UDF |
+| `HEX(x)`, `UNHEX(x)` | Not supported for any input type |
 
 #### JSON / CSV
 
 | Function | Notes |
 |----------|-------|
 | `json_object_keys` | No equivalent |
+| `json_array_length` | No equivalent |
 | `schema_of_json`, `schema_of_csv` | Schema inference — not supported |
 | `from_csv`, `to_csv` | CSV serialization — not supported |
 
@@ -670,3 +726,120 @@ When the Feldera compiler rejects translated SQL, check these common causes firs
 
 - Do NOT hallucinate restrictions that don't exist (e.g., "Multiple RANK aggregates per window" is NOT an error).
 - You CAN combine LAG, LEAD, SUM OVER, etc. in the same query — no restriction.
+
+## Spark-specific syntax rewrites
+
+### Hex binary literals
+
+`x'...'` hex binary literals (e.g. `x'537061726b'`) are **supported** in Feldera. Do NOT mark them unsupported. They can be used in POSITION, comparisons, and binary-typed expressions.
+
+```sql
+-- Supported
+SELECT POSITION(x'537061726b' IN x'537061726b2053514c') > 0;
+SELECT contains(x'aa', x'bb');  -- rewrite: POSITION(x'bb' IN x'aa') > 0
+```
+
+What is NOT supported: passing `x'...'` to VARCHAR-expecting functions like `RPAD(varchar, n, x'...')` — the type mismatch fails.
+
+### VALUES as table source
+
+Spark allows `FROM VALUES (...)` directly; Feldera requires VALUES wrapped in parentheses with an alias.
+
+| Spark | Feldera |
+|-------|---------|
+| `SELECT a FROM VALUES (1), (2) AS t(a)` | `SELECT a FROM (VALUES (1), (2)) AS t(a)` |
+| `SELECT a FROM VALUES (1, 2) AS T(a, b)` | `SELECT a FROM (VALUES (1, 2)) AS T(a, b)` |
+
+**Rule**: always wrap `VALUES (...)` in parentheses: `FROM (VALUES ...) AS alias(cols)`.
+
+### SELECT with GROUP BY / HAVING but no FROM
+
+Spark allows `SELECT expr GROUP BY ... HAVING ...` with no table. Feldera requires a FROM clause. Add a dummy single-row table:
+
+```sql
+-- Spark (valid)
+SELECT 1 GROUP BY COALESCE(1, 1) HAVING COALESCE(1, 1) = 1;
+
+-- Feldera (add dummy FROM)
+SELECT 1 AS col1 FROM (VALUES (1)) AS t(x) GROUP BY COALESCE(1, 1) HAVING COALESCE(1, 1) = 1;
+```
+
+**Rule**: when `GROUP BY` or `HAVING` is present but there is no `FROM` clause, add `FROM (VALUES (1)) AS t(x)`.
+
+### Operators
+
+| Spark | Feldera | Notes |
+|-------|---------|-------|
+| `a == b` | `a = b` | Spark allows `==` for equality; use `=` in Feldera |
+| `GROUP BY ALL` | Expand to explicit column list | Replace with all non-aggregate SELECT expressions. E.g. `SELECT a, b+1, SUM(c) ... GROUP BY ALL` → `GROUP BY a, b+1` |
+
+### Scalar subquery shorthand in HAVING / WHERE
+
+Spark allows `(SELECT expr)` with no FROM clause as a shorthand. When `expr` references only outer-query columns, strip the wrapper:
+
+```sql
+-- Spark
+HAVING (SELECT col1.a = 1)   →  HAVING col1.a = 1
+WHERE  (SELECT x > 0)        →  WHERE  x > 0
+```
+
+**Rule**: if `(SELECT expr)` has no `FROM`, rewrite as just `expr`. If the subquery has a `FROM`, it is a correlated subquery → mark unsupported.
+
+`(SELECT 1 WHERE cond)` with no FROM returns 1 if `cond` is true, NULL otherwise. So `a == (SELECT 1 WHERE cond)` simplifies to `a = 1 AND cond`:
+
+```sql
+-- Spark
+HAVING MAX(col2) == (SELECT 1 WHERE MAX(col2) = 1)
+-- Feldera: both sides must equal 1, so simplify to:
+HAVING MAX(col2) = 1
+```
+
+### SELECT alias chaining
+
+Spark allows a later expression in SELECT to reference an alias defined earlier. Feldera does not — expand the reference.
+
+```sql
+-- Spark: valid
+SELECT col1 AS a, a AS b FROM t
+-- Feldera: rewrite
+SELECT col1 AS a, col1 AS b FROM t
+```
+
+**Rule**: if an expression is just an alias name from an earlier column (`a AS b` where `a` was defined as `col1 AS a`), replace with the original expression (`col1 AS b`).
+
+### SELECT alias shadowing in HAVING / GROUP BY
+
+Spark resolves HAVING/GROUP BY references to the **source column** even when a SELECT alias has the same name. Feldera resolves to the **SELECT alias**.
+
+**Fix**: rename the alias to avoid the collision (e.g. prefix with `agg_` or `out_`):
+
+```sql
+-- Problematic: alias b shadows source column b
+SELECT SUM(a) AS b FROM T(a, b) GROUP BY GROUPING SETS ((b)) HAVING b > 10
+-- Fixed
+SELECT SUM(a) AS sum_a FROM T(a, b) GROUP BY GROUPING SETS ((b)) HAVING b > 10
+```
+
+### Struct field access
+
+In ORDER BY or HAVING, always prefix struct column access with the table alias to avoid misparsing:
+
+```sql
+ORDER BY t.col.field   -- correct
+ORDER BY col.field     -- may fail (Feldera misparses as table.column)
+```
+
+Non-aggregate HAVING with struct field → move to WHERE:
+
+```sql
+-- Spark
+SELECT col1 FROM t GROUP BY col1 HAVING col1.a = 1
+-- Feldera
+SELECT col1 FROM t WHERE t.col1.a = 1 GROUP BY col1
+```
+
+### Null-safe equality
+
+| Spark | Feldera | Notes |
+|-------|---------|-------|
+| `equal_null(a, b)` | `a <=> b` | Returns true when both sides equal OR both NULL |

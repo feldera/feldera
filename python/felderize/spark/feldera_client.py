@@ -37,11 +37,12 @@ def validate_sql(sql: str, compiler_path: str | Path | None = None) -> list[str]
         except FileNotFoundError:
             return [f"Compiler not found at {compiler}"]
 
-    if result.returncode == 0:
-        return []
+        if result.returncode == 0:
+            return []
 
-    # Parse errors from stderr, stripping temp file paths for readability
-    stderr = result.stderr.replace(f.name, "<input>")
+        # Parse errors from stderr, stripping temp file paths for readability
+        stderr = result.stderr.replace(f.name, "<input>")
+
     errors: list[str] = []
     for line in stderr.strip().split("\n"):
         line = line.strip()

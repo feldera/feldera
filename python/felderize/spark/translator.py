@@ -5,9 +5,11 @@ import re
 import sys
 from pathlib import Path
 
+import sqlparse
+
 from felderize.config import Config
 from felderize.feldera_client import validate_sql
-from felderize.llm import create_client
+from felderize.llm import LLMClient, create_client
 from felderize.models import Status, TranslationResult
 from felderize.skills import build_system_prompt
 
@@ -87,7 +89,7 @@ def _translate_with_repair(
     schema_sql: str,
     query_sql: str,
     config: Config,
-    client,
+    client: LLMClient,
     system_prompt: str,
     validate: bool,
     max_retries: int,
@@ -112,6 +114,14 @@ def _translate_with_repair(
 
     # Validation + repair loop
     full_sql = result.feldera_schema + "\n\n" + result.feldera_query
+
+    # If LLM produced no SQL or no query, skip validation — schema-only or empty SQL
+    # always compiles, which is not a meaningful success.
+    if not full_sql.strip() or not result.feldera_query.strip():
+        if not result.unsupported:
+            result.status = Status.UNSUPPORTED
+            result.unsupported = ["No query generated — translation incomplete"]
+        return result
     for attempt in range(max_retries):
         if verbose:
             print(
@@ -191,17 +201,12 @@ def split_combined_sql(sql: str) -> tuple[str, str]:
     Comments and blank lines are preserved with their associated statement.
     Unrecognised statements are placed in schema_sql.
     """
-    import re as _re
-
-    import sqlparse
-
     raw_stmts = [s.strip() for s in sqlparse.split(sql) if s.strip()]
 
     schema_parts: list[str] = []
     query_parts: list[str] = []
 
-    for stmt in raw_stmts:
-        stripped = stmt.strip()
+    for stripped in raw_stmts:
         if not stripped:
             continue
         # Find first non-comment, non-blank line to identify statement type.
@@ -215,7 +220,7 @@ def split_combined_sql(sql: str) -> tuple[str, str]:
         ).upper()
         if not first_kw:
             continue  # comment-only block
-        if _re.match(r"CREATE\s+(OR\s+REPLACE\s+)?(TEMP(ORARY)?\s+)?VIEW\b", first_kw):
+        if re.match(r"CREATE\s+(OR\s+REPLACE\s+)?(TEMP(ORARY)?\s+)?VIEW\b", first_kw):
             query_parts.append(stripped + ";")
         else:
             schema_parts.append(stripped + ";")
@@ -233,6 +238,7 @@ def translate_spark_to_feldera(
     skills_dir: str | None = None,
     docs_dir: str | None = None,
     include_docs: bool = True,
+    force_docs: bool = False,
     verbose: bool = False,
 ) -> TranslationResult:
     combined_sql = schema_sql + "\n" + query_sql
@@ -258,31 +264,38 @@ def translate_spark_to_feldera(
         verbose,
     )
 
-    if result.status != Status.ERROR:
+    # Determine whether to retry with docs:
+    # - always retry on ERROR (existing behaviour, controlled by docs_only_fallback)
+    # - also retry on NOT SUCCESS when force_docs is set
+    should_retry = include_docs and (
+        (result.status == Status.ERROR and docs_only_fallback)
+        or (result.status != Status.SUCCESS and force_docs)
+    )
+
+    if not should_retry:
         return result
 
-    # Final fallback: docs only (no skills, no examples).
-    if include_docs and docs_only_fallback:
-        print("Retrying with docs-only prompt...", file=sys.stderr)
-        system_prompt_docs = build_system_prompt(
-            skills_dir,
-            docs_dir=docs_dir_path,
-            spark_sql=combined_sql,
-            with_docs=True,
-            with_examples=False,
-            with_skills=False,
-        )
-        result = _translate_with_repair(
-            schema_sql,
-            query_sql,
-            config,
-            client,
-            system_prompt_docs,
-            validate,
-            max_retries,
-            verbose,
-        )
-        if result.status != Status.ERROR:
-            result.warnings.append("Resolved with docs-only fallback")
+    # Second pass: docs only (no skills, no examples).
+    print("Retrying with docs-only prompt...", file=sys.stderr)
+    system_prompt_docs = build_system_prompt(
+        skills_dir,
+        docs_dir=docs_dir_path,
+        spark_sql=combined_sql,
+        with_docs=True,
+        with_examples=False,
+        with_skills=False,
+    )
+    result = _translate_with_repair(
+        schema_sql,
+        query_sql,
+        config,
+        client,
+        system_prompt_docs,
+        validate,
+        max_retries,
+        verbose,
+    )
+    if result.status != Status.ERROR:
+        result.warnings.append("Resolved with docs-only fallback")
 
     return result

@@ -18,7 +18,7 @@ def load_skills(skills_dir: str | Path | None = None) -> str:
         return ""
 
     sections: list[str] = []
-    md_files: list[Path] = sorted(skills_dir.glob("*.md"))
+    md_files: list[Path] = list(skills_dir.glob("*.md"))
     for skill_path in sorted(skills_dir.iterdir()):
         if skill_path.is_dir():
             sub = skill_path / "SKILL.md"
