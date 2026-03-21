@@ -59,7 +59,7 @@ where
     rkyv::Archived<T>: rkyv::Deserialize<T, dbsp::storage::file::Deserializer>,
 {
     let bytes = serialize_bytes(value);
-    let restored: T = dbsp::trace::unaligned_deserialize(&bytes[..]);
+    let restored: T = dbsp::trace::aligned_deserialize(&bytes[..]);
     assert_eq!(&restored, value);
 }
 

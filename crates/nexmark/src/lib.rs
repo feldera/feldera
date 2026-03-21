@@ -195,7 +195,7 @@ pub mod tests {
 
     use super::*;
     use core::ops::Range;
-    use dbsp::{OrdZSet, RootCircuit, ZWeight, utils::Tup2};
+    use dbsp::{OrdZSet, ZWeight, utils::Tup2};
     use rand::rngs::mock::StepRng;
     use rstest::rstest;
 

@@ -1054,9 +1054,8 @@ fn get_env_filter(config: &PipelineConfig) -> EnvFilter {
         }
     }
 
-    // Otherwise, fall back to `INFO`, except for `tarpc`, which is too verbose
-    // at that level.
-    EnvFilter::try_new("tarpc=warn,object_store=warn,info").unwrap()
+    // Otherwise, fall back to `INFO`
+    EnvFilter::try_new("object_store=warn,info").unwrap()
 }
 
 fn do_bootstrap(
@@ -1764,8 +1763,14 @@ async fn samply_profile(
         .unwrap()
         .start_profiling(expected_after);
 
+    let layout = controller.layout();
+    let os_cpu = layout
+        .is_multihost()
+        .then(|| format!("host {} of {}", layout.local_host_idx(), layout.n_hosts()));
     spawn(async move {
-        let result = controller.async_samply_profile(duration).await;
+        let result = controller
+            .async_samply_profile(duration, os_cpu.as_deref())
+            .await;
         state_samply_state
             .lock()
             .unwrap()
@@ -2564,7 +2569,7 @@ async fn coordination_adhoc_scan(
         .scan(&session_state, scan.projection.as_ref(), &[], None)
         .await?;
     let mut stream = execution.execute(
-        scan.worker - controller.workers().start,
+        scan.worker - controller.layout().local_workers().start,
         session_state.task_ctx(),
     )?;
 
@@ -2574,20 +2579,21 @@ async fn coordination_adhoc_scan(
     // likely.
     let first_batch = match stream.next().await {
         Some(Err(error)) => return Err(error.into()),
-        other => other,
-    }
-    .into_iter();
+        other => other.into_iter(),
+    };
 
     let schema = stream.schema();
-    Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(
-        futures_util::stream::iter(first_batch).chain(stream).map(
-            move |batch| -> Result<Bytes, PipelineError> {
-                let mut writer = StreamWriter::try_new(Vec::new(), &schema)?;
-                writer.write(&batch?)?;
-                Ok(writer.into_inner()?.into())
-            },
-        ),
-    ))
+    let response_stream = async_stream::try_stream! {
+        let mut writer = StreamWriter::try_new(Vec::new(), &schema)?;
+        let mut stream = futures_util::stream::iter(first_batch).chain(stream);
+        while let Some(batch) = stream.next().await {
+            writer.write(&batch?)?;
+            yield Bytes::copy_from_slice(writer.get_ref().as_slice());
+            writer.get_mut().clear();
+        }
+        yield writer.into_inner()?.into();
+    };
+    Ok(HttpResponseBuilder::new(StatusCode::OK).streaming::<_, PipelineError>(response_stream))
 }
 
 /// Stream the set of incomplete labels.
