@@ -3414,7 +3414,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 // We create an input for the circuit.
                 return this.compileCreateTable(create);
             } else {
-                DropTableStatement drop = statement.as(DropTableStatement.class);
+                DropTableStatement drop = statement.to(DropTableStatement.class);
                 this.compileDropTable(drop);
             }
             return null;

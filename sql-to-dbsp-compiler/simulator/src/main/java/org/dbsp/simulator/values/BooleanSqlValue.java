@@ -1,7 +1,6 @@
 package org.dbsp.simulator.values;
 
 import org.dbsp.simulator.types.BooleanSqlType;
-import org.jetbrains.annotations.NotNull;
 
 import javax.annotation.Nullable;
 import java.util.Comparator;

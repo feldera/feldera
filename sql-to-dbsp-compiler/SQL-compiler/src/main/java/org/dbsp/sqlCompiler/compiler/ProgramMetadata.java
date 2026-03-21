@@ -44,15 +44,14 @@ public class ProgramMetadata implements IJson {
     }
 
     static final Set<String> reserved = Set.of(
-            DBSPCompiler.WARNINGS_ARE_ERRORS.toLowerCase(Locale.ENGLISH)
+            DBSPCompiler.WARNINGS_ARE_ERRORS.toLowerCase(Locale.ENGLISH),
+            ProgramMetadata.AVOID_STAR_JOINS.toLowerCase(Locale.ENGLISH)
     );
 
     private boolean known(String variable) {
         if (reserved.contains(variable))
             return true;
-        if (variable.startsWith("feldera_ignore_warning_"))
-            return true;
-        return false;
+        return variable.startsWith("feldera_ignore_warning_");
     }
 
     public void set(String variable, DBSPExpression value,
