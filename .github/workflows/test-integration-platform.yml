@@ -228,7 +228,7 @@ jobs:
 
       - name: Run platform tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/platform --timeout=1500 -vv ${{ vars.PYTEST_EXTRA }}
+        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/platform --timeout=1500 -vv
         working-directory: python
         env:
           PYTHONPATH: ${{ github.workspace }}/python
