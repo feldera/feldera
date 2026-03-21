@@ -432,6 +432,8 @@ pub struct DevTweaks {
     ///
     /// The default value is equal to the number of worker threads.
     pub merger_threads: Option<u16>,
+
+    pub max_rss_mib: Option<u64>,
 }
 
 impl Default for DevTweaks {
@@ -455,6 +457,7 @@ impl Default for DevTweaks {
             adaptive_joins: false,
             max_level0_batch_size_records: MAX_LEVEL0_BATCH_SIZE_RECORDS,
             merger_threads: None,
+            max_rss_mib: None,
         }
     }
 }

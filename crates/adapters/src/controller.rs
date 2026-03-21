@@ -4334,17 +4334,20 @@ impl ControllerInit {
         pipeline_config: &PipelineConfig,
         storage: Option<CircuitStorageConfig>,
     ) -> Result<CircuitConfig, ControllerError> {
+        let dev_tweaks = DevTweaks::from_config(&pipeline_config.global.dev_tweaks);
+
         Ok(CircuitConfig {
             layout: layout
                 .unwrap_or_else(|| Layout::new_solo(pipeline_config.global.workers as usize)),
             max_rss_bytes: pipeline_config
                 .global
                 .max_rss_mib
-                .map(|mb| mb * 1024 * 1024),
+                .map(|mb| mb * 1024 * 1024)
+                .or_else(|| dev_tweaks.max_rss_mib.map(|mb| mb * 1024 * 1024)),
             pin_cpus: pipeline_config.global.pin_cpus.clone(),
             storage,
             mode: Mode::Persistent,
-            dev_tweaks: DevTweaks::from_config(&pipeline_config.global.dev_tweaks),
+            dev_tweaks,
         })
     }
 
