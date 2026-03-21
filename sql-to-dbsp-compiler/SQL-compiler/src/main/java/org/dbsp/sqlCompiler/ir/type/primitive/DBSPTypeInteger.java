@@ -92,7 +92,7 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
             return INT32;
         else if (precision < 19)
             return INT64;
-        else if (precision < 38)
+        else if (precision <= 38)
             return INT128;
         return null;
     }
