@@ -28,6 +28,7 @@ public class QATests {
         for (File c : BaseSQLTests.getQATests()) {
             // This program cannot be compiled because it contains a udf
             if (c.toString().matches(".*swiss.*-q1.*")) continue;
+            // if (!c.toString().contains("x.sql")) continue;
             System.out.println("Compiling " + c);
             try {
                 compileAndCheck(c);
