@@ -42,7 +42,7 @@
   let lastGenerated = $state<{ name: string; key: string }[]>([])
 </script>
 
-<div class="flex flex-col gap-4 p-4">
+<div class="flex flex-col gap-4">
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <form
     class="flex flex-col gap-2"
@@ -82,40 +82,38 @@
       </FieldErrors>
     </Field>
   </form>
-  <div>
-    {#if lastGenerated.length}
-      <div class="flex flex-col rounded bg-surface-50-950 p-4">
-        <div class="flex w-full flex-nowrap gap-2">
-          <div class="fd fd-circle-alert w-6 text-[20px]"></div>
-          <span>
-            {#if lastGenerated.length === 1}
-              This key will only be shown once and cannot be viewed again.<br />
-              <span class="font-semibold">Please ensure you store it securely.</span>
-            {:else}
-              These keys will only be shown once and cannot be viewed again.<br />
-              <span class="font-semibold">Please ensure you store them securely.</span>
-            {/if}
-          </span>
-          <button
-            class="fd fd-x ml-auto btn-icon text-[24px]"
-            onclick={() => {
-              lastGenerated = []
-            }}
-            aria-label="Hide new keys"
-          ></button>
-        </div>
-
-        <div class="pt-4 pl-8">
-          {#each lastGenerated as { name, key }}
-            <div class="flex w-full flex-nowrap items-center gap-2">
-              <span>{name}:</span>
-              <span class="w-full overflow-hidden overflow-ellipsis">{key}</span>
-              <ClipboardCopyButton value={key}></ClipboardCopyButton>
-              <Tooltip placement="top">Copy to clipboard</Tooltip>
-            </div>
-          {/each}
-        </div>
+  {#if lastGenerated.length}
+    <div class="scrollbar flex max-h-[30vh] flex-col overflow-y-auto rounded bg-surface-50-950 p-4">
+      <div class="flex w-full flex-nowrap gap-2">
+        <div class="fd fd-circle-alert w-6 text-[20px]"></div>
+        <span>
+          {#if lastGenerated.length === 1}
+            This key will only be shown once and cannot be viewed again.<br />
+            <span class="font-semibold">Please ensure you store it securely.</span>
+          {:else}
+            These keys will only be shown once and cannot be viewed again.<br />
+            <span class="font-semibold">Please ensure you store them securely.</span>
+          {/if}
+        </span>
+        <button
+          class="fd fd-x ml-auto btn-icon text-[24px]"
+          onclick={() => {
+            lastGenerated = []
+          }}
+          aria-label="Hide new keys"
+        ></button>
       </div>
-    {/if}
-  </div>
+
+      <div class="pt-4 pl-8">
+        {#each lastGenerated as { name, key }}
+          <div class="flex w-full flex-nowrap items-center gap-2">
+            <span class="text-nowrap">{name}:</span>
+            <span class="w-full overflow-hidden overflow-ellipsis">{key}</span>
+            <ClipboardCopyButton value={key}></ClipboardCopyButton>
+            <Tooltip placement="top">Copy to clipboard</Tooltip>
+          </div>
+        {/each}
+      </div>
+    </div>
+  {/if}
 </div>

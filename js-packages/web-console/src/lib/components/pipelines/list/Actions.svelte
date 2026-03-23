@@ -473,7 +473,6 @@ groups related actions into multi-action dropdowns when multiple options are ava
       },
       'This will delete all checkpoints.'
     )(pipeline.current.name)}
-    onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
 
@@ -486,7 +485,6 @@ groups related actions into multi-action dropdowns when multiple options are ava
         deletePipeline(name)
       }
     )(pipeline.current.name)}
-    onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
 
@@ -504,7 +502,6 @@ groups related actions into multi-action dropdowns when multiple options are ava
       },
       'The pipeline will stop processing inputs without making a checkpoint, leaving only a previous one, if any.'
     )(pipeline.current.name)}
-    onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
 
@@ -522,7 +519,6 @@ groups related actions into multi-action dropdowns when multiple options are ava
       },
       'The pipeline will stop processing inputs and make a checkpoint of its state.'
     )(pipeline.current.name)}
-    onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
 
@@ -851,6 +847,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
 {#snippet pipelineResourcesDialog(dialogTitle: string, field: keyof typeof pipeline.current)}
   <JSONDialog
     disabled={editConfigDisabled}
+    title={dialogTitle}
     value={JSONbig.stringify(pipeline.current[field], undefined, '  ')}
     filePath="file://feldera/pipelines/{pipeline.current.name}/{field}.json"
     onApply={async (json) => {
@@ -858,12 +855,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         [field]: JSONbig.parse(json)
       })
     }}
-    onClose={() => (globalDialog.dialog = null)}
-  >
-    {#snippet title()}
-      {dialogTitle}
-    {/snippet}
-  </JSONDialog>
+  ></JSONDialog>
 {/snippet}
 {#snippet resourcesDialog()}
   {@render pipelineResourcesDialog(

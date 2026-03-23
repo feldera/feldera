@@ -1,25 +1,24 @@
 <script lang="ts">
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import JsonForm from '$lib/components/dialogs/JSONForm.svelte'
-  import type { Snippet } from '$lib/types/svelte'
 
   const {
     value,
     filePath,
     onApply,
-    onClose,
     title,
     readOnlyMessage,
     disabled,
+    disabledMessage,
     refreshOnChange = true
   }: {
     value: string
     filePath: string
     onApply: (json: string) => Promise<void>
-    onClose: () => void
-    title: Snippet
+    title: string
     readOnlyMessage?: { value: string }
     disabled?: boolean
+    disabledMessage?: string
     refreshOnChange?: boolean
   } = $props()
 
@@ -44,11 +43,14 @@
   })
 
   const submitHandler = async () => {
-    onApply(current).then(onClose, () => {})
+    onApply(current)
   }
 </script>
 
-<GenericDialog onApply={submitHandler} {onClose} {title} {disabled} confirmLabel="Apply">
+<GenericDialog
+  content={{ title, onSuccess: { name: 'Apply', callback: submitHandler, disabledMessage } }}
+  {disabled}
+>
   <div class="h-96">
     <JsonForm {filePath} onSubmit={onApply} bind:value={current} {disabled} {readOnlyMessage}
     ></JsonForm>

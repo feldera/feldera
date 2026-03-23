@@ -189,7 +189,6 @@
       'Are you sure? You will lose the associated code and computation state.\nThis action is irreversible.',
       sortedSelectedPipelines.join('\n')
     )()}
-    onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
 
@@ -208,7 +207,6 @@
         : 'This will delete any checkpoints of these pipelines.',
       pipelines.join('\n')
     )()}
-    onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
 
@@ -227,7 +225,6 @@
         : 'These pipelines will stop processing inputs and make checkpoints of their states.',
       pipelines.join('\n')
     )()}
-    onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
 
@@ -246,6 +243,5 @@
         : 'These pipelines will stop processing inputs without making checkpoints, leaving only previous ones, if any.',
       pipelines.join('\n')
     )()}
-    onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}

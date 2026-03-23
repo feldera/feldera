@@ -296,8 +296,16 @@ describe('MetricsTables.svelte', () => {
           state: { metrics: makeInputMetrics({ num_parse_errors: 5 }) },
           testId: 'btn-icon-input-errors'
         },
-        { state: { transaction_phase: 'started' }, testId: 'box-icon-transaction-started', text: 'Started' },
-        { state: { transaction_phase: 'committed' }, testId: 'box-icon-transaction-committed', text: 'Ready to commit' },
+        {
+          state: { transaction_phase: 'started' },
+          testId: 'box-icon-transaction-started',
+          text: 'Started'
+        },
+        {
+          state: { transaction_phase: 'committed' },
+          testId: 'box-icon-transaction-committed',
+          text: 'Ready to commit'
+        },
         {
           state: { metrics: makeInputMetrics({ end_of_input: true }) },
           testId: 'box-icon-end-of-input'

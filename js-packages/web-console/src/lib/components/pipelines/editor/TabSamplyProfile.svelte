@@ -153,10 +153,6 @@
 
     // Show dialog immediately so the indeterminate animation plays while the request is pending
     globalDialog.dialog = downloadDialog
-    globalDialog.onclose = () => {
-      downloadCancelFn?.()
-      isDownloading = false
-    }
 
     try {
       const result = await api.getSamplyProfile(
@@ -349,18 +345,18 @@
 
 {#snippet downloadDialog()}
   <GenericDialog
-    onClose={() => {
-      downloadCancelFn?.()
-      globalDialog.dialog = null
-      isDownloading = false
+    content={{
+      title: 'Downloading Samply Profile',
+      onSuccess: { name: 'Download', callback: () => {} },
+      onCancel: {
+        callback: () => {
+          downloadCancelFn?.()
+          isDownloading = false
+        }
+      }
     }}
-    confirmLabel="Download"
-    onApply={() => {}}
     disabled={true}
   >
-    {#snippet title()}
-      Downloading Samply Profile
-    {/snippet}
     <DownloadProgressDisplay progress={downloadProgress} label="Downloading profile..." />
   </GenericDialog>
 {/snippet}
