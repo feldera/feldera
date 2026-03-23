@@ -261,18 +261,41 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
             new Func(SqlStdOperatorTable.OCTET_LENGTH, "OCTET_LENGTH", SqlLibrary.STANDARD, "binary#octet_length",
                     "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
-            new Func(SqlStdOperatorTable.UPPER, "UPPER", SqlLibrary.STANDARD, "string#upper", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.LOWER, "LOWER", SqlLibrary.STANDARD, "string#lower", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.INITCAP, "INITCAP", SqlLibrary.STANDARD, "string#initcap", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.ASCII, "ASCII", SqlLibrary.STANDARD, "string#ascii", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.POWER, "POWER", SqlLibrary.STANDARD, "float#power", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.SQRT, "SQRT", SqlLibrary.STANDARD, "float#sqrt", FunctionDocumentation.NO_FILE, false),
-
-            new Func(SqlStdOperatorTable.MOD, "MOD", SqlLibrary.STANDARD, "integer#mod", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.LN, "LN", SqlLibrary.STANDARD, "float#ln", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.LOG10, "LOG10", SqlLibrary.STANDARD, "float#log10", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.ABS, "ABS", SqlLibrary.STANDARD, "decimal#abs,float#abs,integer#abs,datetime#abs", FunctionDocumentation.NO_FILE, false),
-
+            new Func(SqlStdOperatorTable.UPPER, "UPPER", SqlLibrary.STANDARD, "string#upper",
+                    "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn,arr_map_type_fn}.py", false),
+            new Func(SqlStdOperatorTable.LOWER, "LOWER", SqlLibrary.STANDARD, "string#lower",
+                    "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
+            new Func(SqlStdOperatorTable.INITCAP, "INITCAP", SqlLibrary.STANDARD, "string#initcap",
+                    "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
+            new Func(SqlStdOperatorTable.ASCII, "ASCII", SqlLibrary.STANDARD, "string#ascii",
+                    """
+                    runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py""", false),
+            new Func(SqlStdOperatorTable.POWER, "POWER", SqlLibrary.STANDARD, "float#power",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.SQRT, "SQRT", SqlLibrary.STANDARD, "float#sqrt",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.MOD, "MOD", SqlLibrary.STANDARD, "integer#mod",
+                    """
+                    runtime_aggtest/negative_tests/test_neg_arithmetic.py|
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.LN, "LN", SqlLibrary.STANDARD, "float#ln",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.LOG10, "LOG10", SqlLibrary.STANDARD, "float#log10",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.ABS, "ABS", SqlLibrary.STANDARD, "decimal#abs,float#abs,integer#abs,datetime#abs",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
             new Func(SqlStdOperatorTable.ACOS, "ACOS", SqlLibrary.STANDARD, "float#acos", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.ASIN, "ASIN", SqlLibrary.STANDARD, "float#asin", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.ATAN, "ATAN", SqlLibrary.STANDARD, "float#atan", FunctionDocumentation.NO_FILE, false),
