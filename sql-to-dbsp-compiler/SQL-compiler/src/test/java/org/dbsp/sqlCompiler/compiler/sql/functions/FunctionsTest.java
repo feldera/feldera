@@ -100,19 +100,19 @@ public class FunctionsTest extends SqlIoTest {
         var ccs = this.getCCS("""
                 CREATE FUNCTION dbl(x INTEGER) RETURNS INTEGER AS x * 2;
                 CREATE VIEW V AS SELECT dbl(3);""");
-        ccs.step("", """
-                 r | weight
-                ------------
-                 6 | 1""");
+        ccs.stepWeightOne("", """
+                 r
+                ---
+                 6""");
         ccs = this.getCCS("""
                 CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER)
                 RETURNS BOOLEAN NOT NULL
                 AS (str LIKE ('%' || COALESCE(CAST(value AS VARCHAR), 'NULL') || '%'));
                 CREATE VIEW V AS SELECT contains_number(CAST('YES: 10 NO:5' AS VARCHAR), 5)""");
-        ccs.step("", """
-                 result | weight
-                -----------------
-                 t      | 1""");
+        ccs.stepWeightOne("", """
+                 result
+                --------
+                 t""");
     }
 
     @Test
@@ -1920,11 +1920,11 @@ public class FunctionsTest extends SqlIoTest {
         var ccs = this.getCCS("""
                 CREATE TABLE T(x VARCHAR, y VARBINARY);
                 CREATE VIEW V AS SELECT MD5(x), MD5(y) FROM T;""");
-        ccs.step("INSERT INTO T VALUES('Feldera', x'0123456789ABCDEF');",
+        ccs.stepWeightOne("INSERT INTO T VALUES('Feldera', x'0123456789ABCDEF');",
                 """
-                         s                               | binary                          | weight
-                        ----------------------------------------------------------------------------
-                         841afc2f65b5763600818ef42a56d7d1| a1cd1d1fc6491068d91007283ed84489| 1""");
+                         s                               | binary
+                        --------------------------------------------------------------------
+                         841afc2f65b5763600818ef42a56d7d1| a1cd1d1fc6491068d91007283ed84489""");
     }
 
     @Test

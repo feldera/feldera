@@ -13,8 +13,11 @@ use std::marker::Copy;
 
 /// Holds some methods for wrapping values into unsigned values
 /// This is used by partitioned_rolling_aggregate
+/// Note: I have changed the name of this class because I have
+/// changed how it works internally; the name change will prevent
+/// programs from reusing incorrectly old state.
 #[doc(hidden)]
-pub struct UnsignedWrapper {}
+pub struct UnsignedWrappers {}
 
 /// The conversion involves four types:
 /// O: the original type which is being converted
@@ -22,9 +25,8 @@ pub struct UnsignedWrapper {}
 /// I: an intermediate signed type wider than S
 /// U: an unsigned type the same width as I
 //  None of the 'unwrap' calls below should ever fail.
-impl UnsignedWrapper {
+impl UnsignedWrappers {
     // Conversion from O to U
-    // O cannot be nullable, so nullsLast is irrelevant
     #[doc(hidden)]
     pub fn from_signed<O, S, I, U>(value: O, ascending: bool, _nullsLast: bool) -> U
     where
@@ -45,31 +47,73 @@ impl UnsignedWrapper {
         result
     }
 
-    // Conversion from O to U
+    // Conversion from Option<O> to U
     #[doc(hidden)]
     pub fn from_option<O, S, I, U>(value: Option<O>, ascending: bool, nullsLast: bool) -> U
     where
         O: ToInteger<S> + Debug,
         S: SignedPrimInt,
         I: SignedPrimInt + From<S>,
-        U: UnsignedPrimInt + TryFrom<I> + HasZero + Debug,
+        U: UnsignedPrimInt + TryFrom<I> + HasZero + HasOne + Debug,
         <U as TryFrom<I>>::Error: Debug,
     {
         match value {
             None => {
                 if nullsLast {
-                    U::large()
+                    // Add two because abs(MIN) is actually MAX+1 for
+                    // signed types, and we leave space for None
+                    U::large() + <U as HasOne>::one() + <U as HasOne>::one()
                 } else {
                     <U as HasZero>::zero()
                 }
             }
-            Some(value) => UnsignedWrapper::from_signed::<O, S, I, U>(value, ascending, nullsLast),
+            Some(value) => UnsignedWrappers::from_signed::<O, S, I, U>(value, ascending, nullsLast),
+        }
+    }
+
+    // Conversion from U to U, where U is the original unsigned type
+    #[doc(hidden)]
+    pub fn from_unsigned<U>(value: U, ascending: bool, _nullsLast: bool) -> U
+    where
+        U: UnsignedPrimInt + Debug,
+    {
+        let result = if ascending {
+            value
+        } else {
+            U::max_value() - value
+        };
+        // println!("Encoded {:?} as {:?}", value, result);
+        result
+    }
+
+    // Conversion from Option<O> to U, where O is unsigned
+    #[doc(hidden)]
+    pub fn from_unsigned_option<O, U>(value: Option<O>, ascending: bool, nullsLast: bool) -> U
+    where
+        O: UnsignedPrimInt + Debug,
+        U: UnsignedPrimInt + HasZero + HasOne + Debug + From<O>,
+    {
+        match value {
+            None => {
+                if nullsLast {
+                    U::large() + <U as HasOne>::one()
+                } else {
+                    <U as HasZero>::zero()
+                }
+            }
+            Some(value) => {
+                let n = if ascending {
+                    value
+                } else {
+                    O::max_value() - value
+                };
+                let i = <U as From<O>>::from(n);
+                i + <U as HasOne>::one()
+            }
         }
     }
 
     // Conversion from U to O
-    // O cannot be nullable, so nullsLast is irrelevant
-    // However, we still have it so that the signature of both
     // functions is the same.
     #[doc(hidden)]
     pub fn to_signed<O, S, I, U>(value: U, ascending: bool, _nullsLast: bool) -> O
@@ -90,27 +134,773 @@ impl UnsignedWrapper {
         result
     }
 
-    // Conversion from U to O where the 0 of U is converted to None
+    // Conversion from U to Option<O> where the 0 of U is converted to None
     #[doc(hidden)]
     pub fn to_signed_option<O, S, I, U>(value: U, ascending: bool, nullsLast: bool) -> Option<O>
     where
         O: FromInteger<S> + Debug,
         S: SignedPrimInt + TryFrom<U> + TryFrom<I>,
         I: SignedPrimInt + From<S> + TryFrom<U>,
-        U: UnsignedPrimInt + TryFrom<I> + Debug,
+        U: UnsignedPrimInt + HasOne + TryFrom<I> + Debug,
         <I as TryFrom<U>>::Error: Debug,
         <S as TryFrom<I>>::Error: Debug,
     {
         if nullsLast {
-            if <U as FirstLargeValue>::large() == value {
+            if <U as FirstLargeValue>::large() + <U as HasOne>::one() + <U as HasOne>::one()
+                == value
+            {
                 return None;
             }
         } else if <U as HasZero>::is_zero(&value) {
             return None;
         }
-        let o = UnsignedWrapper::to_signed::<O, S, I, U>(value, ascending, nullsLast);
+        let o = UnsignedWrappers::to_signed::<O, S, I, U>(value, ascending, nullsLast);
         Some(o)
     }
+
+    #[doc(hidden)]
+    pub fn to_unsigned<U>(value: U, ascending: bool, nullsLast: bool) -> U
+    where
+        U: UnsignedPrimInt + Debug,
+    {
+        UnsignedWrappers::from_unsigned::<U>(value, ascending, nullsLast)
+    }
+
+    // Conversion from Option<O> to U, where O is unsigned
+    #[doc(hidden)]
+    pub fn to_unsigned_option<O, U>(value: U, ascending: bool, nullsLast: bool) -> Option<O>
+    where
+        O: UnsignedPrimInt + Debug + TryFrom<U>,
+        <O as TryFrom<U>>::Error: Debug,
+        U: UnsignedPrimInt + HasZero + HasOne + Debug,
+    {
+        if nullsLast {
+            if value == U::large() + <U as HasOne>::one() {
+                return None;
+            }
+        } else if value == <U as HasZero>::zero() {
+            return None;
+        }
+        let i = value - <U as HasOne>::one();
+        let o = O::try_from(i).unwrap();
+        if ascending {
+            Some(o)
+        } else {
+            Some(O::max_value() - o)
+        }
+    }
+}
+
+#[test]
+fn testUnsignedWrapper() {
+    let i32max = i32::MAX as u64;
+
+    // ascending, nullsFirst
+    // The i32 range is mapped as follows with nullsFirst
+    // null         => 0
+    // i32::MIN     => 1
+    // i32::MIN + 1 => 2
+    // -1           => i32::MAX + 1
+    // 0            => i32::MAX + 2
+    // 1            => i32::MAX + 3
+    // i32::MAX     => i32::MAX * 2 + 2
+    assert_eq!(
+        1u64,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(i32::MIN, true, false)
+    );
+    assert_eq!(
+        2u64,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(i32::MIN + 1, true, false)
+    );
+    assert_eq!(
+        i32max + 1,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(-1i32, true, false)
+    );
+    assert_eq!(
+        i32max + 2,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(0i32, true, false)
+    );
+    assert_eq!(
+        i32max + 3,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(1i32, true, false)
+    );
+    assert_eq!(
+        i32max * 2 + 2,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(i32::MAX, true, false)
+    );
+
+    // ascending, nullsFirst, option types
+    assert_eq!(
+        0u64,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(None, true, false)
+    );
+    assert_eq!(
+        1u64,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(i32::MIN), true, false)
+    );
+    assert_eq!(
+        2u64,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(i32::MIN + 1), true, false)
+    );
+    assert_eq!(
+        i32max + 1,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(-1i32), true, false)
+    );
+    assert_eq!(
+        i32max + 2,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(0i32), true, false)
+    );
+    assert_eq!(
+        i32max + 3,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(1i32), true, false)
+    );
+    assert_eq!(
+        i32max * 2 + 2,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(i32::MAX), true, false)
+    );
+
+    // ascending, nullsLast
+    assert_eq!(
+        1u64,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(i32::MIN, true, true)
+    );
+    assert_eq!(
+        2u64,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(i32::MIN + 1, true, true)
+    );
+    assert_eq!(
+        i32max + 1,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(-1i32, true, true)
+    );
+    assert_eq!(
+        i32max + 2,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(0i32, true, true)
+    );
+    assert_eq!(
+        i32max + 3,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(1i32, true, true)
+    );
+    assert_eq!(
+        i32max * 2 + 2,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(i32::MAX, true, true)
+    );
+
+    // ascending, nullsLast, option types
+    assert_eq!(
+        1u64,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(i32::MIN), true, true)
+    );
+    assert_eq!(
+        2u64,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(i32::MIN + 1), true, true)
+    );
+    assert_eq!(
+        i32max + 1,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(-1i32), true, true)
+    );
+    assert_eq!(
+        i32max + 2,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(0i32), true, true)
+    );
+    assert_eq!(
+        i32max + 3,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(1i32), true, true)
+    );
+    assert_eq!(
+        i32max * 2 + 2,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(i32::MAX), true, true)
+    );
+    assert_eq!(
+        i32max * 2 + 4,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(None, true, true)
+    );
+
+    // descending: flip around 0
+    // The i32 range is mapped as follows with nullsFirst
+    // i32::MAX     => 2
+    // i32::MAX - 1 => 3
+    // 1            => i32::MAX + 1
+    // 0            => i32::MAX + 2
+    // -1           => i32::MAX + 3
+    // i32::MIN     => i32::MAX * 2 + 3
+    // null         => i32::MAX * 2 + 4
+    assert_eq!(
+        2u64,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(i32::MAX, false, false)
+    );
+    assert_eq!(
+        3u64,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(i32::MAX - 1, false, false)
+    );
+    assert_eq!(
+        i32max + 1,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(1i32, false, false)
+    );
+    assert_eq!(
+        i32max + 2,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(0i32, false, false)
+    );
+    assert_eq!(
+        i32max + 3,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(-1i32, false, false)
+    );
+    assert_eq!(
+        i32max * 2 + 3,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(i32::MIN, false, false)
+    );
+
+    // descending, nullsFirst, option types
+    assert_eq!(
+        0u64,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(None, false, false)
+    );
+    assert_eq!(
+        2u64,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(i32::MAX), false, false)
+    );
+    assert_eq!(
+        3u64,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(i32::MAX - 1), false, false)
+    );
+    assert_eq!(
+        i32max + 1,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(1i32), false, false)
+    );
+    assert_eq!(
+        i32max + 2,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(0i32), false, false)
+    );
+    assert_eq!(
+        i32max + 3,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(-1i32), false, false)
+    );
+    assert_eq!(
+        i32max * 2 + 3,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(i32::MIN), false, false)
+    );
+
+    // descending, nullsLast
+    assert_eq!(
+        2u64,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(i32::MAX, false, true)
+    );
+    assert_eq!(
+        3u64,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(i32::MAX - 1, false, true)
+    );
+    assert_eq!(
+        i32max + 1,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(1i32, false, true)
+    );
+    assert_eq!(
+        i32max + 2,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(0i32, false, true)
+    );
+    assert_eq!(
+        i32max + 3,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(-1i32, false, true)
+    );
+    assert_eq!(
+        i32max * 2 + 3,
+        UnsignedWrappers::from_signed::<i32, i32, i64, u64>(i32::MIN, false, true)
+    );
+
+    // descending, nullsLast, option types
+    assert_eq!(
+        2u64,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(i32::MAX), false, true)
+    );
+    assert_eq!(
+        3u64,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(i32::MAX - 1), false, true)
+    );
+    assert_eq!(
+        i32max + 1,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(1i32), false, true)
+    );
+    assert_eq!(
+        i32max + 2,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(0i32), false, true)
+    );
+    assert_eq!(
+        i32max + 3,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(-1i32), false, true)
+    );
+    assert_eq!(
+        i32max * 2 + 3,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(Some(i32::MIN), false, true)
+    );
+    assert_eq!(
+        i32max * 2 + 4,
+        UnsignedWrappers::from_option::<i32, i32, i64, u64>(None, false, true)
+    );
+}
+
+#[test]
+fn testUnsignedWrapperUnsigned() {
+    let u32max = u32::MAX as u64;
+
+    // ascending, nullsLast
+    assert_eq!(0u32, UnsignedWrappers::from_unsigned::<u32>(0, true, false));
+    assert_eq!(1u32, UnsignedWrappers::from_unsigned::<u32>(1, true, false));
+    assert_eq!(
+        u32::MAX - 1,
+        UnsignedWrappers::from_unsigned::<u32>(u32::MAX - 1, true, false)
+    );
+    assert_eq!(
+        u32::MAX,
+        UnsignedWrappers::from_unsigned::<u32>(u32::MAX, true, false)
+    );
+
+    // ascending, nullsFirst, option types
+    assert_eq!(
+        0u64,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(None, true, false)
+    );
+    assert_eq!(
+        1u64,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(Some(0u32), true, false)
+    );
+    assert_eq!(
+        2u64,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(Some(1u32), true, false)
+    );
+    assert_eq!(
+        u32max,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(Some(u32::MAX - 1u32), true, false)
+    );
+    assert_eq!(
+        u32max + 1,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(Some(u32::MAX), true, false)
+    );
+
+    // ascending, nullsLast
+    assert_eq!(0u32, UnsignedWrappers::from_unsigned::<u32>(0, true, true));
+    assert_eq!(1u32, UnsignedWrappers::from_unsigned::<u32>(1, true, true));
+    assert_eq!(
+        u32::MAX - 1,
+        UnsignedWrappers::from_unsigned::<u32>(u32::MAX - 1, true, true)
+    );
+    assert_eq!(
+        u32::MAX,
+        UnsignedWrappers::from_unsigned::<u32>(u32::MAX, true, true)
+    );
+
+    // ascending, nullsLast, option types
+    assert_eq!(
+        u32max + 2,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(None, true, true)
+    );
+    assert_eq!(
+        1u64,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(Some(0u32), true, true)
+    );
+    assert_eq!(
+        2u64,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(Some(1u32), true, true)
+    );
+    assert_eq!(
+        u32max,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(Some(u32::MAX - 1u32), true, true)
+    );
+    assert_eq!(
+        u32max + 1,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(Some(u32::MAX), true, true)
+    );
+
+    //////////// descending
+
+    // descending, nullsLast
+    assert_eq!(
+        u32::MAX,
+        UnsignedWrappers::from_unsigned::<u32>(0, false, true)
+    );
+    assert_eq!(
+        u32::MAX - 1u32,
+        UnsignedWrappers::from_unsigned::<u32>(1, false, true)
+    );
+    assert_eq!(
+        1u32,
+        UnsignedWrappers::from_unsigned::<u32>(u32::MAX - 1, false, true)
+    );
+    assert_eq!(
+        0u32,
+        UnsignedWrappers::from_unsigned::<u32>(u32::MAX, false, true)
+    );
+
+    // descending, nullsLast, option types
+    assert_eq!(
+        u32max + 2,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(None, false, true)
+    );
+    assert_eq!(
+        u32max + 1,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(Some(0u32), false, true)
+    );
+    assert_eq!(
+        u32max,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(Some(1u32), false, true)
+    );
+    assert_eq!(
+        2u64,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(Some(u32::MAX - 1u32), false, true)
+    );
+    assert_eq!(
+        1u64,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(Some(u32::MAX), false, true)
+    );
+
+    // descending, nullsFirst
+    assert_eq!(
+        u32::MAX,
+        UnsignedWrappers::from_unsigned::<u32>(0, false, false)
+    );
+    assert_eq!(
+        u32::MAX - 1u32,
+        UnsignedWrappers::from_unsigned::<u32>(1, false, false)
+    );
+    assert_eq!(
+        1u32,
+        UnsignedWrappers::from_unsigned::<u32>(u32::MAX - 1, false, false)
+    );
+    assert_eq!(
+        0u32,
+        UnsignedWrappers::from_unsigned::<u32>(u32::MAX, false, false)
+    );
+
+    // descending, nullsFirst, option types
+    assert_eq!(
+        0u64,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(None, false, false)
+    );
+    assert_eq!(
+        u32max + 1,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(Some(0u32), false, false)
+    );
+    assert_eq!(
+        u32max,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(Some(1u32), false, false)
+    );
+    assert_eq!(
+        2u64,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(Some(u32::MAX - 1u32), false, false)
+    );
+    assert_eq!(
+        1u64,
+        UnsignedWrappers::from_unsigned_option::<u32, u64>(Some(u32::MAX), false, false)
+    );
+}
+
+#[cfg(test)]
+static DATA: &[i32] = &[
+    i32::MIN,
+    i32::MIN + 1,
+    -2i32,
+    -1i32,
+    0i32,
+    1i32,
+    2i32,
+    i32::MAX - 1,
+    i32::MAX,
+];
+
+#[cfg(test)]
+fn optData() -> Vec<Option<i32>> {
+    let mut result = DATA.iter().map(|v| Some(*v)).collect::<Vec<Option<i32>>>();
+    result.push(None);
+    result
+}
+
+#[test]
+fn testUnsignedWrapperInverse() {
+    // Check that to_signed is the inverse of from_signed
+    for asc in [false, true] {
+        for nullsLast in [false, true] {
+            for v in DATA {
+                let u = UnsignedWrappers::from_signed::<i32, i32, i64, u64>(*v, asc, nullsLast);
+                let s = UnsignedWrappers::to_signed::<i32, i32, i64, u64>(u, asc, nullsLast);
+                assert_eq!(*v, s);
+            }
+        }
+    }
+
+    // check that to_signed_option is the inverse of from_option
+    let optVals = optData();
+    for asc in [false, true] {
+        for nullsLast in [false, true] {
+            for v in &optVals {
+                let u = UnsignedWrappers::from_option::<i32, i32, i64, u64>(*v, asc, nullsLast);
+                let s = UnsignedWrappers::to_signed_option::<i32, i32, i64, u64>(u, asc, nullsLast);
+                assert_eq!(*v, s);
+            }
+        }
+    }
+}
+
+#[test]
+fn testUnsignedWrapperOrderDescending() {
+    let mut reverse = DATA.to_vec();
+    reverse.reverse();
+
+    // Check that the unsigned conversion preservers order
+    let mut uvals = DATA
+        .iter()
+        .map(|v| UnsignedWrappers::from_signed::<i32, i32, i64, u64>(*v, false, true))
+        .collect::<Vec<u64>>();
+    uvals.sort();
+    let inverse = uvals
+        .iter()
+        .map(|v| UnsignedWrappers::to_signed::<i32, i32, i64, u64>(*v, false, true))
+        .collect::<Vec<i32>>();
+    assert_eq!(reverse, inverse);
+
+    // Same holds for nulls first...
+    let mut uvals = DATA
+        .iter()
+        .map(|v| UnsignedWrappers::from_signed::<i32, i32, i64, u64>(*v, false, false))
+        .collect::<Vec<u64>>();
+    uvals.sort();
+    let inverse = uvals
+        .iter()
+        .map(|v| UnsignedWrappers::to_signed::<i32, i32, i64, u64>(*v, false, false))
+        .collect::<Vec<i32>>();
+    assert_eq!(reverse, inverse);
+
+    // Test for option types, nulls last
+    let mut opts = optData();
+    let mut optUvals = opts
+        .iter()
+        .map(|v| UnsignedWrappers::from_option::<i32, i32, i64, u64>(*v, false, true))
+        .collect::<Vec<u64>>();
+    optUvals.sort();
+    let inverse = optUvals
+        .iter()
+        .map(|v| UnsignedWrappers::to_signed_option::<i32, i32, i64, u64>(*v, false, true))
+        .collect::<Vec<Option<i32>>>();
+    // None will be first now
+    opts.rotate_right(1);
+    opts.reverse();
+    assert_eq!(opts, inverse);
+
+    // Test for option types, nulls first
+    let mut opts = optData();
+    let mut optUvals = opts
+        .iter()
+        .map(|v| UnsignedWrappers::from_option::<i32, i32, i64, u64>(*v, false, false))
+        .collect::<Vec<u64>>();
+    optUvals.sort();
+    let inverse = optUvals
+        .iter()
+        .map(|v| UnsignedWrappers::to_signed_option::<i32, i32, i64, u64>(*v, false, false))
+        .collect::<Vec<Option<i32>>>();
+    opts.reverse();
+    assert_eq!(opts, inverse);
+}
+
+#[test]
+fn testUnsignedWrapperOrderAscending() {
+    // Check that the unsigned conversion preservers order
+    let mut uvals = DATA
+        .iter()
+        .map(|v| UnsignedWrappers::from_signed::<i32, i32, i64, u64>(*v, true, true))
+        .collect::<Vec<u64>>();
+    uvals.sort();
+    let inverse = uvals
+        .iter()
+        .map(|v| UnsignedWrappers::to_signed::<i32, i32, i64, u64>(*v, true, true))
+        .collect::<Vec<i32>>();
+    assert_eq!(DATA, inverse);
+
+    // Same holds for nulls first...
+    let mut uvals = DATA
+        .iter()
+        .map(|v| UnsignedWrappers::from_signed::<i32, i32, i64, u64>(*v, true, false))
+        .collect::<Vec<u64>>();
+    uvals.sort();
+    let inverse = uvals
+        .iter()
+        .map(|v| UnsignedWrappers::to_signed::<i32, i32, i64, u64>(*v, true, false))
+        .collect::<Vec<i32>>();
+    assert_eq!(DATA, inverse);
+
+    // Test for option types, nulls last
+    let opts = optData();
+    let mut optUvals = opts
+        .iter()
+        .map(|v| UnsignedWrappers::from_option::<i32, i32, i64, u64>(*v, true, true))
+        .collect::<Vec<u64>>();
+    optUvals.sort();
+    let inverse = optUvals
+        .iter()
+        .map(|v| UnsignedWrappers::to_signed_option::<i32, i32, i64, u64>(*v, true, true))
+        .collect::<Vec<Option<i32>>>();
+    assert_eq!(opts, inverse);
+
+    // Test for option types, nulls first
+    let mut opts = optData();
+    let mut optUvals = opts
+        .iter()
+        .map(|v| UnsignedWrappers::from_option::<i32, i32, i64, u64>(*v, true, false))
+        .collect::<Vec<u64>>();
+    optUvals.sort();
+    let inverse = optUvals
+        .iter()
+        .map(|v| UnsignedWrappers::to_signed_option::<i32, i32, i64, u64>(*v, true, false))
+        .collect::<Vec<Option<i32>>>();
+    // None will be first now
+    opts.rotate_right(1);
+    assert_eq!(opts, inverse);
+}
+
+#[cfg(test)]
+static UDATA: &[u32] = &[0u32, 1u32, 2u32, u32::MAX - 1, u32::MAX];
+
+#[cfg(test)]
+fn optUData() -> Vec<Option<u32>> {
+    let mut result = UDATA.iter().map(|v| Some(*v)).collect::<Vec<Option<u32>>>();
+    result.push(None);
+    result
+}
+
+#[test]
+fn testUnsignedWrapperUnsignedInverse() {
+    // Check that to_unsigned is the inverse of from_unsigned
+    for asc in [false, true] {
+        for nullsLast in [false, true] {
+            for v in UDATA {
+                let u = UnsignedWrappers::from_unsigned::<u32>(*v, asc, nullsLast);
+                let s = UnsignedWrappers::to_unsigned::<u32>(u, asc, nullsLast);
+                assert_eq!(*v, s);
+            }
+        }
+    }
+
+    // check that to_unsigned_option is the inverse of from_unsigned_option
+    let optVals = optUData();
+    for asc in [false, true] {
+        for nullsLast in [false, true] {
+            for v in &optVals {
+                let u = UnsignedWrappers::from_unsigned_option::<u32, u64>(*v, asc, nullsLast);
+                let s = UnsignedWrappers::to_unsigned_option::<u32, u64>(u, asc, nullsLast);
+                assert_eq!(*v, s);
+            }
+        }
+    }
+}
+
+#[test]
+fn testUnsignedWrapperUnsignedOrderDescending() {
+    let mut reverse = UDATA.to_vec();
+    reverse.reverse();
+
+    // Check that the unsigned conversion preservers order
+    let mut uvals = UDATA
+        .iter()
+        .map(|v| UnsignedWrappers::from_unsigned::<u32>(*v, false, true))
+        .collect::<Vec<u32>>();
+    uvals.sort();
+    let inverse = uvals
+        .iter()
+        .map(|v| UnsignedWrappers::to_unsigned::<u32>(*v, false, true))
+        .collect::<Vec<u32>>();
+    assert_eq!(reverse, inverse);
+
+    // Same holds for nulls first...
+    let mut uvals = UDATA
+        .iter()
+        .map(|v| UnsignedWrappers::from_unsigned::<u32>(*v, false, false))
+        .collect::<Vec<u32>>();
+    uvals.sort();
+    let inverse = uvals
+        .iter()
+        .map(|v| UnsignedWrappers::to_unsigned::<u32>(*v, false, false))
+        .collect::<Vec<u32>>();
+    assert_eq!(reverse, inverse);
+
+    // Test for option types, nulls last
+    let mut opts = optUData();
+    let mut optUvals = opts
+        .iter()
+        .map(|v| UnsignedWrappers::from_unsigned_option::<u32, u64>(*v, false, true))
+        .collect::<Vec<u64>>();
+    optUvals.sort();
+    let inverse = optUvals
+        .iter()
+        .map(|v| UnsignedWrappers::to_unsigned_option::<u32, u64>(*v, false, true))
+        .collect::<Vec<Option<u32>>>();
+    // None will be first now
+    opts.rotate_right(1);
+    opts.reverse();
+    assert_eq!(opts, inverse);
+
+    // Test for option types, nulls first
+    let mut opts = optUData();
+    let mut optUvals = opts
+        .iter()
+        .map(|v| UnsignedWrappers::from_unsigned_option::<u32, u64>(*v, false, false))
+        .collect::<Vec<u64>>();
+    optUvals.sort();
+    let inverse = optUvals
+        .iter()
+        .map(|v| UnsignedWrappers::to_unsigned_option::<u32, u64>(*v, false, false))
+        .collect::<Vec<Option<u32>>>();
+    opts.reverse();
+    assert_eq!(opts, inverse);
+}
+
+#[test]
+fn testUnsignedWrapperOrderUnsignedAscending() {
+    // Check that the unsigned conversion preservers order
+    let mut uvals = UDATA
+        .iter()
+        .map(|v| UnsignedWrappers::from_unsigned::<u32>(*v, true, true))
+        .collect::<Vec<u32>>();
+    uvals.sort();
+    let inverse = uvals
+        .iter()
+        .map(|v| UnsignedWrappers::to_unsigned::<u32>(*v, true, true))
+        .collect::<Vec<u32>>();
+    assert_eq!(UDATA, inverse);
+
+    // Same holds for nulls first...
+    let mut uvals = UDATA
+        .iter()
+        .map(|v| UnsignedWrappers::from_unsigned::<u32>(*v, true, false))
+        .collect::<Vec<u32>>();
+    uvals.sort();
+    let inverse = uvals
+        .iter()
+        .map(|v| UnsignedWrappers::to_unsigned::<u32>(*v, true, false))
+        .collect::<Vec<u32>>();
+    assert_eq!(UDATA, inverse);
+
+    // Test for option types, nulls last
+    let opts = optUData();
+    let mut optUvals = opts
+        .iter()
+        .map(|v| UnsignedWrappers::from_unsigned_option::<u32, u64>(*v, true, true))
+        .collect::<Vec<u64>>();
+    optUvals.sort();
+    let inverse = optUvals
+        .iter()
+        .map(|v| UnsignedWrappers::to_unsigned_option::<u32, u64>(*v, true, true))
+        .collect::<Vec<Option<u32>>>();
+    assert_eq!(opts, inverse);
+
+    // Test for option types, nulls first
+    let mut opts = optUData();
+    let mut optUvals = opts
+        .iter()
+        .map(|v| UnsignedWrappers::from_unsigned_option::<u32, u64>(*v, true, false))
+        .collect::<Vec<u64>>();
+    optUvals.sort();
+    let inverse = optUvals
+        .iter()
+        .map(|v| UnsignedWrappers::to_unsigned_option::<u32, u64>(*v, true, false))
+        .collect::<Vec<Option<u32>>>();
+    // None will be first now
+    opts.rotate_right(1);
+    assert_eq!(opts, inverse);
 }
 
 // Macro to create variants of an aggregation function
