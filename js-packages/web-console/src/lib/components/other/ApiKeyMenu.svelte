@@ -1,7 +1,7 @@
 <script lang="ts">
   import { asyncReadable } from '@square/svelte-store'
   import NewApiKeyForm from '$lib/components/apiKey/NewApiKeyForm.svelte'
-  import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
+  import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
@@ -12,28 +12,31 @@
   const thisDialog = globalDialog.dialog
 </script>
 
-<div class="flex h-fit max-h-[90vh] flex-col sm:p-4">
-  <div class="bg-white-dark sticky top-0 flex flex-col gap-4 p-4">
-    <div class="flex flex-nowrap justify-between">
-      <div class="h5 font-medium">Manage API keys</div>
-      <button
-        class="fd fd-x -m-4 btn-icon text-[24px]"
-        aria-label="Close"
-        onclick={() => (globalDialog.dialog = null)}
-      ></button>
-    </div>
-  </div>
-  <div class="flex flex-col gap-2 p-4 pt-0">
+<GenericDialog content={{ title: 'Manage API keys' }}>
+  <div class="scrollbar flex max-h-[80vh] flex-col gap-2 overflow-auto">
     {#each $apiKeys as key}
       {#snippet deleteDialog()}
-        <DeleteDialog
-          {...deleteDialogProps(
-            'Delete',
-            (name) => `Delete ${name} API key?`,
-            api.deleteApiKey
-          )(key.name)}
-          onClose={() => (globalDialog.dialog = thisDialog)}
-        ></DeleteDialog>
+        <GenericDialog
+          content={{
+            title: `Delete ${key.name} API key?`,
+            description: 'Are you sure? This action is irreversible.',
+            onSuccess: {
+              name: 'Delete',
+              callback: async () => {
+                await api.deleteApiKey(key.name)
+                globalDialog.dialog = thisDialog
+              },
+              'data-testid': 'button-confirm-delete'
+            },
+            onCancel: {
+              callback: () => {
+                globalDialog.dialog = thisDialog
+              }
+            }
+          }}
+          noclose
+          danger
+        ></GenericDialog>
       {/snippet}
       <div class="flex flex-nowrap">
         <div class=" w-full">
@@ -47,7 +50,9 @@
         <button
           class="fd fd-trash-2 btn-icon text-[20px]"
           aria-label="Delete {key.name} API key"
-          onclick={() => (globalDialog.dialog = deleteDialog)}
+          onclick={() => {
+            globalDialog.dialog = deleteDialog
+          }}
         ></button>
       </div>
     {:else}
@@ -59,10 +64,4 @@
       apiKeys.reload?.()
     }}
   ></NewApiKeyForm>
-  <!-- <button
-    class="btn w-full preset-outlined-primary-500"
-    onclick={() => (globalDialog.dialog = createAiKeyDialog)}
-  >
-    Generate new key
-  </button> -->
-</div>
+</GenericDialog>

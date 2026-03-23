@@ -1,7 +1,8 @@
 <script lang="ts">
-  import JSONbig from 'true-json-bigint'
   import { toast } from 'svelte-french-toast'
+  import JSONbig from 'true-json-bigint'
   import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
+  import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import MultiJSONDialog from '$lib/components/dialogs/MultiJSONDialog.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
@@ -29,6 +30,10 @@
   let clearStorageError = $state('')
   let pendingPatch: Partial<Pipeline> | null = $state(null)
   let pendingJsonValues: Record<string, string> | null = $state(null)
+
+  const goBackToConfig = () => {
+    globalDialog.dialog = pipelineConfigurationsDialog
+  }
 
   const showClearStorageConfirm = (patch: Partial<Pipeline>) => {
     pendingPatch = patch
@@ -72,6 +77,7 @@
     }
     try {
       await pipeline.patch(patch)
+      globalDialog.dialog = null
     } catch (e) {
       if (isStorageNotClearedError(e)) {
         toast.dismiss()
@@ -121,6 +127,8 @@
 {#snippet pipelineConfigurationsDialog()}
   <MultiJSONDialog
     disabled={pipelineBusy}
+    disabledMessage="Stop the pipeline to edit settings"
+    title={`Configure ${pipeline.current.name} pipeline`}
     refreshOnChange={!pendingJsonValues}
     values={pendingJsonValues ?? {
       runtimeConfig: JSONbig.stringify(pipeline.current.runtimeConfig, undefined, '  '),
@@ -141,77 +149,62 @@
       }
     }}
     onApply={applyConfig}
-    onClose={() => {
-      pendingJsonValues = null
-      globalDialog.dialog = null
-    }}
-  >
-    {#snippet title()}
-      Configure {pipeline.current.name} pipeline
-    {/snippet}
-  </MultiJSONDialog>
+  ></MultiJSONDialog>
 {/snippet}
 
 {#snippet clearStorageDialog()}
-  <div class="p-4 sm:p-8">
-    {#if clearStoragePhase === 'confirm'}
-      <div class="flex flex-col gap-4">
-        <div class="flex flex-nowrap justify-between">
-          <div class="h5">Clear storage to apply changes?</div>
-          <button
-            class="fd fd-x -m-4 btn-icon text-[24px]"
-            onclick={() => (globalDialog.dialog = null)}
-            aria-label="Close"
-          ></button>
-        </div>
-        <span
-          >Storage must be cleared to apply these configuration changes. This will
-          delete all checkpoints.</span
-        >
+  {#if clearStoragePhase === 'confirm'}
+    <GenericDialog
+      content={{
+        title: 'Clear storage to apply changes?',
+        description:
+          'Storage must be cleared to apply these configuration changes. This will delete all checkpoints.',
+        onSuccess: {
+          name: 'Clear and apply',
+          callback: doClearAndApply,
+          'data-testid': 'button-confirm-clear-storage'
+        },
+        onCancel: {
+          name: 'Back',
+          callback: goBackToConfig
+        }
+      }}
+      danger
+      noclose
+    ></GenericDialog>
+  {:else if clearStoragePhase === 'progress'}
+    <GenericDialog
+      content={{
+        title: 'Applying configuration changes',
+        onSuccess: {
+          name: 'Continue in background',
+          callback: () => {
+            globalDialog.dialog = null
+          }
+        }
+      }}
+    >
+      <div class="flex items-center gap-2">
+        <IconLoader class="h-5 flex-none animate-spin fill-surface-950-50"></IconLoader>
+        <span>{clearStorageProgressMessage}</span>
       </div>
-      <div class="flex flex-col-reverse gap-4 pt-4 sm:flex-row sm:justify-end">
-        <button
-          class="btn preset-filled-surface-50-950 px-4"
-          onclick={() => (globalDialog.dialog = pipelineConfigurationsDialog)}>Back</button
-        >
-        <button
-          class="btn preset-filled-error-500 px-4 font-semibold"
-          onclick={doClearAndApply}
-          data-testid="button-confirm-clear-storage">Clear and apply</button
-        >
-      </div>
-    {:else if clearStoragePhase === 'progress'}
-      <div class="flex flex-col gap-4">
-        <div class="h5">Applying configuration changes</div>
-        <div class="flex items-center gap-2">
-          <IconLoader class="h-5 flex-none animate-spin fill-surface-950-50"></IconLoader>
-          <span>{clearStorageProgressMessage}</span>
-        </div>
-      </div>
-      <div class="flex justify-end pt-4">
-        <button
-          class="btn preset-filled-surface-50-950 px-4"
-          onclick={() => (globalDialog.dialog = null)}>Continue in background</button
-        >
-      </div>
-    {:else}
-      <div class="flex flex-col gap-4">
-        <div class="flex flex-nowrap justify-between">
-          <div class="h5">Failed to apply changes</div>
-          <button
-            class="fd fd-x -m-4 btn-icon text-[24px]"
-            onclick={() => (globalDialog.dialog = null)}
-            aria-label="Close"
-          ></button>
-        </div>
-        <span class="whitespace-pre-wrap text-error-500">{clearStorageError}</span>
-      </div>
-      <div class="flex justify-end pt-4">
-        <button
-          class="btn preset-filled-surface-50-950 px-4"
-          onclick={() => (globalDialog.dialog = null)}>Close</button
-        >
-      </div>
-    {/if}
-  </div>
+    </GenericDialog>
+  {:else}
+    <GenericDialog
+      content={{
+        title: 'Failed to apply changes',
+        onSuccess: {
+          name: 'Try again',
+          callback: doClearAndApply
+        },
+        onCancel: {
+          name: 'Back',
+          callback: goBackToConfig
+        }
+      }}
+      noclose
+    >
+      <span class="whitespace-pre-wrap text-error-500">{clearStorageError}</span>
+    </GenericDialog>
+  {/if}
 {/snippet}

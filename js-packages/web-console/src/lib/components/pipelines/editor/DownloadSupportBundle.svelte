@@ -1,7 +1,7 @@
 <script lang="ts">
   import Tooltip from '$lib/components/common/Tooltip.svelte'
-  import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import DownloadProgressDisplay from '$lib/components/dialogs/DownloadProgressDisplay.svelte'
+  import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
@@ -25,7 +25,6 @@
         result.cancel()
         isDownloading = false
       }
-      globalDialog.onclose = () => cancelDownload?.()
 
       await result.dataPromise
     }
@@ -105,17 +104,13 @@
 
 {#snippet supportBundleDialog()}
   <GenericDialog
-    onApply={submitHandler}
-    onClose={() => {
-      cancelDownload?.()
-      globalDialog.dialog = null
+    content={{
+      title: 'Download Support Bundle',
+      onSuccess: { name: 'Download', callback: submitHandler },
+      onCancel: { callback: () => cancelDownload?.() }
     }}
-    confirmLabel="Download"
     disabled={isDownloading}
   >
-    {#snippet title()}
-      Download Support Bundle
-    {/snippet}
     <div class="-mt-2 pb-2 font-semibold">{pipelineName}</div>
     {#if isDownloading}
       <DownloadProgressDisplay {progress} label="Downloading support bundle..." />

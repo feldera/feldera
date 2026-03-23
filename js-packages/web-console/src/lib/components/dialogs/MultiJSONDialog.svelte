@@ -1,15 +1,14 @@
 <script lang="ts">
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import JsonForm from '$lib/components/dialogs/JSONForm.svelte'
-  import type { Snippet } from '$lib/types/svelte'
 
   const {
     values,
     metadata,
     onApply,
-    onClose,
     title,
     disabled,
+    disabledMessage,
     refreshOnChange = true
   }: {
     values: Record<string, string>
@@ -18,9 +17,9 @@
       { title?: string; editorClass?: string; filePath?: string; readOnlyMessage?: string }
     >
     onApply: (values: Record<string, string>) => Promise<void>
-    onClose: () => void
-    title: Snippet
+    title: string
     disabled?: boolean
+    disabledMessage?: string
     refreshOnChange?: boolean
   } = $props()
 
@@ -43,11 +42,14 @@
   }
 
   const submitResults = async () => {
-    onApply(current).then(onClose, () => {})
+    onApply(current)
   }
 </script>
 
-<GenericDialog onApply={submitResults} {onClose} {title} {disabled} confirmLabel="Apply">
+<GenericDialog
+  content={{ title, onSuccess: { name: 'Apply', callback: submitResults, disabledMessage } }}
+  {disabled}
+>
   {#each Object.keys(current) as key}
     <span class="font-normal">{metadata?.[key].title ?? ''}</span>
     <div class={metadata?.[key].editorClass}>

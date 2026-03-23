@@ -223,10 +223,4 @@
     {@render contextDrawer.content?.()}
   </OverlayDrawer>
 </div>
-<GlobalModal
-  dialog={dialog.dialog}
-  onClose={() => {
-    dialog.onclose?.()
-    dialog.dialog = null
-  }}
-></GlobalModal>
+<GlobalModal dialog={dialog.dialog}></GlobalModal>

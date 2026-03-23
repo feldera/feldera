@@ -122,13 +122,14 @@
         deletePipeline(name)
       }
     )(pipelineName)}
-    onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
 
 {#snippet pipelineResourcesDialog(dialogTitle: string, field: keyof typeof pipeline.current)}
   <JSONDialog
     disabled={pipelineBusy}
+    disabledMessage="Stop the pipeline to edit settings"
+    title={dialogTitle}
     value={JSONbig.stringify(pipeline.current[field], undefined, '  ')}
     filePath="file://feldera/pipelines/{pipeline.current.name}/{field}.json"
     onApply={async (json) => {
@@ -136,12 +137,7 @@
         [field]: JSONbig.parse(json)
       })
     }}
-    onClose={() => (globalDialog.dialog = null)}
-  >
-    {#snippet title()}
-      {dialogTitle}
-    {/snippet}
-  </JSONDialog>
+  ></JSONDialog>
 {/snippet}
 {#snippet resourcesDialog()}
   {@render pipelineResourcesDialog(

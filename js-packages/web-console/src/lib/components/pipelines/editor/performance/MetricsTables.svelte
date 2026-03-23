@@ -189,13 +189,13 @@
   {#if transactionPhase === 'started'}
     <span
       data-testid="box-icon-transaction-started"
-      class="-my-1 chip preset-filled-warning-50-950 uppercase text-xs"
-    >Started</span>
+      class="-my-1 chip preset-filled-warning-50-950 text-xs uppercase">Started</span
+    >
   {:else if transactionPhase === 'committed'}
     <span
       data-testid="box-icon-transaction-committed"
-      class="-my-1 chip preset-filled-success-50-950 uppercase text-xs"
-    >Ready to commit</span>
+      class="-my-1 chip preset-filled-success-50-950 text-xs uppercase">Ready to commit</span
+    >
   {/if}
 {/snippet}
 
