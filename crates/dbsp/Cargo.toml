@@ -118,6 +118,8 @@ indicatif = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
 chrono = { workspace = true, features = ["serde"] }
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+roaring = { workspace = true }
+tikv-jemallocator = { workspace = true }
 
 [[bench]]
 name = "galen"
@@ -153,6 +155,10 @@ harness = false
 
 [[bench]]
 name = "star_join"
+harness = false
+
+[[bench]]
+name = "filter_bitmap"
 harness = false
 
 [[example]]
