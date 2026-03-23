@@ -126,55 +126,55 @@ pub fn abs_ShortInterval(value: ShortInterval) -> ShortInterval {
 some_polymorphic_function1!(abs, ShortInterval, ShortInterval, ShortInterval);
 
 #[doc(hidden)]
-/// This function is used in rolling window computations, which require all
-/// values to be expressed using unsigned types.
+/// This function is used in rolling window computations, to compute a window bound.
+/// Window bounds are always positive.
 pub fn to_bound_ShortInterval_ShortInterval_u128(value: &ShortInterval) -> u128 {
     value.microseconds as u128
 }
 
 #[doc(hidden)]
-/// This function is used in rolling window computations, which require all
-/// values to be expressed using unsigned types.
+/// This function is used in rolling window computations, to compute a window bound.
+/// Window bounds are always positive.
 pub fn to_bound_ShortInterval_Date_u128(value: &ShortInterval) -> u128 {
     // express value in days
     (value.microseconds / 1_000_000_i64 / 86400) as u128
 }
 
 #[doc(hidden)]
-/// This function is used in rolling window computations, which require all
-/// values to be expressed using unsigned types.
+/// This function is used in rolling window computations, to compute a window bound.
+/// Window bounds are always positive.
 pub fn to_bound_ShortInterval_Date_u64(value: &ShortInterval) -> u64 {
     // express value in days
     (value.microseconds / 1_000_000_i64 / 86400) as u64
 }
 
 #[doc(hidden)]
-/// This function is used in rolling window computations, which require all
-/// values to be expressed using unsigned types.
+/// This function is used in rolling window computations, to compute a window bound.
+/// Window bounds are always positive.
 pub fn to_bound_ShortInterval_Timestamp_u128(value: &ShortInterval) -> u128 {
     // express value in milliseconds
     value.microseconds as u128
 }
 
 #[doc(hidden)]
-/// This function is used in rolling window computations, which require all
-/// values to be expressed using unsigned types.
+/// This function is used in rolling window computations, to compute a window bound.
+/// Window bounds are always positive.
 pub fn to_bound_ShortInterval_Timestamp_u64(value: &ShortInterval) -> u64 {
     // express value in milliseconds
     value.microseconds as u64
 }
 
 #[doc(hidden)]
-/// This function is used in rolling window computations, which require all
-/// values to be expressed using unsigned types.
+/// This function is used in rolling window computations, to compute a window bound.
+/// Window bounds are always positive.
 pub fn to_bound_ShortInterval_Time_u128(value: &ShortInterval) -> u128 {
     // express value in nanoseconds
     (value.microseconds * 1_000) as u128
 }
 
 #[doc(hidden)]
-/// This function is used in rolling window computations, which require all
-/// values to be expressed using unsigned types.
+/// This function is used in rolling window computations, to compute a window bound.
+/// Window bounds are always positive.
 pub fn to_bound_ShortInterval_Time_u64(value: &ShortInterval) -> u64 {
     // express value in nanoseconds
     (value.microseconds * 1_000) as u64
