@@ -106,7 +106,7 @@ import TabItem from '@theme/TabItem';
         ## 0.226.0
 
         The Delta Lake connector's `skip_unused_columns` property has been deprecated. Use
-        table-level [`skip_unused_colums`](https://docs.feldera.com/sql/grammar#skip-unused-columns)
+        table-level [`skip_unused_colums`](https://docs.feldera.com/sql/grammar#ignoring-unused-columns)
         instead.
 
         ## 0.201.0
