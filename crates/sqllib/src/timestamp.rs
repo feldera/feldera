@@ -1853,6 +1853,13 @@ pub fn date_trunc_year_Timestamp(timestamp: Timestamp) -> Timestamp {
 }
 
 #[doc(hidden)]
+pub fn date_trunc_quarter_Timestamp(timestamp: Timestamp) -> Timestamp {
+    let dt = timestamp.get_date();
+    let dt = date_trunc_quarter_Date(dt);
+    Timestamp::from_date(dt)
+}
+
+#[doc(hidden)]
 pub fn date_trunc_month_Timestamp(timestamp: Timestamp) -> Timestamp {
     let dt = timestamp.get_date();
     let dt = date_trunc_month_Date(dt);
@@ -1877,6 +1884,7 @@ some_polymorphic_function1!(date_trunc_millennium, Timestamp, Timestamp, Timesta
 some_polymorphic_function1!(date_trunc_century, Timestamp, Timestamp, Timestamp);
 some_polymorphic_function1!(date_trunc_decade, Timestamp, Timestamp, Timestamp);
 some_polymorphic_function1!(date_trunc_year, Timestamp, Timestamp, Timestamp);
+some_polymorphic_function1!(date_trunc_quarter, Timestamp, Timestamp, Timestamp);
 some_polymorphic_function1!(date_trunc_month, Timestamp, Timestamp, Timestamp);
 some_polymorphic_function1!(date_trunc_week, Timestamp, Timestamp, Timestamp);
 some_polymorphic_function1!(date_trunc_day, Timestamp, Timestamp, Timestamp);
@@ -1899,6 +1907,11 @@ pub fn timestamp_trunc_decade_Timestamp(timestamp: Timestamp) -> Timestamp {
 #[doc(hidden)]
 pub fn timestamp_trunc_year_Timestamp(timestamp: Timestamp) -> Timestamp {
     date_trunc_year_Timestamp(timestamp)
+}
+
+#[doc(hidden)]
+pub fn timestamp_trunc_quarter_Timestamp(timestamp: Timestamp) -> Timestamp {
+    date_trunc_quarter_Timestamp(timestamp)
 }
 
 #[doc(hidden)]
@@ -1986,6 +1999,20 @@ pub fn date_trunc_year_Date(date: Date) -> Date {
 }
 
 #[doc(hidden)]
+pub fn date_trunc_quarter_Date(date: Date) -> Date {
+    let date = date.to_dateTime();
+    let month = match date.month() {
+        1..=3 => 1,
+        4..=6 => 4,
+        7..=9 => 7,
+        10..=12 => 10,
+        _ => unreachable!(),
+    };
+    let rounded = NaiveDate::from_ymd_opt(date.year(), month, 1).unwrap();
+    Date::from_date(rounded)
+}
+
+#[doc(hidden)]
 pub fn date_trunc_month_Date(date: Date) -> Date {
     let date = date.to_dateTime();
     let rounded = NaiveDate::from_ymd_opt(date.year(), date.month(), 1).unwrap();
@@ -2009,6 +2036,7 @@ some_polymorphic_function1!(date_trunc_millennium, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_century, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_decade, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_year, Date, Date, Date);
+some_polymorphic_function1!(date_trunc_quarter, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_month, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_week, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_day, Date, Date, Date);
