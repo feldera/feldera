@@ -110,7 +110,6 @@ use std::collections::HashSet;
 use std::collections::btree_map::Entry;
 use std::io::ErrorKind;
 use std::mem::replace;
-use std::ops::Range;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, SendError, Sender, SyncSender, channel, sync_channel};
@@ -1922,8 +1921,8 @@ impl Controller {
         self.inner.adhoc_tables.get(name).cloned()
     }
 
-    pub fn workers(&self) -> Range<usize> {
-        self.inner.workers.clone()
+    pub fn layout(&self) -> &Layout {
+        &self.inner.layout
     }
 }
 
@@ -5360,8 +5359,8 @@ pub struct ControllerInner {
     // from the sync context by the circuit thread.
     transaction_info: Mutex<TransactionInfo>,
 
-    /// Workers local to this host.
-    workers: Range<usize>,
+    /// Layout of the [Runtime].
+    layout: Layout,
 
     /// Current transaction number.
     ///
@@ -5426,7 +5425,7 @@ impl ControllerInner {
                 next_input_id: Atomic::new(0),
                 outputs: ShardedLock::new(OutputEndpoints::new()),
                 next_output_id: Atomic::new(0),
-                workers: runtime.layout().local_workers(),
+                layout: runtime.layout().clone(),
                 runtime: runtime.downgrade(),
                 circuit_thread_unparker: circuit_thread_parker.unparker().clone(),
                 backpressure_thread_unparker: backpressure_thread_parker.unparker().clone(),
@@ -5513,7 +5512,7 @@ impl ControllerInner {
             controller.status.set_state(PipelineState::Terminated);
         })?;
 
-        if controller.workers.start == 0 {
+        if controller.layout.local_host_idx() == 0 {
             let _ = controller.connect_input("now", &now_endpoint_config(&config), None);
         }
 
@@ -5541,7 +5540,7 @@ impl ControllerInner {
             return max_batch_size as usize;
         };
 
-        let num_local_workers = std::cmp::max(self.workers.len(), 1);
+        let num_local_workers = std::cmp::max(self.layout.local_workers().len(), 1);
 
         let max_worker_batch_size =
             if let Some(max_worker_batch_size) = connector_config.max_worker_batch_size {
