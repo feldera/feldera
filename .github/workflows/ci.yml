@@ -153,6 +153,15 @@ jobs:
     uses: ./.github/workflows/generate-sbom.yml
     secrets: inherit
 
+  invoke-tests-web-console-e2e:
+    name: Web Console End-to-End Tests
+    needs: [check-prior-build, invoke-build-docker]
+    if: |
+      always() &&
+      (needs.invoke-build-docker.result == 'success' || needs.invoke-build-docker.result == 'skipped')
+    uses: ./.github/workflows/test-web-console-e2e.yml
+    secrets: inherit
+
   invoke-tests-integration-platform:
     name: Integration Tests
     needs: [check-prior-build, invoke-build-docker]
@@ -298,6 +307,21 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
 
+  cancel-if-tests-web-console-integration-failed:
+    name: Cancel if Web Console Integration Tests Failed
+    needs: [invoke-tests-web-console-e2e]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
   cancel-if-tests-integration-platform-failed:
     name: Cancel if Platform Integration Tests Failed
     needs: [invoke-tests-integration-platform]
@@ -370,6 +394,7 @@ jobs:
       - invoke-build-java
       - invoke-build-docs
       - invoke-tests-web-console-unit
+      - invoke-tests-web-console-e2e
       - invoke-tests-unit
       - invoke-tests-adapter
       - invoke-build-docker

@@ -18,11 +18,7 @@ export const useToast = () => {
   }
   return {
     toastError,
-    catchError<Args extends any[], R>(
-      scope: string,
-      f: (...args: Args) => R,
-      durationMs?: number
-    ) {
+    catchError<Args extends any[], R>(scope: string, f: (...args: Args) => R, durationMs?: number) {
       return (...args: Args) => {
         try {
           return f(...args)

@@ -422,7 +422,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         const { waitFor } = await postPipelineAction(pipelineName, 'pause')
         waitFor().then(
           (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'pause'),
-          toastError("Waiting for pipeline to pause")
+          toastError('Waiting for pipeline to pause')
         )
       },
       disabled: () => false,
@@ -436,7 +436,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         const { waitFor } = await postPipelineAction(pipelineName, 'standby')
         waitFor().then(
           (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'standby'),
-          toastError("Waiting for pipeline to standby")
+          toastError('Waiting for pipeline to standby')
         )
       },
       disabled: () => false,
@@ -450,7 +450,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         const { waitFor } = await postPipelineAction(pipelineName, 'activate')
         waitFor().then(
           (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'activate'),
-          toastError("Waiting for pipeline to activate")
+          toastError('Waiting for pipeline to activate')
         )
       },
       disabled: () => false,
@@ -468,7 +468,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         const { waitFor } = await postPipelineAction(pipelineName, 'clear')
         waitFor().then(
           (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'clear'),
-          toastError("Waiting for pipeline to clear state")
+          toastError('Waiting for pipeline to clear state')
         )
       },
       'This will delete all checkpoints.'
@@ -497,7 +497,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         const { waitFor } = await postPipelineAction(pipelineName, 'kill')
         waitFor().then(
           (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'kill'),
-          toastError("Waiting for pipeline to force stop")
+          toastError('Waiting for pipeline to force stop')
         )
       },
       'The pipeline will stop processing inputs without making a checkpoint, leaving only a previous one, if any.'
@@ -514,7 +514,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         const { waitFor } = await postPipelineAction(pipelineName, 'stop')
         waitFor().then(
           (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'stop'),
-          toastError("Waiting for pipeline to stop")
+          toastError('Waiting for pipeline to stop')
         )
       },
       'The pipeline will stop processing inputs and make a checkpoint of its state.'

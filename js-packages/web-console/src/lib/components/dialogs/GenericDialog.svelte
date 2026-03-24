@@ -33,9 +33,9 @@
   })
 </script>
 
-<div class="flex flex-col gap-4 p-4 sm:p-8">
+<div class="flex flex-col gap-4 p-4 sm:p-8" data-testid="box-generic-dialog">
   <div class="flex flex-nowrap justify-between">
-    <div class="h5">{content.title}</div>
+    <div class="h5" data-testid="box-dialog-title">{content.title}</div>
     {#if !noclose}
       <button onclick={cancel} class="fd fd-x -m-4 btn-icon text-[24px]" aria-label="Close dialog"
       ></button>
@@ -45,13 +45,14 @@
     class="-mr-4 scrollbar flex max-h-[calc(90vh-96px)] flex-col gap-4 overflow-auto pr-4 sm:-mr-8"
   >
     {#if content.description}
-      <span class="whitespace-pre-wrap">
+      <span class="whitespace-pre-wrap" data-testid="box-dialog-description">
         {content.description}
       </span>
     {/if}
     {#if content.scrollableContent}
       <div
         class="bg-surface-100-800 scrollbar max-h-[60vh] overflow-y-auto rounded border p-2 whitespace-pre-wrap"
+        data-testid="box-dialog-scrollable-content"
       >
         {content.scrollableContent}
       </div>
@@ -59,8 +60,15 @@
     {@render children?.()}
   </div>
   {#if content.onSuccess}
-    <div class="flex w-full flex-col-reverse gap-4 sm:flex-row sm:justify-end">
-      <button onclick={() => cancel()} class="btn preset-filled-surface-50-950 px-4">
+    <div
+      class="flex w-full flex-col-reverse gap-4 sm:flex-row sm:justify-end"
+      data-testid="box-dialog-actions"
+    >
+      <button
+        onclick={() => cancel()}
+        class="btn preset-filled-surface-50-950 px-4"
+        data-testid="btn-dialog-cancel"
+      >
         {content.onCancel?.name ?? 'Cancel'}
       </button>
       <div>

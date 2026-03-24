@@ -61,7 +61,7 @@
         clearStoragePhase = 'error'
         clearStorageError = (e as Error).message
       } else {
-        toastError(e as Error)
+        toastError('Failed to apply configuration')(e as Error)
       }
     }
   }
@@ -154,57 +154,69 @@
 
 {#snippet clearStorageDialog()}
   {#if clearStoragePhase === 'confirm'}
-    <GenericDialog
-      content={{
-        title: 'Clear storage to apply changes?',
-        description:
-          'Storage must be cleared to apply these configuration changes. This will delete all checkpoints.',
-        onSuccess: {
-          name: 'Clear and apply',
-          callback: doClearAndApply,
-          'data-testid': 'button-confirm-clear-storage'
-        },
-        onCancel: {
-          name: 'Back',
-          callback: goBackToConfig
-        }
-      }}
-      danger
-      noclose
-    ></GenericDialog>
-  {:else if clearStoragePhase === 'progress'}
-    <GenericDialog
-      content={{
-        title: 'Applying configuration changes',
-        onSuccess: {
-          name: 'Continue in background',
-          callback: () => {
-            globalDialog.dialog = null
+    <div data-testid="box-clear-storage-confirm">
+      <GenericDialog
+        content={{
+          title: 'Clear storage to apply changes?',
+          description:
+            'Storage must be cleared to apply these configuration changes. This will delete all checkpoints.',
+          onSuccess: {
+            name: 'Clear and apply',
+            callback: doClearAndApply,
+            'data-testid': 'button-confirm-clear-storage'
+          },
+          onCancel: {
+            name: 'Back',
+            callback: goBackToConfig
           }
-        }
-      }}
-    >
-      <div class="flex items-center gap-2">
-        <IconLoader class="h-5 flex-none animate-spin fill-surface-950-50"></IconLoader>
-        <span>{clearStorageProgressMessage}</span>
-      </div>
-    </GenericDialog>
+        }}
+        danger
+        noclose
+      ></GenericDialog>
+    </div>
+  {:else if clearStoragePhase === 'progress'}
+    <div data-testid="box-clear-storage-progress">
+      <GenericDialog
+        content={{
+          title: 'Applying configuration changes',
+          onSuccess: {
+            name: 'Continue in background',
+            callback: () => {
+              globalDialog.dialog = null
+            },
+            'data-testid': 'btn-continue-background'
+          }
+        }}
+      >
+        <div class="flex items-center gap-2">
+          <IconLoader class="h-5 flex-none animate-spin fill-surface-950-50"></IconLoader>
+          <span data-testid="box-clear-storage-progress-message">{clearStorageProgressMessage}</span
+          >
+        </div>
+      </GenericDialog>
+    </div>
   {:else}
-    <GenericDialog
-      content={{
-        title: 'Failed to apply changes',
-        onSuccess: {
-          name: 'Try again',
-          callback: doClearAndApply
-        },
-        onCancel: {
-          name: 'Back',
-          callback: goBackToConfig
-        }
-      }}
-      noclose
-    >
-      <span class="whitespace-pre-wrap text-error-500">{clearStorageError}</span>
-    </GenericDialog>
+    <div data-testid="box-clear-storage-error">
+      <GenericDialog
+        content={{
+          title: 'Failed to apply changes',
+          onSuccess: {
+            name: 'Try again',
+            callback: doClearAndApply,
+            'data-testid': 'btn-try-again'
+          },
+          onCancel: {
+            name: 'Back',
+            callback: goBackToConfig
+          }
+        }}
+        noclose
+      >
+        <span
+          class="whitespace-pre-wrap text-error-500"
+          data-testid="box-clear-storage-error-message">{clearStorageError}</span
+        >
+      </GenericDialog>
+    </div>
   {/if}
 {/snippet}
