@@ -9,13 +9,64 @@ import devtoolsJson from 'vite-plugin-devtools-json'
 import virtual from 'vite-plugin-virtual'
 import { defineConfig, type ViteUserConfigExport } from 'vitest/config'
 import { felderaApiJsonSchemas } from './src/lib/functions/felderaApiJsonSchemas'
+import { svelteCssVirtualModuleFallback } from './src/lib/vite-plugins/svelte-css-virtual-module-fallback'
 
 const snapshotsDir = path.resolve(__dirname, 'playwright-snapshots')
+
+// Deps that vitest browser tests need pre-bundled. With noDiscovery: true
+// (below), only these explicit deps are pre-bundled during tests.
+// If a new test imports a dep that causes "new dependencies optimized"
+// warnings or test failures, add it here.
+const testOptimizeDepsInclude = [
+  '@axa-fr/oidc-client',
+  '@monaco-editor/loader',
+  '@skeletonlabs/skeleton-svelte',
+  '@streamparser/json',
+  '@svelte-bin/clipboard',
+  '@square/svelte-store',
+  'bignumber.js',
+  'dayjs',
+  'flowbite-svelte',
+  'new-github-issue-url',
+  'paneforge',
+  'runed',
+  'sort-on',
+  'svelte-french-toast',
+  'tiny-invariant',
+  'but-unzip',
+  'colorizr',
+  'cookie-storage',
+  'cytoscape-dblclick',
+  'cytoscape-elk',
+  'cytoscape',
+  'd3-format',
+  'dayjs/plugin/duration',
+  'echarts/charts',
+  'echarts/components',
+  'echarts/core',
+  'echarts/renderers',
+  'fancy-ansi',
+  'formsnap',
+  'jwt-decode',
+  'nprogress',
+  'posthog-js',
+  'strip-ansi',
+  'svelte-attr',
+  'svelte-echarts',
+  'sveltekit-superforms',
+  'sveltekit-superforms/adapters',
+  'true-json-bigint',
+  'ts-pattern',
+  'valibot',
+  'virtua/svelte'
+]
 
 // TODO: remove Prettier
 export default defineConfig(async () => {
   return {
     plugins: [
+      // Address vite-pugin-svelte bug; see the implementation for details.
+      svelteCssVirtualModuleFallback(),
       tailwindcss(),
       sveltekit(),
       svg(),
@@ -60,13 +111,19 @@ export default defineConfig(async () => {
     ] as PluginOption[],
     build: { minify: false },
     optimizeDeps: {
-      // Dev server only (not production builds). Rolldown's dep pre-bundling
-      // breaks svelte/internal/client for vitest browser tests.
-      // Exclude svelte internals from dep optimization — rolldown's @__PURE__
+      // Rolldown's dep pre-bundling breaks svelte/internal/client — its @__PURE__
       // inlining can reorder get_first_child() ahead of init_operations(),
       // causing "Cannot read properties of undefined (reading 'call')".
       exclude: ['svelte'],
-      include: ['@svelte-bin/clipboard', 'flowbite-svelte', '@skeletonlabs/skeleton-svelte', 'd3-format', 'tiny-invariant']
+      // During vitest: the dep scan fails on svelte component virtual-module
+      // exports, aborting ALL pre-bundling. entries:[] skips the failing scan;
+      // noDiscovery prevents runtime discovery that triggers flaky mid-test
+      // reloads ("Vite unexpectedly reloaded a test"). All deps used by tests
+      // must be listed in testOptimizeDepsInclude explicitly.
+      // During vite dev: leave defaults so CJS packages get auto-discovered.
+      ...(process.env.VITEST
+        ? { entries: [], noDiscovery: true, include: testOptimizeDepsInclude }
+        : {})
     },
     resolve: {
       // When support-bundle-triage is symlinked into node_modules, vite dereferences

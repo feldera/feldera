@@ -107,7 +107,10 @@
             triagePlugins.forEach((p) => p.triage(bundle, triageResults))
           } catch (error) {
             triageResults = new TriageResults()
-            toast.toastError('Running triage plugins')(error instanceof Error ? error : new Error(String(error)), 10000)
+            toast.toastError('Running triage plugins')(
+              error instanceof Error ? error : new Error(String(error)),
+              10000
+            )
           }
         } else {
           triageResults = new TriageResults()

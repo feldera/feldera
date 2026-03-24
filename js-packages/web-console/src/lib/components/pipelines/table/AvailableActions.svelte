@@ -115,12 +115,12 @@
           ...p,
           status: isPremium.value ? 'Stopping' : 'Stopping'
         }))
-        await waitFor().catch(toastError("Waiting for pipeline to stop"))
+        await waitFor().catch(toastError('Waiting for pipeline to stop'))
       }
       if (pipeline.storageStatus !== 'Cleared') {
         const { waitFor } = await postPipelineAction(pipeline.name, 'clear')
         updatePipeline(pipeline.name, (p) => ({ ...p, storageStatus: 'Clearing' }))
-        await waitFor().catch(toastError("Waiting for pipeline to clear state"))
+        await waitFor().catch(toastError('Waiting for pipeline to clear state'))
       }
       return api.deletePipeline(pipeline.name)
     })

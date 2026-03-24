@@ -57,7 +57,6 @@ export type ProgramStatus = _ProgramStatus
 
 import JSONbig from 'true-json-bigint'
 import { singleton } from '$lib/functions/common/array'
-import { nonNull } from '$lib/functions/common/function'
 import { tuple } from '$lib/functions/common/tuple'
 import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
 import { applyAuthToRequest, handleAuthResponse } from '$lib/services/auth'
