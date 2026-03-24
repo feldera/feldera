@@ -1,21 +1,41 @@
-//! Runtime support for `samply`.
+//! Annotations for Firefox Profiler profiles.
 //!
-//! The [samply] profiler allows the process that it is profiling to indicate
-//! important runtime spans so that they show up in the profile for the thread
-//! or the process.
+//! [Firefox Profiler] can display user-defined annotations for timespans and
+//! events, as well as information about network activity and memory use, but
+//! only if the profiler added those annotations.  The popular [samply]
+//! profiler, however, has only very limited support for adding these
+//! annotations.  This crate provides a way for a process that is being profiled
+//! to record its own annotations and then merge them into profiler output in a
+//! postprocessing step.
 //!
-//! Use [SamplySpan] to emit a span.
+//! # Use
 //!
-//! # Viewing in the Firefox Profiler
+//! This crate can be integrated into an existing profiler workflow.  For
+//! example, the [Feldera incremental compute engine] runs `samply` as a
+//! subprocess, targeting itself.  While `samply` runs, Feldera uses [Capture],
+//! [Span], and [Event] to record annotations.  After `samply` completes,
+//! Feldera finishes the capture to obtain [Annotations], applies them, and then
+//! passes the postprocessed output to the user.  The annotation step is
+//! invisible to the user.
 //!
-//! Spans logged by this module show up in the Marker Chart and Marker Table
-//! tabs for a given thread. They are linked to particular threads and the
-//! profiler will only show them when those threads are selected.
+//! Short of this kind of integration, where a process effectively profiles
+//! itself, there must be some way to enable capturing and saving profile data.
+//! For example, a command-line option or an environment variable could do the
+//! trick.  Once the capture is complete, the process needs to somehow save the
+//! annotations.
 //!
-//! Spans are enabled only when a profile is running.  They have minimal
-//! overhead otherwise.
+//! # Viewing in Firefox Profiler
+//!
+//! Spans and events logged by this module show up in the Marker Chart and
+//! Marker Table tabs for a given thread. They are linked to particular threads
+//! and the profiler will only show them when those threads are selected.
+//!
+//! Spans and events are enabled only when a profile is running.  They have
+//! minimal overhead otherwise.
 //!
 //! [samply]: https://github.com/mstange/samply?tab=readme-ov-file#samply
+//! [Firefox Profiler]: https://profiler.firefox.com/
+//! [Feldera incremental compute engine]: https://feldera.com
 #![warn(missing_docs)]
 use std::{
     borrow::Cow,
@@ -23,7 +43,7 @@ use std::{
     fmt::{Debug, Display},
     io::{Cursor, Read},
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, AtomicI64, Ordering},
     },
     time::Instant,
@@ -97,9 +117,9 @@ impl<'de> Deserialize<'de> for Timestamp {
     }
 }
 
-impl Debug for SamplySpan {
+impl Debug for Span {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SamplySpan")?;
+        write!(f, "Span")?;
         if let Some(inner) = &self.0 {
             write!(f, "({})", &inner.name)?;
         }
@@ -142,23 +162,28 @@ impl SpanInner {
     }
 }
 
-/// A marker span for the [samply] profiler.
+/// Annotates a timespan during a [Capture].
 ///
-/// Constructing and dropping a [SamplySpan], when marker spans are being
-/// captured with [Markers::capture], records the start and end times of the
-/// [SamplySpan] along with a name, category, and tooltip.
+/// Constructing and dropping a [Span], when marker spans are being captured
+/// with [Capture], records the start and end times of the [Span] along with a
+/// name, category, and tooltip.
 ///
-/// `SamplySpan` is for timespans.  Use [SamplyEvent] for point-in-time events.
+/// `Span` is for timespans.  Use [Event] for point-in-time events.
+///
+/// When [Capture] is not active, `Span` has minimal overhead.
 ///
 /// [samply]: https://github.com/mstange/samply?tab=readme-ov-file#samply
-/// [module documentation]: crate::samply
-pub struct SamplySpan(Option<SpanInner>);
+pub struct Span(Option<SpanInner>);
 
-impl SamplySpan {
-    /// Constructs a new [SamplySpan] with the given name.  When the constructed
+impl Span {
+    /// The number of bytes of memory used during capture to record a [Span] or
+    /// [Event].
+    pub const BYTES: usize = std::mem::size_of::<Marker>();
+
+    /// Constructs a new [Span] with the given name.  When the constructed
     /// span is dropped, it is automatically recorded.
     ///
-    /// [SamplySpan] does nothing when markers are not being captured.  A span
+    /// [Span] does nothing when markers are not being captured.  A span
     /// will be recorded in a profile only if markers were being captured both
     /// when it was created and when it was dropped.
     ///
@@ -168,7 +193,7 @@ impl SamplySpan {
     /// horizontal timeline (unless that would cause overlaps).
     #[must_use]
     pub fn new(name: &'static str) -> Self {
-        Self(markers_enabled().then(|| SpanInner::new(name)))
+        Self(Capture::is_active().then(|| SpanInner::new(name)))
     }
 
     /// Adds `category` to this span.
@@ -191,7 +216,7 @@ impl SamplySpan {
     /// timeline (often truncated) and on hover, and as "details" in the marker
     /// table view.
     ///
-    /// `tooltip` is only evaluated if samply is running.
+    /// `tooltip` is only evaluated if capturing is active.
     #[must_use]
     pub fn with_tooltip<F>(mut self, tooltip: F) -> Self
     where
@@ -204,7 +229,7 @@ impl SamplySpan {
     }
 
     /// Sets the starting time for this span to `start`.  The default starting
-    /// time is when the [SamplySpan] was constructed, so this is only useful if
+    /// time is when the [Span] was constructed, so this is only useful if
     /// it's easier to create the span just before recording it.
     #[must_use]
     pub fn with_start(mut self, start: Instant) -> Self {
@@ -214,7 +239,7 @@ impl SamplySpan {
         self
     }
 
-    /// Calls `f` and records the span, returning whatever `f` returned.
+    /// Calls `f` and records the span.  Returns whatever `f` returned.
     pub fn in_scope<F, T>(self, f: F) -> T
     where
         F: FnOnce() -> T,
@@ -226,9 +251,14 @@ impl SamplySpan {
     pub fn record(self) {
         // [Drop] records the span.
     }
+
+    /// Consumes the span without recording it.
+    pub fn cancel(mut self) {
+        let _ = self.0.take();
+    }
 }
 
-impl Drop for SamplySpan {
+impl Drop for Span {
     fn drop(&mut self) {
         if let Some(inner) = self.0.take() {
             inner.record(true)
@@ -236,21 +266,23 @@ impl Drop for SamplySpan {
     }
 }
 
-/// A marker event for the [samply] profiler.
+/// Annotates an event during a [Capture].
 ///
-/// When [Markers::capture] is running, use this type to record an event along
+/// When a [Capture] is running, use this type to record an event along
 /// with a name, category, and tooltip.
 ///
-/// An event happens at a point in time; use [SamplySpan] to record a timespan.
+/// An event happens at a point in time; use [Span] to record a timespan.
+///
+/// When [Capture] is not active, `Event` has minimal overhead.
 ///
 /// [samply]: https://github.com/mstange/samply?tab=readme-ov-file#samply
-/// [module documentation]: crate::samply
-pub struct SamplyEvent(Option<SpanInner>);
+/// [module documentation]: crate
+pub struct Event(Option<SpanInner>);
 
-impl SamplyEvent {
-    /// Constructs a new [SamplyEvent] with the given name.
+impl Event {
+    /// Constructs a new [Event] with the given name.
     ///
-    /// [SamplyEvent] does nothing when markers are not being captured.
+    /// [Event] does nothing when markers are not being captured.
     ///
     /// The name should ordinarily be a short static string indicating what the
     /// event did.  The Firefox Profiler's marker chart view shows all the
@@ -258,7 +290,7 @@ impl SamplyEvent {
     /// horizontal timeline (unless that would cause overlaps).
     #[must_use]
     pub fn new(name: &'static str) -> Self {
-        Self(markers_enabled().then(|| SpanInner::new(name)))
+        Self(Capture::is_active().then(|| SpanInner::new(name)))
     }
 
     /// Adds `category` to this event.
@@ -281,7 +313,7 @@ impl SamplyEvent {
     /// timeline (often truncated) and on hover, and as "details" in the marker
     /// table view.
     ///
-    /// `tooltip` is only evaluated if samply is running.
+    /// `tooltip` is only evaluated if capturing is active.
     #[must_use]
     pub fn with_tooltip<F>(mut self, tooltip: F) -> Self
     where
@@ -301,74 +333,228 @@ impl SamplyEvent {
     }
 }
 
-/// Profile marker annotation data.
-pub struct Markers(HashMap<usize, (Option<String>, Vec<Vec<Marker>>)>);
+/// Options for capturing profile annotations.
+#[derive(Default, Clone, Debug)]
+pub struct CaptureOptions {
+    memory_limit: Option<usize>,
+}
 
-impl Markers {
-    /// Calls `f` while capturing profile marker annotation data, and returns
-    /// the captured data.  If `memory_limit` is supplied, then no more than
-    /// approximately that many bytes of memory will be used for markers.
+impl CaptureOptions {
+    /// Creates new capture parameters with default settings.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets a limit on the amount of memory that can be used for recording
+    /// captured spans to `memory_limit`, in bytes.  If `memory_limit` is
+    /// `None`, then there will be no limit (which is also the default).
     ///
-    /// Only one call to this function can run at a time; any given call will
-    /// block others until it completes.
-    pub async fn capture<F, E>(memory_limit: Option<usize>, f: F) -> Result<Self, E>
-    where
-        F: Future<Output = Result<(), E>>,
-    {
-        static EXCLUSIVE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-        let _guard = EXCLUSIVE.lock().await;
+    /// The limit is honored approximately.  Recording a span takes
+    /// [Span::BYTES] bytes.
+    pub fn with_memory_limit(self, memory_limit: Option<usize>) -> Self {
+        Self {
+            memory_limit,
+            ..self
+        }
+    }
 
-        if let Some(memory_limit) = memory_limit {
+    /// Starts capturing profile annotations, returning a [Capture] that can be
+    /// used to finish or abort captures.  Dropping the [Capture] will also
+    /// abort capturing.
+    ///
+    /// For use in asynchronous contexts.  If a capture is already in progress,
+    /// this function will wait for it to complete before starting a new one.
+    pub async fn start(self) -> Capture {
+        Capture::new(self, CAPTURE_MUTEX.lock().await)
+    }
+
+    /// Starts capturing profile annotations, returning a [Capture] that can be
+    /// used to finish or abort captures.  Dropping the [Capture] will also
+    /// abort capturing.
+    ///
+    /// For use in blocking contexts.  If a capture is already in progress, this
+    /// function will wait for it to complete before starting a new one.
+    ///
+    /// # Panic
+    ///
+    /// Panics if called from an asynchronous execution context.
+    pub fn blocking_start(self) -> Capture {
+        Capture::new(self, CAPTURE_MUTEX.blocking_lock())
+    }
+
+    /// Starts capturing profile annotations, returning a [Capture] that can be
+    /// used to finish or abort captures.  Dropping the [Capture] will also
+    /// abort capturing.
+    ///
+    /// If a capture is already in progress, this function returns an error
+    /// instead of waiting.
+    pub fn try_start(self) -> Result<Capture, Self> {
+        let guard = match CAPTURE_MUTEX.try_lock() {
+            Ok(guard) => guard,
+            Err(_) => return Err(self),
+        };
+        Ok(Capture::new(self, guard))
+    }
+}
+
+static CAPTURE_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// An in-progress capture of profile annotations.
+///
+/// To start a capture, use [CaptureOptions::start],
+/// [CaptureOptions::blocking_start], or [CaptureOptions::try_start].
+///
+/// Only one `Capture` may exist at one time.
+pub struct Capture {
+    _guard: tokio::sync::MutexGuard<'static, ()>,
+    block_limit: i64,
+}
+
+impl Capture {
+    fn new(params: CaptureOptions, guard: tokio::sync::MutexGuard<'static, ()>) -> Self {
+        if let Some(memory_limit) = params.memory_limit {
             tracing::info!(
                 "marker capture limited to {}",
                 HumanBytes::from(memory_limit)
             );
         }
-        let initial_blocks =
-            memory_limit.map_or(i64::MAX, |memory_limit| (memory_limit / BLOCK_BYTES) as i64);
-        FREE_BLOCKS.store(initial_blocks, Ordering::Relaxed);
-        ENABLE_MARKERS.store(true, Ordering::Release);
-        let result = f.await;
-        ENABLE_MARKERS.store(false, Ordering::Release);
+        let block_limit = params.memory_limit.map_or(i64::MAX, |memory_limit| {
+            (memory_limit / BYTES_PER_BLOCK) as i64
+        });
+        FREE_BLOCKS.store(block_limit, Ordering::Relaxed);
+        CAPTURING.store(true, Ordering::Release);
+        Self {
+            block_limit,
+            _guard: guard,
+        }
+    }
+
+    /// Finishes recording profile annotations and returns what was recorded.
+    pub fn finish(self) -> Annotations {
+        CAPTURING.store(false, Ordering::Release);
         let remaining_blocks = FREE_BLOCKS.load(Ordering::Relaxed);
         if remaining_blocks <= 0 {
             tracing::info!("marker capture exceeded the limit");
         } else {
-            let used_bytes = (initial_blocks - remaining_blocks) as usize * BLOCK_BYTES;
+            let used_bytes = (self.block_limit - remaining_blocks) as usize * BYTES_PER_BLOCK;
             tracing::info!("marker capture used {}", HumanBytes::from(used_bytes));
         }
 
-        result?;
         let all_threads = ALL_THREAD_MARKERS.lock().unwrap();
         let mut markers = HashMap::new();
         for thread in &*all_threads {
             markers.insert(thread.tid, (thread.name.clone(), thread.queue.take()));
         }
-        Ok(Self(markers))
+        Annotations(markers)
     }
 
-    /// Annotates `profile`, which must be the gzipped `profile.json.gz` output
-    /// by samply, with our annotations, and returns the annotated, gzipped
+    /// Aborts recording profile annotations.
+    ///
+    /// This is equivalent to dropping the `Capture` object.
+    pub fn abort(self) {
+        tracing::info!("aborting profile annotation capture");
+    }
+
+    /// Returns true if a profile annotation capture is ongoing.
+    ///
+    /// This only reports the status of annotation captures.  It does not
+    /// indicate whether `samply` or `perf` or another profiler is currently
+    /// capturing profile data for this process (this crate does not provide a
+    /// way to do that).
+    pub fn is_active() -> bool {
+        CAPTURING.load(Ordering::Acquire)
+    }
+}
+
+impl Drop for Capture {
+    fn drop(&mut self) {
+        // Might already have been done in [Capture::finish] but it doesn't hurt
+        // to do it again (since the lock is still held).
+        CAPTURING.store(false, Ordering::Release);
+    }
+}
+
+/// Error returned by [Annotations::apply].
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    /// Error decompressing the profile.
+    #[error("Error decompressing profile ")]
+    GzDecoderError(#[from] std::io::Error),
+
+    /// Error parsing the profile.
+    #[error("Error parsing profile")]
+    SerdeError(#[from] serde_json_path_to_error::Error),
+}
+
+/// Options for applying annotations.
+#[derive(Default, Clone, Debug)]
+pub struct AnnotationOptions {
+    product: Option<String>,
+    os_cpu: Option<String>,
+}
+
+impl AnnotationOptions {
+    /// Constructs a default set of options.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Overrides the product string in the profile.  `None` uses the default,
+    /// which is `PID <pid>`.
+    ///
+    /// The Firefox Profiler prominently displays the product and OS-CPU string
+    /// together in the form `<product> - <OS-CPU>`.
+    pub fn with_product(self, product: Option<impl Into<String>>) -> Self {
+        Self {
+            product: product.map(|s| s.into()),
+            ..self
+        }
+    }
+
+    /// Overrides the OS and CPU string in the profile.  `None` uses the
+    /// default, which looks like `Ubuntu 24.0.04.4 LTS`.
+    ///
+    /// The Firefox Profiler prominently displays the product and OS-CPU string
+    /// together in the form `<product> - <OS-CPU>`.
+    pub fn with_os_cpu(self, os_cpu: Option<impl Into<String>>) -> Self {
+        Self {
+            os_cpu: os_cpu.map(|s| s.into()),
+            ..self
+        }
+    }
+}
+
+/// Profile annotation data.
+///
+/// Obtained from [Capture::finish].
+pub struct Annotations(HashMap<usize, (Option<String>, Blocks)>);
+
+impl Annotations {
+    /// Applies these annotations with the given `options` to `profile`, which
+    /// must be the `profile.json` output by samply, and returns the annotated
     /// profile.
     ///
-    /// `product` and `os_cpu` can optionally override the values in the
-    /// profile.  The Firefox Profiler shows these for identification purposes
-    /// as `product - os_cpu`.  If not overridden, the default is something like
-    /// `PID 14 - Ubuntu 24.0.04.4 LTS`.
-    pub fn annotate_profile(
-        &self,
-        profile: &[u8],
-        product: Option<&str>,
-        os_cpu: Option<&str>,
-    ) -> anyhow::Result<Vec<u8>> {
-        let mut json = Vec::new();
-        GzDecoder::new(profile).read_to_end(&mut json)?;
-        let mut profile = serde_json_path_to_error::from_slice::<Profile>(&json)?;
-        if let Some(product) = product {
-            profile.meta.product = product.into();
+    /// The input may be gzipped or already decompressed.  The output will be in
+    /// the same form.
+    pub fn apply(&self, profile: &[u8], options: AnnotationOptions) -> Result<Vec<u8>, Error> {
+        // Decompress `profile` if it starts with the GZIP magic number,
+        // otherwise assume it has already been decompressed.
+        let mut buffer = Vec::new();
+        let json = if profile.starts_with(&[0x1f, 0x8b]) {
+            GzDecoder::new(profile).read_to_end(&mut buffer)?;
+            &buffer
+        } else {
+            profile
+        };
+        let gzip = !buffer.is_empty();
+
+        // Deserialize.
+        let mut profile = serde_json_path_to_error::from_slice::<Profile>(json)?;
+        if let Some(product) = options.product {
+            profile.meta.product = product;
         }
-        if let Some(os_cpu) = os_cpu {
-            profile.meta.os_cpu = os_cpu.into();
+        if let Some(os_cpu) = options.os_cpu {
+            profile.meta.os_cpu = os_cpu;
         }
         profile.meta.marker_schema.push(json!({
             "name": "FelderaMarker",
@@ -414,7 +600,7 @@ impl Markers {
         for (category, color) in self
             .0
             .values()
-            .flat_map(|(_, markers)| markers.iter().flatten())
+            .flat_map(|(_, markers)| markers.iter())
             .map(|marker| marker.category)
             .collect::<HashSet<_>>()
             .into_iter()
@@ -437,7 +623,7 @@ impl Markers {
                 if let Some(name) = name {
                     thread.name = Some(name.clone());
                 }
-                for marker in markers.iter().flatten() {
+                for marker in markers.iter() {
                     thread.markers.length += 1;
                     thread.markers.category.push(categories[marker.category]);
                     thread.markers.data.push(ProfileMarkerData {
@@ -454,13 +640,19 @@ impl Markers {
                 }
             }
         }
-        let mut output = Vec::new();
-        GzEncoder::new(
-            Cursor::new(serde_json::to_vec(&profile).unwrap()),
-            Compression::fast(),
-        )
-        .read_to_end(&mut output)
-        .unwrap();
+
+        // Produce the output, gzipping it if the input was gzipped.
+        let output = serde_json::to_vec(&profile).unwrap();
+        let output = if gzip {
+            let mut gzipped_output = Vec::new();
+            GzEncoder::new(Cursor::new(output), Compression::fast())
+                .read_to_end(&mut gzipped_output)
+                .unwrap();
+            gzipped_output
+        } else {
+            output
+        };
+
         return Ok(output);
 
         #[derive(Debug, Serialize, Deserialize)]
@@ -543,12 +735,8 @@ impl Markers {
     }
 }
 
-/// Whether markers are currently being captured.
-static ENABLE_MARKERS: AtomicBool = AtomicBool::new(false);
-
-fn markers_enabled() -> bool {
-    ENABLE_MARKERS.load(Ordering::Acquire)
-}
+/// Whether capturing is active.
+static CAPTURING: AtomicBool = AtomicBool::new(false);
 
 /// A single marker as captured.
 struct Marker {
@@ -580,7 +768,7 @@ struct ThreadMarkers {
     /// The thread's markers.
     ///
     /// The thread itself records markers by pushing them onto the queue.
-    /// [Markers::annotate_profile] pops them all off.
+    /// [Capture::finish] pops them all off.
     queue: Arc<Queue>,
 }
 
@@ -603,18 +791,57 @@ impl ThreadMarkers {
 static ALL_THREAD_MARKERS: std::sync::Mutex<Vec<ThreadMarkers>> = std::sync::Mutex::new(Vec::new());
 
 static FREE_BLOCKS: AtomicI64 = AtomicI64::new(0);
-const BLOCK_CAPACITY: usize = 32;
-const BLOCK_BYTES: usize = BLOCK_CAPACITY * MARKER_BYTES;
+const MARKERS_PER_BLOCK: usize = 32;
+const BYTES_PER_BLOCK: usize = MARKERS_PER_BLOCK * Span::BYTES;
 
-/// The size of a captured marker, in bytes, for calculating the memory limit to
-/// pass to [Markers::capture].
-pub const MARKER_BYTES: usize = std::mem::size_of::<Marker>();
+struct Block(Vec<Marker>);
+impl Block {
+    fn new(marker: Marker) -> Self {
+        let mut markers = Vec::with_capacity(MARKERS_PER_BLOCK);
+        markers.push(marker);
+        Self(markers)
+    }
+    fn is_full(&self) -> bool {
+        self.0.len() >= self.0.capacity()
+    }
+    fn push(&mut self, marker: Marker) {
+        self.0.push(marker);
+    }
+}
 
-struct Queue(Mutex<Vec<Vec<Marker>>>);
+struct Blocks(Vec<Block>);
+
+impl Default for Blocks {
+    fn default() -> Self {
+        Self(Vec::with_capacity(32))
+    }
+}
+
+impl Blocks {
+    fn push(&mut self, marker: Marker) {
+        if let Some(block) = self.0.last_mut()
+            && !block.is_full()
+        {
+            block.push(marker);
+        } else {
+            match FREE_BLOCKS.fetch_sub(1, Ordering::Relaxed) {
+                1.. => self.0.push(Block::new(marker)),
+                0 => warn!("marker capture space exhausted"),
+                _ => (),
+            }
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &Marker> {
+        self.0.iter().flat_map(|block| block.0.iter())
+    }
+}
+
+struct Queue(std::sync::Mutex<Blocks>);
 
 impl Queue {
     fn new() -> Arc<Self> {
-        let queue = Arc::new(Self(Mutex::new(Vec::with_capacity(32))));
+        let queue = Arc::new(Self(Default::default()));
         ALL_THREAD_MARKERS
             .lock()
             .unwrap()
@@ -623,25 +850,10 @@ impl Queue {
     }
 
     fn push(&self, marker: Marker) {
-        let mut queue = self.0.lock().unwrap();
-        if let Some(block) = queue.last_mut()
-            && block.len() < block.capacity()
-        {
-            block.push(marker);
-        } else {
-            match FREE_BLOCKS.fetch_sub(1, Ordering::Relaxed) {
-                1.. => {
-                    let mut block = Vec::with_capacity(BLOCK_CAPACITY);
-                    block.push(marker);
-                    queue.push(block);
-                }
-                0 => warn!("marker capture space exhausted"),
-                _ => (),
-            }
-        }
+        self.0.lock().unwrap().push(marker);
     }
 
-    fn take(&self) -> Vec<Vec<Marker>> {
+    fn take(&self) -> Blocks {
         std::mem::take(&mut *self.0.lock().unwrap())
     }
 }

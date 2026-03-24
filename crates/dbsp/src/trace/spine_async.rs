@@ -25,7 +25,6 @@ use crate::{
         runtime::{TOKIO_BUFFER_CACHE, TOKIO_WORKER_INDEX},
     },
     dynamic::{DynVec, Factory, Weight},
-    samply::SamplySpan,
     storage::{
         buffer_cache::{BufferCache, CacheStats},
         filter_stats::FilterStats,
@@ -46,6 +45,7 @@ use crate::storage::file::{Deserializer, to_bytes};
 use crate::trace::CommittedSpine;
 use enum_map::EnumMap;
 use feldera_buffer_cache::ThreadType;
+use feldera_samply::Span;
 use feldera_storage::{
     FileCommitter, StoragePath,
     fbuf::slab::{FBufSlabs, TOKIO_FBUF_SLABS},
@@ -408,7 +408,7 @@ where
         let post_len = new_batch.len();
         self.spine_stats
             .report_merge(pre_len, post_len, cache_stats);
-        SamplySpan::new(LEVEL_NAMES[level])
+        Span::new(LEVEL_NAMES[level])
             .with_category("Spine")
             .with_start(start)
             .with_tooltip(|| {
@@ -618,7 +618,7 @@ where
             state.spine_stats.backpressure_wait += start.elapsed();
             COMPACTION_STALL_TIME_NANOSECONDS
                 .fetch_add(start.elapsed().as_nanos() as u64, Ordering::Relaxed);
-            SamplySpan::new("backpressure-wait")
+            Span::new("backpressure-wait")
                 .with_category("Spine")
                 .with_start(start)
                 .record();
@@ -1664,7 +1664,7 @@ where
             let batch = if batch.location() == BatchLocation::Memory
                 && pick_insert_destination(&batch) == BatchLocation::Storage
             {
-                let _span = SamplySpan::new("eager spill")
+                let _span = Span::new("eager spill")
                     .with_category("Spine")
                     .with_tooltip(|| {
                         format!(

@@ -58,6 +58,7 @@ feldera-types = { workspace = true }
 feldera-adapterlib = { workspace = true }
 feldera-datagen = { workspace = true }
 feldera-observability = { workspace = true }
+feldera-samply = { workspace = true }
 feldera-storage = { workspace = true }
 feldera-iceberg = { workspace = true, optional = true }
 awc = { workspace = true, features = [

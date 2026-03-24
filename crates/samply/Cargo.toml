@@ -1,0 +1,30 @@
+[package]
+name = "feldera-samply"
+description = "Enhance profiles produced using samply"
+categories = ["development-tools::profiling", "command-line-utilities"]
+authors = { workspace = true }
+version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+keywords = { workspace = true }
+readme = { workspace = true }
+rust-version = { workspace = true }
+edition = "2024"
+
+[features]
+
+[dependencies]
+flate2 = { workspace = true }
+libc = { workspace = true }
+nix = { workspace = true, features = ["process", "time"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+serde_json_path_to_error = { workspace = true }
+size-of = { workspace = true }
+thiserror = { workspace = true }
+thread-id = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+tracing = { workspace = true }
+
+[dev-dependencies]

@@ -3762,6 +3762,7 @@ dependencies = [
  "feldera-buffer-cache",
  "feldera-ir",
  "feldera-macros",
+ "feldera-samply",
  "feldera-size-of",
  "feldera-storage",
  "feldera-types",
@@ -3884,6 +3885,7 @@ dependencies = [
  "feldera-ir",
  "feldera-macros",
  "feldera-observability",
+ "feldera-samply",
  "feldera-size-of",
  "feldera-sqllib",
  "feldera-storage",
@@ -5069,6 +5071,23 @@ dependencies = [
  "serde_json",
  "syn 2.0.117",
  "uuid",
+]
+
+[[package]]
+name = "feldera-samply"
+version = "0.288.0"
+dependencies = [
+ "feldera-size-of",
+ "flate2",
+ "libc",
+ "nix 0.29.0",
+ "serde",
+ "serde_json",
+ "serde_json_path_to_error",
+ "thiserror 2.0.17",
+ "thread-id",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

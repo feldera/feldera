@@ -46,13 +46,14 @@ use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use cpu_time::ProcessTime;
 use crossbeam::sync::Unparker;
-use dbsp::{samply::SamplyEvent, utils::process_rss_bytes};
+use dbsp::utils::process_rss_bytes;
 use feldera_adapterlib::{
     errors::journal::ControllerError,
     format::{BufferSize, ParseError},
     metrics::ConnectorMetrics,
     transport::{InputReader, Resume, Step, Watermark},
 };
+use feldera_samply::Event;
 use feldera_storage::histogram::SlidingHistogram;
 use feldera_types::{
     adapter_stats::{
@@ -2137,7 +2138,7 @@ impl InputEndpointStatus {
     ) {
         let num_records = step_results.amt.records as u64;
         let num_bytes = step_results.amt.bytes as u64;
-        SamplyEvent::new("input")
+        Event::new("input")
             .with_category("Step")
             .with_tooltip(|| {
                 format!(

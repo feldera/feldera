@@ -59,7 +59,6 @@ use dbsp::circuit::metrics::{
 };
 use dbsp::circuit::tokio::TOKIO;
 use dbsp::circuit::{CheckpointCommitter, CircuitStorageConfig, Mode};
-use dbsp::samply::{MARKER_BYTES, Markers, SamplySpan};
 use dbsp::storage::backend::{StorageBackend, StoragePath};
 use dbsp::utils::process_rss_bytes;
 use dbsp::{
@@ -73,6 +72,7 @@ use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::transport::{CommandHandler, InputReader, Resume, Watermark};
 use feldera_ir::LirCircuit;
+use feldera_samply::{AnnotationOptions, CaptureOptions, Span};
 use feldera_storage::fbuf::slab::FBufSlabsStats;
 use feldera_storage::histogram::{ExponentialHistogram, ExponentialHistogramSnapshot};
 use feldera_storage::metrics::{
@@ -1085,37 +1085,39 @@ impl Controller {
         // it to allow for other threads.
         let markers_per_second = self.layout().local_workers().len().saturating_mul(2000 * 2);
         let memory_limit = markers_per_second
-            .saturating_mul(MARKER_BYTES)
+            .saturating_mul(Span::BYTES)
             .saturating_mul(duration as usize);
 
-        let markers = Markers::capture(Some(memory_limit),
-            async {
-            let mut child = cmd
-                .args([
-                    "record",
-                    "-p",
-                    &std::process::id().to_string(),
-                    "-o",
-                    profile_file,
-                    "--save-only",
-                    "--presymbolicate",
-                ])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .spawn()
-                .context("failed to spawn samply process")?;
+        let capture = CaptureOptions::new()
+            .with_memory_limit(Some(memory_limit))
+            .start()
+            .await;
+        let mut child = cmd
+            .args([
+                "record",
+                "-p",
+                &std::process::id().to_string(),
+                "-o",
+                profile_file,
+                "--save-only",
+                "--presymbolicate",
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .context("failed to spawn samply process")?;
 
-            let child_pid = child.id().context("failed to get samply process id")?;
+        let child_pid = child.id().context("failed to get samply process id")?;
 
-            // Workaround as samply's `--duration` flag doesn't seem to work.
-            // See: https://github.com/mstange/samply/issues/716
-            //
-            // As the duration flag doesn't work, we have to send a SIGINT to
-            // tell samply to stop recording.
-            //
-            // If samply returns before the specified duration, it is likely due
-            // to an error, and in such cases, we want to report it immediately.
-            tokio::select! {
+        // Workaround as samply's `--duration` flag doesn't seem to work.
+        // See: https://github.com/mstange/samply/issues/716
+        //
+        // As the duration flag doesn't work, we have to send a SIGINT to
+        // tell samply to stop recording.
+        //
+        // If samply returns before the specified duration, it is likely due
+        // to an error, and in such cases, we want to report it immediately.
+        tokio::select! {
                 _ = child.wait() => {}
                 _ = tokio::time::sleep(Duration::from_secs(duration)) => {
                     // Send SIGINT to the samply process to stop recording.
@@ -1125,23 +1127,21 @@ impl Controller {
                     )
                         .context("failed to send SIGINT to samply process")?;
                 }
-            }
+        }
+        let annotations = capture.finish();
+        let output = child
+            .wait_with_output()
+            .await
+            .context("failed when waiting for samply process")?;
 
-            let output = child
-                .wait_with_output()
-                .await
-                .context("failed when waiting for samply process")?;
-
-            if !output.status.success() {
-                anyhow::bail!(
-                    "samply process failed with status: `{}`, samply stdout: `{}`, samply stderr: `{}`",
-                    output.status,
-                    String::from_utf8_lossy(&output.stdout).trim(),
-                    String::from_utf8_lossy(&output.stderr).trim(),
-                );
-            }
-            Ok(())
-        }).await?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "samply process failed with status: `{}`, samply stdout: `{}`, samply stderr: `{}`",
+                output.status,
+                String::from_utf8_lossy(&output.stdout).trim(),
+                String::from_utf8_lossy(&output.stderr).trim(),
+            );
+        }
 
         let buf = tokio::fs::read(profile_file)
             .await
@@ -1153,11 +1153,10 @@ impl Controller {
             );
         }
 
-        let output = match markers.annotate_profile(
-            &buf,
-            self.inner.status.pipeline_config.given_name.as_deref(),
-            os_cpu,
-        ) {
+        let options = AnnotationOptions::new()
+            .with_product(self.inner.status.pipeline_config.given_name.as_ref())
+            .with_os_cpu(os_cpu);
+        let output = match annotations.apply(&buf, options) {
             Ok(output) => output,
             Err(error) => {
                 warn!("profile annotation failed ({error})");
@@ -2230,7 +2229,7 @@ enum RunningCheckpointSync {
 
 impl RunningCheckpointSync {
     fn new(circuit: &mut CircuitThread, uuid: uuid::Uuid) -> Self {
-        SamplySpan::new("fg-checkpoint-sync")
+        Span::new("fg-checkpoint-sync")
             .in_scope(|| Self::start(circuit, uuid))
             .unwrap_or_else(|e| Self::Error(uuid, e))
     }
@@ -2288,7 +2287,7 @@ impl RunningCheckpointSync {
         let join_handle = std::thread::Builder::new()
             .name(String::from("feldera-checkpoint-sync"))
             .spawn(move || {
-                let result = SamplySpan::new("bg-checkpoint-sync").in_scope(|| thread.run());
+                let result = Span::new("bg-checkpoint-sync").in_scope(|| thread.run());
                 let _ = sender.send(result);
                 unparker.unpark();
             })
@@ -2882,7 +2881,7 @@ impl CircuitThread {
 
         self.step_sender
             .send_replace(StepStatus::new(self.step, StepAction::Step));
-        let total_consumed = match SamplySpan::new("input")
+        let total_consumed = match Span::new("input")
             .with_category("Step")
             .with_tooltip(|| format!("supply input before step {}", self.step + 1))
             .in_scope(|| self.input_step())?
@@ -2911,7 +2910,7 @@ impl CircuitThread {
         // query results always reflect all data that we have reported
         // processing; otherwise, there is a race for any code that runs a query
         // as soon as input has been processed.
-        SamplySpan::new("update")
+        Span::new("update")
             .with_category("Step")
             .with_tooltip(|| format!("update ad-hoc tables after step {}", self.step))
             .in_scope(|| self.update_snapshot());
@@ -2980,7 +2979,7 @@ impl CircuitThread {
         if transaction_state != TransactionState::None {
             debug!("circuit thread: calling 'circuit.step'");
 
-            let committed = SamplySpan::new("step")
+            let committed = Span::new("step")
                 .with_category("Step")
                 .with_tooltip(|| format!("step {}", self.step))
                 .in_scope(|| self.circuit.step())
@@ -3030,7 +3029,7 @@ impl CircuitThread {
                         "Transaction {tid}: Finished committing {n} records in {:.1} seconds",
                         duration.as_secs_f64()
                     );
-                    SamplySpan::new("commit")
+                    Span::new("commit")
                         .with_category("Transaction")
                         .with_tooltip(|| format!("transaction {tid} committed {n} records"))
                         .with_start(start)
@@ -3052,7 +3051,7 @@ impl CircuitThread {
         } else {
             debug!("circuit thread: calling 'circuit.transaction'");
             self.controller.increment_transaction_number();
-            SamplySpan::new("step")
+            Span::new("step")
                 .with_category("Step")
                 .with_tooltip(|| format!("step {}", self.step))
                 .in_scope(|| self.circuit.transaction())
@@ -7055,7 +7054,7 @@ impl ControllerInner {
                         "Transaction {tid}: Starting commit of {n} records after {:.1} seconds",
                         duration.as_secs_f64()
                     );
-                    SamplySpan::new("ingested")
+                    Span::new("ingested")
                         .with_category("Transaction")
                         .with_tooltip(|| format!("transaction {tid} ingested {n} records"))
                         .with_start(start)
@@ -7428,7 +7427,7 @@ impl RunningCheckpoint {
     /// can't checkpoint) or after a long time (e.g. if it takes a long time to
     /// write out the checkpoint).
     fn new(circuit: &mut CircuitThread) -> Self {
-        SamplySpan::new("fg-checkpoint")
+        Span::new("fg-checkpoint")
             .in_scope(|| Self::start(circuit))
             .unwrap_or_else(Self::Error)
     }
@@ -7518,7 +7517,7 @@ impl RunningCheckpoint {
             input_statistics,
             output_statistics,
         };
-        SamplySpan::new("blocking")
+        Span::new("blocking")
             .with_category("Checkpoint")
             .with_start(start_checkpoint)
             .with_tooltip(|| {
@@ -7541,7 +7540,7 @@ impl RunningCheckpoint {
         let join_handle = std::thread::Builder::new()
             .name(String::from("feldera-checkpoint"))
             .spawn(move || {
-                let result = SamplySpan::new("bg-checkpoint").in_scope(|| thread.run());
+                let result = Span::new("bg-checkpoint").in_scope(|| thread.run());
                 let _ = sender.send(result);
                 unparker.unpark();
             })
@@ -7585,8 +7584,7 @@ impl RunningCheckpoint {
                 Ok(result) => {
                     join_handle.join().unwrap();
                     Some(result.and_then(|checkpoint| {
-                        SamplySpan::new("end-checkpoint")
-                            .in_scope(|| Self::finish(checkpoint, circuit))
+                        Span::new("end-checkpoint").in_scope(|| Self::finish(checkpoint, circuit))
                     }))
                 }
                 Err(TryRecvError::Empty) => {
@@ -7683,7 +7681,7 @@ impl CheckpointThread {
             .write(&*self.storage, &StoragePath::from(STATE_FILE))?;
 
         // Record statistics.
-        SamplySpan::new("runtime")
+        Span::new("runtime")
             .with_category("Checkpoint")
             .with_tooltip(|| format!("Wrote {} checkpoint", HumanBytes::from(bytes_written)))
             .with_start(self.start_checkpoint)

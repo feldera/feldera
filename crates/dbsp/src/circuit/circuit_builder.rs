@@ -44,7 +44,6 @@ use crate::{
     circuit_cache_key,
     ir::LABEL_MIR_NODE_ID,
     operator::dynamic::balance::{Balancer, BalancerError, BalancerHint, PartitioningPolicy},
-    samply::SamplySpan,
     time::{Timestamp, UnitTimestamp},
 };
 #[cfg(doc)]
@@ -57,6 +56,7 @@ use crate::{
 use anyhow::Error as AnyError;
 use dyn_clone::{DynClone, clone_box};
 use feldera_ir::{LirCircuit, LirNodeId};
+use feldera_samply::Span;
 use feldera_storage::{FileCommitter, StoragePath};
 use serde::{Deserialize, Serialize, Serializer, de::DeserializeOwned};
 use std::{
@@ -3631,7 +3631,7 @@ where
             circuit.nodes.borrow()[id.0].borrow().as_ref(),
         ));
 
-        let span = SamplySpan::new("eval")
+        let span = Span::new("eval")
             .with_category("Operator")
             .with_tooltip(|| {
                 let nodes = circuit.nodes.borrow();
@@ -7007,7 +7007,7 @@ impl CircuitHandle {
 
         self.circuit
             .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
-                let _span = SamplySpan::new("operator")
+                let _span = Span::new("operator")
                     .with_category("Checkpoint")
                     .with_tooltip(|| format!("{} {}", node.name(), node.global_id()));
                 DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS
