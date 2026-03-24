@@ -24,7 +24,11 @@ def cli():
 @click.option("--model", help="LLM model to use (overrides FELDERIZE_MODEL env var)")
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
-@click.option("--force-docs", is_flag=True, help="Include docs on the first pass instead of only as fallback")
+@click.option(
+    "--force-docs",
+    is_flag=True,
+    help="Include docs on the first pass instead of only as fallback",
+)
 @click.option(
     "--verbose", is_flag=True, help="Log SQL submitted to validator at each attempt"
 )
@@ -76,7 +80,11 @@ def translate(
 @click.option("--model", help="LLM model to use (overrides FELDERIZE_MODEL env var)")
 @click.option("--json-output", is_flag=True, help="Output as JSON")
 @click.option("--no-docs", is_flag=True, help="Disable Feldera doc inclusion in prompt")
-@click.option("--force-docs", is_flag=True, help="Include docs on the first pass instead of only as fallback")
+@click.option(
+    "--force-docs",
+    is_flag=True,
+    help="Include docs on the first pass instead of only as fallback",
+)
 @click.option(
     "--verbose", is_flag=True, help="Log SQL submitted to validator at each attempt"
 )

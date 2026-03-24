@@ -26,11 +26,13 @@ class AnthropicClient(LLMClient):
                 response = self.client.messages.create(
                     model=self.model,
                     max_tokens=4096,
-                    system=[{
-                        "type": "text",
-                        "text": system_prompt,
-                        "cache_control": {"type": "ephemeral"},
-                    }],
+                    system=[
+                        {
+                            "type": "text",
+                            "text": system_prompt,
+                            "cache_control": {"type": "ephemeral"},
+                        }
+                    ],
                     messages=[{"role": "user", "content": user_prompt}],
                 )
                 u = response.usage

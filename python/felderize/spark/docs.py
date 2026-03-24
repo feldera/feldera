@@ -92,7 +92,9 @@ _DEFAULT_DOCS_DIR = (
 )
 
 # Cache: docs_dir → (categories, func_anchors)
-_cats_cache: dict[Path, tuple[dict[str, list[str]], dict[str, list[tuple[str, str]]]]] = {}
+_cats_cache: dict[
+    Path, tuple[dict[str, list[str]], dict[str, list[tuple[str, str]]]]
+] = {}
 
 
 def _get_cats_and_anchors(
@@ -100,7 +102,9 @@ def _get_cats_and_anchors(
 ) -> tuple[dict[str, list[str]], dict[str, list[tuple[str, str]]]]:
     """Return (categories, func_anchors) for the given docs_dir, cached per path."""
     if docs_dir not in _cats_cache:
-        cats, func_anchors = _build_categories_from_index(docs_dir / "function-index.md")
+        cats, func_anchors = _build_categories_from_index(
+            docs_dir / "function-index.md"
+        )
         for source in (_EXTRA_PATTERNS, _SPARK_ALIASES):
             for cat, patterns in source.items():
                 seen = set(cats.get(cat, []))
