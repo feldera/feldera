@@ -2564,7 +2564,7 @@ async fn coordination_adhoc_scan(
         .scan(&session_state, scan.projection.as_ref(), &[], None)
         .await?;
     let mut stream = execution.execute(
-        scan.worker - controller.workers().start,
+        scan.worker - controller.layout().local_workers().start,
         session_state.task_ctx(),
     )?;
 

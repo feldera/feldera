@@ -213,6 +213,20 @@ impl Layout {
     pub fn is_solo(&self) -> bool {
         matches!(self, Self::Solo { .. })
     }
+
+    pub fn n_hosts(&self) -> usize {
+        match self {
+            Layout::Solo { .. } => 1,
+            Layout::Multihost { hosts, .. } => hosts.len(),
+        }
+    }
+
+    pub fn local_host_idx(&self) -> usize {
+        match self {
+            Layout::Solo { .. } => 0,
+            Layout::Multihost { local_host_idx, .. } => *local_host_idx,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
