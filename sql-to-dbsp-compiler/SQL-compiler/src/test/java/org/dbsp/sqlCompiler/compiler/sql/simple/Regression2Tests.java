@@ -806,4 +806,21 @@ public class Regression2Tests extends SqlIoTest {
                     SUM(value) OVER (ORDER BY ts ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS rolling_sum
                     FROM purchase;""", "Not yet implemented: Window aggregates with ROWS");
     }
+
+    @Test
+    public void jsonTests() {
+        this.getCCS("""
+                CREATE TYPE c_t AS ("value" VARCHAR);
+                CREATE TYPE b_t AS ("x" c_t, "y" c_t);
+                CREATE TYPE a_t AS ("b" b_t);
+                CREATE FUNCTION jsonstring_as_a_t(input VARCHAR) RETURNS a_t;
+                
+                CREATE TABLE src ("data" VARCHAR);
+                
+                CREATE VIEW v AS
+                SELECT
+                    jsonstring_as_a_t("data")."b"."x"."value" AS "x_val",
+                    jsonstring_as_a_t("data")."b"."y"."value" AS "y_val"
+                FROM src;""");
+    }
 }

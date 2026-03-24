@@ -2265,7 +2265,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         // We are explicitly taking a reference for these cases
                         avoidRef = true;
                 }
-            } else if (parent.is(DBSPBorrowExpression.class)) {
+            } else if (parent.is(DBSPBorrowExpression.class) || parent.is(DBSPLazyExpression.class)) {
                 // Pattern appearing in aggregation
                 avoidRef = true;
             }
