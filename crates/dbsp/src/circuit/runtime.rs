@@ -1095,8 +1095,8 @@ impl Runtime {
     /// Returns the minimum number of bytes in a batch inserted into a spine by a foreground worker to spill it to storage.
     ///
     /// The output is determined by the current memory pressure level and the user-configured `min_storage_bytes` option.
-    /// When memory pressure is low or moderate, the output is `min_storage_bytes`, when memory pressure is high or critical,
-    /// the output is `0`, meaning all batches are spilled to storage.
+    /// When memory pressure is low the output is `usize::MAX`, when memory pressure is moderate, the output is `min_storage_bytes`,
+    /// when memory pressure is high or critical, the output is `0`, meaning all batches are spilled to storage.
     ///
     /// # Returns
     ///
@@ -1111,12 +1111,18 @@ impl Runtime {
 
             if inner.memory_pressure() >= MemoryPressure::High {
                 Some(0)
+            } else if inner.memory_pressure() >= MemoryPressure::Moderate {
+                // Moderate pressure: spill large batches to storage in the foreground; the merger will take care of the rest.
+                Some(
+                    storage
+                        .options
+                        .min_storage_bytes
+                        .unwrap_or(10 * 1024 * 1024),
+                )
             } else {
-                Some(storage.options.min_storage_bytes.unwrap_or({
-                    // This reduces the files stored on disk to a reasonable number.
-
-                    10 * 1024 * 1024
-                }))
+                // When there is no memory pressure, we leave it to the merger to write the batches to storage
+                // eventually.
+                Some(usize::MAX)
             }
         })
     }
@@ -2118,10 +2124,10 @@ mod tests {
             query_runtime_memory_state(circuit.runtime());
         assert_eq!(pressure, MemoryPressure::Low);
 
-        // Verify the spill thresholds: at low pressure, all thresholds are set to the user-configured `min_storage_bytes`
-        // and `min_step_storage_bytes` values.
+        // Verify the spill thresholds: at low pressure, merge threshold is set to the user-configured `min_storage_bytes`,
+        // insert threshold is set to `usize::MAX`, and step threshold is set to `usize::MAX`.
         assert_eq!(min_merge, TEN_MIB);
-        assert_eq!(min_insert, TEN_MIB);
+        assert_eq!(min_insert, usize::MAX);
         assert_eq!(min_step, usize::MAX);
 
         // Verify the spine currently holds in-memory tuples before pressure rises.
