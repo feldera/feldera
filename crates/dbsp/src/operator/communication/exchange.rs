@@ -19,11 +19,11 @@ use crate::{
         tokio::TOKIO,
     },
     circuit_cache_key,
-    samply::SamplySpan,
     storage::file::format::FixedLen,
 };
 use binrw::{BinRead, BinWrite};
 use crossbeam_utils::CachePadded;
+use feldera_samply::Span;
 use feldera_storage::fbuf::FBuf;
 use futures::{prelude::*, stream::FuturesUnordered};
 use itertools::Itertools;
@@ -200,7 +200,7 @@ impl ExchangeServiceClient {
         let size = slices.iter().map(|slice| slice.len()).sum::<usize>();
         let mut bufs = slices.as_mut_slice();
         let mut stream = self.stream.lock().await;
-        let _span = SamplySpan::new("send")
+        let _span = Span::new("send")
             .with_category("Exchange")
             .with_tooltip(|| format!("send {} for exchange {exchange_id}", HumanBytes::from(size)));
         while !bufs.is_empty() {
@@ -284,7 +284,7 @@ impl ExchangeServer {
                 }
                 data.push(receivers_data);
             }
-            SamplySpan::new("receive")
+            Span::new("receive")
                 .with_start(start)
                 .with_category("Exchange")
                 .with_tooltip(|| {
@@ -514,7 +514,7 @@ impl InnerExchange {
     /// Bincode-encoded `Vec<u8>` message from `sender` to `receiver` is
     /// `data[sender - senders.start][receiver - receivers.start]`.
     async fn received(self: &Arc<Self>, senders: Range<usize>, data: Vec<Vec<AlignedVec>>) {
-        let _span = SamplySpan::new("deliver")
+        let _span = Span::new("deliver")
             .with_category("Exchange")
             .with_tooltip(|| {
                 format!(
@@ -968,7 +968,7 @@ where
             .fetch_add(deserialized_bytes, Ordering::Relaxed);
         self.deserialization_usecs
             .fetch_add(start.elapsed().as_micros() as u64, Ordering::Relaxed);
-        SamplySpan::new("deserialize")
+        Span::new("deserialize")
             .with_category("Exchange")
             .with_start(start)
             .with_tooltip(|| {
