@@ -823,4 +823,54 @@ public class Regression2Tests extends SqlIoTest {
                     jsonstring_as_a_t("data")."b"."y"."value" AS "y_val"
                 FROM src;""");
     }
+
+    @Test
+    public void issue5899a() {
+        this.getCCS("""
+                CREATE TABLE F(file_id INT, original_path VARCHAR, replacement VARCHAR);
+                CREATE VIEW V AS SELECT file_id, original_path,
+                OVERLAY(original_path PLACING replacement FROM 10 FOR 4) AS updated_path
+                FROM F WHERE original_path IS NOT NULL AND replacement IS NOT NULL;""");
+        boolean[] b = new boolean[] { false, true };
+        for (var a1: b)
+            for (var a2: b)
+                for (var a3: b)
+                    for (var a4: b) {
+                        var e1 = a1 ? "x" : "y";
+                        var e2 = a2 ? "x" : "y";
+                        var e3 = a3 ? "1" : "NULL";
+                        var e4 = a4 ? "1" : "NULL";
+                        String query = "CREATE TABLE T(x VARCHAR NOT NULL, y VARCHAR, i INT NOT NULL);";
+                        query += "CREATE VIEW V AS SELECT OVERLAY(" + e1 +
+                                " PLACING " + e2 + " FROM " + e3 + " FOR " + e4 + ") FROM T;";
+                        this.getCCS(query);
+                    }
+    }
+
+    @Test
+    public void issue5899b() {
+        this.getCCS("""
+                CREATE VIEW V AS
+                SELECT COUNT(*)
+                FROM (
+                  VALUES
+                    (CAST(ROW(ARRAY[MAP[1, 2, 2, 3], MAP[1, 3]]) AS ROW(b MAP<INT, INT> ARRAY))),
+                    (CAST(ROW(ARRAY[MAP[2, 3], MAP[1, 3]]) AS ROW(b MAP<INT, INT> ARRAY))),
+                    (CAST(ROW(ARRAY[MAP[2, 3, 1, 2], MAP[1, 3]]) AS ROW(b MAP<INT, INT> ARRAY)))
+                ) AS t(a)
+                GROUP BY a""");
+    }
+
+    @Test
+    public void issue5899c() {
+        var ccs = this.getCCS("""
+                CREATE TABLE E(hire_date DATE);
+                CREATE VIEW Q AS
+                SELECT DATE_TRUNC(hire_date, QUARTER) FROM E;""");
+        ccs.step("INSERT INTO E VALUES (DATE '2020-02-01') , (DATE '2020-05-01')", """
+                 trunc | weight
+                ----------------
+                 2020-01-01 | 1
+                 2020-04-01 | 1""");
+    }
 }

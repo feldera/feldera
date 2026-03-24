@@ -253,7 +253,7 @@ public class ExpandUnsafeCasts extends ExpressionTranslator {
         DBSPType convertedType = new DBSPTypeMap(type.getKeyType(), type.getValueType(), sourceType.mayBeNull);
         return new DBSPBinaryExpression(node,
                 convertedType, DBSPOpcode.MAP_CONVERT,
-                source, new DBSPRawTupleExpression(convertKey, convertValue));
+                source.applyClone(), new DBSPRawTupleExpression(convertKey, convertValue));
     }
 
     @Override

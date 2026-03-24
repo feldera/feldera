@@ -457,7 +457,21 @@ macro_rules! some_function4 {
             }
 
             #[doc(hidden)]
-            pub fn [<$func_name N__N>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: Option<$arg_type2>, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
+            pub fn [<$func_name N__N>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: $arg_type2, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg3 = arg3?;
+                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
+            }
+
+            #[doc(hidden)]
+            pub fn [<$func_name N_N_>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: Option<$arg_type2>, arg3: $arg_type3 ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg2 = arg2?;
+                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
+            }
+
+            #[doc(hidden)]
+            pub fn [<$func_name N_NN>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: Option<$arg_type2>, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
                 let arg0 = arg0?;
                 let arg2 = arg2?;
                 let arg3 = arg3?;
@@ -465,31 +479,16 @@ macro_rules! some_function4 {
             }
 
             #[doc(hidden)]
-            pub fn [<$func_name N_N_>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: $arg_type2, arg3: $arg_type3 ) -> Option<$ret_type> {
+            pub fn [<$func_name NN__>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: $arg_type2, arg3: $arg_type3 ) -> Option<$ret_type> {
                 let arg0 = arg0?;
                 let arg1 = arg1?;
                 Some([<$func_name ____>](arg0, arg1, arg2, arg3))
             }
 
             #[doc(hidden)]
-            pub fn [<$func_name N_NN>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: Option<$arg_type2>, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
+            pub fn [<$func_name NN_N>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: $arg_type2, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
                 let arg0 = arg0?;
                 let arg1 = arg1?;
-                let arg2 = arg2?;
-                let arg3 = arg3?;
-                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name NN__>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: $arg_type2, arg3: $arg_type3 ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name NN_N>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: Option<$arg_type2>, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg2 = arg2?;
                 let arg3 = arg3?;
                 Some([<$func_name ____>](arg0, arg1, arg2, arg3))
             }
