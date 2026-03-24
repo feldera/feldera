@@ -809,7 +809,7 @@ This is the content of the `udf.rs` file:
 ```rust
 use tracing::info;
 use std::sync::{Arc, Mutex};
-use feldera_adapterlib::format::ParseError;
+use feldera_adapterlib::format::{ParseError, Splitter};
 use feldera_adapterlib::preprocess::{
     Preprocessor, PreprocessorCreateError, PreprocessorFactory,
 };
