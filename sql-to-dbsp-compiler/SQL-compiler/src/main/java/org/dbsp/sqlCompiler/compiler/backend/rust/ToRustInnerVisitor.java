@@ -1876,6 +1876,17 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(")");
             this.pop(expression);
             return VisitDecision.STOP;
+        } else if (expression.opcode == DBSPOpcode.REINTERPRET) {
+            DBSPTypeBaseType sourceType = expression.source.getType().to(DBSPTypeBaseType.class);
+            this.builder.append(expression.opcode.toString())
+                    .append("_")
+                    .append(sourceType.shortName())
+                    .append(sourceType.nullableSuffix())
+                    .append("(");
+            expression.source.accept(this);
+            this.builder.append(")");
+            this.pop(expression);
+            return VisitDecision.STOP;
         }
         if (expression.source.getType().mayBeNull) {
             this.builder.append("(")
