@@ -13,6 +13,6 @@ CREATE OR REPLACE TEMP VIEW metric_results AS
 SELECT
   metric_id,
   pmod(value, bucket)           AS bucketed,
-  try_divide(value, divisor)    AS safe_ratio,
-  try_subtract(value, baseline) AS delta
+  value / NULLIF(divisor, 0)    AS safe_ratio,
+  value - baseline              AS delta
 FROM metrics;
