@@ -1,5 +1,5 @@
--- Demo: TopK pattern, QUALIFY clause, and TIMESTAMPDIFF
--- Covers: ROW_NUMBER/RANK in subquery (TopK), QUALIFY, DATEDIFF → TIMESTAMPDIFF
+-- Demo: TopK pattern, QUALIFY clause, and datediff
+-- Covers: ROW_NUMBER in subquery (TopK), QUALIFY, datediff → DATEDIFF(unit, start, end)
 
 CREATE TABLE IF NOT EXISTS employee (
   emp_id STRING NOT NULL,
@@ -40,11 +40,11 @@ SELECT
 FROM review
 QUALIFY ROW_NUMBER() OVER (PARTITION BY emp_id ORDER BY review_date DESC) = 1;
 
--- Employee tenure in years using DATEDIFF
+-- Employee tenure in years using datediff
 CREATE OR REPLACE TEMP VIEW employee_tenure AS
 SELECT
   emp_id,
   dept,
   hire_date,
-  DATEDIFF(year, hire_date, CURRENT_TIMESTAMP) AS tenure_years
+  datediff(CURRENT_DATE, hire_date) AS tenure_days
 FROM employee;

@@ -27,7 +27,7 @@ SELECT
   get_json_object(payload, '$.amount')      AS amount_str,
   CAST(get_json_object(payload, '$.amount') AS DOUBLE) AS amount,
   get_json_object(payload, '$.currency')    AS currency,
-  get_json_object(payload, '$.items[0]')    AS first_item
+  get_json_object(payload, '$.item_type')   AS item_type
 FROM raw_events;
 
 -- Aggregate per user, parsing nested JSON
