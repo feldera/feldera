@@ -72,20 +72,25 @@ use crate::{
     dynamic::{ArchivedDBData, DynVec, LeanVec},
     storage::buffer_cache::{FBuf, FBufSerializer},
 };
-use rkyv::de::deserializers::SharedDeserializeMap;
 use rkyv::de::{SharedDeserializeRegistry, SharedPointer};
+use rkyv::{
+    AlignedBytes,
+    de::deserializers::SharedDeserializeMap,
+    ser::{ScratchSpace, serializers::BufferScratch},
+};
 use rkyv::{
     Archive, Archived, Deserialize, Fallible, Serialize,
     ser::{
         Serializer as _,
-        serializers::{
-            AllocScratch, CompositeSerializer, FallbackScratch, HeapScratch, SharedSerializeMap,
-        },
+        serializers::{AllocScratch, CompositeSerializer, SharedSerializeMap},
     },
 };
-use std::cell::RefCell;
-use std::fmt::Debug;
+use std::{
+    alloc::{Layout, alloc_zeroed},
+    cell::RefCell,
+};
 use std::{any::Any, sync::Arc};
+use std::{fmt::Debug, ptr::NonNull};
 
 pub mod format;
 mod item;
@@ -276,8 +281,70 @@ where
 /// The particular [`rkyv::ser::Serializer`] that we use.
 pub type Serializer = CompositeSerializer<FBufSerializer<FBuf>, DbspScratch, SharedSerializeMap>;
 
-/// The particular [`rkyv::ser::ScratchSpace`] that we use.
-pub type DbspScratch = FallbackScratch<HeapScratch<65536>, AllocScratch>;
+/// Scratch space type used by DBSP.
+///
+/// This is `FallbackScratch<HeapScratch<SCRATCH_SIZE>, AllocScratch>` with the
+/// added ability to clear it.
+pub struct DbspScratch {
+    main: BufferScratch<Box<AlignedBytes<SCRATCH_SIZE>>>,
+    fallback: AllocScratch,
+}
+
+impl Default for DbspScratch {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DbspScratch {
+    fn new() -> Self {
+        Self {
+            main: {
+                // This code is copied from `rkyv::ser::serializers::HeapScratch::new`.
+                let layout = Layout::new::<AlignedBytes<SCRATCH_SIZE>>();
+                unsafe {
+                    // SAFETY: `layout` does have nonzero size.
+                    let ptr = alloc_zeroed(layout).cast::<AlignedBytes<SCRATCH_SIZE>>();
+                    assert!(!ptr.is_null());
+                    // SAFETY: We are using the raw pointer only once and the memory is
+                    // allocated by the global allocator using a layout for the correct type.
+                    BufferScratch::new(Box::from_raw(ptr))
+                }
+            },
+            fallback: AllocScratch::new(),
+        }
+    }
+
+    fn cleared(mut self) -> Self {
+        self.main.clear();
+        self.fallback = AllocScratch::new();
+        self
+    }
+}
+
+impl Fallible for DbspScratch {
+    type Error = <AllocScratch as Fallible>::Error;
+}
+
+impl ScratchSpace for DbspScratch {
+    #[inline]
+    unsafe fn push_scratch(&mut self, layout: Layout) -> Result<NonNull<[u8]>, Self::Error> {
+        unsafe {
+            self.main
+                .push_scratch(layout)
+                .or_else(|_| self.fallback.push_scratch(layout))
+        }
+    }
+
+    #[inline]
+    unsafe fn pop_scratch(&mut self, ptr: NonNull<u8>, layout: Layout) -> Result<(), Self::Error> {
+        unsafe {
+            self.main
+                .pop_scratch(ptr, layout)
+                .or_else(|_| self.fallback.pop_scratch(ptr, layout))
+        }
+    }
+}
 
 /// The particular [`rkyv`] deserializer that we use.
 #[derive(Debug)]
@@ -339,6 +406,13 @@ impl SharedDeserializeRegistry for Deserializer {
     }
 }
 
+/// Scratch space size.
+///
+/// This is the amount of space we allocate as base scratch space for rkyv
+/// serialization.  If more is needed for a particular serialization, then we
+/// fall back to [AllocScratch].
+pub const SCRATCH_SIZE: usize = 65536;
+
 /// Creates an instance of [Serializer] that will serialize to `serializer` and
 /// passes it to `f`. Returns a tuple of the `FBuf` from the [Serializer] and
 /// the return value of `f`.
@@ -354,7 +428,11 @@ where
         static SCRATCH: RefCell<Option<DbspScratch>> = RefCell::new(Some(Default::default()));
     }
 
-    let mut serializer = Serializer::new(serializer, SCRATCH.take().unwrap(), Default::default());
+    let mut serializer = Serializer::new(
+        serializer,
+        SCRATCH.take().unwrap().cleared(),
+        Default::default(),
+    );
     let result = f(&mut serializer);
     let (serializer, scratch, _shared) = serializer.into_components();
     SCRATCH.replace(Some(scratch));
