@@ -364,7 +364,7 @@ export const getExtendedPipeline = async (
 ) => {
   return mapResponse(
     _getPipeline({
-      path: { pipeline_name: encodeURIComponent(pipeline_name) },
+      path: { pipeline_name },
       ...options
     }),
     toExtendedPipeline,
@@ -398,7 +398,7 @@ export const putPipeline = async (
   await mapResponse(
     _putPipeline({
       body: newPipeline,
-      path: { pipeline_name: encodeURIComponent(pipeline_name) },
+      path: { pipeline_name },
       ...options
     }),
     (v) => v
@@ -412,7 +412,7 @@ export const patchPipeline = async (
 ) => {
   return mapResponse(
     _patchPipeline({
-      path: { pipeline_name: encodeURIComponent(pipeline_name) },
+      path: { pipeline_name },
       body: fromPipeline(pipeline),
       ...options
     }),
@@ -433,7 +433,7 @@ export const getPipelines = async (options?: FetchOptions): Promise<PipelineThum
 export const getPipelineStatus = async (pipeline_name: string, options?: FetchOptions) => {
   return mapResponse(
     _getPipeline({
-      path: { pipeline_name: encodeURIComponent(pipeline_name) },
+      path: { pipeline_name },
       query: { selector: 'status' },
       ...options
     }),
@@ -450,7 +450,7 @@ export const getPipelineStatus = async (pipeline_name: string, options?: FetchOp
 export const getPipelineStats = async (pipeline_name: string, options?: FetchOptions) => {
   return mapResponse(
     _getPipelineStats({
-      path: { pipeline_name: encodeURIComponent(pipeline_name) },
+      path: { pipeline_name },
       ...options
     }),
     (status) => ({
@@ -477,7 +477,7 @@ export const getInputConnectorStatus = (
 ) =>
   mapResponse(
     _getPipelineInputConnectorStatus({
-      path: { pipeline_name, table_name, connector_name },
+      path: { pipeline_name, table_name: encodeURIComponent(table_name), connector_name: encodeURIComponent(connector_name) },
       ...options
     }),
     (v) => v
@@ -491,7 +491,7 @@ export const getOutputConnectorStatus = (
 ) =>
   mapResponse(
     _getPipelineOutputConnectorStatus({
-      path: { pipeline_name, view_name, connector_name },
+      path: { pipeline_name, view_name: encodeURIComponent(view_name), connector_name: encodeURIComponent(connector_name) },
       ...options
     }),
     (v) => v
@@ -550,7 +550,7 @@ export const postApiKey = (name: string, options?: FetchOptions) =>
 
 export const deleteApiKey = (name: string, options?: FetchOptions) =>
   mapResponse(
-    _deleteApiKey({ path: { api_key_name: name }, ...options }),
+    _deleteApiKey({ path: { api_key_name: encodeURIComponent(name) }, ...options }),
     (v) => v,
     () => {
       throw new Error(`Failed to delete ${name} API key`)
@@ -578,7 +578,7 @@ export const getClusterEvent = (eventId: string) =>
 const getSamplyProfileStream = (pipelineName: string, latest: boolean) => {
   const result = streamingFetch(
     getAuthenticatedFetch(),
-    `${felderaEndpoint}/v0/pipelines/${encodeURIComponent(pipelineName)}/samply_profile${latest ? '?latest=true' : ''}`,
+    `${felderaEndpoint}/v0/pipelines/${pipelineName}/samply_profile${latest ? '?latest=true' : ''}`,
     {
       method: 'GET'
     }
@@ -929,7 +929,7 @@ export const relationIngress = async (
   options?: FetchOptions
 ) => {
   return httpInput({
-    path: { pipeline_name: pipelineName, table_name: relationName },
+    path: { pipeline_name: pipelineName, table_name: encodeURIComponent(relationName) },
     parseAs: 'text', // Response is empty, so no need to parse it as JSON
     query: { format: 'json', array: true, update_format: 'insert_delete', force: !!force },
     body: data as any,
@@ -967,5 +967,5 @@ export const getPipelineSupportBundleUrl = (
   for (const [key, value] of Object.entries(options)) {
     query.append(key, String(value))
   }
-  return `${felderaEndpoint}/v0/pipelines/${encodeURIComponent(pipelineName)}/support_bundle?${query.toString()}`
+  return `${felderaEndpoint}/v0/pipelines/${pipelineName}/support_bundle?${query.toString()}`
 }
