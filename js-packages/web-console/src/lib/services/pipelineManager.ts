@@ -477,7 +477,7 @@ export const getInputConnectorStatus = (
 ) =>
   mapResponse(
     _getPipelineInputConnectorStatus({
-      path: { pipeline_name, table_name: encodeURIComponent(table_name), connector_name: encodeURIComponent(connector_name) },
+      path: { pipeline_name, table_name, connector_name },
       ...options
     }),
     (v) => v
@@ -491,7 +491,7 @@ export const getOutputConnectorStatus = (
 ) =>
   mapResponse(
     _getPipelineOutputConnectorStatus({
-      path: { pipeline_name, view_name: encodeURIComponent(view_name), connector_name: encodeURIComponent(connector_name) },
+      path: { pipeline_name, view_name, connector_name },
       ...options
     }),
     (v) => v
@@ -550,7 +550,7 @@ export const postApiKey = (name: string, options?: FetchOptions) =>
 
 export const deleteApiKey = (name: string, options?: FetchOptions) =>
   mapResponse(
-    _deleteApiKey({ path: { api_key_name: encodeURIComponent(name) }, ...options }),
+    _deleteApiKey({ path: { api_key_name: name }, ...options }),
     (v) => v,
     () => {
       throw new Error(`Failed to delete ${name} API key`)
@@ -929,7 +929,7 @@ export const relationIngress = async (
   options?: FetchOptions
 ) => {
   return httpInput({
-    path: { pipeline_name: pipelineName, table_name: encodeURIComponent(relationName) },
+    path: { pipeline_name: pipelineName, table_name: relationName },
     parseAs: 'text', // Response is empty, so no need to parse it as JSON
     query: { format: 'json', array: true, update_format: 'insert_delete', force: !!force },
     body: data as any,
