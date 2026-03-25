@@ -41,7 +41,6 @@ import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimeString;
 import org.apache.calcite.util.TimestampString;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
@@ -1061,9 +1060,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return makeBinaryExpressions(node, type, DBSPOpcode.BW_OR, ops);
             case BIT_XOR:
                 return makeBinaryExpressions(node, type, DBSPOpcode.XOR, ops);
+            case REINTERPRET:
+                // Calcite only seems to generate this for converting intervals to integers
+                if ((!type.is(DBSPTypeInteger.class) || type.to(DBSPTypeInteger.class).getWidth() != 64)
+                        && !ops.get(0).getType().is(IsIntervalType.class)) {
+                    throw new InternalCompilerError("Unexpected cast ", node);
+                }
+                return new DBSPUnaryExpression(node, type, DBSPOpcode.REINTERPRET, ops.get(0));
             case CAST:
             case SAFE_CAST:
-            case REINTERPRET:
                 if (!validateCast(ops.get(0).getType(), type, call.op.kind == SqlKind.SAFE_CAST)) {
                     throw new CompilationError(call.op.kind + " cannot be used to convert " +
                             ops.get(0).getType().asSqlString() +

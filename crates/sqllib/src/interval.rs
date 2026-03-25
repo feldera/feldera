@@ -54,6 +54,13 @@ pub struct ShortInterval {
 }
 
 #[doc(hidden)]
+pub fn reinterpret_ShortInterval(value: ShortInterval) -> i64 {
+    value.milliseconds()
+}
+
+some_polymorphic_function1!(reinterpret, ShortInterval, ShortInterval, i64);
+
+#[doc(hidden)]
 impl<D> ::rkyv::Deserialize<ShortInterval, D> for ArchivedShortInterval
 where
     D: ::rkyv::Fallible + ::core::any::Any,
@@ -484,6 +491,13 @@ impl LongInterval {
         (months / 12) * mul
     }
 }
+
+#[doc(hidden)]
+pub fn reinterpret_LongInterval(value: LongInterval) -> i64 {
+    value.months() as i64
+}
+
+some_polymorphic_function1!(reinterpret, LongInterval, LongInterval, i64);
 
 #[doc(hidden)]
 pub fn abs_LongInterval(value: LongInterval) -> LongInterval {

@@ -100,7 +100,9 @@ public enum DBSPOpcode {
     // Same as MAP_CONVERT, except the function applied returns SqlResult, and
     // the map function returns None in case any partial result is Error.
     MAP_CONVERT_SAFE("map_map_safe", false),
-    ;
+    // Used to implement Calcite's REINTERPRET casts;
+    // input is always an interval, output is always i64
+    REINTERPRET("reinterpret", false);
 
     private final String text;
     public final boolean isAggregate;
