@@ -753,7 +753,7 @@ impl Unpin for FBuf {}
 /// `WriteSerializer`.
 #[derive(Debug)]
 pub struct FBufSerializer<A> {
-    inner: A,
+    pub inner: A,
     limit: usize,
 }
 
@@ -761,10 +761,17 @@ pub struct FBufSerializer<A> {
 pub struct LimitExceeded;
 
 impl<A: Borrow<FBuf>> FBufSerializer<A> {
-    /// Creates a new `FBufSerializer` by wrapping a `Borrow<FBuf>`.
+    /// Creates a new `FBufSerializer` by wrapping a `FBuf`.
     #[inline]
-    pub fn new(inner: A, limit: usize) -> Self {
-        Self { inner, limit }
+    pub fn new(inner: A) -> Self {
+        Self {
+            inner,
+            limit: usize::MAX,
+        }
+    }
+
+    pub fn with_limit(self, limit: usize) -> Self {
+        Self { limit, ..self }
     }
 
     /// Consumes the serializer and returns the underlying type.

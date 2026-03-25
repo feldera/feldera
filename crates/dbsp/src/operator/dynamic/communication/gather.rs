@@ -129,13 +129,18 @@ where
                             || Vec::new(),
                             move |batch: B, batches: &mut Vec<Mailbox<B>>| {
                                 let empty = B::dyn_empty(&factories_clone3);
+                                let mut serializer_inner = None;
                                 for location in WorkerLocations::new() {
                                     match location {
                                         WorkerLocation::Local => {
                                             batches.push(Mailbox::Plain(empty.clone()))
                                         }
-                                        WorkerLocation::Remote => batches
-                                            .push(Mailbox::Tx(serialize_indexed_wset(&empty))),
+                                        WorkerLocation::Remote => {
+                                            batches.push(Mailbox::Tx(serialize_indexed_wset(
+                                                &empty,
+                                                serializer_inner.get_or_insert_default(),
+                                            )))
+                                        }
                                     }
                                 }
                                 if Runtime::runtime()
@@ -146,8 +151,10 @@ where
                                 {
                                     batches[receiver_worker] = Mailbox::Plain(batch);
                                 } else {
-                                    batches[receiver_worker] =
-                                        Mailbox::Tx(serialize_indexed_wset(&batch));
+                                    batches[receiver_worker] = Mailbox::Tx(serialize_indexed_wset(
+                                        &batch,
+                                        serializer_inner.get_or_insert_default(),
+                                    ));
                                 }
                             },
                             move |data| deserialize_indexed_wset(&factories_clone, &data),

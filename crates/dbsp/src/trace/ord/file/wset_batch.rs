@@ -16,7 +16,7 @@ use crate::{
     },
     trace::{
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Deserializer, FileKeyBatch, Serializer, VecWSetFactories, WeightedItem,
+        DbspSerializer, Deserializer, FileKeyBatch, VecWSetFactories, WeightedItem,
         cursor::{CursorFactoryWrapper, Pending, Position, PushCursor},
         merge_batches_by_reference,
         ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
@@ -308,11 +308,13 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Archive for FileWSet<K, R> 
         todo!()
     }
 }
-impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Serialize<Serializer> for FileWSet<K, R> {
+impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Serialize<DbspSerializer<'_>>
+    for FileWSet<K, R>
+{
     fn serialize(
         &self,
-        _serializer: &mut Serializer,
-    ) -> Result<Self::Resolver, <Serializer as rkyv::Fallible>::Error> {
+        _serializer: &mut DbspSerializer,
+    ) -> Result<Self::Resolver, <DbspSerializer<'_> as rkyv::Fallible>::Error> {
         todo!()
     }
 }

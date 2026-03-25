@@ -789,10 +789,10 @@ where
         self: &Arc<Self>,
         sender: usize,
         data: impl Iterator<Item = T>,
-        serialize: F,
+        mut serialize: F,
     ) -> bool
     where
-        F: Fn(T) -> Vec<u8> + Send + Sync,
+        F: FnMut(T) -> Vec<u8> + Send + Sync,
     {
         self.try_send_all(
             sender,

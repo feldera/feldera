@@ -1,4 +1,5 @@
 use super::utils::{copy_to_builder, pick_merge_destination};
+use crate::storage::file::SerializerInner;
 use crate::storage::tracking_bloom_filter::BloomFilterStats;
 use crate::{
     DBWeight, Error, NumEntries,
@@ -742,7 +743,7 @@ where
     R: WeightTrait + ?Sized,
 {
     fn checkpoint(&self) -> Result<Vec<u8>, Error> {
-        Ok(serialize_indexed_wset(self))
+        Ok(serialize_indexed_wset(self, &mut SerializerInner::new()))
     }
 
     fn restore(&mut self, data: &[u8]) -> Result<(), Error> {

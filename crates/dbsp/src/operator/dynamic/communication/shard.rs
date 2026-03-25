@@ -4,6 +4,7 @@
 // TODOs:
 // - different sharding modes.
 
+use feldera_storage::fbuf::{FBuf, FBufSerializer};
 use itertools::Itertools;
 use rkyv::{archived_root, ser::Serializer as _};
 
@@ -16,9 +17,9 @@ use crate::{
     circuit_cache_key,
     dynamic::{Data, DataTrait, DynPair, DynPairs, Factory},
     operator::communication::{Mailbox, new_exchange_operators},
+    storage::file::SerializerInner,
     trace::{
-        Batch, BatchReader, Builder, IndexedWSetSerializer, Serializer, deserialize_indexed_wset,
-        merge_batches,
+        Batch, BatchReader, Builder, IndexedWSetSerializer, deserialize_indexed_wset, merge_batches,
     },
 };
 
@@ -243,52 +244,70 @@ where
         }
     }
 
-    fn push_diff(&mut self, weight: &OB::R) {
+    fn push_diff(&mut self, weight: &OB::R, serializer_inner: &mut Option<SerializerInner>) {
         match self {
             ShardBuilder::Local(builder) => builder.push_diff(weight),
-            ShardBuilder::Remote(serializer) => serializer.push_diff(weight),
+            ShardBuilder::Remote(serializer) => {
+                serializer.push_diff(weight, serializer_inner.get_or_insert_default())
+            }
         }
     }
 
-    fn push_diff_mut(&mut self, weight: &mut OB::R) {
+    fn push_diff_mut(
+        &mut self,
+        weight: &mut OB::R,
+        serializer_inner: &mut Option<SerializerInner>,
+    ) {
         match self {
             ShardBuilder::Local(builder) => builder.push_diff_mut(weight),
-            ShardBuilder::Remote(serializer) => serializer.push_diff(weight),
+            ShardBuilder::Remote(serializer) => {
+                serializer.push_diff(weight, serializer_inner.get_or_insert_default())
+            }
         }
     }
 
-    fn push_val(&mut self, val: &OB::Val) {
+    fn push_val(&mut self, val: &OB::Val, serializer_inner: &mut Option<SerializerInner>) {
         match self {
             ShardBuilder::Local(builder) => builder.push_val(val),
-            ShardBuilder::Remote(serializer) => serializer.push_val(val),
+            ShardBuilder::Remote(serializer) => {
+                serializer.push_val(val, serializer_inner.get_or_insert_default())
+            }
         }
     }
 
-    fn push_val_mut(&mut self, val: &mut OB::Val) {
+    fn push_val_mut(&mut self, val: &mut OB::Val, serializer_inner: &mut Option<SerializerInner>) {
         match self {
             ShardBuilder::Local(builder) => builder.push_val_mut(val),
-            ShardBuilder::Remote(serializer) => serializer.push_val(val),
+            ShardBuilder::Remote(serializer) => {
+                serializer.push_val(val, serializer_inner.get_or_insert_default())
+            }
         }
     }
 
-    fn push_key(&mut self, key: &OB::Key) {
+    fn push_key(&mut self, key: &OB::Key, serializer_inner: &mut Option<SerializerInner>) {
         match self {
             ShardBuilder::Local(builder) => builder.push_key(key),
-            ShardBuilder::Remote(serializer) => serializer.push_key(key),
+            ShardBuilder::Remote(serializer) => {
+                serializer.push_key(key, serializer_inner.get_or_insert_default())
+            }
         }
     }
 
-    fn push_key_mut(&mut self, key: &mut OB::Key) {
+    fn push_key_mut(&mut self, key: &mut OB::Key, serializer_inner: &mut Option<SerializerInner>) {
         match self {
             ShardBuilder::Local(builder) => builder.push_key_mut(key),
-            ShardBuilder::Remote(serializer) => serializer.push_key(key),
+            ShardBuilder::Remote(serializer) => {
+                serializer.push_key(key, serializer_inner.get_or_insert_default())
+            }
         }
     }
 
-    fn done(self) -> Mailbox<OB> {
+    fn done(self, serializer_inner: &mut Option<SerializerInner>) -> Mailbox<OB> {
         match self {
             ShardBuilder::Local(builder) => Mailbox::Plain(builder.done()),
-            ShardBuilder::Remote(serializer) => Mailbox::Tx(serializer.done()),
+            ShardBuilder::Remote(serializer) => {
+                Mailbox::Tx(serializer.done(serializer_inner.get_or_insert_default()))
+            }
         }
     }
 }
@@ -326,60 +345,66 @@ fn shard_batch<IB, OB>(
         ));
     }
 
+    let mut serializer_inner = None;
     let mut cursor = batch.consuming_cursor(None, None);
     if cursor.has_mut() {
         while cursor.key_valid() {
             let b = &mut builders[cursor.key().default_hash() as usize % shards + workers.start];
             while cursor.val_valid() {
-                b.push_diff_mut(cursor.weight_mut());
-                b.push_val_mut(cursor.val_mut());
+                b.push_diff_mut(cursor.weight_mut(), &mut serializer_inner);
+                b.push_val_mut(cursor.val_mut(), &mut serializer_inner);
                 cursor.step_val();
             }
-            b.push_key_mut(cursor.key_mut());
+            b.push_key_mut(cursor.key_mut(), &mut serializer_inner);
             cursor.step_key();
         }
     } else {
         while cursor.key_valid() {
             let b = &mut builders[cursor.key().default_hash() as usize % shards + workers.start];
             while cursor.val_valid() {
-                b.push_diff(cursor.weight());
-                b.push_val(cursor.val());
+                b.push_diff(cursor.weight(), &mut serializer_inner);
+                b.push_val(cursor.val(), &mut serializer_inner);
                 cursor.step_val();
             }
-            b.push_key(cursor.key());
+            b.push_key(cursor.key(), &mut serializer_inner);
             cursor.step_key();
         }
     }
     for builder in builders.drain(..) {
-        outputs.push(builder.done());
+        outputs.push(builder.done(&mut serializer_inner));
     }
 }
 
 pub struct PairsSerializer {
-    serializer: Serializer,
+    fbuf: FBuf,
     offsets: Vec<usize>,
 }
 
 impl PairsSerializer {
     pub fn with_capacity(estimated_pairs: usize) -> Self {
         Self {
-            serializer: Serializer::default(),
+            fbuf: FBuf::default(),
             offsets: Vec::with_capacity(estimated_pairs),
         }
     }
 
-    pub fn push_val<K, V>(&mut self, pair: &DynPair<K, V>)
+    pub fn push_val<K, V>(&mut self, pair: &DynPair<K, V>, serializer: &mut SerializerInner)
     where
         K: DataTrait + ?Sized,
         V: DataTrait + ?Sized,
     {
-        self.offsets
-            .push(pair.serialize(&mut self.serializer).unwrap());
+        serializer
+            .with(FBufSerializer::new(&mut self.fbuf), |s| pair.serialize(s))
+            .unwrap();
     }
 
-    pub fn done(mut self) -> Vec<u8> {
-        let _offset = self.serializer.serialize_value(&self.offsets).unwrap();
-        self.serializer.into_serializer().into_inner().into_vec()
+    pub fn done(mut self, serializer: &mut SerializerInner) -> Vec<u8> {
+        serializer
+            .with(FBufSerializer::new(&mut self.fbuf), |s| {
+                s.serialize_value(&self.offsets)
+            })
+            .unwrap();
+        self.fbuf.into_vec()
     }
 }
 
@@ -412,17 +437,21 @@ where
         }
     }
 
-    fn push_val(&mut self, pair: &mut DynPair<K, V>) {
+    fn push_val(&mut self, pair: &mut DynPair<K, V>, inner: &mut Option<SerializerInner>) {
         match self {
             PairsBuilder::Local(pairs) => pairs.push_val(pair),
-            PairsBuilder::Remote(serializer) => serializer.push_val(pair),
+            PairsBuilder::Remote(serializer) => {
+                serializer.push_val(pair, inner.get_or_insert_default())
+            }
         }
     }
 
-    fn done(self) -> Mailbox<Box<DynPairs<K, V>>> {
+    fn done(self, inner: &mut Option<SerializerInner>) -> Mailbox<Box<DynPairs<K, V>>> {
         match self {
             PairsBuilder::Local(pairs) => Mailbox::Plain(pairs),
-            PairsBuilder::Remote(serializer) => Mailbox::Tx(serializer.done()),
+            PairsBuilder::Remote(serializer) => {
+                Mailbox::Tx(serializer.done(inner.get_or_insert_default()))
+            }
         }
     }
 }
@@ -439,6 +468,7 @@ pub fn shard_pairs<K, V>(
     V: DataTrait + ?Sized,
 {
     let pairs_per_shard = input_pairs.len() / workers.len();
+    let mut serializer_inner = None;
     let mut output = WorkerLocations::new()
         .enumerate()
         .map(|(worker, location)| {
@@ -454,10 +484,14 @@ pub fn shard_pairs<K, V>(
         for pair in pairs.dyn_iter_mut() {
             let k = pair.fst();
             let shard_index = k.default_hash() as usize % workers.len() + workers.start;
-            output[shard_index].push_val(pair);
+            output[shard_index].push_val(pair, &mut serializer_inner);
         }
     }
-    output_pairs.extend(output.into_iter().map(|pairs| pairs.done()));
+    output_pairs.extend(
+        output
+            .into_iter()
+            .map(|pairs| pairs.done(&mut serializer_inner)),
+    );
 }
 
 impl<C, T> Stream<C, T>
