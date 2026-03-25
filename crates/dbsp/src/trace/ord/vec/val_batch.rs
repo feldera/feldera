@@ -9,8 +9,8 @@ use crate::{
         WeightTrait, WithFactory,
     },
     trace::{
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Serializer,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, DbspSerializer,
+        Deserializer,
         layers::{
             Cursor as TrieCursor, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories,
             OrdOffset, Trie,
@@ -259,7 +259,7 @@ where
         todo!()
     }
 }
-impl<K, V, T: Lattice, R, O: OrdOffset> Serialize<Serializer> for VecValBatch<K, V, T, R, O>
+impl<K, V, T: Lattice, R, O: OrdOffset> Serialize<DbspSerializer<'_>> for VecValBatch<K, V, T, R, O>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -269,8 +269,8 @@ where
 {
     fn serialize(
         &self,
-        _serializer: &mut Serializer,
-    ) -> Result<Self::Resolver, <Serializer as rkyv::Fallible>::Error> {
+        _serializer: &mut DbspSerializer,
+    ) -> Result<Self::Resolver, <DbspSerializer<'_> as rkyv::Fallible>::Error> {
         todo!()
     }
 }

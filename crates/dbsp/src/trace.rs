@@ -29,7 +29,8 @@
 use crate::circuit::metadata::OperatorMeta;
 use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 use crate::storage::buffer_cache::CacheStats;
-pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
+use crate::storage::file::SerializerInner;
+pub use crate::storage::file::{DbspSerializer, Deserializable, Deserializer, Rkyv};
 use crate::trace::cursor::{
     DefaultPushCursor, FilteredMergeCursor, FilteredMergeCursorWithSnapshot, PushCursor,
     UnfilteredMergeCursor,
@@ -38,6 +39,7 @@ use crate::utils::IsNone;
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::CursorFactory;
 use enum_map::Enum;
+use feldera_storage::fbuf::FBufSerializer;
 use feldera_storage::{FileCommitter, FileReader, StoragePath};
 use rand::{Rng, thread_rng};
 use rkyv::ser::Serializer as _;
@@ -1332,16 +1334,17 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    let mut s = Serializer::default();
-    let mut offsets = Vec::with_capacity(2 * batch.len());
-    let mut cursor = batch.cursor();
-    while cursor.key_valid() {
-        offsets.push(cursor.key().serialize(&mut s).unwrap());
-        offsets.push(cursor.weight().serialize(&mut s).unwrap());
-        cursor.step_key();
-    }
-    let _offset = s.serialize_value(&offsets).unwrap();
-    s.into_serializer().into_inner().into_vec()
+    SerializerInner::to_fbuf_with_thread_local(|s| {
+        let mut offsets = Vec::with_capacity(2 * batch.len());
+        let mut cursor = batch.cursor();
+        while cursor.key_valid() {
+            offsets.push(cursor.key().serialize(s)?);
+            offsets.push(cursor.weight().serialize(s)?);
+            cursor.step_key();
+        }
+        s.serialize_value(&offsets)
+    })
+    .into_vec()
 }
 
 fn deserialize_wset<B, K, R>(factories: &B::Factories, data: &[u8]) -> B
@@ -1377,7 +1380,7 @@ enum State {
 }
 
 pub struct IndexedWSetSerializer {
-    serializer: Serializer,
+    fbuf: FBuf,
     offsets: Vec<usize>,
     n_keys: usize,
     n_values: usize,
@@ -1391,7 +1394,7 @@ impl IndexedWSetSerializer {
         offsets.push(0);
         offsets.push(0);
         Self {
-            serializer: Serializer::default(),
+            fbuf: FBuf::new(),
             offsets,
             n_keys: 0,
             n_values: 0,
@@ -1400,18 +1403,27 @@ impl IndexedWSetSerializer {
         }
     }
 
-    pub fn push_diff<R: WeightTrait + ?Sized>(&mut self, weight: &R) {
+    pub fn push_diff<R: WeightTrait + ?Sized>(
+        &mut self,
+        weight: &R,
+        serializer_inner: &mut SerializerInner,
+    ) {
         #[cfg(debug_assertions)]
         {
             debug_assert_ne!(self.state, State::Diff);
             self.state = State::Diff;
         }
 
-        self.offsets
-            .push(weight.serialize(&mut self.serializer).unwrap());
+        serializer_inner.with(FBufSerializer::new(&mut self.fbuf), |s| {
+            self.offsets.push(weight.serialize(s).unwrap())
+        });
     }
 
-    pub fn push_val<V: DataTrait + ?Sized>(&mut self, val: &V) {
+    pub fn push_val<V: DataTrait + ?Sized>(
+        &mut self,
+        val: &V,
+        serializer_inner: &mut SerializerInner,
+    ) {
         #[cfg(debug_assertions)]
         {
             debug_assert_eq!(self.state, State::Diff);
@@ -1419,11 +1431,16 @@ impl IndexedWSetSerializer {
         }
 
         self.n_values += 1;
-        self.offsets
-            .push(val.serialize(&mut self.serializer).unwrap());
+        serializer_inner.with(FBufSerializer::new(&mut self.fbuf), |s| {
+            self.offsets.push(val.serialize(s).unwrap())
+        });
     }
 
-    pub fn push_key<K: DataTrait + ?Sized>(&mut self, key: &K) {
+    pub fn push_key<K: DataTrait + ?Sized>(
+        &mut self,
+        key: &K,
+        serializer_inner: &mut SerializerInner,
+    ) {
         #[cfg(debug_assertions)]
         {
             debug_assert_eq!(self.state, State::Val);
@@ -1432,22 +1449,27 @@ impl IndexedWSetSerializer {
 
         self.offsets.push(SEPARATOR as usize);
         self.n_keys += 1;
-        self.offsets
-            .push(key.serialize(&mut self.serializer).unwrap());
+        serializer_inner.with(FBufSerializer::new(&mut self.fbuf), |s| {
+            self.offsets.push(key.serialize(s).unwrap())
+        });
     }
 
-    pub fn done(mut self) -> Vec<u8> {
+    pub fn done(mut self, serializer_inner: &mut SerializerInner) -> Vec<u8> {
         #[cfg(debug_assertions)]
         debug_assert_eq!(self.state, State::Key);
         self.offsets[0] = self.n_keys;
         self.offsets[1] = self.n_values;
-        let _offset = self.serializer.serialize_value(&self.offsets).unwrap();
-        let inner = self.serializer.into_serializer().into_inner();
-        inner.into_vec()
+        serializer_inner.with(FBufSerializer::new(&mut self.fbuf), |s| {
+            s.serialize_value(&self.offsets).unwrap()
+        });
+        self.fbuf.into_vec()
     }
 }
 
-pub fn serialize_indexed_wset<B, K, V, R>(batch: &B) -> Vec<u8>
+pub fn serialize_indexed_wset<B, K, V, R>(
+    batch: &B,
+    serializer_inner: &mut SerializerInner,
+) -> Vec<u8>
 where
     B: BatchReader<Key = K, Val = V, Time = (), R = R>,
     K: DataTrait + ?Sized,
@@ -1459,14 +1481,14 @@ where
 
     while cursor.key_valid() {
         while cursor.val_valid() {
-            serializer.push_diff(cursor.weight());
-            serializer.push_val(cursor.val());
+            serializer.push_diff(cursor.weight(), serializer_inner);
+            serializer.push_val(cursor.val(), serializer_inner);
             cursor.step_val();
         }
-        serializer.push_key(cursor.key());
+        serializer.push_key(cursor.key(), serializer_inner);
         cursor.step_key();
     }
-    serializer.done()
+    serializer.done(serializer_inner)
 }
 
 pub fn deserialize_indexed_wset<B, K, V, R>(factories: &B::Factories, data: &[u8]) -> B
@@ -1513,6 +1535,7 @@ mod serialize_test {
         algebra::OrdIndexedZSet as DynOrdIndexedZSet,
         dynamic::DynData,
         indexed_zset,
+        storage::file::SerializerInner,
         trace::{BatchReader, deserialize_indexed_wset, serialize_indexed_wset},
     };
 
@@ -1524,7 +1547,7 @@ mod serialize_test {
             indexed_zset! { 1 => { 1 => 1, 2 => 2, 3 => 3 }, 2 => { 1 => 1, 2 => 2, 3 => 3 } };
 
         for test in [test1, test2, test3] {
-            let serialized = serialize_indexed_wset(&*test);
+            let serialized = serialize_indexed_wset(&*test, &mut SerializerInner::new());
             let deserialized = deserialize_indexed_wset::<
                 DynOrdIndexedZSet<DynData, DynData>,
                 DynData,
@@ -1542,7 +1565,7 @@ mod serialize_test {
         let test2 = indexed_zset! { () => { 1 => 1 } };
 
         for test in [test1, test2] {
-            let serialized = serialize_indexed_wset(&*test);
+            let serialized = serialize_indexed_wset(&*test, &mut SerializerInner::new());
             let deserialized = deserialize_indexed_wset::<
                 DynOrdIndexedZSet<DynData, DynData>,
                 DynData,
@@ -1561,7 +1584,7 @@ mod serialize_test {
         let test3 = indexed_zset! { 1 => { () => 1 }, 2 => { () => 1 } };
 
         for test in [test1, test2, test3] {
-            let serialized = serialize_indexed_wset(&*test);
+            let serialized = serialize_indexed_wset(&*test, &mut SerializerInner::new());
             let deserialized = deserialize_indexed_wset::<
                 DynOrdIndexedZSet<DynData, DynData>,
                 DynData,

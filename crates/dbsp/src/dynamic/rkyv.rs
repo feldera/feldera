@@ -1,7 +1,7 @@
 use super::{AsAny, Comparable, DowncastTrait};
 use crate::{
     derive_comparison_traits,
-    storage::file::{Deserializer, Serializer},
+    storage::file::{Deserializer, DbspSerializer},
 };
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, archived_value};
 use std::{cmp::Ordering, marker::PhantomData, mem::transmute};
@@ -11,14 +11,16 @@ use std::{cmp::Ordering, marker::PhantomData, mem::transmute};
 /// The associated type `Repr` with the bound + connecting it to Archived
 /// seems to be the key for rust to know the bounds exist globally in the code
 /// without having to specify the bounds everywhere.
-pub trait ArchivedDBData: Serialize<Serializer> + Archive<Archived = Self::Repr> + Sized {
+pub trait ArchivedDBData:
+    for<'a> Serialize<DbspSerializer<'a>> + Archive<Archived = Self::Repr> + Sized
+{
     type Repr: Deserialize<Self, Deserializer> + Ord;
 }
 
 /// We also automatically implement this bound for everything that satisfies it.
 impl<T> ArchivedDBData for T
 where
-    T: Archive + Serialize<Serializer>,
+    T: Archive + for<'a> Serialize<DbspSerializer<'a>>,
     Archived<T>: Deserialize<T, Deserializer> + Ord,
 {
     type Repr = Archived<T>;
@@ -28,8 +30,8 @@ where
 pub trait SerializeDyn {
     fn serialize(
         &self,
-        serializer: &mut Serializer,
-    ) -> Result<usize, <Serializer as Fallible>::Error>;
+        serializer: &mut DbspSerializer,
+    ) -> Result<usize, <DbspSerializer<'_> as Fallible>::Error>;
 }
 
 pub trait DeserializableDyn {
@@ -65,8 +67,8 @@ where
 {
     fn serialize(
         &self,
-        serializer: &mut Serializer,
-    ) -> Result<usize, <Serializer as Fallible>::Error> {
+        serializer: &mut DbspSerializer,
+    ) -> Result<usize, <DbspSerializer<'_> as Fallible>::Error> {
         rkyv::ser::Serializer::serialize_value(serializer, self)
     }
 }

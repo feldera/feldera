@@ -45,7 +45,7 @@ struct ArchivedFormatHeader {
 
 fn serialize_bytes<T>(value: &T) -> dbsp::storage::buffer_cache::FBuf
 where
-    T: rkyv::Archive + rkyv::Serialize<dbsp::storage::file::Serializer>,
+    T: rkyv::Archive + for<'a> rkyv::Serialize<dbsp::storage::file::DbspSerializer<'a>>,
 {
     dbsp::storage::file::to_bytes(value).expect("serialize tuple")
 }
@@ -53,7 +53,7 @@ where
 fn roundtrip<T>(value: &T)
 where
     T: rkyv::Archive
-        + rkyv::Serialize<dbsp::storage::file::Serializer>
+        + for<'a> rkyv::Serialize<dbsp::storage::file::DbspSerializer<'a>>
         + PartialEq
         + core::fmt::Debug,
     rkyv::Archived<T>: rkyv::Deserialize<T, dbsp::storage::file::Deserializer>,

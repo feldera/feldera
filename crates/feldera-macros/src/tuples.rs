@@ -931,14 +931,11 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
     let checkpoint_impl = quote! {
         impl<#(#generics),*> ::dbsp::circuit::checkpointer::Checkpoint for #name<#(#generics),*>
         where
-            #name<#(#generics),*>: ::rkyv::Serialize<::dbsp::storage::file::Serializer>
+            #name<#(#generics),*>: for<'lifetime> ::rkyv::Serialize<::dbsp::storage::file::DbspSerializer<'lifetime>>
                 + ::dbsp::storage::file::Deserializable,
         {
             fn checkpoint(&self) -> Result<Vec<u8>, ::dbsp::Error> {
-                let mut s = ::dbsp::storage::file::Serializer::default();
-                let _offset = ::rkyv::ser::Serializer::serialize_value(&mut s, self).unwrap();
-                let data = s.into_serializer().into_inner().into_vec();
-                Ok(data)
+                Ok(::dbsp::storage::file::SerializerInner::to_fbuf_with_thread_local(|s| ::rkyv::ser::Serializer::serialize_value(s, self)).into_vec())
             }
 
             fn restore(&mut self, data: &[u8]) -> Result<(), ::dbsp::Error> {

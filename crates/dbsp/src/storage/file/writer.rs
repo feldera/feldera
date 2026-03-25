@@ -8,14 +8,13 @@ use crate::storage::{
     backend::{BlockLocation, FileReader, FileWriter, StorageBackend, StorageError},
     buffer_cache::{BufferCache, FBuf, FBufSerializer, LimitExceeded},
     file::{
-        BLOOM_FILTER_SEED,
+        BLOOM_FILTER_SEED, SerializerInner,
         format::{
             BlockHeader, COMPATIBLE_FEATURE_FILTER64, DATA_BLOCK_MAGIC, DataBlockHeader,
             FILE_TRAILER_BLOCK_MAGIC, FileTrailer, FileTrailerColumn, FilterBlockRef, FixedLen,
             INDEX_BLOCK_MAGIC, IndexBlockHeader, NodeType, VERSION_NUMBER, Varint,
         },
         reader::TreeNode,
-        with_serializer,
     },
 };
 use binrw::{
@@ -237,6 +236,7 @@ impl ColumnWriter {
     fn finish<K, A>(
         &mut self,
         block_writer: &mut BlockWriter,
+        serializer: &mut SerializerInner,
     ) -> Result<FileTrailerColumn, StorageError>
     where
         K: DataTrait + ?Sized,
@@ -245,7 +245,7 @@ impl ColumnWriter {
         // Flush data.
         if !self.data_block.is_empty() {
             let data_block = self.data_block.build::<K, A>();
-            self.write_data_block::<K, A>(block_writer, data_block)?;
+            self.write_data_block::<K, A>(block_writer, data_block, serializer)?;
         }
 
         // Flush index.
@@ -267,7 +267,7 @@ impl ColumnWriter {
                 });
             } else if !self.index_blocks[level].is_empty() {
                 let index_block = self.index_blocks[level].build();
-                self.write_index_block::<K>(block_writer, index_block, level)?;
+                self.write_index_block::<K>(block_writer, index_block, level, serializer)?;
             }
             level += 1;
         }
@@ -299,6 +299,7 @@ impl ColumnWriter {
         &mut self,
         block_writer: &mut BlockWriter,
         data_block: DataBlock<K>,
+        serializer: &mut SerializerInner,
     ) -> Result<(), StorageError>
     where
         K: DataTrait + ?Sized,
@@ -325,8 +326,9 @@ impl ColumnWriter {
             location,
             &data_block.min_max,
             data_block.n_rows as u64,
+            serializer,
         ) {
-            self.write_index_block::<K>(block_writer, index_block, 0)?;
+            self.write_index_block::<K>(block_writer, index_block, 0, serializer)?;
         }
         Ok(())
     }
@@ -336,6 +338,7 @@ impl ColumnWriter {
         block_writer: &mut BlockWriter,
         mut index_block: IndexBlock<K>,
         mut level: usize,
+        serializer: &mut SerializerInner,
     ) -> Result<(), StorageError>
     where
         K: DataTrait + ?Sized,
@@ -359,9 +362,12 @@ impl ColumnWriter {
             .unwrap();
 
             level += 1;
-            let opt_index_block =
-                self.get_index_block(level)
-                    .add_entry(location, &index_block.min_max, n_rows);
+            let opt_index_block = self.get_index_block(level).add_entry(
+                location,
+                &index_block.min_max,
+                n_rows,
+                serializer,
+            );
             index_block = match opt_index_block {
                 None => return Ok(()),
                 Some(index_block) => index_block,
@@ -374,13 +380,14 @@ impl ColumnWriter {
         block_writer: &mut BlockWriter,
         item: (&K, &A),
         row_group: &Option<Range<u64>>,
+        serializer: &mut SerializerInner,
     ) -> Result<(), StorageError>
     where
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
     {
-        if let Some(data_block) = self.data_block.add_item(item, row_group) {
-            self.write_data_block::<K, A>(block_writer, data_block)?;
+        if let Some(data_block) = self.data_block.add_item(item, row_group, serializer) {
+            self.write_data_block::<K, A>(block_writer, data_block, serializer)?;
         }
         Ok(())
     }
@@ -490,6 +497,7 @@ impl DataBlockBuilder {
         &mut self,
         item: (&K, &A),
         row_group: &Option<Range<u64>>,
+        serializer: &mut SerializerInner,
     ) -> Result<(), LimitExceeded>
     where
         K: DataTrait + ?Sized,
@@ -506,8 +514,12 @@ impl DataBlockBuilder {
         self.factories
             .item_factory()
             .with(item.0, item.1, &mut |item| {
-                result =
-                    rkyv_serialize(&mut self.raw, item, self.size_target.unwrap_or(usize::MAX));
+                result = rkyv_serialize(
+                    serializer,
+                    &mut self.raw,
+                    item,
+                    self.size_target.unwrap_or(usize::MAX),
+                );
             });
         let offset = result.inspect_err(|_| self.raw.resize(old_len, 0))?;
 
@@ -542,16 +554,17 @@ impl DataBlockBuilder {
         &mut self,
         item: (&K, &A),
         row_group: &Option<Range<u64>>,
+        serializer: &mut SerializerInner,
     ) -> Option<DataBlock<K>>
     where
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
     {
-        if self.try_add_item(item, row_group).is_ok() {
+        if self.try_add_item(item, row_group, serializer).is_ok() {
             None
         } else {
             let retval = self.build::<K, A>();
-            assert!(self.try_add_item(item, row_group).is_ok());
+            assert!(self.try_add_item(item, row_group, serializer).is_ok());
             Some(retval)
         }
     }
@@ -752,17 +765,23 @@ fn rkyv_deserialize_key<K, A>(
     )
 }
 
-fn rkyv_serialize<T>(dst: &mut FBuf, value: &T, limit: usize) -> Result<usize, LimitExceeded>
+fn rkyv_serialize<T>(
+    serializer: &mut SerializerInner,
+    dst: &mut FBuf,
+    value: &T,
+    limit: usize,
+) -> Result<usize, LimitExceeded>
 where
     T: SerializeDyn + ?Sized,
 {
     let old_len = dst.len();
 
-    let result;
-    (*dst, result) = with_serializer(FBufSerializer::new(take(dst), limit), |serializer| {
-        value.serialize(serializer)
-    });
-    let offset = result.map_err(|_| LimitExceeded)?;
+    let offset = serializer
+        .with(
+            FBufSerializer::new(&mut *dst).with_limit(limit),
+            |serializer| value.serialize(serializer),
+        )
+        .map_err(|_| LimitExceeded)?;
 
     if dst.len() == old_len {
         // Ensure that a value takes up at least one byte.  Otherwise, we'll
@@ -804,6 +823,7 @@ impl IndexBlockBuilder {
         child: BlockLocation,
         min_max: &(Box<K>, Box<K>),
         n_rows: u64,
+        serializer: &mut SerializerInner,
     ) -> Result<(), LimitExceeded>
     where
         K: DataTrait + ?Sized,
@@ -813,8 +833,8 @@ impl IndexBlockBuilder {
         }
         self.max_child_size = self.max_child_size.max(child.size);
         let limit = self.size_target.unwrap_or(usize::MAX);
-        let min_offset = rkyv_serialize(&mut self.raw, min_max.0.as_ref(), limit)?;
-        let max_offset = rkyv_serialize(&mut self.raw, min_max.1.as_ref(), limit)?;
+        let min_offset = rkyv_serialize(serializer, &mut self.raw, min_max.0.as_ref(), limit)?;
+        let max_offset = rkyv_serialize(serializer, &mut self.raw, min_max.1.as_ref(), limit)?;
         self.entries.push(IndexEntry {
             child,
             min_offset,
@@ -841,6 +861,7 @@ impl IndexBlockBuilder {
         child: BlockLocation,
         min_max: &(Box<K>, Box<K>),
         n_rows: u64,
+        serializer: &mut SerializerInner,
     ) -> Result<(), LimitExceeded>
     where
         K: DataTrait + ?Sized,
@@ -848,7 +869,7 @@ impl IndexBlockBuilder {
         let saved_len = self.raw.len();
         let saved_max_child_size = self.max_child_size;
         let n_entries = self.entries.len();
-        self.inner_try_add_entry(child, min_max, n_rows)
+        self.inner_try_add_entry(child, min_max, n_rows, serializer)
             .inspect_err(|_| {
                 self.max_child_size = saved_max_child_size;
                 self.raw.resize(saved_len, 0);
@@ -862,11 +883,12 @@ impl IndexBlockBuilder {
         child: BlockLocation,
         min_max: &(Box<K>, Box<K>),
         n_rows: u64,
+        serializer: &mut SerializerInner,
     ) -> Option<IndexBlock<K>>
     where
         K: DataTrait + ?Sized,
     {
-        let f = |t: &mut Self| t.try_add_entry(child, min_max, n_rows);
+        let mut f = |t: &mut Self| t.try_add_entry(child, min_max, n_rows, serializer);
         if f(self).is_ok() {
             None
         } else {
@@ -1098,6 +1120,7 @@ struct Writer {
     bloom_filter: Option<TrackingBloomFilter>,
     cws: Vec<ColumnWriter>,
     finished_columns: Vec<FileTrailerColumn>,
+    serializer: SerializerInner,
 }
 
 impl Writer {
@@ -1151,6 +1174,7 @@ impl Writer {
             bloom_filter,
             cws,
             finished_columns,
+            serializer: SerializerInner::new(),
         };
         Ok(writer)
     }
@@ -1177,7 +1201,7 @@ impl Writer {
 
         // Add `value` to row group for column.
         self.cws[column].rows.end += 1;
-        self.cws[column].add_item(&mut self.writer, item, &row_group)
+        self.cws[column].add_item(&mut self.writer, item, &row_group, &mut self.serializer)
     }
 
     pub fn finish_column<K, A>(&mut self, column: usize) -> Result<(), StorageError>
@@ -1191,7 +1215,7 @@ impl Writer {
         }
 
         self.finished_columns
-            .push(self.cws[column].finish::<K, A>(&mut self.writer)?);
+            .push(self.cws[column].finish::<K, A>(&mut self.writer, &mut self.serializer)?);
         Ok(())
     }
 

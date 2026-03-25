@@ -71,11 +71,11 @@ macro_rules! declare_trait_object_with_archived {
             }
         }
 
-        impl<$($generic),*> rkyv::Serialize<$crate::trace::Serializer> for Box<$type_alias<$($generic),*>> {
+        impl<$($generic),*> rkyv::Serialize<$crate::trace::DbspSerializer<'_>> for Box<$type_alias<$($generic),*>> {
             fn serialize(
                 &self,
-                _serializer: &mut $crate::trace::Serializer,
-            ) -> Result<Self::Resolver, <$crate::trace::Serializer as rkyv::Fallible>::Error> {
+                _serializer: &mut $crate::trace::DbspSerializer,
+            ) -> Result<Self::Resolver, <$crate::trace::DbspSerializer<'_> as rkyv::Fallible>::Error> {
                 todo!()
             }
         }
