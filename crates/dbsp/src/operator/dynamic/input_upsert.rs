@@ -1,6 +1,6 @@
 use crate::{
-    Circuit, DBData, NumEntries, RootCircuit, Stream, ZWeight,
-    algebra::{HasOne, HasZero, IndexedZSet, OrdZSet, ZTrace},
+    Circuit, DBData, NumEntries, RootCircuit, Runtime, Stream, ZWeight,
+    algebra::{HasOne, HasZero, IndexedZSet, IndexedZSetReader, OrdZSet, ZTrace},
     circuit::{
         OwnershipPreference, Scope,
         checkpointer::Checkpoint,
@@ -34,6 +34,7 @@ use std::{
     mem::take,
     ops::{Deref, Neg},
 };
+use tracing::info;
 
 use super::trace::BoundsId;
 
@@ -307,6 +308,7 @@ where
                 .add_binary_operator(
                     <InputUpsert<Spine<B>, U, B>>::new(
                         factories.batch_factories.clone(),
+                        persistent_id,
                         factories.opt_key_factory,
                         factories.opt_val_factory,
                         patch_func,
@@ -480,6 +482,7 @@ where
     U: DataTrait + ?Sized,
 {
     batch_factories: B::Factories,
+    persistent_id: Option<String>,
     opt_key_factory: &'static dyn Factory<DynOpt<B::Key>>,
     opt_val_factory: &'static dyn Factory<DynOpt<B::Val>>,
     patch_func: PatchFunc<T::Val, U>,
@@ -501,12 +504,14 @@ where
 {
     pub fn new(
         batch_factories: B::Factories,
+        persistent_id: Option<&str>,
         opt_key_factory: &'static dyn Factory<DynOpt<B::Key>>,
         opt_val_factory: &'static dyn Factory<DynOpt<B::Val>>,
         patch_func: PatchFunc<T::Val, U>,
     ) -> Self {
         Self {
             batch_factories,
+            persistent_id: persistent_id.map(|id| id.to_string()),
             opt_key_factory,
             opt_val_factory,
             patch_func,
@@ -551,6 +556,30 @@ where
         trace: &T,
         updates: &Vec<Box<DynPairs<T::Key, DynUpdate<T::Val, U>>>>,
     ) -> B {
+        let mut log = false;
+        if self.persistent_id
+            == Some("fa117bf0bd3da659c9a4b3759a26fa2e660a9b1e0ed6969ecb1da3cad1b204e0".to_string())
+            && !updates.is_empty()
+        {
+            let mut msg = String::new();
+            updates.iter().for_each(|updates| {
+                let mut line = String::new();
+                updates.dyn_iter().for_each(|update| {
+                    let action = match update.snd().get() {
+                        UpdateRef::Insert(_) => "insert",
+                        UpdateRef::Delete => "delete",
+                        UpdateRef::Update(_) => "update",
+                    };
+                    line.push_str(&format!("{action} {:?} ", update.fst()));
+                });
+                msg.push_str(&format!("\n   {line}"));
+            });
+            info!(
+                "{} early_pay_program_enrollment.snapshot_and_follow_connector: input_upsert:{msg}",
+                Runtime::worker_index()
+            );
+            log = true;
+        }
         // Inputs must be sorted by key
         let mut updates = updates
             .iter()
@@ -590,11 +619,21 @@ where
                 .iter()
                 .map(|(updates, index)| updates.index(*index))
                 .enumerate()
-                .min_by(|(_a_index, a), (_b_index, b)| a.cmp(b))
+                .min_by(|(_a_index, a), (_b_index, b)| a.fst().cmp(b.fst()))
                 .unwrap();
+            if log {
+                info!("    winning index: {index:?}");
+            }
             updates[index].1 += 1;
             if updates[index].1 >= updates[index].0.len() {
+                if log {
+                    info!("    removing index: {index:?}");
+                }
                 updates.remove(index);
+            }
+
+            if log {
+                info!("    applying update: {key_upd:?}");
             }
 
             let (key, upd) = key_upd.split();
@@ -602,9 +641,16 @@ where
             // We finished processing updates for the previous key. Push them to the
             // builder and generate a retraction for the new key.
             if cur_key.get() != Some(key) {
+                if cur_key.get().is_some() {
+                    log = false;
+                }
+
                 // Push updates for the previous key to the builder.
                 if let Some(cur_key) = cur_key.get_mut() {
                     if let Some(val) = cur_val.get_mut() {
+                        if log {
+                            info!("    updated val: {val:?}");
+                        }
                         key_updates.push_with(&mut |item| {
                             let (v, w) = item.split_mut();
 
@@ -613,6 +659,9 @@ where
                         });
                     }
                     key_updates.consolidate();
+                    if log {
+                        info!("    consolidated key updates: {key_updates:?}");
+                    }
                     if !key_updates.is_empty() {
                         for pair in key_updates.dyn_iter_mut() {
                             let (v, d) = pair.split_mut();
@@ -628,12 +677,18 @@ where
 
                 // Generate retraction if `key` is present in the trace.
                 if trace_cursor.seek_key_exact(key, None) {
+                    if log {
+                        info!("    found key in trace_cursor: {key:?}");
+                    }
                     // println!("{}: found key in trace_cursor", Runtime::worker_index());
                     while trace_cursor.val_valid() {
                         let weight = **trace_cursor.weight();
 
                         if !weight.is_zero() {
                             let val = trace_cursor.val();
+                            if log {
+                                info!("    found val in trace_cursor: {val:?}");
+                            }
 
                             key_updates.push_with(&mut |item| {
                                 let (v, w) = item.split_mut();
@@ -651,10 +706,16 @@ where
 
             match upd.get() {
                 UpdateRef::Delete => {
+                    if log {
+                        info!("    deleting key: {key:?}");
+                    }
                     // TODO: if cur_val.is_none(), report missing key.
                     cur_val.set_none();
                 }
                 UpdateRef::Insert(val) => {
+                    if log {
+                        info!("    inserting val: {val:?}");
+                    }
                     cur_val.from_ref(val);
                 }
                 UpdateRef::Update(upd) => {
@@ -689,7 +750,21 @@ where
             key_updates.clear();
         }
 
-        builder.done()
+        let batch = builder.done();
+        if self.persistent_id
+            == Some("fa117bf0bd3da659c9a4b3759a26fa2e660a9b1e0ed6969ecb1da3cad1b204e0".to_string())
+            && !batch.is_empty()
+        {
+            let mut msg = String::new();
+            for (k, _v, w) in batch.iter() {
+                msg.push_str(&format!("{:?}->{:?},", k, w));
+            }
+            info!(
+                "{} early_pay_program_enrollment.snapshot_and_follow_connector: input_upsert: {msg:?}",
+                Runtime::worker_index(),
+            );
+        }
+        batch
     }
 
     fn input_preference(&self) -> (OwnershipPreference, OwnershipPreference) {

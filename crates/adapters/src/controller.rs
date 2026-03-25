@@ -6791,6 +6791,12 @@ impl InputConsumer for InputProbe {
     }
 
     fn start_transaction(&self, label: Option<&str>) {
+        if self.endpoint_name == "early_pay_program_enrollment.snapshot_and_follow_connector" {
+            info!(
+                "early_pay_program_enrollment.snapshot_and_follow_connector: Starting transaction: {:?}",
+                label
+            );
+        }
         match self
             .controller
             .start_transaction_from_connector(&self.endpoint_name, label)
@@ -6813,6 +6819,11 @@ impl InputConsumer for InputProbe {
     }
 
     fn commit_transaction(&self) {
+        if self.endpoint_name == "early_pay_program_enrollment.snapshot_and_follow_connector" {
+            info!(
+                "early_pay_program_enrollment.snapshot_and_follow_connector: Committing transaction"
+            );
+        }
         if let Err(error) = self
             .controller
             .commit_transaction_from_connector(&self.endpoint_name)

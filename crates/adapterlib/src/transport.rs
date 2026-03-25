@@ -14,6 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::error::TryRecvError;
+use tracing::info;
 use xxhash_rust::xxh3::Xxh3Default;
 
 use crate::PipelineState;
@@ -464,6 +465,109 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
             else {
                 break;
             };
+
+            if let Some(label) = start_transaction {
+                self.start_transaction(label.as_deref());
+            }
+
+            stop = stop_at(&aux);
+            consumed_aux.push((timestamp, aux));
+
+            if commit_transaction && self.commit_transaction() {
+                break;
+            }
+        }
+
+        (total, hasher, consumed_aux)
+    }
+
+    /// Flushes a batch of records to the circuit and returns the auxiliary data
+    /// that was associated with those records.
+    ///
+    /// Stops after flushing at least `max_batch_size` records or after flushing a
+    /// buffer whose auxiliary data satisfies the `stop_at` predicate, whichever
+    /// happens first.
+    ///
+    /// This always flushes whole buffers to the circuit (with `flush`),
+    /// since auxiliary data is associated with a whole buffer rather than with
+    /// individual records. If the auxiliary data type `A` is `()`, then
+    /// [InputQueue<()>::flush] avoids that and so is a better choice.
+    #[allow(clippy::type_complexity)]
+    pub fn flush_with_aux_until2(
+        &self,
+        endpoint_name: &str,
+        stop_at: &dyn Fn(&A) -> bool,
+    ) -> (BufferSize, Option<Xxh3Default>, Vec<(DateTime<Utc>, A)>) {
+        let mut total = BufferSize::empty();
+        let mut hasher = self.consumer.hasher();
+        let n = self.consumer.max_batch_size();
+        let mut consumed_aux = Vec::new();
+
+        let mut stop = false;
+
+        while !stop && total.records < n {
+            let Some(InputQueueEntry {
+                buffer,
+                timestamp,
+                aux,
+                start_transaction,
+                commit_transaction,
+            }) = self.queue.lock().unwrap().pop_front()
+            else {
+                break;
+            };
+
+            if let Some(label) = &start_transaction {
+                self.start_transaction(label.as_deref());
+            }
+
+            if let Some(mut buffer) = buffer {
+                total += buffer.len();
+                if let Some(hasher) = hasher.as_mut() {
+                    buffer.hash(hasher);
+                }
+                if endpoint_name == "early_pay_program_enrollment.snapshot_and_follow_connector" {
+                    info!(
+                        "early_pay_program_enrollment.snapshot_and_follow_connector: flushing buffer: {:?} records (start_transaction: {:?}, commit_transaction: {:?})",
+                        buffer.len(),
+                        start_transaction,
+                        commit_transaction
+                    );
+                }
+                buffer.flush();
+            }
+
+            stop = stop_at(&aux);
+            consumed_aux.push((timestamp, aux));
+
+            if commit_transaction && self.commit_transaction() {
+                break;
+            }
+        }
+
+        // Process any entries with aux data only.
+        let mut queue = self.queue.lock().unwrap();
+        while !stop
+            && queue
+                .front()
+                .is_some_and(|InputQueueEntry { buffer, .. }| buffer.is_none())
+        {
+            let Some(InputQueueEntry {
+                timestamp,
+                aux,
+                start_transaction,
+                commit_transaction,
+                ..
+            }) = queue.pop_front()
+            else {
+                break;
+            };
+            if endpoint_name == "early_pay_program_enrollment.snapshot_and_follow_connector" {
+                info!(
+                    "empty buffer: start_transaction: {:?}, commit_transaction: {:?}",
+                    start_transaction, commit_transaction
+                );
+            }
 
             if let Some(label) = start_transaction {
                 self.start_transaction(label.as_deref());

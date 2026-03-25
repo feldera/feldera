@@ -25,7 +25,7 @@ use deltalake::kernel::Action;
 use deltalake::logstore::{self, IORuntime};
 use deltalake::table::builder::ensure_table_uri;
 use deltalake::{DeltaTable, DeltaTableBuilder, datafusion};
-use feldera_adapterlib::format::{ParseError, StagedInputBuffer};
+use feldera_adapterlib::format::{BufferSize, ParseError, StagedInputBuffer};
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::transport::{InputQueueEntry, Resume, Watermark, parse_resume_info};
 use feldera_adapterlib::utils::datafusion::{
@@ -349,7 +349,10 @@ impl InputReader for DeltaTableInputReader {
                     &|_: &Option<DeltaResumeInfo>| false
                 };
 
-                let (total, _, resume_info) = self.inner.queue.flush_with_aux_until(stop_at);
+                let (total, _, resume_info) = self
+                    .inner
+                    .queue
+                    .flush_with_aux_until2(self.inner.endpoint_name.as_str(), stop_at);
                 let resume_status = resume_info
                     .last()
                     .map(|(_ts, resume_info)| resume_info.clone())
@@ -1661,6 +1664,7 @@ impl DeltaTableInputEndpointInner {
         let queue = self.queue.clone();
 
         let num_parsers = self.config.num_parsers as usize;
+        let endpoint_name = self.endpoint_name.clone();
 
         // Create a job queue to efficiently parse record batches retrieved by the query.
         let job_queue = JobQueue::<
@@ -1696,6 +1700,14 @@ impl DeltaTableInputEndpointInner {
                 })
             },
             move |(buffer, errors, timestamp)| {
+                if endpoint_name == "early_pay_program_enrollment.snapshot_and_follow_connector" {
+                    info!(
+                        "early_pay_program_enrollment.snapshot_and_follow_connector: pushed {:?} {}",
+                        buffer.as_ref().map_or(BufferSize::empty(), |b| b.len()),
+                        if polarity { "insertions" } else { "deletions" }
+                    );
+                }
+
                 queue.push_entry(
                     InputQueueEntry::new_with_aux(timestamp, None)
                         .with_buffer(buffer)
@@ -1791,28 +1803,30 @@ impl DeltaTableInputEndpointInner {
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) {
-        if self.config.verbose > 0 {
+        if self.config.verbose > 0
+            && self.endpoint_name == "early_pay_program_enrollment.snapshot_and_follow_connector"
+        {
             // Don't log actions we ignore to limit spurious logging. E.g., delta lake
             // optimization passes can generate thousand of noop actions.
-            let data_change_actions = actions
-                .iter()
-                .filter(|action| match action {
-                    Action::Add(add) if add.data_change => true,
-                    Action::Remove(remove) if remove.data_change => true,
-                    _ => false,
-                })
-                .collect::<Vec<_>>();
+            // let data_change_actions = actions
+            //     .iter()
+            //     .filter(|action| match action {
+            //         Action::Add(add) if add.data_change => true,
+            //         Action::Remove(remove) if remove.data_change => true,
+            //         _ => false,
+            //     })
+            //     .collect::<Vec<_>>();
             info!(
-                "delta_table {}: log entry for table version {new_version}: {data_change_actions:?}{}",
+                "delta_table {}: log entry for table version {new_version}: {actions:?}",
                 &self.endpoint_name,
-                if actions.len() > data_change_actions.len() {
-                    format!(
-                        " ({} other actions)",
-                        actions.len() - data_change_actions.len()
-                    )
-                } else {
-                    "".to_string()
-                }
+                // if actions.len() > data_change_actions.len() {
+                //     format!(
+                //         " ({} other actions)",
+                //         actions.len() - data_change_actions.len()
+                //     )
+                // } else {
+                //     "".to_string()
+                // }
             );
         }
 
@@ -1837,6 +1851,12 @@ impl DeltaTableInputEndpointInner {
             // entry.
             for action in actions {
                 if matches!(action, Action::Remove(_)) {
+                    if self.endpoint_name
+                        == "early_pay_program_enrollment.snapshot_and_follow_connector"
+                    {
+                        info!("Processing remove action: {:?}", action);
+                    }
+
                     self.process_action(
                         action,
                         table,
@@ -1851,6 +1871,12 @@ impl DeltaTableInputEndpointInner {
 
             for action in actions {
                 if matches!(action, Action::Add(_)) {
+                    if self.endpoint_name
+                        == "early_pay_program_enrollment.snapshot_and_follow_connector"
+                    {
+                        info!("Processing add action: {:?}", action);
+                    }
+
                     self.process_action(
                         action,
                         table,
