@@ -256,19 +256,19 @@ Results are always `VARIANT` — cast to get a concrete type: `CAST(v['age'] AS 
 | `json_array_length(s)` | `CARDINALITY(CAST(PARSE_JSON(s) AS VARIANT ARRAY))` | |
 
 Notes:
-- **Parse once, reuse — for simple SELECT (no GROUP BY).** When extracting multiple fields from the same JSON column without aggregation, call `PARSE_JSON` once as a lateral alias:
+- **Feldera does NOT support lateral aliases in SELECT.** You CANNOT reference an alias defined in the same SELECT list. Always repeat `PARSE_JSON(col)` per field, or use a CTE.
+
+Simple SELECT — repeat PARSE_JSON per field:
 
 ```sql
--- Simple SELECT: parse once, reuse alias
 SELECT
-  PARSE_JSON(payload) AS v,
-  CAST(v['user_id'] AS VARCHAR)  AS user_id,
-  CAST(v['amount'] AS DOUBLE)    AS amount,
-  CAST(v['currency'] AS VARCHAR) AS currency
+  CAST(PARSE_JSON(payload)['user_id']  AS VARCHAR) AS user_id,
+  CAST(PARSE_JSON(payload)['amount']   AS DOUBLE)  AS amount,
+  CAST(PARSE_JSON(payload)['currency'] AS VARCHAR) AS currency
 FROM raw_events;
 ```
 
-- **With GROUP BY: use a CTE to pre-parse.** The lateral alias pattern breaks with GROUP BY because `payload` must be in the GROUP BY or an aggregate. Pre-parse in a CTE instead. The CTE goes *inside* `CREATE VIEW ... AS`, not before it:
+- **With GROUP BY: use a CTE to pre-parse.** Repeat PARSE_JSON in GROUP BY too, or use a CTE. The CTE goes *inside* `CREATE VIEW ... AS`, not before it:
 
 ```sql
 CREATE VIEW summary AS
@@ -409,8 +409,8 @@ These require translation but ARE supported.
 | `from_unixtime(n[, fmt])` | `TIMESTAMPADD(SECOND, n, DATE '1970-01-01')` | **Type difference**: Spark returns VARCHAR (`'2024-01-15 10:30:00'`); Feldera rewrite returns TIMESTAMP. No-format case is safe for timestamp arithmetic. If `fmt` arg is used (e.g. `from_unixtime(n, 'yyyy-MM-dd')`), mark unsupported — no direct Feldera equivalent. |
 | `make_timestamp(y,mo,d,h,mi,s)` | `PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CONCAT(CAST(y AS VARCHAR), '-', RIGHT(CONCAT('0', CAST(mo AS VARCHAR)), 2), '-', RIGHT(CONCAT('0', CAST(d AS VARCHAR)), 2), ' ', RIGHT(CONCAT('0', CAST(h AS VARCHAR)), 2), ':', RIGHT(CONCAT('0', CAST(mi AS VARCHAR)), 2), ':', RIGHT(CONCAT('0', CAST(s AS VARCHAR)), 2)))` | Pads all components to 2 digits |
 | `to_timestamp(s[, fmt])` | `PARSE_TIMESTAMP(fmt, s)` | Argument order reversed; default fmt is `%Y-%m-%d %H:%M:%S`; translate Java fmt to strftime |
-| `to_date(ts, fmt)` | `CAST(PARSE_TIMESTAMP(fmt, ts) AS DATE)` | Args swapped: Spark `to_date(str, fmt)` → Feldera `PARSE_TIMESTAMP(fmt, str)`; translate Java fmt → strftime (e.g. `yyyy-MM-dd` → `%Y-%m-%d`). No-format: `CAST(str AS DATE)`. |
-| `date_format(d, fmt)` | `FORMAT_DATE(fmt, CAST(d AS DATE))` | Argument order reversed; Spark uses Java patterns (yyyy-MM-dd), Feldera uses strftime (%Y-%m-%d); always CAST input to DATE even if it is already a DATE; for TIMESTAMP input use `FORMAT_DATE('%Y-%m-%d', CAST(ts AS DATE))`. |
+| `to_date(str, fmt)` | `PARSE_DATE(strptime_fmt, str)` | Translate Java fmt → strftime (e.g. `yyyy-MM-dd` → `%Y-%m-%d`). Use `PARSE_DATE` (NOT `PARSE_TIMESTAMP`) — `PARSE_TIMESTAMP` panics on date-only strings. No-format variant: `CAST(str AS DATE)`. |
+| `date_format(d, fmt)` | date-only fmt: `FORMAT_DATE(strftime_fmt, CAST(d AS DATE))`; time-component fmt: use `CONCAT` + `FORMAT_DATE` for date part + `EXTRACT` for time parts, padding each with `CONCAT(REPEAT('0', 2-LENGTH(CAST(EXTRACT(HOUR FROM d) AS VARCHAR))), CAST(EXTRACT(HOUR FROM d) AS VARCHAR))` | Arg order reversed; Java → strftime. **Critical:** `FORMAT_DATE` always truncates time (treats input as DATE). `FORMAT_TIMESTAMP` does not exist. `LPAD` does not work for this. For formats containing `HH`, `mm`, `ss` etc., use CONCAT+EXTRACT: `date_format(ts, 'yyyy-MM-dd HH:mm')` → `CONCAT(FORMAT_DATE('%Y-%m-%d', CAST(ts AS DATE)), ' ', CONCAT(REPEAT('0', 2-LENGTH(CAST(EXTRACT(HOUR FROM ts) AS VARCHAR))), CAST(EXTRACT(HOUR FROM ts) AS VARCHAR)), ':', CONCAT(REPEAT('0', 2-LENGTH(CAST(EXTRACT(MINUTE FROM ts) AS VARCHAR))), CAST(EXTRACT(MINUTE FROM ts) AS VARCHAR)))`. |
 
 ### CAST
 
@@ -442,7 +442,7 @@ These require translation but ARE supported.
 
 | Spark | Feldera | Notes |
 |-------|---------|-------|
-| `pmod(a, b)` | `MOD(MOD(a, ABS(b)) + ABS(b), ABS(b))` | Always returns non-negative result (Spark: `pmod(a, b) ≥ 0` regardless of sign of b). Unified formula works for positive and negative divisors. |
+| `pmod(a, b)` | `CASE WHEN MOD(a, b) < 0 AND b > 0 THEN MOD(a, b) + b ELSE MOD(a, b) END` | With positive divisor: result is always ≥ 0. With negative divisor: result has same sign as dividend. |
 | `isnan(x)` | `IS_NAN(x)` | |
 | `log2(x)` | `LOG(x, 2)` | |
 | `log(base, x)` | `LOG(x, base)` | **CRITICAL — arg order reversed. ALWAYS swap both arguments.** Spark: first arg=base, second arg=value. Feldera: first arg=value, second arg=base. `LOG(a, b)` in Spark → `LOG(b, a)` in Feldera — mechanical swap, no exceptions, regardless of column names. Examples: `LOG(amplitude, 2)` in Spark → `LOG(2, amplitude)` in Feldera. `LOG(col, 10)` in Spark → `LOG(10, col)` in Feldera. Do NOT be misled by column alias names like `log2_col` — follow the rule, not the alias. |
@@ -685,7 +685,7 @@ Rationale: a partial translation produces incorrect results, which is worse than
 | `DECODE(expr, s1, r1, s2, r2, ..., default)` | Not supported in Feldera — DECODE uses Oracle-style NULL-safe equality where `NULL = NULL` is TRUE; a correct rewrite requires `IS NOT DISTINCT FROM` instead of `=`, which Feldera does not support. A naive `CASE WHEN expr = s1` rewrite silently breaks NULL-matching branches. |
 | `substring_index` | No equivalent |
 | `uuid()` | Non-deterministic — not supported in Feldera |
-| `contains(bool, ...)` / `contains(binary, ...)` | `contains()` only works on strings in Feldera; boolean or binary args not supported |
+| `contains(bool, ...)` | `contains()` does not work on boolean args in Feldera — mark unsupported |
 | `startswith(x'...', x'...')` / `endswith(x'...', x'...')` | Binary hex literal args not supported — `LEFT`/`RIGHT` do not work on binary types |
 | `to_number(str, fmt)` | Numeric parsing with format string — not supported in Feldera |
 | `to_binary(str, fmt)` | Binary conversion function — not supported in Feldera |
