@@ -33,11 +33,7 @@ use flate2::{
     Compression,
     bufread::{GzDecoder, GzEncoder},
 };
-use libc::pid_t;
-use nix::{
-    time::{ClockId, clock_gettime},
-    unistd::{Pid, gettid},
-};
+use nix::time::{ClockId, clock_gettime};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use size_of::HumanBytes;
@@ -234,7 +230,7 @@ impl Drop for SamplySpan {
 }
 
 /// Profile marker annotation data.
-pub struct Markers(HashMap<Pid, (Option<String>, Vec<Vec<Marker>>)>);
+pub struct Markers(HashMap<usize, (Option<String>, Vec<Vec<Marker>>)>);
 
 impl Markers {
     /// Calls `f` while capturing profile marker annotation data, and returns
@@ -363,8 +359,8 @@ impl Markers {
         }
         for thread in &mut profile.threads {
             if let Some(tid) = &thread.tid
-                && let Ok(tid) = tid.parse::<pid_t>()
-                && let Some((name, markers)) = self.0.get(&Pid::from_raw(tid))
+                && let Ok(tid) = tid.parse::<usize>()
+                && let Some((name, markers)) = self.0.get(&tid)
             {
                 if let Some(name) = name {
                     thread.name = Some(name.clone());
@@ -497,7 +493,7 @@ struct ThreadMarkers {
     /// The thread's tid.
     ///
     /// We need this to identify this thread in the profiler file.
-    tid: Pid,
+    tid: usize,
 
     /// The thread's name.
     ///
@@ -514,8 +510,13 @@ struct ThreadMarkers {
 
 impl ThreadMarkers {
     fn new(queue: Arc<Queue>) -> Self {
+        #[cfg(target_os = "linux")]
+        let tid = nix::unistd::gettid().as_raw() as usize;
+        #[cfg(not(target_os = "linux"))]
+        let tid = thread_id::get();
+
         Self {
-            tid: gettid(),
+            tid,
             name: std::thread::current().name().map(|s| s.into()),
             queue,
         }
