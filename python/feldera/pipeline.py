@@ -167,7 +167,7 @@ class Pipeline:
         update_format: str = "raw",
         force: bool = False,
         wait: bool = True,
-    ):
+    ) -> str:
         """
         Push this JSON data to the specified table of the pipeline.
 
@@ -182,6 +182,8 @@ class Pipeline:
         :param force: `True` to push data even if the pipeline is paused. `False` by default.
         :param wait: If True, blocks until this input has been processed by the pipeline
 
+        :returns: The completion token to this input.
+
         :raises ValueError: If the update format is invalid.
         :raises FelderaAPIError: If the pipeline is not in a valid state to push data.
         :raises RuntimeError: If the pipeline is paused and `force` is not set to `True`.
@@ -195,7 +197,7 @@ class Pipeline:
             raise ValueError("update_format must be one of raw or insert_delete")
 
         array = True if isinstance(data, list) else False
-        self.client.push_to_pipeline(
+        return self.client.push_to_pipeline(
             self.name,
             table_name,
             "json",
