@@ -17,29 +17,22 @@ const WARMUP_PIPELINE = '__e2e_warmup__'
 export default async function globalSetup() {
   console.log('Warming Rust compilation cache…')
 
-  // Wait for the API to become reachable (service container may still be starting)
-  const healthDeadline = Date.now() + 60_000
-  while (Date.now() < healthDeadline) {
-    try {
-      const res = await fetch(`${API_ORIGIN}/healthz`)
-      if (res.ok) {
-        break
-      }
-    } catch {}
-    await new Promise((r) => setTimeout(r, 2000))
-  }
-
   // Clean up any leftover warmup pipeline
   try {
     await deletePipeline(WARMUP_PIPELINE)
   } catch {}
 
   // Create a minimal pipeline
-  await putPipeline(WARMUP_PIPELINE, {
-    name: WARMUP_PIPELINE,
-    program_code: 'CREATE TABLE _warmup (id INT);',
-    program_config: { profile: 'unoptimized' }
-  })
+  try {
+    await putPipeline(WARMUP_PIPELINE, {
+      name: WARMUP_PIPELINE,
+      program_code: 'CREATE TABLE _warmup (id INT);',
+      program_config: { profile: 'unoptimized' }
+    })
+  } catch (e) {
+    console.error(`putPipeline failed (API_ORIGIN=${API_ORIGIN}):`, e)
+    throw e
+  }
 
   // Wait for compilation (up to 10 minutes for a cold cache)
   const deadline = Date.now() + 600_000
