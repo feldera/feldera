@@ -2,7 +2,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
     DBWeight,
-    dynamic::{Data, DynWeight, Factory, LeanVec, Vector, WithFactory},
+    dynamic::{Data, DowncastTrait, DynWeight, Factory, LeanVec, Vector, WithFactory},
     storage::{
         backend::StorageBackend,
         buffer_cache::BufferCache,
@@ -996,6 +996,55 @@ fn test_one_column_zset<K, A>(
         reader.evict();
         assert_eq!(reader.rows().len(), n as u64);
         test_multifetch_zset(&reader, n, &expected);
+    }
+}
+
+#[test]
+fn one_column_key_range() {
+    init_test_logger();
+
+    for reopen in [false, true] {
+        let factories = Factories::<DynData, DynData>::new::<u64, ()>();
+        let tempdir = tempdir().unwrap();
+        let storage_backend = <dyn StorageBackend>::new(
+            &StorageConfig {
+                path: tempdir.path().to_string_lossy().to_string(),
+                cache: Default::default(),
+            },
+            &StorageOptions::default(),
+        )
+        .unwrap();
+        let mut writer = Writer1::new(
+            &factories,
+            test_buffer_cache,
+            &*storage_backend,
+            Parameters::default(),
+            3,
+        )
+        .unwrap();
+        for key in [10_u64, 20, 30] {
+            writer.write0((&key, &())).unwrap();
+        }
+
+        let reader = if reopen {
+            let path = writer.path().clone();
+            let (_file_handle, _bloom_filter) = writer.close().unwrap();
+            Reader::open(
+                &[&factories.any_factories()],
+                test_buffer_cache,
+                &*storage_backend,
+                &path,
+            )
+            .unwrap()
+        } else {
+            writer.into_reader().unwrap()
+        };
+
+        let Some((min, max)) = reader.key_range().unwrap() else {
+            panic!("expected non-empty key range");
+        };
+        assert_eq!(*min.downcast_checked::<u64>(), 10);
+        assert_eq!(*max.downcast_checked::<u64>(), 30);
     }
 }
 

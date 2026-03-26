@@ -20,7 +20,10 @@ use crate::{
         DbspSerializer, Deserializer, FileKeyBatch, VecWSetFactories, WeightedItem,
         cursor::{CursorFactoryWrapper, Pending, Position, PushCursor},
         merge_batches_by_reference,
-        ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
+        ord::{
+            batch_filter::BatchFilters, file::UnwrapStorage, key_range::KeyRange,
+            merge_batcher::MergeBatcher,
+        },
     },
 };
 use crate::{DynZWeight, ZWeight};
@@ -137,6 +140,7 @@ where
     #[size_of(skip)]
     factories: FileWSetFactories<K, R>,
     file: Arc<Reader<(&'static K, &'static R, ())>>,
+    filters: BatchFilters<K>,
 }
 
 impl<K, R> Debug for FileWSet<K, R>
@@ -171,6 +175,7 @@ where
         Self {
             factories: self.factories.clone(),
             file: self.file.clone(),
+            filters: self.filters.clone(),
         }
     }
 }
@@ -180,6 +185,20 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    fn from_parts(
+        factories: FileWSetFactories<K, R>,
+        file: Arc<Reader<(&'static K, &'static R, ())>>,
+        key_range: Option<KeyRange<K>>,
+    ) -> Self {
+        let filters = BatchFilters::from_file(key_range.clone(), file.clone());
+
+        Self {
+            factories,
+            file,
+            filters,
+        }
+    }
+
     #[inline]
     pub fn len(&self) -> usize {
         self.file.n_rows(0) as usize
@@ -258,10 +277,11 @@ where
             negative_weight_count: (self.len() as u64)
                 .saturating_sub(self.stats().negative_weight_count),
         };
-        Self {
-            factories: self.factories.clone(),
-            file: Arc::new(writer.into_reader(stats).unwrap_storage()),
-        }
+        Self::from_parts(
+            self.factories.clone(),
+            Arc::new(writer.into_reader(stats).unwrap_storage()),
+            self.filters.key_range().cloned(),
+        )
     }
 }
 
@@ -470,11 +490,9 @@ where
             &*Runtime::storage_backend().unwrap(),
             path,
         )?);
+        let key_range = file.key_range()?.map(|(min, max)| KeyRange::new(min, max));
 
-        Ok(Self {
-            factories: factories.clone(),
-            file,
-        })
+        Ok(Self::from_parts(factories.clone(), file, key_range))
     }
 
     fn negative_weight_count(&self) -> Option<u64> {
@@ -686,8 +704,7 @@ where
     }
 
     fn seek_key_exact(&mut self, key: &K, hash: Option<u64>) -> bool {
-        let hash = hash.unwrap_or_else(|| key.default_hash());
-        if !self.wset.maybe_contains_key(hash) {
+        if !self.wset.filters.maybe_contains_key(key, hash) {
             return false;
         }
         self.seek_key(key);
@@ -777,6 +794,7 @@ where
     #[size_of(skip)]
     writer: Writer1<K, R>,
     weight: Box<R>,
+    key_range: Option<KeyRange<K>>,
     num_tuples: usize,
     #[size_of(skip)]
     stats: BatchMetadata,
@@ -818,19 +836,26 @@ where
             )
             .unwrap_storage(),
             weight: factories.weight_factory().default_box(),
+            key_range: None,
             num_tuples: 0,
             stats: BatchMetadata::default(),
         }
     }
 
     fn done(self) -> FileWSet<K, R> {
-        FileWSet {
-            factories: self.factories,
-            file: Arc::new(self.writer.into_reader(self.stats).unwrap_storage()),
-        }
+        FileWSet::from_parts(
+            self.factories,
+            Arc::new(self.writer.into_reader(self.stats).unwrap_storage()),
+            self.key_range,
+        )
     }
 
     fn push_key(&mut self, key: &K) {
+        if let Some(range) = &mut self.key_range {
+            range.extend_to(key);
+        } else {
+            self.key_range = Some(KeyRange::from_refs(key, key));
+        }
         self.writer.write0((key, &*self.weight)).unwrap_storage();
     }
 

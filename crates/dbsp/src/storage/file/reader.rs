@@ -1723,6 +1723,34 @@ where
     A: DataTrait + ?Sized,
     (&'static K, &'static A, N): ColumnSpec,
 {
+    /// Returns the min and max keys stored in column 0.
+    ///
+    /// The bounds are loaded from the root node when first requested and can
+    /// then be cached by higher-level batch types.
+    pub fn key_range(&self) -> Result<Option<(Box<K>, Box<K>)>, Error> {
+        let Some(root) = self.columns[0].root.as_ref() else {
+            return Ok(None);
+        };
+
+        let factories = self.columns[0].factories.factories::<K, A>();
+        let key_factory = factories.key_factory;
+        let mut min = key_factory.default_box();
+        let mut max = key_factory.default_box();
+
+        match root.read::<K, A>(&self.file)? {
+            TreeBlock::Data(data_block) => unsafe {
+                data_block.key(&factories, 0, min.as_mut());
+                data_block.key(&factories, data_block.n_values() - 1, max.as_mut());
+            },
+            TreeBlock::Index(index_block) => unsafe {
+                index_block.get_bound(0, min.as_mut());
+                index_block.get_bound(index_block.n_children() * 2 - 1, max.as_mut());
+            },
+        }
+
+        Ok(Some((min, max)))
+    }
+
     /// Asks the bloom filter of the reader if we have the key.
     pub fn maybe_contains_key(&self, hash: u64) -> bool {
         self.bloom_filter
