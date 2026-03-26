@@ -1403,7 +1403,7 @@ impl IndexedWSetSerializer {
     pub fn push_diff<R: WeightTrait + ?Sized>(&mut self, weight: &R) {
         #[cfg(debug_assertions)]
         {
-            debug_assert_eq!(self.state, State::Key);
+            debug_assert_ne!(self.state, State::Diff);
             self.state = State::Diff;
         }
 
