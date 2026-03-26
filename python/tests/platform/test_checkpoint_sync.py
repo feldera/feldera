@@ -286,6 +286,63 @@ class TestCheckpointSync(SharedTestPipeline):
 
     @enterprise_only
     @single_host_only
+    def test_automated_sync_auth_error(self):
+        """
+        CREATE TABLE t0 (c0 INT, c1 VARCHAR);
+        CREATE MATERIALIZED VIEW v0 AS SELECT * FROM t0;
+        """
+        # Configure pipeline with automatic periodic sync and bad credentials.
+        # The periodic sync should fail, and `periodic` in the sync status
+        # should remain None (not report a UUID for a failed sync).
+        storage_config = storage_cfg(
+            self.pipeline.name,
+            push_interval=5,
+            auth_err=True,
+        )
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
+                storage=Storage(config=storage_config),
+                checkpoint_interval_secs=5,
+            )
+        )
+        self.pipeline.start()
+
+        # Insert data so the pipeline has something to checkpoint.
+        data = [{"c0": i, "c1": str(i)} for i in range(1, 10)]
+        self.pipeline.input_json("t0", data)
+        self.pipeline.wait_for_completion()
+
+        # Wait for a checkpoint to be created.
+        def checkpoint_exists() -> bool:
+            return len(self.pipeline.checkpoints()) > 0
+
+        wait_for_condition(
+            "checkpoint is created",
+            checkpoint_exists,
+            timeout_s=30.0,
+            poll_interval_s=0.5,
+        )
+
+        # Wait long enough for the periodic sync to have attempted (and failed).
+        time.sleep(15)
+
+        # The periodic sync should have failed due to bad credentials.
+        # `periodic` must be None — a failed sync should not report a UUID.
+        status = self.pipeline.client.sync_checkpoint_status(self.pipeline.name)
+        print(f"sync_status after failed periodic sync: {status}", file=sys.stderr)
+        self.assertIsNone(
+            status.get("periodic"),
+            f"periodic should be None after failed sync, got: {status}",
+        )
+
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
+
+    @enterprise_only
+    @single_host_only
     def test_autherr_fail(self):
         with self.assertRaisesRegex(RuntimeError, "SignatureDoesNotMatch|Forbidden"):
             self.test_checkpoint_sync(auth_err=True, strict=True)
