@@ -2209,11 +2209,14 @@ impl RunningCheckpointSync {
                 Ok(result) => {
                     join_handle.join().unwrap();
 
-                    let mut last_sync = circuit.controller.last_checkpoint_sync.lock().unwrap();
-                    *last_sync = LastCheckpoint {
-                        timestamp: Instant::now(),
-                        id: Some(uuid),
-                    };
+                    // Only update last_sync if the checkpoint sync succeeded.
+                    if result.is_ok() {
+                        let mut last_sync = circuit.controller.last_checkpoint_sync.lock().unwrap();
+                        *last_sync = LastCheckpoint {
+                            timestamp: Instant::now(),
+                            id: Some(uuid),
+                        };
+                    }
 
                     Some(result)
                 }
