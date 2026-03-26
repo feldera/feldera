@@ -2310,7 +2310,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CheckpointStatus"
+                  "$ref": "#/components/schemas/CheckpointSyncStatus"
                 }
               }
             }
@@ -6826,6 +6826,51 @@
             "description": "Most recently successful checkpoint.",
             "nullable": true,
             "minimum": 0
+          }
+        }
+      },
+      "CheckpointSyncFailure": {
+        "type": "object",
+        "description": "Information about a failed checkpoint sync.",
+        "required": [
+          "uuid",
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message associated with the failure."
+          },
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the failed checkpoint."
+          }
+        }
+      },
+      "CheckpointSyncStatus": {
+        "type": "object",
+        "description": "Checkpoint status returned by the `/checkpoint/sync_status` endpoint.",
+        "properties": {
+          "failure": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CheckpointSyncFailure"
+              }
+            ],
+            "nullable": true
+          },
+          "periodic": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Most recently successful automated periodic checkpoint sync.",
+            "nullable": true
+          },
+          "success": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Most recently successful checkpoint sync.",
+            "nullable": true
           }
         }
       },

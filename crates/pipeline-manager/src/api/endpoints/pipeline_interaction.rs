@@ -1126,7 +1126,7 @@ pub(crate) async fn get_checkpoint_status(
         (status = OK
          , description = "Checkpoint sync status retrieved successfully"
          , content_type = "application/json"
-         , body = CheckpointStatus),
+         , body = CheckpointSyncStatus),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
