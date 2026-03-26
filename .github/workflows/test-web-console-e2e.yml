@@ -41,13 +41,16 @@ jobs:
         run: bunx svelte-kit sync
         working-directory: js-packages/web-console
 
+      - name: Verify pipeline-manager is reachable
+        run: curl -fsSL --retry 5 --retry-delay 2 --retry-connrefused http://localhost:8080/healthz
+
       - name: Run Playwright e2e tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: bun run test-e2e
         working-directory: js-packages/web-console
         env:
-          PLAYWRIGHT_API_ORIGIN: http://pipeline-manager:8080
-          PLAYWRIGHT_APP_ORIGIN: http://pipeline-manager:8080
+          PLAYWRIGHT_API_ORIGIN: http://localhost:8080
+          PLAYWRIGHT_APP_ORIGIN: http://localhost:8080
 
       - name: Show Kubernetes node
         if: always()
