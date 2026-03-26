@@ -17,7 +17,7 @@ use crate::{
     },
     trace::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, WeightedItem,
-        ord::merge_batcher::MergeBatcher,
+        ord::{batch_filter::BatchFilters, key_range::KeyRange, merge_batcher::MergeBatcher},
     },
     utils::Tup2,
 };
@@ -212,7 +212,10 @@ where
     #[size_of(skip)]
     #[debug(skip)]
     factories: FileValBatchFactories<K, V, T, R>,
+    #[debug(skip)]
     pub file: RawValBatch<K, V, T, R>,
+    #[debug(skip)]
+    filters: BatchFilters<K>,
 }
 
 impl<K, V, T, R> Clone for FileValBatch<K, V, T, R>
@@ -226,6 +229,29 @@ where
         Self {
             factories: self.factories.clone(),
             file: self.file.clone(),
+            filters: self.filters.clone(),
+        }
+    }
+}
+
+impl<K, V, T, R> FileValBatch<K, V, T, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    fn from_parts(
+        factories: FileValBatchFactories<K, V, T, R>,
+        file: RawValBatch<K, V, T, R>,
+        key_range: Option<KeyRange<K>>,
+    ) -> Self {
+        let filters = BatchFilters::from_file(key_range.clone(), file.clone());
+
+        Self {
+            factories,
+            file,
+            filters,
         }
     }
 }
@@ -364,10 +390,8 @@ where
             &*Runtime::storage_backend().unwrap_storage(),
             path,
         )?);
-        Ok(Self {
-            factories: factories.clone(),
-            file,
-        })
+        let key_range = file.key_range()?.map(|(min, max)| KeyRange::new(min, max));
+        Ok(Self::from_parts(factories.clone(), file, key_range))
     }
 
     fn negative_weight_count(&self) -> Option<u64> {
@@ -577,8 +601,7 @@ where
     }
 
     fn seek_key_exact(&mut self, key: &K, hash: Option<u64>) -> bool {
-        let hash = hash.unwrap_or_else(|| key.default_hash());
-        if !self.batch.maybe_contains_key(hash) {
+        if !self.batch.filters.maybe_contains_key(key, hash) {
             return false;
         }
         self.seek_key(key);
@@ -667,6 +690,7 @@ where
     #[size_of(skip)]
     writer: Writer2<K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
     time_diffs: Box<DynWeightedPairs<DynDataTyped<T>, R>>,
+    key_range: Option<KeyRange<K>>,
     num_tuples: usize,
     #[size_of(skip)]
     stats: BatchMetadata,
@@ -697,19 +721,26 @@ where
             )
             .unwrap_storage(),
             time_diffs: factories.timediff_factory.default_box(),
+            key_range: None,
             num_tuples: 0,
             stats: BatchMetadata::default(),
         }
     }
 
     fn done(self) -> FileValBatch<K, V, T, R> {
-        FileValBatch {
-            factories: self.factories,
-            file: Arc::new(self.writer.into_reader(self.stats).unwrap_storage()),
-        }
+        FileValBatch::from_parts(
+            self.factories,
+            Arc::new(self.writer.into_reader(self.stats).unwrap_storage()),
+            self.key_range,
+        )
     }
 
     fn push_key(&mut self, key: &K) {
+        if let Some(range) = &mut self.key_range {
+            range.extend_to(key);
+        } else {
+            self.key_range = Some(KeyRange::from_refs(key, key));
+        }
         self.writer.write0((key, &())).unwrap_storage();
     }
 
