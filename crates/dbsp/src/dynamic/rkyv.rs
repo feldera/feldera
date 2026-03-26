@@ -1,7 +1,7 @@
 use super::{AsAny, Comparable, DowncastTrait};
 use crate::{
     derive_comparison_traits,
-    storage::file::{Deserializer, DbspSerializer},
+    storage::file::{DbspSerializer, Deserializer},
 };
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, archived_value};
 use std::{cmp::Ordering, marker::PhantomData, mem::transmute};
