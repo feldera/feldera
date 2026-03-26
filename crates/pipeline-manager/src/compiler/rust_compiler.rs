@@ -1051,6 +1051,7 @@ async fn checkout_runtime_version(
                 "protocol.version=2",
                 "fetch",
                 "--prune",
+                "--tags",
                 "https://github.com/feldera/feldera.git",
                 requested_runtime_version.as_commitish(),
             ])
@@ -1191,6 +1192,47 @@ async fn checkout_runtime_version(
         Err(e) => Err(RustCompilationError::SystemError(format!(
             "Unable to switch runtime version to '{requested_runtime_version}' for compilation, `git checkout` failed: {e}",
         ))),
+    }
+}
+
+/// We need to pass the actual revision SHA to the binary for verification,
+/// so in case we have a version tag, we need to convert it to the sha.
+pub async fn resolve_runtime_sha(
+    runtime_version: &RuntimeSelector,
+    config: &CompilerConfig,
+) -> Result<String, RustCompilationError> {
+    match runtime_version {
+        RuntimeSelector::Sha(sha) => Ok(sha.clone()),
+        RuntimeSelector::Platform(platform_sha) => Ok(platform_sha.clone()),
+        RuntimeSelector::Version(version) => {
+            let repo_location = runtime_version.runtime_sources(config);
+            match Command::new("git")
+                .current_dir(&repo_location)
+                .args([
+                    "-c",
+                    "protocol.version=2",
+                    "rev-parse",
+                    version,
+                ])
+                .output()
+                .await
+            {
+                Ok(output) => {
+                    if !output.status.success() {
+                        return Err(RustCompilationError::SystemError(format!(
+                            "Failed to determine commit SHA for '{runtime_version}'.\nGit command failed with exit code: {}\nstderr:\n{}\nstdout:\n{}",
+                            output.status.code().unwrap_or(-1),
+                            String::from_utf8_lossy(&output.stderr),
+                            String::from_utf8_lossy(&output.stdout)
+                        )));
+                    }
+                    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+                }
+                Err(e) => Err(RustCompilationError::SystemError(format!(
+                    "Failed to determine commit SHA for '{runtime_version}', `git rev-parse` failed: {e}",
+                ))),
+            }
+        }
     }
 }
 
@@ -1494,7 +1536,10 @@ async fn call_compiler(
     command.env_clear();
     command.env("PATH", env_path);
     if !runtime_selector.is_platform() {
-        command.env("FELDERA_RUNTIME_OVERRIDE", runtime_selector.as_commitish());
+        command.env(
+            "FELDERA_RUNTIME_OVERRIDE",
+            resolve_runtime_sha(runtime_selector, config).await?,
+        );
     }
     if let Some(env_rustflags) = optional_env_rustflags {
         command.env("RUSTFLAGS", env_rustflags);
