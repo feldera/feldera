@@ -3834,6 +3834,7 @@ dependencies = [
  "tempfile",
  "textwrap",
  "thiserror 2.0.17",
+ "thread-id",
  "time",
  "tokio",
  "tokio-util",
