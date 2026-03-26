@@ -394,8 +394,9 @@ impl KafkaFtInputReaderInner {
                 .split_partition_queue(topic, *partition)
                 .ok_or_else(|| anyhow!("could not split queue for partition {partition}"))?;
 
+            let unparker = thread.parker.unparker().clone();
             queue.set_nonempty_callback({
-                let unparker = thread.parker.unparker().clone();
+                let unparker = unparker.clone();
                 move || unparker.unpark()
             });
 
@@ -404,6 +405,7 @@ impl KafkaFtInputReaderInner {
                 queue,
                 next_offset,
                 &config,
+                unparker,
             ));
             receivers.insert(partition, receiver.clone());
             thread.receivers.push(receiver);
@@ -981,6 +983,12 @@ fn update_backpressure(topic: &str, partition: i32, has_backpressure: bool) {
 #[cfg(not(test))]
 fn update_backpressure(_topic: &str, _partition: i32, _has_backpressure: bool) {}
 
+/// Returns true if a partition queue that holds `n_bytes` should pause for
+/// backpressure.
+fn needs_backpressure(n_bytes: usize) -> bool {
+    n_bytes >= 1_000_000
+}
+
 struct PartitionReceiver {
     partition: i32,
     queue: PartitionQueue<KafkaFtInputContext>,
@@ -1016,6 +1024,9 @@ struct PartitionReceiver {
     /// lock.
     n_bytes: AtomicUsize,
 
+    /// Wakes up the [RecvThread] that receives into this partition.
+    unparker: Unparker,
+
     eof: AtomicBool,
     fatal_error: AtomicBool,
 }
@@ -1026,6 +1037,7 @@ impl PartitionReceiver {
         queue: PartitionQueue<KafkaFtInputContext>,
         next_offset: i64,
         config: &KafkaInputConfig,
+        unparker: Unparker,
     ) -> Self {
         let metadata_requested = config.metadata_requested();
 
@@ -1041,6 +1053,7 @@ impl PartitionReceiver {
             fatal_error: AtomicBool::new(false),
             config: config.clone(),
             metadata_requested,
+            unparker,
         }
     }
 
@@ -1050,8 +1063,17 @@ impl PartitionReceiver {
         match messages.first_key_value() {
             Some((offset, _)) if *offset <= max => {
                 let (offset, (buffer, timestamp)) = messages.pop_first().unwrap();
-                self.n_bytes
-                    .fetch_sub(buffer.len().bytes, Ordering::Relaxed);
+
+                // Account the subtraction of the buffer from `self.n_bytes`.
+                // If that releases backpressure, then wake up its receiver
+                // thread.
+                let buffer_len = buffer.len().bytes;
+                let old_nbytes = self.n_bytes.fetch_sub(buffer_len, Ordering::Relaxed);
+                let new_bytes = old_nbytes - buffer_len;
+                if needs_backpressure(old_nbytes) && !needs_backpressure(new_bytes) {
+                    self.unparker.unpark();
+                }
+
                 Some((offset, (buffer, timestamp)))
             }
             _ => None,
@@ -1204,7 +1226,7 @@ impl PartitionReceiver {
         // be dequeued quicker than we can start queuing them again.
         //
         // [1]: https://github.com/confluentinc/librdkafka/wiki/FAQ#what-are-partition-queues-and-why-are-some-partitions-slower-than-others
-        let backpressure = self.n_bytes.load(Ordering::Relaxed) >= 1_000_000;
+        let backpressure = needs_backpressure(self.n_bytes.load(Ordering::Relaxed));
         #[cfg(test)]
         let backpressure = backpressure || self.messages.lock().unwrap().len() >= 1000;
         update_backpressure(&self.config.topic, self.partition, backpressure);
