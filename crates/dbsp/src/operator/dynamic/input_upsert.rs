@@ -590,7 +590,9 @@ where
                 .iter()
                 .map(|(updates, index)| updates.index(*index))
                 .enumerate()
-                .min_by(|(_a_index, a), (_b_index, b)| a.cmp(b))
+                // Find the first update with the smallest key (compare keys, not updates, so that we apply updates in order).
+                // min_by is guaranteed to return the first among equal keys.
+                .min_by(|(_a_index, a), (_b_index, b)| a.fst().cmp(b.fst()))
                 .unwrap();
             updates[index].1 += 1;
             if updates[index].1 >= updates[index].0.len() {
