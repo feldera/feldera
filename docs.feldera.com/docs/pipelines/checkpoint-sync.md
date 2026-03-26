@@ -283,21 +283,33 @@ The status of the sync operation can be checked by making a `GET` request to:
 curl http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status
 ```
 
+### Response fields
+
+| Field      | Type            | Description                                                                                                  |
+| ---------- | --------------- | ------------------------------------------------------------------------------------------------------------ |
+| `success`  | `uuid \| null`  | UUID of the most recently successful manually triggered checkpoint sync (`POST /checkpoint/sync`).           |
+| `failure`  | `object \| null`| Details of the most recently failed manually triggered checkpoint sync. Contains `uuid` and `error` fields.  |
+| `periodic` | `uuid \| null`  | UUID of the most recently successful automatic periodic checkpoint sync (configured via `push_interval`).    |
+
+`success` and `periodic` track different sync mechanisms:
+- `success` is updated only by manual syncs triggered via `POST /checkpoint/sync`.
+- `periodic` is updated only by automatic syncs configured via `push_interval`.
+
 ### Response examples
 
-**In Progress:**
+**No syncs yet:**
 
 ```json
-{ "success": null, "failure": null }
+{ "success": null, "failure": null, "periodic": null }
 ```
 
-**Success:**
+**Successful manual sync:**
 
 ```json
-{ "success": "019779b4-8760-75f2-bdf0-71b825e63610", "failure": null }
+{ "success": "019779b4-8760-75f2-bdf0-71b825e63610", "failure": null, "periodic": null }
 ```
 
-**Failure:**
+**Failed manual sync:**
 
 ```json
 {
@@ -305,6 +317,23 @@ curl http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status
   "failure": {
     "uuid": "019779c1-8317-7a71-bd78-7b971f4a3c43",
     "error": "Error pushing checkpoint to object store: ... SignatureDoesNotMatch ..."
-  }
+  },
+  "periodic": null
+}
+```
+
+**Automatic periodic sync only (no manual syncs):**
+
+```json
+{ "success": null, "failure": null, "periodic": "019779c1-8317-7a71-bd78-7b971f4a3c43" }
+```
+
+**Both manual and automatic syncs:**
+
+```json
+{
+  "success": "019779b4-8760-75f2-bdf0-71b825e63610",
+  "failure": null,
+  "periodic": "019779c1-8317-7a71-bd78-7b971f4a3c43"
 }
 ```
