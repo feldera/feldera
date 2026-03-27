@@ -11,7 +11,6 @@ use crate::operator::communication::Exchange;
 use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
 use crate::storage::file::writer::Parameters;
-use crate::trace::aligned_deserialize;
 use crate::utils::process_rss_bytes;
 use crate::{
     DetailedError,
@@ -35,6 +34,7 @@ use feldera_types::memory_pressure::{
 use indexmap::IndexSet;
 use once_cell::sync::Lazy;
 use serde::Serialize;
+use std::convert::identity;
 use std::iter::repeat;
 use std::ops::Range;
 use std::path::Path;
@@ -1283,48 +1283,11 @@ impl Runtime {
 
 /// A synchronization primitive that allows multiple threads within a runtime to agree
 /// when a condition is satisfied.
-pub(crate) enum Consensus {
-    SingleThreaded,
-    MultiThreaded {
-        notify_sender: Arc<Notify>,
-        notify_receiver: Arc<Notify>,
-        exchange: Arc<Exchange<bool>>,
-    },
-}
+pub(crate) struct Consensus(Broadcast<bool>);
 
 impl Consensus {
     pub fn new() -> Self {
-        match Runtime::runtime() {
-            Some(runtime) if Runtime::num_workers() > 1 => {
-                let worker_index = Runtime::worker_index();
-                let exchange_id = runtime.sequence_next().try_into().unwrap();
-                let exchange = Exchange::with_runtime(
-                    &runtime,
-                    exchange_id,
-                    Box::new(|data| aligned_deserialize(&data[..])),
-                );
-
-                let notify_sender = Arc::new(Notify::new());
-                let notify_sender_clone = notify_sender.clone();
-                let notify_receiver = Arc::new(Notify::new());
-                let notify_receiver_clone = notify_receiver.clone();
-
-                exchange.register_sender_callback(worker_index, move || {
-                    notify_sender_clone.notify_one()
-                });
-
-                exchange.register_receiver_callback(worker_index, move || {
-                    notify_receiver_clone.notify_one()
-                });
-
-                Self::MultiThreaded {
-                    notify_sender,
-                    notify_receiver,
-                    exchange,
-                }
-            }
-            _ => Self::SingleThreaded,
-        }
+        Self(Broadcast::new())
     }
 
     /// Returns `true` if all workers vote `true`.
@@ -1333,37 +1296,7 @@ impl Consensus {
     ///
     /// * `local` - Local vote by the current worker.
     pub async fn check(&self, local: bool) -> Result<bool, SchedulerError> {
-        match self {
-            Self::SingleThreaded => Ok(local),
-            Self::MultiThreaded {
-                notify_sender,
-                notify_receiver,
-                exchange,
-            } => {
-                while !exchange.try_send_all_with_serializer(
-                    Runtime::worker_index(),
-                    repeat(local),
-                    |local| FBuf::from_slice(&[local as u8]),
-                ) {
-                    if Runtime::kill_in_progress() {
-                        return Err(SchedulerError::Killed);
-                    }
-                    notify_sender.notified().await;
-                }
-                // Receive the status of each peer, compute global result
-                // as a logical and of all peer statuses.
-                let mut global = true;
-                while !exchange.try_receive_all(Runtime::worker_index(), |status| global &= status)
-                {
-                    if Runtime::kill_in_progress() {
-                        return Err(SchedulerError::Killed);
-                    }
-                    // Sleep if other threads are still working.
-                    notify_receiver.notified().await;
-                }
-                Ok(global)
-            }
-        }
+        Ok(self.0.collect(local).await?.into_iter().all(identity))
     }
 }
 
@@ -1444,8 +1377,7 @@ where
                     }
                     notify_sender.notified().await;
                 }
-                // Receive the status of each peer, compute global result
-                // as a logical and of all peer statuses.
+                // Receive and collect the status of each peer.
                 let mut result = Vec::with_capacity(Runtime::num_workers());
                 while !exchange
                     .try_receive_all(Runtime::worker_index(), |status| result.push(status))
