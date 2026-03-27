@@ -37,6 +37,9 @@ use std::{borrow::Cow, cmp::max, collections::BTreeMap};
 use utoipa::ToSchema;
 use utoipa::openapi::{ObjectBuilder, OneOfBuilder, Ref, RefOr, Schema, SchemaType};
 
+pub mod dev_tweaks;
+pub use dev_tweaks::DevTweaks;
+
 const DEFAULT_MAX_PARALLEL_CONNECTOR_INIT: u64 = 10;
 
 /// Default value of `ConnectorConfig::max_queued_records`.
@@ -926,11 +929,7 @@ pub struct RuntimeConfig {
     pub env: BTreeMap<String, String>,
 
     /// Optional settings for tweaking Feldera internals.
-    ///
-    /// The available key-value pairs change from one version of Feldera to
-    /// another, so users should not depend on particular settings being
-    /// available, or on their behavior.
-    pub dev_tweaks: BTreeMap<String, serde_json::Value>,
+    pub dev_tweaks: DevTweaks,
 
     /// Log filtering directives.
     ///
@@ -1086,7 +1085,7 @@ impl Default for RuntimeConfig {
             io_workers: None,
             http_workers: None,
             env: BTreeMap::default(),
-            dev_tweaks: BTreeMap::default(),
+            dev_tweaks: DevTweaks::default(),
             logging: None,
             pipeline_template_configmap: None,
         }

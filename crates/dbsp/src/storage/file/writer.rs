@@ -1148,7 +1148,7 @@ struct Writer {
 
 impl Writer {
     fn bloom_false_positive_rate() -> Option<f64> {
-        let rate = Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.bloom_false_positive_rate);
+        let rate = Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.bloom_false_positive_rate());
         let rate = (rate > 0.0 && rate < 1.0).then_some(rate);
 
         static ONCE: Once = Once::new();

@@ -625,13 +625,7 @@ pub fn run_server(
 
     // Install stack overflow handler early, before creating the controller and parsing DevTweaks.
     #[cfg(target_family = "unix")]
-    if config
-        .global
-        .dev_tweaks
-        .get("stack_overflow_backtrace")
-        .cloned()
-        == Some(serde_json::Value::Bool(true))
-    {
+    if config.global.dev_tweaks.stack_overflow_backtrace() {
         unsafe {
             use crate::server::stack_overflow_backtrace::enable_stack_overflow_backtrace_with_limit;
 

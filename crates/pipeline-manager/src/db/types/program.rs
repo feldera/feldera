@@ -845,9 +845,7 @@ pub fn generate_pipeline_config(
         global: runtime_config.clone(),
         storage_config: None, // Set by the runner based on global field
         secrets_dir: None,
-        multihost: if runtime_config.hosts > 1
-            || runtime_config.dev_tweaks.contains_key("multihost")
-        {
+        multihost: if runtime_config.hosts > 1 {
             Some(MultihostConfig {
                 hosts: runtime_config.hosts,
             })

@@ -718,7 +718,7 @@ pub(crate) fn run_in_posix_runtime<F>(
     F: FnOnce() + Send + 'static,
 {
     use dbsp::Runtime;
-    use dbsp::circuit::{CircuitConfig, CircuitStorageConfig, DevTweaks, Layout, Mode};
+    use dbsp::circuit::{CircuitConfig, CircuitStorageConfig, Layout, Mode};
     use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
     use std::sync::{Arc, Mutex};
 
@@ -742,7 +742,7 @@ pub(crate) fn run_in_posix_runtime<F>(
             )
             .expect("failed to configure storage"),
         ),
-        dev_tweaks: DevTweaks::default(),
+        dev_tweaks: Default::default(),
     };
 
     let test_fn: Arc<Mutex<Option<F>>> = Arc::new(Mutex::new(Some(test_fn)));

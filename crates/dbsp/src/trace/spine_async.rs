@@ -50,8 +50,8 @@ use feldera_storage::{
     FileCommitter, StoragePath,
     fbuf::slab::{FBufSlabs, TOKIO_FBUF_SLABS},
 };
-use feldera_types::checkpoint::PSpineBatches;
 use feldera_types::memory_pressure::MemoryPressure;
+use feldera_types::{checkpoint::PSpineBatches, config::dev_tweaks::MergerType};
 use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
@@ -554,7 +554,7 @@ where
                     let idle = Arc::clone(&idle);
                     let no_backpressure = Arc::clone(&no_backpressure);
                     let mut merger = None;
-                    let merger_type = Runtime::with_dev_tweaks(|tweaks| tweaks.merger);
+                    let merger_type = Runtime::with_dev_tweaks(|tweaks| tweaks.merger());
                     let notify = state.lock().unwrap().slots[level].notify.clone();
 
                     loop {
@@ -1028,19 +1028,6 @@ impl WorkerState {
     fn avg_slot0_merge_fuel(&self) -> isize {
         self.avg_slot0_merge_fuel.load(Ordering::Relaxed)
     }
-}
-
-/// Which merger to use.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MergerType {
-    /// Newer merger, which should be faster for high-latency storage, such as
-    /// object storage, but it likely needs tuning.
-    PushMerger,
-
-    /// The old standby, with known performance.
-    #[default]
-    ListMerger,
 }
 
 /// A single merge in progress in an [AsyncMerger].

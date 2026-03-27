@@ -3,13 +3,8 @@ use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
 use crate::circuit::schedule::CommitProgress;
 use crate::monitor::visual_graph::Graph;
-use crate::operator::dynamic::balance::{
-    BALANCE_TAX, BalancerHint, KEY_DISTRIBUTION_REFRESH_THRESHOLD,
-    MIN_ABSOLUTE_IMPROVEMENT_THRESHOLD, MIN_RELATIVE_IMPROVEMENT_THRESHOLD, PartitioningPolicy,
-};
+use crate::operator::dynamic::balance::{BalancerHint, PartitioningPolicy};
 use crate::storage::backend::StorageError;
-use crate::storage::file::BLOOM_FILTER_FALSE_POSITIVE_RATE;
-use crate::trace::MergerType;
 use crate::trace::spine_async::MAX_LEVEL0_BATCH_SIZE_RECORDS;
 use crate::{
     Error as DbspError, RootCircuit, Runtime, RuntimeError, circuit::runtime::RuntimeHandle,
@@ -17,16 +12,15 @@ use crate::{
 };
 use anyhow::Error as AnyError;
 use crossbeam::channel::{Receiver, Select, Sender, TryRecvError, bounded};
-use feldera_buffer_cache::{BufferCacheAllocationStrategy, BufferCacheStrategy, ThreadType};
+use feldera_buffer_cache::ThreadType;
 use feldera_ir::LirCircuit;
-use feldera_storage::fbuf::slab::FBufSlabs;
 use feldera_storage::{FileCommitter, StorageBackend, StoragePath};
 use feldera_types::checkpoint::CheckpointMetadata;
+use feldera_types::config::DevTweaks;
+use feldera_types::config::dev_tweaks::{BufferCacheAllocationStrategy, BufferCacheStrategy};
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use feldera_types::transaction::CommitProgressSummary;
 use itertools::Either;
-use serde::Deserialize;
-use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -301,246 +295,43 @@ pub struct CircuitConfig {
     pub dev_tweaks: DevTweaks,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(default)]
-pub struct DevTweaks {
-    /// Buffer-cache implementation to use for storage reads.
-    ///
-    /// The default is `s3_fifo`.
-    pub buffer_cache_strategy: BufferCacheStrategy,
-
-    /// Override the number of buckets/shards used by sharded buffer caches.
-    ///
-    /// This only applies when `buffer_cache_strategy = "s3_fifo"`. Values are
-    /// rounded up to the next power of two because the current implementation
-    /// shards by `hash(key) & (n - 1)`.
-    pub buffer_max_buckets: Option<usize>,
-
-    /// How S3-FIFO caches are assigned to foreground/background workers.
-    ///
-    /// This only applies when `buffer_cache_strategy = "s3_fifo"`. The
-    /// default is `shared_per_worker_pair`; LRU always uses `per_thread`.
-    pub buffer_cache_allocation_strategy: BufferCacheAllocationStrategy,
-
-    /// Target number of cached bytes retained in each `FBuf` slab size class.
-    ///
-    /// The default value is [`FBufSlabs::DEFAULT_BYTES_PER_CLASS`].
-    pub fbuf_slab_bytes_per_class: usize,
-
-    /// Whether to asynchronously fetch keys needed for the join operator from
-    /// storage.  Asynchronous fetching should be faster for high-latency
-    /// storage, such as object storage, but it could use excessive amounts of
-    /// memory if the number of keys fetched is very large.
-    pub fetch_join: bool,
-
-    /// Whether to asynchronously fetch keys needed for the distinct operator
-    /// from storage.  Asynchronous fetching should be faster for high-latency
-    /// storage, such as object storage, but it could use excessive amounts of
-    /// memory if the number of keys fetched is very large.
-    pub fetch_distinct: bool,
-
-    /// Which merger to use.
-    pub merger: MergerType,
-
-    /// If set, the maximum amount of storage, in MiB, for the POSIX backend to
-    /// allow to be in use before failing all writes with [StorageFull].  This
-    /// is useful for testing on top of storage that does not implement its own
-    /// quota mechanism.
-    ///
-    /// [StorageFull]: std::io::ErrorKind::StorageFull
-    pub storage_mb_max: Option<u64>,
-
-    /// Attempt to print a stack trace on stack overflow.
-    ///
-    /// To be used for debugging only; do not enable in production.
-    // NOTE: this flag is handled manually in `adapters/src/server.rs` before
-    // parsing DevTweaks. If the name or type of this field changes, make sure to
-    // adjust `server.rs` accordingly.
-    pub stack_overflow_backtrace: bool,
-
-    /// Controls the maximal number of records output by splitter operators
-    /// (joins, distinct, aggregation, rolling window and group operators) at
-    /// each step.
-    ///
-    /// The default value is 10,000 records.
-    // TODO: splitter_chunk_size_bytes, per-operator chunk size.
-    pub splitter_chunk_size_records: u64,
-
-    /// Enable adaptive joins.
-    ///
-    /// Adaptive joins dynamically change their partitioning policy to avoid skew.
-    ///
-    /// Adaptive joins are disabled by default.
-    pub adaptive_joins: bool,
-
-    /// The minimum relative improvement threshold for the join balancer.
-    ///
-    /// This parameter prevents the join balancer from making changes to the
-    /// partitioning policy if the improvement is not significant, since the overhead
-    /// of such rebalancing, especially when performed frequently, can exceed the benefits.
-    ///
-    /// A rebalancing is considered significant if the relative estimated improvement for the cluster
-    /// of joins where the rebalancing is applied is at least this threshold.
-    ///
-    /// A rebalancing is applied if both this threshold and `balancer_min_absolute_improvement_threshold` are met.
-    ///
-    /// The default value is 1.2.
-    pub balancer_min_relative_improvement_threshold: f64,
-
-    /// The minimum absolute improvement threshold for the balancer.
-    ///
-    /// This parameter prevents the join balancer from making changes to the
-    /// partitioning policy if the improvement is not significant, since the overhead
-    /// of such rebalancing, especially when performed frequently, can exceed the benefits.
-    ///
-    /// A rebalancing is considered significant if the absolute estimated improvement for the cluster
-    /// of joins where the rebalancing is applied is at least this threshold. The cost model used by
-    /// the balancer is based on the number of records in the largest partition of a collection.
-    ///
-    /// A rebalancing is applied if both this threshold and `balancer_min_relative_improvement_threshold` are met.
-    ///
-    /// The default value is 10,000.
-    pub balancer_min_absolute_improvement_threshold: u64,
-
-    /// Factor that discourages the use of the Balance policy in a perfectly balanced collection.
-    ///
-    /// Assuming a perfectly balanced key distribution, the Balance policy is slightly less efficient than Shard,
-    /// since it requires computing the hash of the entire key/value pair. This factor discourages the use of this policy
-    /// if the skew is `<balancer_balance_tax`.
-    ///
-    /// The default value is 1.1.
-    pub balancer_balance_tax: f64,
-
-    /// The balancer threshold for checking for an improved partitioning policy for a stream.
-    ///
-    /// Finding a good partitioning policy for a circuit involves solving an optimization problem,
-    /// which can be relatively expensive. Instead of doing this on every step, the balancer only
-    /// checks for an improved partitioning policy if the key distribution of a stream has changed
-    /// significantly since the current solution was computed.  Specifically, it only kicks in when
-    /// the size of at least one shard of at least one stream in the cluster has changed by more than
-    /// this threshold.
-    ///
-    /// The default value is 0.1.
-    pub balancer_key_distribution_refresh_threshold: f64,
-
-    /// False-positive rate for Bloom filters on batches on storage, as a
-    /// fraction f, where 0 < f < 1.
-    ///
-    /// The false-positive rate trades off between the amount of memory used by
-    /// Bloom filters and how frequently storage needs to be searched for keys
-    /// that are not actually present.  Typical false-positive rates and their
-    /// corresponding memory costs are:
-    ///
-    /// - 0.1: 4.8 bits per key
-    /// - 0.01: 9.6 bits per key
-    /// - 0.001: 14.4 bits per key
-    /// - 0.0001: 19.2 bits per key (default)
-    ///
-    /// Values outside the valid range, such as 0.0, disable Bloom filters.
-    pub bloom_false_positive_rate: f64,
-
-    /// Maximum batch size in records for level 0 merges.
-    pub max_level0_batch_size_records: u16,
-
-    /// The number of merger threads.
-    ///
-    /// The default value is equal to the number of worker threads.
-    pub merger_threads: Option<u16>,
-
-    /// Additional bias the merger assigns to records with negative weights
-    /// (retractions) in order to promote them to higher levels of the LSM tree sooner.
-    ///
-    /// Reasonable values for this parameter are in the range [0, 10].
-    ///
-    /// The default value is 0, which means that retractions are not given
-    /// any additional bias.
-    pub negative_weight_multiplier: u16,
-}
-
-impl Default for DevTweaks {
-    fn default() -> Self {
-        Self {
-            buffer_cache_strategy: BufferCacheStrategy::default(),
-            buffer_max_buckets: None,
-            buffer_cache_allocation_strategy: BufferCacheAllocationStrategy::default(),
-            fbuf_slab_bytes_per_class: FBufSlabs::DEFAULT_BYTES_PER_CLASS,
-            fetch_join: false,
-            fetch_distinct: false,
-            merger: MergerType::default(),
-            storage_mb_max: None,
-            stack_overflow_backtrace: false,
-            splitter_chunk_size_records: 10_000,
-            bloom_false_positive_rate: BLOOM_FILTER_FALSE_POSITIVE_RATE,
-            balancer_min_relative_improvement_threshold: MIN_RELATIVE_IMPROVEMENT_THRESHOLD,
-            balancer_min_absolute_improvement_threshold: MIN_ABSOLUTE_IMPROVEMENT_THRESHOLD,
-            balancer_balance_tax: BALANCE_TAX,
-            balancer_key_distribution_refresh_threshold: KEY_DISTRIBUTION_REFRESH_THRESHOLD,
-            adaptive_joins: false,
-            max_level0_batch_size_records: MAX_LEVEL0_BATCH_SIZE_RECORDS,
-            merger_threads: None,
-            negative_weight_multiplier: 0,
-        }
-    }
-}
-
-impl DevTweaks {
-    pub fn from_config(config: &BTreeMap<String, Value>) -> Self {
-        let tweaks: Self = serde_json::to_value(config)
-            .and_then(serde_json::from_value)
-            .inspect_err(|error| {
-                tracing::error!("falling back to default `dev_tweaks` due to error ({error}) with configuration: {config:#?}")
-            })
-            .unwrap_or_default();
-        if tweaks != DevTweaks::default() {
-            info!("using non-default `dev_tweaks`: {tweaks:#?}")
-        }
-        tweaks
-    }
-
-    pub(crate) fn effective_buffer_cache_allocation_strategy(
-        &self,
-    ) -> BufferCacheAllocationStrategy {
-        match self.buffer_cache_strategy {
-            BufferCacheStrategy::S3Fifo => self.buffer_cache_allocation_strategy,
-            BufferCacheStrategy::Lru => BufferCacheAllocationStrategy::PerThread,
-        }
-    }
-}
-
 /// Returns the chunk size for splitter operators, in records.
 ///
 /// Operators that split their output into multiple chunks, such as joins, distinct, and aggregation,
 /// should attempt to limit their output to this chunk size.
 pub fn splitter_output_chunk_size() -> usize {
-    Runtime::with_dev_tweaks(|d| d.splitter_chunk_size_records as usize)
+    Runtime::with_dev_tweaks(|d| d.splitter_chunk_size_records() as usize)
 }
 
 pub fn balancer_min_absolute_improvement_threshold() -> u64 {
-    Runtime::with_dev_tweaks(|d| d.balancer_min_absolute_improvement_threshold)
+    Runtime::with_dev_tweaks(|d| d.balancer_min_absolute_improvement_threshold())
 }
 
 pub fn balancer_min_relative_improvement_threshold() -> f64 {
-    Runtime::with_dev_tweaks(|d| d.balancer_min_relative_improvement_threshold)
+    Runtime::with_dev_tweaks(|d| d.balancer_min_relative_improvement_threshold())
 }
 
 pub fn balancer_balance_tax() -> f64 {
-    Runtime::with_dev_tweaks(|d| d.balancer_balance_tax)
+    Runtime::with_dev_tweaks(|d| d.balancer_balance_tax())
 }
 
 pub fn balancer_key_distribution_refresh_threshold() -> f64 {
-    Runtime::with_dev_tweaks(|d| d.balancer_key_distribution_refresh_threshold)
+    Runtime::with_dev_tweaks(|d| d.balancer_key_distribution_refresh_threshold())
 }
 
 pub fn adaptive_joins_enabled() -> bool {
-    Runtime::with_dev_tweaks(|d| d.adaptive_joins)
+    Runtime::with_dev_tweaks(|d| d.adaptive_joins())
 }
 
 pub fn max_level0_batch_size_records() -> u16 {
-    Runtime::with_dev_tweaks(|d| d.max_level0_batch_size_records)
+    Runtime::with_dev_tweaks(|d| {
+        d.max_level0_batch_size_records
+            .unwrap_or(MAX_LEVEL0_BATCH_SIZE_RECORDS)
+    })
 }
 
 pub fn negative_weight_multiplier() -> u16 {
-    Runtime::with_dev_tweaks(|d| d.negative_weight_multiplier)
+    Runtime::with_dev_tweaks(|d| d.negative_weight_multiplier())
 }
 
 /// Configuration for storage in a [Runtime]-hosted circuit.
@@ -621,12 +412,12 @@ impl CircuitConfig {
     }
 
     pub fn with_splitter_chunk_size_records(mut self, records: u64) -> Self {
-        self.dev_tweaks.splitter_chunk_size_records = records;
+        self.dev_tweaks.splitter_chunk_size_records = Some(records);
         self
     }
 
     pub fn with_buffer_cache_strategy(mut self, strategy: BufferCacheStrategy) -> Self {
-        self.dev_tweaks.buffer_cache_strategy = strategy;
+        self.dev_tweaks.buffer_cache_strategy = Some(strategy);
         self
     }
 
@@ -639,28 +430,28 @@ impl CircuitConfig {
         mut self,
         strategy: BufferCacheAllocationStrategy,
     ) -> Self {
-        self.dev_tweaks.buffer_cache_allocation_strategy = strategy;
+        self.dev_tweaks.buffer_cache_allocation_strategy = Some(strategy);
         self
     }
 
     #[cfg(test)]
     pub fn with_fbuf_slab_bytes_per_class(mut self, bytes_per_class: usize) -> Self {
-        self.dev_tweaks.fbuf_slab_bytes_per_class = bytes_per_class;
+        self.dev_tweaks.fbuf_slab_bytes_per_class = Some(bytes_per_class);
         self
     }
 
     pub fn with_balancer_min_relative_improvement_threshold(mut self, threshold: f64) -> Self {
-        self.dev_tweaks.balancer_min_relative_improvement_threshold = threshold;
+        self.dev_tweaks.balancer_min_relative_improvement_threshold = Some(threshold);
         self
     }
 
     pub fn with_balancer_min_absolute_improvement_threshold(mut self, threshold: u64) -> Self {
-        self.dev_tweaks.balancer_min_absolute_improvement_threshold = threshold;
+        self.dev_tweaks.balancer_min_absolute_improvement_threshold = Some(threshold);
         self
     }
 
     pub fn with_balancer_balance_tax(mut self, tax: f64) -> Self {
-        self.dev_tweaks.balancer_balance_tax = tax;
+        self.dev_tweaks.balancer_balance_tax = Some(tax);
         self
     }
 

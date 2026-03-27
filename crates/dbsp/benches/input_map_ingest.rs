@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use crossbeam::channel::{Sender, bounded};
-use dbsp::circuit::{CircuitConfig, CircuitStorageConfig, DevTweaks, Layout, Mode};
+use dbsp::circuit::{CircuitConfig, CircuitStorageConfig, Layout, Mode};
 use dbsp::{
     Runtime,
     mimalloc::MiMalloc,
@@ -54,7 +54,7 @@ fn main() -> Result<()> {
             )
             .context("failed to configure POSIX storage backend")?,
         ),
-        dev_tweaks: DevTweaks::default(),
+        dev_tweaks: Default::default(),
     };
 
     let total_batches = (TOTAL_RECORDS / BATCH_SIZE as u64) as usize;

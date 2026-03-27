@@ -29,7 +29,9 @@ use crate::db::types::utils::{
 use crate::db::types::version::Version;
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
-use feldera_types::config::{FtConfig, PipelineConfig, ProgramIr, ResourceConfig, RuntimeConfig};
+use feldera_types::config::{
+    DevTweaks, FtConfig, PipelineConfig, ProgramIr, ResourceConfig, RuntimeConfig,
+};
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{
@@ -322,7 +324,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
             http_workers: val.val18,
             io_workers: val.val19,
             env: BTreeMap::new(),
-            dev_tweaks: BTreeMap::new(),
+            dev_tweaks: DevTweaks::default(),
             logging: None,
             pipeline_template_configmap: None,
         })
@@ -1207,7 +1209,7 @@ async fn pipeline_versioning() {
         http_workers: None,
         io_workers: None,
         env: BTreeMap::new(),
-        dev_tweaks: BTreeMap::new(),
+        dev_tweaks: DevTweaks::default(),
         logging: None,
         pipeline_template_configmap: None,
     })
@@ -2254,7 +2256,7 @@ async fn pipeline_provision_version_guard() {
                     max_parallel_connector_init: None,
                     init_containers: None,
                     checkpoint_during_suspend: false,
-                    dev_tweaks: BTreeMap::new(),
+                    dev_tweaks: DevTweaks::default(),
                     http_workers: None,
                     io_workers: None,
                     env: BTreeMap::new(),
