@@ -1077,19 +1077,11 @@ impl ControllerStatus {
     }
 
     pub fn output_buffers_full(&self) -> bool {
-        self.output_status().values().any(|endpoint_stats| {
-            let num_buffered_records = endpoint_stats
-                .metrics
-                .queued_records
-                .load(Ordering::Acquire);
-            num_buffered_records >= endpoint_stats.config.connector_config.max_queued_records
-        })
+        !self.output_buffers_full_names().is_empty()
     }
 
-    /// Returns details about output endpoints whose buffers are full.
-    ///
-    /// For each full endpoint, returns `(connector_name, transmitted_records)`.
-    pub fn output_buffers_full_details(&self) -> Vec<(String, u64)> {
+    /// Returns the names of output connectors whose buffers are currently full.
+    pub fn output_buffers_full_names(&self) -> Vec<String> {
         self.output_status()
             .values()
             .filter_map(|endpoint_stats| {
@@ -1099,11 +1091,7 @@ impl ControllerStatus {
                     .load(Ordering::Acquire);
                 if num_buffered_records >= endpoint_stats.config.connector_config.max_queued_records
                 {
-                    let transmitted = endpoint_stats
-                        .metrics
-                        .transmitted_records
-                        .load(Ordering::Acquire);
-                    Some((endpoint_stats.endpoint_name.clone(), transmitted))
+                    Some(endpoint_stats.endpoint_name.clone())
                 } else {
                     None
                 }
