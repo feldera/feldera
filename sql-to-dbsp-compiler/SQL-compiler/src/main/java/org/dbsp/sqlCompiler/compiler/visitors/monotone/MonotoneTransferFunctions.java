@@ -743,7 +743,9 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     static final Set<DBSPOpcode> monotoneUnary = Set.of(
             DBSPOpcode.UNARY_PLUS, DBSPOpcode.TYPEDBOX,
             DBSPOpcode.DECIMAL_TO_INTEGER, DBSPOpcode.INTEGER_TO_DECIMAL,
-            DBSPOpcode.SHORT_INTERVAL_TO_INTEGER, DBSPOpcode.INTEGER_TO_SHORT_INTERVAL);
+            DBSPOpcode.SHORT_INTERVAL_TO_INTEGER, DBSPOpcode.INTEGER_TO_SHORT_INTERVAL,
+            DBSPOpcode.UUID_TO_INTEGER, DBSPOpcode.INTEGER_TO_UUID
+    );
 
     @Override
     public void postorder(DBSPUnaryExpression expression) {
