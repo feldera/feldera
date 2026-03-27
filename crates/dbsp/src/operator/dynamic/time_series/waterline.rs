@@ -1,4 +1,5 @@
 use dyn_clone::clone_box;
+use feldera_storage::fbuf::FBuf;
 use size_of::SizeOf;
 
 use crate::circuit::checkpointer::Checkpoint;
@@ -94,9 +95,9 @@ where
                             WorkerLocation::Local => {
                                 waterlines.push(Mailbox::Plain(clone_box(waterline.as_ref())))
                             }
-                            WorkerLocation::Remote => {
-                                waterlines.push(Mailbox::Tx(waterline.checkpoint().unwrap()))
-                            }
+                            WorkerLocation::Remote => waterlines.push(Mailbox::Tx(
+                                FBuf::from_slice(&waterline.checkpoint().unwrap()),
+                            )),
                         };
                     }
                 },
@@ -175,9 +176,9 @@ where
                             WorkerLocation::Local => {
                                 waterlines.push(Mailbox::Plain(clone_box(waterline.as_ref())))
                             }
-                            WorkerLocation::Remote => {
-                                waterlines.push(Mailbox::Tx(waterline.checkpoint().unwrap()))
-                            }
+                            WorkerLocation::Remote => waterlines.push(Mailbox::Tx(
+                                FBuf::from_slice(&waterline.checkpoint().unwrap()),
+                            )),
                         };
                     }
                 },

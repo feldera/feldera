@@ -298,15 +298,13 @@ pub fn build_string_interner(
             let mut locations = WorkerLocations::new();
             match locations.next().unwrap() {
                 WorkerLocation::Local => outputs.push(Mailbox::Plain(spine.clone())),
-                WorkerLocation::Remote => {
-                    outputs.push(Mailbox::Tx(to_bytes(&spine).unwrap().into_vec()))
-                }
+                WorkerLocation::Remote => outputs.push(Mailbox::Tx(to_bytes(&spine).unwrap())),
             };
             for location in locations {
                 match location {
                     WorkerLocation::Local => outputs.push(Mailbox::Plain(empty_by_id())),
                     WorkerLocation::Remote => {
-                        outputs.push(Mailbox::Tx(to_bytes(&empty_by_id()).unwrap().into_vec()))
+                        outputs.push(Mailbox::Tx(to_bytes(&empty_by_id()).unwrap()))
                     }
                 }
             }
