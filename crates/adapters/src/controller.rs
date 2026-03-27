@@ -2687,8 +2687,7 @@ impl CircuitThread {
         };
         let _ = init_status_sender.send(Ok(self.controller.clone()));
 
-        let mut output_backpressure_warning: Option<(LongOperationWarning, Vec<(String, u64)>)> =
-            None;
+        let mut output_backpressure_warning: Option<LongOperationWarning> = None;
         loop {
             // Run received commands.  Commands can initiate checkpoint
             // requests, so attempt to execute those afterward.  Executing a
@@ -2718,38 +2717,21 @@ impl CircuitThread {
                 .update_output_stall_start(stalled);
             if stalled {
                 debug!("circuit thread: park waiting for output buffer space");
-                let (warning, initial_transmitted) = output_backpressure_warning
-                    .get_or_insert_with(|| {
-                        (
-                            LongOperationWarning::new(Duration::from_secs(1)),
-                            self.controller.output_buffers_full_details(),
-                        )
-                    });
+                let warning = output_backpressure_warning
+                    .get_or_insert_with(|| LongOperationWarning::new(Duration::from_secs(1)));
                 let controller = &self.controller;
                 warning.check(|elapsed| {
-                    let current_details = controller.output_buffers_full_details();
+                    let full_names = controller.output_buffers_full_names();
                     let elapsed_secs = elapsed.as_secs();
-                    for (name, current_transmitted) in &current_details {
-                        let baseline = initial_transmitted
-                            .iter()
-                            .find(|(n, _)| n == name)
-                            .map(|(_, t)| *t)
-                            .unwrap_or(0);
-                        let throughput = if elapsed_secs > 0 {
-                            current_transmitted.saturating_sub(baseline) / elapsed_secs
-                        } else {
-                            0
-                        };
-                        info!(
-                            "pipeline stalled {elapsed_secs} seconds because output buffers \
-                             from connector '{name}' are full (observed output throughput \
-                             is {throughput} records/second). Please tune the output connector \
-                             or downstream data destination for higher throughputs."
-                        );
-                    }
-                    if current_details.is_empty() {
+                    if full_names.is_empty() {
                         info!(
                             "pipeline stalled {elapsed_secs} seconds because output buffers are full"
+                        );
+                    } else {
+                        let names = full_names.join(", ");
+                        info!(
+                            "pipeline stalled {elapsed_secs} seconds because output buffers \
+                             are full: {names}"
                         );
                     }
                 });
@@ -6630,8 +6612,8 @@ impl ControllerInner {
         self.status.output_buffers_full()
     }
 
-    fn output_buffers_full_details(&self) -> Vec<(String, u64)> {
-        self.status.output_buffers_full_details()
+    fn output_buffers_full_names(&self) -> Vec<String> {
+        self.status.output_buffers_full_names()
     }
 
     fn warn_restoring() -> ControllerError {
