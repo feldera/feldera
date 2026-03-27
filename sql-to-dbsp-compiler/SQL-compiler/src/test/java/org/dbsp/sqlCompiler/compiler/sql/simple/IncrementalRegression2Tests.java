@@ -446,4 +446,60 @@ public class IncrementalRegression2Tests extends SqlIoTest {
             }
         });
     }
+
+    @Test
+    public void issue5935() {
+        var ccs = this.getCCS("""
+                CREATE TABLE orders (
+                    order_id              INT NOT NULL PRIMARY KEY,
+                    order_date            DATE NOT NULL,
+                    billing_customer_id   INT,
+                    shipping_customer_id  INT
+                );
+                
+                CREATE TABLE customers (
+                    customer_id   INT NOT NULL PRIMARY KEY,
+                    customer_name VARCHAR(200) NOT NULL,
+                    region        TINYINT NOT NULL
+                );
+                
+                CREATE VIEW V AS SELECT
+                    o.order_id,
+                    o.order_date,
+                    bc.customer_name AS billing_name,
+                    bc.region        AS billing_region,
+                    sc.customer_name AS shipping_name,
+                    sc.region        AS shipping_region
+                FROM orders AS o
+                LEFT JOIN customers AS bc
+                    ON o.billing_customer_id = bc.customer_id
+                LEFT JOIN customers AS sc
+                    ON o.shipping_customer_id = sc.customer_id
+                ORDER BY o.order_id;""");
+        // Validated on Postgres
+        ccs.stepWeightOne("""
+                INSERT INTO CUSTOMERS VALUES
+                  (1, 'Alice',   0),
+                  (2, 'Bob',     1),
+                  (3, 'Carol',   2),
+                  (4, 'Dave',    3);
+                INSERT INTO orders (order_id, order_date, billing_customer_id, shipping_customer_id) VALUES
+                  -- both billing + shipping
+                  (101, DATE '2024-01-10', 1, 2),
+                  -- billing only
+                  (102, DATE '2024-01-11', 3, NULL),
+                  -- shipping only
+                  (103, DATE '2024-01-12', NULL, 4),
+                  -- neither
+                  (104, DATE '2024-01-13', NULL, NULL),
+                  -- same customer for both roles
+                  (105, DATE '2024-01-14', 2, 2);""", """
+                 order_id | order_date | billing_name | billing_region | shipping_name | shipping_region
+                ------------------------------------------------------------------------------------------
+                  101     | 2024-01-10 | Alice|         0              | Bob|            1
+                  102     | 2024-01-11 | Carol|         2              |NULL           |
+                  103     | 2024-01-12 |NULL          |                | Dave|           3
+                  104     | 2024-01-13 |NULL          |                |NULL           |
+                  105     | 2024-01-14 | Bob|           1              | Bob|            1""");
+    }
 }
