@@ -25,6 +25,7 @@ use crate::{
 use std::{borrow::Cow, cell::RefCell, marker::PhantomData, ops::Neg, rc::Rc};
 
 mod lag;
+mod rank;
 mod topk;
 
 #[cfg(test)]
@@ -36,6 +37,7 @@ use futures::Stream as AsyncStream;
 
 use crate::dynamic::{ClonableTrait, Erase};
 pub use lag::{LagCustomOrdFactories, LagFactories};
+pub use rank::RankCustomOrdFactories;
 pub use topk::{TopKCustomOrdFactories, TopKFactories, TopKRankCustomOrdFactories};
 
 /// Specifies the order in which a group transformer produces output tuples.
@@ -48,7 +50,7 @@ pub enum Monotonicity {
     /// have been produced, they can be pushed to a `Builder` in reverse
     /// order.
     Descending,
-    /// Transformer does not guarantee an particular order of output tuples.
+    /// Transformer does not guarantee any particular order of output tuples.
     /// Outputs must be sorted before pushing them to a `Builder`.
     #[allow(dead_code)]
     Unordered,
@@ -62,7 +64,7 @@ pub enum Monotonicity {
 /// a group transformer maps multiple input values into multiple output
 /// values. Examples are the `top-k` transformer that returns
 /// `k` largest values in the group and the `row-number` transformer
-/// that attaches index to each input value according to ascdending or
+/// that attaches index to each input value according to ascending or
 /// descending order.
 pub trait GroupTransformer<I: ?Sized, O: ?Sized>: 'static {
     /// Transformer name.
