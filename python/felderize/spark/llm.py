@@ -17,7 +17,9 @@ class LLMClient(ABC):
 
 class AnthropicClient(LLMClient):
     def __init__(self, config: Config):
-        self.client = anthropic.Anthropic(api_key=config.api_key)
+        self.client = anthropic.Anthropic(
+            api_key=config.api_key, base_url=config.base_url
+        )
         self.model = config.model
 
     def translate(self, system_prompt: str, user_prompt: str) -> str:

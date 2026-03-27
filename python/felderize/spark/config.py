@@ -10,7 +10,8 @@ from dotenv import load_dotenv
 @dataclass
 class Config:
     model: str = ""
-    api_key: str = ""
+    api_key: str | None = None
+    base_url: str | None = None
     feldera_compiler: str = ""
 
     @classmethod
@@ -21,6 +22,7 @@ class Config:
 
         return cls(
             model=os.environ.get("FELDERIZE_MODEL", ""),
-            api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+            api_key=os.environ.get("ANTHROPIC_API_KEY"),
+            base_url=os.environ.get("ANTHROPIC_BASE_URL"),
             feldera_compiler=os.environ.get("FELDERA_COMPILER", ""),
         )

@@ -185,6 +185,7 @@ These Spark functions exist in Feldera — translate directly:
 | `RLIKE(s, pattern)` | Same | Infix `s RLIKE pattern` also works |
 | `OCTET_LENGTH(s)` | Same | Returns byte length of string |
 | `overlay(str placing repl from pos for len)` | `OVERLAY(str PLACING repl FROM pos FOR len)` | Same syntax |
+| `SPLIT_PART(s, delimiter, n)` | `SPLIT_PART(s, delimiter, n)` | Feldera does not support negative indices |
 
 #### Array functions
 
@@ -680,7 +681,6 @@ Rationale: a partial translation produces incorrect results, which is worse than
 
 | Function | Notes |
 |----------|-------|
-| `split_part(str, delim, n)` | Feldera's `SPLIT_PART` treats the delimiter as a regex — special chars like `.` match any character and produce wrong results. Negative indices not supported. Always mark unsupported. |
 | `substring(str, -n)` / `substr(str, -n)` | Negative position counts from end in Spark (`substring('Spark SQL', -3)` → `'SQL'`); Feldera returns full string or wrong result. Mark unsupported when position is negative. |
 | `DECODE(expr, s1, r1, s2, r2, ..., default)` | Not supported in Feldera — DECODE uses Oracle-style NULL-safe equality where `NULL = NULL` is TRUE; a correct rewrite requires `IS NOT DISTINCT FROM` instead of `=`, which Feldera does not support. A naive `CASE WHEN expr = s1` rewrite silently breaks NULL-matching branches. |
 | `substring_index` | No equivalent |
