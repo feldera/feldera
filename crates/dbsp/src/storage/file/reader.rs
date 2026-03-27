@@ -7,7 +7,8 @@ use super::{AnyFactories, Deserializer, Factories};
 use crate::dynamic::{DynVec, WeightTrait};
 use crate::storage::buffer_cache::CacheAccess;
 use crate::storage::file::format::{BatchMetadata, FilterBlock};
-use crate::storage::tracking_bloom_filter::{BloomFilterStats, TrackingBloomFilter};
+use crate::storage::filter_stats::FilterStats;
+use crate::storage::tracking_bloom_filter::TrackingBloomFilter;
 use crate::storage::{
     backend::StorageError,
     buffer_cache::{BufferCache, FBuf},
@@ -655,6 +656,12 @@ where
             DeserializeDyn::deserialize_with(item.fst(), key, &mut deserializer)
         }
     }
+    unsafe fn key_range(&self, factories: &Factories<K, A>, min: &mut K, max: &mut K) {
+        unsafe {
+            self.key(factories, 0, min);
+            self.key(factories, self.n_values() - 1, max);
+        }
+    }
     unsafe fn aux(&self, factories: &Factories<K, A>, index: usize, aux: &mut A) {
         unsafe {
             let item = self.archived_item(factories, index);
@@ -806,6 +813,33 @@ impl TreeNode {
             NodeType::Data => Ok(TreeBlock::Data(DataBlock::new(file, self)?)),
             NodeType::Index => Ok(TreeBlock::Index(IndexBlock::new(file, self)?)),
         }
+    }
+
+    fn key_range<K, A>(
+        &self,
+        file: &ImmutableFileRef,
+        factories: &Factories<K, A>,
+    ) -> Result<(Box<K>, Box<K>), Error>
+    where
+        K: DataTrait + ?Sized,
+        A: DataTrait + ?Sized,
+    {
+        let key_factory = factories.key_factory;
+        let mut min = key_factory.default_box();
+        let mut max = key_factory.default_box();
+
+        match self.read::<K, A>(file)? {
+            // SAFETY: Unsafe because of serialization
+            TreeBlock::Data(data_block) => unsafe {
+                data_block.key_range(factories, min.as_mut(), max.as_mut());
+            },
+            // SAFETY: Unsafe because of serialization
+            TreeBlock::Index(index_block) => unsafe {
+                index_block.key_range(min.as_mut(), max.as_mut());
+            },
+        }
+
+        Ok((min, max))
     }
 }
 
@@ -1112,6 +1146,17 @@ where
         }
     }
 
+    unsafe fn key_range(&self, min: &mut K, max: &mut K) {
+        unsafe {
+            self.get_bound(0, min);
+            self.max_bound(max);
+        }
+    }
+
+    unsafe fn max_bound(&self, bound: &mut K) {
+        unsafe { self.get_bound(self.last_bound_index(), bound) }
+    }
+
     /// Returns the index of the child of this index block that contains a row
     /// in the range `target_rows` and which may contain a key for which
     /// `compare` returns `bias` or [Equal], or `None` if there is no such
@@ -1205,6 +1250,10 @@ where
         self.child_offsets.count
     }
 
+    fn last_bound_index(&self) -> usize {
+        self.n_children() * 2 - 1
+    }
+
     /// Returns the comparison of the largest bound key using `compare`.
     unsafe fn compare_max<C>(&self, key_factory: &dyn Factory<K>, compare: &C) -> Ordering
     where
@@ -1213,7 +1262,7 @@ where
         unsafe {
             let mut ordering = Equal;
             key_factory.with(&mut |key| {
-                self.get_bound(self.n_children() * 2 - 1, key);
+                self.max_bound(key);
                 ordering = compare(key);
             });
             ordering
@@ -1515,7 +1564,7 @@ where
 {
     fn size_of_children(&self, context: &mut size_of::Context) {
         self.file.size_of_with_context(context);
-        context.add(self.filter_stats().size_byte);
+        context.add(self.membership_filter_stats().size_byte);
         self.columns.size_of_with_context(context);
     }
 }
@@ -1683,14 +1732,15 @@ where
         Ok(self.file.file_handle.get_size()?)
     }
 
-    /// Returns statistics of the Bloom filter, including its size in bytes.
+    /// Returns statistics of the membership filter, including its size in
+    /// bytes.
     ///
     /// If the file doesn't have a Bloom filter, returns a default of zeros.
-    pub fn filter_stats(&self) -> BloomFilterStats {
+    pub fn membership_filter_stats(&self) -> FilterStats {
         if let Some(bloom_filter) = &self.bloom_filter {
             bloom_filter.stats()
         } else {
-            BloomFilterStats::default()
+            FilterStats::default()
         }
     }
 
@@ -1733,22 +1783,7 @@ where
         };
 
         let factories = self.columns[0].factories.factories::<K, A>();
-        let key_factory = factories.key_factory;
-        let mut min = key_factory.default_box();
-        let mut max = key_factory.default_box();
-
-        match root.read::<K, A>(&self.file)? {
-            TreeBlock::Data(data_block) => unsafe {
-                data_block.key(&factories, 0, min.as_mut());
-                data_block.key(&factories, data_block.n_values() - 1, max.as_mut());
-            },
-            TreeBlock::Index(index_block) => unsafe {
-                index_block.get_bound(0, min.as_mut());
-                index_block.get_bound(index_block.n_children() * 2 - 1, max.as_mut());
-            },
-        }
-
-        Ok(Some((min, max)))
+        Ok(Some(root.key_range(&self.file, &factories)?))
     }
 
     /// Asks the bloom filter of the reader if we have the key.

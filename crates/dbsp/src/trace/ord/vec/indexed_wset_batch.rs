@@ -1,5 +1,5 @@
 use crate::storage::file::SerializerInner;
-use crate::storage::tracking_bloom_filter::BloomFilterStats;
+use crate::storage::filter_stats::FilterStats;
 use crate::trace::ord::merge_batcher::MergeBatcher;
 use crate::{
     DBData, DBWeight, Error, NumEntries,
@@ -457,8 +457,8 @@ where
         self.layer.approximate_byte_size()
     }
 
-    fn filter_stats(&self) -> BloomFilterStats {
-        BloomFilterStats::default()
+    fn membership_filter_stats(&self) -> FilterStats {
+        FilterStats::default()
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)

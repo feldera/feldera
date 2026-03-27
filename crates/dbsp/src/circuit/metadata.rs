@@ -136,6 +136,12 @@ pub const BLOOM_FILTER_MISSES_COUNT: MetricId =
 pub const BLOOM_FILTER_HIT_RATE_PERCENT: MetricId =
     MetricId(Cow::Borrowed("bloom_filter_hit_rate_percent"));
 pub const BLOOM_FILTER_SIZE_BYTES: MetricId = MetricId(Cow::Borrowed("bloom_filter_size_bytes"));
+pub const RANGE_FILTER_HITS_COUNT: MetricId = MetricId(Cow::Borrowed("range_filter_hits_count"));
+pub const RANGE_FILTER_MISSES_COUNT: MetricId =
+    MetricId(Cow::Borrowed("range_filter_misses_count"));
+pub const RANGE_FILTER_HIT_RATE_PERCENT: MetricId =
+    MetricId(Cow::Borrowed("range_filter_hit_rate_percent"));
+pub const RANGE_FILTER_SIZE_BYTES: MetricId = MetricId(Cow::Borrowed("range_filter_size_bytes"));
 pub const SPINE_BATCHES_COUNT: MetricId = MetricId(Cow::Borrowed("spine_batches_count"));
 pub const SPINE_STORAGE_SIZE_BYTES: MetricId = MetricId(Cow::Borrowed("spine_storage_size_bytes"));
 pub const MERGING_SIZE_BYTES: MetricId = MetricId(Cow::Borrowed("merging_size_bytes"));
@@ -161,7 +167,7 @@ pub const PREFIX_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("prefix_batche
 pub const INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("input_integral_records_count"));
 
-pub const CIRCUIT_METRICS: [CircuitMetric; 66] = [
+pub const CIRCUIT_METRICS: [CircuitMetric; 70] = [
     // State
     CircuitMetric {
         name: USED_MEMORY_BYTES,
@@ -288,6 +294,30 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 66] = [
         category: CircuitMetricCategory::State,
         advanced: false,
         description: "Hit rate of the Bloom filter.",
+    },
+    CircuitMetric {
+        name: RANGE_FILTER_SIZE_BYTES,
+        category: CircuitMetricCategory::State,
+        advanced: true,
+        description: "Size of the cached range filter in bytes.",
+    },
+    CircuitMetric {
+        name: RANGE_FILTER_HITS_COUNT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "The number of hits across all range filters. The hits are summed across the range filters for all batches in the spine.",
+    },
+    CircuitMetric {
+        name: RANGE_FILTER_MISSES_COUNT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "The number of misses across all range filters. The misses are summed across the range filters for all batches in the spine.",
+    },
+    CircuitMetric {
+        name: RANGE_FILTER_HIT_RATE_PERCENT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "Hit rate of the range filter.",
     },
     CircuitMetric {
         name: RETAINMENT_BOUNDS,

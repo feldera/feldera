@@ -1,5 +1,5 @@
 use crate::storage::buffer_cache::CacheStats;
-use crate::storage::tracking_bloom_filter::BloomFilterStats;
+use crate::storage::filter_stats::FilterStats;
 use crate::trace::BatchLocation;
 use crate::trace::cursor::Position;
 use crate::trace::ord::file::UnwrapStorage;
@@ -323,8 +323,12 @@ where
         self.file.byte_size().unwrap_storage() as usize
     }
 
-    fn filter_stats(&self) -> BloomFilterStats {
-        self.file.filter_stats()
+    fn membership_filter_stats(&self) -> FilterStats {
+        self.filters.stats().membership_filter
+    }
+
+    fn range_filter_stats(&self) -> FilterStats {
+        self.filters.stats().range_filter
     }
 
     #[inline]
@@ -390,7 +394,7 @@ where
             &*Runtime::storage_backend().unwrap_storage(),
             path,
         )?);
-        let key_range = file.key_range()?.map(|(min, max)| KeyRange::new(min, max));
+        let key_range = file.key_range()?.map(Into::into);
         Ok(Self::from_parts(factories.clone(), file, key_range))
     }
 
@@ -690,7 +694,6 @@ where
     #[size_of(skip)]
     writer: Writer2<K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
     time_diffs: Box<DynWeightedPairs<DynDataTyped<T>, R>>,
-    key_range: Option<KeyRange<K>>,
     num_tuples: usize,
     #[size_of(skip)]
     stats: BatchMetadata,
@@ -721,26 +724,19 @@ where
             )
             .unwrap_storage(),
             time_diffs: factories.timediff_factory.default_box(),
-            key_range: None,
             num_tuples: 0,
             stats: BatchMetadata::default(),
         }
     }
 
     fn done(self) -> FileValBatch<K, V, T, R> {
-        FileValBatch::from_parts(
-            self.factories,
-            Arc::new(self.writer.into_reader(self.stats).unwrap_storage()),
-            self.key_range,
-        )
+        let (file, key_bounds) = self.writer.into_reader(self.stats).unwrap_storage();
+        let file = Arc::new(file);
+        let key_range = key_bounds.map(Into::into);
+        FileValBatch::from_parts(self.factories, file, key_range)
     }
 
     fn push_key(&mut self, key: &K) {
-        if let Some(range) = &mut self.key_range {
-            range.extend_to(key);
-        } else {
-            self.key_range = Some(KeyRange::from_refs(key, key));
-        }
         self.writer.write0((key, &())).unwrap_storage();
     }
 

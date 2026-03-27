@@ -74,12 +74,12 @@ pub use ord::{
 
 use rkyv::{Deserialize, archived_root};
 
-use crate::storage::tracking_bloom_filter::BloomFilterStats;
 use crate::{
     Error, NumEntries, Timestamp,
     algebra::MonoidValue,
     dynamic::{DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
     storage::file::reader::Error as ReaderError,
+    storage::filter_stats::FilterStats,
 };
 pub use cursor::{Cursor, MergeCursor};
 pub use filter::{Filter, GroupFilter};
@@ -471,14 +471,20 @@ where
     /// the implementation need not attempt to cache the return value.
     fn approximate_byte_size(&self) -> usize;
 
-    /// Statistics of the Bloom filter used by [Cursor::seek_key_exact].
-    /// The Bloom filter (kept in memory) is used there to quickly check
-    /// whether a key might be present in the batch, before doing a
-    /// binary tree lookup within the batch to be exactly sure.
-    /// The statistics include for example the size in bytes and the hit rate.
-    /// Only some kinds of batches use a filter; others should return
-    /// `BloomFilterStats::default()`.
-    fn filter_stats(&self) -> BloomFilterStats;
+    /// Statistics of the secondary membership filter used by
+    /// [Cursor::seek_key_exact] after the range filter.
+    ///
+    /// Today this is usually a Bloom filter. Batches without such a filter
+    /// should return `FilterStats::default()`.
+    fn membership_filter_stats(&self) -> FilterStats;
+
+    /// Statistics of the in-memory range filter used by
+    /// [Cursor::seek_key_exact].
+    ///
+    /// Batches without a range filter should return `FilterStats::default()`.
+    fn range_filter_stats(&self) -> FilterStats {
+        FilterStats::default()
+    }
 
     /// Where the batch's data is stored.
     fn location(&self) -> BatchLocation {
@@ -659,8 +665,11 @@ where
     fn approximate_byte_size(&self) -> usize {
         (**self).approximate_byte_size()
     }
-    fn filter_stats(&self) -> BloomFilterStats {
-        (**self).filter_stats()
+    fn membership_filter_stats(&self) -> FilterStats {
+        (**self).membership_filter_stats()
+    }
+    fn range_filter_stats(&self) -> FilterStats {
+        (**self).range_filter_stats()
     }
     fn location(&self) -> BatchLocation {
         (**self).location()
