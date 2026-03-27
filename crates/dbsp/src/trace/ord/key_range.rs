@@ -23,7 +23,7 @@ where
 {
     /// Creates a range from owned endpoints.
     pub(crate) fn new(min: Box<K>, max: Box<K>) -> Self {
-        debug_assert!(min.as_ref() <= max.as_ref());
+        assert!(min.as_ref() <= max.as_ref());
         Self { min, max }
     }
 
@@ -32,15 +32,18 @@ where
         Self::new(clone_box(min), clone_box(max))
     }
 
-    /// Extends the upper bound when keys arrive in sorted order.
-    pub(crate) fn extend_to(&mut self, max: &K) {
-        max.clone_to(self.max.as_mut());
-        debug_assert!(self.min.as_ref() <= self.max.as_ref());
-    }
-
     /// Returns `true` when `key` is inside the closed interval.
     pub(crate) fn contains(&self, key: &K) -> bool {
         self.min.as_ref() <= key && key <= self.max.as_ref()
+    }
+}
+
+impl<K> From<(Box<K>, Box<K>)> for KeyRange<K>
+where
+    K: DataTrait + ?Sized,
+{
+    fn from((min, max): (Box<K>, Box<K>)) -> Self {
+        Self::new(min, max)
     }
 }
 

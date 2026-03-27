@@ -2,7 +2,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
     DBWeight,
-    dynamic::{Data, DowncastTrait, DynWeight, Factory, LeanVec, Vector, WithFactory},
+    dynamic::{Data, DataTrait, DowncastTrait, DynWeight, Factory, LeanVec, Vector, WithFactory},
     storage::{
         backend::StorageBackend,
         buffer_cache::BufferCache,
@@ -683,6 +683,31 @@ fn test_bloom<K, A, N>(
     }
 }
 
+fn test_key_range<K, A, Aux, N>(
+    reader: &Reader<(&'static DynData, &'static Aux, N)>,
+    n: usize,
+    expected: impl Fn(usize) -> (K, K, K, A),
+) where
+    K: DBData,
+    A: DBData,
+    Aux: DataTrait + ?Sized,
+    N: ColumnSpec,
+{
+    let key_range = reader.key_range().unwrap();
+    if n == 0 {
+        assert!(key_range.is_none());
+        return;
+    }
+
+    let Some((min, max)) = key_range else {
+        panic!("expected non-empty key range");
+    };
+    let (_, expected_min, _, _) = expected(0);
+    let (_, expected_max, _, _) = expected(n - 1);
+    assert_eq!(min.downcast_checked::<K>(), &expected_min);
+    assert_eq!(max.downcast_checked::<K>(), &expected_max);
+}
+
 fn test_two_columns<T>(parameters: Parameters)
 where
     T: TwoColumns,
@@ -718,7 +743,7 @@ where
         layer_file.write0((&T::key0(row0), &T::aux0(row0))).unwrap();
     }
 
-    let reader = layer_file.into_reader(BatchMetadata::default()).unwrap();
+    let (reader, _key_bounds) = layer_file.into_reader(BatchMetadata::default()).unwrap();
     reader.evict();
     let rows0 = reader.rows();
     let expected0 = |row0| {
@@ -729,6 +754,7 @@ where
     };
     test_cursor(&rows0, n0, expected0);
     test_bloom(&reader, n0, expected0);
+    test_key_range(&reader, n0, expected0);
 
     let expected1 = |row0, row1| {
         let key1 = T::key1(row0, row1);
@@ -783,7 +809,7 @@ where
         layer_file.write0((&T::key0(row0), &T::aux0(row0))).unwrap();
     }
 
-    let reader = layer_file.into_reader(BatchMetadata::default()).unwrap();
+    let (reader, _key_bounds) = layer_file.into_reader(BatchMetadata::default()).unwrap();
     reader.evict();
     test_multifetch_two_columns::<T>(&reader);
 }
@@ -926,7 +952,8 @@ where
         let reader = if reopen {
             println!("closing writer and reopening as reader");
             let path = writer.path().clone();
-            let (_file_handle, _bloom_filter) = writer.close(BatchMetadata::default()).unwrap();
+            let (_file_handle, _bloom_filter, _key_bounds) =
+                writer.close(BatchMetadata::default()).unwrap();
             Reader::open(
                 &[&factories.any_factories()],
                 test_buffer_cache,
@@ -936,12 +963,14 @@ where
             .unwrap()
         } else {
             println!("transforming writer into reader");
-            writer.into_reader(BatchMetadata::default()).unwrap()
+            let (reader, _key_bounds) = writer.into_reader(BatchMetadata::default()).unwrap();
+            reader
         };
         reader.evict();
         assert_eq!(reader.rows().len(), n as u64);
         test_cursor(&reader.rows(), n, &expected);
         test_bloom(&reader, n, &expected);
+        test_key_range(&reader, n, &expected);
         test_bulk_rows(reader.bulk_rows().unwrap(), OneColumn::new(&expected, n));
     }
 }
@@ -981,7 +1010,8 @@ fn test_one_column_zset<K, A>(
         let reader = if reopen {
             println!("closing writer and reopening as reader");
             let path = writer.path().clone();
-            let (_file_handle, _bloom_filter) = writer.close(BatchMetadata::default()).unwrap();
+            let (_file_handle, _bloom_filter, _key_bounds) =
+                writer.close(BatchMetadata::default()).unwrap();
             Reader::open(
                 &[&factories.any_factories()],
                 test_buffer_cache,
@@ -991,10 +1021,12 @@ fn test_one_column_zset<K, A>(
             .unwrap()
         } else {
             println!("transforming writer into reader");
-            writer.into_reader(BatchMetadata::default()).unwrap()
+            let (reader, _key_bounds) = writer.into_reader(BatchMetadata::default()).unwrap();
+            reader
         };
         reader.evict();
         assert_eq!(reader.rows().len(), n as u64);
+        test_key_range(&reader, n, &expected);
         test_multifetch_zset(&reader, n, &expected);
     }
 }
@@ -1004,47 +1036,59 @@ fn one_column_key_range() {
     init_test_logger();
 
     for reopen in [false, true] {
-        let factories = Factories::<DynData, DynData>::new::<u64, ()>();
-        let tempdir = tempdir().unwrap();
-        let storage_backend = <dyn StorageBackend>::new(
-            &StorageConfig {
-                path: tempdir.path().to_string_lossy().to_string(),
-                cache: Default::default(),
-            },
-            &StorageOptions::default(),
-        )
-        .unwrap();
-        let mut writer = Writer1::new(
-            &factories,
-            test_buffer_cache,
-            &*storage_backend,
-            Parameters::default(),
-            3,
-        )
-        .unwrap();
-        for key in [10_u64, 20, 30] {
-            writer.write0((&key, &())).unwrap();
-        }
-
-        let reader = if reopen {
-            let path = writer.path().clone();
-            let (_file_handle, _bloom_filter) = writer.close().unwrap();
-            Reader::open(
-                &[&factories.any_factories()],
+        for (label, keys) in [
+            ("negative", [-30_i64, -20, -10]),
+            ("positive", [10_i64, 20, 30]),
+            ("mixed", [-30_i64, 0, 20]),
+        ] {
+            let factories = Factories::<DynData, DynData>::new::<i64, ()>();
+            let tempdir = tempdir().unwrap();
+            let storage_backend = <dyn StorageBackend>::new(
+                &StorageConfig {
+                    path: tempdir.path().to_string_lossy().to_string(),
+                    cache: Default::default(),
+                },
+                &StorageOptions::default(),
+            )
+            .unwrap();
+            let mut writer = Writer1::new(
+                &factories,
                 test_buffer_cache,
                 &*storage_backend,
-                &path,
+                Parameters::default(),
+                keys.len(),
             )
-            .unwrap()
-        } else {
-            writer.into_reader().unwrap()
-        };
+            .unwrap();
+            for key in keys {
+                writer.write0((&key, &())).unwrap();
+            }
 
-        let Some((min, max)) = reader.key_range().unwrap() else {
-            panic!("expected non-empty key range");
-        };
-        assert_eq!(*min.downcast_checked::<u64>(), 10);
-        assert_eq!(*max.downcast_checked::<u64>(), 30);
+            let reader = if reopen {
+                let path = writer.path().clone();
+                let (_file_handle, _bloom_filter, _key_bounds) =
+                    writer.close(BatchMetadata::default()).unwrap();
+                Reader::open(
+                    &[&factories.any_factories()],
+                    test_buffer_cache,
+                    &*storage_backend,
+                    &path,
+                )
+                .unwrap()
+            } else {
+                let (reader, _key_bounds) = writer.into_reader(BatchMetadata::default()).unwrap();
+                reader
+            };
+
+            let Some((min, max)) = reader.key_range().unwrap() else {
+                panic!("expected non-empty key range for {label}");
+            };
+            assert_eq!(*min.downcast_checked::<i64>(), keys[0], "{label}");
+            assert_eq!(
+                *max.downcast_checked::<i64>(),
+                keys[keys.len() - 1],
+                "{label}"
+            );
+        }
     }
 }
 

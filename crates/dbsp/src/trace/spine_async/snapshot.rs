@@ -13,7 +13,7 @@ use size_of::SizeOf;
 use super::SpineCursor;
 use crate::NumEntries;
 use crate::dynamic::{DynVec, Factory};
-use crate::storage::tracking_bloom_filter::BloomFilterStats;
+use crate::storage::filter_stats::FilterStats;
 use crate::trace::cursor::{CursorFactory, CursorList};
 use crate::trace::spine_async::sample_keys_from_batches;
 use crate::trace::{Batch, BatchReader, BatchReaderFactories, Cursor, Spine, merge_batches};
@@ -228,8 +228,15 @@ where
             .fold(0, |acc, batch| acc + batch.approximate_byte_size())
     }
 
-    fn filter_stats(&self) -> BloomFilterStats {
-        self.batches.iter().map(|b| b.filter_stats()).sum()
+    fn membership_filter_stats(&self) -> FilterStats {
+        self.batches
+            .iter()
+            .map(|b| b.membership_filter_stats())
+            .sum()
+    }
+
+    fn range_filter_stats(&self) -> FilterStats {
+        self.batches.iter().map(|b| b.range_filter_stats()).sum()
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)

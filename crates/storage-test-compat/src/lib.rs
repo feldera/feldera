@@ -402,13 +402,36 @@ mod tests {
         buffer_cache, golden_aux, golden_file_directory, golden_row, golden_row_small, GoldenRow,
         GoldenRowSmall,
     };
-    use dbsp::dynamic::{DynData, Erase};
+    use dbsp::dynamic::{DowncastTrait, DynData, Erase};
     use dbsp::storage::backend::{StorageBackend, StoragePath};
     use dbsp::storage::file::format::BatchMetadata;
     use dbsp::storage::file::reader::Reader;
     use dbsp::storage::file::Factories;
     use dbsp::DBData;
     use feldera_types::config::{StorageConfig, StorageOptions};
+
+    fn validate_key_range<T>(
+        reader: &Reader<(&'static DynData, &'static DynData, ())>,
+        row_builder: fn(usize) -> T,
+    ) where
+        T: DBData + Default + Erase<DynData>,
+    {
+        let n_rows = reader.n_rows(0) as usize;
+        let key_range = reader.key_range().unwrap();
+
+        if n_rows == 0 {
+            assert!(key_range.is_none());
+            return;
+        }
+
+        // The golden writer emits keys in deterministic sorted order, so the
+        // persisted range should match the first and last logical rows.
+        let expected_min = row_builder(0);
+        let expected_max = row_builder(n_rows - 1);
+        let (min, max) = key_range.expect("expected non-empty key range");
+        assert_eq!(min.downcast_checked::<T>(), &expected_min);
+        assert_eq!(max.downcast_checked::<T>(), &expected_max);
+    }
 
     fn validate_rows<T>(
         storage_backend: &dyn StorageBackend,
@@ -429,6 +452,7 @@ mod tests {
         assert_eq!(reader.metadata(), &BatchMetadata::default());
 
         let n_rows = reader.n_rows(0) as usize;
+        validate_key_range(&reader, row_builder);
         let mut bulk = reader.bulk_rows().unwrap();
         let mut tmp_key = T::default();
         let mut tmp_aux = 0i64;

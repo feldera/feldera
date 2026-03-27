@@ -12,15 +12,15 @@ use size_of::SizeOf;
 use crate::{
     DynZWeight, Runtime, ZWeight,
     algebra::{
-        IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet, OrdZSetFactories, ZBatch,
-        ZSet,
+        IndexedZSet, NegByRef, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet, OrdZSetFactories,
+        ZBatch, ZSet,
     },
     circuit::{CircuitConfig, mkconfig},
     dynamic::{DowncastTrait, DynData, DynUnit, DynWeightedPairs, Erase, LeanVec, pair::DynPair},
     trace::{
         Batch, BatchReader, BatchReaderFactories, Builder, FileIndexedWSetFactories,
         FileWSetFactories, GroupFilter, Spine, Trace,
-        cursor::CursorPair,
+        cursor::{Cursor, CursorPair},
         ord::{
             FileIndexedWSet, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
             FileValBatchFactories, FileWSet, OrdKeyBatch, OrdKeyBatchFactories, OrdValBatch,
@@ -467,6 +467,87 @@ fn test_key_batch_spine<B: ZBatch<Key = DynI32, Val = DynUnit, Time = u32>>(
 
         assert_trace_eq(&trace, &ref_trace);
     }
+}
+
+fn assert_out_of_range_seek_uses_range_filter<B>(batch: &B, low: i32, high: i32)
+where
+    B: BatchReader<Key = DynI32, Time = ()>,
+{
+    let range_before = batch.range_filter_stats();
+    let membership_before = batch.membership_filter_stats();
+    assert!(range_before.size_byte > 0);
+
+    let low: Box<DynI32> = Box::new(low).erase_box();
+    let high: Box<DynI32> = Box::new(high).erase_box();
+    let mut cursor = batch.cursor();
+    assert!(!cursor.seek_key_exact(low.as_ref(), None));
+    assert!(!cursor.seek_key_exact(high.as_ref(), None));
+
+    let range_after = batch.range_filter_stats();
+    let membership_after = batch.membership_filter_stats();
+
+    assert_eq!(range_after.size_byte, range_before.size_byte);
+    assert_eq!(range_after.hits, range_before.hits);
+    assert_eq!(range_after.misses, range_before.misses + 2);
+    assert_eq!(membership_after, membership_before);
+}
+
+#[test]
+fn test_file_wset_neg_by_ref_preserves_key_bounds() {
+    run_in_circuit_with_storage(|| {
+        let factories = <FileWSetFactories<DynI32, DynZWeight>>::new::<i32, (), ZWeight>();
+        let tuples = vec![Tup2(-10, 1), Tup2(0, -2), Tup2(25, 3)];
+
+        let mut erased_tuples = zset_tuples(tuples.clone());
+        let batch =
+            FileWSet::<DynI32, DynZWeight>::dyn_from_tuples(&factories, (), &mut erased_tuples);
+        let negated = batch.neg_by_ref();
+
+        let mut expected_tuples = zset_tuples(
+            tuples
+                .into_iter()
+                .map(|Tup2(key, weight)| Tup2(key, -weight))
+                .collect(),
+        );
+        let expected =
+            TestBatch::dyn_from_tuples(&TestBatchFactories::new(), (), &mut expected_tuples);
+
+        assert_batch_eq(&negated, &expected);
+        assert_out_of_range_seek_uses_range_filter(&negated, -20, 40);
+    });
+}
+
+#[test]
+fn test_file_indexed_wset_neg_by_ref_preserves_key_bounds() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let tuples = vec![
+            Tup2(Tup2(-10, 1), 1),
+            Tup2(Tup2(0, 5), -2),
+            Tup2(Tup2(25, 7), 3),
+        ];
+
+        let mut erased_tuples = indexed_zset_tuples(tuples.clone());
+        let batch = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+            &factories,
+            (),
+            &mut erased_tuples,
+        );
+        let negated = batch.neg_by_ref();
+
+        let mut expected_tuples = indexed_zset_tuples(
+            tuples
+                .into_iter()
+                .map(|Tup2(Tup2(key, val), weight)| Tup2(Tup2(key, val), -weight))
+                .collect(),
+        );
+        let expected =
+            TestBatch::dyn_from_tuples(&TestBatchFactories::new(), (), &mut expected_tuples);
+
+        assert_batch_eq(&negated, &expected);
+        assert_out_of_range_seek_uses_range_filter(&negated, -20, 40);
+    });
 }
 
 proptest! {

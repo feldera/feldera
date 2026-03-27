@@ -1,5 +1,5 @@
 use crate::storage::file::format::BatchMetadata;
-use crate::storage::tracking_bloom_filter::BloomFilterStats;
+use crate::storage::filter_stats::FilterStats;
 use crate::{
     DBData, DBWeight, NumEntries, Runtime,
     algebra::{AddAssignByRef, AddByRef, NegByRef},
@@ -277,11 +277,9 @@ where
             negative_weight_count: (self.len() as u64)
                 .saturating_sub(self.stats().negative_weight_count),
         };
-        Self::from_parts(
-            self.factories.clone(),
-            Arc::new(writer.into_reader(stats).unwrap_storage()),
-            self.filters.key_range().cloned(),
-        )
+        let (file, key_bounds) = writer.into_reader(stats).unwrap_storage();
+        let key_range = key_bounds.map(Into::into);
+        Self::from_parts(self.factories.clone(), Arc::new(file), key_range)
     }
 }
 
@@ -391,8 +389,12 @@ where
         self.file.byte_size().unwrap_storage() as usize
     }
 
-    fn filter_stats(&self) -> BloomFilterStats {
-        self.file.filter_stats()
+    fn membership_filter_stats(&self) -> FilterStats {
+        self.filters.stats().membership_filter
+    }
+
+    fn range_filter_stats(&self) -> FilterStats {
+        self.filters.stats().range_filter
     }
 
     #[inline]
@@ -490,7 +492,7 @@ where
             &*Runtime::storage_backend().unwrap(),
             path,
         )?);
-        let key_range = file.key_range()?.map(|(min, max)| KeyRange::new(min, max));
+        let key_range = file.key_range()?.map(Into::into);
 
         Ok(Self::from_parts(factories.clone(), file, key_range))
     }
@@ -794,7 +796,6 @@ where
     #[size_of(skip)]
     writer: Writer1<K, R>,
     weight: Box<R>,
-    key_range: Option<KeyRange<K>>,
     num_tuples: usize,
     #[size_of(skip)]
     stats: BatchMetadata,
@@ -836,26 +837,19 @@ where
             )
             .unwrap_storage(),
             weight: factories.weight_factory().default_box(),
-            key_range: None,
             num_tuples: 0,
             stats: BatchMetadata::default(),
         }
     }
 
     fn done(self) -> FileWSet<K, R> {
-        FileWSet::from_parts(
-            self.factories,
-            Arc::new(self.writer.into_reader(self.stats).unwrap_storage()),
-            self.key_range,
-        )
+        let (file, key_bounds) = self.writer.into_reader(self.stats).unwrap_storage();
+        let file = Arc::new(file);
+        let key_range = key_bounds.map(Into::into);
+        FileWSet::from_parts(self.factories, file, key_range)
     }
 
     fn push_key(&mut self, key: &K) {
-        if let Some(range) = &mut self.key_range {
-            range.extend_to(key);
-        } else {
-            self.key_range = Some(KeyRange::from_refs(key, key));
-        }
         self.writer.write0((key, &*self.weight)).unwrap_storage();
     }
 

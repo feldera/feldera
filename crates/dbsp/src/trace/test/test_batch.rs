@@ -3,7 +3,7 @@
 //! So far, only methods/traits used in tests have been implemented.
 #![allow(clippy::type_complexity)]
 
-use crate::storage::tracking_bloom_filter::BloomFilterStats;
+use crate::storage::filter_stats::FilterStats;
 use crate::{
     DBData, DBWeight, NumEntries, Timestamp,
     dynamic::{
@@ -1264,8 +1264,8 @@ where
         self.size_of().total_bytes()
     }
 
-    fn filter_stats(&self) -> BloomFilterStats {
-        BloomFilterStats::default()
+    fn membership_filter_stats(&self) -> FilterStats {
+        FilterStats::default()
     }
 
     fn sample_keys<RG>(&self, _rng: &mut RG, _sample_size: usize, _sample: &mut DynVec<Self::Key>)
