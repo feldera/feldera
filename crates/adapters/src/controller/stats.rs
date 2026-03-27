@@ -1085,12 +1085,7 @@ impl ControllerStatus {
         self.output_status()
             .values()
             .filter_map(|endpoint_stats| {
-                let num_buffered_records = endpoint_stats
-                    .metrics
-                    .queued_records
-                    .load(Ordering::Acquire);
-                if num_buffered_records >= endpoint_stats.config.connector_config.max_queued_records
-                {
+                if endpoint_stats.is_buffer_full() {
                     Some(endpoint_stats.endpoint_name.clone())
                 } else {
                     None
@@ -2425,6 +2420,11 @@ impl OutputEndpointStatus {
             },
             health: self.health.lock().unwrap().clone(),
         }
+    }
+
+    pub fn is_buffer_full(&self) -> bool {
+        self.metrics.queued_records.load(Ordering::Acquire)
+            >= self.config.connector_config.max_queued_records
     }
 
     pub fn is_busy(&self) -> bool {
