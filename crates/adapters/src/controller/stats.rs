@@ -1077,7 +1077,9 @@ impl ControllerStatus {
     }
 
     pub fn output_buffers_full(&self) -> bool {
-        !self.output_buffers_full_names().is_empty()
+        self.output_status()
+            .values()
+            .any(|endpoint_stats| endpoint_stats.is_buffer_full())
     }
 
     /// Returns the names of output connectors whose buffers are currently full.
