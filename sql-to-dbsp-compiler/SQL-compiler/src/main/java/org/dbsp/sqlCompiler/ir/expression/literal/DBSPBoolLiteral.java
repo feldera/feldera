@@ -63,6 +63,12 @@ public final class DBSPBoolLiteral extends DBSPLiteral {
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }
 
+    public boolean hasValue(@Nullable Boolean value) {
+        if (this.value == null)
+            return value == null;
+        return this.value == value;
+    }
+
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPBoolLiteral(this.getNode(), this.type, this.value);

@@ -21,10 +21,16 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpressionTranslator;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -524,29 +530,100 @@ public class ShareIndexes extends Passes {
         }
     }
 
-    record VarAndExpression(DBSPVariablePath var, DBSPExpression expression) {}
+    record ParameterIndexMap(DBSPVariablePath var, Map<Integer, Integer> indexRemap) {}
+
+    record ParameterIndexMapSet(Map<DBSPParameter, ParameterIndexMap> map) {
+        public ParameterIndexMapSet() {
+            this(new HashMap<>());
+        }
+
+        void add(DBSPParameter param, ParameterIndexMap map) {
+            Utilities.putNew(this.map, param, map);
+        }
+
+        @Nullable
+        ParameterIndexMap get(DBSPParameter param) {
+            return this.map.get(param);
+        }
+    }
+
+    /** For a parameter param this is given a map from integer to integer and a variable.
+     * If the map[a] = b, this rewrites (*param).a to (*var).b */
+    static class ParameterIndexRewriter extends ExpressionTranslator {
+        final ResolveReferences resolver;
+        final ParameterIndexMapSet rewriteMap;
+
+        public ParameterIndexRewriter(DBSPCompiler compiler, ParameterIndexMapSet rewriteMap) {
+            super(compiler);
+            this.resolver = new ResolveReferences(compiler, false);
+            this.rewriteMap = rewriteMap;
+        }
+
+        @Override
+        public void startVisit(IDBSPInnerNode node) {
+            super.startVisit(node);
+            this.resolver.apply(node);
+        }
+
+        @Override
+        public void postorder(DBSPVariablePath var) {
+            if (this.maybeGet(var) != null) {
+                // Already translated
+                return;
+            }
+            var decl = this.resolver.reference.getDeclaration(var);
+            if (decl.is(DBSPParameter.class)) {
+                var map = this.rewriteMap.get(decl.to(DBSPParameter.class));
+                if (map != null) {
+                    this.map(var, map.var.deepCopy());
+                    return;
+                }
+            }
+            super.postorder(var);
+        }
+
+        @Override
+        public void postorder(DBSPFieldExpression field) {
+            if (this.maybeGet(field) != null) {
+                // Already translated
+                return;
+            }
+            if (field.expression.is(DBSPDerefExpression.class)) {
+                var deref = field.expression.to(DBSPDerefExpression.class);
+                if (deref.expression.is(DBSPVariablePath.class)) {
+                    var var = deref.expression.to(DBSPVariablePath.class);
+                    var decl = this.resolver.reference.getDeclaration(var);
+                    if (decl.is(DBSPParameter.class)) {
+                        var map = this.rewriteMap.get(decl.to(DBSPParameter.class));
+                        if (map != null) {
+                            Integer newField = map.indexRemap.get(field.fieldNo);
+                            if (newField == null)
+                                newField = field.fieldNo;
+                            this.map(field, map.var.deepCopy().deref().field(newField));
+                            return;
+                        }
+                    }
+                }
+            }
+            super.postorder(field);
+        }
+    }
 
     record JoinSource(WideMapIndexBuilder builder, int consumerIndex) {
-        /** Create an expression that represents the value part of the field of the new join input */
-        public VarAndExpression createValue(DBSPType expectedType) {
-            DBSPTypeTuple tuple = expectedType.deref().to(DBSPTypeTuple.class);
+        public ParameterIndexMap getParameterRemap() {
             DBSPMapIndexOperator source = this.builder.get();
             // This is the new input for this join input
             var newVar = source.getOutputIndexedZSetType().elementType.ref().var();
-            List<DBSPExpression> valueFields = new ArrayList<>();
+
             // This is the list of fields from the value produced by the MapIndex that this join consumes
             List<Integer> outputIndexes = builder.outputIndexes.get(consumerIndex);
-            int i = 0;
-            for (int index: outputIndexes) {
-                DBSPExpression field = newVar.deref().field(index);
-                if (field.getType().mayBeNull && !tuple.getFieldType(i).mayBeNull)
-                    field = field.neverFailsUnwrap();
-                valueFields.add(field.applyCloneIfNeeded());
-                i++;
+            Map<Integer, Integer> remap = new HashMap<>();
+            for (int i = 0; i < outputIndexes.size(); i++) {
+                int index = outputIndexes.get(i);
+                remap.put(i, index);
             }
-            DBSPExpression expr = new DBSPTupleExpression(valueFields, builder.valueNullable).borrow();
-            Utilities.enforce(expr.getType().sameType(expectedType));
-            return new VarAndExpression(newVar, expr);
+
+            return new ParameterIndexMap(newVar, remap);
         }
 
         @Override
@@ -623,24 +700,25 @@ public class ShareIndexes extends Passes {
                 DBSPClosureExpression closure,
                 JoinInputs inputs) {
 
-            DBSPVariablePath keyVar = closure.parameters[0].type.var();
-            DBSPVariablePath leftVar = closure.parameters[1].type.var();
-            DBSPVariablePath rightVar = closure.parameters[2].type.var();
-            DBSPExpression leftValue = leftVar;
+            DBSPVariablePath keyVar = closure.parameters[0].asVariable();
+            DBSPVariablePath leftVar = closure.parameters[1].asVariable();
+            DBSPVariablePath rightVar = closure.parameters[2].asVariable();
+            ParameterIndexMapSet set = new ParameterIndexMapSet();
+
             if (inputs.left != null) {
-                var pair = inputs.left.createValue(closure.parameters[1].type);
-                leftValue = pair.expression;
-                leftVar = pair.var;
+                var remap = inputs.left.getParameterRemap();
+                leftVar = remap.var;
+                set.add(closure.parameters[1], remap);
             }
-            DBSPExpression rightValue = rightVar;
             if (inputs.right != null) {
-                var pair = inputs.right.createValue(closure.parameters[2].type);
-                rightValue = pair.expression;
-                rightVar = pair.var;
+                var remap = inputs.right.getParameterRemap();
+                rightVar = remap.var;
+                set.add(closure.parameters[2], remap);
             }
-            DBSPExpression call = closure.call(keyVar, leftValue, rightValue);
-            DBSPExpression reduced = call.reduce(this.compiler);
-            return reduced.closure(keyVar, leftVar, rightVar);
+
+            ParameterIndexRewriter rewriter = new ParameterIndexRewriter(this.compiler, set);
+            DBSPClosureExpression result = rewriter.apply(closure).to(DBSPClosureExpression.class);
+            return result.body.closure(keyVar, leftVar, rightVar);
         }
 
         @Override

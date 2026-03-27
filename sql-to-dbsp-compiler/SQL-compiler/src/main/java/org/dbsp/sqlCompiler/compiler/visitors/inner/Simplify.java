@@ -528,6 +528,22 @@ public class Simplify extends ExpressionTranslator {
                 negative.isCompileTimeConstant() &&
                 positive.equivalent(negative)) {
             result = positive;
+        } else if (negative != null &&
+                // if (condition) then { true } else { false } == condition
+                positive.getType().sameType(condition.getType()) &&
+                positive.is(DBSPBoolLiteral.class) &&
+                positive.to(DBSPBoolLiteral.class).hasValue(true) &&
+                negative.is(DBSPBoolLiteral.class) &&
+                negative.to(DBSPBoolLiteral.class).hasValue(false)) {
+            result = condition;
+        } else if (negative != null &&
+                // if (condition) then { false } else { true } == !condition
+                positive.getType().sameType(condition.getType()) &&
+                positive.is(DBSPBoolLiteral.class) &&
+                positive.to(DBSPBoolLiteral.class).hasValue(false) &&
+                negative.is(DBSPBoolLiteral.class) &&
+                negative.to(DBSPBoolLiteral.class).hasValue(true)) {
+            result = condition.not();
         } else if (condition != expression.condition ||
                 positive != expression.positive ||
                 negative != expression.negative) {
@@ -903,7 +919,9 @@ public class Simplify extends ExpressionTranslator {
                     .appendSupplier(result::toString)
                     .newline();
         }
-        Utilities.enforce(expression.getType().sameType(result.getType()));
+        Utilities.enforce(expression.getType().sameType(result.getType()),
+                () -> "Expression with type " + expression.getType() + " has type " + result.getType() +
+                        " after simplification");
         super.map(expression, result);
     }
 }

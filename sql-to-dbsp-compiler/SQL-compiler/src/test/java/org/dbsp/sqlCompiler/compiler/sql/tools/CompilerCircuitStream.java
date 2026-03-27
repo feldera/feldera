@@ -72,6 +72,24 @@ public class CompilerCircuitStream extends CompilerCircuit {
         this.stream.addPair(input, output);
     }
 
+    /** Like step, but every record in the output has weight one, and the
+     * weight column is omitted for the expected output. */
+    public void stepWeightOne(String script, String expected) {
+        String[] lines = expected.split("\n");
+        boolean inHeader = true;
+        for (int i = 0; i < lines.length; i++) {
+            var l = lines[i];
+            if (inHeader && l.contains("---")) {
+                inHeader = false;
+                continue;
+            }
+            if (inHeader)
+                continue;
+            lines[i] = l + "| 1";
+        }
+        this.step(script, String.join("\n", lines));
+    }
+
     public void step(Change input, Change output) {
         this.stream.addPair(input, output);
     }
