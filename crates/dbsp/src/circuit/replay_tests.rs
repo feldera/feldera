@@ -9,9 +9,9 @@ use crate::{
         time_series::{RelOffset, RelRange},
     },
     typed_batch::SpineSnapshot,
-    utils::{Tup2, Tup3, test::init_test_logger},
+    utils::{Tup2, Tup3, Tup4, test::init_test_logger},
 };
-use std::{fmt::Debug, marker::PhantomData, sync::Arc};
+use std::{cmp::Ordering, fmt::Debug, marker::PhantomData, sync::Arc};
 
 use super::{CircuitConfig, dbsp_handle::Mode};
 
@@ -1169,6 +1169,15 @@ impl<T: DBData> CmpFunc<T> for Asc<T> {
     }
 }
 
+/// Total order for `Tup2` values: by first `u64`, then second (used with `rank_custom_order`).
+struct RankValOrd(PhantomData<()>);
+
+impl CmpFunc<Tup2<u64, u64>> for RankValOrd {
+    fn cmp(left: &Tup2<u64, u64>, right: &Tup2<u64, u64>) -> Ordering {
+        left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1))
+    }
+}
+
 fn lag_circuit1(
     circuit: &mut RootCircuit,
 ) -> (
@@ -1279,6 +1288,131 @@ fn test_lag_circuit() {
     >(
         Arc::new(lag_circuit1),
         Arc::new(lag_circuit2),
+        std::iter::repeat_n((), 10).collect(),
+        sequence(0, 10),
+        sequence(10, 20),
+        std::iter::repeat_n((), 10).collect(),
+    );
+}
+
+// Circuit with rank:
+//
+// The interesting part here is that the input to dense_rank is replayed from the internal state of the rank operator.
+//
+// Pipeline 1:
+//
+// ---> input1 ---> rank --> output1
+//
+// Pipeline 2: adds a dense_rank:
+//
+//                      /--------> output1
+// ---> input1 ---> rank-------> dense_rank --> output2
+//
+
+struct RankValOrd3(PhantomData<()>);
+
+impl CmpFunc<Tup3<u64, u64, i64>> for RankValOrd3 {
+    fn cmp(left: &Tup3<u64, u64, i64>, right: &Tup3<u64, u64, i64>) -> Ordering {
+        left.0
+            .cmp(&right.0)
+            .then_with(|| left.1.cmp(&right.1).then_with(|| left.2.cmp(&right.2)))
+    }
+}
+
+fn rank_circuit1(
+    circuit: &mut RootCircuit,
+) -> (
+    (),
+    ZSetHandle<u64>,
+    (),
+    OutputHandle<SpineSnapshot<OrdZSet<Tup4<u64, u64, u64, i64>>>>,
+) {
+    let (input_stream1, input_handle1) = circuit.add_input_zset::<u64>();
+    input_stream1.set_persistent_id(Some("input1"));
+
+    let input_stream1_indexed = input_stream1
+        .map_index(|x| (x % 3, Tup2(*x, *x % 5)))
+        .set_persistent_id(Some("input_stream1_indexed"));
+
+    let rank1 = input_stream1_indexed
+        .rank_custom_order_persistent::<RankValOrd, u64, _, _, _, _>(
+            Some("rank1"),
+            |v, rv| *rv = v.0,
+            |a, b| a.0.cmp(b),
+            |rank, t| Tup3(t.0, t.1, rank),
+        )
+        .set_persistent_id(Some("rank1"));
+
+    let rank1_flat = rank1
+        .map(|(k, t)| Tup4(*k, t.0, t.1, t.2))
+        .set_persistent_id(Some("rank1_flat"));
+
+    let output_handle1 = rank1_flat.accumulate_output_persistent(Some("output1"));
+
+    ((), input_handle1, (), output_handle1)
+}
+
+fn rank_circuit2(
+    circuit: &mut RootCircuit,
+) -> (
+    ZSetHandle<u64>,
+    (),
+    OutputHandle<SpineSnapshot<OrdZSet<Tup4<u64, u64, u64, i64>>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<Tup4<u64, u64, u64, i64>>>>,
+) {
+    let (input_stream1, input_handle1) = circuit.add_input_zset::<u64>();
+    input_stream1.set_persistent_id(Some("input1"));
+
+    input_stream1.integrate_trace();
+
+    let input_stream1_indexed = input_stream1
+        .map_index(|x| (x % 3, Tup2(*x, *x % 5)))
+        .set_persistent_id(Some("input_stream1_indexed"));
+
+    let rank1 = input_stream1_indexed
+        .rank_custom_order_persistent::<RankValOrd, u64, _, _, _, _>(
+            Some("rank1"),
+            |v, rv| *rv = v.0,
+            |a, b| a.0.cmp(b),
+            |rank, t| Tup3(t.0, t.1, rank),
+        )
+        .set_persistent_id(Some("rank1"));
+
+    let rank1_flat = rank1
+        .map(|(k, t)| Tup4(*k, t.0, t.1, t.2))
+        .set_persistent_id(Some("rank1_flat"));
+
+    let dense1 = rank1
+        .dense_rank_custom_order_persistent::<RankValOrd3, u64, _, _, _, _>(
+            Some("dense1"),
+            |v| v.0,
+            |a, b| a.0.cmp(b),
+            |rank, t| Tup3(t.0, t.1, rank),
+        )
+        .set_persistent_id(Some("dense1"));
+
+    let dense1_flat = dense1
+        .map(|(k, t)| Tup4(*k, t.0, t.1, t.2))
+        .set_persistent_id(Some("dense1_flat"));
+
+    let output_handle1 = rank1_flat.accumulate_output_persistent(Some("output1"));
+    let output_handle2 = dense1_flat.accumulate_output_persistent(Some("output2"));
+
+    (input_handle1, (), output_handle1, output_handle2)
+}
+
+#[test]
+fn test_rank_circuit() {
+    test_replay::<
+        (),
+        TestData1<u64>,
+        (),
+        (),
+        TestData1<Tup4<u64, u64, u64, i64>>,
+        TestData1<Tup4<u64, u64, u64, i64>>,
+    >(
+        Arc::new(rank_circuit1),
+        Arc::new(rank_circuit2),
         std::iter::repeat_n((), 10).collect(),
         sequence(0, 10),
         sequence(10, 20),
