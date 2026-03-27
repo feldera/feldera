@@ -976,7 +976,7 @@ where
     R: WeightTrait + ?Sized,
 {
     fn checkpoint(&self) -> Result<Vec<u8>, Error> {
-        Ok(serialize_indexed_wset(self, &mut SerializerInner::new()))
+        Ok(serialize_indexed_wset(self, &mut SerializerInner::new()).into_vec())
     }
 
     fn restore(&mut self, data: &[u8]) -> Result<(), Error> {

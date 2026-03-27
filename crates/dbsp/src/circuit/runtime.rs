@@ -25,6 +25,7 @@ use core_affinity::{CoreId, get_core_ids};
 use crossbeam::sync::{Parker, Unparker};
 use enum_map::{Enum, EnumMap, enum_map};
 use feldera_buffer_cache::ThreadType;
+use feldera_storage::fbuf::FBuf;
 use feldera_storage::fbuf::slab::{FBufSlabs, FBufSlabsStats, set_thread_slab_pool};
 use feldera_types::config::{StorageCompression, StorageConfig, StorageOptions};
 use feldera_types::memory_pressure::{
@@ -1342,7 +1343,7 @@ impl Consensus {
                 while !exchange.try_send_all_with_serializer(
                     Runtime::worker_index(),
                     repeat(local),
-                    |local| vec![local as u8],
+                    |local| FBuf::from_slice(&[local as u8]),
                 ) {
                     if Runtime::kill_in_progress() {
                         return Err(SchedulerError::Killed);
@@ -1432,7 +1433,11 @@ where
                 while !exchange.try_send_all_with_serializer(
                     Runtime::worker_index(),
                     repeat(local.clone()),
-                    |local| rmp_serde::to_vec(&local).unwrap(),
+                    |local| {
+                        let mut fbuf = FBuf::new();
+                        rmp_serde::encode::write(&mut fbuf, &local).unwrap();
+                        fbuf
+                    },
                 ) {
                     if Runtime::kill_in_progress() {
                         return Err(SchedulerError::Killed);

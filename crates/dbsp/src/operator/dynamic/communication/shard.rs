@@ -398,13 +398,13 @@ impl PairsSerializer {
             .unwrap();
     }
 
-    pub fn done(mut self, serializer: &mut SerializerInner) -> Vec<u8> {
+    pub fn done(mut self, serializer: &mut SerializerInner) -> FBuf {
         serializer
             .with(FBufSerializer::new(&mut self.fbuf), |s| {
                 s.serialize_value(&self.offsets)
             })
             .unwrap();
-        self.fbuf.into_vec()
+        self.fbuf
     }
 }
 

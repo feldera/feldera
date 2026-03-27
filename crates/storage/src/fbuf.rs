@@ -458,6 +458,13 @@ impl FBuf {
         self.into_vec().into_boxed_slice()
     }
 
+    /// Creates an `FBuf` by copying the slice.
+    pub fn from_slice(slice: &[u8]) -> Self {
+        let mut fbuf = FBuf::new();
+        fbuf.extend_from_slice(slice);
+        fbuf
+    }
+
     /// Converts the vector into `Vec<u8>`.
     ///
     /// This method reallocates and copies the underlying bytes. Any excess

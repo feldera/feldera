@@ -1231,16 +1231,16 @@ where
         fn serialize_with_flush<B, K, V, R>(
             (batch, flush): (B, bool),
             serializer_inner: &mut Option<SerializerInner>,
-        ) -> Vec<u8>
+        ) -> FBuf
         where
             B: BatchReader<Key = K, Val = V, Time = (), R = R>,
             K: DataTrait + ?Sized,
             V: DataTrait + ?Sized,
             R: WeightTrait + ?Sized,
         {
-            let mut vec = serialize_indexed_wset(&batch, serializer_inner.get_or_insert_default());
-            vec.push(flush as u8);
-            vec
+            let mut fbuf = serialize_indexed_wset(&batch, serializer_inner.get_or_insert_default());
+            fbuf.push(flush as u8);
+            fbuf
         }
 
         stream! {

@@ -1454,7 +1454,7 @@ impl IndexedWSetSerializer {
         });
     }
 
-    pub fn done(mut self, serializer_inner: &mut SerializerInner) -> Vec<u8> {
+    pub fn done(mut self, serializer_inner: &mut SerializerInner) -> FBuf {
         #[cfg(debug_assertions)]
         debug_assert_eq!(self.state, State::Key);
         self.offsets[0] = self.n_keys;
@@ -1462,14 +1462,11 @@ impl IndexedWSetSerializer {
         serializer_inner.with(FBufSerializer::new(&mut self.fbuf), |s| {
             s.serialize_value(&self.offsets).unwrap()
         });
-        self.fbuf.into_vec()
+        self.fbuf
     }
 }
 
-pub fn serialize_indexed_wset<B, K, V, R>(
-    batch: &B,
-    serializer_inner: &mut SerializerInner,
-) -> Vec<u8>
+pub fn serialize_indexed_wset<B, K, V, R>(batch: &B, serializer_inner: &mut SerializerInner) -> FBuf
 where
     B: BatchReader<Key = K, Val = V, Time = (), R = R>,
     K: DataTrait + ?Sized,
