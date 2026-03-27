@@ -1,4 +1,6 @@
-use crate::{BufferCache, BufferCacheStrategy, CacheEntry};
+use feldera_types::config::dev_tweaks::BufferCacheStrategy;
+
+use crate::{BufferCache, CacheEntry};
 use std::any::Any;
 use std::collections::BTreeMap;
 use std::fmt::Debug;

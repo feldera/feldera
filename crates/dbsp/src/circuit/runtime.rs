@@ -4,7 +4,6 @@
 use super::CircuitConfig;
 use super::dbsp_handle::{Layout, Mode};
 use crate::SchedulerError;
-use crate::circuit::DevTweaks;
 use crate::circuit::checkpointer::Checkpointer;
 use crate::error::Error as DbspError;
 use crate::operator::communication::Exchange;
@@ -27,7 +26,7 @@ use enum_map::{Enum, EnumMap, enum_map};
 use feldera_buffer_cache::ThreadType;
 use feldera_storage::fbuf::FBuf;
 use feldera_storage::fbuf::slab::{FBufSlabs, FBufSlabsStats, set_thread_slab_pool};
-use feldera_types::config::{StorageCompression, StorageConfig, StorageOptions};
+use feldera_types::config::{DevTweaks, StorageCompression, StorageConfig, StorageOptions};
 use feldera_types::memory_pressure::{
     CRITICAL_MEMORY_PRESSURE_THRESHOLD, HIGH_MEMORY_PRESSURE_THRESHOLD,
     MODERATE_MEMORY_PRESSURE_THRESHOLD, MemoryPressure,
@@ -389,12 +388,15 @@ fn map_pin_cpus(config: &CircuitConfig) -> (Vec<CoreId>, Vec<CoreId>) {
 impl RuntimeInner {
     fn new(config: CircuitConfig) -> Result<Self, DbspError> {
         let nworkers = config.layout.local_workers().len();
-        let buffer_cache_strategy = config.dev_tweaks.buffer_cache_strategy;
+        let buffer_cache_strategy = config.dev_tweaks.buffer_cache_strategy();
         let buffer_max_buckets = config.dev_tweaks.buffer_max_buckets;
         let buffer_cache_allocation_strategy = config
             .dev_tweaks
             .effective_buffer_cache_allocation_strategy();
-        let fbuf_slab_bytes_per_class = config.dev_tweaks.fbuf_slab_bytes_per_class;
+        let fbuf_slab_bytes_per_class = config
+            .dev_tweaks
+            .fbuf_slab_bytes_per_class
+            .unwrap_or(FBufSlabs::DEFAULT_BYTES_PER_CLASS);
         let storage = if let Some(storage) = config.storage.clone() {
             let locked_directory =
                 LockedDirectory::new_blocking(storage.config.path(), Duration::from_secs(60))?;
@@ -1692,7 +1694,7 @@ mod tests {
         Circuit, RootCircuit,
         circuit::{
             CircuitConfig, Layout,
-            dbsp_handle::{CircuitStorageConfig, DevTweaks, Mode},
+            dbsp_handle::{CircuitStorageConfig, Mode},
             metadata::{LOOSE_MEMORY_RECORDS_COUNT, MERGING_MEMORY_RECORDS_COUNT},
             schedule::{DynamicScheduler, Scheduler},
         },
@@ -1701,11 +1703,12 @@ mod tests {
         storage::backend::FileId,
     };
     use enum_map::Enum;
-    use feldera_buffer_cache::{
-        BufferCacheAllocationStrategy, BufferCacheStrategy, CacheEntry, ThreadType,
-    };
+    use feldera_buffer_cache::{CacheEntry, ThreadType};
     use feldera_storage::fbuf::{FBuf, slab::set_thread_slab_pool};
-    use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
+    use feldera_types::config::{
+        DevTweaks, StorageCacheConfig, StorageConfig, StorageOptions,
+        dev_tweaks::{BufferCacheAllocationStrategy, BufferCacheStrategy},
+    };
     use feldera_types::memory_pressure::MemoryPressure;
     use std::{
         cell::RefCell,

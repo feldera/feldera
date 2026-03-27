@@ -81,6 +81,16 @@ export type AuthProvider =
 export type BootstrapPolicy = 'allow' | 'reject' | 'await_approval'
 
 /**
+ * Controls how caches are shared across a foreground/background worker pair.
+ */
+export type BufferCacheAllocationStrategy = 'shared_per_worker_pair' | 'per_thread' | 'global'
+
+/**
+ * Selects which eviction strategy backs a cache instance.
+ */
+export type BufferCacheStrategy = 's3_fifo' | 'lru'
+
+/**
  * Information about the build of the platform.
  */
 export type BuildInformation = {
@@ -210,6 +220,35 @@ export type CheckpointStatus = {
    * Most recently successful checkpoint.
    */
   success?: number | null
+}
+
+/**
+ * Information about a failed checkpoint sync.
+ */
+export type CheckpointSyncFailure = {
+  /**
+   * Error message associated with the failure.
+   */
+  error: string
+  /**
+   * UUID of the failed checkpoint.
+   */
+  uuid: string
+}
+
+/**
+ * Checkpoint status returned by the `/checkpoint/sync_status` endpoint.
+ */
+export type CheckpointSyncStatus = {
+  failure?: CheckpointSyncFailure | null
+  /**
+   * Most recently successful automated periodic checkpoint sync.
+   */
+  periodic?: string | null
+  /**
+   * Most recently successful checkpoint sync.
+   */
+  success?: string | null
 }
 
 /**
@@ -1195,6 +1234,155 @@ export type Demo = {
   udf_toml: string
 }
 
+/**
+ * Optional settings for tweaking Feldera internals.
+ */
+export type DevTweaks = {
+  /**
+   * Enable adaptive joins.
+   *
+   * Adaptive joins dynamically change their partitioning policy to avoid skew.
+   *
+   * Adaptive joins are disabled by default.
+   */
+  adaptive_joins?: boolean | null
+  /**
+   * Factor that discourages the use of the Balance policy in a perfectly balanced collection.
+   *
+   * Assuming a perfectly balanced key distribution, the Balance policy is slightly less efficient than Shard,
+   * since it requires computing the hash of the entire key/value pair. This factor discourages the use of this policy
+   * if the skew is `<balancer_balance_tax`.
+   *
+   * The default value is 1.1.
+   */
+  balancer_balance_tax?: number | null
+  /**
+   * The balancer threshold for checking for an improved partitioning policy for a stream.
+   *
+   * Finding a good partitioning policy for a circuit involves solving an optimization problem,
+   * which can be relatively expensive. Instead of doing this on every step, the balancer only
+   * checks for an improved partitioning policy if the key distribution of a stream has changed
+   * significantly since the current solution was computed.  Specifically, it only kicks in when
+   * the size of at least one shard of at least one stream in the cluster has changed by more than
+   * this threshold.
+   *
+   * The default value is 0.1.
+   */
+  balancer_key_distribution_refresh_threshold?: number | null
+  /**
+   * The minimum absolute improvement threshold for the balancer.
+   *
+   * This parameter prevents the join balancer from making changes to the
+   * partitioning policy if the improvement is not significant, since the overhead
+   * of such rebalancing, especially when performed frequently, can exceed the benefits.
+   *
+   * A rebalancing is considered significant if the absolute estimated improvement for the cluster
+   * of joins where the rebalancing is applied is at least this threshold. The cost model used by
+   * the balancer is based on the number of records in the largest partition of a collection.
+   *
+   * A rebalancing is applied if both this threshold and `balancer_min_relative_improvement_threshold` are met.
+   *
+   * The default value is 10,000.
+   */
+  balancer_min_absolute_improvement_threshold?: number | null
+  /**
+   * The minimum relative improvement threshold for the join balancer.
+   *
+   * This parameter prevents the join balancer from making changes to the
+   * partitioning policy if the improvement is not significant, since the overhead
+   * of such rebalancing, especially when performed frequently, can exceed the benefits.
+   *
+   * A rebalancing is considered significant if the relative estimated improvement for the cluster
+   * of joins where the rebalancing is applied is at least this threshold.
+   *
+   * A rebalancing is applied if both this threshold and `balancer_min_absolute_improvement_threshold` are met.
+   *
+   * The default value is 1.2.
+   */
+  balancer_min_relative_improvement_threshold?: number | null
+  /**
+   * False-positive rate for Bloom filters on batches on storage, as a
+   * fraction f, where 0 < f < 1.
+   *
+   * The false-positive rate trades off between the amount of memory used by
+   * Bloom filters and how frequently storage needs to be searched for keys
+   * that are not actually present.  Typical false-positive rates and their
+   * corresponding memory costs are:
+   *
+   * - 0.1: 4.8 bits per key
+   * - 0.01: 9.6 bits per key
+   * - 0.001: 14.4 bits per key
+   * - 0.0001: 19.2 bits per key (default)
+   *
+   * Values outside the valid range, such as 0.0, disable Bloom filters.
+   */
+  bloom_false_positive_rate?: number | null
+  buffer_cache_allocation_strategy?: BufferCacheAllocationStrategy | null
+  buffer_cache_strategy?: BufferCacheStrategy | null
+  /**
+   * Override the number of buckets/shards used by sharded buffer caches.
+   *
+   * This only applies when `buffer_cache_strategy = "s3_fifo"`. Values are
+   * rounded up to the next power of two because the current implementation
+   * shards by `hash(key) & (n - 1)`.
+   */
+  buffer_max_buckets?: number | null
+  /**
+   * Target number of cached bytes retained in each `FBuf` slab size class.
+   *
+   * The default value is [`FBufSlabs::DEFAULT_BYTES_PER_CLASS`].
+   */
+  fbuf_slab_bytes_per_class?: number | null
+  /**
+   * Whether to asynchronously fetch keys needed for the distinct operator
+   * from storage.  Asynchronous fetching should be faster for high-latency
+   * storage, such as object storage, but it could use excessive amounts of
+   * memory if the number of keys fetched is very large.
+   */
+  fetch_distinct?: boolean | null
+  /**
+   * Whether to asynchronously fetch keys needed for the join operator from
+   * storage.  Asynchronous fetching should be faster for high-latency
+   * storage, such as object storage, but it could use excessive amounts of
+   * memory if the number of keys fetched is very large.
+   */
+  fetch_join?: boolean | null
+  /**
+   * Maximum batch size in records for level 0 merges.
+   */
+  max_level0_batch_size_records?: number | null
+  merger?: MergerType | null
+  /**
+   * The number of merger threads.
+   *
+   * The default value is equal to the number of worker threads.
+   */
+  merger_threads?: number | null
+  /**
+   * Controls the maximal number of records output by splitter operators
+   * (joins, distinct, aggregation, rolling window and group operators) at
+   * each step.
+   *
+   * The default value is 10,000 records.
+   */
+  splitter_chunk_size_records?: number | null
+  /**
+   * Attempt to print a stack trace on stack overflow.
+   *
+   * To be used for debugging only; do not enable in production.
+   */
+  stack_overflow_backtrace?: boolean | null
+  /**
+   * If set, the maximum amount of storage, in MiB, for the POSIX backend to
+   * allow to be in use before failing all writes with [StorageFull].  This
+   * is useful for testing on top of storage that does not implement its own
+   * quota mechanism.
+   *
+   * [StorageFull]: std::io::ErrorKind::StorageFull
+   */
+  storage_mb_max?: number | null
+}
+
 export type DisplaySchedule =
   | 'Once'
   | 'Session'
@@ -1485,6 +1673,11 @@ export type GlobalControllerMetrics = {
    * Time at which the pipeline process from which we resumed started, in seconds since the epoch.
    */
   initial_start_time: number
+  memory_pressure: MemoryPressure
+  /**
+   * Memory pressure epoch.
+   */
+  memory_pressure_epoch: number
   /**
    * If the pipeline is stalled because one or more output connectors' output
    * buffers are full, this is the number of milliseconds that the current
@@ -1574,6 +1767,26 @@ export type GlobalControllerMetrics = {
    */
   transaction_id: number
   transaction_initiators: TransactionInitiators
+  /**
+   * Elapsed time in milliseconds, according to `transaction_status`:
+   *
+   * - [TransactionStatus::TransactionInProgress]: Time that this transaction
+   * has been in progress.
+   *
+   * - [TransactionStatus::CommitInProgress]: Time that this transaction has
+   * been committing.
+   */
+  transaction_msecs?: number | null
+  /**
+   * Number of records in this transaction, according to
+   * `transaction_status`:
+   *
+   * - [TransactionStatus::TransactionInProgress]: Number of records added so
+   * far.  More records might be added.
+   *
+   * - [TransactionStatus::CommitInProgress]: Final number of records.
+   */
+  transaction_records?: number | null
   transaction_status: TransactionStatus
   /**
    * Time since the pipeline process started, including time that the
@@ -2274,6 +2487,27 @@ export type LicenseValidity =
     }
 
 /**
+ * Memory pressure level.
+ *
+ * The current memory pressure level is computed as a function of the current process
+ * resident set size (RSS) and the user-configured memory limit (`max_rss`).
+ *
+ * As the memory pressure level increases, the system will apply increasing backpressure to
+ * push state cached in memory to storage.
+ *
+ * - `Low`: less than 85% of the user-configured memory limit has been allocated.
+ * - `Moderate`: between 85% and 90% of the user-configured memory limit has been allocated.
+ * - `High`: between 90% and 95% of the user-configured memory limit has been allocated.
+ * - `Critical`: more than 95% of the user-configured memory limit has been allocated.
+ */
+export type MemoryPressure = 'low' | 'moderate' | 'high' | 'critical'
+
+/**
+ * Which merger to use.
+ */
+export type MergerType = 'push_merger' | 'list_merger'
+
+/**
  * Circuit metrics output format.
  * - `prometheus`: [format](https://github.com/prometheus/docs/blob/4b1b80f5f660a2f8dc25a54f52a65a502f31879a/docs/instrumenting/exposition_formats.md) expected by Prometheus
  * - `json`: JSON format
@@ -2341,6 +2575,16 @@ export type MultihostConfig = {
 export type NatsInputConfig = {
   connection_config: ConnectOptions
   consumer_config: ConsumerConfig
+  /**
+   * Maximum time in seconds to wait for the next message before running
+   * a stream/server health check. Must be at least 1.
+   */
+  inactivity_timeout_secs?: number
+  /**
+   * Delay between automatic reconnect attempts while in retry mode.
+   * Must be at least 1.
+   */
+  retry_interval_secs?: number
   stream_name: string
 }
 
@@ -2710,16 +2954,7 @@ export type PipelineConfig = {
    * The default value is `true`.
    */
   cpu_profiler?: boolean
-  /**
-   * Optional settings for tweaking Feldera internals.
-   *
-   * The available key-value pairs change from one version of Feldera to
-   * another, so users should not depend on particular settings being
-   * available, or on their behavior.
-   */
-  dev_tweaks?: {
-    [key: string]: unknown
-  }
+  dev_tweaks?: DevTweaks
   /**
    * Environment variables for the pipeline process.
    *
@@ -2797,6 +3032,29 @@ export type PipelineConfig = {
    * The default is 10.
    */
   max_parallel_connector_init?: number | null
+  /**
+   * The maximum amount of memory, in Megabytes, that the pipeline is allowed to use
+   * on each host.
+   *
+   * Setting this property activates memory pressure monitoring and backpressure
+   * mechanisms. The pipeline will track the amount of remaining memory and
+   * report the memory pressure level via the `memory_pressure` metric.
+   *
+   * As the memory pressure increases, the system will apply increasing backpressure
+   * to push state cached in memory to storage, preventing the pipeline from running
+   * out of memory at the cost of some performance degradation.
+   *
+   * It is strongly recommended to set this property to prevent the pipeline from
+   * running out of memory. The setting should not exceed the memory limit of the pipeline
+   * instance.
+   *
+   * When `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the
+   * latter is used as the effective memory cap for the pipeline.
+   *
+   * See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
+   * for more details.
+   */
+  max_rss_mb?: number | null
   /**
    * Minimal input batch size.
    *
@@ -3832,16 +4090,7 @@ export type RuntimeConfig = {
    * The default value is `true`.
    */
   cpu_profiler?: boolean
-  /**
-   * Optional settings for tweaking Feldera internals.
-   *
-   * The available key-value pairs change from one version of Feldera to
-   * another, so users should not depend on particular settings being
-   * available, or on their behavior.
-   */
-  dev_tweaks?: {
-    [key: string]: unknown
-  }
+  dev_tweaks?: DevTweaks
   /**
    * Environment variables for the pipeline process.
    *
@@ -3919,6 +4168,29 @@ export type RuntimeConfig = {
    * The default is 10.
    */
   max_parallel_connector_init?: number | null
+  /**
+   * The maximum amount of memory, in Megabytes, that the pipeline is allowed to use
+   * on each host.
+   *
+   * Setting this property activates memory pressure monitoring and backpressure
+   * mechanisms. The pipeline will track the amount of remaining memory and
+   * report the memory pressure level via the `memory_pressure` metric.
+   *
+   * As the memory pressure increases, the system will apply increasing backpressure
+   * to push state cached in memory to storage, preventing the pipeline from running
+   * out of memory at the cost of some performance degradation.
+   *
+   * It is strongly recommended to set this property to prevent the pipeline from
+   * running out of memory. The setting should not exceed the memory limit of the pipeline
+   * instance.
+   *
+   * When `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the
+   * latter is used as the effective memory cap for the pipeline.
+   *
+   * See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
+   * for more details.
+   */
+  max_rss_mb?: number | null
   /**
    * Minimal input batch size.
    *
@@ -4434,6 +4706,19 @@ export type SyncConfig = {
    * Default: disabled (no periodic push).
    */
   push_interval?: number | null
+  /**
+   * A read-only bucket used as a fallback checkpoint source.
+   *
+   * When the pipeline has no local checkpoint and `bucket` contains no
+   * checkpoint either, it will attempt to fetch the checkpoint from this
+   * location instead.  All connection settings (`endpoint`, `region`,
+   * `provider`, `access_key`, `secret_key`) are shared with `bucket`.
+   *
+   * The pipeline **never writes** to `read_bucket`.
+   *
+   * Must point to a different location than `bucket`.
+   */
+  read_bucket?: string | null
   /**
    * The region that this bucket is in.
    *
@@ -5345,7 +5630,7 @@ export type GetCheckpointSyncStatusResponses = {
   /**
    * Checkpoint sync status retrieved successfully
    */
-  200: CheckpointStatus
+  200: CheckpointSyncStatus
 }
 
 export type GetCheckpointSyncStatusResponse =

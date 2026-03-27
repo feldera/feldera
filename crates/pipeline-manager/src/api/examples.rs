@@ -19,7 +19,7 @@ use crate::runner::error::RunnerError;
 use crate::runner::interaction::{
     format_disconnected_error_message, format_timeout_error_message, RunnerInteraction,
 };
-use feldera_types::config::{FtConfig, ResourceConfig, StorageOptions};
+use feldera_types::config::{DevTweaks, FtConfig, ResourceConfig, StorageOptions};
 use feldera_types::{config::RuntimeConfig, error::ErrorResponse};
 use uuid::uuid;
 
@@ -123,7 +123,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
             io_workers: None,
             http_workers: None,
             env: BTreeMap::new(),
-            dev_tweaks: BTreeMap::new(),
+            dev_tweaks: DevTweaks::default(),
             logging: None,
             pipeline_template_configmap: None,
         })

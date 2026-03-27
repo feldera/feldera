@@ -1,6 +1,6 @@
-use crate::{
-    BufferCacheAllocationStrategy, BufferCacheBuilder, BufferCacheStrategy, CacheEntry, ThreadType,
-};
+use feldera_types::config::dev_tweaks::{BufferCacheAllocationStrategy, BufferCacheStrategy};
+
+use crate::{BufferCacheBuilder, CacheEntry, ThreadType};
 use std::sync::Arc;
 
 #[derive(Clone)]

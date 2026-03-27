@@ -53,9 +53,7 @@ pub mod filter;
 pub mod layers;
 pub mod ord;
 pub mod spine_async;
-pub use spine_async::{
-    BatchReaderWithSnapshot, ListMerger, MergerType, Spine, SpineSnapshot, WithSnapshot,
-};
+pub use spine_async::{BatchReaderWithSnapshot, ListMerger, Spine, SpineSnapshot, WithSnapshot};
 
 #[cfg(test)]
 pub mod test;

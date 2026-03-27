@@ -1569,7 +1569,7 @@ where
             self.stats.borrow_mut().lhs_tuples += delta.len();
             self.stats.borrow_mut().rhs_tuples = trace.len();
 
-            let fetched = if Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.fetch_join) {
+            let fetched = if Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.fetch_join == Some(true)) {
                 trace.fetch(&delta).await
             } else {
                 None
