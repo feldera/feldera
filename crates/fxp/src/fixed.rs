@@ -1507,8 +1507,7 @@ mod test {
 
     #[test]
     fn div_generic() {
-        for a in -999..=999 {
-            let af: Fixed<10, 2> = Fixed(a);
+        fn test<const P: usize, const S: usize>(a: i128, af: Fixed<P, S>) {
             for b in -999..=999 {
                 if b != 0 {
                     let bf: Fixed<10, 3> = Fixed(b);
@@ -1520,6 +1519,13 @@ mod test {
                     assert_eq!(ef, Fixed::<10, 0>(a * 10 / b));
                 }
             }
+        }
+
+        for a in -999..=999 {
+            let af: Fixed<10, 2> = Fixed(a);
+            test(a, af);
+            let af2: Fixed<18, 10> = af.convert().unwrap();
+            test(a, af2);
         }
     }
 
