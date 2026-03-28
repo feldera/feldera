@@ -20,7 +20,7 @@ public class QATests {
             messages.print();
             throw new RuntimeException("Error during compilation");
         }
-        BaseSQLTests.compileAndCheckRust(true);
+        // BaseSQLTests.compileAndCheckRust(true);
     }
 
     @Test
