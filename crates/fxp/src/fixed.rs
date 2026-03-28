@@ -811,7 +811,7 @@ impl<const P0: usize, const S0: usize> Fixed<P0, S0> {
             } else {
                 Fixed::try_new_with_exponent(
                     I256::from_product(self.0, pow10(shift_left)).narrowing_div(other.0)?,
-                    S0.saturating_sub(S1 + S2) as i32,
+                    -(S0.saturating_sub(S1 + S2) as i32),
                 )
             }
         }

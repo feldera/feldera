@@ -873,4 +873,16 @@ public class Regression2Tests extends SqlIoTest {
                  2020-01-01 | 1
                  2020-04-01 | 1""");
     }
+
+    @Test
+    public void issue5946() {
+        var ccs = this.getCCS("""
+                CREATE TABLE test ("tt" DECIMAL(38,10));
+                create view  ff as select tt, tt / 100.0 as tt2 from test;""");
+        ccs.stepWeightOne("INSERT INTO test VALUES (36)", """
+                 ff | ff2
+                ----------
+                 36 | 0.36""");
+    }
+
 }
