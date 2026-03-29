@@ -101,7 +101,7 @@ impl Display for DeltaTableIngestMode {
         match self {
             DeltaTableIngestMode::Snapshot => write!(f, "snapshot"),
             DeltaTableIngestMode::Follow => write!(f, "follow"),
-            DeltaTableIngestMode::SnapshotAndFollow => write!(f, "shapshot_and_follow"),
+            DeltaTableIngestMode::SnapshotAndFollow => write!(f, "snapshot_and_follow"),
             DeltaTableIngestMode::Cdc => write!(f, "cdc"),
         }
     }
@@ -352,6 +352,18 @@ fn test_delta_reader_config_serde() {
         serde_json::from_str::<serde_json::Value>(&serialized_config).unwrap(),
         serde_json::from_str::<serde_json::Value>(expected).unwrap()
     );
+}
+
+#[cfg(test)]
+#[test]
+fn test_delta_table_ingest_mode_display() {
+    assert_eq!(DeltaTableIngestMode::Snapshot.to_string(), "snapshot");
+    assert_eq!(DeltaTableIngestMode::Follow.to_string(), "follow");
+    assert_eq!(
+        DeltaTableIngestMode::SnapshotAndFollow.to_string(),
+        "snapshot_and_follow"
+    );
+    assert_eq!(DeltaTableIngestMode::Cdc.to_string(), "cdc");
 }
 
 impl DeltaTableReaderConfig {
