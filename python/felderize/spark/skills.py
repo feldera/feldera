@@ -10,7 +10,7 @@ from felderize.docs import load_docs, load_examples
 def load_skills(skills_dir: str | Path | None = None) -> str:
     """Load all SKILL.md files and return a combined prompt string."""
     if skills_dir is None:
-        skills_dir = Path(__file__).resolve().parent.parent / "data" / "skills"
+        skills_dir = Path(__file__).resolve().parent / "skills"
     else:
         skills_dir = Path(skills_dir)
 
