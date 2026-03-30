@@ -2,6 +2,7 @@ import logging
 import os
 import shutil
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 COMPOSE_FILE = str(Path(__file__).parent / "docker-compose.yml")
 FELDERA_URL = os.environ.get("FELDERA_URL", "http://localhost:8080")
+KAFKA_PROXY_URL = os.environ.get("KAFKA_PROXY_URL", "http://localhost:18082")
 
 
 def _resolve_feldera_url(base_url: str) -> str:
@@ -45,6 +47,34 @@ def _resolve_feldera_url(base_url: str) -> str:
             logger.debug("Feldera not reachable at %s", url)
 
     logger.warning("Feldera not reachable at any candidate URL; using %s", base_url)
+    return base_url
+
+
+def _resolve_kafka_proxy_url(base_url: str) -> str:
+    """
+    Probe for a reachable Kafka HTTP proxy instance.
+
+    Tries the given URL first, then falls back to ``host.docker.internal``.
+
+    :param base_url: The URL to try first.
+    :return: The first reachable URL, or the original if none work.
+    """
+    candidates = [base_url]
+
+    if "localhost" in base_url or "127.0.0.1" in base_url:
+        alt = base_url.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal")
+        if alt != base_url:
+            candidates.append(alt)
+
+    for url in candidates:
+        try:
+            urllib.request.urlopen(f"{url}/topics", timeout=5)
+            logger.info("Kafka proxy reachable at %s", url)
+            return url
+        except Exception:
+            logger.debug("Kafka proxy not reachable at %s", url)
+
+    logger.warning("Kafka proxy not reachable at any candidate URL; using %s", base_url)
     return base_url
 
 
@@ -85,8 +115,8 @@ def delta_output_dir(dbt_project_dir):
 @pytest.fixture(scope="session")
 def docker_feldera(delta_output_dir):
     """
-    Session-scoped fixture that starts Feldera via Docker Compose
-    and tears it down after all tests complete.
+    Session-scoped fixture that starts Feldera and Kafka via Docker Compose
+    and tears them down after all tests complete.
 
     Depends on ``delta_output_dir`` so the bind-mounted directory exists
     before the container starts.
@@ -103,7 +133,7 @@ def docker_feldera(delta_output_dir):
     manager = DockerManager(compose_file=COMPOSE_FILE)
 
     try:
-        logger.info("Starting Feldera via Docker Compose...")
+        logger.info("Starting Feldera and Kafka via Docker Compose...")
         manager.down(volumes=True)
         manager.up(detach=True, wait=True, timeout=300)
         manager.wait_for_healthy(timeout=300)
@@ -111,10 +141,33 @@ def docker_feldera(delta_output_dir):
         logger.info("Feldera is ready at %s", resolved)
         yield resolved
     finally:
-        logger.info("Stopping Feldera...")
+        logger.info("Stopping Feldera and Kafka...")
         logs = manager.logs(tail=50)
         logger.info("Feldera logs (last 50 lines):\n%s", logs)
         manager.down(volumes=True)
+
+
+@pytest.fixture(scope="session")
+def kafka_proxy_url(docker_feldera):
+    """
+    Session-scoped fixture that resolves and returns the Kafka proxy URL.
+
+    Waits until Kafka's HTTP proxy is reachable (up to 60s).
+    """
+    base = KAFKA_PROXY_URL
+    resolved = _resolve_kafka_proxy_url(base)
+
+    for i in range(30):
+        try:
+            urllib.request.urlopen(f"{resolved}/topics", timeout=5)
+            logger.info("Kafka proxy ready at %s", resolved)
+            return resolved
+        except Exception:
+            logger.debug("Waiting for Kafka proxy... (%d/30)", i + 1)
+            time.sleep(2)
+
+    logger.warning("Kafka proxy may not be fully ready; proceeding with %s", resolved)
+    return resolved
 
 
 @pytest.fixture(scope="session")

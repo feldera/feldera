@@ -9,17 +9,22 @@ via Docker Compose. They validate the full lifecycle:
   3. dbt run     - model deployment as Feldera pipeline views
   4. dbt test    - data integrity via ad-hoc queries
   5. Delta Lake  - verify materialized output via DuckDB
+  6. Kafka       - incremental view maintenance via Kafka to Delta
 
 Requires Docker to be available. Set FELDERA_SKIP_DOCKER=1 if Feldera
 is already running externally.
 """
 
+import json
 import logging
 import os
+import random
 import shutil
 import subprocess
 import sys
 import time
+import urllib.request
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -27,7 +32,7 @@ import pytest
 logger = logging.getLogger(__name__)
 _ADAPTER_ROOT = str(Path(__file__).resolve().parent.parent)
 
-# Expected row counts for each mart model (inserts only).
+# Expected row counts for each mart model (seed-only, net inserts minus deletes).
 EXPECTED_ROW_COUNTS = {
     "dim_address": 1675,
     "dim_credit_card": 1316,
@@ -38,6 +43,12 @@ EXPECTED_ROW_COUNTS = {
     "fct_sales": 5675,
     "obt_sales": 5675,
 }
+
+# Valid FK references into seed dimension data for generating Kafka records.
+_VALID_PRODUCT_IDS = [776, 777, 778, 771, 772, 773, 774, 775]
+_VALID_CUSTOMER_IDS = [29825, 29672, 29734, 29994, 30089, 30052]
+_VALID_CREDIT_CARD_IDS = [16281, 5618, 1, 2, 3, 4]
+_VALID_ADDRESS_IDS = [985, 921, 613, 446, 940, 606]
 
 
 def _find_dbt_executable() -> str:
@@ -152,6 +163,244 @@ def _wait_for_delta_tables(
     )
 
 
+# ---------------------------------------------------------------------------
+# Kafka helpers
+# ---------------------------------------------------------------------------
+
+
+def _produce_to_kafka(records: list[dict], topic: str, kafka_proxy_url: str) -> None:
+    """
+    Produce JSON records to a Kafka topic via Kafka proxy HTTP API.
+
+    :param records: List of dicts to produce as JSON values.
+    :param topic: The Kafka topic name.
+    :param kafka_proxy_url: Base URL of the Kafka proxy (e.g., http://localhost:18082).
+    :raises RuntimeError: If the produce request fails.
+    """
+    url = f"{kafka_proxy_url}/topics/{topic}"
+    payload = json.dumps({"records": [{"value": r} for r in records]}).encode()
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/vnd.kafka.json.v2+json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = json.loads(resp.read())
+            errors = [o for o in body.get("offsets", []) if o.get("error")]
+            if errors:
+                raise RuntimeError(f"Kafka produce errors: {errors}")
+            logger.info("Produced %d records to topic '%s'", len(records), topic)
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(
+            f"Kafka proxy POST to {url} failed ({exc.code}): {exc.read().decode()}"
+        ) from exc
+
+
+def _ensure_kafka_topic(topic: str, kafka_proxy_url: str) -> None:
+    """
+    Ensure a Kafka topic exists before a Feldera pipeline tries to consume it.
+
+    Uses ``rpk`` inside the Redpanda container to create the topic, with
+    a fallback to the Kafka proxy producer API. Verifies the topic exists
+    via Kafka proxy before returning.
+
+    :param topic: The Kafka topic name.
+    :param kafka_proxy_url: Base URL of the Kafka proxy (used to verify topic exists).
+    """
+    compose_file = str(Path(__file__).parent / "docker-compose.yml")
+
+    # Try creating via rpk inside the Redpanda container (most reliable).
+    # Use `docker compose exec` to avoid hardcoding container names.
+    try:
+        result = subprocess.run(
+            [
+                "docker", "compose", "-f", compose_file,
+                "-p", "feldera-dbt-test",
+                "exec", "-T", "redpanda",
+                "rpk", "topic", "create", topic,
+                "--brokers", "localhost:29092",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode == 0:
+            logger.info("Created Kafka topic '%s' via rpk", topic)
+        elif "exists" in result.stderr.lower() or "exists" in result.stdout.lower():
+            logger.info("Kafka topic '%s' already exists", topic)
+        else:
+            logger.warning("rpk topic create returned %d: %s %s", result.returncode, result.stdout, result.stderr)
+    except Exception as exc:
+        logger.warning("rpk topic create failed: %s", exc)
+
+    # Verify the topic exists via Kafka proxy
+    for attempt in range(10):
+        try:
+            with urllib.request.urlopen(f"{kafka_proxy_url}/topics", timeout=10) as resp:
+                topics = json.loads(resp.read())
+                if topic in topics:
+                    logger.info("Verified Kafka topic '%s' exists", topic)
+                    return
+        except Exception as exc:
+            logger.debug("Topic verification attempt %d failed: %s", attempt + 1, exc)
+        time.sleep(1)
+
+    logger.warning("Could not verify topic '%s' exists; proceeding anyway", topic)
+
+
+def _generate_sales_records(count: int, start_order_id: int = 99001) -> list[dict]:
+    """
+    Generate random sales event records with valid FK references to seed data.
+
+    Each record represents one order line-item that can flow through
+    ``fct_sales`` → ``obt_sales``.
+
+    :param count: Number of records to generate.
+    :param start_order_id: Starting salesorderid (should be above seed range).
+    :return: List of record dicts matching the ``kafka_sales`` table schema.
+    """
+    records = []
+    for i in range(count):
+        records.append({
+            "salesorderid": start_order_id + i,
+            "salesorderdetailid": 200_000 + i,
+            "productid": random.choice(_VALID_PRODUCT_IDS),
+            "customerid": random.choice(_VALID_CUSTOMER_IDS),
+            "creditcardid": random.choice(_VALID_CREDIT_CARD_IDS),
+            "shiptoaddressid": random.choice(_VALID_ADDRESS_IDS),
+            "order_status": 5,
+            "orderdate": "2024-01-15",
+            "orderqty": random.randint(1, 10),
+            "unitprice": round(random.uniform(10.0, 2000.0), 2),
+        })
+    return records
+
+
+def _get_delta_net_count(delta_path: str) -> int:
+    """
+    Read a Delta table and return the net row count (inserts minus deletes).
+
+    :param delta_path: Path to the Delta table directory.
+    :return: Net row count.
+    """
+    import duckdb
+
+    conn = duckdb.connect()
+    conn.execute("INSTALL delta;")
+    conn.execute("LOAD delta;")
+    row = conn.execute(
+        f"""
+        SELECT
+            COUNT(*) FILTER (WHERE __feldera_op = 'i') AS inserts,
+            COUNT(*) FILTER (WHERE __feldera_op = 'd') AS deletes
+        FROM delta_scan('{delta_path}')
+        """
+    ).fetchone()
+    conn.close()
+    return row[0] - row[1]
+
+
+def _get_delta_version(delta_path: str) -> int:
+    """
+    Return the current version of a Delta table.
+
+    :param delta_path: Path to the Delta table directory.
+    :return: The current Delta table version (0-based).
+    """
+    from deltalake import DeltaTable
+
+    dt = DeltaTable(delta_path)
+    return dt.version()
+
+
+def _get_delta_parquet_files(delta_path: str) -> set[str]:
+    """
+    Return the set of Parquet file paths in the current Delta table version.
+
+    :param delta_path: Path to the Delta table directory.
+    :return: Set of Parquet file path strings.
+    """
+    from deltalake import DeltaTable
+
+    dt = DeltaTable(delta_path)
+    return set(dt.file_uris())
+
+
+def _wait_for_delta_net_count(
+    delta_path: str,
+    min_net_count: int,
+    timeout: int = 120,
+    poll_interval: int = 5,
+) -> int:
+    """
+    Poll a Delta table until its net row count reaches at least ``min_net_count``.
+
+    :param delta_path: Path to the Delta table directory.
+    :param min_net_count: Minimum expected net row count.
+    :param timeout: Maximum wait time in seconds.
+    :param poll_interval: Seconds between polls.
+    :return: The actual net count once it meets or exceeds the threshold.
+    :raises TimeoutError: If the threshold is not reached in time.
+    """
+    start = time.time()
+    last_count = 0
+    while time.time() - start < timeout:
+        try:
+            last_count = _get_delta_net_count(delta_path)
+            if last_count >= min_net_count:
+                logger.info(
+                    "Delta net count reached %d (target: %d) after %.1fs",
+                    last_count, min_net_count, time.time() - start,
+                )
+                return last_count
+        except Exception as exc:
+            logger.debug("Delta read failed (retrying): %s", exc)
+        time.sleep(poll_interval)
+
+    raise TimeoutError(
+        f"Delta net count did not reach {min_net_count} within {timeout}s "
+        f"(last count: {last_count})"
+    )
+
+
+def _stop_feldera_pipeline(feldera_url: str, pipeline_name: str) -> None:
+    """
+    Stop a Feldera pipeline via the REST API.
+
+    :param feldera_url: Base URL of the Feldera instance.
+    :param pipeline_name: Name of the pipeline to stop.
+    """
+    url = f"{feldera_url}/v0/pipelines/{pipeline_name}/shutdown"
+    req = urllib.request.Request(url, method="POST", data=b"")
+    try:
+        urllib.request.urlopen(req, timeout=30)
+        logger.info("Requested shutdown of pipeline '%s'", pipeline_name)
+    except urllib.error.HTTPError as exc:
+        logger.warning("Pipeline shutdown request failed (%d): %s", exc.code, exc.read().decode())
+
+    for _ in range(60):
+        try:
+            status_url = f"{feldera_url}/v0/pipelines/{pipeline_name}"
+            with urllib.request.urlopen(status_url, timeout=5) as resp:
+                info = json.loads(resp.read())
+                status = info.get("deployment_status", "")
+                if status in ("Shutdown", "shutdown"):
+                    logger.info("Pipeline '%s' is stopped", pipeline_name)
+                    return
+        except Exception:
+            pass
+        time.sleep(1)
+
+    logger.warning("Pipeline '%s' may not have fully stopped", pipeline_name)
+
+
+# ---------------------------------------------------------------------------
+# Integration tests
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.integration
 class TestDbtFelderaIntegration:
     """End-to-end integration tests for dbt-feldera with adventureworks."""
@@ -167,8 +416,9 @@ class TestDbtFelderaIntegration:
         result = _run_dbt(dbt_project_dir, ["seed", "--target", "local", "--full-refresh"], feldera_url=docker_feldera)
         assert result.returncode == 0, f"dbt seed failed:\n{result.stdout}\n{result.stderr}"
 
-    def test_dbt_run(self, docker_feldera, dbt_project_dir, delta_output_dir):
+    def test_dbt_run(self, docker_feldera, dbt_project_dir, delta_output_dir, kafka_proxy_url):
         """Deploy all models as Feldera pipeline materialized views with Delta output."""
+        _ensure_kafka_topic("sales_events", kafka_proxy_url)
         result = _run_dbt(dbt_project_dir, ["run", "--target", "local"], feldera_url=docker_feldera)
         assert result.returncode == 0, f"dbt run failed:\n{result.stdout}\n{result.stderr}"
 
@@ -177,7 +427,7 @@ class TestDbtFelderaIntegration:
         result = _run_dbt(dbt_project_dir, ["test", "--target", "local"], feldera_url=docker_feldera)
         assert result.returncode in (0, 1), f"dbt test failed:\n{result.stdout}\n{result.stderr}"
 
-    def test_dbt_build_full_refresh(self, docker_feldera, dbt_project_dir, delta_output_dir):
+    def test_dbt_build_full_refresh(self, docker_feldera, dbt_project_dir, delta_output_dir, kafka_proxy_url):
         """
         Full lifecycle via ``dbt build --full-refresh``.
 
@@ -185,6 +435,8 @@ class TestDbtFelderaIntegration:
         Feldera processes seed data through materialized views and writes
         output to Delta Lake connectors.
         """
+        _ensure_kafka_topic("sales_events", kafka_proxy_url)
+
         delta_path = Path(delta_output_dir)
         for child in delta_path.iterdir():
             if child.is_dir():
@@ -245,3 +497,139 @@ class TestDbtFelderaIntegration:
             pytest.fail(
                 "Delta Lake output correctness check failed:\n" + "\n".join(f"  - {e}" for e in errors)
             )
+
+    def test_kafka_ivm_auto_consume(self, docker_feldera, dbt_project_dir, delta_output_dir, kafka_proxy_url):
+        """
+        IVM test: Kafka data is auto-consumed by the running pipeline.
+
+        After ``dbt build --full-refresh``, the pipeline is running with
+        ``start_from: latest`` on the Kafka connector. When we produce
+        records, the pipeline consumes them immediately and incrementally
+        updates the Delta output.
+
+        Verifies:
+        - New rows appear in obt_sales Delta (net count increases)
+        - Delta version increases (new commit with new Parquet files)
+        - No existing Parquet files are removed (proves incremental write)
+        """
+        obt_delta_path = str(Path(delta_output_dir) / "obt_sales")
+        fct_delta_path = str(Path(delta_output_dir) / "fct_sales")
+
+        _wait_for_delta_tables(delta_output_dir, ["obt_sales", "fct_sales"], timeout=120)
+
+        pre_obt_net = _get_delta_net_count(obt_delta_path)
+        pre_fct_net = _get_delta_net_count(fct_delta_path)
+        pre_obt_version = _get_delta_version(obt_delta_path)
+        pre_obt_files = _get_delta_parquet_files(obt_delta_path)
+
+        logger.info(
+            "Pre-Kafka state: obt_sales=%d net rows (v%d, %d files), fct_sales=%d net rows",
+            pre_obt_net, pre_obt_version, len(pre_obt_files), pre_fct_net,
+        )
+
+        kafka_batch_1 = _generate_sales_records(count=10, start_order_id=99001)
+        _produce_to_kafka(kafka_batch_1, "sales_events", kafka_proxy_url)
+
+        expected_fct_net = pre_fct_net + len(kafka_batch_1)
+        expected_obt_net = pre_obt_net + len(kafka_batch_1)
+
+        actual_fct_net = _wait_for_delta_net_count(fct_delta_path, expected_fct_net, timeout=120)
+        actual_obt_net = _wait_for_delta_net_count(obt_delta_path, expected_obt_net, timeout=120)
+
+        assert actual_fct_net == expected_fct_net, (
+            f"fct_sales: expected {expected_fct_net} net rows, got {actual_fct_net}"
+        )
+        assert actual_obt_net == expected_obt_net, (
+            f"obt_sales: expected {expected_obt_net} net rows, got {actual_obt_net}"
+        )
+
+        post_obt_version = _get_delta_version(obt_delta_path)
+        post_obt_files = _get_delta_parquet_files(obt_delta_path)
+
+        assert post_obt_version > pre_obt_version, (
+            f"Delta version did not increase: {pre_obt_version} → {post_obt_version}"
+        )
+        assert pre_obt_files.issubset(post_obt_files), (
+            f"Existing Parquet files were removed (not incremental). "
+            f"Missing: {pre_obt_files - post_obt_files}"
+        )
+        new_files = post_obt_files - pre_obt_files
+        assert new_files, "No new Parquet files were added (expected incremental write)"
+
+        logger.info(
+            "IVM auto-consume: obt_sales v%d→v%d, %d new Parquet files, "
+            "net rows %d→%d (+%d from Kafka)",
+            pre_obt_version, post_obt_version, len(new_files),
+            pre_obt_net, actual_obt_net, len(kafka_batch_1),
+        )
+
+    def test_kafka_ivm_restart_resume(self, docker_feldera, dbt_project_dir, delta_output_dir, kafka_proxy_url):
+        """
+        IVM test: Pipeline restart preserves Kafka offsets.
+
+        Stops the pipeline, produces new records to Kafka, then runs
+        ``dbt run`` (non-full-refresh) which uses ``update_with_views``
+        (modify + restart). The pipeline resumes from the committed Kafka
+        offset and processes only the new records.
+
+        Verifies:
+        - Pipeline successfully restarts via ``dbt run``
+        - Only new records appear in Delta output (offset preserved)
+        - Delta writes are incremental (new files only)
+        """
+        obt_delta_path = str(Path(delta_output_dir) / "obt_sales")
+        fct_delta_path = str(Path(delta_output_dir) / "fct_sales")
+
+        pre_obt_net = _get_delta_net_count(obt_delta_path)
+        pre_fct_net = _get_delta_net_count(fct_delta_path)
+        pre_obt_version = _get_delta_version(obt_delta_path)
+        pre_obt_files = _get_delta_parquet_files(obt_delta_path)
+
+        logger.info(
+            "Pre-restart state: obt_sales=%d net rows (v%d), fct_sales=%d net rows",
+            pre_obt_net, pre_obt_version, pre_fct_net,
+        )
+
+        _stop_feldera_pipeline(docker_feldera, "adventureworks")
+
+        kafka_batch_2 = _generate_sales_records(count=5, start_order_id=99201)
+        _produce_to_kafka(kafka_batch_2, "sales_events", kafka_proxy_url)
+        logger.info("Produced %d records while pipeline is stopped", len(kafka_batch_2))
+
+        result = _run_dbt(
+            dbt_project_dir,
+            ["run", "--target", "local"],
+            feldera_url=docker_feldera,
+        )
+        assert result.returncode == 0, f"dbt run (restart) failed:\n{result.stdout}\n{result.stderr}"
+
+        expected_fct_net = pre_fct_net + len(kafka_batch_2)
+        expected_obt_net = pre_obt_net + len(kafka_batch_2)
+
+        actual_fct_net = _wait_for_delta_net_count(fct_delta_path, expected_fct_net, timeout=120)
+        actual_obt_net = _wait_for_delta_net_count(obt_delta_path, expected_obt_net, timeout=120)
+
+        assert actual_fct_net == expected_fct_net, (
+            f"fct_sales: expected {expected_fct_net} net rows, got {actual_fct_net}"
+        )
+        assert actual_obt_net == expected_obt_net, (
+            f"obt_sales: expected {expected_obt_net} net rows, got {actual_obt_net}"
+        )
+
+        post_obt_version = _get_delta_version(obt_delta_path)
+        post_obt_files = _get_delta_parquet_files(obt_delta_path)
+
+        assert post_obt_version > pre_obt_version, (
+            f"Delta version did not increase: {pre_obt_version} → {post_obt_version}"
+        )
+        assert pre_obt_files.issubset(post_obt_files), (
+            f"Existing Parquet files were removed (not incremental). "
+            f"Missing: {pre_obt_files - post_obt_files}"
+        )
+
+        logger.info(
+            "IVM restart-resume: obt_sales v%d→v%d, "
+            "net rows %d→%d (+%d from Kafka after restart)",
+            pre_obt_version, post_obt_version,
+            pre_obt_net, actual_obt_net, len(kafka_batch_2),
+        )

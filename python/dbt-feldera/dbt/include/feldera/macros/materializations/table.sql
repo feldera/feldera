@@ -21,5 +21,10 @@
 
     {{ adapter.register_table(pipeline_name, table_name, table_sql) }}
 
+    {# dbt requires a 'main' statement to be called during model execution #}
+    {% call statement('main') %}
+        -- Feldera: table '{{ table_name }}' registered (deployed on-run-end)
+    {% endcall %}
+
     {{ return({'relations': [this]}) }}
 {% endmaterialization %}
