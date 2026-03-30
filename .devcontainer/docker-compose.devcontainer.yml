@@ -7,6 +7,9 @@ services:
       # array).
       dockerfile: Dockerfile
     tty: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    pids_limit: -1
     environment:
       - RUST_VERSION=1.91.1
       - RUST_BACKTRACE=1

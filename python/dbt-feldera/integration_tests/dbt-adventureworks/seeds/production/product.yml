@@ -1,0 +1,25 @@
+version: 2
+seeds:
+- name: product
+  config:
+    column_types:
+      productid: INT
+      name: VARCHAR
+      safetystocklevel: SMALLINT
+      finishedgoodsflag: BOOLEAN
+      class: VARCHAR
+      makeflag: BOOLEAN
+      productnumber: VARCHAR
+      reorderpoint: SMALLINT
+      modifieddate: TIMESTAMP
+      rowguid: VARCHAR
+      productmodelid: INT
+      weightunitmeasurecode: VARCHAR
+      standardcost: DECIMAL
+      productsubcategoryid: INT
+      listprice: DECIMAL
+      daystomanufacture: INT
+      productline: VARCHAR
+      color: VARCHAR
+      sellstartdate: TIMESTAMP
+      weight: DECIMAL

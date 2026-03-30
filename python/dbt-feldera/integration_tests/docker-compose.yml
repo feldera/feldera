@@ -1,0 +1,17 @@
+name: feldera-dbt-integration
+services:
+  pipeline-manager:
+    image: "${FELDERA_IMAGE:-images.feldera.com/feldera/pipeline-manager:latest}"
+    ports:
+      - "${FELDERA_PORT:-8080}:8080"
+    tty: true
+    stop_grace_period: 0s
+    environment:
+      - RUST_LOG=${RUST_LOG:-info}
+      - RUST_BACKTRACE=1
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --request GET --url http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s

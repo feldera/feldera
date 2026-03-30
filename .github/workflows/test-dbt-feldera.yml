@@ -1,0 +1,68 @@
+name: dbt-feldera Tests
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+    working-directory: ./python/dbt-feldera
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: dbt-feldera Unit Tests
+    runs-on: ubuntu-latest-amd64
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+        with:
+          version: "0.4.15"
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Setup venv
+        run: .scripts/run.sh venv
+
+      - name: Lint
+        run: .scripts/run.sh lint
+
+      - name: Unit tests
+        run: .scripts/run.sh unit-test
+
+      - name: Build wheel
+        run: .scripts/run.sh build
+
+  integration-tests:
+    name: dbt-feldera Integration Tests
+    runs-on: ubuntu-latest-amd64
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+        with:
+          version: "0.4.15"
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Setup venv
+        run: .scripts/run.sh venv
+
+      - name: Run integration tests
+        run: .scripts/run.sh integration-test
+        timeout-minutes: 15

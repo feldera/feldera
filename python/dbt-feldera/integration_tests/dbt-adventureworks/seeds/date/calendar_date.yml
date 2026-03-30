@@ -1,0 +1,14 @@
+version: 2
+seeds:
+- name: calendar_date
+  config:
+    column_types:
+      date_day: DATE
+      prior_date_day: DATE
+      next_date_day: DATE
+      prior_year_date_day: DATE
+      prior_year_over_year_date_day: DATE
+      day_of_week: INT
+      day_of_week_name: VARCHAR
+      day_of_month: INT
+      day_of_year: INT

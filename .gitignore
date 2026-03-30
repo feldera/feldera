@@ -60,8 +60,7 @@ python/docs/_build
 python/docs/make.bat
 python/docs/modules.rst
 python/docs/feldera.rest.rst
-feldera.egg-info
-UNKNOWN.egg-info
+*.egg-info
 .vscode
 
 # clone of the benchmark repo
