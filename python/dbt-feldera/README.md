@@ -31,13 +31,13 @@ my_project:
 
 ## Materializations
 
-| Materialization      | Feldera object               |
-| -------------------- | ---------------------------- |
-| `view`               | `CREATE VIEW`                |
-| `table`              | `CREATE TABLE` (input)       |
-| `incremental`        | `CREATE MATERIALIZED VIEW`   |
-| `streaming_pipeline` | Full pipeline program        |
-| `seed`               | Table + HTTP ingress push    |
+| Materialization      | Feldera object             |
+| -------------------- | -------------------------- |
+| `view`               | `CREATE VIEW`              |
+| `table`              | `CREATE TABLE` (input)     |
+| `incremental`        | `CREATE MATERIALIZED VIEW` |
+| `streaming_pipeline` | Full pipeline program      |
+| `seed`               | Table + HTTP ingress push  |
 
 ## Development
 
@@ -56,3 +56,15 @@ cd python/dbt-feldera
 .scripts/run.sh integration-test # pytest integration
 .scripts/run.sh e2e              # dbt CLI end-to-end test
 ```
+
+### Environment variables
+
+| Variable              | Default                                              | Used by                   | Description                                                             |
+| --------------------- | ---------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------- |
+| `FELDERA_URL`         | `http://localhost:8080`                              | `run.sh`, e2e             | Feldera API base URL                                                    |
+| `FELDERA_SKIP_DOCKER` | _(unset)_                                            | `run.sh integration-test` | Set to `1` to skip Docker start/stop (use an external Feldera instance) |
+| `FELDERA_IMAGE`       | `images.feldera.com/feldera/pipeline-manager:latest` | docker-compose            | Docker image for the Feldera container                                  |
+| `FELDERA_PORT`        | `8080`                                               | docker-compose            | Host port mapped to the Feldera container                               |
+| `RUST_LOG`            | `info`                                               | docker-compose            | Log level inside the Feldera container                                  |
+| `SKIP_TEARDOWN`       | _(unset)_                                            | e2e (`run-dbt-local.sh`)  | Set to `1` to keep Feldera running after the e2e test and print UI URLs |
+| `DBT_DOCS_PORT`       | `18081`                                              | e2e (`run-dbt-local.sh`)  | Host port suggested for `dbt docs serve`                                |

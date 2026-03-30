@@ -29,7 +29,9 @@ _teardown() {
     _compose down -v --remove-orphans 2>/dev/null || true
 }
 
-trap _teardown EXIT
+if [[ "${SKIP_TEARDOWN:-}" != "1" ]]; then
+    trap _teardown EXIT
+fi
 
 echo "============================================"
 echo " dbt-feldera end-to-end test"
@@ -82,9 +84,52 @@ echo ""
 echo "[5/5] Generating docs..."
 dbt docs generate --target "${TARGET}"
 
+DBT_DOCS_PORT="${DBT_DOCS_PORT:-18081}"
+FELDERA_HOST_PORT="${FELDERA_PORT:-8080}"
+
 echo ""
 echo "============================================"
 echo " All dbt commands completed successfully."
 echo "============================================"
+echo ""
+echo "  To browse the dbt documentation:"
+echo ""
+echo "    # 1. Create & activate a virtual environment"
+echo "    uv venv /tmp/dbt-docs-venv"
+echo "    source /tmp/dbt-docs-venv/bin/activate"
+echo ""
+echo "    # 2. Install dbt-feldera"
+echo "    uv pip install dbt-core $(ls "${ADAPTER_DIR}"/dist/*.whl | head -1)"
+echo ""
+echo "    # 3. Serve the docs"
+echo "    cd ${PROJECT_DIR}"
+echo "    export DBT_PROFILES_DIR=${PROJECT_DIR}"
+echo "    dbt docs serve --port ${DBT_DOCS_PORT}"
+echo ""
+echo "    # 4. Open in your browser"
+echo "    #    http://localhost:${DBT_DOCS_PORT}"
+echo ""
+
+if [[ "${SKIP_TEARDOWN:-}" == "1" ]]; then
+    echo "  ┌──────────────────────────────────────────┐"
+    echo "  │  SKIP_TEARDOWN=1 — Feldera is still up   │"
+    echo "  └──────────────────────────────────────────┘"
+    echo ""
+    echo "  ┌──────────┬──────────────────────────────────┐"
+    echo "  │ UI       │ URL                              │"
+    echo "  ├──────────┼──────────────────────────────────┤"
+    printf "  │ Feldera  │ %-32s │\n" "http://localhost:${FELDERA_HOST_PORT}"
+    printf "  │ dbt docs │ %-32s │\n" "http://localhost:${DBT_DOCS_PORT}"
+    echo "  └──────────┴──────────────────────────────────┘"
+    echo ""
+    echo "  NOTE: If you are running inside WSL, make sure the ports"
+    echo "  (${FELDERA_HOST_PORT}, ${DBT_DOCS_PORT}) are forwarded to your"
+    echo "  Windows host. In VS Code this happens automatically via the"
+    echo "  Ports tab."
+    echo ""
+    echo "  When done, tear down Feldera manually:"
+    echo "    docker compose -f ${COMPOSE_FILE} -p ${PROJECT_NAME} down -v --remove-orphans"
+    echo ""
+fi
 
 deactivate

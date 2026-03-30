@@ -348,18 +348,18 @@ class FelderaAdapter(BaseAdapter):
                 columns = self.get_columns_in_relation(relation)
                 for idx, col in enumerate(columns, start=1):
                     rows.append(
-                        [
-                            relation.database,
-                            relation.schema,
-                            relation.identifier,
-                            str(relation.type),
-                            None,
-                            None,
-                            col.name,
-                            idx,
-                            col.dtype,
-                            None,
-                        ]
+                        {
+                            "table_database": relation.database,
+                            "table_schema": relation.schema,
+                            "table_name": relation.identifier,
+                            "table_type": str(relation.type),
+                            "table_comment": None,
+                            "table_owner": None,
+                            "column_name": col.name,
+                            "column_index": idx,
+                            "column_type": col.dtype,
+                            "column_comment": None,
+                        }
                     )
 
         table = table_from_data(rows, catalog_columns)
