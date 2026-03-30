@@ -176,12 +176,10 @@ where
     Op: StreamingBinaryOperator<I1, I2, O> + 'static,
 {
     async fn eval(&mut self, lhs: &I1, rhs: &I2) -> O {
-        if self.stream.is_none() {
-            self.stream = Some(Box::pin(self.operator.clone().eval(lhs, rhs))
-                as Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>);
-        }
-
-        let stream = self.stream.as_mut().unwrap();
+        let stream = self.stream.get_or_insert_with(|| {
+            Box::pin(self.operator.clone().eval(lhs, rhs))
+                as Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>
+        });
 
         let Some((output, complete, progress)) = stream.next().await else {
             panic!("StreamingBinaryOperator unexpectedly reached end of stream");
@@ -350,12 +348,10 @@ where
     Op: StreamingTernaryOperator<I1, I2, I3, O> + 'static,
 {
     async fn eval(&mut self, i1: Cow<'_, I1>, i2: Cow<'_, I2>, i3: Cow<'_, I3>) -> O {
-        if self.stream.is_none() {
-            self.stream = Some(Box::pin(self.operator.clone().eval(i1, i2, i3))
-                as Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>);
-        }
-
-        let stream = self.stream.as_mut().unwrap();
+        let stream = self.stream.get_or_insert_with(|| {
+            Box::pin(self.operator.clone().eval(i1, i2, i3))
+                as Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>
+        });
 
         let Some((output, complete, progress)) = stream.next().await else {
             panic!("StreamingTernaryOperator unexpectedly reached end of stream");
@@ -534,12 +530,10 @@ where
         i3: Cow<'_, I3>,
         i4: Cow<'_, I4>,
     ) -> O {
-        if self.stream.is_none() {
-            self.stream = Some(Box::pin(self.operator.clone().eval(i1, i2, i3, i4))
-                as Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>);
-        }
-
-        let stream = self.stream.as_mut().unwrap();
+        let stream = self.stream.get_or_insert_with(|| {
+            Box::pin(self.operator.clone().eval(i1, i2, i3, i4))
+                as Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>
+        });
 
         let Some((output, complete, progress)) = stream.next().await else {
             panic!("StreamingQuaternaryOperator unexpectedly reached end of stream");
@@ -702,12 +696,10 @@ where
     where
         Iter: Iterator<Item = Cow<'a, I>>,
     {
-        if self.stream.is_none() {
-            self.stream = Some(Box::pin(self.operator.clone().eval(inputs))
-                as Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>);
-        }
-
-        let stream = self.stream.as_mut().unwrap();
+        let stream = self.stream.get_or_insert_with(|| {
+            Box::pin(self.operator.clone().eval(inputs))
+                as Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>
+        });
 
         let Some((output, complete, progress)) = stream.next().await else {
             panic!("StreamingNaryOperator unexpectedly reached end of stream");
@@ -884,12 +876,10 @@ where
     Op: StreamingTernarySinkOperator<I1, I2, I3> + 'static,
 {
     async fn eval(&mut self, i1: Cow<'_, I1>, i2: Cow<'_, I2>, i3: Cow<'_, I3>) {
-        if self.stream.is_none() {
-            self.stream = Some(Box::pin(self.operator.clone().eval(i1, i2, i3))
-                as Pin<Box<dyn AsyncStream<Item = (bool, Option<Position>)>>>);
-        }
-
-        let stream = self.stream.as_mut().unwrap();
+        let stream = self.stream.get_or_insert_with(|| {
+            Box::pin(self.operator.clone().eval(i1, i2, i3))
+                as Pin<Box<dyn AsyncStream<Item = (bool, Option<Position>)>>>
+        });
 
         let Some((complete, progress)) = stream.next().await else {
             panic!("StreamingTernarySinkOperator unexpectedly reached end of stream");
