@@ -13,10 +13,15 @@ from felderize.translator import split_combined_sql, translate_spark_to_feldera
 
 @click.group()
 def cli():
-    """Spark SQL to Feldera SQL translator."""
+    """Feldera SQL translator — converts source SQL dialects to Feldera SQL."""
 
 
-@cli.command()
+@cli.group()
+def spark():
+    """Translate Spark SQL to Feldera SQL."""
+
+
+@spark.command()
 @click.argument("schema_file", type=click.Path(exists=True))
 @click.argument("query_file", type=click.Path(exists=True))
 @click.option("--validate", is_flag=True, help="Validate against Feldera instance")
@@ -73,7 +78,7 @@ def translate(
         _print_result(result)
 
 
-@cli.command("translate-file")
+@spark.command("translate-file")
 @click.argument("sql_file", type=click.Path(exists=True))
 @click.option("--validate", is_flag=True, help="Validate against Feldera instance")
 @click.option("--compiler", type=click.Path(), help="Path to Feldera compiler binary")
@@ -131,7 +136,7 @@ def translate_file(
 _EXAMPLES_DIR = Path(__file__).resolve().parent / "data" / "demo"
 
 
-@cli.command()
+@spark.command()
 @click.argument("name", required=False)
 @click.option(
     "--validate/--no-validate",
@@ -160,8 +165,8 @@ def example(
 
     \b
     Usage:
-      felderize example              # list available examples
-      felderize example simple       # translate the 'simple' example
+      felderize spark example              # list available examples
+      felderize spark example simple       # translate the 'simple' example
     """
     # Discover available examples: schema+views pairs and combined files
     pairs: dict[str, tuple[Path, Path] | Path] = {}
@@ -179,7 +184,7 @@ def example(
         for ex_name, files in pairs.items():
             tag = "[combined]" if isinstance(files, Path) else "[schema+query]"
             click.echo(f"  {ex_name:20s} {tag}")
-        click.echo("\nRun one with: felderize example <name>")
+        click.echo("\nRun one with: felderize spark example <name>")
         return
 
     if name not in pairs:

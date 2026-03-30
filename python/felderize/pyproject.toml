@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "felderize"
 version = "0.1.0"
-description = "Spark SQL to Feldera SQL translator agent"
+description = "SQL dialect to Feldera SQL translator agent"
 requires-python = ">=3.10"
 dependencies = [
     "anthropic>=0.39.0",
