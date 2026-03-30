@@ -179,7 +179,7 @@ jobs:
       FELDERA_HOST: https://localhost:8080
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-db53e1302c944e29edd6d2af516fff7032b90e3b
+      image: ghcr.io/feldera/feldera-dev:sha-06a694400a6aea1f568da04eaf786bfe84e0a869
     services:
       pipeline-manager:
         image: ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
