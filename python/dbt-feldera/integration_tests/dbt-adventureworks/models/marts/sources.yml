@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: adventureworks_seed
     description: "Seed data for the AdventureWorks project (loaded via dbt seed)"
-    schema: dbt_adventureworks
+    schema: adventureworks
     tables:
       # Date
       - name: calendar_date
