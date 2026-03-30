@@ -28,7 +28,13 @@ use async_stream::stream;
 use feldera_storage::{FileCommitter, StoragePath};
 use futures::Stream as AsyncStream;
 use rkyv::Deserialize;
-use std::{borrow::Cow, cell::RefCell, marker::PhantomData, rc::Rc, sync::Arc};
+use std::{
+    borrow::Cow,
+    cell::{Cell, RefCell},
+    marker::PhantomData,
+    rc::Rc,
+    sync::Arc,
+};
 
 impl Stream<RootCircuit, MonoIndexedZSet> {
     pub fn dyn_window_mono(
@@ -111,7 +117,7 @@ where
     // have been received yet, and window boundaries haven't been set.
     window: RefCell<Option<(Box<B::Key>, Box<B::Key>)>>,
     delta: RefCell<Option<SpineSnapshot<B>>>,
-    flush: RefCell<bool>,
+    flush: Cell<bool>,
 
     // Input batch sizes.
     input_batch_stats: RefCell<BatchSizeStats>,
@@ -135,7 +141,7 @@ where
             right_inclusive,
             window: RefCell::new(None),
             delta: RefCell::new(None),
-            flush: RefCell::new(false),
+            flush: Cell::new(false),
             input_batch_stats: RefCell::new(BatchSizeStats::new()),
             output_batch_stats: RefCell::new(BatchSizeStats::new()),
 
@@ -225,7 +231,7 @@ where
     }
 
     fn flush(&mut self) {
-        *self.flush.borrow_mut() = true;
+        self.flush.set(true);
     }
 }
 
@@ -319,7 +325,7 @@ where
             *self.delta.borrow_mut() = Some(delta.ro_snapshot());
         }
 
-        let trace = if *self.flush.borrow() {
+        let trace = if self.flush.get() {
             Some(trace.as_ref().ro_snapshot())
         } else {
             None
@@ -329,8 +335,7 @@ where
         let bounds0: Option<_> = (*self.window.borrow()).clone();
 
         stream! {
-            let delta = if *self.flush.borrow() {
-                *self.flush.borrow_mut() = false;
+            let delta = if self.flush.replace(false) {
                 self.delta.take().unwrap()
             } else {
                 yield (B::dyn_empty(&self.factories), true, None);

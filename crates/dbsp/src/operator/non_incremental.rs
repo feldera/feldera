@@ -14,7 +14,14 @@ use crate::{
     typed_batch::{Spine, TypedBatch},
 };
 use impl_trait_for_tuples::impl_for_tuples;
-use std::{borrow::Cow, cell::RefCell, collections::BTreeSet, future::Future, pin::Pin, rc::Rc};
+use std::{
+    borrow::Cow,
+    cell::{Cell, RefCell},
+    collections::BTreeSet,
+    future::Future,
+    pin::Pin,
+    rc::Rc,
+};
 
 /// A trait for a collection of streams that can be imported into a non-incremental circuit.
 ///
@@ -80,7 +87,7 @@ where
 /// from the parent circuit.
 struct NonIterativeExecutor {
     scheduler: DynamicScheduler,
-    flush: RefCell<bool>,
+    flush: Cell<bool>,
     flush_consensus: Consensus,
 }
 
@@ -88,7 +95,7 @@ impl NonIterativeExecutor {
     pub fn new() -> Self {
         Self {
             scheduler: DynamicScheduler::new(),
-            flush: RefCell::new(false),
+            flush: Cell::new(false),
             flush_consensus: Consensus::new(),
         }
     }
@@ -142,9 +149,9 @@ where
     ) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
         let circuit = circuit.clone();
         Box::pin(async move {
-            let local = *self.flush.borrow();
+            let local = self.flush.get();
             if self.flush_consensus.check(local).await? {
-                *self.flush.borrow_mut() = false;
+                self.flush.set(false);
                 self.scheduler.transaction(&circuit).await?;
             }
             Ok(())
@@ -152,11 +159,11 @@ where
     }
 
     fn flush(&self) {
-        *self.flush.borrow_mut() = true;
+        self.flush.set(true);
     }
 
     fn is_flush_complete(&self) -> bool {
-        !*self.flush.borrow()
+        !self.flush.get()
     }
 }
 

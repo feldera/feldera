@@ -1,5 +1,10 @@
 use std::{
-    borrow::Cow, cell::RefCell, cmp::Ordering, marker::PhantomData, panic::Location, rc::Rc,
+    borrow::Cow,
+    cell::{Cell, RefCell},
+    cmp::Ordering,
+    marker::PhantomData,
+    panic::Location,
+    rc::Rc,
 };
 
 use async_stream::stream;
@@ -228,7 +233,7 @@ where
     valts_cmp_func: Box<dyn Fn(&I1::Val, &TS) -> Ordering>,
     join_func: Box<AsofJoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>>,
     location: &'static Location<'static>,
-    flush: RefCell<bool>,
+    flush: Cell<bool>,
     delta1: RefCell<Option<SpineSnapshot<I1>>>,
     delta2: RefCell<Option<SpineSnapshot<I2>>>,
 
@@ -266,7 +271,7 @@ where
             valts_cmp_func,
             join_func,
             location,
-            flush: RefCell::new(false),
+            flush: Cell::new(false),
             delta1: RefCell::new(None),
             delta2: RefCell::new(None),
             delta1_batch_stats: RefCell::new(BatchSizeStats::new()),
@@ -566,7 +571,7 @@ where
     }
 
     fn flush(&mut self) {
-        *self.flush.borrow_mut() = true;
+        self.flush.set(true);
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
@@ -608,13 +613,13 @@ where
             *self.delta2.borrow_mut() = Some(delta2.ro_snapshot());
         };
 
-        let delayed_trace1 = if *self.flush.borrow() {
+        let delayed_trace1 = if self.flush.get() {
             Some(delayed_trace1.as_ref().ro_snapshot())
         } else {
             None
         };
 
-        let delayed_trace2 = if *self.flush.borrow() {
+        let delayed_trace2 = if self.flush.get() {
             Some(delayed_trace2.ro_snapshot())
         } else {
             None
@@ -623,9 +628,7 @@ where
         stream! {
             let chunk_size = splitter_output_chunk_size();
 
-            if *self.flush.borrow() {
-                *self.flush.borrow_mut() = false;
-            } else {
+            if !self.flush.replace(false) {
                 // println!("yield empty");
                 yield(Z::dyn_empty(&self.factories.output_factories), true, None);
                 return;

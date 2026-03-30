@@ -42,7 +42,7 @@ use futures::Stream as AsyncStream;
 use num::Bounded;
 use std::{
     borrow::Cow,
-    cell::RefCell,
+    cell::{Cell, RefCell},
     marker::PhantomData,
     ops::{Deref, Div, Neg},
     rc::Rc,
@@ -737,7 +737,7 @@ struct PartitionedRollingAggregate<
     output_factories: O::Factories,
     range: RelRange<TS>,
     aggregator: Box<dyn DynAggregator<V, (), DynZWeight, Accumulator = Acc, Output = Out>>,
-    flush: RefCell<bool>,
+    flush: Cell<bool>,
     input_delta: RefCell<Option<SpineSnapshot<B>>>,
 
     // Input batch sizes.
@@ -767,7 +767,7 @@ where
             output_factories: output_factories.clone(),
             range,
             aggregator: clone_box(aggregator),
-            flush: RefCell::new(false),
+            flush: Cell::new(false),
             input_delta: RefCell::new(None),
             input_batch_stats: RefCell::new(BatchSizeStats::new()),
             output_batch_stats: RefCell::new(BatchSizeStats::new()),
@@ -825,7 +825,7 @@ where
     }
 
     fn flush(&mut self) {
-        *self.flush.borrow_mut() = true;
+        self.flush.set(true);
     }
 }
 
@@ -857,26 +857,26 @@ where
             *self.input_delta.borrow_mut() = Some(input_delta.ro_snapshot());
         };
 
-        let input_trace = if *self.flush.borrow() {
+        let input_trace = if self.flush.get() {
             Some(input_trace.as_ref().ro_snapshot())
         } else {
             None
         };
 
-        let radix_tree = if *self.flush.borrow() {
+        let radix_tree = if self.flush.get() {
             Some(radix_tree.as_ref().ro_snapshot())
         } else {
             None
         };
 
-        let output_trace = if *self.flush.borrow() {
+        let output_trace = if self.flush.get() {
             Some(output_trace.as_ref().ro_snapshot())
         } else {
             None
         };
 
         stream! {
-            if !*self.flush.borrow() {
+            if !self.flush.get() {
                 yield (O::dyn_empty(&self.output_factories), true, None);
                 return;
             }
@@ -1021,7 +1021,7 @@ where
                 delta_cursor.step_key();
             }
 
-            *self.flush.borrow_mut() = false;
+            self.flush.set(false);
             let retractions = retraction_builder.done();
             let insertions = insertion_builder.done();
 
