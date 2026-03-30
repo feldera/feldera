@@ -33,7 +33,7 @@ stg_kafka_sales as (
         orderqty,
         unitprice,
         unitprice * orderqty as revenue
-    from {{ ref('kafka_sales') }}
+    from {{ ref('int_kafka_sales') }}
 )
 
 select
