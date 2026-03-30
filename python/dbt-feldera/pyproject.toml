@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dbt-feldera"
+readme = "README.md"
+description = "The dbt adapter for Feldera — DBSP-native incremental view maintenance"
+version = "0.1.0"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { "name" = "Feldera Team", "email" = "dev@feldera.com" },
+    { "name" = "Raki Rahman", "email" = "mdrakiburrahman@gmail.com" },
+]
+keywords = [
+    "feldera",
+    "dbt",
+    "incremental",
+    "streaming",
+    "dbsp",
+]
+classifiers = [
+    "Programming Language :: Python :: 3.10",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "dbt-core~=1.11",
+    "dbt-adapters~=1.16",
+    "dbt-common~=1.12",
+    "feldera>=0.275.0",
+    "agate>=1.9.1",
+]
+
+[project.urls]
+Homepage = "https://www.feldera.com"
+Documentation = "https://docs.feldera.com"
+Repository = "https://github.com/feldera/feldera"
+Issues = "https://github.com/feldera/feldera/issues"
+
+[project.entry-points."dbt.adapters"]
+feldera = "dbt.adapters.feldera"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.5",
+    "pytest-timeout>=2.3.1",
+    "ruff>=0.6.9",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "integration: marks tests that require a running Feldera instance",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.setuptools.packages.find]
+namespaces = true
+include = ["dbt*"]
+
+[tool.setuptools.package-data]
+"dbt.include.feldera" = ["*.yml", "macros/**/*.sql"]

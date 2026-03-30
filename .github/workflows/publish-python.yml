@@ -56,3 +56,42 @@ jobs:
 
       - name: Minimize uv cache
         run: uv cache prune --ci
+
+  deploy-dbt-feldera:
+    runs-on: ubuntu-latest-amd64
+    environment:
+      name: release
+      url: https://pypi.org/p/dbt-feldera
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+        with:
+          version: "0.4.15"
+          enable-cache: true
+      - name: "Set up Python"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install and build dbt-feldera
+        working-directory: ./python/dbt-feldera
+        run: |
+          uv venv
+          uv pip install -e ".[dev]"
+          uv build
+      - name: Run unit tests
+        working-directory: ./python/dbt-feldera
+        run: uv run pytest tests/unit -vv
+
+      - name: Publish dbt-feldera
+        if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
+        with:
+          packages-dir: ./python/dbt-feldera/dist
+
+      - name: Minimize uv cache
+        working-directory: ./python/dbt-feldera
+        run: uv cache prune --ci

@@ -1,0 +1,15 @@
+version: 2
+seeds:
+- name: person
+  config:
+    column_types:
+      businessentityid: INT
+      title: VARCHAR
+      firstname: VARCHAR
+      middlename: VARCHAR
+      lastname: VARCHAR
+      namestyle: BOOLEAN
+      suffix: VARCHAR
+      modifieddate: TIMESTAMP
+      rowguid: VARCHAR
+      emailpromotion: INT

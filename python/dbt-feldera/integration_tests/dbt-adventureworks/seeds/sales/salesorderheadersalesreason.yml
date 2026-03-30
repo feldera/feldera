@@ -1,0 +1,9 @@
+version: 2
+seeds:
+- name: salesorderheadersalesreason
+  description: contains sales data between 2011-01-01 to 2011-12-31.
+  config:
+    column_types:
+      salesorderid: INT
+      modifieddate: TIMESTAMP
+      salesreasonid: INT

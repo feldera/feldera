@@ -1,0 +1,19 @@
+fixed:
+  type: feldera
+prompts:
+  host:
+    hint: "Feldera API URL (e.g., http://localhost:8080)"
+    default: "http://localhost:8080"
+  api_key:
+    hint: "Feldera API key (optional, format: apikey:...)"
+  schema:
+    hint: "Pipeline name"
+  compilation_profile:
+    hint: "Compilation profile (dev, unoptimized, optimized)"
+    default: "dev"
+  workers:
+    hint: "Number of pipeline worker threads"
+    default: 4
+  timeout:
+    hint: "Compilation timeout in seconds"
+    default: 300

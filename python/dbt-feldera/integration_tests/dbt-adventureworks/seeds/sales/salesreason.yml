@@ -1,0 +1,9 @@
+version: 2
+seeds:
+- name: salesreason
+  config:
+    column_types:
+      salesreasonid: INT
+      name: VARCHAR
+      reasontype: VARCHAR
+      modifieddate: TIMESTAMP
