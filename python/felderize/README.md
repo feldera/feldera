@@ -36,22 +36,22 @@ cd sql-to-dbsp-compiler
 
 ```bash
 # List available examples
-felderize example
+felderize spark example
 
 # Translate an example (validates by default)
-felderize example simple
+felderize spark example simple
 
 # Without compiler validation
-felderize example simple --no-validate
+felderize spark example simple --no-validate
 
 # Log SQL submitted to the validator at each attempt
-felderize example json --verbose
+felderize spark example json --verbose
 
 # Use a specific compiler binary
-felderize example simple --compiler /path/to/sql-to-dbsp
+felderize spark example simple --compiler /path/to/sql-to-dbsp
 
 # Output as JSON
-felderize example simple --json-output
+felderize spark example simple --json-output
 ```
 
 Available examples:
@@ -63,9 +63,11 @@ Available examples:
 | `arrays` | array_contains, size, element_at |
 | `joins` | Null-safe equality (`<=>`) |
 | `windows` | LAG, running SUM OVER |
-| `aggregations` | COUNT DISTINCT, HAVING (includes unsupported: COLLECT_LIST, PERCENTILE_APPROX) |
+| `aggregations` | COUNT DISTINCT, AVG, SUM, HAVING |
 | `json` | get_json_object → PARSE_JSON + VARIANT access *(combined file)* |
-| `topk` | ROW_NUMBER TopK, QUALIFY, DATEDIFF → TIMESTAMPDIFF *(combined file)* |
+| `topk` | ROW_NUMBER TopK, QUALIFY, datediff *(combined file)* |
+| `dates` | to_date → PARSE_DATE, date_format → FORMAT_DATE/EXTRACT *(combined file)* |
+| `arithmetic` | pmod, NULLIF division, subtraction *(combined file)* |
 
 The JSON output contains:
 
@@ -86,14 +88,14 @@ Two input formats are supported:
 
 **Separate schema and query files:**
 ```bash
-felderize translate path/to/schema.sql path/to/query.sql
-felderize translate path/to/schema.sql path/to/query.sql --validate
+felderize spark translate path/to/schema.sql path/to/query.sql
+felderize spark translate path/to/schema.sql path/to/query.sql --validate
 ```
 
 **Single combined file** (CREATE TABLE and CREATE VIEW statements in one file):
 ```bash
-felderize translate-file path/to/combined.sql
-felderize translate-file path/to/combined.sql --validate
+felderize spark translate-file path/to/combined.sql
+felderize spark translate-file path/to/combined.sql --validate
 ```
 
 > **Note:** Running without `--validate` prints a warning — the output SQL has not been verified against the Feldera compiler.

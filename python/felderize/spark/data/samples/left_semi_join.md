@@ -5,8 +5,7 @@ categories: [comparisons]
 # LEFT SEMI JOIN
 
 Feldera does not support LEFT SEMI JOIN. Rewrite as INNER JOIN with DISTINCT.
-The WHERE clause filtering on right-table columns must move into the ON condition
-(or a subquery) to preserve semi-join semantics — only left-side rows are returned.
+Any filtering on right-table columns belongs in the ON condition to preserve semi-join semantics — only left-side rows are returned.
 
 Spark:
 ```sql
@@ -35,8 +34,7 @@ CREATE TABLE order_facts (
 );
 
 -- NOTE: LEFT SEMI JOIN → INNER JOIN + DISTINCT.
--- Filtering on the right table (o.amount >= 500) moves into the ON clause so that
--- only matching right-side rows drive which left rows are kept.
+-- Right-table filters stay in the ON clause; DISTINCT ensures only left-side columns are returned.
 SELECT DISTINCT c.customer_id, c.customer_name, c.segment
 FROM customer_dimension c
 INNER JOIN order_facts o

@@ -6,6 +6,7 @@ categories: [array, map]
 
 Key rewrites: ARRAY<T> → T ARRAY, size → CARDINALITY, element_at(map, key) → map[key].
 Note: size() returns -1 for NULL in Spark; CARDINALITY returns NULL in Feldera.
+For exact NULL behavior use COALESCE(CARDINALITY(tags), -1). If the column is NOT NULL, CARDINALITY alone is sufficient.
 
 Spark:
 ```sql
@@ -31,9 +32,9 @@ CREATE TABLE session_profiles (
   event_time TIMESTAMP
 );
 
--- NOTE: CARDINALITY returns NULL for NULL input; Spark size() returns -1.
+-- NOTE: COALESCE(CARDINALITY(tags), -1) matches Spark size() NULL behavior exactly.
 SELECT user_id,
-  CARDINALITY(tags)                   AS tag_count,
+  COALESCE(CARDINALITY(tags), -1)     AS tag_count,
   ARRAY_CONTAINS(tags, 'vip')         AS has_vip_tag,
   attributes['source']                AS traffic_source,
   attributes['campaign']              AS campaign

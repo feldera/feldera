@@ -6,7 +6,7 @@ categories: [json]
 
 Feldera uses VARIANT type. Parse with PARSE_JSON, then access fields with bracket syntax.
 get_json_object returns STRING only — numbers/booleans need CAST to correct type.
-Feldera does NOT support lateral aliases — repeat PARSE_JSON(col) per field or use a CTE.
+Feldera supports lateral aliases — parse once and reuse: `SELECT PARSE_JSON(col) AS v, v['field'] ...`
 
 Spark:
 ```sql
@@ -19,11 +19,12 @@ FROM raw_events;
 
 Feldera:
 ```sql
--- Repeat PARSE_JSON per field (no lateral alias in Feldera)
+-- Parse once using lateral alias, reuse v per field
 SELECT
-  CAST(PARSE_JSON(payload)['user_id']  AS VARCHAR) AS user_id,
-  CAST(PARSE_JSON(payload)['amount']   AS DOUBLE)  AS amount,
-  CAST(PARSE_JSON(payload)['currency'] AS VARCHAR) AS currency
+  PARSE_JSON(payload)                      AS v,
+  CAST(v['user_id']  AS VARCHAR)           AS user_id,
+  CAST(v['amount']   AS DOUBLE)            AS amount,
+  CAST(v['currency'] AS VARCHAR)           AS currency
 FROM raw_events;
 ```
 
@@ -38,7 +39,7 @@ FROM raw_events
 GROUP BY get_json_object(payload, '$.region');
 ```
 
-Feldera (use CTE to pre-parse — lateral alias breaks with GROUP BY):
+Feldera (use CTE to pre-parse when GROUP BY needs the parsed value):
 ```sql
 CREATE VIEW summary AS
 WITH parsed AS (

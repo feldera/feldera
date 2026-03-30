@@ -22,7 +22,7 @@ These are systematic differences between Spark and Feldera to be aware of during
 
 - **[GBD-INT-DIV] Integer division:** When both operands are integers, Spark returns DECIMAL (e.g. `95/100 = 0.95`); Feldera performs integer division (e.g. `95/100 = 0`). Cast at least one operand to DECIMAL when fractional results are needed.
 
-- **[GBD-AGG-TYPE] Aggregate return types on numeric inputs:** Spark often widens numeric aggregates to DOUBLE regardless of input type; Feldera follows the SQL standard and preserves the input type. Key cases:
+- **[GBD-AGG-TYPE] Aggregate return types on numeric inputs:** Spark often widens numeric aggregates regardless of input type; Feldera follows the SQL standard and preserves the input type. Key cases:
   - `AVG(integer_col)` — Spark returns DOUBLE (`AVG(1,2)` = `1.5`); Feldera returns INT (`AVG(1,2)` = `1`). **Rewrite: `AVG(CAST(col AS DOUBLE))`** only when the input type is confirmed integer (INT, BIGINT, SMALLINT, TINYINT) — derive from schema or column definition. If the type cannot be determined, leave as-is and flag [GBD-AGG-TYPE].
   - `STDDEV_SAMP/STDDEV_POP(decimal_col)` — Spark widens to DOUBLE; Feldera preserves DECIMAL scale. No rewrite possible.
   - `AVG(decimal_col)` — Spark returns `DECIMAL(p+4, s+4)`; Feldera returns `DECIMAL(p,s)` (same scale). No rewrite possible.
@@ -203,7 +203,7 @@ These Spark functions exist in Feldera — translate directly:
 | `array_intersect(a, b)` | `ARRAY_INTERSECT(a, b)` | |
 | `array_except(a, b)` | `ARRAY_EXCEPT(a, b)` | → [GBD-ARRAY-ORDER]: Feldera returns elements in sorted order; Spark preserves input order. |
 | `array_join(arr, sep)` | `ARRAY_JOIN(arr, sep)` | Alias for ARRAY_TO_STRING |
-| `size(arr)` | `CARDINALITY(arr)` | Different name. **WARNING**: Spark `size()` returns `-1` for NULL input; Feldera `CARDINALITY` returns `NULL`. If input may be NULL, mark unsupported. |
+| `size(arr)` | `COALESCE(CARDINALITY(arr), -1)` | Spark `size()` returns `-1` for NULL input; Feldera `CARDINALITY` returns `NULL`. Use `COALESCE(CARDINALITY(arr), -1)` for exact match. If column is NOT NULL, `CARDINALITY(arr)` alone is sufficient. |
 | `array(v1, v2)` | `ARRAY(v1, v2)` | |
 
 #### Higher-order array functions
@@ -257,15 +257,16 @@ Results are always `VARIANT` — cast to get a concrete type: `CAST(v['age'] AS 
 | `json_array_length(s)` | `CARDINALITY(CAST(PARSE_JSON(s) AS VARIANT ARRAY))` | |
 
 Notes:
-- **Feldera does NOT support lateral aliases in SELECT.** You CANNOT reference an alias defined in the same SELECT list. Always repeat `PARSE_JSON(col)` per field, or use a CTE.
+- **Feldera supports lateral aliases in SELECT.** Parse once and reuse: `SELECT PARSE_JSON(col) AS v, v['field1'] AS f1, v['field2'] AS f2 ...`
 
-Simple SELECT — repeat PARSE_JSON per field:
+Simple SELECT — parse once with lateral alias:
 
 ```sql
 SELECT
-  CAST(PARSE_JSON(payload)['user_id']  AS VARCHAR) AS user_id,
-  CAST(PARSE_JSON(payload)['amount']   AS DOUBLE)  AS amount,
-  CAST(PARSE_JSON(payload)['currency'] AS VARCHAR) AS currency
+  PARSE_JSON(payload)                    AS v,
+  CAST(v['user_id']  AS VARCHAR)         AS user_id,
+  CAST(v['amount']   AS DOUBLE)          AS amount,
+  CAST(v['currency'] AS VARCHAR)         AS currency
 FROM raw_events;
 ```
 
