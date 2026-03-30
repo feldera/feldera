@@ -20,10 +20,10 @@ These are systematic differences between Spark and Feldera to be aware of during
 
 - **[GBD-WHITESPACE] Whitespace definition:** Spark treats `' '` (space), `\t` (tab), `\n` (newline), `\r` (carriage return), and other Unicode whitespace as "whitespace" in any operation that involves trimming or whitespace-awareness. Feldera follows the SQL standard and only considers ASCII space (0x20) as whitespace. This affects `TRIM`, `LTRIM`, `RTRIM`, `CAST(str AS BOOLEAN)`, and any other function that implicitly strips whitespace. If the input may contain `\t` or `\n` at the edges, the results will differ.
 
-- **[GBD-INT-DIV] Integer division:** When both operands are integers, Spark returns DOUBLE (e.g. `95/100 = 0.95`); Feldera performs integer division (e.g. `95/100 = 0`). Cast at least one operand to DOUBLE when fractional results are needed.
+- **[GBD-INT-DIV] Integer division:** When both operands are integers, Spark returns DECIMAL (e.g. `95/100 = 0.95`); Feldera performs integer division (e.g. `95/100 = 0`). Cast at least one operand to DECIMAL when fractional results are needed.
 
 - **[GBD-AGG-TYPE] Aggregate return types on numeric inputs:** Spark often widens numeric aggregates to DOUBLE regardless of input type; Feldera follows the SQL standard and preserves the input type. Key cases:
-  - `AVG(integer_col)` — Spark returns DOUBLE (`AVG(1,2)` = `1.5`); Feldera returns INT (`AVG(1,2)` = `1`). No rewrite possible.
+  - `AVG(integer_col)` — Spark returns DOUBLE (`AVG(1,2)` = `1.5`); Feldera returns INT (`AVG(1,2)` = `1`). **Rewrite: `AVG(CAST(col AS DOUBLE))`** only when the input type is confirmed integer (INT, BIGINT, SMALLINT, TINYINT) — derive from schema or column definition. If the type cannot be determined, leave as-is and flag [GBD-AGG-TYPE].
   - `STDDEV_SAMP/STDDEV_POP(decimal_col)` — Spark widens to DOUBLE; Feldera preserves DECIMAL scale. No rewrite possible.
   - `AVG(decimal_col)` — Spark returns `DECIMAL(p+4, s+4)`; Feldera returns `DECIMAL(p,s)` (same scale). No rewrite possible.
 
@@ -163,7 +163,7 @@ These Spark functions exist in Feldera — translate directly:
 
 | Spark | Feldera | Notes |
 |-------|---------|-------|
-| `AVG(col)` | Same | → [GBD-AGG-TYPE]: integer input returns INT not DOUBLE; decimal input preserves scale |
+| `AVG(col)` | `AVG(CAST(col AS DOUBLE))` if col is integer type; `AVG(col)` otherwise | Integer input: rewrite to return DOUBLE matching Spark. Decimal/float: leave as-is → [GBD-AGG-TYPE] scale mismatch |
 | `STDDEV_SAMP(col)` | Same | → [GBD-AGG-TYPE]: decimal input preserves scale, not widened to DOUBLE |
 | `STDDEV_POP(col)` | Same | → [GBD-AGG-TYPE]: decimal input preserves scale, not widened to DOUBLE |
 | `every(col)` | Same | Alias for `bool_and` — supported in Feldera |
