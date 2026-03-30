@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import sys
 import urllib.request
 from pathlib import Path
@@ -48,10 +49,47 @@ def _resolve_feldera_url(base_url: str) -> str:
 
 
 @pytest.fixture(scope="session")
-def docker_feldera():
+def delta_output_dir(dbt_project_dir):
+    """
+    Session-scoped fixture that prepares the Delta Lake output directory.
+
+    Cleans any stale Delta data from previous runs, creates a fresh
+    directory, and yields the path for tests to use.
+
+    This fixture must run before docker_feldera so the bind mount
+    ``./dbt-adventureworks/delta-output:/data/delta`` has a valid source.
+    """
+    delta_dir = Path(dbt_project_dir) / "delta-output"
+
+    if delta_dir.exists():
+        for child in delta_dir.iterdir():
+            try:
+                if child.is_dir():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+            except PermissionError:
+                logger.warning("Could not remove %s (permission denied)", child)
+    else:
+        delta_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        delta_dir.chmod(0o777)
+    except PermissionError:
+        pass
+    logger.info("Prepared delta output directory at %s", delta_dir)
+
+    yield str(delta_dir)
+
+
+@pytest.fixture(scope="session")
+def docker_feldera(delta_output_dir):
     """
     Session-scoped fixture that starts Feldera via Docker Compose
     and tears it down after all tests complete.
+
+    Depends on ``delta_output_dir`` so the bind-mounted directory exists
+    before the container starts.
 
     Set FELDERA_SKIP_DOCKER=1 to skip Docker management (e.g., when
     Feldera is already running externally).

@@ -1,16 +1,30 @@
 {#
     View materialization for Feldera.
 
-    Creates a non-materialized view in the pipeline. The view exists as part
-    of the DBSP dataflow but does not persist its output for ad-hoc queries.
-    Suitable for intermediate transformations.
+    Creates a view in the pipeline. By default, a non-materialized view is
+    created (intermediate transform). When ``connectors`` are configured or
+    ``materialized_view`` is set to ``true``, a ``CREATE MATERIALIZED VIEW``
+    is emitted instead, enabling ad-hoc queries and output connectors
+    (e.g., Delta Lake, Kafka).
+
+    Configuration:
+        materialized: 'view'
+        pipeline_name: Pipeline name (defaults to schema)
+        materialized_view: true/false (default false, auto-promoted when connectors are set)
+        connectors: Optional output connector config (list of connector dicts)
 #}
 {% materialization view, adapter='feldera' %}
     {%- set pipeline_name = config.get('pipeline_name', model.schema) -%}
     {%- set view_name = model.name -%}
+    {%- set connectors = config.get('connectors', []) -%}
+    {%- set materialized = config.get('materialized_view', false) or connectors -%}
 
     {%- set view_sql -%}
-        CREATE VIEW {{ view_name }} AS
+        CREATE {{ 'MATERIALIZED ' if materialized else '' }}VIEW {{ view_name }}
+        {%- if connectors %}
+        WITH ('connectors' = '{{ connectors | tojson }}')
+        {%- endif %}
+        AS
         {{ sql }}
     {%- endset -%}
 
