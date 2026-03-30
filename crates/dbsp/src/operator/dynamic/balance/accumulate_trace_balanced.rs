@@ -42,7 +42,7 @@ use feldera_storage::{FileCommitter, StoragePath, fbuf::FBuf};
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
-    cell::RefCell,
+    cell::{Cell, RefCell},
     fmt::{Display, Formatter},
     hash::Hasher,
     iter::repeat,
@@ -396,13 +396,13 @@ where
     // Input batch sizes.
     input_batch_stats: BatchSizeStats,
 
-    flush_state: RefCell<FlushState>,
+    flush_state: Cell<FlushState>,
 
     /// The number of steps since the transaction started (see `ready_to_commit`).
-    num_steps_in_transaction: RefCell<usize>,
+    num_steps_in_transaction: Cell<usize>,
 
     /// Current partitioning policy.
-    current_policy: RefCell<PartitioningPolicy>,
+    current_policy: Cell<PartitioningPolicy>,
 
     /// When Some(), the policy has changed during the current transaction, and the operator must rebalance
     /// accumulator and integral state before committing the transaction.
@@ -411,22 +411,22 @@ where
     /// The moment rebalancing started.
     ///
     /// None if the policy has changed but flush hasn't yet been invoked, so rebalancing has not started yet.
-    rebalance_start_time: RefCell<Option<Instant>>,
+    rebalance_start_time: Cell<Option<Instant>>,
 
     /// Number of times the stream was rebalanced.
-    num_rebalancings: RefCell<usize>,
+    num_rebalancings: Cell<usize>,
 
     /// Size of the accumulator state to be rebalanced.
-    rebalance_accumulator_size: RefCell<usize>,
+    rebalance_accumulator_size: Cell<usize>,
 
     /// Size of the integral state to be rebalanced.
-    rebalance_integral_size: RefCell<usize>,
+    rebalance_integral_size: Cell<usize>,
 
     /// Local key distribution of the input stream computed by the current worker.
     key_distribution: RefCell<KeyDistribution>,
 
     /// Total time spent rebalancing the stream.
-    total_rebalancing_time: RefCell<Duration>,
+    total_rebalancing_time: Cell<Duration>,
 
     phantom: PhantomData<C>,
 }
@@ -459,22 +459,22 @@ where
             balancer,
             metadata_exchange,
             input_batch_stats: BatchSizeStats::new(),
-            flush_state: RefCell::new(FlushState::FlushCompleted),
-            num_steps_in_transaction: RefCell::new(0),
-            current_policy: RefCell::new(PartitioningPolicy::Shard),
+            flush_state: Cell::new(FlushState::FlushCompleted),
+            num_steps_in_transaction: Cell::new(0),
+            current_policy: Cell::new(PartitioningPolicy::Shard),
             rebalance_state: RefCell::new(None),
-            rebalance_start_time: RefCell::new(None),
-            num_rebalancings: RefCell::new(0),
-            rebalance_accumulator_size: RefCell::new(0),
-            rebalance_integral_size: RefCell::new(0),
+            rebalance_start_time: Cell::new(None),
+            num_rebalancings: Cell::new(0),
+            rebalance_accumulator_size: Cell::new(0),
+            rebalance_integral_size: Cell::new(0),
             key_distribution: RefCell::new(KeyDistribution::new(Runtime::num_workers())),
-            total_rebalancing_time: RefCell::new(Duration::from_secs(0)),
+            total_rebalancing_time: Cell::new(Duration::ZERO),
             phantom: PhantomData,
         }
     }
 
     fn rebalancing_in_progress(&self) -> bool {
-        *self.flush_state.borrow() == FlushState::RebalanceInProgress
+        self.flush_state.get() == FlushState::RebalanceInProgress
     }
 
     /// Hash a key/value pair for use with Policy::Balance.
@@ -502,15 +502,15 @@ where
     /// not be in a FlushRequested state at the same time. We address this by splitting the cluster into layers and only
     /// waiting for operators in the same layer to be in the FlushRequested state (Balancer::ready_to_commit).
     fn ready_to_commit(&self) -> bool {
-        *self.flush_state.borrow() == FlushState::FlushRequested
+        self.flush_state.get() == FlushState::FlushRequested
             && (self.balancer.ready_to_commit(self.input_node_id)
-                || *self.num_steps_in_transaction.borrow() < LONG_TRANSACTION_THRESHOLD)
+                || self.num_steps_in_transaction.get() < LONG_TRANSACTION_THRESHOLD)
     }
 
     fn update_exchange_metadata(&self) {
         let metadata = RebalancingExchangeSenderExchangeMetadata {
-            flush_state: *self.flush_state.borrow(),
-            current_policy: *self.current_policy.borrow(),
+            flush_state: self.flush_state.get(),
+            current_policy: self.current_policy.get(),
             key_distribution: self.key_distribution.borrow().clone(),
         };
         // println!(
@@ -526,7 +526,8 @@ where
 
     /// Update the total rebalancing time metric when completing rebalancing started at `start_time`.
     fn update_total_rebalancing_time(&self, start_time: &Instant) {
-        *self.total_rebalancing_time.borrow_mut() += start_time.elapsed();
+        self.total_rebalancing_time
+            .update(|time| time + start_time.elapsed());
     }
 
     /// Update the balancing policy. If the new policy is different from the current one:
@@ -536,7 +537,7 @@ where
     ///   policy in rebalance_state, so it can later be used to retract the old contents
     ///   of the integral.
     fn update_policy(&self, new_policy: PartitioningPolicy, delayed_accumulator: Vec<Arc<B>>) {
-        let old_policy = *self.current_policy.borrow();
+        let old_policy = self.current_policy.get();
         if old_policy == new_policy {
             return;
         }
@@ -551,8 +552,8 @@ where
                 self.key_distribution.borrow()
             );
         }
-        *self.current_policy.borrow_mut() = new_policy;
-        *self.num_rebalancings.borrow_mut() += 1;
+        self.current_policy.set(new_policy);
+        self.num_rebalancings.update(|value| value + 1);
 
         // Discard the accumulator state, so we don't need to retract it explicitly.
         self.accumulator_inner.borrow_mut().clear_state();
@@ -588,7 +589,7 @@ where
     ///
     /// Update key distribution stats.
     fn partition_batch(&self, delta: B) -> Vec<B> {
-        match *self.current_policy.borrow() {
+        match self.current_policy.get() {
             PartitioningPolicy::Shard => self.shard_batch(delta),
             PartitioningPolicy::Balance => self.balance_batch(delta),
             PartitioningPolicy::Broadcast => self.broadcast_batch(delta),
@@ -607,7 +608,7 @@ where
     ) where
         TS: Timestamp,
     {
-        assert!(old_policy != *self.current_policy.borrow());
+        assert!(old_policy != self.current_policy.get());
 
         match old_policy {
             PartitioningPolicy::Broadcast => self.repartition_after_broadcast(
@@ -638,7 +639,7 @@ where
     {
         let shards = builders.len();
 
-        match *self.current_policy.borrow() {
+        match self.current_policy.get() {
             PartitioningPolicy::Shard => {
                 while cursor.key_valid() {
                     let b = &mut builders[cursor.key().default_hash() as usize % shards];
@@ -746,7 +747,7 @@ where
     {
         let shards = Runtime::num_workers();
 
-        match *self.current_policy.borrow() {
+        match self.current_policy.get() {
             PartitioningPolicy::Shard => {
                 while cursor.key_valid() {
                     let shard = cursor.key().default_hash() as usize % shards;
@@ -1046,15 +1047,15 @@ where
         meta.extend(metadata! {
             INPUT_BATCHES_STATS => self.input_batch_stats.metadata(),
             KEY_DISTRIBUTION => self.key_distribution.borrow().meta_item(),
-            BALANCER_POLICY => MetaItem::String(self.current_policy.borrow().to_string()),
-            RABALANCINGS_COUNT => MetaItem::Count(*self.num_rebalancings.borrow()),
+            BALANCER_POLICY => MetaItem::String(self.current_policy.get().to_string()),
+            RABALANCINGS_COUNT => MetaItem::Count(self.num_rebalancings.get()),
             REBALANCING_IN_PROGRESS => MetaItem::Bool(self.rebalancing_in_progress()),
-            ACCUMULATOR_RECORDS_TO_REPARTITION_COUNT => MetaItem::Count(*self.rebalance_accumulator_size.borrow()),
-            INTEGRAL_RECORDS_TO_REPARTITION_COUNT => MetaItem::Count(*self.rebalance_integral_size.borrow()),
-            TOTAL_REBALANCING_TIME_SECONDS => MetaItem::Duration(*self.total_rebalancing_time.borrow()),
+            ACCUMULATOR_RECORDS_TO_REPARTITION_COUNT => MetaItem::Count(self.rebalance_accumulator_size.get()),
+            INTEGRAL_RECORDS_TO_REPARTITION_COUNT => MetaItem::Count(self.rebalance_integral_size.get()),
+            TOTAL_REBALANCING_TIME_SECONDS => MetaItem::Duration(self.total_rebalancing_time.get()),
         });
 
-        if let Some(rebalancing_start_time) = self.rebalance_start_time.borrow().as_ref() {
+        if let Some(rebalancing_start_time) = self.rebalance_start_time.get() {
             meta.extend(metadata! {
                 INPROGRESS_REBALANCING_TIME_SECONDS => MetaItem::Duration(rebalancing_start_time.elapsed()),
             });
@@ -1106,19 +1107,19 @@ where
         //     Runtime::worker_index(),
         //     self.global_id
         // );
-        *self.flush_state.borrow_mut() = FlushState::TransactionStarted;
-        *self.num_steps_in_transaction.borrow_mut() = 0;
+        self.flush_state.set(FlushState::TransactionStarted);
+        self.num_steps_in_transaction.set(0);
         self.update_exchange_metadata();
     }
 
     fn flush(&mut self) {
         // println!("{}:{} flush", Runtime::worker_index(), self.global_id);
-        *self.flush_state.borrow_mut() = FlushState::FlushRequested;
+        self.flush_state.set(FlushState::FlushRequested);
     }
 
     fn is_flush_complete(&self) -> bool {
         // flushed == true and all rebalancing state has been flushed
-        *self.flush_state.borrow() == FlushState::FlushCompleted
+        self.flush_state.get() == FlushState::FlushCompleted
     }
 
     /// Checkpoint the current sharding policy only.
@@ -1131,7 +1132,7 @@ where
         let pid = require_persistent_id(pid, &self.global_id)?;
 
         let checkpoint = RebalanceExchangeSenderCheckpoint {
-            current_policy: *self.current_policy.borrow(),
+            current_policy: self.current_policy.get(),
             key_distribution: self.key_distribution.borrow().clone(),
         };
 
@@ -1163,7 +1164,7 @@ where
                 )))
             })?;
 
-        *self.current_policy.borrow_mut() = checkpoint.current_policy;
+        self.current_policy.set(checkpoint.current_policy);
         self.balancer
             .set_policy_for_stream(self.input_node_id, checkpoint.current_policy);
         *self.key_distribution.borrow_mut() = checkpoint.key_distribution;
@@ -1175,7 +1176,7 @@ where
     }
 
     fn clear_state(&mut self) -> Result<(), crate::Error> {
-        *self.current_policy.borrow_mut() = PartitioningPolicy::Shard;
+        self.current_policy.set(PartitioningPolicy::Shard);
         *self.key_distribution.borrow_mut() = KeyDistribution::new(Runtime::num_workers());
 
         // Clear the metadata. If the operator is deactivated during bootstrapping, its metadata
@@ -1207,9 +1208,9 @@ where
 
         let delta = delta.into_owned();
 
-        *self.num_steps_in_transaction.borrow_mut() += 1;
+        self.num_steps_in_transaction.update(|steps| steps + 1);
 
-        assert_ne!(*self.flush_state.borrow(), FlushState::RebalanceInProgress);
+        assert_ne!(self.flush_state.get(), FlushState::RebalanceInProgress);
 
         // 1. We first partition the `delta` batch based on the latest policy.
         // 2. In addition if a rebalancing is requested (latest policy != current policy), we
@@ -1247,14 +1248,14 @@ where
             // Policy change? Update rebalancing state.
             let new_policy = self.balancer.get_optimal_policy(self.input_node_id).unwrap();
 
-            if *self.flush_state.borrow() == FlushState::FlushCompleted {
+            if self.flush_state.get() == FlushState::FlushCompleted {
                 assert!(delta.is_empty());
                 // No policy change expected after commit.
 
                 // if *self.current_policy.borrow() != new_policy  {
                 //     println!("{}: current_policy: {:?}, new_policy: {:?}", self.input_node_id, *self.current_policy.borrow(), new_policy);
                 // }
-                assert_eq!(*self.current_policy.borrow(), new_policy);
+                assert_eq!(self.current_policy.get(), new_policy);
                 // ExchangeReceiver expects precisely one flush per transaction.
                 assert!(self.exchange.try_send_all_with_serializer(
                     self.worker_index,
@@ -1300,28 +1301,28 @@ where
                     // if Runtime::worker_index() == 0 {
                     //     println!("{}: flush complete 1 ({:?})", self.input_node_id, *self.current_policy.borrow());
                     // }
-                    *self.flush_state.borrow_mut() = FlushState::FlushCompleted;
+                    self.flush_state.set(FlushState::FlushCompleted);
                 }
                 // Let other workers know that no more rebalancing is allowed in the current transaction.
                 self.update_exchange_metadata();
                 yield (true, None);
                 return;
             } else {
-                *self.flush_state.borrow_mut() = FlushState::RebalanceInProgress;
+                self.flush_state.set(FlushState::RebalanceInProgress);
                 self.update_exchange_metadata();
                 yield (false, None);
             }
 
             // We have no more inputs to process, but there is rebalancing work to be done.
-            self.rebalance_start_time.borrow_mut().replace(Instant::now());
+            self.rebalance_start_time.set(Some(Instant::now()));
 
             // Used to measure step duration and add it to the total rebalancing time.
             let mut step_start_time = Instant::now();
 
             let RebalanceState { mut accumulator, trace_policy } = self.rebalance_state.borrow_mut().take().unwrap();
 
-            *self.rebalance_accumulator_size.borrow_mut() = accumulator.len();
-            *self.rebalance_integral_size.borrow_mut() = delayed_trace.len();
+            self.rebalance_accumulator_size.set(accumulator.len());
+            self.rebalance_integral_size.set(delayed_trace.len());
 
             let mut integral_cursor = delayed_trace.cursor();
 
@@ -1380,12 +1381,12 @@ where
                     //     println!("{}: flush complete 2 ({:?})", self.input_node_id, *self.current_policy.borrow());
                     // }
 
-                    *self.flush_state.borrow_mut() = FlushState::FlushCompleted;
+                    self.flush_state.set(FlushState::FlushCompleted);
                     self.update_exchange_metadata();
-                    *self.rebalance_accumulator_size.borrow_mut() = 0;
-                    *self.rebalance_integral_size.borrow_mut() = 0;
+                    self.rebalance_accumulator_size.set(0);
+                    self.rebalance_integral_size.set(0);
                     self.update_total_rebalancing_time(&step_start_time);
-                    *self.rebalance_start_time.borrow_mut() = None;
+                    self.rebalance_start_time.set(None);
                     yield (true, None);
                     return;
                 }
@@ -1399,12 +1400,12 @@ where
             //     println!("{}: flush complete 3 ({:?})", self.input_node_id, *self.current_policy.borrow());
             // }
 
-            *self.flush_state.borrow_mut() = FlushState::FlushCompleted;
+            self.flush_state.set(FlushState::FlushCompleted);
             self.update_exchange_metadata();
-            *self.rebalance_accumulator_size.borrow_mut() = 0;
-            *self.rebalance_integral_size.borrow_mut() = 0;
+            self.rebalance_accumulator_size.set(0);
+            self.rebalance_integral_size.set(0);
             self.update_total_rebalancing_time(&step_start_time);
-            *self.rebalance_start_time.borrow_mut() = None;
+            self.rebalance_start_time.set(None);
             yield (true, None);
         }
     }

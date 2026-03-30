@@ -26,7 +26,7 @@ use feldera_storage::{FileCommitter, StoragePath};
 use futures::{Stream as AsyncStream, StreamExt};
 use size_of::{Context, SizeOf};
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::{BTreeMap, HashMap},
     marker::PhantomData,
     ops::Deref,
@@ -249,7 +249,7 @@ where
             preprocess_prefix: self.preprocess_prefix,
             streams: self.streams,
             preprocess: self.preprocess,
-            flush: RefCell::new(false),
+            flush: Cell::new(false),
             async_stream: None,
             inner: Rc::new(MatchInternal::new(
                 id,
@@ -436,8 +436,8 @@ where
     join_func: F,
     circuit: C,
 
-    empty_input: RefCell<bool>,
-    empty_output: RefCell<bool>,
+    empty_input: Cell<bool>,
+    empty_output: Cell<bool>,
     stats: RefCell<MatchStats>,
 
     // Future updates computed ahead of time, indexed by time
@@ -463,8 +463,8 @@ where
             timed_item_factory: factories.timed_item_factory,
             timed_items_factory: factories.timed_items_factory,
             join_func,
-            empty_input: RefCell::new(false),
-            empty_output: RefCell::new(true),
+            empty_input: Cell::new(false),
+            empty_output: Cell::new(true),
             future_outputs: RefCell::new(HashMap::new()),
             stats: RefCell::new(MatchStats::new()),
             circuit: circuit.clone(),
@@ -488,8 +488,8 @@ where
             self.stats.borrow_mut().add_prefix_batch(&prefix);
             self.stats.borrow_mut().trace_sizes = snapshots.iter().map(|(s, _factories, _saturate)| s.len()).collect();
 
-            *self.empty_input.borrow_mut() = prefix.is_empty();
-            *self.empty_output.borrow_mut() = true;
+            self.empty_input.set(prefix.is_empty());
+            self.empty_output.set(true);
 
             let mut generator = self.join_func.new_generator(self.circuit.time());
 
@@ -598,7 +598,7 @@ where
                             batcher.push_batch(&mut output_tuples);
 
                             if batcher.tuples() >= chunk_size {
-                                *self.empty_output.borrow_mut() = false;
+                                self.empty_output.set(false);
                                 let batch = batcher.seal();
                                 self.stats.borrow_mut().add_output_batch(&batch);
 
@@ -629,7 +629,7 @@ where
             self.stats.borrow_mut().add_output_batch(&batch);
 
             if !batch.is_empty() {
-                *self.empty_output.borrow_mut() = false;
+                self.empty_output.set(false);
             }
 
             //println!("{}:{} async_eval: yield final batch: {:?}", Runtime::worker_index(), self.id, batch);
@@ -659,7 +659,7 @@ where
     preprocess:
         Vec<Box<dyn Fn() -> SpineSnapshot<<<C as WithClock>::Time as Timestamp>::TimedBatch<I>>>>,
 
-    flush: RefCell<bool>,
+    flush: Cell<bool>,
 
     async_stream: Option<Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>>,
     inner: Rc<MatchInternal<C, I, O, F>>,
@@ -711,7 +711,7 @@ where
     fn start_transaction(&mut self) {}
 
     fn flush(&mut self) {
-        *self.flush.borrow_mut() = true;
+        self.flush.set(true);
     }
 
     fn is_flush_complete(&self) -> bool {
@@ -720,8 +720,8 @@ where
 
     fn clock_start(&mut self, scope: Scope) {
         if scope == 0 {
-            *self.inner.empty_input.borrow_mut() = false;
-            *self.inner.empty_output.borrow_mut() = false;
+            self.inner.empty_input.set(false);
+            self.inner.empty_output.set(false);
         }
     }
 
@@ -805,8 +805,8 @@ where
         // We're in a stable state if input and output at the current clock cycle are
         // both empty, and there are no precomputed outputs before the end of the
         // clock epoch.
-        *self.inner.empty_input.borrow()
-            && *self.inner.empty_output.borrow()
+        self.inner.empty_input.get()
+            && self.inner.empty_output.get()
             && self
                 .inner
                 .future_outputs
@@ -872,7 +872,7 @@ where
 
             let mut snapshots = Vec::with_capacity(self.streams.len());
 
-            if *self.flush.borrow() {
+            if self.flush.get() {
                 // Collect all input snapshots.
                 self.preprocess
                     .iter()
@@ -888,7 +888,7 @@ where
             });
             self.prefix_stream.consume_token();
 
-            if *self.flush.borrow() {
+            if self.flush.replace(false) {
                 assert!(self.async_stream.is_none());
                 let prefix = self.prefix.take().unwrap();
 
@@ -897,8 +897,6 @@ where
                         as Pin<
                             Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>,
                         >);
-
-                *self.flush.borrow_mut() = false;
             }
 
             if let Some(async_stream) = self.async_stream.as_mut() {

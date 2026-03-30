@@ -62,7 +62,7 @@ use serde::{Deserialize, Serialize, Serializer, de::DeserializeOwned};
 use std::{
     any::{Any, TypeId, type_name_of_val},
     borrow::Cow,
-    cell::{Ref, RefCell, RefMut},
+    cell::{Cell, Ref, RefCell, RefMut},
     collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{self, Debug, Display, Write},
     future::Future,
@@ -104,7 +104,7 @@ struct StreamValue<D> {
     /// The last consumer to read from the stream (`tokens` drops to 0) obtains
     /// an owned value rather than a borrow.  See description of
     /// [ownership-aware scheduling](`OwnershipPreference`) for details.
-    tokens: RefCell<usize>,
+    tokens: Cell<usize>,
 }
 
 impl<D> StreamValue<D> {
@@ -112,7 +112,7 @@ impl<D> StreamValue<D> {
         Self {
             val: None,
             consumers: 0,
-            tokens: RefCell::new(0),
+            tokens: Cell::new(0),
         }
     }
 
@@ -125,7 +125,7 @@ impl<D> StreamValue<D> {
         // If the stream is not connected to any consumers, drop the output
         // on the floor.
         if self.consumers > 0 {
-            self.tokens = RefCell::new(self.consumers);
+            self.tokens = Cell::new(self.consumers);
             self.val = Some(val);
         }
     }
@@ -135,7 +135,7 @@ impl<D> StreamValue<D> {
     where
         R: Deref<Target = Self>,
     {
-        debug_assert_ne!(*this.tokens.borrow(), 0);
+        debug_assert_ne!(this.tokens.get(), 0);
 
         this.val.as_ref().unwrap()
     }
@@ -146,7 +146,7 @@ impl<D> StreamValue<D> {
     where
         D: Clone,
     {
-        let tokens = *this.borrow().tokens.borrow();
+        let tokens = this.borrow().tokens.get();
         debug_assert_ne!(tokens, 0);
 
         if tokens == 1 {
@@ -163,9 +163,9 @@ impl<D> StreamValue<D> {
     /// consumer can retrieve the value using `Self::take`.
     fn consume_token(this: &RefCell<Self>) {
         let this_ref = this.borrow();
-        debug_assert_ne!(*this_ref.tokens.borrow(), 0);
-        *this_ref.tokens.borrow_mut() -= 1;
-        if *this_ref.tokens.borrow() == 0 {
+        debug_assert_ne!(this_ref.tokens.get(), 0);
+        this_ref.tokens.update(|tokens| tokens - 1);
+        if this_ref.tokens.get() == 0 {
             // We're the last consumer. It's now safe to take a mutable reference to `this`.
             drop(this_ref);
             this.borrow_mut().val.take();

@@ -9,7 +9,7 @@ use crate::{
         schedule::{Error as SchedulerError, Scheduler},
     },
 };
-use std::{cell::RefCell, marker::PhantomData, rc::Rc};
+use std::{cell::Cell, marker::PhantomData, rc::Rc};
 
 impl<C, D> Stream<C, D>
 where
@@ -27,9 +27,9 @@ where
     where
         F: 'static + Fn(&D) -> bool,
     {
-        let cond = Rc::new(RefCell::new(false));
+        let cond = Rc::new(Cell::new(false));
         let cond_clone = cond.clone();
-        self.inspect(move |v| *cond_clone.borrow_mut() = condition_func(v));
+        self.inspect(move |v| cond_clone.set(condition_func(v)));
         Condition::new(cond)
     }
 }
@@ -132,12 +132,12 @@ where
 ///
 /// A condition is created by the [`Stream::condition`] method.
 pub struct Condition<C> {
-    cond: Rc<RefCell<bool>>,
+    cond: Rc<Cell<bool>>,
     _phantom: PhantomData<C>,
 }
 
 impl<C> Condition<C> {
-    fn new(cond: Rc<RefCell<bool>>) -> Self {
+    fn new(cond: Rc<Cell<bool>>) -> Self {
         Self {
             cond,
             _phantom: PhantomData,
@@ -145,7 +145,7 @@ impl<C> Condition<C> {
     }
 
     fn check(&self) -> bool {
-        *self.cond.borrow()
+        self.cond.get()
     }
 }
 
