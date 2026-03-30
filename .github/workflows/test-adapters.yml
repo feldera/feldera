@@ -126,7 +126,7 @@ jobs:
     runs-on: ubuntu-latest-amd64
     services:
       pubsub:
-        image: thekevjames/gcloud-pubsub-emulator:e852273e07
+        image: ghcr.io/feldera/gcloud-pubsub-emulator:e852273e07
         ports:
           - 8681:8681
         options: >-
