@@ -35,6 +35,15 @@ models:
               config:
                 update_format: raw
                 array: false
+    intermediate:
+      +materialized: view
+      int_kafka_sales:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/int_kafka_sales"
+                mode: append
     marts:
       +materialized: view
       dim_address:
