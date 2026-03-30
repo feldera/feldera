@@ -20,8 +20,6 @@ felderize = "spark"
 
 [tool.setuptools.package-data]
 felderize = [
-    "data/skills/*.md",
-    "data/skills/**/*.md",
     "data/samples/*.md",
     "data/demo/*.sql",
 ]
