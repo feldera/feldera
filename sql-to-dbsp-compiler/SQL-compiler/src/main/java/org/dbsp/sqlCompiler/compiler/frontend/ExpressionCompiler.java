@@ -241,6 +241,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         DBSPTypeTuple type = this.inputRow.getType().deref().to(DBSPTypeTuple.class);
         if (index < type.size()) {
             DBSPExpression field = this.inputRow.deref().field(index);
+            if (field.getType().is(DBSPTypeNull.class)) {
+                // Optimize away field accesses in ROW members which have null types.
+                return field.getType().none();
+            }
             return field.applyCloneIfNeeded();
         }
         if (index - type.size() < this.constants.size())
@@ -926,13 +930,61 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         return false;
     }
 
+    void checkFormatArg(List<DBSPExpression> args, int formatPosition) {
+        if (formatPosition >= args.size())
+            return;
+        DBSPExpression formatArg = args.get(formatPosition);
+        DBSPType formatArgType = formatArg.getType();
+        if (!formatArgType.is(DBSPTypeString.class)) {
+            this.compiler.reportWarning(formatArg.getSourcePosition(),
+                    "Suspicious argument",
+                    "Format argument is expected to be a string, but the type is " + formatArgType.asSqlString());
+            return;
+        }
+        if (formatArg.is(DBSPStringLiteral.class)) {
+            String str = formatArg.to(DBSPStringLiteral.class).value;
+            if (str == null) {
+                this.compiler.reportWarning(formatArg.getSourcePosition(),
+                        "Suspicious argument",
+                        "Format argument is NULL.");
+                return;
+            }
+            if (!str.contains("%")) {
+                this.compiler.reportWarning(formatArg.getSourcePosition(),
+                        "Suspicious argument",
+                        "Format argument does not look like a format string.");
+                return;
+            }
+        } else if (formatArg.is(DBSPCastExpression.class)) {
+            // This may be a sign that the format string is
+            DBSPCastExpression cast = formatArg.to(DBSPCastExpression.class);
+            if (!cast.source.getType().is(DBSPTypeString.class)) {
+                this.compiler.reportWarning(formatArg.getSourcePosition(),
+                        "Suspicious argument",
+                        "Format argument does not look like a format string.");
+                return;
+            }
+        }
+        if (args.size() == 2) {
+            DBSPExpression otherArg = args.get(1 - formatPosition);
+            if (otherArg.is(DBSPStringLiteral.class)) {
+                String strData = otherArg.to(DBSPStringLiteral.class).value;
+                if (strData != null && strData.contains("%")) {
+                    this.compiler.reportWarning(otherArg.getSourcePosition(),
+                            "Suspicious argument",
+                            "Are the two arguments swapped?");
+                }
+            }
+        }
+    }
+
     @Override
     public DBSPExpression visitCall(RexCall call) {
         CalciteObject node = CalciteObject.create(this.context, call);
         DBSPType type = this.typeCompiler.convertType(node.getPositionRange(), call.getType(), false);
         // If type is NULL we can skip the call altogether...
         if (type.is(DBSPTypeNull.class))
-            return DBSPNullLiteral.INSTANCE;
+            return new DBSPNullLiteral();
         Utilities.enforce(!type.is(DBSPTypeStruct.class));
 
         final RexCall finalCall = call;
@@ -1008,9 +1060,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return makeBinaryExpressions(node, type, DBSPOpcode.BW_OR, ops);
             case BIT_XOR:
                 return makeBinaryExpressions(node, type, DBSPOpcode.XOR, ops);
+            case REINTERPRET:
+                // Calcite only seems to generate this for converting intervals to integers
+                if ((!type.is(DBSPTypeInteger.class) || type.to(DBSPTypeInteger.class).getWidth() != 64)
+                        && !ops.get(0).getType().is(IsIntervalType.class)) {
+                    throw new InternalCompilerError("Unexpected cast ", node);
+                }
+                return new DBSPUnaryExpression(node, type, DBSPOpcode.REINTERPRET, ops.get(0));
             case CAST:
             case SAFE_CAST:
-            case REINTERPRET:
                 if (!validateCast(ops.get(0).getType(), type, call.op.kind == SqlKind.SAFE_CAST)) {
                     throw new CompilationError(call.op.kind + " cannot be used to convert " +
                             ops.get(0).getType().asSqlString() +
@@ -1373,6 +1431,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return compilePolymorphicFunction(false, call, node, type, ops, 2);
                     }
                     case "format_date":
+                    case "format_timestamp":
+                    case "format_time":
+                        this.checkFormatArg(ops, 0);
                         return compileFunction(call, node, type, ops, 2);
                     case "bround": {
                         validateArgCount(node, opName, ops.size(), 2);
@@ -1482,6 +1543,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "parse_time":
                     case "parse_timestamp": {
                         validateArgCount(node, operationName, ops.size(), 2);
+                        this.checkFormatArg(ops, 0);
                         ensureString(ops, 0);
                         ensureString(ops, 1);
                         return compileStrictFunction(call, node, type, ops, 2);

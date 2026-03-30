@@ -5,8 +5,22 @@ on:
   workflow_dispatch:
 
 jobs:
-  # NOTE: For every job added here, add a matching cancel-if-<name>-failed
-  # sentinel job in the cancel-if-* section below.
+  # HOW JOBS ARE STRUCTURED IN THIS FILE
+  #
+  # Each substantive job (build, test, etc.) must have a matching
+  # cancel-if-<name>-failed sentinel job in the cancel-if-* section below.
+  # GitHub Actions does not cancel sibling jobs when one job fails — they keep
+  # running and waste runner time. The sentinels work around this: each one
+  # watches a single upstream job and immediately cancels the entire run on
+  # failure.
+  #
+  # IMPORTANT: The sentinel cancel is asynchronous. Any job that must not run
+  # when a prior job fails MUST also list that job in its `needs:` field and
+  # check its result in its `if:` condition — do not rely on the cancel alone.
+  # Example: invoke-tests-web-console-unit runs in parallel with the build
+  # jobs, so invoke-build-docker lists it in `needs:` and checks its result in
+  # `if:`. Without that explicit gate, the Docker build can start before the
+  # cancel propagates and waste expensive runner time.
 
   # Checks whether all build artifacts already exist in a prior run for this
   # commit. If so, downstream build jobs are skipped and tests download
@@ -26,7 +40,7 @@ jobs:
       artifacts_run_id: ${{ steps.result.outputs.artifacts_run_id }}
       skip_docker: ${{ steps.result.outputs.skip_docker }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Finds the first prior run for this commit that has all Rust/Java build
       # artifacts. If found, its run ID is used by downstream jobs to download
@@ -39,6 +53,7 @@ jobs:
           required-artifacts: |
             fda-x86_64-unknown-linux-gnu
             fda-aarch64-unknown-linux-gnu
+            fda-x86_64-pc-windows-msvc
             pipeline-manager-x86_64-unknown-linux-gnu
             pipeline-manager-aarch64-unknown-linux-gnu
             feldera-test-binaries-x86_64-unknown-linux-gnu
@@ -87,6 +102,11 @@ jobs:
     uses: ./.github/workflows/build-docs.yml
     secrets: inherit
 
+  invoke-tests-web-console-unit:
+    name: Web Console Unit Tests
+    uses: ./.github/workflows/test-web-console-unit.yml
+    secrets: inherit
+
   invoke-tests-unit:
     name: Unit Tests
     needs: [check-prior-build, invoke-build-rust, invoke-build-java]
@@ -112,12 +132,13 @@ jobs:
 
   invoke-build-docker:
     name: Build Docker
-    needs: [check-prior-build, invoke-build-rust, invoke-build-java]
+    needs: [check-prior-build, invoke-build-rust, invoke-build-java, invoke-tests-web-console-unit]
     if: |
       always() &&
       needs.check-prior-build.outputs.skip_docker != 'true' &&
       (needs.invoke-build-rust.result == 'success' || needs.invoke-build-rust.result == 'skipped') &&
-      (needs.invoke-build-java.result == 'success' || needs.invoke-build-java.result == 'skipped')
+      (needs.invoke-build-java.result == 'success' || needs.invoke-build-java.result == 'skipped') &&
+      (needs.invoke-tests-web-console-unit.result == 'success' || needs.invoke-tests-web-console-unit.result == 'skipped')
     uses: ./.github/workflows/build-docker.yml
     with:
       artifacts_run_id: ${{ needs.check-prior-build.outputs.artifacts_run_id }}
@@ -130,6 +151,15 @@ jobs:
       always() &&
       (needs.invoke-build-docker.result == 'success' || needs.invoke-build-docker.result == 'skipped')
     uses: ./.github/workflows/generate-sbom.yml
+    secrets: inherit
+
+  invoke-tests-web-console-e2e:
+    name: Web Console End-to-End Tests
+    needs: [check-prior-build, invoke-build-docker]
+    if: |
+      always() &&
+      (needs.invoke-build-docker.result == 'success' || needs.invoke-build-docker.result == 'skipped')
+    uses: ./.github/workflows/test-web-console-e2e.yml
     secrets: inherit
 
   invoke-tests-integration-platform:
@@ -172,10 +202,20 @@ jobs:
       environment: ci
     secrets: inherit
 
-  # GitHub doesn't cancel in-progress sibling jobs when one job fails — they keep running
-  # until they finish, which wastes runner time when a build or test fails early.
-  # The jobs below work around this: each one watches a single upstream job and, if that
-  # job fails, immediately cancels the entire workflow run so everything else stops too.
+  cancel-if-tests-web-console-unit-failed:
+    name: Cancel if Web Console Unit Tests Failed
+    needs: [invoke-tests-web-console-unit]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
 
   cancel-if-build-rust-failed:
     name: Cancel if Rust Build Failed
@@ -267,6 +307,21 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
 
+  cancel-if-tests-web-console-integration-failed:
+    name: Cancel if Web Console Integration Tests Failed
+    needs: [invoke-tests-web-console-e2e]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
   cancel-if-tests-integration-platform-failed:
     name: Cancel if Platform Integration Tests Failed
     needs: [invoke-tests-integration-platform]
@@ -338,6 +393,8 @@ jobs:
       - invoke-build-rust
       - invoke-build-java
       - invoke-build-docs
+      - invoke-tests-web-console-unit
+      - invoke-tests-web-console-e2e
       - invoke-tests-unit
       - invoke-tests-adapter
       - invoke-build-docker

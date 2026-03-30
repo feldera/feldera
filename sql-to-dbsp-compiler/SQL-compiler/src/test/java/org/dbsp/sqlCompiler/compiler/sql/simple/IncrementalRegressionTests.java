@@ -41,7 +41,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-/** Regression tests that failed in incremental mode using the Catalog API */
+/** Regression tests that executed in incremental mode */
 public class IncrementalRegressionTests extends SqlIoTest {
     @Override
     public CompilerOptions testOptions() {
@@ -949,7 +949,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
 
     @Test
     public void testHashes2() {
-        String common = """
+        final String tables = """
                 CREATE TABLE LINEITEM (
                         L_ORDERKEY    INTEGER NOT NULL,
                         L_PARTKEY     INTEGER NOT NULL,
@@ -1040,8 +1040,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         R_REGIONKEY  INTEGER NOT NULL,
                         R_NAME       CHAR(25) NOT NULL,
                         R_COMMENT    VARCHAR(152)
-                );
-                
+                );""";
+        final String q1 = """                
                 -- Pricing Summary Report
                 create materialized view q1
                 as select
@@ -1064,8 +1064,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         l_linestatus
                 order by
                         l_returnflag,
-                        l_linestatus;
-                
+                        l_linestatus;""";
+        final String q2 = """
                 -- Minimum Cost Supplier
                 create materialized view q2
                 as select
@@ -1111,8 +1111,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         n_name,
                         s_name,
                         p_partkey
-                limit 100;
-                
+                limit 100;""";
+        final String q3 = """
                 -- Shipping Priority
                 create materialized view q3
                 as select
@@ -1137,8 +1137,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 order by
                         revenue desc,
                         o_orderdate
-                limit 10;
-                
+                limit 10;""";
+        final String q4 = """
                 -- Order Priority Checking
                 create materialized view q4
                 as select
@@ -1161,8 +1161,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 group by
                         o_orderpriority
                 order by
-                        o_orderpriority;
-                
+                        o_orderpriority;""";
+        final String q5 = """
                 create materialized view q5
                 as select
                         n_name,
@@ -1187,8 +1187,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 group by
                         n_name
                 order by
-                        revenue desc;
-                
+                        revenue desc;""";
+        final String q6 = """
                 -- Forecasting Revenue Change
                 create materialized view q6
                 as select
@@ -1199,8 +1199,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         l_shipdate >= date '1994-01-01'
                         and l_shipdate < date '1994-01-01' + interval '1' year
                         and l_discount between .06 - 0.01 and .06 + 0.01
-                        and l_quantity < 24;
-                
+                        and l_quantity < 24;""";
+        final String q7 = """
                 -- Volume Shipping
                 create materialized view q7
                 as select
@@ -1241,52 +1241,49 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 order by
                         supp_nation,
                         cust_nation,
-                        l_year;
-                
-                -- Unfortunately this does not work for q8: there is a
-                -- shared join (followed by 2 projections) between q8 and q10 which causes
-                -- the plans for q8 to differ when compiled with and without q10
-                --
-                ---- National Market Share
-                --create materialized view q8
-                --as select
-                --        o_year,
-                --        sum(case
-                --                when nation = 'BRAZIL' then volume
-                --                else 0
-                --        end) / sum(volume) as mkt_share
-                --from
-                --        (
-                --                select
-                --                        year(o_orderdate) as o_year,
-                --                        l_extendedprice * (1 - l_discount) as volume,
-                --                        n2.n_name as nation
-                --                from
-                --                        part,
-                --                        supplier,
-                --                        lineitem,
-                --                        orders,
-                --                        customer,
-                --                        nation n1,
-                --                        nation n2,
-                --                        region
-                --                where
-                --                        p_partkey = l_partkey
-                --                        and s_suppkey = l_suppkey
-                --                        and l_orderkey = o_orderkey
-                --                        and o_custkey = c_custkey
-                --                        and c_nationkey = n1.n_nationkey
-                --                        and n1.n_regionkey = r_regionkey
-                --                        and r_name = 'AMERICA'
-                --                        and s_nationkey = n2.n_nationkey
-                --                        and o_orderdate between date '1995-01-01' and date '1996-12-31'
-                --                        and p_type = 'ECONOMY ANODIZED STEEL'
-                --        ) as all_nations
-                --group by
-                --        o_year
-                --order by
-                --        o_year;
-                
+                        l_year;""";
+        final String q8 = """                
+                -- National Market Share
+                create materialized view q8
+                as select
+                        o_year,
+                        sum(case
+                                when nation = 'BRAZIL' then volume
+                                else 0
+                        end) / sum(volume) as mkt_share
+                from
+                        (
+                                select
+                                        year(o_orderdate) as o_year,
+                                        l_extendedprice * (1 - l_discount) as volume,
+                                        n2.n_name as nation
+                                from
+                                        part,
+                                        supplier,
+                                        lineitem,
+                                        orders,
+                                        customer,
+                                        nation n1,
+                                        nation n2,
+                                        region
+                                where
+                                        p_partkey = l_partkey
+                                        and s_suppkey = l_suppkey
+                                        and l_orderkey = o_orderkey
+                                        and o_custkey = c_custkey
+                                        and c_nationkey = n1.n_nationkey
+                                        and n1.n_regionkey = r_regionkey
+                                        and r_name = 'AMERICA'
+                                        and s_nationkey = n2.n_nationkey
+                                        and o_orderdate between date '1995-01-01' and date '1996-12-31'
+                                        and p_type = 'ECONOMY ANODIZED STEEL'
+                        ) as all_nations
+                group by
+                        o_year
+                order by
+                        o_year;""";
+
+        final String q9 = """
                 -- Product Type Profit Measure
                 create materialized view q9
                 as select
@@ -1320,9 +1317,9 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         o_year
                 order by
                         nation,
-                        o_year desc;
-                """;
-        String extra = """
+                        o_year desc;""";
+
+        final String q10 = """
                 create materialized view q10
                 as select
                       c_custkey,
@@ -1355,14 +1352,14 @@ public class IncrementalRegressionTests extends SqlIoTest {
                       c_comment
                 order by
                       revenue desc
-                limit 20;
-                """;
+                limit 20;""";
 
+        String common = tables + q1 + q2 + q3 + q4 + q5 + q7 + q8 + q9 + q10;
         var cc0 = this.getCCS(common);
+        System.out.println(cc0.compiler.messages);
         Map<String, String> hash0 = this.collectHashes(cc0);
         Set<String> hash0keys = new HashSet<>(hash0.keySet());
-
-        var cc1 = this.getCCS(common + extra);
+        var cc1 = this.getCCS(common + q6);
         Map<String, String> hash1 = this.collectHashes(cc1);
 
         hash0keys.removeAll(hash1.keySet());

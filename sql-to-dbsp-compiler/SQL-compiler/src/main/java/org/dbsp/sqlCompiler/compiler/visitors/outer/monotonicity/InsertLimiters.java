@@ -23,7 +23,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.ScalarMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.IndexedInputs;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.ExpandIndexedInputs;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.AggregateDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.CommonJoinDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DistinctDeltaExpansion;
@@ -1591,7 +1591,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
         DBSPSourceMultisetOperator multisetInput = operator.as(DBSPSourceMultisetOperator.class);
         final DBSPTypeIndexedZSet indexedOutputType = (multisetInput != null) ?
-                IndexedInputs.getIndexedType(multisetInput) : null;
+                ExpandIndexedInputs.getIndexedType(multisetInput) : null;
 
         List<DBSPExpression> timestamps = new ArrayList<>();
         int index = 0;
@@ -1649,7 +1649,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPInputMapWithWaterlineOperator newSource = null;
 
         if (replaceIndexedInput) {
-            List<Integer> keyFields = IndexedInputs.getKeyFields(multisetInput);
+            List<Integer> keyFields = ExpandIndexedInputs.getKeyFields(multisetInput);
             // Many of these functions take the key as a parameter, although
             // it is a subset of the value fields...
             DBSPVariablePath k = indexedOutputType.keyType.ref().var();

@@ -203,18 +203,36 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.RESPECT_NULLS, "RESPECT NULLS", SqlLibrary.STANDARD, "grammar#window-aggregates", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.MINUS_DATE, "-", SqlLibrary.STANDARD, "datetime", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.UNNEST, "UNNEST", SqlLibrary.STANDARD, "array#the-unnest-sql-operator,map#the-unnest-operator", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.UNNEST_WITH_ORDINALITY, "UNNEST WITH ORDINALITY", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.UNNEST_WITH_ORDINALITY, "UNNEST WITH ORDINALITY", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE,
+//                 """
+//                 runtime_aggtest/complex_type_tests/test_{arr,arr_unnest,arr_arr_unnest,arr_row_unnest,row_arr_unnest,arr_map_unnest,arr_udt_unnest,arr_of_arr,arr_of_row,arr_of_map,arr_of_udt,row_of_arr,udt_of_arr,map_var_cmpx}.py|
+//                 runtime_aggtest/variant_tests/{row_of_cmpx_type,cpmx_variant,arr_cmpx_varnt_unnest,arr_of_cmpx_type,udt_of_cmpx_type,arr_unnest_varnt}.py
+//                 """,
+            false),
             new Func(SqlStdOperatorTable.LATERAL, "LATERAL", SqlLibrary.STANDARD, "grammar#lateral", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.COLLECTION_TABLE, "TABLE", SqlLibrary.STANDARD, "grammar", FunctionDocumentation.NO_FILE, false),
 
-            new Func(SqlStdOperatorTable.OVERLAPS, "OVERLAPS", SqlLibrary.STANDARD, "operators#between", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.OVERLAPS, "OVERLAPS", SqlLibrary.STANDARD, "datetime#overlaps",
+                "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
+            new Func(SqlStdOperatorTable.PRECEDES, "PRECEDES", SqlLibrary.STANDARD, "datetime#precedes",
+                "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
+            new Func(SqlStdOperatorTable.SUCCEEDS, "SUCCEEDS", SqlLibrary.STANDARD, "datetime#succeeds",
+                "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
+            new Func(SqlStdOperatorTable.CONTAINS, "CONTAINS", SqlLibrary.STANDARD, "datetime#contains",
+                "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
+            new Func(SqlStdOperatorTable.PERIOD_EQUALS, "EQUALS", SqlLibrary.STANDARD, "datetime#equals",
+                "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
+            new Func(SqlStdOperatorTable.IMMEDIATELY_PRECEDES, "IMMEDIATELY PRECEDES", SqlLibrary.STANDARD, "datetime#immediately-precedes",
+                "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
+            new Func(SqlStdOperatorTable.IMMEDIATELY_SUCCEEDS, "IMMEDIATELY SUCCEEDS", SqlLibrary.STANDARD, "datetime#immediately-succeeds",
+                "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
             new Func(SqlStdOperatorTable.BETWEEN, "BETWEEN", SqlLibrary.STANDARD, "comparisons#between,operators#between",
                     "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
             new Func(SqlStdOperatorTable.NOT_BETWEEN, "NOT BETWEEN", SqlLibrary.STANDARD, "comparisons#notbetween",
                      "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
-            new Func(SqlStdOperatorTable.SYMMETRIC_BETWEEN, "BETWEEN", SqlLibrary.STANDARD, "operators#between",
+            new Func(SqlStdOperatorTable.SYMMETRIC_BETWEEN, "BETWEEN SYMMETRIC", SqlLibrary.STANDARD, "comparisons#symmetric-between",
                      "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
-            new Func(SqlStdOperatorTable.SYMMETRIC_NOT_BETWEEN, "NOT BETWEEN", SqlLibrary.STANDARD, "operators#between",
+            new Func(SqlStdOperatorTable.SYMMETRIC_NOT_BETWEEN, "NOT BETWEEN SYMMETRIC", SqlLibrary.STANDARD, "comparisons#symmetric-notbetween",
                      "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
             new Func(SqlStdOperatorTable.VALUES, "VALUES", SqlLibrary.STANDARD, "grammar#values", FunctionDocumentation.NO_FILE, false),
 
@@ -243,18 +261,41 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
             new Func(SqlStdOperatorTable.OCTET_LENGTH, "OCTET_LENGTH", SqlLibrary.STANDARD, "binary#octet_length",
                     "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
-            new Func(SqlStdOperatorTable.UPPER, "UPPER", SqlLibrary.STANDARD, "string#upper", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.LOWER, "LOWER", SqlLibrary.STANDARD, "string#lower", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.INITCAP, "INITCAP", SqlLibrary.STANDARD, "string#initcap", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.ASCII, "ASCII", SqlLibrary.STANDARD, "string#ascii", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.POWER, "POWER", SqlLibrary.STANDARD, "float#power", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.SQRT, "SQRT", SqlLibrary.STANDARD, "float#sqrt", FunctionDocumentation.NO_FILE, false),
-
-            new Func(SqlStdOperatorTable.MOD, "MOD", SqlLibrary.STANDARD, "integer#mod", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.LN, "LN", SqlLibrary.STANDARD, "float#ln", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.LOG10, "LOG10", SqlLibrary.STANDARD, "float#log10", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.ABS, "ABS", SqlLibrary.STANDARD, "decimal#abs,float#abs,integer#abs,datetime#abs", FunctionDocumentation.NO_FILE, false),
-
+            new Func(SqlStdOperatorTable.UPPER, "UPPER", SqlLibrary.STANDARD, "string#upper",
+                    "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn,arr_map_type_fn}.py", false),
+            new Func(SqlStdOperatorTable.LOWER, "LOWER", SqlLibrary.STANDARD, "string#lower",
+                    "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
+            new Func(SqlStdOperatorTable.INITCAP, "INITCAP", SqlLibrary.STANDARD, "string#initcap",
+                    "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
+            new Func(SqlStdOperatorTable.ASCII, "ASCII", SqlLibrary.STANDARD, "string#ascii",
+                    """
+                    runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py""", false),
+            new Func(SqlStdOperatorTable.POWER, "POWER", SqlLibrary.STANDARD, "float#power",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.SQRT, "SQRT", SqlLibrary.STANDARD, "float#sqrt",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.MOD, "MOD", SqlLibrary.STANDARD, "integer#mod",
+                    """
+                    runtime_aggtest/negative_tests/test_neg_arithmetic.py|
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.LN, "LN", SqlLibrary.STANDARD, "float#ln",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.LOG10, "LOG10", SqlLibrary.STANDARD, "float#log10",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.ABS, "ABS", SqlLibrary.STANDARD, "decimal#abs,float#abs,integer#abs,datetime#abs",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
             new Func(SqlStdOperatorTable.ACOS, "ACOS", SqlLibrary.STANDARD, "float#acos", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.ASIN, "ASIN", SqlLibrary.STANDARD, "float#asin", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.ATAN, "ATAN", SqlLibrary.STANDARD, "float#atan", FunctionDocumentation.NO_FILE, false),
@@ -311,6 +352,8 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.SCALAR_QUERY, "$SCALAR_QUERY", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.STRUCT_ACCESS, "$STRUCT_ACCESS", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.CARDINALITY, "CARDINALITY", SqlLibrary.STANDARD, "array#cardinality,map#cardinality", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.TUMBLE, "TUMBLE", SqlLibrary.STANDARD, "table#tumble", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.HOP, "HOP", SqlLibrary.STANDARD, "table#hop", FunctionDocumentation.NO_FILE, false),
 
             // SqlLibraryOperators operators
             // DATEADD is not implemented, but give a better error message

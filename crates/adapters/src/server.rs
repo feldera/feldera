@@ -90,7 +90,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
 use std::ffi::OsStr;
-use std::hash::{BuildHasherDefault, DefaultHasher};
+use std::hash::{BuildHasherDefault, DefaultHasher, Hash, Hasher};
 use std::io::ErrorKind;
 use std::mem::take;
 use std::ops::{Deref, DerefMut};
@@ -1054,9 +1054,8 @@ fn get_env_filter(config: &PipelineConfig) -> EnvFilter {
         }
     }
 
-    // Otherwise, fall back to `INFO`, except for `tarpc`, which is too verbose
-    // at that level.
-    EnvFilter::try_new("tarpc=warn,object_store=warn,info").unwrap()
+    // Otherwise, fall back to `INFO`
+    EnvFilter::try_new("object_store=warn,info").unwrap()
 }
 
 fn do_bootstrap(
@@ -1764,8 +1763,14 @@ async fn samply_profile(
         .unwrap()
         .start_profiling(expected_after);
 
+    let layout = controller.layout();
+    let os_cpu = layout
+        .is_multihost()
+        .then(|| format!("host {} of {}", layout.local_host_idx(), layout.n_hosts()));
     spawn(async move {
-        let result = controller.async_samply_profile(duration).await;
+        let result = controller
+            .async_samply_profile(duration, os_cpu.as_deref())
+            .await;
         state_samply_state
             .lock()
             .unwrap()
@@ -2000,13 +2005,22 @@ struct IngressArgs {
     force: bool,
 }
 
-/// Create a new HTTP input endpoint.
-async fn create_http_input_endpoint(
+/// Lookup or create an HTTP input endpoint.
+async fn get_or_create_http_input_endpoint(
     state: &WebData<ServerState>,
     format: FormatConfig,
     table_name: String,
     endpoint_name: String,
 ) -> Result<HttpInputEndpoint, PipelineError> {
+    let controller = state.controller()?;
+
+    // We rely on the name to uniquely encode connector configuration.
+    if let Some(reader) = controller.get_input_endpoint(&endpoint_name)
+        && let Ok(endpoint) = reader.as_any().downcast::<HttpInputEndpoint>()
+    {
+        return Ok(endpoint.as_ref().clone());
+    }
+
     let config = HttpInputConfig {
         name: endpoint_name.clone(),
     };
@@ -2030,8 +2044,6 @@ async fn create_http_input_endpoint(
         },
     };
 
-    // Connect endpoint.
-    let controller = state.controller()?;
     if controller.register_api_connection().is_err() {
         return Err(PipelineError::ApiConnectionLimit);
     }
@@ -2059,8 +2071,11 @@ async fn input_endpoint(
     args: Query<IngressArgs>,
     payload: Payload,
 ) -> Result<HttpResponse, PipelineError> {
+    // A local cache of HTTP input endpoints. We create one endpoint per (table_name, format) pair
+    // in the controller. Caching them in a thread-local variable avoids acquiring the global controller
+    // lock on every HTTP request.
     thread_local! {
-        static TABLE_ENDPOINTS: RefCell<HashMap<(String, FormatConfig), HttpInputEndpoint, BuildHasherDefault<DefaultHasher>>> = const {
+        static TABLE_ENDPOINTS: RefCell<HashMap<String, HttpInputEndpoint, BuildHasherDefault<DefaultHasher>>> = const {
             RefCell::new(HashMap::with_hasher(BuildHasherDefault::new()))
         };
     }
@@ -2068,29 +2083,31 @@ async fn input_endpoint(
 
     let table_name = path.into_inner();
 
-    // Generate endpoint name.
-    let endpoint_name = format!("api-ingress-{table_name}-{}", Uuid::new_v4());
-    let format = parser_config_from_http_request(&endpoint_name, &args.format, &req)?;
+    // Generate deterministic endpoint name per (table_name, FormatConfig).
+    let parser_endpoint_name = format!("{table_name}.api-ingress-{}", args.format);
+    let format = parser_config_from_http_request(&parser_endpoint_name, &args.format, &req)?;
 
-    let cached_endpoint = TABLE_ENDPOINTS.with(|endpoints| {
-        endpoints
-            .borrow()
-            .get(&(table_name.clone(), format.clone()))
-            .cloned()
-    });
+    let mut endpoint_hasher = DefaultHasher::new();
+    table_name.hash(&mut endpoint_hasher);
+    format.hash(&mut endpoint_hasher);
+    let endpoint_hash = endpoint_hasher.finish();
+
+    let endpoint_name = format!("{table_name}.api-ingress-{endpoint_hash:016x}");
+
+    let cached_endpoint =
+        TABLE_ENDPOINTS.with(|endpoints| endpoints.borrow().get(&endpoint_name).cloned());
     let endpoint = match cached_endpoint {
         Some(endpoint) => endpoint,
         None => {
-            let endpoint = create_http_input_endpoint(
+            let endpoint = get_or_create_http_input_endpoint(
                 &state,
                 format.clone(),
                 table_name.clone(),
                 endpoint_name.clone(),
             )
             .await?;
-            TABLE_ENDPOINTS.with_borrow_mut(|endpoints| {
-                endpoints.insert((table_name, format), endpoint.clone())
-            });
+            TABLE_ENDPOINTS
+                .with_borrow_mut(|endpoints| endpoints.insert(endpoint_name, endpoint.clone()));
             endpoint
         }
     };
@@ -2183,7 +2200,7 @@ async fn output_endpoint(
     let table_name = path.into_inner();
 
     // Generate endpoint name depending on the query and output mode.
-    let endpoint_name = format!("api-{}-{table_name}", Uuid::new_v4());
+    let endpoint_name = format!("{table_name}.api-{}", Uuid::new_v4());
 
     // debug!("Endpoint name: '{endpoint_name}'");
 
@@ -2564,7 +2581,7 @@ async fn coordination_adhoc_scan(
         .scan(&session_state, scan.projection.as_ref(), &[], None)
         .await?;
     let mut stream = execution.execute(
-        scan.worker - controller.workers().start,
+        scan.worker - controller.layout().local_workers().start,
         session_state.task_ctx(),
     )?;
 
@@ -2574,20 +2591,21 @@ async fn coordination_adhoc_scan(
     // likely.
     let first_batch = match stream.next().await {
         Some(Err(error)) => return Err(error.into()),
-        other => other,
-    }
-    .into_iter();
+        other => other.into_iter(),
+    };
 
     let schema = stream.schema();
-    Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(
-        futures_util::stream::iter(first_batch).chain(stream).map(
-            move |batch| -> Result<Bytes, PipelineError> {
-                let mut writer = StreamWriter::try_new(Vec::new(), &schema)?;
-                writer.write(&batch?)?;
-                Ok(writer.into_inner()?.into())
-            },
-        ),
-    ))
+    let response_stream = async_stream::try_stream! {
+        let mut writer = StreamWriter::try_new(Vec::new(), &schema)?;
+        let mut stream = futures_util::stream::iter(first_batch).chain(stream);
+        while let Some(batch) = stream.next().await {
+            writer.write(&batch?)?;
+            yield Bytes::copy_from_slice(writer.get_ref().as_slice());
+            writer.get_mut().clear();
+        }
+        yield writer.into_inner()?.into();
+    };
+    Ok(HttpResponseBuilder::new(StatusCode::OK).streaming::<_, PipelineError>(response_stream))
 }
 
 /// Stream the set of incomplete labels.

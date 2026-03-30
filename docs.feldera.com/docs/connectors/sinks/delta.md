@@ -30,7 +30,42 @@ Delta table:
 
 Effectively, we treat the table as a change log, where every record corresponds to
 either an insert or delete operation. The user can run a periodic Spark job to
-incorporate these change log into another Delta table, using the SQL `MERGE INTO` operation.
+incorporate this change log into another Delta table, using the SQL `MERGE INTO` operation. An example of the code is below:
+
+```sql
+MERGE INTO {target_table} AS target
+        USING (
+          SELECT *
+          FROM (
+            SELECT *,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY {merge_key}
+                     ORDER BY __feldera_ts DESC
+                   ) as rn
+            FROM {source_table}
+            -- Only consider new updates since the last merge.
+            WHERE __feldera_ts >= (
+              SELECT COALESCE(MAX(__feldera_ts), 0)
+              FROM {target_table}
+            )
+          )
+          -- Only apply the last update for each key.
+          WHERE rn = 1
+        ) AS source
+        ON target.{merge_key} = source.{merge_key}
+
+        WHEN MATCHED AND source.__feldera_op = 'd' THEN
+          DELETE
+
+        WHEN MATCHED AND source.__feldera_op = 'u' THEN
+          UPDATE SET *
+
+        WHEN NOT MATCHED AND source.__feldera_op = 'i' THEN
+          INSERT *
+
+        WHEN NOT MATCHED AND source.__feldera_op = 'u' THEN
+          INSERT *
+```
 
 ## Delta Lake output connector configuration
 

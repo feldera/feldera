@@ -21,14 +21,14 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 
-/** Rewrite field accesses according to a {@link ParameterFieldRemap}.
+/** Rewrite field accesses according to a {@link ParameterFieldUse}.
  * Very similar to the {@link CanonicalForm} visitor. */
 public class RewriteFields extends InnerRewriteVisitor {
     final Substitution<DBSPParameter, DBSPParameter> newParam;
     /** Maps original parameters to their remap tables
         param.X is remapped to newParam.Y, where newParam is given
         by the 'newParam' table, and Y is given by fieldRemap[param][X]. */
-    final ParameterFieldRemap fieldRemap;
+    final ParameterFieldUse fieldRemap;
     final ResolveReferences resolver;
     final int depth;
     /** Field use map for the currently evaluated expression */
@@ -37,7 +37,7 @@ public class RewriteFields extends InnerRewriteVisitor {
 
     public RewriteFields(DBSPCompiler compiler,
                          Substitution<DBSPParameter, DBSPParameter> newParam,
-                         ParameterFieldRemap fieldRemap,
+                         ParameterFieldUse fieldRemap,
                          int depth) {
         super(compiler, false);
         this.fieldRemap = fieldRemap;
@@ -50,7 +50,7 @@ public class RewriteFields extends InnerRewriteVisitor {
 
     /** Essentially says that "all fields of this parameter are used" */
     public void parameterFullyUsed(DBSPParameter parameter) {
-        this.fieldRemap.changeMap(parameter, FieldUseMap.identity(parameter.getType()));
+        this.fieldRemap.updateParameterValue(parameter, FieldUseMap.identity(parameter.getType()));
         this.newParam.substitute(parameter, parameter);
     }
 

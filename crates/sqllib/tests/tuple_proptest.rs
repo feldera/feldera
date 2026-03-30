@@ -262,14 +262,14 @@ const MAX_COLLECTION_LEN: usize = 24;
 fn roundtrip_eq<T>(value: &T) -> Result<(), TestCaseError>
 where
     T: rkyv::Archive
-        + rkyv::Serialize<dbsp::storage::file::Serializer>
+        + for<'a> rkyv::Serialize<dbsp::storage::file::DbspSerializer<'a>>
         + PartialEq
         + core::fmt::Debug,
     rkyv::Archived<T>: rkyv::Deserialize<T, dbsp::storage::file::Deserializer>,
 {
     let bytes = dbsp::storage::file::to_bytes(value)
         .map_err(|err| TestCaseError::fail(format!("serialize failed: {err:?}")))?;
-    let restored: T = dbsp::trace::unaligned_deserialize(&bytes[..]);
+    let restored: T = dbsp::trace::aligned_deserialize(&bytes[..]);
     prop_assert_eq!(value, &restored);
     Ok(())
 }
@@ -277,7 +277,7 @@ where
 fn roundtrip_all<T>(values: &[T]) -> Result<(), TestCaseError>
 where
     T: rkyv::Archive
-        + rkyv::Serialize<dbsp::storage::file::Serializer>
+        + for<'a> rkyv::Serialize<dbsp::storage::file::DbspSerializer<'a>>
         + PartialEq
         + core::fmt::Debug,
     rkyv::Archived<T>: rkyv::Deserialize<T, dbsp::storage::file::Deserializer>,

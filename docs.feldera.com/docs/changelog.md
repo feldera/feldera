@@ -54,6 +54,17 @@ import TabItem from '@theme/TabItem';
         operations, validates replay and resume sequence bounds, and
         provides improved error messages during retries and health checks.
 
+        ### NATS input connector timeout and probe updates
+
+        - The default value for `inactivity_timeout_secs` has been increased
+          from `10` to `60` seconds.
+        - Health probes now avoid duplicate JetStream stream-info requests,
+          reducing API pressure during retry and recovery loops.
+
+        NATS retry classification during resume and replay validation has also been refined:
+        transient failures while fetching JetStream stream metadata are now treated as retryable,
+        while logical sequence-range validation failures remain fatal.
+
         ## v0.263.0
 
         Added connector error list to input/output connector stats.
@@ -95,7 +106,7 @@ import TabItem from '@theme/TabItem';
         ## 0.226.0
 
         The Delta Lake connector's `skip_unused_columns` property has been deprecated. Use
-        table-level [`skip_unused_colums`](https://docs.feldera.com/sql/grammar#skip-unused-columns)
+        table-level [`skip_unused_colums`](https://docs.feldera.com/sql/grammar#ignoring-unused-columns)
         instead.
 
         ## 0.201.0

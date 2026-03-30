@@ -1,3 +1,4 @@
+use crate::storage::file::SerializerInner;
 use crate::storage::tracking_bloom_filter::BloomFilterStats;
 use crate::trace::ord::merge_batcher::MergeBatcher;
 use crate::{
@@ -9,8 +10,8 @@ use crate::{
         WeightTraitTyped, WithFactory,
     },
     trace::{
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Filter, GroupFilter, MergeCursor, Serializer, VecValBatch, WeightedItem,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, DbspSerializer,
+        Deserializer, Filter, GroupFilter, MergeCursor, VecValBatch, WeightedItem,
         cursor::Position,
         deserialize_indexed_wset,
         layers::{
@@ -360,7 +361,7 @@ where
         todo!()
     }
 }
-impl<K, V, R, O> Serialize<Serializer> for VecIndexedWSet<K, V, R, O>
+impl<K, V, R, O> Serialize<DbspSerializer<'_>> for VecIndexedWSet<K, V, R, O>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -369,8 +370,8 @@ where
 {
     fn serialize(
         &self,
-        _serializer: &mut Serializer,
-    ) -> Result<Self::Resolver, <Serializer as rkyv::Fallible>::Error> {
+        _serializer: &mut DbspSerializer,
+    ) -> Result<Self::Resolver, <DbspSerializer<'_> as rkyv::Fallible>::Error> {
         todo!()
     }
 }
@@ -975,7 +976,7 @@ where
     R: WeightTrait + ?Sized,
 {
     fn checkpoint(&self) -> Result<Vec<u8>, Error> {
-        Ok(serialize_indexed_wset(self))
+        Ok(serialize_indexed_wset(self, &mut SerializerInner::new()))
     }
 
     fn restore(&mut self, data: &[u8]) -> Result<(), Error> {

@@ -18,7 +18,7 @@ use crate::{
         dynamic::{MonoIndexedZSet, trace::TraceBound},
         require_persistent_id,
     },
-    storage::file::{to_bytes, with_serializer},
+    storage::file::{SerializerInner, to_bytes},
     trace::{
         BatchFactories, BatchReader, BatchReaderFactories, Cursor, Spine, SpineSnapshot,
         spine_async::WithSnapshot,
@@ -88,8 +88,8 @@ impl<B: IndexedZSet, T: WithSnapshot<Batch = B>> From<&Window<B, T>> for Committ
         // Transform the window bounds into a serialized form and store it as a byte vector.
         // This is necessary because the key type is not sized.
         let window = value.window.borrow().as_ref().map(|(a, b)| {
-            let sa = with_serializer(Default::default(), |s| a.serialize(s).unwrap()).0;
-            let sb = with_serializer(Default::default(), |s| b.serialize(s).unwrap()).0;
+            let sa = SerializerInner::to_fbuf_with_thread_local(|s| a.serialize(s));
+            let sb = SerializerInner::to_fbuf_with_thread_local(|s| b.serialize(s));
             (sa.into_vec(), sb.into_vec())
         });
 
@@ -675,8 +675,8 @@ mod test {
             ]
             .into_iter();
 
-        let (circuit, (bounds_handle, index1_handle, output_handle)) =
-            RootCircuit::build(window_test_circuit).unwrap();
+        let (mut circuit, (bounds_handle, index1_handle, output_handle)) =
+            Runtime::init_circuit(1, move |circuit| window_test_circuit(circuit)).unwrap();
 
         for clock in 1000..1006 {
             bounds_handle.set_for_all(((clock - 100), clock));
@@ -743,8 +743,8 @@ mod test {
 
         const WINDOW_SIZE: Time = 5;
 
-        let (circuit, (bounds_handle, index1_handle, output_handle)) =
-            RootCircuit::build(window_test_circuit).unwrap();
+        let (mut circuit, (bounds_handle, index1_handle, output_handle)) =
+            Runtime::init_circuit(1, move |circuit| window_test_circuit(circuit)).unwrap();
 
         for clock in 1000..1011 {
             bounds_handle.set_for_all((
@@ -829,8 +829,8 @@ mod test {
         ]
         .into_iter();
 
-        let (circuit, (bounds_handle, index1_handle, output_handle)) =
-            RootCircuit::build(window_test_circuit).unwrap();
+        let (mut circuit, (bounds_handle, index1_handle, output_handle)) =
+            Runtime::init_circuit(1, move |circuit| window_test_circuit(circuit)).unwrap();
 
         for _ in 1000..1006 {
             bounds_handle.set_for_all(windows.next().unwrap());

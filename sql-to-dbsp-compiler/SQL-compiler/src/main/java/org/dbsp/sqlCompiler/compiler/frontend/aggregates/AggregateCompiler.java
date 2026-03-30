@@ -509,19 +509,20 @@ public class AggregateCompiler implements ICompilerComponent {
                 Linq.list(
                         dataType.getFieldType(1).withMayBeNull(true),
                         this.resultType));
-        DBSPExpression zero = new DBSPRawTupleExpression(
+        final DBSPExpression zero = new DBSPRawTupleExpression(
                 accumulatorType.tupFields[0].none(),
                 accumulatorType.tupFields[1].defaultValue());
-        DBSPExpression aggregatedValue =
+        final DBSPExpression aggregatedValue =
             new DBSPRawTupleExpression(
                     ExpressionCompiler.expandTuple(node, tuple.fields[1]),
                     ExpressionCompiler.expandTuple(node, tuple.fields[0]));
-        DBSPVariablePath accumulator = accumulatorType.var();
-        DBSPExpression increment = this.incrementOperation(
+        final DBSPVariablePath accumulator = accumulatorType.var();
+        final DBSPExpression increment = this.incrementOperation(
                 node, opcode, accumulatorType, accumulator, aggregatedValue, this.filterArgument());
-        DBSPTypeUser semigroup = new DBSPTypeUser(node, SEMIGROUP, semigroupName, false, accumulatorType);
-        DBSPClosureExpression postProcessing = ExpressionCompiler.expandTuple(node, accumulator.field(1))
-                .closure(accumulator);
+        final DBSPTypeUser semigroup = new DBSPTypeUser(node, SEMIGROUP, semigroupName, false, accumulatorType);
+        var acc2 = accumulatorType.var();
+        DBSPClosureExpression postProcessing = ExpressionCompiler.expandTuple(node, acc2.field(1))
+                .closure(acc2);
 
         if (this.filterArgument >= 0) {
             aggregate = new NonLinearAggregate(

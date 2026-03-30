@@ -91,7 +91,7 @@ where
     // This is equivalent to `batch1.byte_size() + batch2.byte_size() >=
     // Runtime::min_storage_bytes()` but it avoids calling `byte_size()` any
     // more than necessary since it can be expensive.
-    match Runtime::min_index_storage_bytes().unwrap_or(usize::MAX) {
+    match Runtime::min_merge_storage_bytes().unwrap_or(usize::MAX) {
         0 => BatchLocation::Storage,
         usize::MAX => BatchLocation::Memory,
         min_storage_bytes => {
@@ -104,6 +104,23 @@ where
             }
 
             BatchLocation::Memory
+        }
+    }
+}
+
+pub fn pick_insert_destination<B>(batch: &B) -> BatchLocation
+where
+    B: BatchReader,
+{
+    match Runtime::min_insert_storage_bytes().unwrap_or(usize::MAX) {
+        0 => BatchLocation::Storage,
+        usize::MAX => BatchLocation::Memory,
+        min_storage_bytes => {
+            if batch.approximate_byte_size() >= min_storage_bytes {
+                BatchLocation::Storage
+            } else {
+                BatchLocation::Memory
+            }
         }
     }
 }

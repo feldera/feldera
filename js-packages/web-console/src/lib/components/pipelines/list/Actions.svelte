@@ -348,7 +348,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     const { waitFor } = await postPipelineAction(pipeline.current.name, action, callbacks)
     waitFor().then(
       (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, action),
-      toastError
+      toastError(`Waiting for pipeline to ${action}`)
     )
   }
 
@@ -422,7 +422,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         const { waitFor } = await postPipelineAction(pipelineName, 'pause')
         waitFor().then(
           (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'pause'),
-          toastError
+          toastError('Waiting for pipeline to pause')
         )
       },
       disabled: () => false,
@@ -436,7 +436,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         const { waitFor } = await postPipelineAction(pipelineName, 'standby')
         waitFor().then(
           (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'standby'),
-          toastError
+          toastError('Waiting for pipeline to standby')
         )
       },
       disabled: () => false,
@@ -450,7 +450,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         const { waitFor } = await postPipelineAction(pipelineName, 'activate')
         waitFor().then(
           (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'activate'),
-          toastError
+          toastError('Waiting for pipeline to activate')
         )
       },
       disabled: () => false,
@@ -468,12 +468,11 @@ groups related actions into multi-action dropdowns when multiple options are ava
         const { waitFor } = await postPipelineAction(pipelineName, 'clear')
         waitFor().then(
           (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'clear'),
-          toastError
+          toastError('Waiting for pipeline to clear state')
         )
       },
       'This will delete all checkpoints.'
     )(pipeline.current.name)}
-    onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
 
@@ -486,7 +485,6 @@ groups related actions into multi-action dropdowns when multiple options are ava
         deletePipeline(name)
       }
     )(pipeline.current.name)}
-    onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
 
@@ -499,12 +497,11 @@ groups related actions into multi-action dropdowns when multiple options are ava
         const { waitFor } = await postPipelineAction(pipelineName, 'kill')
         waitFor().then(
           (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'kill'),
-          toastError
+          toastError('Waiting for pipeline to force stop')
         )
       },
       'The pipeline will stop processing inputs without making a checkpoint, leaving only a previous one, if any.'
     )(pipeline.current.name)}
-    onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
 
@@ -517,12 +514,11 @@ groups related actions into multi-action dropdowns when multiple options are ava
         const { waitFor } = await postPipelineAction(pipelineName, 'stop')
         waitFor().then(
           (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'stop'),
-          toastError
+          toastError('Waiting for pipeline to stop')
         )
       },
       'The pipeline will stop processing inputs and make a checkpoint of its state.'
     )(pipeline.current.name)}
-    onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
 
@@ -653,25 +649,24 @@ groups related actions into multi-action dropdowns when multiple options are ava
 {/snippet}
 {#snippet start({
   text,
-  getAction,
+  action,
   disabled
 }: {
   text: string
-  getAction?: (alt: boolean) => PipelineAction
+  action?: PipelineAction
   disabled?: boolean
 })}
   <div>
     <button
-      aria-label={getAction?.(false)}
+      aria-label={text}
       class:disabled
       class={isMobile.current
         ? `${buttonClass} ${shortClass} ${importantBtnColor} {iconClass}`
         : `${buttonClass} ${longClass} ${importantBtnColor}`}
-      onclick={async (e) => {
-        if (!getAction) {
+      onclick={async () => {
+        if (!action) {
           return
         }
-        const action = getAction(e.ctrlKey || e.shiftKey || e.metaKey)
         const pipelineName = pipeline.current.name
         performStartAction(action, pipelineName)
       }}
@@ -687,7 +682,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
 {#snippet _start()}
   {@render start({
     text: 'Start',
-    getAction: () => 'start',
+    action: 'start',
     disabled: unsavedChanges
   })}
   {#if unsavedChanges}
@@ -697,7 +692,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
 {#snippet _start_paused()}
   {@render start({
     text: 'Start',
-    getAction: (alt) => (alt ? 'start_paused' : 'start'),
+    action: 'start_paused',
     disabled: unsavedChanges
   })}
   {#if unsavedChanges}
@@ -707,7 +702,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
 {#snippet _resume()}
   {@render start({
     text: 'Resume',
-    getAction: () => 'resume',
+    action: 'resume',
     disabled: unsavedChanges
   })}
   {#if unsavedChanges}
@@ -717,7 +712,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
 {#snippet _standby()}
   {@render start({
     text: 'Standby',
-    getAction: () => 'standby',
+    action: 'standby',
     disabled: unsavedChanges
   })}
   <Tooltip placement="top">Put the pipeline in standby mode</Tooltip>
@@ -725,7 +720,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
 {#snippet _activate()}
   {@render start({
     text: 'Activate',
-    getAction: () => 'activate',
+    action: 'activate',
     disabled: unsavedChanges
   })}
   <Tooltip placement="top">Activate the pipeline to start data ingress and processing</Tooltip>
@@ -744,14 +739,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
 {#snippet _pause()}
   <button
     class="hidden sm:flex {buttonClass} {longClass} {basicBtnColor}"
-    onclick={async () => {
-      const pipelineName = pipeline.current.name
-      const { waitFor } = await postPipelineAction(pipelineName, 'pause')
-      waitFor().then(
-        (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'pause'),
-        toastError
-      )
-    }}
+    onclick={buttonConfigs._pause.onclick}
   >
     <span class="fd fd-pause {iconClass}"></span>
     Pause
@@ -759,14 +747,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   </button>
   <button
     class="flex sm:hidden {buttonClass} {shortClass} {basicBtnColor} {iconClass}"
-    onclick={async () => {
-      const pipelineName = pipeline.current.name
-      const { waitFor } = await postPipelineAction(pipelineName, 'pause')
-      waitFor().then(
-        (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'pause'),
-        toastError
-      )
-    }}
+    onclick={buttonConfigs._pause.onclick}
   >
     <span class="fd fd-pause {iconClass}"></span>
   </button>
@@ -866,6 +847,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
 {#snippet pipelineResourcesDialog(dialogTitle: string, field: keyof typeof pipeline.current)}
   <JSONDialog
     disabled={editConfigDisabled}
+    title={dialogTitle}
     value={JSONbig.stringify(pipeline.current[field], undefined, '  ')}
     filePath="file://feldera/pipelines/{pipeline.current.name}/{field}.json"
     onApply={async (json) => {
@@ -873,12 +855,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         [field]: JSONbig.parse(json)
       })
     }}
-    onClose={() => (globalDialog.dialog = null)}
-  >
-    {#snippet title()}
-      {dialogTitle}
-    {/snippet}
-  </JSONDialog>
+  ></JSONDialog>
 {/snippet}
 {#snippet resourcesDialog()}
   {@render pipelineResourcesDialog(

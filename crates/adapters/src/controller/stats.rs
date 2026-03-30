@@ -46,6 +46,7 @@ use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use cpu_time::ProcessTime;
 use crossbeam::sync::Unparker;
+use dbsp::utils::process_rss_bytes;
 use feldera_adapterlib::{
     errors::journal::ControllerError,
     format::{BufferSize, ParseError},
@@ -61,11 +62,11 @@ use feldera_types::{
     },
     config::{FtModel, PipelineConfig},
     coordination::Completion,
+    memory_pressure::MemoryPressure,
     suspend::SuspendError,
     time_series::SampleStatistics,
     transaction::CommitProgressSummary,
 };
-use memory_stats::memory_stats;
 use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -1139,7 +1140,7 @@ impl ControllerStatus {
         if !self
             .input_status()
             .values()
-            .filter(|endpoint_stats| !endpoint_stats.endpoint_name.starts_with("api-ingress"))
+            .filter(|endpoint_stats| !endpoint_stats.endpoint_name.contains(".api-ingress-"))
             .all(|endpoint_stats| endpoint_stats.is_eoi())
         {
             return false;
@@ -1171,6 +1172,8 @@ impl ControllerStatus {
         suspend_error: Result<(), SuspendError>,
         pipeline_complete: bool,
         transaction_info: TransactionInfo,
+        memory_pressure: MemoryPressure,
+        memory_pressure_epoch: u64,
     ) -> feldera_types::adapter_stats::ExternalControllerStatus {
         use feldera_types::adapter_stats;
 
@@ -1229,12 +1232,12 @@ impl ControllerStatus {
                 .num_milliseconds()
                 .try_into()
                 .unwrap_or(0),
-            rss_bytes: if let Some(usage) = memory_stats() {
-                usage.physical_mem as u64
-            } else {
+            rss_bytes: process_rss_bytes().unwrap_or_else(|| {
                 error!("Failed to fetch process RSS");
                 0
-            },
+            }),
+            memory_pressure,
+            memory_pressure_epoch,
             cpu_msecs: match ProcessTime::try_now() {
                 Ok(time) => time.as_duration().as_millis() as u64,
                 Err(e) => {
@@ -1884,7 +1887,7 @@ pub struct InputEndpointStatus {
     pub progress: Mutex<Option<StepResults>>,
 
     /// May be None during endpoint initialization.
-    pub reader: Option<Box<dyn InputReader>>,
+    pub reader: Option<Arc<dyn InputReader>>,
 
     /// Endpoint support for fault tolerance.
     pub fault_tolerance: Option<FtModel>,

@@ -51,7 +51,7 @@ size-of = { workspace = true, features = [
     "xxhash-xxh3",
     "arcstr"
 ] }
-tarpc = { workspace = true, features = ["full"] }
+tokio-util = { workspace = true }
 futures = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
 paste = { workspace = true }
@@ -98,9 +98,16 @@ smallvec = { workspace = true }
 async-stream = { workspace = true }
 futures-util = { workspace = true }
 rmp-serde = { workspace = true }
+feldera-buffer-cache = { workspace = true }
+memory-stats = { workspace = true }
+serde_json_path_to_error = { workspace = true }
+flate2 = { workspace = true }
+nix = { workspace = true, features = ["process", "time"] }
+thread-id = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }
+rand_distr = { workspace = true }
 proptest-derive = { workspace = true }
 proptest = { workspace = true }
 proptest-state-machine = { workspace = true }
@@ -116,6 +123,7 @@ indicatif = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
 chrono = { workspace = true, features = ["serde"] }
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+tarpc = { workspace = true, features = ["full"] }
 
 [[bench]]
 name = "galen"
@@ -143,6 +151,10 @@ harness = false
 
 [[bench]]
 name = "input_map_ingest"
+harness = false
+
+[[bench]]
+name = "buffer_cache"
 harness = false
 
 [[bench]]

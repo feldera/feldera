@@ -3,7 +3,6 @@ package org.dbsp.sqlCompiler.compiler.sql.postgres;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
-import org.junit.Ignore;
 import org.junit.Test;
 
 // Adapted from https://github.com/postgres/postgres/src/test/regress/expected/limit.out
@@ -76,7 +75,7 @@ public class PostgresLimitTests extends SqlIoTest {
                 (2 rows)""");
     }
 
-    @Test @Ignore("OFFSET not yet implemented")
+    @Test
     public void testOffset() {
         this.qs("""
                 SELECT unique1, unique2, stringu1

@@ -7,16 +7,17 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.util.IHasId;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.ToIndentableString;
-import org.dbsp.util.graph.DFSOrder;
 import org.dbsp.util.graph.DiGraph;
 import org.dbsp.util.graph.Port;
 import org.dbsp.util.Utilities;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 
 /* The Graph represents edges source->destination,
@@ -121,9 +122,44 @@ public class CircuitGraph implements DiGraph<DBSPOperator>, IHasId, ToIndentable
         return builder.decrease().append("}");
     }
 
-    /** Return a topological sort of this graph */
+    /** Return a stable topological sort of this graph */
     public Iterable<DBSPOperator> sort() {
-        DFSOrder<DBSPOperator> dfs = new DFSOrder<>(this);
-        return dfs.reversePost();
+        // Uses Kahn's algorithm for a stable sort
+        Map<DBSPOperator, Integer> inDegree = new HashMap<>();
+        for (DBSPOperator op: this.nodes)
+            Utilities.putNew(inDegree, op, 0);
+
+        for (DBSPOperator op : this.edges.keySet()) {
+            for (Port<DBSPOperator> next: this.edges.get(op)) {
+                DBSPOperator v = next.node();
+                inDegree.put(v, inDegree.get(v) + 1);
+            }
+        }
+
+        // Queue of zero-indegree nodes, in *input order*
+        Queue<DBSPOperator> q = new ArrayDeque<>();
+        for (var n : this.nodes) {
+            if (inDegree.get(n) == 0)
+                q.add(n);
+        }
+
+        List<DBSPOperator> result = new ArrayList<>();
+        while (!q.isEmpty()) {
+            DBSPOperator u = q.remove();
+            result.add(u);
+
+            for (Port<DBSPOperator> port : this.edges.get(u)) {
+                DBSPOperator v = port.node();
+                int d = inDegree.get(v) - 1;
+                inDegree.put(v, d);
+                if (d == 0) {
+                    q.add(v);
+                }
+            }
+        }
+
+        if (result.size() != this.nodes.size())
+            throw new IllegalStateException("Graph has a cycle");
+        return result;
     }
 }

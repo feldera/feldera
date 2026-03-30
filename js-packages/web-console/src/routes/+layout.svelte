@@ -51,7 +51,13 @@
   class="text-base scrollbar-h-[10px] scrollbar-thumb-primary-200 scrollbar-thumb-rounded-full scrollbar-w-[10px] dark:scrollbar-thumb-surface-600 scrollbar-hover:scrollbar-thumb-surface-400 dark:scrollbar-hover:scrollbar-thumb-surface-600"
 />
 
-<Toaster position={'bottom-right'} toastOptions={{}}></Toaster>
+<Toaster
+  position={'bottom-right'}
+  toastOptions={{
+    style:
+      'background-color: light-dark(var(--color-white), var(--color-dark)); color: light-dark(var(--color-surface-950), var(--color-surface-50)); box-shadow: 2px 2px 10px -3px light-dark(var(--color-surface-600), var(--color-surface-400));'
+  }}
+></Toaster>
 {@render children?.()}
 
 {#if shouldTrack}

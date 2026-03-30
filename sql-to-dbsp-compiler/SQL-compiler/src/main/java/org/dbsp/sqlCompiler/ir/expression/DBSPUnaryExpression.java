@@ -79,7 +79,8 @@ public final class DBSPUnaryExpression extends DBSPExpression {
         if (this.opcode == DBSPOpcode.DECIMAL_TO_INTEGER ||
                 this.opcode == DBSPOpcode.INTEGER_TO_DECIMAL ||
                 this.opcode == DBSPOpcode.SHORT_INTERVAL_TO_INTEGER ||
-                this.opcode == DBSPOpcode.INTEGER_TO_SHORT_INTERVAL) {
+                this.opcode == DBSPOpcode.INTEGER_TO_SHORT_INTERVAL ||
+                this.opcode == DBSPOpcode.REINTERPRET) {
             return builder.append(this.opcode.toString())
                     .append("(")
                     .append(this.source)

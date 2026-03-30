@@ -1184,7 +1184,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        Circuit, OrdIndexedZSet, RootCircuit, indexed_zset,
+        Circuit, OrdIndexedZSet, RootCircuit, Runtime, indexed_zset,
         operator::Generator,
         typed_batch::{IndexedZSetReader, OrdZSet, SpineSnapshot},
         utils::Tup2,
@@ -1352,7 +1352,7 @@ mod test {
     /// distinct.
     #[test]
     fn distinct_filter_test() {
-        let (circuit, (input_handle, output_handle)) = RootCircuit::build(|circuit| {
+        let (mut circuit, (input_handle, output_handle)) = Runtime::init_circuit(1, |circuit| {
             let (input_stream, input_handle) = circuit.add_input_indexed_zset::<i32, ()>();
             let sharded = input_stream.shard();
             assert!(!sharded.inner().is_distinct());

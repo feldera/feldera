@@ -100,7 +100,8 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
                     .append(end - start)
                     .append("ms, created ")
                     .append(String.format("%,d", endId - startId))
-                    .append(" nodes")
+                    .append(" node")
+                    .append((endId - startId != 1) ? "s" : "")
                     .newline();
             if (this.getDebugLevel() >= 3) {
                 String name = String.format("%02d-", dumped++) + pass.toString().replace(" ", "_") + ".png";

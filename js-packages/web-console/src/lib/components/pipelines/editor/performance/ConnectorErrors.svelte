@@ -1,7 +1,7 @@
 <script lang="ts">
   import { SegmentedControl } from '@skeletonlabs/skeleton-svelte'
   import Dayjs from 'dayjs'
-  import { slide } from 'svelte/transition'
+  import { fade, slide } from 'svelte/transition'
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   import InlineDrawer from '$lib/components/layout/InlineDrawer.svelte'
@@ -200,15 +200,21 @@
                   ></div>
                   <span class="flex-1 overflow-hidden text-nowrap text-ellipsis">
                     {#if !isOpen}
-                      {item.error.message}
+                      <span out:fade={{ duration: 100 }}>{item.error.message}</span>
                     {/if}
                   </span>
+                  {#if status?.fatal_error != null && item.error.message === status.fatal_error}
+                    <span class="fd fd-circle-x text-error-500"></span>
+                  {/if}
                   <span class="ml-auto">{Dayjs(item.error.timestamp).format('HH:mm:ss')}</span>
                   <Tooltip placement="top">{formatDateTime(Dayjs(item.error.timestamp))}</Tooltip>
                 </div>
               {/snippet}
               {#snippet content()}
-                <div class="pr-2 pb-2 pl-7" transition:slide={{ duration: 150 }}>
+                <div
+                  class="mr-16 -mb-7 ml-7 -translate-y-7 pb-2"
+                  transition:slide={{ duration: 150 }}
+                >
                   {item.error.message}
                 </div>
               {/snippet}

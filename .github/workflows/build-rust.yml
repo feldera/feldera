@@ -33,7 +33,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-db53e1302c944e29edd6d2af516fff7032b90e3b
+      image: ghcr.io/feldera/feldera-dev:sha-06a694400a6aea1f568da04eaf786bfe84e0a869
 
     steps:
       - name: Show Kubernetes node
@@ -42,10 +42,10 @@ jobs:
           echo "K8S node: ${K8S_NODE_NAME}"
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Cache Cargo registry and index
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -117,22 +117,66 @@ jobs:
 
       # Upload test binaries as one artifact
       - name: Upload test artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: feldera-test-binaries-${{ matrix.target }}
           path: build-artifacts
           retention-days: 7
 
       - name: Upload fda
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fda-${{ matrix.target }}
           path: build-release-artifacts/fda
           retention-days: 7
 
       - name: Upload pipeline-manager
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pipeline-manager-${{ matrix.target }}
           path: build-release-artifacts/pipeline-manager
+          retention-days: 7
+
+  build-fda-native:
+    name: Build fda (Windows)
+
+    # Builds fda for Windows using GitHub-hosted larger runners.
+    # macOS arm64 will be added once self-hosted macOS runners are available.
+    # Windows arm64 is skipped for now — the runner lacks Rust and MSVC.
+    strategy:
+      matrix:
+        include:
+          - runner: windows-latest-amd64
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+
+    # sccache is not available on Windows GitHub-hosted runners
+    env:
+      RUSTC_WRAPPER: ""
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Cache Cargo registry and index
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-${{ matrix.target }}-
+
+      - name: Build fda
+        run: cargo build --release --locked -p fda --target=${{ matrix.target }}
+
+      - name: Upload fda
+        uses: actions/upload-artifact@v7
+        with:
+          name: fda-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/fda.exe
           retention-days: 7

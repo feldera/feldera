@@ -1,7 +1,7 @@
 use crate::{
     DBData,
     dynamic::{DataTrait, DowncastTrait, Erase, SerializeDyn},
-    trace::Serializer,
+    trace::DbspSerializer,
 };
 use rkyv::{Archive, Fallible, Serialize, archived_value, with::Inline};
 use std::{marker::PhantomData, mem::transmute};
@@ -116,8 +116,8 @@ where
 {
     fn serialize(
         &self,
-        serializer: &mut Serializer,
-    ) -> Result<usize, <Serializer as Fallible>::Error> {
+        serializer: &mut DbspSerializer,
+    ) -> Result<usize, <DbspSerializer<'_> as Fallible>::Error> {
         rkyv::ser::Serializer::serialize_value(serializer, self)
     }
 }

@@ -38,7 +38,7 @@ The connector configuration consists of three main sections:
 | Property      | Type   | Required | Description |
 |--------------|--------|----------|-------------|
 | `stream_name` | string | Yes      | The name of the NATS JetStream stream to consume from |
-| `inactivity_timeout_secs` | integer | No | Maximum idle time while waiting for the next message before running a stream/server health check. Must be at least 1. Default: 10 |
+| `inactivity_timeout_secs` | integer | No | Maximum idle time while waiting for the next message before running a stream/server health check. Must be at least 1. Default: 60 |
 | `retry_interval_secs` | integer | No | Delay between automatic retry attempts while the connector is in retry mode. Must be at least 1. Default: 5 |
 
 ### Consumer Configuration
@@ -84,10 +84,12 @@ If not specified, defaults to `"Instant"`.
 
 The connector distinguishes between **retryable** and **fatal** errors:
 
-- **Retryable errors** (temporary network/server issues, missing stream during startup, transient message-stream failures) move the connector into retry mode. It reports non-fatal endpoint errors and retries automatically every `retry_interval_secs`.
+- **Retryable errors** (temporary network/server issues, missing stream during startup, transient message-stream failures, and temporary failures while fetching JetStream stream metadata used during startup, resume, or replay validation) move the connector into retry mode. It reports non-fatal endpoint errors and retries automatically every `retry_interval_secs`.
 - **Fatal errors** stop the connector and report a fatal endpoint error. This is used when checkpoint/replay metadata is incompatible with the current stream sequence space.
 
 Before reading after startup or resume, the connector validates the checkpoint resume cursor against the stream's available sequence range. During replay, it validates that the requested replay range still exists.
+
+Only transient I/O failures during these validation checks are retried. Once the connector successfully reads the stream metadata, logical validation failures remain fatal.
 
 Typical fatal scenarios include:
 

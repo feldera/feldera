@@ -16,7 +16,7 @@ use crate::{
         splitter_output_chunk_size,
     },
     circuit_cache_key, default_hasher,
-    dynamic::{ClonableTrait, Data as _, Erase},
+    dynamic::{ClonableTrait, Data as _, DataTrait, Erase, WeightTrait},
     operator::{
         Z1,
         async_stream_operators::{StreamingTernarySinkOperator, StreamingTernarySinkWrapper},
@@ -30,6 +30,7 @@ use crate::{
         },
         require_persistent_id,
     },
+    storage::file::SerializerInner,
     trace::{
         Batch, BatchReader, BatchReaderFactories, Builder, Cursor, MergeCursor, Spine,
         SpineSnapshot, TupleBuilder, WithSnapshot, deserialize_indexed_wset, merge_batches,
@@ -44,6 +45,7 @@ use std::{
     cell::RefCell,
     fmt::{Display, Formatter},
     hash::Hasher,
+    iter::repeat,
     marker::PhantomData,
     panic::Location,
     rc::Rc,
@@ -128,7 +130,7 @@ where
                 circuit.region("accumulate_trace_with_balancer", || {
                     // Exchange + receiver
                     let runtime = Runtime::runtime().unwrap();
-                    let exchange_id = runtime.sequence_next();
+                    let exchange_id = runtime.sequence_next().try_into().unwrap();
                     let worker_index = Runtime::worker_index();
                     let batch_factories_clone = batch_factories.clone();
                     let start_wait_usecs = Arc::new(AtomicU64::new(0));
@@ -142,11 +144,6 @@ where
                     let exchange: Arc<Exchange<(B, bool)>> = Exchange::with_runtime(
                         &runtime,
                         exchange_id,
-                        Box::new(move |(batch, flush)| {
-                            let mut vec = serialize_indexed_wset(&batch);
-                            vec.push(flush as u8);
-                            vec
-                        }),
                         Box::new(move |mut vec| {
                             let flush = match vec.pop().unwrap() {
                                 0 => false,
@@ -1230,6 +1227,22 @@ where
         // Why not clear integral state instantly on rebalancing instead of producing and merging relatively expensive
         // retractions? Because otherwise retractions will not appear in the output of the accumulator, which is in turn
         // used as input to other operators such as join (see `accumulator_stream` in the diagram above).
+        let mut serializer_inner = None;
+        fn serialize_with_flush<B, K, V, R>(
+            (batch, flush): (B, bool),
+            serializer_inner: &mut Option<SerializerInner>,
+        ) -> Vec<u8>
+        where
+            B: BatchReader<Key = K, Val = V, Time = (), R = R>,
+            K: DataTrait + ?Sized,
+            V: DataTrait + ?Sized,
+            R: WeightTrait + ?Sized,
+        {
+            let mut vec = serialize_indexed_wset(&batch, serializer_inner.get_or_insert_default());
+            vec.push(flush as u8);
+            vec
+        }
+
         stream! {
             // Policy change? Update rebalancing state.
             let new_policy = self.balancer.get_optimal_policy(self.input_node_id).unwrap();
@@ -1243,10 +1256,10 @@ where
                 // }
                 assert_eq!(*self.current_policy.borrow(), new_policy);
                 // ExchangeReceiver expects precisely one flush per transaction.
-                assert!(self.exchange.try_send_all(
+                assert!(self.exchange.try_send_all_with_serializer(
                     self.worker_index,
-                    &mut std::iter::repeat_with(move || (B::dyn_empty(&batch_factories), false)).take(Runtime::num_workers()),
-                ));
+                    repeat((B::dyn_empty(&batch_factories), false)),
+                    |args| serialize_with_flush(args, &mut serializer_inner)));
 
                 self.update_exchange_metadata();
                 yield (true, None);
@@ -1276,9 +1289,10 @@ where
 
             let flush_complete = ready_to_commit && self.rebalance_state.borrow().is_none();
 
-            assert!(self.exchange.try_send_all(
+            assert!(self.exchange.try_send_all_with_serializer(
                 self.worker_index,
-                &mut batches.into_iter().map(|batch| (batch, flush_complete)),
+                batches.into_iter().map(|batch| (batch, flush_complete)),
+                |args| serialize_with_flush(args, &mut serializer_inner)
             ));
 
             if !rebalance {
@@ -1318,12 +1332,9 @@ where
             while integral_cursor.key_valid() {
                 self.process_retractions(&mut integral_cursor, &mut builders[self.worker_index], chunk_size);
 
-                let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
+                let batches = builders.into_iter().map(|builder| (builder.done(), false));
                 // println!("{}: integral retractions: {:?}", Runtime::worker_index(), batches);
-                assert!(self.exchange.try_send_all(
-                    self.worker_index,
-                    &mut batches.into_iter(),
-                ));
+                assert!(self.exchange.try_send_all_with_serializer(self.worker_index, batches, |args| serialize_with_flush(args, &mut serializer_inner)));
                 builders = self.create_builders(chunk_size);
                 self.update_exchange_metadata();
                 self.update_total_rebalancing_time(&step_start_time);
@@ -1339,12 +1350,9 @@ where
             while accumulator_cursor.key_valid() {
                 self.repartition_after_unicast(&mut accumulator_cursor, &mut builders, chunk_size);
 
-                let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
+                let batches = builders.into_iter().map(|builder| (builder.done(), false));
                 // println!("{}: acc insertions: {:?}", Runtime::worker_index(), batches);
-                assert!(self.exchange.try_send_all(
-                    self.worker_index,
-                    &mut batches.into_iter(),
-                ));
+                assert!(self.exchange.try_send_all_with_serializer(self.worker_index, batches, |args| serialize_with_flush(args, &mut serializer_inner)));
                 builders = self.create_builders(chunk_size);
                 self.update_exchange_metadata();
                 self.update_total_rebalancing_time(&step_start_time);
@@ -1356,12 +1364,9 @@ where
             while integral_cursor.key_valid() {
                 self.repartition(trace_policy, &mut integral_cursor, &mut builders, chunk_size);
 
-                let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), !integral_cursor.key_valid())).collect();
+                let batches = builders.into_iter().map(|builder| (builder.done(), !integral_cursor.key_valid()));
                 // println!("{}: integral insertions: {:?}", Runtime::worker_index(), batches);
-                assert!(self.exchange.try_send_all(
-                    self.worker_index,
-                    &mut batches.into_iter(),
-                ));
+                assert!(self.exchange.try_send_all_with_serializer(self.worker_index, batches, |args| serialize_with_flush(args, &mut serializer_inner)));
                 builders = self.create_builders(chunk_size);
                 self.update_exchange_metadata();
 
@@ -1380,17 +1385,15 @@ where
                     *self.rebalance_accumulator_size.borrow_mut() = 0;
                     *self.rebalance_integral_size.borrow_mut() = 0;
                     self.update_total_rebalancing_time(&step_start_time);
+                    *self.rebalance_start_time.borrow_mut() = None;
                     yield (true, None);
                     return;
                 }
             }
 
-            let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), true)).collect();
+            let batches = builders.into_iter().map(|builder| (builder.done(), true));
             // println!("{}: final batches: {:?}", Runtime::worker_index(), batches);
-            assert!(self.exchange.try_send_all(
-                self.worker_index,
-                &mut batches.into_iter(),
-            ));
+            assert!(self.exchange.try_send_all_with_serializer(self.worker_index, batches, |args| serialize_with_flush(args, &mut serializer_inner)));
 
             // if Runtime::worker_index() == 0 {
             //     println!("{}: flush complete 3 ({:?})", self.input_node_id, *self.current_policy.borrow());
@@ -1401,6 +1404,7 @@ where
             *self.rebalance_accumulator_size.borrow_mut() = 0;
             *self.rebalance_integral_size.borrow_mut() = 0;
             self.update_total_rebalancing_time(&step_start_time);
+            *self.rebalance_start_time.borrow_mut() = None;
             yield (true, None);
         }
     }

@@ -1,23 +1,26 @@
 use anyhow::{Context, Result, anyhow};
 use crossbeam::channel::{Sender, bounded};
+use dbsp::circuit::{CircuitConfig, CircuitStorageConfig, DevTweaks, Layout, Mode};
 use dbsp::{
     Runtime,
     mimalloc::MiMalloc,
     operator::{MapHandle, Update},
     utils::{Tup2, Tup5},
 };
+use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use rand::{Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
+use tempfile::tempdir;
 
 const BATCH_SIZE: usize = 10_000;
 const PROGRESS_EVERY_BATCHES: usize = 100;
-const WORKERS: usize = 8;
+const WORKERS: usize = 2;
 const DATAGEN_THREADS: usize = 8;
-const TOTAL_RECORDS: u64 = 200_000_000;
+const TOTAL_RECORDS: u64 = 70_000_000;
 const KEY_SPACE: u64 = 100_000_000;
 const SEED: u64 = 0;
 const MAX_IN_FLIGHT_BATCHES: usize = 64;
@@ -31,6 +34,28 @@ static ALLOC: MiMalloc = MiMalloc;
 
 fn main() -> Result<()> {
     validate_constants()?;
+    let temp = tempdir().context("failed to create temp directory for storage backend")?;
+    let config = CircuitConfig {
+        layout: Layout::new_solo(WORKERS),
+        max_rss_bytes: None,
+        mode: Mode::Ephemeral,
+        pin_cpus: Vec::new(),
+        storage: Some(
+            CircuitStorageConfig::for_config(
+                StorageConfig {
+                    path: temp.path().to_string_lossy().into_owned(),
+                    cache: StorageCacheConfig::default(),
+                },
+                StorageOptions {
+                    min_storage_bytes: None,
+                    min_step_storage_bytes: None,
+                    ..StorageOptions::default()
+                },
+            )
+            .context("failed to configure POSIX storage backend")?,
+        ),
+        dev_tweaks: DevTweaks::default(),
+    };
 
     let total_batches = (TOTAL_RECORDS / BATCH_SIZE as u64) as usize;
     println!(
@@ -38,7 +63,7 @@ fn main() -> Result<()> {
         WORKERS, DATAGEN_THREADS, TOTAL_RECORDS, total_batches, BATCH_SIZE
     );
 
-    let (mut dbsp, mut input_handle) = Runtime::init_circuit(WORKERS, |circuit| {
+    let (mut dbsp, mut input_handle) = Runtime::init_circuit(config, |circuit| {
         let (stream, handle): (_, MapHandle<u64, Value, Value>) =
             circuit.add_input_map::<u64, Value, Value, _>(|v, u| *v = *u);
 
@@ -72,6 +97,9 @@ fn main() -> Result<()> {
             );
         }
     }
+
+    let profile_path = dbsp.dump_profile("profile").unwrap();
+    println!("profile dumped to {profile_path:?}");
 
     for handle in datagen_handles {
         handle

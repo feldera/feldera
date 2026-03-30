@@ -38,7 +38,7 @@ jobs:
         shell: bash
         working-directory: ./python
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install uv
         uses: astral-sh/setup-uv@v2
         with:
@@ -72,7 +72,7 @@ jobs:
   adjust-versions:
     runs-on: [k8s-runners-amd64]
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-db53e1302c944e29edd6d2af516fff7032b90e3b
+      image: ghcr.io/feldera/feldera-dev:sha-06a694400a6aea1f568da04eaf786bfe84e0a869
     steps:
       - name: Show Kubernetes node
         if: always()
@@ -87,7 +87,7 @@ jobs:
           private-key: ${{ secrets.CI_ACCESS_APP_PKEY }}
           permission-contents: write
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           # This runs on main because we make the commit on main at the end of the workflow,
           # we use the token so it can circument push to main protection rules

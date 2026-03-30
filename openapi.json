@@ -10,7 +10,7 @@
     "license": {
       "name": "MIT OR Apache-2.0"
     },
-    "version": "0.269.0"
+    "version": "0.276.0"
   },
   "paths": {
     "/config/authentication": {
@@ -583,6 +583,7 @@
                     "platform_version": "v0",
                     "runtime_config": {
                       "workers": 16,
+                      "max_rss_mb": null,
                       "hosts": 1,
                       "storage": {
                         "backend": {
@@ -671,6 +672,7 @@
                     "platform_version": "v0",
                     "runtime_config": {
                       "workers": 10,
+                      "max_rss_mb": null,
                       "hosts": 1,
                       "storage": {
                         "backend": {
@@ -789,6 +791,7 @@
                 "description": "Description of the pipeline example1",
                 "runtime_config": {
                   "workers": 16,
+                  "max_rss_mb": null,
                   "hosts": 1,
                   "storage": {
                     "backend": {
@@ -861,6 +864,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "max_rss_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
@@ -1042,6 +1046,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "max_rss_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
@@ -1187,6 +1192,7 @@
                 "description": "Description of the pipeline example1",
                 "runtime_config": {
                   "workers": 16,
+                  "max_rss_mb": null,
                   "hosts": 1,
                   "storage": {
                     "backend": {
@@ -1259,6 +1265,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "max_rss_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
@@ -1357,6 +1364,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "max_rss_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
@@ -1624,6 +1632,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "max_rss_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
@@ -2301,7 +2310,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CheckpointStatus"
+                  "$ref": "#/components/schemas/CheckpointSyncStatus"
                 }
               }
             }
@@ -6157,6 +6166,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "max_rss_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
@@ -6816,6 +6826,51 @@
             "description": "Most recently successful checkpoint.",
             "nullable": true,
             "minimum": 0
+          }
+        }
+      },
+      "CheckpointSyncFailure": {
+        "type": "object",
+        "description": "Information about a failed checkpoint sync.",
+        "required": [
+          "uuid",
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message associated with the failure."
+          },
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the failed checkpoint."
+          }
+        }
+      },
+      "CheckpointSyncStatus": {
+        "type": "object",
+        "description": "Checkpoint status returned by the `/checkpoint/sync_status` endpoint.",
+        "properties": {
+          "failure": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CheckpointSyncFailure"
+              }
+            ],
+            "nullable": true
+          },
+          "periodic": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Most recently successful automated periodic checkpoint sync.",
+            "nullable": true
+          },
+          "success": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Most recently successful checkpoint sync.",
+            "nullable": true
           }
         }
       },
@@ -8330,6 +8385,8 @@
           "transaction_id",
           "transaction_initiators",
           "rss_bytes",
+          "memory_pressure",
+          "memory_pressure_epoch",
           "cpu_msecs",
           "uptime_msecs",
           "start_time",
@@ -8390,6 +8447,15 @@
             "type": "integer",
             "format": "int64",
             "description": "Time at which the pipeline process from which we resumed started, in seconds since the epoch.",
+            "minimum": 0
+          },
+          "memory_pressure": {
+            "$ref": "#/components/schemas/MemoryPressure"
+          },
+          "memory_pressure_epoch": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Memory pressure epoch.",
             "minimum": 0
           },
           "output_stall_msecs": {
@@ -9178,6 +9244,16 @@
           }
         ]
       },
+      "MemoryPressure": {
+        "type": "string",
+        "description": "Memory pressure level.\n\nThe current memory pressure level is computed as a function of the current process\nresident set size (RSS) and the user-configured memory limit (`max_rss`).\n\nAs the memory pressure level increases, the system will apply increasing backpressure to\npush state cached in memory to storage.\n\n- `Low`: less than 85% of the user-configured memory limit has been allocated.\n- `Moderate`: between 85% and 90% of the user-configured memory limit has been allocated.\n- `High`: between 90% and 95% of the user-configured memory limit has been allocated.\n- `Critical`: more than 95% of the user-configured memory limit has been allocated.",
+        "enum": [
+          "low",
+          "moderate",
+          "high",
+          "critical"
+        ]
+      },
       "MetricsFormat": {
         "type": "string",
         "description": "Circuit metrics output format.\n- `prometheus`: [format](https://github.com/prometheus/docs/blob/4b1b80f5f660a2f8dc25a54f52a65a502f31879a/docs/instrumenting/exposition_formats.md) expected by Prometheus\n- `json`: JSON format",
@@ -9844,6 +9920,14 @@
                 "type": "integer",
                 "format": "int64",
                 "description": "The maximum number of connectors initialized in parallel during pipeline\nstartup.\n\nAt startup, the pipeline must initialize all of its input and output connectors.\nDepending on the number and types of connectors, this can take a long time.\nTo accelerate the process, multiple connectors are initialized concurrently.\nThis option controls the maximum number of connectors that can be initialized\nin parallel.\n\nThe default is 10.",
+                "default": null,
+                "nullable": true,
+                "minimum": 0
+              },
+              "max_rss_mb": {
+                "type": "integer",
+                "format": "int64",
+                "description": "The maximum amount of memory, in Megabytes, that the pipeline is allowed to use\non each host.\n\nSetting this property activates memory pressure monitoring and backpressure\nmechanisms. The pipeline will track the amount of remaining memory and\nreport the memory pressure level via the `memory_pressure` metric.\n\nAs the memory pressure increases, the system will apply increasing backpressure\nto push state cached in memory to storage, preventing the pipeline from running\nout of memory at the cost of some performance degradation.\n\nIt is strongly recommended to set this property to prevent the pipeline from\nrunning out of memory. The setting should not exceed the memory limit of the pipeline\ninstance.\n\nWhen `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the\nlatter is used as the effective memory cap for the pipeline.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
                 "default": null,
                 "nullable": true,
                 "minimum": 0
@@ -10751,6 +10835,28 @@
         ],
         "description": "Postgres output connector configuration."
       },
+      "PreprocessorConfig": {
+        "type": "object",
+        "description": "Configuration for describing a preprocessor",
+        "required": [
+          "name",
+          "message_oriented",
+          "config"
+        ],
+        "properties": {
+          "config": {
+            "description": "Arbitrary additional configuration."
+          },
+          "message_oriented": {
+            "type": "boolean",
+            "description": "True if the preprocessor is message-oriented: true if each preprocessor\noutput record corresponds to a whole number of of parser records."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the preprocessor.\nAll preprocessors with the same name will perform the same task."
+          }
+        }
+      },
       "ProgramConfig": {
         "type": "object",
         "description": "Program configuration.",
@@ -11518,6 +11624,14 @@
             "type": "integer",
             "format": "int64",
             "description": "The maximum number of connectors initialized in parallel during pipeline\nstartup.\n\nAt startup, the pipeline must initialize all of its input and output connectors.\nDepending on the number and types of connectors, this can take a long time.\nTo accelerate the process, multiple connectors are initialized concurrently.\nThis option controls the maximum number of connectors that can be initialized\nin parallel.\n\nThe default is 10.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "max_rss_mb": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The maximum amount of memory, in Megabytes, that the pipeline is allowed to use\non each host.\n\nSetting this property activates memory pressure monitoring and backpressure\nmechanisms. The pipeline will track the amount of remaining memory and\nreport the memory pressure level via the `memory_pressure` metric.\n\nAs the memory pressure increases, the system will apply increasing backpressure\nto push state cached in memory to storage, preventing the pipeline from running\nout of memory at the cost of some performance degradation.\n\nIt is strongly recommended to set this property to prevent the pipeline from\nrunning out of memory. The setting should not exceed the memory limit of the pipeline\ninstance.\n\nWhen `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the\nlatter is used as the effective memory cap for the pipeline.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
             "default": null,
             "nullable": true,
             "minimum": 0

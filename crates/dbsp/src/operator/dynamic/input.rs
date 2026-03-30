@@ -1378,7 +1378,8 @@ mod test {
         dynamic::{DowncastTrait, DynData, Erase},
         indexed_zset,
         operator::{
-            IndexedZSetHandle, MapHandle, SetHandle, Update, ZSetHandle, input::InputHandle,
+            IndexedZSetHandle, MapHandle, SetHandle, StagedBuffers, Update, ZSetHandle,
+            input::InputHandle,
         },
         trace::{BatchReaderFactories, Builder, Cursor},
         typed_batch::{
@@ -1389,7 +1390,7 @@ mod test {
         zset,
     };
     use anyhow::Result as AnyResult;
-    use std::{cmp::max, iter::once, ops::Mul};
+    use std::{cmp::max, collections::VecDeque, iter::once, ops::Mul};
 
     fn input_batches() -> Vec<OrdZSet<u64>> {
         vec![
@@ -1730,16 +1731,16 @@ mod test {
 
     #[test]
     fn set_test_st() {
-        let (circuit, mut input_handle) =
-            RootCircuit::build(move |circuit| set_test_circuit(circuit)).unwrap();
+        let (mut circuit, mut input_handle) =
+            Runtime::init_circuit(1, move |circuit| set_test_circuit(circuit)).unwrap();
 
         for mut vec in input_set_updates().into_iter() {
             input_handle.append(&mut vec);
             circuit.transaction().unwrap();
         }
 
-        let (circuit, input_handle) =
-            RootCircuit::build(move |circuit| set_test_circuit(circuit)).unwrap();
+        let (mut circuit, input_handle) =
+            Runtime::init_circuit(1, move |circuit| set_test_circuit(circuit)).unwrap();
 
         for vec in input_set_updates().into_iter() {
             for Tup2(k, b) in vec.into_iter() {
@@ -1958,18 +1959,20 @@ mod test {
     // without filtering.
     #[test]
     fn map_test_st() {
-        let (circuit, mut input_handle) =
-            RootCircuit::build(move |circuit| map_test_circuit(circuit, output_map_updates1))
-                .unwrap();
+        let (mut circuit, mut input_handle) = Runtime::init_circuit(1, move |circuit| {
+            map_test_circuit(circuit, output_map_updates1)
+        })
+        .unwrap();
 
         for mut vec in input_map_updates1().into_iter() {
             input_handle.append(&mut vec);
             circuit.transaction().unwrap();
         }
 
-        let (circuit, input_handle) =
-            RootCircuit::build(move |circuit| map_test_circuit(circuit, output_map_updates1))
-                .unwrap();
+        let (mut circuit, input_handle) = Runtime::init_circuit(1, move |circuit| {
+            map_test_circuit(circuit, output_map_updates1)
+        })
+        .unwrap();
 
         for vec in input_map_updates1().into_iter() {
             for Tup2(k, v) in vec.into_iter() {
@@ -2027,6 +2030,92 @@ mod test {
     fn map_test_mt4() {
         map_test_mt(4, input_map_updates1, output_map_updates1);
         map_test_mt(4, input_map_updates2, output_map_updates2);
+    }
+
+    /// There was a bug in InputUpsert where if within the same step the operator received two
+    /// vectors with updates, where the first vector contained a key that was deleted and the second
+    /// vector contained the same key that was inserted, the output would be incorrect because we
+    /// reordered the insert and the delete.
+    #[test]
+    fn map_reinsert_within_step_accumulate_output() {
+        let (mut dbsp, (input_handle, output_handle)) = Runtime::init_circuit(1, |circuit| {
+            let (stream, handle) =
+                circuit.add_input_map::<u64, u64, i64, _>(|v, u| *v = ((*v as i64) + u) as u64);
+            Ok((handle, stream.accumulate_output()))
+        })
+        .unwrap();
+
+        // Seed the map with a few keys.
+        let initial_batch = vec![
+            Tup2(1, Update::Insert(10)),
+            Tup2(2, Update::Insert(20)),
+            Tup2(3, Update::Insert(30)),
+        ];
+        // Use stage instead of append to make sure the updates don't get merged in a single vector.
+        input_handle
+            .stage(vec![VecDeque::from(initial_batch)])
+            .flush();
+        dbsp.transaction().unwrap();
+        assert_eq!(
+            output_handle.concat().consolidate(),
+            indexed_zset! { 1 => {10 => 1}, 2 => {20 => 1}, 3 => {30 => 1} }
+        );
+
+        // Step 1:
+        // - first batch deletes existing keys
+        // - second batch reinserts them and adds one extra key
+        let delete_batch_1 = vec![
+            Tup2(1, Update::Delete),
+            Tup2(2, Update::Delete),
+            Tup2(3, Update::Delete),
+        ];
+        input_handle
+            .stage(vec![VecDeque::from(delete_batch_1)])
+            .flush();
+        let reinsert_batch_1 = vec![
+            Tup2(1, Update::Insert(10)),
+            Tup2(2, Update::Insert(20)),
+            Tup2(3, Update::Insert(30)),
+            Tup2(4, Update::Insert(40)),
+        ];
+        input_handle
+            .stage(vec![VecDeque::from(reinsert_batch_1)])
+            .flush();
+        dbsp.transaction().unwrap();
+        assert_eq!(
+            output_handle.concat().consolidate(),
+            indexed_zset! { 4 => {40 => 1} }
+        );
+
+        // Step 2: repeat with one more additional key.
+        let delete_batch_2 = vec![
+            Tup2(1, Update::Delete),
+            Tup2(2, Update::Delete),
+            Tup2(3, Update::Delete),
+            Tup2(4, Update::Delete),
+        ];
+        input_handle
+            .stage(vec![VecDeque::from(delete_batch_2)])
+            .flush();
+        let reinsert_batch_2 = vec![
+            Tup2(1, Update::Insert(10)),
+            Tup2(2, Update::Insert(20)),
+            Tup2(3, Update::Insert(30)),
+            Tup2(4, Update::Insert(40)),
+            Tup2(5, Update::Insert(50)),
+        ];
+        input_handle
+            .stage(vec![VecDeque::from(reinsert_batch_2)])
+            .flush();
+        dbsp.transaction().unwrap();
+        assert_eq!(
+            output_handle.concat().consolidate(),
+            indexed_zset! {
+                5 => {50 => 1}
+            }
+        );
+
+        dbsp.kill().unwrap();
     }
 
     fn map_with_waterline_test_circuit(

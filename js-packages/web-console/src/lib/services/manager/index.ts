@@ -432,6 +432,7 @@ export type {
   PostUpdateRuntimeErrors,
   PostUpdateRuntimeResponse,
   PostUpdateRuntimeResponses,
+  PreprocessorConfig,
   ProgramConfig,
   ProgramDiff,
   ProgramError,

@@ -1,16 +1,15 @@
-//! A buffer-cache based on LRU eviction.
-//!
-//! This is a layer over a storage backend that adds a cache of a
-//! client-provided function of the blocks.
-use std::any::Any;
 use std::fmt::{Debug, Display};
+use std::ops::Range;
 use std::ops::{Add, AddAssign};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use std::{collections::BTreeMap, ops::Range};
 
 use enum_map::{Enum, EnumMap};
+use feldera_buffer_cache::{
+    BufferCacheAllocationStrategy, BufferCacheBuilder, BufferCacheStrategy, CacheEntry, LruCache,
+    SharedBufferCache, ThreadType,
+};
 use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
 
@@ -19,7 +18,7 @@ use crate::circuit::metadata::{
     CACHE_FOREGROUND_HIT_RATE_PERCENT, CACHE_FOREGROUND_HITS, CACHE_FOREGROUND_MISSES, MetaItem,
     MetricId, MetricReading, OperatorMeta,
 };
-use crate::circuit::runtime::ThreadType;
+use crate::circuit::runtime::current_thread_type;
 use crate::storage::backend::{BlockLocation, FileId, FileReader};
 
 /// A key for the block cache.
@@ -27,9 +26,8 @@ use crate::storage::backend::{BlockLocation, FileId, FileReader};
 /// The block size could be part of the key, but we'll never read a given offset
 /// with more than one size so it's also not necessary.
 ///
-/// It's important that the sort order is by `fd` first and `offset` second, so
-/// that [`CacheKey::fd_range`] can work.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+/// It's important that the sort order is by `fd` first and `offset` second.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct CacheKey {
     /// File being cached.
     file_id: FileId,
@@ -43,9 +41,8 @@ impl CacheKey {
         Self { file_id, offset }
     }
 
-    /// Returns a range that would contain all of the blocks for the specified
-    /// `fd`.
-    fn file_range(file_id: FileId) -> Range<CacheKey> {
+    /// Returns the key range that covers every cached block for `file_id`.
+    fn file_range(file_id: FileId) -> Range<Self> {
         Self { file_id, offset: 0 }..Self {
             file_id: file_id.after(),
             offset: 0,
@@ -53,159 +50,32 @@ impl CacheKey {
     }
 }
 
-/// A value in the block cache.
-struct CacheValue {
-    /// Cached interpretation of `block`.
-    aux: Arc<dyn CacheEntry>,
-
-    /// Serial number for LRU purposes.  Blocks with higher serial numbers have
-    /// been used more recently.
-    serial: u64,
-}
-
-pub trait CacheEntry: Any + Send + Sync {
-    fn cost(&self) -> usize;
-}
-
-impl dyn CacheEntry {
-    pub fn downcast<T>(self: Arc<Self>) -> Option<Arc<T>>
-    where
-        T: Send + Sync + 'static,
-    {
-        (self as Arc<dyn Any + Send + Sync>).downcast().ok()
-    }
-}
-
-struct CacheInner {
-    /// Cache contents.
-    cache: BTreeMap<CacheKey, CacheValue>,
-
-    /// Map from LRU serial number to cache key.  The element with the smallest
-    /// serial number was least recently used.
-    lru: BTreeMap<u64, CacheKey>,
-
-    /// Serial number to use the next time we touch a block.
-    next_serial: u64,
-
-    /// Sum over `cache[*].block.cost()`.
-    cur_cost: usize,
-
-    /// Maximum `size`, in bytes.
-    max_cost: usize,
-}
-
-impl CacheInner {
-    fn new(max_cost: usize) -> Self {
-        Self {
-            cache: BTreeMap::new(),
-            lru: BTreeMap::new(),
-            next_serial: 0,
-            cur_cost: 0,
-            max_cost,
-        }
-    }
-
-    #[allow(dead_code)]
-    fn check_invariants(&self) {
-        assert_eq!(self.cache.len(), self.lru.len());
-        let mut cost = 0;
-        for (key, value) in self.cache.iter() {
-            assert_eq!(self.lru.get(&value.serial), Some(key));
-            cost += value.aux.cost();
-        }
-        for (serial, key) in self.lru.iter() {
-            assert_eq!(self.cache.get(key).unwrap().serial, *serial);
-        }
-        assert_eq!(cost, self.cur_cost);
-    }
-
-    fn debug_check_invariants(&self) {
-        #[cfg(debug_assertions)]
-        self.check_invariants()
-    }
-
-    fn delete_file(&mut self, file_id: FileId) {
-        let offsets: Vec<_> = self
-            .cache
-            .range(CacheKey::file_range(file_id))
-            .map(|(k, v)| (k.offset, v.serial))
-            .collect();
-        for (offset, serial) in offsets {
-            self.lru.remove(&serial).unwrap();
-            self.cur_cost -= self
-                .cache
-                .remove(&CacheKey::new(file_id, offset))
-                .unwrap()
-                .aux
-                .cost();
-        }
-        self.debug_check_invariants();
-    }
-
-    fn get(&mut self, key: CacheKey) -> Option<Arc<dyn CacheEntry>> {
-        if let Some(value) = self.cache.get_mut(&key) {
-            self.lru.remove(&value.serial);
-            value.serial = self.next_serial;
-            self.lru.insert(value.serial, key);
-            self.next_serial += 1;
-            Some(value.aux.clone())
-        } else {
-            None
-        }
-    }
-
-    fn evict_to(&mut self, max_size: usize) {
-        while self.cur_cost > max_size {
-            let (_serial, key) = self.lru.pop_first().unwrap();
-            let value = self.cache.remove(&key).unwrap();
-            self.cur_cost -= value.aux.cost();
-        }
-        self.debug_check_invariants();
-    }
-
-    fn insert(&mut self, key: CacheKey, aux: Arc<dyn CacheEntry>) {
-        let cost = aux.cost();
-        self.evict_to(self.max_cost.saturating_sub(cost));
-        if let Some(old_value) = self.cache.insert(
-            key,
-            CacheValue {
-                aux,
-                serial: self.next_serial,
-            },
-        ) {
-            self.lru.remove(&old_value.serial);
-            self.cur_cost -= old_value.aux.cost();
-        }
-        self.lru.insert(self.next_serial, key);
-        self.cur_cost += cost;
-        self.next_serial += 1;
-        self.debug_check_invariants();
-    }
-}
-
 /// A cache on top of a storage [backend](crate::storage::backend).
 pub struct BufferCache {
-    inner: Mutex<CacheInner>,
+    inner: SharedBufferCache<CacheKey, Arc<dyn CacheEntry>>,
 }
 
 impl Debug for BufferCache {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BufferCache").finish()
+        f.debug_struct("BufferCache")
+            .field("strategy", &self.strategy())
+            .finish()
     }
 }
 
 impl BufferCache {
-    /// Creates a new cache on top of `backend`.
+    /// Creates a new cache using the default [`BufferCacheStrategy`].
     ///
-    /// It's best to use a single `StorageCache` for all uses of a given
-    /// `backend`, because otherwise the cache will end up with duplicates.
-    ///
-    /// `max_cost` limits the size of the cache. It is denominated in terms of
-    /// [CacheEntry::cost].
+    /// `max_cost` limits the size of the cache in terms of [CacheEntry::cost].
     pub fn new(max_cost: usize) -> Self {
-        Self {
-            inner: Mutex::new(CacheInner::new(max_cost)),
-        }
+        Self::from_inner(
+            BufferCacheBuilder::<CacheKey, Arc<dyn CacheEntry>>::new().build_single(max_cost),
+        )
+    }
+
+    /// Returns the strategy backing this cache.
+    pub fn strategy(&self) -> BufferCacheStrategy {
+        self.inner.strategy()
     }
 
     pub fn get(
@@ -214,30 +84,71 @@ impl BufferCache {
         location: BlockLocation,
     ) -> Option<Arc<dyn CacheEntry>> {
         self.inner
-            .lock()
-            .unwrap()
             .get(CacheKey::new(file.file_id(), location.offset))
-            .clone()
     }
 
     pub fn insert(&self, file_id: FileId, offset: u64, aux: Arc<dyn CacheEntry>) {
-        self.inner
-            .lock()
-            .unwrap()
-            .insert(CacheKey::new(file_id, offset), aux);
+        self.inner.insert(CacheKey::new(file_id, offset), aux);
     }
 
     pub fn evict(&self, file: &dyn FileReader) {
-        self.inner.lock().unwrap().delete_file(file.file_id());
+        let file_id = file.file_id();
+        if let Some(lru) = self
+            .inner
+            .as_any()
+            .downcast_ref::<LruCache<CacheKey, Arc<dyn CacheEntry>>>()
+        {
+            lru.remove_range(CacheKey::file_range(file_id));
+        } else {
+            let predicate = |key: &CacheKey| key.file_id == file_id;
+            self.inner.remove_if(&predicate);
+        }
     }
 
     /// Returns `(cur_cost, max_cost)`, reporting the amount of the cache that
     /// is currently used and the maximum value, both denominated in terms of
     /// [CacheEntry::cost] for `CacheEntry`.
     pub fn occupancy(&self) -> (usize, usize) {
-        let inner = self.inner.lock().unwrap();
-        (inner.cur_cost, inner.max_cost)
+        (self.inner.total_charge(), self.inner.total_capacity())
     }
+
+    /// Builds a wrapper around an already-constructed cache backend.
+    fn from_inner(inner: SharedBufferCache<CacheKey, Arc<dyn CacheEntry>>) -> Self {
+        Self { inner }
+    }
+
+    /// Returns an identifier for the shared cache backend used by this wrapper.
+    pub(crate) fn backend_id(&self) -> usize {
+        Arc::as_ptr(&self.inner) as *const () as usize
+    }
+
+    /// Returns `true` if `self` and `other` share the same cache backend.
+    #[cfg(test)]
+    pub(crate) fn shares_backend_with(&self, other: &Self) -> bool {
+        self.backend_id() == other.backend_id()
+    }
+}
+
+/// Creates the runtime cache layout for DBSP worker pairs.
+pub(crate) fn build_buffer_caches(
+    worker_pairs: usize,
+    total_capacity_bytes: usize,
+    strategy: BufferCacheStrategy,
+    max_buckets: Option<usize>,
+    allocation_strategy: BufferCacheAllocationStrategy,
+) -> Vec<EnumMap<ThreadType, Arc<BufferCache>>> {
+    BufferCacheBuilder::<CacheKey, Arc<dyn CacheEntry>>::new()
+        .with_buffer_cache_strategy(strategy)
+        .with_buffer_max_buckets(max_buckets)
+        .with_buffer_cache_allocation_strategy(allocation_strategy)
+        .build(worker_pairs, total_capacity_bytes)
+        .into_iter()
+        .map(|caches| {
+            EnumMap::from_fn(|thread_type| {
+                Arc::new(BufferCache::from_inner(caches[thread_type].clone()))
+            })
+        })
+        .collect()
 }
 
 /// Cache statistics that can be accessed atomically for multithread updates.
@@ -248,7 +159,7 @@ pub struct AtomicCacheStats(EnumMap<ThreadType, EnumMap<CacheAccess, AtomicCache
 impl AtomicCacheStats {
     /// Records that `location` was access in the cache with effect `access`.
     pub fn record(&self, access: CacheAccess, duration: Duration, location: BlockLocation) {
-        let Some(thread_type) = ThreadType::current() else {
+        let Some(thread_type) = current_thread_type() else {
             // TODO: record stats for aux threads.
             return;
         };

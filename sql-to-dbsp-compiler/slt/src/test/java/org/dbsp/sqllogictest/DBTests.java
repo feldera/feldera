@@ -11,7 +11,6 @@ import org.apache.calcite.tools.RelRunner;
 import org.dbsp.util.StringPrintStream;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import javax.sql.DataSource;
@@ -66,18 +65,6 @@ public class DBTests {
             StringPrintStream throughCalcite = new StringPrintStream();
             Utilities.showResultSet(resultSet, throughCalcite.getPrintStream());
             Assert.assertEquals(direct.toString(), throughCalcite.toString());
-        }
-    }
-
-    @Test @Ignore("Fails due to a bug in HSQLDB")
-    public void HSQLDBDoubleNegTest() throws SQLException {
-        // Reproduction for https://sourceforge.net/p/hsqldb/bugs/1680/
-        // and https://sourceforge.net/p/hsqldb/bugs/1681/
-        String jdbcUrl = "jdbc:hsqldb:mem:db";
-        Connection connection = DriverManager.getConnection(jdbcUrl, "", "");
-        try (Statement s = connection.createStatement()) {
-            s.execute("SELECT +2;");
-            s.execute("SELECT - -2;");
         }
     }
 }

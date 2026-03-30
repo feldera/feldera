@@ -25,7 +25,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.util.Utilities;
 
 import java.util.List;
 
@@ -48,7 +47,6 @@ public class RankAggregate extends WindowAggregates {
                   int windowFieldIndex, AggregateCall call) {
         super(compiler, window, group, windowFieldIndex);
         this.call = call;
-        Utilities.enforce(group.getAggregateCalls(window).size() == 1);
     }
 
     @Override
@@ -76,7 +74,7 @@ public class RankAggregate extends WindowAggregates {
         // Generate comparison function for sorting the vector
         DBSPType inputRowType = lastOperator.getOutputZSetElementType();
         DBSPComparatorExpression comparator = CalciteToDBSPCompiler.generateComparator(
-                node, group.orderKeys.getFieldCollations(), inputRowType, false);
+                node, this.group.orderKeys.getFieldCollations(), inputRowType, false);
 
         // The rank must be added at the end of the input collection (that's how Calcite expects it).
         DBSPVariablePath left = DBSPTypeInteger.getType(node, INT64, false).var();

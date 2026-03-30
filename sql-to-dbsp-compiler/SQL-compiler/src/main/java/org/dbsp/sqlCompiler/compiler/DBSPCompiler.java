@@ -98,6 +98,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -205,7 +206,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             stream.append("\"").append(Utilities.escapeDoubleQuotes(e.name())).append("\"");
             stream.append(": ");
             RelNode rel = cv.getRel();
-            RelJsonWriter planWriter = new RelJsonWriter(result);
+            RelJsonWriter planWriter = new RelJsonWriter(result, options.ioOptions.verbosity);
             rel.explain(planWriter);
             String json = planWriter.asString();
             stream.appendIndentedStrings(json);
@@ -750,6 +751,12 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     static final Pattern ITEM_ERROR = Pattern.compile("Cannot apply 'ITEM' to arguments of type 'ITEM\\(([^,]+), ([^']+)\\)'(.*)", Pattern.DOTALL);
 
+    static SourcePositionRange getRange(CalciteContextException e) {
+        return new SourcePositionRange(
+                new SourcePosition(e.getPosLine(), e.getPosColumn()),
+                new SourcePosition(e.getEndPosLine(), e.getEndPosColumn()));
+    }
+
     /** Rewrite the error message for some Calcite errors which are confusing */
     private CompilationError improveErrorMessage(CalciteContextException e) {
         String message = e.getMessage();
@@ -760,11 +767,19 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 String index = matcher.group(2);
                 String tail = matcher.group(3);
                 String newMessage = "Cannot apply indexing to arguments of type " + source + "[" + index + "]" + tail;
-                return new CompilationError(
-                        newMessage,
-                        new SourcePositionRange(
-                                new SourcePosition(e.getPosLine(), e.getPosColumn()),
-                                new SourcePosition(e.getEndPosLine(), e.getEndPosColumn())));
+                return new CompilationError(newMessage, getRange(e));
+            }
+            if (message.contains("'TIMESTAMPDIFF'.")) {
+                // The Calcite parser replaces DATEDIFF with TIMESTAMPDIFF
+                // Try to figure out whether this is what happened and rewrite it.
+                // This heuristic may fail... but will work in general.
+                SourcePositionRange range = getRange(e);
+                String fragment = this.sources.getFragment(range, false);
+                String lower = fragment.toLowerCase(Locale.ENGLISH);
+                if (lower.contains("datediff") && !lower.contains("timestampdiff")) {
+                    message = message.replace("TIMESTAMPDIFF", "DATEDIFF");
+                    return new CompilationError(message, range);
+                }
             }
         }
         return new CompilationError(e);

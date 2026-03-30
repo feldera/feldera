@@ -3,6 +3,7 @@ import { groupBy } from '$lib/functions/common/array'
 import { tuple } from '$lib/functions/common/tuple'
 import { normalizeCaseIndependentName } from '$lib/functions/felderaRelation'
 import type {
+  ConnectorHealth,
   ControllerStatus,
   InputEndpointMetrics,
   InputEndpointStatus,
@@ -12,19 +13,17 @@ import type {
 import type { GlobalMetricsTimestamp, TimeSeriesEntry } from '$lib/types/pipelineManager'
 import { discreteDerivative } from './common/math'
 
-export type AggregatedMetrics<M, Extras = {}> = {
+export type AggregatedMetrics<M, EndpointStatus = {}> = {
   aggregate: { metrics: M }
   connectors: ({
     endpointName: string
     metrics: M
-  } & Extras)[]
+  } & EndpointStatus)[]
 }
 
 export type AggregatedInputEndpointMetrics = AggregatedMetrics<
   InputEndpointMetrics,
-  {
-    paused?: boolean
-    barrier?: boolean
+  Pick<InputEndpointStatus, 'paused' | 'barrier' | 'health' | 'fatal_error'> & {
     io_active: boolean
     transaction_phase?: 'started' | 'committed'
   }
@@ -32,7 +31,7 @@ export type AggregatedInputEndpointMetrics = AggregatedMetrics<
 
 export type AggregatedOutputEndpointMetrics = AggregatedMetrics<
   OutputEndpointMetrics,
-  { io_active: boolean }
+  Pick<OutputEndpointStatus, 'health' | 'fatal_error'> & { io_active: boolean }
 >
 
 export const emptyPipelineMetrics = {
@@ -55,10 +54,11 @@ const addZeroMetrics = (previous: PipelineMetrics) => ({
 })
 
 export const accumulatePipelineMetrics =
-  (newTimestamp: number, refetchMs: number, keepMs?: number) => (oldData: any, x: any) => {
-    const { status: newData } = x
-    invariant(((v: any): v is PipelineMetrics | undefined => true)(oldData))
-    invariant(((v: any): v is ControllerStatus | null => true)(newData))
+  (newTimestamp: number) =>
+  (
+    oldData: PipelineMetrics | undefined,
+    { status: newData }: { status: ControllerStatus | null }
+  ): PipelineMetrics | undefined => {
     if (!newData) {
       return oldData ? addZeroMetrics(oldData) : oldData
     }
@@ -89,7 +89,9 @@ export const accumulatePipelineMetrics =
                 barrier: cur.barrier,
                 io_active:
                   prev !== undefined && cur.metrics.total_records > prev.metrics.total_records,
-                transaction_phase: connectorPhase
+                transaction_phase: connectorPhase,
+                health: cur.health,
+                fatal_error: cur.fatal_error
               }
             })
             const metrics: AggregatedInputEndpointMetrics = {
@@ -137,7 +139,9 @@ export const accumulatePipelineMetrics =
                 metrics: cur.metrics,
                 io_active:
                   prev !== undefined &&
-                  cur.metrics.transmitted_records > prev.metrics.transmitted_records
+                  cur.metrics.transmitted_records > prev.metrics.transmitted_records,
+                health: cur.health,
+                fatal_error: cur.fatal_error
               }
             }),
             aggregate: {
@@ -180,7 +184,7 @@ export const accumulatePipelineMetrics =
         })
       ),
       global: globalWithTimestamp
-    } as any
+    }
   }
 
 /**

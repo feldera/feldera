@@ -228,6 +228,7 @@ const sql = {
                 'sql/string',
                 'sql/table',
                 'sql/uuid',
+                'sql/unsupported-operations'
             ]
         },
         'sql/materialized',

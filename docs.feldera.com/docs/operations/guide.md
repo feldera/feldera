@@ -86,36 +86,9 @@ ALTER TABLE my_table SET TBLPROPERTIES (
 
 **Error**: `The pipeline container has restarted. This was likely caused by an Out-Of-Memory (OOM) crash.`
 
-Feldera runs each pipeline in a separate container with configurable memory limits. Here are some knobs to
-control memory usage:
-
-1. Adjust the pipeline’s memory reservation and limit:
-   ```json
-   "resources": {
-       "memory_mb_min": 32000,
-       "memory_mb_max": 32000
-   }
-   ```
-
-2. Throttle the amount of records buffered by the connector using the [`max_queued_records`](https://docs.feldera.com/connectors/#generic-attributes) setting:
-   ```json
-   "max_queued_records": 100000
-   ```
-
-3. Ensure that storage is enabled (it's on by default):
-   ```json
-   "storage": {
-       "backend": {
-         "name": "default"
-       },
-       "min_storage_bytes": null,
-       "compression": "default",
-       "cache_mib": null
-   },
-   ```
-4. Optimize your SQL queries to avoid expensive
-   cross-products. Use functions like
-   [NOW()](https://docs.feldera.com/sql/datetime/#now) sparingly on large relations.
+Feldera runs each pipeline in a separate container with configurable memory limits.
+See [documentation on the pipeline's memory usage](memory) for a detailed breakdown
+of how memory is used and available control knobs.
 
 ### Out-of-storage Errors
 

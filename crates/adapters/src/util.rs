@@ -725,6 +725,7 @@ pub(crate) fn run_in_posix_runtime<F>(
     let temp = tempfile::tempdir().expect("failed to create temp dir for storage");
     let cconf = CircuitConfig {
         layout: Layout::new_solo(1),
+        max_rss_bytes: None,
         mode: Mode::Ephemeral,
         pin_cpus: Vec::new(),
         storage: Some(

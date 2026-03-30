@@ -81,6 +81,7 @@ pub mod mimalloc;
 pub mod monitor;
 pub mod operator;
 pub mod profile;
+pub mod samply;
 pub mod storage;
 pub mod time;
 pub mod trace;

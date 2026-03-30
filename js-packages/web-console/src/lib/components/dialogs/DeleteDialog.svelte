@@ -3,7 +3,7 @@
     actionName: string,
     itemName: string | ((...args: Args) => string),
     onAction: (...args: Args) => void | Promise<any>,
-    description = 'Are you sure? This action is irreversible.',
+    description?: string,
     scrollableContent?: string
   ) {
     return (...args: Args) => ({
@@ -18,7 +18,9 @@
 </script>
 
 <script lang="ts" generics="Args extends unknown[]">
-  import DangerDialog from './DangerDialog.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
+
+  import GenericDialog from './GenericDialog.svelte'
 
   let {
     actionName,
@@ -26,8 +28,7 @@
     onAction,
     description = 'Are you sure? This action is irreversible.',
     scrollableContent,
-    args,
-    onClose
+    args
   }: {
     actionName: string
     itemName: string | ((...args: Args) => string)
@@ -35,8 +36,9 @@
     description?: string
     scrollableContent?: string
     args: Args
-    onClose: () => void
   } = $props()
+
+  let globalDialog = useGlobalDialog()
 
   let content = $derived({
     title: typeof itemName === 'string' ? itemName : itemName(...args),
@@ -44,10 +46,13 @@
     scrollableContent,
     onSuccess: {
       name: actionName,
-      callback: () => onAction(...args),
+      callback: async () => {
+        await onAction(...args)
+        globalDialog.dialog = null
+      },
       'data-testid': 'button-confirm-delete'
     }
   })
 </script>
 
-<DangerDialog {content} {onClose}></DangerDialog>
+<GenericDialog {content} danger></GenericDialog>

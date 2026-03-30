@@ -7,8 +7,8 @@ use crate::{
         LeanVec, WeightTrait, WithFactory,
     },
     trace::{
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Serializer, WeightedItem,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, DbspSerializer,
+        Deserializer, WeightedItem,
         cursor::Position,
         layers::{
             Cursor as TrieCursor, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories,
@@ -205,7 +205,7 @@ where
         todo!()
     }
 }
-impl<K, T, R, O: OrdOffset> Serialize<Serializer> for VecKeyBatch<K, T, R, O>
+impl<K, T, R, O: OrdOffset> Serialize<DbspSerializer<'_>> for VecKeyBatch<K, T, R, O>
 where
     K: DataTrait + ?Sized,
     T: Timestamp,
@@ -214,8 +214,8 @@ where
 {
     fn serialize(
         &self,
-        _serializer: &mut Serializer,
-    ) -> Result<Self::Resolver, <Serializer as rkyv::Fallible>::Error> {
+        _serializer: &mut DbspSerializer,
+    ) -> Result<Self::Resolver, <DbspSerializer<'_> as rkyv::Fallible>::Error> {
         todo!()
     }
 }

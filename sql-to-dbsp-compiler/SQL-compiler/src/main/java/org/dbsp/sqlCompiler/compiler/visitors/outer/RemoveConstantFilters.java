@@ -12,9 +12,9 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 
-/** Removes filters constant predicates. */
-public class RemoveFilters extends CircuitCloneVisitor {
-    public RemoveFilters(DBSPCompiler compiler) {
+/** Removes filters with constant predicates. */
+public class RemoveConstantFilters extends CircuitCloneVisitor {
+    public RemoveConstantFilters(DBSPCompiler compiler) {
         super(compiler, false);
     }
 

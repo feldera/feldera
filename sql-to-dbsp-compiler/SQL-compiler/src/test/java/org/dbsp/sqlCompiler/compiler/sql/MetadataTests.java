@@ -196,19 +196,48 @@ public class MetadataTests extends BaseSQLTests {
         Assert.assertTrue(found);
     }
 
+    DBSPCompiler chattyCompiler() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        compiler.options.ioOptions.quiet = false;
+        return compiler;
+    }
+
     @Test
     public void issue3341() {
         String sql = """
                 CREATE FUNCTION F(x INTEGER NOT NULL) RETURNS INTEGER;
                 CREATE TABLE T(x INTEGER);
                 CREATE VIEW V AS SELECT F(x) FROM T;""";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
-        compiler.options.ioOptions.quiet = false;
+        DBSPCompiler compiler = this.chattyCompiler();
         compiler.submitStatementsForCompilation(sql);
         compiler.getFinalCircuit(true);
         TestUtil.assertMessagesContain(compiler,
                 "Argument 0 is nullable, while 'f' expects a not nullable value");
+    }
+
+    @Test
+    public void testFormatWarnings() {
+        String sql = "CREATE TABLE T(d DATE);\n" +
+                "CREATE VIEW V AS SELECT FORMAT_DATE(DATE '2020-10-10', '%Y-%m');";
+        DBSPCompiler compiler = this.chattyCompiler();
+        compiler.submitStatementsForCompilation(sql);
+        compiler.getFinalCircuit(true);
+        TestUtil.assertMessagesContain(compiler,
+                "warning: Suspicious argument: String '%Y-%m' cannot be interpreted as a DATE");
+
+        compiler = this.chattyCompiler();
+        compiler.submitStatementsForCompilation("CREATE VIEW V AS SELECT PARSE_TIMESTAMP(10, '%s');");
+        compiler.getFinalCircuit(true);
+        TestUtil.assertMessagesContain(compiler, """
+                Format argument does not look like a format string.
+                    1|CREATE VIEW V AS SELECT PARSE_TIMESTAMP(10, '%s');
+                                                              ^^""");
+
+        compiler = this.chattyCompiler();
+        compiler.submitStatementsForCompilation("CREATE VIEW V AS SELECT PARSE_TIMESTAMP('10', '%s');");
+        compiler.getFinalCircuit(true);
+        TestUtil.assertMessagesContain(compiler, "Suspicious argument: Format argument does not look like a format string.");
     }
 
     @Test
@@ -381,8 +410,7 @@ public class MetadataTests extends BaseSQLTests {
                     "url": "localhost"
                   }]'
                );""";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.options.ioOptions.quiet = false;
+        DBSPCompiler compiler = this.chattyCompiler();
         compiler.submitStatementsForCompilation(sql);
         // Force compilation
         compiler.getFinalCircuit(true);
@@ -480,8 +508,7 @@ public class MetadataTests extends BaseSQLTests {
                   'connector' = 'localhost'
                );
                CREATE VIEW V AS SELECT * FROM T;""";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
+        DBSPCompiler compiler = this.chattyCompiler();
         compiler.submitStatementsForCompilation(ddl);
         TestUtil.assertMessagesContain(compiler, "Duplicate key");
         TestUtil.assertMessagesContain(compiler, "Previous declaration");
@@ -490,18 +517,14 @@ public class MetadataTests extends BaseSQLTests {
     @Test
     public void materializedProperty() {
         String ddl = "CREATE VIEW V WITH ('materialized' = 'true') AS SELECT 5;";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
-        compiler.options.ioOptions.quiet = false;
+        DBSPCompiler compiler = this.chattyCompiler();
         compiler.submitStatementsForCompilation(ddl);
         TestUtil.assertMessagesContain(compiler, "please use 'CREATE MATERIALIZED VIEW' instead");
     }
 
     @Test
     public void unusedInputColumns() {
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
-        compiler.options.ioOptions.quiet = false;
+        DBSPCompiler compiler = this.chattyCompiler();
         compiler.submitStatementsForCompilation("""
                 CREATE TABLE T(used INTEGER, unused INTEGER);
                 CREATE TABLE T1(used INTEGER, unused INTEGER) with ('materialized' = 'true');
@@ -568,8 +591,7 @@ public class MetadataTests extends BaseSQLTests {
 
     @Test
     public void issue5436() {
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.options.ioOptions.quiet = false;
+        DBSPCompiler compiler = this.chattyCompiler();
         compiler.submitStatementsForCompilation("""
                 CREATE TABLE T(used INTEGER, unused INTEGER) with ('skip_unused_columns' = 'true');
                 CREATE TABLE T1(used INTEGER, unused INTEGER) with (
@@ -641,9 +663,7 @@ public class MetadataTests extends BaseSQLTests {
 
     @Test
     public void issue3427() {
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
-        compiler.options.ioOptions.quiet = false;
+        DBSPCompiler compiler = this.chattyCompiler();
         compiler.submitStatementsForCompilation("""
                 CREATE TABLE t1(c1 INTEGER);
                 CREATE VIEW v1 AS SELECT ELEMENT(ARRAY [2, 3]) FROM t1;""");
@@ -655,9 +675,7 @@ public class MetadataTests extends BaseSQLTests {
 
     @Test
     public void issue3706() {
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
-        compiler.options.ioOptions.quiet = false;
+        DBSPCompiler compiler = this.chattyCompiler();
         compiler.submitStatementsForCompilation("""
                 CREATE TABLE T(x INT, y INT);
                 CREATE VIEW V as (SELECT * FROM T) UNION ALL (SELECT y, x FROM T);
@@ -1402,7 +1420,7 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript(sql);
         File json = this.createTempJsonFile();
         CompilerMessages msg = CompilerMain.execute(
-                "--dataflow", json.getPath(), "--noRust", file.getPath());
+                "-v", "1", "--dataflow", json.getPath(), "--noRust", file.getPath());
         Assert.assertEquals(0, msg.exitCode);
         String jsonContents = Utilities.readFile(json.toPath());
         String expected = TestUtil.readStringFromResourceFile("metadataTests-generateDFRecursive.json");

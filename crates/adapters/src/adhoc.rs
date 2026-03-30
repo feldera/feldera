@@ -41,7 +41,7 @@ pub(crate) fn create_session_context(
     // Initialize datafusion memory limits
     let mut runtime_env_builder = RuntimeEnvBuilder::new();
     if let Some(memory_mb_max) = config.global.resources.memory_mb_max {
-        let memory_bytes_max = memory_mb_max * 1024 * 1024;
+        let memory_bytes_max = memory_mb_max * 1_000_000;
         runtime_env_builder = runtime_env_builder
             .with_memory_pool(Arc::new(FairSpillPool::new(memory_bytes_max as usize)));
     }

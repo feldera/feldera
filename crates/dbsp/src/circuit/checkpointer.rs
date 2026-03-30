@@ -1,6 +1,7 @@
 //! Logic to manage persistent checkpoints for a circuit.
 
 use crate::dynamic::{self, data::DataTyped};
+use crate::storage::file::SerializerInner;
 use crate::{Error, NumEntries, TypedBox};
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::constants::{
@@ -17,7 +18,6 @@ use std::{
     sync::Arc,
 };
 
-use crate::trace::Serializer;
 use feldera_storage::error::StorageError;
 use feldera_storage::fbuf::FBuf;
 use feldera_storage::{StorageBackend, StorageFileType, StoragePath};
@@ -396,10 +396,7 @@ impl<T, D: ?Sized> Checkpoint for TypedBox<T, D> {
 
 impl Checkpoint for dyn dynamic::data::Data + 'static {
     fn checkpoint(&self) -> Result<Vec<u8>, Error> {
-        let mut s = Serializer::default();
-        let _r = self.serialize(&mut s).unwrap();
-        let fbuf = s.into_serializer().into_inner();
-        Ok(fbuf.into_vec())
+        Ok(SerializerInner::to_fbuf_with_thread_local(|s| self.serialize(s)).into_vec())
     }
 
     fn restore(&mut self, data: &[u8]) -> Result<(), Error> {

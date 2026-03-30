@@ -373,7 +373,7 @@ mod tests {
             .into_iter()
             .map(|batch| batch.into_iter().map(|b| Tup2(Event::Bid(b), 1)).collect());
 
-        let (circuit, input_handle) = RootCircuit::build(move |circuit| {
+        let (mut circuit, input_handle) = dbsp::Runtime::init_circuit(1, move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q18(circuit, stream);

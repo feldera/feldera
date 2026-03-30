@@ -517,7 +517,7 @@
         <SegmentedControl.Control class="w-fit flex-none rounded preset-filled-surface-50-950 p-1">
           <SegmentedControl.Indicator class="bg-white-dark shadow" />
           {#each mobileDisplayModes as mode}
-            <SegmentedControl.Item value={mode} class="z-1 btn h-6 cursor-pointer px-5 text-sm">
+            <SegmentedControl.Item value={mode} class="z-1 btn h-6 cursor-pointer px-5">
               <SegmentedControl.ItemText class="text-surface-950-50">
                 {mode}
               </SegmentedControl.ItemText>

@@ -301,7 +301,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testNull() {
         String query = "SELECT NULL";
-        DBSPZSetExpression result = new DBSPZSetExpression(new DBSPTupleExpression(DBSPNullLiteral.INSTANCE));
+        DBSPZSetExpression result = new DBSPZSetExpression(new DBSPTupleExpression(new DBSPNullLiteral()));
         this.testConstantOutput(query, result);
     }
 

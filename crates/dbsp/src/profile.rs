@@ -12,10 +12,10 @@ use crate::{
             MetricReading, OperatorMeta, RUNTIME_PERCENT, RUNTIME_SECONDS,
             SPINE_STORAGE_SIZE_BYTES, STEPS_COUNT, USED_MEMORY_BYTES,
         },
-        runtime::ThreadType,
     },
     monitor::{TraceMonitor, visual_graph::Graph},
 };
+use feldera_buffer_cache::ThreadType;
 use serde::Serialize;
 use size_of::HumanBytes;
 use std::{
@@ -103,6 +103,28 @@ impl WorkerProfile {
                 .into_iter()
                 .fold(0u64, |acc, (_, item)| acc + item.bytes),
         ))
+    }
+
+    /// Returns the sum of values of an attribute of type [`MetaItem::Count`]
+    /// across all nodes, including entries with labels.
+    ///
+    /// Fails if the profile contains an attribute with the specified name and a
+    /// type that is different from [`MetaItem::Count`].  On error, returns
+    /// the value of the attribute that caused the failure.
+    pub fn attribute_total_as_count(&self, attr: &MetricId) -> Result<usize, MetaItem> {
+        let mut acc = 0;
+        for meta in self.metadata.values() {
+            for ((metric_id, _labels), value) in meta.iter() {
+                if metric_id == attr {
+                    if let MetaItem::Count(count) = value {
+                        acc += *count;
+                    } else {
+                        return Err(value.clone());
+                    }
+                }
+            }
+        }
+        Ok(acc)
     }
 
     /// Returns the total number of bytes used by all stateful operators.
@@ -250,6 +272,20 @@ impl DbspProfile {
     /// Returns the total spine storage size in bytes across all operators.
     pub fn total_storage_size(&self) -> Result<HumanBytes, MetaItem> {
         self.attribute_total_as_bytes(&SPINE_STORAGE_SIZE_BYTES)
+    }
+
+    /// Returns the sum of values of an attribute of type [`MetaItem::Count`]
+    /// across all nodes and all worker threads, including entries with labels.
+    ///
+    /// Fails if the profile contains an attribute with the specified name and a
+    /// type that is different from [`MetaItem::Count`].  On error, returns
+    /// the value of the attribute that caused the failure.
+    pub fn attribute_total_as_count(&self, attr: &MetricId) -> Result<usize, MetaItem> {
+        let mut acc = 0;
+        for profile in self.worker_profiles.iter() {
+            acc += profile.attribute_total_as_count(attr)?;
+        }
+        Ok(acc)
     }
 }
 

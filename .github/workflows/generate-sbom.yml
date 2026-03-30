@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest-amd64
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download Syft
         uses: anchore/sbom-action/download-syft@v0.17.4
@@ -33,7 +33,7 @@ jobs:
           syft "$IMAGE_REF" --output spdx-json=feldera-sbom-image-${GITHUB_SHA}.spdx.json
 
       - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: feldera-sbom
           path: |

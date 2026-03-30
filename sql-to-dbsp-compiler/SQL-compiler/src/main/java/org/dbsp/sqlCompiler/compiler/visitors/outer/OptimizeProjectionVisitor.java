@@ -39,9 +39,9 @@ import java.util.Objects;
  * - constant followed by projection
  * - flatmap followed by projection
  * - join followed by projection
- * - join followed by mapindex projection
- * - indexjoin followed by mapindex projection
- * - indexjoin followed by map projection
+ * - join followed by mapIndex projection
+ * - indexJoin followed by mapIndex projection
+ * - indexJoin followed by map projection
  * Projections are map operations that have a function with a very simple
  * structure.  The function is analyzed using the 'Projection' visitor. */
 public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {

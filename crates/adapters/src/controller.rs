@@ -30,7 +30,6 @@ use crate::controller::sync::{
     CHECKPOINT_SYNC_PUSH_FAILURES, CHECKPOINT_SYNC_PUSH_SUCCESS,
     CHECKPOINT_SYNC_PUSH_TRANSFER_SPEED, CHECKPOINT_SYNC_PUSH_TRANSFERRED_BYTES, SYNCHRONIZER,
 };
-use crate::samply::SamplySpan;
 use crate::server::metrics::{HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, Value};
 use crate::server::{InitializationState, ServerState};
 use crate::transport::Step;
@@ -60,7 +59,9 @@ use dbsp::circuit::metrics::{
 };
 use dbsp::circuit::tokio::TOKIO;
 use dbsp::circuit::{CheckpointCommitter, CircuitStorageConfig, DevTweaks, Mode};
+use dbsp::samply::{MARKER_BYTES, Markers, SamplySpan};
 use dbsp::storage::backend::{StorageBackend, StoragePath};
+use dbsp::utils::process_rss_bytes;
 use dbsp::{
     DBSPHandle,
     circuit::{CircuitConfig, Layout},
@@ -70,8 +71,9 @@ use dbsp::{Runtime, WeakRuntime};
 use enum_map::EnumMap;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
-use feldera_adapterlib::transport::{Resume, Watermark};
+use feldera_adapterlib::transport::{InputReader, Resume, Watermark};
 use feldera_ir::LirCircuit;
+use feldera_storage::fbuf::slab::FBufSlabsStats;
 use feldera_storage::histogram::{ExponentialHistogram, ExponentialHistogramSnapshot};
 use feldera_storage::metrics::{
     READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS, SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES,
@@ -98,10 +100,10 @@ use governor::Quota;
 use governor::RateLimiter;
 use itertools::Itertools;
 use journal::StepMetadata;
-use memory_stats::memory_stats;
 use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
 use serde_json::Value as JsonValue;
+use size_of::HumanBytes;
 use stats::StepResults;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -109,7 +111,6 @@ use std::collections::HashSet;
 use std::collections::btree_map::Entry;
 use std::io::ErrorKind;
 use std::mem::replace;
-use std::ops::Range;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, SendError, Sender, SyncSender, channel, sync_channel};
@@ -127,15 +128,13 @@ use std::{
 };
 use tokio::sync::Notify;
 use tokio::{
-    fs::File,
-    io::{AsyncReadExt, BufReader},
     sync::{
         Mutex as TokioMutex,
         oneshot::{self, error::TryRecvError},
     },
     task::spawn_blocking,
 };
-use tracing::{debug, debug_span, error, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
 use validate::validate_config;
 
@@ -665,6 +664,10 @@ impl Controller {
             .add_input_endpoint(endpoint_name, endpoint_config, Some(endpoint), resume_info)
     }
 
+    pub fn get_input_endpoint(&self, endpoint_name: &str) -> Option<Arc<dyn InputReader>> {
+        self.inner.get_input_endpoint(endpoint_name)
+    }
+
     /// Disconnect an existing output endpoint.
     ///
     /// This method is asynchronous and may return before all endpoint
@@ -809,10 +812,22 @@ impl Controller {
     /// Returns the current controller status in the form used by the external
     /// API.
     pub fn api_status(&self) -> ExternalControllerStatus {
+        let runtime = self.inner.runtime.upgrade();
+        let memory_pressure = runtime
+            .as_ref()
+            .map(|runtime| runtime.current_memory_pressure())
+            .unwrap_or_default();
+        let memory_pressure_epoch = runtime
+            .as_ref()
+            .map(|runtime| runtime.memory_pressure_epoch())
+            .unwrap_or_default();
+
         self.status().to_api_type(
             self.can_suspend(),
             self.pipeline_complete(),
             self.inner.transaction_info.lock().unwrap().clone(),
+            memory_pressure,
+            memory_pressure_epoch,
         )
     }
 
@@ -933,7 +948,11 @@ impl Controller {
         receiver.await.unwrap()
     }
 
-    pub async fn async_samply_profile(&self, duration: u64) -> Result<Vec<u8>, AnyError> {
+    pub async fn async_samply_profile(
+        &self,
+        duration: u64,
+        os_cpu: Option<&str>,
+    ) -> Result<Vec<u8>, AnyError> {
         #[cfg(not(unix))]
         {
             anyhow::bail!(
@@ -984,66 +1003,75 @@ impl Controller {
             .context("failed to convert path to samply profile to str")?;
 
         let mut cmd = tokio::process::Command::new("samply");
-        let mut child = cmd
-            .args([
-                "record",
-                "-p",
-                &std::process::id().to_string(),
-                "-o",
-                profile_file,
-                "--save-only",
-                "--presymbolicate",
-            ])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .context("failed to spawn samply process")?;
 
-        let child_pid = child.id().context("failed to get samply process id")?;
+        // Calculate a maximum memory consumption for markers.
+        //
+        // In experiments, a busy worker thread can emit over 1,000 markers per
+        // second.  Round that up to 2,000 to allow for expansion, then double
+        // it to allow for other threads.
+        let markers_per_second = self.layout().local_workers().len().saturating_mul(2000 * 2);
+        let memory_limit = markers_per_second
+            .saturating_mul(MARKER_BYTES)
+            .saturating_mul(duration as usize);
 
-        // Workaround as samply's `--duration` flag doesn't seem to work.
-        // See: https://github.com/mstange/samply/issues/716
-        //
-        // As the duration flag doesn't work, we have to send a SIGINT to
-        // tell samply to stop recording.
-        //
-        // If samply returns before the specified duration, it is likely due
-        // to an error, and in such cases, we want to report it immediately.
-        tokio::select! {
-            _ = child.wait() => {}
-            _ = tokio::time::sleep(Duration::from_secs(duration)) => {
-                // Send SIGINT to the samply process to stop recording.
-                nix::sys::signal::kill(
-                    nix::unistd::Pid::from_raw(child_pid as i32),
-                    nix::sys::signal::Signal::SIGINT,
-                )
-                .context("failed to send SIGINT to samply process")?;
+        let markers = Markers::capture(Some(memory_limit),
+            async {
+            let mut child = cmd
+                .args([
+                    "record",
+                    "-p",
+                    &std::process::id().to_string(),
+                    "-o",
+                    profile_file,
+                    "--save-only",
+                    "--presymbolicate",
+                ])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .context("failed to spawn samply process")?;
+
+            let child_pid = child.id().context("failed to get samply process id")?;
+
+            // Workaround as samply's `--duration` flag doesn't seem to work.
+            // See: https://github.com/mstange/samply/issues/716
+            //
+            // As the duration flag doesn't work, we have to send a SIGINT to
+            // tell samply to stop recording.
+            //
+            // If samply returns before the specified duration, it is likely due
+            // to an error, and in such cases, we want to report it immediately.
+            tokio::select! {
+                _ = child.wait() => {}
+                _ = tokio::time::sleep(Duration::from_secs(duration)) => {
+                    // Send SIGINT to the samply process to stop recording.
+                    nix::sys::signal::kill(
+                        nix::unistd::Pid::from_raw(child_pid as i32),
+                        nix::sys::signal::Signal::SIGINT,
+                    )
+                        .context("failed to send SIGINT to samply process")?;
+                }
             }
-        }
 
-        let output = child
-            .wait_with_output()
+            let output = child
+                .wait_with_output()
+                .await
+                .context("failed when waiting for samply process")?;
+
+            if !output.status.success() {
+                anyhow::bail!(
+                    "samply process failed with status: `{}`, samply stdout: `{}`, samply stderr: `{}`",
+                    output.status,
+                    String::from_utf8_lossy(&output.stdout).trim(),
+                    String::from_utf8_lossy(&output.stderr).trim(),
+                );
+            }
+            Ok(())
+        }).await?;
+
+        let buf = tokio::fs::read(profile_file)
             .await
-            .context("failed when waiting for samply process")?;
-
-        if !output.status.success() {
-            anyhow::bail!(
-                "samply process failed with status: `{}`, samply stdout: `{}`, samply stderr: `{}`",
-                output.status,
-                String::from_utf8_lossy(&output.stdout).trim(),
-                String::from_utf8_lossy(&output.stderr).trim(),
-            );
-        }
-
-        let mut file = BufReader::new(File::open(profile_file).await.context(format!(
-            "failed to open samply profile file `{profile_file}`"
-        ))?);
-
-        let mut buf = Vec::with_capacity(10 * 1024 * 1024); // 10 MB
-
-        file.read_to_end(&mut buf).await.context(format!(
-            "failed to read samply profile file `{profile_file}`"
-        ))?;
+            .with_context(|| format!("failed to read samply profile file `{profile_file}`"))?;
 
         if buf.is_empty() {
             anyhow::bail!(
@@ -1051,9 +1079,21 @@ impl Controller {
             );
         }
 
-        tracing::info!("collected samply profile ({} bytes)", buf.len());
+        let output = match markers.annotate_profile(
+            &buf,
+            self.inner.status.pipeline_config.given_name.as_deref(),
+            os_cpu,
+        ) {
+            Ok(output) => output,
+            Err(error) => {
+                warn!("profile annotation failed ({error})");
+                buf
+            }
+        };
 
-        Ok(buf)
+        tracing::info!("collected samply profile ({} bytes)", output.len());
+
+        Ok(output)
     }
 
     /// Triggers a sync checkpoint operation. `cb` will be called when it
@@ -1187,6 +1227,7 @@ impl Controller {
         F: MetricsFormatter,
     {
         metrics.process_metrics(labels);
+
         metrics.gauge(
             "records_input_buffered",
             "Total amount of data currently buffered by all endpoints, in records.",
@@ -1342,6 +1383,27 @@ impl Controller {
                 "The limit for the number of bytes of memory for caching data on storage.",
                 labels,
                 cache_max,
+            );
+
+            write_fbuf_slab_metrics(metrics, labels, &runtime.fbuf_slabs_stats());
+
+            metrics.gauge(
+                "max_rss_bytes",
+                "Configured maximum process RSS in bytes. A value of 0 means no limit is configured.",
+                labels,
+                runtime.max_rss_bytes().unwrap_or(0),
+            );
+            metrics.gauge(
+                "memory_pressure",
+                "Current memory pressure level in [0..3]: low=0, moderate=1, high=2, critical=3.",
+                labels,
+                runtime.current_memory_pressure() as u8,
+            );
+            metrics.gauge(
+                "memory_pressure_epoch",
+                "Monotonic counter incremented whenever memory pressure transitions to high/critical.",
+                labels,
+                runtime.memory_pressure_epoch(),
             );
         }
 
@@ -1895,9 +1957,106 @@ impl Controller {
         self.inner.adhoc_tables.get(name).cloned()
     }
 
-    pub fn workers(&self) -> Range<usize> {
-        self.inner.workers.clone()
+    pub fn layout(&self) -> &Layout {
+        &self.inner.layout
     }
+}
+
+fn slab_served_percent(served_by_slab: u64, total: u64) -> f64 {
+    if total == 0 {
+        0.0
+    } else {
+        100.0 * (served_by_slab as f64) / (total as f64)
+    }
+}
+
+fn write_fbuf_slab_metrics<F>(
+    metrics: &mut MetricsWriter<F>,
+    labels: &LabelStack,
+    stats: &FBufSlabsStats,
+) where
+    F: MetricsFormatter,
+{
+    let alloc_total = stats.alloc_requests();
+    let free_total = stats.recycle_requests();
+
+    metrics.counter(
+        "storage_fbuf_slab_alloc_total",
+        "The total number of `FBuf` allocation requests across all slab size classes and fallbacks.",
+        labels,
+        alloc_total,
+    );
+    metrics.gauge(
+        "storage_fbuf_slab_alloc_served_by_slab_percent",
+        "The percentage of `FBuf` allocation requests served by slab pools.",
+        labels,
+        slab_served_percent(stats.mallocs_saved(), alloc_total),
+    );
+    metrics.counter(
+        "storage_fbuf_slab_free_total",
+        "The total number of `FBuf` deallocation requests across all slab size classes and fallbacks.",
+        labels,
+        free_total,
+    );
+    metrics.gauge(
+        "storage_fbuf_slab_free_served_by_slab_percent",
+        "The percentage of `FBuf` deallocation requests served by slab pools.",
+        labels,
+        slab_served_percent(stats.frees_saved(), free_total),
+    );
+
+    metrics.counters(
+        "storage_fbuf_slab_size_class_alloc_total",
+        "The total number of `FBuf` allocation requests for each slab size class.",
+        |w| {
+            for class in &stats.classes {
+                let size_class = class.size.to_string();
+                w.write_value(
+                    &labels.with("size_class_bytes", &size_class),
+                    class.alloc_requests,
+                );
+            }
+        },
+    );
+    metrics.gauges(
+        "storage_fbuf_slab_size_class_alloc_served_by_slab_percent",
+        "The percentage of `FBuf` allocation requests served by each slab size class.",
+        |w| {
+            for class in &stats.classes {
+                let size_class = class.size.to_string();
+                w.write_value(
+                    &labels.with("size_class_bytes", &size_class),
+                    slab_served_percent(class.alloc_hits, class.alloc_requests),
+                );
+            }
+        },
+    );
+    metrics.counters(
+        "storage_fbuf_slab_size_class_free_total",
+        "The total number of `FBuf` deallocation requests for each slab size class.",
+        |w| {
+            for class in &stats.classes {
+                let size_class = class.size.to_string();
+                w.write_value(
+                    &labels.with("size_class_bytes", &size_class),
+                    class.recycle_requests,
+                );
+            }
+        },
+    );
+    metrics.gauges(
+        "storage_fbuf_slab_size_class_free_served_by_slab_percent",
+        "The percentage of `FBuf` deallocation requests served by each slab size class.",
+        |w| {
+            for class in &stats.classes {
+                let size_class = class.size.to_string();
+                w.write_value(
+                    &labels.with("size_class_bytes", &size_class),
+                    slab_served_percent(class.recycle_hits, class.recycle_requests),
+                );
+            }
+        },
+    );
 }
 
 /// Write connector-specific (custom) metrics registered via
@@ -1979,7 +2138,7 @@ enum RunningCheckpointSync {
 
 impl RunningCheckpointSync {
     fn new(circuit: &mut CircuitThread, uuid: uuid::Uuid) -> Self {
-        SamplySpan::new(debug_span!("fg-checkpoint-sync", uuid = %uuid))
+        SamplySpan::new("fg-checkpoint-sync")
             .in_scope(|| Self::start(circuit, uuid))
             .unwrap_or_else(|e| Self::Error(uuid, e))
     }
@@ -2037,8 +2196,7 @@ impl RunningCheckpointSync {
         let join_handle = std::thread::Builder::new()
             .name(String::from("feldera-checkpoint-sync"))
             .spawn(move || {
-                let result = SamplySpan::new(debug_span!("bg-checkpoint-sync", uuid = %uuid))
-                    .in_scope(|| thread.run());
+                let result = SamplySpan::new("bg-checkpoint-sync").in_scope(|| thread.run());
                 let _ = sender.send(result);
                 unparker.unpark();
             })
@@ -2055,11 +2213,14 @@ impl RunningCheckpointSync {
                 Ok(result) => {
                     join_handle.join().unwrap();
 
-                    let mut last_sync = circuit.controller.last_checkpoint_sync.lock().unwrap();
-                    *last_sync = LastCheckpoint {
-                        timestamp: Instant::now(),
-                        id: Some(uuid),
-                    };
+                    // Only update last_sync if the checkpoint sync succeeded.
+                    if result.is_ok() {
+                        let mut last_sync = circuit.controller.last_checkpoint_sync.lock().unwrap();
+                        *last_sync = LastCheckpoint {
+                            timestamp: Instant::now(),
+                            id: Some(uuid),
+                        };
+                    }
 
                     Some(result)
                 }
@@ -2619,11 +2780,14 @@ impl CircuitThread {
 
         self.step_sender
             .send_replace(StepStatus::new(self.step, StepAction::Step));
-        let total_consumed =
-            match SamplySpan::new(debug_span!("input")).in_scope(|| self.input_step())? {
-                Some(total_consumed) => total_consumed,
-                None => return Ok(false),
-            };
+        let total_consumed = match SamplySpan::new("input")
+            .with_category("Step")
+            .with_tooltip(|| format!("supply input before step {}", self.step + 1))
+            .in_scope(|| self.input_step())?
+        {
+            Some(total_consumed) => total_consumed,
+            None => return Ok(false),
+        };
 
         self.step += 1;
 
@@ -2645,7 +2809,10 @@ impl CircuitThread {
         // query results always reflect all data that we have reported
         // processing; otherwise, there is a race for any code that runs a query
         // as soon as input has been processed.
-        SamplySpan::new(debug_span!("update")).in_scope(|| self.update_snapshot());
+        SamplySpan::new("update")
+            .with_category("Step")
+            .with_tooltip(|| format!("update ad-hoc tables after step {}", self.step))
+            .in_scope(|| self.update_snapshot());
 
         // Record that we've processed the records, unless there is a transaction in progress,
         // in which case records are ingested by the circuit but are not fully processed.
@@ -2711,7 +2878,9 @@ impl CircuitThread {
         if transaction_state != TransactionState::None {
             debug!("circuit thread: calling 'circuit.step'");
 
-            let committed = SamplySpan::new(debug_span!("step"))
+            let committed = SamplySpan::new("step")
+                .with_category("Step")
+                .with_tooltip(|| format!("step {}", self.step))
                 .in_scope(|| self.circuit.step())
                 .unwrap_or_else(|e| {
                     self.controller.error(Arc::new(e.into()), None);
@@ -2759,6 +2928,11 @@ impl CircuitThread {
                         "Transaction {tid}: Finished committing {n} records in {:.1} seconds",
                         duration.as_secs_f64()
                     );
+                    SamplySpan::new("commit")
+                        .with_category("Transaction")
+                        .with_tooltip(|| format!("transaction {tid} committed {n} records"))
+                        .with_start(start)
+                        .record();
                     TRANSACTION_COMMIT_TIME.record_duration(duration);
 
                     let mut transaction_info = self.controller.transaction_info.lock().unwrap();
@@ -2777,7 +2951,7 @@ impl CircuitThread {
             debug!("circuit thread: calling 'circuit.transaction'");
             self.controller.increment_transaction_number();
             // FIXME: we're using "span" for both step() (above) and transaction() (here).
-            SamplySpan::new(debug_span!("step"))
+            SamplySpan::new("step")
                 .in_scope(|| self.circuit.transaction())
                 .unwrap_or_else(|e| self.controller.error(Arc::new(e.into()), None));
             debug!("circuit thread: 'circuit.transaction' returned");
@@ -4104,6 +4278,20 @@ impl ControllerInit {
             )
         }
 
+        // Transfer HTTP input endpoints that are not affected by the program diff from the checkpoint to the new configuration.
+        checkpoint_config
+            .inputs
+            .iter()
+            .filter(|(_connector_name, connector_config)| {
+                connector_config.connector_config.transport.is_http_input()
+                    && !pipeline_diff.is_affected_relation(&connector_config.stream)
+            })
+            .for_each(|(connector_name, connector_config)| {
+                config
+                    .inputs
+                    .insert(connector_name.clone(), connector_config.clone());
+            });
+
         // Merge `config` (the configuration provided by the pipeline manager)
         // with `checkpoint_config` (the configuration read from the
         // checkpoint).
@@ -4120,6 +4308,7 @@ impl ControllerInit {
                 // Can't change number of workers or hosts yet.
                 hosts: checkpoint_config.global.hosts,
                 workers: checkpoint_config.global.workers,
+                max_rss_mb: checkpoint_config.global.max_rss_mb,
 
                 // The checkpoint determines the fault tolerance model, but the
                 // pipeline manager can override the details of the
@@ -4193,7 +4382,7 @@ impl ControllerInit {
     }
 
     pub fn set_incarnation_uuid(&mut self, incarnation_uuid: Uuid) {
-        self.incarnation_uuid = incarnation_uuid;
+        self.incarnation_uuid = incarnation_uuid
     }
 
     fn circuit_config(
@@ -4201,13 +4390,42 @@ impl ControllerInit {
         pipeline_config: &PipelineConfig,
         storage: Option<CircuitStorageConfig>,
     ) -> Result<CircuitConfig, ControllerError> {
+        let dev_tweaks = DevTweaks::from_config(&pipeline_config.global.dev_tweaks);
+
+        let mut max_rss_mb = pipeline_config.global.max_rss_mb;
+
+        if max_rss_mb.is_none()
+            && let Some(memory_mb_max) = &pipeline_config.global.resources.memory_mb_max
+        {
+            warn!(
+                "RSS memory limit ('max_rss_mb') is not set, but a Kubernetes memory limit \
+('resources.memory_mb_max' = {memory_mb_max} MB) is configured. \
+Using the Kubernetes limit as the RSS memory limit."
+            );
+            max_rss_mb = Some(*memory_mb_max);
+        } else if max_rss_mb.is_none() && pipeline_config.global.resources.memory_mb_max.is_none() {
+            warn!(
+                "RSS memory limit ('max_rss_mb') is not set, and no Kubernetes memory limit \
+('resources.memory_mb_max') is configured. We recommend configuring at least one of these settings to avoid out-of-memory failures."
+            );
+        } else if let Some(max_rss_mb) = max_rss_mb
+            && let Some(memory_mb_max) = &pipeline_config.global.resources.memory_mb_max
+            && max_rss_mb > *memory_mb_max
+        {
+            warn!(
+                "RSS memory limit ('max_rss_mb') is set to {max_rss_mb} MB exceeds the Kubernetes memory limit \
+('resources.memory_mb_max' = {memory_mb_max} MB) is configured. This will likely cause out-of-memory failures."
+            );
+        }
+
         Ok(CircuitConfig {
             layout: layout
                 .unwrap_or_else(|| Layout::new_solo(pipeline_config.global.workers as usize)),
+            max_rss_bytes: max_rss_mb.map(|mb| mb * 1_000_000),
             pin_cpus: pipeline_config.global.pin_cpus.clone(),
             storage,
             mode: Mode::Persistent,
-            dev_tweaks: DevTweaks::from_config(&pipeline_config.global.dev_tweaks),
+            dev_tweaks,
         })
     }
 
@@ -4413,7 +4631,7 @@ impl StatisticsThread {
                 total_processed_records: controller_status
                     .global_metrics
                     .num_total_processed_records(),
-                memory_bytes: memory_stats().map_or(0, |stats| stats.physical_mem as u64),
+                memory_bytes: process_rss_bytes().unwrap_or_default(),
                 storage_bytes,
             };
             let mut time_series = controller_status.time_series.lock().unwrap();
@@ -5206,8 +5424,8 @@ pub struct ControllerInner {
     // from the sync context by the circuit thread.
     transaction_info: Mutex<TransactionInfo>,
 
-    /// Workers local to this host.
-    workers: Range<usize>,
+    /// Layout of the [Runtime].
+    layout: Layout,
 
     /// Current transaction number.
     ///
@@ -5272,7 +5490,7 @@ impl ControllerInner {
                 next_input_id: Atomic::new(0),
                 outputs: ShardedLock::new(OutputEndpoints::new()),
                 next_output_id: Atomic::new(0),
-                workers: runtime.layout().local_workers(),
+                layout: runtime.layout().clone(),
                 runtime: runtime.downgrade(),
                 circuit_thread_unparker: circuit_thread_parker.unparker().clone(),
                 backpressure_thread_unparker: backpressure_thread_parker.unparker().clone(),
@@ -5359,7 +5577,7 @@ impl ControllerInner {
             controller.status.set_state(PipelineState::Terminated);
         })?;
 
-        if controller.workers.start == 0 {
+        if controller.layout.local_host_idx() == 0 {
             let _ = controller.connect_input("now", &now_endpoint_config(&config), None);
         }
 
@@ -5387,7 +5605,7 @@ impl ControllerInner {
             return max_batch_size as usize;
         };
 
-        let num_local_workers = std::cmp::max(self.workers.len(), 1);
+        let num_local_workers = std::cmp::max(self.layout.local_workers().len(), 1);
 
         let max_worker_batch_size =
             if let Some(max_worker_batch_size) = connector_config.max_worker_batch_size {
@@ -5665,7 +5883,7 @@ impl ControllerInner {
                             .write()
                             .get_mut(&endpoint_id)
                             .unwrap()
-                            .reader = Some(reader);
+                            .reader = Some(Arc::from(reader));
                     }
                     Err(e) => {
                         self.status.inputs.write().remove(&endpoint_id);
@@ -5711,7 +5929,7 @@ impl ControllerInner {
                             .write()
                             .get_mut(&endpoint_id)
                             .unwrap()
-                            .reader = Some(reader);
+                            .reader = Some(Arc::from(reader));
                     }
                     Err(e) => {
                         self.status.inputs.write().remove(&endpoint_id);
@@ -5736,6 +5954,15 @@ impl ControllerInner {
 
         self.unpark_backpressure();
         Ok(endpoint_id)
+    }
+
+    fn get_input_endpoint(&self, endpoint_name: &str) -> Option<Arc<dyn InputReader>> {
+        let endpoint_id = self.status.input_endpoint_id_by_name(endpoint_name).ok()?;
+        self.status
+            .inputs
+            .read()
+            .get(&endpoint_id)
+            .and_then(|ep| ep.reader.as_ref().cloned())
     }
 
     fn register_api_connection(&self) -> Result<(), u64> {
@@ -6625,6 +6852,11 @@ impl ControllerInner {
                         "Transaction {tid}: Starting commit of {n} records after {:.1} seconds",
                         duration.as_secs_f64()
                     );
+                    SamplySpan::new("ingested")
+                        .with_category("Transaction")
+                        .with_tooltip(|| format!("transaction {tid} ingested {n} records"))
+                        .with_start(start)
+                        .record();
                     transaction_info.transaction_state = TransactionState::Committing {
                         tid,
                         start: Instant::now(),
@@ -6988,7 +7220,7 @@ impl RunningCheckpoint {
     /// can't checkpoint) or after a long time (e.g. if it takes a long time to
     /// write out the checkpoint).
     fn new(circuit: &mut CircuitThread) -> Self {
-        SamplySpan::new(debug_span!("fg-checkpoint"))
+        SamplySpan::new("fg-checkpoint")
             .in_scope(|| Self::start(circuit))
             .unwrap_or_else(Self::Error)
     }
@@ -7078,6 +7310,13 @@ impl RunningCheckpoint {
             input_statistics,
             output_statistics,
         };
+        SamplySpan::new("blocking")
+            .with_category("Checkpoint")
+            .with_start(start_checkpoint)
+            .with_tooltip(|| {
+                String::from("Time during which checkpointing blocked pipeline execution")
+            })
+            .record();
         let delay = start_checkpoint.elapsed();
 
         let (sender, receiver) = oneshot::channel();
@@ -7094,8 +7333,7 @@ impl RunningCheckpoint {
         let join_handle = std::thread::Builder::new()
             .name(String::from("feldera-checkpoint"))
             .spawn(move || {
-                let result =
-                    SamplySpan::new(debug_span!("bg-checkpoint")).in_scope(|| thread.run());
+                let result = SamplySpan::new("bg-checkpoint").in_scope(|| thread.run());
                 let _ = sender.send(result);
                 unparker.unpark();
             })
@@ -7139,7 +7377,7 @@ impl RunningCheckpoint {
                 Ok(result) => {
                     join_handle.join().unwrap();
                     Some(result.and_then(|checkpoint| {
-                        SamplySpan::new(debug_span!("end-checkpoint"))
+                        SamplySpan::new("end-checkpoint")
                             .in_scope(|| Self::finish(checkpoint, circuit))
                     }))
                 }
@@ -7237,6 +7475,11 @@ impl CheckpointThread {
             .write(&*self.storage, &StoragePath::from(STATE_FILE))?;
 
         // Record statistics.
+        SamplySpan::new("runtime")
+            .with_category("Checkpoint")
+            .with_tooltip(|| format!("Wrote {} checkpoint", HumanBytes::from(bytes_written)))
+            .with_start(self.start_checkpoint)
+            .record();
         CHECKPOINT_RUNTIME.record_elapsed(self.start_checkpoint);
         CHECKPOINT_DELAY.record(self.delay.as_micros());
         CHECKPOINT_WRITTEN_MEGABYTES.record(bytes_written / 1_000_000);

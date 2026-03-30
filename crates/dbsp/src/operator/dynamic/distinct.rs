@@ -1232,7 +1232,7 @@ mod test {
 
     #[test]
     fn distinct_inc_test() {
-        let circuit = RootCircuit::build(move |circuit| {
+        let mut circuit = Runtime::init_circuit(1, move |circuit| {
             let mut inputs = vec![
                 vec![zset! { 1 => 1, 2 => 1 }, zset! { 2 => -1, 3 => 2, 4 => 2 }],
                 vec![zset! { 2 => 1, 3 => 1 }, zset! { 3 => -2, 4 => -1 }],

@@ -29,7 +29,8 @@
 use crate::circuit::metadata::OperatorMeta;
 use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 use crate::storage::buffer_cache::CacheStats;
-pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
+use crate::storage::file::SerializerInner;
+pub use crate::storage::file::{DbspSerializer, Deserializable, Deserializer, Rkyv};
 use crate::trace::cursor::{
     DefaultPushCursor, FilteredMergeCursor, FilteredMergeCursorWithSnapshot, PushCursor,
     UnfilteredMergeCursor,
@@ -38,6 +39,7 @@ use crate::utils::IsNone;
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::CursorFactory;
 use enum_map::Enum;
+use feldera_storage::fbuf::FBufSerializer;
 use feldera_storage::{FileCommitter, FileReader, StoragePath};
 use rand::{Rng, thread_rng};
 use rkyv::ser::Serializer as _;
@@ -132,16 +134,18 @@ pub(crate) struct CommittedSpine {
     pub dirty: bool,
 }
 
-/// Trait for data that can be serialized and deserialized with [`rkyv`].
-///
-/// This trait doesn't have any extra bounds on Deserializable.
-///
 /// Deserializes `bytes` as type `T` using `rkyv`, tolerating `bytes` being
 /// misaligned.
 pub fn unaligned_deserialize<T: Deserializable>(bytes: &[u8]) -> T {
     let mut aligned_bytes = FBuf::new();
     aligned_bytes.extend_from_slice(bytes);
-    unsafe { archived_root::<T>(&aligned_bytes[..]) }
+    aligned_deserialize(&aligned_bytes)
+}
+
+/// Deserializes `bytes` as type `T` using `rkyv`.  `bytes` must be properly
+/// aligned.
+pub fn aligned_deserialize<T: Deserializable>(bytes: &[u8]) -> T {
+    unsafe { archived_root::<T>(bytes) }
         .deserialize(&mut Deserializer::default())
         .unwrap()
 }
@@ -956,7 +960,7 @@ where
 /// builder.push_val(v2);
 /// builder.push_key(k4);
 /// ```
-pub trait Builder<Output>: SizeOf
+pub trait Builder<Output>: Send + SizeOf
 where
     Self: Sized,
     Output: Batch,
@@ -1330,16 +1334,17 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    let mut s = Serializer::default();
-    let mut offsets = Vec::with_capacity(2 * batch.len());
-    let mut cursor = batch.cursor();
-    while cursor.key_valid() {
-        offsets.push(cursor.key().serialize(&mut s).unwrap());
-        offsets.push(cursor.weight().serialize(&mut s).unwrap());
-        cursor.step_key();
-    }
-    let _offset = s.serialize_value(&offsets).unwrap();
-    s.into_serializer().into_inner().into_vec()
+    SerializerInner::to_fbuf_with_thread_local(|s| {
+        let mut offsets = Vec::with_capacity(2 * batch.len());
+        let mut cursor = batch.cursor();
+        while cursor.key_valid() {
+            offsets.push(cursor.key().serialize(s)?);
+            offsets.push(cursor.weight().serialize(s)?);
+            cursor.step_key();
+        }
+        s.serialize_value(&offsets)
+    })
+    .into_vec()
 }
 
 fn deserialize_wset<B, K, R>(factories: &B::Factories, data: &[u8]) -> B
@@ -1366,31 +1371,124 @@ where
 /// Separator that identifies the end of values for a key.
 const SEPARATOR: u64 = u64::MAX;
 
-pub fn serialize_indexed_wset<B, K, V, R>(batch: &B) -> Vec<u8>
+#[cfg(debug_assertions)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum State {
+    Key,
+    Val,
+    Diff,
+}
+
+pub struct IndexedWSetSerializer {
+    fbuf: FBuf,
+    offsets: Vec<usize>,
+    n_keys: usize,
+    n_values: usize,
+    #[cfg(debug_assertions)]
+    state: State,
+}
+
+impl IndexedWSetSerializer {
+    pub fn with_capacity(estimated_keys: usize, estimated_values: usize) -> Self {
+        let mut offsets = Vec::with_capacity(2 + 2 * estimated_keys + 2 * estimated_values);
+        offsets.push(0);
+        offsets.push(0);
+        Self {
+            fbuf: FBuf::new(),
+            offsets,
+            n_keys: 0,
+            n_values: 0,
+            #[cfg(debug_assertions)]
+            state: State::Key,
+        }
+    }
+
+    pub fn push_diff<R: WeightTrait + ?Sized>(
+        &mut self,
+        weight: &R,
+        serializer_inner: &mut SerializerInner,
+    ) {
+        #[cfg(debug_assertions)]
+        {
+            debug_assert_ne!(self.state, State::Diff);
+            self.state = State::Diff;
+        }
+
+        serializer_inner.with(FBufSerializer::new(&mut self.fbuf), |s| {
+            self.offsets.push(weight.serialize(s).unwrap())
+        });
+    }
+
+    pub fn push_val<V: DataTrait + ?Sized>(
+        &mut self,
+        val: &V,
+        serializer_inner: &mut SerializerInner,
+    ) {
+        #[cfg(debug_assertions)]
+        {
+            debug_assert_eq!(self.state, State::Diff);
+            self.state = State::Val;
+        }
+
+        self.n_values += 1;
+        serializer_inner.with(FBufSerializer::new(&mut self.fbuf), |s| {
+            self.offsets.push(val.serialize(s).unwrap())
+        });
+    }
+
+    pub fn push_key<K: DataTrait + ?Sized>(
+        &mut self,
+        key: &K,
+        serializer_inner: &mut SerializerInner,
+    ) {
+        #[cfg(debug_assertions)]
+        {
+            debug_assert_eq!(self.state, State::Val);
+            self.state = State::Key;
+        }
+
+        self.offsets.push(SEPARATOR as usize);
+        self.n_keys += 1;
+        serializer_inner.with(FBufSerializer::new(&mut self.fbuf), |s| {
+            self.offsets.push(key.serialize(s).unwrap())
+        });
+    }
+
+    pub fn done(mut self, serializer_inner: &mut SerializerInner) -> Vec<u8> {
+        #[cfg(debug_assertions)]
+        debug_assert_eq!(self.state, State::Key);
+        self.offsets[0] = self.n_keys;
+        self.offsets[1] = self.n_values;
+        serializer_inner.with(FBufSerializer::new(&mut self.fbuf), |s| {
+            s.serialize_value(&self.offsets).unwrap()
+        });
+        self.fbuf.into_vec()
+    }
+}
+
+pub fn serialize_indexed_wset<B, K, V, R>(
+    batch: &B,
+    serializer_inner: &mut SerializerInner,
+) -> Vec<u8>
 where
     B: BatchReader<Key = K, Val = V, Time = (), R = R>,
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    let mut s = Serializer::default();
-    let mut offsets = Vec::with_capacity(2 * batch.len());
+    let mut serializer = IndexedWSetSerializer::with_capacity(batch.key_count(), batch.len());
     let mut cursor = batch.cursor();
-    offsets.push(batch.len());
 
     while cursor.key_valid() {
-        offsets.push(cursor.key().serialize(&mut s).unwrap());
         while cursor.val_valid() {
-            offsets.push(cursor.val().serialize(&mut s).unwrap());
-            offsets.push(cursor.weight().serialize(&mut s).unwrap());
-
+            serializer.push_diff(cursor.weight(), serializer_inner);
+            serializer.push_val(cursor.val(), serializer_inner);
             cursor.step_val();
         }
+        serializer.push_key(cursor.key(), serializer_inner);
         cursor.step_key();
-        offsets.push(SEPARATOR as usize);
     }
-    let _offset = s.serialize_value(&offsets).unwrap();
-    s.into_serializer().into_inner().into_vec()
+    serializer.done(serializer_inner)
 }
 
 pub fn deserialize_indexed_wset<B, K, V, R>(factories: &B::Factories, data: &[u8]) -> B
@@ -1401,28 +1499,30 @@ where
     R: WeightTrait + ?Sized,
 {
     let offsets = unsafe { archived_root::<Vec<usize>>(data) };
-    let len = offsets[0];
+    let n_keys = offsets[0] as usize;
+    let n_values = offsets[1] as usize;
 
-    let mut builder = B::Builder::with_capacity(factories, len as usize, len as usize);
+    let mut builder = B::Builder::with_capacity(factories, n_keys, n_values);
     let mut key = factories.key_factory().default_box();
     let mut val = factories.val_factory().default_box();
     let mut diff = factories.weight_factory().default_box();
 
-    let mut current_offset = 1;
+    let mut current_offset = 2;
 
     while current_offset < offsets.len() {
-        unsafe { key.deserialize_from_bytes(data, offsets[current_offset] as usize) };
-        current_offset += 1;
         while offsets[current_offset] != SEPARATOR {
+            unsafe { diff.deserialize_from_bytes(data, offsets[current_offset] as usize) };
+            current_offset += 1;
             unsafe { val.deserialize_from_bytes(data, offsets[current_offset] as usize) };
             current_offset += 1;
-            unsafe { diff.deserialize_from_bytes(data, offsets[current_offset] as usize) };
 
             builder.push_val_diff(&val, &diff);
-            current_offset += 1;
         }
-
         current_offset += 1;
+
+        unsafe { key.deserialize_from_bytes(data, offsets[current_offset] as usize) };
+        current_offset += 1;
+
         builder.push_key(&key);
     }
     builder.done()
@@ -1435,6 +1535,7 @@ mod serialize_test {
         algebra::OrdIndexedZSet as DynOrdIndexedZSet,
         dynamic::DynData,
         indexed_zset,
+        storage::file::SerializerInner,
         trace::{BatchReader, deserialize_indexed_wset, serialize_indexed_wset},
     };
 
@@ -1446,7 +1547,7 @@ mod serialize_test {
             indexed_zset! { 1 => { 1 => 1, 2 => 2, 3 => 3 }, 2 => { 1 => 1, 2 => 2, 3 => 3 } };
 
         for test in [test1, test2, test3] {
-            let serialized = serialize_indexed_wset(&*test);
+            let serialized = serialize_indexed_wset(&*test, &mut SerializerInner::new());
             let deserialized = deserialize_indexed_wset::<
                 DynOrdIndexedZSet<DynData, DynData>,
                 DynData,
@@ -1464,7 +1565,7 @@ mod serialize_test {
         let test2 = indexed_zset! { () => { 1 => 1 } };
 
         for test in [test1, test2] {
-            let serialized = serialize_indexed_wset(&*test);
+            let serialized = serialize_indexed_wset(&*test, &mut SerializerInner::new());
             let deserialized = deserialize_indexed_wset::<
                 DynOrdIndexedZSet<DynData, DynData>,
                 DynData,
@@ -1483,7 +1584,7 @@ mod serialize_test {
         let test3 = indexed_zset! { 1 => { () => 1 }, 2 => { () => 1 } };
 
         for test in [test1, test2, test3] {
-            let serialized = serialize_indexed_wset(&*test);
+            let serialized = serialize_indexed_wset(&*test, &mut SerializerInner::new());
             let deserialized = deserialize_indexed_wset::<
                 DynOrdIndexedZSet<DynData, DynData>,
                 DynData,

@@ -742,4 +742,147 @@ public class Regression2Tests extends SqlIoTest {
                     WHERE foo.out1 = a.col2
                 );""");
     }
+
+    @Test
+    public void issue5821() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE shipments (
+                  shipment_id BIGINT,
+                  warehouse_id BIGINT,
+                  shipped_at TIMESTAMP,
+                  expected_at TIMESTAMP,
+                  delivered_at TIMESTAMP,
+                  shipping_mode VARCHAR
+                );
+                
+                CREATE MATERIALIZED VIEW bm07_shipping_performance AS
+                SELECT
+                  warehouse_id,
+                  MAX(DATEDIFF(delivered_at, shipped_at)) AS max_days_in_transit
+                FROM shipments
+                GROUP BY
+                  warehouse_id,
+                  TIMESTAMP_TRUNC(shipped_at, WEEK);
+                """, "Invalid number of arguments to function 'DATEDIFF'.");
+    }
+
+    @Test
+    public void issue5822() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE payments (
+                  payment_id BIGINT,
+                  customer_id BIGINT,
+                  payment_time TIMESTAMP,
+                  amount DECIMAL(12, 2),
+                  payment_method VARCHAR
+                );
+                
+                CREATE VIEW bm06_customer_payment_windows AS
+                SELECT
+                  customer_id,
+                  payment_time,
+                  amount,
+                  ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY payment_time) AS payment_number,
+                  LAG(amount) OVER (PARTITION BY customer_id ORDER BY payment_time) AS previous_amount,
+                  SUM(amount) OVER (
+                    PARTITION BY customer_id
+                    ORDER BY payment_time
+                    RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                  ) AS running_amount
+                FROM payments""", "Not yet implemented: ROW_NUMBER only supported in a TopK pattern");
+    }
+
+    @Test
+    public void rowsTest() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE purchase (
+                    ts TIMESTAMP NOT NULL,
+                    amount BIGINT,
+                    value BIGINT LATENESS 5
+                );
+                
+                CREATE MATERIALIZED VIEW rolling_sum AS
+                SELECT ts,
+                    SUM(value) OVER (ORDER BY ts ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS rolling_sum
+                    FROM purchase;""", "Not yet implemented: Window aggregates with ROWS");
+    }
+
+    @Test
+    public void jsonTests() {
+        this.getCCS("""
+                CREATE TYPE c_t AS ("value" VARCHAR);
+                CREATE TYPE b_t AS ("x" c_t, "y" c_t);
+                CREATE TYPE a_t AS ("b" b_t);
+                CREATE FUNCTION jsonstring_as_a_t(input VARCHAR) RETURNS a_t;
+                
+                CREATE TABLE src ("data" VARCHAR);
+                
+                CREATE VIEW v AS
+                SELECT
+                    jsonstring_as_a_t("data")."b"."x"."value" AS "x_val",
+                    jsonstring_as_a_t("data")."b"."y"."value" AS "y_val"
+                FROM src;""");
+    }
+
+    @Test
+    public void issue5899a() {
+        this.getCCS("""
+                CREATE TABLE F(file_id INT, original_path VARCHAR, replacement VARCHAR);
+                CREATE VIEW V AS SELECT file_id, original_path,
+                OVERLAY(original_path PLACING replacement FROM 10 FOR 4) AS updated_path
+                FROM F WHERE original_path IS NOT NULL AND replacement IS NOT NULL;""");
+        boolean[] b = new boolean[] { false, true };
+        for (var a1: b)
+            for (var a2: b)
+                for (var a3: b)
+                    for (var a4: b) {
+                        var e1 = a1 ? "x" : "y";
+                        var e2 = a2 ? "x" : "y";
+                        var e3 = a3 ? "1" : "NULL";
+                        var e4 = a4 ? "1" : "NULL";
+                        String query = "CREATE TABLE T(x VARCHAR NOT NULL, y VARCHAR, i INT NOT NULL);";
+                        query += "CREATE VIEW V AS SELECT OVERLAY(" + e1 +
+                                " PLACING " + e2 + " FROM " + e3 + " FOR " + e4 + ") FROM T;";
+                        this.getCCS(query);
+                    }
+    }
+
+    @Test
+    public void issue5899b() {
+        this.getCCS("""
+                CREATE VIEW V AS
+                SELECT COUNT(*)
+                FROM (
+                  VALUES
+                    (CAST(ROW(ARRAY[MAP[1, 2, 2, 3], MAP[1, 3]]) AS ROW(b MAP<INT, INT> ARRAY))),
+                    (CAST(ROW(ARRAY[MAP[2, 3], MAP[1, 3]]) AS ROW(b MAP<INT, INT> ARRAY))),
+                    (CAST(ROW(ARRAY[MAP[2, 3, 1, 2], MAP[1, 3]]) AS ROW(b MAP<INT, INT> ARRAY)))
+                ) AS t(a)
+                GROUP BY a""");
+    }
+
+    @Test
+    public void issue5899c() {
+        var ccs = this.getCCS("""
+                CREATE TABLE E(hire_date DATE);
+                CREATE VIEW Q AS
+                SELECT DATE_TRUNC(hire_date, QUARTER) FROM E;""");
+        ccs.step("INSERT INTO E VALUES (DATE '2020-02-01') , (DATE '2020-05-01')", """
+                 trunc | weight
+                ----------------
+                 2020-01-01 | 1
+                 2020-04-01 | 1""");
+    }
+
+    @Test
+    public void issue5946() {
+        var ccs = this.getCCS("""
+                CREATE TABLE test ("tt" DECIMAL(38,10));
+                create view  ff as select tt, tt / 100.0 as tt2 from test;""");
+        ccs.stepWeightOne("INSERT INTO test VALUES (36)", """
+                 ff | ff2
+                ----------
+                 36 | 0.36""");
+    }
+
 }

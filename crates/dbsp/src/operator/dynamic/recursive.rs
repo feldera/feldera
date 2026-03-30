@@ -187,8 +187,8 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        Circuit, FallbackZSet, RootCircuit, Runtime, Stream, operator::Generator,
-        typed_batch::OrdZSet, utils::Tup2, zset,
+        Circuit, FallbackZSet, Runtime, Stream, operator::Generator, typed_batch::OrdZSet,
+        utils::Tup2, zset,
     };
     use std::{
         thread,
@@ -198,7 +198,7 @@ mod test {
 
     #[test]
     fn reachability() {
-        let root = RootCircuit::build(move |circuit| {
+        let mut root = Runtime::init_circuit(1, move |circuit| {
             // Changes to the edges relation.
             let mut edges = vec![
                 zset! { Tup2(1, 2) => 1 },
@@ -321,7 +321,7 @@ mod test {
             .map(|i| Tup2(Tup2(i, i + 1), -1))
             .collect::<Vec<_>>();
 
-        let (root, (edges_handle, paths_handle)) = RootCircuit::build(move |circuit| {
+        let (mut root, (edges_handle, paths_handle)) = Runtime::init_circuit(1, move |circuit| {
             let (edges, edges_handle) = circuit.add_input_zset::<Tup2<u64, u64>>();
 
             let paths = circuit
@@ -361,7 +361,7 @@ mod test {
     fn reachability2() {
         type Edges<S> = Stream<S, OrdZSet<Tup2<u64, u64>>>;
 
-        let root = RootCircuit::build(move |circuit| {
+        let mut root = Runtime::init_circuit(1, move |circuit| {
             // Changes to the edges relation.
             let mut edges = vec![
                 zset! { Tup2(1, 2) => 1 },

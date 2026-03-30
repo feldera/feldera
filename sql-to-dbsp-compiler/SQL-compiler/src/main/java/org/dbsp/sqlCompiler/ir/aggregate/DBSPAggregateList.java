@@ -18,7 +18,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVoidLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
@@ -96,7 +95,7 @@ public final class DBSPAggregateList extends DBSPNode
             DBSPTypeUser semigroup = new DBSPTypeUser(node, USER, "EmptySemigroup", false);
             return new DBSPFold(CalciteObject.EMPTY, semigroup,
                     new DBSPTupleExpression(),
-                    DBSPVoidLiteral.INSTANCE.closure(accumulator, this.rowVar, weight),
+                    new DBSPVoidLiteral().closure(accumulator, this.rowVar, weight),
                     new DBSPTupleExpression().closure(var));
         }
         NonLinearAggregate combined = this.combine(compiler).to(NonLinearAggregate.class);

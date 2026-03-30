@@ -1,7 +1,6 @@
 use crate::circuit::GlobalNodeId;
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
-use crate::circuit::runtime::ThreadType;
 use crate::circuit::schedule::CommitProgress;
 use crate::monitor::visual_graph::Graph;
 use crate::operator::dynamic::balance::{
@@ -18,7 +17,9 @@ use crate::{
 };
 use anyhow::Error as AnyError;
 use crossbeam::channel::{Receiver, Select, Sender, TryRecvError, bounded};
+use feldera_buffer_cache::{BufferCacheAllocationStrategy, BufferCacheStrategy, ThreadType};
 use feldera_ir::LirCircuit;
+use feldera_storage::fbuf::slab::FBufSlabs;
 use feldera_storage::{FileCommitter, StorageBackend, StoragePath};
 use feldera_types::checkpoint::CheckpointMetadata;
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
@@ -51,6 +52,9 @@ use crate::profile::{DbspProfile, GraphProfile, WorkerProfile};
 use super::SchedulerError;
 use super::circuit_builder::BootstrapInfo;
 use super::runtime::WorkerPanicInfo;
+
+/// Default ratio of merger threads to worker threads.
+const DEFAULT_MERGER_THREAD_RATIO: usize = 1;
 
 /// A host for some workers in the [`Layout`] for a multi-host DBSP circuit.
 #[allow(clippy::manual_non_exhaustive)]
@@ -209,6 +213,20 @@ impl Layout {
     pub fn is_solo(&self) -> bool {
         matches!(self, Self::Solo { .. })
     }
+
+    pub fn n_hosts(&self) -> usize {
+        match self {
+            Layout::Solo { .. } => 1,
+            Layout::Multihost { hosts, .. } => hosts.len(),
+        }
+    }
+
+    pub fn local_host_idx(&self) -> usize {
+        match self {
+            Layout::Solo { .. } => 0,
+            Layout::Multihost { local_host_idx, .. } => *local_host_idx,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -267,6 +285,10 @@ pub struct CircuitConfig {
     /// How the circuit is laid out across one or multiple machines.
     pub layout: Layout,
 
+    /// The maximum amount of memory, in bytes, that the process is allowed to use.
+    /// Used to calculate the memory pressure level.
+    pub max_rss_bytes: Option<u64>,
+
     /// Optionally, CPU numbers for pinning the worker threads.
     pub pin_cpus: Vec<usize>,
 
@@ -282,6 +304,29 @@ pub struct CircuitConfig {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct DevTweaks {
+    /// Buffer-cache implementation to use for storage reads.
+    ///
+    /// The default is `s3_fifo`.
+    pub buffer_cache_strategy: BufferCacheStrategy,
+
+    /// Override the number of buckets/shards used by sharded buffer caches.
+    ///
+    /// This only applies when `buffer_cache_strategy = "s3_fifo"`. Values are
+    /// rounded up to the next power of two because the current implementation
+    /// shards by `hash(key) & (n - 1)`.
+    pub buffer_max_buckets: Option<usize>,
+
+    /// How S3-FIFO caches are assigned to foreground/background workers.
+    ///
+    /// This only applies when `buffer_cache_strategy = "s3_fifo"`. The
+    /// default is `shared_per_worker_pair`; LRU always uses `per_thread`.
+    pub buffer_cache_allocation_strategy: BufferCacheAllocationStrategy,
+
+    /// Target number of cached bytes retained in each `FBuf` slab size class.
+    ///
+    /// The default value is [`FBufSlabs::DEFAULT_BYTES_PER_CLASS`].
+    pub fbuf_slab_bytes_per_class: usize,
+
     /// Whether to asynchronously fetch keys needed for the join operator from
     /// storage.  Asynchronous fetching should be faster for high-latency
     /// storage, such as object storage, but it could use excessive amounts of
@@ -396,11 +441,20 @@ pub struct DevTweaks {
 
     /// Maximum batch size in records for level 0 merges.
     pub max_level0_batch_size_records: u16,
+
+    /// The number of merger threads.
+    ///
+    /// The default value is equal to the number of worker threads.
+    pub merger_threads: Option<u16>,
 }
 
 impl Default for DevTweaks {
     fn default() -> Self {
         Self {
+            buffer_cache_strategy: BufferCacheStrategy::default(),
+            buffer_max_buckets: None,
+            buffer_cache_allocation_strategy: BufferCacheAllocationStrategy::default(),
+            fbuf_slab_bytes_per_class: FBufSlabs::DEFAULT_BYTES_PER_CLASS,
             fetch_join: false,
             fetch_distinct: false,
             merger: MergerType::default(),
@@ -414,13 +468,14 @@ impl Default for DevTweaks {
             balancer_key_distribution_refresh_threshold: KEY_DISTRIBUTION_REFRESH_THRESHOLD,
             adaptive_joins: false,
             max_level0_batch_size_records: MAX_LEVEL0_BATCH_SIZE_RECORDS,
+            merger_threads: None,
         }
     }
 }
 
 impl DevTweaks {
     pub fn from_config(config: &BTreeMap<String, Value>) -> Self {
-        let tweaks = serde_json::to_value(config)
+        let tweaks: Self = serde_json::to_value(config)
             .and_then(serde_json::from_value)
             .inspect_err(|error| {
                 tracing::error!("falling back to default `dev_tweaks` due to error ({error}) with configuration: {config:#?}")
@@ -430,6 +485,15 @@ impl DevTweaks {
             info!("using non-default `dev_tweaks`: {tweaks:#?}")
         }
         tweaks
+    }
+
+    pub(crate) fn effective_buffer_cache_allocation_strategy(
+        &self,
+    ) -> BufferCacheAllocationStrategy {
+        match self.buffer_cache_strategy {
+            BufferCacheStrategy::S3Fifo => self.buffer_cache_allocation_strategy,
+            BufferCacheStrategy::Lru => BufferCacheAllocationStrategy::PerThread,
+        }
     }
 }
 
@@ -519,11 +583,17 @@ impl CircuitConfig {
     pub fn with_workers(n: usize) -> Self {
         Self {
             layout: Layout::new_solo(n),
+            max_rss_bytes: None,
             pin_cpus: Vec::new(),
             mode: Mode::Ephemeral,
             storage: None,
             dev_tweaks: DevTweaks::default(),
         }
+    }
+
+    pub fn with_max_rss_bytes(mut self, max_rss: Option<u64>) -> Self {
+        self.max_rss_bytes = max_rss;
+        self
     }
 
     pub fn with_mode(mut self, mode: Mode) -> Self {
@@ -538,6 +608,30 @@ impl CircuitConfig {
 
     pub fn with_splitter_chunk_size_records(mut self, records: u64) -> Self {
         self.dev_tweaks.splitter_chunk_size_records = records;
+        self
+    }
+
+    pub fn with_buffer_cache_strategy(mut self, strategy: BufferCacheStrategy) -> Self {
+        self.dev_tweaks.buffer_cache_strategy = strategy;
+        self
+    }
+
+    pub fn with_buffer_max_buckets(mut self, max_buckets: Option<usize>) -> Self {
+        self.dev_tweaks.buffer_max_buckets = max_buckets;
+        self
+    }
+
+    pub fn with_buffer_cache_allocation_strategy(
+        mut self,
+        strategy: BufferCacheAllocationStrategy,
+    ) -> Self {
+        self.dev_tweaks.buffer_cache_allocation_strategy = strategy;
+        self
+    }
+
+    #[cfg(test)]
+    pub fn with_fbuf_slab_bytes_per_class(mut self, bytes_per_class: usize) -> Self {
+        self.dev_tweaks.fbuf_slab_bytes_per_class = bytes_per_class;
         self
     }
 
@@ -570,6 +664,15 @@ impl CircuitConfig {
                 .unwrap(),
             ),
             ..self
+        }
+    }
+
+    /// The number of merger threads per host.
+    pub(crate) fn num_merger_threads(&self) -> usize {
+        let num_workers = self.layout.local_workers().len();
+        match self.dev_tweaks.merger_threads {
+            Some(threads) => threads as usize,
+            None => num_workers * DEFAULT_MERGER_THREAD_RATIO,
         }
     }
 }
@@ -1740,6 +1843,7 @@ pub(crate) mod tests {
     use super::{CircuitStorageConfig, Mode};
     use crate::circuit::checkpointer::Checkpointer;
     use crate::circuit::dbsp_handle::DevTweaks;
+    use crate::circuit::runtime::TOKIO_WORKER_INDEX;
     use crate::circuit::{CircuitConfig, Layout};
     use crate::dynamic::{ClonableTrait, DowncastTrait, DynData, Erase};
     use crate::operator::Generator;
@@ -1752,6 +1856,7 @@ pub(crate) mod tests {
         OutputHandle, Runtime, RuntimeError, ZSetHandle, ZWeight,
     };
     use anyhow::anyhow;
+    use feldera_buffer_cache::ThreadType;
     use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
     use tempfile::{TempDir, tempdir};
     use uuid::Uuid;
@@ -1838,6 +1943,57 @@ pub(crate) mod tests {
         if let DbspError::Runtime(err) = handle.transaction().unwrap_err() {
             // println!("error: {err}");
             matches!(err, RuntimeError::WorkerPanic { .. });
+        } else {
+            panic!();
+        }
+    }
+
+    /// Check that a panic in the tokio merger runtime is propagated to the client.
+    #[test]
+    fn test_panic_in_tokio_merger_runtime() {
+        let (panic_tx, panic_rx) = std::sync::mpsc::channel();
+        let (mut handle, _) = Runtime::init_circuit(1, move |circuit| {
+            let (_stream, _input_handle) = circuit.add_input_map::<u64, u64, i64, _>(|v, u| {
+                *v = ((*v as i64) + *u) as u64;
+            });
+
+            if Runtime::worker_index() == 0 {
+                let runtime = Runtime::runtime().unwrap();
+                let panic_tx = panic_tx.clone();
+                runtime.tokio_merger_runtime().spawn(async move {
+                    TOKIO_WORKER_INDEX
+                        .scope(0, async move {
+                            let _ = std::panic::catch_unwind(|| {
+                                panic!("panic from tokio merger runtime task");
+                            });
+                            let _ = panic_tx.send(());
+                        })
+                        .await;
+                });
+            }
+
+            Ok(())
+        })
+        .unwrap();
+
+        panic_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("timed out waiting for panic task to complete");
+
+        if let DbspError::Runtime(err) = handle.transaction().unwrap_err() {
+            println!("error: {err}");
+            match err {
+                RuntimeError::WorkerPanic { panic_info } => {
+                    assert!(
+                        panic_info
+                            .iter()
+                            .any(|(_worker, thread_type, _info)| *thread_type
+                                == ThreadType::Background),
+                        "expected WorkerPanic to include background worker panic info"
+                    );
+                }
+                _ => panic!(),
+            }
         } else {
             panic!();
         }
@@ -1998,6 +2154,7 @@ pub(crate) mod tests {
         let temp = tempdir().expect("Can't create temp dir for storage");
         let cconf = CircuitConfig {
             layout: Layout::new_solo(1),
+            max_rss_bytes: None,
             mode: Mode::Ephemeral,
             pin_cpus: Vec::new(),
             storage: Some(

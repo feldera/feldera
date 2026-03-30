@@ -210,13 +210,13 @@ public class WindowTests extends ScottBaseTests {
         String[] aggregates = new String[] {
                 "account_id", """
                 LAG(runtime_elapsed_msecs) OVER (
-                            PARTITION BY account_id
-                            ORDER BY event_timestamp
-                        ) AS daily_runtime_increment""", """
+                    PARTITION BY account_id
+                    ORDER BY event_timestamp
+                ) AS daily_runtime_increment""", """
                 ROW_NUMBER() OVER (
-                            PARTITION BY account_id
-                            ORDER BY event_timestamp DESC
-                        ) AS event_rank"""
+                    PARTITION BY account_id
+                    ORDER BY event_timestamp DESC
+                ) AS event_rank"""
         };
         String tail = """
                   FROM T

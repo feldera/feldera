@@ -389,6 +389,8 @@ public class ProfilingTests extends StreamingTestBase {
                 let _ = circuit.transaction().expect("could not run circuit");
                 let _ = circuit.transaction().expect("could not run circuit");
                 """);
+        if (BaseSQLTests.skipRust)
+            return;
         this.measure(sql, main);
     }
 }
