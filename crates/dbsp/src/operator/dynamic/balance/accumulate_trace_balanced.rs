@@ -1254,11 +1254,14 @@ where
             if self.flush_state.get() == FlushState::FlushCompleted {
                 assert!(delta.is_empty());
                 // No policy change expected after commit.
+                assert_eq!(
+                    self.current_policy.get(),
+                    new_policy,
+                    "{}: unexpected policy change after commit: current_policy: {:?}, new_policy: {:?}",
+                    self.input_node_id,
+                    self.current_policy.get(),
+                    new_policy);
 
-                // if *self.current_policy.borrow() != new_policy  {
-                //     println!("{}: current_policy: {:?}, new_policy: {:?}", self.input_node_id, *self.current_policy.borrow(), new_policy);
-                // }
-                assert_eq!(self.current_policy.get(), new_policy);
                 // ExchangeReceiver expects precisely one flush per transaction.
                 self.send(repeat(B::dyn_empty(&batch_factories)), false, &mut serializer_inner);
                 self.update_exchange_metadata();
