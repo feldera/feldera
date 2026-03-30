@@ -21,3 +21,59 @@ models:
     +materialized: view
     marts:
       +materialized: view
+      dim_address:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/dim_address"
+                mode: append
+      dim_credit_card:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/dim_credit_card"
+                mode: append
+      dim_customer:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/dim_customer"
+                mode: append
+      dim_date:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/dim_date"
+                mode: append
+      dim_order_status:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/dim_order_status"
+                mode: append
+      dim_product:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/dim_product"
+                mode: append
+      fct_sales:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/fct_sales"
+                mode: append
+      obt_sales:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/obt_sales"
+                mode: append

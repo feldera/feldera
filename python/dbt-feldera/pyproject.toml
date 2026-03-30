@@ -47,6 +47,12 @@ dev = [
     "pytest-timeout>=2.3.1",
     "ruff>=0.6.9",
 ]
+test = [
+    "pytest>=8.3.5",
+    "pytest-timeout>=2.3.1",
+    "duckdb>=1.0.0",
+    "deltalake>=0.18.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

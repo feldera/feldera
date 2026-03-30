@@ -128,6 +128,11 @@ run_integration_test() {
     ensure_venv
     cd "${PROJECT_DIR}"
 
+    local delta_dir="${PROJECT_DIR}/integration_tests/dbt-adventureworks/delta-output"
+    rm -rf "${delta_dir}"
+    mkdir -p "${delta_dir}"
+    chmod 777 "${delta_dir}"
+
     local skip_docker="${FELDERA_SKIP_DOCKER:-}"
 
     if [[ -z "$skip_docker" ]]; then

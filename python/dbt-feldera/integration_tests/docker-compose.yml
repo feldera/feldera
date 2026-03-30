@@ -6,6 +6,8 @@ services:
       - "${FELDERA_PORT:-8080}:8080"
     tty: true
     stop_grace_period: 0s
+    volumes:
+      - ./dbt-adventureworks/delta-output:/data/delta
     environment:
       - RUST_LOG=${RUST_LOG:-info}
       - RUST_BACKTRACE=1
