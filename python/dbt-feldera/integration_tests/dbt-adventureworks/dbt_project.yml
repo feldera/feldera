@@ -19,6 +19,22 @@ clean-targets:
 models:
   adventureworks:
     +materialized: view
+    kafka:
+      +materialized: table
+      kafka_sales:
+        +connectors:
+          - transport:
+              name: kafka_input
+              config:
+                topic: sales_events
+                bootstrap.servers: "redpanda:29092"
+                start_from: latest
+                allow.auto.create.topics: "true"
+            format:
+              name: json
+              config:
+                update_format: raw
+                array: false
     marts:
       +materialized: view
       dim_address:

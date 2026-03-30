@@ -1,11 +1,45 @@
 name: feldera-dbt-integration
 services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v23.1.13
+    command:
+      - redpanda
+      - start
+      - --smp
+      - '1'
+      - --reserve-memory
+      - 0M
+      - --overprovisioned
+      - --node-id
+      - '0'
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - PLAINTEXT://redpanda:29092,OUTSIDE://localhost:19092
+      - --pandaproxy-addr
+      - PLAINTEXT://0.0.0.0:28082,OUTSIDE://0.0.0.0:18082
+      - --advertise-pandaproxy-addr
+      - PLAINTEXT://redpanda:28082,OUTSIDE://localhost:18082
+    ports:
+      - "19092:19092"
+      - "18082:18082"
+      - "9644:9644"
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:9644/v1/status/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
   pipeline-manager:
     image: "${FELDERA_IMAGE:-images.feldera.com/feldera/pipeline-manager:latest}"
     ports:
       - "${FELDERA_PORT:-8080}:8080"
     tty: true
     stop_grace_period: 0s
+    depends_on:
+      redpanda:
+        condition: service_healthy
     volumes:
       - ./dbt-adventureworks/delta-output:/data/delta
     environment:

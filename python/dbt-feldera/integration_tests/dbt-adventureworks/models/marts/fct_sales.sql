@@ -18,6 +18,22 @@ stg_salesorderdetail as (
         unitprice,
         unitprice * orderqty as revenue
     from {{ ref('salesorderdetail') }}
+),
+
+stg_kafka_sales as (
+    select
+        salesorderid,
+        salesorderdetailid,
+        productid,
+        customerid,
+        creditcardid,
+        shiptoaddressid,
+        order_status,
+        cast(orderdate as date) as orderdate,
+        orderqty,
+        unitprice,
+        unitprice * orderqty as revenue
+    from {{ ref('kafka_sales') }}
 )
 
 select
@@ -35,3 +51,20 @@ select
     stg_salesorderdetail.revenue
 from stg_salesorderdetail
 inner join stg_salesorderheader on stg_salesorderdetail.salesorderid = stg_salesorderheader.salesorderid
+
+UNION ALL
+
+select
+    {{ generate_surrogate_key(['stg_kafka_sales.salesorderid', 'stg_kafka_sales.salesorderdetailid']) }} as sales_key,
+    {{ generate_surrogate_key(['stg_kafka_sales.productid']) }} as product_key,
+    {{ generate_surrogate_key(['stg_kafka_sales.customerid']) }} as customer_key,
+    {{ generate_surrogate_key(['stg_kafka_sales.creditcardid']) }} as creditcard_key,
+    {{ generate_surrogate_key(['stg_kafka_sales.shiptoaddressid']) }} as ship_address_key,
+    {{ generate_surrogate_key(['stg_kafka_sales.order_status']) }} as order_status_key,
+    {{ generate_surrogate_key(['stg_kafka_sales.orderdate']) }} as order_date_key,
+    stg_kafka_sales.salesorderid,
+    stg_kafka_sales.salesorderdetailid,
+    stg_kafka_sales.unitprice,
+    stg_kafka_sales.orderqty,
+    stg_kafka_sales.revenue
+from stg_kafka_sales

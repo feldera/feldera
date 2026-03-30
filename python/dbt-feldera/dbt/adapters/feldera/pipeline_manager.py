@@ -279,6 +279,16 @@ class PipelineStateManager:
             # (discard existing CREATE VIEW statements to avoid duplicates)
             table_parts = self._extract_table_ddls(existing_sql)
 
+            # Include locally registered tables not already in the
+            # existing pipeline
+            local_tables = self._tables.get(pipeline, {})
+            if local_tables:
+                existing_names = self._extract_table_names(table_parts)
+                for name, ddl in local_tables.items():
+                    if name.lower() not in existing_names:
+                        table_parts.append(ddl.rstrip().rstrip(";") + ";")
+                        logger.debug("Added locally registered table '%s' to pipeline '%s'", name, pipeline)
+
             # Assemble new views
             view_parts = []
             for _name, ddl in local_views.items():
@@ -345,6 +355,23 @@ class PipelineStateManager:
             if re.match(r"\s*CREATE\s+TABLE\b", stmt, re.IGNORECASE):
                 table_ddls.append(stmt)
         return table_ddls
+
+    @staticmethod
+    def _extract_table_names(table_ddls: List[str]) -> set:
+        """
+        Extract table names from a list of CREATE TABLE DDL statements.
+
+        :param table_ddls: List of DDL strings (e.g., ``CREATE TABLE "foo" (...);``).
+        :return: A set of lowercase table names.
+        """
+        import re
+
+        names = set()
+        for ddl in table_ddls:
+            m = re.match(r'\s*CREATE\s+TABLE\s+"?(\w+)"?\s*\(', ddl, re.IGNORECASE)
+            if m:
+                names.add(m.group(1).lower())
+        return names
 
     def has_pending_views(self) -> bool:
         """
