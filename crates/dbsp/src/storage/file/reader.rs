@@ -1710,6 +1710,11 @@ where
     pub fn file_handle(&self) -> &Arc<dyn FileReader> {
         &self.file.file_handle
     }
+
+    /// Returns additional metadata added to the file by the writer.
+    pub fn metadata(&self) -> &BatchMetadata {
+        &self.metadata
+    }
 }
 
 impl<K, A, N> Reader<(&'static K, &'static A, N)>

@@ -136,7 +136,7 @@ impl BlockHeader {
 
 /// Additional metadata added to the file by the writer.
 #[binrw]
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BatchMetadata {
     /// The number of records with negative weights in the batch.
     pub negative_weight_count: u64,

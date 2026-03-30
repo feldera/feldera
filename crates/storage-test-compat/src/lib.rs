@@ -404,6 +404,7 @@ mod tests {
     };
     use dbsp::dynamic::{DynData, Erase};
     use dbsp::storage::backend::{StorageBackend, StoragePath};
+    use dbsp::storage::file::format::BatchMetadata;
     use dbsp::storage::file::reader::Reader;
     use dbsp::storage::file::Factories;
     use dbsp::DBData;
@@ -425,6 +426,7 @@ mod tests {
             &storage_path,
         )
         .unwrap();
+        assert_eq!(reader.metadata(), &BatchMetadata::default());
 
         let n_rows = reader.n_rows(0) as usize;
         let mut bulk = reader.bulk_rows().unwrap();
