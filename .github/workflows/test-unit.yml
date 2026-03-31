@@ -60,7 +60,7 @@ jobs:
 
       - name: Python SDK unit-tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/unit -vv
+        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/unit -vv ${{ vars.PYTEST_EXTRA }}
         working-directory: python
 
       - name: dbt-feldera unit-tests
