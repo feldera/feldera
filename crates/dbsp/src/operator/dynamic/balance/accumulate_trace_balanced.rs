@@ -1014,7 +1014,6 @@ where
         serializer_inner: &mut Option<SerializerInner>,
     ) {
         assert!(self.exchange.try_send_all_with_serializer(
-            self.worker_index,
             batches.into_iter().map(|batch| (batch, flush_complete)),
             |(batch, flush)| {
                 let mut fbuf =

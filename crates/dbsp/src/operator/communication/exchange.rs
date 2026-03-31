@@ -771,7 +771,6 @@ where
 
     pub(crate) fn try_send_all_with_serializer<F>(
         self: &Arc<Self>,
-        sender: usize,
         data: impl Iterator<Item = T>,
         mut serialize: F,
     ) -> bool
@@ -779,7 +778,6 @@ where
         F: FnMut(T) -> FBuf + Send + Sync,
     {
         self.try_send_all(
-            sender,
             data.zip(WorkerLocations::new())
                 .map(|(data, location)| match location {
                     WorkerLocation::Local => Mailbox::Plain(data),
@@ -788,7 +786,7 @@ where
         )
     }
 
-    /// Write all outgoing messages for `sender` to mailboxes.
+    /// Write all outgoing messages for this worker to mailboxes.
     ///
     /// Values to be sent are retrieved from the `data` iterator, with the
     /// first value delivered to receiver 0, second value delivered to receiver
@@ -801,11 +799,8 @@ where
     /// # Panics
     ///
     /// Panics if `data` yields fewer than `self.npeers` items.
-    pub(crate) fn try_send_all(
-        self: &Arc<Self>,
-        sender: usize,
-        data: impl Iterator<Item = Mailbox<T>>,
-    ) -> bool {
+    pub(crate) fn try_send_all(self: &Arc<Self>, data: impl Iterator<Item = Mailbox<T>>) -> bool {
+        let sender = Runtime::worker_index();
         let npeers = self.inner.npeers;
         if self.inner.sender_counters[sender]
             .compare_exchange(npeers, 0, Ordering::AcqRel, Ordering::Acquire)
@@ -908,17 +903,18 @@ where
         self.inner.ready_to_receive(receiver)
     }
 
-    /// Read all incoming messages for `receiver`.
+    /// Read all incoming messages for this worker.
     ///
     /// Values are passed to callback function `cb` in the order of worker indexes.
     ///
     /// # Errors
     ///
     /// Fails if at least one of the receiver's incoming mailboxes is empty.
-    pub(crate) fn try_receive_all<F>(&self, receiver: usize, mut cb: F) -> bool
+    pub(crate) fn try_receive_all<F>(&self, mut cb: F) -> bool
     where
         F: FnMut(T),
     {
+        let receiver = Runtime::worker_index();
         let npeers = self.inner.npeers;
         if self.inner.receiver_counters[receiver]
             .compare_exchange(npeers, 0, Ordering::AcqRel, Ordering::Acquire)
@@ -1274,17 +1270,16 @@ where
         self.start_wait_usecs
             .store(current_time_usecs(), Ordering::Release);
 
-        let res = self.exchange.try_send_all(
-            self.worker_index,
-            self.outputs.drain(..).map(|mailbox| match mailbox {
+        let res = self
+            .exchange
+            .try_send_all(self.outputs.drain(..).map(|mailbox| match mailbox {
                 Mailbox::Tx(mut data) => {
                     data.push(self.flushed as u8);
                     Mailbox::Tx(data)
                 }
                 Mailbox::Rx(_) => unreachable!(),
                 Mailbox::Plain(item) => Mailbox::Plain((item, self.flushed)),
-            }),
-        );
+            }));
         self.flushed = false;
         debug_assert!(res);
     }
@@ -1450,19 +1445,17 @@ where
     async fn eval(&mut self) -> D {
         debug_assert!(self.ready());
         let mut combined = (self.init)();
-        let res = self
-            .exchange
-            .try_receive_all(self.worker_index, |(x, flushed)| {
-                // println!(
-                //     "{} exchange_receiver::eval received input with flushed={:?}",
-                //     Runtime::worker_index(),
-                //     flushed
-                // );
-                if flushed {
-                    self.flush_count += 1;
-                }
-                (self.combine)(&mut combined, x)
-            });
+        let res = self.exchange.try_receive_all(|(x, flushed)| {
+            // println!(
+            //     "{} exchange_receiver::eval received input with flushed={:?}",
+            //     Runtime::worker_index(),
+            //     flushed
+            // );
+            if flushed {
+                self.flush_count += 1;
+            }
+            (self.combine)(&mut combined, x)
+        });
         if self.flush_count == Runtime::num_workers() {
             // println!(
             //     "{} exchange_receiver::eval received all inputs",
@@ -1616,11 +1609,9 @@ mod tests {
             for round in 0..ROUNDS {
                 let output_data = vec![round; WORKERS];
                 loop {
-                    if exchange.try_send_all_with_serializer(
-                        Runtime::worker_index(),
-                        repeat(round),
-                        |round| to_bytes(&round).unwrap(),
-                    ) {
+                    if exchange.try_send_all_with_serializer(repeat(round), |round| {
+                        to_bytes(&round).unwrap()
+                    }) {
                         break;
                     }
 
@@ -1629,7 +1620,7 @@ mod tests {
 
                 let mut input_data = Vec::with_capacity(WORKERS);
                 loop {
-                    if exchange.try_receive_all(Runtime::worker_index(), |x| input_data.push(x)) {
+                    if exchange.try_receive_all(|x| input_data.push(x)) {
                         break;
                     }
 
