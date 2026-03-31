@@ -11,6 +11,7 @@ import re
 import json
 import socket
 import uuid
+from datetime import datetime, timedelta
 
 _KAFKA_BOOTSTRAP = None
 _SCHEMA_REGISTRY = None
@@ -96,9 +97,9 @@ def extract_kafka_schema_artifacts(sql: str) -> tuple[list[str], list[str]]:
 def delete_kafka_topics(admin: AdminClient, topics: list[str]):
     tpcs = admin.delete_topics(topics)
 
-    for topic, tpcs in tpcs.items():
+    for topic, fut in tpcs.items():
         try:
-            tpcs.result()
+            fut.result()
             print(f"Deleted topic: {topic}")
         except Exception as e:
             print(f"Failed to delete {topic}: {e}")
@@ -129,9 +130,9 @@ def create_kafka_topic(topic_name: str, num_partitions: int, replication_factor:
         topic_name, num_partitions=num_partitions, replication_factor=replication_factor
     )
     tpcs = get_kafka_admin().create_topics([new_topic])
-    for topic, tpcs in tpcs.items():
+    for topic, fut in tpcs.items():
         try:
-            tpcs.result()
+            fut.result()
             print(
                 f"Topic {topic} created with {num_partitions} partitions and {replication_factor} replication factor"
             )
@@ -146,7 +147,7 @@ class Variant:
     """Represents a pipeline variant whose tables and views share the same SQL but differ in connector configuration.
     Each variant generates unique topic, table, and view names based on the provided configuration."""
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, pipeline_name):
         self.id = cfg["id"]
         self.limit = cfg["limit"]
         self.partitions = cfg.get("partitions")
@@ -156,14 +157,18 @@ class Variant:
         self.num_partitions = cfg.get("num_partitions")
         self.replication_factor = cfg.get("replication_factor")
 
-        suffix = uuid.uuid4().hex[:8]
+        # Include date for age tracking
+        date_str = datetime.now().strftime("%Y%m%d")
+        suffix = uuid.uuid4().hex[:4]
 
-        self.topic1 = f"my_topic_avro_{self.id}_{suffix}"
-        self.topic2 = f"my_topic_avro2_{self.id}_{suffix}"
-        self.source = f"t_{self.id}"
-        self.view = f"v_{self.id}_{suffix}"
-        self.index = f"idx_{self.id}_{suffix}"
-        self.loopback = f"loopback_{self.id}_{suffix}"
+        self.pipeline_name = pipeline_name
+
+        self.topic1 = f"{self.pipeline_name}_topic_{date_str}_{suffix}"
+        self.topic2 = f"{self.pipeline_name}_topic2_{date_str}_{suffix}"
+        self.source = f"{self.pipeline_name}_table"
+        self.view = f"{self.pipeline_name}_view"
+        self.index = f"{self.pipeline_name}_idx_{suffix}"
+        self.loopback = f"{self.pipeline_name}_loopback"
 
 
 def sql_source_table(v: Variant) -> str:
@@ -286,7 +291,7 @@ def build_sql(v: Variant) -> str:
     return "\n".join([sql_source_table(v), sql_view(v), sql_loopback_table(v)])
 
 
-def wait_for_rows(pipeline, expected_rows, timeout_s=3600, poll_interval_s=5):
+def wait_for_rows(pipeline, expected_rows, timeout_s=600, poll_interval_s=5):
     """Since records aren't processed instantaneously, wait until all rows are processed to validate completion by
     polling `total_completed_records` every `poll_interval_s` seconds until it reaches `expected_records`"""
     start = time.perf_counter()
@@ -326,9 +331,20 @@ def validate_loopback(pipeline, variant: Variant):
     print(f"Loopback table validated successfully for variant {variant.id}")
 
 
+def poll_until_topic_exists(admin, topic_name, timeout=30):
+    """Poll until the Kafka topic is created by the connector"""
+    start = time.time()
+    while time.time() - start < timeout:
+        if topic_name in admin.list_topics().topics:
+            return
+        time.sleep(1)
+    raise TimeoutError(f"Topic {topic_name} not created within {timeout}s")
+
+
 def create_and_run_pipeline_variant(cfg):
     """Create and run multiple pipelines based on configurations defined for each pipeline variant"""
-    v = Variant(cfg)
+    pipeline_name = unique_pipeline_name(f"test_kafka_avro_{cfg['id']}")
+    v = Variant(cfg, pipeline_name)
 
     # Pre-create topics if specified
     if v.create_topic:
@@ -336,7 +352,6 @@ def create_and_run_pipeline_variant(cfg):
         create_kafka_topic(v.topic2, v.num_partitions, v.replication_factor)
 
     sql = build_sql(v)
-    pipeline_name = unique_pipeline_name(f"test_kafka_avro_{v.id}")
     pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, sql).create_or_replace()
 
     try:
@@ -344,7 +359,9 @@ def create_and_run_pipeline_variant(cfg):
 
         # For variants without pre-created topics, wait for the output connector to create them
         if not v.create_topic:
-            time.sleep(3)
+            admin = get_kafka_admin()
+            poll_until_topic_exists(admin, v.topic1)
+            poll_until_topic_exists(admin, v.topic2)
 
         # NOTE => total_completed_records counts all rows that are processed through each output as follows:
         # 1. Written by the view<v> -> Kafka
@@ -380,6 +397,27 @@ class TestKafkaAvro(unittest.TestCase):
             "replication_factor": 1,
         },
     ]
+
+    @classmethod
+    def setUpClass(cls):
+        """Clean up stale topics older than 3 days from previous test runs"""
+
+        admin = get_kafka_admin()
+        cutoff = (datetime.now() - timedelta(days=3)).strftime("%Y%m%d")
+
+        topics_to_delete = []
+        for topic in admin.list_topics().topics:
+            if "kafka_avro" in topic:
+                try:
+                    if topic.split("_")[4] < cutoff:
+                        topics_to_delete.append(topic)
+                except IndexError:
+                    # Skip if topic doesn't have expected format
+                    pass
+
+        if topics_to_delete:
+            print(f"Deleting {len(topics_to_delete)} stale topics: {topics_to_delete}")
+            delete_kafka_topics(admin, topics_to_delete)
 
     def test_kafka_avro_variants(self):
         # If a run ID is specified, only the test with the specified run ID is ran
