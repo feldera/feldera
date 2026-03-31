@@ -78,7 +78,3 @@ class FelderaColumn(Column):
     def is_float(self) -> bool:
         """Return True if this column is a floating-point type."""
         return self.translate_type(self.dtype) == "number"
-
-    def string_size(self) -> int:
-        """Return the maximum length for string types."""
-        return 65535

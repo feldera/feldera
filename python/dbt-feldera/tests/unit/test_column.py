@@ -82,10 +82,6 @@ class TestFelderaColumn(unittest.TestCase):
         col = FelderaColumn(column="ratio", dtype="DOUBLE")
         self.assertTrue(col.is_float())
 
-    def test_string_size(self):
-        col = FelderaColumn(column="name", dtype="VARCHAR")
-        self.assertEqual(col.string_size(), 65535)
-
 
 if __name__ == "__main__":
     unittest.main()
