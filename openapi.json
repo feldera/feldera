@@ -8127,7 +8127,7 @@
           },
           "fbuf_slab_bytes_per_class": {
             "type": "integer",
-            "description": "Target number of cached bytes retained in each `FBuf` slab size class.\n\nThe default value is [`FBufSlabs::DEFAULT_BYTES_PER_CLASS`].",
+            "description": "Target number of cached bytes retained in each `FBuf` slab size class.\n\nThe default is 16 MiB.",
             "default": null,
             "nullable": true,
             "minimum": 0
