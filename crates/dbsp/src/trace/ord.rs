@@ -5,6 +5,7 @@ pub(crate) mod key_range;
 pub mod merge_batcher;
 pub mod vec;
 
+pub use batch_filter::{BatchFilterStats, BatchFilters};
 pub use fallback::{
     indexed_wset::{
         FallbackIndexedWSet, FallbackIndexedWSet as OrdIndexedWSet, FallbackIndexedWSetBuilder,

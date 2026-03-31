@@ -315,10 +315,10 @@ where
             .map_err(|err| TestCaseError::fail(format!("write failed: {err:?}")))?;
     }
 
-    let (reader, key_bounds) = writer
+    let (reader, filters) = writer
         .into_reader(BatchMetadata::default())
         .map_err(|err| TestCaseError::fail(format!("reader init failed: {err:?}")))?;
-    match (values.first(), values.last(), key_bounds) {
+    match (values.first(), values.last(), filters.key_bounds()) {
         (None, None, None) => {}
         (Some(expected_min), Some(expected_max), Some((min, max))) => {
             prop_assert_eq!(min.downcast_checked::<T>(), expected_min);
@@ -326,7 +326,7 @@ where
         }
         _ => {
             return Err(TestCaseError::fail(
-                "writer returned unexpected key bounds for sorted input".to_string(),
+                "writer returned unexpected filter bounds for sorted input".to_string(),
             ));
         }
     }

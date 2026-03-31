@@ -36,6 +36,11 @@ where
     pub(crate) fn contains(&self, key: &K) -> bool {
         self.min.as_ref() <= key && key <= self.max.as_ref()
     }
+
+    /// Returns the bounds of the interval.
+    pub(crate) fn bounds(&self) -> (&K, &K) {
+        (self.min.as_ref(), self.max.as_ref())
+    }
 }
 
 impl<K> From<(Box<K>, Box<K>)> for KeyRange<K>

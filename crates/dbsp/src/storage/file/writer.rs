@@ -47,6 +47,7 @@ use crate::{
     Runtime,
     dynamic::{DataTrait, DeserializeDyn, SerializeDyn},
     storage::file::ItemFactory,
+    trace::ord::{BatchFilters, key_range::KeyRange},
 };
 
 struct VarintWriter {
@@ -1450,24 +1451,32 @@ where
         self.inner.storage()
     }
 
-    /// Finishes writing the layer file and returns a reader for it together
-    /// with the column-0 key bounds.
-    pub fn into_reader(
+    fn into_reader_impl(
         self,
         metadata: BatchMetadata,
-    ) -> Result<
-        (
-            Reader<(&'static K0, &'static A0, ())>,
-            Option<(Box<K0>, Box<K0>)>,
-        ),
-        super::reader::Error,
-    > {
+    ) -> Result<(Reader<(&'static K0, &'static A0, ())>, BatchFilters<K0>), super::reader::Error>
+    {
         let any_factories = self.factories.any_factories();
 
         let cache = self.inner.cache;
         let (file_handle, bloom_filter, key_bounds) = self.close(metadata)?;
-        let reader = Reader::new(&[&any_factories], cache, file_handle, bloom_filter)?;
-        Ok((reader, key_bounds))
+        let key_range = key_bounds
+            .as_ref()
+            .map(|(min, max)| KeyRange::from_refs(min.as_ref(), max.as_ref()));
+        let (reader, membership_filter) =
+            Reader::new_with_filter(&[&any_factories], cache, file_handle, bloom_filter)?;
+        let filters = BatchFilters::from_file(key_range, membership_filter);
+        Ok((reader, filters))
+    }
+
+    /// Finishes writing the layer file and returns a reader for it together
+    /// with exact-seek filters.
+    pub fn into_reader(
+        self,
+        metadata: BatchMetadata,
+    ) -> Result<(Reader<(&'static K0, &'static A0, ())>, BatchFilters<K0>), super::reader::Error>
+    {
+        self.into_reader_impl(metadata)
     }
 }
 
@@ -1649,16 +1658,13 @@ where
         self.inner.path()
     }
 
-    /// Finishes writing the layer file and returns a reader for it together
-    /// with the column-0 key bounds.
-    #[allow(clippy::type_complexity)]
-    pub fn into_reader(
+    fn into_reader_impl(
         self,
         metadata: BatchMetadata,
     ) -> Result<
         (
             Reader<(&'static K0, &'static A0, (&'static K1, &'static A1, ()))>,
-            Option<(Box<K0>, Box<K0>)>,
+            BatchFilters<K0>,
         ),
         super::reader::Error,
     > {
@@ -1666,12 +1672,32 @@ where
         let any_factories1 = self.factories1.any_factories();
         let cache = self.inner.cache;
         let (file_handle, bloom_filter, key_bounds) = self.close(metadata)?;
-        let reader = Reader::new(
+        let key_range = key_bounds
+            .as_ref()
+            .map(|(min, max)| KeyRange::from_refs(min.as_ref(), max.as_ref()));
+        let (reader, membership_filter) = Reader::new_with_filter(
             &[&any_factories0, &any_factories1],
             cache,
             file_handle,
             bloom_filter,
         )?;
-        Ok((reader, key_bounds))
+        let filters = BatchFilters::from_file(key_range, membership_filter);
+        Ok((reader, filters))
+    }
+
+    /// Finishes writing the layer file and returns a reader for it together
+    /// with exact-seek filters.
+    #[allow(clippy::type_complexity)]
+    pub fn into_reader(
+        self,
+        metadata: BatchMetadata,
+    ) -> Result<
+        (
+            Reader<(&'static K0, &'static A0, (&'static K1, &'static A1, ()))>,
+            BatchFilters<K0>,
+        ),
+        super::reader::Error,
+    > {
+        self.into_reader_impl(metadata)
     }
 }
