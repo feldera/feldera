@@ -269,7 +269,7 @@ where
 
         let mut cursor = self.cursor();
         while cursor.key_valid() {
-            let diff = cursor.diff.neg_by_ref();
+            let diff = cursor.weight().neg_by_ref();
             writer.write0((cursor.key(), diff.erase())).unwrap_storage();
             cursor.step_key();
         }
