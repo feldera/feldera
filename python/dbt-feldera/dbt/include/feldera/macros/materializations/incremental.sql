@@ -6,7 +6,7 @@
 
     The model SQL is installed as a standing query. DBSP automatically
     incrementalizes it. When input data changes, only affected output rows
-    are recomputed. No watermarks, no merge logic.
+    are recomputed.
 
     Configuration:
         materialized: 'incremental'
