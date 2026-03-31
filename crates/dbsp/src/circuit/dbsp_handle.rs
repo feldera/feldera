@@ -28,6 +28,7 @@ use itertools::Either;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -700,6 +701,12 @@ impl From<&CircuitConfig> for CircuitConfig {
 impl From<usize> for CircuitConfig {
     fn from(n_workers: usize) -> Self {
         Self::with_workers(n_workers)
+    }
+}
+
+impl From<NonZeroUsize> for CircuitConfig {
+    fn from(n_workers: NonZeroUsize) -> Self {
+        Self::with_workers(n_workers.get())
     }
 }
 
