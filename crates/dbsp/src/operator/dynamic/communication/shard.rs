@@ -393,9 +393,11 @@ impl PairsSerializer {
         K: DataTrait + ?Sized,
         V: DataTrait + ?Sized,
     {
-        serializer
-            .with(FBufSerializer::new(&mut self.fbuf), |s| pair.serialize(s))
-            .unwrap();
+        self.offsets.push(
+            serializer
+                .with(FBufSerializer::new(&mut self.fbuf), |s| pair.serialize(s))
+                .unwrap(),
+        );
     }
 
     pub fn done(mut self, serializer: &mut SerializerInner) -> FBuf {
