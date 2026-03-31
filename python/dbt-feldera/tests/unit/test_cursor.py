@@ -1,62 +1,64 @@
 import unittest
 
-from dbt.adapters.feldera.cursor import FelderaCursor, SqlIntent, classify_sql_intent
+from dbt.adapters.feldera.cursor import FelderaCursor
+from dbt.adapters.feldera.sql_parser import SqlIntent
+from dbt.adapters.feldera.sqlglot_parser import parser
 
 
 class TestSqlIntentClassification(unittest.TestCase):
     """Unit tests for SQL intent classification."""
 
     def test_select_is_adhoc_query(self):
-        self.assertEqual(classify_sql_intent("SELECT * FROM users"), SqlIntent.ADHOC_QUERY)
+        self.assertEqual(parser.classify("SELECT * FROM users"), SqlIntent.ADHOC_QUERY)
 
     def test_select_with_whitespace(self):
-        self.assertEqual(classify_sql_intent("  SELECT 1"), SqlIntent.ADHOC_QUERY)
+        self.assertEqual(parser.classify("  SELECT 1"), SqlIntent.ADHOC_QUERY)
 
     def test_with_cte_is_adhoc_query(self):
         self.assertEqual(
-            classify_sql_intent("WITH cte AS (SELECT 1) SELECT * FROM cte"),
+            parser.classify("WITH cte AS (SELECT 1) SELECT * FROM cte"),
             SqlIntent.ADHOC_QUERY,
         )
 
     def test_create_table_is_ddl(self):
         self.assertEqual(
-            classify_sql_intent("CREATE TABLE foo (id INT)"),
+            parser.classify("CREATE TABLE foo (id INT)"),
             SqlIntent.PIPELINE_DDL,
         )
 
     def test_create_view_is_ddl(self):
         self.assertEqual(
-            classify_sql_intent("CREATE VIEW bar AS SELECT 1"),
+            parser.classify("CREATE VIEW bar AS SELECT 1"),
             SqlIntent.PIPELINE_DDL,
         )
 
     def test_drop_is_ddl(self):
-        self.assertEqual(classify_sql_intent("DROP TABLE foo"), SqlIntent.PIPELINE_DDL)
+        self.assertEqual(parser.classify("DROP TABLE foo"), SqlIntent.PIPELINE_DDL)
 
     def test_alter_is_ddl(self):
         self.assertEqual(
-            classify_sql_intent("ALTER TABLE foo ADD COLUMN bar INT"),
+            parser.classify("ALTER TABLE foo ADD COLUMN bar INT"),
             SqlIntent.PIPELINE_DDL,
         )
 
     def test_insert_is_ingress(self):
         self.assertEqual(
-            classify_sql_intent("INSERT INTO foo VALUES (1)"),
+            parser.classify("INSERT INTO foo VALUES (1)"),
             SqlIntent.DATA_INGRESS,
         )
 
     def test_empty_string_is_noop(self):
-        self.assertEqual(classify_sql_intent(""), SqlIntent.NO_OP)
+        self.assertEqual(parser.classify(""), SqlIntent.NO_OP)
 
     def test_whitespace_only_is_noop(self):
-        self.assertEqual(classify_sql_intent("   "), SqlIntent.NO_OP)
+        self.assertEqual(parser.classify("   "), SqlIntent.NO_OP)
 
     def test_case_insensitive(self):
-        self.assertEqual(classify_sql_intent("select * from foo"), SqlIntent.ADHOC_QUERY)
-        self.assertEqual(classify_sql_intent("create table foo (id int)"), SqlIntent.PIPELINE_DDL)
+        self.assertEqual(parser.classify("select * from foo"), SqlIntent.ADHOC_QUERY)
+        self.assertEqual(parser.classify("create table foo (id int)"), SqlIntent.PIPELINE_DDL)
 
     def test_unknown_defaults_to_adhoc(self):
-        self.assertEqual(classify_sql_intent("EXPLAIN SELECT 1"), SqlIntent.ADHOC_QUERY)
+        self.assertEqual(parser.classify("EXPLAIN SELECT 1"), SqlIntent.ADHOC_QUERY)
 
 
 class TestFelderaCursor(unittest.TestCase):

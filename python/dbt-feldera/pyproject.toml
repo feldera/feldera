@@ -30,6 +30,7 @@ dependencies = [
     "dbt-common~=1.12",
     "feldera>=0.275.0",
     "agate>=1.9.1",
+    "sqlglot>=30.1.0",
 ]
 
 [project.urls]

@@ -205,6 +205,8 @@ class FelderaAdapter(BaseAdapter):
         :param from_relation: The source relation.
         :param to_relation: The target relation.
         """
+        from dbt.adapters.feldera.sqlglot_parser import parser
+
         pipeline = self._get_pipeline_name(from_relation.schema)
         old_name = from_relation.identifier
         new_name = to_relation.identifier
@@ -213,11 +215,11 @@ class FelderaAdapter(BaseAdapter):
         views = _pipeline_state.get_views(pipeline)
 
         if old_name in tables:
-            ddl = tables[old_name].replace(old_name, new_name, 1)
+            ddl = parser.rename_in_ddl(tables[old_name], old_name, new_name)
             _pipeline_state.remove_table(pipeline, old_name)
             _pipeline_state.register_table(pipeline, new_name, ddl)
         elif old_name in views:
-            ddl = views[old_name].replace(old_name, new_name, 1)
+            ddl = parser.rename_in_ddl(views[old_name], old_name, new_name)
             _pipeline_state.remove_view(pipeline, old_name)
             _pipeline_state.register_view(pipeline, new_name, ddl)
 
@@ -596,7 +598,9 @@ class FelderaAdapter(BaseAdapter):
         _BOOL_TYPES = {"BOOLEAN", "BOOL"}
 
         def _make_caster(sql_type: str):
-            upper = sql_type.upper().split("(")[0].strip()
+            from dbt.adapters.feldera.sqlglot_parser import parser
+
+            upper = parser.sql_type_base_name(sql_type)
             if upper in _INT_TYPES:
                 return lambda v: int(v) if v is not None else None
             if upper in _FLOAT_TYPES:

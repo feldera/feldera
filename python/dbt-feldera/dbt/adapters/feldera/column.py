@@ -45,7 +45,9 @@ class FelderaColumn(Column):
         :param dtype: The Feldera SQL data type string.
         :return: The dbt type category (e.g., 'text', 'integer', 'number').
         """
-        base_type = dtype.split("(")[0].strip().upper()
+        from dbt.adapters.feldera.sqlglot_parser import parser
+
+        base_type = parser.sql_type_base_name(dtype)
         return cls.TYPE_LABELS.get(base_type, "text")
 
     @classmethod

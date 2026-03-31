@@ -1,51 +1,11 @@
 import logging
-from enum import Enum
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from dbt.adapters.feldera.sql_parser import SqlIntent
+from dbt.adapters.feldera.sqlglot_parser import parser as _parser
 from feldera.rest.feldera_client import FelderaClient
 
 logger = logging.getLogger(__name__)
-
-
-class SqlIntent(Enum):
-    """Classification of SQL statements by their Feldera execution intent."""
-
-    ADHOC_QUERY = "adhoc_query"
-    PIPELINE_DDL = "pipeline_ddl"
-    DATA_INGRESS = "data_ingress"
-    METADATA = "metadata"
-    NO_OP = "no_op"
-
-
-def classify_sql_intent(sql: str) -> SqlIntent:
-    """
-    Classify a SQL statement to determine how it should be routed to Feldera.
-
-    :param sql: The SQL statement to classify.
-    :return: The classified intent.
-    """
-    stripped = sql.strip()
-    if not stripped:
-        return SqlIntent.NO_OP
-
-    # Strip leading SQL comments (-- and /* ... */)
-    while stripped.startswith("--"):
-        newline = stripped.find("\n")
-        if newline == -1:
-            return SqlIntent.NO_OP
-        stripped = stripped[newline + 1 :].strip()
-
-    if not stripped:
-        return SqlIntent.NO_OP
-
-    upper = stripped.upper()
-    if upper.startswith("SELECT") or upper.startswith("WITH"):
-        return SqlIntent.ADHOC_QUERY
-    if upper.startswith("CREATE") or upper.startswith("DROP") or upper.startswith("ALTER"):
-        return SqlIntent.PIPELINE_DDL
-    if upper.startswith("INSERT"):
-        return SqlIntent.DATA_INGRESS
-    return SqlIntent.ADHOC_QUERY
 
 
 class FelderaCursor:
@@ -91,7 +51,7 @@ class FelderaCursor:
         if self._closed:
             raise RuntimeError("Cursor is closed")
 
-        intent = classify_sql_intent(sql)
+        intent = _parser.classify(sql)
         logger.debug("Executing SQL (intent=%s): %s", intent.value, sql[:200])
 
         if intent == SqlIntent.NO_OP:
