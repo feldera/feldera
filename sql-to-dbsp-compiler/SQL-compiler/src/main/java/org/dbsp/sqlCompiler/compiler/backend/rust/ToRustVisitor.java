@@ -88,6 +88,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
@@ -462,14 +463,14 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
-    /** Remove properties from a json tree. */
-    JsonNode stripProperties(JsonNode json) {
+    /** Remove connectors property from a json tree. */
+    JsonNode stripConnectors(JsonNode json) {
         if (!json.isObject())
             return json;
         ObjectNode j = (ObjectNode) json;
         ObjectNode props = (ObjectNode) j.get("properties");
         if (props != null)
-            j.remove("properties");
+            props.remove("connectors");
         return json;
     }
 
@@ -603,7 +604,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append("::<_, ");
         IHasSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
         JsonNode j = tableDescription.asJson(true);
-        j = this.stripProperties(j);
+        j = this.stripConnectors(j);
         DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
         operator.originalRowType.accept(this.innerVisitor);
         this.builder.append(">(")
@@ -798,7 +799,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
             IHasSchema tableDescription = this.metadata.getTableDescription(operator.getTableName());
             JsonNode j = tableDescription.asJson(true);
-            j = this.stripProperties(j);
+            j = this.stripConnectors(j);
             DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
 
             // Check if any of the primary keys columns has a LATENESS annotation
@@ -1088,7 +1089,7 @@ public class ToRustVisitor extends CircuitVisitor {
             } else {
                 IHasSchema description = this.metadata.getViewDescription(operator.viewName);
                 JsonNode j = description.asJson(true);
-                j = this.stripProperties(j);
+                j = this.stripConnectors(j);
                 DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
                 String registerFunction = switch (operator.metadata.viewKind) {
                     case MATERIALIZED -> "register_materialized_output_zset_persistent";

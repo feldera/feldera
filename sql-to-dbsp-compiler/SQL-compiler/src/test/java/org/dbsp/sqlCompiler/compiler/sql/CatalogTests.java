@@ -8,11 +8,15 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.MerkleOuter;
+import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.rust.multi.ProjectDeclarations;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -20,7 +24,9 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -35,6 +41,17 @@ public class CatalogTests extends BaseSQLTests {
         result.ioOptions.emitHandles = false;
         result.languageOptions.unrestrictedIOTypes = false;
         return result;
+    }
+
+    @Test
+    public void issue5957() {
+        var ccs = this.getCCS("CREATE TABLE T(used INTEGER, unused INTEGER) with ('skip_unused_columns' = 'true', 'connectors' = '[]');");
+        IndentStreamBuilder builder = new IndentStreamBuilder();
+        ToRustVisitor visitor = new ToRustVisitor(
+                ccs.compiler, builder, ccs.getCircuit().getMetadata(),
+                new ProjectDeclarations(), new LateMaterializations(ccs.compiler));
+        visitor.apply(ccs.getCircuit());
+        Assert.assertTrue(builder.toString().contains("\"skip_unused_columns\":{\"value\":\"true\""));
     }
 
     @Test
