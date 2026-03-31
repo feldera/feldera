@@ -332,29 +332,14 @@ class PipelineStateManager:
         """
         Extract CREATE TABLE statements from a pipeline SQL program.
 
-        Splits the SQL into individual statements and returns only those
-        that start with CREATE TABLE (case-insensitive). This preserves
-        seed table definitions while discarding views.
+        Returns only ``CREATE TABLE`` DDL strings.
 
         :param sql: The full pipeline SQL program.
         :return: A list of CREATE TABLE DDL strings (with trailing semicolons).
         """
-        import re
+        from dbt.adapters.feldera.sqlglot_parser import parser
 
-        # Split on semicolons followed by whitespace/newline and a CREATE keyword
-        statements = re.split(r";\s*(?=CREATE\b)", sql, flags=re.IGNORECASE)
-        table_ddls = []
-        for stmt in statements:
-            stmt = stmt.strip()
-            if not stmt:
-                continue
-            # Ensure trailing semicolon
-            if not stmt.endswith(";"):
-                stmt += ";"
-            # Keep only CREATE TABLE statements
-            if re.match(r"\s*CREATE\s+TABLE\b", stmt, re.IGNORECASE):
-                table_ddls.append(stmt)
-        return table_ddls
+        return parser.extract_table_ddls(sql)
 
     @staticmethod
     def _extract_table_names(table_ddls: List[str]) -> set:
@@ -364,14 +349,9 @@ class PipelineStateManager:
         :param table_ddls: List of DDL strings (e.g., ``CREATE TABLE "foo" (...);``).
         :return: A set of lowercase table names.
         """
-        import re
+        from dbt.adapters.feldera.sqlglot_parser import parser
 
-        names = set()
-        for ddl in table_ddls:
-            m = re.match(r'\s*CREATE\s+TABLE\s+"?(\w+)"?\s*\(', ddl, re.IGNORECASE)
-            if m:
-                names.add(m.group(1).lower())
-        return names
+        return parser.extract_table_names(table_ddls)
 
     def has_pending_views(self) -> bool:
         """
