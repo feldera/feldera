@@ -27,6 +27,28 @@ import TabItem from '@theme/TabItem';
 
         ## v0.281.0
 
+        ### New dbt adapter for Feldera (`dbt-feldera`)
+
+        A new [dbt](https://www.getdbt.com/) adapter (`dbt-feldera` v0.1.0) that maps dbt
+        concepts onto Feldera's streaming SQL engine. Schemas map to pipelines, tables to input
+        sources, views to transforms, and incremental models to Feldera's automatic incremental
+        view maintenance (IVM).
+
+        Supported materializations:
+        - **table** — input source tables
+        - **view** — transform views (auto-promoted to materialized views when connectors are attached)
+        - **incremental** — IVM-backed materialized views
+        - **seed** — table creation with HTTP data ingestion
+        - **streaming_pipeline** — entire SQL program as a single dbt model
+
+        The adapter connects to Feldera via its REST API, uses `sqlglot` for SQL dialect
+        parsing, and supports Kafka ingestion and Delta Lake output. An AdventureWorks-based
+        integration test suite validates the full dbt lifecycle (`seed`, `run`, `test`,
+        `build --full-refresh`) including Delta Lake correctness via DuckDB and Kafka IVM.
+
+        CI workflows for linting, unit tests, and integration tests were added, along with
+        PyPI publishing support.
+
         Starting a pipeline while storage is still clearing (`storage_status=Clearing`) now returns
         `CannotStartWhileClearingStorage` instead of succeeding. Clearing storage while a start
         is in progress but hasn't yet transitioned to `Provisioning` now returns
