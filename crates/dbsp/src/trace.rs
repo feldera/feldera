@@ -503,12 +503,6 @@ where
         self.len() == 0
     }
 
-    /// A method that returns either true (possibly in the batch) or false
-    /// (definitely not in the batch).
-    fn maybe_contains_key(&self, _hash: u64) -> bool {
-        true
-    }
-
     /// Returns a uniform random sample of distincts keys from the batch.
     ///
     /// Does not take into account the number values associated with each
@@ -679,9 +673,6 @@ where
     }
     fn is_empty(&self) -> bool {
         (**self).is_empty()
-    }
-    fn maybe_contains_key(&self, hash: u64) -> bool {
-        (**self).maybe_contains_key(hash)
     }
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where

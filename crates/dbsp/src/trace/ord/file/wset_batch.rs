@@ -20,10 +20,7 @@ use crate::{
         DbspSerializer, Deserializer, FileKeyBatch, VecWSetFactories, WeightedItem,
         cursor::{CursorFactoryWrapper, Pending, Position, PushCursor},
         merge_batches_by_reference,
-        ord::{
-            batch_filter::BatchFilters, file::UnwrapStorage, key_range::KeyRange,
-            merge_batcher::MergeBatcher,
-        },
+        ord::{batch_filter::BatchFilters, file::UnwrapStorage, merge_batcher::MergeBatcher},
     },
 };
 use crate::{DynZWeight, ZWeight};
@@ -188,10 +185,8 @@ where
     fn from_parts(
         factories: FileWSetFactories<K, R>,
         file: Arc<Reader<(&'static K, &'static R, ())>>,
-        key_range: Option<KeyRange<K>>,
+        filters: BatchFilters<K>,
     ) -> Self {
-        let filters = BatchFilters::from_file(key_range.clone(), file.clone());
-
         Self {
             factories,
             file,
@@ -277,9 +272,8 @@ where
             negative_weight_count: (self.len() as u64)
                 .saturating_sub(self.stats().negative_weight_count),
         };
-        let (file, key_bounds) = writer.into_reader(stats).unwrap_storage();
-        let key_range = key_bounds.map(Into::into);
-        Self::from_parts(self.factories.clone(), Arc::new(file), key_range)
+        let (file, filters) = writer.into_reader(stats).unwrap_storage();
+        Self::from_parts(self.factories.clone(), Arc::new(file), filters)
     }
 }
 
@@ -406,10 +400,6 @@ where
         self.file.cache_stats()
     }
 
-    fn maybe_contains_key(&self, hash: u64) -> bool {
-        self.file.maybe_contains_key(hash)
-    }
-
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
     where
         RG: Rng,
@@ -458,9 +448,10 @@ where
             &*keys_vec
         };
 
+        let filtered_keys = self.filters.filtered_keys(keys);
         let results = self
             .file
-            .fetch_zset(keys)
+            .fetch_zset(filtered_keys)
             .unwrap_storage()
             .async_results(self.factories.vec_wset_factory.clone())
             .await
@@ -486,15 +477,17 @@ where
 
     fn from_path(factories: &Self::Factories, path: &StoragePath) -> Result<Self, ReaderError> {
         let any_factory0 = factories.file_factories.any_factories();
-        let file = Arc::new(Reader::open(
+        let (file, membership_filter) = Reader::open_with_filter(
             &[&any_factory0],
             Runtime::buffer_cache,
             &*Runtime::storage_backend().unwrap(),
             path,
-        )?);
+        )?;
+        let file = Arc::new(file);
         let key_range = file.key_range()?.map(Into::into);
+        let filters = BatchFilters::from_file(key_range, membership_filter);
 
-        Ok(Self::from_parts(factories.clone(), file, key_range))
+        Ok(Self::from_parts(factories.clone(), file, filters))
     }
 
     fn negative_weight_count(&self) -> Option<u64> {
@@ -843,10 +836,9 @@ where
     }
 
     fn done(self) -> FileWSet<K, R> {
-        let (file, key_bounds) = self.writer.into_reader(self.stats).unwrap_storage();
+        let (file, filters) = self.writer.into_reader(self.stats).unwrap_storage();
         let file = Arc::new(file);
-        let key_range = key_bounds.map(Into::into);
-        FileWSet::from_parts(self.factories, file, key_range)
+        FileWSet::from_parts(self.factories, file, filters)
     }
 
     fn push_key(&mut self, key: &K) {

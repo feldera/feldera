@@ -2,18 +2,21 @@ use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
     DBWeight,
-    dynamic::{Data, DataTrait, DowncastTrait, DynWeight, Factory, LeanVec, Vector, WithFactory},
+    dynamic::{DataTrait, DowncastTrait, DynWeight, Factory, LeanVec, Vector, WithFactory},
     storage::{
         backend::StorageBackend,
         buffer_cache::BufferCache,
         file::{
             format::{BatchMetadata, Compression},
-            reader::{BulkRows, Reader},
+            reader::{BulkRows, FilteredKeys, Reader},
         },
     },
     trace::{
         BatchReaderFactories, Builder, VecIndexedWSetFactories, VecWSetFactories,
-        ord::vec::{indexed_wset_batch::VecIndexedWSetBuilder, wset_batch::VecWSetBuilder},
+        ord::{
+            batch_filter::BatchFilters,
+            vec::{indexed_wset_batch::VecIndexedWSetBuilder, wset_batch::VecWSetBuilder},
+        },
     },
     utils::test::init_test_logger,
 };
@@ -603,7 +606,7 @@ fn test_multifetch_zset<K, A>(
     }
     let expected = expected.done();
 
-    let mut multifetch = reader.fetch_zset(&*keys).unwrap();
+    let mut multifetch = reader.fetch_zset(FilteredKeys::all(&*keys)).unwrap();
     while !multifetch.is_done() {
         multifetch.wait().unwrap();
     }
@@ -641,7 +644,9 @@ fn test_multifetch_two_columns<T>(
     }
     let expected = expected.done();
 
-    let mut multifetch = reader.fetch_indexed_zset(&*keys).unwrap();
+    let mut multifetch = reader
+        .fetch_indexed_zset(FilteredKeys::all(&*keys))
+        .unwrap();
     while !multifetch.is_done() {
         multifetch.wait().unwrap();
     }
@@ -649,23 +654,22 @@ fn test_multifetch_two_columns<T>(
     assert_eq!(&output, &expected);
 }
 
-fn test_bloom<K, A, N>(
-    reader: &Reader<(&'static DynData, &'static DynData, N)>,
+fn test_bloom<K, A>(
+    filters: &BatchFilters<DynData>,
     n: usize,
     expected: impl Fn(usize) -> (K, K, K, A),
 ) where
-    K: DBData,
+    K: DBData + Erase<DynData>,
     A: DBData,
-    N: ColumnSpec,
 {
     let mut false_positives = 0;
     for row in 0..n {
         let (before, key, after, _aux) = expected(row);
-        assert!(reader.maybe_contains_key(key.default_hash()));
-        if reader.maybe_contains_key(before.default_hash()) {
+        assert!(filters.maybe_contains_key(key.erase(), None));
+        if filters.maybe_contains_key(before.erase(), None) {
             false_positives += 1;
         }
-        if reader.maybe_contains_key(after.default_hash()) {
+        if filters.maybe_contains_key(after.erase(), None) {
             false_positives += 1;
         }
     }
@@ -743,7 +747,7 @@ where
         layer_file.write0((&T::key0(row0), &T::aux0(row0))).unwrap();
     }
 
-    let (reader, _key_bounds) = layer_file.into_reader(BatchMetadata::default()).unwrap();
+    let (reader, filters) = layer_file.into_reader(BatchMetadata::default()).unwrap();
     reader.evict();
     let rows0 = reader.rows();
     let expected0 = |row0| {
@@ -753,7 +757,7 @@ where
         (before0, key0, after0, aux0)
     };
     test_cursor(&rows0, n0, expected0);
-    test_bloom(&reader, n0, expected0);
+    test_bloom(&filters, n0, expected0);
     test_key_range(&reader, n0, expected0);
 
     let expected1 = |row0, row1| {
@@ -809,7 +813,7 @@ where
         layer_file.write0((&T::key0(row0), &T::aux0(row0))).unwrap();
     }
 
-    let (reader, _key_bounds) = layer_file.into_reader(BatchMetadata::default()).unwrap();
+    let (reader, _filters) = layer_file.into_reader(BatchMetadata::default()).unwrap();
     reader.evict();
     test_multifetch_two_columns::<T>(&reader);
 }
@@ -949,27 +953,30 @@ where
             writer.write0((&key, &aux)).unwrap();
         }
 
-        let reader = if reopen {
+        let (reader, filters) = if reopen {
             println!("closing writer and reopening as reader");
             let path = writer.path().clone();
             let (_file_handle, _bloom_filter, _key_bounds) =
                 writer.close(BatchMetadata::default()).unwrap();
-            Reader::open(
+            let (reader, membership_filter) = Reader::open_with_filter(
                 &[&factories.any_factories()],
                 test_buffer_cache,
                 &*storage_backend,
                 &path,
             )
-            .unwrap()
+            .unwrap();
+            let key_range = reader.key_range().unwrap().map(Into::into);
+            let filters = BatchFilters::from_file(key_range, membership_filter);
+            (reader, filters)
         } else {
             println!("transforming writer into reader");
-            let (reader, _key_bounds) = writer.into_reader(BatchMetadata::default()).unwrap();
-            reader
+            let (reader, filters) = writer.into_reader(BatchMetadata::default()).unwrap();
+            (reader, filters)
         };
         reader.evict();
         assert_eq!(reader.rows().len(), n as u64);
         test_cursor(&reader.rows(), n, &expected);
-        test_bloom(&reader, n, &expected);
+        test_bloom(&filters, n, &expected);
         test_key_range(&reader, n, &expected);
         test_bulk_rows(reader.bulk_rows().unwrap(), OneColumn::new(&expected, n));
     }
@@ -1021,7 +1028,7 @@ fn test_one_column_zset<K, A>(
             .unwrap()
         } else {
             println!("transforming writer into reader");
-            let (reader, _key_bounds) = writer.into_reader(BatchMetadata::default()).unwrap();
+            let (reader, _filters) = writer.into_reader(BatchMetadata::default()).unwrap();
             reader
         };
         reader.evict();
@@ -1075,7 +1082,7 @@ fn one_column_key_range() {
                 )
                 .unwrap()
             } else {
-                let (reader, _key_bounds) = writer.into_reader(BatchMetadata::default()).unwrap();
+                let (reader, _filters) = writer.into_reader(BatchMetadata::default()).unwrap();
                 reader
             };
 

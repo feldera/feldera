@@ -17,7 +17,7 @@ use crate::{
     },
     trace::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, WeightedItem,
-        ord::{batch_filter::BatchFilters, key_range::KeyRange, merge_batcher::MergeBatcher},
+        ord::{batch_filter::BatchFilters, merge_batcher::MergeBatcher},
     },
     utils::Tup2,
 };
@@ -244,10 +244,8 @@ where
     fn from_parts(
         factories: FileValBatchFactories<K, V, T, R>,
         file: RawValBatch<K, V, T, R>,
-        key_range: Option<KeyRange<K>>,
+        filters: BatchFilters<K>,
     ) -> Self {
-        let filters = BatchFilters::from_file(key_range.clone(), file.clone());
-
         Self {
             factories,
             file,
@@ -363,10 +361,6 @@ where
             }
         }
     }
-
-    fn maybe_contains_key(&self, hash: u64) -> bool {
-        self.file.maybe_contains_key(hash)
-    }
 }
 
 impl<K, V, T, R> Batch for FileValBatch<K, V, T, R>
@@ -388,14 +382,16 @@ where
     fn from_path(factories: &Self::Factories, path: &StoragePath) -> Result<Self, ReaderError> {
         let any_factory0 = factories.factories0.any_factories();
         let any_factory1 = factories.factories1.any_factories();
-        let file = Arc::new(Reader::open(
+        let (file, membership_filter) = Reader::open_with_filter(
             &[&any_factory0, &any_factory1],
             Runtime::buffer_cache,
             &*Runtime::storage_backend().unwrap_storage(),
             path,
-        )?);
+        )?;
+        let file = Arc::new(file);
         let key_range = file.key_range()?.map(Into::into);
-        Ok(Self::from_parts(factories.clone(), file, key_range))
+        let filters = BatchFilters::from_file(key_range, membership_filter);
+        Ok(Self::from_parts(factories.clone(), file, filters))
     }
 
     fn negative_weight_count(&self) -> Option<u64> {
@@ -730,10 +726,9 @@ where
     }
 
     fn done(self) -> FileValBatch<K, V, T, R> {
-        let (file, key_bounds) = self.writer.into_reader(self.stats).unwrap_storage();
+        let (file, filters) = self.writer.into_reader(self.stats).unwrap_storage();
         let file = Arc::new(file);
-        let key_range = key_bounds.map(Into::into);
-        FileValBatch::from_parts(self.factories, file, key_range)
+        FileValBatch::from_parts(self.factories, file, filters)
     }
 
     fn push_key(&mut self, key: &K) {

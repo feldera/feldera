@@ -4,15 +4,16 @@
 //! present", so callers can reject cheap cases before doing the exact lookup.
 
 use crate::{
-    dynamic::DataTrait,
+    dynamic::{DataTrait, DynVec},
     storage::{
-        file::reader::{ColumnSpec, Reader},
+        file::reader::FilteredKeys,
         filter_stats::{FilterStats, TrackingFilterStats},
+        tracking_bloom_filter::TrackingBloomFilter,
     },
     trace::ord::key_range::KeyRange,
 };
-use dyn_clone::{DynClone, clone_box};
 use size_of::SizeOf;
+use smallvec::SmallVec;
 use std::sync::Arc;
 
 /// A cheap, in-memory precheck used by `seek_key_exact`.
@@ -20,7 +21,7 @@ use std::sync::Arc;
 /// Each filter may only reject a key early. Returning `true` means "the key
 /// might still be present", so the caller must continue with the next filter or
 /// the exact lookup.
-pub(crate) trait BatchFilter<K>: DynClone + Send + Sync
+pub(crate) trait BatchFilter<K>: Send + Sync
 where
     K: DataTrait + ?Sized,
 {
@@ -34,27 +35,27 @@ where
     fn stats(&self) -> FilterStats;
 }
 
-/// Ordered key filters for file-backed batches.
+/// Ordered key filters for exact-key probes against file-backed batches.
 ///
 /// The key range is kept separately from the trait objects because batches
 /// thread typed bounds through file-writer finalization and rebuild the range
 /// when they create a new reader. All other filters are stored behind a trait
 /// object so we can swap bloom for bitmap or another single post-range filter
 /// without changing the batch structs again.
-#[derive(SizeOf)]
-pub(crate) struct BatchFilters<K>
+pub struct BatchFilters<K>
 where
     K: DataTrait + ?Sized,
 {
     range_filter: Arc<TrackedRangeFilter<K>>,
-    #[size_of(skip)]
-    membership_filter: Box<dyn BatchFilter<K>>,
+    membership_filter: Option<Arc<dyn BatchFilter<K>>>,
 }
 
+/// Runtime statistics for the range and membership filters inside
+/// [`BatchFilters`].
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct BatchFilterStats {
-    pub(crate) range_filter: FilterStats,
-    pub(crate) membership_filter: FilterStats,
+pub struct BatchFilterStats {
+    pub range_filter: FilterStats,
+    pub membership_filter: FilterStats,
 }
 
 /// A range filter with statistics.
@@ -94,7 +95,7 @@ where
 {
     pub(crate) fn new(
         range_filter: Option<KeyRange<K>>,
-        membership_filter: Box<dyn BatchFilter<K>>,
+        membership_filter: Option<Arc<dyn BatchFilter<K>>>,
     ) -> Self {
         Self {
             range_filter: Arc::new(TrackedRangeFilter::new(range_filter)),
@@ -106,31 +107,67 @@ where
     ///
     /// The range check runs before the bloom filter so out-of-range keys never
     /// pay the hash or bloom lookup cost.
-    pub(crate) fn from_file<A, N>(
+    pub(crate) fn from_file(
         key_range: Option<KeyRange<K>>,
-        file: Arc<Reader<(&'static K, &'static A, N)>>,
-    ) -> Self
-    where
-        A: DataTrait + ?Sized,
-        N: 'static,
-        (&'static K, &'static A, N): ColumnSpec,
-    {
-        Self::new(key_range, Box::new(file))
+        membership_filter: Option<TrackingBloomFilter>,
+    ) -> Self {
+        Self::new(
+            key_range,
+            membership_filter
+                .map(Arc::new)
+                .map(|filter| filter as Arc<dyn BatchFilter<K>>),
+        )
     }
 
-    pub(crate) fn stats(&self) -> BatchFilterStats {
+    /// Returns cumulative statistics for the range and membership filters.
+    pub fn stats(&self) -> BatchFilterStats {
         BatchFilterStats {
             range_filter: self.range_filter.stats(),
-            membership_filter: self.membership_filter.stats(),
+            membership_filter: self
+                .membership_filter
+                .as_ref()
+                .map(|filter| filter.stats())
+                .unwrap_or_default(),
         }
     }
 
-    pub(crate) fn maybe_contains_key(&self, key: &K, mut hash: Option<u64>) -> bool {
+    /// Returns the cached key bounds, when available.
+    pub fn key_bounds(&self) -> Option<(&K, &K)> {
+        self.range_filter.range.as_ref().map(|range| range.bounds())
+    }
+
+    /// Returns `keys`, optionally narrowed to the indexes that pass the filter
+    /// chain when that is cheap enough to be worthwhile.
+    pub(crate) fn filtered_keys<'a>(&self, keys: &'a DynVec<K>) -> FilteredKeys<'a, K> {
+        debug_assert!(keys.is_sorted_by(&|a, b| a.cmp(b)));
+
+        // Preserve the old `FilteredKeys` heuristic: if too many keys pass,
+        // avoid allocating the index vector and just keep the original slice.
+        let mut filter_pass_keys = SmallVec::<[_; 50]>::new();
+        for (index, key) in keys.dyn_iter().enumerate() {
+            if self.maybe_contains_key(key, None) {
+                filter_pass_keys.push(index);
+                if filter_pass_keys.len() >= keys.len() / 300 {
+                    return FilteredKeys::all(keys);
+                }
+            }
+        }
+
+        FilteredKeys::with_filter_pass_keys(keys, Some(filter_pass_keys.into_vec()))
+    }
+
+    /// Returns `false` only when `key` is definitely not present.
+    ///
+    /// Passing a cached `hash` avoids recomputing it when the caller already
+    /// has one available.
+    pub fn maybe_contains_key(&self, key: &K, mut hash: Option<u64>) -> bool {
         if !self.range_filter.maybe_contains_key(key, &mut hash) {
             return false;
         }
 
-        self.membership_filter.maybe_contains_key(key, &mut hash)
+        self.membership_filter
+            .as_ref()
+            .is_none_or(|filter| filter.maybe_contains_key(key, &mut hash))
     }
 }
 
@@ -141,8 +178,23 @@ where
     fn clone(&self) -> Self {
         Self {
             range_filter: self.range_filter.clone(),
-            membership_filter: clone_box(self.membership_filter.as_ref()),
+            membership_filter: self.membership_filter.clone(),
         }
+    }
+}
+
+impl<K> SizeOf for BatchFilters<K>
+where
+    K: DataTrait + ?Sized,
+{
+    fn size_of_children(&self, context: &mut size_of::Context) {
+        self.range_filter.size_of_with_context(context);
+        context.add(
+            self.membership_filter
+                .as_ref()
+                .map(|filter| filter.stats().size_byte)
+                .unwrap_or_default(),
+        );
     }
 }
 
@@ -161,20 +213,17 @@ where
     }
 }
 
-impl<K, A, N> BatchFilter<K> for Arc<Reader<(&'static K, &'static A, N)>>
+impl<K> BatchFilter<K> for TrackingBloomFilter
 where
     K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-    N: 'static,
-    (&'static K, &'static A, N): ColumnSpec,
 {
     fn maybe_contains_key(&self, key: &K, hash: &mut Option<u64>) -> bool {
         let hash = hash.get_or_insert_with(|| key.default_hash());
-        self.as_ref().maybe_contains_key(*hash)
+        self.contains_hash(*hash)
     }
 
     fn stats(&self) -> FilterStats {
-        self.as_ref().membership_filter_stats()
+        TrackingBloomFilter::stats(self)
     }
 }
 
