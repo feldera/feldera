@@ -127,6 +127,7 @@ pub const MERGING_MEMORY_RECORDS_COUNT: MetricId =
 pub const MERGING_STORAGE_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("merging_storage_records_count"));
 pub const COMPLETED_MERGES: MetricId = MetricId(Cow::Borrowed("completed_merges"));
+pub const NEGATIVE_WEIGHT_COUNT: MetricId = MetricId(Cow::Borrowed("negative_weight_count"));
 pub const BLOOM_FILTER_BITS_PER_KEY: MetricId =
     MetricId(Cow::Borrowed("bloom_filter_bits_per_key"));
 pub const BLOOM_FILTER_HITS_COUNT: MetricId = MetricId(Cow::Borrowed("bloom_filter_hits_count"));
@@ -160,7 +161,7 @@ pub const PREFIX_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("prefix_batche
 pub const INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("input_integral_records_count"));
 
-pub const CIRCUIT_METRICS: [CircuitMetric; 65] = [
+pub const CIRCUIT_METRICS: [CircuitMetric; 66] = [
     // State
     CircuitMetric {
         name: USED_MEMORY_BYTES,
@@ -251,6 +252,12 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 65] = [
         category: CircuitMetricCategory::State,
         advanced: false,
         description: "The number of on-disk records in loose batches.",
+    },
+    CircuitMetric {
+        name: NEGATIVE_WEIGHT_COUNT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "Total number of negative weight records in the spine.",
     },
     CircuitMetric {
         name: BLOOM_FILTER_BITS_PER_KEY,

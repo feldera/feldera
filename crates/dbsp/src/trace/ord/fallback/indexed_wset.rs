@@ -377,6 +377,13 @@ where
             inner: Inner::File(FileIndexedWSet::from_path(factories, path)?),
         })
     }
+
+    fn negative_weight_count(&self) -> Option<u64> {
+        match &self.inner {
+            Inner::File(file) => file.negative_weight_count(),
+            Inner::Vec(vec) => vec.negative_weight_count(),
+        }
+    }
 }
 
 /// A builder for batches from ordered update tuples.
@@ -743,7 +750,7 @@ where
     R: WeightTrait + ?Sized,
 {
     fn checkpoint(&self) -> Result<Vec<u8>, Error> {
-        Ok(serialize_indexed_wset(self, &mut SerializerInner::new()))
+        Ok(serialize_indexed_wset(self, &mut SerializerInner::new()).into_vec())
     }
 
     fn restore(&mut self, data: &[u8]) -> Result<(), Error> {

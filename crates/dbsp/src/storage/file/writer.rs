@@ -10,7 +10,8 @@ use crate::storage::{
     file::{
         BLOOM_FILTER_SEED, SerializerInner,
         format::{
-            BlockHeader, COMPATIBLE_FEATURE_FILTER64, DATA_BLOCK_MAGIC, DataBlockHeader,
+            BatchMetadata, BlockHeader, COMPATIBLE_FEATURE_FILTER64,
+            COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT, DATA_BLOCK_MAGIC, DataBlockHeader,
             FILE_TRAILER_BLOCK_MAGIC, FileTrailer, FileTrailerColumn, FilterBlockRef, FixedLen,
             INDEX_BLOCK_MAGIC, IndexBlockHeader, NodeType, VERSION_NUMBER, Varint,
         },
@@ -1221,6 +1222,7 @@ impl Writer {
 
     pub fn close(
         mut self,
+        metadata: BatchMetadata,
     ) -> Result<(Arc<dyn FileReader>, Option<TrackingBloomFilter>), StorageError> {
         debug_assert_eq!(self.cws.len(), self.finished_columns.len());
 
@@ -1250,10 +1252,11 @@ impl Writer {
             compression: self.cws[0].parameters.compression,
             filter_offset: 0,
             filter_size: 0,
-            compatible_features: 0,
+            compatible_features: COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT,
             incompatible_features: 0,
             filter_offset64: 0,
             filter_size64: 0,
+            metadata,
         };
         if filter_location.size > 0 {
             if let Ok(size) = u32::try_from(filter_location.size)
@@ -1311,7 +1314,7 @@ impl Writer {
 /// # use std::sync::Arc;
 /// use dbsp::storage::{
 ///     backend::StorageBackend,
-///     file::Factories,
+///     file::{Factories, format::BatchMetadata},
 ///     buffer_cache::BufferCache,
 /// };
 /// let factories = Factories::<DynData, DynUnit>::new::<u32, ()>();
@@ -1326,7 +1329,7 @@ impl Writer {
 /// for i in 0..1000_u32 {
 ///     file.write0((i.erase(), ().erase())).unwrap();
 /// }
-/// file.close().unwrap();
+/// file.close(BatchMetadata::default()).unwrap();
 /// ```
 pub struct Writer1<K0, A0>
 where
@@ -1392,11 +1395,16 @@ where
 
     /// Finishes writing the layer file and returns the writer passed to
     /// [`new`](Self::new).
+    ///
+    /// # Arguments
+    ///
+    /// * `metadata` - Batch metadata to include in the trailer.
     pub fn close(
         mut self,
+        metadata: BatchMetadata,
     ) -> Result<(Arc<dyn FileReader>, Option<TrackingBloomFilter>), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
-        self.inner.close()
+        self.inner.close(metadata)
     }
 
     /// Returns the path for the file being written.
@@ -1410,13 +1418,18 @@ where
     }
 
     /// Finishes writing the layer file and returns a reader for it.
+    ///
+    /// # Arguments
+    ///
+    /// * `metadata` - Batch metadata to include in the trailer.
     pub fn into_reader(
         self,
+        metadata: BatchMetadata,
     ) -> Result<Reader<(&'static K0, &'static A0, ())>, super::reader::Error> {
         let any_factories = self.factories.any_factories();
 
         let cache = self.inner.cache;
-        let (file_handle, bloom_filter) = self.close()?;
+        let (file_handle, bloom_filter) = self.close(metadata)?;
 
         Reader::new(&[&any_factories], cache, file_handle, bloom_filter)
     }
@@ -1446,7 +1459,7 @@ where
 /// use feldera_types::config::{StorageConfig, StorageOptions};
 /// use dbsp::storage::{
 ///     backend::StorageBackend,
-///     file::Factories,
+///     file::{Factories, format::BatchMetadata},
 ///     buffer_cache::BufferCache,
 /// };
 /// let factories = Factories::<DynData, DynUnit>::new::<u32, ()>();
@@ -1464,7 +1477,7 @@ where
 ///     }
 ///     file.write0((&i, &())).unwrap();
 /// }
-/// file.close().unwrap();
+/// file.close(BatchMetadata::default()).unwrap();
 /// ```
 pub struct Writer2<K0, A0, K1, A1>
 where
@@ -1569,12 +1582,17 @@ where
     ///
     /// This function will panic if [`write1`](Self::write1) has been called
     /// without a subsequent call to [`write0`](Self::write0).
+    ///
+    /// # Arguments
+    ///
+    /// * `metadata` - Batch metadata to include in the trailer.
     pub fn close(
         mut self,
+        metadata: BatchMetadata,
     ) -> Result<(Arc<dyn FileReader>, Option<TrackingBloomFilter>), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.finish_column::<K1, A1>(1)?;
-        self.inner.close()
+        self.inner.close(metadata)
     }
 
     /// Returns the storage used for this writer.
@@ -1588,9 +1606,14 @@ where
     }
 
     /// Finishes writing the layer file and returns a reader for it.
+    ///
+    /// # Arguments
+    ///
+    /// * `metadata` - Batch metadata to include in the trailer.
     #[allow(clippy::type_complexity)]
     pub fn into_reader(
         self,
+        metadata: BatchMetadata,
     ) -> Result<
         Reader<(&'static K0, &'static A0, (&'static K1, &'static A1, ()))>,
         super::reader::Error,
@@ -1598,7 +1621,7 @@ where
         let any_factories0 = self.factories0.any_factories();
         let any_factories1 = self.factories1.any_factories();
         let cache = self.inner.cache;
-        let (file_handle, bloom_filter) = self.close()?;
+        let (file_handle, bloom_filter) = self.close(metadata)?;
         Reader::new(
             &[&any_factories0, &any_factories1],
             cache,

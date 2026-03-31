@@ -24,6 +24,7 @@ use crate::{
 };
 use binrw::{BinRead, BinWrite};
 use crossbeam_utils::CachePadded;
+use feldera_storage::fbuf::FBuf;
 use futures::{prelude::*, stream::FuturesUnordered};
 use itertools::Itertools;
 use rkyv::AlignedVec;
@@ -159,7 +160,7 @@ impl ExchangeServiceClient {
         &self,
         exchange_id: ExchangeId,
         senders: Range<usize>,
-        data: Vec<Vec<Vec<u8>>>,
+        data: Vec<Vec<FBuf>>,
     ) -> std::io::Result<()> {
         // We want to write each data buffer preceded by a header and followed
         // by padding.  To minimize the system calls required to do this, we
@@ -585,13 +586,13 @@ impl InnerExchange {
 
 #[derive(Clone, Debug)]
 pub enum Mailbox<T> {
-    Tx(Vec<u8>),
+    Tx(FBuf),
     Rx(AlignedVec),
     Plain(T),
 }
 
 impl<T> Mailbox<T> {
-    fn into_tx(self) -> Option<Vec<u8>> {
+    fn into_tx(self) -> Option<FBuf> {
         match self {
             Mailbox::Tx(bytes) => Some(bytes),
             Mailbox::Rx(_) | Mailbox::Plain(_) => None,
@@ -792,7 +793,7 @@ where
         mut serialize: F,
     ) -> bool
     where
-        F: FnMut(T) -> Vec<u8> + Send + Sync,
+        F: FnMut(T) -> FBuf + Send + Sync,
     {
         self.try_send_all(
             sender,
@@ -870,7 +871,7 @@ where
             for host in runtime.layout().other_hosts() {
                 let receivers = &host.workers;
                 let mut serialized_bytes = 0;
-                let items: Vec<Vec<_>> = senders
+                let items: Vec<Vec<FBuf>> = senders
                     .clone()
                     .map(|sender| {
                         receivers
@@ -1134,7 +1135,7 @@ where
 ///                     match location {
 ///                         WorkerLocation::Local => vals.push(Mailbox::Plain(n)),
 ///                         WorkerLocation::Remote => {
-///                             vals.push(Mailbox::Tx(to_bytes_dyn(&n).unwrap().into_vec()))
+///                             vals.push(Mailbox::Tx(to_bytes_dyn(&n).unwrap()))
 ///                         }
 ///                     }
 ///                 }
@@ -1631,7 +1632,7 @@ mod tests {
                     if exchange.try_send_all_with_serializer(
                         Runtime::worker_index(),
                         repeat(round),
-                        |round| to_bytes(&round).unwrap().into_vec(),
+                        |round| to_bytes(&round).unwrap(),
                     ) {
                         break;
                     }
@@ -1693,7 +1694,7 @@ mod tests {
                                 match location {
                                     WorkerLocation::Local => vals.push(Mailbox::Plain(n)),
                                     WorkerLocation::Remote => {
-                                        vals.push(Mailbox::Tx(to_bytes_dyn(&n).unwrap().into_vec()))
+                                        vals.push(Mailbox::Tx(to_bytes_dyn(&n).unwrap()))
                                     }
                                 }
                             }

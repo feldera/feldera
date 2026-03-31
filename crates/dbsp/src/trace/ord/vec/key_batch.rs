@@ -343,9 +343,9 @@ where
         unimplemented!()
     }
 
-    /*fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self {
-        Self::from_tuples(time, keys)
-    }*/
+    fn negative_weight_count(&self) -> Option<u64> {
+        None
+    }
 }
 
 /// A cursor for navigating a single layer.

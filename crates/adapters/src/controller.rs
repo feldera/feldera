@@ -2687,7 +2687,7 @@ impl CircuitThread {
         };
         let _ = init_status_sender.send(Ok(self.controller.clone()));
 
-        let mut output_backpressure_warning = None;
+        let mut output_backpressure_warning: Option<LongOperationWarning> = None;
         loop {
             // Run received commands.  Commands can initiate checkpoint
             // requests, so attempt to execute those afterward.  Executing a
@@ -2719,11 +2719,21 @@ impl CircuitThread {
                 debug!("circuit thread: park waiting for output buffer space");
                 let warning = output_backpressure_warning
                     .get_or_insert_with(|| LongOperationWarning::new(Duration::from_secs(1)));
+                let controller = &self.controller;
                 warning.check(|elapsed| {
-                    info!(
-                        "pipeline stalled {} seconds because output buffers are full",
-                        elapsed.as_secs()
-                    )
+                    let full_names = controller.output_buffers_full_names();
+                    let elapsed_secs = elapsed.as_secs();
+                    if full_names.is_empty() {
+                        info!(
+                            "pipeline stalled {elapsed_secs} seconds because output buffers are full"
+                        );
+                    } else {
+                        let names = full_names.join(", ");
+                        info!(
+                            "pipeline stalled {elapsed_secs} seconds because output buffers \
+                             are full: {names}"
+                        );
+                    }
                 });
                 self.parker.park_deadline(warning.next_warning());
                 continue;
@@ -6600,6 +6610,10 @@ impl ControllerInner {
 
     fn output_buffers_full(&self) -> bool {
         self.status.output_buffers_full()
+    }
+
+    fn output_buffers_full_names(&self) -> Vec<String> {
+        self.status.output_buffers_full_names()
     }
 
     fn warn_restoring() -> ControllerError {

@@ -1287,16 +1287,9 @@ where
     type Batcher = TestBatchBatcher<K, V, T, R>;
     type Builder = TestBatchBuilder<K, V, T, R>;
 
-    /*fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self
-    where
-        Self::Val: From<()>,
-    {
-        let tuples = keys
-            .into_iter()
-            .map(|(k, r)| ((k, <Self::Val>::from(())), r))
-            .collect::<Vec<_>>();
-        Self::from_tuples(time, tuples)
-    }*/
+    fn negative_weight_count(&self) -> Option<u64> {
+        None
+    }
 }
 
 impl<K, V, T, R> Trace for TestBatch<K, V, T, R>

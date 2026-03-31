@@ -1077,13 +1077,23 @@ impl ControllerStatus {
     }
 
     pub fn output_buffers_full(&self) -> bool {
-        self.output_status().values().any(|endpoint_stats| {
-            let num_buffered_records = endpoint_stats
-                .metrics
-                .queued_records
-                .load(Ordering::Acquire);
-            num_buffered_records >= endpoint_stats.config.connector_config.max_queued_records
-        })
+        self.output_status()
+            .values()
+            .any(|endpoint_stats| endpoint_stats.is_buffer_full())
+    }
+
+    /// Returns the names of output connectors whose buffers are currently full.
+    pub fn output_buffers_full_names(&self) -> Vec<String> {
+        self.output_status()
+            .values()
+            .filter_map(|endpoint_stats| {
+                if endpoint_stats.is_buffer_full() {
+                    Some(endpoint_stats.endpoint_name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     pub fn parse_error(&self, endpoint_id: EndpointId, tag: Option<&str>, error: &ParseError) {
@@ -2412,6 +2422,11 @@ impl OutputEndpointStatus {
             },
             health: self.health.lock().unwrap().clone(),
         }
+    }
+
+    pub fn is_buffer_full(&self) -> bool {
+        self.metrics.queued_records.load(Ordering::Acquire)
+            >= self.config.connector_config.max_queued_records
     }
 
     pub fn is_busy(&self) -> bool {

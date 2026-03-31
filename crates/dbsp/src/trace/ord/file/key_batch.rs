@@ -1,3 +1,4 @@
+use crate::storage::file::format::BatchMetadata;
 use crate::storage::tracking_bloom_filter::BloomFilterStats;
 use crate::trace::cursor::Position;
 use crate::{
@@ -344,6 +345,10 @@ where
             file,
         })
     }
+
+    fn negative_weight_count(&self) -> Option<u64> {
+        None
+    }
 }
 
 type RawKeyCursor<'s, K, T, R> = FileCursor<
@@ -617,6 +622,8 @@ where
     writer: Writer2<K, DynUnit, DynDataTyped<T>, R>,
     key: Box<DynOpt<K>>,
     num_tuples: usize,
+    #[size_of(skip)]
+    stats: BatchMetadata,
 }
 
 impl<K, T, R> Builder<FileKeyBatch<K, T, R>> for FileKeyBuilder<K, T, R>
@@ -645,6 +652,7 @@ where
             .unwrap_storage(),
             key: factories.opt_key_factory.default_box(),
             num_tuples: 0,
+            stats: BatchMetadata::default(),
         }
     }
 
@@ -663,7 +671,7 @@ where
     fn done(self) -> FileKeyBatch<K, T, R> {
         FileKeyBatch {
             factories: self.factories,
-            file: Arc::new(self.writer.into_reader().unwrap_storage()),
+            file: Arc::new(self.writer.into_reader(self.stats).unwrap_storage()),
         }
     }
 
