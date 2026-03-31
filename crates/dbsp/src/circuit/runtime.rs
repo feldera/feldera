@@ -1378,15 +1378,11 @@ where
                 let sender_notify = exchange.sender_notify(Runtime::worker_index());
                 loop {
                     let notified = sender_notify.notified();
-                    if exchange.try_send_all_with_serializer(
-                        Runtime::worker_index(),
-                        repeat(local.clone()),
-                        |local| {
-                            let mut fbuf = FBuf::new();
-                            rmp_serde::encode::write(&mut fbuf, &local).unwrap();
-                            fbuf
-                        },
-                    ) {
+                    if exchange.try_send_all_with_serializer(repeat(local.clone()), |local| {
+                        let mut fbuf = FBuf::new();
+                        rmp_serde::encode::write(&mut fbuf, &local).unwrap();
+                        fbuf
+                    }) {
                         break;
                     }
                     if Runtime::kill_in_progress() {
@@ -1396,9 +1392,7 @@ where
                 }
                 // Receive and collect the status of each peer.
                 let mut result = Vec::with_capacity(Runtime::num_workers());
-                while !exchange
-                    .try_receive_all(Runtime::worker_index(), |status| result.push(status))
-                {
+                while !exchange.try_receive_all(|status| result.push(status)) {
                     if Runtime::kill_in_progress() {
                         return Err(SchedulerError::Killed);
                     }
