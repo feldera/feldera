@@ -39,7 +39,7 @@ This table shows the operators associativity, starting from highest to lowest:
     <td>arithmetic</td>
   </tr>
   <tr>
-    <td><a id="between"></a><code>BETWEEN, IN, LIKE, SIMILAR, OVERLAPS, CONTAINS</code></td>
+    <td><a id="between"></a><code>BETWEEN, IN, LIKE, OVERLAPS, CONTAINS</code></td>
     <td>N/A</td>
     <td></td>
   </tr>

@@ -18,6 +18,8 @@ import org.dbsp.util.Utilities;
 import java.util.List;
 import java.util.Objects;
 
+import static java.util.Objects.requireNonNull;
+
 /** Parse tree for {@code CREATE VIEW} statement. */
 public class SqlCreateView extends SqlCreate {
     public enum ViewKind {
@@ -39,13 +41,14 @@ public class SqlCreateView extends SqlCreate {
             new SqlSpecialOperator("CREATE VIEW", SqlKind.CREATE_VIEW) {
                 @Override
                 public SqlCall createCall(@Nullable SqlLiteral functionQualifier, SqlParserPos pos, @Nullable SqlNode... operands) {
-                    Utilities.enforce(operands.length == 5);
-                    return new SqlCreateView(pos, false,
-                            ViewKind.valueOf(((SqlIdentifier) Objects.requireNonNull(operands[0])).getSimple()),
-                            (SqlIdentifier) Objects.requireNonNull(operands[1]),
-                            (SqlNodeList) operands[2],
+                    Utilities.enforce(operands.length == 6);
+                    return new SqlCreateView(pos,
+                            ((SqlLiteral) requireNonNull(operands[0], "replace")).booleanValue(),
+                            ViewKind.valueOf(((SqlIdentifier) Objects.requireNonNull(operands[1])).getSimple()),
+                            (SqlIdentifier) Objects.requireNonNull(operands[2]),
                             (SqlNodeList) operands[3],
-                            Objects.requireNonNull(operands[4]));
+                            (SqlNodeList) operands[4],
+                            Objects.requireNonNull(operands[5]));
                 }
             };
 
@@ -69,6 +72,7 @@ public class SqlCreateView extends SqlCreate {
     @SuppressWarnings("nullness")
     @Override public List<SqlNode> getOperandList() {
         return ImmutableNullableList.of(
+                SqlLiteral.createBoolean(this.getReplace(), SqlParserPos.ZERO),
                 new SqlIdentifier(this.viewKind.name(), SqlParserPos.ZERO),
                 name, columnList, viewProperties, query);
     }

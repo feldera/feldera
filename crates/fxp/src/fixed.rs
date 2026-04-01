@@ -717,31 +717,48 @@ impl<const P0: usize, const S0: usize> Fixed<P0, S0> {
         match S0.cmp(&S1) {
             Ordering::Less => {
                 let factor = pow10(S1 - S0);
-                if self.0 <= i128::MAX / factor / 10 {
-                    Fixed::try_new_with_exponent(
-                        other.0.checked_add(self.0 * factor)?,
-                        S2 as i32 - S1 as i32,
-                    )
+                if let Some(shifted) = self.0.checked_mul(factor)
+                    && let Some(sum) = other.0.checked_add(shifted)
+                {
+                    // This is the common case, where we can shift `self` left
+                    // to match `other` and add `other` without intermediate
+                    // overflow.
+                    Fixed::try_new_with_exponent(sum, S2 as i32 - S1 as i32)
                 } else {
+                    // If the result type has more digits to the left of the
+                    // decimal point than `other`, then we still might be able
+                    // to compute a correct answer without ultimate overflow.
                     let result = (I256::from_product(self.0, factor) + I256::from(other.0))
-                        .narrowing_div(pow10(S2.saturating_sub(S1)))?;
-                    Fixed::try_new_with_exponent(result, S1.saturating_sub(S2) as i32)
+                        .narrowing_div(pow10(S1.saturating_sub(S2)))?;
+                    Fixed::try_new_with_exponent(result, (S2.saturating_sub(S1)) as i32)
                 }
             }
             Ordering::Equal => {
-                Fixed::try_new_with_exponent(self.0.checked_add(other.0)?, S2 as i32 - S0 as i32)
-            }
-            Ordering::Greater => {
-                let factor = pow10(S0 - S1);
-                if other.0 <= i128::MAX / factor / 10 {
-                    Fixed::try_new_with_exponent(
-                        self.0.checked_add(other.0 * factor)?,
-                        S2 as i32 - S0 as i32,
+                if let Some(sum) = self.0.checked_add(other.0) {
+                    // This is the common case, where the result fits in `i128`.
+                    Fixed::try_new_with_exponent(sum, S2 as i32 - S0 as i32)
+                } else if S2 < S0 {
+                    // The ultimate result might fit in `i128` but we need
+                    // multiple-precision arithmetic.
+                    Fixed::try_new(
+                        (I256::from(self.0) + I256::from(other.0)).narrowing_div(pow10(S0 - S2))?,
                     )
                 } else {
+                    // Definitely does not fit.
+                    None
+                }
+            }
+            Ordering::Greater => {
+                // Mirror of the `Less` case.
+                let factor = pow10(S0 - S1);
+                if let Some(shifted) = other.0.checked_mul(factor)
+                    && let Some(sum) = self.0.checked_add(shifted)
+                {
+                    Fixed::try_new_with_exponent(sum, S2 as i32 - S0 as i32)
+                } else {
                     let result = (I256::from_product(other.0, factor) + I256::from(self.0))
-                        .narrowing_div(pow10(S2.saturating_sub(S0)))?;
-                    Fixed::try_new_with_exponent(result, S0.saturating_sub(S2) as i32)
+                        .narrowing_div(pow10(S0.saturating_sub(S2)))?;
+                    Fixed::try_new_with_exponent(result, S2.saturating_sub(S0) as i32)
                 }
             }
         }
@@ -811,7 +828,7 @@ impl<const P0: usize, const S0: usize> Fixed<P0, S0> {
             } else {
                 Fixed::try_new_with_exponent(
                     I256::from_product(self.0, pow10(shift_left)).narrowing_div(other.0)?,
-                    S0.saturating_sub(S1 + S2) as i32,
+                    -(S0.saturating_sub(S1 + S2) as i32),
                 )
             }
         }
@@ -1507,8 +1524,7 @@ mod test {
 
     #[test]
     fn div_generic() {
-        for a in -999..=999 {
-            let af: Fixed<10, 2> = Fixed(a);
+        fn test<const P: usize, const S: usize>(a: i128, af: Fixed<P, S>) {
             for b in -999..=999 {
                 if b != 0 {
                     let bf: Fixed<10, 3> = Fixed(b);
@@ -1521,6 +1537,13 @@ mod test {
                 }
             }
         }
+
+        for a in -999..=999 {
+            let af: Fixed<10, 2> = Fixed(a);
+            test(a, af);
+            let af2: Fixed<18, 10> = af.convert().unwrap();
+            test(a, af2);
+        }
     }
 
     #[test]
@@ -1530,6 +1553,18 @@ mod test {
         assert_eq!(f(-1.23) + f(2.34), f(1.11));
         assert_eq!(f(1.23) + f(-2.34), f(-1.11));
         assert_eq!(f(-1.23) + f(-2.34), f(-3.57));
+
+        // Cases that require avoiding intermediate overflow.
+        let af: Fixed<38, 35> = Fixed::try_from(999).unwrap();
+        let bf: Fixed<37, 34> = Fixed::try_from(999).unwrap();
+        let cf: Fixed<36, 30> = af.checked_add_generic(bf).unwrap();
+        assert_eq!(cf, 1998);
+        let df: Fixed<36, 30> = bf.checked_add_generic(af).unwrap();
+        assert_eq!(df, 1998);
+        let ef: Fixed<36, 3> = af.checked_add_generic(af).unwrap();
+        assert_eq!(ef, 1998);
+        let ff: Option<Fixed<38, 35>> = af.checked_add_generic(af);
+        assert_eq!(ff, None);
 
         // General case.
         for a in -999..=999 {

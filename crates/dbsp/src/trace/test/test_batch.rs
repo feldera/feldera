@@ -3,7 +3,7 @@
 //! So far, only methods/traits used in tests have been implemented.
 #![allow(clippy::type_complexity)]
 
-use crate::storage::tracking_bloom_filter::BloomFilterStats;
+use crate::storage::filter_stats::FilterStats;
 use crate::{
     DBData, DBWeight, NumEntries, Timestamp,
     dynamic::{
@@ -20,6 +20,7 @@ use rand::{Rng, SeedableRng, seq::IteratorRandom, thread_rng};
 use rand_chacha::ChaChaRng;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::SizeOf;
+use std::any::TypeId;
 use std::{
     collections::{BTreeMap, BTreeSet, btree_map::Entry},
     fmt::{self, Debug},
@@ -1069,7 +1070,15 @@ where
     where
         T: PartialEq<()>,
     {
-        self.data[self.index].1.as_ref()
+        self.weight_checked()
+    }
+
+    fn weight_checked(&mut self) -> &R {
+        if TypeId::of::<T>() == TypeId::of::<()>() {
+            self.data[self.index].1.as_ref()
+        } else {
+            panic!("TestBatchCursor::weight_checked called on non-unit timestamp type");
+        }
     }
 
     fn step_key(&mut self) {
@@ -1255,8 +1264,8 @@ where
         self.size_of().total_bytes()
     }
 
-    fn filter_stats(&self) -> BloomFilterStats {
-        BloomFilterStats::default()
+    fn membership_filter_stats(&self) -> FilterStats {
+        FilterStats::default()
     }
 
     fn sample_keys<RG>(&self, _rng: &mut RG, _sample_size: usize, _sample: &mut DynVec<Self::Key>)
@@ -1278,16 +1287,9 @@ where
     type Batcher = TestBatchBatcher<K, V, T, R>;
     type Builder = TestBatchBuilder<K, V, T, R>;
 
-    /*fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self
-    where
-        Self::Val: From<()>,
-    {
-        let tuples = keys
-            .into_iter()
-            .map(|(k, r)| ((k, <Self::Val>::from(())), r))
-            .collect::<Vec<_>>();
-        Self::from_tuples(time, tuples)
-    }*/
+    fn negative_weight_count(&self) -> Option<u64> {
+        None
+    }
 }
 
 impl<K, V, T, R> Trace for TestBatch<K, V, T, R>

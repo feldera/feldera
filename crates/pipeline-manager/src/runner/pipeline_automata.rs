@@ -470,7 +470,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                 // This can happen in the following concurrency scenario:
                                 // (1) Automaton is (current: Stopped, desired: Stopped)
                                 // (2) User issues /start on pipeline (v1)
-                                // (3) Automaton picks up (current: Stopped, desired: Running) and
+                                // (3) Automaton picks up (current: Stopped, desired: Provisioned) and
                                 //     generates the deployment_config for v1, but has not yet stored
                                 //     it in the database
                                 // (4) User issues /stop on pipeline, makes an edit to for example
@@ -501,6 +501,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                         pipeline.deployment_resources_status
                                     );
                                 }
+                                (ResourcesStatus::Stopped, None, None)
+                            }
+                            DBError::UnnecessaryResourcesStatusTransition { .. } => {
+                                info!(
+                                    pipeline_id = %pipeline.id,
+                                    pipeline = %pipeline.name,
+                                    "Unnecessary to transition from Stopped to Provisioning as desired is already Stopped"
+                                );
                                 (ResourcesStatus::Stopped, None, None)
                             }
                             e => {
@@ -584,7 +592,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     error,
                     suspend_info,
                 } => {
-                    self.db
+                    if let Err(e) = self
+                        .db
                         .lock()
                         .await
                         .transit_deployment_resources_status_to_stopping(
@@ -594,8 +603,21 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             error.clone(),
                             suspend_info.clone(),
                         )
-                        .await?;
-                    (ResourcesStatus::Stopping, None, None)
+                        .await
+                    {
+                        if matches!(e, DBError::UnnecessaryResourcesStatusTransition { .. }) {
+                            info!(
+                                pipeline_id = %pipeline.id,
+                                pipeline = %pipeline.name,
+                                "Unnecessary to transition from Stopped to Stopping as desired is already Stopped"
+                            );
+                            (ResourcesStatus::Stopped, None, None)
+                        } else {
+                            return Err(e);
+                        }
+                    } else {
+                        (ResourcesStatus::Stopping, None, None)
+                    }
                 }
                 Action::RemainStoppingUpdateDetails {
                     deployment_resources_status_details,
@@ -1825,6 +1847,7 @@ mod test {
                     &pipeline.name,
                     initial,
                     BootstrapPolicy::default(),
+                    true,
                 )
                 .await
                 .unwrap();

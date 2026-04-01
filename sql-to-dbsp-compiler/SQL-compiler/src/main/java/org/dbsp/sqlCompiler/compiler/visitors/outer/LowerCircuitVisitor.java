@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -269,7 +270,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPStreamAggregateOperator node) {
         if (node.function != null) {
-            // OrderBy
+            // OrderBy implemented as an aggregate
             super.postorder(node);
             return;
         }
@@ -284,7 +285,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPAggregateOperator node) {
         if (node.function != null) {
-            // OrderBy
+            // OrderBy implemented as an aggregate
             super.postorder(node);
             return;
         }
@@ -298,8 +299,10 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
     public static DBSPClosureExpression lowerJoinFilterMapFunctions(
             DBSPCompiler compiler, DBSPClosureExpression expression,
             @Nullable DBSPClosureExpression filter, @Nullable DBSPClosureExpression map) {
-        if (filter == null)
+        if (filter == null) {
+            Utilities.enforce(map == null);
             return expression;
+        }
         if (map == null) {
             // Generate code of the form
             // let tmp = join(...);
@@ -352,6 +355,22 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPSimpleOperator result = new DBSPJoinFilterMapOperator(node.getRelNode(), node.getOutputZSetType(),
                 newFunction, null, null, node.isMultiset,
                 this.mapped(node.left()), this.mapped(node.right()), node.balanced)
+                .copyAnnotations(node);
+        this.map(node, result);
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinFilterMapOperator node) {
+        if (node.filter == null) {
+            // Already lowered, or we will remove them later
+            super.postorder(node);
+            return;
+        }
+        DBSPClosureExpression newFunction = lowerJoinFilterMapFunctions(this.compiler(),
+                node.getClosureFunction(), node.filter, node.map);
+        DBSPSimpleOperator result = new DBSPStarJoinFilterMapOperator(node.getRelNode(), node.getOutputZSetType(),
+                newFunction, null, null, node.isMultiset,
+                Linq.map(node.inputs, this::mapped))
                 .copyAnnotations(node);
         this.map(node, result);
     }

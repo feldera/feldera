@@ -1,5 +1,5 @@
 use crate::storage::buffer_cache::CacheStats;
-use crate::storage::tracking_bloom_filter::BloomFilterStats;
+use crate::storage::filter_stats::FilterStats;
 use crate::trace::BatchLocation;
 use crate::trace::cursor::Position;
 use crate::trace::ord::file::UnwrapStorage;
@@ -11,12 +11,13 @@ use crate::{
     },
     storage::file::{
         Factories as FileFactories,
+        format::BatchMetadata,
         reader::{Cursor as FileCursor, Error as ReaderError, Reader},
         writer::Writer2,
     },
     trace::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, WeightedItem,
-        ord::merge_batcher::MergeBatcher,
+        ord::{batch_filter::BatchFilters, merge_batcher::MergeBatcher},
     },
     utils::Tup2,
 };
@@ -26,6 +27,7 @@ use feldera_storage::{FileReader, StoragePath};
 use rand::{Rng, seq::index::sample};
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::SizeOf;
+use std::any::TypeId;
 use std::sync::Arc;
 use std::{
     fmt,
@@ -210,7 +212,10 @@ where
     #[size_of(skip)]
     #[debug(skip)]
     factories: FileValBatchFactories<K, V, T, R>,
+    #[debug(skip)]
     pub file: RawValBatch<K, V, T, R>,
+    #[debug(skip)]
+    filters: BatchFilters<K>,
 }
 
 impl<K, V, T, R> Clone for FileValBatch<K, V, T, R>
@@ -224,6 +229,27 @@ where
         Self {
             factories: self.factories.clone(),
             file: self.file.clone(),
+            filters: self.filters.clone(),
+        }
+    }
+}
+
+impl<K, V, T, R> FileValBatch<K, V, T, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    fn from_parts(
+        factories: FileValBatchFactories<K, V, T, R>,
+        file: RawValBatch<K, V, T, R>,
+        filters: BatchFilters<K>,
+    ) -> Self {
+        Self {
+            factories,
+            file,
+            filters,
         }
     }
 }
@@ -295,8 +321,12 @@ where
         self.file.byte_size().unwrap_storage() as usize
     }
 
-    fn filter_stats(&self) -> BloomFilterStats {
-        self.file.filter_stats()
+    fn membership_filter_stats(&self) -> FilterStats {
+        self.filters.stats().membership_filter
+    }
+
+    fn range_filter_stats(&self) -> FilterStats {
+        self.filters.stats().range_filter
     }
 
     #[inline]
@@ -331,10 +361,6 @@ where
             }
         }
     }
-
-    fn maybe_contains_key(&self, hash: u64) -> bool {
-        self.file.maybe_contains_key(hash)
-    }
 }
 
 impl<K, V, T, R> Batch for FileValBatch<K, V, T, R>
@@ -356,16 +382,20 @@ where
     fn from_path(factories: &Self::Factories, path: &StoragePath) -> Result<Self, ReaderError> {
         let any_factory0 = factories.factories0.any_factories();
         let any_factory1 = factories.factories1.any_factories();
-        let file = Arc::new(Reader::open(
+        let (file, membership_filter) = Reader::open_with_filter(
             &[&any_factory0, &any_factory1],
             Runtime::buffer_cache,
             &*Runtime::storage_backend().unwrap_storage(),
             path,
-        )?);
-        Ok(Self {
-            factories: factories.clone(),
-            file,
-        })
+        )?;
+        let file = Arc::new(file);
+        let key_range = file.key_range()?.map(Into::into);
+        let filters = BatchFilters::from_file(key_range, membership_filter);
+        Ok(Self::from_parts(factories.clone(), file, filters))
+    }
+
+    fn negative_weight_count(&self) -> Option<u64> {
+        None
     }
 }
 
@@ -528,18 +558,26 @@ where
     where
         T: PartialEq<()>,
     {
-        debug_assert!(self.key_valid());
-        debug_assert!(self.val_valid());
-        self.weight.set_zero();
+        self.weight_checked()
+    }
 
-        self.timediff_factory.with(&mut |timediffs| {
-            for timediff in self.times(timediffs).dyn_iter() {
-                self.weight.add_assign(timediff.snd());
-            }
-        });
+    fn weight_checked(&mut self) -> &R {
+        if TypeId::of::<T>() == TypeId::of::<()>() {
+            debug_assert!(self.key_valid());
+            debug_assert!(self.val_valid());
+            self.weight.set_zero();
 
-        debug_assert!(!self.weight.is_zero());
-        &self.weight
+            self.timediff_factory.with(&mut |timediffs| {
+                for timediff in self.times(timediffs).dyn_iter() {
+                    self.weight.add_assign(timediff.snd());
+                }
+            });
+
+            debug_assert!(!self.weight.is_zero());
+            &self.weight
+        } else {
+            panic!("FileValCursor::weight_checked called on non-unit timestamp type");
+        }
     }
 
     fn key_valid(&self) -> bool {
@@ -563,8 +601,7 @@ where
     }
 
     fn seek_key_exact(&mut self, key: &K, hash: Option<u64>) -> bool {
-        let hash = hash.unwrap_or_else(|| key.default_hash());
-        if !self.batch.maybe_contains_key(hash) {
+        if !self.batch.filters.maybe_contains_key(key, hash) {
             return false;
         }
         self.seek_key(key);
@@ -654,6 +691,8 @@ where
     writer: Writer2<K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
     time_diffs: Box<DynWeightedPairs<DynDataTyped<T>, R>>,
     num_tuples: usize,
+    #[size_of(skip)]
+    stats: BatchMetadata,
 }
 
 impl<K, V, T, R> Builder<FileValBatch<K, V, T, R>> for FileValBuilder<K, V, T, R>
@@ -682,14 +721,14 @@ where
             .unwrap_storage(),
             time_diffs: factories.timediff_factory.default_box(),
             num_tuples: 0,
+            stats: BatchMetadata::default(),
         }
     }
 
     fn done(self) -> FileValBatch<K, V, T, R> {
-        FileValBatch {
-            factories: self.factories,
-            file: Arc::new(self.writer.into_reader().unwrap_storage()),
-        }
+        let (file, filters) = self.writer.into_reader(self.stats).unwrap_storage();
+        let file = Arc::new(file);
+        FileValBatch::from_parts(self.factories, file, filters)
     }
 
     fn push_key(&mut self, key: &K) {

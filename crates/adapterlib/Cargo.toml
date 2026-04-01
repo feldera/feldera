@@ -1,15 +1,17 @@
 [package]
 name = "feldera-adapterlib"
-
-edition = "2024"
+description = "Connector support for the Feldera streaming engine"
+categories = ["parsing"]
+authors = { workspace = true }
 version = { workspace = true }
+license = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
-license = { workspace = true }
-authors = { workspace = true }
-rust-version = { workspace = true }
+keywords = { workspace = true }
 readme = { workspace = true }
-publish = false
+rust-version = { workspace = true }
+edition = "2024"
+publish = true
 
 [features]
 with-avro = ["apache-avro"]
@@ -39,6 +41,7 @@ datafusion = { workspace = true }
 thiserror = { workspace = true }
 serde_json_path_to_error = { workspace = true }
 chrono = { workspace = true }
+tracing = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["num-traits"]

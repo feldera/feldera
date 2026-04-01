@@ -17,6 +17,14 @@ public class RelAnd extends CalciteRelNode {
     final Set<LastRel> nodes;
     SourcePositionRange position = SourcePositionRange.INVALID;
 
+    @Override
+    public CalciteRelNode copy() {
+        RelAnd result = new RelAnd();
+        for (var last: this.nodes)
+            result.add(last);
+        return result.addSourcePositions(this.positions);
+    }
+
     public RelAnd() {
         this.nodes = new HashSet<>();
     }

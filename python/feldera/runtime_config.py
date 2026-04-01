@@ -1,4 +1,5 @@
-from typing import Optional, Any, Mapping
+from typing import Any, Mapping, Optional
+
 from feldera.enums import FaultToleranceModel
 
 
@@ -82,6 +83,7 @@ class RuntimeConfig:
         fault_tolerance_model: Optional[FaultToleranceModel] = None,
         checkpoint_interval_secs: Optional[int] = None,
         dev_tweaks: Optional[dict] = None,
+        env: Optional[dict[str, str]] = None,
         logging: Optional[str] = None,
     ):
         self.workers = workers
@@ -108,6 +110,7 @@ class RuntimeConfig:
             else:
                 raise ValueError(f"Unknown value '{storage}' for storage")
         self.dev_tweaks = dev_tweaks
+        self.env = env
         self.logging = logging
 
     @staticmethod

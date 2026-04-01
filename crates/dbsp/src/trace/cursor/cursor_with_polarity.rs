@@ -88,6 +88,11 @@ where
         self.weight.erase()
     }
 
+    fn weight_checked(&mut self) -> &DynZWeight {
+        self.weight = **self.cursor.weight_checked() * self.polarity;
+        self.weight.erase()
+    }
+
     fn map_values(&mut self, logic: &mut dyn FnMut(&V, &DynZWeight))
     where
         T: PartialEq<()>,

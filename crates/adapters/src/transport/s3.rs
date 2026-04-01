@@ -342,6 +342,10 @@ struct S3InputReader {
 }
 
 impl InputReader for S3InputReader {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
     fn request(&self, command: InputReaderCommand) {
         let _ = self.sender.send_blocking(command);
     }
@@ -521,7 +525,7 @@ impl S3InputReader {
             let partially_processed_keys = partially_processed_keys.clone();
 
             let handle = tokio::task::spawn(async move {
-                let mut splitter = StreamSplitter::new(parser.splitter());
+                let mut splitter: StreamSplitter = StreamSplitter::new(parser.splitter());
 
                 'outer: loop {
                     let msg = { rx.recv().await };

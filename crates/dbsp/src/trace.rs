@@ -29,7 +29,8 @@
 use crate::circuit::metadata::OperatorMeta;
 use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 use crate::storage::buffer_cache::CacheStats;
-pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
+use crate::storage::file::SerializerInner;
+pub use crate::storage::file::{DbspSerializer, Deserializable, Deserializer, Rkyv};
 use crate::trace::cursor::{
     DefaultPushCursor, FilteredMergeCursor, FilteredMergeCursorWithSnapshot, PushCursor,
     UnfilteredMergeCursor,
@@ -38,8 +39,9 @@ use crate::utils::IsNone;
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::CursorFactory;
 use enum_map::Enum;
+use feldera_storage::fbuf::FBufSerializer;
 use feldera_storage::{FileCommitter, FileReader, StoragePath};
-use rand::Rng;
+use rand::{Rng, thread_rng};
 use rkyv::ser::Serializer as _;
 use size_of::SizeOf;
 use std::any::TypeId;
@@ -51,9 +53,7 @@ pub mod filter;
 pub mod layers;
 pub mod ord;
 pub mod spine_async;
-pub use spine_async::{
-    BatchReaderWithSnapshot, ListMerger, MergerType, Spine, SpineSnapshot, WithSnapshot,
-};
+pub use spine_async::{BatchReaderWithSnapshot, ListMerger, Spine, SpineSnapshot, WithSnapshot};
 
 #[cfg(test)]
 pub mod test;
@@ -72,12 +72,12 @@ pub use ord::{
 
 use rkyv::{Deserialize, archived_root};
 
-use crate::storage::tracking_bloom_filter::BloomFilterStats;
 use crate::{
     Error, NumEntries, Timestamp,
     algebra::MonoidValue,
     dynamic::{DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
     storage::file::reader::Error as ReaderError,
+    storage::filter_stats::FilterStats,
 };
 pub use cursor::{Cursor, MergeCursor};
 pub use filter::{Filter, GroupFilter};
@@ -132,16 +132,18 @@ pub(crate) struct CommittedSpine {
     pub dirty: bool,
 }
 
-/// Trait for data that can be serialized and deserialized with [`rkyv`].
-///
-/// This trait doesn't have any extra bounds on Deserializable.
-///
 /// Deserializes `bytes` as type `T` using `rkyv`, tolerating `bytes` being
 /// misaligned.
 pub fn unaligned_deserialize<T: Deserializable>(bytes: &[u8]) -> T {
     let mut aligned_bytes = FBuf::new();
     aligned_bytes.extend_from_slice(bytes);
-    unsafe { archived_root::<T>(&aligned_bytes[..]) }
+    aligned_deserialize(&aligned_bytes)
+}
+
+/// Deserializes `bytes` as type `T` using `rkyv`.  `bytes` must be properly
+/// aligned.
+pub fn aligned_deserialize<T: Deserializable>(bytes: &[u8]) -> T {
+    unsafe { archived_root::<T>(bytes) }
         .deserialize(&mut Deserializer::default())
         .unwrap()
 }
@@ -318,14 +320,14 @@ pub enum BatchLocation {
     Storage,
 }
 
-impl BatchLocation {
-    fn as_str(&self) -> &'static str {
-        match self {
-            Self::Memory => "memory",
-            Self::Storage => "storage",
-        }
-    }
-}
+// impl BatchLocation {
+//     fn as_str(&self) -> &'static str {
+//         match self {
+//             Self::Memory => "memory",
+//             Self::Storage => "storage",
+//         }
+//     }
+// }
 
 /// A set of `(key, value, time, diff)` tuples whose contents may be read in
 /// order by key and value.
@@ -467,14 +469,20 @@ where
     /// the implementation need not attempt to cache the return value.
     fn approximate_byte_size(&self) -> usize;
 
-    /// Statistics of the Bloom filter used by [Cursor::seek_key_exact].
-    /// The Bloom filter (kept in memory) is used there to quickly check
-    /// whether a key might be present in the batch, before doing a
-    /// binary tree lookup within the batch to be exactly sure.
-    /// The statistics include for example the size in bytes and the hit rate.
-    /// Only some kinds of batches use a filter; others should return
-    /// `BloomFilterStats::default()`.
-    fn filter_stats(&self) -> BloomFilterStats;
+    /// Statistics of the secondary membership filter used by
+    /// [Cursor::seek_key_exact] after the range filter.
+    ///
+    /// Today this is usually a Bloom filter. Batches without such a filter
+    /// should return `FilterStats::default()`.
+    fn membership_filter_stats(&self) -> FilterStats;
+
+    /// Statistics of the in-memory range filter used by
+    /// [Cursor::seek_key_exact].
+    ///
+    /// Batches without a range filter should return `FilterStats::default()`.
+    fn range_filter_stats(&self) -> FilterStats {
+        FilterStats::default()
+    }
 
     /// Where the batch's data is stored.
     fn location(&self) -> BatchLocation {
@@ -491,12 +499,6 @@ where
     /// True if the batch is empty.
     fn is_empty(&self) -> bool {
         self.len() == 0
-    }
-
-    /// A method that returns either true (possibly in the batch) or false
-    /// (definitely not in the batch).
-    fn maybe_contains_key(&self, _hash: u64) -> bool {
-        true
     }
 
     /// Returns a uniform random sample of distincts keys from the batch.
@@ -534,6 +536,52 @@ where
     where
         Self::Time: PartialEq<()>,
         RG: Rng;
+
+    /// Returns num_partitions-1 keys from the batch that partition the batch into num_partitions
+    /// approximately equal size ranges 0..key1, key1..key2, ... , key_num_partitions-1..last_key_in_the_batch.
+    ///
+    /// The default implementation uses the sample_keys method to sample num_partitions^2 keys and
+    /// picks keys num_partitions, 2*num_partitions, ..,num_partitions-1*num_partitions as boundaries.
+    ///
+    /// # Arguments
+    ///
+    /// * `num_partitions` - number of partitions to create.
+    /// * `bounds` - output vector to store the partition boundaries.
+    fn partition_keys(&self, num_partitions: usize, bounds: &mut DynVec<Self::Key>)
+    where
+        Self::Time: PartialEq<()>,
+    {
+        bounds.clear();
+        if num_partitions <= 1 {
+            return;
+        }
+
+        let sample_size = num_partitions * num_partitions;
+
+        let mut sample = self.factories().keys_factory().default_box();
+        self.sample_keys(&mut thread_rng(), sample_size, sample.as_mut());
+
+        // Pick evenly distributed keys as boundaries
+        let sample_len = sample.len();
+        if sample_len == 0 {
+            return;
+        }
+
+        if sample_len >= num_partitions {
+            // Pick num_bounds evenly distributed indices from the sample
+            // These divide the sample into num_bounds + 1 roughly equal parts
+            for i in 0..num_partitions - 1 {
+                let idx = ((i + 1) * sample_len) / num_partitions;
+                let idx = idx.min(sample_len - 1);
+                bounds.push_ref(sample.index(idx));
+            }
+        } else {
+            // If we have fewer samples than needed, use what we have
+            for i in 0..sample_len {
+                bounds.push_ref(sample.index(i));
+            }
+        }
+    }
 
     /// Creates and returns a new batch that is a subset of this one, containing
     /// only the key-value pairs whose keys are in `keys`. May also return
@@ -609,8 +657,11 @@ where
     fn approximate_byte_size(&self) -> usize {
         (**self).approximate_byte_size()
     }
-    fn filter_stats(&self) -> BloomFilterStats {
-        (**self).filter_stats()
+    fn membership_filter_stats(&self) -> FilterStats {
+        (**self).membership_filter_stats()
+    }
+    fn range_filter_stats(&self) -> FilterStats {
+        (**self).range_filter_stats()
     }
     fn location(&self) -> BatchLocation {
         (**self).location()
@@ -620,9 +671,6 @@ where
     }
     fn is_empty(&self) -> bool {
         (**self).is_empty()
-    }
-    fn maybe_contains_key(&self, hash: u64) -> bool {
-        (**self).maybe_contains_key(hash)
     }
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
@@ -829,6 +877,18 @@ where
     fn from_path(_factories: &Self::Factories, _path: &StoragePath) -> Result<Self, ReaderError> {
         Err(ReaderError::Unsupported)
     }
+
+    /// The number of tuples with negative weights in the batch.
+    ///
+    /// This metric is used in merger heuristics. Negative weights are likely to cancel out
+    /// with positive weights when merging the batch with other batches in the spine; therefore the
+    /// merger will merge such batches more aggressively than it otherwise would based on the batch
+    /// size only.
+    ///
+    /// This heuristic is not useful for all batch types, in particular negative weights in batches
+    /// produced by recursive queries do not generally cancel out. For such batches we don't track
+    /// negative weights, and this method returns `None`.
+    fn negative_weight_count(&self) -> Option<u64>;
 }
 
 /// Functionality for collecting and batching updates.
@@ -910,7 +970,7 @@ where
 /// builder.push_val(v2);
 /// builder.push_key(k4);
 /// ```
-pub trait Builder<Output>: SizeOf
+pub trait Builder<Output>: Send + SizeOf
 where
     Self: Sized,
     Output: Batch,
@@ -1284,16 +1344,17 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    let mut s = Serializer::default();
-    let mut offsets = Vec::with_capacity(2 * batch.len());
-    let mut cursor = batch.cursor();
-    while cursor.key_valid() {
-        offsets.push(cursor.key().serialize(&mut s).unwrap());
-        offsets.push(cursor.weight().serialize(&mut s).unwrap());
-        cursor.step_key();
-    }
-    let _offset = s.serialize_value(&offsets).unwrap();
-    s.into_serializer().into_inner().into_vec()
+    SerializerInner::to_fbuf_with_thread_local(|s| {
+        let mut offsets = Vec::with_capacity(2 * batch.len());
+        let mut cursor = batch.cursor();
+        while cursor.key_valid() {
+            offsets.push(cursor.key().serialize(s)?);
+            offsets.push(cursor.weight().serialize(s)?);
+            cursor.step_key();
+        }
+        s.serialize_value(&offsets)
+    })
+    .into_vec()
 }
 
 fn deserialize_wset<B, K, R>(factories: &B::Factories, data: &[u8]) -> B
@@ -1320,31 +1381,121 @@ where
 /// Separator that identifies the end of values for a key.
 const SEPARATOR: u64 = u64::MAX;
 
-pub fn serialize_indexed_wset<B, K, V, R>(batch: &B) -> Vec<u8>
+#[cfg(debug_assertions)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum State {
+    Key,
+    Val,
+    Diff,
+}
+
+pub struct IndexedWSetSerializer {
+    fbuf: FBuf,
+    offsets: Vec<usize>,
+    n_keys: usize,
+    n_values: usize,
+    #[cfg(debug_assertions)]
+    state: State,
+}
+
+impl IndexedWSetSerializer {
+    pub fn with_capacity(estimated_keys: usize, estimated_values: usize) -> Self {
+        let mut offsets = Vec::with_capacity(2 + 2 * estimated_keys + 2 * estimated_values);
+        offsets.push(0);
+        offsets.push(0);
+        Self {
+            fbuf: FBuf::new(),
+            offsets,
+            n_keys: 0,
+            n_values: 0,
+            #[cfg(debug_assertions)]
+            state: State::Key,
+        }
+    }
+
+    pub fn push_diff<R: WeightTrait + ?Sized>(
+        &mut self,
+        weight: &R,
+        serializer_inner: &mut SerializerInner,
+    ) {
+        #[cfg(debug_assertions)]
+        {
+            debug_assert_ne!(self.state, State::Diff);
+            self.state = State::Diff;
+        }
+
+        serializer_inner.with(FBufSerializer::new(&mut self.fbuf), |s| {
+            self.offsets.push(weight.serialize(s).unwrap())
+        });
+    }
+
+    pub fn push_val<V: DataTrait + ?Sized>(
+        &mut self,
+        val: &V,
+        serializer_inner: &mut SerializerInner,
+    ) {
+        #[cfg(debug_assertions)]
+        {
+            debug_assert_eq!(self.state, State::Diff);
+            self.state = State::Val;
+        }
+
+        self.n_values += 1;
+        serializer_inner.with(FBufSerializer::new(&mut self.fbuf), |s| {
+            self.offsets.push(val.serialize(s).unwrap())
+        });
+    }
+
+    pub fn push_key<K: DataTrait + ?Sized>(
+        &mut self,
+        key: &K,
+        serializer_inner: &mut SerializerInner,
+    ) {
+        #[cfg(debug_assertions)]
+        {
+            debug_assert_eq!(self.state, State::Val);
+            self.state = State::Key;
+        }
+
+        self.offsets.push(SEPARATOR as usize);
+        self.n_keys += 1;
+        serializer_inner.with(FBufSerializer::new(&mut self.fbuf), |s| {
+            self.offsets.push(key.serialize(s).unwrap())
+        });
+    }
+
+    pub fn done(mut self, serializer_inner: &mut SerializerInner) -> FBuf {
+        #[cfg(debug_assertions)]
+        debug_assert_eq!(self.state, State::Key);
+        self.offsets[0] = self.n_keys;
+        self.offsets[1] = self.n_values;
+        serializer_inner.with(FBufSerializer::new(&mut self.fbuf), |s| {
+            s.serialize_value(&self.offsets).unwrap()
+        });
+        self.fbuf
+    }
+}
+
+pub fn serialize_indexed_wset<B, K, V, R>(batch: &B, serializer_inner: &mut SerializerInner) -> FBuf
 where
     B: BatchReader<Key = K, Val = V, Time = (), R = R>,
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    let mut s = Serializer::default();
-    let mut offsets = Vec::with_capacity(2 * batch.len());
+    let mut serializer = IndexedWSetSerializer::with_capacity(batch.key_count(), batch.len());
     let mut cursor = batch.cursor();
-    offsets.push(batch.len());
 
     while cursor.key_valid() {
-        offsets.push(cursor.key().serialize(&mut s).unwrap());
         while cursor.val_valid() {
-            offsets.push(cursor.val().serialize(&mut s).unwrap());
-            offsets.push(cursor.weight().serialize(&mut s).unwrap());
-
+            serializer.push_diff(cursor.weight(), serializer_inner);
+            serializer.push_val(cursor.val(), serializer_inner);
             cursor.step_val();
         }
+        serializer.push_key(cursor.key(), serializer_inner);
         cursor.step_key();
-        offsets.push(SEPARATOR as usize);
     }
-    let _offset = s.serialize_value(&offsets).unwrap();
-    s.into_serializer().into_inner().into_vec()
+    serializer.done(serializer_inner)
 }
 
 pub fn deserialize_indexed_wset<B, K, V, R>(factories: &B::Factories, data: &[u8]) -> B
@@ -1355,28 +1506,30 @@ where
     R: WeightTrait + ?Sized,
 {
     let offsets = unsafe { archived_root::<Vec<usize>>(data) };
-    let len = offsets[0];
+    let n_keys = offsets[0] as usize;
+    let n_values = offsets[1] as usize;
 
-    let mut builder = B::Builder::with_capacity(factories, len as usize, len as usize);
+    let mut builder = B::Builder::with_capacity(factories, n_keys, n_values);
     let mut key = factories.key_factory().default_box();
     let mut val = factories.val_factory().default_box();
     let mut diff = factories.weight_factory().default_box();
 
-    let mut current_offset = 1;
+    let mut current_offset = 2;
 
     while current_offset < offsets.len() {
-        unsafe { key.deserialize_from_bytes(data, offsets[current_offset] as usize) };
-        current_offset += 1;
         while offsets[current_offset] != SEPARATOR {
+            unsafe { diff.deserialize_from_bytes(data, offsets[current_offset] as usize) };
+            current_offset += 1;
             unsafe { val.deserialize_from_bytes(data, offsets[current_offset] as usize) };
             current_offset += 1;
-            unsafe { diff.deserialize_from_bytes(data, offsets[current_offset] as usize) };
 
             builder.push_val_diff(&val, &diff);
-            current_offset += 1;
         }
-
         current_offset += 1;
+
+        unsafe { key.deserialize_from_bytes(data, offsets[current_offset] as usize) };
+        current_offset += 1;
+
         builder.push_key(&key);
     }
     builder.done()
@@ -1389,6 +1542,7 @@ mod serialize_test {
         algebra::OrdIndexedZSet as DynOrdIndexedZSet,
         dynamic::DynData,
         indexed_zset,
+        storage::file::SerializerInner,
         trace::{BatchReader, deserialize_indexed_wset, serialize_indexed_wset},
     };
 
@@ -1400,7 +1554,7 @@ mod serialize_test {
             indexed_zset! { 1 => { 1 => 1, 2 => 2, 3 => 3 }, 2 => { 1 => 1, 2 => 2, 3 => 3 } };
 
         for test in [test1, test2, test3] {
-            let serialized = serialize_indexed_wset(&*test);
+            let serialized = serialize_indexed_wset(&*test, &mut SerializerInner::new());
             let deserialized = deserialize_indexed_wset::<
                 DynOrdIndexedZSet<DynData, DynData>,
                 DynData,
@@ -1418,7 +1572,7 @@ mod serialize_test {
         let test2 = indexed_zset! { () => { 1 => 1 } };
 
         for test in [test1, test2] {
-            let serialized = serialize_indexed_wset(&*test);
+            let serialized = serialize_indexed_wset(&*test, &mut SerializerInner::new());
             let deserialized = deserialize_indexed_wset::<
                 DynOrdIndexedZSet<DynData, DynData>,
                 DynData,
@@ -1437,7 +1591,7 @@ mod serialize_test {
         let test3 = indexed_zset! { 1 => { () => 1 }, 2 => { () => 1 } };
 
         for test in [test1, test2, test3] {
-            let serialized = serialize_indexed_wset(&*test);
+            let serialized = serialize_indexed_wset(&*test, &mut SerializerInner::new());
             let deserialized = deserialize_indexed_wset::<
                 DynOrdIndexedZSet<DynData, DynData>,
                 DynData,

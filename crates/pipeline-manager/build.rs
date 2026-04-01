@@ -120,6 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_instructions(&gitcl)?
         .add_instructions(&rustc)?
         .add_instructions(&si)?
+        .quiet()
         .emit()?;
     Ok(())
 }

@@ -19,7 +19,7 @@ import java.util.List;
 /** Given a stream, it computes function(extractTS(stream), delay(this, init)).
  * This operator is special: the output is replicated for all workers.
  * See the comments for {@link DBSPApplyOperator}. */
-public final class DBSPWaterlineOperator extends DBSPUnaryOperator implements IStateful {
+public final class DBSPWaterlineOperator extends DBSPUnaryOperator implements IStateful, IIncremental {
     /** Initial value of waterline; a closure with 0 parameters */
     public final DBSPClosureExpression init;
     /** Function which extracts a timestamp; a closure with two parameters;

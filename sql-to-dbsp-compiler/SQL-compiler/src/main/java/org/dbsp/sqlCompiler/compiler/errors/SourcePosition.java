@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.errors;
 
+import com.fasterxml.jackson.core.JsonLocation;
+
 public class SourcePosition implements Comparable<SourcePosition> {
     public static final SourcePosition INVALID = new SourcePosition(0, 0);
 
@@ -9,6 +11,11 @@ public class SourcePosition implements Comparable<SourcePosition> {
     public SourcePosition(int line, int column) {
         this.line = line;
         this.column = column;
+    }
+
+    public SourcePosition(JsonLocation location) {
+        this.line = location.getLineNr();
+        this.column = location.getColumnNr();
     }
 
     public boolean isValid() {
@@ -60,11 +67,24 @@ public class SourcePosition implements Comparable<SourcePosition> {
         return this;
     }
 
+    public SourcePositionRange asRange() {
+        return new SourcePositionRange(this, this);
+    }
+
     @Override
     public int compareTo(SourcePosition other) {
         int compare = Integer.compare(this.line, other.line);
         if (compare != 0)
             return compare;
         return Integer.compare(this.column, other.column);
+    }
+
+    /** We have a position described by this.  But the first character should not
+     * have position (1, 0), but rather firstCharPosition.  What is the correct position of this? */
+    public SourcePosition relativeTo(SourcePosition firstCharPosition) {
+        if (this.line == 1)
+            // For the first line the colum needs to be adjusted
+            return new SourcePosition(this.line + firstCharPosition.line - 1, this.column + firstCharPosition.column);
+        return new SourcePosition(this.line + firstCharPosition.line - 1, this.column);
     }
 }

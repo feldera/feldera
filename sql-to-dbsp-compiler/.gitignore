@@ -22,13 +22,13 @@
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 
+calcite-build
 SQL-compiler/target/
 SQL-compiler/*.png
 extra/
 # Compiler-generated test files
 temp/*
 !temp/Cargo.toml
-!temp/Cargo.lock
 !temp/src/udf.rs
 !temp/src/README.md
 multi/*

@@ -12,7 +12,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 
 public class RemoveIdentityOperators extends CircuitCloneVisitor {
@@ -31,9 +30,8 @@ public class RemoveIdentityOperators extends CircuitCloneVisitor {
         // After some fast negative checks we compare equivalence with
         // an identity function of the appropriate type.
         DBSPType paramType = expression.parameters[0].getType();
-        if (paramType.is(DBSPTypeTuple.class)) {
-            if (!paramType.is(DBSPTypeRef.class) ||
-                    !paramType.deref().sameType(expression.getResultType()))
+        if (paramType.is(DBSPTypeRef.class)) {
+            if (!paramType.deref().sameType(expression.getResultType()))
                 return false;
             DBSPVariablePath var = paramType.var();
             DBSPTypeTupleBase tuple = paramType.deref().as(DBSPTypeTupleBase.class);

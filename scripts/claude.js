@@ -37,7 +37,7 @@ function parseArgs() {
 const { mode, root } = parseArgs();
 const DEFAULT_ROOT = path.resolve(__dirname, "..");
 const REPO_ROOT = root ? path.resolve(process.cwd(), root) : DEFAULT_ROOT;
-const TARGET_COMBINED = path.join(REPO_ROOT, "CLAUDE.md");
+const TARGET_COMBINED = path.join(REPO_ROOT, "COMPOSITE_CLAUDE.md");
 
 /** @type {Set<string>} */
 const IGNORE_DIRS = new Set([
@@ -112,10 +112,11 @@ function ensureInsideRepo(absTarget) {
 
 async function mergeAll() {
   // Capture pre-merge content of root CLAUDE.md (if it exists)
+  const rootClaudePath = path.join(REPO_ROOT, "CLAUDE.md");
   /** @type {string|null} */
   let preMergeRoot = null;
   try {
-    preMergeRoot = await fs.readFile(TARGET_COMBINED, "utf8");
+    preMergeRoot = await fs.readFile(rootClaudePath, "utf8");
   } catch (e) {
     preMergeRoot = null; // no root file before merge
   }
@@ -178,7 +179,14 @@ async function splitAll() {
   /** @type {RegExpExecArray | null} */
   let match;
   let count = 0;
-  let rootAssigned = false;
+
+  // Delete TARGET_COMBINED before writing individual files
+  try {
+    await fs.unlink(TARGET_COMBINED);
+    console.log(`Deleted ${toRel(TARGET_COMBINED)}`);
+  } catch (err) {
+    if (/** @type {any} */ (err).code !== "ENOENT") throw err;
+  }
 
   while ((match = re.exec(combined)) !== null) {
     const relPath = match[1].trim();
@@ -195,16 +203,6 @@ async function splitAll() {
     await fs.writeFile(absPath, body.trimStart(), "utf8");
     console.log(`Wrote ${relPath}`);
     count++;
-
-    if (relPath === "CLAUDE.md") {
-      rootAssigned = true; // we restored the root content from the optional root section
-    }
-  }
-
-  // If no explicit root section was found, clear the root file
-  if (!rootAssigned) {
-    await fs.writeFile(TARGET_COMBINED, "", "utf8");
-    console.log(`No root section found; cleared ${toRel(TARGET_COMBINED)}.`);
   }
 
   if (count === 0) {

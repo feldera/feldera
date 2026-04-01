@@ -16,7 +16,6 @@ use crate::{
     typed_batch::{OrdIndexedZSet, OrdZSet},
     utils::Tup2,
 };
-use itertools::Itertools;
 use std::{
     borrow::{Borrow, Cow},
     collections::VecDeque,
@@ -70,7 +69,7 @@ pub struct ZSetStagedBuffers {
 
 impl StagedBuffers for ZSetStagedBuffers {
     fn flush(&mut self) {
-        for (vals, worker) in self.vals.drain(..).zip_eq(self.input_handle.workers()) {
+        for (worker, vals) in self.vals.drain(..).enumerate() {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
@@ -158,7 +157,7 @@ pub struct IndexedZSetStagedBuffers {
 
 impl StagedBuffers for IndexedZSetStagedBuffers {
     fn flush(&mut self) {
-        for (vals, worker) in self.vals.drain(..).zip_eq(self.input_handle.workers()) {
+        for (worker, vals) in self.vals.drain(..).enumerate() {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
@@ -202,7 +201,7 @@ pub struct SetStagedBuffers {
 
 impl StagedBuffers for SetStagedBuffers {
     fn flush(&mut self) {
-        for (vals, worker) in self.vals.drain(..).zip_eq(self.input_handle.workers()) {
+        for (worker, vals) in self.vals.drain(..).enumerate() {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
@@ -271,7 +270,7 @@ pub struct MapStagedBuffers {
 
 impl StagedBuffers for MapStagedBuffers {
     fn flush(&mut self) {
-        for (vals, worker) in self.vals.drain(..).zip_eq(self.input_handle.workers()) {
+        for (worker, vals) in self.vals.drain(..).enumerate() {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
@@ -890,7 +889,6 @@ impl<T: Clone> Mailbox<T> {
 
 pub(crate) struct InputHandleInternal<T> {
     pub(crate) mailbox: Vec<Mailbox<T>>,
-    offset: usize,
 }
 
 impl<T> InputHandleInternal<T>
@@ -906,12 +904,7 @@ where
                 .clone()
                 .map(move |_| Mailbox::new(empty_val.clone()))
                 .collect(),
-            offset: workers.start,
         }
-    }
-
-    pub(crate) fn workers(&self) -> Range<usize> {
-        self.offset..self.offset + self.mailbox.len()
     }
 
     fn set_for_worker(&self, worker: usize, v: T) {
@@ -940,7 +933,7 @@ where
     }
 
     fn mailbox(&self, worker: usize) -> &Mailbox<T> {
-        &self.mailbox[worker - self.offset]
+        &self.mailbox[worker]
     }
 }
 
@@ -988,25 +981,25 @@ where
         }
     }
 
-    /// Returns the range of worker indexes that this input handle covers, that
-    /// is, all of the workers on this host (all workers everywhere, for a
-    /// single-host circuit).
-    pub(crate) fn workers(&self) -> Range<usize> {
-        self.0.workers()
-    }
-
+    /// Returns the mailbox for the given `worker`.
+    ///
+    /// A `worker` of 0 is the first worker on the local host.
     fn mailbox(&self, worker: usize) -> &Mailbox<T> {
         self.0.mailbox(worker)
     }
 
     /// Write value `v` to the specified worker's mailbox,
     /// overwriting any previous value in the mailbox.
+    ///
+    /// A `worker` of 0 is the first worker on the local host.
     pub fn set_for_worker(&self, worker: usize, v: T) {
         self.0.set_for_worker(worker, v);
     }
 
     /// Mutate the contents of the specified worker's mailbox
     /// using closure `f`.
+    ///
+    /// A `worker` of 0 is the first worker on the local host.
     pub fn update_for_worker<F>(&self, worker: usize, f: F)
     where
         F: FnOnce(&mut T),
@@ -1053,7 +1046,7 @@ where
         default: Arc<dyn Fn() -> IT + Send + Sync>,
     ) -> (Self, InputHandle<IT>) {
         let handle = InputHandle::new(default);
-        let mailbox = handle.mailbox(Runtime::worker_index()).clone();
+        let mailbox = handle.mailbox(Runtime::local_worker_offset()).clone();
 
         let input = Self {
             location,

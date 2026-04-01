@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
@@ -636,8 +637,8 @@ public class CastTests extends SqlIoTest {
         Assert.assertEquals(types.length, legal.length);
         Assert.assertEquals(types.length, legal[0].length);
         StringBuilder program = new StringBuilder();
-        program.append("CREATE VIEW V AS SELECT ");
         boolean first = true;
+        program.append("CREATE VIEW V AS SELECT ");
         for (int i = 0; i < types.length; i++) {
             String type = types[i];
             String value = values[i];
@@ -684,6 +685,55 @@ public class CastTests extends SqlIoTest {
             }
             program.append(";\n");
         }
-        this.compileRustTestCase(program.toString());
+        // Disable Calcite optimizations so it doesn't do constant-folding
+        CompilerOptions options = this.testOptions();
+        options.languageOptions.optimizationLevel = 0;
+        DBSPCompiler compiler = new DBSPCompiler(options);
+        compiler.submitStatementsForCompilation(program.toString());
+        this.getCCS(compiler);
+    }
+
+    @Test
+    public void issue5894() {
+        this.qs("""
+                SELECT INTERVAL '1' YEAR;
+                 r
+                ---
+                 1 year
+                (1 row)
+                
+                SELECT CAST('1' AS INTERVAL YEAR);
+                 r
+                ---
+                 1 year
+                (1 row)
+                
+                SELECT INTERVAL 1 YEAR;
+                 r
+                ---
+                 1 year
+                (1 row)
+                
+                SELECT CAST(CAST('1' AS INTERVAL YEAR) AS TINYINT);
+                 r
+                ---
+                 1
+                (1 row)
+                
+                SELECT CAST(INTERVAL '1' YEAR AS TINYINT);
+                 r
+                ---
+                 1
+                (1 row)""");
+    }
+
+    @Test
+    public void issue5895() {
+        this.qs("""
+                SELECT CAST(INTERVAL '1000' MONTH AS INT);
+                 r
+                -----
+                 1000
+                (1 row)""");
     }
 }

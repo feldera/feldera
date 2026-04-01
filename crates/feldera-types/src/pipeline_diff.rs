@@ -318,6 +318,13 @@ impl PipelineDiff {
             || self.modified_output_connectors.contains(&connector_name)
     }
 
+    pub fn is_affected_relation(&self, relation_name: &str) -> bool {
+        self.program_diff
+            .as_ref()
+            .map(|diff| diff.is_affected_relation(relation_name))
+            .unwrap_or(false)
+    }
+
     pub fn program_diff(&self) -> Option<&ProgramDiff> {
         self.program_diff.as_ref()
     }

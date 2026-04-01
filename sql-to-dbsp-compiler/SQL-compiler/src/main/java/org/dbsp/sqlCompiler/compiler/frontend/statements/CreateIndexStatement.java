@@ -6,7 +6,6 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateIndex;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Utilities;
 
 import java.util.List;
 
@@ -22,8 +21,8 @@ public class CreateIndexStatement extends RelStatement {
         super(node);
         this.indexName = indexName;
         this.createIndex = createIndex;
-        this.refersTo = Utilities.toIdentifier(createIndex.indexed);
-        this.columns = Linq.map(createIndex.columns, c -> Utilities.toIdentifier((SqlIdentifier) c));
+        this.refersTo = ProgramIdentifier.fromSqlId(createIndex.indexed);
+        this.columns = Linq.map(createIndex.columns, c -> ProgramIdentifier.fromSqlId((SqlIdentifier) c));
     }
 
     public ProgramIdentifier getName() {

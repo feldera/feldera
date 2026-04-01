@@ -273,51 +273,51 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                 cast('' AS VARCHAR(64));
                 
                 -- Given a cell value e.g., =A0+B0, returns an array of cell ids that were mentioned in the formula
-                create function mentions(cell varchar(64)) returns bigint array not null AS 
+                create function mentions(cell varchar(64)) returns bigint array not null AS
                 ARRAY(CAST(NULL AS BIGINT));
                 
                 -- Forward declaration of spreadsheet view
                 declare recursive view spreadsheet_view (
-                                                        id bigint not null,
-                                                        background integer not null,
-                                                        raw_value varchar(64) not null,
-                                                        computed_value varchar(64),
-                                                        cnt integer not null
-                    );
+                    id bigint not null,
+                    background integer not null,
+                    raw_value varchar(64) not null,
+                    computed_value varchar(64),
+                    cnt integer not null
+                );
                 
                 -- Raw spreadsheet cell data coming from backend/user, updates
                 -- are inserted as new entries with newer timestamps
                 create table spreadsheet_data (
-                                                  id bigint not null,
-                                                  ip varchar(45) not null,
-                                                  ts timestamp not null,
-                                                  raw_value varchar(64) not null,
-                                                  background integer not null
+                    id bigint not null,
+                    ip varchar(45) not null,
+                    ts timestamp not null,
+                    raw_value varchar(64) not null,
+                    background integer not null
                 );
                 
                 -- Get the latest cell value for the spreadsheet.
                 -- (By finding the one with the highest `ts` for a given `id`)
                 create view latest_cells as with
-                                                max_ts_per_cell as (
-                                                    select
-                                                        id,
-                                                        max(ts) as max_ts
-                                                    from
-                                                        spreadsheet_data
-                                                    group by
-                                                        id
-                                                )
-                                            select
-                                                s.id,
-                                                s.raw_value,
-                                                s.background,
-                                                -- The append with null is silly but crucial to ensure that the
-                                                -- cross join in `latest_cells_with_mention` returns all cells
-                                                -- not just those that reference another cell
-                                                ARRAY_APPEND(mentions(s.raw_value), null) as mentioned_cell_ids
-                                            from
-                                                spreadsheet_data s
-                                                    join max_ts_per_cell mt on s.id = mt.id and s.ts = mt.max_ts;
+                    max_ts_per_cell as (
+                        select
+                            id,
+                            max(ts) as max_ts
+                        from
+                            spreadsheet_data
+                        group by
+                            id
+                    )
+                select
+                    s.id,
+                    s.raw_value,
+                    s.background,
+                    -- The append with null is silly but crucial to ensure that the
+                    -- cross join in `latest_cells_with_mention` returns all cells
+                    -- not just those that reference another cell
+                    ARRAY_APPEND(mentions(s.raw_value), null) as mentioned_cell_ids
+                from
+                    spreadsheet_data s
+                        join max_ts_per_cell mt on s.id = mt.id and s.ts = mt.max_ts;
                 
                 -- List all mentioned ids per latest cell
                 create view latest_cells_with_mentions as

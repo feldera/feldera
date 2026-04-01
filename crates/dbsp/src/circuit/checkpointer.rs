@@ -1,6 +1,7 @@
 //! Logic to manage persistent checkpoints for a circuit.
 
 use crate::dynamic::{self, data::DataTyped};
+use crate::storage::file::SerializerInner;
 use crate::{Error, NumEntries, TypedBox};
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::constants::{
@@ -17,7 +18,6 @@ use std::{
     sync::Arc,
 };
 
-use crate::trace::Serializer;
 use feldera_storage::error::StorageError;
 use feldera_storage::fbuf::FBuf;
 use feldera_storage::{StorageBackend, StorageFileType, StoragePath};
@@ -70,34 +70,13 @@ impl Checkpointer {
     }
 
     fn init_storage(&self) -> Result<(), Error> {
-        let usage = if !self.checkpoint_list.is_empty() {
-            self.gc_startup()?
-        } else {
-            // There's no checkpoint file, or we couldn't read it. Don't run GC,
-            // to ensure that we don't accidentally remove everything.
-            //
-            // We still know the amount of storage in use.
-            self.measure_storage_use()?
-        };
+        let usage = self.gc_startup()?;
 
         // We measured the amount of storage in use. Give it to the backend as
         // the initial value.
         self.backend.usage().store(usage as i64, Ordering::Relaxed);
 
         Ok(())
-    }
-
-    fn measure_storage_use(&self) -> Result<u64, Error> {
-        let mut usage = 0;
-        StorageError::ignore_notfound(self.backend.list(
-            &StoragePath::default(),
-            &mut |_path, file_type| {
-                if let StorageFileType::File { size } = file_type {
-                    usage += size;
-                }
-            },
-        ))?;
-        Ok(usage)
     }
 
     pub(super) fn measure_checkpoint_storage_use(&self, uuid: uuid::Uuid) -> Result<u64, Error> {
@@ -417,10 +396,7 @@ impl<T, D: ?Sized> Checkpoint for TypedBox<T, D> {
 
 impl Checkpoint for dyn dynamic::data::Data + 'static {
     fn checkpoint(&self) -> Result<Vec<u8>, Error> {
-        let mut s = Serializer::default();
-        let _r = self.serialize(&mut s).unwrap();
-        let fbuf = s.into_serializer().into_inner();
-        Ok(fbuf.into_vec())
+        Ok(SerializerInner::to_fbuf_with_thread_local(|s| self.serialize(s)).into_vec())
     }
 
     fn restore(&mut self, data: &[u8]) -> Result<(), Error> {

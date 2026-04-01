@@ -36,7 +36,8 @@ import java.util.Map;
 public class LineageTests extends BaseSQLTests {
     @Test
     public void testInnerLineage() {
-        Lineage.InnerLineage lineage = new Lineage.InnerLineage(this.testCompiler());
+        Lineage outer = new Lineage(this.testCompiler());
+        Lineage.InnerLineage lineage = outer.new InnerLineage(this.testCompiler());
 
         DBSPType i32 = DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, false);
         var var = new DBSPVariablePath(new DBSPTypeTuple(i32, i32, i32).ref());
@@ -100,13 +101,17 @@ public class LineageTests extends BaseSQLTests {
                 CREATE TABLE T(X INT, Y INT, Z INT);
                 CREATE TABLE S(X INT, Y INT);
                 CREATE LOCAL VIEW W AS SELECT T.X AS X, S.Y AS Y FROM T JOIN S ON T.X = S.X;
-                CREATE VIEW V AS SELECT X+1, Y, 2 FROM W WHERE X - 2 < Y;""";
+                CREATE VIEW V AS SELECT X+1, Y, 2 FROM W WHERE X - 2 < Y AND x > 0;""";
         File file = createInputScript(sql);
         PrintStream save = System.out;
         ByteArrayOutputStream capture = new ByteArrayOutputStream();
         System.setOut(new PrintStream(capture));
         CompilerMain.execute("--noRust", "--correlatedColumns", file.getPath());
         System.setOut(save);
-        Assert.assertEquals("[Correlated:] [s.x, t.x]\n", capture.toString());
+        Assert.assertEquals("""
+                  [Correlated:] [s.x, t.x]
+                  [Compared:] [ s.x > 0 ]
+                  [Compared:] [ t.x > 0 ]
+                  """, capture.toString());
     }
 }

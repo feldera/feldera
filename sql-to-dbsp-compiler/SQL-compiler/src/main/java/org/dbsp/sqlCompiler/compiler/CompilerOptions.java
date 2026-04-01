@@ -157,6 +157,8 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
     /** Options related to input and output. */
     @SuppressWarnings("CanBeFinal")
     public static class IO implements IDiff<IO>, IValidate {
+        @Parameter(names = "--anonymize", description = "Produce in the output file an anonymized version of the input program")
+        public boolean anonymize = false;
         @DynamicParameter(names = "-T",
                 description = "Specify logging level for a class (can be repeated)")
         public Map<String, String> loggingLevel = new HashMap<>();
@@ -194,9 +196,6 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Parameter(names = "--handles",
                 description = "Use handles (true) or Catalog (false) in the emitted Rust code")
         public boolean emitHandles = false;
-        @Parameter(names = "--jdbcSource",
-                description = "Connection string to a database that contains table metadata")
-        public String metadataSource = "";
         // This option is ignored; it is here just for backward compatibility, and it will be removed.
         @Parameter(names = "--nowstream", hidden = true,
                 description = "Implement NOW as a stream (true) or as an internal operator (false)")
@@ -245,17 +244,14 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                         "Options -png and -jpg cannot be used at the same time");
                 return false;
             }
-            if (this.noRust && !this.outputFile.isEmpty()) {
-                reporter.reportWarning(SourcePositionRange.INVALID, "Invalid options",
-                        "Options --nooutput and -o used at the same time");
-            }
             return true;
         }
 
         @Override
         public String toString() {
             return "IO{" +
-                    "\n\tcorrelatedColumns=" + this.correlatedColumns +
+                    "\n\tanonymize=" + this.anonymize +
+                    ",\n\tcorrelatedColumns=" + this.correlatedColumns +
                     ",\n\tcrates=" + this.crates +
                     ",\n\temitHandles=" + this.emitHandles +
                     ",\n\temitJpeg=" + this.emitJpeg +
@@ -266,7 +262,6 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                     ",\n\temitPng=" + this.emitPng +
                     ",\n\terrorFile=" + Utilities.singleQuote(this.errorFile) +
                     ",\n\tinputFile=" + Utilities.singleQuote(this.inputFile) +
-                    ",\n\tmetadataSource=" + this.metadataSource +
                     ",\n\tnoRust=" + this.noRust +
                     ",\n\toutputFile=" + Utilities.singleQuote(this.outputFile) +
                     ",\n\tquiet=" + this.quiet +

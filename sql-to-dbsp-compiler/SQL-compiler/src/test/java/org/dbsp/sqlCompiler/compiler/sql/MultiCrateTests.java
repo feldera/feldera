@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCrates;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
@@ -17,13 +18,24 @@ import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.sql.SQLException;
 import java.util.Arrays;
 
 public class MultiCrateTests extends BaseSQLTests {
+    public static void setupCargoLock() throws IOException {
+        Files.copy(Path.of(BaseSQLTests.PROJECT_DIRECTORY, "..", BaseSQLTests.CARGO_LOCK),
+                Path.of(BaseSQLTests.RUST_MULTI_DIRECTORY, BaseSQLTests.CARGO_LOCK),
+                StandardCopyOption.REPLACE_EXISTING);
+    }
+
     static void compileToMultiCrate(String file, boolean check, boolean noUdfs) throws SQLException, IOException, InterruptedException {
+        if (Utilities.inCI())
+            // Do not compile these tests in CI: all other tests in CI will use multi-crate
+            return;
         if (noUdfs) {
             // Make sure there is no stray udf.rs file from a previous test
             Path path = Paths.get(BaseSQLTests.RUST_MULTI_DIRECTORY + "/crates",
@@ -32,6 +44,7 @@ public class MultiCrateTests extends BaseSQLTests {
             Utilities.deleteFile(udfFile, true);
         }
 
+        setupCargoLock();
         String jsonFile = PROJECT_DIRECTORY + "/x.json";
         CompilerMessages messages = CompilerMain.execute(
                 "-i", "--alltables", "-q", "--ignoreOrder", "--crates", "x",
@@ -54,26 +67,22 @@ public class MultiCrateTests extends BaseSQLTests {
         compileToMultiCrate(file, check, true);
     }
 
-    static void compileProgramToMultiCrate(String sql, boolean check) throws IOException, SQLException, InterruptedException {
+    @SuppressWarnings("SameParameterValue")
+    static void compileProgramToMultiCrate(String sql, boolean check)
+            throws IOException, SQLException, InterruptedException {
         File file = createInputScript(sql);
         compileToMultiCrate(file.getAbsolutePath(), check);
     }
 
-    @Test @Ignore
-    public void extraTests() throws IOException, SQLException, InterruptedException {
-        String dir = "../extra";
-        File file = new File(dir);
-        if (file.exists()) {
-            File[] toCompile = file.listFiles();
-            if (toCompile == null)
-                return;
-            Arrays.sort(toCompile);
-            for (File c: toCompile) {
-                if (c.getName().contains("sql")) {
-                    System.out.println("Compiling " + c);
-                    String sql = Utilities.readFile(c.getPath());
-                    compileProgramToMultiCrate(sql, true);
-                }
+    @Test @Ignore("These tests are slow")
+    public void qaTests() throws IOException, SQLException, InterruptedException {
+        for (File c : getQATests()) {
+            String sql = Utilities.readFile(c.getPath());
+            try {
+                compileProgramToMultiCrate(sql, true);
+            } catch (UnsupportedException ex) {
+                // This is probably a file containing an ad-hoc query
+                System.out.println(c.getName() + " skipped due to unsupported features.");
             }
         }
     }
@@ -194,12 +203,6 @@ public class MultiCrateTests extends BaseSQLTests {
         compileProgramToMultiCrate(sql, true);
     }
    
-    @Test @Ignore
-    public void testMultiCrateLarge() throws IOException, SQLException, InterruptedException {
-        File file = new File("../extra/current_pipeline.sql");
-        compileToMultiCrate(file.getAbsolutePath(), true);
-    }
-
     @Test
     public void testJoin() throws IOException, SQLException, InterruptedException {
         String sql = """
@@ -271,8 +274,10 @@ public class MultiCrateTests extends BaseSQLTests {
                     this.appendCargoDependencies(cargoContents);
                 }
             }
-            if (!BaseSQLTests.skipRust)
+            if (!BaseSQLTests.skipRust && !Utilities.inCI()) {
+                setupCargoLock();
                 Utilities.compileAndCheckRust(BaseSQLTests.RUST_MULTI_DIRECTORY, true);
+            }
             Utilities.deleteFile(udf, true);
         }
     }

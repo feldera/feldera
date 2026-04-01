@@ -19,6 +19,8 @@ import org.dbsp.util.Utilities;
 import java.util.List;
 import java.util.Objects;
 
+import static java.util.Objects.requireNonNull;
+
 /** Parse tree for {@code CREATE TABLE} statement. */
 public class SqlCreateTable extends SqlCreate {
     public final SqlIdentifier name;
@@ -31,11 +33,13 @@ public class SqlCreateTable extends SqlCreate {
             new SqlSpecialOperator("CREATE TABLE", SqlKind.CREATE_TABLE) {
                 @Override
                 public SqlCall createCall(@Nullable SqlLiteral functionQualifier, SqlParserPos pos, @Nullable SqlNode... operands) {
-                    Utilities.enforce(operands.length == 3);
-                    return new SqlCreateTable(pos, false, false,
-                            (SqlIdentifier) Objects.requireNonNull(operands[0]),
-                            (SqlNodeList) Objects.requireNonNull(operands[1]),
-                            (SqlNodeList) operands[2]);
+                    Utilities.enforce(operands.length == 5);
+                    return new SqlCreateTable(pos,
+                            ((SqlLiteral) requireNonNull(operands[0], "replace")).booleanValue(),
+                            ((SqlLiteral) requireNonNull(operands[1], "ifNotExists")).booleanValue(),
+                            (SqlIdentifier) Objects.requireNonNull(operands[2]),
+                            (SqlNodeList) Objects.requireNonNull(operands[3]),
+                            (SqlNodeList) operands[4]);
                 }
             };
 
@@ -51,7 +55,10 @@ public class SqlCreateTable extends SqlCreate {
 
     @SuppressWarnings("nullness")
     @Override public List<SqlNode> getOperandList() {
-        return ImmutableNullableList.of(this.name, this.columnsOrForeignKeys, this.tableProperties);
+        return ImmutableNullableList.of(
+                SqlLiteral.createBoolean(getReplace(), SqlParserPos.ZERO),
+                SqlLiteral.createBoolean(this.ifNotExists, SqlParserPos.ZERO),
+                this.name, this.columnsOrForeignKeys, this.tableProperties);
     }
 
     public static void writeProperties(SqlWriter writer, @Nullable SqlNodeList properties) {
@@ -69,7 +76,6 @@ public class SqlCreateTable extends SqlCreate {
                 even = !even;
             }
             writer.endList(frame);
-            writer.newlineAndIndent();
         }
     }
 

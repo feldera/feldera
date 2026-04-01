@@ -119,22 +119,22 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         String str = circuit.toString();
         String expected = """
                 Circuit circuit {
-                    // DBSPConstantOperator s0
-                    let s0 = constant(zset!());
-                    // DBSPSourceMultisetOperator s1
+                    // DBSPSourceMultisetOperator s0
                     // CREATE TABLE `t` (`col1` INTEGER NOT NULL, `col2` DOUBLE NOT NULL, `col3` BOOLEAN NOT NULL, `col4` VARCHAR NOT NULL, `col5` INTEGER, `col6` DOUBLE)
-                    let s1 = t();
-                    // DBSPMapOperator s2
-                    let s2 = s1.map((|p0: &Tup6<i32, d, b, s, i32?, d?>|
+                    let s0 = t();
+                    // DBSPMapOperator s1
+                    let s1 = s0.map((|p0: &Tup6<i32, d, b, s, i32?, d?>|
                     Tup1::new(((*p0).2), )));
                     // CREATE VIEW `v` AS
                     // SELECT `t`.`col3`
                     // FROM `schema`.`t` AS `t`
-                    let s3 = s2;
+                    let s2 = s1;
+                    // DBSPConstantOperator s3
+                    let s3 = constant(zset!());
                     // CREATE VIEW `error_view` AS
                     // SELECT `feldera_error_table`.`table_or_view_name`, `feldera_error_table`.`message`, `feldera_error_table`.`metadata`
                     // FROM `schema`.`feldera_error_table` AS `feldera_error_table`
-                    let s4 = s0;
+                    let s4 = s3;
                 }
                 """;
         Assert.assertEquals(expected, str);
@@ -180,7 +180,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         File file = createInputScript(sql);
         CompilerMain.execute("-TSqlToRelCompiler=2", "-TPasses=2",
                 "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
-        Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
+        BaseSQLTests.compileAndCheckRust(true);
         Logger.INSTANCE.setDebugStream(save);
         String messages = builder.toString();
         Assert.assertTrue(messages.contains("After optimizer"));
@@ -291,8 +291,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
-        if (!BaseSQLTests.skipRust)
-            Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
+        BaseSQLTests.compileAndCheckRust(true);
     }
 
     void compileFile(String file, boolean run) throws SQLException, IOException, InterruptedException {
@@ -300,8 +299,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 "-i", "--alltables", "-q", "--ignoreOrder", "-o", BaseSQLTests.TEST_FILE_PATH, file);
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
-        if (run && !BaseSQLTests.skipRust)
-            Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
+        if (run)
+            BaseSQLTests.compileAndCheckRust(true);
         // cleanup after ourselves
         createEmptyStubs();
     }
@@ -400,8 +399,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         CompilerMessages messages = CompilerMain.execute("-q", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         messages.print();
         Assert.assertEquals(0, messages.exitCode);
-        if (!BaseSQLTests.skipRust)
-            Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
+        BaseSQLTests.compileAndCheckRust(true);
     }
 
     @Test
@@ -765,8 +763,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
     @Test
     public void rustFmt() throws IOException, InterruptedException {
-        // Don't run this in CI so we don't recompile at the point where we run the tests
-        if (System.getenv("CI") != null)
+        // Don't run this in CI
+        if (Utilities.inCI())
             return;
         // Check that the rust library is properly formatted
         Utilities.runProcess(BaseSQLTests.PROJECT_DIRECTORY + "/../crates/sqllib",

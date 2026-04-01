@@ -1073,7 +1073,7 @@ macro_rules! cast_to_string {
 
             #[doc(hidden)]
             pub fn [<cast_to_sN_ $type_name >] $(< $( const $var : $ty ),* >)? ( value: $arg_type, size: i32, fixed: bool ) -> SqlResult<Option<SqlString>> {
-                r2o(([< cast_to_s_ $type_name >] $(:: < $($var),* >)? (value, size, fixed)))
+                r2o([< cast_to_s_ $type_name >] $(:: < $($var),* >)? (value, size, fixed))
             }
 
             #[doc(hidden)]
@@ -1739,202 +1739,38 @@ pub fn cast_to_i64_Weight(w: Weight) -> SqlResult<i64> {
 }
 
 #[doc(hidden)]
-pub fn cast_to_i8_ShortInterval_DAYS(value: ShortInterval) -> SqlResult<i8> {
-    cast_to_i8_i64(value.milliseconds())
+pub fn cast_to_i8_LongInterval_YEARS(value: LongInterval) -> SqlResult<i8> {
+    cast_to_i8_i32(value.years())
 }
 
 #[doc(hidden)]
-pub fn cast_to_i16_ShortInterval_DAYS(value: ShortInterval) -> SqlResult<i16> {
-    cast_to_i16_i64(value.milliseconds())
+pub fn cast_to_i8_LongInterval_MONTHS(value: LongInterval) -> SqlResult<i8> {
+    cast_to_i8_i32(value.months())
 }
 
 #[doc(hidden)]
-pub fn cast_to_i32_ShortInterval_DAYS(value: ShortInterval) -> SqlResult<i32> {
-    cast_to_i32_i64(value.milliseconds())
+pub fn cast_to_i16_LongInterval_YEARS(value: LongInterval) -> SqlResult<i16> {
+    cast_to_i16_i32(value.years())
 }
 
 #[doc(hidden)]
-pub fn cast_to_i64_ShortInterval_DAYS(value: ShortInterval) -> SqlResult<i64> {
-    Ok(value.milliseconds())
+pub fn cast_to_i16_LongInterval_MONTHS(value: LongInterval) -> SqlResult<i16> {
+    cast_to_i16_i32(value.months())
 }
 
 #[doc(hidden)]
-pub fn cast_to_i8_ShortInterval_HOURS(value: ShortInterval) -> SqlResult<i8> {
-    cast_to_i8_i64(value.milliseconds())
+pub fn cast_to_i32_LongInterval_YEARS(value: LongInterval) -> SqlResult<i32> {
+    Ok(value.years())
 }
 
 #[doc(hidden)]
-pub fn cast_to_i16_ShortInterval_HOURS(value: ShortInterval) -> SqlResult<i16> {
-    cast_to_i16_i64(value.milliseconds())
+pub fn cast_to_i32_LongInterval_MONTHS(value: LongInterval) -> SqlResult<i32> {
+    Ok(value.months())
 }
-
-#[doc(hidden)]
-pub fn cast_to_i32_ShortInterval_HOURS(value: ShortInterval) -> SqlResult<i32> {
-    cast_to_i32_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_i64_ShortInterval_HOURS(value: ShortInterval) -> SqlResult<i64> {
-    Ok(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_i8_ShortInterval_MINUTES(value: ShortInterval) -> SqlResult<i8> {
-    cast_to_i8_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_i16_ShortInterval_MINUTES(value: ShortInterval) -> SqlResult<i16> {
-    cast_to_i16_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_i32_ShortInterval_MINUTES(value: ShortInterval) -> SqlResult<i32> {
-    cast_to_i32_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_i64_ShortInterval_MINUTES(value: ShortInterval) -> SqlResult<i64> {
-    Ok(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_i8_ShortInterval_SECONDS(value: ShortInterval) -> SqlResult<i8> {
-    cast_to_i8_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_i16_ShortInterval_SECONDS(value: ShortInterval) -> SqlResult<i16> {
-    cast_to_i16_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_i32_ShortInterval_SECONDS(value: ShortInterval) -> SqlResult<i32> {
-    cast_to_i32_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_i64_ShortInterval_SECONDS(value: ShortInterval) -> SqlResult<i64> {
-    Ok(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u8_ShortInterval_DAYS(value: ShortInterval) -> SqlResult<u8> {
-    cast_to_u8_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u16_ShortInterval_DAYS(value: ShortInterval) -> SqlResult<u16> {
-    cast_to_u16_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u32_ShortInterval_DAYS(value: ShortInterval) -> SqlResult<u32> {
-    cast_to_u32_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u64_ShortInterval_DAYS(value: ShortInterval) -> SqlResult<u64> {
-    cast_to_u64_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u8_ShortInterval_HOURS(value: ShortInterval) -> SqlResult<u8> {
-    cast_to_u8_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u16_ShortInterval_HOURS(value: ShortInterval) -> SqlResult<u16> {
-    cast_to_u16_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u32_ShortInterval_HOURS(value: ShortInterval) -> SqlResult<u32> {
-    cast_to_u32_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u64_ShortInterval_HOURS(value: ShortInterval) -> SqlResult<u64> {
-    cast_to_u64_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u8_ShortInterval_MINUTES(value: ShortInterval) -> SqlResult<u8> {
-    cast_to_u8_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u16_ShortInterval_MINUTES(value: ShortInterval) -> SqlResult<u16> {
-    cast_to_u16_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u32_ShortInterval_MINUTES(value: ShortInterval) -> SqlResult<u32> {
-    cast_to_u32_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u64_ShortInterval_MINUTES(value: ShortInterval) -> SqlResult<u64> {
-    cast_to_u64_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u8_ShortInterval_SECONDS(value: ShortInterval) -> SqlResult<u8> {
-    cast_to_u8_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u16_ShortInterval_SECONDS(value: ShortInterval) -> SqlResult<u16> {
-    cast_to_u16_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u32_ShortInterval_SECONDS(value: ShortInterval) -> SqlResult<u32> {
-    cast_to_u32_i64(value.milliseconds())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u64_ShortInterval_SECONDS(value: ShortInterval) -> SqlResult<u64> {
-    cast_to_u64_i64(value.milliseconds())
-}
-
-cast_function!(i8, i8, ShortInterval_DAYS, ShortInterval);
-cast_function!(i16, i16, ShortInterval_DAYS, ShortInterval);
-cast_function!(i32, i32, ShortInterval_DAYS, ShortInterval);
-cast_function!(i64, i64, ShortInterval_DAYS, ShortInterval);
-cast_function!(i8, i8, ShortInterval_HOURS, ShortInterval);
-cast_function!(i16, i16, ShortInterval_HOURS, ShortInterval);
-cast_function!(i32, i32, ShortInterval_HOURS, ShortInterval);
-cast_function!(i64, i64, ShortInterval_HOURS, ShortInterval);
-cast_function!(i8, i8, ShortInterval_MINUTES, ShortInterval);
-cast_function!(i16, i16, ShortInterval_MINUTES, ShortInterval);
-cast_function!(i32, i32, ShortInterval_MINUTES, ShortInterval);
-cast_function!(i64, i64, ShortInterval_MINUTES, ShortInterval);
-cast_function!(i8, i8, ShortInterval_SECONDS, ShortInterval);
-cast_function!(i16, i16, ShortInterval_SECONDS, ShortInterval);
-cast_function!(i32, i32, ShortInterval_SECONDS, ShortInterval);
-cast_function!(i64, i64, ShortInterval_SECONDS, ShortInterval);
-
-cast_function!(u8, u8, ShortInterval_DAYS, ShortInterval);
-cast_function!(u16, u16, ShortInterval_DAYS, ShortInterval);
-cast_function!(u32, u32, ShortInterval_DAYS, ShortInterval);
-cast_function!(u64, u64, ShortInterval_DAYS, ShortInterval);
-cast_function!(u8, u8, ShortInterval_HOURS, ShortInterval);
-cast_function!(u16, u16, ShortInterval_HOURS, ShortInterval);
-cast_function!(u32, u32, ShortInterval_HOURS, ShortInterval);
-cast_function!(u64, u64, ShortInterval_HOURS, ShortInterval);
-cast_function!(u8, u8, ShortInterval_MINUTES, ShortInterval);
-cast_function!(u16, u16, ShortInterval_MINUTES, ShortInterval);
-cast_function!(u32, u32, ShortInterval_MINUTES, ShortInterval);
-cast_function!(u64, u64, ShortInterval_MINUTES, ShortInterval);
-cast_function!(u8, u8, ShortInterval_SECONDS, ShortInterval);
-cast_function!(u16, u16, ShortInterval_SECONDS, ShortInterval);
-cast_function!(u32, u32, ShortInterval_SECONDS, ShortInterval);
-cast_function!(u64, u64, ShortInterval_SECONDS, ShortInterval);
 
 #[doc(hidden)]
 pub fn cast_to_i64_LongInterval_YEARS(value: LongInterval) -> SqlResult<i64> {
-    Ok(value.months() as i64)
+    Ok(value.years() as i64)
 }
 
 #[doc(hidden)]
@@ -1942,8 +1778,63 @@ pub fn cast_to_i64_LongInterval_MONTHS(value: LongInterval) -> SqlResult<i64> {
     Ok(value.months() as i64)
 }
 
+#[doc(hidden)]
+pub fn cast_to_u8_LongInterval_YEARS(value: LongInterval) -> SqlResult<u8> {
+    cast_to_u8_i32(value.years())
+}
+
+#[doc(hidden)]
+pub fn cast_to_u8_LongInterval_MONTHS(value: LongInterval) -> SqlResult<u8> {
+    cast_to_u8_i32(value.months())
+}
+
+#[doc(hidden)]
+pub fn cast_to_u16_LongInterval_YEARS(value: LongInterval) -> SqlResult<u16> {
+    cast_to_u16_i32(value.years())
+}
+
+#[doc(hidden)]
+pub fn cast_to_u16_LongInterval_MONTHS(value: LongInterval) -> SqlResult<u16> {
+    cast_to_u16_i32(value.months())
+}
+
+#[doc(hidden)]
+pub fn cast_to_u32_LongInterval_YEARS(value: LongInterval) -> SqlResult<u32> {
+    cast_to_u32_i32(value.years())
+}
+
+#[doc(hidden)]
+pub fn cast_to_u32_LongInterval_MONTHS(value: LongInterval) -> SqlResult<u32> {
+    cast_to_u32_i32(value.months())
+}
+
+#[doc(hidden)]
+pub fn cast_to_u64_LongInterval_YEARS(value: LongInterval) -> SqlResult<u64> {
+    cast_to_u64_i32(value.years())
+}
+
+#[doc(hidden)]
+pub fn cast_to_u64_LongInterval_MONTHS(value: LongInterval) -> SqlResult<u64> {
+    cast_to_u64_i32(value.months())
+}
+
+cast_function!(i8, i8, LongInterval_MONTHS, LongInterval);
+cast_function!(i8, i8, LongInterval_YEARS, LongInterval);
+cast_function!(i16, i16, LongInterval_MONTHS, LongInterval);
+cast_function!(i16, i16, LongInterval_YEARS, LongInterval);
+cast_function!(i32, i32, LongInterval_MONTHS, LongInterval);
+cast_function!(i32, i32, LongInterval_YEARS, LongInterval);
 cast_function!(i64, i64, LongInterval_MONTHS, LongInterval);
 cast_function!(i64, i64, LongInterval_YEARS, LongInterval);
+
+cast_function!(u8, u8, LongInterval_MONTHS, LongInterval);
+cast_function!(u8, u8, LongInterval_YEARS, LongInterval);
+cast_function!(u16, u16, LongInterval_MONTHS, LongInterval);
+cast_function!(u16, u16, LongInterval_YEARS, LongInterval);
+cast_function!(u32, u32, LongInterval_MONTHS, LongInterval);
+cast_function!(u32, u32, LongInterval_YEARS, LongInterval);
+cast_function!(u64, u64, LongInterval_MONTHS, LongInterval);
+cast_function!(u64, u64, LongInterval_YEARS, LongInterval);
 
 //////// casts to Short interval
 

@@ -30,7 +30,42 @@ Delta table:
 
 Effectively, we treat the table as a change log, where every record corresponds to
 either an insert or delete operation. The user can run a periodic Spark job to
-incorporate these change log into another Delta table, using the SQL `MERGE INTO` operation.
+incorporate this change log into another Delta table, using the SQL `MERGE INTO` operation. An example of the code is below:
+
+```sql
+MERGE INTO {target_table} AS target
+        USING (
+          SELECT *
+          FROM (
+            SELECT *,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY {merge_key}
+                     ORDER BY __feldera_ts DESC
+                   ) as rn
+            FROM {source_table}
+            -- Only consider new updates since the last merge.
+            WHERE __feldera_ts >= (
+              SELECT COALESCE(MAX(__feldera_ts), 0)
+              FROM {target_table}
+            )
+          )
+          -- Only apply the last update for each key.
+          WHERE rn = 1
+        ) AS source
+        ON target.{merge_key} = source.{merge_key}
+
+        WHEN MATCHED AND source.__feldera_op = 'd' THEN
+          DELETE
+
+        WHEN MATCHED AND source.__feldera_op = 'u' THEN
+          UPDATE SET *
+
+        WHEN NOT MATCHED AND source.__feldera_op = 'i' THEN
+          INSERT *
+
+        WHEN NOT MATCHED AND source.__feldera_op = 'u' THEN
+          INSERT *
+```
 
 ## Delta Lake output connector configuration
 
@@ -41,6 +76,8 @@ incorporate these change log into another Delta table, using the SQL `MERGE INTO
 |            | - `append`: New updates will be appended to the existing table at the target location. |
 |            | - `truncate`: Existing table at the specified location will be truncated. The connector achieves this by outputting delete actions for all files in the latest snapshot of the table. |
 |            | - `error_if_exists`: If a table exists at the specified location, the operation will fail. |
+| `max_retries`|<p>Maximum number of retries for failed Delta Lake operations like writing Parquet files and committing transactions.</p><p>The connector performs retries on several levels: individual S3 operations, Delta Lake transaction commits, and overall operation retries. This setting controls the overall operation retries. When a write to the table fails, because of an S3 timeout or any other reason that was not resolved by lower-level retries, the connector will retry the entire operation.</p><p>When not specified, the connector performs infinite retries. When set to 0, the connector doesn't retry failed operations.</p>|
+| `threads` | Number of parallel threads used by the connector. Increasing this value can improve Delta Lake write throughput by enabling concurrent writes. Default: `1`. |
 
 [*]: Required fields
 

@@ -9,13 +9,17 @@ from .helper import (
     post_no_body,
     http_request,
     api_url,
-    start_pipeline,
     start_pipeline_as_paused,
     resume_pipeline,
     stop_pipeline,
     clear_pipeline,
     gen_pipeline_name,
+    wait_for_condition,
 )
+
+from feldera.testutils import FELDERA_TEST_NUM_HOSTS
+from feldera.stats import PipelineStatistics
+from feldera.enums import PipelineStatus
 
 
 def _ingest_lines(name: str, table: str, body: str):
@@ -57,29 +61,27 @@ def test_pipeline_metrics(pipeline_name):
     # Default
     r_default = get(api_url(f"/pipelines/{pipeline_name}/metrics"))
     assert r_default.status_code == HTTPStatus.OK
-    text_default = r_default.text
+    assert "# TYPE records_processed_total counter" in r_default.text
 
     # Prometheus
     r_prom = get(api_url(f"/pipelines/{pipeline_name}/metrics?format=prometheus"))
     assert r_prom.status_code == HTTPStatus.OK
-    text_prom = r_prom.text
+    assert "# TYPE records_processed_total counter" in r_prom.text
 
     # JSON
-    r_json = get(api_url(f"/pipelines/{pipeline_name}/metrics?format=json"))
-    assert r_json.status_code == HTTPStatus.OK
-    parsed_json = json.loads(r_json.text)
-    assert isinstance(parsed_json, list), "Expected JSON metrics array"
+    if FELDERA_TEST_NUM_HOSTS == 1:
+        r_json = get(api_url(f"/pipelines/{pipeline_name}/metrics?format=json"))
+        assert r_json.status_code == HTTPStatus.OK
+        parsed_json = json.loads(r_json.text)
+        assert isinstance(parsed_json, list), "Expected JSON metrics array"
+
+        assert any(m.get("key") == "records_processed_total" for m in parsed_json), (
+            "records_processed_total missing in JSON metrics"
+        )
 
     # Invalid
     r_bad = get(api_url(f"/pipelines/{pipeline_name}/metrics?format=does-not-exist"))
     assert r_bad.status_code == HTTPStatus.BAD_REQUEST
-
-    # Minimal checks
-    assert "# TYPE records_processed_total counter" in text_default
-    assert "# TYPE records_processed_total counter" in text_prom
-    assert any(m.get("key") == "records_processed_total" for m in parsed_json), (
-        "records_processed_total missing in JSON metrics"
-    )
 
 
 @gen_pipeline_name
@@ -101,55 +103,82 @@ def test_pipeline_stats(pipeline_name):
     """.strip()
 
     create_pipeline(pipeline_name, sql)
-    start_pipeline(pipeline_name)
+    start_pipeline_as_paused(pipeline_name)
 
     # Create output connector on v1 (egress)
     r_out = post_no_body(api_url(f"/pipelines/{pipeline_name}/egress/v1"), stream=True)
     assert r_out.status_code == HTTPStatus.OK, (r_out.status_code, r_out.text)
 
+    resume_pipeline(pipeline_name)
+
     # Wait for datagen completion
-    time.sleep(3)
-    deadline = time.time() + 10
-    while time.time() < deadline:
-        cnt = _adhoc_count(pipeline_name, "t1")
-        if cnt == 5:
-            break
-        time.sleep(1)
+    wait_for_condition(
+        "datagen ingests 5 rows into t1",
+        lambda: _adhoc_count(pipeline_name, "t1") == 5,
+        timeout_s=10.0,
+        poll_interval_s=1.0,
+    )
     assert _adhoc_count(pipeline_name, "t1") == 5, "Did not ingest expected 5 rows"
+
+    # Wait for all the steps to be completed.
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        r_stats = get(api_url(f"/pipelines/{pipeline_name}/stats"))
+        assert r_stats.status_code == HTTPStatus.OK, (r_stats.status_code, r_stats.text)
+        stats = PipelineStatistics.from_dict(r_stats.json())
+        gm = stats.global_metrics
+        steps = gm.total_initiated_steps
+        if steps is not None and steps == gm.total_completed_steps:
+            break
 
     r_stats = get(api_url(f"/pipelines/{pipeline_name}/stats"))
     assert r_stats.status_code == HTTPStatus.OK, (r_stats.status_code, r_stats.text)
-    stats = r_stats.json()
-    keys = sorted(stats.keys())
+    r_stats_json = r_stats.json()
+    keys = sorted(r_stats_json.keys())
     assert keys == ["global_metrics", "inputs", "outputs", "suspend_error"]
+    stats = PipelineStatistics.from_dict(r_stats_json)
 
-    gm = stats["global_metrics"]
-    assert gm.get("state") == "Running"
-    assert gm.get("total_input_records") == 5
-    assert gm.get("total_processed_records") == 5
-    assert gm.get("pipeline_complete")
-    assert gm.get("buffered_input_records") == 0
-    assert gm.get("buffered_input_bytes") == 0
+    gm = stats.global_metrics
+    assert gm.state == PipelineStatus.RUNNING
+    assert gm.total_input_records == 5
+    assert gm.total_processed_records == 5
+    assert gm.pipeline_complete
+    assert gm.buffered_input_records == 0
+    assert gm.buffered_input_bytes == 0
 
-    inputs = stats["inputs"]
-    assert isinstance(inputs, list) and len(inputs) == 1
+    inputs = stats.inputs
+    assert len(inputs) == 1
     inp = inputs[0]
-    assert inp.get("config", {}).get("stream") == "t1"
-    assert inp.get("metrics", {}).get("buffered_bytes") == 0
-    assert inp.get("metrics", {}).get("buffered_records") == 0
-    assert inp.get("metrics", {}).get("end_of_input")
-    assert inp.get("metrics", {}).get("num_parse_errors") == 0
-    assert inp.get("metrics", {}).get("num_transport_errors") == 0
-    assert inp.get("metrics", {}).get("total_bytes") == 40
-    assert inp.get("metrics", {}).get("total_records") == 5
+    assert inp.config["stream"] == "t1"
+    assert inp.metrics.buffered_bytes == 0
+    assert inp.metrics.buffered_records == 0
+    assert inp.metrics.end_of_input
+    assert inp.metrics.num_parse_errors == 0
+    assert inp.metrics.num_transport_errors == 0
+    assert inp.metrics.total_bytes == 40
+    assert inp.metrics.total_records == 5
 
-    outputs = stats["outputs"]
-    assert isinstance(outputs, list) and len(outputs) == 1
+    outputs = stats.outputs
+    assert len(outputs) == 1
     out = outputs[0]
-    assert out.get("config", {}).get("stream") == "v1"
-    assert out.get("metrics", {}).get("total_processed_input_records") == 5
+    assert out.config["stream"] == "v1"
+    assert out.metrics.total_processed_steps == steps
 
     # /time_series
+    def time_series_ready():
+        resp = get(api_url(f"/pipelines/{pipeline_name}/time_series"))
+        if resp.status_code != HTTPStatus.OK:
+            return False
+        samples = resp.json().get("samples") or []
+        return len(samples) > 1 and samples[-1].get("r") == 5
+
+    wait_for_condition(
+        "time_series has >=2 samples and reflects 5 processed records",
+        time_series_ready,
+        timeout_s=10.0,
+        poll_interval_s=1.0,
+    )
+
     r_ts = get(api_url(f"/pipelines/{pipeline_name}/time_series"))
     assert r_ts.status_code == HTTPStatus.OK, r_ts.text
     ts = r_ts.json()
@@ -177,20 +206,15 @@ def test_pipeline_logs(pipeline_name):
     )
 
     # Poll for logs availability
-    deadline = time.time() + 30
-    while time.time() < deadline:
-        resp = get(api_url(f"/pipelines/{pipeline_name}/logs"), stream=True)
-        if resp.status_code == HTTPStatus.OK:
-            break
-        elif resp.status_code == HTTPStatus.NOT_FOUND:
-            time.sleep(0.5)
-            continue
-        else:
-            raise AssertionError(
-                f"Unexpected status while waiting for logs: {resp.status_code} {resp.text}"
-            )
-    else:
-        raise TimeoutError("Logs did not become available in time")
+    wait_for_condition(
+        "logs endpoint becomes available",
+        lambda: get(
+            api_url(f"/pipelines/{pipeline_name}/logs"), stream=True
+        ).status_code
+        == HTTPStatus.OK,
+        timeout_s=30.0,
+        poll_interval_s=0.5,
+    )
 
     # Pause pipeline
     start_pipeline_as_paused(pipeline_name)
@@ -229,17 +253,12 @@ def test_pipeline_logs(pipeline_name):
     )
 
     # Poll until logs become unavailable (404)
-    deadline = time.time() + 30
-    while time.time() < deadline:
-        resp = get(api_url(f"/pipelines/{pipeline_name}/logs"), stream=True)
-        if resp.status_code == HTTPStatus.NOT_FOUND:
-            break
-        elif resp.status_code == HTTPStatus.OK:
-            time.sleep(0.5)
-            continue
-        else:
-            raise AssertionError(
-                f"Unexpected status while waiting for logs to disappear: {resp.status_code} {resp.text}"
-            )
-    else:
-        raise TimeoutError("Logs did not become unavailable after deletion")
+    wait_for_condition(
+        "logs endpoint becomes unavailable after deletion",
+        lambda: get(
+            api_url(f"/pipelines/{pipeline_name}/logs"), stream=True
+        ).status_code
+        == HTTPStatus.NOT_FOUND,
+        timeout_s=30.0,
+        poll_interval_s=0.5,
+    )

@@ -30,12 +30,6 @@
           "fields": [
             "col1"
           ],
-          "exprs": [
-            {
-              "input": 0,
-              "name": "$0"
-            }
-          ],
           "inputs": [
             1
           ]
@@ -44,24 +38,6 @@
           "id": 3,
           "relOp": "LogicalAggregate",
           "group": [],
-          "aggs": [
-            {
-              "agg": {
-                "name": "SUM",
-                "kind": "SUM",
-                "syntax": "FUNCTION"
-              },
-              "type": {
-                "type": "INTEGER",
-                "nullable": true
-              },
-              "distinct": false,
-              "operands": [
-                0
-              ],
-              "name": "EXPR$0"
-            }
-          ],
           "inputs": [
             2
           ]
@@ -71,22 +47,6 @@
   },
   "mir": {
     "s0": {
-      "operation": "constant",
-      "inputs": [],
-      "calcite": {
-        "partial": 0
-      },
-      "positions": [],
-      "persistent_id": "dabdc0517fb639de8ebd480cb4350e3b2054b584a8c9c42515f268f99294f72c"
-    }, "s1": {
-      "operation": "constant",
-      "inputs": [],
-      "calcite": {
-        "partial": 3
-      },
-      "positions": [],
-      "persistent_id": "073120d9c4eea1862d5aae5f99d5753fc61d32b368fde8f3ba9a82dbd532860d"
-    }, "s2": {
       "operation": "source_multiset",
       "inputs": [],
       "table": "t",
@@ -94,24 +54,23 @@
         "final": 1
       },
       "positions": [
-        {"start_line_number":1,"start_column":14,"end_line_number":1,"end_column":14},
         {"start_line_number":1,"start_column":14,"end_line_number":1,"end_column":14}
       ],
       "persistent_id": "5e6c4775639ef50da58436d192195ae13fa8cd9681af464d09f0927ebbd24bbf"
-    }, "s3": {
+    }, "s1": {
       "operation": "differentiate",
       "inputs": [
-        { "node": "s2", "output": 0 }
+        { "node": "s0", "output": 0 }
       ],
       "calcite": {
         "partial": 3
       },
       "positions": [],
       "persistent_id": "75f6aef62d77fe19e76200d21472b7cb2e51629638054899decb829ba3df3859"
-    }, "s4": {
+    }, "s2": {
       "operation": "map_index",
       "inputs": [
-        { "node": "s3", "output": 0 }
+        { "node": "s1", "output": 0 }
       ],
       "calcite": {
         "seq": [
@@ -123,10 +82,10 @@
       },
       "positions": [],
       "persistent_id": "82bbfee37e33a4b0fedde6bc5e8bb31f17ccce1fd1957ad029e9cba1bc79d2b4"
-    }, "s5": {
+    }, "s3": {
       "operation": "aggregate_linear_postprocess",
       "inputs": [
-        { "node": "s4", "output": 0 }
+        { "node": "s2", "output": 0 }
       ],
       "calcite": {
         "partial": 3
@@ -135,10 +94,30 @@
         {"start_line_number":2,"start_column":25,"end_line_number":2,"end_column":33}
       ],
       "persistent_id": "134c6466aaa7694ea35a60b8949ec0a4d70a5bf9bdf014d4fb9426d96aa7dbb7"
+    }, "s4": {
+      "operation": "map",
+      "inputs": [
+        { "node": "s3", "output": 0 }
+      ],
+      "calcite": {
+        "partial": 3
+      },
+      "positions": [],
+      "persistent_id": "bcc438bd472b190d25cfdac257bc4f4263a0003f9f939a63be4497b268ed837f"
+    }, "s5": {
+      "operation": "integrate",
+      "inputs": [
+        { "node": "s4", "output": 0 }
+      ],
+      "calcite": {
+        "partial": 3
+      },
+      "positions": [],
+      "persistent_id": "7f3b5c52bed875fc3ade540f9bcb1b1fb96f64fca107f34eb8e56469317c7b82"
     }, "s6": {
       "operation": "map",
       "inputs": [
-        { "node": "s5", "output": 0 }
+        { "node": "s3", "output": 0 }
       ],
       "calcite": {
         "partial": 3
@@ -166,41 +145,29 @@
       "positions": [],
       "persistent_id": "7bc400efc53be162b85fdaadf583824555a184e370242b950c422e39488bfd4d"
     }, "s9": {
-      "operation": "map",
+      "operation": "constant",
+      "inputs": [],
+      "calcite": {
+        "partial": 3
+      },
+      "positions": [],
+      "persistent_id": "bd39cf1159208fe39f804045bb097cac071084865503769ca862515fd35f1289"
+    }, "s10": {
+      "operation": "sum",
       "inputs": [
+        { "node": "s9", "output": 0 },
+        { "node": "s8", "output": 0 },
         { "node": "s5", "output": 0 }
       ],
       "calcite": {
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "bcc438bd472b190d25cfdac257bc4f4263a0003f9f939a63be4497b268ed837f"
-    }, "s10": {
-      "operation": "integrate",
-      "inputs": [
-        { "node": "s9", "output": 0 }
-      ],
-      "calcite": {
-        "partial": 3
-      },
-      "positions": [],
-      "persistent_id": "7f3b5c52bed875fc3ade540f9bcb1b1fb96f64fca107f34eb8e56469317c7b82"
+      "persistent_id": "5a531ea30f94f3cc3a4e724e1e9a72540d2a574be0d63565e5caa388c9f59221"
     }, "s11": {
-      "operation": "sum",
-      "inputs": [
-        { "node": "s1", "output": 0 },
-        { "node": "s8", "output": 0 },
-        { "node": "s10", "output": 0 }
-      ],
-      "calcite": {
-        "partial": 3
-      },
-      "positions": [],
-      "persistent_id": "040f303a787c124052f91dfb293018d52b0e35aa98fb24e3078bca8c09e7ddb7"
-    }, "s12": {
       "operation": "inspect",
       "inputs": [
-        { "node": "s11", "output": 0 }
+        { "node": "s10", "output": 0 }
       ],
       "view": "v",
       "calcite": {
@@ -210,11 +177,19 @@
         {"start_line_number":2,"start_column":1,"end_line_number":2,"end_column":40},
         {"start_line_number":2,"start_column":1,"end_line_number":2,"end_column":40}
       ],
-      "persistent_id": "c1ffe4f3132e9426e7a70371ee283614d01223417b97444e03f933502c26a854"
+      "persistent_id": "a5563f0944296ab7968e9015c9d8ced05a8e9955dec0aa1e727f76c2f4d05489"
+    }, "s12": {
+      "operation": "constant",
+      "inputs": [],
+      "calcite": {
+        "partial": 0
+      },
+      "positions": [],
+      "persistent_id": "dabdc0517fb639de8ebd480cb4350e3b2054b584a8c9c42515f268f99294f72c"
     }, "s13": {
       "operation": "inspect",
       "inputs": [
-        { "node": "s0", "output": 0 }
+        { "node": "s12", "output": 0 }
       ],
       "view": "error_view",
       "calcite": {

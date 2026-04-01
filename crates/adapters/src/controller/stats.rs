@@ -34,7 +34,7 @@ use super::{EndpointId, InputEndpointConfig, OutputEndpointConfig};
 use crate::{
     PipelineState,
     controller::{
-        TransactionInitiators,
+        TransactionInfo, TransactionState,
         checkpoint::{CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics},
         journal::{InputChecksums, InputLog},
     },
@@ -46,41 +46,47 @@ use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use cpu_time::ProcessTime;
 use crossbeam::sync::Unparker;
+use dbsp::utils::process_rss_bytes;
 use feldera_adapterlib::{
     errors::journal::ControllerError,
-    format::BufferSize,
-    transport::{InputReader, Resume, Watermark},
+    format::{BufferSize, ParseError},
+    metrics::ConnectorMetrics,
+    transport::{InputReader, Resume, Step, Watermark},
 };
 use feldera_storage::histogram::SlidingHistogram;
 use feldera_types::{
     adapter_stats::{
-        ExternalCompletedWatermark, ExternalInputEndpointMetrics, ExternalInputEndpointStatus,
-        ExternalOutputEndpointMetrics, ExternalOutputEndpointStatus, ShortEndpointConfig,
-        TransactionStatus,
+        CompletedWatermark, ConnectorError, ConnectorHealth, ExternalInputEndpointMetrics,
+        ExternalInputEndpointStatus, ExternalOutputEndpointMetrics, ExternalOutputEndpointStatus,
+        ShortEndpointConfig,
     },
     config::{FtModel, PipelineConfig},
+    coordination::Completion,
+    memory_pressure::MemoryPressure,
     suspend::SuspendError,
     time_series::SampleStatistics,
-    transaction::TransactionId,
+    transaction::CommitProgressSummary,
 };
-use memory_stats::memory_stats;
 use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 use std::{
-    cmp::min,
     collections::{BTreeMap, BTreeSet, VecDeque},
+    fmt::Display,
     sync::{
-        Mutex,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use utoipa::ToSchema;
+
+/// The number of the most recent errors stored for each endpoint as part of the endpoint status.
+/// There are separate counters for parse and transport errors and for every tag.
+const MAX_CONNECTOR_ERRORS: usize = 100;
 
 /// Completion token.
 ///
@@ -154,29 +160,8 @@ pub struct GlobalControllerMetrics {
     /// new and modified views.
     bootstrap_in_progress: AtomicBool,
 
-    /// Status of the current transaction.
-    pub transaction_status: Atomic<TransactionStatus>,
-
-    /// ID of the current transaction or 0 if no transaction is in progress.
-    pub transaction_id: Atomic<TransactionId>,
-
-    /// Entities that initiated the current transaction.
-    pub transaction_initiators: Mutex<TransactionInitiators>,
-
-    /// Resident set size of the pipeline process, in bytes.
-    // This field is computed on-demand by calling `ControllerStatus::update`.
-    pub rss_bytes: AtomicU64,
-
-    /// CPU time used by the pipeline across all threads, in milliseconds.
-    // This field is computed on-demand by calling `ControllerStatus::update`.
-    pub cpu_msecs: AtomicU64,
-
-    /// Time since the pipeline process started, including time that the
-    /// pipeline was running or paused.
-    ///
-    /// This is the elapsed time since `start_time`.
-    // This field is computed on-demand by calling `ControllerStatus::update`.
-    pub uptime_msecs: AtomicU64,
+    /// Transaction commit progress, if a transaction is committing.
+    pub commit_progress: Mutex<Option<CommitProgressSummary>>,
 
     /// Time at which the pipeline process started, in seconds since the epoch.
     pub start_time: DateTime<Utc>,
@@ -247,19 +232,40 @@ pub struct GlobalControllerMetrics {
     ///
     /// A record is processed to completion if it has been processed by the DBSP engine and
     /// all outputs derived from it have been processed by all output connectors.
-    // This field is computed on-demand by calling `ControllerStatus::update_total_completed_records`.
     pub total_completed_records: AtomicU64,
 
-    /// True if the pipeline has processed all input data to completion.
-    /// This means that the following conditions hold:
+    /// If the pipeline is stalled because one or more output connectors' output
+    /// buffers are full, this is the time at which the stall began.
+    pub output_stall_start: Mutex<Option<Instant>>,
+
+    /// The amount of time the pipeline has stalled due to output connectors,
+    /// excluding any current stall in `output_stall_start`.
+    pub accumulated_output_stall: Mutex<Duration>,
+
+    /// Number of steps that have been initiated.
     ///
-    /// * All input endpoints have signalled end-of-input.
-    /// * All input records received from all endpoints have been processed by
-    ///   the circuit.
-    /// * All output records have been sent to respective output transport
-    ///   endpoints.
-    // This field is computed on-demand by calling `ControllerStatus::update`.
-    pub pipeline_complete: AtomicBool,
+    /// # Interpretation
+    ///
+    /// This is a count, not a step number.  If `total_initiated_steps` is 0, no
+    /// steps have been initiated.  If `total_initiated_steps > 0`, then step
+    /// `total_initiated_steps - 1` has been started and all steps previous to
+    /// that have been completely processed by the circuit.
+    pub total_initiated_steps: Atomic<Step>,
+
+    /// Number of steps whose input records have been processed to completion.
+    ///
+    /// A record is processed to completion if it has been processed by the DBSP engine and
+    /// all outputs derived from it have been processed by all output connectors.
+    ///
+    /// # Interpretation
+    ///
+    /// This is a count, not a step number.  If `total_completed_steps` is 0, no
+    /// steps have been processed to completion.  If `total_completed_steps >
+    /// 0`, then the last step whose input records have been processed to
+    /// completion is `total_completed_steps - 1`. A record that was ingested
+    /// when `total_initiated_steps` was `n` is fully processed when
+    /// `total_completed_steps >= n`.
+    pub total_completed_steps: Atomic<Step>,
 
     /// Forces the controller to perform a step regardless of the state of
     /// input buffers.
@@ -267,20 +273,19 @@ pub struct GlobalControllerMetrics {
 }
 
 impl GlobalControllerMetrics {
-    fn new(processed_records: u64, initial_start_time: Option<DateTime<Utc>>) -> Self {
+    fn new(
+        processed_records: u64,
+        initial_start_time: Option<DateTime<Utc>>,
+        incarnation_uuid: Uuid,
+    ) -> Self {
         let start_time = Utc::now();
         let initial_start_time = initial_start_time.unwrap_or(start_time);
         Self {
             state: Atomic::new(PipelineState::Paused),
             bootstrap_in_progress: AtomicBool::new(false),
-            transaction_id: Atomic::new(0),
-            transaction_status: Atomic::new(TransactionStatus::NoTransaction),
-            transaction_initiators: Mutex::new(TransactionInitiators::default()),
-            rss_bytes: AtomicU64::new(0),
-            cpu_msecs: AtomicU64::new(0),
-            uptime_msecs: AtomicU64::new(0),
+            commit_progress: Mutex::new(None),
             start_time,
-            incarnation_uuid: Uuid::now_v7(),
+            incarnation_uuid,
             initial_start_time,
             storage_bytes: AtomicU64::new(0),
             storage_mb_secs: AtomicU64::new(0),
@@ -294,8 +299,11 @@ impl GlobalControllerMetrics {
             total_processed_records: AtomicU64::new(processed_records),
             total_processed_bytes: AtomicU64::new(0),
             total_completed_records: AtomicU64::new(processed_records),
-            pipeline_complete: AtomicBool::new(false),
+            output_stall_start: Mutex::new(None),
+            accumulated_output_stall: Mutex::new(Duration::ZERO),
             step_requested: AtomicBool::new(false),
+            total_initiated_steps: Atomic::new(0),
+            total_completed_steps: Atomic::new(0),
         }
     }
 
@@ -335,14 +343,6 @@ impl GlobalControllerMetrics {
             + amt.records as u64
     }
 
-    pub fn rss_bytes(&self) -> u64 {
-        self.rss_bytes.load(Ordering::Relaxed)
-    }
-
-    pub fn cpu_msecs(&self) -> u64 {
-        self.cpu_msecs.load(Ordering::Relaxed)
-    }
-
     pub fn num_buffered_input_records(&self) -> u64 {
         self.buffered_input_records.load(Ordering::Acquire)
     }
@@ -367,6 +367,14 @@ impl GlobalControllerMetrics {
         self.total_processed_records.load(Ordering::Acquire)
     }
 
+    pub fn total_initiated_steps(&self) -> Step {
+        self.total_initiated_steps.load(Ordering::Acquire)
+    }
+
+    pub fn total_completed_steps(&self) -> Step {
+        self.total_completed_steps.load(Ordering::Acquire)
+    }
+
     pub fn num_total_processed_bytes(&self) -> u64 {
         self.total_processed_bytes.load(Ordering::Acquire)
     }
@@ -386,6 +394,32 @@ impl GlobalControllerMetrics {
 
     fn set_step_requested(&self) -> bool {
         self.step_requested.swap(true, Ordering::AcqRel)
+    }
+
+    pub fn set_commit_progress(&self, commit_progress: Option<CommitProgressSummary>) {
+        *self.commit_progress.lock().unwrap() = commit_progress;
+    }
+
+    pub fn update_output_stall_start(&self, stalled: bool) {
+        let mut output_stall_start = self.output_stall_start.lock().unwrap();
+        if stalled != output_stall_start.is_some() {
+            if let Some(start) = &*output_stall_start {
+                *self.accumulated_output_stall.lock().unwrap() += start.elapsed();
+            }
+            *output_stall_start = stalled.then(Instant::now);
+        }
+    }
+
+    pub fn current_output_stall_duration(&self) -> Duration {
+        self.output_stall_start
+            .lock()
+            .unwrap()
+            .map(|instant| instant.elapsed())
+            .unwrap_or_default()
+    }
+
+    pub fn total_output_stall_duration(&self) -> Duration {
+        self.current_output_stall_duration() + *self.accumulated_output_stall.lock().unwrap()
     }
 }
 
@@ -412,10 +446,8 @@ pub struct ControllerStatus {
     /// Broadcast channel for notifying subscribers about new time series data.
     pub time_series_notifier: broadcast::Sender<SampleStatistics>,
 
-    /// If this is empty, the pipeline can be suspended or checkpointed.  If
-    /// this is nonempty, it is the (permanent or temporary) reasons why not.
-    // This field is computed on-demand by calling `ControllerStatus::update`.
-    pub suspend_error: Mutex<Option<SuspendError>>,
+    /// Watch channel for notifying subscribers about [Completion] updates.
+    pub completion_notifier: watch::Sender<Completion>,
 
     /// Input endpoint configs and metrics.
     pub(crate) inputs: InputsStatus,
@@ -429,14 +461,20 @@ impl ControllerStatus {
         pipeline_config: PipelineConfig,
         processed_records: u64,
         initial_start_time: Option<DateTime<Utc>>,
+        incarnation_uuid: Uuid,
     ) -> Self {
         let (time_series_notifier, _) = broadcast::channel(1024); // Buffer for up to 1024 time series updates
+        let (completion_notifier, _) = watch::channel(Completion::default());
         Self {
             pipeline_config,
-            global_metrics: GlobalControllerMetrics::new(processed_records, initial_start_time),
+            global_metrics: GlobalControllerMetrics::new(
+                processed_records,
+                initial_start_time,
+                incarnation_uuid,
+            ),
             time_series: Mutex::new(VecDeque::with_capacity(60)),
             time_series_notifier,
-            suspend_error: Mutex::new(None),
+            completion_notifier,
             inputs: RwLock::new(BTreeMap::new()),
             outputs: RwLock::new(BTreeMap::new()),
         }
@@ -660,13 +698,6 @@ impl ControllerStatus {
             .set_bootstrap_in_progress(bootstrap_in_progress);
     }
 
-    pub fn transaction_in_progress(&self) -> bool {
-        self.global_metrics
-            .transaction_status
-            .load(Ordering::Acquire)
-            != TransactionStatus::NoTransaction
-    }
-
     pub fn request_step(&self, circuit_thread_unparker: &Unparker) {
         let old = self.global_metrics.set_step_requested();
         if !old {
@@ -677,6 +708,13 @@ impl ControllerStatus {
     /// Input endpoint stats.
     pub fn input_status(&self) -> RwLockReadGuard<'_, BTreeMap<EndpointId, InputEndpointStatus>> {
         self.inputs.read_recursive()
+    }
+
+    /// Register connector-specific metrics for an input endpoint.
+    pub fn set_custom_metrics(&self, endpoint_id: EndpointId, metrics: Arc<dyn ConnectorMetrics>) {
+        if let Some(status) = self.inputs.write().get_mut(&endpoint_id) {
+            status.custom_metrics = Some(metrics);
+        }
     }
 
     /// Output endpoint stats.
@@ -731,7 +769,7 @@ impl ControllerStatus {
         pending_output_records
     }
 
-    /// Update `global_metrics.total_completed_records`.
+    /// Update `global_metrics.total_completed_records` and `global_metrics.total_completed_steps`.
     ///
     /// Must be invoked any time this metric can change, i.e., after every output
     /// produced by an output connector as well as after each step.
@@ -753,28 +791,39 @@ impl ControllerStatus {
 
         let output_status = self.output_status();
 
-        let mut total_completed_records = self
-            .global_metrics
-            .total_processed_records
-            .load(Ordering::Acquire);
-
+        let mut total_completed_records = self.global_metrics.num_total_processed_records();
+        let mut total_completed_steps = self.global_metrics.total_initiated_steps();
         for output_ep in output_status.values() {
-            total_completed_records = min(
-                total_completed_records,
-                output_ep.num_total_processed_input_records(),
-            );
+            total_completed_records =
+                total_completed_records.min(output_ep.num_total_processed_input_records());
+            total_completed_steps =
+                total_completed_steps.min(output_ep.num_total_processed_steps());
         }
 
         drop(output_status);
 
         // Use `fetch_max` to ensure that the biggest value wins among multiple writers.
-        let old = self
+        let old_records = self
             .global_metrics
             .total_completed_records
             .fetch_max(total_completed_records, Ordering::SeqCst);
-
-        if total_completed_records >= old {
+        if total_completed_records >= old_records {
             self.watermarks_update_completed(total_completed_records);
+        }
+
+        let old_steps = self
+            .global_metrics
+            .total_completed_steps
+            .fetch_max(total_completed_steps, Ordering::SeqCst);
+        if total_completed_steps >= old_steps {
+            self.completion_notifier.send_if_modified(|state| {
+                if state.total_completed_steps != total_completed_steps {
+                    state.total_completed_steps = total_completed_steps;
+                    true
+                } else {
+                    false
+                }
+            });
         }
     }
 
@@ -796,8 +845,8 @@ impl ControllerStatus {
     ) -> Result<CompletionToken, ControllerError> {
         if let Some(endpoint_stats) = self.input_status().get(&endpoint_id) {
             let num_input_records = endpoint_stats.completion_token(
-                self.num_total_circuit_input_records(),
-                self.num_total_completed_records(),
+                self.global_metrics.total_initiated_steps(),
+                self.global_metrics.total_completed_steps(),
             );
             Ok(CompletionToken::new(
                 self.global_metrics.incarnation_uuid,
@@ -809,11 +858,15 @@ impl ControllerStatus {
         }
     }
 
-    /// Check completion status of a token.
+    /// Check completion status of `completion_token`.
+    ///
+    /// Returns `None` if the token is definitely incomplete, `Some(step)` if it
+    /// is complete once `GlobalControllerMetrics::total_completed_steps`
+    /// reaches `step`, or an error if the token is invalid.
     pub fn completion_status(
         &self,
         completion_token: &CompletionToken,
-    ) -> Result<bool, ControllerError> {
+    ) -> Result<Option<Step>, ControllerError> {
         if completion_token.incarnation != self.global_metrics.incarnation_uuid {
             return Err(ControllerError::pipeline_restarted(&format!(
                 "Completion token was created by a previous incarnation of the pipeline (incarnation uuid: {}) and is not valid for the current incarnation ({}). This indicates that the pipeline was suspended and resumed from a checkpoint or restarted after a failure.",
@@ -822,8 +875,7 @@ impl ControllerStatus {
         }
 
         if let Some(endpoint_stats) = self.input_status().get(&completion_token.endpoint_id) {
-            Ok(endpoint_stats
-                .completion_status(completion_token.count, self.num_total_completed_records()))
+            Ok(endpoint_stats.completion_status(completion_token.count))
         } else {
             Err(ControllerError::unknown_endpoint_in_completion_token(
                 completion_token.endpoint_id,
@@ -942,7 +994,8 @@ impl ControllerStatus {
                 step_results,
                 watermarks,
                 self.num_total_circuit_input_records(),
-                self.num_total_completed_records(),
+                self.global_metrics.total_initiated_steps(),
+                self.global_metrics.total_completed_steps(),
             );
             finished = endpoint_stats.finished();
         };
@@ -978,19 +1031,20 @@ impl ControllerStatus {
         };
     }
 
-    /// `total_processed_records` is the total number of records processed by the circuit
-    /// before this output batch was produced or `None` if the circuit is executing a transaction.
+    /// `processed` is statistics about records processed by the circuit before
+    /// this output batch was produced or `None` if the circuit is executing a
+    /// transaction.
     pub fn output_batch(
         &self,
         endpoint_id: EndpointId,
-        total_processed_records: Option<u64>,
+        processed: Option<ProcessedRecords>,
         num_records: usize,
         circuit_thread_unparker: &Unparker,
     ) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
             let threshold = endpoint_stats.config.connector_config.max_queued_records;
 
-            let old = endpoint_stats.output_batch(total_processed_records, num_records);
+            let old = endpoint_stats.output_batch(processed, num_records);
 
             let new = old - (num_records as u64);
             if (old >= threshold && new <= threshold) || new == 0 {
@@ -1009,9 +1063,9 @@ impl ControllerStatus {
         }
     }
 
-    pub fn output_buffered_batches(&self, endpoint_id: EndpointId, total_processed_records: u64) {
+    pub fn output_buffered_batches(&self, endpoint_id: EndpointId, processed: ProcessedRecords) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
-            endpoint_stats.output_buffered_batches(total_processed_records);
+            endpoint_stats.output_buffered_batches(processed);
         }
         self.update_total_completed_records();
     }
@@ -1023,36 +1077,70 @@ impl ControllerStatus {
     }
 
     pub fn output_buffers_full(&self) -> bool {
-        self.output_status().values().any(|endpoint_stats| {
-            let num_buffered_records = endpoint_stats
-                .metrics
-                .queued_records
-                .load(Ordering::Acquire);
-            num_buffered_records >= endpoint_stats.config.connector_config.max_queued_records
-        })
+        self.output_status()
+            .values()
+            .any(|endpoint_stats| endpoint_stats.is_buffer_full())
     }
 
-    pub fn parse_error(&self, endpoint_id: EndpointId) {
+    /// Returns the names of output connectors whose buffers are currently full.
+    pub fn output_buffers_full_names(&self) -> Vec<String> {
+        self.output_status()
+            .values()
+            .filter_map(|endpoint_stats| {
+                if endpoint_stats.is_buffer_full() {
+                    Some(endpoint_stats.endpoint_name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    pub fn parse_error(&self, endpoint_id: EndpointId, tag: Option<&str>, error: &ParseError) {
         if let Some(endpoint_stats) = self.input_status().get(&endpoint_id) {
-            endpoint_stats.parse_error();
+            endpoint_stats.parse_error(tag, error);
         }
     }
 
-    pub fn encode_error(&self, endpoint_id: EndpointId) {
+    pub fn encode_error(&self, endpoint_id: EndpointId, tag: Option<&str>, error: &AnyError) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
-            endpoint_stats.encode_error();
+            endpoint_stats.encode_error(tag, error);
         }
     }
 
-    pub fn input_transport_error(&self, endpoint_id: EndpointId, fatal: bool, error: &AnyError) {
+    pub fn input_transport_error(
+        &self,
+        endpoint_id: EndpointId,
+        fatal: bool,
+        tag: Option<&str>,
+        error: &AnyError,
+    ) {
         if let Some(endpoint_stats) = self.input_status().get(&endpoint_id) {
-            endpoint_stats.transport_error(fatal, error);
+            endpoint_stats.transport_error(fatal, tag, error);
         }
     }
 
-    pub fn output_transport_error(&self, endpoint_id: EndpointId, fatal: bool, error: &AnyError) {
+    pub fn output_transport_error(
+        &self,
+        endpoint_id: EndpointId,
+        fatal: bool,
+        tag: Option<&str>,
+        error: &AnyError,
+    ) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
-            endpoint_stats.transport_error(fatal, error);
+            endpoint_stats.transport_error(fatal, tag, error);
+        }
+    }
+
+    pub fn update_input_connector_health(&self, endpoint_id: EndpointId, health: ConnectorHealth) {
+        if let Some(endpoint_stats) = self.input_status().get(&endpoint_id) {
+            endpoint_stats.update_health(health);
+        }
+    }
+
+    pub fn update_output_connector_health(&self, endpoint_id: EndpointId, health: ConnectorHealth) {
+        if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
+            endpoint_stats.update_health(health);
         }
     }
 
@@ -1062,7 +1150,7 @@ impl ControllerStatus {
         if !self
             .input_status()
             .values()
-            .filter(|endpoint_stats| !endpoint_stats.endpoint_name.starts_with("api-ingress"))
+            .filter(|endpoint_stats| !endpoint_stats.endpoint_name.contains(".api-ingress-"))
             .all(|endpoint_stats| endpoint_stats.is_eoi())
         {
             return false;
@@ -1085,47 +1173,27 @@ impl ControllerStatus {
         true
     }
 
-    pub fn update(&self, suspend_error: Option<SuspendError>) {
-        self.global_metrics
-            .pipeline_complete
-            .store(self.pipeline_complete(), Ordering::Release);
-
-        *self.suspend_error.lock().unwrap() = suspend_error;
-
-        let uptime = Utc::now() - self.global_metrics.start_time;
-        self.global_metrics.uptime_msecs.store(
-            uptime.num_milliseconds().try_into().unwrap_or(0),
-            Ordering::Relaxed,
-        );
-
-        if let Some(usage) = memory_stats() {
-            self.global_metrics
-                .rss_bytes
-                .store(usage.physical_mem as u64, Ordering::Relaxed);
-        } else {
-            error!("Failed to fetch process RSS");
-        }
-
-        match ProcessTime::try_now() {
-            Ok(time) => {
-                self.global_metrics
-                    .cpu_msecs
-                    .store(time.as_duration().as_millis() as u64, Ordering::Relaxed);
-            }
-            Err(e) => {
-                error!("Failed to fetch process times: {e}");
-            }
-        }
-    }
-
     /// Convert from internal `ControllerStatus` to the public API type in `feldera_types`.
     ///
     /// This function ensures that the "duplicate" types in `feldera_types::adapter_stats`
     /// stay correlated with the original types and won't go out of sync.
-    pub fn to_api_type(&self) -> feldera_types::adapter_stats::ExternalControllerStatus {
+    pub fn to_api_type(
+        &self,
+        suspend_error: Result<(), SuspendError>,
+        pipeline_complete: bool,
+        transaction_info: TransactionInfo,
+        memory_pressure: MemoryPressure,
+        memory_pressure_epoch: u64,
+    ) -> feldera_types::adapter_stats::ExternalControllerStatus {
         use feldera_types::adapter_stats;
 
-        // Convert global metrics
+        let total_processed_records = self
+            .global_metrics
+            .total_processed_records
+            .load(Ordering::Acquire);
+
+        #[allow(clippy::manual_unwrap_or_default)]
+        #[allow(clippy::manual_unwrap_or)]
         let global_metrics = adapter_stats::ExternalGlobalControllerMetrics {
             state: match self.global_metrics.state.load(Ordering::Acquire) {
                 PipelineState::Paused => adapter_stats::PipelineState::Paused,
@@ -1136,25 +1204,57 @@ impl ControllerStatus {
                 .global_metrics
                 .bootstrap_in_progress
                 .load(Ordering::Acquire),
-            transaction_status: self
-                .global_metrics
-                .transaction_status
-                .load(Ordering::Acquire),
-            transaction_id: self.global_metrics.transaction_id.load(Ordering::Acquire),
-            transaction_initiators: self
-                .global_metrics
-                .transaction_initiators
-                .lock()
-                .unwrap()
-                .to_api_type(),
-            rss_bytes: self.global_metrics.rss_bytes.load(Ordering::Relaxed),
-            cpu_msecs: self.global_metrics.cpu_msecs.load(Ordering::Relaxed),
-            uptime_msecs: self.global_metrics.uptime_msecs.load(Ordering::Relaxed),
+            transaction_status: match transaction_info.transaction_state {
+                TransactionState::None => adapter_stats::TransactionStatus::NoTransaction,
+                TransactionState::Started { .. } => {
+                    adapter_stats::TransactionStatus::TransactionInProgress
+                }
+                TransactionState::Committing { .. } => {
+                    adapter_stats::TransactionStatus::CommitInProgress
+                }
+            },
+            transaction_msecs: transaction_info
+                .transaction_state
+                .start_time()
+                .and_then(|start| start.elapsed().as_millis().try_into().ok()),
+            transaction_records: transaction_info
+                .transaction_state
+                .processed_records()
+                .map(|n| total_processed_records - n),
+            transaction_id: if let Some(tid) = transaction_info.transaction_state.tid() {
+                // The current transaction ID.
+                tid
+            } else if let Some(tid) = transaction_info.initiators.transaction_id {
+                // The transaction that will start when we execute a step.
+                tid
+            } else {
+                // No transaction
+                0
+            },
+            commit_progress: self.global_metrics.commit_progress.lock().unwrap().clone(),
+            transaction_initiators: transaction_info.initiators.to_api_type(),
             start_time: self.global_metrics.start_time,
             incarnation_uuid: self.global_metrics.incarnation_uuid,
             initial_start_time: self.global_metrics.initial_start_time,
             storage_bytes: self.global_metrics.storage_bytes.load(Ordering::Relaxed),
             storage_mb_secs: self.global_metrics.storage_mb_secs.load(Ordering::Relaxed),
+            uptime_msecs: (Utc::now() - self.global_metrics.start_time)
+                .num_milliseconds()
+                .try_into()
+                .unwrap_or(0),
+            rss_bytes: process_rss_bytes().unwrap_or_else(|| {
+                error!("Failed to fetch process RSS");
+                0
+            }),
+            memory_pressure,
+            memory_pressure_epoch,
+            cpu_msecs: match ProcessTime::try_now() {
+                Ok(time) => time.as_duration().as_millis() as u64,
+                Err(e) => {
+                    error!("Failed to fetch process times: {e}");
+                    0
+                }
+            },
             runtime_elapsed_msecs: self
                 .global_metrics
                 .runtime_elapsed_msecs
@@ -1175,10 +1275,7 @@ impl ControllerStatus {
                 .global_metrics
                 .total_input_bytes
                 .load(Ordering::Acquire),
-            total_processed_records: self
-                .global_metrics
-                .total_processed_records
-                .load(Ordering::Acquire),
+            total_processed_records,
             total_processed_bytes: self
                 .global_metrics
                 .total_processed_bytes
@@ -1187,50 +1284,22 @@ impl ControllerStatus {
                 .global_metrics
                 .total_completed_records
                 .load(Ordering::Acquire),
-            pipeline_complete: self
+            output_stall_msecs: self
                 .global_metrics
-                .pipeline_complete
-                .load(Ordering::Acquire),
+                .current_output_stall_duration()
+                .as_millis()
+                .try_into()
+                .unwrap_or(u64::MAX),
+            total_initiated_steps: self.global_metrics.total_initiated_steps(),
+            total_completed_steps: self.global_metrics.total_completed_steps(),
+            pipeline_complete,
         };
 
         // Convert input endpoints and sort by endpoint_name to match serialize_inputs behavior
         let mut inputs: Vec<_> = self
             .input_status()
             .values()
-            .map(|input| adapter_stats::ExternalInputEndpointStatus {
-                endpoint_name: input.endpoint_name.clone(),
-                config: ShortEndpointConfig {
-                    stream: input.config.stream.clone().into_owned(),
-                },
-                metrics: adapter_stats::ExternalInputEndpointMetrics {
-                    total_bytes: input.metrics.total_bytes.load(Ordering::Acquire),
-                    total_records: input.metrics.total_records.load(Ordering::Acquire),
-                    buffered_records: input.metrics.buffered_records.load(Ordering::Acquire),
-                    buffered_bytes: input.metrics.buffered_bytes.load(Ordering::Acquire),
-                    num_transport_errors: input
-                        .metrics
-                        .num_transport_errors
-                        .load(Ordering::Acquire),
-                    num_parse_errors: input.metrics.num_parse_errors.load(Ordering::Acquire),
-                    end_of_input: input.metrics.end_of_input.load(Ordering::Acquire),
-                },
-                fatal_error: input.fatal_error(),
-                paused: input.is_paused_by_user(),
-                barrier: input.barrier.load(Ordering::Acquire),
-                completed_frontier: input
-                    .completed_frontier
-                    .0
-                    .lock()
-                    .unwrap()
-                    .completed_watermark
-                    .as_ref()
-                    .map(|wm| adapter_stats::ExternalCompletedWatermark {
-                        metadata: wm.metadata.clone(),
-                        ingested_at: wm.ingested_at.to_rfc3339(),
-                        processed_at: wm.processed_at.to_rfc3339(),
-                        completed_at: wm.completed_at.to_rfc3339(),
-                    }),
-            })
+            .map(|input| input.to_api_type(false))
             .collect();
         inputs.sort_by(|ep1, ep2| ep1.endpoint_name.cmp(&ep2.endpoint_name));
 
@@ -1238,37 +1307,13 @@ impl ControllerStatus {
         let mut outputs: Vec<_> = self
             .output_status()
             .values()
-            .map(|output| adapter_stats::ExternalOutputEndpointStatus {
-                endpoint_name: output.endpoint_name.clone(),
-                config: ShortEndpointConfig {
-                    stream: output.config.stream.clone().into_owned(),
-                },
-                metrics: adapter_stats::ExternalOutputEndpointMetrics {
-                    transmitted_records: output.metrics.transmitted_records.load(Ordering::Acquire),
-                    transmitted_bytes: output.metrics.transmitted_bytes.load(Ordering::Relaxed),
-                    queued_records: output.metrics.queued_records.load(Ordering::Relaxed),
-                    queued_batches: output.metrics.queued_batches.load(Ordering::Relaxed),
-                    buffered_records: output.metrics.buffered_records.load(Ordering::Relaxed),
-                    buffered_batches: output.metrics.buffered_batches.load(Ordering::Relaxed),
-                    num_encode_errors: output.metrics.num_encode_errors.load(Ordering::Relaxed),
-                    num_transport_errors: output
-                        .metrics
-                        .num_transport_errors
-                        .load(Ordering::Relaxed),
-                    total_processed_input_records: output
-                        .metrics
-                        .total_processed_input_records
-                        .load(Ordering::Relaxed),
-                    memory: output.metrics.memory.load(Ordering::Relaxed),
-                },
-                fatal_error: output.fatal_error.lock().unwrap().clone(),
-            })
+            .map(|output| output.to_api_type(false))
             .collect();
         outputs.sort_by(|ep1, ep2| ep1.endpoint_name.cmp(&ep2.endpoint_name));
 
         adapter_stats::ExternalControllerStatus {
             global_metrics,
-            suspend_error: self.suspend_error.lock().unwrap().clone(),
+            suspend_error: suspend_error.err(),
             inputs,
             outputs,
         }
@@ -1399,12 +1444,17 @@ const MAX_TOKENLIST_LEN: usize = 1_000_000;
 /// Tracks the set of tokens issued by the connector and the state needed to report
 /// completion status for these tokens.
 ///
-/// A token is the number of records ingested by the connector at the time the token
-/// was requested.  When all records up to this offset are pushed from the connector's
-/// queue into the circuit, we record the corresponding index (global offset) in the
-/// globally ordered stream of input to the circuit.  We can then determine whether
-/// all records associated with the token have been fully processed by comparing this
-/// offset with the `total_completed_records` counter.
+/// # Processing
+///
+/// Processing a token has two phases:
+///
+/// 1. Initialize the token consists as just the number of records ingested *by
+///    the connector* at the time it was created.  After the circuit ingests all
+///    of the records associated with the token, we additionally label the token
+///    with the step in which the last record was ingested.
+///
+/// 2. Wait until all of the records output for the labeled step have been sent
+///    to the output connector, by watching the `total_completed_steps` counter.
 ///
 /// # Garbage collection
 ///
@@ -1425,8 +1475,8 @@ const MAX_TOKENLIST_LEN: usize = 1_000_000;
 struct TokenList(Mutex<TokenListInner>);
 
 struct TokenListInner {
-    /// List of (token, global offset) mappings.
-    token_list: VecDeque<(u64, Option<u64>)>,
+    /// List of (token, step) mappings.
+    token_list: VecDeque<(u64, Option<Step>)>,
 }
 
 impl TokenListInner {
@@ -1441,54 +1491,50 @@ impl TokenListInner {
     /// Invoked when a new token is pushed to the queue or when additional records are pushed from
     /// the connector to the circuit.
     ///
-    /// * Set `total_circuit_input_records` as the global offset for all tokens that are <= connector_input_records,
-    ///   and that don't have a global offset yet.
-    /// * GC all but one tokens whose global offset is `<= total_completed_records`.
-    /// * Remove old tokens that exceed queue capacity.
+    /// * Set `total_initiated_steps` as the step for all tokens that are <= connector_input_records
+    ///   and that don't have a step yet.
+    /// * GC all but one token whose step is `< total_completed_steps`.
+    /// * Remove tokens that exceed queue capacity.
     ///
     /// # Arguments
     ///
     /// * `connector_circuit_input_records` - total number of inputs **from this connector** ingested by the circuit.
-    /// * `total_circuit_input_records` - total number of inputs across all connectors ingested by the circuit.
-    /// * `total_completed_records` - the number of records processed by the pipeline to completion.
+    /// * `total_initiated_steps` - Number of steps that have been initiated.
+    /// * `total_completed_steps` - Number of steps whose output has been delivered to connectors
     fn update(
         &mut self,
         connector_circuit_input_records: u64,
-        total_circuit_input_records: u64,
-        total_completed_records: u64,
+        total_initiated_steps: Step,
+        total_completed_steps: Step,
     ) {
-        // Label all unlabeled tokens <= connector_input_records with total_circuit_input_records
+        // Label all unlabeled tokens <= `connector_circuit_input_records` with `total_initiated_steps`.
         let first_unlabeled = self
             .token_list
             .partition_point(|(_token, label)| label.is_some());
 
         for (token, label) in self.token_list.range_mut(first_unlabeled..) {
             if *token <= connector_circuit_input_records {
-                *label = Some(total_circuit_input_records)
+                *label = Some(total_initiated_steps)
             } else {
                 break;
             }
         }
 
-        // Delete all but one tokens whose global offset is `<= total_completed_records`.
+        // Delete all but one token whose global offset is `<= total_completed_steps`.
         let first_completed = self.token_list.partition_point(|(_token, label)| {
             if let Some(label) = label {
-                *label <= total_completed_records
+                *label <= total_completed_steps
             } else {
                 false
             }
         });
-
         if first_completed > 0 {
-            for _ in 0..first_completed - 1 {
-                self.token_list.pop_front();
-            }
+            self.token_list.drain(0..first_completed - 1);
         }
 
-        // Remove old tokens.
-        while self.token_list.len() > MAX_TOKENLIST_LEN {
-            self.token_list.pop_back();
-        }
+        // If we've overflowed, delete the newest ones so that the old ones have
+        // a chance to complete.
+        self.token_list.truncate(MAX_TOKENLIST_LEN);
     }
 
     /// Create a token to track records ingested by the connector up to now.
@@ -1499,11 +1545,10 @@ impl TokenListInner {
     ///   (not all of these record have been pushed to the circuit).
     fn add_token(&mut self, token_input_records: u64) {
         // Don't track more than one token for the same offset.
-        if !self.token_list.is_empty() {
+        if let Some((token, _label)) = self.token_list.back() {
             // The number of ingested records grows monotonically.
-            debug_assert!(self.token_list[self.token_list.len() - 1].0 <= token_input_records);
-
-            if self.token_list[self.token_list.len() - 1].0 >= token_input_records {
+            debug_assert!(*token <= token_input_records);
+            if *token >= token_input_records {
                 return;
             }
         }
@@ -1511,33 +1556,22 @@ impl TokenListInner {
         self.token_list.push_back((token_input_records, None));
     }
 
-    /// Check completion status of a token.
+    /// Check completion status of `token`, an offset in the connector's input stream.
     ///
-    /// # Arguments
-    ///
-    /// * `token` - offset in the connector's input stream.
-    ///
-    /// * `total_completed_records` - the total number of records processed by the pipeline to completion.
-    ///   The token is considered completed if its associated global offset is `<= total_completed_records`.
-    ///
-    /// # Return value
-    ///
-    /// `true` if the token is completed; `false` otherwise.
-    fn completion_status(&self, token: u64, total_completed_records: u64) -> bool {
+    /// Returns `None` if the token is definitely incomplete, or `Some(step)` if
+    /// it is complete once [GlobalControllerMetrics::total_completed_steps]
+    /// reaches `step`.
+    fn completion_status(&self, token: u64) -> Option<Step> {
         // The first queued token `>= token`.
         let nearest_index = self
             .token_list
             .partition_point(|(queue_token, _label)| *queue_token < token);
 
-        if nearest_index >= self.token_list.len() {
-            warn!("Client requested completion status of unknown token {token}");
-            return false;
-        };
-
-        if let Some(global_offset) = &self.token_list[nearest_index].1 {
-            *global_offset <= total_completed_records
+        if let Some((_token, label)) = self.token_list.get(nearest_index) {
+            *label
         } else {
-            false
+            warn!("Client requested completion status of unknown token {token}");
+            None
         }
     }
 }
@@ -1549,13 +1583,13 @@ impl TokenList {
     fn update(
         &self,
         connector_circuit_input_records: u64,
-        total_circuit_input_records: u64,
-        total_completed_records: u64,
+        total_initiated_steps: Step,
+        total_completed_steps: Step,
     ) {
         self.0.lock().unwrap().update(
             connector_circuit_input_records,
-            total_circuit_input_records,
-            total_completed_records,
+            total_initiated_steps,
+            total_completed_steps,
         );
     }
 
@@ -1563,11 +1597,13 @@ impl TokenList {
         self.0.lock().unwrap().add_token(token_input_records);
     }
 
-    fn completion_status(&self, token: u64, total_completed_records: u64) -> bool {
-        self.0
-            .lock()
-            .unwrap()
-            .completion_status(token, total_completed_records)
+    /// Check completion status of `token`, an offset in the connector's input stream.
+    ///
+    /// Returns `None` if the token is definitely incomplete, or `Some(step)` if
+    /// it is complete once [GlobalControllerMetrics::total_completed_steps]
+    /// reaches `step`.
+    fn completion_status(&self, token: u64) -> Option<Step> {
+        self.0.lock().unwrap().completion_status(token)
     }
 }
 
@@ -1720,7 +1756,7 @@ impl WatermarkTrackerInner {
                 // a chance to complete; otherwise we risk always evicting all watermarks before the complete
                 // and never reporting any completed watermarks.
                 if self.watermark_with_metadata_list.len() >= MAX_TRACKED_WATERMARKS {
-                    break;
+                    continue;
                 }
 
                 self.watermark_with_metadata_list
@@ -1731,7 +1767,7 @@ impl WatermarkTrackerInner {
                     });
             } else {
                 if self.watermark_list.len() >= MAX_TRACKED_WATERMARKS {
-                    break;
+                    continue;
                 }
                 self.watermark_list.push_back(WatermarkListEntry {
                     watermark,
@@ -1826,35 +1862,6 @@ impl WatermarkTrackerInner {
     }
 }
 
-/// A watermark that has been fully processed by the pipeline.
-///
-/// Keep in sync with feldera_types::ExternalCompletedWatermark
-#[derive(Clone, Debug)]
-pub(crate) struct CompletedWatermark {
-    /// Metadata that describes the position in the input stream, e.g., Kafka partition/offset pairs.
-    pub metadata: JsonValue,
-
-    /// Timestamp when the data was ingested from the wire.
-    pub ingested_at: DateTime<Utc>,
-
-    /// Timestamp when the data was processed by the circuit.
-    pub processed_at: DateTime<Utc>,
-
-    /// Timestamp when all outputs produced from this input have been pushed to all output endpoints.
-    pub completed_at: DateTime<Utc>,
-}
-
-impl CompletedWatermark {
-    pub fn into_api_type(self) -> ExternalCompletedWatermark {
-        ExternalCompletedWatermark {
-            metadata: self.metadata,
-            ingested_at: self.ingested_at.to_rfc3339(),
-            processed_at: self.processed_at.to_rfc3339(),
-            completed_at: self.completed_at.to_rfc3339(),
-        }
-    }
-}
-
 #[derive(Debug)]
 struct WatermarkListEntry {
     watermark: Watermark,
@@ -1877,11 +1884,20 @@ pub struct InputEndpointStatus {
     /// The first fatal error that occurred at the endpoint.
     pub fatal_error: Mutex<Option<String>>,
 
+    /// Recent transport errors.
+    pub transport_errors: Mutex<ConnectorErrorList>,
+
+    /// Recent parse errors.
+    pub parse_errors: Mutex<ConnectorErrorList>,
+
+    /// Health status of the connector.
+    pub health: Mutex<Option<ConnectorHealth>>,
+
     /// Progress within the latest step.
     pub progress: Mutex<Option<StepResults>>,
 
     /// May be None during endpoint initialization.
-    pub reader: Option<Box<dyn InputReader>>,
+    pub reader: Option<Arc<dyn InputReader>>,
 
     /// Endpoint support for fault tolerance.
     pub fault_tolerance: Option<FtModel>,
@@ -1905,6 +1921,10 @@ pub struct InputEndpointStatus {
     /// endpoint or endpoints advance beyond the barriers.
     pub barrier: AtomicBool,
 
+    /// Connector-specific metrics for Prometheus export, registered via
+    /// [`InputConsumer::set_custom_metrics`].
+    pub custom_metrics: Option<Arc<dyn ConnectorMetrics>>,
+
     /// Completion tokens associated with the endpoint.
     completion_tokens: TokenList,
 
@@ -1912,7 +1932,16 @@ pub struct InputEndpointStatus {
 }
 
 impl InputEndpointStatus {
-    pub fn to_api_type(&self) -> ExternalInputEndpointStatus {
+    /// Convert the endpoint status to the API type.
+    ///
+    /// If `full` is true, generates a full version of the endpoint status,
+    /// including the list of errors. This status can be returned via the
+    /// `/tables/<table_name>/connectors/<connector_name>/status` endpoint.
+    ///
+    /// If `full` is false, generates a trimmed version of the endpoint status,
+    /// not including the list of errors. This status can be returned via the
+    /// `/stats` endpoint.
+    pub fn to_api_type(&self, full: bool) -> ExternalInputEndpointStatus {
         ExternalInputEndpointStatus {
             endpoint_name: self.endpoint_name.clone(),
             config: feldera_types::adapter_stats::ShortEndpointConfig {
@@ -1920,12 +1949,20 @@ impl InputEndpointStatus {
             },
             metrics: self.metrics.to_api_type(),
             fatal_error: self.fatal_error(),
+            parse_errors: if full {
+                Some(self.parse_errors.lock().unwrap().to_api_type())
+            } else {
+                None
+            },
+            transport_errors: if full {
+                Some(self.transport_errors.lock().unwrap().to_api_type())
+            } else {
+                None
+            },
+            health: self.health.lock().unwrap().clone(),
             paused: self.is_paused_by_user(),
             barrier: self.is_barrier(),
-            completed_frontier: self
-                .completed_frontier
-                .completed_watermark()
-                .map(|watermark| watermark.into_api_type()),
+            completed_frontier: self.completed_frontier.completed_watermark(),
         }
     }
 }
@@ -1948,11 +1985,15 @@ impl InputEndpointStatus {
                     initial_statistics.into()
                 }),
             fatal_error: Mutex::new(None),
+            transport_errors: Mutex::new(ConnectorErrorList::new()),
+            parse_errors: Mutex::new(ConnectorErrorList::new()),
+            health: Mutex::new(None),
             progress: Mutex::new(None),
             paused: AtomicBool::new(paused_by_user),
             barrier: AtomicBool::new(false),
             reader: None,
             fault_tolerance,
+            custom_metrics: None,
             completion_tokens: TokenList::new(),
             completed_frontier: WatermarkTracker::new(),
         }
@@ -1993,22 +2034,38 @@ impl InputEndpointStatus {
     }
 
     /// Increment parser error counter.
-    fn parse_error(&self) {
-        self.metrics.num_parse_errors.fetch_add(1, Ordering::AcqRel);
+    fn parse_error(&self, tag: Option<&str>, error: &ParseError) {
+        let last_error = self.metrics.num_parse_errors.fetch_add(1, Ordering::AcqRel);
+
+        self.parse_errors
+            .lock()
+            .unwrap()
+            .add_error(tag, error, last_error + 1);
     }
 
     /// Increment transport error counter.  If this is the first fatal error,
     /// save it in `self.fatal_error`.
-    pub fn transport_error(&self, fatal: bool, error: &AnyError) {
-        self.metrics
+    pub fn transport_error(&self, fatal: bool, tag: Option<&str>, error: &AnyError) {
+        let last_error = self
+            .metrics
             .num_transport_errors
             .fetch_add(1, Ordering::AcqRel);
+
+        self.transport_errors
+            .lock()
+            .unwrap()
+            .add_error(tag, error, last_error + 1);
+
         if fatal {
             let mut fatal_error = self.fatal_error.lock().unwrap();
             if fatal_error.is_none() {
                 *fatal_error = Some(error.to_string());
             }
         }
+    }
+
+    pub fn update_health(&self, health: ConnectorHealth) {
+        *self.health.lock().unwrap() = Some(health);
     }
 
     /// True if the endpoint's `paused_by_user` flag is set to `true`.
@@ -2038,14 +2095,16 @@ impl InputEndpointStatus {
     ///
     /// # Arguments
     ///
-    /// `total_circuit_input_records`, `total_completed_records` - current pipeline-level metrics
-    /// (already updated with `step_results`) used to update `completion_tokens`.
+    /// `total_circuit_input_records`, `total_initiated_steps`,
+    /// `total_completed_steps` - current pipeline-level metrics (already
+    /// updated with `step_results`) used to update `completion_tokens`.
     fn extended(
         &self,
         step_results: StepResults,
         watermarks: Vec<Watermark>,
         total_circuit_input_records: u64,
-        total_completed_records: u64,
+        total_initiated_steps: Step,
+        total_completed_steps: Step,
     ) {
         let num_records = step_results.amt.records as u64;
         let num_bytes = step_results.amt.bytes as u64;
@@ -2065,8 +2124,8 @@ impl InputEndpointStatus {
             .fetch_add(num_records, Ordering::AcqRel);
         self.completion_tokens.update(
             old_circuit_input_records + num_records,
-            total_circuit_input_records,
-            total_completed_records,
+            total_initiated_steps,
+            total_completed_steps,
         );
         self.completed_frontier
             .append(watermarks, total_circuit_input_records);
@@ -2076,11 +2135,7 @@ impl InputEndpointStatus {
     /// `completion_tokens` queue.
     ///
     /// Returns the input offset that can be used to build `CompletionToken`.
-    fn completion_token(
-        &self,
-        total_circuit_input_records: u64,
-        total_completed_records: u64,
-    ) -> u64 {
+    fn completion_token(&self, total_initiated_steps: Step, total_completed_steps: Step) -> u64 {
         let token_input_records = self.metrics.total_records.load(Ordering::Acquire);
 
         // To avoid a race, we add a token _before_ reading the circuit_input_records
@@ -2092,16 +2147,19 @@ impl InputEndpointStatus {
 
         self.completion_tokens.update(
             connector_circuit_input_records,
-            total_circuit_input_records,
-            total_completed_records,
+            total_initiated_steps,
+            total_completed_steps,
         );
         token_input_records
     }
 
-    /// Check the status of a completion token.
-    fn completion_status(&self, token: u64, total_completed_records: u64) -> bool {
-        self.completion_tokens
-            .completion_status(token, total_completed_records)
+    /// Check completion status of `token`, an offset in the connector's input stream.
+    ///
+    /// Returns `None` if the token is definitely incomplete, or `Some(step)` if
+    /// it is complete once [GlobalControllerMetrics::total_completed_steps]
+    /// reaches `step`.
+    fn completion_status(&self, token: u64) -> Option<Step> {
+        self.completion_tokens.completion_status(token)
     }
 
     pub fn is_barrier(&self) -> bool {
@@ -2158,7 +2216,26 @@ pub struct OutputEndpointMetrics {
     /// This metric tracks the end-to-end progress of the pipeline: the output
     /// of this endpoint is equal to the output of the circuit after
     /// processing `total_processed_input_records` records.
+    ///
+    /// In a multihost pipeline, this count reflects only the input records
+    /// processed on the same host as the output endpoint, which is not usually
+    /// meaningful.
     pub total_processed_input_records: AtomicU64,
+
+    /// The number of steps whose input records have been processed by the
+    /// endpoint.
+    ///
+    /// This is meaningful in a multihost pipeline because steps are
+    /// synchronized across all of the hosts.
+    ///
+    /// # Interpretation
+    ///
+    /// This is a count, not a step number.  If `total_processed_steps` is 0, no
+    /// steps have been processed to completion.  If `total_processed_steps >
+    /// 0`, then the last step whose input records have been processed to
+    /// completion is `total_processed_steps - 1`. A record that was ingested in
+    /// step `n` is fully processed when `total_processed_steps > n`.
+    pub total_processed_steps: Atomic<Step>,
 
     /// Extra memory in use beyond that used for queuing records.  Not all
     /// output connectors report this.
@@ -2181,6 +2258,7 @@ impl OutputEndpointMetrics {
             num_encode_errors: AtomicU64::new(initial_statistics.num_encode_errors),
             num_transport_errors: AtomicU64::new(initial_statistics.num_transport_errors),
             total_processed_input_records: AtomicU64::new(total_processed_input_records),
+            total_processed_steps: Atomic::new(0),
             memory: AtomicU64::new(0),
         }
     }
@@ -2216,8 +2294,78 @@ impl OutputEndpointMetrics {
             total_processed_input_records: self
                 .total_processed_input_records
                 .load(Ordering::Relaxed),
+            total_processed_steps: self.total_processed_steps.load(Ordering::Relaxed),
             memory: self.memory.load(Ordering::Relaxed),
         }
+    }
+}
+
+/// Statistics for a collection of records being processed by an output
+/// endpoint.
+#[derive(Copy, Clone, Default)]
+pub struct ProcessedRecords {
+    /// Total number of input records ingested by the circuit across all
+    /// endpoints corresponding to these records.
+    ///
+    /// When the records represented by these statistics are fully processed by
+    /// the output endpoint, this value becomes the output endpoint's new
+    /// [OutputEndpointMetrics::total_processed_input_records].
+    pub total_processed_input_records: u64,
+
+    /// The number of steps whose input records have been processed by the
+    /// endpoint, once the endpoint has fully processed these records.
+    ///
+    /// When the records represented by these statistics are fully processed by
+    /// the output endpoint, this value becomes the output endpoint's new
+    /// [OutputEndpointMetrics::total_processed_steps].
+    pub total_processed_steps: Step,
+}
+
+/// Recent connector errors.
+///
+/// Stores up to MAX_CONNECTOR_ERRORS most recent errors for each tag.
+/// When the number of errors for a tag exceeds MAX_CONNECTOR_ERRORS, the oldest error is removed.
+#[derive(Debug)]
+pub struct ConnectorErrorList {
+    errors: BTreeMap<Option<String>, VecDeque<ConnectorError>>,
+}
+
+impl Default for ConnectorErrorList {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ConnectorErrorList {
+    pub fn new() -> Self {
+        Self {
+            errors: BTreeMap::new(),
+        }
+    }
+
+    pub fn add_error<E: Display>(&mut self, tag: Option<&str>, error: E, index: u64) {
+        let tag = tag.map(|tag| tag.to_string());
+        let entry: &mut VecDeque<ConnectorError> = self.errors.entry(tag.clone()).or_default();
+
+        entry.push_back(ConnectorError {
+            timestamp: Utc::now(),
+            tag: tag.map(|tag| tag.to_string()),
+            index,
+            message: error.to_string(),
+        });
+        if entry.len() > MAX_CONNECTOR_ERRORS {
+            entry.pop_front();
+        }
+    }
+
+    pub fn to_api_type(&self) -> Vec<ConnectorError> {
+        let mut errors = self
+            .errors
+            .iter()
+            .flat_map(|(_tag, errors)| errors.iter().cloned())
+            .collect::<Vec<_>>();
+        errors.sort_by_key(|error| error.index);
+        errors
     }
 }
 
@@ -2234,10 +2382,27 @@ pub struct OutputEndpointStatus {
 
     /// The first fatal error that occurred at the endpoint.
     pub fatal_error: Mutex<Option<String>>,
+
+    /// Recent encode errors.
+    pub encode_errors: Mutex<ConnectorErrorList>,
+
+    /// Recent transport errors.
+    pub transport_errors: Mutex<ConnectorErrorList>,
+
+    pub health: Mutex<Option<ConnectorHealth>>,
 }
 
 impl OutputEndpointStatus {
-    pub fn to_api_type(&self) -> ExternalOutputEndpointStatus {
+    /// Convert the endpoint status to the API type.
+    ///
+    /// If `full` is true, generates a full version of the endpoint status,
+    /// including the list of errors. This status can be returned via the
+    /// `/tables/<table_name>/connectors/<connector_name>/status` endpoint.
+    ///
+    /// If `full` is false, generates a trimmed version of the endpoint status,
+    /// not including the list of errors. This status can be returned via the
+    /// `/stats` endpoint.
+    pub fn to_api_type(&self, full: bool) -> ExternalOutputEndpointStatus {
         ExternalOutputEndpointStatus {
             endpoint_name: self.endpoint_name.clone(),
             config: ShortEndpointConfig {
@@ -2245,7 +2410,23 @@ impl OutputEndpointStatus {
             },
             metrics: self.metrics.to_api_type(),
             fatal_error: self.fatal_error(),
+            encode_errors: if full {
+                Some(self.encode_errors.lock().unwrap().to_api_type())
+            } else {
+                None
+            },
+            transport_errors: if full {
+                Some(self.transport_errors.lock().unwrap().to_api_type())
+            } else {
+                None
+            },
+            health: self.health.lock().unwrap().clone(),
         }
+    }
+
+    pub fn is_buffer_full(&self) -> bool {
+        self.metrics.queued_records.load(Ordering::Acquire)
+            >= self.config.connector_config.max_queued_records
     }
 
     pub fn is_busy(&self) -> bool {
@@ -2277,6 +2458,9 @@ impl OutputEndpointStatus {
             config: config.clone(),
             metrics: OutputEndpointMetrics::new(total_processed_records, initial_statistics),
             fatal_error: Mutex::new(None),
+            encode_errors: Mutex::new(ConnectorErrorList::new()),
+            transport_errors: Mutex::new(ConnectorErrorList::new()),
+            health: Mutex::new(None),
         }
     }
 
@@ -2289,11 +2473,14 @@ impl OutputEndpointStatus {
 
     /// A batch has been pushed to the output transport directly from the queue,
     /// bypassing the buffer.
-    fn output_batch(&self, total_processed_input_records: Option<u64>, num_records: usize) -> u64 {
-        if let Some(total_processed_input_records) = total_processed_input_records {
+    fn output_batch(&self, processed: Option<ProcessedRecords>, num_records: usize) -> u64 {
+        if let Some(processed) = processed {
             self.metrics
                 .total_processed_input_records
-                .store(total_processed_input_records, Ordering::Release);
+                .store(processed.total_processed_input_records, Ordering::Release);
+            self.metrics
+                .total_processed_steps
+                .store(processed.total_processed_steps, Ordering::Release);
         }
 
         let old = self
@@ -2328,16 +2515,18 @@ impl OutputEndpointStatus {
     ///
     /// # Arguments
     ///
-    /// * `total_processed_input_records` - the output of the endpoint is now
-    ///   up to speed with the output of the circuit after processing this
-    ///   many records.
-    fn output_buffered_batches(&self, total_processed_input_records: u64) {
+    /// * `processed` - the output of the endpoint is now up to speed with the
+    ///   output of the circuit after processing these records.
+    fn output_buffered_batches(&self, processed: ProcessedRecords) {
         self.metrics.buffered_records.store(0, Ordering::Release);
         self.metrics.buffered_batches.store(0, Ordering::Release);
 
         self.metrics
             .total_processed_input_records
-            .store(total_processed_input_records, Ordering::Release);
+            .store(processed.total_processed_input_records, Ordering::Release);
+        self.metrics
+            .total_processed_steps
+            .store(processed.total_processed_steps, Ordering::Release);
     }
 
     fn output_buffer(&self, num_bytes: usize, num_records: usize) {
@@ -2350,18 +2539,31 @@ impl OutputEndpointStatus {
     }
 
     /// Increment encoder error counter.
-    fn encode_error(&self) {
-        self.metrics
+    fn encode_error(&self, tag: Option<&str>, error: &AnyError) {
+        let last_error = self
+            .metrics
             .num_encode_errors
             .fetch_add(1, Ordering::AcqRel);
+
+        self.encode_errors
+            .lock()
+            .unwrap()
+            .add_error(tag, error, last_error + 1);
     }
 
     /// Increment error counter.  If this is the first fatal error,
     /// save it in `self.fatal_error`.
-    fn transport_error(&self, fatal: bool, error: &AnyError) {
-        self.metrics
+    fn transport_error(&self, fatal: bool, tag: Option<&str>, error: &AnyError) {
+        let last_error = self
+            .metrics
             .num_transport_errors
             .fetch_add(1, Ordering::AcqRel);
+
+        self.transport_errors
+            .lock()
+            .unwrap()
+            .add_error(tag, error, last_error + 1);
+
         if fatal {
             let mut fatal_error = self.fatal_error.lock().unwrap();
             if fatal_error.is_none() {
@@ -2370,9 +2572,17 @@ impl OutputEndpointStatus {
         }
     }
 
+    fn update_health(&self, health: ConnectorHealth) {
+        *self.health.lock().unwrap() = Some(health);
+    }
+
     fn num_total_processed_input_records(&self) -> u64 {
         self.metrics
             .total_processed_input_records
             .load(Ordering::Acquire)
+    }
+
+    fn num_total_processed_steps(&self) -> u64 {
+        self.metrics.total_processed_steps.load(Ordering::Acquire)
     }
 }

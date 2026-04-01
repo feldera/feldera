@@ -67,10 +67,12 @@ which Feldera is built.
 | Name | Type | Description |
 | :--- | :--- | :---------- |
 | <a name='compaction_stall_duration_seconds'>`compaction_stall_duration_seconds`</a> |counter | Time in seconds a worker was stalled waiting for more merges to complete. |
-| <a name='dbsp_operator_checkpoint_latency_seconds'>`dbsp_operator_checkpoint_latency_seconds`</a> |histogram | Latency of individual operator checkpoint operations in seconds. (Because checkpoints run in parallel across workers, these will not add to `feldera_checkpoint_latency_seconds`.) |
+| <a name='dbsp_operator_checkpoint_latency_seconds'>`dbsp_operator_checkpoint_latency_seconds`</a> |histogram | The time that individual operator checkpoint operations delayed the pipeline, in seconds. (Because checkpoints run in parallel across workers, these will add up to more than `feldera_checkpoint_delay_seconds`.) |
 | <a name='dbsp_runtime_elapsed_seconds_total'>`dbsp_runtime_elapsed_seconds_total`</a> |counter | Time elapsed while the pipeline is executing a step, multiplied by the number of foreground and background threads, in seconds. |
 | <a name='dbsp_step_latency_seconds'>`dbsp_step_latency_seconds`</a> |histogram | Latency of DBSP steps over the last 60 seconds or 1000 steps, whichever is less, in seconds |
 | <a name='dbsp_steps_total'>`dbsp_steps_total`</a> |counter | Total number of DBSP steps executed. |
+| <a name='output_stall_seconds'>`output_stall_seconds`</a> |gauge | If the pipeline is currently stalled because one or more output connectors' output buffers were full, this is the time in seconds for which it has been stalled.<br/><br/>If the pipeline is not currently stalled, this is zero.<br/><br/>If this is nonzero, then the output connectors causing the stall can be identified by observing which values of `output_connector_queued_records` are greater than or equal to the configured maximum (which defaults to 1,000,000). |
+| <a name='output_stall_seconds_total'>`output_stall_seconds_total`</a> |counter | Time in seconds that the pipeline was stalled because one or more output connectors' output buffers were full.<br/><br/>This value is greater than or equal to `output_stall_seconds`. |
 
 ## Record Processing
 
@@ -100,6 +102,14 @@ to work with data larger than memory.
 | <a name='storage_byte_seconds_total'>`storage_byte_seconds_total`</a> |counter | Storage usage integrated over time during this run of the pipeline, in bytes × seconds. |
 | <a name='storage_cache_usage_bytes'>`storage_cache_usage_bytes`</a> |gauge | The number of bytes of memory currently in use for caching data on storage. |
 | <a name='storage_cache_usage_limit_bytes_total'>`storage_cache_usage_limit_bytes_total`</a> |counter | The limit for the number of bytes of memory for caching data on storage. |
+| <a name='storage_fbuf_slab_alloc_served_by_slab_percent'>`storage_fbuf_slab_alloc_served_by_slab_percent`</a> |gauge | The percentage of `FBuf` allocation requests served by slab pools. |
+| <a name='storage_fbuf_slab_alloc_total'>`storage_fbuf_slab_alloc_total`</a> |counter | The total number of `FBuf` allocation requests across all slab size classes and fallbacks. |
+| <a name='storage_fbuf_slab_free_served_by_slab_percent'>`storage_fbuf_slab_free_served_by_slab_percent`</a> |gauge | The percentage of `FBuf` deallocation requests served by slab pools. |
+| <a name='storage_fbuf_slab_free_total'>`storage_fbuf_slab_free_total`</a> |counter | The total number of `FBuf` deallocation requests across all slab size classes and fallbacks. |
+| <a name='storage_fbuf_slab_size_class_alloc_served_by_slab_percent'>`storage_fbuf_slab_size_class_alloc_served_by_slab_percent`</a> |gauge | The percentage of `FBuf` allocation requests served by each slab size class. |
+| <a name='storage_fbuf_slab_size_class_alloc_total'>`storage_fbuf_slab_size_class_alloc_total`</a> |counter | The total number of `FBuf` allocation requests for each slab size class. |
+| <a name='storage_fbuf_slab_size_class_free_served_by_slab_percent'>`storage_fbuf_slab_size_class_free_served_by_slab_percent`</a> |gauge | The percentage of `FBuf` deallocation requests served by each slab size class. |
+| <a name='storage_fbuf_slab_size_class_free_total'>`storage_fbuf_slab_size_class_free_total`</a> |counter | The total number of `FBuf` deallocation requests for each slab size class. |
 | <a name='storage_read_block_bytes'>`storage_read_block_bytes`</a> |histogram | Sizes in bytes of blocks read from storage. |
 | <a name='storage_read_latency_seconds'>`storage_read_latency_seconds`</a> |histogram | Read latency for storage blocks in seconds |
 | <a name='storage_sync_latency_seconds'>`storage_sync_latency_seconds`</a> |histogram | Sync latency in seconds |
@@ -136,15 +146,21 @@ invisible to users unless a pause or checkpoint happens mid-batch.
 
 | Name | Type | Description |
 | :--- | :--- | :---------- |
+| <a name='input_connector_barrier'>`input_connector_barrier`</a> |gauge | Whether the input connector is currently a barrier for checkpointing/suspend (1 for true, 0 for false). |
 | <a name='input_connector_buffered_records'>`input_connector_buffered_records`</a> |gauge | Amount of data currently buffered by an input connector, in records. |
 | <a name='input_connector_buffered_records_bytes'>`input_connector_buffered_records_bytes`</a> |gauge | Amount of data currently buffered by an input connector, in bytes. |
 | <a name='input_connector_bytes_total'>`input_connector_bytes_total`</a> |counter | Total number of bytes received by an input connector. |
 | <a name='input_connector_completion_latency_seconds'>`input_connector_completion_latency_seconds`</a> |histogram | Time between when the connector receives new data and when the pipeline processes this data, computes output updates, and sends these updates to all output connectors, over the last 600 seconds or 10,000 samples. |
+| <a name='input_connector_delta_phase'>`input_connector_delta_phase`</a> |gauge | Current phase: 0=loading_snapshot, 1=follow/streaming, 2=completed. |
+| <a name='input_connector_delta_snapshot_completed_seconds'>`input_connector_delta_snapshot_completed_seconds`</a> |gauge | Unix epoch seconds when the snapshot phase finished (0 if not yet complete). |
+| <a name='input_connector_delta_snapshot_records_total'>`input_connector_delta_snapshot_records_total`</a> |counter | Total records loaded during the snapshot phase. |
+| <a name='input_connector_end_of_input'>`input_connector_end_of_input`</a> |gauge | Whether the input connector has reached end of input (1 for true, 0 for false). |
 | <a name='input_connector_errors_parse_total'>`input_connector_errors_parse_total`</a> |counter | Total number of errors encountered parsing records received by the input connector. |
 | <a name='input_connector_errors_transport_total'>`input_connector_errors_transport_total`</a> |counter | Total number of errors encountered by the input connector at the transport layer. |
 | <a name='input_connector_extra_memory_bytes'>`input_connector_extra_memory_bytes`</a> |gauge | Additional memory used by an input connector beyond that used for buffered records. |
 | <a name='input_connector_processing_latency_seconds'>`input_connector_processing_latency_seconds`</a> |histogram | Time between when the connector receives new data and when the pipeline processes this data and computes output updates, over the last 600 seconds or 10,000 samples. |
 | <a name='input_connector_records_total'>`input_connector_records_total`</a> |counter | Total number of records received by an input connector. |
+| <a name='input_connector_running'>`input_connector_running`</a> |gauge | Whether the input connector is running (1) or paused by the user (0). |
 
 ## Output Connectors
 
@@ -163,6 +179,8 @@ These metrics accumulate across checkpoint and resume.
 | <a name='output_connector_errors_encode_total'>`output_connector_errors_encode_total`</a> |counter | Total number of errors encountered encoding records to send. |
 | <a name='output_connector_errors_transport_total'>`output_connector_errors_transport_total`</a> |counter | Total number of errors encountered at the transport layer sending records. |
 | <a name='output_connector_extra_memory_bytes'>`output_connector_extra_memory_bytes`</a> |gauge | Additional memory used by an output connector beyond that used for buffered records. |
+| <a name='output_connector_queued_batches'>`output_connector_queued_batches`</a> |gauge | Number of batches of records currently queued by the output connector. |
+| <a name='output_connector_queued_records'>`output_connector_queued_records`</a> |gauge | Number of records currently queued by the output connector. |
 | <a name='output_connector_records_total'>`output_connector_records_total`</a> |counter | Total number of records sent by the output connector. |
 
 ## Checkpoint Synchronization
@@ -183,3 +201,18 @@ These metrics report the status of [checkpoint synchronization].
 | <a name='checkpoint_sync_push_success'>`checkpoint_sync_push_success`</a> |counter | Number of checkpoints pushed successfully. |
 | <a name='checkpoint_sync_push_transfer_speed_bytes_per_second'>`checkpoint_sync_push_transfer_speed_bytes_per_second`</a> |histogram | Transfer speed when pushing a checkpoint, in bytes per second. |
 | <a name='checkpoint_sync_push_transferred_bytes'>`checkpoint_sync_push_transferred_bytes`</a> |histogram | Bytes transferred when pushing a checkpoint. |
+
+## Transactions
+
+These metrics report the status of [transactions].
+
+[transactions]: /pipelines/transactions.md
+
+| Name | Type | Description |
+| :--- | :--- | :---------- |
+| <a name='transaction_commit_seconds'>`transaction_commit_seconds`</a> |histogram | Transaction commit time, that is, from starting commit to finishing commit. |
+| <a name='transaction_completed_operators'>`transaction_completed_operators`</a> |gauge | Number of operators that have been fully flushed while the current transaction is committing.  This is 0 if no transaction is active, or if a transaction is running but has not yet started committing. |
+| <a name='transaction_in_progress_operators'>`transaction_in_progress_operators`</a> |gauge | Number of operators that are currently being flushed while the current transaction is committing.  This is 0 if no transaction is active, or if a transaction is running but has not yet started committing. |
+| <a name='transaction_ingest_seconds'>`transaction_ingest_seconds`</a> |histogram | Transaction ingestion time, that is, from transaction start to start of commit. |
+| <a name='transaction_remaining_operators'>`transaction_remaining_operators`</a> |gauge | Number of operators that have not started flushing while the current transaction is committing.  This is 0 if no transaction is active, or if a transaction is running but has not yet started committing. |
+| <a name='transaction_state'>`transaction_state`</a> |gauge | 0 when no transaction is active, 1 when a transaction has started, 2 while a transaction is committing. |

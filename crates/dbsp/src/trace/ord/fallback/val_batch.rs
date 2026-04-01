@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use super::utils::{copy_to_builder, pick_merge_destination};
 use crate::storage::buffer_cache::CacheStats;
-use crate::storage::tracking_bloom_filter::BloomFilterStats;
+use crate::storage::filter_stats::FilterStats;
 use crate::trace::cursor::{DelegatingCursor, PushCursor};
 use crate::trace::ord::file::val_batch::FileValBuilder;
 use crate::trace::ord::vec::val_batch::VecValBuilder;
@@ -274,10 +274,18 @@ where
     }
 
     #[inline]
-    fn filter_stats(&self) -> BloomFilterStats {
+    fn membership_filter_stats(&self) -> FilterStats {
         match &self.inner {
-            Inner::File(file) => file.filter_stats(),
-            Inner::Vec(vec) => vec.filter_stats(),
+            Inner::File(file) => file.membership_filter_stats(),
+            Inner::Vec(vec) => vec.membership_filter_stats(),
+        }
+    }
+
+    #[inline]
+    fn range_filter_stats(&self) -> FilterStats {
+        match &self.inner {
+            Inner::File(file) => file.range_filter_stats(),
+            Inner::Vec(vec) => vec.range_filter_stats(),
         }
     }
 
@@ -304,13 +312,6 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.sample_keys(rng, sample_size, output),
             Inner::File(file) => file.sample_keys(rng, sample_size, output),
-        }
-    }
-
-    fn maybe_contains_key(&self, hash: u64) -> bool {
-        match &self.inner {
-            Inner::Vec(vec) => vec.maybe_contains_key(hash),
-            Inner::File(file) => file.maybe_contains_key(hash),
         }
     }
 }
@@ -359,6 +360,13 @@ where
                 path,
             )?),
         })
+    }
+
+    fn negative_weight_count(&self) -> Option<u64> {
+        match &self.inner {
+            Inner::File(file) => file.negative_weight_count(),
+            Inner::Vec(vec) => vec.negative_weight_count(),
+        }
     }
 }
 

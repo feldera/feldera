@@ -6,6 +6,7 @@ Uses pytest-xdist hooks to ensure OIDC token fetching happens only once on the m
 """
 
 import pytest
+import logging
 
 
 def is_master(config) -> bool:
@@ -15,6 +16,9 @@ def is_master(config) -> bool:
 
 def pytest_configure(config):
     """Configure hook: fetch OIDC token on master node only."""
+    # Keep SDK debug logs enabled in tests without affecting production defaults.
+    logging.getLogger("feldera.rest.feldera_client").setLevel(logging.DEBUG)
+
     if is_master(config):
         # This runs only on the master node (or in single-node mode)
         from feldera.testutils_oidc import setup_token_cache

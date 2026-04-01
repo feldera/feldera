@@ -26,8 +26,8 @@
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
-  import { humanSize } from '$lib/functions/common/string'
   import { triggerFileDownload } from '$lib/services/browser'
+  import DownloadProgressDisplay from '$lib/components/dialogs/DownloadProgressDisplay.svelte'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
 
@@ -147,22 +147,24 @@
 
   // Download profile handler
   const handleDownloadProfile = async (latest: boolean) => {
-    try {
-      isDownloading = true
-      downloadProgress.reset()
-      downloadCancelFn = null
+    isDownloading = true
+    downloadProgress.reset()
+    downloadCancelFn = null
 
+    // Show dialog immediately so the indeterminate animation plays while the request is pending
+    globalDialog.dialog = downloadDialog
+
+    try {
       const result = await api.getSamplyProfile(
         pipeline.current.name,
         latest,
         downloadProgress.onProgress
       )
       if ('expectedInSeconds' in result) {
-        // Profile is still being collected, update countdown with the server's expected time
+        // Profile is still being collected, close the dialog and update countdown
+        globalDialog.dialog = null
         const now = Date.now()
         expectedCompletion = now + result.expectedInSeconds * 1000
-
-        // Ensure collecting state is active
         if (!isCollecting) {
           isCollecting = true
           profileReady = false
@@ -172,15 +174,15 @@
         return
       }
 
-      // Store cancel function
+      // If user dismissed the dialog while the request was pending, stop
+      if (!isDownloading) {
+        result.cancel()
+        return
+      }
+
       downloadCancelFn = result.cancel
 
-      // Show download dialog for actual download
-      globalDialog.dialog = downloadDialog
-
       const download = await result.downloadPromise
-
-      // Await the download to complete
       triggerFileDownload(download.filename, await download.dataPromise)
 
       globalDialog.dialog = null
@@ -343,34 +345,18 @@
 
 {#snippet downloadDialog()}
   <GenericDialog
-    onClose={() => {
-      downloadCancelFn?.()
-      globalDialog.dialog = null
-      isDownloading = false
+    content={{
+      title: 'Downloading Samply Profile',
+      onSuccess: { name: 'Download', callback: () => {} },
+      onCancel: {
+        callback: () => {
+          downloadCancelFn?.()
+          isDownloading = false
+        }
+      }
     }}
-    confirmLabel="Download"
-    onApply={() => {}}
     disabled={true}
   >
-    {#snippet title()}
-      Downloading Samply Profile
-    {/snippet}
-    <div class="flex flex-col items-center gap-3 py-4">
-      <Progress class="h-1" value={downloadProgress.percent ?? 0} max={100}>
-        <Progress.Track>
-          <Progress.Range class="bg-primary-500" />
-        </Progress.Track>
-      </Progress>
-      <div class="flex w-full justify-between gap-2">
-        <span>Downloading profile...</span>
-        {#if downloadProgress.percent}
-          <span
-            >{humanSize(downloadProgress.bytes.downloaded)} / {humanSize(
-              downloadProgress.bytes.total
-            )}</span
-          >
-        {/if}
-      </div>
-    </div>
+    <DownloadProgressDisplay progress={downloadProgress} label="Downloading profile..." />
   </GenericDialog>
 {/snippet}

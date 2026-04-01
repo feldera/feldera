@@ -5,13 +5,95 @@ on:
   workflow_dispatch:
 
 jobs:
+  # HOW JOBS ARE STRUCTURED IN THIS FILE
+  #
+  # Each substantive job (build, test, etc.) must have a matching
+  # cancel-if-<name>-failed sentinel job in the cancel-if-* section below.
+  # GitHub Actions does not cancel sibling jobs when one job fails — they keep
+  # running and waste runner time. The sentinels work around this: each one
+  # watches a single upstream job and immediately cancels the entire run on
+  # failure.
+  #
+  # IMPORTANT: The sentinel cancel is asynchronous. Any job that must not run
+  # when a prior job fails MUST also list that job in its `needs:` field and
+  # check its result in its `if:` condition — do not rely on the cancel alone.
+  # Example: invoke-tests-web-console-unit runs in parallel with the build
+  # jobs, so invoke-build-docker lists it in `needs:` and checks its result in
+  # `if:`. Without that explicit gate, the Docker build can start before the
+  # cancel propagates and waste expensive runner time.
+
+  # Checks whether all build artifacts already exist in a prior run for this
+  # commit. If so, downstream build jobs are skipped and tests download
+  # artifacts from that prior run instead of the current one.
+  # NOTE: No cancel sentinel is needed for this job — it is designed to always
+  # succeed. Individual steps use continue-on-error and the final 'result'
+  # step runs unconditionally, so the job never leaves the workflow in a
+  # failed state.
+  check-prior-build:
+    name: Check for Prior Build Artifacts
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: read
+    # Outputs are set by the final 'result' step so this job always succeeds
+    # and never blocks downstream jobs even if individual checks fail.
+    outputs:
+      artifacts_run_id: ${{ steps.result.outputs.artifacts_run_id }}
+      skip_docker: ${{ steps.result.outputs.skip_docker }}
+    steps:
+      - uses: actions/checkout@v6
+
+      # Finds the first prior run for this commit that has all Rust/Java build
+      # artifacts. If found, its run ID is used by downstream jobs to download
+      # artifacts instead of rebuilding.
+      - name: Find prior run with all Rust/Java build artifacts
+        id: find-builds
+        continue-on-error: true
+        uses: ./.github/actions/find-artifacts-run
+        with:
+          required-artifacts: |
+            fda-x86_64-unknown-linux-gnu
+            fda-aarch64-unknown-linux-gnu
+            fda-x86_64-pc-windows-msvc
+            pipeline-manager-x86_64-unknown-linux-gnu
+            pipeline-manager-aarch64-unknown-linux-gnu
+            feldera-test-binaries-x86_64-unknown-linux-gnu
+            feldera-test-binaries-aarch64-unknown-linux-gnu
+            feldera-sql-compiler
+          token: ${{ github.token }}
+
+      # Checks whether the run found above also has the Docker image artifact.
+      # This artifact is uploaded by merge-manifests only after the image is
+      # verified in GHCR, so its presence guarantees the sha-{sha} tag exists.
+      - name: Check if Docker image artifact also present
+        id: find-docker
+        if: steps.find-builds.outputs.run-id != ''
+        continue-on-error: true
+        uses: ./.github/actions/find-artifacts-run
+        with:
+          required-artifacts: docker-image-ready
+          token: ${{ github.token }}
+          run-id: ${{ steps.find-builds.outputs.run-id }}
+
+      # Consolidates outputs so both are always set even if a find step failed.
+      # Defaults: artifacts_run_id='' (run builds), skip_docker=false (run Docker build).
+      - name: Consolidate outputs
+        id: result
+        if: always()
+        run: |
+          echo "artifacts_run_id=${{ steps.find-builds.outputs.run-id }}" >> "$GITHUB_OUTPUT"
+          echo "skip_docker=${{ steps.find-docker.outputs.run-id != '' && 'true' || 'false' }}" >> "$GITHUB_OUTPUT"
+
   invoke-build-rust:
     name: Build Rust
+    needs: [check-prior-build]
+    if: needs.check-prior-build.outputs.artifacts_run_id == ''
     uses: ./.github/workflows/build-rust.yml
     secrets: inherit
 
   invoke-build-java:
     name: Build Java
+    needs: [check-prior-build]
+    if: needs.check-prior-build.outputs.artifacts_run_id == ''
     uses: ./.github/workflows/build-java.yml
     secrets: inherit
 
@@ -20,55 +102,285 @@ jobs:
     uses: ./.github/workflows/build-docs.yml
     secrets: inherit
 
+  invoke-tests-web-console-unit:
+    name: Web Console Unit Tests
+    uses: ./.github/workflows/test-web-console-unit.yml
+    secrets: inherit
+
   invoke-tests-unit:
     name: Unit Tests
-    needs: [invoke-build-rust, invoke-build-java]
+    needs: [check-prior-build, invoke-build-rust, invoke-build-java]
+    if: |
+      always() &&
+      (needs.invoke-build-rust.result == 'success' || needs.invoke-build-rust.result == 'skipped') &&
+      (needs.invoke-build-java.result == 'success' || needs.invoke-build-java.result == 'skipped')
     uses: ./.github/workflows/test-unit.yml
+    with:
+      artifacts_run_id: ${{ needs.check-prior-build.outputs.artifacts_run_id }}
     secrets: inherit
 
   invoke-tests-adapter:
     name: Adapter Tests
-    needs: [invoke-build-rust]
+    needs: [check-prior-build, invoke-build-rust]
+    if: |
+      always() &&
+      (needs.invoke-build-rust.result == 'success' || needs.invoke-build-rust.result == 'skipped')
     uses: ./.github/workflows/test-adapters.yml
+    with:
+      artifacts_run_id: ${{ needs.check-prior-build.outputs.artifacts_run_id }}
     secrets: inherit
 
   invoke-build-docker:
     name: Build Docker
-    needs: [invoke-build-rust, invoke-build-java]
+    needs: [check-prior-build, invoke-build-rust, invoke-build-java, invoke-tests-web-console-unit]
+    if: |
+      always() &&
+      needs.check-prior-build.outputs.skip_docker != 'true' &&
+      (needs.invoke-build-rust.result == 'success' || needs.invoke-build-rust.result == 'skipped') &&
+      (needs.invoke-build-java.result == 'success' || needs.invoke-build-java.result == 'skipped') &&
+      (needs.invoke-tests-web-console-unit.result == 'success' || needs.invoke-tests-web-console-unit.result == 'skipped')
     uses: ./.github/workflows/build-docker.yml
+    with:
+      artifacts_run_id: ${{ needs.check-prior-build.outputs.artifacts_run_id }}
     secrets: inherit
 
   invoke-generate-sbom:
     name: Generate SBOMs
     needs: [invoke-build-docker]
+    if: |
+      always() &&
+      (needs.invoke-build-docker.result == 'success' || needs.invoke-build-docker.result == 'skipped')
     uses: ./.github/workflows/generate-sbom.yml
+    secrets: inherit
+
+  invoke-tests-web-console-e2e:
+    name: Web Console End-to-End Tests
+    needs: [check-prior-build, invoke-build-docker]
+    if: |
+      always() &&
+      (needs.invoke-build-docker.result == 'success' || needs.invoke-build-docker.result == 'skipped')
+    uses: ./.github/workflows/test-web-console-e2e.yml
     secrets: inherit
 
   invoke-tests-integration-platform:
     name: Integration Tests
-    needs: [invoke-build-docker]
+    needs: [check-prior-build, invoke-build-docker]
+    if: |
+      always() &&
+      (needs.invoke-build-docker.result == 'success' || needs.invoke-build-docker.result == 'skipped')
     uses: ./.github/workflows/test-integration-platform.yml
+    with:
+      artifacts_run_id: ${{ needs.check-prior-build.outputs.artifacts_run_id }}
     secrets: inherit
 
   invoke-tests-integration-runtime:
     name: Integration Tests
-    needs: [invoke-build-java]
+    needs: [check-prior-build, invoke-build-java]
+    if: |
+      always() &&
+      (needs.invoke-build-java.result == 'success' || needs.invoke-build-java.result == 'skipped')
     uses: ./.github/workflows/test-integration-runtime.yml
     secrets: inherit
 
   invoke-tests-java:
     name: Java Tests
-    needs: [invoke-build-java]
+    needs: [check-prior-build, invoke-build-java]
+    if: |
+      always() &&
+      (needs.invoke-build-java.result == 'success' || needs.invoke-build-java.result == 'skipped')
     uses: ./.github/workflows/test-java.yml
     secrets: inherit
 
   invoke-publish-crates-dry-run:
     name: Publish Crates (Dry Run)
-    needs: [invoke-build-rust]
+    needs: [check-prior-build, invoke-build-rust]
+    if: |
+      always() &&
+      (needs.invoke-build-rust.result == 'success' || needs.invoke-build-rust.result == 'skipped')
     uses: ./.github/workflows/publish-crates.yml
     with:
       environment: ci
     secrets: inherit
+
+  cancel-if-tests-web-console-unit-failed:
+    name: Cancel if Web Console Unit Tests Failed
+    needs: [invoke-tests-web-console-unit]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
+  cancel-if-build-rust-failed:
+    name: Cancel if Rust Build Failed
+    needs: [invoke-build-rust]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
+  cancel-if-build-java-failed:
+    name: Cancel if Java Build Failed
+    needs: [invoke-build-java]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
+  cancel-if-build-docs-failed:
+    name: Cancel if Docs Build Failed
+    needs: [invoke-build-docs]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
+  cancel-if-tests-unit-failed:
+    name: Cancel if Unit Tests Failed
+    needs: [invoke-tests-unit]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
+  cancel-if-tests-adapter-failed:
+    name: Cancel if Adapter Tests Failed
+    needs: [invoke-tests-adapter]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
+  cancel-if-build-docker-failed:
+    name: Cancel if Docker Build Failed
+    needs: [invoke-build-docker]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
+  cancel-if-tests-web-console-integration-failed:
+    name: Cancel if Web Console Integration Tests Failed
+    needs: [invoke-tests-web-console-e2e]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
+  cancel-if-tests-integration-platform-failed:
+    name: Cancel if Platform Integration Tests Failed
+    needs: [invoke-tests-integration-platform]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
+  cancel-if-tests-integration-runtime-failed:
+    name: Cancel if Runtime Integration Tests Failed
+    needs: [invoke-tests-integration-runtime]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
+  cancel-if-tests-java-failed:
+    name: Cancel if Java Tests Failed
+    needs: [invoke-tests-java]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
+  cancel-if-publish-crates-dry-run-failed:
+    name: Cancel if Publish Crates Dry Run Failed
+    needs: [invoke-publish-crates-dry-run]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
 
   # This job needs to be called main (the same as the ci-pre-mergequeue.yml workflow)
   # because of how merge queues work: https://stackoverflow.com/a/78030618
@@ -77,9 +389,12 @@ jobs:
     if: always()
     runs-on: ubuntu-latest-amd64
     needs:
+      - check-prior-build
       - invoke-build-rust
       - invoke-build-java
       - invoke-build-docs
+      - invoke-tests-web-console-unit
+      - invoke-tests-web-console-e2e
       - invoke-tests-unit
       - invoke-tests-adapter
       - invoke-build-docker

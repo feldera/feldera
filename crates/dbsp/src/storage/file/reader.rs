@@ -5,9 +5,9 @@
 use super::format::{Compression, FileTrailer};
 use super::{AnyFactories, Deserializer, Factories};
 use crate::dynamic::{DynVec, WeightTrait};
-use crate::storage::buffer_cache::{CacheAccess, CacheEntry};
-use crate::storage::file::format::FilterBlock;
-use crate::storage::tracking_bloom_filter::{BloomFilterStats, TrackingBloomFilter};
+use crate::storage::buffer_cache::CacheAccess;
+use crate::storage::file::format::{BatchMetadata, FilterBlock};
+use crate::storage::tracking_bloom_filter::TrackingBloomFilter;
 use crate::storage::{
     backend::StorageError,
     buffer_cache::{BufferCache, FBuf},
@@ -29,6 +29,7 @@ use binrw::{
 };
 use crc32c::crc32c;
 use dyn_clone::clone_box;
+use feldera_buffer_cache::CacheEntry;
 use feldera_storage::StoragePath;
 use feldera_storage::file::FileId;
 use size_of::SizeOf;
@@ -49,7 +50,7 @@ use std::{
     sync::Arc,
 };
 use thiserror::Error as ThisError;
-use tracing::{info, warn};
+use tracing::info;
 
 mod bulk_rows;
 pub use bulk_rows::BulkRows;
@@ -654,6 +655,12 @@ where
             DeserializeDyn::deserialize_with(item.fst(), key, &mut deserializer)
         }
     }
+    unsafe fn key_range(&self, factories: &Factories<K, A>, min: &mut K, max: &mut K) {
+        unsafe {
+            self.key(factories, 0, min);
+            self.key(factories, self.n_values() - 1, max);
+        }
+    }
     unsafe fn aux(&self, factories: &Factories<K, A>, index: usize, aux: &mut A) {
         unsafe {
             let item = self.archived_item(factories, index);
@@ -805,6 +812,33 @@ impl TreeNode {
             NodeType::Data => Ok(TreeBlock::Data(DataBlock::new(file, self)?)),
             NodeType::Index => Ok(TreeBlock::Index(IndexBlock::new(file, self)?)),
         }
+    }
+
+    fn key_range<K, A>(
+        &self,
+        file: &ImmutableFileRef,
+        factories: &Factories<K, A>,
+    ) -> Result<(Box<K>, Box<K>), Error>
+    where
+        K: DataTrait + ?Sized,
+        A: DataTrait + ?Sized,
+    {
+        let key_factory = factories.key_factory;
+        let mut min = key_factory.default_box();
+        let mut max = key_factory.default_box();
+
+        match self.read::<K, A>(file)? {
+            // SAFETY: Unsafe because of serialization
+            TreeBlock::Data(data_block) => unsafe {
+                data_block.key_range(factories, min.as_mut(), max.as_mut());
+            },
+            // SAFETY: Unsafe because of serialization
+            TreeBlock::Index(index_block) => unsafe {
+                index_block.key_range(min.as_mut(), max.as_mut());
+            },
+        }
+
+        Ok((min, max))
     }
 }
 
@@ -1111,6 +1145,17 @@ where
         }
     }
 
+    unsafe fn key_range(&self, min: &mut K, max: &mut K) {
+        unsafe {
+            self.get_bound(0, min);
+            self.max_bound(max);
+        }
+    }
+
+    unsafe fn max_bound(&self, bound: &mut K) {
+        unsafe { self.get_bound(self.last_bound_index(), bound) }
+    }
+
     /// Returns the index of the child of this index block that contains a row
     /// in the range `target_rows` and which may contain a key for which
     /// `compare` returns `bias` or [Equal], or `None` if there is no such
@@ -1204,6 +1249,10 @@ where
         self.child_offsets.count
     }
 
+    fn last_bound_index(&self) -> usize {
+        self.n_children() * 2 - 1
+    }
+
     /// Returns the comparison of the largest bound key using `compare`.
     unsafe fn compare_max<C>(&self, key_factory: &dyn Factory<K>, compare: &C) -> Ordering
     where
@@ -1212,7 +1261,7 @@ where
         unsafe {
             let mut ordering = Equal;
             key_factory.with(&mut |key| {
-                self.get_bound(self.n_children() * 2 - 1, key);
+                self.max_bound(key);
                 ordering = compare(key);
             });
             ordering
@@ -1497,8 +1546,10 @@ where
 #[derive(Debug)]
 pub struct Reader<T> {
     file: ImmutableFileRef,
-    bloom_filter: Option<TrackingBloomFilter>,
     columns: Vec<Column>,
+
+    /// Additional metadata added to the file by the writer.
+    pub(crate) metadata: BatchMetadata,
 
     /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
     /// <https://doc.rust-lang.org/nomicon/phantom-data.html>.
@@ -1511,7 +1562,6 @@ where
 {
     fn size_of_children(&self, context: &mut size_of::Context) {
         self.file.size_of_with_context(context);
-        context.add(self.filter_stats().size_byte);
         self.columns.size_of_with_context(context);
     }
 }
@@ -1525,8 +1575,17 @@ where
         factories: &[&AnyFactories],
         cache: fn() -> Arc<BufferCache>,
         file: Arc<dyn FileReader>,
-        bloom_filter: Option<TrackingBloomFilter>,
     ) -> Result<Self, Error> {
+        let (reader, _membership_filter) = Self::new_with_filter(factories, cache, file, None)?;
+        Ok(reader)
+    }
+
+    pub(crate) fn new_with_filter(
+        factories: &[&AnyFactories],
+        cache: fn() -> Arc<BufferCache>,
+        file: Arc<dyn FileReader>,
+        membership_filter: Option<TrackingBloomFilter>,
+    ) -> Result<(Self, Option<TrackingBloomFilter>), Error> {
         let file_size = file.get_size()?;
         if file_size < 512 || (file_size % 512) != 0 {
             return Err(CorruptionError::InvalidFileSize(file_size).into());
@@ -1539,29 +1598,21 @@ where
             BlockLocation::new(file_size - 512, 512).unwrap(),
             &stats,
         )?;
-        let has_compatible_bloom_filter = match file_trailer.version {
-            1 => {
-                // Old, incompatible version.
-                None
-            }
-            2 => {
-                // Version before [fastbloom] crate was upgraded to one with an incompatible format.
-                warn!("{}: reading old format storage file, performance may be reduced due to incompatible Bloom filters", file.path());
-                Some(false)
-            }
-            3..=VERSION_NUMBER => Some(true),
-            _ => None,
-        }
-        .ok_or_else(|| CorruptionError::InvalidVersion {
-            version: file_trailer.version,
-            expected_version: VERSION_NUMBER,
-        })?;
 
-        if file_trailer.compatible_features != 0 {
+        // v4/v5 isn't backwards compatible. do not attempt to support
+        // older formats.
+        if file_trailer.version < VERSION_NUMBER {
+            return Err(CorruptionError::InvalidVersion {
+                version: file_trailer.version,
+                expected_version: VERSION_NUMBER,
+            }
+            .into());
+        }
+
+        if let Some(features) = file_trailer.unsupported_compatible_features() {
             info!(
-                "{}: storage file uses unsupported compatible features {:#x}",
+                "{}: storage file uses unsupported compatible features {features:#x}",
                 file.path(),
-                file_trailer.compatible_features
             );
         }
 
@@ -1602,36 +1653,52 @@ where
             }
         }
 
-        let bloom_filter = match bloom_filter {
-            Some(bloom_filter) => Some(bloom_filter),
-            None if has_compatible_bloom_filter && file_trailer.filter_offset != 0 => Some(
-                FilterBlock::new(
-                    &*file,
-                    BlockLocation::new(
-                        file_trailer.filter_offset,
-                        file_trailer.filter_size as usize,
-                    )
-                    .map_err(|error: InvalidBlockLocation| {
-                        Error::Corruption(CorruptionError::InvalidFilterLocation(error))
-                    })?,
-                )?
-                .into(),
-            ),
-            None => None,
+        fn read_filter_block(
+            file_handle: &dyn FileReader,
+            offset: u64,
+            size: usize,
+        ) -> Result<TrackingBloomFilter, Error> {
+            Ok(FilterBlock::new(
+                file_handle,
+                BlockLocation::new(offset, size).map_err(|error: InvalidBlockLocation| {
+                    Error::Corruption(CorruptionError::InvalidFilterLocation(error))
+                })?,
+            )?
+            .into())
+        }
+        let membership_filter = if let Some(membership_filter) = membership_filter {
+            Some(membership_filter)
+        } else if file_trailer.has_filter64() {
+            Some(read_filter_block(
+                &*file,
+                file_trailer.filter_offset64,
+                file_trailer.filter_size64 as usize,
+            )?)
+        } else if file_trailer.filter_offset != 0 {
+            Some(read_filter_block(
+                &*file,
+                file_trailer.filter_offset,
+                file_trailer.filter_size as usize,
+            )?)
+        } else {
+            None
         };
 
-        Ok(Self {
-            file: ImmutableFileRef::new(
-                cache,
-                file,
-                file_trailer.compression,
-                stats,
-                file_trailer.version,
-            ),
-            columns,
-            bloom_filter,
-            _phantom: PhantomData,
-        })
+        Ok((
+            Self {
+                file: ImmutableFileRef::new(
+                    cache,
+                    file,
+                    file_trailer.compression,
+                    stats,
+                    file_trailer.version,
+                ),
+                columns,
+                metadata: file_trailer.metadata.clone(),
+                _phantom: PhantomData,
+            },
+            membership_filter,
+        ))
     }
 
     /// Marks the file of the reader as being part of a checkpoint.
@@ -1646,7 +1713,16 @@ where
         storage_backend: &dyn StorageBackend,
         path: &StoragePath,
     ) -> Result<Self, Error> {
-        Self::new(factories, cache, storage_backend.open(path)?, None)
+        Self::new(factories, cache, storage_backend.open(path)?)
+    }
+
+    pub(crate) fn open_with_filter(
+        factories: &[&AnyFactories],
+        cache: fn() -> Arc<BufferCache>,
+        storage_backend: &dyn StorageBackend,
+        path: &StoragePath,
+    ) -> Result<(Self, Option<TrackingBloomFilter>), Error> {
+        Self::new_with_filter(factories, cache, storage_backend.open(path)?, None)
     }
 
     /// The number of columns in the layer file.
@@ -1676,17 +1752,6 @@ where
         Ok(self.file.file_handle.get_size()?)
     }
 
-    /// Returns statistics of the Bloom filter, including its size in bytes.
-    ///
-    /// If the file doesn't have a Bloom filter, returns a default of zeros.
-    pub fn filter_stats(&self) -> BloomFilterStats {
-        if let Some(bloom_filter) = &self.bloom_filter {
-            bloom_filter.stats()
-        } else {
-            BloomFilterStats::default()
-        }
-    }
-
     /// Evict this file from the cache.
     #[cfg(test)]
     pub fn evict(&self) {
@@ -1703,6 +1768,11 @@ where
     pub fn file_handle(&self) -> &Arc<dyn FileReader> {
         &self.file.file_handle
     }
+
+    /// Returns additional metadata added to the file by the writer.
+    pub fn metadata(&self) -> &BatchMetadata {
+        &self.metadata
+    }
 }
 
 impl<K, A, N> Reader<(&'static K, &'static A, N)>
@@ -1711,11 +1781,17 @@ where
     A: DataTrait + ?Sized,
     (&'static K, &'static A, N): ColumnSpec,
 {
-    /// Asks the bloom filter of the reader if we have the key.
-    pub fn maybe_contains_key(&self, hash: u64) -> bool {
-        self.bloom_filter
-            .as_ref()
-            .is_none_or(|b| b.contains_hash(hash))
+    /// Returns the min and max keys stored in column 0.
+    ///
+    /// The bounds are loaded from the root node when first requested and can
+    /// then be cached by higher-level batch types.
+    pub fn key_range(&self) -> Result<Option<(Box<K>, Box<K>)>, Error> {
+        let Some(root) = self.columns[0].root.as_ref() else {
+            return Ok(None);
+        };
+
+        let factories = self.columns[0].factories.factories::<K, A>();
+        Ok(Some(root.key_range(&self.file, &factories)?))
     }
 
     /// Returns a [`RowGroup`] for all of the rows in column 0.
@@ -1737,9 +1813,9 @@ where
     /// Returns a [`FetchZSet`], which will subset this reader to just the rows
     /// in colunn 0 whose keys are in `keys` (which must be sorted) and return
     /// it as a Z-set, treating auxiliary values as weights.
-    pub fn fetch_zset<'a, 'b>(
+    pub(crate) fn fetch_zset<'a, 'b>(
         &'a self,
-        keys: &'b DynVec<K>,
+        keys: FilteredKeys<'b, K>,
     ) -> Result<FetchZSet<'a, 'b, K, A>, Error> {
         FetchZSet::new(self, keys)
     }
@@ -1755,11 +1831,67 @@ where
     /// Returns a [`FetchIndexedZSet`], which will build an indexed Z-set from
     /// this reader containing just the rows whose keys are in `keys` (which
     /// must be sorted).
-    pub fn fetch_indexed_zset<'a, 'b>(
+    pub(crate) fn fetch_indexed_zset<'a, 'b>(
         &'a self,
-        keys: &'b DynVec<K0>,
+        keys: FilteredKeys<'b, K0>,
     ) -> Result<FetchIndexedZSet<'a, 'b, K0, A0, K1, A1>, Error> {
         FetchIndexedZSet::new(self, keys)
+    }
+}
+
+/// A `DynVec`, possibly filtered by a higher-level exact-seek filter chain.
+pub(crate) struct FilteredKeys<'a, K>
+where
+    K: DataTrait + ?Sized,
+{
+    queried_keys: &'a DynVec<K>,
+    filter_pass_keys: Option<Vec<usize>>,
+}
+
+impl<'a, K> FilteredKeys<'a, K>
+where
+    K: DataTrait + ?Sized,
+{
+    pub(crate) fn all(queried_keys: &'a DynVec<K>) -> Self {
+        Self {
+            queried_keys,
+            filter_pass_keys: None,
+        }
+    }
+
+    pub(crate) fn with_filter_pass_keys(
+        queried_keys: &'a DynVec<K>,
+        filter_pass_keys: Option<Vec<usize>>,
+    ) -> Self {
+        Self {
+            queried_keys,
+            filter_pass_keys,
+        }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        match &self.filter_pass_keys {
+            Some(filter_pass_keys) => filter_pass_keys.len(),
+            None => self.queried_keys.len(),
+        }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl<K> Index<usize> for FilteredKeys<'_, K>
+where
+    K: DataTrait + ?Sized,
+{
+    type Output = K;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match &self.filter_pass_keys {
+            Some(filter_pass_keys) => &self.queried_keys[filter_pass_keys[index]],
+            None => &self.queried_keys[index],
+        }
     }
 }
 
@@ -3036,83 +3168,6 @@ where
                 }
             }
             Ok(())
-        }
-    }
-}
-
-/// A `DynVec`, possibly filtered by a Bloom filter.
-struct FilteredKeys<'b, K>
-where
-    K: ?Sized,
-{
-    /// Sorted array to keys to retrieve.
-    queried_keys: &'b DynVec<K>,
-
-    /// Indexes into `queried_keys` of the keys that pass the Bloom filter.  If
-    /// this is `None`, then enough of the keys passed the Bloom filter that we
-    /// just take all of them.
-    bloom_keys: Option<Vec<usize>>,
-}
-
-impl<'b, K> FilteredKeys<'b, K>
-where
-    K: DataTrait + ?Sized,
-{
-    /// Returns `keys`, filtered using `reader.maybe_contains_key()`.
-    fn new<'a, A, N>(reader: &'a Reader<(&'static K, &'static A, N)>, keys: &'b DynVec<K>) -> Self
-    where
-        A: DataTrait + ?Sized,
-        N: ColumnSpec,
-    {
-        debug_assert!(keys.is_sorted_by(&|a, b| a.cmp(b)));
-
-        // Pass keys into the Bloom filter until 1/300th of them pass the Bloom
-        // filter.  Empirically, this seems to good enough for the common case
-        // where the data passed into a "distinct" operator is actually distinct
-        // but we get some false positives from the Bloom filter.  Because the
-        // keys that go into a "distinct" operator are often large, we don't
-        // want to pass all of them into the Bloom filter if we're going to have
-        // to deserialize them anyhow later.
-        let mut bloom_keys = SmallVec::<[_; 50]>::new();
-        for (index, key) in keys.dyn_iter().enumerate() {
-            if reader.maybe_contains_key(key.default_hash()) {
-                bloom_keys.push(index);
-                if bloom_keys.len() >= keys.len() / 300 {
-                    return Self {
-                        queried_keys: keys,
-                        bloom_keys: None,
-                    };
-                }
-            }
-        }
-        Self {
-            queried_keys: keys,
-            bloom_keys: Some(bloom_keys.into_vec()),
-        }
-    }
-
-    fn len(&self) -> usize {
-        match &self.bloom_keys {
-            Some(bloom_keys) => bloom_keys.len(),
-            None => self.queried_keys.len(),
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-}
-
-impl<'b, K> Index<usize> for FilteredKeys<'b, K>
-where
-    K: DataTrait + ?Sized,
-{
-    type Output = K;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        match &self.bloom_keys {
-            Some(bloom_keys) => &self.queried_keys[bloom_keys[index]],
-            None => &self.queried_keys[index],
         }
     }
 }

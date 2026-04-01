@@ -29,6 +29,14 @@ All parameters are optional:
   By default, a single plan is used that generates rows with incrementing values for
   every type.
 
+* `transaction_size` - By default, the data generator does not request
+  [transactions].  Set this to a nonzero value for the data generator
+  to automatically orchestrate transactions of specified number of
+  rows.  Transactions may overshoot the specified number by up to an
+  input batch.
+
+  [transactions]: /pipelines/transactions
+
 ### Plan
 
 A plan is a list of objects that describe how to generate rows. Each object can have the following, optional

@@ -57,6 +57,7 @@ pub fn now_endpoint_config(config: &PipelineConfig) -> InputEndpointConfig {
                     .clock_resolution_usecs
                     .unwrap_or(DEFAULT_CLOCK_RESOLUTION_USECS),
             }),
+            preprocessor: None,
             format: Some(FormatConfig {
                 name: Cow::Borrowed("json"),
                 config: serde_json::to_value(JsonParserConfig {
@@ -69,7 +70,8 @@ pub fn now_endpoint_config(config: &PipelineConfig) -> InputEndpointConfig {
             }),
             index: None,
             output_buffer_config: OutputBufferConfig::default(),
-            max_batch_size: 1,
+            max_batch_size: Some(1),
+            max_worker_batch_size: None,
             // This must be >1; otherwise the controller will pause the connector after every input.
             max_queued_records: 2,
             paused: false,
@@ -238,6 +240,10 @@ impl ClockReader {
 }
 
 impl InputReader for ClockReader {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
     fn request(&self, command: InputReaderCommand) {
         let _ = self.sender.send(command);
     }

@@ -8,6 +8,8 @@ import {
   getConfigSession as _getConfigSession,
   getPipeline as _getPipeline,
   getPipelineDataflowGraph as _getPipelineDataflowGraph,
+  getPipelineInputConnectorStatus as _getPipelineInputConnectorStatus,
+  getPipelineOutputConnectorStatus as _getPipelineOutputConnectorStatus,
   getPipelineStats as _getPipelineStats,
   type ProgramStatus as _ProgramStatus,
   patchPipeline as _patchPipeline,
@@ -30,6 +32,7 @@ import {
   postPipelineActivate,
   postPipelineApprove,
   postPipelineClear,
+  postPipelineDismissError,
   postPipelinePause,
   postPipelineResume,
   postPipelineStart,
@@ -39,7 +42,9 @@ import {
 
 export type {
   InputEndpointConfig,
+  InputEndpointStatus,
   OutputEndpointConfig,
+  OutputEndpointStatus,
   RuntimeConfig,
   SqlCompilerMessage
 } from '$lib/services/manager'
@@ -52,7 +57,6 @@ export type ProgramStatus = _ProgramStatus
 
 import JSONbig from 'true-json-bigint'
 import { singleton } from '$lib/functions/common/array'
-import { nonNull } from '$lib/functions/common/function'
 import { tuple } from '$lib/functions/common/tuple'
 import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
 import { applyAuthToRequest, handleAuthResponse } from '$lib/services/auth'
@@ -297,7 +301,12 @@ const toExtendedPipeline = ({
   compilerOutput: toCompilerOutput(pipeline.program_error),
   deploymentResourcesStatus: pipeline.deployment_resources_status,
   deploymentResourcesStatusSince: new Date(pipeline.deployment_resources_status_since),
-  deploymentRuntimeStatusDetails: pipeline.deployment_runtime_status_details
+  deploymentRuntimeStatusDetails: pipeline.deployment_runtime_status_details,
+  connectors: pipeline.connectors
+    ? {
+        numErrors: pipeline.connectors.num_errors
+      }
+    : undefined
 })
 
 const fromPipeline = <T extends Partial<Pipeline>>(pipeline: T) => ({
@@ -460,6 +469,34 @@ export const getPipelineStats = async (pipeline_name: string, options?: FetchOpt
   )
 }
 
+export const getInputConnectorStatus = (
+  pipeline_name: string,
+  table_name: string,
+  connector_name: string,
+  options?: FetchOptions
+) =>
+  mapResponse(
+    _getPipelineInputConnectorStatus({
+      path: { pipeline_name, table_name, connector_name },
+      ...options
+    }),
+    (v) => v
+  )
+
+export const getOutputConnectorStatus = (
+  pipeline_name: string,
+  view_name: string,
+  connector_name: string,
+  options?: FetchOptions
+) =>
+  mapResponse(
+    _getPipelineOutputConnectorStatus({
+      path: { pipeline_name, view_name, connector_name },
+      ...options
+    }),
+    (v) => v
+  )
+
 export const deletePipeline = async (pipeline_name: string, options?: FetchOptions) => {
   await mapResponse(_deletePipeline({ path: { pipeline_name }, ...options }), (v) => v)
 }
@@ -519,6 +556,9 @@ export const deleteApiKey = (name: string, options?: FetchOptions) =>
       throw new Error(`Failed to delete ${name} API key`)
     }
   )
+
+export const dismissDeploymentError = (pipeline_name: string) =>
+  mapResponse(postPipelineDismissError({ path: { pipeline_name } }), (v) => v)
 
 export const getPipelineDataflowGraph = (pipelineName: string) =>
   mapResponse(_getPipelineDataflowGraph({ path: { pipeline_name: pipelineName } }), (v) => v)
@@ -680,10 +720,9 @@ const streamToDownload = (
     response.headers.get('content-length')
   )
 
-  const streamWithProgress =
-    nonNull(totalBytes) && onProgress
-      ? response.body!.pipeThrough(progressTransform(totalBytes, onProgress))
-      : response.body
+  const streamWithProgress = onProgress
+    ? response.body!.pipeThrough(progressTransform(totalBytes ?? 0, onProgress))
+    : response.body
 
   // Extract filename from Content-Disposition header
   const contentDisposition = response.headers.get('Content-Disposition')
@@ -745,8 +784,21 @@ const getAuthenticatedFetch = (options?: FetchOptions): typeof globalThis.fetch 
   return Object.assign(f, { preconnect: globalThis.fetch.preconnect })
 }
 
+function formatValue(details: unknown): string {
+  if (typeof details === 'string') {
+    return details
+  }
+
+  // Pretty‑print objects, arrays, numbers, booleans, etc.
+  try {
+    return JSON.stringify(details, null, 2)
+  } catch {
+    return String(details)
+  }
+}
+
 const apiErrorText = (error: ErrorResponse) => {
-  return `${error.message}${error.details ? `\n${error.details}` : ''}`
+  return `${error.message}${error.details ? `\n${formatValue(error.details)}` : ''}`
 }
 
 const streamingFetch = (

@@ -40,6 +40,7 @@ nexmark_comment.txt
 galen_results.csv
 ldbc_results.csv
 benchmark-run-data
+bench_results.csv
 
 # pipeline manager
 manager.db
@@ -69,6 +70,9 @@ gh-pages
 # JavaScript
 node_modules/
 
+# Vitest
+.vitest-attachments/
+
 # Playwright
 playwright-artifacts/
 playwright-snapshots/
@@ -92,4 +96,4 @@ playwright/.cache/
 .vite/
 
 # Claude Code
-/.claude/
+/.claude/settings.local.json

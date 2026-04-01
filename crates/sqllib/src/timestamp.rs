@@ -63,18 +63,8 @@ where
     D: ::rkyv::Fallible + ::core::any::Any,
 {
     fn deserialize(&self, deserializer: &mut D) -> Result<Timestamp, D::Error> {
-        // The internal representation of Timestamps changed from version 4 of the storage format
-        const MILLISECOND_VERSION: u32 = 4;
-        let version = (deserializer as &mut dyn ::core::any::Any)
-            .downcast_mut::<::dbsp::storage::file::Deserializer>()
-            .map(|deserializer| deserializer.version())
-            .expect("Deserializer must be of type dbsp::storage::file::Deserializer");
         let value: i64 = self.microseconds.deserialize(deserializer)?;
-        if version <= MILLISECOND_VERSION {
-            Ok(Timestamp::from_milliseconds(value))
-        } else {
-            Ok(Timestamp::from_microseconds(value))
-        }
+        Ok(Timestamp::from_microseconds(value))
     }
 }
 
@@ -1791,6 +1781,20 @@ pub fn format_date__(format: SqlString, date: Date) -> SqlString {
 some_function2!(format_date, SqlString, Date, SqlString);
 
 #[doc(hidden)]
+pub fn format_time__(format: SqlString, date: Time) -> SqlString {
+    SqlString::from(date.to_time().format(format.str()).to_string())
+}
+
+some_function2!(format_time, SqlString, Time, SqlString);
+
+#[doc(hidden)]
+pub fn format_timestamp__(format: SqlString, date: Timestamp) -> SqlString {
+    SqlString::from(date.to_naiveDateTime().format(format.str()).to_string())
+}
+
+some_function2!(format_timestamp, SqlString, Timestamp, SqlString);
+
+#[doc(hidden)]
 pub fn parse_date__(format: SqlString, st: SqlString) -> Option<Date> {
     let nd = NaiveDate::parse_from_str(st.str(), format.str());
     match nd {
@@ -1849,6 +1853,13 @@ pub fn date_trunc_year_Timestamp(timestamp: Timestamp) -> Timestamp {
 }
 
 #[doc(hidden)]
+pub fn date_trunc_quarter_Timestamp(timestamp: Timestamp) -> Timestamp {
+    let dt = timestamp.get_date();
+    let dt = date_trunc_quarter_Date(dt);
+    Timestamp::from_date(dt)
+}
+
+#[doc(hidden)]
 pub fn date_trunc_month_Timestamp(timestamp: Timestamp) -> Timestamp {
     let dt = timestamp.get_date();
     let dt = date_trunc_month_Date(dt);
@@ -1873,6 +1884,7 @@ some_polymorphic_function1!(date_trunc_millennium, Timestamp, Timestamp, Timesta
 some_polymorphic_function1!(date_trunc_century, Timestamp, Timestamp, Timestamp);
 some_polymorphic_function1!(date_trunc_decade, Timestamp, Timestamp, Timestamp);
 some_polymorphic_function1!(date_trunc_year, Timestamp, Timestamp, Timestamp);
+some_polymorphic_function1!(date_trunc_quarter, Timestamp, Timestamp, Timestamp);
 some_polymorphic_function1!(date_trunc_month, Timestamp, Timestamp, Timestamp);
 some_polymorphic_function1!(date_trunc_week, Timestamp, Timestamp, Timestamp);
 some_polymorphic_function1!(date_trunc_day, Timestamp, Timestamp, Timestamp);
@@ -1895,6 +1907,11 @@ pub fn timestamp_trunc_decade_Timestamp(timestamp: Timestamp) -> Timestamp {
 #[doc(hidden)]
 pub fn timestamp_trunc_year_Timestamp(timestamp: Timestamp) -> Timestamp {
     date_trunc_year_Timestamp(timestamp)
+}
+
+#[doc(hidden)]
+pub fn timestamp_trunc_quarter_Timestamp(timestamp: Timestamp) -> Timestamp {
+    date_trunc_quarter_Timestamp(timestamp)
 }
 
 #[doc(hidden)]
@@ -1982,6 +1999,20 @@ pub fn date_trunc_year_Date(date: Date) -> Date {
 }
 
 #[doc(hidden)]
+pub fn date_trunc_quarter_Date(date: Date) -> Date {
+    let date = date.to_dateTime();
+    let month = match date.month() {
+        1..=3 => 1,
+        4..=6 => 4,
+        7..=9 => 7,
+        10..=12 => 10,
+        _ => unreachable!(),
+    };
+    let rounded = NaiveDate::from_ymd_opt(date.year(), month, 1).unwrap();
+    Date::from_date(rounded)
+}
+
+#[doc(hidden)]
 pub fn date_trunc_month_Date(date: Date) -> Date {
     let date = date.to_dateTime();
     let rounded = NaiveDate::from_ymd_opt(date.year(), date.month(), 1).unwrap();
@@ -2005,6 +2036,7 @@ some_polymorphic_function1!(date_trunc_millennium, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_century, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_decade, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_year, Date, Date, Date);
+some_polymorphic_function1!(date_trunc_quarter, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_month, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_week, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_day, Date, Date, Date);

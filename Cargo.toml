@@ -1,13 +1,13 @@
 [workspace.package]
 authors = ["Feldera Team <dev@feldera.com>"]
-version = "0.239.0"
+version = "0.278.0"
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/feldera/feldera"
 repository = "https://github.com/feldera/feldera"
 keywords = ["ivm", "analytics", "database", "incremental", "sql"]
 readme = "README.md"
 # Define Minimum Supported Rust Version (MSRV)
-rust-version = "1.91.1"
+rust-version = "1.93.1"
 edition = "2021"
 
 [workspace]
@@ -30,6 +30,7 @@ members = [
   "crates/ir",
   "crates/fxp",
   "crates/storage-test-compat",
+  "crates/buffer-cache",
 ]
 exclude = [
   "sql-to-dbsp-compiler/temp",
@@ -42,7 +43,7 @@ resolver = "2"
 actix = "0.13.1"
 actix-codec = "0.5.0"
 actix-cors = "0.7.1"
-actix-files = "0.6.2"
+actix-files = "0.6.10"
 actix-http = "3.11.2"
 actix-test = "0.1.1"
 actix-web = "4.11.0"
@@ -53,10 +54,10 @@ anyhow = "1.0.91"
 apache-avro = "0.18.0"
 arc-swap = "1.5.1"
 arcstr = "1.2.0"
-arrow = "55"
-arrow-json = "55"
-arrow-digest = "55"
-arrow-schema = "55"
+arrow = "57"
+arrow-json = "57"
+arrow-digest = "57"
+arrow-schema = "57"
 ascii_table = "=4.0.2"
 async-channel = "2.3.1"
 async-nats = "0.44.2"
@@ -70,6 +71,7 @@ aws-sdk-s3 = { version = "1.122.0", default-features = false, features = [
   "default-https-client",
   "rt-tokio",
   "sigv4a",
+  "behavior-version-latest"
 ] }
 aws-types = "1.1.7"
 backoff = "0.4.0"
@@ -79,11 +81,11 @@ binrw = "0.13.3"
 blake3 = "1.8.2"
 bstr = "0.2.1"
 bytemuck = { version = "1.16.3", features = ["derive"] }
-bytes = "1.10.1"
+bytes = "1.11.1"
 bytestring = "1.4.0"
 change-detection = "1.2"
 cached = { version = "0.43.0", features = ["async"] }
-chrono = { version = "0.4.38", default-features = false }
+chrono = { version = "0.4.43", default-features = false }
 circular-queue = "0.2.6"
 clap = { version = "4.5", features = ["derive", "env"] }
 clap_complete = "4.5"
@@ -98,13 +100,19 @@ crossbeam-utils = "0.8.6"
 csv = "1.2.2"
 csv-core = "0.1.10"
 dashmap = "6.1.0"
-datafusion = "47"
-dbsp = { path = "crates/dbsp", version = "0.239.0" }
+datafusion = "51.0"
+dbsp = { path = "crates/dbsp", version = "0.278.0" }
 dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.14.1"
-#deltalake = "0.26.2"
-deltalake = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "06f42db5344f4ad8560af341352572488a4e6e06" }
-deltalake-catalog-unity = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "06f42db5344f4ad8560af341352572488a4e6e06" }
+#deltalake = "0.30.2"
+#deltalake-catalog-unity = "0.14.1"
+deltalake-catalog-unity = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "b24e5aaec322db0f084449e5c57f97ff4526bbdc" }
+deltalake = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "b24e5aaec322db0f084449e5c57f97ff4526bbdc" }
+
+# deltalake = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "06f42db5344f4ad8560af341352572488a4e6e06" }
+# deltalake-catalog-unity = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "06f42db5344f4ad8560af341352572488a4e6e06" }
+delta_kernel = "0.19.0"
+derive_more = { version = "1.0.0" }
 directories = "6.0"
 dirs = "5.0"
 dyn-clone = "1.0.17"
@@ -113,36 +121,37 @@ erased-serde = "0.3.31"
 fake = "2.10"
 fastbloom = "0.14.0"
 fdlimit = "0.3.0"
-feldera-adapterlib = { path = "crates/adapterlib" }
+feldera-buffer-cache = { version = "0.278.0", path = "crates/buffer-cache" }
 feldera-cloud1-client = "0.1.2"
 feldera-datagen = { path = "crates/datagen" }
-feldera-fxp = { version = "0.239.0", path = "crates/fxp", features = ["dbsp"] }
+feldera-fxp = { version = "0.278.0", path = "crates/fxp", features = ["dbsp"] }
 feldera-iceberg = { path = "crates/iceberg" }
-feldera-observability = { version = "0.239.0", path = "crates/feldera-observability" }
-feldera-macros = { version = "0.239.0", path = "crates/feldera-macros" }
-feldera-sqllib = { path = "crates/sqllib" }
-feldera-storage = { version = "0.239.0", path = "crates/storage" }
-feldera-types = { version = "0.239.0", path = "crates/feldera-types" }
-feldera-rest-api = { version = "0.239.0", path = "crates/rest-api" }
-feldera-ir = { version = "0.239.0", path = "crates/ir" }
+feldera-observability = { version = "0.278.0", path = "crates/feldera-observability" }
+feldera-macros = { version = "0.278.0", path = "crates/feldera-macros" }
+feldera-sqllib = { version = "0.278.0", path = "crates/sqllib" }
+feldera-storage = { version = "0.278.0", path = "crates/storage" }
+feldera-types = { version = "0.278.0", path = "crates/feldera-types" }
+feldera-rest-api = { version = "0.278.0", path = "crates/rest-api" }
+feldera-ir = { version = "0.278.0", path = "crates/ir" }
+feldera-adapterlib = { version = "0.278.0", path = "crates/adapterlib" }
 flate2 = "1.1.0"
 form_urlencoded = "1.2.0"
 futures = "0.3.30"
 futures-timer = "3.0.2"
 futures-util = "0.3.30"
 geo = "0.26.0"
-google-cloud-gax = "0.19.1"
-google-cloud-googleapis = "0.15.0"
-google-cloud-pubsub = "0.29.1"
+google-cloud-gax = { package="gcloud-gax", version="1.3.2" }
+google-cloud-googleapis = { package="gcloud-googleapis", version="1.3.0" }
+google-cloud-pubsub = { package="gcloud-pubsub", version="1.6.0" }
 governor = "0.7.0"
 hashbrown = "0.14.2"
 hdrhist = "0.5"
 hex = "0.4.3"
 home = "=0.5.9"
-iceberg = "0.5.1"
-iceberg-catalog-glue = "0.5.1"
-iceberg-catalog-rest = "0.5.1"
-iceberg-datafusion = "0.5.1"
+iceberg = "0.8.0"
+iceberg-catalog-glue = "0.8.0"
+iceberg-catalog-rest = "0.8.0"
+iceberg-datafusion = "0.8.0"
 impl-trait-for-tuples = "0.2"
 indexmap = "2.7.1"
 indicatif = "0.17.0-rc.11"
@@ -151,12 +160,13 @@ inventory = "0.3"
 itertools = "0.14.0"
 jemalloc_pprof = "0.7.0"
 json_to_table = "0.9.0"
-jsonwebtoken = { version = "10.2.0", features = ["aws_lc_rs"] }
+jsonwebtoken = { version = "10.3.0", features = ["aws_lc_rs"] }
 lexical-core = "1.0.5"
 libc = "0.2.153"
 like = "0.3.1"
 log = "0.4.20"
 md-5 = "0.10.6"
+memory-stats = { version = "1.2.0", features = ["always_use_statm"] }
 metrics = "0.23.0"
 metrics-exporter-prometheus = "0.15.3"
 metrics-util = "0.17.0"
@@ -175,14 +185,14 @@ once_cell = "1.20.2"
 openssl = "0.10.72"
 ordered-float = { version = "4.2.0", features = ["serde"] }
 ouroboros = "0.18.4"
-parquet = "55"
+parquet = "57"
 paste = "1.0.12"
 petgraph = "0.6.0"
 pg-client-config = "0.1.2"
 postgres = "0.19.10"
 postgres-openssl = "0.5.1"
 postgresql_embedded = { version = "0.20.0", features = ["bundled"] }
-pprof = "0.13.0"
+pprof = "0.15.0"
 pretty_assertions = "1.4.0"
 prettyplease = "0.2.22"
 progenitor = "0.7.0"
@@ -191,7 +201,7 @@ proptest = "1.5.0"
 proptest-derive = "0.5.0"
 proptest-state-machine = "0.3.0"
 ptr_meta = "0.2.0"
-quick_cache = "0.6.14"
+quick_cache = "0.6.19"
 r2d2 = "0.8.10"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
@@ -217,7 +227,7 @@ ryu = "1.0.20"
 schema_registry_converter = "4.2.0"
 semver = "1.0.27"
 serde = "1.0.213"
-serde_arrow = { version = "0.13.4", features = ["arrow-55"] }
+serde_arrow = { version = "0.13.7", features = ["arrow-57"] }
 serde_bytes = "0.11.15"
 serde_json = { version = "1.0.132", features = ["arbitrary_precision"] }
 serde_json_path_to_error = "0.1.5"
@@ -242,7 +252,7 @@ static-files = "0.2.3"
 static_assertions = "1.1.0"
 syn = "2.0.77"
 tabled = "0.17"
-tar = "0.4.44"
+tar = "0.4.45"
 tarpc = "0.37.0"
 tempfile = "3.21"
 termbg = "0.5.1"
@@ -252,8 +262,8 @@ thiserror = "2"
 threadpool = "1.8.1"
 thread-id = "5.0.0"
 tikv-jemallocator = "0.6.0"
-time = { version = "0.3.20", features = ["serde", "serde-well-known"] }
-tokio = "1.44.2"
+time = { version = "0.3.47", features = ["serde", "serde-well-known"] }
+tokio = "1.50.0"
 tokio-postgres = "0.7"
 tokio-stream = "0.1.15"
 tokio-util = "0.7.11"

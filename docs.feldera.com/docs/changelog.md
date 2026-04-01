@@ -8,15 +8,105 @@ import TabItem from '@theme/TabItem';
 
 # Changelog
 
-
 <Tabs>
     <TabItem className="changelogItem" value="enterprise"
         label="Enterprise">
 
         ## Unreleased
 
+        Starting a pipeline while storage is still clearing (`storage_status=Clearing`) now returns
+        `CannotStartWhileClearingStorage` instead of succeeding. Clearing storage while a start
+        is in progress but hasn't yet transitioned to `Provisioning` now returns
+        `StorageStatusImmutableUnlessStopped` instead of succeeding.
+
+        Backward-incompatible Delta Lake output connector change. The new `max_retries` setting configures
+        the number of times the connector retries failed Delta Lake operations like writing Parquet files
+        and committing transactions. The setting is unset by default, causing the connector to retry
+        indefinitely.  This behavior prevents data loss due to transient or permanent write errors.
+
+        ### Checkpoint sync: `read_bucket` and checkpoint loading priority
+
+        The checkpoint sync configuration now supports a `read_bucket` field — a read-only
+        fallback bucket used to seed a pipeline's initial state. The pipeline **never writes**
+        to `read_bucket`.
+
+        Checkpoint sources are now resolved in priority order:
+        1. **Local checkpoint** — if the pipeline already has a local checkpoint, it resumes
+           from that without contacting any remote bucket.
+        2. **`bucket`** — the pipeline's own S3-compatible bucket. If a checkpoint is found
+           here, it is used and `read_bucket` is ignored.
+        3. **`read_bucket`** — consulted only when both local storage and `bucket` are empty.
+           This allows a new pipeline to seed from another pipeline's checkpoint, avoiding
+           a full backfill. `read_bucket` must point to a different location than `bucket`.
+
+        Refer to the [checkpoint sync documentation](/pipelines/checkpoint-sync#checkpoint-resolution-priority) for details.
+
+        ### NATS input connector retry and health check support
+
+        The NATS input connector now supports automatic reconnection with
+        configurable retry behavior. Two new configuration fields have been added:
+        - `inactivity_timeout_secs`: Maximum time in seconds to wait for the
+          next message before running a stream/server health check.
+        - `retry_interval_secs`: Delay between automatic reconnect attempts
+          while in retry mode.
+
+        The connector now supports pause and resume (start) lifecycle
+        operations, validates replay and resume sequence bounds, and
+        provides improved error messages during retries and health checks.
+
+        ### NATS input connector timeout and probe updates
+
+        - The default value for `inactivity_timeout_secs` has been increased
+          from `10` to `60` seconds.
+        - Health probes now avoid duplicate JetStream stream-info requests,
+          reducing API pressure during retry and recovery loops.
+
+        NATS retry classification during resume and replay validation has also been refined:
+        transient failures while fetching JetStream stream metadata are now treated as retryable,
+        while logical sequence-range validation failures remain fatal.
+
+        ## v0.263.0
+
+        Added connector error list to input/output connector stats.
+        [Input](https://docs.feldera.com/api/get-input-status) and
+        [output](https://docs.feldera.com/api/get-output-status)
+        status endpoints now list up to 100 most recent transport, parser, and
+        encoder errors of each type.
+
+        In addition, the openapi spec for both endpoints now specifies strongly typed return values
+        of type `InputConnectorStatus` and `OutputConnectorStatus` respectively.
+
+        ## v0.252.0
+
+        ### Python API removed `ignore_deployment_error`
+
+        The `ignore_deployment_error` parameter has been removed from the Python
+        `pipeline.start()` method. Instead, make use of the newly added `dismiss_error` parameter.
+        If you do not want the pipeline to start if there is a pre-existing deployment error,
+        you should call `pipeline.start(dismiss_error=False)`. Otherwise call `pipeline.start()`
+        which is by default equivalent to `pipeline.start(dismiss_error=True)` (preserving
+        existing behavior). If the start results in an error occurring, the method will still
+        throw an error as before. A pipeline deployment error can now also be separately dismissed
+        using a dedicated endpoint and the corresponding client functions (e.g.,
+        `pipeline.dismiss_error()` for the Python client).
+
+        ### Kafka input connector `synchronize_partitions` option
+
+        The Kafka input connector has a new setting `synchronize_partitions`.  When it is
+        set to `true`, the connector will read messages in order of their Kafka timestamps
+        across partitions.  Refer to the documentation for more information.
+
+        ## 0.227.0
+
+        Loading data from checkpoints made in earlier versions of feldera (0.226.0 and below)
+        are not compatible with versions 0.227.0 and above.
+        When upgrading to a version >=0.227, existing pipelines should be backfilled
+        rather than starting from a previous checkpoint.
+
+        ## 0.226.0
+
         The Delta Lake connector's `skip_unused_columns` property has been deprecated. Use
-        table-level [`skip_unused_colums`](https://docs.feldera.com/sql/grammar#skip-unused-columns)
+        table-level [`skip_unused_colums`](https://docs.feldera.com/sql/grammar#ignoring-unused-columns)
         instead.
 
         ## 0.201.0
@@ -288,4 +378,5 @@ import TabItem from '@theme/TabItem';
     <TabItem className="changelogItem" value="oss" label="Open Source">
      [Release notes](https://github.com/feldera/feldera/releases/) for the Open Source edition can be found on github.
     </TabItem>
+
 </Tabs>

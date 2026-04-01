@@ -7,7 +7,7 @@ use crate::{
     Circuit, Error,
     circuit::checkpointer::Checkpoint,
     dynamic::{DataTrait, DynData, DynUnit, Erase, LeanVec, WeightTrait},
-    trace::{BatchReaderFactories, Deserializer, Serializer, spine_async::WithSnapshot},
+    trace::{BatchReaderFactories, DbspSerializer, Deserializer, spine_async::WithSnapshot},
 };
 pub use crate::{
     DBData, DBWeight, DynZWeight, Stream, Timestamp, ZWeight,
@@ -672,15 +672,15 @@ where
     }
 }
 
-impl<T, D> Serialize<Serializer> for TypedBox<T, D>
+impl<T, D> Serialize<DbspSerializer<'_>> for TypedBox<T, D>
 where
     T: DBData + Erase<D>,
     D: DataTrait + ?Sized,
 {
     fn serialize(
         &self,
-        serializer: &mut Serializer,
-    ) -> Result<Self::Resolver, <Serializer as Fallible>::Error> {
+        serializer: &mut DbspSerializer,
+    ) -> Result<Self::Resolver, <DbspSerializer<'_> as Fallible>::Error> {
         let val: &T = self.deref();
         val.serialize(serializer)
     }
@@ -705,12 +705,14 @@ where
 fn test_typedbox_rkyv() {
     use rkyv::archived_value;
 
+    use crate::storage::file::SerializerInner;
+
     let tbox = TypedBox::<u64, DynData>::new(12345u64);
 
-    let mut s = Serializer::default();
-    rkyv::ser::Serializer::serialize_value(&mut s, &tbox).unwrap();
-
-    let bytes = s.into_serializer().into_inner().into_vec();
+    let bytes = SerializerInner::to_fbuf_with_thread_local(|s| {
+        rkyv::ser::Serializer::serialize_value(s, &tbox)
+    })
+    .into_vec();
 
     let archived: &<TypedBox<u64, DynData> as Archive>::Archived =
         unsafe { archived_value::<TypedBox<u64, DynData>>(bytes.as_slice(), 0) };

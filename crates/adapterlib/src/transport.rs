@@ -10,8 +10,8 @@ use serde_json::Value as JsonValue;
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::marker::PhantomData;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::error::TryRecvError;
 use xxhash_rust::xxh3::Xxh3Default;
@@ -19,6 +19,7 @@ use xxhash_rust::xxh3::Xxh3Default;
 use crate::PipelineState;
 use crate::catalog::InputCollectionHandle;
 use crate::format::{BufferSize, InputBuffer, ParseError, Parser};
+use crate::metrics::ConnectorMetrics;
 
 /// Step number for fault-tolerant circuits.
 ///
@@ -72,6 +73,7 @@ pub trait TransportInputEndpoint: InputEndpoint {
     ) -> AnyResult<Box<dyn InputReader>>;
 }
 
+#[doc(hidden)]
 pub trait IntegratedInputEndpoint: InputEndpoint {
     fn open(
         self: Box<Self>,
@@ -270,6 +272,7 @@ pub enum NonFtInputReaderCommand {
     Transition(PipelineState),
 }
 
+#[doc(hidden)]
 pub struct InputQueueEntry<A, B> {
     /// Data buffer to push to the circuit.
     buffer: Option<B>,
@@ -290,6 +293,7 @@ pub struct InputQueueEntry<A, B> {
 }
 
 impl<A, B> InputQueueEntry<A, B> {
+    #[doc(hidden)]
     pub fn new_with_aux(timestamp: DateTime<Utc>, aux: A) -> Self {
         Self {
             buffer: None,
@@ -300,6 +304,7 @@ impl<A, B> InputQueueEntry<A, B> {
         }
     }
 
+    #[doc(hidden)]
     pub fn with_buffer(self, buffer: Option<B>) -> Self {
         Self { buffer, ..self }
     }
@@ -588,6 +593,8 @@ impl InputQueue<(), Box<dyn InputBuffer>> {
 ///
 /// Use [`TransportInputEndpoint::open`] to obtain an [`InputReader`].
 pub trait InputReader: Send + Sync {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync>;
+
     /// Requests the input reader to execute `command`.
     fn request(&self, command: InputReaderCommand);
 
@@ -749,6 +756,14 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// belong to the the transaction, immediately before calling `extended`. The connector cannot
     /// queue any more updates after this function is invoked, until the next `Queue` command.
     fn commit_transaction(&self);
+
+    /// Register connector-specific metrics for Prometheus export.
+    ///
+    /// A connector may call this once during [`TransportInputEndpoint::open`]
+    /// to provide an [`Arc<dyn ConnectorMetrics>`] whose [`ConnectorMetrics::metrics`]
+    /// will be polled on every scrape.  The default implementation is a no-op,
+    /// so connectors that have no custom metrics need not override it.
+    fn set_custom_metrics(&self, _metrics: Arc<dyn ConnectorMetrics>) {}
 
     /// Endpoint failed.
     ///
@@ -920,6 +935,7 @@ where
             .map_err(|e| anyhow::anyhow!("unable to parse checkpointed connector state (checkpointed state: {metadata}; parse error: {e})"))
 }
 
+#[doc(hidden)]
 pub type AsyncErrorCallback = Box<dyn Fn(bool, AnyError, Option<&'static str>) + Send + Sync>;
 
 /// A configured output transport endpoint.
@@ -1071,6 +1087,7 @@ impl<M, D> InputCommandReceiver<M, D> {
         }
     }
 
+    #[doc(hidden)]
     pub fn blocking_recv_replay(&mut self) -> Result<Option<(M, D)>, InputCommandReceiverError>
     where
         M: for<'a> Deserialize<'a>,
@@ -1080,6 +1097,7 @@ impl<M, D> InputCommandReceiver<M, D> {
         self.take_replay(command)
     }
 
+    #[doc(hidden)]
     pub async fn recv_replay(&mut self) -> Result<Option<(M, D)>, InputCommandReceiverError>
     where
         M: for<'a> Deserialize<'a>,
@@ -1109,6 +1127,7 @@ impl<M, D> InputCommandReceiver<M, D> {
         }
     }
 
+    #[doc(hidden)]
     pub async fn recv(&mut self) -> Result<InputReaderCommand, InputCommandReceiverError> {
         match self.buffer.take() {
             Some(value) => Ok(value),
@@ -1120,6 +1139,7 @@ impl<M, D> InputCommandReceiver<M, D> {
         }
     }
 
+    #[doc(hidden)]
     pub fn blocking_recv(&mut self) -> Result<InputReaderCommand, InputCommandReceiverError> {
         match self.buffer.take() {
             Some(value) => Ok(value),
@@ -1130,6 +1150,7 @@ impl<M, D> InputCommandReceiver<M, D> {
         }
     }
 
+    #[doc(hidden)]
     pub fn try_recv(&mut self) -> Result<Option<InputReaderCommand>, InputCommandReceiverError> {
         if let Some(command) = self.buffer.take() {
             Ok(Some(command))
@@ -1142,6 +1163,7 @@ impl<M, D> InputCommandReceiver<M, D> {
         }
     }
 
+    #[doc(hidden)]
     pub fn put_back(&mut self, value: InputReaderCommand) {
         assert!(self.buffer.is_none());
         self.buffer = Some(value);

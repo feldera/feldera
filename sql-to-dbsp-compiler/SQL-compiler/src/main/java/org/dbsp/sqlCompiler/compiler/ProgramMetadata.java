@@ -6,23 +6,120 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.ToSqlVisitor;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.util.IJson;
 import org.dbsp.util.Utilities;
 
+import java.math.BigInteger;
 import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.HashSet;
+import java.util.Set;
 
 /** Represents metadata about the compiled program.
- * Contains a description of all input tables and all views. */
+ * Contains a description of all input tables and all views,
+ * and the values of all variables set by SQL SET statements. */
 public class ProgramMetadata implements IJson {
     final LinkedHashMap<ProgramIdentifier, IHasSchema> inputTables;
     final LinkedHashMap<ProgramIdentifier, IHasSchema> outputViews;
+    /** The variables created by SET statements with their values. */
+    final LinkedHashMap<String, DBSPExpression> variables;
 
     public ProgramMetadata() {
         this.inputTables = new LinkedHashMap<>();
         this.outputViews = new LinkedHashMap<>();
+        this.variables = new LinkedHashMap<>();
+    }
+
+    private static String canonicalVariableName(String variable) {
+        return variable.toLowerCase(Locale.ENGLISH);
+    }
+
+    static final Set<String> reserved = Set.of(
+            DBSPCompiler.WARNINGS_ARE_ERRORS.toLowerCase(Locale.ENGLISH),
+            ProgramMetadata.AVOID_STAR_JOINS.toLowerCase(Locale.ENGLISH)
+    );
+
+    private boolean known(String variable) {
+        if (reserved.contains(variable))
+            return true;
+        return variable.startsWith("feldera_ignore_warning_");
+    }
+
+    public void set(String variable, DBSPExpression value,
+                    SourcePositionRange range, DBSPCompiler compiler) {
+        variable = canonicalVariableName(variable);
+        if (this.variables.containsKey(variable)) {
+            DBSPExpression expression = this.variables.get(variable);
+            String str = ToSqlVisitor.convert(compiler, expression);
+            compiler.reportWarning(range,
+                    "Overwriting value", "Variable " + Utilities.singleQuote(variable) +
+                            " is already set to " + str);
+        }
+        if (!this.known(variable)) {
+            compiler.reportWarning(range,
+                    "Unknown setting", "Variable " + Utilities.singleQuote(variable) +
+                            " does not control any known settings");
+        }
+        this.variables.put(variable, value);
+    }
+
+    public boolean hasValue(String variable) {
+        variable = canonicalVariableName(variable);
+        return this.variables.containsKey(variable);
+    }
+
+    /** Return true if the value of the supplied variable is falsy
+     * (OFF, false, NULL, or zero).  The variable must have a value. */
+    public boolean isFalsy(String variable) {
+        variable = canonicalVariableName(variable);
+        DBSPExpression expression = Utilities.getExists(this.variables, variable);
+        if (expression.is(DBSPIntLiteral.class)) {
+            BigInteger value = expression.to(DBSPIntLiteral.class).getValue();
+            if (value == null) return true;
+            return value.equals(BigInteger.ZERO);
+        } else if (expression.is(DBSPBoolLiteral.class)) {
+            Boolean value = expression.to(DBSPBoolLiteral.class).value;
+            if (value == null) return true;
+            return !value;
+        } else {
+            return expression.is(DBSPNullLiteral.class);
+        }
+    }
+
+    /** True if a feature is set explicitly to 'true'. */
+    public boolean isExplicitlyOn(String variable) {
+        if (!this.hasValue(variable))
+            return false;
+        return !this.isFalsy(variable);
+    }
+
+    /** True if a feature is set explicitly to 'false' */
+    public boolean isExplicitlyOff(String variable) {
+        if (!this.hasValue(variable))
+            return false;
+        return this.isFalsy(variable);
+    }
+
+    public static final String AVOID_STAR_JOINS = "FELDERA_AVOID_STAR_JOINS";
+
+    public boolean noStarJoins() {
+        return this.isExplicitlyOn(AVOID_STAR_JOINS);
+    }
+
+    /** True if a feature is not set or set to 'false' */
+    public boolean isOffOrMissing(String variable) {
+        if (!this.hasValue(variable))
+            return true;
+        return this.isFalsy(variable);
     }
 
     public ObjectNode asJson() {
@@ -62,8 +159,9 @@ public class ProgramMetadata implements IJson {
         this.inputTables.put(description.getName(), description);
     }
 
-    public void removeTable(ProgramIdentifier name) {
-        this.inputTables.remove(name);
+    public boolean removeTable(ProgramIdentifier name) {
+        IHasSchema removed = this.inputTables.remove(name);
+        return removed != null;
     }
 
     public void addView(IHasSchema description) {
@@ -90,5 +188,14 @@ public class ProgramMetadata implements IJson {
     @Override
     public void asJson(ToJsonInnerVisitor visitor) {
         IJson.toJsonStream(this.asJson(), visitor.stream);
+    }
+
+    /** Find all the preprocessors mentioned in all connectors */
+    public Set<String> getPreprocessors() {
+        Set<String> result = new HashSet<>();
+        for (var meta: this.inputTables.values()) {
+            meta.collectPreprocessors(result);
+        }
+        return result;
     }
 }

@@ -284,6 +284,13 @@ pub struct DatagenInputConfig {
     ///   apart from setting a seed, `workers` also needs to remain unchanged.
     /// - The input will arrive in non-deterministic order if `workers > 1`.
     pub seed: Option<u64>,
+
+    /// By default, the data generator does not request [transactions].  Set
+    /// this to a nonzero value for the data generator to automatically
+    /// orchestrate transactions of approximately the specified number of rows.
+    ///
+    /// [transactions]: https://docs.feldera.com/pipelines/transactions
+    pub transaction_size: Option<usize>,
 }
 
 impl Default for DatagenInputConfig {
@@ -292,6 +299,7 @@ impl Default for DatagenInputConfig {
             plan: vec![GenerationPlan::default()],
             workers: 1,
             seed: None,
+            transaction_size: None,
         }
     }
 }

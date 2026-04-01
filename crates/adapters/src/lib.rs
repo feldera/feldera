@@ -155,6 +155,7 @@ mod catalog;
 mod controller;
 pub mod format;
 pub mod integrated;
+pub mod preprocess;
 pub mod server;
 pub mod static_compile;
 pub mod transport;
@@ -179,8 +180,9 @@ pub use feldera_adapterlib::format::{
 };
 
 pub use controller::{
-    ConfigError, ConnectorConfig, Controller, ControllerError, ControllerStatus, FormatConfig,
-    InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig, TransportConfig,
+    ConfigError, ConnectorConfig, Controller, ControllerError, ControllerInner, ControllerStatus,
+    EndpointId, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
+    RuntimeConfig, TransportConfig,
 };
 pub use transport::{
     AsyncErrorCallback, InputConsumer, InputEndpoint, InputReader, OutputEndpoint,

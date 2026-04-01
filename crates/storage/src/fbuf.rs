@@ -32,6 +32,10 @@ use rkyv::{
 };
 use rkyv::{ArchiveUnsized, Fallible, RelPtr, vec::VecResolver};
 
+pub mod slab;
+
+use self::slab::{acquire_allocation, layout_for, recycle_or_dealloc};
+
 /// A custom buffer type that works with our read/write APIs and the
 /// buffer-cache.
 ///
@@ -48,9 +52,7 @@ impl Drop for FBuf {
     #[inline]
     fn drop(&mut self) {
         if self.cap != 0 {
-            unsafe {
-                alloc::dealloc(self.ptr.as_ptr(), self.layout());
-            }
+            recycle_or_dealloc(self.ptr, self.cap);
         }
     }
 }
@@ -81,7 +83,7 @@ impl FBuf {
 
     /// Constructs a new, empty `FBuf` with the specified capacity.
     ///
-    /// The vector will be able to hold exactly `capacity` bytes without
+    /// The vector will be able to hold at least `capacity` bytes without
     /// reallocating. If `capacity` is 0, the vector will not allocate.
     #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
@@ -92,14 +94,7 @@ impl FBuf {
                 capacity <= Self::MAX_CAPACITY,
                 "`capacity` cannot exceed isize::MAX - 15"
             );
-            let ptr = unsafe {
-                let layout = alloc::Layout::from_size_align_unchecked(capacity, Self::ALIGNMENT);
-                let ptr = alloc::alloc(layout);
-                if ptr.is_null() {
-                    alloc::handle_alloc_error(layout);
-                }
-                NonNull::new_unchecked(ptr)
-            };
+            let (ptr, capacity) = acquire_allocation(capacity);
             Self {
                 ptr,
                 cap: capacity,
@@ -110,7 +105,7 @@ impl FBuf {
 
     #[inline]
     fn layout(&self) -> alloc::Layout {
-        unsafe { alloc::Layout::from_size_align_unchecked(self.cap, Self::ALIGNMENT) }
+        layout_for(self.cap)
     }
 
     /// Clears the vector, removing all values.
@@ -124,7 +119,7 @@ impl FBuf {
 
     /// Change capacity of vector.
     ///
-    /// Will set capacity to exactly `new_cap`.
+    /// Will set capacity to at least `new_cap`.
     /// Can be used to either grow or shrink capacity.
     /// Backing memory will be reallocated.
     ///
@@ -146,27 +141,19 @@ impl FBuf {
             debug_assert!(new_cap >= self.len);
 
             if new_cap > 0 {
-                let new_ptr = if self.cap > 0 {
+                let (new_ptr, new_cap) = if self.cap > 0 {
                     let new_ptr = alloc::realloc(self.ptr.as_ptr(), self.layout(), new_cap);
                     if new_ptr.is_null() {
-                        alloc::handle_alloc_error(alloc::Layout::from_size_align_unchecked(
-                            new_cap,
-                            Self::ALIGNMENT,
-                        ));
+                        alloc::handle_alloc_error(layout_for(new_cap));
                     }
-                    new_ptr
+                    (NonNull::new_unchecked(new_ptr), new_cap)
                 } else {
-                    let layout = alloc::Layout::from_size_align_unchecked(new_cap, Self::ALIGNMENT);
-                    let new_ptr = alloc::alloc(layout);
-                    if new_ptr.is_null() {
-                        alloc::handle_alloc_error(layout);
-                    }
-                    new_ptr
+                    acquire_allocation(new_cap)
                 };
-                self.ptr = NonNull::new_unchecked(new_ptr);
+                self.ptr = new_ptr;
                 self.cap = new_cap;
             } else if self.cap > 0 {
-                alloc::dealloc(self.ptr.as_ptr(), self.layout());
+                recycle_or_dealloc(self.ptr, self.cap);
                 self.ptr = NonNull::dangling();
                 self.cap = 0;
             }
@@ -471,6 +458,13 @@ impl FBuf {
         self.into_vec().into_boxed_slice()
     }
 
+    /// Creates an `FBuf` by copying the slice.
+    pub fn from_slice(slice: &[u8]) -> Self {
+        let mut fbuf = FBuf::new();
+        fbuf.extend_from_slice(slice);
+        fbuf
+    }
+
     /// Converts the vector into `Vec<u8>`.
     ///
     /// This method reallocates and copies the underlying bytes. Any excess
@@ -766,7 +760,7 @@ impl Unpin for FBuf {}
 /// `WriteSerializer`.
 #[derive(Debug)]
 pub struct FBufSerializer<A> {
-    inner: A,
+    pub inner: A,
     limit: usize,
 }
 
@@ -774,10 +768,17 @@ pub struct FBufSerializer<A> {
 pub struct LimitExceeded;
 
 impl<A: Borrow<FBuf>> FBufSerializer<A> {
-    /// Creates a new `FBufSerializer` by wrapping a `Borrow<FBuf>`.
+    /// Creates a new `FBufSerializer` by wrapping a `FBuf`.
     #[inline]
-    pub fn new(inner: A, limit: usize) -> Self {
-        Self { inner, limit }
+    pub fn new(inner: A) -> Self {
+        Self {
+            inner,
+            limit: usize::MAX,
+        }
+    }
+
+    pub fn with_limit(self, limit: usize) -> Self {
+        Self { limit, ..self }
     }
 
     /// Consumes the serializer and returns the underlying type.

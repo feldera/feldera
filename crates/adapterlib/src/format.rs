@@ -1,8 +1,12 @@
 use std::any::Any;
 use std::borrow::Cow;
+use std::cmp::max;
 use std::fmt::{Display, Error as FmtError, Formatter};
+use std::fs::File;
 use std::hash::Hasher;
-use std::ops::{Add, AddAssign};
+use std::io::{Error as IoError, Read};
+use std::ops::{Add, AddAssign, Range};
+use std::sync::Arc;
 
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
@@ -17,6 +21,7 @@ use serde::de::StdError;
 use crate::ConnectorMetadata;
 use crate::catalog::{InputCollectionHandle, SerBatchReader};
 use crate::errors::controller::ControllerError;
+use crate::preprocess::Preprocessor;
 use crate::transport::Step;
 
 /// Trait that represents a specific data format.
@@ -216,6 +221,80 @@ impl InputBuffer for Box<dyn InputBuffer> {
     }
 }
 
+impl InputBuffer for Vec<Box<dyn InputBuffer>> {
+    fn flush(&mut self) {
+        for v in self.iter_mut() {
+            v.flush();
+        }
+    }
+
+    fn len(&self) -> BufferSize {
+        let mut size = BufferSize::empty();
+        for v in self.iter() {
+            size += v.len();
+        }
+        size
+    }
+
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        for v in self.iter() {
+            v.hash(hasher);
+        }
+    }
+
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
+        let mut result = Vec::new();
+        let mut remaining = n;
+        // Index of first buffer that should be preserved
+        let mut index = 0;
+        for v in self.iter_mut() {
+            if remaining == 0 {
+                break;
+            }
+            let buf = v.take_some(remaining);
+            if let Some(ib) = buf {
+                let len = ib.len().records;
+                if remaining >= len {
+                    // This buffer will be completely used
+                    index += 1;
+                }
+                remaining = remaining.saturating_sub(len);
+                result.push(ib);
+            }
+        }
+        self.drain(0..index);
+        if result.is_empty() {
+            None
+        } else {
+            Some(Box::new(result))
+        }
+    }
+}
+
+/// If any of the InputBuffer elements is a Vec itself, flatten it recursively.
+/// Return the concatenated input buffers all downcast to T.
+pub fn flatten_nested<T>(buffers: Vec<Box<dyn InputBuffer>>) -> Vec<Box<T>>
+where
+    T: Any,
+{
+    fn inner<T>(input: Vec<Box<dyn InputBuffer>>, output: &mut Vec<Box<T>>)
+    where
+        T: Any,
+    {
+        for buffer in input {
+            let any = buffer as Box<dyn Any>;
+            match any.downcast::<Vec<Box<dyn InputBuffer>>>() {
+                Ok(vec) => inner(*vec, output),
+                Err(any) => output.push(any.downcast().unwrap()),
+            }
+        }
+    }
+
+    let mut output = Vec::new();
+    inner(buffers, &mut output);
+    output
+}
+
 /// A wrapper around a [StagedBuffers] that implements the [InputBuffer] trait.
 ///
 /// The `StagedBuffers` trait is similar to `InputBuffer` in that it supports flushing
@@ -290,11 +369,135 @@ pub trait Parser: Send + Sync {
     fn fork(&self) -> Box<dyn Parser>;
 }
 
+/// A parser with preprocessing for a streaming preprocessor
+pub struct StreamingPreprocessedParser {
+    preprocessor: Box<dyn Preprocessor>,
+    stream_splitter: StreamSplitter,
+    parser: Box<dyn Parser>,
+}
+
+impl StreamingPreprocessedParser {
+    pub fn new(preprocessor: Box<dyn Preprocessor>, parser: Box<dyn Parser>) -> Self {
+        Self {
+            preprocessor,
+            stream_splitter: StreamSplitter::new(parser.splitter()),
+            parser,
+        }
+    }
+}
+
+impl Parser for StreamingPreprocessedParser {
+    fn parse(
+        &mut self,
+        data: &[u8],
+        metadata: Option<ConnectorMetadata>,
+    ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+        let (pre_data, mut pre_errors) = self.preprocessor.process(data);
+        self.stream_splitter.append(&pre_data);
+        let mut parsed: Vec<Box<dyn InputBuffer>> = Vec::new();
+        while let Some(chunk) = self.stream_splitter.next(true) {
+            let (parsed_data, mut parse_errors) = self.parser.parse(chunk, metadata.clone());
+            pre_errors.append(&mut parse_errors);
+            if let Some(data) = parsed_data {
+                parsed.push(data);
+            }
+        }
+        if parsed.is_empty() {
+            (None, pre_errors)
+        } else {
+            (Some(Box::new(parsed)), pre_errors)
+        }
+    }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        self.parser.stage(buffers)
+    }
+
+    fn splitter(&self) -> Box<dyn Splitter> {
+        let pre_splitter = self.preprocessor.splitter();
+        if let Some(splitter) = pre_splitter {
+            return splitter;
+        }
+        self.parser.splitter()
+    }
+
+    fn fork(&self) -> Box<dyn Parser> {
+        Box::new(StreamingPreprocessedParser::new(
+            self.preprocessor.fork(),
+            self.parser.fork(),
+        ))
+    }
+}
+
+/// A parser with preprocessing for a message-oriented preprocessor
+pub struct MessageOrientedPreprocessedParser {
+    preprocessor: Box<dyn Preprocessor>,
+    parser: Box<dyn Parser>,
+}
+
+impl MessageOrientedPreprocessedParser {
+    pub fn new(preprocessor: Box<dyn Preprocessor>, parser: Box<dyn Parser>) -> Self {
+        Self {
+            preprocessor,
+            parser,
+        }
+    }
+}
+
+impl Parser for MessageOrientedPreprocessedParser {
+    fn parse(
+        &mut self,
+        data: &[u8],
+        metadata: Option<ConnectorMetadata>,
+    ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+        let (pre_data, mut pre_errors) = self.preprocessor.process(data);
+        let mut parser_splitter = self.parser.splitter();
+        let mut parsed: Vec<Box<dyn InputBuffer>> = Vec::new();
+        let mut remaining = pre_data.as_slice();
+        // Use the parser to divide the message received from the preprocessor into chunks and parse each of them
+        while !remaining.is_empty() {
+            let chunk;
+            let split_offset = parser_splitter.input(remaining).unwrap_or(remaining.len());
+            (chunk, remaining) = remaining.split_at(split_offset);
+            let (parsed_data, mut parse_errors) = self.parser.parse(chunk, metadata.clone());
+            pre_errors.append(&mut parse_errors);
+            if let Some(data) = parsed_data {
+                parsed.push(data);
+            }
+        }
+        if parsed.is_empty() {
+            (None, pre_errors)
+        } else {
+            (Some(Box::new(parsed)), pre_errors)
+        }
+    }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        self.parser.stage(buffers)
+    }
+
+    fn splitter(&self) -> Box<dyn Splitter> {
+        let pre_splitter = self.preprocessor.splitter();
+        if let Some(splitter) = pre_splitter {
+            return splitter;
+        }
+        self.parser.splitter()
+    }
+
+    fn fork(&self) -> Box<dyn Parser> {
+        Box::new(MessageOrientedPreprocessedParser::new(
+            self.preprocessor.fork(),
+            self.parser.fork(),
+        ))
+    }
+}
+
 /// Splits a data stream at boundaries between records.
 ///
-/// [Parser::parse] can only parse complete records. For a byte stream source, a
-/// format-specific [Splitter] allows a transport to find boundaries.
-pub trait Splitter: Send {
+/// [Parser::parse] or [Preprocessor::process] can only parse complete records.
+/// For a byte stream source, a format-specific [Splitter] allows a transport
+/// to find boundaries.
+pub trait Splitter: Send + Sync {
     /// Looks for a record boundary in `data`. Returns:
     ///
     /// - `None`, if `data` does not necessarily complete a record.
@@ -308,6 +511,129 @@ pub trait Splitter: Send {
     /// Clears any state in this splitter and prepares it to start splitting new
     /// data.
     fn clear(&mut self);
+}
+
+/// Helper for breaking a stream of data into groups of records using a
+/// [Splitter].
+///
+/// A [Splitter] finds breakpoints between records given data presented to
+/// it. This is a higher-level data structure that takes input data and breaks
+/// it into chunks.
+pub struct StreamSplitter {
+    buffer: Vec<u8>,
+    start: u64,
+    fragment: Range<usize>,
+    fed: usize,
+    splitter: Box<dyn Splitter>,
+}
+
+impl StreamSplitter {
+    /// Returns a new stream splitter that finds breakpoints with `splitter`.
+    pub fn new(splitter: Box<dyn Splitter>) -> Self {
+        Self {
+            buffer: Vec::new(),
+            start: 0,
+            fragment: 0..0,
+            fed: 0,
+            splitter,
+        }
+    }
+
+    /// Returns the next full chunk of input, if any.  `eoi` specifies whether
+    /// the input stream is complete. If `eoi` is true and this function returns
+    /// `None`, then there are no more chunks.
+    pub fn next(&mut self, eoi: bool) -> Option<&[u8]> {
+        match self
+            .splitter
+            .input(&self.buffer[self.fed..self.fragment.end])
+        {
+            Some(n) => {
+                let chunk = &self.buffer[self.fragment.start..self.fed + n];
+                self.fed += n;
+                self.fragment.start = self.fed;
+                Some(chunk)
+            }
+            None => {
+                self.fed = self.fragment.end;
+                if eoi && !self.fragment.is_empty() {
+                    let chunk = &self.buffer[self.fragment.clone()];
+                    self.fragment.start = self.fragment.end;
+                    Some(chunk)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    /// Appends `data` to the data to be broken into chunks.
+    pub fn append(&mut self, data: &[u8]) {
+        let final_len = self.fragment.len() + data.len();
+        if final_len > self.buffer.len() {
+            self.buffer.reserve(final_len - self.buffer.len());
+        }
+        self.buffer.copy_within(self.fragment.clone(), 0);
+        self.buffer.resize(self.fragment.len(), 0);
+        self.buffer.extend(data);
+        self.fed -= self.fragment.start;
+        self.start += self.fragment.start as u64;
+        self.fragment = 0..self.buffer.len();
+    }
+
+    // Reads no more than `limit` bytes of data from `file` into the splitter,
+    // with an initial minimum buffer size of `buffer_size`. Returns the number
+    // of bytes read or an I/O error.
+    pub fn read(
+        &mut self,
+        file: &mut File,
+        buffer_size: usize,
+        limit: usize,
+    ) -> Result<usize, IoError> {
+        // Move data to beginning of buffer.
+        if self.fragment.start != 0 {
+            self.buffer.copy_within(self.fragment.clone(), 0);
+            self.fed -= self.fragment.start;
+            self.start += self.fragment.start as u64;
+            self.fragment = 0..self.fragment.len();
+        }
+
+        // Make sure there's some space to read data.
+        if self.fragment.len() == self.buffer.len() {
+            self.buffer
+                .resize(max(buffer_size, self.buffer.capacity() * 2), 0);
+        }
+
+        // Read data.
+        let mut space = &mut self.buffer[self.fragment.len()..];
+        if space.len() > limit {
+            space = &mut space[..limit];
+        }
+        let result = file.read(space);
+        if let Ok(n) = result {
+            self.fragment.end += n;
+        }
+        result
+    }
+
+    /// Returns the logical stream position of the next byte to be returned by
+    /// the splitter.
+    pub fn position(&self) -> u64 {
+        self.start + self.fragment.start as u64
+    }
+
+    /// Sets the logical stream position of the next byte to be returned by
+    /// the splitter to `offset`, and discards other state.
+    pub fn seek(&mut self, offset: u64) {
+        self.start = offset;
+        self.fragment = 0..0;
+        self.fed = 0;
+        self.splitter.clear();
+    }
+
+    /// Resets the splitter's state as if it were newly created.
+    pub fn reset(&mut self) {
+        self.seek(0);
+    }
 }
 
 pub trait OutputFormat: Send + Sync {
@@ -347,9 +673,10 @@ pub trait Encoder: Send {
 
     /// Encode a batch of updates, push encoded buffers to the consumer
     /// using [`OutputConsumer::push_buffer`].
-    fn encode(&mut self, batch: &dyn SerBatchReader) -> AnyResult<()>;
+    fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()>;
 }
 
+#[doc(hidden)]
 pub trait OutputConsumer: Send {
     /// Maximum buffer size that this transport can transmit.
     /// The encoder should not generate buffers exceeding this size.

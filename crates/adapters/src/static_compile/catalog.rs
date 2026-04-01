@@ -3,6 +3,7 @@ use crate::catalog::{InputCollectionHandle, SerBatchReaderHandle};
 use crate::{Catalog, ControllerError, catalog::OutputCollectionHandles};
 use dbsp::circuit::Layout;
 use dbsp::circuit::circuit_builder::CircuitBase;
+use dbsp::dynamic::DynData;
 use dbsp::trace::spine_async::WithSnapshot;
 use dbsp::typed_batch::TypedBatch;
 use dbsp::utils::Tup1;
@@ -22,7 +23,6 @@ use std::any::TypeId;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::mem::transmute;
-use std::ops::Range;
 use std::sync::{Arc, Mutex};
 
 const INTERNED_STRING_RELATION_NAME: &str = "feldera_interned_strings";
@@ -58,7 +58,7 @@ impl Catalog {
         name: &SqlIdentifier,
         stream: &Stream<RootCircuit, Z>,
         shard: bool,
-    ) -> (Stream<RootCircuit, Z>, Option<Range<usize>>)
+    ) -> Stream<RootCircuit, Z>
     where
         Z: Batch<Time = ()>,
         Z::InnerBatch: Send,
@@ -73,12 +73,11 @@ impl Catalog {
                 .get(&name.name())
                 .copied()
                 .unwrap_or_default();
-            let workers = &hosts[ordinal].workers;
-            (stream.shard_workers(workers.clone()), Some(workers.clone()))
+            stream.shard_workers(hosts[ordinal].workers.clone())
         } else if shard {
-            (stream.shard(), None)
+            stream.shard()
         } else {
-            (stream.clone(), None)
+            stream.clone()
         }
     }
 
@@ -101,7 +100,7 @@ impl Catalog {
             + Send
             + Sync
             + 'static,
-        Z: ZSet + Debug + Send + Sync,
+        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
@@ -138,7 +137,7 @@ impl Catalog {
             + Send
             + Sync
             + 'static,
-        Z: ZSet + Debug + Send + Sync,
+        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
@@ -178,7 +177,7 @@ impl Catalog {
             + Send
             + Sync
             + 'static,
-        Z: ZSet + Debug + Send + Sync,
+        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
@@ -215,7 +214,7 @@ impl Catalog {
             + Send
             + Sync
             + 'static,
-        Z: ZSet + Debug + Send + Sync,
+        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
@@ -372,7 +371,7 @@ impl Catalog {
             + Send
             + Sync
             + 'static,
-        Z: ZSet + Debug + Send + Sync,
+        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
@@ -399,7 +398,7 @@ impl Catalog {
             + Send
             + Sync
             + 'static,
-        Z: ZSet + Debug + Send + Sync,
+        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
@@ -422,7 +421,7 @@ impl Catalog {
             }
         }
 
-        let (stream, workers) = self.gather_output_to_host(&name, &stream, false);
+        let stream = self.gather_output_to_host(&name, &stream, false);
 
         // Create handle for the stream itself.
         let (delta_handle, enable_count, delta_gid) =
@@ -438,7 +437,6 @@ impl Catalog {
             enable_count,
             integrate_handle_is_indexed: false,
             integrate_handle: None,
-            workers,
         };
 
         self.register_output_batch_handles(&name, handles).unwrap();
@@ -458,7 +456,7 @@ impl Catalog {
             + Debug
             + Send
             + 'static,
-        Z: ZSet + Debug + Send + Sync,
+        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
@@ -478,14 +476,14 @@ impl Catalog {
             + Debug
             + Send
             + 'static,
-        Z: ZSet + Debug + Send + Sync,
+        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
         let name = schema.name.clone();
 
-        let (integrate_handle, delta_handle, enable_count, workers) =
+        let (integrate_handle, delta_handle, enable_count) =
             stream
                 .circuit()
                 .region(&format!("materialized output ({})", name.name()), || {
@@ -498,7 +496,7 @@ impl Catalog {
                     // same record with +1 and -1 weights in different workers.
                     // To avoid this, we shard the stream, so that such records
                     // get canceled out.
-                    let (stream, workers) = self.gather_output_to_host(&name, &stream, true);
+                    let stream = self.gather_output_to_host(&name, &stream, true);
 
                     // Create handle for the stream itself.
                     let (delta_handle, enable_count, delta_gid) =
@@ -517,7 +515,7 @@ impl Catalog {
                         .circuit()
                         .set_mir_node_id(&integrate_gid, persistent_id);
 
-                    (integrate_handle, delta_handle, enable_count, workers)
+                    (integrate_handle, delta_handle, enable_count)
                 });
 
         let handles = OutputCollectionHandles {
@@ -531,7 +529,6 @@ impl Catalog {
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerBatchReaderHandle>,
             enable_count,
-            workers,
         };
 
         self.register_output_batch_handles(&name, handles).unwrap();
@@ -652,7 +649,7 @@ impl Catalog {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
         let name = schema.name.clone();
 
-        let (delta_handle, enable_count, integrate_handle, workers) = stream.circuit().region(
+        let (delta_handle, enable_count, integrate_handle) = stream.circuit().region(
             &format!(
                 "{}indexed output ({})",
                 if materialized { "materialized " } else { "" },
@@ -660,7 +657,7 @@ impl Catalog {
             ),
             || {
                 let stream = stream.try_sharded_version();
-                let (stream, workers) = self.gather_output_to_host(&name, &stream, false);
+                let stream = self.gather_output_to_host(&name, &stream, false);
 
                 // Create handle for the stream itself.
                 let delta = stream.map(|(_k, v)| v.clone()).set_persistent_id(
@@ -695,7 +692,7 @@ impl Catalog {
                     None
                 };
 
-                (delta_handle, enable_count, integrate_handle, workers)
+                (delta_handle, enable_count, integrate_handle)
             },
         );
 
@@ -708,7 +705,6 @@ impl Catalog {
             enable_count,
             integrate_handle_is_indexed: true,
             integrate_handle,
-            workers,
         };
 
         self.register_output_batch_handles(&name, handles).unwrap();
@@ -773,7 +769,7 @@ impl Catalog {
             return None;
         }
 
-        let (stream, workers) = self.gather_output_to_host(index_name, &stream, false);
+        let stream = self.gather_output_to_host(index_name, &stream, false);
         let view_handles = self.output_handles(view_name)?;
 
         let (stream_handle, enable_count, stream_gid) =
@@ -793,7 +789,6 @@ impl Catalog {
             enable_count,
             integrate_handle_is_indexed: false,
             integrate_handle: None,
-            workers,
         };
 
         self.register_output_batch_handles(index_name, handles)

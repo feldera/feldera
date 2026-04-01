@@ -360,6 +360,32 @@ computation on whole days.
 <a id="abs"></a>`ABS`(interval) computes the absolute value of an
 interval.
 
+## Period predicate DATE/TIME/TIMESTAMP operators
+
+A time period is defined as a pair: `(Start, End)`, where `Start` and `End` are expressions that evaluate to `DATE`, `TIME`, or `TIMESTAMP` values. They can either be DATETIME literals, columns, or expressions that return a DATETIME value.
+
+The `END` value can also be an `INTERVAL`, in which case the time period is defined as `(Start, Interval)`. The `INTERVAL` must be type-compatible with the `Start` value. Both positive and negative intervals are supported.
+
+**Examples:**
+- Literal value:`(DATE '2020-06-21', DATE '2020-06-22')`
+- Literal value with interval: `(DATE '2020-06-21', INTERVAL '1' DAY)`
+
+The `Start` and `End` values may be provided in any order. If `Start` > `End`, the period is interpreted as `(End, Start)`. This ensures if `END` is the smaller `TIME/DATE/TIMESTAMP`, or an `INTERVAL` with a negative duration, it is treated as the beginning of the range.
+
+We support the following time period predicate operators:
+
+| Operation                | Syntax                                               | Semantics                           | Example                                                                                                     |
+| ------------------------ | ---------------------------------------------------- |-------------------------------------| ----------------------------------------------------------------------------------------------------------- |
+| <a id="contains"></a>**CONTAINS (value)**     | `(Start1, End1) CONTAINS V`                          | `start1 <= V AND end1 >= V`         | `(DATE '2020-06-24', DATE '2020-06-22') CONTAINS DATE '2020-06-21'` => FALSE                               |
+|                      **CONTAINS (period)**    | `(Start1, End1) CONTAINS (Start2, End2)`             | `start1 <= start2 AND end1 >= end2` | `(DATE '2020-06-21', DATE '2020-06-25') CONTAINS (DATE '2020-06-22', DATE '2020-06-23')` => TRUE          |
+| <a id="overlaps"></a>**OVERLAPS**             | `(Start1, End1) OVERLAPS (Start2, End2)`             | `start1 <= end2 AND end1 >= start2` | `(DATE '2020-06-21', DATE '2020-06-23') OVERLAPS (DATE '2020-06-22', DATE '2020-06-24')` => TRUE          |
+| <a id="equals"></a>  **EQUALS**               | `(Start1, End1) EQUALS (Start2, End2)`               | `start1 = start2 AND end1 = end2`   | `(DATE '2020-06-21', DATE '2020-06-23') EQUALS (DATE '2020-06-21', DATE '2020-06-23')` => TRUE            |
+| <a id="precedes"></a>**PRECEDES**             | `(Start1, End1) PRECEDES (Start2, End2)`             | `end1 <= start2`                    | `(DATE '2020-06-21', DATE '2020-06-22') PRECEDES (DATE '2020-06-24', DATE '2020-06-25')` => TRUE          |
+| <a id="immediately-precedes"></a>**IMMEDIATELY PRECEDES** | `(Start1, End1) IMMEDIATELY PRECEDES (Start2, End2)` | `end1 = start2`         | `(DATE '2020-06-21', DATE '2020-06-22') IMMEDIATELY PRECEDES (DATE '2020-06-22', DATE '2020-06-23')` => TRUE |
+| <a id="succeeds"></a>**SUCCEEDS**             | `(Start1, End1) SUCCEEDS (Start2, End2)`             | `start1 >= end2`                    | `(DATE '2020-06-24', DATE '2020-06-25') SUCCEEDS (DATE '2020-06-21', DATE '2020-06-22')` => TRUE          |
+| <a id="immediately-succeeds"></a>**IMMEDIATELY SUCCEEDS** | `(Start1, End1) IMMEDIATELY SUCCEEDS (Start2, End2)` | `start1 = end2`         | `(DATE '2020-06-24', DATE '2020-06-25') IMMEDIATELY SUCCEEDS (DATE '2020-06-23', DATE '2020-06-24')` => TRUE |
+
+
 ## Timezones
 
 `DATE`, `TIME` and `TIMESTAMP` have no time zone.
@@ -412,12 +438,14 @@ AND T.ts <= NOW() + INTERVAL 1 DAYS`).
 
 We support the following functions for formatting and parsing date-like values:
 
-| Operation          | Arguments             | Result    | Example                              |
-|--------------------|-----------------------|-----------|--------------------------------------|
-| `FORMAT_DATE`      | string_format, date   | string    | `FORMAT_DATE('%Y-%m', DATE '2020-10-10')` => `2020-10` |
-| `PARSE_DATE`       | string_format, string | DATE      | `PARSE_DATE(' %Y-%m-%d', '   2020-10-01')` => `2020-10-01` |
-| `PARSE_TIME`       | string_format, string | TIME      | `PARSE_TIME('%H:%M', '10:10')` => `10:10:00` |
-| `PARSE_TIMESTAMP`  | string_format, string | TIMESTAMP | `PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', '2020-10-01 00:00:00')` => `2020-10-01 00:00:00` |
+| Operation                                       | Arguments                | Result    | Example                              |
+|-------------------------------------------------|--------------------------|-----------|--------------------------------------|
+| <a id="format_date"></a>     `FORMAT_DATE`      | string_format, date      | string    | `FORMAT_DATE('%Y-%m', DATE '2020-10-10')` => `2020-10` |
+| <a id="format_timestamp"></a>`FORMAT_TIMESTAMP` | string_format, timestamp | string    | `FORMAT_TIMESTAMP('%Y-%m %H,%M,%S', TIMESTAMP '2020-10-10 10:00:00')` => `2020-10 10,00,00` |
+| <a id="format_time"></a>     `FORMAT_TIME`      | string_format, time      | string    | `FORMAT_TIME('%H-%M-%S', TIME '10:00:00')` => `10-00-00` |
+| <a id="parse_date"></a>      `PARSE_DATE`       | string_format, string    | DATE      | `PARSE_DATE(' %Y-%m-%d', '   2020-10-01')` => `2020-10-01` |
+| <a id="parse_time"></a>      `PARSE_TIME`       | string_format, string    | TIME      | `PARSE_TIME('%H:%M', '10:10')` => `10:10:00` |
+| <a id="parse_timestamp"></a> `PARSE_TIMESTAMP`  | string_format, string    | TIMESTAMP | `PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', '2020-10-01 00:00:00')` => `2020-10-01 00:00:00` |
 
 If the string cannot be parsed according to the specified format:
 

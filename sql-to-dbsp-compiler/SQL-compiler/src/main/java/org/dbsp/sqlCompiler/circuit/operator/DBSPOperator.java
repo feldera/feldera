@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.circuit.annotation.Annotation;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
@@ -212,5 +213,9 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
 
     public CalciteRelNode getRelNode() {
         return this.node.to(CalciteRelNode.class);
+    }
+
+    public List<SourcePositionRange> getSourcePositions() {
+        return this.getRelNode().getSourcePositions();
     }
 }

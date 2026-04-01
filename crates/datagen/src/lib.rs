@@ -33,7 +33,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 use tokio::{sync::mpsc::UnboundedSender, time::Instant as TokioInstant};
 
 use dbsp::circuit::tokio::TOKIO;
-use feldera_adapterlib::format::{BufferSize, InputBuffer, Parser};
+use feldera_adapterlib::format::{BufferSize, InputBuffer, Parser, StagedInputBuffer};
 use feldera_adapterlib::transport::{
     InputCommandReceiver, InputConsumer, InputEndpoint, InputReader, InputReaderCommand, Resume,
     TransportInputEndpoint, Watermark, parse_resume_info,
@@ -513,6 +513,7 @@ impl InputGenerator {
             let consumer = consumer.clone();
             let parser = parser.fork();
             let rate_limiters = rate_limiters.clone();
+            let hash_enabled = consumer.hasher().is_some();
 
             let task = Self::worker_thread(
                 work_receiver,
@@ -523,6 +524,7 @@ impl InputGenerator {
                 parser,
                 rate_limiters,
                 parker.unparker().clone(),
+                hash_enabled,
             );
             if needs_blocking_tasks {
                 thread::Builder::new()
@@ -576,12 +578,13 @@ impl InputGenerator {
                 let Completion {
                     batch,
                     mut buffer,
+                    hash_data,
                     timestamp: _timestamp,
                 } = completion;
                 in_flight[batch.plan_idx].remove_range(batch.rows.start..=batch.rows.end - 1);
                 let size = buffer.len();
                 consumer.buffered(size);
-                buffer.hash(hasher);
+                hasher.write(&hash_data);
                 buffer.flush();
                 size
             }
@@ -605,6 +608,7 @@ impl InputGenerator {
         let mut running = false;
         let mut eoi = false;
         let mut completed = VecDeque::new();
+        let mut transaction_size = 0;
         loop {
             match command_receiver.try_recv()? {
                 Some(command @ InputReaderCommand::Replay { .. }) => {
@@ -619,38 +623,53 @@ impl InputGenerator {
                     let mut consumed = vec![RowRangeSet::new(); config.plan.len()];
                     let mut watermarks = Vec::new();
 
+                    // Did we start a transaction for this particular `Queue`
+                    // command?  (We will not both start and commit a
+                    // transaction for a single `Queue` command, because one
+                    // goal of supporting transactions for datagen is to test
+                    // the transactions mechanism, which degenerates into a
+                    // no-op if we do both without another step in between.)
+                    let mut started_transaction = false;
+
                     while total.records < n {
                         let Some(Completion {
                             batch: Batch { plan_idx, rows },
                             mut buffer,
+                            hash_data,
                             timestamp,
                         }) = completed.pop_front()
                         else {
                             break;
                         };
-                        let mut taken = buffer.take_some(n - total.records);
-                        watermarks.push(Watermark::new(timestamp, None));
-
-                        let flushed = taken.len();
-                        if flushed.records > 0 {
-                            total += flushed;
-                            if let Some(hasher) = hasher.as_mut() {
-                                taken.hash(hasher);
-                            }
-                            consumed[plan_idx]
-                                .insert_range(rows.start..=rows.start + flushed.records - 1);
-                            taken.flush();
-                        }
-                        if !buffer.is_empty() {
+                        let flushed = buffer.len();
+                        if total.records > 0 && total.records + flushed.records > n {
                             completed.push_front(Completion {
-                                batch: Batch {
-                                    plan_idx,
-                                    rows: rows.start + flushed.records..rows.end,
-                                },
+                                batch: Batch { plan_idx, rows },
                                 buffer,
+                                hash_data,
                                 timestamp,
                             });
                             break;
+                        }
+                        watermarks.push(Watermark::new(timestamp, None));
+
+                        if flushed.records > 0 {
+                            if let Some(goal) = config.transaction_size
+                                && goal > 0
+                            {
+                                if transaction_size == 0 {
+                                    consumer.start_transaction(None);
+                                    started_transaction = true;
+                                }
+                                transaction_size += flushed.records;
+                            }
+
+                            total += flushed;
+                            if let Some(hasher) = hasher.as_mut() {
+                                hasher.write(&hash_data);
+                            }
+                            consumed[plan_idx].insert_range(rows.start..=rows.end - 1);
+                            buffer.flush();
                         }
                     }
                     let mut metadata_todo = unassigned.clone();
@@ -674,6 +693,14 @@ impl InputGenerator {
                         serde_json::to_value(metadata).unwrap(),
                         hasher.map(|h| h.finish()),
                     );
+                    if !started_transaction
+                        && let Some(goal) = config.transaction_size
+                        && goal > 0
+                        && transaction_size >= goal
+                    {
+                        consumer.commit_transaction();
+                        transaction_size = 0;
+                    }
                     consumer.extended(total, Some(resume), watermarks);
                 }
                 Some(InputReaderCommand::Disconnect) => break,
@@ -693,6 +720,10 @@ impl InputGenerator {
                 {
                     let _ = work_sender.send_blocking(work);
                 } else if in_flight.iter().all(|set| set.is_empty()) {
+                    if transaction_size > 0 {
+                        consumer.commit_transaction();
+                        transaction_size = 0;
+                    }
                     eoi = true;
                     running = false;
                     consumer.eoi();
@@ -715,12 +746,14 @@ impl InputGenerator {
         mut parser: Box<dyn Parser>,
         rate_limiters: Arc<Vec<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>>,
         datagen_unparker: Unparker,
+        hash_enabled: bool,
     ) {
         let mut buffer = Vec::new();
         let mut buffer_start = 0;
         static START_ARR: &[u8; 1] = b"[";
         static END_ARR: &[u8; 1] = b"]";
         static REC_DELIM: &[u8; 1] = b",";
+        let max_batch_size = consumer.max_batch_size();
 
         while let Ok(work) = work_receiver.recv().await {
             datagen_unparker.unpark();
@@ -731,7 +764,10 @@ impl InputGenerator {
                 seed,
             } = work;
             let plan = &config.plan[plan_idx];
-            let batch_size: usize = min(plan.rate.unwrap_or(u32::MAX) as usize, 10_000);
+            let batch_size: usize = min(
+                min(plan.rate.unwrap_or(u32::MAX) as usize, 10_000),
+                max_batch_size,
+            );
             let schema = schema.clone();
             let mut generator = RecordGenerator::new(seed, plan, &schema);
 
@@ -764,14 +800,17 @@ impl InputGenerator {
                             buffer.extend(END_ARR);
 
                             let timestamp = Utc::now();
-                            let (buffer, errors) = parser.parse(&buffer, None);
+                            let (parsed, errors) = parser.parse(&buffer, None);
                             consumer.parse_errors(errors);
+                            let (buffer, hash_data) =
+                                stage_and_hash_buffer(&*parser, parsed, hash_enabled);
                             let _ = completion_sender.send(Completion {
                                 batch: Batch {
                                     plan_idx,
                                     rows: buffer_start..idx + 1,
                                 },
                                 buffer,
+                                hash_data,
                                 timestamp,
                             });
                             datagen_unparker.unpark();
@@ -795,14 +834,16 @@ impl InputGenerator {
                 buffer.extend(END_ARR);
                 let timestamp = Utc::now();
 
-                let (buffer, errors) = parser.parse(&buffer, None);
+                let (parsed, errors) = parser.parse(&buffer, None);
                 consumer.parse_errors(errors);
+                let (buffer, hash_data) = stage_and_hash_buffer(&*parser, parsed, hash_enabled);
                 let _ = completion_sender.send(Completion {
                     batch: Batch {
                         plan_idx,
                         rows: buffer_start..rows.end,
                     },
                     buffer,
+                    hash_data,
                     timestamp,
                 });
                 datagen_unparker.unpark();
@@ -820,12 +861,53 @@ struct Work {
 struct Completion {
     batch: Batch,
     buffer: Option<Box<dyn InputBuffer>>,
+    hash_data: Vec<u8>,
     timestamp: DateTime<Utc>,
 }
 
 struct Batch {
     plan_idx: usize,
     rows: Range<usize>,
+}
+
+#[derive(Default)]
+struct HashBytesRecorder(Vec<u8>);
+
+impl HashBytesRecorder {
+    fn into_inner(self) -> Vec<u8> {
+        self.0
+    }
+}
+
+impl Hasher for HashBytesRecorder {
+    fn finish(&self) -> u64 {
+        0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        self.0.extend_from_slice(bytes);
+    }
+}
+
+fn stage_and_hash_buffer(
+    parser: &dyn Parser,
+    buffer: Option<Box<dyn InputBuffer>>,
+    hash_enabled: bool,
+) -> (Option<Box<dyn InputBuffer>>, Vec<u8>) {
+    let Some(buffer) = buffer else {
+        return (None, Vec::new());
+    };
+
+    let mut hash_data = Vec::new();
+    if hash_enabled {
+        let mut recorder = HashBytesRecorder::default();
+        buffer.hash(&mut recorder);
+        hash_data = recorder.into_inner();
+    }
+
+    let len = buffer.len();
+    let staged = StagedInputBuffer::new(parser.stage(vec![buffer]), len);
+    (Some(Box::new(staged)), hash_data)
 }
 
 type RowRangeSet = RangeSet<[RangeInclusive<usize>; 4]>;
@@ -911,6 +993,10 @@ fn assign_work(
 }
 
 impl InputReader for InputGenerator {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
     fn request(&self, command: InputReaderCommand) {
         let _ = self.command_sender.send(command);
         self.datagen_unparker.unpark();

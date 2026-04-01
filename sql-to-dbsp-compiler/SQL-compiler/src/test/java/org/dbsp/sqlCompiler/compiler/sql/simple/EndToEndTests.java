@@ -301,7 +301,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testNull() {
         String query = "SELECT NULL";
-        DBSPZSetExpression result = new DBSPZSetExpression(new DBSPTupleExpression(DBSPNullLiteral.INSTANCE));
+        DBSPZSetExpression result = new DBSPZSetExpression(new DBSPTupleExpression(new DBSPNullLiteral()));
         this.testConstantOutput(query, result);
     }
 
@@ -315,7 +315,8 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testArrayIndexOutOfBounds() {
         String query = "SELECT (ARRAY [2])[3]";
-        DBSPZSetExpression result = new DBSPZSetExpression(new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))));
+        DBSPZSetExpression result = new DBSPZSetExpression(new DBSPTupleExpression(
+                DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))));
         this.testConstantOutput(query, result);
     }
 

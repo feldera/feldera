@@ -577,7 +577,7 @@ class illarg_isnot_distinct_illegal(TstView):
         self.expected_error = "Cannot apply 'IS NOT DISTINCT FROM' to arguments of type"
 
 
-# BETWEEN...AND...
+# BETWEEN [ASYMMETRIC]...AND...
 class illarg_between_and_legal(TstView):
     def __init__(self):
         # checked manually
@@ -587,17 +587,17 @@ class illarg_between_and_legal(TstView):
                 "decimall": False,
                 "reall": False,
                 "dbl": False,
-                "str": True,
-                "booll": True,
-                "bin": True,
-                "tmestmp": True,
-                "datee": True,
-                "tme": True,
-                "uuidd": True,
-                "arr": True,
-                "mapp": True,
-                "roww": True,
-                "udt": True,
+                "str": False,
+                "booll": False,
+                "bin": False,
+                "tmestmp": False,
+                "datee": False,
+                "tme": False,
+                "uuidd": False,
+                "arr": False,
+                "mapp": False,
+                "roww": False,
+                "udt": False,
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW between_and_legal AS SELECT
@@ -605,17 +605,17 @@ class illarg_between_and_legal(TstView):
                       decimall BETWEEN -1111.51 AND -1111.53 AS decimall,
                       reall BETWEEN -57681.17 AND -57681.19 AS reall,
                       dbl BETWEEN -38.2711234601245 AND -38.2711234601247 AS dbl,
-                      str BETWEEN 'hello ' AND 'hello ' AS str,
-                      booll BETWEEN True AND True AS booll,
-                      bin BETWEEN X'0B1620' AND X'0B1620' AS bin,
-                      tmestmp BETWEEN TIMESTAMP '2020-06-21 14:23:43.123654' AND TIMESTAMP '2020-06-21 14:23:45.123654' AS tmestmp,
-                      datee BETWEEN DATE '2020-06-20' AND DATE '2020-06-22' AS datee,
-                      tme BETWEEN TIME '14:23:43.456' AND TIME '14:23:45.456' AS tme,
-                      uuidd BETWEEN UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AND UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
-                      ARRAY['bye', '14'] BETWEEN ARRAY['bye', '14'] AND ARRAY['bye', '14'] AS arr,
-                      mapp BETWEEN MAP['a', 12, 'b', 17] AND MAP['a', 12, 'b', 17] AS mapp,
-                      roww BETWEEN ROW(4,'cat') AND ROW(4,'cat') AS roww,
-                      udt BETWEEN (4,'cat') AND (4,'cat') AS udt
+                      str BETWEEN 'i ' AND 'g' AS str,
+                      booll BETWEEN True AND False AS booll,
+                      bin BETWEEN X'0C1620' AND X'0A1620' AS bin,
+                      tmestmp BETWEEN TIMESTAMP '2021-06-21 14:23:43.123655' AND TIMESTAMP '2019-06-21 14:23:45.123653' AS tmestmp,
+                      datee BETWEEN DATE '2020-06-22' AND DATE '2020-06-20' AS datee,
+                      tme BETWEEN TIME '15:23:43.457' AND TIME '13:23:45.455' AS tme,
+                      uuidd BETWEEN UUID '52b8fec7-c7a3-4531-9611-4bde80f9cb4c' AND UUID '32b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
+                      ARRAY['bye'] BETWEEN ARRAY['c'] AND ARRAY['a'] AS arr,
+                      mapp BETWEEN MAP['a', 13] AND MAP['a', 11] AS mapp,
+                      roww BETWEEN ROW(5,'cat') AND ROW(3,'cat') AS roww,
+                      udt BETWEEN (5,'cat') AND (3,'cat') AS udt
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -631,7 +631,60 @@ class illarg_between_and_illegal(TstView):
         self.expected_error = "Cannot apply 'BETWEEN ASYMMETRIC' to arguments of type"
 
 
-# NOT BETWEEN...AND...
+# BETWEEN SYMMETRIC ... AND ...
+class illarg_between_symmetric_and_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "intt": True,
+                "decimall": True,
+                "reall": True,
+                "dbl": True,
+                "str": True,
+                "booll": True,
+                "bin": True,
+                "tmestmp": True,
+                "datee": True,
+                "tme": True,
+                "uuidd": True,
+                "arr": True,
+                "mapp": True,
+                "roww": True,
+                "udt": True,
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW between_symmetric_and_legal AS SELECT
+                      intt BETWEEN SYMMETRIC -11 AND -13 AS intt,
+                      decimall BETWEEN SYMMETRIC -1111.51 AND -1111.53 AS decimall,
+                      reall BETWEEN SYMMETRIC -57681.17 AND -57681.19 AS reall,
+                      dbl BETWEEN SYMMETRIC -38.2711234601245 AND -38.2711234601247 AS dbl,
+                      str BETWEEN SYMMETRIC 'i ' AND 'g' AS str,
+                      booll BETWEEN SYMMETRIC True AND False AS booll,
+                      bin BETWEEN SYMMETRIC X'0C1620' AND X'0A1620' AS bin,
+                      tmestmp BETWEEN SYMMETRIC TIMESTAMP '2021-06-21 14:23:43.123655' AND TIMESTAMP '2019-06-21 14:23:45.123653' AS tmestmp,
+                      datee BETWEEN SYMMETRIC DATE '2020-06-22' AND DATE '2020-06-20' AS datee,
+                      tme BETWEEN SYMMETRIC TIME '15:23:43.457' AND TIME '13:23:45.455' AS tme,
+                      uuidd BETWEEN SYMMETRIC UUID '52b8fec7-c7a3-4531-9611-4bde80f9cb4c' AND UUID '32b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
+                      ARRAY['bye'] BETWEEN SYMMETRIC ARRAY['c'] AND ARRAY['a'] AS arr,
+                      mapp BETWEEN SYMMETRIC MAP['a', 13] AND MAP['a', 11] AS mapp,
+                      roww BETWEEN SYMMETRIC ROW(5,'cat') AND ROW(3,'cat') AS roww,
+                      udt BETWEEN SYMMETRIC (5,'cat') AND (3,'cat') AS udt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_between_symmetric_and_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW between_symmetric_and_illegal AS SELECT
+                      roww BETWEEN SYMMETRIC -38.2711234601245 AND ROW(3,'cat') AS roww
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Cannot apply 'BETWEEN SYMMETRIC' to arguments of type"
+
+
+# NOT BETWEEN [ASYMMETRIC]...AND...
 class illarg_notbetween_and_legal(TstView):
     def __init__(self):
         # checked manually
@@ -641,17 +694,17 @@ class illarg_notbetween_and_legal(TstView):
                 "decimall": True,
                 "reall": True,
                 "dbl": True,
-                "str": False,
-                "bin": False,
-                "booll": False,
-                "tmestmp": False,
-                "datee": False,
-                "tme": False,
-                "uuidd": False,
-                "arr": False,
-                "mapp": False,
-                "roww": False,
-                "udt": False,
+                "str": True,
+                "booll": True,
+                "bin": True,
+                "tmestmp": True,
+                "datee": True,
+                "tme": True,
+                "uuidd": True,
+                "arr": True,
+                "mapp": True,
+                "roww": True,
+                "udt": True,
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW notbetween_and_legal AS SELECT
@@ -659,17 +712,17 @@ class illarg_notbetween_and_legal(TstView):
                       decimall NOT BETWEEN -1111.51 AND -1111.53 AS decimall,
                       reall NOT BETWEEN -57681.17 AND -57681.19 AS reall,
                       dbl NOT BETWEEN -38.2711234601245 AND -38.2711234601247 AS dbl,
-                      str NOT BETWEEN 'hello ' AND 'hello ' AS str,
-                      X'0B1620' NOT BETWEEN X'0B1620' AND X'0B1620' AS bin,
-                      booll NOT BETWEEN True AND True AS booll,
-                      tmestmp NOT BETWEEN TIMESTAMP '2020-06-21 14:23:43.123654' AND TIMESTAMP '2020-06-21 14:23:45.123654' AS tmestmp,
-                      datee NOT BETWEEN DATE '2020-06-20' AND DATE '2020-06-22' AS datee,
-                      tme NOT BETWEEN TIME '14:23:43.456' AND TIME '14:23:45.456' AS tme,
-                      uuidd NOT BETWEEN UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AND UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
-                      arr NOT BETWEEN ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] AND ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] AS arr,
-                      mapp NOT BETWEEN MAP['a', 12, 'b', 17] AND MAP['a', 12, 'b', 17] AS mapp,
-                      roww NOT BETWEEN ROW(4,'cat') AND ROW(4,'cat') AS roww,
-                      udt NOT BETWEEN (4,'cat') AND (4,'cat') AS udt
+                      str NOT BETWEEN 'i ' AND 'g' AS str,
+                      booll NOT BETWEEN True AND False AS booll,
+                      bin NOT BETWEEN X'0C1620' AND X'0A1620' AS bin,
+                      tmestmp NOT BETWEEN TIMESTAMP '2021-06-21 14:23:43.123655' AND TIMESTAMP '2019-06-21 14:23:45.123653' AS tmestmp,
+                      datee NOT BETWEEN DATE '2020-06-22' AND DATE '2020-06-20' AS datee,
+                      tme NOT BETWEEN TIME '15:23:43.457' AND TIME '13:23:45.455' AS tme,
+                      uuidd NOT BETWEEN UUID '52b8fec7-c7a3-4531-9611-4bde80f9cb4c' AND UUID '32b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
+                      ARRAY['bye'] NOT BETWEEN ARRAY['c'] AND ARRAY['a'] AS arr,
+                      mapp NOT BETWEEN MAP['a', 13] AND MAP['a', 11] AS mapp,
+                      roww NOT BETWEEN ROW(5,'cat') AND ROW(3,'cat') AS roww,
+                      udt NOT BETWEEN (5,'cat') AND (3,'cat') AS udt
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -684,6 +737,61 @@ class illarg_notbetween_and_illegal(TstView):
                       WHERE id = 1"""
         self.expected_error = (
             "Cannot apply 'NOT BETWEEN ASYMMETRIC' to arguments of type"
+        )
+
+
+# NOT BETWEEN [SYMMETRIC]...AND...
+class illarg_not_between_symmetric_and_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "intt": False,
+                "decimall": False,
+                "reall": False,
+                "dbl": False,
+                "str": False,
+                "booll": False,
+                "bin": False,
+                "tmestmp": False,
+                "datee": False,
+                "tme": False,
+                "uuidd": False,
+                "arr": False,
+                "mapp": False,
+                "roww": False,
+                "udt": False,
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW not_between_symmetric_and_legal AS SELECT
+                      intt NOT BETWEEN SYMMETRIC -11 AND -13 AS intt,
+                      decimall NOT BETWEEN SYMMETRIC -1111.51 AND -1111.53 AS decimall,
+                      reall NOT BETWEEN SYMMETRIC -57681.17 AND -57681.19 AS reall,
+                      dbl NOT BETWEEN SYMMETRIC -38.2711234601245 AND -38.2711234601247 AS dbl,
+                      str NOT BETWEEN SYMMETRIC 'i ' AND 'g' AS str,
+                      booll NOT BETWEEN SYMMETRIC True AND False AS booll,
+                      bin NOT BETWEEN SYMMETRIC X'0C1620' AND X'0A1620' AS bin,
+                      tmestmp NOT BETWEEN SYMMETRIC TIMESTAMP '2021-06-21 14:23:43.123655' AND TIMESTAMP '2019-06-21 14:23:45.123653' AS tmestmp,
+                      datee NOT BETWEEN SYMMETRIC DATE '2020-06-22' AND DATE '2020-06-20' AS datee,
+                      tme NOT BETWEEN SYMMETRIC TIME '15:23:43.457' AND TIME '13:23:45.455' AS tme,
+                      uuidd NOT BETWEEN SYMMETRIC UUID '52b8fec7-c7a3-4531-9611-4bde80f9cb4c' AND UUID '32b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
+                      ARRAY['bye'] NOT BETWEEN SYMMETRIC ARRAY['c'] AND ARRAY['a'] AS arr,
+                      mapp NOT BETWEEN SYMMETRIC MAP['a', 13] AND MAP['a', 11] AS mapp,
+                      roww NOT BETWEEN SYMMETRIC ROW(5,'cat') AND ROW(3,'cat') AS roww,
+                      udt NOT BETWEEN SYMMETRIC (5,'cat') AND (3,'cat') AS udt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_not_between_symmetric_and_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW not_between_symmetric_and_illegal AS SELECT
+                      reall NOT BETWEEN SYMMETRIC -57681.17 AND X'0A1620' AS reall
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = (
+            "Cannot apply 'NOT BETWEEN SYMMETRIC' to arguments of type"
         )
 
 
@@ -1558,3 +1666,285 @@ class illarg_is_not_unknown_illegal(TstView):
                       FROM illegal_tbl
                       WHERE id = 2"""
         self.expected_error = " Cannot apply 'IS NOT UNKNOWN' to arguments of type"
+
+
+# PERIOD PREDICATES(CONTAINS, EQUALS, OVERLAPS, PRECEDES, IMMEDIATELY PRECEDES, SUCCEEDS, IMMEDIATELY SUCCEEDS)
+class illarg_period_operators_legal(TstView):
+    def __init__(self):
+        self.data = [
+            {
+                "res_date": True,
+                "res_time": True,
+                "res_ts": True,
+                "res_date_equals": True,
+                "res_time_equals": True,
+                "res_ts_equals": True,
+                "res_date_overlaps": True,
+                "res_time_overlaps": True,
+                "res_ts_overlaps": True,
+                "res_date_precedes": True,
+                "res_time_precedes": True,
+                "res_ts_precedes": True,
+                "res_date_immed_precedes": True,
+                "res_time_immed_precedes": True,
+                "res_ts_immed_precedes": True,
+                "res_date_succeeds": True,
+                "res_time_succeeds": True,
+                "res_ts_succeeds": True,
+                "res_date_immed_succeeds": True,
+                "res_time_immed_succeeds": True,
+                "res_ts_immed_succeeds": True,
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW period_operators_legal AS SELECT
+
+                        -- CONTAINS
+                        (DATE '2020-06-21', DATE '2020-06-25') CONTAINS DATE '2020-06-23' AS res_date,
+                        (TIME '14:00:00', TIME '16:00:00') CONTAINS TIME '15:00:00' AS res_time,
+                        (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') CONTAINS TIMESTAMP '2020-06-21 14:30:00' AS res_ts,
+
+                        -- EQUALS
+                        (DATE '2020-06-21', DATE '2020-06-23') EQUALS (DATE '2020-06-21', DATE '2020-06-23') AS res_date_equals,
+                        (TIME '14:00:00', TIME '15:00:00') EQUALS (TIME '14:00:00', TIME '15:00:00') AS res_time_equals,
+                        (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') EQUALS (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') AS res_ts_equals,
+
+                        -- OVERLAPS
+                        (DATE '2020-06-21', DATE '2020-06-23') OVERLAPS (DATE '2020-06-22', DATE '2020-06-24') AS res_date_overlaps,
+                        (TIME '14:00:00', TIME '15:00:00') OVERLAPS (TIME '14:30:00', TIME '15:30:00') AS res_time_overlaps,
+                        (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') OVERLAPS (TIMESTAMP '2020-06-21 14:30:00', TIMESTAMP '2020-06-21 15:30:00') AS res_ts_overlaps,
+
+                        -- PRECEDES
+                        (DATE '2020-06-21', DATE '2020-06-22') PRECEDES (DATE '2020-06-24', DATE '2020-06-25') AS res_date_precedes,
+                        (TIME '14:00:00', TIME '15:00:00') PRECEDES (TIME '15:30:00', TIME '16:30:00') AS res_time_precedes,
+                        (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') PRECEDES (TIMESTAMP '2020-06-21 15:30:00', TIMESTAMP '2020-06-21 16:30:00') AS res_ts_precedes,
+
+                        -- IMMEDIATELY PRECEDES
+                        (DATE '2020-06-21', DATE '2020-06-22') IMMEDIATELY PRECEDES (DATE '2020-06-22', DATE '2020-06-23') AS res_date_immed_precedes,
+                        (TIME '14:00:00', TIME '15:00:00') IMMEDIATELY PRECEDES (TIME '15:00:00', TIME '16:00:00') AS res_time_immed_precedes,
+                        (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') IMMEDIATELY PRECEDES (TIMESTAMP '2020-06-21 15:00:00', TIMESTAMP '2020-06-21 16:00:00') AS res_ts_immed_precedes,
+
+                        -- SUCCEEDS
+                        (DATE '2020-06-25', DATE '2020-06-26') SUCCEEDS (DATE '2020-06-21', DATE '2020-06-24') AS res_date_succeeds,
+                        (TIME '15:30:00', TIME '16:30:00') SUCCEEDS (TIME '14:00:00', TIME '15:00:00') AS res_time_succeeds,
+                        (TIMESTAMP '2020-06-21 15:30:00', TIMESTAMP '2020-06-21 16:30:00') SUCCEEDS (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') AS res_ts_succeeds,
+
+                        -- IMMEDIATELY SUCCEEDS
+                        (DATE '2020-06-25', DATE '2020-06-26') IMMEDIATELY SUCCEEDS (DATE '2020-06-24', DATE '2020-06-25') AS res_date_immed_succeeds,
+                        (TIME '15:00:00', TIME '16:00:00') IMMEDIATELY SUCCEEDS (TIME '14:00:00', TIME '15:00:00') AS res_time_immed_succeeds,
+                        (TIMESTAMP '2020-06-21 15:00:00', TIMESTAMP '2020-06-21 16:00:00') IMMEDIATELY SUCCEEDS (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') AS res_ts_immed_succeeds"""
+
+
+# Same test as above but with swapped order of START and END(i.e where START > END)
+class illarg_period_operators_swap_legal(TstView):
+    def __init__(self):
+        self.data = [
+            {
+                "res_date": True,
+                "res_date_equals": True,
+                "res_date_overlaps": True,
+                "res_date_precedes": True,
+                "res_date_immed_precedes": True,
+                "res_date_succeeds": True,
+                "res_date_immed_succeeds": True,
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW period_operators_swap_legal AS SELECT
+
+                        -- CONTAINS
+                        (DATE '2020-06-25', DATE '2020-06-21') CONTAINS DATE '2020-06-23' AS res_date,
+
+                        -- EQUALS
+                        (DATE '2020-06-23', DATE '2020-06-21') EQUALS (DATE '2020-06-23', DATE '2020-06-21') AS res_date_equals,
+
+                        -- OVERLAPS
+                        (DATE '2020-06-23', DATE '2020-06-21') OVERLAPS (DATE '2020-06-24', DATE '2020-06-22') AS res_date_overlaps,
+
+                        -- PRECEDES
+                        (DATE '2020-06-22', DATE '2020-06-21') PRECEDES (DATE '2020-06-25', DATE '2020-06-24') AS res_date_precedes,
+
+                        -- IMMEDIATELY PRECEDES
+                        (DATE '2020-06-22', DATE '2020-06-21') IMMEDIATELY PRECEDES (DATE '2020-06-23', DATE '2020-06-22') AS res_date_immed_precedes,
+
+                        -- SUCCEEDS
+                        (DATE '2020-06-26', DATE '2020-06-25') SUCCEEDS (DATE '2020-06-24', DATE '2020-06-21') AS res_date_succeeds,
+
+                        -- IMMEDIATELY SUCCEEDS
+                        (DATE '2020-06-26', DATE '2020-06-25') IMMEDIATELY SUCCEEDS (DATE '2020-06-25', DATE '2020-06-24') AS res_date_immed_succeeds"""
+
+
+class illarg_period_operators_interval_legal(TstView):
+    def __init__(self):
+        self.data = [
+            {
+                "res_date": True,
+                "res_time": True,
+                "res_ts": True,
+                "res_date_equals": True,
+                "res_time_equals": True,
+                "res_ts_equals": True,
+                "res_date_overlaps": True,
+                "res_time_overlaps": True,
+                "res_ts_overlaps": True,
+                "res_date_precedes": True,
+                "res_time_precedes": True,
+                "res_ts_precedes": True,
+                "res_date_immed_precedes": True,
+                "res_time_immed_precedes": True,
+                "res_ts_immed_precedes": True,
+                "res_date_succeeds": True,
+                "res_time_succeeds": True,
+                "res_ts_succeeds": True,
+                "res_date_immed_succeeds": True,
+                "res_time_immed_succeeds": True,
+                "res_ts_immed_succeeds": True,
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW period_operators_interval_legal AS SELECT
+
+                        -- CONTAINS
+                        (DATE '2020-06-21', INTERVAL '4' DAY) CONTAINS DATE '2020-06-23' AS res_date,
+                        (TIME '14:00:00', INTERVAL '2' HOUR) CONTAINS TIME '15:00:00' AS res_time,
+                        (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) CONTAINS TIMESTAMP '2020-06-21 14:30:00' AS res_ts,
+
+                        -- EQUALS
+                        (DATE '2020-06-21', INTERVAL '2' DAY) EQUALS (DATE '2020-06-21', INTERVAL '2' DAY) AS res_date_equals,
+                        (TIME '14:00:00', INTERVAL '1' HOUR) EQUALS (TIME '14:00:00', INTERVAL '1' HOUR) AS res_time_equals,
+                        (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) EQUALS (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) AS res_ts_equals,
+
+                        -- OVERLAPS
+                        (DATE '2020-06-21', INTERVAL '2' DAY) OVERLAPS (DATE '2020-06-22', INTERVAL '2' DAY) AS res_date_overlaps,
+                        (TIME '14:00:00', INTERVAL '1' HOUR) OVERLAPS (TIME '14:30:00', INTERVAL '1' HOUR) AS res_time_overlaps,
+                        (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) OVERLAPS (TIMESTAMP '2020-06-21 14:30:00', INTERVAL '1' HOUR) AS res_ts_overlaps,
+
+                        -- PRECEDES
+                        (DATE '2020-06-21', INTERVAL '1' DAY) PRECEDES (DATE '2020-06-24', INTERVAL '1' DAY) AS res_date_precedes,
+                        (TIME '14:00:00', INTERVAL '1' HOUR) PRECEDES (TIME '15:30:00', INTERVAL '1' HOUR) AS res_time_precedes,
+                        (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) PRECEDES (TIMESTAMP '2020-06-21 15:30:00', INTERVAL '1' HOUR) AS res_ts_precedes,
+
+                        -- IMMEDIATELY PRECEDES
+                        (DATE '2020-06-21', INTERVAL '1' DAY) IMMEDIATELY PRECEDES (DATE '2020-06-22', INTERVAL '1' DAY) AS res_date_immed_precedes,
+                        (TIME '14:00:00', INTERVAL '1' HOUR) IMMEDIATELY PRECEDES (TIME '15:00:00', INTERVAL '1' HOUR) AS res_time_immed_precedes,
+                        (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) IMMEDIATELY PRECEDES (TIMESTAMP '2020-06-21 15:00:00', INTERVAL '1' HOUR) AS res_ts_immed_precedes,
+
+                        -- SUCCEEDS
+                        (DATE '2020-06-25', INTERVAL '1' DAY) SUCCEEDS (DATE '2020-06-21', INTERVAL '3' DAY) AS res_date_succeeds,
+                        (TIME '15:30:00', INTERVAL '1' HOUR) SUCCEEDS (TIME '14:00:00', INTERVAL '1' HOUR) AS res_time_succeeds,
+                        (TIMESTAMP '2020-06-21 15:30:00', INTERVAL '1' HOUR) SUCCEEDS (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) AS res_ts_succeeds,
+
+                        -- IMMEDIATELY SUCCEEDS
+                        (DATE '2020-06-25', INTERVAL '1' DAY) IMMEDIATELY SUCCEEDS (DATE '2020-06-24', INTERVAL '1' DAY) AS res_date_immed_succeeds,
+                        (TIME '15:00:00', INTERVAL '1' HOUR) IMMEDIATELY SUCCEEDS (TIME '14:00:00', INTERVAL '1' HOUR) AS res_time_immed_succeeds,
+                        (TIMESTAMP '2020-06-21 15:00:00', INTERVAL '1' HOUR) IMMEDIATELY SUCCEEDS (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) AS res_ts_immed_succeeds
+                      """
+
+
+class illarg_period_operators_neg_interval_legal(TstView):
+    def __init__(self):
+        self.data = [
+            {
+                "res_date": False,
+                "res_ts_equals": True,
+                "res_time_overlaps": True,
+                "res_date_precedes": True,
+                "res_date_immed_precedes": True,
+                "res_date_succeeds": True,
+                "res_date_immed_succeeds": True,
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW period_operators_neg_interval_legal AS SELECT
+
+                        -- CONTAINS
+                        (DATE '2020-06-21', - INTERVAL '4' DAY) CONTAINS DATE '2020-06-23' AS res_date,
+
+                        -- EQUALS
+                        (TIMESTAMP '2020-06-21 14:00:00', - INTERVAL '1' HOUR) EQUALS (TIMESTAMP '2020-06-21 14:00:00', - INTERVAL '1' HOUR) AS res_ts_equals,
+
+                        -- OVERLAPS
+                        (TIME '14:00:00', - INTERVAL '1' HOUR) OVERLAPS (TIME '14:30:00', - INTERVAL '1' HOUR) AS res_time_overlaps,
+
+                        -- PRECEDES
+                        (DATE '2020-06-21', - INTERVAL '1' DAY) PRECEDES (DATE '2020-06-24', - INTERVAL '1' DAY) AS res_date_precedes,
+
+                        -- IMMEDIATELY PRECEDES
+                        (DATE '2020-06-21', - INTERVAL '1' DAY) IMMEDIATELY PRECEDES (DATE '2020-06-22', - INTERVAL '1' DAY) AS res_date_immed_precedes,
+
+                        -- SUCCEEDS
+                        (DATE '2020-06-25', - INTERVAL '1' DAY) SUCCEEDS (DATE '2020-06-21', - INTERVAL '3' DAY) AS res_date_succeeds,
+
+                        -- IMMEDIATELY SUCCEEDS
+                        (DATE '2020-06-25', INTERVAL '1' DAY) IMMEDIATELY SUCCEEDS (DATE '2020-06-24', INTERVAL '1' DAY) AS res_date_immed_succeeds
+                      """
+
+
+# Negative Tests
+class illarg_contains_illegal_timestamp(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW contains_illegal_timestamp AS SELECT
+                      (tmestmp, tmestmp) CONTAINS INTERVAL '1' HOUR AS res
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Cannot apply 'CONTAINS' to arguments of type"
+
+
+class illarg_overlaps_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW overlaps_illegal AS SELECT
+                      (datee)
+                      OVERLAPS
+                      (DATE '2020-06-21') AS res
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Cannot apply 'OVERLAPS' to arguments of type"
+
+
+class illarg_interval_overlaps_illegal(TstView):
+    def __init__(self):
+        self.data = []
+        self.sql = """CREATE LOCAL VIEW ats_minus_ts AS SELECT
+                      (tmestmp - TIMESTAMP'2018-06-21 14:23:44')YEAR AS interval_yr
+                      FROM illegal_tbl
+                      WHERE id = 0;
+
+                      CREATE MATERIALIZED VIEW interval_overlap_illegal AS SELECT
+                      (interval_yr, interval_yr)
+                      OVERLAPS
+                      (INTERVAL '2' YEAR, INTERVAL '2' YEAR) AS res
+                      FROM ats_minus_ts"""
+        self.expected_error = "Cannot apply 'OVERLAPS' to arguments of type"
+
+
+class illarg_equals_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW equals_illegal AS SELECT
+                        (TIME '14:00:00', TIME '15:00:00') EQUALS (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') AS res_time"""
+        self.expected_error = "Cannot apply 'EQUALS' to arguments of type"
+
+
+class illarg_precedes_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW precedes_illegal AS SELECT
+                        (DATE '2020-06-21', INTERVAL '1' DAY) PRECEDES (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' MINUTE) AS res_time"""
+        self.expected_error = "Cannot apply 'PRECEDES' to arguments of type"
+
+
+class illarg_imm_precedes_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW imm_precedes_illegal AS SELECT
+                        (datee, INTERVAL '1' MINUTE) IMMEDIATELY PRECEDES (TIME '15:00:00', INTERVAL '1' MINUTE) AS res_ts
+                        FROM illegal_tbl
+                        WHERE id = 0"""
+        self.expected_error = "Cannot apply 'IMMEDIATELY PRECEDES' to arguments of type"
+
+
+class illarg_succeeds_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW succeeds_illegal AS SELECT
+                        (INTERVAL '1' DAY, DATE '2020-06-25') SUCCEEDS (INTERVAL '1' DAY, DATE '2020-06-25') AS res_date"""
+        self.expected_error = "Cannot apply 'SUCCEEDS' to arguments of type"
+
+
+class illarg_imm_succeeds_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW imm_succeeds_illegal AS SELECT
+                        (INTERVAL '1' HOUR, INTERVAL '1' DAY) IMMEDIATELY SUCCEEDS (INTERVAL '1' DAY, INTERVAL '1' HOUR) AS res_date_immed"""
+        self.expected_error = "Cannot apply 'IMMEDIATELY SUCCEEDS' to arguments of type"

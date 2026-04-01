@@ -7,7 +7,7 @@ use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, Instant};
 
 #[cfg(feature = "with-deltalake")]
-use std::{error::Error, future::Future, pin::Pin};
+use std::{future::Future, pin::Pin};
 
 use anyhow::{Result as AnyResult, bail};
 use dashmap::DashMap;
@@ -19,14 +19,6 @@ use itertools::Itertools;
 #[cfg(feature = "with-deltalake")]
 use tokio::{spawn, task::JoinHandle};
 use tracing::warn;
-
-#[cfg(feature = "with-deltalake")]
-pub(crate) fn root_cause(mut err: &dyn Error) -> &dyn Error {
-    while let Some(source) = err.source() {
-        err = source;
-    }
-    err
-}
 
 /// Operations over an indexed view.
 #[derive(Debug)]
@@ -712,6 +704,57 @@ impl LongOperationWarning {
     pub fn elapsed(&self) -> Duration {
         self.start.elapsed()
     }
+}
+
+/// Run any function in a single-worker dbsp::Runtime configured with POSIX storage backend.
+///
+/// Used to test code that needs to write to storage without creating a circuit.
+#[cfg(test)]
+pub(crate) fn run_in_posix_runtime<F>(
+    min_storage_bytes: Option<usize>,
+    min_step_storage_bytes: Option<usize>,
+    test_fn: F,
+) where
+    F: FnOnce() + Send + 'static,
+{
+    use dbsp::Runtime;
+    use dbsp::circuit::{CircuitConfig, CircuitStorageConfig, Layout, Mode};
+    use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
+    use std::sync::{Arc, Mutex};
+
+    let temp = tempfile::tempdir().expect("failed to create temp dir for storage");
+    let cconf = CircuitConfig {
+        layout: Layout::new_solo(1),
+        max_rss_bytes: None,
+        mode: Mode::Ephemeral,
+        pin_cpus: Vec::new(),
+        storage: Some(
+            CircuitStorageConfig::for_config(
+                StorageConfig {
+                    path: temp.path().to_string_lossy().into_owned(),
+                    cache: StorageCacheConfig::default(),
+                },
+                StorageOptions {
+                    min_storage_bytes,
+                    min_step_storage_bytes,
+                    ..StorageOptions::default()
+                },
+            )
+            .expect("failed to configure storage"),
+        ),
+        dev_tweaks: Default::default(),
+    };
+
+    let test_fn: Arc<Mutex<Option<F>>> = Arc::new(Mutex::new(Some(test_fn)));
+    let test_fn_cloned = Arc::clone(&test_fn);
+    let handle = Runtime::run(cconf, move |_parker| {
+        if let Some(test_fn) = test_fn_cloned.lock().unwrap().take() {
+            test_fn();
+        }
+    })
+    .unwrap();
+
+    handle.kill().unwrap();
 }
 
 #[cfg(test)]

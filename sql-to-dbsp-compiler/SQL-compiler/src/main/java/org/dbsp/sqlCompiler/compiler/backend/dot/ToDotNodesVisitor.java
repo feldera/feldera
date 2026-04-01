@@ -7,7 +7,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
@@ -18,6 +17,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IStateful;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
@@ -32,7 +33,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.util.IndentStream;
 
 /** Visitor which emits the circuit nodes in a graphviz file.
- * The compiler options control the detail.  On verbosity=0 table and view names are ommitted. */
+ * The compiler options control the detail.  On details=0 table and view names are omitted. */
 public class ToDotNodesVisitor extends CircuitVisitor {
     protected final IndentStream stream;
     // A higher value -> more details
@@ -68,9 +69,10 @@ public class ToDotNodesVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSourceBaseOperator node) {
-        String name = (this.compiler.options.ioOptions.verbosity > 0 ? (node.tableName + " ") : "") + node.operation;
+        String name = (this.details > 0 ? (node.tableName + " ") : "") + node.operation;
+        String color = " style=filled fillcolor=lightgrey";
         this.stream.append(node.getNodeName(false))
-                .append(" [ shape=box style=filled fillcolor=lightgrey label=\"")
+                .append(" [ shape=box " + color + " label=\"")
                 .append(node.getIdString())
                 .append(isMultiset(node))
                 .append(annotations(node))
@@ -105,7 +107,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                 .append(node.getIdString())
                 .append(isMultiset(node))
                 .append(annotations(node))
-                .append(this.compiler.options.ioOptions.verbosity > 0 ? " " + node.viewName.name() : "")
+                .append(this.details > 0 ? " " + node.viewName.name() : "")
                 .append("\"")
                 .append(" style=filled fillcolor=lightgrey")
                 .append("]")
@@ -159,12 +161,16 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         return result.toString();
     }
 
+    static String rustToDot(String rust) {
+        String f = escapeString(rust);
+        return f.replace("\n", "\\l");
+    }
+
     String convertFunction(DBSPExpression expression) {
         String result = "";
         if (this.details > 3) {
             String f = ToRustInnerVisitor.toRustString(this.compiler(), expression, null, true);
-            f = escapeString(f);
-            result = f.replace("\n", "\\l");
+            result = rustToDot(f);
         }
         if (this.details >= 3) {
             result += getPositions(expression);
@@ -178,7 +184,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
             DBSPAggregateOperatorBase aggregate = node.to(DBSPAggregateOperatorBase.class);
             if (aggregate.aggregateList != null) {
                 if (this.details > 3) {
-                    return escapeString(aggregate.aggregateList.toString());
+                    return rustToDot(aggregate.aggregateList.toString());
                 } else if (details >= 3) {
                     return this.getPositions(aggregate.aggregateList);
                 }
@@ -188,17 +194,25 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                     node.to(DBSPPartitionedRollingAggregateWithWaterlineOperator.class);
             if (aggregate.aggregateList != null) {
                 if (this.details > 3) {
-                    return escapeString(aggregate.aggregateList.toString());
+                    return rustToDot(aggregate.aggregateList.toString());
                 } else if (this.details >= 3) {
                     return this.getPositions(aggregate.aggregateList);
                 }
             }
         } else if (node.is(DBSPChainOperator.class) && this.details > 3) {
             String chain = node.to(DBSPChainOperator.class).chain.toString();
-            return escapeString(chain);
+            return rustToDot(chain);
         }
-        if (expression == null)
-            return "";
+        if (expression == null) {
+            if (this.details >= 3) {
+                StringBuilder builder = new StringBuilder();
+                for (SourcePositionRange pos: node.getSourcePositions())
+                    builder.append(pos.toShortString());
+                return builder.toString();
+            } else {
+                return "";
+            }
+        }
         if (node.is(DBSPFlatMapOperator.class)) {
             if (expression.is(DBSPFlatmap.class)) {
                 expression = LowerCircuitVisitor.rewriteFlatmap(
@@ -230,32 +244,20 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         if (operator.id > lastCircuit)
             return " style=filled fillcolor=green";
          */
-        if (operator.is(DBSPJoinBaseOperator.class)) {
+        if (operator.is(IGCOperator.class)) {
+            return " style=filled fillcolor=pink";
+        }
+        switch (operator.operation) {
+            case "waterline": return " style=filled fillcolor=lightgreen";
+            case "controlled_filter": return " style=filled fillcolor=cyan";
+            case "apply", "apply2", "apply_n": return " style=filled fillcolor=yellow";
+            default: break;
+        }
+        if (operator.is(IStateful.class)) {
             // There are more of these every day
             return " style=filled fillcolor=orangered";
         }
-        if (operator.operation.contains("retain")) {
-            return " style=filled fillcolor=pink";
-        }
-        return switch (operator.operation) {
-            case "waterline" -> " style=filled fillcolor=lightgreen";
-            case "controlled_filter" -> " style=filled fillcolor=cyan";
-            case "apply", "apply2" -> " style=filled fillcolor=yellow";
-            case "partitioned_rolling_aggregate_with_waterline", "window" -> " style=filled fillcolor=pink";
-            // stateful operators
-            case "distinct", "stream_distinct",
-                 // all aggregates require an upsert, which is stateful, even the ones that are linear
-                 "aggregate", "partitioned_rolling_aggregate",
-                 "stream_aggregate", "chain_aggregate", "linear_aggregate",
-                 // these are not derived from JoinBase
-                 "antijoin", "stream_antijoin",
-                 // delays contain state, but not that much
-                 "accumulate_delay_trace", // "transaction_delay", "differentiate",
-                 // group operators
-                 "topK", "lag_custom_order", "upsert",
-                 "integrate" -> " style=filled fillcolor=orangered";
-            default -> "";
-        };
+        return "";
     }
 
     String shorten(String operation) {

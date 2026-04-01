@@ -150,6 +150,11 @@ The user can monitor the transaction handling status of the pipeline using the [
 
 When the status is `TransactionInProgress` or `CommitInProgress`, the `transaction_id` attribute contains the current transaction ID.
 
+When the status is `CommitInProgress`, the `commit_progress` attribute
+contains information about progress of the commit.
+
+Transaction status is also available through [metrics](/operations/metrics.md#transactions).
+
 <Tabs>
     <TabItem value="rest" label="REST API">
     ```shell
@@ -203,8 +208,14 @@ equivalent to initiating a single transaction through the REST API that ingests 
 
 ### Supported Connectors
 
-Automatic transaction orchestration is currently supported only for the **Delta Lake connector**.
-Refer to the [Delta Lake connector documentation](/connectors/sources/delta#transactions) for details.
+The following input connectors support automatic transaction
+orchestration:
+
+- Delta Lake (see [Delta Lake transactions])
+- Data generator (see [Datagen input connector config parameters])
+
+[Delta Lake transactions]: /connectors/sources/delta#transactions
+[Datagen input connector config parameters]: /connectors/sources/datagen#config-parameters
 
 ## Limitations
 

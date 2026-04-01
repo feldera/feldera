@@ -194,7 +194,6 @@ pub struct PropertyValue {
 #[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone)]
 #[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
 pub struct Relation {
-    // This field should only be accessed via the `name()` method.
     #[serde(flatten)]
     pub name: SqlIdentifier,
     #[cfg_attr(feature = "testing", proptest(value = "Vec::new()"))]

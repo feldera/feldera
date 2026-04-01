@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -18,8 +19,10 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Given a value with a type keeps track of which fields of the type are being used. */
+/** Given a value with a type keeps track of which fields of the type are being used.
+ * Note: this structure is mutable, and it is occasionally updated by calling {@link FieldUseMap#setUsed}. */
 public class FieldUseMap {
+    /** Base class for representing field usage information */
     public static abstract class FieldInfo implements ICastable {
         static long crtId = 0;
         final long id;
@@ -66,6 +69,7 @@ public class FieldUseMap {
             }
         }
 
+        /** The union of the fields used in this and fieldInfo */
         public abstract FieldInfo reduce(FieldInfo fieldInfo);
 
         public abstract FieldInfo project(int depth);
@@ -246,7 +250,7 @@ public class FieldUseMap {
 
         @Override
         public String toString() {
-            return (this.isRaw() ? "R" : "") + Linq.map(this.fields, Object::toString);
+            return (this.isRaw() ? "Raw" : "") + Linq.map(this.fields, Object::toString);
         }
 
         @Override
@@ -306,7 +310,6 @@ public class FieldUseMap {
             if (depth == 0)
                 return from.applyCloneIfNeeded();
 
-            Utilities.enforce(!this.type.mayBeNull);
             boolean isRaw = this.getTupleType().isRaw();
             int size = isRaw ? this.size() : this.getCompressedSize();
             DBSPExpression[] fields = new DBSPExpression[size];
@@ -314,16 +317,28 @@ public class FieldUseMap {
             for (int i = 0; i < this.size(); i++) {
                 if (this.fields.get(i).anyUsed() || isRaw) {
                     // For raw tuples never discard fields, rather return Tup0.
-                    fields[index] = this.fields.get(i).allUsedFields(from.field(i), depth - 1);
-                    Utilities.enforce(fields[index] != null);
+                    DBSPExpression field;
+                    if (from.getType().mayBeNull) {
+                        field = from.neverFailsUnwrap().field(i);
+                    } else {
+                        field = from.field(i);
+                    }
+                    DBSPExpression expr = this.fields.get(i).allUsedFields(field, depth - 1);
+                    Utilities.enforce(expr != null);
+                    fields[index] = expr;
                     index++;
                 }
             }
             Utilities.enforce(index == size);
-            if (isRaw)
+            if (isRaw) {
                 return new DBSPRawTupleExpression(fields);
-            else
-                return new DBSPTupleExpression(this.type.mayBeNull, fields);
+            } else {
+                DBSPExpression result = new DBSPTupleExpression(this.type.mayBeNull, fields);
+                if (from.getType().mayBeNull) {
+                    result = new DBSPIfExpression(result.getNode(), from.is_null(), result.getType().none(), result);
+                }
+                return result;
+            }
         }
 
         public List<Integer> allUsedFields() {
@@ -477,6 +492,11 @@ public class FieldUseMap {
             current = current.reduce(maps.get(i));
         }
         return current;
+    }
+
+    /** Make a {@link FieldUseMap} for a tuple from a list of use maps for each of the tuple's fields */
+    public static FieldUseMap list(DBSPTypeTupleBase type, List<FieldUseMap> fields) {
+        return new FieldUseMap(new BitList(type, Linq.map(fields, f -> f.fieldInfo)));
     }
 
     public FieldUseMap slice(int start, int endExclusive) {

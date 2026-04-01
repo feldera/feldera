@@ -65,9 +65,16 @@ use uuid::Uuid;
 use crate::{
     config::{InputEndpointConfig, OutputEndpointConfig},
     program_schema::SqlIdentifier,
-    runtime_status::RuntimeDesiredStatus,
+    runtime_status::{ExtendedRuntimeStatus, ExtendedRuntimeStatusError, RuntimeDesiredStatus},
     suspend::TemporarySuspendError,
 };
+
+/// `/coordination/status` update, streamed by pipeline to coordinator.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct CoordinationStatus {
+    pub incarnation_uuid: Uuid,
+    pub status: Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError>,
+}
 
 /// `/coordination/activate` request, sent by coordinator to pipeline to
 /// transition out of [RuntimeDesiredStatus::Coordination].
@@ -160,33 +167,36 @@ pub struct StepRequest {
     /// Otherwise, the pipeline will not start a step.
     pub step: Step,
 
-    /// Input endpoints to consider, based on the `action`:
+    /// Which input endpoints to use.
     ///
-    /// - [Idle][]: Unused.
-    ///
-    /// - [Trigger][]: Only input arriving on the specified endpoints can
-    ///   trigger a step.  If a step is triggered, it will only use input from
-    ///   the specified endpoints.
-    ///
-    /// - [Step][]: The step only uses input from the specified endpoints.
-    ///
-    /// [Idle]: StepAction::Idle
-    /// [Trigger]: StepAction::Trigger
-    /// [Step]: StepAction::Step
-    pub input_connectors: Vec<String>,
+    /// This is not significant for [StepAction::Idle].
+    pub inputs: StepInputs,
 }
 
 impl StepRequest {
-    pub fn new(step: Step, action: StepAction, input_connectors: Vec<String>) -> Self {
+    pub fn new(step: Step, action: StepAction, inputs: StepInputs) -> Self {
         Self {
             step,
             action,
-            input_connectors,
+            inputs,
         }
     }
     pub fn new_idle(step: Step) -> Self {
-        Self::new(step, StepAction::Idle, Vec::new())
+        Self::new(step, StepAction::Idle, StepInputs::All)
     }
+}
+
+/// The input endpoints to consider in a [StepRequest].
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub enum StepInputs {
+    /// Consider input arriving on any input endpoint to trigger a step.  For
+    /// executing a step, use input from all the input endpoints.
+    All,
+
+    /// Consider input arriving only on input endpoints that are blocking a
+    /// checkpoint to trigger a step.  For executing a step, use input only from
+    /// input endpoints that are blocking a checkpoint.
+    CheckpointBarriers,
 }
 
 /// `/coordination/checkpoint/status`, streamed by pipeline to coordinator.
@@ -248,6 +258,15 @@ pub struct AdHocTable {
     pub materialized: bool,
     pub indexed: bool,
     pub schema: Schema,
+    #[serde(default)]
+    pub table_type: AdHocTableType,
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AdHocTableType {
+    #[default]
+    View,
+    Table,
 }
 
 /// `/coordination/adhoc/scan` request.
@@ -274,4 +293,36 @@ pub struct AdHocScan {
 pub struct Labels {
     /// All the labels on incomplete connectors.
     pub incomplete: HashSet<String>,
+}
+
+/// `/coordination/completion/status` reply, streamed from pipeline to coordinator.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Completion {
+    /// Number of steps whose input records have been processed to completion.
+    ///
+    /// A record is processed to completion if it has been processed by the DBSP engine and
+    /// all outputs derived from it have been processed by all output connectors.
+    ///
+    /// # Interpretation
+    ///
+    /// This is a count, not a step number.  If `total_completed_steps` is 0, no
+    /// steps have been processed to completion.  If `total_completed_steps >
+    /// 0`, then the last step whose input records have been processed to
+    /// completion is `total_completed_steps - 1`. A record that was ingested
+    /// in step `n` is fully processed when `total_completed_steps >= n`.
+    #[serde(rename = "c")]
+    pub total_completed_steps: Step,
+}
+
+/// `/coordination/restart` arguments.
+///
+/// This pipeline request restarts the pipeline process.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RestartArgs {
+    /// The incarnation UUID of the pipeline process to restart.
+    ///
+    /// If this doesn't match the incarnation UUID of the running pipeline, then
+    /// the request returns an error (since it has presumably already
+    /// restarted).
+    pub incarnation_uuid: Uuid,
 }

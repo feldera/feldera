@@ -69,6 +69,8 @@ public class CustomFunctions {
         this.functions.add(new BlackboxFunction());
         this.functions.add(new BroundFunction());
         this.functions.add(new FormatDateFunction());
+        this.functions.add(new FormatTimestampFunction());
+        this.functions.add(new FormatTimeFunction());
         this.functions.add(new GreatestNonNullsFunction());
         this.functions.add(new GunzipFunction());
         this.functions.add(new InitcapSpacesFunction());
@@ -85,8 +87,6 @@ public class CustomFunctions {
         this.functions.add(new ToJsonFunction());
         this.functions.add(new ConnectorMetadataFunction());
         this.functions.add(new WriteLogFunction());
-        this.functions.add(FelderaSqlTumbleTableFunction.INSTANCE);
-        this.functions.add(FelderaSqlHopTableFunction.INSTANCE);
         this.udf = new HashMap<>();
         this.aggregates = new HashMap<>();
     }
@@ -176,7 +176,26 @@ public class CustomFunctions {
 
     static class FormatDateFunction extends CalciteFunctionClone {
         private FormatDateFunction() {
-            super(SqlLibraryOperators.FORMAT_DATE, "datetime#date-parsing-and-formatting", FunctionDocumentation.NO_FILE);
+            super(SqlLibraryOperators.FORMAT_DATE, "datetime#format_date", FunctionDocumentation.NO_FILE);
+        }
+    }
+
+    static class FormatTimestampFunction extends NonOptimizedFunction {
+        private FormatTimestampFunction() {
+            super("FORMAT_TIMESTAMP",
+                    ReturnTypes.VARCHAR.andThen(SqlTypeTransforms.TO_NULLABLE),
+                    OperandTypes.sequence("FORMAT_TIMESTAMP(<CHARACTER>, <TIMESTAMP>)",
+                            OperandTypes.CHARACTER, OperandTypes.TIMESTAMP),
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION,
+                    "datetime#format_timestamp",
+                    FunctionDocumentation.NO_FILE
+            );
+        }
+    }
+
+    static class FormatTimeFunction extends CalciteFunctionClone {
+        private FormatTimeFunction() {
+            super(SqlLibraryOperators.FORMAT_TIME, "datetime#format_time", FunctionDocumentation.NO_FILE);
         }
     }
 
@@ -486,7 +505,7 @@ public class CustomFunctions {
                     SqlKind.RLIKE,
                     ReturnTypes.BOOLEAN_NULLABLE,
                     OperandTypes.STRING_STRING,
-                    SqlFunctionCategory.STRING, "string#rlike", FunctionDocumentation.NO_FILE);
+                    SqlFunctionCategory.STRING, "string#rlike-function", FunctionDocumentation.NO_FILE);
         }
     }
 
@@ -619,7 +638,7 @@ public class CustomFunctions {
             CalciteObject node, SqlIdentifier name,
             RelDataType signature, RelDataType returnType, @Nullable RexNode body) {
         List<RelDataTypeField> parameterList = signature.getFieldList();
-        ProgramIdentifier functionName = Utilities.toIdentifier(name);
+        ProgramIdentifier functionName = ProgramIdentifier.fromSqlId(name);
         boolean generated = functionName.name().toLowerCase(Locale.ENGLISH).startsWith("jsonstring_as_") || body != null;
         ExternalFunction result = new ExternalFunction(name, returnType, parameterList, body, generated);
         if (this.udf.containsKey(functionName)) {
@@ -641,7 +660,7 @@ public class CustomFunctions {
     public SqlUserDefinedAggregationFunction createAggregate(
             CalciteObject node, SqlIdentifier name, boolean linear,
             RelDataType signature, RelDataType returnType) {
-        ProgramIdentifier functionName = Utilities.toIdentifier(name);
+        ProgramIdentifier functionName = ProgramIdentifier.fromSqlId(name);
         AggregateFunctionDescription description = new AggregateFunctionDescription(name, returnType, signature.getFieldList(), linear);
         if (this.aggregates.containsKey(functionName)) {
             throw new CompilationError("Aggregate with name " +

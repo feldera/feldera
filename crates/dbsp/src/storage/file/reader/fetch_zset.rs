@@ -1,5 +1,5 @@
 use super::super::Factories;
-use crate::dynamic::{DataTrait, DynVec, WeightTrait};
+use crate::dynamic::{DataTrait, WeightTrait};
 use crate::storage::file::reader::{
     DataBlock, Error, FilteredKeys, Reader, TreeBlock, TreeNode, decompress,
 };
@@ -60,13 +60,13 @@ where
 {
     pub(super) fn new(
         reader: &'a Reader<(&'static K, &'static A, ())>,
-        keys: &'b DynVec<K>,
+        keys: FilteredKeys<'b, K>,
     ) -> Result<Self, Error> {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         let factories = reader.columns[0].factories.factories();
         let tmp_key = factories.key_factory.default_box();
         let mut this = Self {
-            keys: FilteredKeys::new(reader, keys),
+            keys,
             reader,
             cache: (reader.file.cache)(),
             factories,

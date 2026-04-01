@@ -18,7 +18,7 @@ jobs:
   # because of how merge queues work: https://stackoverflow.com/a/78030618
   main:
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-db53e1302c944e29edd6d2af516fff7032b90e3b
+      image: ghcr.io/feldera/feldera-dev:sha-06a694400a6aea1f568da04eaf786bfe84e0a869
     runs-on: [k8s-runners-amd64]
     steps:
       - name: Show Kubernetes node
@@ -26,7 +26,13 @@ jobs:
         run: |
           echo "K8S node: ${K8S_NODE_NAME}"
 
+      - name: Disable sccache for fork/dependabot PRs (secrets unavailable)
+        if: ${{ github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]' }}
+        run: |
+          echo "RUSTC_WRAPPER=" >> "$GITHUB_ENV"
+
       - name: Generate GitHub App token
+        if: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
         id: app-token
         uses: actions/create-github-app-token@v2
         with:
@@ -34,14 +40,20 @@ jobs:
           private-key: ${{ secrets.CI_ACCESS_APP_PKEY }}
           permission-contents: write
 
-      - uses: actions/checkout@v4
+      - name: Checkout (internal PRs)
+        if: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
+        uses: actions/checkout@v6
         with:
           # This needs to be set to a token to trigger a follow-up workflow
           # in case some changes were corrected.
           token: ${{ steps.app-token.outputs.token }}
 
+      - name: Checkout (fork/dependabot PRs)
+        if: ${{ github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]' }}
+        uses: actions/checkout@v6
+
       - name: Cache uv pre-commit environments
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/pre-commit
@@ -49,7 +61,7 @@ jobs:
           key: pre-commit-uv-1|${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Cache Cargo registry and index
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -65,10 +77,19 @@ jobs:
           pre-commit run --show-diff-on-failure --color=always --all-files
         shell: bash
         if: ${{ vars.CI_DRY_RUN != 'true' }}
+
+      - name: Validate OpenAPI codegen
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        working-directory: js-packages/web-console
+        run: |
+          bun install --frozen-lockfile
+          bunx openapi-ts --output /tmp/openapi-ts-check
+
       - name: Print sccache stats
         run: sccache --show-stats
       - uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403
-        if: always()
+        # Only attempt auto-fix commits for internal branches (forks and dependabot can't be pushed to)
+        if: ${{ always() && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
         with:
           commit_message: "[ci] apply automatic fixes"
           commit_user_name: feldera-bot

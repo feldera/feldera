@@ -25,7 +25,12 @@
 
 package org.dbsp.util;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonLocation;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -34,9 +39,9 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.util.TimeString;
-import org.apache.calcite.util.TimestampString;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.jetbrains.annotations.Contract;
 
 import javax.annotation.Nullable;
@@ -223,10 +228,68 @@ public class Utilities {
      * @param unicodeBraces If true use \\u{} for Unicode, otherwise use \\u. */
     public static String doubleQuote(String value, boolean unicodeBraces) {
          return "\"" + escape(value, unicodeBraces) + "\"";
-     }
+    }
+
+    /** Parse and validate a JSON text string, returning either the parsed object or an error to show to the user */
+    public static Result<JsonNode> validateJson(String body) {
+        try {
+            JsonNode node = Utilities.deterministicObjectMapper().readTree(body);
+            return Result.ok(node);
+        } catch (JsonMappingException e) {
+            throw new RuntimeException(e);
+        } catch (JsonProcessingException e) {
+            JsonLocation location = e.getLocation();
+            if (location != null) {
+                String[] lines = body.split("\\r?\\n");
+                int errorLineIdx = location.getLineNr() - 1; // getLineNr() is 1-based
+                if (errorLineIdx < 0 || errorLineIdx >= lines.length) {
+                    // Check if the position is within the document.
+                    return Result.err(new ErrorWithPosition(e.getMessage(), SourcePositionRange.INVALID));
+                }
+
+                SourcePosition pos = new SourcePosition(location);
+                return Result.err(new ErrorWithPosition(e.getOriginalMessage(), pos.asRange()));
+            } else {
+                return Result.err(new ErrorWithPosition(e.getMessage(), SourcePositionRange.INVALID));
+            }
+        }
+    }
+
+    /**
+     * Given a Json document as a text string, find the position of a specific JSON element
+     * specified using a JSON pointer.
+     *
+     * @param json          The raw JSON source string to scan.
+     * @param targetPointer A standard JSON Pointer string (e.g., "/users/0/email")
+     *                      representing the path to the element.
+     * @param toValue       If true, advance the pointer to the value associated with the key found.
+     * @return A {@link JsonLocation} containing the line and column number of the
+     * start of the target token, or {@code null} if the path is not found or the document is invalid.
+     * @see <a href="https://datatracker.ietf.org/doc/html/rfc6901">RFC 6901 (JSON Pointer)</a>
+     */
+    @Nullable
+    public static SourcePosition jsonPointerLocation(String json, String targetPointer, boolean toValue) {
+        // Unfortunately the Jackson library does not keep track of source positions after parsing JSON,
+        // so we need to reparse it to find out where something is when we need to provide good error messages.
+        JsonFactory factory = new JsonFactory();
+        try (JsonParser parser = factory.createParser(json)) {
+            while (parser.nextToken() != null) {
+                String currentPath = parser.getParsingContext().pathAsPointer().toString();
+                if (currentPath.equals(targetPointer)) {
+                    if (toValue) {
+                        parser.nextToken();
+                    }
+                    return new SourcePosition(parser.currentTokenLocation());
+                }
+            }
+        } catch (IOException e) {
+            return null;
+        }
+        return null;
+    }
 
     /** Just adds single quotes around a string.  No escaping is performed. */
-     public static String singleQuote(@Nullable String other) {
+    public static String singleQuote(@Nullable String other) {
          return "'" + other + "'";
      }
 
@@ -283,15 +346,6 @@ public class Utilities {
         if (result == null)
             throw new RuntimeException("Key '" + key + "' does not exist in map");
         return result;
-    }
-
-    public static ProgramIdentifier toIdentifier(SqlIdentifier id) {
-        return new ProgramIdentifier(id.getSimple(), identifierIsQuoted(id));
-    }
-
-    public static ProgramIdentifier toIdentifier(List<String> qualifiedName) {
-        String id = Utilities.last(qualifiedName);
-        return new ProgramIdentifier(id);
     }
 
     /** True when a simple identifier is quoted. */
@@ -387,7 +441,7 @@ public class Utilities {
         List<String> args = new ArrayList<>();
         args.add("cargo");
         args.add("test");
-        if (System.getenv("CI") == null) {
+        if (Utilities.inCI()) {
             args.add("--jobs");
             args.add("6");
         }
@@ -431,7 +485,7 @@ public class Utilities {
         List<String> args = new ArrayList<>();
         args.add("cargo");
         args.add("check");
-        if (System.getenv("CI") == null) {
+        if (Utilities.inCI()) {
             args.add("--jobs");
             args.add("6");
         }
@@ -587,5 +641,10 @@ public class Utilities {
             expansion = next;
             pattern = tail.substring(close + 1);
         }
+    }
+
+    /** True if the CI environment variable is set */
+    public static boolean inCI() {
+        return System.getenv("CI") != null;
     }
 }

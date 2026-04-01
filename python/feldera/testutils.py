@@ -169,6 +169,14 @@ def enterprise_only(fn):
     )(fn)
 
 
+def single_host_only(fn):
+    fn._single_host_only = True
+    return unittest.skipUnless(
+        FELDERA_TEST_NUM_HOSTS == 1,
+        f"multihost not yet supported for {fn.__name__}, skipping",
+    )(fn)
+
+
 def datafusionize(query: str) -> str:
     sort_array_pattern = re.compile(re.escape("SORT_ARRAY"), re.IGNORECASE)
     truncate_pattern = re.compile(re.escape("TRUNCATE"), re.IGNORECASE)

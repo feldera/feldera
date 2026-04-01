@@ -38,7 +38,7 @@ for details.
 The `append_only` annotation on a table instructs Feldera that the table will
 only receive `INSERT` updates.
 
-See the [Time Series Analysis Guide](/tutorials/time-series#append-only-tables)
+See the [Time Series Analysis Guide](/tutorials/time-series#append_only-tables)
 for details.
 
 ## `emit_final` views

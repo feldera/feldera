@@ -17,7 +17,8 @@ import java.util.List;
 
 /** This is a primitive operator that corresponds to the Rust AggregateIncremental node. */
 @NonCoreIR
-public final class DBSPPrimitiveAggregateOperator extends DBSPBinaryOperator implements INonLinearAggregate {
+public final class DBSPPrimitiveAggregateOperator extends DBSPBinaryOperator
+        implements INonLinearAggregate, IIncremental {
     public DBSPPrimitiveAggregateOperator(
             CalciteRelNode node, @Nullable DBSPExpression function, DBSPType outputType,
             OutputPort delta, OutputPort integral) {

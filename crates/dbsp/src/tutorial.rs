@@ -89,13 +89,12 @@
 //! use anyhow::Result;
 //! use csv::Reader;
 //! use serde::Deserialize;
-//! use time::Date;
 //!
 //! #[allow(dead_code)]
 //! #[derive(Debug, Deserialize)]
 //! struct Record {
 //!     location: String,
-//!     date: Date,
+//!     date: i32,
 //!     daily_vaccinations: Option<u64>,
 //! }
 //!
@@ -116,23 +115,23 @@
 //! first few:
 //!
 //! ```text
-//! Record { location: "England", date: 2021-01-10, daily_vaccinations: None }
-//! Record { location: "England", date: 2021-01-11, daily_vaccinations: Some(140441) }
-//! Record { location: "England", date: 2021-01-12, daily_vaccinations: Some(164043) }
-//! Record { location: "England", date: 2021-01-13, daily_vaccinations: Some(192088) }
-//! Record { location: "England", date: 2021-01-14, daily_vaccinations: Some(213978) }
+//! Record { location: "England", date: 18637, daily_vaccinations: None }
+//! Record { location: "England", date: 18638, daily_vaccinations: Some(140441) }
+//! Record { location: "England", date: 18639, daily_vaccinations: Some(164043) }
+//! Record { location: "England", date: 18640, daily_vaccinations: Some(192088) }
+//! Record { location: "England", date: 18641, daily_vaccinations: Some(213978) }
 //! ...
 //! ```
 //!
 //! We want to create a DBSP circuit and bring this data into it.  We create a
-//! circuit with [`RootCircuit::build`], which creates an empty circuit, calls a
-//! callback that we pass it to add input and computation and output to the
-//! circuit, and then fixes the form of the circuit and returns the circuit plus
-//! anything we returned from our callback.  The code skeleton is like this:
+//! circuit with [`Runtime::init_circuit`], which creates an empty circuit in a new
+//! DBSP runtime, calls a callback that we pass it to add input and computation and
+//! output to the circuit, and then fixes the form of the circuit and returns the
+//! circuit plus anything we returned from our callback.  The code skeleton is like this:
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use dbsp::RootCircuit;
+//! # use dbsp::{RootCircuit, Runtime};
 //! fn build_circuit(circuit: &mut RootCircuit) -> Result<()> {
 //!     // ...populate `circuit` with operators...
 //!     Ok((/*handles*/))
@@ -140,7 +139,7 @@
 //!
 //! fn main() -> Result<()> {
 //!     // Build circuit.
-//!     let (circuit, (/*handles*/)) = RootCircuit::build(build_circuit)?;
+//!     let (mut circuit, (/*handles*/)) = Runtime::init_circuit(1, build_circuit)?;
 //!
 //!     // ...feed data into circuit...
 //!     // ...execute circuit...
@@ -171,10 +170,10 @@
 //!
 //! ```rust
 //! # use anyhow::Result;
-//! # use chrono::NaiveDate;
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::utils::Tup2;
-//! # use dbsp::{RootCircuit, ZSet, ZSetHandle};
+//! # use dbsp::{RootCircuit, ZSet, ZSetHandle, Runtime};
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
 //! #
@@ -197,7 +196,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! fn build_circuit(circuit: &mut RootCircuit) -> Result<ZSetHandle<Record>> {
@@ -210,7 +209,7 @@
 //! }
 //! fn main() -> Result<()> {
 //!     // Build circuit.
-//!     let (circuit, input_handle) = RootCircuit::build(build_circuit)?;
+//!     let (mut circuit, input_handle) = Runtime::init_circuit(1, build_circuit)?;
 //!
 //!     // ...feed data into circuit...
 //!     // ...execute circuit...
@@ -227,10 +226,10 @@
 //!
 //! ```rust
 //! # use anyhow::Result;
-//! # use chrono::NaiveDate;
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::utils::Tup2;
-//! # use dbsp::{RootCircuit, ZSet, ZSetHandle};
+//! # use dbsp::{RootCircuit, ZSet, ZSetHandle, Runtime};
 //! # use dbsp::algebra::zset::ZWeight;
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -254,7 +253,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! # fn build_circuit(circuit: &mut RootCircuit) -> Result<ZSetHandle<Record>> {
@@ -268,7 +267,7 @@
 //! #
 //! # fn main() -> Result<()> {
 //! #     // Build circuit.
-//! #     let (circuit, input_handle) = RootCircuit::build(build_circuit)?;
+//! #     let (mut circuit, input_handle) = Runtime::init_circuit(1, build_circuit)?;
 //! #
 //!      // Feed data into circuit.
 //!    let path = format!(
@@ -304,7 +303,7 @@
 //! ```
 //! use rkyv::{Archive, Serialize};
 //! use size_of::SizeOf;
-//! use chrono::NaiveDate;
+//! use chrono::Datelike;
 //! use dbsp::utils;
 //!
 //! #[derive(
@@ -326,7 +325,7 @@
 //! #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! ```
@@ -344,11 +343,11 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::NaiveDate;
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::algebra::zset::ZWeight;
 //! # use dbsp::utils::Tup2;
-//! # use dbsp::{RootCircuit, ZSet, ZSetHandle};
+//! # use dbsp::{RootCircuit, ZSet, ZSetHandle, Runtime};
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
 //! #
@@ -371,7 +370,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! # fn build_circuit(circuit: &mut RootCircuit) -> Result<ZSetHandle<Record>> {
@@ -385,7 +384,7 @@
 //! #
 //! # fn main() -> Result<()> {
 //! #     // Build circuit.
-//! #     let (circuit, input_handle) = RootCircuit::build(build_circuit)?;
+//! #     let (mut circuit, input_handle) = Runtime::init_circuit(1, build_circuit)?;
 //! #
 //! #     // Feed data into circuit.
 //! #     let path = format!(
@@ -426,11 +425,11 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::NaiveDate;
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::algebra::zset::ZWeight;
 //! # use dbsp::utils::Tup2;
-//! # use dbsp::{OrdZSet, OutputHandle, RootCircuit, ZSet, ZSetHandle};
+//! # use dbsp::{OrdZSet, OutputHandle, RootCircuit, ZSet, ZSetHandle, Runtime};
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
 //! #
@@ -453,7 +452,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! # fn build_circuit(
@@ -474,7 +473,7 @@
 //! #
 //! # fn main() -> Result<()> {
 //! #     // Build circuit.
-//! #     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//! #     let (mut circuit, (input_handle, output_handle)) = Runtime::init_circuit(1, build_circuit)?;
 //! #
 //! #     // Feed data into circuit.
 //! #     let path = format!(
@@ -505,11 +504,11 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::NaiveDate;
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::algebra::zset::ZWeight;
 //! # use dbsp::utils::Tup2;
-//! # use dbsp::{OrdZSet, OutputHandle, RootCircuit, ZSet, ZSetHandle};
+//! # use dbsp::{OrdZSet, OutputHandle, RootCircuit, ZSet, ZSetHandle, Runtime};
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
 //! #
@@ -532,7 +531,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! fn build_circuit(
@@ -553,7 +552,7 @@
 //! #
 //! # fn main() -> Result<()> {
 //! #     // Build circuit.
-//! #     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//! #     let (mut circuit, (input_handle, output_handle)) = Runtime::init_circuit(1, build_circuit)?;
 //! #
 //! #     // Feed data into circuit.
 //! #     let path = format!(
@@ -576,7 +575,7 @@
 //! # }
 //! ```
 //!
-//! Back in `main`, we need to update the call to [`RootCircuit::build`] so that
+//! Back in `main`, we need to update the call to [`Runtime::init_circuit`] so that
 //! we save the new `output_handle`.  Then, after we feed in input and execute
 //! the circuit, we can read the output.  For general kinds of output, it can be
 //! a little tricky using `OutputHandle`, because it supports multithreaded DBSP
@@ -587,11 +586,11 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::NaiveDate;
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::algebra::zset::ZWeight;
 //! # use dbsp::utils::Tup2;
-//! # use dbsp::{OrdZSet, OutputHandle, RootCircuit, ZSet, ZSetHandle};
+//! # use dbsp::{OrdZSet, OutputHandle, RootCircuit, ZSet, ZSetHandle, Runtime};
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
 //! #
@@ -614,7 +613,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! # fn build_circuit(
@@ -635,7 +634,7 @@
 //! #
 //! # fn main() -> Result<()> {
 //!     // Build circuit.
-//!     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//!     let (mut circuit, (input_handle, output_handle)) = Runtime::init_circuit(1, build_circuit)?;
 //! #
 //! #     // Feed data into circuit.
 //! #     let path = format!(
@@ -698,8 +697,9 @@
 //! ```ignore
 //!     let monthly_totals = subset
 //!         .map_index(|r| {
+//!             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //!             (
-//!                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//!                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //!                 r.daily_vaccinations.unwrap_or(0),
 //!             )
 //!         })
@@ -723,10 +723,10 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::{Datelike, NaiveDate};
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::utils::{Tup2, Tup3};
-//! # use dbsp::{OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader};
+//! # use dbsp::{OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader, Runtime};
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
 //! #
@@ -749,7 +749,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -768,8 +768,9 @@
 //! #     });
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
+//! #             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
@@ -779,7 +780,7 @@
 //!   }
 //!
 //!   fn main() -> Result<()> {
-//! #     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//! #     let (mut circuit, (input_handle, output_handle)) = Runtime::init_circuit(1, build_circuit)?;
 //! #
 //! #     let path = format!(
 //! #         "{}/examples/tutorial/vaccinations.csv",
@@ -878,12 +879,12 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::{Datelike, NaiveDate};
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
+//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader, Runtime
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -907,7 +908,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -926,8 +927,9 @@
 //! #     });
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
+//! #             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
@@ -945,7 +947,7 @@
 //! }
 //! #
 //! # fn main() -> Result<()> {
-//! #     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//! #     let (mut circuit, (input_handle, output_handle)) = Runtime::init_circuit(1, build_circuit)?;
 //! #
 //! #     let path = format!(
 //! #         "{}/examples/tutorial/vaccinations.csv",
@@ -1035,12 +1037,12 @@
 //! print the new kind of output:
 //! ```ignore
 //! # use anyhow::Result;
-//! # use chrono::{Datelike, NaiveDate};
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
+//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader, Runtime
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1064,7 +1066,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -1083,8 +1085,9 @@
 //! #     });
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
+//! #             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
@@ -1107,7 +1110,7 @@
 //! }
 //!
 //! fn main() -> Result<()> {
-//!     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//!     let (mut circuit, (input_handle, output_handle)) = Runtime::init_circuit(1, build_circuit)?;
 //! #
 //! #     let path = format!(
 //! #         "{}/examples/tutorial/vaccinations.csv",
@@ -1217,11 +1220,11 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::{Datelike, NaiveDate};
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     utils::{Tup2, Tup3},
-//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
+//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader, Runtime
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1245,7 +1248,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -1287,8 +1290,9 @@
 //! #     });
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
+//! #             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
@@ -1310,7 +1314,7 @@
 //! }
 //!
 //! fn main() -> Result<()> {
-//! #     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//! #     let (mut circuit, (input_handle, output_handle)) = Runtime::init_circuit(1, build_circuit)?;
 //! #
 //! #     let path = format!(
 //! #         "{}/examples/tutorial/vaccinations.csv",
@@ -1374,12 +1378,12 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::{Datelike, NaiveDate};
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
+//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader, Runtime
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1403,7 +1407,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -1424,8 +1428,9 @@
 //! #     });
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
+//! #             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
@@ -1453,7 +1458,7 @@
 //! }
 //! #
 //! # fn main() -> Result<()> {
-//! #     let (circuit, (vax_handle, pop_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//! #     let (mut circuit, (vax_handle, pop_handle, output_handle)) = Runtime::init_circuit(1, build_circuit)?;
 //! #
 //! #     let path = format!(
 //! #         "{}/examples/tutorial/vaccinations.csv",
@@ -1491,12 +1496,12 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::{Datelike, NaiveDate};
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
+//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader, Runtime
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1520,7 +1525,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -1541,8 +1546,9 @@
 //! #     });
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
+//! #             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
@@ -1569,7 +1575,7 @@
 //! # }
 //! #
 //! fn main() -> Result<()> {
-//!     let (circuit, (vax_handle, pop_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//!     let (mut circuit, (vax_handle, pop_handle, output_handle)) = Runtime::init_circuit(1, build_circuit)?;
 //! #
 //! #     let path = format!(
 //! #         "{}/examples/tutorial/vaccinations.csv",
@@ -1611,7 +1617,7 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::{Datelike, NaiveDate};
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
@@ -1640,7 +1646,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -1661,8 +1667,9 @@
 //! #     });
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
+//! #             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
@@ -1693,12 +1700,12 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::{Datelike, NaiveDate};
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
+//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader, Runtime
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1722,7 +1729,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -1743,8 +1750,9 @@
 //! #     });
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
+//! #             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
@@ -1771,7 +1779,7 @@
 //! # }
 //! #
 //! # fn main() -> Result<()> {
-//! #     let (circuit, (vax_handle, pop_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//! #     let (mut circuit, (vax_handle, pop_handle, output_handle)) = Runtime::init_circuit(1, build_circuit)?;
 //! #
 //! #     let path = format!(
 //! #         "{}/examples/tutorial/vaccinations.csv",
@@ -1836,11 +1844,11 @@
 //!
 //! ```
 //! # use anyhow::Result;
-//! # use chrono::{Datelike, NaiveDate};
+//! # use chrono::Datelike;
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     utils::{Tup2, Tup3},
-//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
+//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader, Runtime
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1864,7 +1872,7 @@
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
-//! #     date: NaiveDate,
+//! #     date: i32,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -1906,8 +1914,9 @@
 //! #     });
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
+//! #             let date = chrono::NaiveDate::from_epoch_days(r.date).unwrap();
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3(r.location.clone(), date.year(), date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
@@ -1928,7 +1937,7 @@
 //! # }
 //! #
 //! fn main() -> Result<()> {
-//!     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
+//!     let (mut circuit, (input_handle, output_handle)) = Runtime::init_circuit(1, build_circuit)?;
 //!
 //!     let path = format!(
 //!         "{}/examples/tutorial/vaccinations.csv",
@@ -2009,7 +2018,7 @@
 //! We have two execution contexts: a [root circuit](`RootCircuit`)
 //! and a [child circuit](`crate::NestedCircuit`).
 //! The root circuit is the one that is built by the parameter to the
-//! [`RootCircuit::build`] function. The child circuit is defined by the parameter to
+//! [`Runtime::init_circuit`] function. The child circuit is defined by the parameter to
 //! the [`ChildCircuit<()>::recursive`](`crate::ChildCircuit::recursive`) function.
 //! We also make use of the [`delta0`](`crate::operator::Delta0`) operator to
 //! import streams from a parent circuit into a child circuit.
@@ -2036,13 +2045,13 @@
 //! use dbsp::{
 //!     operator::Generator,
 //!     utils::{Tup3, Tup4},
-//!     zset, zset_set, Circuit, OrdZSet, RootCircuit, Stream, IndexedZSetReader
+//!     zset, zset_set, Circuit, OrdZSet, RootCircuit, Stream, IndexedZSetReader, Runtime
 //! };
 //!
 //! fn main() -> Result<()> {
 //!     const STEPS: usize = 2;
 //!
-//!     let (circuit_handle, output_handle) = RootCircuit::build(move |root_circuit| {
+//!     let (mut circuit_handle, output_handle) = Runtime::init_circuit(1, move |root_circuit| {
 //!         let mut edges_data = ([
 //!             zset_set! { Tup3(0_usize, 1_usize, 1_usize), Tup3(1, 2, 1), Tup3(2, 3, 2), Tup3(3, 4, 2) },
 //!             zset! { Tup3(1, 2, 1) => -1 },
@@ -2170,7 +2179,7 @@
 //! #     indexed_zset,
 //! #     operator::{Generator, Min},
 //! #     utils::{Tup2, Tup3, Tup4},
-//! #     zset_set, Circuit, NestedCircuit, OrdIndexedZSet, RootCircuit, Stream, IndexedZSetReader
+//! #     zset_set, Circuit, NestedCircuit, OrdIndexedZSet, RootCircuit, Stream, IndexedZSetReader, Runtime
 //! # };
 //! #
 //! type Accumulator =
@@ -2179,7 +2188,7 @@
 //! # fn main() -> Result<()> {
 //! #     const STEPS: usize = 2;
 //! #
-//! #     let (circuit_handle, output_handle) = RootCircuit::build(move |root_circuit| {
+//! #     let (mut circuit_handle, output_handle) = Runtime::init_circuit(1, move |root_circuit| {
 //! #         let mut edges_data = ([
 //! #             zset_set! { Tup3(0_usize, 1_usize, 1_usize), Tup3(1, 2, 1), Tup3(2, 3, 2), Tup3(3, 4, 2) },
 //! #             zset_set! { Tup3(4, 0, 3)}
@@ -2280,14 +2289,12 @@
 //! the basics.  A good next step could be to look through the methods available
 //! on [`Stream`] for computation.
 //!
-//! As a final note, we used [`RootCircuit::build`] to create our circuits.
-//! That method creates circuits that run in the current thread.  DBSP also
-//! provides a multithreaded runtime.  To run our circuit in 4 worker threads
-//! instead of in the current thread is as simple as importing
-//! [`dbsp::Runtime`](`Runtime`) and then changing
+//! As a final note, we used `Runtime::init_circuit(1, build_circuit)` to create
+//! single-threaded circuits.  DBSP supports multithreaded runtimes.  To run our
+//! circuit in 4 worker threads instead of one, change
 //!
 //! ```ignore
-//! let (circuit, (/*handles*/)) = RootCircuit::build(build_circuit)?;
+//! let (mut circuit, (/*handles*/)) = Runtime::init_circuit(1, build_circuit)?;
 //! ```
 //!
 //! to:

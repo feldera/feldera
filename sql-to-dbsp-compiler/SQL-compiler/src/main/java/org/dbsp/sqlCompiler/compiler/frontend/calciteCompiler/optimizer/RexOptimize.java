@@ -8,7 +8,6 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexShuttle;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.type.SqlTypeName;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;

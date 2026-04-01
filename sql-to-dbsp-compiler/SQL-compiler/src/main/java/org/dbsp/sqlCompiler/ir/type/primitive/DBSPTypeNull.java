@@ -49,7 +49,7 @@ public class DBSPTypeNull extends DBSPTypeBaseType implements IsBoundedType {
 
     @Override
     public DBSPExpression defaultValue() {
-        return DBSPNullLiteral.INSTANCE;
+        return new DBSPNullLiteral();
     }
 
     public static DBSPTypeNull getDefault() {
@@ -99,11 +99,11 @@ public class DBSPTypeNull extends DBSPTypeBaseType implements IsBoundedType {
 
     @Override
     public DBSPExpression getMaxValue() {
-        return DBSPNullLiteral.INSTANCE;
+        return new DBSPNullLiteral();
     }
 
     @Override
     public DBSPExpression getMinValue() {
-        return DBSPNullLiteral.INSTANCE;
+        return new DBSPNullLiteral();
     }
 }

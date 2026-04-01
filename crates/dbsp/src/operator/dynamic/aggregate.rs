@@ -18,7 +18,7 @@ use crate::{
     algebra::{HasOne, IndexedZSet, IndexedZSetReader, Lattice, OrdIndexedZSet, PartialOrder},
     circuit::{
         Circuit, Scope, Stream, WithClock,
-        metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL, OperatorMeta},
+        metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::{Operator, UnaryOperator},
         splitter_output_chunk_size,
     },
@@ -1008,8 +1008,8 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
-            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
+            INPUT_BATCHES_STATS => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_STATS => self.output_batch_stats.borrow().metadata(),
         });
     }
 
@@ -1387,7 +1387,7 @@ pub mod test {
         #[test]
         fn proptest_aggregate_test_st(inputs in test_input()) {
             let iterations = inputs.len();
-            let circuit = RootCircuit::build(|circuit| aggregate_test_circuit(circuit, inputs)).unwrap().0;
+            let mut circuit = Runtime::init_circuit(1, |circuit| aggregate_test_circuit(circuit, inputs)).unwrap().0;
 
             for _ in 0..iterations {
                 circuit.transaction().unwrap();

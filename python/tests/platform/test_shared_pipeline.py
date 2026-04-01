@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import pathlib
 import tempfile
@@ -15,7 +16,12 @@ from feldera.rest.errors import FelderaAPIError
 from feldera.runtime_config import RuntimeConfig
 from tests import TEST_CLIENT, enterprise_only
 from tests.shared_test_pipeline import SharedTestPipeline
-from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
+from tests.platform.helper import http_request, API_PREFIX
+from feldera.testutils import (
+    FELDERA_TEST_NUM_WORKERS,
+    FELDERA_TEST_NUM_HOSTS,
+)
+from .helper import wait_for_condition
 
 
 class TestPipeline(SharedTestPipeline):
@@ -339,12 +345,13 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.start()
         data = [{"id": 2147483647}]
         self.pipeline.input_json("tbl", data, wait=False)
-        while True:
-            status = self.pipeline.status()
-            expected = PipelineStatus.STOPPED
-            if status == expected and len(self.pipeline.deployment_error()) > 0:
-                break
-            time.sleep(1)
+        wait_for_condition(
+            "pipeline stops with deployment error after worker panic",
+            lambda: self.pipeline.status() == PipelineStatus.STOPPED
+            and len(self.pipeline.deployment_error()) > 0,
+            timeout_s=20.0,
+            poll_interval_s=1.0,
+        )
         self.pipeline.stop(force=True)
 
     def test_adhoc_execute(self):
@@ -363,7 +370,7 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("v0")
         self.pipeline.resume()
         self.pipeline.input_json("tbl", data, update_format="insert_delete")
-        self.pipeline.wait_for_idle(True)
+        self.pipeline.wait_for_idle()
         out_data = out.to_dict()
         expected = [dict(data["insert"], insert_delete=1)]
         assert out_data == expected
@@ -839,6 +846,88 @@ class TestPipeline(SharedTestPipeline):
                 assert len(chunk) > 0
         except OSError:
             self.fail("Samply profile is not a valid GZIP file")
+
+    # Verify /circuit_profile returns a valid ZIP via the streaming proxy
+    # (Transfer-Encoding: chunked, Content-Encoding: identity since ZIP
+    # is already compressed).
+    def test_circuit_profile_streaming(self):
+        self.pipeline.start()
+
+        resp = http_request(
+            "GET",
+            f"{API_PREFIX}/pipelines/{self.pipeline.name}/circuit_profile",
+            timeout=120,
+        )
+        assert resp.status_code == 200, (
+            f"Expected 200, got {resp.status_code}: {resp.text[:200]}"
+        )
+
+        # Response must be a valid ZIP archive
+        try:
+            with zipfile.ZipFile(io.BytesIO(resp.content), "r") as zf:
+                assert len(zf.namelist()) > 0, "ZIP is empty"
+        except zipfile.BadZipFile:
+            self.fail("circuit_profile did not return a valid ZIP")
+
+        # ZIP is already compressed; Content-Encoding should be identity
+        ce = resp.headers.get("content-encoding", "identity")
+        assert ce == "identity", (
+            f"Expected Content-Encoding: identity for ZIP, got {ce}"
+        )
+
+        # Confirm the streaming proxy is used (not the buffered path, which
+        # would set Content-Length instead of Transfer-Encoding: chunked).
+        assert resp.headers.get("transfer-encoding") == "chunked", (
+            "Expected Transfer-Encoding: chunked (streaming proxy)"
+        )
+
+    # Verify /circuit_json_profile streams valid JSON via the streaming proxy
+    # (Transfer-Encoding: chunked) and that the gzip compression round-trip
+    # is transparent (compressed and uncompressed responses yield the same data).
+    def test_circuit_json_profile_streaming(self):
+        self.pipeline.start()
+
+        # Request with gzip — the pipeline compresses and the streaming
+        # proxy passes the compressed bytes through.  `requests`
+        # auto-decompresses, so resp.content is plain JSON.
+        resp_gzip = http_request(
+            "GET",
+            f"{API_PREFIX}/pipelines/{self.pipeline.name}/circuit_json_profile",
+            headers={"Accept-Encoding": "gzip"},
+            timeout=120,
+        )
+        assert resp_gzip.status_code == 200, (
+            f"Expected 200, got {resp_gzip.status_code}: {resp_gzip.text[:200]}"
+        )
+        try:
+            data_gzip = resp_gzip.json()
+        except json.JSONDecodeError:
+            self.fail("circuit_json_profile (gzip) did not return valid JSON")
+        assert isinstance(data_gzip, (dict, list))
+
+        # Confirm the streaming proxy is used (not the buffered path, which
+        # would set Content-Length instead of Transfer-Encoding: chunked).
+        assert resp_gzip.headers.get("transfer-encoding") == "chunked", (
+            "Expected Transfer-Encoding: chunked (streaming proxy)"
+        )
+
+        # Request without compression
+        resp_plain = http_request(
+            "GET",
+            f"{API_PREFIX}/pipelines/{self.pipeline.name}/circuit_json_profile",
+            headers={"Accept-Encoding": "identity"},
+            timeout=120,
+        )
+        assert resp_plain.status_code == 200
+        try:
+            data_plain = resp_plain.json()
+        except json.JSONDecodeError:
+            self.fail("circuit_json_profile (identity) did not return valid JSON")
+
+        # Both should return the same profile data
+        assert data_gzip == data_plain, (
+            "Compressed and uncompressed responses returned different data"
+        )
 
 
 if __name__ == "__main__":

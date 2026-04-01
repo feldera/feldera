@@ -88,7 +88,7 @@ public class ExpandUnsafeCasts extends ExpressionTranslator {
                 ProgramIdentifier fieldName = names.get(i);
                 keys.add(new DBSPStringLiteral(fieldName.toString()));
 
-                DBSPExpression field = source.field(i).simplify();
+                DBSPExpression field = source.field(i);
                 if (!field.getType().hasCopy())
                     field = field.applyCloneIfNeeded();
                 DBSPExpression rec = field.cast(node, DBSPTypeVariant.create(false), UNSAFE);
@@ -129,8 +129,10 @@ public class ExpandUnsafeCasts extends ExpressionTranslator {
         for (int i = 0; i < type.size(); i++) {
             DBSPType fieldType = type.getFieldType(i);
             DBSPExpression field;
-            if (sourceType.is(DBSPTypeTupleBase.class)) {
-                field = source.field(i).simplify();
+            if (sourceType.is(DBSPTypeNull.class)) {
+                field = fieldType.none();
+            } else if (sourceType.is(DBSPTypeTupleBase.class)) {
+                field = source.field(i);
             } else if (sourceType.is(DBSPTypeVariant.class)) {
                 if (struct == null) {
                     field = new DBSPBinaryExpression(
@@ -179,7 +181,7 @@ public class ExpandUnsafeCasts extends ExpressionTranslator {
             throw new InternalCompilerError("Cast to RAW tuple from " + sourceType);
         for (int i = 0; i < type.size(); i++) {
             DBSPType fieldType = type.getFieldType(i);
-            DBSPExpression field = source.field(i).simplify();
+            DBSPExpression field = source.field(i);
             DBSPExpression expression;
             expression = field.cast(node, fieldType, UNSAFE);
             // Convert recursively
@@ -251,7 +253,7 @@ public class ExpandUnsafeCasts extends ExpressionTranslator {
         DBSPType convertedType = new DBSPTypeMap(type.getKeyType(), type.getValueType(), sourceType.mayBeNull);
         return new DBSPBinaryExpression(node,
                 convertedType, DBSPOpcode.MAP_CONVERT,
-                source, new DBSPRawTupleExpression(convertKey, convertValue));
+                source.applyClone(), new DBSPRawTupleExpression(convertKey, convertValue));
     }
 
     @Override

@@ -1,27 +1,19 @@
 <script lang="ts">
   import { Switch } from '@skeletonlabs/skeleton-svelte'
   import { selectScope } from '$lib/compositions/common/userSelect'
-  import {
-    extractPipelineStderr,
-    extractPipelineXgressStderr,
-    extractProgramStderr,
-    type SystemError
-  } from '$lib/compositions/health/systemErrors'
+  import { extractProgramStderr, type SystemError } from '$lib/compositions/health/systemErrors'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
-  import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
 
   const { hideWarnings, verbatimErrors } = useLayoutSettings()
 
   const {
     pipeline,
-    errors,
-    metrics
+    errors
   }: {
     pipeline: { current: ExtendedPipeline }
     errors: SystemError<any, any>[]
-    metrics: { current: PipelineMetrics }
   } = $props()
 
   const theme = useSkeletonTheme()
@@ -57,14 +49,7 @@
     tabindex={-1}
   >
     {#if verbatimErrors.value}
-      {@const stderr = [
-        ...extractProgramStderr(pipeline.current),
-        ...extractPipelineXgressStderr({
-          pipelineName: pipeline.current.name,
-          status: metrics.current
-        }),
-        ...extractPipelineStderr(pipeline.current)
-      ].join('\n')}
+      {@const stderr = [...extractProgramStderr(pipeline.current)].join('\n')}
       {#if stderr}
         <div
           class="bg-white-dark flex flex-1 rounded p-4 whitespace-pre-wrap"
@@ -97,7 +82,13 @@
           </span>
         </div>
       {:else}
-        <span class="text-surface-600-400">No errors</span>
+        <span class="text-surface-600-400">
+          {#if hideWarnings.value && errors.length}
+            No errors, warnings hidden
+          {:else}
+            No errors
+          {/if}
+        </span>
       {/each}
     {/if}
   </div>

@@ -1,4 +1,4 @@
-import time
+from feldera.enums import PipelineStatus
 from http import HTTPStatus
 
 from .helper import (
@@ -16,12 +16,18 @@ from .helper import (
     connector_action,
     pipeline_stats,
     connector_paused,
+    wait_for_condition,
+    get,
 )
+from feldera.testutils import FELDERA_TEST_NUM_HOSTS
 
 
 def _basic_orchestration_info(pipeline: str, table: str, connector: str):
     stats = pipeline_stats(pipeline)
-    pipeline_paused = stats["global_metrics"]["state"] == "Paused"
+    pipeline_paused = (
+        PipelineStatus.from_str(stats["global_metrics"]["state"])
+        == PipelineStatus.PAUSED
+    )
     processed = stats["global_metrics"]["total_processed_records"]
     return pipeline_paused, connector_paused(pipeline, table, connector), processed
 
@@ -65,6 +71,24 @@ def test_pipeline_orchestration_basic(pipeline_name):
         create_pipeline(cur_pipeline_name, sql)
         start_pipeline_as_paused(cur_pipeline_name)
 
+        if FELDERA_TEST_NUM_HOSTS > 1:
+            # The multihost coordinator can report that it is ready
+            # before some of the hosts are individually ready, but the
+            # coordinator only reports statistics when all of them are
+            # ready.  This might be a bug in the coordinator; it is
+            # hard to tell.  For now, waiting for statistics to be
+            # available is a compromise that allows this otherwise
+            # valuable test to pass.
+            wait_for_condition(
+                f"pipeline stats for {cur_pipeline_name} are available",
+                lambda: get(
+                    api_url(f"/pipelines/{cur_pipeline_name}/stats")
+                ).status_code
+                == HTTPStatus.OK,
+                timeout_s=30.0,
+                poll_interval_s=1.0,
+            )
+
         # Initial: pipeline paused, connector running, processed=0
         p_paused, c_paused, processed = _basic_orchestration_info(
             cur_pipeline_name, table_name, connector_name
@@ -76,7 +100,14 @@ def test_pipeline_orchestration_basic(pipeline_name):
         # Pause connector
         resp = connector_action(cur_pipeline_name, table_name, connector_name, "pause")
         assert resp.status_code == HTTPStatus.OK, (resp.status_code, resp.text)
-        time.sleep(0.5)  # TODO: why is this necessary? might not be, remove if not
+        wait_for_condition(
+            "connector pause observed",
+            lambda: _basic_orchestration_info(
+                cur_pipeline_name, table_name, connector_name
+            )[1],
+            timeout_s=10.0,
+            poll_interval_s=0.5,
+        )
         p_paused, c_paused, processed = _basic_orchestration_info(
             cur_pipeline_name, table_name, connector_name
         )
@@ -96,7 +127,14 @@ def test_pipeline_orchestration_basic(pipeline_name):
         # Start connector
         resp = connector_action(cur_pipeline_name, table_name, connector_name, "start")
         assert resp.status_code == HTTPStatus.OK, (resp.status_code, resp.text)
-        time.sleep(0.5)
+        wait_for_condition(
+            "connector start observed",
+            lambda: not _basic_orchestration_info(
+                cur_pipeline_name, table_name, connector_name
+            )[1],
+            timeout_s=10.0,
+            poll_interval_s=0.5,
+        )
         p_paused, c_paused, processed = _basic_orchestration_info(
             cur_pipeline_name, table_name, connector_name
         )
@@ -294,7 +332,10 @@ def test_pipeline_orchestration_scenarios(pipeline_name):
             apply_step(s)
 
         st = pipeline_stats(pipeline_name)
-        pipeline_paused = st["global_metrics"]["state"] == "Paused"
+        pipeline_paused = (
+            PipelineStatus.from_str(st["global_metrics"]["state"])
+            == PipelineStatus.PAUSED
+        )
         inputs = st["inputs"]
         c1_paused = next(i for i in inputs if i["endpoint_name"] == "numbers.c1")[
             "paused"

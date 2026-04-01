@@ -14,7 +14,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
-import org.dbsp.sqlCompiler.compiler.backend.rust.RustSqlRuntimeLibrary;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -43,27 +42,30 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
+import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT128;
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.*;
 
-/**
- * Implements a window aggregate with a RANGE
- */
+/** Implements a window aggregate with a RANGE */
 public class RangeAggregates extends WindowAggregates {
     final int orderColumnIndex;
     final RelFieldCollation collation;
@@ -71,20 +73,41 @@ public class RangeAggregates extends WindowAggregates {
     protected RangeAggregates(CalciteToDBSPCompiler compiler, Window window, Window.Group group, int windowFieldIndex) {
         super(compiler, window, group, windowFieldIndex);
 
+        CalciteObject object = CalciteObject.create(group.aggCalls.get(0).pos);
         List<RelFieldCollation> orderKeys = this.group.orderKeys.getFieldCollations();
+        if (group.isRows)
+            throw new UnimplementedException("Window aggregates with ROWS", 457, object);
         if (orderKeys.isEmpty())
-            throw new CompilationError("Missing ORDER BY in OVER", node);
+            throw new CompilationError("Missing ORDER BY in OVER", object);
         if (orderKeys.size() > 1)
-            throw new UnimplementedException("ORDER BY in OVER requires exactly 1 column", 457, node);
+            throw new UnimplementedException("ORDER BY in OVER requires exactly 1 column", 457, object);
         if (group.exclude != RexWindowExclusion.EXCLUDE_NO_OTHER)
-            throw new UnimplementedException("EXCLUDE BY in OVER", 457, node);
+            throw new UnimplementedException("EXCLUDE BY in OVER", 457, object);
 
         this.collation = orderKeys.get(0);
         this.orderColumnIndex = this.collation.getFieldIndex();
     }
 
+    String intervalConversionFunction(CalciteObject node, DBSPType unsignedType, DBSPType sortType, DBSPType deltaType) {
+        if (deltaType.is(DBSPTypeLongInterval.class)) {
+            throw new UnsupportedException("""
+                    Currently the compiler only supports constant OVER window bounds.
+                    Intervals such as 'INTERVAL 1 MONTH' or 'INTERVAL 1 YEAR' are not constant.
+                    Can you rephrase the query using an interval such as 'INTERVAL 30 DAYS' instead?""", node);
+        }
+
+        // we ignore nullability because window bounds are constants and cannot be null
+        // BEWARE: this function name structure is hardwired in the monotonicity analysis
+        return "to_bound_" +
+                deltaType.withMayBeNull(false).to(DBSPTypeBaseType.class).shortName() + "_" +
+                sortType.withMayBeNull(false).to(DBSPTypeBaseType.class).shortName() + "_" +
+                unsignedType.baseTypeWithSuffix();
+    }
+
     DBSPWindowBoundExpression compileWindowBound(
-            RexWindowBound bound, DBSPType sortType, DBSPType unsignedType, ExpressionCompiler eComp) {
+            RexWindowBound bound, DBSPType originalSortType,
+            DBSPType unsignedType, @Nullable DBSPClosureExpression convertToSigned,
+            ExpressionCompiler eComp) {
         CalciteObject node = CalciteObject.create(this.window);
         IsNumericType numType = unsignedType.as(IsNumericType.class);
         if (numType == null) {
@@ -108,12 +131,14 @@ public class RangeAggregates extends WindowAggregates {
             if (!literal.to(IsNumericLiteral.class).gt0()) {
                 throw new UnsupportedException("Window bounds must be positive: " + literal.toSqlString(), node);
             }
-            if (literal.getType().is(DBSPTypeInteger.class)) {
-                numericBound = value.cast(node, unsignedType, DBSPCastExpression.CastType.SqlUnsafe);
+            numericBound = value.cast(node, originalSortType, DBSPCastExpression.CastType.SqlUnsafe);
+            if (literal.getType().is(IsTimeRelatedType.class)) {
+                String intervalConversion = intervalConversionFunction(node, unsignedType, originalSortType, literal.getType());
+                numericBound = new DBSPApplyExpression(intervalConversion, unsignedType, literal.borrow());
             } else {
-                RustSqlRuntimeLibrary.FunctionDescription desc =
-                        RustSqlRuntimeLibrary.getWindowBound(node, unsignedType, sortType, literal.getType());
-                numericBound = new DBSPApplyExpression(desc.function, unsignedType, literal.borrow());
+                if (convertToSigned != null)
+                    numericBound = convertToSigned.call(numericBound).reduce(eComp.compiler());
+                numericBound = numericBound.cast(node, unsignedType, DBSPCastExpression.CastType.SqlUnsafe);
             }
         }
         return new DBSPWindowBoundExpression(node, bound.isPreceding(), numericBound);
@@ -129,51 +154,66 @@ public class RangeAggregates extends WindowAggregates {
         if (orderKeys.size() > 1)
             throw new UnimplementedException("ORDER BY in OVER requires exactly 1 column", 457, this.node);
 
-        DBSPType sortType, originalSortType;
-        DBSPType unsignedSortType;
-        DBSPSimpleOperator mapIndex;
-        boolean ascending = this.collation.getDirection() == RelFieldCollation.Direction.ASCENDING;
-        boolean nullsLast = this.collation.nullDirection != RelFieldCollation.NullDirection.FIRST;
-        DBSPType partitionType;
-        DBSPType partitionAndRowType;
-        DBSPTypeTuple lastTupleType = lastOperator.getOutputZSetElementType().to(DBSPTypeTuple.class);
+        final DBSPExpression originalOrderField = this.inputRowRefVar.deref().field(orderColumnIndex);
+        // Original type that sorting is performed on
+        final DBSPType originalSortType = originalOrderField.getType();
+        final DBSPType sortType;
+        final DBSPType unsignedSortType;
+        final DBSPSimpleOperator mapIndex;
+        final boolean ascending = this.collation.getDirection() == RelFieldCollation.Direction.ASCENDING;
+        final boolean nullsLast = this.collation.nullDirection != RelFieldCollation.NullDirection.FIRST;
+        final DBSPType partitionType;
+        final DBSPType partitionAndRowType;
+        final DBSPTypeTuple lastTupleType = lastOperator.getOutputZSetElementType().to(DBSPTypeTuple.class);
+        // For Decimal and floating point this function converts the value to a signed integer.
+        @Nullable
+        DBSPClosureExpression convertToSigned = null;
 
         {
             DBSPTupleExpression partitionKeys = this.partitionKeys();
             partitionType = partitionKeys.getType();
-
-            DBSPExpression originalOrderField = this.inputRowRefVar.deref().field(orderColumnIndex);
-            sortType = originalOrderField.getType();
-            originalSortType = sortType;
-            // Original scale if the sort field is a DECIMAL
-            if (sortType.is(DBSPTypeDecimal.class)) {
+            DBSPVariablePath var = originalSortType.var();
+            if (originalSortType.is(DBSPTypeDecimal.class)) {
                 // Scale decimal to make it an integer by multiplying with 10^scale
-                DBSPTypeDecimal dec = sortType.to(DBSPTypeDecimal.class);
-
-                DBSPTypeInteger intType;
+                DBSPTypeDecimal dec = originalSortType.to(DBSPTypeDecimal.class);
                 DBSPTypeCode code = DBSPTypeInteger.smallestInteger(dec.precision);
                 if (code != null) {
-                    intType = DBSPTypeInteger.getType(this.node, code, dec.mayBeNull);
-                    DBSPType i128 = DBSPTypeInteger.getType(this.node, INT128, dec.mayBeNull);
-                    // directly build the expression, no casts are needed
-                    originalOrderField = new DBSPUnaryExpression(
-                            this.node, i128, DBSPOpcode.DECIMAL_TO_INTEGER, originalOrderField);
-                    originalOrderField = originalOrderField.cast(
-                            CalciteObject.EMPTY, intType, DBSPCastExpression.CastType.SqlUnsafe);
-                    sortType = intType;
+                    sortType = DBSPTypeInteger.getType(this.node, code, dec.mayBeNull);
+                    final DBSPType i128 = DBSPTypeInteger.getType(this.node, INT128, dec.mayBeNull);
+                    // This is a function in sqllib.
+                    final var toI128 = new DBSPUnaryExpression(
+                            this.node, i128, DBSPOpcode.DECIMAL_TO_INTEGER, var);
+                    // Not all 128 bits are used -- this cast will be lossless
+                    convertToSigned = toI128.cast(
+                            CalciteObject.EMPTY, sortType, DBSPCastExpression.CastType.SqlUnsafe).closure(var);
+                } else {
+                    sortType = null;
                 }
+            } else if (originalSortType.is(DBSPTypeShortInterval.class)) {
+                sortType = DBSPTypeInteger.getType(node, INT64, originalSortType.mayBeNull);
+                convertToSigned = new DBSPUnaryExpression(
+                        this.node, sortType, DBSPOpcode.SHORT_INTERVAL_TO_INTEGER, var).closure(var);
+            } else {
+                sortType = originalSortType;
             }
 
-            if (!sortType.is(DBSPTypeInteger.class) &&
+            if (sortType == null ||
+                    !sortType.is(DBSPTypeInteger.class) &&
                     !sortType.is(DBSPTypeTimestamp.class) &&
                     !sortType.is(DBSPTypeDate.class) &&
-                    !sortType.is(DBSPTypeTime.class))
+                    !sortType.is(DBSPTypeTime.class) &&
+                    !sortType.is(DBSPTypeShortInterval.class))
                 throw new UnimplementedException("OVER currently cannot sort on columns with type "
-                        + Utilities.singleQuote(sortType.asSqlString()), 457, node);
+                        + Utilities.singleQuote(originalSortType.asSqlString()), 457, node);
 
-            // This only works if the order field is unsigned.
+            final DBSPExpression converted;
+            if (convertToSigned != null)
+                converted = convertToSigned.call(originalOrderField).reduce(this.compiler.compiler());
+            else
+                converted = originalOrderField;
+            // The DBSP rolling aggregate requires the order field to be unsigned.
             DBSPExpression orderField = new DBSPUnsignedWrapExpression(
-                    this.node, originalOrderField, ascending, nullsLast);
+                    this.node, converted, ascending, nullsLast);
             unsignedSortType = orderField.getType();
 
             // Map each row to an expression of the form: |t| (order, Tup2(partition, (*t).clone()))
@@ -198,8 +238,10 @@ public class RangeAggregates extends WindowAggregates {
             this.compiler.addOperator(diff);
 
             // Create window description
-            DBSPWindowBoundExpression lb = this.compileWindowBound(group.lowerBound, sortType, unsignedSortType, eComp);
-            DBSPWindowBoundExpression ub = this.compileWindowBound(group.upperBound, sortType, unsignedSortType, eComp);
+            DBSPWindowBoundExpression lb = this.compileWindowBound(
+                    group.lowerBound, originalSortType, unsignedSortType, convertToSigned, eComp);
+            DBSPWindowBoundExpression ub = this.compileWindowBound(
+                    group.upperBound, originalSortType, unsignedSortType, convertToSigned, eComp);
 
             List<DBSPType> types = Linq.map(
                     this.aggregateCalls,
@@ -258,6 +300,9 @@ public class RangeAggregates extends WindowAggregates {
                 unwrap = unwrap.cast(this.node, i128, DBSPCastExpression.CastType.SqlUnsafe);
                 unwrap = new DBSPUnaryExpression(this.node, originalSortType,
                         DBSPOpcode.INTEGER_TO_DECIMAL, unwrap);
+            } else if (originalSortType.is(DBSPTypeShortInterval.class)) {
+                unwrap = new DBSPUnaryExpression(this.node, originalSortType,
+                        DBSPOpcode.INTEGER_TO_SHORT_INTERVAL, unwrap);
             }
 
             DBSPExpression ixKey = var.field(0).deref();
@@ -285,8 +330,8 @@ public class RangeAggregates extends WindowAggregates {
             List<DBSPExpression> expressions = Linq.map(partitionKeys,
                     f -> previousRowRefVar.deref().field(f).applyCloneIfNeeded());
 
-            DBSPExpression originalOrderField = previousRowRefVar.deref().field(orderColumnIndex);
-            expressions.add(originalOrderField.applyCloneIfNeeded());
+            DBSPExpression orderField = previousRowRefVar.deref().field(orderColumnIndex);
+            expressions.add(orderField.applyCloneIfNeeded());
             DBSPExpression partAndOrder = new DBSPTupleExpression(expressions, false);
             lastPartAndOrderType = partAndOrder.getType();
             // Copy all the fields from the previousRowRefVar except the partition fields.

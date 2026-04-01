@@ -8,6 +8,7 @@ use crate::db::types::pipeline::{
 };
 use crate::db::types::version::Version;
 use crate::error::{source_error, ManagerError};
+use crate::pipeline_env::validate_pipeline_env;
 use crate::runner::error::RunnerError;
 use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
 use crate::runner::pipeline_logs::{LogMessage, LogsSender};
@@ -19,6 +20,7 @@ use feldera_types::config::{
 use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus};
 use reqwest::StatusCode;
 use serde_json::json;
+use std::io::ErrorKind;
 use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
@@ -433,6 +435,10 @@ impl PipelineExecutor for LocalRunner {
             .into());
         }
 
+        if let Err(e) = validate_pipeline_env(&deployment_config.global.env) {
+            return Err(RunnerError::RunnerProvisionError { error: e }.into());
+        }
+
         // (Re-)create pipeline working directory (which will contain storage directory)
         let pipeline_dir = self.config.pipeline_dir(self.pipeline_id);
         create_dir_all(&pipeline_dir).await.map_err(|e| {
@@ -540,52 +546,76 @@ impl PipelineExecutor for LocalRunner {
         )
         .await?;
 
-        // Run executable:
-        // - Current directory: pipeline working directory
-        // - Configuration file: path to config.yaml
-        // - Stdout/stderr are piped to follow logs
-        let mut command = Command::new(binary_file_path);
-        command
-            .env(
-                "TOKIO_WORKER_THREADS",
-                deployment_config
-                    .global
-                    .io_workers
-                    .unwrap_or(deployment_config.global.workers as u64)
-                    .to_string(),
-            )
-            .current_dir(pipeline_dir)
-            .arg("--config-file")
-            .arg(self.config.config_file_path(self.pipeline_id, "yaml"))
-            .arg("--bind-address")
-            .arg(&self.common_config.bind_address)
-            .arg("--initial")
-            .arg(runtime_desired_status_to_string(deployment_initial))
-            .arg("--deployment-id")
-            .arg(deployment_id.to_string())
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        if let Some(bootstrap_policy) = bootstrap_policy {
+        let mut retries = 0..3;
+        let mut process = loop {
+            // Run executable:
+            // - Current directory: pipeline working directory
+            // - Configuration file: path to config.yaml
+            // - Stdout/stderr are piped to follow logs
+            let mut command = Command::new(&binary_file_path);
             command
-                .arg("--bootstrap-policy")
-                .arg(bootstrap_policy_to_string(bootstrap_policy));
-        }
+                .env(
+                    "TOKIO_WORKER_THREADS",
+                    deployment_config
+                        .global
+                        .io_workers
+                        .unwrap_or(deployment_config.global.workers as u64)
+                        .to_string(),
+                )
+                .envs(
+                    deployment_config
+                        .global
+                        .env
+                        .iter()
+                        .map(|(key, value)| (key.as_str(), value.as_str())),
+                )
+                .current_dir(&pipeline_dir)
+                .arg("--config-file")
+                .arg(self.config.config_file_path(self.pipeline_id, "yaml"))
+                .arg("--bind-address")
+                .arg(&self.common_config.bind_address)
+                .arg("--initial")
+                .arg(runtime_desired_status_to_string(deployment_initial))
+                .arg("--deployment-id")
+                .arg(deployment_id.to_string())
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
 
-        if let Some((https_tls_cert_path, https_tls_key_path)) = self.common_config.https_config() {
-            command
-                .arg("--enable-https")
-                .arg("--https-tls-cert-path")
-                .arg(https_tls_cert_path)
-                .arg("--https-tls-key-path")
-                .arg(https_tls_key_path);
-        }
-        let mut process = command
-            .spawn()
-            .map_err(|e| RunnerError::RunnerProvisionError {
-                error: format!("unable to spawn process due to: {e}"),
-            })?;
+            if let Some(bootstrap_policy) = bootstrap_policy {
+                command
+                    .arg("--bootstrap-policy")
+                    .arg(bootstrap_policy_to_string(bootstrap_policy));
+            }
+
+            if let Some((https_tls_cert_path, https_tls_key_path)) =
+                self.common_config.https_config()
+            {
+                command
+                    .arg("--enable-https")
+                    .arg("--https-tls-cert-path")
+                    .arg(https_tls_cert_path)
+                    .arg("--https-tls-key-path")
+                    .arg(https_tls_key_path);
+            }
+            match command.spawn() {
+                Ok(process) => break process,
+                Err(e) if e.kind() == ErrorKind::ExecutableFileBusy && retries.next().is_some() => {
+                    // This race appears very occasionally in testing.  It might
+                    // be that tokio in some cases keeps an `Arc<File>` for the
+                    // underlying file in some background task after we've
+                    // finished retrieving the binary.
+                    warn!("pipeline executable is busy, retrying in 1 second...");
+                    sleep(Duration::from_secs(1)).await;
+                }
+                Err(e) => {
+                    return Err(RunnerError::RunnerProvisionError {
+                        error: format!("unable to spawn process due to: {e}"),
+                    }
+                    .into())
+                }
+            }
+        };
 
         // Spawn a thread which follows the process stdout and stderr
         let stdout = process

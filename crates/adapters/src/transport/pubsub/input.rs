@@ -158,12 +158,16 @@ impl PubSubReader {
 
                                 let consumer = consumer.clone();
                                 let mut parser = parser.fork();
-                                let token = stream.cancellable();
+                                let token = CancellationToken::new();
+                                let token_clone = token.clone();
                                 let handle = tokio::spawn({
                                     let queue = queue.clone();
                                     async move {
                                         // None if the stream is cancelled
-                                        while let Some(message) = stream.next().await {
+                                        while let Some(message) = tokio::select! {
+                                            message = stream.next() => message,
+                                            _ = token_clone.cancelled() => None,
+                                        } {
                                             let data = message.message.data.as_slice();
                                             // Use the time when we start processing the message as the ingestion timestamp,
                                             // since we don't have a way to get the time we _start_ reading the message.
@@ -192,6 +196,10 @@ impl PubSubReader {
 }
 
 impl InputReader for PubSubReader {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
     fn request(&self, command: InputReaderCommand) {
         let _ = self.state_sender.send(command.as_nonft().unwrap());
     }
@@ -211,7 +219,7 @@ async fn pubsub_config(config: &PubSubInputConfig) -> Result<ClientConfig, AnyEr
     }
 
     if let Some(pool_size) = config.pool_size {
-        client_config.pool_size = Some(pool_size as usize);
+        client_config.pool_size = pool_size as usize;
     }
 
     if let Some(endpoint) = &config.endpoint {

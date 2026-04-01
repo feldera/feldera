@@ -1,4 +1,5 @@
 use chrono::{DateTime, TimeZone};
+use feldera_adapterlib::metrics::ValueType;
 use feldera_storage::histogram::ExponentialHistogramSnapshot;
 use itertools::Itertools;
 use std::{
@@ -242,31 +243,6 @@ where
 {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// The type of a metric whose values are [Value].
-pub enum ValueType {
-    /// A counter.
-    ///
-    /// The value of a counter never decreases, but it can increase.  For
-    /// example, a counter might report the amount of CPU time used by a
-    /// process.
-    Counter,
-
-    /// A gauge.
-    ///
-    /// A gauge can vary over time.  For example, a gauge might report the
-    /// amount of memory used by a process.
-    Gauge,
-}
-
-impl ValueType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            ValueType::Counter => "counter",
-            ValueType::Gauge => "gauge",
-        }
     }
 }
 
@@ -684,6 +660,13 @@ macro_rules! from_cast {
         }
     };
 }
+
+impl Value for bool {
+    fn as_f64(&self) -> f64 {
+        *self as u8 as f64
+    }
+}
+
 from_cast!(f32);
 from_cast!(u8);
 from_cast!(u16);

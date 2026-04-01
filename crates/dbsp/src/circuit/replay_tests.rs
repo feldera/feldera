@@ -2,6 +2,7 @@ use feldera_types::config::StorageConfig;
 
 use crate::{
     CmpFunc, DBData, OrdZSet, OutputHandle, RootCircuit, Runtime, Stream, ZSetHandle, ZWeight,
+    circuit::dbsp_handle::CircuitStorageConfig,
     default_hash,
     operator::{
         Max, Min,
@@ -12,7 +13,7 @@ use crate::{
 };
 use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 
-use super::{CircuitConfig, CircuitStorageConfig, dbsp_handle::Mode};
+use super::{CircuitConfig, dbsp_handle::Mode};
 
 const NUM_WORKERS: usize = 4;
 

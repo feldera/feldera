@@ -1,9 +1,9 @@
 use super::NexmarkStream;
 use crate::model::Event;
 use dbsp::{
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream, ZWeight,
     operator::Max,
     utils::{Tup2, Tup3},
-    OrdIndexedZSet, OrdZSet, RootCircuit, Stream, ZWeight,
 };
 
 type Q4Stream = Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>>;
@@ -89,7 +89,7 @@ mod tests {
         generator::tests::{make_auction, make_bid},
         model::{Auction, Bid, Event},
     };
-    use dbsp::{OrdZSet, RootCircuit};
+    use dbsp::OrdZSet;
 
     #[test]
     fn test_q4_average_final_bids_per_category() {
@@ -209,7 +209,7 @@ mod tests {
             ],
         ];
 
-        let (circuit, input_handle) = RootCircuit::build(move |circuit| {
+        let (mut circuit, input_handle) = dbsp::Runtime::init_circuit(1, move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q4(circuit, stream);

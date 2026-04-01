@@ -368,8 +368,8 @@ public class InternInner extends ExpressionTranslator {
             DBSPExpression[] rExpr = new DBSPExpression[lTuple.size()];
             for (int i = 0; i < lTuple.size(); i++) {
                 var fields = this.uninternBothOrNone(
-                        left.unwrapIfNullable("Cannot be NULL").field(i).simplify(),
-                        right.unwrapIfNullable("Cannot be NULL").field(i).simplify(),
+                        left.unwrapIfNullable("Cannot be NULL").field(i),
+                        right.unwrapIfNullable("Cannot be NULL").field(i),
                         lTuple.getFieldType(i), rTuple.getFieldType(i));
                 lExpr[i] = this.applyClone(fields.left);
                 rExpr[i] = this.applyClone(fields.right);
@@ -480,7 +480,13 @@ public class InternInner extends ExpressionTranslator {
     public void postorder(DBSPUnwrapExpression expression) {
         DBSPExpression source = this.getE(expression.expression);
         if (source.getType().code == INTERNED_STRING) {
-            source = this.uninternIfNecessary(expression.expression);
+            if (expression.neverFails()) {
+                // Drop the unwrap
+                this.map(expression, source);
+                return;
+            } else {
+                source = this.uninternIfNecessary(expression.expression);
+            }
         }
         DBSPExpression result = new DBSPUnwrapExpression(expression.message, source);
         this.map(expression, result);

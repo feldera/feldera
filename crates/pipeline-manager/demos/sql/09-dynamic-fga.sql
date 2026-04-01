@@ -10,6 +10,8 @@ It is part of the Fine-Grained Authorization tutorial: https://docs.feldera.com/
 Follow the tutorial for a detailed explanation.
 */
 
+SET FELDERA_IGNORE_WARNING_UNUSED = 1;
+
 -- We use strings as unique ids, so we can refer to various entities by name.
 create type id_t as string;
 

@@ -5,7 +5,11 @@ from tests import TEST_CLIENT, enterprise_only
 from .helper import (
     gen_pipeline_name,
 )
-from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
+from feldera.testutils import (
+    FELDERA_TEST_NUM_WORKERS,
+    FELDERA_TEST_NUM_HOSTS,
+    single_host_only,
+)
 
 
 @enterprise_only
@@ -55,13 +59,19 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
         )
     except Exception as e:
         print(f"Expected exception caught: {e}")
+        # Reject triggers async stopping.
+        # This only guarantees deployment_status is Stopped
+        pipeline.wait_for_status(PipelineStatus.STOPPED, timeout=30)
         pass
 
-    print("Starting pipeline with bootstrap_policy='allow'")
-    pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW)
+    print(
+        "Starting pipeline with bootstrap_policy='allow' and dismissing deployment error from previous reject start"
+    )
+    pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW, dismiss_error=True)
     assert pipeline.status() == PipelineStatus.RUNNING
 
     pipeline.execute("INSERT INTO t1 VALUES (4), (5), (6);")
+    pipeline.wait_for_idle()
 
     result = list(pipeline.query("SELECT * FROM v1;"))
     assert result == [{"c": 6}]
@@ -70,10 +80,10 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
     assert result == [{"c": 6}]
 
     pipeline.stop(force=True)
+    pipeline.wait_for_status(PipelineStatus.STOPPED, timeout=30)
 
     # Since we didn't make a checkpoint during the previous run, the pipeline should be in the AWAITINGAPPROVAL state.
     print("Starting pipeline with bootstrap_policy='await_approval'")
-
     pipeline.start(bootstrap_policy=BootstrapPolicy.AWAIT_APPROVAL)
     assert pipeline.status() == PipelineStatus.AWAITINGAPPROVAL
 
@@ -93,6 +103,7 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
     # Wait for the pipeline to reach RUNNING status (up to 300 seconds)
     pipeline.wait_for_status(PipelineStatus.RUNNING, timeout=300)
     pipeline.execute("INSERT INTO t1 VALUES (4), (5), (6);")
+    pipeline.wait_for_idle()
 
     result = list(pipeline.query("SELECT * FROM v1;"))
     assert result == [{"c": 6}]
@@ -134,6 +145,7 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
     # Wait for the pipeline to reach RUNNING status (up to 300 seconds)
     pipeline.wait_for_status(PipelineStatus.RUNNING, timeout=300)
     pipeline.execute("INSERT INTO t2 VALUES (10), (20), (30);")
+    pipeline.wait_for_idle()
 
     result = list(pipeline.query("SELECT * FROM v3;"))
     assert result == [{"m": 30}]
@@ -181,6 +193,7 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
     assert result == [{"c": 6}]
 
     pipeline.execute("INSERT INTO t2 (y) VALUES (40), (50), (60);")
+    pipeline.wait_for_idle()
 
     result = list(pipeline.query("SELECT * FROM v3;"))
     assert result == [{"m": 60}]
@@ -221,6 +234,7 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
     # Wait for the pipeline to reach RUNNING status (up to 300 seconds)
     pipeline.wait_for_status(PipelineStatus.RUNNING, timeout=300)
     pipeline.execute("INSERT INTO t2 (y) VALUES (70), (80), (90);")
+    pipeline.wait_for_idle()
 
     # The table hasn't changed, so the previous 3 rows should still be there.
     result = list(pipeline.query("SELECT count(*) as c FROM t2;"))
@@ -399,6 +413,7 @@ LATENESS v1.c 0;
 
 # Add/remove connectors.
 @enterprise_only
+@single_host_only
 @gen_pipeline_name
 def test_bootstrap_connectors(pipeline_name):
     """
@@ -430,6 +445,7 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
     assert pipeline.status() == PipelineStatus.RUNNING
 
     pipeline.execute("INSERT INTO t1 VALUES (1), (2), (3);")
+    pipeline.wait_for_idle()
     result = list(pipeline.query("SELECT * FROM v1;"))
     assert result == [{"c": 3}]
 

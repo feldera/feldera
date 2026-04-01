@@ -679,6 +679,12 @@ pub enum ControllerError {
         endpoint_name: String,
     },
 
+    /// Error creating a user-defined preprocessor
+    PreprocessorCreateError {
+        endpoint_name: String,
+        error: String,
+    },
+
     /// Unknown output endpoint name.
     UnknownOutputEndpoint {
         endpoint_name: String,
@@ -806,6 +812,11 @@ pub enum ControllerError {
     UnexpectedBootstrap {
         bootstrap_info: Option<BootstrapInfo>,
     },
+
+    /// Unexpected runtime version
+    UnexpectedRuntimeVersion {
+        error: String,
+    },
 }
 
 impl ResponseError for ControllerError {
@@ -836,6 +847,7 @@ impl ResponseError for ControllerError {
             Self::InvalidInitialStatus(_) => StatusCode::GONE,
             Self::BootstrapRejectedByUser => StatusCode::CONFLICT,
             Self::UnexpectedBootstrap { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::UnexpectedRuntimeVersion { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -931,6 +943,7 @@ impl DbspDetailedError for ControllerError {
     // TODO: attempts to cast `AnyError` to `DetailedError`.
     fn error_code(&self) -> Cow<'static, str> {
         match self {
+            Self::PreprocessorCreateError { .. } => Cow::from("PreprocessorCreateError"),
             Self::IoError { .. } => Cow::from("ControllerIoError"),
             Self::NotSupported { .. } => Cow::from("NotSupported"),
             Self::SchemaParseError { .. } => Cow::from("SchemaParseError"),
@@ -976,6 +989,7 @@ impl DbspDetailedError for ControllerError {
             Self::BootstrapRejectedByUser => Cow::from("BootstrapRejected"),
             Self::BootstrapNotAllowed { .. } => Cow::from("BootstrapNotAllowed"),
             Self::UnexpectedBootstrap { .. } => Cow::from("UnexpectedBootstrap"),
+            Self::UnexpectedRuntimeVersion { .. } => Cow::from("UnexpectedRuntimeVersion"),
         }
     }
 }
@@ -992,6 +1006,15 @@ impl StdError for ControllerError {}
 impl Display for ControllerError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         match self {
+            Self::PreprocessorCreateError {
+                endpoint_name,
+                error,
+            } => {
+                write!(
+                    f,
+                    "Error creating preprocessor for endpoint {endpoint_name}: {error}"
+                )
+            }
             Self::IoError {
                 context, io_error, ..
             } => {
@@ -1178,6 +1201,9 @@ impl Display for ControllerError {
                     f,
                     "The pipeline's query plan was modified since the last checkpoint and requires bootstrapping; however we were not able to detect the changes in the pipeline metadata. This is a bug; please report to the developers. Bootstrap info: {bootstrap_info:?}"
                 )
+            }
+            Self::UnexpectedRuntimeVersion { error } => {
+                write!(f, "{error}")
             }
         }
     }
@@ -1556,7 +1582,9 @@ impl ControllerError {
             | Self::BootstrapNotAllowed { .. }
             | Self::UnexpectedBootstrap { .. }
             | Self::InvalidStandby(_)
-            | Self::InvalidStartupTransition { .. } => ErrorKind::Other,
+            | Self::InvalidStartupTransition { .. }
+            | Self::PreprocessorCreateError { .. }
+            | Self::UnexpectedRuntimeVersion { .. } => ErrorKind::Other,
         }
     }
 }

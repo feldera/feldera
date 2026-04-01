@@ -1,8 +1,8 @@
 use super::NexmarkStream;
 use crate::model::Event;
 use dbsp::{
-    utils::{Tup3, Tup4},
     OrdZSet, RootCircuit, Stream,
+    utils::{Tup3, Tup4},
 };
 
 const STATES_OF_INTEREST: &[&str] = &["OR", "ID", "CA"];
@@ -71,7 +71,7 @@ mod tests {
         generator::tests::{make_auction, make_person},
         model::{Auction, Person},
     };
-    use dbsp::{utils::Tup2, OrdZSet, RootCircuit, ZWeight};
+    use dbsp::{OrdZSet, ZWeight, utils::Tup2};
 
     #[test]
     fn test_q3_people() {
@@ -165,7 +165,7 @@ mod tests {
             ],
         ];
 
-        let (circuit, input_handle) = RootCircuit::build(move |circuit| {
+        let (mut circuit, input_handle) = dbsp::Runtime::init_circuit(1, move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q3(circuit, stream);

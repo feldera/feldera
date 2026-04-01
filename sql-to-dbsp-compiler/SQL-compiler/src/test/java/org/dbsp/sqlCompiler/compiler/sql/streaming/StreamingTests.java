@@ -1471,6 +1471,111 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void rollingInterval() {
+        // Test rolling aggregates with INTERVAL windows
+        String sql = """
+                CREATE TABLE data (
+                  t0 TIMESTAMP NOT NULL LATENESS INTERVAL '2' HOURS,
+                  location INT NOT NULL
+                );
+                
+                CREATE LOCAL VIEW IT AS SELECT (t0 - TIMESTAMP '2020-01-01 00:00:00') HOURS AS t, location FROM data;
+                
+                CREATE VIEW V AS
+                SELECT
+                *,
+                COUNT(*) OVER(
+                   PARTITION BY location
+                   ORDER BY t
+                   RANGE BETWEEN INTERVAL '2' DAYS PRECEDING AND INTERVAL '1' DAYS PRECEDING ) AS c
+                FROM IT;""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            int rolling_waterline = 0;
+            int integrate_trace = 0;
+
+            @Override
+            public void postorder(DBSPPartitionedRollingAggregateWithWaterlineOperator operator) {
+                this.rolling_waterline++;
+            }
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.integrate_trace++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.rolling_waterline);
+                Assert.assertEquals(2, this.integrate_trace);
+            }
+        };
+        ccs.visit(visitor);
+        // Validated on Postgres
+        ccs.step("""
+                INSERT INTO data
+                  VALUES(TIMESTAMP '2020-01-01 10:00:00', 10),
+                        (TIMESTAMP '2020-02-01 10:00:00', 10),
+                        (TIMESTAMP '2019-12-30 20:00:00', 10);""", """
+                 t         | location | c | weight
+                -----------------------------------
+                 10 hours  | 10       | 1 | 1
+                 -28 hours | 10       | 0 | 1
+                 754 hours | 10       | 0 | 1""");
+    }
+
+    @Test
+    public void rollingDecimal() {
+        // Test rolling aggregates with DECIMAL windows
+        String sql = """
+                CREATE TABLE data (
+                  t DECIMAL(4, 2) NOT NULL LATENESS 2.0,
+                  location INT NOT NULL
+                );
+
+                CREATE VIEW V AS
+                SELECT
+                *,
+                COUNT(*) OVER(
+                   PARTITION BY location
+                   ORDER BY  t
+                   RANGE BETWEEN 1.5 PRECEDING AND 0.5 PRECEDING) AS c
+                FROM data;""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            int rolling_waterline = 0;
+            int integrate_trace = 0;
+
+            @Override
+            public void postorder(DBSPPartitionedRollingAggregateWithWaterlineOperator operator) {
+                this.rolling_waterline++;
+            }
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.integrate_trace++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.rolling_waterline);
+                Assert.assertEquals(2, this.integrate_trace);
+            }
+        };
+        // Validated on Postgres
+        ccs.visit(visitor);
+        ccs.step("INSERT INTO data VALUES(1.0, 1), (2.0, 2), (1.0, 0), (2.0, 3), (3.5, 2), (4.0, 3);", """
+                 t | location | c | weight
+                ---------------------------
+                 1 | 0        | 0 | 1
+                 1 | 1        | 0 | 1
+                 2 | 2        | 0 | 1
+                 3.5 | 2      | 1 | 1
+                 2 | 3        | 0 | 1
+                 4 | 3        | 0 | 1""");
+    }
+
+    @Test
     public void taxiTest() {
         String sql = """
                 CREATE TABLE green_tripdata(

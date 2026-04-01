@@ -1,7 +1,12 @@
+from feldera.enums import PipelineStatus, ProgramStatus, StorageStatus
+from feldera.rest.errors import FelderaAPIError
 import time
 from http import HTTPStatus
-
+from feldera import PipelineBuilder, Pipeline
+from feldera.enums import BootstrapPolicy
+from tests import TEST_CLIENT
 from .helper import (
+    wait_for_condition,
     create_pipeline,
     post_json,
     http_request,
@@ -16,7 +21,6 @@ from .helper import (
     clear_pipeline,
     delete_pipeline,
     cleanup_pipeline,
-    wait_for_deployment_status,
     api_url,
     adhoc_query_json,
     post_no_body,
@@ -25,17 +29,17 @@ from tests import enterprise_only
 
 
 def _wait_for_stopped_with_error(name: str, timeout_s: float = 90.0):
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
-        r = get_pipeline(name, "status")
-        if r.status_code == HTTPStatus.OK:
-            obj = r.json()
-            if obj.get("deployment_status") == "Stopped":
-                err = obj.get("deployment_error")
-                if err:
-                    return err
-        time.sleep(0.5)
-    raise TimeoutError(f"Timed out waiting for pipeline '{name}' to stop with an error")
+    pipeline = Pipeline.get(name, TEST_CLIENT)
+    wait_for_condition(
+        "become stopped",
+        lambda: pipeline.status() == PipelineStatus.STOPPED,
+        timeout_s=timeout_s,
+        poll_interval_s=0.5,
+    )
+    error = pipeline.deployment_error()
+    if error is None:
+        raise AssertionError("pipeline did stop but not with an error as expected")
+    return error
 
 
 def _ingress(name: str, table: str, body: str):
@@ -127,22 +131,16 @@ def test_pipeline_start_without_compiling(pipeline_name):
     )
     assert r.status_code == HTTPStatus.CREATED
 
-    # Poll status transitions
-
-    # TODO reduce with parallel compilation
-    # 30minutes because we compile a lot of tests in parallel so things might be queued for along time
-    max_deadline = 1800
-    deadline = time.time() + max_deadline
-    while time.time() < deadline:
-        obj = get_pipeline(pipeline_name, "status").json()
-        status = obj.get("program_status")
-        if status not in ("Pending", "CompilingSql"):
-            break
-        time.sleep(1)
-    else:
-        raise TimeoutError(
-            f"Took longer than {max_deadline} seconds to move past CompilingSql"
-        )
+    # Wait until program status moves beyond early compilation states.
+    # Keep a long timeout because parallel test runs can queue compilation.
+    pipeline = Pipeline.get(pipeline_name, TEST_CLIENT)
+    wait_for_condition(
+        "program status moves past Pending/CompilingSql",
+        lambda: pipeline.program_status()
+        not in (ProgramStatus.Pending, ProgramStatus.CompilingSql),
+        timeout_s=1800.0,
+        poll_interval_s=1.0,
+    )
 
     start_pipeline(pipeline_name, wait=False)
 
@@ -186,14 +184,10 @@ def test_pipeline_stop_force_after_start(pipeline_name):
     """
     create_pipeline(pipeline_name, "CREATE TABLE t1(c1 INTEGER);")
 
-    for delay_sec in [0, 0.1, 0.5, 1, 3, 10]:
+    for delay_sec in [0, 0.1, 0.5, 1, 3, 10, 20]:
         print(f"Testing with {delay_sec} second delay")
-        start_pipeline(pipeline_name)
-        # Wait for the pipeline to transition away from "Stopped"
-        #
-        # See big comment in test_pipeline_stop_with_force for
-        # reasoning.
-        wait_for_deployment_status(pipeline_name, lambda status: status != "Stopped")
+        # Issue non-blocking start
+        start_pipeline(pipeline_name, wait=False)
         # Shortly wait for the pipeline to transition to next state(s)
         time.sleep(delay_sec)
         # Stop force and clear the pipeline
@@ -230,12 +224,17 @@ def test_pipeline_stop_with_force(pipeline_name):
     #   pipeline while it is stopping. Wait until it is stopped before
     #   starting the pipeline again."
     start_pipeline(pipeline_name, wait=False)
-    wait_for_deployment_status(pipeline_name, lambda status: status != "Stopped")
+    pipeline = Pipeline.get(pipeline_name, TEST_CLIENT)
+    wait_for_condition(
+        f"{pipeline_name} no longer stopped",
+        lambda: pipeline.status() != PipelineStatus.STOPPED,
+        timeout_s=30.0,
+        poll_interval_s=0.2,
+    )
     stop_pipeline(pipeline_name, force=True)
 
     # Start paused then stop (simulate by pausing immediately)
     start_pipeline_as_paused(pipeline_name)
-    wait_for_deployment_status(pipeline_name, "Paused", 30)
     stop_pipeline(pipeline_name, force=True)
 
     # Start, stop (without waiting), then stop again
@@ -259,7 +258,6 @@ def test_pipeline_stop_without_force(pipeline_name):
     #
     # See test_pipeline_stop_with_force() for notes.
     start_pipeline(pipeline_name, wait=False)
-    wait_for_deployment_status(pipeline_name, lambda status: status != "Stopped")
     stop_pipeline(pipeline_name, force=False)
 
     # Start, wait for running, stop
@@ -284,7 +282,7 @@ def test_pipeline_clear(pipeline_name):
     create_pipeline(pipeline_name, "")
 
     obj = get_pipeline(pipeline_name, "status").json()
-    assert obj.get("storage_status") == "Cleared"
+    assert StorageStatus.from_str(obj.get("storage_status")) == StorageStatus.CLEARED
 
     # Calling /clear does not have an effect
     cr = clear_pipeline(pipeline_name)
@@ -293,7 +291,7 @@ def test_pipeline_clear(pipeline_name):
     # Start (becomes InUse)
     start_pipeline(pipeline_name)
     obj = get_pipeline(pipeline_name, "status").json()
-    assert obj.get("storage_status") == "InUse"
+    assert StorageStatus.from_str(obj.get("storage_status")) == StorageStatus.INUSE
 
     # While running, clear is not possible
     cr = clear_pipeline(pipeline_name)
@@ -302,13 +300,13 @@ def test_pipeline_clear(pipeline_name):
     # Force stop -> still InUse
     stop_pipeline(pipeline_name, force=True)
     obj = get_pipeline(pipeline_name, "status").json()
-    assert obj.get("storage_status") == "InUse"
+    assert StorageStatus.from_str(obj.get("storage_status")) == StorageStatus.INUSE
 
     # Start then pause
     start_pipeline(pipeline_name)
     pause_pipeline(pipeline_name)
     obj = get_pipeline(pipeline_name, "status").json()
-    assert obj.get("storage_status") == "InUse"
+    assert StorageStatus.from_str(obj.get("storage_status")) == StorageStatus.INUSE
 
     # Clear while paused -> BAD_REQUEST
     cr = clear_pipeline(pipeline_name)
@@ -317,7 +315,7 @@ def test_pipeline_clear(pipeline_name):
     # Force stop again, it should still be InUse
     stop_pipeline(pipeline_name, force=True)
     obj = get_pipeline(pipeline_name, "status").json()
-    assert obj.get("storage_status") == "InUse"
+    assert StorageStatus.from_str(obj.get("storage_status")) == StorageStatus.INUSE
 
     # Clear (may go through Clearing then Cleared). Allow two attempts.
     first = clear_pipeline(pipeline_name, wait=False)
@@ -325,7 +323,103 @@ def test_pipeline_clear(pipeline_name):
     second = clear_pipeline(pipeline_name, wait=True)
     assert second.status_code == HTTPStatus.ACCEPTED
     assert (
-        get_pipeline(pipeline_name, "status").json().get("storage_status") == "Cleared"
+        StorageStatus.from_str(
+            get_pipeline(pipeline_name, "status").json().get("storage_status")
+        )
+        == StorageStatus.CLEARED
+    )
+
+
+@gen_pipeline_name
+def test_pipeline_clear_using_api(pipeline_name):
+    """
+    Validate storage_status transitions and clear behavior using the Python API.
+    """
+    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
+
+    # Initially should be cleared
+    assert pipeline.storage_status() == StorageStatus.CLEARED
+
+    # Clearing should not fail or have an effect while cleared
+    pipeline.clear_storage()
+    assert pipeline.storage_status() == StorageStatus.CLEARED
+
+    # Starting should make it in-use
+    pipeline.start()
+    assert pipeline.storage_status() == StorageStatus.INUSE
+
+    # While running, clear is not possible, and it should still be in-use
+    error_code = None
+    try:
+        pipeline.clear_storage()
+    except FelderaAPIError as e:
+        error_code = e.error_code
+    assert error_code == "StorageStatusImmutableUnlessStopped"
+    assert pipeline.storage_status() == StorageStatus.INUSE
+
+    # The same for non-blocking clear
+    error_code = None
+    try:
+        pipeline.clear_storage(wait=False)
+    except FelderaAPIError as e:
+        error_code = e.error_code
+    assert error_code == "StorageStatusImmutableUnlessStopped"
+    assert pipeline.storage_status() == StorageStatus.INUSE
+
+    # After stopping, it should still be in-use
+    pipeline.stop(force=True)
+    assert pipeline.storage_status() == StorageStatus.INUSE
+
+    # Starting again makes it remain in use
+    pipeline.start()
+    assert pipeline.storage_status() == StorageStatus.INUSE
+    pipeline.stop(force=True)
+
+    # Clearing it should work when stopped
+    assert pipeline.storage_status() == StorageStatus.INUSE
+    pipeline.clear_storage()
+    assert pipeline.storage_status() == StorageStatus.CLEARED
+
+    # Non-blocking clear should work as well
+    pipeline.start()
+    pipeline.stop(force=True)
+    pipeline.clear_storage(wait=False)
+    assert pipeline.storage_status() in [StorageStatus.CLEARING, StorageStatus.CLEARED]
+
+    # Start just after might yield an error if it is still clearing
+    try:
+        pipeline.start()
+    except FelderaAPIError as e:
+        assert e.error_code == "CannotStartWhileClearingStorage"
+    pipeline.stop(force=True)
+    pipeline.clear_storage()
+
+
+@gen_pipeline_name
+def test_pipeline_clear_while_desired_provisioned(pipeline_name):
+    """
+    This tests the following scenario:
+    - There is a pipeline that is stopped (`resources_status=Stopped`) and has
+      state in storage (`storage_status=InUse`).
+    - The pipeline is started (`resources_desired_status=Provisioned`) without
+      waiting. It does not transition yet its `resources_status`. In order to make
+      sure this fact is not based solely on quick timing, the test first started
+      recompiling the program which takes a few seconds.
+    - Before it transitions to `Provisioning` the user attempts to clear the pipeline.
+      This should fail.
+    """
+    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
+    pipeline.start()
+    pipeline.stop(force=True)
+    TEST_CLIENT.patch_pipeline(name=pipeline_name, sql="CREATE TABLE t1 (c1 INT);")
+    pipeline.start(wait=False)
+    error_code = None
+    try:
+        pipeline.clear_storage(wait=False)
+    except FelderaAPIError as e:
+        error_code = e.error_code
+    assert error_code == "StorageStatusImmutableUnlessStopped", (
+        f"User was able to clear storage without error or got the wrong error (error={error_code}), which shouldn't happen"
     )
 
 
@@ -341,3 +435,19 @@ def test_start_as_standby_fails(pipeline_name):
     )
     assert r.status_code == HTTPStatus.BAD_REQUEST
     assert r.json()["error_code"] == "InitialStandbyNotAllowed"
+
+
+@gen_pipeline_name
+def test_pipeline_bootstrap_policy_is_removed(pipeline_name):
+    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
+    for expectation in [
+        BootstrapPolicy.ALLOW,
+        BootstrapPolicy.REJECT,
+        BootstrapPolicy.AWAIT_APPROVAL,
+    ]:
+        assert pipeline.bootstrap_policy() is None
+        pipeline.start(bootstrap_policy=expectation)
+        assert pipeline.bootstrap_policy() == expectation
+        assert pipeline.bootstrap_policy() is not None
+        pipeline.stop(force=True)
+        assert pipeline.bootstrap_policy() is None

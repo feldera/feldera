@@ -5,10 +5,9 @@ use feldera_types::{
     program_schema::{Relation, SqlIdentifier},
     serde_with_context::{SerializeWithContext, SqlSerdeConfig},
     serialize_table_record,
-    transport::postgres::PostgresWriteMode,
+    transport::postgres::{PostgresTlsConfig, PostgresWriteMode},
 };
 use pg::PostgresTestStruct;
-use postgres::NoTls;
 use serde_json::json;
 use serial_test::serial;
 use std::{collections::BTreeMap, io::Write, path::Path};
@@ -25,6 +24,39 @@ fn postgres_url() -> String {
         .unwrap_or("postgres://postgres:password@localhost:5432".to_string())
 }
 
+/// Returns the SSL connection URL and TLS config if the SSL environment
+/// variables are set (`POSTGRES_SSL_URL`, `POSTGRES_SSL_CA_LOCATION`,
+/// `POSTGRES_SSL_CLIENT_LOCATION`, `POSTGRES_SSL_CLIENT_KEY_LOCATION`).
+fn postgres_ssl_config() -> (String, PostgresTlsConfig) {
+    let url = std::env::var("POSTGRES_SSL_URL")
+        .unwrap_or("postgres://postgres:secret@localhost:5432/postgres".to_string());
+    let ssl_ca_pem = std::env::var("POSTGRES_SSL_CA_PEM").ok();
+    let ssl_ca_location = std::env::var("POSTGRES_SSL_CA_LOCATION").ok();
+    let ssl_client_pem = std::env::var("POSTGRES_SSL_CLIENT_CERT_PEM").ok();
+    let ssl_client_location = std::env::var("POSTGRES_SSL_CLIENT_LOCATION").ok();
+    let ssl_client_key = std::env::var("POSTGRES_SSL_CLIENT_KEY_PEM").ok();
+    let ssl_client_key_location = std::env::var("POSTGRES_SSL_CLIENT_KEY_LOCATION").ok();
+    let ssl_certificate_chain_location =
+        std::env::var("POSTGRES_SSL_CERTIFICATE_CHAIN_LOCATION").ok();
+    let verify_hostname = std::env::var("POSTGRES_SSL_VERIFY_HOSTNAME")
+        .ok()
+        .and_then(|s| s.parse::<bool>().ok());
+
+    (
+        url,
+        PostgresTlsConfig {
+            ssl_ca_location,
+            ssl_ca_pem,
+            ssl_client_location,
+            ssl_client_key_location,
+            ssl_client_pem,
+            ssl_client_key,
+            ssl_certificate_chain_location,
+            verify_hostname,
+        },
+    )
+}
+
 mod pg {
     use std::collections::BTreeMap;
 
@@ -37,11 +69,14 @@ mod pg {
         deserialize_table_record,
         program_schema::{ColumnType, Field, Relation, SqlIdentifier},
         serialize_table_record,
+        transport::postgres::PostgresTlsConfig,
     };
     use postgres::{NoTls, Row};
     use rand::{Rng, distributions::Standard, prelude::Distribution};
 
-    use crate::{Catalog, Controller, test::TestStruct};
+    use crate::{
+        Catalog, Controller, integrated::postgres::tls::make_tls_connector, test::TestStruct,
+    };
 
     #[derive(Debug, postgres_types::ToSql, postgres_types::FromSql)]
     #[postgres(name = "test_struct")]
@@ -199,11 +234,27 @@ mod pg {
         name: String,
     }
 
+    /// Connects a sync postgres client, with TLS if config is provided.
+    pub(super) fn pg_connect(uri: &str, tls: &Option<PostgresTlsConfig>) -> postgres::Client {
+        if let Some(tls) = tls {
+            let connector = make_tls_connector(tls, "test")
+                .expect("failed to build TLS connector")
+                .expect("TLS config should produce a connector");
+            postgres::Client::connect(uri, connector).expect("failed to connect with TLS")
+        } else {
+            postgres::Client::connect(uri, NoTls).expect("failed to connect")
+        }
+    }
+
     impl TempPgTable {
-        fn new(name: &str, uri: String, pk: bool) -> Self {
-            let mut client = postgres::Client::connect(&uri, NoTls).unwrap();
+        fn new(name: &str, uri: String, pk: bool, tls: &Option<PostgresTlsConfig>) -> Self {
+            let mut client = pg_connect(&uri, tls);
 
             let pk = if pk { "PRIMARY KEY" } else { "" };
+
+            client
+                .execute("DROP TYPE IF EXISTS test_struct", &[])
+                .unwrap();
 
             client
                 .execute(
@@ -406,8 +457,13 @@ CREATE TABLE {name} (
             ]
         }
 
-        pub fn create_table(name: &str, uri: String, pk: bool) -> TempPgTable {
-            TempPgTable::new(name, uri, pk)
+        pub fn create_table(
+            name: &str,
+            uri: String,
+            pk: bool,
+            tls: &Option<PostgresTlsConfig>,
+        ) -> TempPgTable {
+            TempPgTable::new(name, uri, pk, tls)
         }
 
         pub fn test_circuit(
@@ -630,6 +686,7 @@ fn test_pg_on_conflict(on_conflict_do_nothing: bool, mode: PostgresWriteMode) {
         table_name,
         url,
         matches!(mode, PostgresWriteMode::Materialized),
+        &None,
     );
 
     let (controller, err_receiver) =
@@ -826,6 +883,7 @@ fn pg_insert0(mode: PostgresWriteMode) {
         table_name,
         url,
         matches!(mode, PostgresWriteMode::Materialized),
+        &None,
     );
 
     let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
@@ -929,7 +987,7 @@ fn test_pg_insert() {
     }))
     .unwrap();
 
-    let mut table = PostgresTestStruct::create_table(table_name, url, true);
+    let mut table = PostgresTestStruct::create_table(table_name, url, true, &None);
 
     let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
 
@@ -1094,6 +1152,7 @@ fn pg_upsert0(mode: PostgresWriteMode) {
         table_name,
         url,
         matches!(mode, PostgresWriteMode::Materialized),
+        &None,
     );
 
     let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
@@ -1304,7 +1363,7 @@ fn test_pg_upsert() {
     }))
     .unwrap();
 
-    let mut table = PostgresTestStruct::create_table(table_name, url, true);
+    let mut table = PostgresTestStruct::create_table(table_name, url, true, &None);
 
     let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
 
@@ -1463,6 +1522,7 @@ fn pg_delete(mode: PostgresWriteMode) {
         table_name,
         url,
         matches!(mode, PostgresWriteMode::Materialized),
+        &None,
     );
 
     let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
@@ -1547,12 +1607,10 @@ fn pg_delete(mode: PostgresWriteMode) {
     .expect("timeout: failed to delete data from postgres");
 }
 
-#[test]
-fn test_pg_simple() {
-    let url = postgres_url();
+fn pg_simple(url: String, tls: Option<PostgresTlsConfig>) {
     let table_name = "simple_test";
 
-    let mut client = postgres::Client::connect(&url, NoTls).expect("failed to connect to postgres");
+    let mut client = pg::pg_connect(&url, &tls);
     client
         .execute(
             &format!(
@@ -1635,6 +1693,18 @@ fn test_pg_simple() {
 
     let idx = "v1_idx";
 
+    let mut pg_output_config = json!({
+        "uri": url,
+        "table": table_name,
+    });
+    if let Some(ref tls) = tls {
+        let tls_json = serde_json::to_value(tls).unwrap();
+        pg_output_config
+            .as_object_mut()
+            .unwrap()
+            .extend(tls_json.as_object().unwrap().clone());
+    }
+
     let schema = TestStruct::schema();
     let config = serde_json::from_value(json!({
       "name": "test",
@@ -1696,10 +1766,7 @@ fn test_pg_simple() {
           "stream": "test_output1",
           "transport": {
             "name": "postgres_output",
-            "config": {
-              "uri": url,
-              "table": table_name
-            }
+            "config": pg_output_config,
           },
           "index": idx
         }
@@ -1793,7 +1860,10 @@ fn test_pg_simple() {
         ||
             {
                 let rows = client
-                    .query(&format!("SELECT * FROM {table_name}"), &[])
+                    .query(
+                        &format!("SELECT * FROM {table_name} ORDER BY id"),
+                        &[],
+                    )
                     .unwrap();
                 let got: Vec<TestStruct> = rows
                     .into_iter()
@@ -1851,6 +1921,194 @@ fn test_pg_simple() {
         1_000,
     )
     .expect("timedout: failed to delete records");
+
+    client
+        .execute(&format!("DROP TABLE {table_name}"), &[])
+        .unwrap();
+}
+
+#[test]
+fn test_pg_simple() {
+    pg_simple(postgres_url(), None);
+}
+
+/// Same as `test_pg_simple` but over a TLS connection.
+#[test]
+fn test_pg_simple_tls() {
+    let (url, tls) = postgres_ssl_config();
+    pg_simple(url, Some(tls));
+}
+
+/// Test the postgres *input* connector over a TLS connection.
+///
+/// Inserts rows into TLS-enabled postgres directly, then reads them back
+/// through the `postgres_input` transport and writes them to a file.
+#[test]
+#[serial]
+fn test_pg_input_tls() {
+    let (url, tls) = postgres_ssl_config();
+    let table_name = "test_pg_input_tls";
+
+    // -- seed the table via the sync client --
+    let mut client = pg::pg_connect(&url, &Some(tls.clone()));
+    client
+        .execute(
+            &format!(
+                r#"CREATE TABLE IF NOT EXISTS {table_name} (
+    id int primary key,
+    b bool not null,
+    i int8,
+    s varchar not null
+)"#
+            ),
+            &[],
+        )
+        .expect("failed to create test table");
+    client
+        .execute(&format!("TRUNCATE {table_name}"), &[])
+        .unwrap();
+    client
+        .execute(
+            &format!("INSERT INTO {table_name} VALUES (1, true, NULL, 'hello')"),
+            &[],
+        )
+        .unwrap();
+    client
+        .execute(
+            &format!("INSERT INTO {table_name} VALUES (2, false, 42, 'world')"),
+            &[],
+        )
+        .unwrap();
+
+    // -- set up the pipeline: postgres_input -> file_output --
+    let output_file = NamedTempFile::new().unwrap();
+    let output_path = output_file.path().to_owned();
+
+    let mut pg_input_config = json!({
+        "uri": url,
+        "query": format!("SELECT * FROM {table_name} ORDER BY id"),
+    });
+    let tls_json = serde_json::to_value(&tls).unwrap();
+    pg_input_config
+        .as_object_mut()
+        .unwrap()
+        .extend(tls_json.as_object().unwrap().clone());
+
+    let schema = TestStruct::schema();
+    let config = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 1,
+        "inputs": {
+            "pg_in": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "postgres_input",
+                    "config": pg_input_config,
+                },
+            },
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "file_output",
+                    "config": {
+                        "path": output_path,
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "insert_delete",
+                        "array": false,
+                    }
+                }
+            }
+        }
+    }))
+    .unwrap();
+
+    let (err_sender, err_receiver) = crossbeam::channel::unbounded();
+    let controller = Controller::with_test_config(
+        move |workers| {
+            Ok({
+                let (circuit, catalog) = Runtime::init_circuit(workers, move |circuit| {
+                    let mut catalog = Catalog::new();
+                    let (input, hinput) = circuit.add_input_zset::<TestStruct>();
+
+                    let input_schema = serde_json::to_string(&Relation::new(
+                        "test_input1".into(),
+                        schema.clone(),
+                        false,
+                        BTreeMap::new(),
+                    ))
+                    .unwrap();
+
+                    let output_schema = serde_json::to_string(&Relation::new(
+                        "test_output1".into(),
+                        schema,
+                        false,
+                        BTreeMap::new(),
+                    ))
+                    .unwrap();
+
+                    catalog.register_materialized_input_zset::<_, TestStruct>(
+                        input.clone(),
+                        hinput,
+                        &input_schema,
+                    );
+
+                    catalog
+                        .register_materialized_output_zset::<_, TestStruct>(input, &output_schema);
+
+                    Ok(catalog)
+                })
+                .unwrap();
+                (circuit, Box::new(catalog))
+            })
+        },
+        &config,
+        Box::new(move |e, _| {
+            let msg = format!("test_pg_input_tls: error: {e}");
+            println!("{msg}");
+            err_sender.send(msg).unwrap()
+        }),
+    )
+    .unwrap();
+
+    controller.start();
+
+    // Wait for the output file to contain the expected data.
+    wait(
+        || {
+            let content = std::fs::read_to_string(&output_path).unwrap_or_default();
+            let lines: Vec<&str> = content.lines().filter(|l| !l.is_empty()).collect();
+            lines.len() >= 2 || !err_receiver.is_empty()
+        },
+        10_000,
+    )
+    .expect("timeout: postgres input TLS test did not produce output");
+
+    assert!(err_receiver.is_empty(), "unexpected errors in pipeline");
+
+    let content = std::fs::read_to_string(&output_path).unwrap();
+    let rows: Vec<serde_json::Value> = content
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0]["insert"]["id"], 1);
+    assert_eq!(rows[0]["insert"]["b"], true);
+    assert!(rows[0]["insert"]["i"].is_null());
+    assert_eq!(rows[0]["insert"]["s"], "hello");
+    assert_eq!(rows[1]["insert"]["id"], 2);
+    assert_eq!(rows[1]["insert"]["b"], false);
+    assert_eq!(rows[1]["insert"]["i"], 42);
+    assert_eq!(rows[1]["insert"]["s"], "world");
+
+    controller.stop().unwrap();
 
     client
         .execute(&format!("DROP TABLE {table_name}"), &[])

@@ -353,7 +353,7 @@ SqlCreateIndex SqlCreateIndex(Span s, boolean replace) :
    indexed = CompoundIdentifier()
    columnList = ParenthesizedSimpleIdentifierList()
    {
-        return new SqlCreateIndex(s.end(this), id, indexed, columnList);
+        return new SqlCreateIndex(s.end(this), id, indexed, columnList, replace, false);
    }
 }
 

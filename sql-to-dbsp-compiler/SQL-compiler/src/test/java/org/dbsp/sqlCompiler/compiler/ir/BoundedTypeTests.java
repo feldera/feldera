@@ -26,10 +26,10 @@ public class BoundedTypeTests {
     @Test
     public void testLimits() {
         Assert.assertEquals(
-                DBSPNullLiteral.INSTANCE,
+                new DBSPNullLiteral(),
                 DBSPTypeNull.INSTANCE.getMinValue());
         Assert.assertEquals(
-                DBSPNullLiteral.INSTANCE,
+                new DBSPNullLiteral(),
                 DBSPTypeNull.INSTANCE.getMaxValue());
         Assert.assertEquals(
                 "00000000-0000-0000-0000-000000000000",

@@ -1,10 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.apache.calcite.sql.SqlIdentifier;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
 import org.dbsp.util.IJson;
 import org.dbsp.util.Utilities;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
@@ -31,6 +33,15 @@ public final class ProgramIdentifier implements IJson {
         String name = Utilities.getStringProperty(node, "name");
         boolean isQuoted = Utilities.getBooleanProperty(node, "isQuoted");
         return new ProgramIdentifier(name, isQuoted);
+    }
+
+    public static ProgramIdentifier fromSqlId(SqlIdentifier id) {
+        return new ProgramIdentifier(id.getSimple(), Utilities.identifierIsQuoted(id));
+    }
+
+    public static ProgramIdentifier fromSqlIdList(List<String> qualifiedName) {
+        String id = Utilities.last(qualifiedName);
+        return new ProgramIdentifier(id);
     }
 
     @Override

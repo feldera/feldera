@@ -29,12 +29,6 @@
         "fields": [
           "col1"
         ],
-        "exprs": [
-          {
-            "input": 0,
-            "name": "$0"
-          }
-        ],
         "inputs": [
           1
         ]
@@ -58,12 +52,6 @@
         "fields": [
           "col1"
         ],
-        "exprs": [
-          {
-            "input": 0,
-            "name": "$0"
-          }
-        ],
         "inputs": [
           3
         ]
@@ -72,24 +60,6 @@
         "id": 5,
         "relOp": "LogicalAggregate",
         "group": [],
-        "aggs": [
-          {
-            "agg": {
-              "name": "SUM",
-              "kind": "SUM",
-              "syntax": "FUNCTION"
-            },
-            "type": {
-              "type": "INTEGER",
-              "nullable": true
-            },
-            "distinct": false,
-            "operands": [
-              0
-            ],
-            "name": "EXPR$0"
-          }
-        ],
         "inputs": [
           4
         ]

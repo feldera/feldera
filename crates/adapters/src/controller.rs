@@ -22,7 +22,7 @@ use crate::controller::checkpoint::{
     CheckpointInputEndpointMetrics, CheckpointOffsets, CheckpointOutputEndpointMetrics,
 };
 use crate::controller::journal::Journal;
-use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics};
+use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics, ProcessedRecords};
 use crate::controller::sync::{
     CHECKPOINT_SYNC_PULL_DURATION_SECONDS, CHECKPOINT_SYNC_PULL_FAILURES,
     CHECKPOINT_SYNC_PULL_SUCCESS, CHECKPOINT_SYNC_PULL_TRANSFER_SPEED,
@@ -30,10 +30,7 @@ use crate::controller::sync::{
     CHECKPOINT_SYNC_PUSH_FAILURES, CHECKPOINT_SYNC_PUSH_SUCCESS,
     CHECKPOINT_SYNC_PUSH_TRANSFER_SPEED, CHECKPOINT_SYNC_PUSH_TRANSFERRED_BYTES, SYNCHRONIZER,
 };
-use crate::samply::SamplySpan;
-use crate::server::metrics::{
-    HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, Value, ValueType,
-};
+use crate::server::metrics::{HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, Value};
 use crate::server::{InitializationState, ServerState};
 use crate::transport::Step;
 use crate::transport::clock::now_endpoint_config;
@@ -61,8 +58,10 @@ use dbsp::circuit::metrics::{
     DBSP_STEP_LATENCY_MICROSECONDS, FILES_CREATED, FILES_DELETED, TOTAL_LATE_RECORDS,
 };
 use dbsp::circuit::tokio::TOKIO;
-use dbsp::circuit::{CheckpointCommitter, CircuitStorageConfig, DevTweaks, Mode};
+use dbsp::circuit::{CheckpointCommitter, CircuitStorageConfig, Mode};
+use dbsp::samply::{MARKER_BYTES, Markers, SamplySpan};
 use dbsp::storage::backend::{StorageBackend, StoragePath};
+use dbsp::utils::process_rss_bytes;
 use dbsp::{
     DBSPHandle,
     circuit::{CircuitConfig, Layout},
@@ -71,20 +70,23 @@ use dbsp::{
 use dbsp::{Runtime, WeakRuntime};
 use enum_map::EnumMap;
 use feldera_adapterlib::format::BufferSize;
-use feldera_adapterlib::transport::{Resume, Watermark};
+use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
+use feldera_adapterlib::transport::{InputReader, Resume, Watermark};
 use feldera_ir::LirCircuit;
+use feldera_storage::fbuf::slab::FBufSlabsStats;
 use feldera_storage::histogram::{ExponentialHistogram, ExponentialHistogramSnapshot};
 use feldera_storage::metrics::{
     READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS, SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES,
     WRITE_LATENCY_MICROSECONDS,
 };
 use feldera_types::adapter_stats::{
-    ExternalInputEndpointStatus, ExternalOutputEndpointStatus, TransactionStatus,
+    ConnectorHealth, ExternalControllerStatus, ExternalInputEndpointStatus,
+    ExternalOutputEndpointStatus,
 };
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::coordination::{
-    self, AdHocCatalog, CheckpointCoordination, StepAction, StepRequest, StepStatus,
-    TransactionCoordination,
+    self, AdHocCatalog, AdHocTableType, CheckpointCoordination, Completion, StepAction, StepInputs,
+    StepRequest, StepStatus, TransactionCoordination,
 };
 use feldera_types::format::json::JsonLines;
 use feldera_types::pipeline_diff::PipelineDiff;
@@ -98,10 +100,10 @@ use governor::Quota;
 use governor::RateLimiter;
 use itertools::Itertools;
 use journal::StepMetadata;
-use memory_stats::memory_stats;
 use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
 use serde_json::Value as JsonValue;
+use size_of::HumanBytes;
 use stats::StepResults;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -109,7 +111,6 @@ use std::collections::HashSet;
 use std::collections::btree_map::Entry;
 use std::io::ErrorKind;
 use std::mem::replace;
-use std::ops::Range;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, SendError, Sender, SyncSender, channel, sync_channel};
@@ -127,15 +128,13 @@ use std::{
 };
 use tokio::sync::Notify;
 use tokio::{
-    fs::File,
-    io::{AsyncReadExt, BufReader},
     sync::{
         Mutex as TokioMutex,
         oneshot::{self, error::TryRecvError},
     },
     task::spawn_blocking,
 };
-use tracing::{debug, debug_span, error, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
 use validate::validate_config;
 
@@ -149,8 +148,9 @@ mod validate;
 
 use crate::adhoc::table::AdHocTable;
 use crate::adhoc::{create_session_context, execute_sql};
-use crate::catalog::{SerBatchReader, SerTrace, SyncSerBatchReader};
+use crate::catalog::{SerBatchReader, SerTrace};
 use crate::format::parquet::relation_to_arrow_fields;
+use crate::format::{MessageOrientedPreprocessedParser, StreamingPreprocessedParser};
 use crate::format::{get_input_format, get_output_format};
 use crate::integrated::create_integrated_input_endpoint;
 pub use error::{ConfigError, ControllerError};
@@ -159,7 +159,8 @@ pub use feldera_types::config::{
     RuntimeConfig, TransportConfig,
 };
 use feldera_types::config::{
-    FileBackendConfig, FtConfig, FtModel, OutputBufferConfig, StorageBackendConfig, SyncConfig,
+    DEFAULT_MAX_WORKER_BATCH_SIZE, DevTweaks, FileBackendConfig, FtConfig, FtModel,
+    OutputBufferConfig, StorageBackendConfig, SyncConfig,
 };
 use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
@@ -172,7 +173,7 @@ pub use stats::{CompletionToken, ControllerStatus, InputEndpointStatus};
 // TODO: make this configurable.
 pub(crate) const MAX_API_CONNECTIONS: u64 = 100;
 
-pub(crate) type EndpointId = u64;
+pub type EndpointId = u64;
 
 /// Runtime of checkpoint operations, in microseconds, including time that the
 /// pipeline could continue executing while the checkpoint completed.
@@ -189,11 +190,23 @@ static CHECKPOINT_DELAY: ExponentialHistogram = ExponentialHistogram::new();
 /// ongoing background merges.
 static CHECKPOINT_WRITTEN_MEGABYTES: ExponentialHistogram = ExponentialHistogram::new();
 
+/// Duration of transaction ingest time, that is, from transaction start to
+/// start of commit.
+static TRANSACTION_INGEST_TIME: ExponentialHistogram = ExponentialHistogram::new();
+
+/// Duration of transaction commit time, that is, from starting commit to
+/// finishing commit.
+static TRANSACTION_COMMIT_TIME: ExponentialHistogram = ExponentialHistogram::new();
+
 /// Number of records successfully processed at the time of the last successful
 /// checkpoint.
 static CHECKPOINT_PROCESSED_RECORDS: AtomicU64 = AtomicU64::new(0);
 
-static COMMIT_UPDATE_INTERVAL: Duration = Duration::from_secs(10);
+/// Interval between updating statistics for transaction commit.
+static COMMIT_UPDATE_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Interval between logging updates about transaction commit.
+static COMMIT_DISPLAY_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Creates a [Controller].
 pub struct ControllerBuilder {
@@ -651,6 +664,10 @@ impl Controller {
             .add_input_endpoint(endpoint_name, endpoint_config, Some(endpoint), resume_info)
     }
 
+    pub fn get_input_endpoint(&self, endpoint_name: &str) -> Option<Arc<dyn InputReader>> {
+        self.inner.get_input_endpoint(endpoint_name)
+    }
+
     /// Disconnect an existing output endpoint.
     ///
     /// This method is asynchronous and may return before all endpoint
@@ -787,16 +804,31 @@ impl Controller {
         self.inner.output_endpoint_status(endpoint_name)
     }
 
-    /// Returns controller status.
+    /// Returns the current controller status.
     pub fn status(&self) -> &ControllerStatus {
-        // Update pipeline stats computed on-demand.
-        self.inner.status.update(self.can_suspend().err());
         &self.inner.status
     }
 
-    /// Returns the current controller status without updating the lazily updated data.
-    pub fn stale_status(&self) -> &ControllerStatus {
-        &self.inner.status
+    /// Returns the current controller status in the form used by the external
+    /// API.
+    pub fn api_status(&self) -> ExternalControllerStatus {
+        let runtime = self.inner.runtime.upgrade();
+        let memory_pressure = runtime
+            .as_ref()
+            .map(|runtime| runtime.current_memory_pressure())
+            .unwrap_or_default();
+        let memory_pressure_epoch = runtime
+            .as_ref()
+            .map(|runtime| runtime.memory_pressure_epoch())
+            .unwrap_or_default();
+
+        self.status().to_api_type(
+            self.can_suspend(),
+            self.pipeline_complete(),
+            self.inner.transaction_info.lock().unwrap().clone(),
+            memory_pressure,
+            memory_pressure_epoch,
+        )
     }
 
     /// Returns the pipeline state.
@@ -874,6 +906,11 @@ impl Controller {
         self.inner.transaction_receiver.clone()
     }
 
+    /// Returns an object for monitoring progress of input completion.
+    pub fn completion_watcher(&self) -> tokio::sync::watch::Receiver<Completion> {
+        self.inner.status.completion_notifier.subscribe()
+    }
+
     pub fn release_checkpoint(&self) {
         self.inner
             .coordination_prepare_checkpoint
@@ -911,7 +948,11 @@ impl Controller {
         receiver.await.unwrap()
     }
 
-    pub async fn async_samply_profile(&self, duration: u64) -> Result<Vec<u8>, AnyError> {
+    pub async fn async_samply_profile(
+        &self,
+        duration: u64,
+        os_cpu: Option<&str>,
+    ) -> Result<Vec<u8>, AnyError> {
         #[cfg(not(unix))]
         {
             anyhow::bail!(
@@ -962,66 +1003,75 @@ impl Controller {
             .context("failed to convert path to samply profile to str")?;
 
         let mut cmd = tokio::process::Command::new("samply");
-        let mut child = cmd
-            .args([
-                "record",
-                "-p",
-                &std::process::id().to_string(),
-                "-o",
-                profile_file,
-                "--save-only",
-                "--presymbolicate",
-            ])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .context("failed to spawn samply process")?;
 
-        let child_pid = child.id().context("failed to get samply process id")?;
+        // Calculate a maximum memory consumption for markers.
+        //
+        // In experiments, a busy worker thread can emit over 1,000 markers per
+        // second.  Round that up to 2,000 to allow for expansion, then double
+        // it to allow for other threads.
+        let markers_per_second = self.layout().local_workers().len().saturating_mul(2000 * 2);
+        let memory_limit = markers_per_second
+            .saturating_mul(MARKER_BYTES)
+            .saturating_mul(duration as usize);
 
-        // Workaround as samply's `--duration` flag doesn't seem to work.
-        // See: https://github.com/mstange/samply/issues/716
-        //
-        // As the duration flag doesn't work, we have to send a SIGINT to
-        // tell samply to stop recording.
-        //
-        // If samply returns before the specified duration, it is likely due
-        // to an error, and in such cases, we want to report it immediately.
-        tokio::select! {
-            _ = child.wait() => {}
-            _ = tokio::time::sleep(Duration::from_secs(duration)) => {
-                // Send SIGINT to the samply process to stop recording.
-                nix::sys::signal::kill(
-                    nix::unistd::Pid::from_raw(child_pid as i32),
-                    nix::sys::signal::Signal::SIGINT,
-                )
-                .context("failed to send SIGINT to samply process")?;
+        let markers = Markers::capture(Some(memory_limit),
+            async {
+            let mut child = cmd
+                .args([
+                    "record",
+                    "-p",
+                    &std::process::id().to_string(),
+                    "-o",
+                    profile_file,
+                    "--save-only",
+                    "--presymbolicate",
+                ])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .context("failed to spawn samply process")?;
+
+            let child_pid = child.id().context("failed to get samply process id")?;
+
+            // Workaround as samply's `--duration` flag doesn't seem to work.
+            // See: https://github.com/mstange/samply/issues/716
+            //
+            // As the duration flag doesn't work, we have to send a SIGINT to
+            // tell samply to stop recording.
+            //
+            // If samply returns before the specified duration, it is likely due
+            // to an error, and in such cases, we want to report it immediately.
+            tokio::select! {
+                _ = child.wait() => {}
+                _ = tokio::time::sleep(Duration::from_secs(duration)) => {
+                    // Send SIGINT to the samply process to stop recording.
+                    nix::sys::signal::kill(
+                        nix::unistd::Pid::from_raw(child_pid as i32),
+                        nix::sys::signal::Signal::SIGINT,
+                    )
+                        .context("failed to send SIGINT to samply process")?;
+                }
             }
-        }
 
-        let output = child
-            .wait_with_output()
+            let output = child
+                .wait_with_output()
+                .await
+                .context("failed when waiting for samply process")?;
+
+            if !output.status.success() {
+                anyhow::bail!(
+                    "samply process failed with status: `{}`, samply stdout: `{}`, samply stderr: `{}`",
+                    output.status,
+                    String::from_utf8_lossy(&output.stdout).trim(),
+                    String::from_utf8_lossy(&output.stderr).trim(),
+                );
+            }
+            Ok(())
+        }).await?;
+
+        let buf = tokio::fs::read(profile_file)
             .await
-            .context("failed when waiting for samply process")?;
-
-        if !output.status.success() {
-            anyhow::bail!(
-                "samply process failed with status: `{}`, samply stdout: `{}`, samply stderr: `{}`",
-                output.status,
-                String::from_utf8_lossy(&output.stdout).trim(),
-                String::from_utf8_lossy(&output.stderr).trim(),
-            );
-        }
-
-        let mut file = BufReader::new(File::open(profile_file).await.context(format!(
-            "failed to open samply profile file `{profile_file}`"
-        ))?);
-
-        let mut buf = Vec::with_capacity(10 * 1024 * 1024); // 10 MB
-
-        file.read_to_end(&mut buf).await.context(format!(
-            "failed to read samply profile file `{profile_file}`"
-        ))?;
+            .with_context(|| format!("failed to read samply profile file `{profile_file}`"))?;
 
         if buf.is_empty() {
             anyhow::bail!(
@@ -1029,9 +1079,21 @@ impl Controller {
             );
         }
 
-        tracing::info!("collected samply profile ({} bytes)", buf.len());
+        let output = match markers.annotate_profile(
+            &buf,
+            self.inner.status.pipeline_config.given_name.as_deref(),
+            os_cpu,
+        ) {
+            Ok(output) => output,
+            Err(error) => {
+                warn!("profile annotation failed ({error})");
+                buf
+            }
+        };
 
-        Ok(buf)
+        tracing::info!("collected samply profile ({} bytes)", output.len());
+
+        Ok(output)
     }
 
     /// Triggers a sync checkpoint operation. `cb` will be called when it
@@ -1165,6 +1227,7 @@ impl Controller {
         F: MetricsFormatter,
     {
         metrics.process_metrics(labels);
+
         metrics.gauge(
             "records_input_buffered",
             "Total amount of data currently buffered by all endpoints, in records.",
@@ -1219,6 +1282,16 @@ impl Controller {
             labels,
             COMPACTION_STALL_TIME_NANOSECONDS.load(Ordering::Relaxed) as f64 / 1_000_000_000.0,
         );
+        metrics.counter(
+            "output_stall_seconds_total",
+            "Time in seconds that the pipeline was stalled because one or more output connectors' output buffers were full.\n\nThis value is greater than or equal to `output_stall_seconds`.",
+            labels,
+            status.global_metrics.total_output_stall_duration().as_secs_f64());
+        metrics.gauge(
+            "output_stall_seconds",
+            "If the pipeline is currently stalled because one or more output connectors' output buffers were full, this is the time in seconds for which it has been stalled.\n\nIf the pipeline is not currently stalled, this is zero.\n\nIf this is nonzero, then the output connectors causing the stall can be identified by observing which values of `output_connector_queued_records` are greater than or equal to the configured maximum (which defaults to 1,000,000).",
+            labels,
+            status.global_metrics.current_output_stall_duration().as_secs_f64());
         metrics.counter(
             "files_created_total",
             "Total number of files created.",
@@ -1310,6 +1383,27 @@ impl Controller {
                 "The limit for the number of bytes of memory for caching data on storage.",
                 labels,
                 cache_max,
+            );
+
+            write_fbuf_slab_metrics(metrics, labels, &runtime.fbuf_slabs_stats());
+
+            metrics.gauge(
+                "max_rss_bytes",
+                "Configured maximum process RSS in bytes. A value of 0 means no limit is configured.",
+                labels,
+                runtime.max_rss_bytes().unwrap_or(0),
+            );
+            metrics.gauge(
+                "memory_pressure",
+                "Current memory pressure level in [0..3]: low=0, moderate=1, high=2, critical=3.",
+                labels,
+                runtime.current_memory_pressure() as u8,
+            );
+            metrics.gauge(
+                "memory_pressure_epoch",
+                "Monotonic counter incremented whenever memory pressure transitions to high/critical.",
+                labels,
+                runtime.memory_pressure_epoch(),
             );
         }
 
@@ -1416,6 +1510,56 @@ impl Controller {
             &CHECKPOINT_SYNC_PULL_FAILURES,
         );
 
+        metrics.gauge(
+            "transaction_state",
+            "0 when no transaction is active, 1 when a transaction has started, 2 while a transaction is committing.",
+            labels,
+            match self.inner.get_transaction_state() {
+                TransactionState::None => 0,
+                TransactionState::Started { .. } => 1,
+                TransactionState::Committing { .. } => 2,
+            }
+        );
+        let commit_progress = self
+            .inner
+            .status
+            .global_metrics
+            .commit_progress
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_default();
+        metrics.gauge(
+            "transaction_completed_operators",
+            "Number of operators that have been fully flushed while the current transaction is committing.  This is 0 if no transaction is active, or if a transaction is running but has not yet started committing.",
+            labels,
+            commit_progress.completed
+        );
+        metrics.gauge(
+            "transaction_in_progress_operators",
+            "Number of operators that are currently being flushed while the current transaction is committing.  This is 0 if no transaction is active, or if a transaction is running but has not yet started committing.",
+            labels,
+            commit_progress.in_progress
+        );
+        metrics.gauge(
+            "transaction_remaining_operators",
+            "Number of operators that have not started flushing while the current transaction is committing.  This is 0 if no transaction is active, or if a transaction is running but has not yet started committing.",
+            labels,
+            commit_progress.remaining
+        );
+        metrics.histogram(
+            "transaction_ingest_seconds",
+            "Transaction ingestion time, that is, from transaction start to start of commit.",
+            labels,
+            &TRANSACTION_INGEST_TIME.snapshot(),
+        );
+        metrics.histogram(
+            "transaction_commit_seconds",
+            "Transaction commit time, that is, from starting commit to finishing commit.",
+            labels,
+            &TRANSACTION_COMMIT_TIME.snapshot(),
+        );
+
         fn write_input_metric<F, M, T>(
             metrics: &mut MetricsWriter<F>,
             labels: &LabelStack,
@@ -1499,6 +1643,36 @@ impl Controller {
             |s| s.reader.as_ref().map_or(0, |reader| reader.memory()),
         );
 
+        write_input_metric(
+            metrics,
+            labels,
+            status,
+            "input_connector_running",
+            "Whether the input connector is running (1) or paused by the user (0).",
+            ValueType::Gauge,
+            |s| !s.is_paused_by_user(),
+        );
+
+        write_input_metric(
+            metrics,
+            labels,
+            status,
+            "input_connector_barrier",
+            "Whether the input connector is currently a barrier for checkpointing/suspend (1 for true, 0 for false).",
+            ValueType::Gauge,
+            |s| s.is_barrier(),
+        );
+
+        write_input_metric(
+            metrics,
+            labels,
+            status,
+            "input_connector_end_of_input",
+            "Whether the input connector has reached end of input (1 for true, 0 for false).",
+            ValueType::Gauge,
+            |s| s.metrics.end_of_input.load(Ordering::Relaxed),
+        );
+
         fn write_input_histogram<F, M>(
             metrics: &mut MetricsWriter<F>,
             labels: &LabelStack,
@@ -1553,6 +1727,10 @@ impl Controller {
                 )
             },
         );
+
+        // Export connector-specific (custom) metrics registered via
+        // `InputConsumer::set_custom_metrics`.
+        write_custom_metrics(status, metrics, labels);
 
         fn write_output_metric<F, M>(
             metrics: &mut MetricsWriter<F>,
@@ -1695,7 +1873,14 @@ impl Controller {
 
     /// Check whether all records identified by the completion token
     /// have been fully processed by the pipeline.
-    pub fn completion_status(&self, token: &CompletionToken) -> Result<bool, ControllerError> {
+    ///
+    /// Returns `None` if the token is definitely incomplete, `Some(step)` if it
+    /// is complete once `GlobalControllerMetrics::completed_steps` reaches
+    /// `step`, or an error if the token is invalid.
+    pub fn completion_status(
+        &self,
+        token: &CompletionToken,
+    ) -> Result<Option<Step>, ControllerError> {
         self.status().completion_status(token)
     }
 
@@ -1758,6 +1943,11 @@ impl Controller {
                 materialized: clh.integrate_handle.is_some(),
                 indexed: clh.integrate_handle_is_indexed,
                 schema: Schema::new(relation_to_arrow_fields(&clh.value_schema.fields, false)),
+                table_type: if self.inner.catalog.input_collection_handle(name).is_some() {
+                    AdHocTableType::Table
+                } else {
+                    AdHocTableType::View
+                },
             });
         }
         AdHocCatalog { tables }
@@ -1767,8 +1957,142 @@ impl Controller {
         self.inner.adhoc_tables.get(name).cloned()
     }
 
-    pub fn workers(&self) -> Range<usize> {
-        self.inner.workers.clone()
+    pub fn layout(&self) -> &Layout {
+        &self.inner.layout
+    }
+}
+
+fn slab_served_percent(served_by_slab: u64, total: u64) -> f64 {
+    if total == 0 {
+        0.0
+    } else {
+        100.0 * (served_by_slab as f64) / (total as f64)
+    }
+}
+
+fn write_fbuf_slab_metrics<F>(
+    metrics: &mut MetricsWriter<F>,
+    labels: &LabelStack,
+    stats: &FBufSlabsStats,
+) where
+    F: MetricsFormatter,
+{
+    let alloc_total = stats.alloc_requests();
+    let free_total = stats.recycle_requests();
+
+    metrics.counter(
+        "storage_fbuf_slab_alloc_total",
+        "The total number of `FBuf` allocation requests across all slab size classes and fallbacks.",
+        labels,
+        alloc_total,
+    );
+    metrics.gauge(
+        "storage_fbuf_slab_alloc_served_by_slab_percent",
+        "The percentage of `FBuf` allocation requests served by slab pools.",
+        labels,
+        slab_served_percent(stats.mallocs_saved(), alloc_total),
+    );
+    metrics.counter(
+        "storage_fbuf_slab_free_total",
+        "The total number of `FBuf` deallocation requests across all slab size classes and fallbacks.",
+        labels,
+        free_total,
+    );
+    metrics.gauge(
+        "storage_fbuf_slab_free_served_by_slab_percent",
+        "The percentage of `FBuf` deallocation requests served by slab pools.",
+        labels,
+        slab_served_percent(stats.frees_saved(), free_total),
+    );
+
+    metrics.counters(
+        "storage_fbuf_slab_size_class_alloc_total",
+        "The total number of `FBuf` allocation requests for each slab size class.",
+        |w| {
+            for class in &stats.classes {
+                let size_class = class.size.to_string();
+                w.write_value(
+                    &labels.with("size_class_bytes", &size_class),
+                    class.alloc_requests,
+                );
+            }
+        },
+    );
+    metrics.gauges(
+        "storage_fbuf_slab_size_class_alloc_served_by_slab_percent",
+        "The percentage of `FBuf` allocation requests served by each slab size class.",
+        |w| {
+            for class in &stats.classes {
+                let size_class = class.size.to_string();
+                w.write_value(
+                    &labels.with("size_class_bytes", &size_class),
+                    slab_served_percent(class.alloc_hits, class.alloc_requests),
+                );
+            }
+        },
+    );
+    metrics.counters(
+        "storage_fbuf_slab_size_class_free_total",
+        "The total number of `FBuf` deallocation requests for each slab size class.",
+        |w| {
+            for class in &stats.classes {
+                let size_class = class.size.to_string();
+                w.write_value(
+                    &labels.with("size_class_bytes", &size_class),
+                    class.recycle_requests,
+                );
+            }
+        },
+    );
+    metrics.gauges(
+        "storage_fbuf_slab_size_class_free_served_by_slab_percent",
+        "The percentage of `FBuf` deallocation requests served by each slab size class.",
+        |w| {
+            for class in &stats.classes {
+                let size_class = class.size.to_string();
+                w.write_value(
+                    &labels.with("size_class_bytes", &size_class),
+                    slab_served_percent(class.recycle_hits, class.recycle_requests),
+                );
+            }
+        },
+    );
+}
+
+/// Write connector-specific (custom) metrics registered via
+/// [`InputConsumer::set_custom_metrics`] into `metrics`.
+///
+/// Groups values by `(name, help, ValueType)` so that all endpoints' values
+/// for the same metric are emitted in a single Prometheus block (the
+/// Prometheus exposition format requires that all values for a given metric
+/// appear together under one `# TYPE` header).
+pub(crate) fn write_custom_metrics<F>(
+    status: &ControllerStatus,
+    metrics: &mut MetricsWriter<F>,
+    labels: &LabelStack,
+) where
+    F: MetricsFormatter,
+{
+    type MetricKey = (&'static str, &'static str, ValueType);
+    type EndpointValues = Vec<(String, f64)>;
+
+    let mut grouped: BTreeMap<MetricKey, EndpointValues> = BTreeMap::new();
+    for input in status.input_status().values() {
+        if let Some(cm) = &input.custom_metrics {
+            for (name, help, vtype, value) in cm.metrics() {
+                grouped
+                    .entry((name, help, vtype))
+                    .or_default()
+                    .push((input.endpoint_name.clone(), value));
+            }
+        }
+    }
+    for ((name, help, vtype), entries) in &grouped {
+        metrics.values(name, help, *vtype, |w| {
+            for (endpoint_name, value) in entries {
+                w.write_value(&labels.with("endpoint", endpoint_name), *value);
+            }
+        });
     }
 }
 
@@ -1814,7 +2138,7 @@ enum RunningCheckpointSync {
 
 impl RunningCheckpointSync {
     fn new(circuit: &mut CircuitThread, uuid: uuid::Uuid) -> Self {
-        SamplySpan::new(debug_span!("fg-checkpoint-sync", uuid = %uuid))
+        SamplySpan::new("fg-checkpoint-sync")
             .in_scope(|| Self::start(circuit, uuid))
             .unwrap_or_else(|e| Self::Error(uuid, e))
     }
@@ -1872,8 +2196,7 @@ impl RunningCheckpointSync {
         let join_handle = std::thread::Builder::new()
             .name(String::from("feldera-checkpoint-sync"))
             .spawn(move || {
-                let result = SamplySpan::new(debug_span!("bg-checkpoint-sync", uuid = %uuid))
-                    .in_scope(|| thread.run());
+                let result = SamplySpan::new("bg-checkpoint-sync").in_scope(|| thread.run());
                 let _ = sender.send(result);
                 unparker.unpark();
             })
@@ -1890,11 +2213,14 @@ impl RunningCheckpointSync {
                 Ok(result) => {
                     join_handle.join().unwrap();
 
-                    let mut last_sync = circuit.controller.last_checkpoint_sync.lock().unwrap();
-                    *last_sync = LastCheckpoint {
-                        timestamp: Instant::now(),
-                        id: Some(uuid),
-                    };
+                    // Only update last_sync if the checkpoint sync succeeded.
+                    if result.is_ok() {
+                        let mut last_sync = circuit.controller.last_checkpoint_sync.lock().unwrap();
+                        *last_sync = LastCheckpoint {
+                            timestamp: Instant::now(),
+                            id: Some(uuid),
+                        };
+                    }
 
                     Some(result)
                 }
@@ -1984,7 +2310,47 @@ struct CircuitThread {
     /// record into an endpoint we first need to seek that endpoint.
     input_metadata: HashMap<String, Option<Resume>>,
 
-    last_commit_progress_update: Instant,
+    commit_updates: Option<CommitUpdates>,
+}
+
+struct CommitUpdates {
+    /// Next time we should update global_status.commit_progress.
+    status_update: Instant,
+
+    /// Next time we should display a progress update.
+    display_update: Instant,
+}
+
+impl Default for CommitUpdates {
+    fn default() -> Self {
+        let now = Instant::now();
+        Self {
+            status_update: now,
+            display_update: now + COMMIT_DISPLAY_INTERVAL,
+        }
+    }
+}
+
+impl CommitUpdates {
+    fn should_update_status(&mut self) -> bool {
+        let now = Instant::now();
+        if now >= self.status_update {
+            self.status_update = now + COMMIT_UPDATE_INTERVAL;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn should_display_status(&mut self) -> bool {
+        let now = Instant::now();
+        if now >= self.display_update {
+            self.display_update = now + COMMIT_DISPLAY_INTERVAL;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 /// Detect the following situation:
@@ -2074,6 +2440,7 @@ impl CircuitThread {
             input_statistics,
             output_statistics,
             pipeline_diff,
+            incarnation_uuid,
         } = controller_init;
 
         let storage = circuit_config
@@ -2207,6 +2574,7 @@ impl CircuitThread {
             &output_statistics,
             step_receiver,
             checkpoint_receiver,
+            incarnation_uuid,
         )?;
 
         controller
@@ -2278,7 +2646,7 @@ impl CircuitThread {
             step_sender,
             checkpoint_sender,
             input_metadata: input_metadata.unwrap_or_default(),
-            last_commit_progress_update: Instant::now(),
+            commit_updates: None,
         })
     }
 
@@ -2319,7 +2687,7 @@ impl CircuitThread {
         };
         let _ = init_status_sender.send(Ok(self.controller.clone()));
 
-        let mut output_backpressure_warning = None;
+        let mut output_backpressure_warning: Option<LongOperationWarning> = None;
         loop {
             // Run received commands.  Commands can initiate checkpoint
             // requests, so attempt to execute those afterward.  Executing a
@@ -2342,15 +2710,30 @@ impl CircuitThread {
 
             // Backpressure in the output pipeline: wait for room in output buffers to
             // become available.
-            if self.controller.output_buffers_full() {
+            let stalled = self.controller.output_buffers_full();
+            self.controller
+                .status
+                .global_metrics
+                .update_output_stall_start(stalled);
+            if stalled {
                 debug!("circuit thread: park waiting for output buffer space");
                 let warning = output_backpressure_warning
                     .get_or_insert_with(|| LongOperationWarning::new(Duration::from_secs(1)));
+                let controller = &self.controller;
                 warning.check(|elapsed| {
-                    info!(
-                        "pipeline stalled {} seconds because output buffers are full",
-                        elapsed.as_secs()
-                    )
+                    let full_names = controller.output_buffers_full_names();
+                    let elapsed_secs = elapsed.as_secs();
+                    if full_names.is_empty() {
+                        info!(
+                            "pipeline stalled {elapsed_secs} seconds because output buffers are full"
+                        );
+                    } else {
+                        let names = full_names.join(", ");
+                        info!(
+                            "pipeline stalled {elapsed_secs} seconds because output buffers \
+                             are full: {names}"
+                        );
+                    }
                 });
                 self.parker.park_deadline(warning.next_warning());
                 continue;
@@ -2399,13 +2782,22 @@ impl CircuitThread {
     }
 
     fn step(&mut self) -> Result<bool, ControllerError> {
+        self.controller
+            .status
+            .global_metrics
+            .total_initiated_steps
+            .store(self.step + 1, Ordering::Release);
+
         self.step_sender
             .send_replace(StepStatus::new(self.step, StepAction::Step));
-        let total_consumed =
-            match SamplySpan::new(debug_span!("input")).in_scope(|| self.input_step())? {
-                Some(total_consumed) => total_consumed,
-                None => return Ok(false),
-            };
+        let total_consumed = match SamplySpan::new("input")
+            .with_category("Step")
+            .with_tooltip(|| format!("supply input before step {}", self.step + 1))
+            .in_scope(|| self.input_step())?
+        {
+            Some(total_consumed) => total_consumed,
+            None => return Ok(false),
+        };
 
         self.step += 1;
 
@@ -2427,14 +2819,20 @@ impl CircuitThread {
         // query results always reflect all data that we have reported
         // processing; otherwise, there is a race for any code that runs a query
         // as soon as input has been processed.
-        SamplySpan::new(debug_span!("update")).in_scope(|| self.update_snapshot());
+        SamplySpan::new("update")
+            .with_category("Step")
+            .with_tooltip(|| format!("update ad-hoc tables after step {}", self.step))
+            .in_scope(|| self.update_snapshot());
 
         // Record that we've processed the records, unless there is a transaction in progress,
         // in which case records are ingested by the circuit but are not fully processed.
         let processed_records = self.processed_records(total_consumed);
         let processed_records = if self.controller.get_transaction_state() == TransactionState::None
         {
-            Some(processed_records)
+            Some(ProcessedRecords {
+                total_processed_input_records: processed_records,
+                total_processed_steps: self.step,
+            })
         } else {
             None
         };
@@ -2472,33 +2870,27 @@ impl CircuitThread {
     /// instantly commit a transaction.
     fn step_circuit(&mut self) {
         match self.controller.advance_transaction_state() {
-            Some(TransactionState::Started(transaction_id)) => {
-                info!("Starting transaction {transaction_id}");
+            Some(AdvanceTransaction::Start) => {
                 self.controller.increment_transaction_number();
-                self.circuit.start_transaction().unwrap_or_else(|e| {
-                    self.controller.error(Arc::new(e.into()), None);
-                    self.controller
-                        .set_transaction_state(TransactionState::None);
-                });
+                self.circuit
+                    .start_transaction()
+                    .expect("should have been able to start transaction");
             }
-            Some(TransactionState::Committing(transaction_id)) => {
-                info!("Committing transaction {transaction_id}");
-                self.circuit.start_commit_transaction().unwrap_or_else(|e| {
-                    self.controller.error(Arc::new(e.into()), None);
-                    self.controller
-                        .set_transaction_state(TransactionState::Started(transaction_id));
-                });
-                self.last_commit_progress_update = Instant::now();
+            Some(AdvanceTransaction::Commit) => {
+                self.circuit
+                    .start_commit_transaction()
+                    .expect("should have been able to start transaction commit");
             }
-            _ => {}
+            None => (),
         }
 
         let transaction_state = self.controller.get_transaction_state();
-
         if transaction_state != TransactionState::None {
             debug!("circuit thread: calling 'circuit.step'");
 
-            let committed = SamplySpan::new(debug_span!("step"))
+            let committed = SamplySpan::new("step")
+                .with_category("Step")
+                .with_tooltip(|| format!("step {}", self.step))
                 .in_scope(|| self.circuit.step())
                 .unwrap_or_else(|e| {
                     self.controller.error(Arc::new(e.into()), None);
@@ -2507,32 +2899,69 @@ impl CircuitThread {
 
             debug!("circuit thread: 'circuit.step' returned");
 
-            if let TransactionState::Committing(transaction_id) = transaction_state {
-                // Print transaction commit progress every COMMIT_UPDATE_INTERVAL.
-                // This is temporary until we have API/UI for progress reporting.
-                if self.last_commit_progress_update.elapsed() >= COMMIT_UPDATE_INTERVAL {
-                    self.last_commit_progress_update = Instant::now();
-                    match self.circuit.commit_progress() {
-                        Ok(progress) => {
-                            info!(
-                                "Transaction {transaction_id} commit progress: {}",
-                                progress.summary()
-                            )
+            if let TransactionState::Committing {
+                tid,
+                start,
+                processed_records,
+            } = transaction_state
+            {
+                let n = self
+                    .controller
+                    .status
+                    .global_metrics
+                    .num_total_processed_records()
+                    - processed_records;
+                if !committed {
+                    let commit_updates = self.commit_updates.get_or_insert_default();
+                    if commit_updates.should_update_status() {
+                        match self.circuit.commit_progress() {
+                            Ok(progress) => {
+                                let summary = progress.summary();
+                                if commit_updates.should_display_status() {
+                                    info!(
+                                        "Transaction {tid}: Commit of {n} records in progress ({summary})"
+                                    );
+                                }
+                                self.controller
+                                    .status
+                                    .global_metrics
+                                    .set_commit_progress(Some(summary));
+                            }
+                            Err(e) => {
+                                error!("Transaction {tid}: Error retrieving commit progress ({e})");
+                            }
                         }
-                        Err(e) => error!("Error retrieving transaction commit progress: {e}"),
-                    }
-                }
-                if committed {
-                    info!("Transaction {transaction_id} committed");
+                    };
+                } else {
+                    let duration = start.elapsed();
+                    info!(
+                        "Transaction {tid}: Finished committing {n} records in {:.1} seconds",
+                        duration.as_secs_f64()
+                    );
+                    SamplySpan::new("commit")
+                        .with_category("Transaction")
+                        .with_tooltip(|| format!("transaction {tid} committed {n} records"))
+                        .with_start(start)
+                        .record();
+                    TRANSACTION_COMMIT_TIME.record_duration(duration);
+
+                    let mut transaction_info = self.controller.transaction_info.lock().unwrap();
+                    transaction_info.transaction_state = TransactionState::None;
+                    transaction_info.update_transaction_status();
+                    drop(transaction_info);
+
+                    self.commit_updates = None;
                     self.controller
-                        .set_transaction_state(TransactionState::None);
+                        .status
+                        .global_metrics
+                        .set_commit_progress(None);
                 }
             }
         } else {
             debug!("circuit thread: calling 'circuit.transaction'");
             self.controller.increment_transaction_number();
             // FIXME: we're using "span" for both step() (above) and transaction() (here).
-            SamplySpan::new(debug_span!("step"))
+            SamplySpan::new("step")
                 .in_scope(|| self.circuit.transaction())
                 .unwrap_or_else(|e| self.controller.error(Arc::new(e.into()), None));
             debug!("circuit thread: 'circuit.transaction' returned");
@@ -2849,9 +3278,17 @@ impl CircuitThread {
         // if the user runs end-to-end transactions. One possible way to solve this
         // in the future is to remove the notion of barriers altogether, making input
         // connectors always checkpointable.
-        let barriers_only = self.checkpoint_requested()
+        let coordination_request = self.controller.coordination_request.lock().unwrap().clone();
+        let inputs = if self.checkpoint_requested()
             && self.ft.is_none()
-            && self.controller.get_transaction_state() == TransactionState::None;
+            && self.controller.get_transaction_state() == TransactionState::None
+        {
+            StepInputs::CheckpointBarriers
+        } else if let Some(coordination_request) = &coordination_request {
+            coordination_request.inputs
+        } else {
+            StepInputs::All
+        };
 
         // Collect the ids of the endpoints that we'll flush to the circuit.
         //
@@ -2861,26 +3298,27 @@ impl CircuitThread {
         // exist when we start flushing input. New ones will be processed in
         // future steps.
         let statuses = self.controller.status.input_status();
-        let coordination_request = self.controller.coordination_request.lock().unwrap();
         let mut waiting = HashMap::with_capacity(statuses.len());
 
         // Connectors that have committed the transaction and should not be queried
         // until the transaction is committed. This is necessary to ensure liveness, i.e.,
         // the transaction does not continue indefinitely because connectors keep reinitiating
         // it.
-        let committing = self
-            .controller
-            .transaction_info
-            .lock()
-            .unwrap()
-            .committed_connectors();
+        let committing = if coordination_request.is_none() {
+            self.controller
+                .transaction_info
+                .lock()
+                .unwrap()
+                .committed_connectors()
+        } else {
+            // When there is a coordinator, the coordinator decides which input
+            // connectors to use.
+            Default::default()
+        };
 
         for (&endpoint_id, status) in statuses.iter() {
-            if barriers_only && !status.is_barrier()
+            if inputs == StepInputs::CheckpointBarriers && !status.is_barrier()
                 || committing.contains(&status.endpoint_name)
-                || coordination_request
-                    .as_ref()
-                    .is_some_and(|cr| !cr.input_connectors.contains(&status.endpoint_name))
             {
                 if let Some(resume) = self.input_metadata.remove(&status.endpoint_name) {
                     step_metadata.insert(
@@ -3052,10 +3490,10 @@ impl CircuitThread {
     ///
     /// # Arguments
     ///
-    /// * `processed_records` is the total number of records processed by the
-    ///   pipeline *before* this step. If `processed_records` is `None`, we're in
-    ///   the middle of a transaction and the records are not fully processed yet.
-    fn push_output(&mut self, processed_records: Option<u64>) {
+    /// * `processed_records` is the records processed by the pipeline *before*
+    ///   this step. If `processed_records` is `None`, we're in the middle of a
+    ///   transaction and the records are not fully processed yet.
+    fn push_output(&mut self, processed_records: Option<ProcessedRecords>) {
         let outputs = self.controller.outputs.read().unwrap();
         for (_stream, (output_handles, endpoints)) in outputs.iter_by_stream() {
             let delta_batch = output_handles.delta_handle.as_ref().concat();
@@ -3076,7 +3514,11 @@ impl CircuitThread {
                     self.controller.status.enqueue_batch(*endpoint_id, 0);
 
                     // We need to propagate processed_records to the connector for progress tracking.
-                    endpoint.queue.push((self.step, None, processed_records));
+                    endpoint.queue.push(BatchQueueEntry {
+                        step: self.step,
+                        data: None,
+                        processed_records,
+                    });
                     endpoint.unparker.unpark();
                     continue;
                 }
@@ -3090,9 +3532,11 @@ impl CircuitThread {
                     delta_batch.as_ref().unwrap().clone()
                 };
 
-                endpoint
-                    .queue
-                    .push((self.step, Some(batch), processed_records));
+                endpoint.queue.push(BatchQueueEntry {
+                    step: self.step,
+                    data: Some(batch),
+                    processed_records,
+                });
 
                 // Wake up the output thread.  We're not trying to be smart here and
                 // wake up the thread conditionally if it was previously idle, as I
@@ -3588,21 +4032,16 @@ impl StepTrigger {
         // whether there is buffered data.
         let result = if let Some(request) = &coordination_request {
             match request.action {
-                StepAction::Idle => Some(Action::Park(None)),
-                StepAction::Step => {
-                    if request.step >= step {
+                StepAction::Step if request.step >= step => Some(Action::Step),
+                StepAction::Trigger if request.step >= step => {
+                    if self.controller.status.unset_step_requested() {
+                        // The `clock` connector requests steps explicitly.
                         Some(Action::Step)
                     } else {
-                        Some(Action::Park(None))
-                    }
-                }
-                StepAction::Trigger => {
-                    if request.step >= step {
                         None
-                    } else {
-                        Some(Action::Park(None))
                     }
                 }
+                _ => Some(Action::Park(None)),
             }
         } else if replaying
             || self.controller.transaction_commit_requested()
@@ -3645,16 +4084,17 @@ impl StepTrigger {
             //
             // If we're running under a coordinator, then we only consider input
             // endpoints that the coordinator told us to.
+            let inputs = if let Some(coordination_request) = &coordination_request {
+                coordination_request.inputs
+            } else if checkpoint_requested {
+                StepInputs::CheckpointBarriers
+            } else {
+                StepInputs::All
+            };
             let mut buffered_records = EnumMap::<bool, u64>::default();
             for status in self.controller.status.input_status().values() {
-                if let Some(coordination_request) = &coordination_request
-                    && !coordination_request
-                        .input_connectors
-                        .contains(&status.endpoint_name)
-                {
-                    continue;
-                }
-                buffered_records[checkpoint_requested && status.is_barrier()] +=
+                buffered_records
+                    [inputs == StepInputs::CheckpointBarriers && status.is_barrier()] +=
                     status.metrics.buffered_records.load(Ordering::Relaxed);
             }
             let buffered_records = if buffered_records[true] > 0 {
@@ -3738,6 +4178,9 @@ pub struct ControllerInit {
     /// When starting from a checkpoint, contains the diff between the checkpointed and the
     /// current pipeline config computed using `compute_pipeline_diff`
     pub pipeline_diff: Option<PipelineDiff>,
+
+    /// The incarnation UUID to report in controller statistics.
+    pub incarnation_uuid: Uuid,
 }
 
 impl ControllerInit {
@@ -3756,6 +4199,7 @@ impl ControllerInit {
             input_statistics: HashMap::new(),
             output_statistics: HashMap::new(),
             pipeline_diff: None,
+            incarnation_uuid: Uuid::nil(),
         })
     }
 
@@ -3844,6 +4288,20 @@ impl ControllerInit {
             )
         }
 
+        // Transfer HTTP input endpoints that are not affected by the program diff from the checkpoint to the new configuration.
+        checkpoint_config
+            .inputs
+            .iter()
+            .filter(|(_connector_name, connector_config)| {
+                connector_config.connector_config.transport.is_http_input()
+                    && !pipeline_diff.is_affected_relation(&connector_config.stream)
+            })
+            .for_each(|(connector_name, connector_config)| {
+                config
+                    .inputs
+                    .insert(connector_name.clone(), connector_config.clone());
+            });
+
         // Merge `config` (the configuration provided by the pipeline manager)
         // with `checkpoint_config` (the configuration read from the
         // checkpoint).
@@ -3860,6 +4318,7 @@ impl ControllerInit {
                 // Can't change number of workers or hosts yet.
                 hosts: checkpoint_config.global.hosts,
                 workers: checkpoint_config.global.workers,
+                max_rss_mb: checkpoint_config.global.max_rss_mb,
 
                 // The checkpoint determines the fault tolerance model, but the
                 // pipeline manager can override the details of the
@@ -3888,6 +4347,7 @@ impl ControllerInit {
                 checkpoint_during_suspend: config.global.checkpoint_during_suspend,
                 http_workers: config.global.http_workers,
                 io_workers: config.global.io_workers,
+                env: config.global.env.clone(),
                 dev_tweaks: config.global.dev_tweaks.clone(),
                 logging: config.global.logging,
                 pipeline_template_configmap: config.global.pipeline_template_configmap.clone(),
@@ -3927,7 +4387,12 @@ impl ControllerInit {
             processed_records,
             initial_start_time: Some(initial_start_time),
             pipeline_diff: Some(pipeline_diff),
+            incarnation_uuid: Uuid::nil(),
         })
+    }
+
+    pub fn set_incarnation_uuid(&mut self, incarnation_uuid: Uuid) {
+        self.incarnation_uuid = incarnation_uuid
     }
 
     fn circuit_config(
@@ -3935,13 +4400,45 @@ impl ControllerInit {
         pipeline_config: &PipelineConfig,
         storage: Option<CircuitStorageConfig>,
     ) -> Result<CircuitConfig, ControllerError> {
+        let dev_tweaks = pipeline_config.global.dev_tweaks.clone();
+        if dev_tweaks != DevTweaks::default() {
+            info!("using non-default `dev_tweaks`: {dev_tweaks:#?}")
+        }
+
+        let mut max_rss_mb = pipeline_config.global.max_rss_mb;
+
+        if max_rss_mb.is_none()
+            && let Some(memory_mb_max) = &pipeline_config.global.resources.memory_mb_max
+        {
+            warn!(
+                "RSS memory limit ('max_rss_mb') is not set, but a Kubernetes memory limit \
+('resources.memory_mb_max' = {memory_mb_max} MB) is configured. \
+Using the Kubernetes limit as the RSS memory limit."
+            );
+            max_rss_mb = Some(*memory_mb_max);
+        } else if max_rss_mb.is_none() && pipeline_config.global.resources.memory_mb_max.is_none() {
+            warn!(
+                "RSS memory limit ('max_rss_mb') is not set, and no Kubernetes memory limit \
+('resources.memory_mb_max') is configured. We recommend configuring at least one of these settings to avoid out-of-memory failures."
+            );
+        } else if let Some(max_rss_mb) = max_rss_mb
+            && let Some(memory_mb_max) = &pipeline_config.global.resources.memory_mb_max
+            && max_rss_mb > *memory_mb_max
+        {
+            warn!(
+                "RSS memory limit ('max_rss_mb') is set to {max_rss_mb} MB exceeds the Kubernetes memory limit \
+('resources.memory_mb_max' = {memory_mb_max} MB) is configured. This will likely cause out-of-memory failures."
+            );
+        }
+
         Ok(CircuitConfig {
             layout: layout
                 .unwrap_or_else(|| Layout::new_solo(pipeline_config.global.workers as usize)),
+            max_rss_bytes: max_rss_mb.map(|mb| mb * 1_000_000),
             pin_cpus: pipeline_config.global.pin_cpus.clone(),
             storage,
             mode: Mode::Persistent,
-            dev_tweaks: DevTweaks::from_config(&pipeline_config.global.dev_tweaks),
+            dev_tweaks,
         })
     }
 
@@ -4147,7 +4644,7 @@ impl StatisticsThread {
                 total_processed_records: controller_status
                     .global_metrics
                     .num_total_processed_records(),
-                memory_bytes: memory_stats().map_or(0, |stats| stats.physical_mem as u64),
+                memory_bytes: process_rss_bytes().unwrap_or_default(),
                 storage_bytes,
             };
             let mut time_series = controller_status.time_series.lock().unwrap();
@@ -4175,12 +4672,30 @@ impl Drop for StatisticsThread {
     }
 }
 
+struct BatchQueueEntry {
+    /// The step in which the output was produced.
+    step: Step,
+
+    /// The output batch.
+    ///
+    /// This is `None` if the step produced no output.  We still create an entry
+    /// to allow for progress tracking.
+    data: Option<Arc<dyn SerBatchReader>>,
+
+    /// The records processed by the pipeline *before* this step.
+    ///
+    /// This is `None` if we're in the middle of a transaction and the records
+    /// are not fully processed yet.
+    processed_records: Option<ProcessedRecords>,
+}
+
 /// A lock-free queue used to send output batches from the circuit thread
-/// to output endpoint threads.  Each entry is annotated with a progress label
-/// that is equal to the number of input records fully processed by
-/// DBSP before emitting this batch of outputs or `None` if the circuit is
-/// executing a transaction.  The label increases monotonically over time.
-type BatchQueue = SegQueue<(Step, Option<Arc<dyn SyncSerBatchReader>>, Option<u64>)>;
+/// to output endpoint threads.
+///
+/// Each entry is labeled with information about the records processed by DBSP
+/// before emitting this batch of outputs or `None` if the circuit is executing
+/// a transaction.  The label increases monotonically over time.
+type BatchQueue = SegQueue<BatchQueueEntry>;
 
 /// State tracked by the controller for each output endpoint.
 struct OutputEndpointDescr {
@@ -4312,12 +4827,13 @@ struct OutputBuffer {
     /// Time when the first batch was pushed to the buffer.
     buffer_since: Instant,
 
-    /// Number of input records that will be fully processed after the buffer is flushed.
+    /// Records that will be fully processed after the buffer is flushed.
     ///
-    /// This is a part of the progress tracking mechanism, which tracks the number of inputs
-    /// to the pipeline that have been processed to completion.  It is currently used
-    /// to determine when the circuit has run to completion.
-    buffered_processed_records: u64,
+    /// This is a part of the progress tracking mechanism, which tracks the
+    /// number of inputs to the pipeline that have been processed to completion.
+    /// It is used for watermarks, completion tokens, and to determine when the
+    /// circuit has run to completion.
+    buffered_processed_records: ProcessedRecords,
 }
 
 impl OutputBuffer {
@@ -4328,7 +4844,7 @@ impl OutputBuffer {
             buffer: None,
             buffered_step: 0,
             buffer_since: Instant::now(),
-            buffered_processed_records: 0,
+            buffered_processed_records: ProcessedRecords::default(),
         }
     }
 
@@ -4346,9 +4862,9 @@ impl OutputBuffer {
     /// before this batch was produced or `None` if the circuit is executing a transaction.
     fn insert(
         &mut self,
-        batch: Option<Arc<dyn SyncSerBatchReader>>,
+        batch: Option<Arc<dyn SerBatchReader>>,
         step: Step,
-        processed_records: Option<u64>,
+        processed_records: Option<ProcessedRecords>,
     ) {
         if let Some(batch) = batch {
             if let Some(buffer) = &mut self.buffer {
@@ -4406,7 +4922,7 @@ impl OutputBuffer {
     }
 }
 
-pub type ConsistentSnapshot = Arc<BTreeMap<SqlIdentifier, Vec<Arc<dyn SyncSerBatchReader>>>>;
+pub type ConsistentSnapshot = Arc<BTreeMap<SqlIdentifier, Vec<Arc<dyn SerBatchReader>>>>;
 
 /// Current state of transaction processing.
 #[derive(Default, Debug, Clone, PartialEq, Eq, Copy)]
@@ -4417,17 +4933,67 @@ pub enum TransactionState {
 
     /// A transaction is running. New inputs ingested in this state become part of the transaction.
     /// No outputs are produced until the state changes to committing.
-    Started(TransactionId),
+    Started {
+        /// Transaction ID of the ongoing transaction.
+        tid: TransactionId,
+        /// When the transaction started.
+        start: Instant,
+        /// Number of records processed when this transaction started.
+        processed_records: u64,
+    },
 
     /// A transaction is committing. In this state the pipeline doesn't accept new inputs from
     /// connectors and computes all outputs for the inputs received in the Started state.
-    Committing(TransactionId),
+    Committing {
+        /// Transaction ID of the committing transaction.
+        tid: TransactionId,
+        /// When the commit started.
+        start: Instant,
+        /// Number of records processed when this transaction started.
+        processed_records: u64,
+    },
 }
 
 impl TransactionState {
     fn is_committing(&self) -> bool {
-        matches!(self, TransactionState::Committing(_))
+        matches!(self, TransactionState::Committing { .. })
     }
+
+    pub fn tid(&self) -> Option<TransactionId> {
+        match self {
+            TransactionState::None => None,
+            TransactionState::Started { tid, .. } | TransactionState::Committing { tid, .. } => {
+                Some(*tid)
+            }
+        }
+    }
+
+    /// Returns when this phase of the transaction started.
+    pub fn start_time(&self) -> Option<Instant> {
+        match self {
+            TransactionState::None => None,
+            TransactionState::Started { start, .. }
+            | TransactionState::Committing { start, .. } => Some(*start),
+        }
+    }
+
+    /// Returns the number of processed records when the transaction started.
+    pub fn processed_records(&self) -> Option<u64> {
+        match self {
+            TransactionState::None => None,
+            TransactionState::Started {
+                processed_records, ..
+            }
+            | TransactionState::Committing {
+                processed_records, ..
+            } => Some(*processed_records),
+        }
+    }
+}
+
+enum AdvanceTransaction {
+    Start,
+    Commit,
 }
 
 /// Phase of a transaction.
@@ -4517,10 +5083,12 @@ impl TransactionInitiators {
     /// Clear the transaction requested state.
     ///
     /// Must be invoked when a transaction is committed.
-    fn clear(&mut self) {
+    fn clear(&mut self, is_multihost: bool) {
         self.transaction_id = None;
         self.initiated_by_api = None;
-        self.initiated_by_connectors.clear();
+        if !is_multihost {
+            self.initiated_by_connectors.clear();
+        }
     }
 
     /// Returns true if at least one participant has started a transaction and
@@ -4583,8 +5151,8 @@ impl TransactionInitiators {
     }
 }
 
-#[derive(Default, Clone)]
-struct TransactionInfo {
+#[derive(Clone, Default, Debug)]
+pub struct TransactionInfo {
     /// Is this a multihost pipeline?
     ///
     /// In a single-host pipeline, connectors can initiate and commit
@@ -4604,15 +5172,22 @@ struct TransactionInfo {
 
     /// Actual pipeline state, set by the circuit thread.
     transaction_state: TransactionState,
+
+    /// For sending updates to the coordination status to the coordinator.
+    sender: tokio::sync::watch::Sender<TransactionCoordination>,
 }
 
 impl TransactionInfo {
-    fn new(is_multihost: bool) -> Self {
+    fn new(
+        is_multihost: bool,
+        sender: tokio::sync::watch::Sender<TransactionCoordination>,
+    ) -> Self {
         TransactionInfo {
             is_multihost,
             last_transaction_id: 0,
             initiators: TransactionInitiators::default(),
             transaction_state: TransactionState::None,
+            sender,
         }
     }
 
@@ -4651,14 +5226,34 @@ impl TransactionInfo {
         endpoint_name: &str,
         label: Option<&str>,
     ) -> Result<(), ControllerError> {
+        if self.is_multihost {
+            match self
+                .initiators
+                .initiated_by_connectors
+                .entry(endpoint_name.to_string())
+            {
+                Entry::Vacant(entry) => {
+                    entry.insert(ConnectorTransactionPhase {
+                        phase: TransactionPhase::Started,
+                        label: label.map(String::from),
+                    });
+                    debug!("Connector {endpoint_name} initiated request for transaction");
+                    return Ok(());
+                }
+                Entry::Occupied(_entry) => {
+                    error!("Connector {endpoint_name} had already requested transaction");
+                    return Err(ControllerError::TransactionInProgress);
+                }
+            }
+        }
+
         let mut initiated = false;
 
         if self.transaction_state.is_committing() {
             return Err(ControllerError::TransactionInProgress);
         }
 
-        if self.initiators.transaction_id.is_none() && !self.is_multihost {
-            assert!(!self.initiators.is_ongoing(self.is_multihost));
+        if self.initiators.transaction_id.is_none() {
             self.last_transaction_id += 1;
             self.initiators.transaction_id = Some(self.last_transaction_id);
             initiated = true;
@@ -4701,6 +5296,20 @@ impl TransactionInfo {
         &mut self,
         endpoint_name: &str,
     ) -> Result<(), ControllerError> {
+        if self.is_multihost {
+            debug!("Connector {endpoint_name} requests transaction commit");
+            if self
+                .initiators
+                .initiated_by_connectors
+                .remove(endpoint_name)
+                .is_some()
+            {
+                return Ok(());
+            } else {
+                return Err(ControllerError::NoTransactionInProgress);
+            }
+        }
+
         let num_active_participants = self.initiators.num_active_participants();
 
         match self
@@ -4712,7 +5321,7 @@ impl TransactionInfo {
                 return Err(ControllerError::NoTransactionInProgress);
             }
             Entry::Occupied(mut entry) => {
-                assert!(self.is_multihost || self.initiators.transaction_id.is_some());
+                assert!(self.initiators.transaction_id.is_some());
                 if entry.get().phase != TransactionPhase::Started {
                     return Err(ControllerError::NoTransactionInProgress);
                 }
@@ -4747,6 +5356,48 @@ impl TransactionInfo {
             })
             .collect()
     }
+
+    fn clear_initiators(&mut self) {
+        self.initiators.clear(self.is_multihost);
+    }
+
+    /// Sends an update to the transaction coordination status, if it has
+    /// changed.
+    fn update_transaction_status(&self) {
+        let coordination = TransactionCoordination {
+            status: match (
+                self.transaction_state,
+                self.initiators.is_ongoing(self.is_multihost),
+            ) {
+                (TransactionState::None, false) => None,
+                (TransactionState::Started { .. } | TransactionState::Committing { .. }, false) => {
+                    Some(false)
+                }
+                (TransactionState::None | TransactionState::Started { .. }, true) => Some(true),
+                (TransactionState::Committing { .. }, true) => {
+                    error!(
+                        "Invalid transaction state: actual state: {:?}; desired state {:?}",
+                        self.transaction_state, self.initiators
+                    );
+                    return;
+                }
+            },
+            requests: self
+                .initiators
+                .initiated_by_connectors
+                .iter()
+                .filter_map(
+                    |(name, phase)| match phase.phase == TransactionPhase::Started {
+                        true => Some((name.clone(), phase.label.clone())),
+                        false => None,
+                    },
+                )
+                .collect(),
+        };
+        if *self.sender.borrow() != coordination {
+            self.sender.send_replace(coordination);
+        }
+    }
 }
 
 /// Controller state sharable across threads.
@@ -4779,14 +5430,15 @@ pub struct ControllerInner {
     step_receiver: tokio::sync::watch::Receiver<StepStatus>,
     checkpoint_receiver: tokio::sync::watch::Receiver<Option<CheckpointCoordination>>,
     transaction_receiver: tokio::sync::watch::Receiver<TransactionCoordination>,
-    transaction_sender: tokio::sync::watch::Sender<TransactionCoordination>,
     coordination_request: Mutex<Option<StepRequest>>,
     coordination_prepare_checkpoint: AtomicBool,
     input_completion_notify: Arc<Notify>,
     // The mutex is acquired from async context by actix and
     // from the sync context by the circuit thread.
     transaction_info: Mutex<TransactionInfo>,
-    workers: Range<usize>,
+
+    /// Layout of the [Runtime].
+    layout: Layout,
 
     /// Current transaction number.
     ///
@@ -4821,11 +5473,13 @@ impl ControllerInner {
         output_statistics: &HashMap<String, CheckpointOutputEndpointMetrics>,
         step_receiver: tokio::sync::watch::Receiver<StepStatus>,
         checkpoint_receiver: tokio::sync::watch::Receiver<Option<CheckpointCoordination>>,
+        incarnation_uuid: Uuid,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let status = Arc::new(ControllerStatus::new(
             config.clone(),
             processed_records,
             initial_start_time,
+            incarnation_uuid,
         ));
         let circuit_thread_parker = Parker::new();
         let backpressure_thread_parker = Parker::new();
@@ -4849,7 +5503,7 @@ impl ControllerInner {
                 next_input_id: Atomic::new(0),
                 outputs: ShardedLock::new(OutputEndpoints::new()),
                 next_output_id: Atomic::new(0),
-                workers: runtime.layout().local_workers(),
+                layout: runtime.layout().clone(),
                 runtime: runtime.downgrade(),
                 circuit_thread_unparker: circuit_thread_parker.unparker().clone(),
                 backpressure_thread_unparker: backpressure_thread_parker.unparker().clone(),
@@ -4857,12 +5511,14 @@ impl ControllerInner {
                 session_ctxt,
                 adhoc_tables,
                 fault_tolerance: config.global.fault_tolerance.model,
-                transaction_info: Mutex::new(TransactionInfo::new(is_multihost)),
+                transaction_info: Mutex::new(TransactionInfo::new(
+                    is_multihost,
+                    transaction_sender,
+                )),
                 restoring: AtomicBool::new(config.global.fault_tolerance.is_enabled()),
                 transaction_number: AtomicU64::new(0),
                 step_receiver,
                 checkpoint_receiver,
-                transaction_sender,
                 transaction_receiver,
                 coordination_request: Mutex::new(is_multihost.then_some(StepRequest::new_idle(0))),
                 coordination_prepare_checkpoint: AtomicBool::new(false),
@@ -4934,7 +5590,9 @@ impl ControllerInner {
             controller.status.set_state(PipelineState::Terminated);
         })?;
 
-        let _ = controller.connect_input("now", &now_endpoint_config(&config), None);
+        if controller.layout.local_host_idx() == 0 {
+            let _ = controller.connect_input("now", &now_endpoint_config(&config), None);
+        }
 
         let backpressure_thread =
             BackpressureThread::new(controller.clone(), backpressure_thread_parker);
@@ -4944,6 +5602,32 @@ impl ControllerInner {
             command_receiver,
             controller,
         ))
+    }
+
+    /// Compute max_batch_size for a connector.
+    ///
+    /// `max_batch_size` is a (soft) bound on the number of records ingested in one step from
+    /// the connector.
+    ///
+    /// If the connector config specifies a `max_batch_size`, it is used as is.
+    ///
+    /// Otherwise, `max_batch_size` is computed as the number of workers times `config.max_worker_batch_size` (if specified)
+    /// or `DEFAULT_MAX_WORKER_BATCH_SIZE` otherwise.
+    pub fn max_connector_batch_size(&self, connector_config: &ConnectorConfig) -> usize {
+        if let Some(max_batch_size) = connector_config.max_batch_size {
+            return max_batch_size as usize;
+        };
+
+        let num_local_workers = std::cmp::max(self.layout.local_workers().len(), 1);
+
+        let max_worker_batch_size =
+            if let Some(max_worker_batch_size) = connector_config.max_worker_batch_size {
+                max_worker_batch_size as usize
+            } else {
+                DEFAULT_MAX_WORKER_BATCH_SIZE as usize
+            };
+
+        max_worker_batch_size * num_local_workers
     }
 
     fn last_checkpoint(&self) -> LastCheckpoint {
@@ -5077,6 +5761,51 @@ impl ControllerInner {
         )
         .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
 
+        // Create preprocessor if specified by the configuration
+        let mut preprocessor = None;
+        let mut streaming_preprocessor = false;
+        if let Some(vec) = &endpoint_config.connector_config.preprocessor {
+            if vec.len() != 1 {
+                return Err(ControllerError::PreprocessorCreateError {
+                    endpoint_name: endpoint_name.to_string(),
+                    error: "Currently exactly one preprocessor can be specified".to_string(),
+                });
+            }
+            let config = &vec[0];
+            if let Some(factory) = self
+                .catalog
+                .preprocessor_registry()
+                .lock()
+                .unwrap()
+                .get(&config.name)
+            {
+                debug!(
+                    "Endpoint {0} creating preprocessor for {1}",
+                    endpoint_name, config.name
+                );
+                match factory.create(config) {
+                    Err(e) => {
+                        return Err(ControllerError::PreprocessorCreateError {
+                            endpoint_name: endpoint_name.to_string(),
+                            error: format!("Error parsing preprocessor configuration: {e}"),
+                        });
+                    }
+                    Ok(pre) => {
+                        preprocessor = Some(pre);
+                        streaming_preprocessor = !config.message_oriented;
+                    }
+                }
+            } else {
+                return Err(ControllerError::PreprocessorCreateError {
+                    endpoint_name: endpoint_name.to_string(),
+                    error: format!(
+                        "Could not locate factory for preprocessor named '{}'",
+                        config.name
+                    ),
+                });
+            }
+        }
+
         // Create input pipeline, consisting of a transport endpoint and parser.
 
         let input_handle = self
@@ -5127,8 +5856,21 @@ impl ControllerInner {
                     ControllerError::unknown_input_format(endpoint_name, &format_config.name)
                 })?;
 
-                let parser =
+                let mut parser =
                     format.new_parser(endpoint_name, input_handle, &format_config.config)?;
+
+                // If a preprocessor exists, combine it with the parser
+                if let Some(pre) = preprocessor {
+                    if streaming_preprocessor {
+                        warn!(
+                            "Preprocessor is not message-oriented; fault tolerance unavailable for {}",
+                            endpoint_name
+                        );
+                        parser = Box::new(StreamingPreprocessedParser::new(pre, parser));
+                    } else {
+                        parser = Box::new(MessageOrientedPreprocessedParser::new(pre, parser));
+                    }
+                }
 
                 let fault_tolerance = endpoint.fault_tolerance();
 
@@ -5154,7 +5896,7 @@ impl ControllerInner {
                             .write()
                             .get_mut(&endpoint_id)
                             .unwrap()
-                            .reader = Some(reader);
+                            .reader = Some(Arc::from(reader));
                     }
                     Err(e) => {
                         self.status.inputs.write().remove(&endpoint_id);
@@ -5165,6 +5907,13 @@ impl ControllerInner {
                 fault_tolerance
             }
             None => {
+                if preprocessor.is_some() {
+                    return Err(ControllerError::PreprocessorCreateError {
+                        endpoint_name: endpoint_name.to_string(),
+                        error: "Preprocessors cannot be used with integrated input endpoints"
+                            .to_string(),
+                    });
+                }
                 let endpoint = create_integrated_input_endpoint(
                     endpoint_name,
                     &resolved_connector_config,
@@ -5193,7 +5942,7 @@ impl ControllerInner {
                             .write()
                             .get_mut(&endpoint_id)
                             .unwrap()
-                            .reader = Some(reader);
+                            .reader = Some(Arc::from(reader));
                     }
                     Err(e) => {
                         self.status.inputs.write().remove(&endpoint_id);
@@ -5218,6 +5967,15 @@ impl ControllerInner {
 
         self.unpark_backpressure();
         Ok(endpoint_id)
+    }
+
+    fn get_input_endpoint(&self, endpoint_name: &str) -> Option<Arc<dyn InputReader>> {
+        let endpoint_id = self.status.input_endpoint_id_by_name(endpoint_name).ok()?;
+        self.status
+            .inputs
+            .read()
+            .get(&endpoint_id)
+            .and_then(|ep| ep.reader.as_ref().cloned())
     }
 
     fn register_api_connection(&self) -> Result<(), u64> {
@@ -5381,7 +6139,7 @@ impl ControllerInner {
         let encoder = if let Some(mut endpoint) = endpoint {
             endpoint
                 .connect(Box::new(
-                    move |fatal: bool, e: AnyError, error_tag: Option<&'static str>| {
+                    move |fatal: bool, e: AnyError, error_tag: Option<&str>| {
                         if let Some(controller) = self_weak.upgrade() {
                             controller.output_transport_error(
                                 endpoint_id,
@@ -5490,7 +6248,7 @@ impl ControllerInner {
     }
 
     fn push_batch_to_encoder(
-        batch: &dyn SerBatchReader,
+        batch: Arc<dyn SerBatchReader>,
         endpoint_id: EndpointId,
         endpoint_name: &str,
         encoder: &mut dyn Encoder,
@@ -5537,7 +6295,7 @@ impl ControllerInner {
                 // so we convert the spine to a snapshot to avoid wasting CPU, I/O, and memory on
                 // background merging.
                 Self::push_batch_to_encoder(
-                    output_buffer.take_buffer().unwrap().snapshot().as_ref(),
+                    output_buffer.take_buffer().unwrap().snapshot(),
                     endpoint_id,
                     &endpoint_name,
                     encoder.as_mut(),
@@ -5549,7 +6307,12 @@ impl ControllerInner {
                     .status
                     .output_buffered_batches(endpoint_id, output_buffer.buffered_processed_records);
                 controller.circuit_thread_unparker.unpark()
-            } else if let Some((step, data, processed_records)) = queue.pop() {
+            } else if let Some(BatchQueueEntry {
+                step,
+                data,
+                processed_records,
+            }) = queue.pop()
+            {
                 // Dequeue the next output batch. If output buffering is enabled, push it to the
                 // buffer; we will check if the buffer needs to be flushed at the next iteration of
                 // the loop.  If buffering is disabled, push the buffer directly to the encoder.
@@ -5578,7 +6341,7 @@ impl ControllerInner {
                 } else {
                     if let Some(data) = data {
                         Self::push_batch_to_encoder(
-                            data.as_ref(),
+                            data,
                             endpoint_id,
                             &endpoint_name,
                             encoder.as_mut(),
@@ -5703,7 +6466,7 @@ impl ControllerInner {
         endpoint_name: &str,
     ) -> Result<ExternalInputEndpointStatus, ControllerError> {
         let endpoint_id = self.input_endpoint_id_by_name(endpoint_name)?;
-        Ok(self.status.input_status()[&endpoint_id].to_api_type())
+        Ok(self.status.input_status()[&endpoint_id].to_api_type(true))
     }
 
     fn output_endpoint_status(
@@ -5711,7 +6474,7 @@ impl ControllerInner {
         endpoint_name: &str,
     ) -> Result<ExternalOutputEndpointStatus, ControllerError> {
         let endpoint_id = self.output_endpoint_id_by_name(endpoint_name)?;
-        Ok(self.status.output_status()[&endpoint_id].to_api_type())
+        Ok(self.status.output_status()[&endpoint_id].to_api_type(true))
     }
 
     fn send_command(&self, command: Command) {
@@ -5734,10 +6497,10 @@ impl ControllerInner {
         endpoint_name: &str,
         fatal: bool,
         error: AnyError,
-        tag: Option<&'static str>,
+        tag: Option<&str>,
     ) {
         self.status
-            .input_transport_error(endpoint_id, fatal, &error);
+            .input_transport_error(endpoint_id, fatal, tag, &error);
         let tag = tag.map(|tag| format!("{endpoint_name}-{tag}"));
         self.error(
             Arc::new(ControllerError::input_transport_error(
@@ -5750,7 +6513,8 @@ impl ControllerInner {
     }
 
     pub fn parse_error(&self, endpoint_id: EndpointId, endpoint_name: &str, error: ParseError) {
-        self.status.parse_error(endpoint_id);
+        let tag = error.get_error_tag();
+        self.status.parse_error(endpoint_id, tag.as_deref(), &error);
 
         let tag = error
             .get_error_tag()
@@ -5767,9 +6531,9 @@ impl ControllerInner {
         endpoint_id: EndpointId,
         endpoint_name: &str,
         error: AnyError,
-        tag: Option<&'static str>,
+        tag: Option<&str>,
     ) {
-        self.status.encode_error(endpoint_id);
+        self.status.encode_error(endpoint_id, tag, &error);
         let tag = tag.map(|tag| format!("{endpoint_name}-{tag}"));
         self.error(
             Arc::new(ControllerError::encode_error(endpoint_name, error)),
@@ -5786,10 +6550,10 @@ impl ControllerInner {
         endpoint_name: &str,
         fatal: bool,
         error: AnyError,
-        tag: Option<&'static str>,
+        tag: Option<&str>,
     ) {
         self.status
-            .output_transport_error(endpoint_id, fatal, &error);
+            .output_transport_error(endpoint_id, fatal, tag, &error);
         let tag = tag.map(|tag| format!("{endpoint_name}-{tag}"));
         self.error(
             Arc::new(ControllerError::output_transport_error(
@@ -5801,9 +6565,19 @@ impl ControllerInner {
         );
     }
 
+    pub fn update_input_connector_health(&self, endpoint_id: EndpointId, health: ConnectorHealth) {
+        self.status
+            .update_input_connector_health(endpoint_id, health);
+    }
+
+    pub fn update_output_connector_health(&self, endpoint_id: EndpointId, health: ConnectorHealth) {
+        self.status
+            .update_output_connector_health(endpoint_id, health);
+    }
+
     /// Update counters after receiving a new input batch.
     ///
-    /// See [ControllerStatus::input_batch].
+    /// See `ControllerStatus::input_batch`.
     pub fn input_batch(&self, endpoint_id: Option<EndpointId>, amt: BufferSize) {
         // We update the individual endpoint metrics, then the global metrics.
         // The order is important because global metrics updates can unpark the
@@ -5839,6 +6613,10 @@ impl ControllerInner {
 
     fn output_buffers_full(&self) -> bool {
         self.status.output_buffers_full()
+    }
+
+    fn output_buffers_full_names(&self) -> Vec<String> {
+        self.status.output_buffers_full_names()
     }
 
     fn warn_restoring() -> ControllerError {
@@ -5912,7 +6690,7 @@ impl ControllerInner {
         if self.status.bootstrap_in_progress() {
             temporary.push(TemporarySuspendError::Bootstrapping);
         }
-        if self.status.transaction_in_progress() {
+        if self.get_transaction_state() != TransactionState::None {
             temporary.push(TemporarySuspendError::TransactionInProgress);
         }
         for endpoint_stats in self.status.input_status().values() {
@@ -5932,79 +6710,6 @@ impl ControllerInner {
         }
     }
 
-    /// Update transaction status in GlobalControllerMetrics given the current value of TransactionInfo.
-    fn update_transaction_status(&self, transaction_info: &TransactionInfo) {
-        let tid_status = match (
-            transaction_info.transaction_state,
-            transaction_info
-                .initiators
-                .is_ongoing(transaction_info.is_multihost),
-        ) {
-            (TransactionState::None, false) => Some((0, TransactionStatus::NoTransaction)),
-            (TransactionState::Started(tid), false)
-            | (TransactionState::Committing(tid), false) => {
-                Some((tid, TransactionStatus::CommitInProgress))
-            }
-            (TransactionState::None, true) => Some((
-                transaction_info.initiators.transaction_id.unwrap(),
-                TransactionStatus::TransactionInProgress,
-            )),
-            (TransactionState::Started(tid), true) => {
-                Some((tid, TransactionStatus::TransactionInProgress))
-            }
-            (TransactionState::Committing(_), true) => {
-                error!(
-                    "Invalid transaction state: actual state: {:?}; desired state {:?}",
-                    transaction_info.transaction_state, transaction_info.initiators
-                );
-                None
-            }
-        };
-        if let Some((tid, status)) = tid_status {
-            if status != TransactionStatus::NoTransaction {
-                assert!(tid != 0);
-            }
-
-            self.status
-                .global_metrics
-                .transaction_id
-                .store(tid, Ordering::Release);
-            self.status
-                .global_metrics
-                .transaction_status
-                .store(status, Ordering::Release);
-
-            let coordination = TransactionCoordination {
-                status: match status {
-                    TransactionStatus::NoTransaction => None,
-                    TransactionStatus::TransactionInProgress => Some(true),
-                    TransactionStatus::CommitInProgress => Some(false),
-                },
-                requests: transaction_info
-                    .initiators
-                    .initiated_by_connectors
-                    .iter()
-                    .filter_map(
-                        |(name, phase)| match phase.phase == TransactionPhase::Started {
-                            true => Some((name.clone(), phase.label.clone())),
-                            false => None,
-                        },
-                    )
-                    .collect(),
-            };
-            if *self.transaction_sender.borrow() != coordination {
-                self.transaction_sender.send_replace(coordination);
-            }
-        }
-
-        *self
-            .status
-            .global_metrics
-            .transaction_initiators
-            .lock()
-            .unwrap() = transaction_info.initiators.clone();
-    }
-
     /// Initiate a new transaction.
     ///
     /// Fails if there is already a transaction in progress.
@@ -6014,7 +6719,7 @@ impl ControllerInner {
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
         let transaction_id = transaction_info.start_transaction_from_api()?;
-        self.update_transaction_status(transaction_info);
+        transaction_info.update_transaction_status();
 
         Ok(transaction_id)
     }
@@ -6029,15 +6734,18 @@ impl ControllerInner {
         transaction_info.start_commit_transaction_from_api()?;
 
         // All initiators have committed the transaction before it even started.
+        //
+        // This isn't just a momentary race: it can happen across an arbitrary
+        // amount of time because we only transition `transaction_state` when we
+        // take a step, which we will only do when input arrives.
         if transaction_info
             .initiators
             .is_ready_to_commit(transaction_info.is_multihost)
             && transaction_info.transaction_state == TransactionState::None
         {
-            transaction_info.initiators.clear();
+            transaction_info.clear_initiators();
         }
-
-        self.update_transaction_status(transaction_info);
+        transaction_info.update_transaction_status();
         self.unpark_circuit();
 
         Ok(())
@@ -6051,8 +6759,7 @@ impl ControllerInner {
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
         transaction_info.start_transaction_from_connector(endpoint_name, label)?;
-
-        self.update_transaction_status(transaction_info);
+        transaction_info.update_transaction_status();
 
         Ok(())
     }
@@ -6071,21 +6778,13 @@ impl ControllerInner {
             .is_ready_to_commit(transaction_info.is_multihost)
             && transaction_info.transaction_state == TransactionState::None
         {
-            transaction_info.initiators.clear();
+            transaction_info.clear_initiators();
         }
 
-        self.update_transaction_status(transaction_info);
+        transaction_info.update_transaction_status();
 
         self.unpark_circuit();
         Ok(())
-    }
-
-    /// Update transaction_info.transaction_state.
-    pub fn set_transaction_state(&self, transaction_state: TransactionState) {
-        let transaction_info = &mut *self.transaction_info.lock().unwrap();
-
-        transaction_info.transaction_state = transaction_state;
-        self.update_transaction_status(transaction_info);
     }
 
     /// Read the current value of transaction_info.transaction_state.
@@ -6104,7 +6803,7 @@ impl ControllerInner {
             initiators: transaction_requested,
             transaction_state,
             ..
-        } = &mut *self.transaction_info.lock().unwrap();
+        } = &*self.transaction_info.lock().unwrap();
 
         *transaction_state != TransactionState::None
             && !transaction_requested.is_ongoing(*is_multihost)
@@ -6114,18 +6813,18 @@ impl ControllerInner {
     ///
     /// Used to prevent the pipeline from ingesting new inputs while committing a transaction.
     pub fn transaction_commit_in_progress(&self) -> bool {
-        let TransactionInfo {
-            transaction_state, ..
-        } = &mut *self.transaction_info.lock().unwrap();
-
-        matches!(transaction_state, TransactionState::Committing(_))
+        self.transaction_info
+            .lock()
+            .unwrap()
+            .transaction_state
+            .is_committing()
     }
 
     /// Advance transaction state from None to Started or from Started to committing in response
     /// to desired state changes.
     ///
-    /// Returns the new state if it's different from the previous state or `None` otherwise.
-    pub fn advance_transaction_state(&self) -> Option<TransactionState> {
+    /// Returns how the transaction is advancing (if it is).
+    fn advance_transaction_state(&self) -> Option<AdvanceTransaction> {
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
         let is_multihost = transaction_info.is_multihost;
@@ -6135,16 +6834,20 @@ impl ControllerInner {
             match transaction_info.transaction_state {
                 TransactionState::None => {
                     // Start a new transaction.
-                    transaction_info.transaction_state = TransactionState::Started(
-                        transaction_info.initiators.transaction_id.unwrap(),
-                    );
-                    Some(transaction_info.transaction_state)
+                    let transaction_id = transaction_info.initiators.transaction_id.unwrap();
+                    info!("Transaction {transaction_id}: Starting");
+                    transaction_info.transaction_state = TransactionState::Started {
+                        tid: transaction_id,
+                        start: Instant::now(),
+                        processed_records: self.status.global_metrics.num_total_processed_records(),
+                    };
+                    Some(AdvanceTransaction::Start)
                 }
-                TransactionState::Started(_) => {
+                TransactionState::Started { .. } => {
                     // We are already in a transaction, so there is nothing to do.
                     None
                 }
-                TransactionState::Committing(_) => unreachable!(
+                TransactionState::Committing { .. } => unreachable!(
                     "Requests to initiate a transaction are rejected while a transaction is committing but somehow one slipped through anyhow"
                 ),
             }
@@ -6152,14 +6855,34 @@ impl ControllerInner {
             // The API and connectors want us to not be in a transaction, so
             // start committing one if we are.
             match transaction_info.transaction_state {
-                TransactionState::Started(transaction_id) => {
+                TransactionState::Started {
+                    tid,
+                    start,
+                    processed_records,
+                } => {
                     // Commit the running transaction.
-                    transaction_info.transaction_state =
-                        TransactionState::Committing(transaction_id);
-                    transaction_info.initiators.clear();
-                    Some(transaction_info.transaction_state)
+                    let duration = start.elapsed();
+                    TRANSACTION_INGEST_TIME.record_duration(duration);
+                    let n = self.status.global_metrics.num_total_processed_records()
+                        - processed_records;
+                    info!(
+                        "Transaction {tid}: Starting commit of {n} records after {:.1} seconds",
+                        duration.as_secs_f64()
+                    );
+                    SamplySpan::new("ingested")
+                        .with_category("Transaction")
+                        .with_tooltip(|| format!("transaction {tid} ingested {n} records"))
+                        .with_start(start)
+                        .record();
+                    transaction_info.transaction_state = TransactionState::Committing {
+                        tid,
+                        start: Instant::now(),
+                        processed_records,
+                    };
+                    transaction_info.clear_initiators();
+                    Some(AdvanceTransaction::Commit)
                 }
-                TransactionState::Committing(_) => {
+                TransactionState::Committing { .. } => {
                     // Nothing to do.
                     //
                     // We know that there must not be any active initiators
@@ -6191,7 +6914,7 @@ impl ControllerInner {
             }
         };
 
-        self.update_transaction_status(transaction_info);
+        transaction_info.update_transaction_status();
         result
     }
 }
@@ -6224,11 +6947,13 @@ impl InputProbe {
         connector_config: &ConnectorConfig,
         controller: Arc<ControllerInner>,
     ) -> Self {
+        let max_batch_size = controller.max_connector_batch_size(connector_config);
+
         Self {
             endpoint_id,
             endpoint_name: endpoint_name.to_owned(),
             controller,
-            max_batch_size: connector_config.max_batch_size as usize,
+            max_batch_size,
             transaction_in_progress: AtomicBool::new(false),
         }
     }
@@ -6355,7 +7080,7 @@ impl InputConsumer for InputProbe {
         self.transaction_in_progress.store(false, Ordering::Release);
     }
 
-    fn error(&self, fatal: bool, error: AnyError, tag: Option<&'static str>) {
+    fn error(&self, fatal: bool, error: AnyError, tag: Option<&str>) {
         self.controller.input_transport_error(
             self.endpoint_id,
             &self.endpoint_name,
@@ -6363,6 +7088,12 @@ impl InputConsumer for InputProbe {
             error,
             tag,
         );
+    }
+
+    fn set_custom_metrics(&self, metrics: Arc<dyn ConnectorMetrics>) {
+        self.controller
+            .status
+            .set_custom_metrics(self.endpoint_id, metrics);
     }
 }
 
@@ -6506,7 +7237,7 @@ impl RunningCheckpoint {
     /// can't checkpoint) or after a long time (e.g. if it takes a long time to
     /// write out the checkpoint).
     fn new(circuit: &mut CircuitThread) -> Self {
-        SamplySpan::new(debug_span!("fg-checkpoint"))
+        SamplySpan::new("fg-checkpoint")
             .in_scope(|| Self::start(circuit))
             .unwrap_or_else(Self::Error)
     }
@@ -6596,6 +7327,13 @@ impl RunningCheckpoint {
             input_statistics,
             output_statistics,
         };
+        SamplySpan::new("blocking")
+            .with_category("Checkpoint")
+            .with_start(start_checkpoint)
+            .with_tooltip(|| {
+                String::from("Time during which checkpointing blocked pipeline execution")
+            })
+            .record();
         let delay = start_checkpoint.elapsed();
 
         let (sender, receiver) = oneshot::channel();
@@ -6612,8 +7350,7 @@ impl RunningCheckpoint {
         let join_handle = std::thread::Builder::new()
             .name(String::from("feldera-checkpoint"))
             .spawn(move || {
-                let result =
-                    SamplySpan::new(debug_span!("bg-checkpoint")).in_scope(|| thread.run());
+                let result = SamplySpan::new("bg-checkpoint").in_scope(|| thread.run());
                 let _ = sender.send(result);
                 unparker.unpark();
             })
@@ -6657,7 +7394,7 @@ impl RunningCheckpoint {
                 Ok(result) => {
                     join_handle.join().unwrap();
                     Some(result.and_then(|checkpoint| {
-                        SamplySpan::new(debug_span!("end-checkpoint"))
+                        SamplySpan::new("end-checkpoint")
                             .in_scope(|| Self::finish(checkpoint, circuit))
                     }))
                 }
@@ -6755,6 +7492,11 @@ impl CheckpointThread {
             .write(&*self.storage, &StoragePath::from(STATE_FILE))?;
 
         // Record statistics.
+        SamplySpan::new("runtime")
+            .with_category("Checkpoint")
+            .with_tooltip(|| format!("Wrote {} checkpoint", HumanBytes::from(bytes_written)))
+            .with_start(self.start_checkpoint)
+            .record();
         CHECKPOINT_RUNTIME.record_elapsed(self.start_checkpoint);
         CHECKPOINT_DELAY.record(self.delay.as_micros());
         CHECKPOINT_WRITTEN_MEGABYTES.record(bytes_written / 1_000_000);

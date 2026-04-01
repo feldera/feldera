@@ -4,15 +4,22 @@
 // TODOs:
 // - different sharding modes.
 
+use feldera_storage::fbuf::{FBuf, FBufSerializer};
+use itertools::Itertools;
+use rkyv::{archived_root, ser::Serializer as _};
+
 use crate::{
     Circuit, Runtime, Stream,
-    circuit::circuit_builder::StreamId,
+    circuit::{
+        circuit_builder::StreamId,
+        runtime::{WorkerLocation, WorkerLocations},
+    },
     circuit_cache_key,
-    dynamic::Data,
-    operator::communication::new_exchange_operators,
+    dynamic::{Data, DataTrait, DynPair, DynPairs, Factory},
+    operator::communication::{Mailbox, new_exchange_operators},
+    storage::file::SerializerInner,
     trace::{
-        Batch, BatchReader, Builder, deserialize_indexed_wset, merge_batches,
-        serialize_indexed_wset,
+        Batch, BatchReader, Builder, IndexedWSetSerializer, deserialize_indexed_wset, merge_batches,
     },
 };
 
@@ -112,7 +119,7 @@ where
                         let (sender, receiver) = new_exchange_operators(
                             Some(location),
                             || Vec::new(),
-                            move |batch: IB, batches: &mut Vec<OB>| {
+                            move |batch: IB, batches: &mut Vec<Mailbox<OB>>| {
                                 shard_batch(
                                     batch,
                                     &workers_clone,
@@ -121,7 +128,6 @@ where
                                     &factories_clone3,
                                 );
                             },
-                            |batch| serialize_indexed_wset(&batch),
                             move |data| deserialize_indexed_wset(&factories_clone4, &data),
                             |batches: &mut Vec<OB>, batch: OB| batches.push(batch),
                         )
@@ -155,13 +161,164 @@ where
     }
 }
 
+impl<C, K, V> Stream<C, Vec<Box<DynPairs<K, V>>>>
+where
+    C: Circuit,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+{
+    #[track_caller]
+    pub fn dyn_shard_pairs(
+        &self,
+        pairs_factory: &'static dyn Factory<DynPairs<K, V>>,
+    ) -> Stream<C, Vec<Box<DynPairs<K, V>>>> {
+        if self.is_sharded() {
+            return self.clone();
+        }
+
+        let location = Location::caller();
+
+        let (sender, receiver) = new_exchange_operators(
+            Some(location),
+            Vec::new,
+            move |input_pairs: Vec<Box<DynPairs<K, V>>>,
+                  output_pairs: &mut Vec<Mailbox<Box<DynPairs<K, V>>>>| {
+                shard_pairs(input_pairs, &all_workers(), output_pairs, pairs_factory);
+            },
+            move |data| {
+                let offsets = unsafe { archived_root::<Vec<usize>>(&data) };
+                let mut output = pairs_factory.default_box();
+                output.reserve(offsets.len());
+                for offset in (0..offsets.len()).map(|i| offsets[i] as usize) {
+                    output.push_with(&mut |pair| {
+                        unsafe { pair.deserialize_from_bytes(&data, offset) };
+                    })
+                }
+                output
+            },
+            |output_pairs: &mut Vec<Box<DynPairs<K, V>>>, batch: Box<DynPairs<K, V>>| {
+                output_pairs.push(batch);
+            },
+        )
+        .unwrap();
+
+        let output = self.circuit().add_exchange(sender, receiver, self);
+
+        output.set_persistent_id(
+            self.get_persistent_id()
+                .map(|name| format!("{name}.shard"))
+                .as_deref(),
+        );
+        output
+    }
+}
+
+enum ShardBuilder<OB>
+where
+    OB: Batch<Time = ()>,
+{
+    Local(OB::Builder),
+    Remote(IndexedWSetSerializer),
+}
+
+impl<OB> ShardBuilder<OB>
+where
+    OB: Batch<Time = ()>,
+{
+    fn new(
+        location: WorkerLocation,
+        factories: &OB::Factories,
+        estimated_keys: usize,
+        estimated_values: usize,
+    ) -> Self {
+        match location {
+            WorkerLocation::Local => Self::Local(OB::Builder::with_capacity(
+                factories,
+                estimated_keys,
+                estimated_values,
+            )),
+            WorkerLocation::Remote => Self::Remote(IndexedWSetSerializer::with_capacity(
+                estimated_keys,
+                estimated_values,
+            )),
+        }
+    }
+
+    fn push_diff(&mut self, weight: &OB::R, serializer_inner: &mut Option<SerializerInner>) {
+        match self {
+            ShardBuilder::Local(builder) => builder.push_diff(weight),
+            ShardBuilder::Remote(serializer) => {
+                serializer.push_diff(weight, serializer_inner.get_or_insert_default())
+            }
+        }
+    }
+
+    fn push_diff_mut(
+        &mut self,
+        weight: &mut OB::R,
+        serializer_inner: &mut Option<SerializerInner>,
+    ) {
+        match self {
+            ShardBuilder::Local(builder) => builder.push_diff_mut(weight),
+            ShardBuilder::Remote(serializer) => {
+                serializer.push_diff(weight, serializer_inner.get_or_insert_default())
+            }
+        }
+    }
+
+    fn push_val(&mut self, val: &OB::Val, serializer_inner: &mut Option<SerializerInner>) {
+        match self {
+            ShardBuilder::Local(builder) => builder.push_val(val),
+            ShardBuilder::Remote(serializer) => {
+                serializer.push_val(val, serializer_inner.get_or_insert_default())
+            }
+        }
+    }
+
+    fn push_val_mut(&mut self, val: &mut OB::Val, serializer_inner: &mut Option<SerializerInner>) {
+        match self {
+            ShardBuilder::Local(builder) => builder.push_val_mut(val),
+            ShardBuilder::Remote(serializer) => {
+                serializer.push_val(val, serializer_inner.get_or_insert_default())
+            }
+        }
+    }
+
+    fn push_key(&mut self, key: &OB::Key, serializer_inner: &mut Option<SerializerInner>) {
+        match self {
+            ShardBuilder::Local(builder) => builder.push_key(key),
+            ShardBuilder::Remote(serializer) => {
+                serializer.push_key(key, serializer_inner.get_or_insert_default())
+            }
+        }
+    }
+
+    fn push_key_mut(&mut self, key: &mut OB::Key, serializer_inner: &mut Option<SerializerInner>) {
+        match self {
+            ShardBuilder::Local(builder) => builder.push_key_mut(key),
+            ShardBuilder::Remote(serializer) => {
+                serializer.push_key(key, serializer_inner.get_or_insert_default())
+            }
+        }
+    }
+
+    fn done(self, serializer_inner: &mut Option<SerializerInner>) -> Mailbox<OB> {
+        match self {
+            ShardBuilder::Local(builder) => Mailbox::Plain(builder.done()),
+            ShardBuilder::Remote(serializer) => {
+                Mailbox::Tx(serializer.done(serializer_inner.get_or_insert_default()))
+            }
+        }
+    }
+}
+
 // Partitions the batch into shards covering `workers` (out of
 // `all_workers()`), based on the hash of the key.
-pub fn shard_batch<IB, OB>(
+fn shard_batch<IB, OB>(
     mut batch: IB,
     workers: &Range<usize>,
-    builders: &mut Vec<OB::Builder>,
-    outputs: &mut Vec<OB>,
+    builders: &mut Vec<ShardBuilder<OB>>,
+    outputs: &mut Vec<Mailbox<OB>>,
     factories: &OB::Factories,
 ) where
     IB: BatchReader<Time = ()>,
@@ -172,50 +329,171 @@ pub fn shard_batch<IB, OB>(
     // XXX If `shards == 1` and `OB` and `IB` are the same, then we could
     // implement this more efficiently, without copying.
     let shards = workers.len();
-    for _ in 0..shards {
-        // We iterate over tuples in the batch in order; hence tuples added
-        // to each shard are also ordered, so we can use the more efficient
-        // `Builder` API (instead of `Batcher`) to construct output batches.
-        builders.push(OB::Builder::with_capacity(
+    let keys_per_shard = batch.key_count() / shards;
+    let values_per_shard = batch.len() / shards;
+    for (worker, location) in WorkerLocations::new().enumerate() {
+        let (estimated_keys, estimated_values) = if workers.contains(&worker) {
+            (keys_per_shard, values_per_shard)
+        } else {
+            (0, 0)
+        };
+        builders.push(ShardBuilder::new(
+            location,
             factories,
-            batch.key_count() / shards,
-            batch.len() / shards,
+            estimated_keys,
+            estimated_values,
         ));
     }
 
+    let mut serializer_inner = None;
     let mut cursor = batch.consuming_cursor(None, None);
     if cursor.has_mut() {
         while cursor.key_valid() {
-            let b = &mut builders[cursor.key().default_hash() as usize % shards];
+            let b = &mut builders[cursor.key().default_hash() as usize % shards + workers.start];
             while cursor.val_valid() {
-                b.push_diff_mut(cursor.weight_mut());
-                b.push_val_mut(cursor.val_mut());
+                b.push_diff_mut(cursor.weight_mut(), &mut serializer_inner);
+                b.push_val_mut(cursor.val_mut(), &mut serializer_inner);
                 cursor.step_val();
             }
-            b.push_key_mut(cursor.key_mut());
+            b.push_key_mut(cursor.key_mut(), &mut serializer_inner);
             cursor.step_key();
         }
     } else {
         while cursor.key_valid() {
-            let b = &mut builders[cursor.key().default_hash() as usize % shards];
+            let b = &mut builders[cursor.key().default_hash() as usize % shards + workers.start];
             while cursor.val_valid() {
-                b.push_diff(cursor.weight());
-                b.push_val(cursor.val());
+                b.push_diff(cursor.weight(), &mut serializer_inner);
+                b.push_val(cursor.val(), &mut serializer_inner);
                 cursor.step_val();
             }
-            b.push_key(cursor.key());
+            b.push_key(cursor.key(), &mut serializer_inner);
             cursor.step_key();
         }
     }
-    for _ in 0..workers.start {
-        outputs.push(OB::dyn_empty(factories));
-    }
     for builder in builders.drain(..) {
-        outputs.push(builder.done());
+        outputs.push(builder.done(&mut serializer_inner));
     }
-    for _ in workers.end..Runtime::num_workers() {
-        outputs.push(OB::dyn_empty(factories));
+}
+
+pub struct PairsSerializer {
+    fbuf: FBuf,
+    offsets: Vec<usize>,
+}
+
+impl PairsSerializer {
+    pub fn with_capacity(estimated_pairs: usize) -> Self {
+        Self {
+            fbuf: FBuf::default(),
+            offsets: Vec::with_capacity(estimated_pairs),
+        }
     }
+
+    pub fn push_val<K, V>(&mut self, pair: &DynPair<K, V>, serializer: &mut SerializerInner)
+    where
+        K: DataTrait + ?Sized,
+        V: DataTrait + ?Sized,
+    {
+        self.offsets.push(
+            serializer
+                .with(FBufSerializer::new(&mut self.fbuf), |s| pair.serialize(s))
+                .unwrap(),
+        );
+    }
+
+    pub fn done(mut self, serializer: &mut SerializerInner) -> FBuf {
+        serializer
+            .with(FBufSerializer::new(&mut self.fbuf), |s| {
+                s.serialize_value(&self.offsets)
+            })
+            .unwrap();
+        self.fbuf
+    }
+}
+
+enum PairsBuilder<K, V>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+{
+    Local(Box<DynPairs<K, V>>),
+    Remote(PairsSerializer),
+}
+
+impl<K, V> PairsBuilder<K, V>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+{
+    fn with_capacity(
+        location: WorkerLocation,
+        pairs_factory: &'static dyn Factory<DynPairs<K, V>>,
+        estimated_pairs: usize,
+    ) -> Self {
+        match location {
+            WorkerLocation::Local => {
+                let mut pairs = pairs_factory.default_box();
+                pairs.reserve(estimated_pairs);
+                Self::Local(pairs)
+            }
+            WorkerLocation::Remote => Self::Remote(PairsSerializer::with_capacity(estimated_pairs)),
+        }
+    }
+
+    fn push_val(&mut self, pair: &mut DynPair<K, V>, inner: &mut Option<SerializerInner>) {
+        match self {
+            PairsBuilder::Local(pairs) => pairs.push_val(pair),
+            PairsBuilder::Remote(serializer) => {
+                serializer.push_val(pair, inner.get_or_insert_default())
+            }
+        }
+    }
+
+    fn done(self, inner: &mut Option<SerializerInner>) -> Mailbox<Box<DynPairs<K, V>>> {
+        match self {
+            PairsBuilder::Local(pairs) => Mailbox::Plain(pairs),
+            PairsBuilder::Remote(serializer) => {
+                Mailbox::Tx(serializer.done(inner.get_or_insert_default()))
+            }
+        }
+    }
+}
+
+// Partitions the batch into shards covering `workers` (out of
+// `all_workers()`), based on the hash of the key.
+pub fn shard_pairs<K, V>(
+    input_pairs: Vec<Box<DynPairs<K, V>>>,
+    workers: &Range<usize>,
+    output_pairs: &mut Vec<Mailbox<Box<DynPairs<K, V>>>>,
+    pairs_factory: &'static dyn Factory<DynPairs<K, V>>,
+) where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+{
+    let pairs_per_shard = input_pairs.len() / workers.len();
+    let mut serializer_inner = None;
+    let mut output = WorkerLocations::new()
+        .enumerate()
+        .map(|(worker, location)| {
+            let estimated_pairs = if workers.contains(&worker) {
+                pairs_per_shard
+            } else {
+                0
+            };
+            PairsBuilder::with_capacity(location, pairs_factory, estimated_pairs)
+        })
+        .collect_vec();
+    for mut pairs in input_pairs {
+        for pair in pairs.dyn_iter_mut() {
+            let k = pair.fst();
+            let shard_index = k.default_hash() as usize % workers.len() + workers.start;
+            output[shard_index].push_val(pair, &mut serializer_inner);
+        }
+    }
+    output_pairs.extend(
+        output
+            .into_iter()
+            .map(|pairs| pairs.done(&mut serializer_inner)),
+    );
 }
 
 impl<C, T> Stream<C, T>

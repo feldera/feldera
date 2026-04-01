@@ -93,9 +93,9 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
     String getMaxLiteral() {
         StringBuilder str = new StringBuilder();
         for (int i = 0; i < this.precision; i++) {
-            str.append("9");
-            if (i == this.scale)
+            if (i == this.precision - this.scale)
                 str.append(".");
+            str.append("9");
         }
         return str.toString();
     }

@@ -1,0 +1,346 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=DM+Sans+Mono:wght@400;500;600&display=swap");
+
+:root {
+  --bg: #F3F3F3;
+  --bg-2: #F2F9F9;
+  --card: #FFFFFF;
+  --ink: #1E1E1E;
+  --muted: #717171;
+  --accent: #C533B9;
+  --accent-2: #FCAF4F;
+  --border: #D9D9D9;
+  --shadow: 0 12px 24px #D9D9D9;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "DM Sans", "Segoe UI", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(900px 420px at 10% 0%, #F3D6F1 0%, #FFFFFF 70%),
+    radial-gradient(1100px 520px at 90% 10%, #FFF9ED 0%, #FFFFFF 70%),
+    linear-gradient(180deg, var(--bg), var(--bg-2));
+}
+
+.app {
+  padding: 1.6rem 2.2rem 2.6rem;
+  min-height: 100vh;
+}
+
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+}
+
+.brand-logo {
+  width: 88px;
+  height: 88px;
+  object-fit: contain;
+}
+
+.app-title {
+  margin: 0;
+  font-size: 2.4rem;
+  letter-spacing: -0.02em;
+}
+
+.app-subtitle {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+}
+
+.status-pill {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+  box-shadow: var(--shadow);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 1.6rem;
+  align-items: start;
+  margin-top: 1.8rem;
+}
+
+@media (max-width: 980px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.controls {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 1.2rem;
+  box-shadow: var(--shadow);
+  position: sticky;
+  top: 1.2rem;
+}
+
+.control-group + .control-group {
+  margin-top: 1.4rem;
+}
+
+.control-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.45rem;
+}
+
+.control-label-small {
+  font-size: 0.65rem;
+  margin-top: 0.3rem;
+}
+
+.control-subgroup + .control-subgroup {
+  margin-top: 0.6rem;
+}
+
+.gauge-worker-select {
+  margin: 0.6rem 0.6rem 0.3rem;
+}
+
+.gauge-worker-select .rc-slider {
+  margin: 0.25rem 0.2rem 0.1rem;
+}
+
+.control-input {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.95rem;
+  background: #FFFFFF;
+}
+
+.button {
+  margin-top: 0.7rem;
+  padding: 0.55rem 1.1rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #FFFFFF;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.button-outline {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.button:hover {
+  transform: translateY(-1px);
+  background: #A52B9A;
+}
+
+.button-outline:hover {
+  background: rgba(197, 51, 185, 0.1);
+}
+
+.upload {
+  display: inline-block;
+  margin-top: 0.6rem;
+}
+
+.control-help {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.tabs-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 0.4rem 0.6rem;
+  box-shadow: var(--shadow);
+}
+
+.tabs {
+  border-bottom: none;
+}
+
+.tab {
+  border: none !important;
+  border-radius: 999px !important;
+  padding: 0.35rem 0.95rem !important;
+  margin-right: 0.35rem !important;
+  font-weight: 600 !important;
+  color: var(--muted) !important;
+  background: transparent !important;
+}
+
+.tab--selected {
+  color: #FFFFFF !important;
+  background: var(--accent) !important;
+  box-shadow: none;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  gap: 1.2rem;
+  margin-top: 1.6rem;
+}
+
+@media (max-width: 1200px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 0.6rem;
+  box-shadow: var(--shadow);
+  animation: floatIn 0.5s ease both;
+}
+
+.card-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0.4rem 0.6rem 0;
+}
+
+.info-tooltip {
+  position: relative;
+}
+
+.info-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 140%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1F2937;
+  color: #F9FAFB;
+  padding: 0.4rem 0.55rem;
+  border-radius: 8px;
+  font-size: 0.7rem;
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.05s ease-out, visibility 0.05s ease-out;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.info-tooltip:hover::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+.card.empty {
+  padding: 1.4rem;
+  color: var(--muted);
+}
+
+.graph {
+  height: 320px;
+  width: 100%;
+}
+
+.gauge-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.6rem;
+  padding: 0.2rem 0.4rem 0.4rem;
+}
+
+.sql-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 1rem 1.2rem;
+  margin-top: 1.4rem;
+  box-shadow: var(--shadow);
+}
+
+.sql-card pre {
+  margin: 0.8rem 0 0;
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  background: #F3F3F3;
+  color: #1E1E1E;
+  border: none;
+  box-shadow: none;
+  overflow-x: auto;
+  font-size: 0.9rem;
+}
+
+.sql-card code {
+  font-family: "DM Sans Mono", "JetBrains Mono", monospace;
+  font-size: 0.9rem;
+  display: block;
+  white-space: pre-wrap;
+}
+
+.sql-markdown {
+  margin: 0;
+}
+
+.sql-empty {
+  color: var(--muted);
+  padding: 0.8rem 0;
+}
+
+.control-dropdown .Select-control,
+.control-dropdown .select__control {
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  background: #FFFFFF !important;
+}
+
+.control-dropdown .Select-placeholder,
+.control-dropdown .select__placeholder {
+  color: var(--muted) !important;
+}
+
+@keyframes floatIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

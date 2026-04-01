@@ -7,6 +7,6 @@
   const chipClass = $derived(pipelineStatusColor(status).chip)
 </script>
 
-<div class={'pointer-events-none chip w-32 uppercase ' + chipClass + ' ' + _class}>
+<div class={'chip w-28 uppercase ' + chipClass + ' ' + _class}>
   {getPipelineStatusLabel(status)}
 </div>

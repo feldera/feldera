@@ -11,9 +11,7 @@ import org.dbsp.util.IIndentStream;
 /** In literal the () value has type void, but that's confusing.
  * There should exist an empty tuple.  This is a literal of type void. */
 public class DBSPVoidLiteral extends DBSPLiteral {
-    public static final DBSPVoidLiteral INSTANCE = new DBSPVoidLiteral();
-
-    DBSPVoidLiteral() {
+    public DBSPVoidLiteral() {
         super(CalciteObject.EMPTY, DBSPTypeVoid.INSTANCE, false);
     }
 
@@ -36,7 +34,7 @@ public class DBSPVoidLiteral extends DBSPLiteral {
 
     @Override
     public DBSPExpression deepCopy() {
-        return this;
+        return new DBSPVoidLiteral();
     }
 
     @Override
@@ -46,7 +44,6 @@ public class DBSPVoidLiteral extends DBSPLiteral {
 
     @SuppressWarnings("unused")
     public static DBSPVoidLiteral fromJson(JsonNode node, JsonDecoder decoder) {
-        return INSTANCE;
+        return new DBSPVoidLiteral();
     }
-
 }

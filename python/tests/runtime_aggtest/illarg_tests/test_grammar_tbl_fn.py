@@ -1,4 +1,76 @@
-from tests.runtime_aggtest.aggtst_base import TstView
+from tests.runtime_aggtest.aggtst_base import TstTable, TstView
+
+
+# CONNECTOR_METADATA
+class illarg_connector_metadata_legal_tbl(TstTable):
+    """Define the table used by connector_metadata passing test"""
+
+    def __init__(self):
+        self.sql = """CREATE TABLE connector_metadata_legal_tbl(
+                          id INT,
+                          meta_val VARCHAR
+                              DEFAULT CAST(CONNECTOR_METADATA()['check'] AS VARCHAR)
+                      ) WITH (
+                            'connectors' = '[{
+                          "name": "check",
+                          "transport": {
+                            "name": "datagen",
+                            "config": {
+                              "plan": [{"limit": 2}]
+                            }
+                          }
+                        }]'
+                            );"""
+        self.data = []
+
+
+class illarg_connector_metadata_legal(TstView):
+    def __init__(self):
+        self.data = [{"id": 0, "meta_val": "0"}, {"id": 1, "meta_val": "1"}]
+        self.sql = """CREATE MATERIALIZED VIEW illarg_connector_metadata_legal AS SELECT
+                      *
+                      FROM connector_metadata_legal_tbl"""
+
+
+# Negative Test
+class illarg_connector_metadata_illegal_tbl(TstTable):
+    """Define the table used by connector_metadata failing test"""
+
+    def __init__(self):
+        self.sql = """CREATE TABLE connector_metadata_illegal_tbl(
+                          id INT,
+                          meta_val VARCHAR
+                              DEFAULT CAST(CONNECTOR_METADATA('check')['check'] AS VARCHAR)
+                      ) WITH (
+                            'connectors' = '[{
+                          "name": "check",
+                          "transport": {
+                            "name": "datagen",
+                            "config": {
+                              "plan": [{"limit": 2}]
+                            }
+                          }
+                        }]'
+                            );"""
+        self.data = []
+        self.expected_error = "Invalid number of arguments to function 'connector_metadata'. Was expecting 0 arguments"
+
+
+# DEFAULT
+class illarg_default_legal(TstTable):
+    def __init__(self):
+        self.sql = """CREATE TABLE default_legal (
+                      x INT DEFAULT CAST(42 AS INTEGER))"""
+        self.data = []
+
+
+# Negative Test
+class illarg_default_illegal(TstTable):
+    def __init__(self):
+        self.sql = """CREATE TABLE default_illegal(
+                      intt INT DEFAULT CAST(intt AS INTEGER))"""
+        self.data = []
+        self.expected_error = "column 'intt' not found in any table"
 
 
 # AS
@@ -430,3 +502,77 @@ class illarg_over_illegal(TstView):
                       FROM illegal_tbl
                       GROUP BY GROUPING SETS (str + 1)"""
         self.expected_error = "Window 'intt' not found"
+
+
+# QUALIFY
+class illarg_qualify_top_k_legal(TstView):
+    def __init__(self):
+        self.data = [{"id": 0, "intt": -12}, {"id": 1, "intt": -1}]
+        self.sql = """CREATE MATERIALIZED VIEW qualify_top_k_legal AS SELECT
+                      id, intt
+                      FROM illegal_tbl
+                      QUALIFY
+                      ROW_NUMBER() OVER (ORDER BY intt DESC) <= 2"""
+
+
+# Negative Test
+class illarg_qualify_top_k_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW qualify_top_k_illegal AS SELECT
+                      id, intt
+                      FROM illegal_tbl
+                      QUALIFY
+                      ROW_NUMBER() OVER (ORDER BY intt DESC) <= 2 OR
+                      RANK() OVER (ORDER BY intt DESC) <= 2 OR
+                      DENSE_RANK() OVER (ORDER BY intt DESC) <= 2"""
+        self.expected_error = "Not yet implemented"
+
+
+# IS TRUE/IS FALSE/IS NOT TRUE/IS NOT FALSE
+class illarg_is_true_false_legal(TstView):
+    def __init__(self):
+        self.data = [{"booll": True, "booll1": False, "booll2": False, "booll3": True}]
+        self.sql = """CREATE MATERIALIZED VIEW is_true_legal AS SELECT
+                      booll IS TRUE AS booll,
+                      booll IS NOT TRUE AS booll1,
+                      booll IS FALSE AS booll2,
+                      booll IS NOT FALSE AS booll3
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Tests
+class illarg_is_true_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW is_true_illegal AS SELECT
+                      udt IS TRUE AS udt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = " Cannot apply 'IS TRUE' to arguments of type"
+
+
+class illarg_is_false_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW is_false_illegal AS SELECT
+                      intt IS FALSE AS intt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = " Cannot apply 'IS FALSE' to arguments of type"
+
+
+class illarg_is_not_true_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW is_not_true_illegal AS SELECT
+                      udt IS NOT TRUE AS udt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = " Cannot apply 'IS NOT TRUE' to arguments of type"
+
+
+class illarg_is_not_false_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW is_not_false_illegal AS SELECT
+                      intt IS NOT FALSE AS intt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = " Cannot apply 'IS NOT FALSE' to arguments of type"

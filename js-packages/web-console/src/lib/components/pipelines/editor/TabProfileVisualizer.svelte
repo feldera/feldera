@@ -10,6 +10,8 @@
   let getProfileFiles: () => [Date, ZipItem[]][] = $state(() => [])
   let selectedProfile: Date | null = $state(null)
 
+  export const id = 'Profile Visualizer' as const
+
   export { label as Label }
 </script>
 
@@ -32,9 +34,13 @@
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
   import { goto } from '$app/navigation'
+  import triagePlugins, { createBundle, TriageResults } from 'virtual:feldera-triage-plugins'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
   const api = usePipelineManager()
+  const toast = useToast()
+
+  let triageResults: TriageResults = $state(new TriageResults())
 
   let pipelineName = $derived(pipeline.current.name)
   $effect(() => {
@@ -44,6 +50,7 @@
         getProfileData = null
         loadedPipelineName = null
         getProfileFiles = () => []
+        triageResults = new TriageResults()
       }
     })
   })
@@ -92,6 +99,22 @@
     ;(async () => {
       try {
         const processedProfile = await processProfileFiles(profileFiles[1])
+        // Run triage plugins on the full zip contents
+        if (triagePlugins.length > 0) {
+          try {
+            const bundle = await createBundle(profileFiles[1])
+            triageResults = new TriageResults()
+            triagePlugins.forEach((p) => p.triage(bundle, triageResults))
+          } catch (error) {
+            triageResults = new TriageResults()
+            toast.toastError('Running triage plugins')(
+              error instanceof Error ? error : new Error(String(error)),
+              10000
+            )
+          }
+        } else {
+          triageResults = new TriageResults()
+        }
         getProfileData = enclosure({
           profile: processedProfile.profile,
           dataflow: processedProfile.dataflow,
@@ -134,7 +157,7 @@
     const success = await processZipBundle(
       new Uint8Array(await supportBundle.data.arrayBuffer()),
       pipelineName,
-      'No suitable profiles found. If you are trying to debug a pipeline of an older version try enabling "Collect new data" option.'
+      'No suitable profiles found - download the support bundle and check if it contains the circuit profile. If you are trying to debug a pipeline of an older version try enabling "Collect new data" option.'
     )
     if (!success) {
       downloadProgress.reset()
@@ -188,10 +211,9 @@
   }
   let errorMessage = $state('')
 
-  const toast = useToast()
   $effect(() => {
     if (errorMessage && getProfileData) {
-      toast.toastError(new Error(errorMessage), 10000)
+      toast.toastError('Loading profile data')(new Error(errorMessage), 10000)
     }
   })
 

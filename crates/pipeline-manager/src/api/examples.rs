@@ -19,7 +19,7 @@ use crate::runner::error::RunnerError;
 use crate::runner::interaction::{
     format_disconnected_error_message, format_timeout_error_message, RunnerInteraction,
 };
-use feldera_types::config::{FtConfig, ResourceConfig, StorageOptions};
+use feldera_types::config::{DevTweaks, FtConfig, ResourceConfig, StorageOptions};
 use feldera_types::{config::RuntimeConfig, error::ErrorResponse};
 use uuid::uuid;
 
@@ -95,6 +95,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         platform_version: "v0".to_string(),
         runtime_config: serde_json::to_value(RuntimeConfig {
             workers: 10,
+            max_rss_mb: None,
             hosts: 1,
             storage: Some(StorageOptions::default()),
             fault_tolerance: FtConfig::default(),
@@ -121,7 +122,8 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
             checkpoint_during_suspend: false,
             io_workers: None,
             http_workers: None,
-            dev_tweaks: BTreeMap::new(),
+            env: BTreeMap::new(),
+            dev_tweaks: DevTweaks::default(),
             logging: None,
             pipeline_template_configmap: None,
         })

@@ -4,6 +4,7 @@
 
 use super::{Circuit, GlobalNodeId, NodeId, trace::SchedulerEvent};
 use crate::{DetailedError, Position};
+use feldera_types::transaction::CommitProgressSummary;
 use itertools::Itertools;
 use serde::Serialize;
 use std::{
@@ -172,64 +173,6 @@ impl CommitProgress {
             in_progress_processed_records,
             in_progress_total_records,
         }
-    }
-}
-
-/// Summary of the commit progress.
-pub struct CommitProgressSummary {
-    /// Number of operators that have been fully flushed.
-    completed: u64,
-
-    /// Number of operators that are currently being flushed.
-    in_progress: u64,
-
-    /// Number of operators that haven't started flushing.
-    remaining: u64,
-
-    /// Number of records processed by operators that are currently being flushed.
-    in_progress_processed_records: u64,
-
-    // Total number of records that operators that are currently being flushed need to process.
-    in_progress_total_records: u64,
-}
-
-impl Default for CommitProgressSummary {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl CommitProgressSummary {
-    pub fn new() -> Self {
-        Self {
-            completed: 0,
-            in_progress: 0,
-            remaining: 0,
-            in_progress_processed_records: 0,
-            in_progress_total_records: 0,
-        }
-    }
-
-    pub fn merge(&mut self, other: &CommitProgressSummary) {
-        self.completed += other.completed;
-        self.in_progress += other.in_progress;
-        self.remaining += other.remaining;
-        self.in_progress_processed_records += other.in_progress_processed_records;
-        self.in_progress_total_records += other.in_progress_total_records;
-    }
-}
-
-impl Display for CommitProgressSummary {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "completed: {} operators, evaluating: {} operators [{}/{} changes processed], remaining: {} operators",
-            self.completed,
-            self.in_progress,
-            self.in_progress_processed_records,
-            self.in_progress_total_records,
-            self.remaining
-        )
     }
 }
 

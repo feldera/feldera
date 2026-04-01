@@ -1,4 +1,3 @@
-use chrono::NaiveDate;
 use dbsp::circuit::Layout;
 use dbsp::utils::Tup2;
 use feldera_macros::IsNone;
@@ -25,7 +24,7 @@ use size_of::SizeOf;
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct Record {
     pub location: String,
-    pub date: NaiveDate,
+    pub date: i32,
     pub daily_vaccinations: Option<u64>,
 }
 

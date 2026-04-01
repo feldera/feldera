@@ -1,4 +1,5 @@
-use crate::storage::tracking_bloom_filter::BloomFilterStats;
+use crate::ZWeight;
+use crate::storage::filter_stats::FilterStats;
 use crate::trace::cursor::Position;
 use crate::trace::ord::merge_batcher::MergeBatcher;
 use crate::{
@@ -9,8 +10,8 @@ use crate::{
         WeightTrait, WithFactory,
     },
     trace::{
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Serializer,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, DbspSerializer,
+        Deserializer,
         layers::{
             Cursor as TrieCursor, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories,
             OrdOffset, Trie,
@@ -22,6 +23,7 @@ use feldera_storage::FileReader;
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
+use std::any::TypeId;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::sync::Arc;
 
@@ -258,7 +260,7 @@ where
         todo!()
     }
 }
-impl<K, V, T: Lattice, R, O: OrdOffset> Serialize<Serializer> for VecValBatch<K, V, T, R, O>
+impl<K, V, T: Lattice, R, O: OrdOffset> Serialize<DbspSerializer<'_>> for VecValBatch<K, V, T, R, O>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -268,8 +270,8 @@ where
 {
     fn serialize(
         &self,
-        _serializer: &mut Serializer,
-    ) -> Result<Self::Resolver, <Serializer as rkyv::Fallible>::Error> {
+        _serializer: &mut DbspSerializer,
+    ) -> Result<Self::Resolver, <DbspSerializer<'_> as rkyv::Fallible>::Error> {
         todo!()
     }
 }
@@ -375,8 +377,8 @@ where
         self.layer.approximate_byte_size()
     }
 
-    fn filter_stats(&self) -> BloomFilterStats {
-        BloomFilterStats::default()
+    fn membership_filter_stats(&self) -> FilterStats {
+        FilterStats::default()
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
@@ -404,17 +406,9 @@ where
         unimplemented!()
     }
 
-    /*fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self
-    where
-        Self::Val: From<()>,
-    {
-        Self::from_tuples(
-            time,
-            keys.into_iter()
-                .map(|(k, w)| ((k, From::from(())), w))
-                .collect(),
-        )
-    }*/
+    fn negative_weight_count(&self) -> Option<u64> {
+        None
+    }
 }
 
 /// A cursor for navigating a single layer.
@@ -503,8 +497,16 @@ where
     where
         T: PartialEq<()>,
     {
-        debug_assert!(&self.cursor.valid());
-        self.cursor.child.child.current_diff()
+        self.weight_checked()
+    }
+
+    fn weight_checked(&mut self) -> &R {
+        if TypeId::of::<T>() == TypeId::of::<()>() {
+            debug_assert!(&self.cursor.child.child.valid());
+            self.cursor.child.child.current_diff()
+        } else {
+            panic!("VecValCursor::weight_checked called on non-unit timestamp type");
+        }
     }
 
     fn key_valid(&self) -> bool {
@@ -598,6 +600,8 @@ where
     val_offs: Vec<O>,
     times: Box<DynVec<DynDataTyped<T>>>,
     diffs: Box<DynVec<R>>,
+    total_positive_weight: ZWeight,
+    total_negative_weight: ZWeight,
 }
 
 impl<K, V, T, R, O> VecValBuilder<K, V, T, R, O>
@@ -660,6 +664,8 @@ where
             val_offs,
             times,
             diffs,
+            total_positive_weight: 0,
+            total_negative_weight: 0,
         }
     }
 

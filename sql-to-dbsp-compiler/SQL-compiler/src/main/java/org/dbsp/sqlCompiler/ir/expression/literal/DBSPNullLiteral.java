@@ -16,11 +16,9 @@ import javax.annotation.Nullable;
 
 /** A literal with type NULL, the only value of this type. */
 public final class DBSPNullLiteral extends DBSPLiteral {
-    DBSPNullLiteral() {
+    public DBSPNullLiteral() {
         super(CalciteObject.EMPTY, DBSPTypeNull.INSTANCE, true);
     }
-
-    public static final DBSPNullLiteral INSTANCE = new DBSPNullLiteral();
 
     public static final String NULL = "NULL";
 
@@ -68,6 +66,6 @@ public final class DBSPNullLiteral extends DBSPLiteral {
 
     @SuppressWarnings("unused")
     public static DBSPNullLiteral fromJson(JsonNode node, JsonDecoder decoder) {
-        return INSTANCE;
+        return new DBSPNullLiteral();
     }
 }

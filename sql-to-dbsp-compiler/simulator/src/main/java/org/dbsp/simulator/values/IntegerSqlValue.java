@@ -1,7 +1,6 @@
 package org.dbsp.simulator.values;
 
 import org.dbsp.simulator.types.IntegerSqlType;
-import org.jetbrains.annotations.NotNull;
 
 import javax.annotation.Nullable;
 import java.util.Comparator;
@@ -46,7 +45,7 @@ public class IntegerSqlValue extends BaseSqlValue {
     }
 
     @Override
-    public int compareTo(@NotNull DynamicSqlValue dynamicSqlValue) {
+    public int compareTo(DynamicSqlValue dynamicSqlValue) {
         IntegerSqlValue other = (IntegerSqlValue) dynamicSqlValue;
         return Comparator.comparing(
                 IntegerSqlValue::getValue,

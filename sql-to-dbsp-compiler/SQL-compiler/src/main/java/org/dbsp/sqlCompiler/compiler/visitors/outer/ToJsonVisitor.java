@@ -42,7 +42,7 @@ public class ToJsonVisitor extends CircuitVisitor {
     final Map<RelNode, Integer> relId;
 
     public static class FindSourcePositions extends InnerVisitor {
-        private final Set<SourcePositionRange> positions;
+        public final Set<SourcePositionRange> positions;
         private final boolean reset;
 
         public FindSourcePositions(DBSPCompiler compiler, boolean reset) {
@@ -88,7 +88,7 @@ public class ToJsonVisitor extends CircuitVisitor {
     SourcePositionRanges getPositions(DBSPOperator operator) {
         FindSourcePositions positions = new FindSourcePositions(this.compiler, true);
         operator.accept(positions);
-        positions.positions.add(operator.getSourcePosition());
+        positions.positions.addAll(operator.getSourcePositions());
         return positions.getPositions();
     }
 

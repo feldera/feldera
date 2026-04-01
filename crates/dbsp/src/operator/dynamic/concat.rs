@@ -2,9 +2,7 @@ use crate::{
     Circuit, NestedCircuit, Position, RootCircuit, Stream,
     algebra::{IndexedZSet, ZBatch},
     circuit::{
-        metadata::{
-            BatchSizeStats, INPUT_BATCHES_COLLECTION, MetaItem, OUTPUT_BATCHES_LABEL, OperatorMeta,
-        },
+        metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::Operator,
         splitter_output_chunk_size,
     },
@@ -135,9 +133,19 @@ where
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
+        self.input_batch_stats
+            .borrow()
+            .iter()
+            .enumerate()
+            .for_each(|(i, stats)| {
+                meta.insert(
+                    INPUT_BATCHES_STATS,
+                    vec![(Cow::Borrowed("input"), Cow::Owned(format!("{i}")))],
+                    stats.metadata(),
+                )
+            });
         meta.extend(metadata! {
-            INPUT_BATCHES_COLLECTION => MetaItem::Array(self.input_batch_stats.borrow().iter().map(|stats| stats.metadata()).collect()),
-            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_STATS => self.output_batch_stats.borrow().metadata(),
         });
     }
 

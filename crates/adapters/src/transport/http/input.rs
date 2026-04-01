@@ -96,9 +96,10 @@ impl HttpInputEndpointInner {
                     let mut hasher = Xxh3Default::new();
                     for chunk in chunks {
                         let (mut buffer, errors) = details.parser.parse(&chunk, None);
-                        details.consumer.buffered(buffer.len());
+                        let len = buffer.len();
+                        details.consumer.buffered(len);
                         details.consumer.parse_errors(errors);
-                        total += buffer.len();
+                        total += len;
                         buffer.hash(&mut hasher);
                         buffer.flush();
                     }
@@ -327,6 +328,10 @@ impl TransportInputEndpoint for HttpInputEndpoint {
 }
 
 impl InputReader for HttpInputEndpoint {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
     fn request(&self, command: InputReaderCommand) {
         let _ = self.sender.send(command);
     }

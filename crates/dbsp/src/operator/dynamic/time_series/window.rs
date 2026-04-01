@@ -5,7 +5,7 @@ use crate::{
     algebra::{IndexedZSet, NegByRef},
     circuit::{
         Circuit, GlobalNodeId, Scope, Stream,
-        metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL, OperatorMeta},
+        metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::Operator,
         splitter_output_chunk_size,
     },
@@ -18,7 +18,7 @@ use crate::{
         dynamic::{MonoIndexedZSet, trace::TraceBound},
         require_persistent_id,
     },
-    storage::file::{to_bytes, with_serializer},
+    storage::file::{SerializerInner, to_bytes},
     trace::{
         BatchFactories, BatchReader, BatchReaderFactories, Cursor, Spine, SpineSnapshot,
         spine_async::WithSnapshot,
@@ -54,20 +54,26 @@ where
         inclusive: (bool, bool),
         bounds: &Stream<C, (Box<B::Key>, Box<B::Key>)>,
     ) -> Stream<C, B> {
-        let bound = TraceBound::new();
-        let bound_clone = bound.clone();
-        bounds.apply(move |(lower, _upper)| {
-            bound_clone.set(lower.clone());
-        });
-        let trace = self
-            .dyn_accumulate_integrate_trace_with_bound(factories, bound, TraceBound::new())
-            .accumulate_delay_trace();
-        self.circuit().add_ternary_operator(
-            StreamingTernaryWrapper::new(<Window<B, SpineSnapshot<B>>>::new(factories, inclusive)),
-            &trace,
-            &self.dyn_accumulate(factories),
-            bounds,
-        )
+        self.circuit()
+            .region("window", || {
+                let bound = TraceBound::new();
+                let bound_clone = bound.clone();
+                bounds.apply(move |(lower, _upper)| {
+                    bound_clone.set(lower.clone());
+                });
+                let trace = self
+                    .dyn_accumulate_integrate_trace_with_bound(factories, bound, TraceBound::new())
+                    .accumulate_delay_trace();
+                self.circuit().add_ternary_operator(
+                    StreamingTernaryWrapper::new(<Window<B, SpineSnapshot<B>>>::new(
+                        factories, inclusive,
+                    )),
+                    &trace,
+                    &self.dyn_accumulate(factories),
+                    bounds,
+                )
+            })
+            .clone()
     }
 }
 
@@ -82,8 +88,8 @@ impl<B: IndexedZSet, T: WithSnapshot<Batch = B>> From<&Window<B, T>> for Committ
         // Transform the window bounds into a serialized form and store it as a byte vector.
         // This is necessary because the key type is not sized.
         let window = value.window.borrow().as_ref().map(|(a, b)| {
-            let sa = with_serializer(Default::default(), |s| a.serialize(s).unwrap()).0;
-            let sb = with_serializer(Default::default(), |s| b.serialize(s).unwrap()).0;
+            let sa = SerializerInner::to_fbuf_with_thread_local(|s| a.serialize(s));
+            let sb = SerializerInner::to_fbuf_with_thread_local(|s| b.serialize(s));
             (sa.into_vec(), sb.into_vec())
         });
 
@@ -162,8 +168,8 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
-            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
+            INPUT_BATCHES_STATS => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_STATS => self.output_batch_stats.borrow().metadata(),
         });
     }
 
@@ -669,8 +675,8 @@ mod test {
             ]
             .into_iter();
 
-        let (circuit, (bounds_handle, index1_handle, output_handle)) =
-            RootCircuit::build(window_test_circuit).unwrap();
+        let (mut circuit, (bounds_handle, index1_handle, output_handle)) =
+            Runtime::init_circuit(1, move |circuit| window_test_circuit(circuit)).unwrap();
 
         for clock in 1000..1006 {
             bounds_handle.set_for_all(((clock - 100), clock));
@@ -737,8 +743,8 @@ mod test {
 
         const WINDOW_SIZE: Time = 5;
 
-        let (circuit, (bounds_handle, index1_handle, output_handle)) =
-            RootCircuit::build(window_test_circuit).unwrap();
+        let (mut circuit, (bounds_handle, index1_handle, output_handle)) =
+            Runtime::init_circuit(1, move |circuit| window_test_circuit(circuit)).unwrap();
 
         for clock in 1000..1011 {
             bounds_handle.set_for_all((
@@ -823,8 +829,8 @@ mod test {
         ]
         .into_iter();
 
-        let (circuit, (bounds_handle, index1_handle, output_handle)) =
-            RootCircuit::build(window_test_circuit).unwrap();
+        let (mut circuit, (bounds_handle, index1_handle, output_handle)) =
+            Runtime::init_circuit(1, move |circuit| window_test_circuit(circuit)).unwrap();
 
         for _ in 1000..1006 {
             bounds_handle.set_for_all(windows.next().unwrap());

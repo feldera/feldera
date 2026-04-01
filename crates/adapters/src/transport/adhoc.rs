@@ -268,6 +268,10 @@ impl TransportInputEndpoint for AdHocInputEndpoint {
 }
 
 impl InputReader for AdHocInputEndpoint {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
     fn request(&self, command: InputReaderCommand) {
         match command {
             InputReaderCommand::Replay { data, .. } => {
@@ -278,9 +282,10 @@ impl InputReader for AdHocInputEndpoint {
                 let mut hasher = Xxh3Default::new();
                 for chunk in chunks {
                     let (mut buffer, errors) = details.parser.parse(&chunk, None);
-                    details.consumer.buffered(buffer.len());
+                    let len = buffer.len();
+                    details.consumer.buffered(len);
                     details.consumer.parse_errors(errors);
-                    total += buffer.len();
+                    total += len;
                     buffer.hash(&mut hasher);
                     buffer.flush();
                 }

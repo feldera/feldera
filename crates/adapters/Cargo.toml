@@ -51,6 +51,7 @@ iceberg-tests-fs = []
 iceberg-tests-glue = []
 iceberg-tests-rest = []
 fips = ["rustls/fips"]
+bench-mode = []
 
 [dependencies]
 feldera-types = { workspace = true }
@@ -107,7 +108,7 @@ proptest-derive = { workspace = true, optional = true }
 clap = { workspace = true }
 tokio = { workspace = true, features = ["sync", "macros", "fs", "rt"] }
 utoipa = { workspace = true }
-chrono = { workspace = true, features = ["rkyv-64", "serde"] }
+chrono = { workspace = true, features = ["serde"] }
 colored = { workspace = true }
 uuid = { workspace = true, features = ["v4", "std"] }
 rkyv = { workspace = true, features = ["std", "size_64"] }
@@ -177,7 +178,6 @@ postgres = { workspace = true }
 postgres-openssl = { workspace = true }
 dyn-clone = { workspace = true }
 cpu-time = "1.0.0"
-memory-stats = { version = "1.2.0", features = ["always_use_statm"] }
 feldera-ir = { workspace = true }
 base64 = { workspace = true }
 aws-msk-iam-sasl-signer = "1.0.1"
@@ -197,6 +197,9 @@ parking_lot = { workspace = true }
 backoff = { workspace = true }
 sentry = { workspace = true }
 zip = { workspace = true }
+smallvec = { workspace = true }
+delta_kernel = { workspace = true }
+flate2 = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["num-traits"]
@@ -206,7 +209,10 @@ jemalloc_pprof = { workspace = true, features = ["symbolize"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
-nix = { workspace = true, features = ["signal", "mman", "time", "feature"] }
+nix = { workspace = true, features = ["signal", "mman", "feature"] }
+
+[build-dependencies]
+vergen-gitcl = { workspace = true }
 
 [dev-dependencies]
 actix-test = { workspace = true }
@@ -229,3 +235,18 @@ mockall = { workspace = true }
 pretty_assertions = { workspace = true }
 google-cloud-googleapis = { workspace = true }
 postgres-types = { version = "0.2.9", features = ["derive"] }
+criterion = { workspace = true }
+
+[[bench]]
+name = "avro_encoder"
+harness = false
+required-features = ["with-avro"]
+
+[[bench]]
+name = "postgres_output"
+harness = false
+required-features = ["bench-mode"]
+
+[[bench]]
+name = "delta_encoder"
+harness = false

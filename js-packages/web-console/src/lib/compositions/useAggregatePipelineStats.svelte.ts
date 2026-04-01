@@ -22,36 +22,37 @@ export const useAggregatePipelineStats = (
   const metricsAvailable = $derived(isMetricsAvailable(pipelineStatus))
   const api = usePipelineManager()
 
-  const doFetch = (pipelineName: string) => {
+  const doFetch = async (pipelineName: string) => {
     if (metricsAvailable === 'no') {
       metrics[pipelineName] = emptyPipelineMetrics
       getMetrics = () => metrics
-      return Promise.resolve()
+      return
     }
     if (metricsAvailable === 'soon') {
-      metrics[pipelineName] = accumulatePipelineMetrics(
-        Date.now(),
-        refetchMs,
-        keepMs
-      )(metrics[pipelineName], { status: null })
-
+      const data = accumulatePipelineMetrics(Date.now())(metrics[pipelineName], { status: null })
+      if (!data) {
+        return
+      }
+      metrics[pipelineName] = data
       getMetrics = () => metrics
-      return Promise.resolve()
+      return
     }
     if (metricsAvailable === 'missing') {
       getMetrics = () => metrics
-      return Promise.resolve()
+      return
     }
     const requestTimestamp = Date.now()
-    return api.getPipelineStats(pipelineName).then((stats) => {
-      const responseTimestamp = Date.now()
-      metrics[pipelineName] = accumulatePipelineMetrics(
-        (requestTimestamp + responseTimestamp) / 2,
-        refetchMs,
-        keepMs
-      )(metrics[pipelineName], stats.status === 'not running' ? { status: null } : stats)
-      getMetrics = () => metrics
-    })
+    const stats = await api.getPipelineStats(pipelineName)
+    const responseTimestamp = Date.now()
+    const data = accumulatePipelineMetrics((requestTimestamp + responseTimestamp) / 2)(
+      metrics[pipelineName],
+      stats.status === 'not running' ? { status: null } : { status: stats.status }
+    )
+    if (!data) {
+      return
+    }
+    metrics[pipelineName] = data
+    getMetrics = () => metrics
   }
 
   const pipelineName = $derived(pipeline.current.name)

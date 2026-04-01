@@ -27,6 +27,8 @@ class MeasurementMatrix {
     constructor(
         // There should be one column name for each value in the attributes array
         readonly columnNames: Array<string>,
+        // Order that the metrics should be displayed in
+        readonly metricOrder: Array<string>,
         // Keys are measurement names, arrays contain one element per column name.
         readonly attributes: Map<string, Array<SerializedMeasurement>>) {
         for (const a of attributes.entries()) {
@@ -697,7 +699,7 @@ export class CytographRendering {
                 const p = parent.unwrap();
                 kv.set("parent", p);
             }
-            let matrix = new MeasurementMatrix(columnNames, data);
+            let matrix = new MeasurementMatrix(columnNames, [...profileNode.measurements.getMetrics()], data);
             let attributes = new Attributes(matrix, kv);
             let rendered = this.getRenderedNode(node.getId());
             rendered.data("expanded", node.expanded);
@@ -985,6 +987,7 @@ export class CytographRendering {
         let visible = false;
 
         const tooltipData: NodeAttributes = {
+            title: "",
             columns: [],
             rows: [],
             attributes: new Map()
@@ -1003,8 +1006,7 @@ export class CytographRendering {
             // Add rows (metrics)
             const MAX_CELL_COUNT = 40;
             let matrix = attributes.matrix.getAttributes();
-            let keys = [...matrix.keys()];
-            keys.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+            let keys = attributes.matrix.metricOrder;
 
             for (const key of keys) {
                 let values = matrix.get(key)!;
@@ -1039,7 +1041,13 @@ export class CytographRendering {
         if (attributes.kv.size !== 0) {
             visible = true;
             for (const [key, value] of attributes.kv.entries()) {
-                tooltipData.attributes.set(key, value);
+                if (key == "id") {
+                    tooltipData.title = value + tooltipData.title;
+                } else if (key == "operation") {
+                    tooltipData.title = tooltipData.title + " " + value;
+                } else {
+                    tooltipData.attributes.set(key, value);
+                }
             }
         }
 

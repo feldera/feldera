@@ -1,11 +1,14 @@
 use dyn_clone::clone_box;
+use feldera_storage::fbuf::FBuf;
 use size_of::SizeOf;
 
 use crate::circuit::checkpointer::Checkpoint;
+use crate::circuit::runtime::{WorkerLocation, WorkerLocations};
 use crate::dynamic::{DynData, DynUnit};
+use crate::operator::communication::Mailbox;
 use crate::operator::dynamic::{MonoIndexedZSet, MonoZSet};
 use crate::{
-    Circuit, NumEntries, RootCircuit, Runtime, Stream,
+    Circuit, NumEntries, RootCircuit, Stream,
     dynamic::DataTrait,
     operator::communication::new_exchange_operators,
     trace::{BatchReader, Cursor, Rkyv},
@@ -86,12 +89,18 @@ where
             let exchange = new_exchange_operators(
                 Some(Location::caller()),
                 init,
-                move |waterline: Box<TS>, waterlines: &mut Vec<Box<TS>>| {
-                    for _ in 0..Runtime::num_workers() {
-                        waterlines.push(clone_box(waterline.as_ref()));
+                move |waterline: Box<TS>, waterlines: &mut Vec<Mailbox<Box<TS>>>| {
+                    for location in WorkerLocations::new() {
+                        match location {
+                            WorkerLocation::Local => {
+                                waterlines.push(Mailbox::Plain(clone_box(waterline.as_ref())))
+                            }
+                            WorkerLocation::Remote => waterlines.push(Mailbox::Tx(
+                                FBuf::from_slice(&waterline.checkpoint().unwrap()),
+                            )),
+                        };
                     }
                 },
-                |waterline| waterline.checkpoint().unwrap(),
                 move |data| {
                     let mut waterline = example.clone();
                     waterline.restore(&data).unwrap();
@@ -161,12 +170,18 @@ where
             let exchange = new_exchange_operators(
                 Some(Location::caller()),
                 init,
-                move |waterline: Box<TS>, waterlines: &mut Vec<Box<TS>>| {
-                    for _ in 0..Runtime::num_workers() {
-                        waterlines.push(waterline.clone());
+                move |waterline: Box<TS>, waterlines: &mut Vec<Mailbox<Box<TS>>>| {
+                    for location in WorkerLocations::new() {
+                        match location {
+                            WorkerLocation::Local => {
+                                waterlines.push(Mailbox::Plain(clone_box(waterline.as_ref())))
+                            }
+                            WorkerLocation::Remote => waterlines.push(Mailbox::Tx(
+                                FBuf::from_slice(&waterline.checkpoint().unwrap()),
+                            )),
+                        };
                     }
                 },
-                |waterline| waterline.checkpoint().unwrap(),
                 move |data| {
                     let mut waterline = example.clone();
                     waterline.restore(&data).unwrap();

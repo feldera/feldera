@@ -26,7 +26,10 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyNOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IContainsIntegrator;
 import org.dbsp.sqlCompiler.circuit.operator.IInputMapOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
@@ -93,6 +96,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CollectSourcePositions;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.DeclareComparators;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -132,6 +136,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /** This visitor generates a Rust implementation of a circuit. */
@@ -262,6 +267,28 @@ public class ToRustVisitor extends CircuitVisitor {
         return decl.item.is(DBSPStaticItem.class) || decl.item.is(DBSPFunctionItem.class);
     }
 
+    public static void registerPreprocessors(DBSPCompiler compiler, IIndentStream builder) {
+        // Scan the input table connectors to discover preprocessor declarations
+        // Insert a call to the PreprocessorRegistry for each kind of preprocessor.
+        Set<String> preprocessors = compiler.metadata.getPreprocessors();
+        if (!preprocessors.isEmpty()) {
+            builder.append("if Runtime::worker_index() == 0 {").increase();
+            // This code is executed on all worker threads, but only register the preprocessor factory in worker 0
+            for (String pre : preprocessors) {
+                String normalized = pre.substring(0, 1).toUpperCase(Locale.ENGLISH) + pre.substring(1);
+                builder.append("catalog.preprocessor_registry()").newline()
+                        .append(".lock().unwrap().register(\"")
+                        .append(pre.toLowerCase(Locale.ENGLISH))
+                        .append("\", ")
+                        .append("Box::new(")
+                        .append(normalized)
+                        .append("PreprocessorFactory));")
+                        .newline();
+            }
+            builder.decrease().append("}").newline();
+        }
+    }
+
     @Override
     public VisitDecision preorder(DBSPCircuit circuit) {
         IndentStream signature = new IndentStreamBuilder();
@@ -318,6 +345,8 @@ public class ToRustVisitor extends CircuitVisitor {
             this.sourcePositionResource.generateInitializer(this.builder);
             SourcePositionResource.generateReference(this.builder, CircuitWriter.SOURCE_MAP_VARIABLE_NAME);
         }
+
+        registerPreprocessors(this.compiler, this.builder);
 
         for (DBSPDeclaration decl: circuit.declarations) {
             if (this.declareInside(decl)) {
@@ -1363,6 +1392,14 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
+    void emitWindowBounds(DBSPWindowBoundExpression lower, DBSPWindowBoundExpression upper) {
+        this.builder.append("RelRange::new(").increase();
+        this.emitWindowBound(lower);
+        this.builder.append(",").newline();
+        this.emitWindowBound(upper);
+        this.builder.newline().decrease().append(")");
+    }
+
     void emitWindowBound(DBSPWindowBoundExpression bound) {
         String beforeAfter = bound.isPreceding ? "Before" : "After";
         this.builder.append("RelOffset::")
@@ -1395,12 +1432,8 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(", ").newline();
         operator.getFunction().accept(this.innerVisitor);
         this.builder.append(", ").newline();
-        this.builder.append("RelRange::new(").increase();
-        this.emitWindowBound(operator.lower);
-        this.builder.append(",").newline();
-        this.emitWindowBound(operator.upper);
-        this.builder.decrease().append(")")
-                .newline()
+        this.emitWindowBounds(operator.lower, operator.upper);
+        this.builder
                 .decrease()
                 .append(")")
                 .append(this.markDistinct(operator))
@@ -1432,12 +1465,8 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(", ").newline();
         operator.getFunction().accept(this.innerVisitor);
         this.builder.append(", ").newline();
-        this.builder.append("RelRange::new(");
-        this.emitWindowBound(operator.lower);
-        this.builder.append(", ").newline();
-        this.emitWindowBound(operator.upper);
-        this.builder.append(")")
-                .newline()
+        this.emitWindowBounds(operator.lower, operator.upper);
+        this.builder
                 .decrease()
                 .append(")")
                 .append(this.markDistinct(operator))
@@ -1624,6 +1653,98 @@ public class ToRustVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPJoinOperator operator) {
         return this.processJoinBase(operator);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPStarJoinBaseOperator operator) {
+        if (compiler.metadata.noStarJoins())
+            throw new InternalCompilerError("Star join operator were not enabled");
+        this.computeHash(operator);
+        this.innerVisitor.setOperatorContext(null);
+        DBSPType streamType = this.streamType(operator);
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getNodeName(this.preferHash))
+                .append(": ");
+        streamType.accept(this.innerVisitor);
+        this.builder.append(" = ");
+        this.builder.append(operator.operation);
+        // A different function has to be called in nested circuits
+        // DBSP operator name contains input count
+        this.builder.append(operator.inputs.size());
+        if (this.getParent().is(DBSPNestedOperator.class))
+            this.builder.append("_nested");
+        this.builder.append("(").increase();
+        for (int index = 0; index < operator.inputs.size(); index++) {
+            this.builder.append("&")
+                    .append(this.getInputName(operator, index))
+                    .append(",")
+                    .newline();
+        }
+        DBSPClosureExpression closure = operator.getClosureFunction();
+        if (operator.is(DBSPStarJoinIndexOperator.class))
+            // The function signature does not correspond to
+            // the DBSP star_join_index operator; it must produce an iterator.
+            closure = closure.body.some().closure(closure.parameters);
+        closure.accept(this.innerVisitor);
+        this.builder.newline()
+                .decrease()
+                .append(")")
+                .append(this.markDistinct(operator))
+                .append(";");
+        this.tagStream(operator);
+        this.innerVisitor.setOperatorContext(null);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPApplyNOperator operator) {
+        this.computeHash(operator);
+        this.innerVisitor.setOperatorContext(null);
+        DBSPType streamType = this.streamType(operator);
+        this.builder.append("let streams = vec!(");
+        for (int index = 0; index < operator.inputs.size(); index++) {
+            this.builder.append("")
+                    .append(this.getInputName(operator, index))
+                    .append(".clone()")
+                    .append(",");
+        }
+        this.builder.append(");").newline();
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getNodeName(this.preferHash))
+                .append(": ");
+        streamType.accept(this.innerVisitor);
+        this.builder.append(" = ");
+        this.builder.append(operator.operation);
+        this.builder.append("(circuit, streams.iter(),").newline();
+        DBSPClosureExpression closure = operator.getClosureFunction();
+        // In Rust this closure takes an iterator as the only argument
+        this.builder.append("move |i| {").increase();
+        for (DBSPParameter param: closure.parameters) {
+            // Copy the iterator values into variables named like the parameters
+            this.builder.append("let ")
+                    .append(param.name)
+                    .append("_ = i.next().unwrap();")
+                    .newline();
+            this.builder.append("let ")
+                    .append(param.name)
+                    .append(": ");
+            param.type.accept(this.innerVisitor);
+            this.builder.append(" = ")
+                    .append(param.name)
+                    .append("_.as_ref();")
+                    .newline();
+        }
+        closure.body.accept(this.innerVisitor);
+        this.builder.decrease().append("}");
+        this.builder
+                .append(")")
+                .append(this.markDistinct(operator))
+                .append(";");
+        this.tagStream(operator);
+        this.innerVisitor.setOperatorContext(null);
+        return VisitDecision.STOP;
     }
 
     @Override

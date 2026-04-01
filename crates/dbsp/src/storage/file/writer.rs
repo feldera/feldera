@@ -6,16 +6,16 @@
 //! `pub`.
 use crate::storage::{
     backend::{BlockLocation, FileReader, FileWriter, StorageBackend, StorageError},
-    buffer_cache::{BufferCache, CacheEntry, FBuf, FBufSerializer, LimitExceeded},
+    buffer_cache::{BufferCache, FBuf, FBufSerializer, LimitExceeded},
     file::{
-        BLOOM_FILTER_SEED,
+        BLOOM_FILTER_SEED, SerializerInner,
         format::{
-            BlockHeader, DATA_BLOCK_MAGIC, DataBlockHeader, FILE_TRAILER_BLOCK_MAGIC, FileTrailer,
-            FileTrailerColumn, FilterBlockRef, FixedLen, INDEX_BLOCK_MAGIC, IndexBlockHeader,
-            NodeType, VERSION_NUMBER, Varint,
+            BatchMetadata, BlockHeader, COMPATIBLE_FEATURE_FILTER64,
+            COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT, DATA_BLOCK_MAGIC, DataBlockHeader,
+            FILE_TRAILER_BLOCK_MAGIC, FileTrailer, FileTrailerColumn, FilterBlockRef, FixedLen,
+            INDEX_BLOCK_MAGIC, IndexBlockHeader, NodeType, VERSION_NUMBER, Varint,
         },
         reader::TreeNode,
-        with_serializer,
     },
 };
 use binrw::{
@@ -26,6 +26,7 @@ use crc32c::crc32c;
 #[cfg(debug_assertions)]
 use dyn_clone::clone_box;
 use fastbloom::BloomFilter;
+use feldera_buffer_cache::CacheEntry;
 use feldera_storage::StoragePath;
 use snap::raw::{Encoder, max_compress_len};
 use std::{
@@ -46,6 +47,7 @@ use crate::{
     Runtime,
     dynamic::{DataTrait, DeserializeDyn, SerializeDyn},
     storage::file::ItemFactory,
+    trace::ord::{BatchFilters, key_range::KeyRange},
 };
 
 struct VarintWriter {
@@ -183,7 +185,7 @@ impl Default for Parameters {
 }
 
 trait IntoBlock {
-    fn into_block(self) -> FBuf;
+    fn into_block(self, expected_capacity: usize) -> FBuf;
     fn overwrite_head(&self, dst: &mut FBuf)
     where
         Self: FixedLen;
@@ -193,8 +195,8 @@ impl<B> IntoBlock for B
 where
     B: for<'a> BinWrite<Args<'a> = ()>,
 {
-    fn into_block(self) -> FBuf {
-        let mut block = NoSeek::new(FBuf::with_capacity(4096));
+    fn into_block(self, expected_capacity: usize) -> FBuf {
+        let mut block = NoSeek::new(FBuf::with_capacity(expected_capacity));
         self.write_le(&mut block).unwrap();
         block.into_inner()
     }
@@ -236,7 +238,8 @@ impl ColumnWriter {
     fn finish<K, A>(
         &mut self,
         block_writer: &mut BlockWriter,
-    ) -> Result<FileTrailerColumn, StorageError>
+        serializer: &mut SerializerInner,
+    ) -> Result<(FileTrailerColumn, Option<(Box<K>, Box<K>)>), StorageError>
     where
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
@@ -244,7 +247,7 @@ impl ColumnWriter {
         // Flush data.
         if !self.data_block.is_empty() {
             let data_block = self.data_block.build::<K, A>();
-            self.write_data_block::<K, A>(block_writer, data_block)?;
+            self.write_data_block::<K, A>(block_writer, data_block, serializer)?;
         }
 
         // Flush index.
@@ -253,24 +256,50 @@ impl ColumnWriter {
             if level == self.index_blocks.len() - 1 && self.index_blocks[level].entries.len() == 1 {
                 let builder = &self.index_blocks[level];
                 let entry = &builder.entries[0];
-                return Ok(FileTrailerColumn {
-                    node_type: builder.child_type,
-                    node_offset: entry.child.offset,
-                    node_size: entry.child.size as u32,
-                    n_rows: entry.row_total,
-                });
+                return Ok((
+                    FileTrailerColumn {
+                        node_type: builder.child_type,
+                        node_offset: entry.child.offset,
+                        node_size: entry.child.size.try_into().unwrap_or_else(|_| {
+                            unreachable!(
+                                "Individual blocks should be much less than 4 GiB, tried to write {:?}",
+                                &entry.child
+                            )
+                        }),
+                        n_rows: entry.row_total,
+                    },
+                    Some(self.key_bounds::<K>(&builder.raw, entry)),
+                ));
             } else if !self.index_blocks[level].is_empty() {
                 let index_block = self.index_blocks[level].build();
-                self.write_index_block::<K>(block_writer, index_block, level)?;
+                self.write_index_block::<K>(block_writer, index_block, level, serializer)?;
             }
             level += 1;
         }
-        Ok(FileTrailerColumn {
-            node_type: NodeType::Data,
-            node_offset: 0,
-            node_size: 0,
-            n_rows: 0,
-        })
+        Ok((
+            FileTrailerColumn {
+                node_type: NodeType::Data,
+                node_offset: 0,
+                node_size: 0,
+                n_rows: 0,
+            },
+            None,
+        ))
+    }
+
+    fn key_bounds<K>(&self, raw: &FBuf, entry: &IndexEntry) -> (Box<K>, Box<K>)
+    where
+        K: DataTrait + ?Sized,
+    {
+        let key_factory = self.factories.key_factory::<K>();
+
+        let mut min = key_factory.default_box();
+        rkyv_deserialize(raw, entry.min_offset, min.as_mut());
+
+        let mut max = key_factory.default_box();
+        rkyv_deserialize(raw, entry.max_offset, max.as_mut());
+
+        (min, max)
     }
 
     fn get_index_block(&mut self, level: usize) -> &mut IndexBlockBuilder {
@@ -293,6 +322,7 @@ impl ColumnWriter {
         &mut self,
         block_writer: &mut BlockWriter,
         data_block: DataBlock<K>,
+        serializer: &mut SerializerInner,
     ) -> Result<(), StorageError>
     where
         K: DataTrait + ?Sized,
@@ -319,8 +349,9 @@ impl ColumnWriter {
             location,
             &data_block.min_max,
             data_block.n_rows as u64,
+            serializer,
         ) {
-            self.write_index_block::<K>(block_writer, index_block, 0)?;
+            self.write_index_block::<K>(block_writer, index_block, 0, serializer)?;
         }
         Ok(())
     }
@@ -330,6 +361,7 @@ impl ColumnWriter {
         block_writer: &mut BlockWriter,
         mut index_block: IndexBlock<K>,
         mut level: usize,
+        serializer: &mut SerializerInner,
     ) -> Result<(), StorageError>
     where
         K: DataTrait + ?Sized,
@@ -353,9 +385,12 @@ impl ColumnWriter {
             .unwrap();
 
             level += 1;
-            let opt_index_block =
-                self.get_index_block(level)
-                    .add_entry(location, &index_block.min_max, n_rows);
+            let opt_index_block = self.get_index_block(level).add_entry(
+                location,
+                &index_block.min_max,
+                n_rows,
+                serializer,
+            );
             index_block = match opt_index_block {
                 None => return Ok(()),
                 Some(index_block) => index_block,
@@ -368,13 +403,14 @@ impl ColumnWriter {
         block_writer: &mut BlockWriter,
         item: (&K, &A),
         row_group: &Option<Range<u64>>,
+        serializer: &mut SerializerInner,
     ) -> Result<(), StorageError>
     where
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
     {
-        if let Some(data_block) = self.data_block.add_item(item, row_group) {
-            self.write_data_block::<K, A>(block_writer, data_block)?;
+        if let Some(data_block) = self.data_block.add_item(item, row_group, serializer) {
+            self.write_data_block::<K, A>(block_writer, data_block, serializer)?;
         }
         Ok(())
     }
@@ -484,6 +520,7 @@ impl DataBlockBuilder {
         &mut self,
         item: (&K, &A),
         row_group: &Option<Range<u64>>,
+        serializer: &mut SerializerInner,
     ) -> Result<(), LimitExceeded>
     where
         K: DataTrait + ?Sized,
@@ -500,8 +537,12 @@ impl DataBlockBuilder {
         self.factories
             .item_factory()
             .with(item.0, item.1, &mut |item| {
-                result =
-                    rkyv_serialize(&mut self.raw, item, self.size_target.unwrap_or(usize::MAX));
+                result = rkyv_serialize(
+                    serializer,
+                    &mut self.raw,
+                    item,
+                    self.size_target.unwrap_or(usize::MAX),
+                );
             });
         let offset = result.inspect_err(|_| self.raw.resize(old_len, 0))?;
 
@@ -536,16 +577,17 @@ impl DataBlockBuilder {
         &mut self,
         item: (&K, &A),
         row_group: &Option<Range<u64>>,
+        serializer: &mut SerializerInner,
     ) -> Option<DataBlock<K>>
     where
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
     {
-        if self.try_add_item(item, row_group).is_ok() {
+        if self.try_add_item(item, row_group, serializer).is_ok() {
             None
         } else {
             let retval = self.build::<K, A>();
-            assert!(self.try_add_item(item, row_group).is_ok());
+            assert!(self.try_add_item(item, row_group, serializer).is_ok());
             Some(retval)
         }
     }
@@ -746,17 +788,23 @@ fn rkyv_deserialize_key<K, A>(
     )
 }
 
-fn rkyv_serialize<T>(dst: &mut FBuf, value: &T, limit: usize) -> Result<usize, LimitExceeded>
+fn rkyv_serialize<T>(
+    serializer: &mut SerializerInner,
+    dst: &mut FBuf,
+    value: &T,
+    limit: usize,
+) -> Result<usize, LimitExceeded>
 where
     T: SerializeDyn + ?Sized,
 {
     let old_len = dst.len();
 
-    let result;
-    (*dst, result) = with_serializer(FBufSerializer::new(take(dst), limit), |serializer| {
-        value.serialize(serializer)
-    });
-    let offset = result.map_err(|_| LimitExceeded)?;
+    let offset = serializer
+        .with(
+            FBufSerializer::new(&mut *dst).with_limit(limit),
+            |serializer| value.serialize(serializer),
+        )
+        .map_err(|_| LimitExceeded)?;
 
     if dst.len() == old_len {
         // Ensure that a value takes up at least one byte.  Otherwise, we'll
@@ -798,6 +846,7 @@ impl IndexBlockBuilder {
         child: BlockLocation,
         min_max: &(Box<K>, Box<K>),
         n_rows: u64,
+        serializer: &mut SerializerInner,
     ) -> Result<(), LimitExceeded>
     where
         K: DataTrait + ?Sized,
@@ -807,8 +856,8 @@ impl IndexBlockBuilder {
         }
         self.max_child_size = self.max_child_size.max(child.size);
         let limit = self.size_target.unwrap_or(usize::MAX);
-        let min_offset = rkyv_serialize(&mut self.raw, min_max.0.as_ref(), limit)?;
-        let max_offset = rkyv_serialize(&mut self.raw, min_max.1.as_ref(), limit)?;
+        let min_offset = rkyv_serialize(serializer, &mut self.raw, min_max.0.as_ref(), limit)?;
+        let max_offset = rkyv_serialize(serializer, &mut self.raw, min_max.1.as_ref(), limit)?;
         self.entries.push(IndexEntry {
             child,
             min_offset,
@@ -835,6 +884,7 @@ impl IndexBlockBuilder {
         child: BlockLocation,
         min_max: &(Box<K>, Box<K>),
         n_rows: u64,
+        serializer: &mut SerializerInner,
     ) -> Result<(), LimitExceeded>
     where
         K: DataTrait + ?Sized,
@@ -842,7 +892,7 @@ impl IndexBlockBuilder {
         let saved_len = self.raw.len();
         let saved_max_child_size = self.max_child_size;
         let n_entries = self.entries.len();
-        self.inner_try_add_entry(child, min_max, n_rows)
+        self.inner_try_add_entry(child, min_max, n_rows, serializer)
             .inspect_err(|_| {
                 self.max_child_size = saved_max_child_size;
                 self.raw.resize(saved_len, 0);
@@ -856,11 +906,12 @@ impl IndexBlockBuilder {
         child: BlockLocation,
         min_max: &(Box<K>, Box<K>),
         n_rows: u64,
+        serializer: &mut SerializerInner,
     ) -> Option<IndexBlock<K>>
     where
         K: DataTrait + ?Sized,
     {
-        let f = |t: &mut Self| t.try_add_entry(child, min_max, n_rows);
+        let mut f = |t: &mut Self| t.try_add_entry(child, min_max, n_rows, serializer);
         if f(self).is_ok() {
             None
         } else {
@@ -1092,11 +1143,12 @@ struct Writer {
     bloom_filter: Option<TrackingBloomFilter>,
     cws: Vec<ColumnWriter>,
     finished_columns: Vec<FileTrailerColumn>,
+    serializer: SerializerInner,
 }
 
 impl Writer {
     fn bloom_false_positive_rate() -> Option<f64> {
-        let rate = Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.bloom_false_positive_rate);
+        let rate = Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.bloom_false_positive_rate());
         let rate = (rate > 0.0 && rate < 1.0).then_some(rate);
 
         static ONCE: Once = Once::new();
@@ -1145,6 +1197,7 @@ impl Writer {
             bloom_filter,
             cws,
             finished_columns,
+            serializer: SerializerInner::new(),
         };
         Ok(writer)
     }
@@ -1171,10 +1224,13 @@ impl Writer {
 
         // Add `value` to row group for column.
         self.cws[column].rows.end += 1;
-        self.cws[column].add_item(&mut self.writer, item, &row_group)
+        self.cws[column].add_item(&mut self.writer, item, &row_group, &mut self.serializer)
     }
 
-    pub fn finish_column<K, A>(&mut self, column: usize) -> Result<(), StorageError>
+    pub fn finish_column<K, A>(
+        &mut self,
+        column: usize,
+    ) -> Result<Option<(Box<K>, Box<K>)>, StorageError>
     where
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
@@ -1184,39 +1240,65 @@ impl Writer {
             assert!(cw.rows.is_empty());
         }
 
-        self.finished_columns
-            .push(self.cws[column].finish::<K, A>(&mut self.writer)?);
-        Ok(())
+        let (trailer, key_bounds) =
+            self.cws[column].finish::<K, A>(&mut self.writer, &mut self.serializer)?;
+        self.finished_columns.push(trailer);
+        Ok(key_bounds)
     }
 
     pub fn close(
         mut self,
+        metadata: BatchMetadata,
     ) -> Result<(Arc<dyn FileReader>, Option<TrackingBloomFilter>), StorageError> {
         debug_assert_eq!(self.cws.len(), self.finished_columns.len());
 
         // Write the Bloom filter.
         let filter_location = if let Some(bloom_filter) = &self.bloom_filter {
+            let filter_block = FilterBlockRef::from(bloom_filter);
+            // std::mem::size_of::<FilterBlockRef>() should be an
+            // upper bound: in-memory struct size + bloom payload bytes.
+            let estimated_block_size = (std::mem::size_of::<FilterBlockRef>()
+                + std::mem::size_of_val(filter_block.data))
+            // our binrw min block size is 512 so we round it up to avoid another
+            // reallocation
+            .next_multiple_of(512);
             self.writer
-                .write_block(FilterBlockRef::from(bloom_filter).into_block(), None)?
+                .write_block(filter_block.into_block(estimated_block_size), None)?
                 .1
         } else {
             BlockLocation { offset: 0, size: 0 }
         };
 
         // Write the file trailer block.
-        let file_trailer = FileTrailer {
+
+        let mut file_trailer = FileTrailer {
             header: BlockHeader::new(&FILE_TRAILER_BLOCK_MAGIC),
             version: VERSION_NUMBER,
             columns: take(&mut self.finished_columns),
             compression: self.cws[0].parameters.compression,
-            filter_offset: filter_location.offset,
-            filter_size: filter_location.size.try_into().unwrap(),
-            compatible_features: 0,
+            filter_offset: 0,
+            filter_size: 0,
+            compatible_features: COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT,
             incompatible_features: 0,
+            filter_offset64: 0,
+            filter_size64: 0,
+            metadata,
         };
+        if filter_location.size > 0 {
+            if let Ok(size) = u32::try_from(filter_location.size)
+                && size < i32::MAX as u32
+            {
+                file_trailer.filter_offset = filter_location.offset;
+                file_trailer.filter_size = size;
+            } else {
+                file_trailer.compatible_features |= COMPATIBLE_FEATURE_FILTER64;
+                file_trailer.filter_offset64 = filter_location.offset;
+                file_trailer.filter_size64 = filter_location.size as u64;
+            }
+        }
         let (_block, location) = self
             .writer
-            .write_block(file_trailer.clone().into_block(), None)?;
+            .write_block(file_trailer.clone().into_block(4096), None)?;
         self.writer
             .insert_cache_entry(location, Arc::new(file_trailer));
 
@@ -1258,7 +1340,7 @@ impl Writer {
 /// # use std::sync::Arc;
 /// use dbsp::storage::{
 ///     backend::StorageBackend,
-///     file::Factories,
+///     file::{Factories, format::BatchMetadata},
 ///     buffer_cache::BufferCache,
 /// };
 /// let factories = Factories::<DynData, DynUnit>::new::<u32, ()>();
@@ -1273,7 +1355,7 @@ impl Writer {
 /// for i in 0..1000_u32 {
 ///     file.write0((i.erase(), ().erase())).unwrap();
 /// }
-/// file.close().unwrap();
+/// file.close(BatchMetadata::default()).unwrap();
 /// ```
 pub struct Writer1<K0, A0>
 where
@@ -1337,13 +1419,26 @@ where
         self.inner.n_rows()
     }
 
-    /// Finishes writing the layer file and returns the writer passed to
-    /// [`new`](Self::new).
+    /// Finishes writing the layer file and returns the file handle, optional
+    /// bloom filter, and column-0 key bounds.
+    ///
+    /// # Arguments
+    ///
+    /// * `metadata` - Batch metadata to include in the trailer.
     pub fn close(
         mut self,
-    ) -> Result<(Arc<dyn FileReader>, Option<TrackingBloomFilter>), StorageError> {
-        self.inner.finish_column::<K0, A0>(0)?;
-        self.inner.close()
+        metadata: BatchMetadata,
+    ) -> Result<
+        (
+            Arc<dyn FileReader>,
+            Option<TrackingBloomFilter>,
+            Option<(Box<K0>, Box<K0>)>,
+        ),
+        StorageError,
+    > {
+        let key_bounds = self.inner.finish_column::<K0, A0>(0)?;
+        let (file_handle, bloom_filter) = self.inner.close(metadata)?;
+        Ok((file_handle, bloom_filter, key_bounds))
     }
 
     /// Returns the path for the file being written.
@@ -1356,16 +1451,32 @@ where
         self.inner.storage()
     }
 
-    /// Finishes writing the layer file and returns a reader for it.
-    pub fn into_reader(
+    fn into_reader_impl(
         self,
-    ) -> Result<Reader<(&'static K0, &'static A0, ())>, super::reader::Error> {
+        metadata: BatchMetadata,
+    ) -> Result<(Reader<(&'static K0, &'static A0, ())>, BatchFilters<K0>), super::reader::Error>
+    {
         let any_factories = self.factories.any_factories();
 
         let cache = self.inner.cache;
-        let (file_handle, bloom_filter) = self.close()?;
+        let (file_handle, bloom_filter, key_bounds) = self.close(metadata)?;
+        let key_range = key_bounds
+            .as_ref()
+            .map(|(min, max)| KeyRange::from_refs(min.as_ref(), max.as_ref()));
+        let (reader, membership_filter) =
+            Reader::new_with_filter(&[&any_factories], cache, file_handle, bloom_filter)?;
+        let filters = BatchFilters::from_file(key_range, membership_filter);
+        Ok((reader, filters))
+    }
 
-        Reader::new(&[&any_factories], cache, file_handle, bloom_filter)
+    /// Finishes writing the layer file and returns a reader for it together
+    /// with exact-seek filters.
+    pub fn into_reader(
+        self,
+        metadata: BatchMetadata,
+    ) -> Result<(Reader<(&'static K0, &'static A0, ())>, BatchFilters<K0>), super::reader::Error>
+    {
+        self.into_reader_impl(metadata)
     }
 }
 
@@ -1393,7 +1504,7 @@ where
 /// use feldera_types::config::{StorageConfig, StorageOptions};
 /// use dbsp::storage::{
 ///     backend::StorageBackend,
-///     file::Factories,
+///     file::{Factories, format::BatchMetadata},
 ///     buffer_cache::BufferCache,
 /// };
 /// let factories = Factories::<DynData, DynUnit>::new::<u32, ()>();
@@ -1411,7 +1522,7 @@ where
 ///     }
 ///     file.write0((&i, &())).unwrap();
 /// }
-/// file.close().unwrap();
+/// file.close(BatchMetadata::default()).unwrap();
 /// ```
 pub struct Writer2<K0, A0, K1, A1>
 where
@@ -1511,17 +1622,30 @@ where
         self.inner.n_rows()
     }
 
-    /// Finishes writing the layer file and returns the writer passed to
-    /// [`new`](Self::new).
+    /// Finishes writing the layer file and returns the file handle, optional
+    /// bloom filter, and column-0 key bounds.
     ///
     /// This function will panic if [`write1`](Self::write1) has been called
     /// without a subsequent call to [`write0`](Self::write0).
+    ///
+    /// # Arguments
+    ///
+    /// * `metadata` - Batch metadata to include in the trailer.
     pub fn close(
         mut self,
-    ) -> Result<(Arc<dyn FileReader>, Option<TrackingBloomFilter>), StorageError> {
-        self.inner.finish_column::<K0, A0>(0)?;
-        self.inner.finish_column::<K1, A1>(1)?;
-        self.inner.close()
+        metadata: BatchMetadata,
+    ) -> Result<
+        (
+            Arc<dyn FileReader>,
+            Option<TrackingBloomFilter>,
+            Option<(Box<K0>, Box<K0>)>,
+        ),
+        StorageError,
+    > {
+        let key_bounds = self.inner.finish_column::<K0, A0>(0)?;
+        let _ = self.inner.finish_column::<K1, A1>(1)?;
+        let (file_handle, bloom_filter) = self.inner.close(metadata)?;
+        Ok((file_handle, bloom_filter, key_bounds))
     }
 
     /// Returns the storage used for this writer.
@@ -1534,23 +1658,46 @@ where
         self.inner.path()
     }
 
-    /// Finishes writing the layer file and returns a reader for it.
-    #[allow(clippy::type_complexity)]
-    pub fn into_reader(
+    fn into_reader_impl(
         self,
+        metadata: BatchMetadata,
     ) -> Result<
-        Reader<(&'static K0, &'static A0, (&'static K1, &'static A1, ()))>,
+        (
+            Reader<(&'static K0, &'static A0, (&'static K1, &'static A1, ()))>,
+            BatchFilters<K0>,
+        ),
         super::reader::Error,
     > {
         let any_factories0 = self.factories0.any_factories();
         let any_factories1 = self.factories1.any_factories();
         let cache = self.inner.cache;
-        let (file_handle, bloom_filter) = self.close()?;
-        Reader::new(
+        let (file_handle, bloom_filter, key_bounds) = self.close(metadata)?;
+        let key_range = key_bounds
+            .as_ref()
+            .map(|(min, max)| KeyRange::from_refs(min.as_ref(), max.as_ref()));
+        let (reader, membership_filter) = Reader::new_with_filter(
             &[&any_factories0, &any_factories1],
             cache,
             file_handle,
             bloom_filter,
-        )
+        )?;
+        let filters = BatchFilters::from_file(key_range, membership_filter);
+        Ok((reader, filters))
+    }
+
+    /// Finishes writing the layer file and returns a reader for it together
+    /// with exact-seek filters.
+    #[allow(clippy::type_complexity)]
+    pub fn into_reader(
+        self,
+        metadata: BatchMetadata,
+    ) -> Result<
+        (
+            Reader<(&'static K0, &'static A0, (&'static K1, &'static A1, ()))>,
+            BatchFilters<K0>,
+        ),
+        super::reader::Error,
+    > {
+        self.into_reader_impl(metadata)
     }
 }

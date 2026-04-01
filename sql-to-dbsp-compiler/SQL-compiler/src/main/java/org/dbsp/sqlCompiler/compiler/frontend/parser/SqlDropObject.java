@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.frontend.parser;
 
 import com.google.common.collect.ImmutableList;
-import org.apache.calcite.jdbc.CalcitePrepare;
 import org.apache.calcite.sql.SqlDrop;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlNode;
@@ -38,6 +37,4 @@ public abstract class SqlDropObject extends SqlDrop {
         }
         name.unparse(writer, leftPrec, rightPrec);
     }
-
-    public void execute(CalcitePrepare.Context context) { }
 }

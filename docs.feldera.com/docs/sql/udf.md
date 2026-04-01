@@ -358,7 +358,7 @@ In order to implement a complex Rust UDF (or a library of UDFs) using
 a Rust IDE:
 
 * Create a new Rust crate to serve as the container for your UDFs.
-* Add `feldera-sqllib` as a dependency to `Cargo.toml` (use the crate
+* Add `feldera-sqllib` as a dependency to `udf.toml` (use the crate
   version that matches the version of Feldera you are working with).
 * Implement and test your UDFs within this crate.
 * Copy the final Rust code and dependencies to the Feldera Web Console.
@@ -643,4 +643,243 @@ empty) produces `NULL`.
 
 Currently user-defined non-linear aggregation functions are not
 supported.  These may be added in the future.
+
+## User-defined preprocessors
+
+:::warning Experimental feature
+
+Preprocessor support is currently experimental and may undergo significant changes, including
+non-backward-compatible modifications, in future releases of Feldera.
+
+:::
+
+:::danger
+
+* Preprocessors are compiled into native binary code and executed directly within the address
+  space of the pipeline. Therefore, only trusted code should be included in preprocessors. They
+  should not contain panics or invoke undefined behaviors.
+
+:::
+
+A **preprocessor** is a user-defined Rust component that transforms raw bytes produced by an
+input transport endpoint before they reach the format parser:
+
+```text
+[stream of bytes] -> Transport -> [stream of bytes] -> Preprocessor -> [stream of array of bytes] -> Parser -> [stream of records] -> Circuit
+```
+
+Preprocessors are useful for:
+
+- Decrypting or decompressing data produced by the transport
+- Stripping protocol-specific framing or headers
+- Filtering data
+- Re-encoding data from one wire format to another before the standard parsers see it
+
+### Implementing a preprocessor
+
+To add a custom preprocessor, implement three Rust traits:
+
+- `feldera_adapterlib::preprocess::Preprocessor`
+- `feldera_adapterlib::preprocess::PreprocessorFactory`,
+- `feldera_adapterlib::format::Splitter`.
+
+Preprocessors can only be used with certain classes of input
+connectors, which accept raw data as byte arrays and perform their own parsing.
+Preprocessors cannot be combined with input connectors such as
+Delta, Iceberg, Postgres, which read directly structured data.
+An attempt to use a preprocessor with such a connector will lead to a
+runtime error.
+
+#### `PreprocessorConfig`
+
+The configuration for a preprocessor has the following structure in Rust:
+
+```
+pub struct PreprocessorConfig {
+    /// Name of the preprocessor.
+    /// All preprocessors with the same name will perform the same task.
+    pub name: String,
+    /// True if the preprocessor is message-oriented: true if each preprocessor
+    /// output record corresponds to a whole number of of parser records.
+    pub message_oriented: bool,
+    /// Arbitrary additional configuration.
+    pub config: Value,
+}
+```
+
+#### `Preprocessor` trait
+
+```rust
+pub trait Preprocessor: Send + Sync {
+    /// Transform raw input bytes.
+    ///
+    /// Returns the transformed bytes together with any non-fatal parse errors
+    /// encountered during transformation.
+    fn process(&mut self, data: &[u8]) -> (Vec<u8>, Vec<ParseError>);
+
+    /// Create an independent copy of this preprocessor with the same configuration.
+    ///
+    /// Called by multi-threaded transport endpoints to set up parallel input
+    /// pipelines.  Only called once, prior to data processing.
+    fn fork(&self) -> Box<dyn Preprocessor>;
+
+    /// Returns an object that can be used to break a stream of incoming data
+    /// into complete records to pass to [Preprocessor::process].  If the object
+    /// is None, the parser's splitter object will actually be used.
+    fn splitter(&self) -> Option<Box<dyn Splitter>>;
+}
+```
+
+There are two kinds of preprocessors: streaming and message-oriented,
+depending on the "message_oriented" configuration field value.
+
+A message-oriented preprocessor is one which processes input records
+independently of each other.  The parser following the preprocessor
+will split each input record produced by the preprocessor into zero or
+more records that are passed to the pipeline.  A preprocessor that is
+not message-oriented is called a "streaming" preprocessor.  The parser
+following a streaming preprocessor may need to receive multiple
+records from the preprocessor to produce even one record.
+
+Currently only "message-oriented" preprocessors are supported with
+fault-tolerance.
+
+#### `PreprocessorFactory` trait
+
+A factory is responsible for constructing `Preprocessor` instances from a JSON configuration
+object.
+
+```rust
+pub trait PreprocessorFactory: Send + Sync {
+    /// Construct a `Preprocessor` from the supplied configuration.
+    fn create(
+        &self,
+        config: &PreprocessorConfig,
+    ) -> Result<Box<dyn Preprocessor>, PreprocessorCreateError>;
+}
+```
+
+#### `Splitter` trait
+
+The splitter is responsible for breaking the byte stream into frames
+at "object" boundaries.
+
+```rust
+/// Splits a data stream at boundaries between records.
+///
+/// [Parser::parse] or [Preprocessor::process] can only parse complete records.
+/// For a byte stream source, a format-specific [Splitter] allows a transport
+/// to find boundaries.
+pub trait Splitter: Send {
+    /// Looks for a record boundary in `data`. Returns:
+    ///
+    /// - `None`, if `data` does not necessarily complete a record.
+    ///
+    /// - `Some(n)`, if the first `n` bytes of data, plus any data previously
+    ///   presented for which `None` was returned, form one or more complete
+    ///   records. If `n < data.len()`, then the caller should re-present
+    ///   `data[n..]` for further splitting.
+    fn input(&mut self, data: &[u8]) -> Option<usize>;
+
+    /// Clears any state in this splitter and prepares it to start splitting new
+    /// data.
+    fn clear(&mut self);
+}
+```
+
+#### Usage in SQL programs
+
+By declaring a preprocessor in the connector configuration
+the user indicates that a user-defined preprocessor will
+be used for that specific connector.  When declaring a preprocessor with name "example", the user has to provide two
+trait implementations in the udf.rs file:
+
+- `ExamplePreprocessor` that implements the `Preprocessor` trait
+- `ExamplePreprocessorFactory` that implements the `PreprocessorFactory` trait
+
+You will need to add `feldera-adapterlib` to the `udf.toml` file.
+
+### Example: logging preprocessor
+
+The following example shows a minimal preprocessor that returns its
+input unchanged but logs a message for every 1M data bytes processed.
+
+This is the content of the `udf.rs` file:
+
+```rust
+use tracing::info;
+use std::sync::{Arc, Mutex};
+use feldera_adapterlib::format::{ParseError, Splitter};
+use feldera_adapterlib::preprocess::{
+    Preprocessor, PreprocessorCreateError, PreprocessorFactory,
+};
+use feldera_types::preprocess::PreprocessorConfig;
+
+pub struct LoggerPreprocessor {
+   count: Arc<Mutex<u64>>,
+}
+
+impl Preprocessor for LoggerPreprocessor {
+    fn process(&mut self, data: &[u8]) -> (Vec<u8>, Vec<ParseError>) {
+        let mut count = self.count.lock().unwrap();
+        *count += data.len() as u64;
+        // Log a message if the counter has crossed a Megabyte boundary
+        if *count / (1024 * 1024) > (*count - data.len() as u64) / (1024 * 1024) {
+            info!("Processed {} bytes of data", *count);
+        }
+        (data.to_vec(), vec![])
+    }
+
+    fn fork(&self) -> Box<dyn Preprocessor> {
+        Box::new(LoggerPreprocessor { count: Arc::clone(&self.count) })
+    }
+
+    fn splitter(&self) -> Option<Box<dyn Splitter>> {
+        None
+    }
+}
+
+pub struct LoggerPreprocessorFactory;
+
+impl PreprocessorFactory for LoggerPreprocessorFactory {
+    fn create(
+        &self,
+        _config: &PreprocessorConfig,
+    ) -> Result<Box<dyn Preprocessor>, PreprocessorCreateError> {
+        Ok(Box::new(LoggerPreprocessor { count: Arc::new(Mutex::new(0)) }))
+    }
+}
+```
+
+This is the content of the `udf.toml` file:
+
+```
+tracing = { version = "0.1.40" }
+```
+
+### Configuring a preprocessor in a connector
+
+Preprocessors are enabled by adding a `preprocess` field to the connector configuration.
+Each entry has
+- a string `name` (matching a registered factory)
+- a boolean `message_oriented` property
+- a `config` object, passed verbatim to `PreprocessorFactory::create`.
+
+```json
+{
+  "transport": { "...": "..." },
+  "format":    { "...": "..." },
+  "preprocessor": [{
+      "name": "logger",
+      "message_oriented": true,
+      "config": { <logger-specific configuration> }
+  }]
+}
+```
+
+:::note
+
+Currently exactly one preprocessor may be specified per connector.
+
+:::
 

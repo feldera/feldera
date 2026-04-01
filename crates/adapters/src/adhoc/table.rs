@@ -4,7 +4,6 @@ use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::{Arc, Weak};
 
-use crate::catalog::SyncSerBatchReader;
 use crate::controller::{ConsistentSnapshot, ControllerInner};
 use crate::transport::adhoc::AdHocInputEndpoint;
 use crate::{DeCollectionHandle, RecordFormat, TransportInputEndpoint};
@@ -28,9 +27,9 @@ use datafusion::physical_plan::stream::{
 use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
 };
+use feldera_adapterlib::catalog::SerBatchReader;
 use feldera_types::config::{
-    ConnectorConfig, FormatConfig, InputEndpointConfig, TransportConfig, default_max_batch_size,
-    default_max_queued_records,
+    ConnectorConfig, FormatConfig, InputEndpointConfig, TransportConfig, default_max_queued_records,
 };
 use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::serde_with_context::serde_config::{
@@ -285,9 +284,11 @@ impl DataSink for AdHocTableSink {
                     name: Cow::from("parquet"),
                     config: serde_json::Value::Null,
                 }),
+                preprocessor: None,
                 index: None,
                 output_buffer_config: Default::default(),
-                max_batch_size: default_max_batch_size(),
+                max_batch_size: None,
+                max_worker_batch_size: None,
                 max_queued_records: default_max_queued_records(),
                 paused: false,
                 labels: vec![],
@@ -332,7 +333,7 @@ struct AdHocQueryExecution {
     indexed: bool,
     table_schema: Arc<Schema>,
     projected_schema: Arc<Schema>,
-    readers: Option<Vec<Arc<dyn SyncSerBatchReader>>>,
+    readers: Vec<Arc<dyn SerBatchReader>>,
     projection: Option<Vec<usize>>,
     plan_properties: PlanProperties,
     children: Vec<Arc<dyn ExecutionPlan>>,
@@ -346,7 +347,7 @@ impl AdHocQueryExecution {
         indexed: bool,
         table_schema: Arc<Schema>,
         projected_schema: Arc<Schema>,
-        readers: Option<Vec<Arc<dyn SyncSerBatchReader>>>,
+        readers: Option<Vec<Arc<dyn SerBatchReader>>>,
         projection: Option<&Vec<usize>>,
     ) -> Self {
         // TODO: we could do much better here by encoding our data partitioning schema
@@ -367,7 +368,7 @@ impl AdHocQueryExecution {
             indexed,
             table_schema,
             projected_schema,
-            readers,
+            readers: readers.unwrap_or_default(),
             projection: projection.cloned(),
             plan_properties,
             children: vec![],
@@ -454,11 +455,10 @@ use `with ('materialized' = 'true')` for tables, or `create materialized view` f
             Ok(())
         }
 
-        if let Some(readers) = &self.readers {
+        if let Some(batch_reader) = self.readers.get(partition).cloned() {
             let mut builder =
                 RecordBatchReceiverStreamBuilder::new(self.projected_schema.clone(), 10);
             // Returns a single batch when the returned stream is polled
-            let batch_reader = readers[partition].clone();
             let schema = self.table_schema.clone();
             let tx = builder.tx();
             let projection = self.projection.clone();
@@ -543,8 +543,18 @@ use `with ('materialized' = 'true')` for tables, or `create materialized view` f
                 builder.build(),
             )))
         } else {
-            // The case of no readers can happen if the table has never received any input &
-            // the circuit has never stepped so the correct response is to send an empty batch
+            // We did not find a reader.  There are two causes:
+            //
+            // - There are no readers at all, because the table has never
+            //   received any input, and the circuit has never stepped.
+            //
+            // - There are some readers but not for every worker, because the
+            //   output operator only produces output for one worker.  (It might
+            //   not even be our worker, it might be on a different host in
+            //   multihost.)
+            //
+            // In either case, the correct thing to do is to produce an empty
+            // batch.
             let fut =
                 futures::future::ready(Ok(RecordBatch::new_empty(self.projected_schema.clone())));
             let stream = futures::stream::once(fut);

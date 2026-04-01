@@ -200,13 +200,15 @@ curl -i -X POST http://127.0.0.1:8080/v0/pipelines/supply-chain/start
 
 ... which will return `HTTP/1.1 202 Accepted` when successful.
 
-Check that it has successfully started using:
+The start action is asynchronous (hence its `202` Accepted response).
+As such, it will take some time before the final target state has been reached.
+Regularly poll the status until the start has completed:
 
 ```
 curl -s GET http://127.0.0.1:8080/v0/pipelines/supply-chain | jq '.deployment_status'
 ```
 
-... which will say 'Running` when the pipeline has started:
+... which eventually will say `Running` when the pipeline has started.
 
 > Note: Connectors are only initialized when a pipeline starts to use them.
 > A pipeline will not start if a connector is unable to connect to its

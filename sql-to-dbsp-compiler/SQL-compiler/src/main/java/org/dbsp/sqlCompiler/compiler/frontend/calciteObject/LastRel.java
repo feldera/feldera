@@ -28,6 +28,11 @@ public class LastRel extends CalciteRelNode {
     }
 
     @Override
+    public CalciteRelNode copy() {
+        return new LastRel(this.relNode, super.position).addSourcePositions(this.positions);
+    }
+
+    @Override
     public IIndentStream asJson(IIndentStream stream, Map<RelNode, Integer> idRemap) {
         return stream.append("{").increase()
                 .appendJsonLabelAndColon("final")

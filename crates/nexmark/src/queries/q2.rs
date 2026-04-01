@@ -1,6 +1,6 @@
 use super::NexmarkStream;
 use crate::model::Event;
-use dbsp::{utils::Tup2, OrdZSet, RootCircuit, Stream};
+use dbsp::{OrdZSet, RootCircuit, Stream, utils::Tup2};
 
 const AUCTION_ID_MODULO: u64 = 123;
 
@@ -39,7 +39,7 @@ mod tests {
         generator::tests::make_bid,
         model::{Bid, Event},
     };
-    use dbsp::{OrdZSet, RootCircuit, ZWeight};
+    use dbsp::{OrdZSet, ZWeight};
 
     #[test]
     fn test_q2() {
@@ -90,7 +90,7 @@ mod tests {
             ],
         ];
 
-        let (circuit, input_handle) = RootCircuit::build(move |circuit| {
+        let (mut circuit, input_handle) = dbsp::Runtime::init_circuit(1, move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q2(circuit, stream);

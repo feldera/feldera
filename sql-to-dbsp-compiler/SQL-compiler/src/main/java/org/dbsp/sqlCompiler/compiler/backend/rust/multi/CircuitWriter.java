@@ -15,6 +15,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.SourcePositionResource;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CollectSourcePositions;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
@@ -135,6 +136,8 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
                 .increase();
         if (!useHandles)
             this.builder().append("let mut catalog = Catalog::new();").newline();
+
+        ToRustVisitor.registerPreprocessors(compiler, this.builder());
 
         SourcePositionResource sourcePositionResource = new SourcePositionResource();
         CircuitVisitor collector = new CollectSourcePositions(compiler, sourcePositionResource)

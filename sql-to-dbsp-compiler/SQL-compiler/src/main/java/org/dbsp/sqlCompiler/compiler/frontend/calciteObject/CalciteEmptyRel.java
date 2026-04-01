@@ -8,6 +8,11 @@ import java.util.Map;
 /** Represents a CalciteObject that does not exist.
  * Similar to {@link CalciteObject#EMPTY}, but this is a subclass of {@link CalciteRelNode}. */
 public class CalciteEmptyRel extends CalciteRelNode {
+    @Override
+    public CalciteRelNode copy() {
+        return INSTANCE;
+    }
+
     private CalciteEmptyRel() {}
 
     public static final CalciteEmptyRel INSTANCE = new CalciteEmptyRel();

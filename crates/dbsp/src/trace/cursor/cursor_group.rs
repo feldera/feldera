@@ -84,6 +84,13 @@ where
         self.base.weight()
     }
 
+    fn weight_checked(&mut self) -> &R
+    where
+        R: WeightTrait,
+    {
+        self.base.weight_checked()
+    }
+
     fn map_values(&mut self, logic: &mut dyn FnMut(&DynUnit, &R))
     where
         T: PartialEq<()>,

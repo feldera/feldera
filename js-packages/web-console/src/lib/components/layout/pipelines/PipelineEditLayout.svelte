@@ -4,7 +4,9 @@
 
 <script lang="ts">
   import { PaneGroup, Pane, PaneResizer, type PaneAPI } from 'paneforge'
-  import MonitoringPanel from '$lib/components/pipelines/editor/MonitoringPanel.svelte'
+  import MonitoringPanel, {
+    type MonitoringTabs
+  } from '$lib/components/pipelines/editor/MonitoringPanel.svelte'
   import PipelineActions from '$lib/components/pipelines/list/Actions.svelte'
   import { resolve } from '$lib/functions/svelte'
   import {
@@ -62,6 +64,10 @@
   import StorageInUseBanner from '$lib/components/pipelines/editor/StorageInUseBanner.svelte'
   import { getRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'
   import InteractionPanel from '$lib/components/pipelines/editor/InteractionPanel.svelte'
+  import PipelineTransactionStatus from '$lib/components/pipelines/list/PipelineTransactionStatus.svelte'
+  import * as TabPerformance from '$lib/components/pipelines/editor/TabPerformance.svelte'
+  import { untrack } from 'svelte'
+  import { singleton } from '$lib/functions/common/array'
 
   let {
     preloaded,
@@ -92,6 +98,7 @@
   )
 
   const { updatePipelines } = useUpdatePipelineList()
+  const api = usePipelineManager()
   const pipelineAction = getPipelineAction()
   const pipelineActionCallbacks = usePipelineActionCallbacks()
   const handleActionSuccess = async (pipelineName: string, action: PipelineAction) => {
@@ -242,7 +249,8 @@ example = "1.0"`
       return {
         header: `The last execution of the pipeline failed with the error code: ${pipeline.current.deploymentError.error_code}`,
         message: pipeline.current.deploymentError.message,
-        style: 'error' as const
+        style: 'error' as const,
+        onClose: () => api.dismissDeploymentError(pipeline.current.name)
       }
     } else if (pipeline.current.status === 'AwaitingApproval') {
       return {
@@ -279,14 +287,28 @@ example = "1.0"`
       if (e instanceof Error) {
         setTimeout(() => {
           contextDrawer.content = null
-          toast.toastError(e)
+          toast.toastError('Parsing pipeline diff')(e)
         })
       }
       return undefined
     }
   }
 
+  let currentMonitoringTab: MonitoringTabs | null = $state(null)
   let currentInteractionTab: string | null = $state(null)
+
+  const monitoringTabSwitchTo = async () => {
+    if (currentMonitoringTab === 'Errors') {
+      currentMonitoringTab = 'Performance'
+    }
+  }
+  $effect(() => {
+    pipelineName
+    untrack(() => pipelineActionCallbacks.add(pipelineName, 'start', monitoringTabSwitchTo))
+    return () => {
+      pipelineActionCallbacks.remove(pipelineName, 'start', monitoringTabSwitchTo)
+    }
+  })
 </script>
 
 {#snippet reviewPipelineChanges()}
@@ -370,6 +392,12 @@ example = "1.0"`
           {/snippet}
         </PipelineBreadcrumbs>
         <PipelineStatus class="h-6" status={pipeline.current.status}></PipelineStatus>
+        <PipelineTransactionStatus
+          globalMetrics={metrics.current.global}
+          onClick={() => {
+            currentMonitoringTab = TabPerformance.id
+          }}
+        ></PipelineTransactionStatus>
       </div>
     {/snippet}
     {#snippet beforeEnd()}
@@ -435,12 +463,7 @@ example = "1.0"`
       <PaneGroup direction="vertical" class="!overflow-visible">
         {#if pipelineBannerMessage}
           <div class="pb-2 md:pb-4">
-            <PipelineBanner
-              header={pipelineBannerMessage.header}
-              message={pipelineBannerMessage.message}
-              actions={pipelineBannerMessage.actions ?? []}
-              style={pipelineBannerMessage.style}
-            ></PipelineBanner>
+            <PipelineBanner {...pipelineBannerMessage}></PipelineBanner>
           </div>
         {/if}
         <CodeEditor
@@ -557,7 +580,12 @@ example = "1.0"`
         {#if showMonitoringPanel.value && pipeline.current.name}
           <PaneResizer class="pane-divider-horizontal my-2" />
           <Pane minSize={15} class="flex flex-col !overflow-visible">
-            <MonitoringPanel {pipeline} {metrics} {currentInteractionTab}></MonitoringPanel>
+            <MonitoringPanel
+              {pipeline}
+              {metrics}
+              hiddenTabs={singleton(currentInteractionTab)}
+              bind:currentTab={currentMonitoringTab}
+            ></MonitoringPanel>
           </Pane>
         {/if}
       </PaneGroup>

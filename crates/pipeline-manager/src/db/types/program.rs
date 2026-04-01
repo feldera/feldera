@@ -1,3 +1,4 @@
+use crate::config::CompilerConfig;
 use crate::db::error::DBError;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::utils::validate_name;
@@ -15,10 +16,10 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::string::ParseError;
 use thiserror::Error as ThisError;
-use tracing::error;
 use tracing::warn;
 use utoipa::ToSchema;
 
@@ -340,6 +341,18 @@ impl From<RuntimeSelector> for Option<String> {
 }
 
 impl RuntimeSelector {
+    /// Returns a path to sources of the runtime which the compilation should be using.
+    pub fn runtime_sources(&self, config: &CompilerConfig) -> String {
+        if self.is_platform() {
+            config.dbsp_override_path.clone()
+        } else {
+            assert!(has_unstable_feature("runtime_version"));
+            let repo_location =
+                PathBuf::from(&config.compiler_working_directory).join("feldera-checkout");
+            repo_location.to_string_lossy().to_string()
+        }
+    }
+
     /// Is this the platform's default runtime version?
     pub fn is_platform(&self) -> bool {
         matches!(self, RuntimeSelector::Platform(_))
@@ -832,9 +845,7 @@ pub fn generate_pipeline_config(
         global: runtime_config.clone(),
         storage_config: None, // Set by the runner based on global field
         secrets_dir: None,
-        multihost: if runtime_config.hosts > 1
-            || runtime_config.dev_tweaks.contains_key("multihost")
-        {
+        multihost: if runtime_config.hosts > 1 {
             Some(MultihostConfig {
                 hosts: runtime_config.hosts,
             })
@@ -886,9 +897,11 @@ mod tests {
         let config = ConnectorConfig {
             transport: TransportConfig::Datagen(DatagenInputConfig::default()),
             format: None,
+            preprocessor: None,
             index: None,
             output_buffer_config: Default::default(),
-            max_batch_size: 0,
+            max_batch_size: Some(0),
+            max_worker_batch_size: None,
             max_queued_records: 0,
             paused: false,
             labels: vec![],

@@ -463,3 +463,15 @@ export function* concat<T>(...iters: IterableIterator<T>[]): IterableIterator<T>
         yield* iter;
     }
 }
+
+/**
+ * Return arguments as-is with type inferred as a tuple
+ * @example
+ * [3, 'three', true]: (string | number | boolean)[]
+ * tuple(3, 'three', true): [number, string, boolean]
+ * @param t Arguments to be passed down as a tuple
+ * @returns
+ */
+export function tuple<T extends unknown[]>(...t: [...T]) {
+  return t;
+}

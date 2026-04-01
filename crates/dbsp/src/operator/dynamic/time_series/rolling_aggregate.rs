@@ -3,7 +3,7 @@ use crate::{
     algebra::{HasZero, IndexedZSet, UnsignedPrimInt, ZRingValue},
     circuit::{
         Scope,
-        metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL, OperatorMeta},
+        metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::Operator,
         splitter_output_chunk_size,
     },
@@ -815,8 +815,8 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
-            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
+            INPUT_BATCHES_STATS => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_STATS => self.output_batch_stats.borrow().metadata(),
         });
     }
 
@@ -1529,7 +1529,7 @@ mod test {
     // Test derived from issue #199 (https://github.com/feldera/feldera/issues/199).
     #[test]
     fn test_partitioned_rolling_aggregate2() {
-        let (circuit, (input, expected)) = RootCircuit::build(move |circuit| {
+        let (mut circuit, (input, expected)) = Runtime::init_circuit(1, move |circuit| {
             let (input_stream, input_handle) =
                 circuit.add_input_indexed_zset::<u64, Tup2<u64, i64>>();
 
@@ -1587,7 +1587,7 @@ mod test {
 
     #[test]
     fn test_partitioned_rolling_average() {
-        let (circuit, (input, expected)) = RootCircuit::build(move |circuit| {
+        let (mut circuit, (input, expected)) = Runtime::init_circuit(1, move |circuit| {
             let (input_stream, input_handle) =
                 circuit.add_input_indexed_zset::<u64, Tup2<u64, i64>>();
 
@@ -1635,7 +1635,7 @@ mod test {
 
     #[test]
     fn test_partitioned_rolling_aggregate() {
-        let (circuit, input) = RootCircuit::build(move |circuit| {
+        let (mut circuit, input) = Runtime::init_circuit(1, move |circuit| {
             let (input_stream, input_handle) =
                 circuit.add_input_indexed_zset::<u64, Tup2<u64, i64>>();
 

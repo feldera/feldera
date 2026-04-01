@@ -194,6 +194,7 @@ It contains the following fields:
         endpoints::pipeline_management::delete_pipeline,
         endpoints::pipeline_management::post_pipeline_start,
         endpoints::pipeline_management::post_pipeline_stop,
+        endpoints::pipeline_management::post_pipeline_dismiss_error,
         endpoints::pipeline_management::post_pipeline_clear,
         endpoints::pipeline_management::get_pipeline_logs,
 
@@ -355,6 +356,10 @@ It contains the following fields:
         feldera_types::config::ObjectStorageConfig,
         feldera_types::config::FtModel,
         feldera_types::config::PipelineTemplateConfig,
+        feldera_types::config::DevTweaks,
+        feldera_types::config::dev_tweaks::BufferCacheStrategy,
+        feldera_types::config::dev_tweaks::BufferCacheAllocationStrategy,
+        feldera_types::config::dev_tweaks::MergerType,
         feldera_types::transport::adhoc::AdHocInputConfig,
         feldera_types::transport::clock::ClockConfig,
         feldera_types::transport::file::FileInputConfig,
@@ -398,6 +403,7 @@ It contains the following fields:
         feldera_types::transport::postgres::PostgresReaderConfig,
         feldera_types::transport::postgres::PostgresWriterConfig,
         feldera_types::transport::postgres::PostgresWriteMode,
+        feldera_types::transport::postgres::PostgresTlsConfig,
         feldera_types::transport::redis::RedisOutputConfig,
         feldera_types::transport::http::Chunk,
         feldera_types::transport::clock::ClockConfig,
@@ -405,6 +411,7 @@ It contains the following fields:
         feldera_types::query::AdHocResultFormat,
         feldera_types::format::json::JsonUpdateFormat,
         feldera_types::format::json::JsonLines,
+        feldera_types::preprocess::PreprocessorConfig,
         feldera_types::program_schema::ProgramSchema,
         feldera_types::program_schema::Relation,
         feldera_types::program_schema::SqlType,
@@ -422,10 +429,13 @@ It contains the following fields:
         feldera_types::completion_token::CompletionStatus,
         feldera_types::completion_token::CompletionStatusResponse,
         feldera_types::checkpoint::CheckpointStatus,
+        feldera_types::checkpoint::CheckpointSyncStatus,
         feldera_types::checkpoint::CheckpointResponse,
         feldera_types::checkpoint::CheckpointFailure,
+        feldera_types::checkpoint::CheckpointSyncFailure,
         feldera_types::checkpoint::CheckpointMetadata,
         feldera_types::transaction::StartTransactionResponse,
+        feldera_types::transaction::CommitProgressSummary,
         feldera_types::time_series::TimeSeries,
         feldera_types::time_series::SampleStatistics,
         feldera_types::suspend::SuspendError,
@@ -434,12 +444,16 @@ It contains the following fields:
 
         // Adapter statistics
         feldera_types::adapter_stats::ExternalControllerStatus,
+        feldera_types::memory_pressure::MemoryPressure,
         feldera_types::adapter_stats::ExternalGlobalControllerMetrics,
+        feldera_types::adapter_stats::ConnectorError,
+        feldera_types::adapter_stats::ConnectorHealth,
+        feldera_types::adapter_stats::ConnectorHealthStatus,
         feldera_types::adapter_stats::ExternalInputEndpointStatus,
         feldera_types::adapter_stats::ExternalInputEndpointMetrics,
         feldera_types::adapter_stats::ExternalOutputEndpointStatus,
         feldera_types::adapter_stats::ExternalOutputEndpointMetrics,
-        feldera_types::adapter_stats::ExternalCompletedWatermark,
+        feldera_types::adapter_stats::CompletedWatermark,
         feldera_types::adapter_stats::ExternalTransactionInitiators,
         feldera_types::adapter_stats::ExternalTransactionPhase,
         feldera_types::adapter_stats::ExternalConnectorTransactionPhase,
@@ -539,6 +553,7 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_management::delete_pipeline)
         .service(endpoints::pipeline_management::post_pipeline_start)
         .service(endpoints::pipeline_management::post_pipeline_stop)
+        .service(endpoints::pipeline_management::post_pipeline_dismiss_error)
         .service(endpoints::pipeline_management::post_pipeline_clear)
         .service(endpoints::pipeline_management::get_pipeline_logs)
         // Pipeline interaction endpoints

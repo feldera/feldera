@@ -52,7 +52,12 @@ impl ExponentialHistogram {
     /// Records the time elapsed since `start` in the histogram, as a count of
     /// microseconds.
     pub fn record_elapsed(&self, start: Instant) {
-        self.record(start.elapsed().as_micros());
+        self.record_duration(start.elapsed());
+    }
+
+    /// Records `duration` as a count of microseconds.
+    pub fn record_duration(&self, duration: Duration) {
+        self.record(duration.as_micros());
     }
 
     /// Returns a snapshot of the histogram.

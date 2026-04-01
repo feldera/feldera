@@ -37,6 +37,7 @@ export interface TooltipRow {
 
 /** Tooltip data structure */
 export interface NodeAttributes {
+    title: string;
     /** Column headers */
     columns: string[];
     /** Rows of metrics with values */

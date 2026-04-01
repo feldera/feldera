@@ -2,10 +2,12 @@ package org.dbsp.sqlCompiler.compiler.frontend.aggregates;
 
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.core.Window;
+import org.apache.calcite.sql.SqlKind;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
@@ -117,8 +119,17 @@ public abstract class WindowAggregates implements ICastable {
     public static WindowAggregates newGroup(CalciteToDBSPCompiler compiler, Window window, Window.Group group,
                                             int windowFieldIndex, AggregateCall call) {
         WindowAggregates result = switch (call.getAggregation().getKind()) {
-            case RANK, DENSE_RANK, ROW_NUMBER -> new RankAggregate(
+            case RANK, DENSE_RANK, ROW_NUMBER -> {
+                var allCalls = group.getAggregateCalls(window);
+                var rankCalls = Linq.where(Linq.map(allCalls, c -> c.getAggregation().getKind()),
+                            k -> k == SqlKind.RANK || k == SqlKind.DENSE_RANK || k == SqlKind.ROW_NUMBER);
+                if (rankCalls.size() > 1) {
+                    throw new UnimplementedException("Multiple RANK aggregates per window",
+                            CalciteObject.create(window, new SourcePositionRange(call.getParserPosition())));
+                }
+                yield new RankAggregate(
                     compiler, window, group, windowFieldIndex, call);
+            }
             case FIRST_VALUE, LAST_VALUE -> new FirstLastAggregate(
                     compiler, window, group, windowFieldIndex, call);
             case LAG, LEAD -> {

@@ -301,6 +301,13 @@ pub(crate) trait Storage {
         system_error: &str,
     ) -> Result<(), DBError>;
 
+    /// Dismisses the `deployment_error`.
+    async fn dismiss_deployment_error(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<(), DBError>;
+
     /// Sets deployment desired status to `Provisioned`.
     async fn set_deployment_resources_desired_status_provisioned(
         &self,
@@ -308,6 +315,7 @@ pub(crate) trait Storage {
         pipeline_name: &str,
         initial: RuntimeDesiredStatus,
         bootstrap_policy: BootstrapPolicy,
+        dismiss_error: bool,
     ) -> Result<PipelineId, DBError>;
 
     /// Sets deployment desired status to `Stopped` if it is not in currently `Provisioned`.

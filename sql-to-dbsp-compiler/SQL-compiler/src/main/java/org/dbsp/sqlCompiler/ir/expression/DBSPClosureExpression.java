@@ -101,6 +101,11 @@ public final class DBSPClosureExpression extends DBSPExpression {
         return new DBSPApplyExpression(this, arguments);
     }
 
+    public DBSPApplyExpression call(List<DBSPExpression> arguments) {
+        DBSPExpression[] args = arguments.toArray(DBSPExpression[]::new);
+        return this.call(args);
+    }
+
     @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);
@@ -164,9 +169,7 @@ public final class DBSPClosureExpression extends DBSPExpression {
         } else {
             // TODO: this could be refined by checking how many times the source expression
             // is substituted in the result.
-            Expensive expensive = new Expensive(compiler);
-            expensive.apply(before);
-            return !expensive.isExpensive();
+            return !Expensive.isExpensive(compiler, before);
         }
     }
 

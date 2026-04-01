@@ -54,6 +54,13 @@ pub struct ShortInterval {
 }
 
 #[doc(hidden)]
+pub fn reinterpret_ShortInterval(value: ShortInterval) -> i64 {
+    value.milliseconds()
+}
+
+some_polymorphic_function1!(reinterpret, ShortInterval, ShortInterval, i64);
+
+#[doc(hidden)]
 impl<D> ::rkyv::Deserialize<ShortInterval, D> for ArchivedShortInterval
 where
     D: ::rkyv::Fallible + ::core::any::Any,
@@ -119,6 +126,13 @@ pub fn abs_ShortInterval(value: ShortInterval) -> ShortInterval {
 }
 
 some_polymorphic_function1!(abs, ShortInterval, ShortInterval, ShortInterval);
+
+#[doc(hidden)]
+/// This function is used in rolling window computations, which require all
+/// values to be expressed using unsigned types.
+pub fn to_bound_ShortInterval_ShortInterval_u128(value: &ShortInterval) -> u128 {
+    value.microseconds as u128
+}
 
 #[doc(hidden)]
 /// This function is used in rolling window computations, which require all
@@ -479,6 +493,13 @@ impl LongInterval {
 }
 
 #[doc(hidden)]
+pub fn reinterpret_LongInterval(value: LongInterval) -> i64 {
+    value.months() as i64
+}
+
+some_polymorphic_function1!(reinterpret, LongInterval, LongInterval, i64);
+
+#[doc(hidden)]
 pub fn abs_LongInterval(value: LongInterval) -> LongInterval {
     LongInterval::from_months(num::abs(value.months))
 }
@@ -814,6 +835,16 @@ pub fn extract_hour_LongInterval(_value: LongInterval) -> i64 {
 }
 
 ///////////
+
+#[doc(hidden)]
+pub fn short_interval_to_integer(value: ShortInterval) -> i64 {
+    value.microseconds
+}
+
+#[doc(hidden)]
+pub fn integer_to_short_interval(value: i64) -> ShortInterval {
+    ShortInterval::from_microseconds(value)
+}
 
 #[doc(hidden)]
 pub fn extract_day_ShortInterval(value: ShortInterval) -> i64 {

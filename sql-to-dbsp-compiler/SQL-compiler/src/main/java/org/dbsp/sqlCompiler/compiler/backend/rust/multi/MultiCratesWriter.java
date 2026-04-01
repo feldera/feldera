@@ -74,29 +74,37 @@ public final class MultiCratesWriter extends RustWriter {
         cargoStream.println("]");
 
         String deps = """
+                resolver = "2"
+
                 [profile.unoptimized]
                 inherits = "release"
                 opt-level = 0
                 lto = "off"
                 codegen-units = 256
-        
+
                 [profile.optimized]
                 inherits = "release"
-                
+
+                [profile.optimized_symbols]
+                inherits = "release"
+                debug = "line-tables-only"
+
                 [workspace.dependencies]
                 arcstr = { version = "1.2.0" }
                 paste = { version = "1.0.12" }
-                derive_more = { version = "0.99.17", features = ["add", "not", "from"] }
+                derive_more = { version = "1.0.0", features = ["add", "not", "from"] }
                 dbsp = { path = "$ROOT/crates/dbsp", features = ["backend-mode"] }
                 dbsp_adapters = { path = "$ROOT/crates/adapters"$FEATURES }
                 feldera-macros = { path = "$ROOT/crates/feldera-macros" }
                 feldera-types = { path = "$ROOT/crates/feldera-types" }
+                feldera-adapterlib = { path = "$ROOT/crates/adapterlib" }
                 feldera-sqllib = { path = "$ROOT/crates/sqllib" }
-                serde = { version = "1.0", features = ["derive"] }
+                serde = { version = "1.0.213", features = ["derive"] }
                 compare = { version = "0.1.0" }
-                size-of = { version = "0.1.5", package = "feldera-size-of" }
-                serde_json = { version = "1.0.127", features = ["arbitrary_precision"] }
+                size-of = { version = "0.1.7", package = "feldera-size-of" }
+                serde_json = { version = "1.0.132", features = ["arbitrary_precision"] }
                 rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64"] }
+                seq-macro = { version = "0.3.6" }
                 tikv-jemallocator = { version = "0.6.0", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }""";
 
         String relativePath = "../..";
@@ -138,7 +146,7 @@ public final class MultiCratesWriter extends RustWriter {
                     this.rootDirectory, MultiCrates.CRATES_DIRECTORY, MultiCratesWriter.getTestName(), writer,
                     crates.enterprise(), true);
             RustWriter.StructuresUsed locallyUsed = new RustWriter.StructuresUsed();
-            RustWriter.FindResources finder = new RustWriter.FindResources(compiler, locallyUsed);
+            FindInnerResources finder = new FindInnerResources(compiler, locallyUsed);
 
             for (var node : this.testNodes) {
                 if (node.is(IDBSPInnerNode.class))

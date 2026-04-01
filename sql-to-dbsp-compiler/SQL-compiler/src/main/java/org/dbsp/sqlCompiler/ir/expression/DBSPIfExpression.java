@@ -37,7 +37,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
-import java.util.Objects;
 
 public final class DBSPIfExpression extends DBSPExpression {
     public final DBSPExpression condition;
@@ -106,7 +105,7 @@ public final class DBSPIfExpression extends DBSPExpression {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        builder.append("if ")
+        builder.append("(if ")
                 .append(this.condition)
                 .append(" ");
         if (this.positive.is(DBSPBlockExpression.class))
@@ -132,6 +131,7 @@ public final class DBSPIfExpression extends DBSPExpression {
                         .append("}");
             }
         }
+        builder.append(")");
         return builder;
     }
 

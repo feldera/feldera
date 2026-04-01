@@ -40,7 +40,8 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.List;
 
-public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase implements INonLinearAggregate {
+public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase
+        implements INonLinearAggregate, IIncremental {
     public DBSPAggregateOperator(
             CalciteRelNode node,
             DBSPTypeIndexedZSet outputType,

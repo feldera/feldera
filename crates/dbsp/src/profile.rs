@@ -5,16 +5,22 @@ use crate::{
     circuit::{
         GlobalNodeId,
         circuit_builder::{CircuitBase, Node},
-        metadata::{MetaItem, OperatorMeta},
-        runtime::ThreadType,
+        metadata::{
+            BACKGROUND_CACHE_OCCUPANCY, CIRCUIT_IDLE_TIME_SECONDS, CIRCUIT_METRICS,
+            CIRCUIT_RUNTIME_ELAPSED_SECONDS, CIRCUIT_RUNTIME_SECONDS, CIRCUIT_WAIT_TIME_SECONDS,
+            CircuitMetric, FOREGROUND_CACHE_OCCUPANCY, INVOCATIONS_COUNT, MetaItem, MetricId,
+            MetricReading, OperatorMeta, RUNTIME_PERCENT, RUNTIME_SECONDS,
+            SPINE_STORAGE_SIZE_BYTES, STEPS_COUNT, USED_MEMORY_BYTES,
+        },
     },
     monitor::{TraceMonitor, visual_graph::Graph},
 };
+use feldera_buffer_cache::ThreadType;
 use serde::Serialize;
 use size_of::HumanBytes;
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fmt::Write,
     fs::{self, create_dir_all},
     io::{Cursor as IoCursor, Error as IoError, Write as _},
@@ -24,9 +30,6 @@ use std::{
 use zip::{ZipWriter, write::SimpleFileOptions};
 
 mod cpu;
-use crate::circuit::metadata::{
-    ALLOCATED_BYTES_LABEL, NUM_ENTRIES_LABEL, SHARED_BYTES_LABEL, USED_BYTES_LABEL,
-};
 pub use cpu::CPUProfiler;
 
 /// Rudimentary circuit profiler.
@@ -54,11 +57,11 @@ impl WorkerProfile {
     ///
     /// The returned hashmap contains id's of nodes that have the specified
     /// attribute along with the value of the attribute.
-    pub fn attribute_profile(&self, attr: &str) -> HashMap<GlobalNodeId, MetaItem> {
+    pub fn attribute_profile(&self, attr: &MetricId) -> HashMap<GlobalNodeId, MetaItem> {
         let mut result = HashMap::new();
 
         for (id, meta) in self.metadata.iter() {
-            if let Some(item) = meta.get(attr) {
+            if let Some(item) = meta.get(attr.clone()) {
                 result.insert(id.clone(), item);
             }
         }
@@ -74,7 +77,7 @@ impl WorkerProfile {
     /// the value of the attribute that caused the failure.
     pub fn attribute_profile_as_bytes(
         &self,
-        attr: &str,
+        attr: &MetricId,
     ) -> Result<HashMap<GlobalNodeId, HumanBytes>, MetaItem> {
         let mut result = HashMap::new();
 
@@ -94,7 +97,7 @@ impl WorkerProfile {
     /// Fails if the profile contains an attribute with the specified name and a
     /// type that is different from [`MetaItem::Bytes`].  On error, returns
     /// the value of the attribute that caused the failure.
-    pub fn attribute_total_as_bytes(&self, attr: &str) -> Result<HumanBytes, MetaItem> {
+    pub fn attribute_total_as_bytes(&self, attr: &MetricId) -> Result<HumanBytes, MetaItem> {
         Ok(HumanBytes::new(
             self.attribute_profile_as_bytes(attr)?
                 .into_iter()
@@ -102,79 +105,31 @@ impl WorkerProfile {
         ))
     }
 
-    /// Returns the profile for a specific attribute of type [`MetaItem::Int`].
+    /// Returns the sum of values of an attribute of type [`MetaItem::Count`]
+    /// across all nodes, including entries with labels.
     ///
     /// Fails if the profile contains an attribute with the specified name and a
-    /// type that is different from [`MetaItem::Int`].  On error, returns
+    /// type that is different from [`MetaItem::Count`].  On error, returns
     /// the value of the attribute that caused the failure.
-    pub fn attribute_profile_as_int(
-        &self,
-        attr: &str,
-    ) -> Result<HashMap<GlobalNodeId, usize>, MetaItem> {
-        let mut result = HashMap::new();
-
-        for (id, meta) in self.attribute_profile(attr).into_iter() {
-            if let MetaItem::Int(val) = meta {
-                result.insert(id, val);
-            } else {
-                return Err(meta);
+    pub fn attribute_total_as_count(&self, attr: &MetricId) -> Result<usize, MetaItem> {
+        let mut acc = 0;
+        for meta in self.metadata.values() {
+            for ((metric_id, _labels), value) in meta.iter() {
+                if metric_id == attr {
+                    if let MetaItem::Count(count) = value {
+                        acc += *count;
+                    } else {
+                        return Err(value.clone());
+                    }
+                }
             }
         }
-        Ok(result)
-    }
-
-    /// Returns the sum of values of an attribute of type [`MetaItem::Int`]
-    /// across all nodes.
-    ///
-    /// Fails if the profile contains an attribute with the specified name and a
-    /// type that is different from [`MetaItem::Int`].  On error, returns
-    /// the value of the attribute that caused the failure.
-    pub fn attribute_total_as_int(&self, attr: &str) -> Result<usize, MetaItem> {
-        Ok(self
-            .attribute_profile_as_int(attr)?
-            .into_iter()
-            .fold(0usize, |acc, (_, item)| acc + item))
-    }
-
-    /// Returns the number of entries stored in each stateful operator.
-    pub fn relation_size_profile(&self) -> Result<HashMap<GlobalNodeId, usize>, MetaItem> {
-        self.attribute_profile_as_int(NUM_ENTRIES_LABEL)
-    }
-
-    /// Returns the total number of entries across all stateful operators.
-    pub fn total_relation_size(&self) -> Result<usize, MetaItem> {
-        self.attribute_total_as_int(NUM_ENTRIES_LABEL)
-    }
-
-    /// Returns the number of used bytes for each stateful operator.
-    pub fn used_bytes_profile(&self) -> Result<HashMap<GlobalNodeId, HumanBytes>, MetaItem> {
-        self.attribute_profile_as_bytes(USED_BYTES_LABEL)
+        Ok(acc)
     }
 
     /// Returns the total number of bytes used by all stateful operators.
     pub fn total_used_bytes(&self) -> Result<HumanBytes, MetaItem> {
-        self.attribute_total_as_bytes(USED_BYTES_LABEL)
-    }
-
-    /// Returns the number of allocated bytes for each stateful operator.
-    pub fn allocated_bytes_profile(&self) -> Result<HashMap<GlobalNodeId, HumanBytes>, MetaItem> {
-        self.attribute_profile_as_bytes(ALLOCATED_BYTES_LABEL)
-    }
-
-    /// Returns the total number of allocated bytes across all stateful
-    /// operators.
-    pub fn total_allocated_bytes(&self) -> Result<HumanBytes, MetaItem> {
-        self.attribute_total_as_bytes(ALLOCATED_BYTES_LABEL)
-    }
-
-    /// Returns the number of shared bytes for each stateful operator.
-    pub fn shared_bytes_profile(&self) -> Result<HashMap<GlobalNodeId, HumanBytes>, MetaItem> {
-        self.attribute_profile_as_bytes(SHARED_BYTES_LABEL)
-    }
-
-    /// Returns the total number of shared bytes across all stateful operators.
-    pub fn total_shared_bytes(&self) -> Result<HumanBytes, MetaItem> {
-        self.attribute_total_as_bytes(SHARED_BYTES_LABEL)
+        self.attribute_total_as_bytes(&USED_MEMORY_BYTES)
     }
 
     pub fn merge(&mut self, other: &Self) {
@@ -261,6 +216,7 @@ $(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
 /// This also includes the circuit graph.
 #[derive(Debug, Serialize)]
 pub struct DbspProfile {
+    pub metrics: &'static [CircuitMetric],
     pub worker_profiles: Vec<WorkerProfile>,
     pub graph: Option<Graph>,
 }
@@ -268,6 +224,7 @@ pub struct DbspProfile {
 impl DbspProfile {
     pub fn new(worker_profiles: Vec<WorkerProfile>, graph: Option<Graph>) -> Self {
         Self {
+            metrics: &CIRCUIT_METRICS,
             worker_profiles,
             graph,
         }
@@ -290,61 +247,13 @@ impl DbspProfile {
         zip.finish().unwrap().into_inner()
     }
 
-    /// Compute aggregate profile for a specific attribute across all workers.
-    ///
-    /// # Arguments
-    ///
-    /// - `attr` - attribute name
-    /// - `default` - default value of the attribute
-    /// - `combine` - combines a value of the attribute with a new value
-    ///   retrieved from a `MetaItem`. Fails if the `MetaItem` has incorrect
-    ///   type for the attribute.
-    pub fn attribute_profile<T, DF, CF>(
-        &self,
-        attr: &str,
-        default: DF,
-        combine: CF,
-    ) -> Result<HashMap<GlobalNodeId, T>, MetaItem>
-    where
-        DF: Fn() -> T,
-        CF: Fn(&T, &MetaItem) -> Result<T, MetaItem>,
-    {
-        let mut result = HashMap::new();
-
-        for profile in self.worker_profiles.iter() {
-            let new = profile.attribute_profile(attr);
-            for (id, item) in new.into_iter() {
-                let entry = result.entry(id).or_insert_with(&default);
-                *entry = combine(entry, &item)?;
-            }
-        }
-
-        Ok(result)
-    }
-
-    /// Compute aggregate profile of an attribute of type [`MetaItem::Bytes`] by
-    /// summing up the values of the attribute across all workers.
-    pub fn attribute_profile_as_bytes(
-        &self,
-        attr: &str,
-    ) -> Result<HashMap<GlobalNodeId, HumanBytes>, MetaItem> {
-        self.attribute_profile(
-            attr,
-            || HumanBytes::new(0),
-            |bytes, item| match item {
-                MetaItem::Bytes(new_bytes) => Ok(HumanBytes::new(bytes.bytes + new_bytes.bytes)),
-                _ => Err(item.clone()),
-            },
-        )
-    }
-
     /// Returns the sum of values of an attribute of type [`MetaItem::Bytes`]
     /// across all nodes and all worker threads.
     ///
     /// Fails if the profile contains an attribute with the specified name and a
     /// type that is different from [`MetaItem::Bytes`].  On error, returns
     /// the value of the attribute that caused the failure.
-    pub fn attribute_total_as_bytes(&self, attr: &str) -> Result<HumanBytes, MetaItem> {
+    pub fn attribute_total_as_bytes(&self, attr: &MetricId) -> Result<HumanBytes, MetaItem> {
         let mut acc = 0;
 
         for profile in self.worker_profiles.iter() {
@@ -354,77 +263,29 @@ impl DbspProfile {
         Ok(HumanBytes::new(acc))
     }
 
-    /// Compute aggregate profile of an attribute of type [`MetaItem::Int`] by
-    /// summing up the values of the attribute across all workers.
-    pub fn attribute_profile_as_int(
-        &self,
-        attr: &str,
-    ) -> Result<HashMap<GlobalNodeId, usize>, MetaItem> {
-        self.attribute_profile(
-            attr,
-            || 0,
-            |val, item| match item {
-                MetaItem::Int(new_val) => Ok(val + new_val),
-                _ => Err(item.clone()),
-            },
-        )
+    /// Returns the total number of bytes used by all stateful operators.
+    // This function is used by some Java tests, do not delete.
+    pub fn total_used_bytes(&self) -> Result<HumanBytes, MetaItem> {
+        self.attribute_total_as_bytes(&USED_MEMORY_BYTES)
     }
 
-    /// Returns the sum of values of an attribute of type [`MetaItem::Int`]
-    /// across all nodes and all worker threads.
+    /// Returns the total spine storage size in bytes across all operators.
+    pub fn total_storage_size(&self) -> Result<HumanBytes, MetaItem> {
+        self.attribute_total_as_bytes(&SPINE_STORAGE_SIZE_BYTES)
+    }
+
+    /// Returns the sum of values of an attribute of type [`MetaItem::Count`]
+    /// across all nodes and all worker threads, including entries with labels.
     ///
     /// Fails if the profile contains an attribute with the specified name and a
-    /// type that is different from [`MetaItem::Int`].  On error, returns
+    /// type that is different from [`MetaItem::Count`].  On error, returns
     /// the value of the attribute that caused the failure.
-    pub fn attribute_total_as_int(&self, attr: &str) -> Result<usize, MetaItem> {
-        let mut acc = 0usize;
-
+    pub fn attribute_total_as_count(&self, attr: &MetricId) -> Result<usize, MetaItem> {
+        let mut acc = 0;
         for profile in self.worker_profiles.iter() {
-            acc += profile.attribute_total_as_int(attr)?;
+            acc += profile.attribute_total_as_count(attr)?;
         }
-
         Ok(acc)
-    }
-
-    /// Returns the number of table entries stored in each stateful operator.
-    pub fn relation_size_profile(&self) -> Result<HashMap<GlobalNodeId, usize>, MetaItem> {
-        self.attribute_profile_as_int(NUM_ENTRIES_LABEL)
-    }
-
-    /// Returns the total number of table entries across all stateful operators.
-    pub fn total_relation_size(&self) -> Result<usize, MetaItem> {
-        self.attribute_total_as_int(NUM_ENTRIES_LABEL)
-    }
-
-    /// Returns the number of used bytes for each stateful operator.
-    pub fn used_bytes_profile(&self) -> Result<HashMap<GlobalNodeId, HumanBytes>, MetaItem> {
-        self.attribute_profile_as_bytes(USED_BYTES_LABEL)
-    }
-
-    /// Returns the total number of bytes used by all stateful operators.
-    pub fn total_used_bytes(&self) -> Result<HumanBytes, MetaItem> {
-        self.attribute_total_as_bytes(USED_BYTES_LABEL)
-    }
-
-    /// Returns the number of allocated bytes for each stateful operator.
-    pub fn allocated_bytes_profile(&self) -> Result<HashMap<GlobalNodeId, HumanBytes>, MetaItem> {
-        self.attribute_profile_as_bytes(ALLOCATED_BYTES_LABEL)
-    }
-
-    /// Returns the total number of allocated bytes across all stateful
-    /// operators.
-    pub fn total_allocated_bytes(&self) -> Result<HumanBytes, MetaItem> {
-        self.attribute_total_as_bytes(ALLOCATED_BYTES_LABEL)
-    }
-
-    /// Returns the number of shared bytes for each stateful operator.
-    pub fn shared_bytes_profile(&self) -> Result<HashMap<GlobalNodeId, HumanBytes>, MetaItem> {
-        self.attribute_profile_as_bytes(SHARED_BYTES_LABEL)
-    }
-
-    /// Returns the total number of shared bytes across all stateful operators.
-    pub fn total_shared_bytes(&self) -> Result<HumanBytes, MetaItem> {
-        self.attribute_total_as_bytes(SHARED_BYTES_LABEL)
     }
 }
 
@@ -459,13 +320,11 @@ impl Profiler {
             let mut meta = OperatorMeta::new();
             node.metadata(&mut meta);
             for (label, value) in node.labels().iter() {
-                meta.insert(
-                    0,
-                    (
-                        Cow::Owned(label.to_string()),
-                        MetaItem::String(value.to_string()),
-                    ),
-                )
+                meta.extend([MetricReading::new(
+                    MetricId(Cow::Owned(label.clone())),
+                    Vec::new(),
+                    MetaItem::String(value.to_string()),
+                )]);
             }
             metadata.insert(node.global_id().clone(), meta);
             Ok(())
@@ -491,16 +350,19 @@ impl Profiler {
         for (node_id, meta) in metadata.iter_mut() {
             if let Some(profile) = self.cpu_profiler.operator_profile(node_id) {
                 let default_meta = [
-                    (
-                        Cow::Borrowed("invocations"),
-                        MetaItem::Int(profile.invocations()),
+                    MetricReading::new(
+                        INVOCATIONS_COUNT,
+                        Vec::new(),
+                        MetaItem::Count(profile.invocations()),
                     ),
-                    (
-                        Cow::Borrowed("time"),
+                    MetricReading::new(
+                        RUNTIME_SECONDS,
+                        Vec::new(),
                         MetaItem::Duration(profile.total_time()),
                     ),
-                    (
-                        Cow::Borrowed("time%"),
+                    MetricReading::new(
+                        RUNTIME_PERCENT,
+                        Vec::new(),
                         MetaItem::Percent {
                             numerator: profile.total_time().as_micros() as u64,
                             denominator: total_time.as_micros() as u64,
@@ -508,38 +370,26 @@ impl Profiler {
                     ),
                 ];
 
-                for item in default_meta {
-                    meta.insert(0, item);
-                }
+                meta.extend(default_meta);
             }
 
             // Additional metadata for circuit nodes.
             if let Some(profile) = self.cpu_profiler.circuit_profile(node_id) {
-                let default_meta = [
-                    (
-                        Cow::Borrowed("wait_time"),
-                        MetaItem::Duration(profile.wait_profile.total_time()),
-                    ),
-                    (
-                        Cow::Borrowed("steps"),
-                        MetaItem::Int(profile.step_profile.invocations()),
-                    ),
-                    (
-                        Cow::Borrowed("total_runtime"),
-                        MetaItem::Duration(profile.step_profile.total_time()),
-                    ),
-                    (
-                        Cow::Borrowed("total_idle_time"),
-                        MetaItem::Duration(profile.idle_profile.total_time()),
-                    ),
-                    (
-                        Cow::Borrowed("runtime_elapsed"),
-                        MetaItem::Duration(runtime_elapsed),
-                    ),
+                let default_meta = metadata![
+                    CIRCUIT_WAIT_TIME_SECONDS => profile.wait_profile.total_time(),
+                    STEPS_COUNT => profile.step_profile.invocations(),
+                    CIRCUIT_RUNTIME_SECONDS => profile.step_profile.total_time(),
+                    CIRCUIT_IDLE_TIME_SECONDS => profile.idle_profile.total_time(),
+                    CIRCUIT_RUNTIME_ELAPSED_SECONDS => runtime_elapsed,
                 ];
 
-                for item in default_meta {
-                    meta.insert(0, item);
+                meta.extend(default_meta);
+
+                fn cache_occupancy_metric(thread_type: ThreadType) -> MetricId {
+                    match thread_type {
+                        ThreadType::Foreground => FOREGROUND_CACHE_OCCUPANCY,
+                        ThreadType::Background => BACKGROUND_CACHE_OCCUPANCY,
+                    }
                 }
 
                 let runtime = Runtime::runtime().unwrap();
@@ -547,17 +397,20 @@ impl Profiler {
                     let cache =
                         runtime.get_buffer_cache(Runtime::local_worker_offset(), thread_type);
                     let (cur, max) = cache.occupancy();
-                    meta.insert(
-                        0,
-                        (
-                            Cow::from(format!("{thread_type} cache occupancy")),
-                            MetaItem::String(format!(
-                                "{} used (max {})",
-                                HumanBytes::new(cur as u64),
-                                HumanBytes::new(max as u64)
-                            )),
-                        ),
-                    );
+                    meta.extend([MetricReading::new(
+                        cache_occupancy_metric(thread_type),
+                        Vec::new(),
+                        MetaItem::Map(BTreeMap::from([
+                            (
+                                Cow::Borrowed("used"),
+                                MetaItem::Bytes(HumanBytes::new(cur as u64)),
+                            ),
+                            (
+                                Cow::Borrowed("max"),
+                                MetaItem::Bytes(HumanBytes::new(max as u64)),
+                            ),
+                        ])),
+                    )]);
                 }
             }
         }
@@ -579,10 +432,22 @@ impl Profiler {
             let meta = profile.metadata.get(node_id).cloned().unwrap_or_default();
 
             let mut importance = 0f64;
-            for (label, item) in meta.iter() {
-                write!(output, "{label}: ").unwrap();
+            for ((metric_id, labels), item) in meta.iter() {
+                let label = if labels.is_empty() {
+                    "".to_string()
+                } else {
+                    format!(
+                        "[{}]",
+                        labels
+                            .iter()
+                            .map(|(key, value)| format!("{key}={value}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                };
+                write!(output, "{metric_id}{label}: ",).unwrap();
                 item.format(&mut output).unwrap();
-                if label == "time%"
+                if metric_id == &RUNTIME_PERCENT
                     && let MetaItem::Percent {
                         numerator,
                         denominator,

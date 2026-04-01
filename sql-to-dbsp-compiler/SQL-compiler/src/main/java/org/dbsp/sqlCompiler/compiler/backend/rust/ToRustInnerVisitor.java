@@ -1868,6 +1868,25 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(")");
             this.pop(expression);
             return VisitDecision.STOP;
+        } else if (expression.opcode == DBSPOpcode.INTEGER_TO_SHORT_INTERVAL ||
+                expression.opcode == DBSPOpcode.SHORT_INTERVAL_TO_INTEGER) {
+            this.builder.append(expression.opcode.toString())
+                    .append("(");
+            expression.source.accept(this);
+            this.builder.append(")");
+            this.pop(expression);
+            return VisitDecision.STOP;
+        } else if (expression.opcode == DBSPOpcode.REINTERPRET) {
+            DBSPTypeBaseType sourceType = expression.source.getType().to(DBSPTypeBaseType.class);
+            this.builder.append(expression.opcode.toString())
+                    .append("_")
+                    .append(sourceType.shortName())
+                    .append(sourceType.nullableSuffix())
+                    .append("(");
+            expression.source.accept(this);
+            this.builder.append(")");
+            this.pop(expression);
+            return VisitDecision.STOP;
         }
         if (expression.source.getType().mayBeNull) {
             this.builder.append("(")
@@ -2257,7 +2276,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         // We are explicitly taking a reference for these cases
                         avoidRef = true;
                 }
-            } else if (parent.is(DBSPBorrowExpression.class)) {
+            } else if (parent.is(DBSPBorrowExpression.class) || parent.is(DBSPLazyExpression.class)) {
                 // Pattern appearing in aggregation
                 avoidRef = true;
             }
@@ -2318,6 +2337,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(expression.fieldNo);
                 if (fieldTypeIsNullable && !expression.getType().hasCopy() && !avoidRef) {
                     this.builder.append(".as_ref()");
+                } else if (fieldTypeIsNullable) {
+                    this.builder.append(".clone()");
                 }
                 this.builder.append(")").decrease();
             }

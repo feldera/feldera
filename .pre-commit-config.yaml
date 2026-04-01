@@ -1,14 +1,14 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
 default_language_version:
-  rust: 1.91.1
+  rust: 1.93.1
 repos:
   - repo: local
     hooks:
       - id: cargo-clippy
         name: Clippy Automatic Fixes
         description: Run the Clippy linter on the package.
-        entry: cargo clippy --fix
+        entry: cargo clippy --fix --allow-dirty
         language: rust
         files: \.rs$
         pass_filenames: false

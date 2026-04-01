@@ -29,6 +29,11 @@ public class RelSequence extends CalciteRelNode {
     }
 
     @Override
+    public CalciteRelNode copy() {
+        return new RelSequence(this.nodes).addSourcePositions(this.positions);
+    }
+
+    @Override
     public IIndentStream asJson(IIndentStream stream, Map<RelNode, Integer> idRemap) {
         stream.append("{").increase()
                 .appendJsonLabelAndColon("seq")

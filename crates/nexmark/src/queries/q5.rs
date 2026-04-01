@@ -1,8 +1,8 @@
 use super::{NexmarkStream, WATERMARK_INTERVAL_SECONDS};
 use crate::model::Event;
 use dbsp::{
-    dynamic::DynData, operator::Max, typed_batch::TypedBox, utils::Tup2, OrdIndexedZSet, OrdZSet,
-    RootCircuit, Stream,
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream, dynamic::DynData, operator::Max,
+    typed_batch::TypedBox, utils::Tup2,
 };
 
 type Q5Stream = Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>>;
@@ -130,7 +130,7 @@ mod tests {
         generator::tests::make_bid,
         model::{Bid, Event},
     };
-    use dbsp::{utils::Tup2, zset, RootCircuit};
+    use dbsp::{utils::Tup2, zset};
     use rstest::rstest;
 
     #[rstest]
@@ -199,7 +199,7 @@ mod tests {
                         .collect()
                 });
 
-        let (circuit, input_handle) = RootCircuit::build(move |circuit| {
+        let (mut circuit, input_handle) = dbsp::Runtime::init_circuit(1, move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q5(circuit, stream);

@@ -12,12 +12,14 @@ import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlSpecialOperator;
 import org.apache.calcite.sql.SqlWriter;
 import org.apache.calcite.sql.parser.SqlParserPos;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+
+import static java.util.Objects.requireNonNull;
 
 /** Our own version of CREATE FUNCTION, different from Calcite. */
 public class SqlCreateFunctionDeclaration extends SqlCreate {
@@ -31,12 +33,14 @@ public class SqlCreateFunctionDeclaration extends SqlCreate {
                 @Override
                 public SqlCall createCall(@org.checkerframework.checker.nullness.qual.Nullable SqlLiteral functionQualifier,
                                           SqlParserPos pos, @org.checkerframework.checker.nullness.qual.Nullable SqlNode... operands) {
-                    Utilities.enforce(operands.length == 4);
-                    return new SqlCreateFunctionDeclaration(pos, false, false,
-                            (SqlIdentifier) Objects.requireNonNull(operands[0]),
-                            (SqlNodeList) Objects.requireNonNull(operands[1]),
-                            (SqlDataTypeSpec) Objects.requireNonNull(operands[2]),
-                            operands[3]);
+                    Utilities.enforce(operands.length == 6);
+                    return new SqlCreateFunctionDeclaration(pos,
+                            ((SqlLiteral) requireNonNull(operands[0], "replace")).booleanValue(),
+                            ((SqlLiteral) requireNonNull(operands[1], "ifNotExists")).booleanValue(),
+                            (SqlIdentifier) Objects.requireNonNull(operands[2]),
+                            (SqlNodeList) Objects.requireNonNull(operands[3]),
+                            (SqlDataTypeSpec) Objects.requireNonNull(operands[4]),
+                            operands[5]);
                 }
             };
 
@@ -90,7 +94,10 @@ public class SqlCreateFunctionDeclaration extends SqlCreate {
     }
 
     @Override public List<SqlNode> getOperandList() {
-        return Arrays.asList(this.name, this.parameters, this.returnType, this.body);
+        return Linq.list(
+                SqlLiteral.createBoolean(getReplace(), SqlParserPos.ZERO),
+                SqlLiteral.createBoolean(this.ifNotExists, SqlParserPos.ZERO),
+                this.name, this.parameters, this.returnType, this.body);
     }
 
     @Nullable public SqlNode getBody() { return this.body; }

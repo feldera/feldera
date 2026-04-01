@@ -15,7 +15,7 @@ pub enum DeltaTableWriteMode {
 
     /// Existing table at the specified location will get truncated.
     ///
-    /// The connector truncates the table by outputing delete actions for all
+    /// The connector truncates the table by outputting delete actions for all
     /// files in the latest snapshot of the table.
     #[serde(rename = "truncate")]
     Truncate,
@@ -35,6 +35,28 @@ pub struct DeltaTableWriterConfig {
     #[serde(default)]
     pub mode: DeltaTableWriteMode,
 
+    /// Maximum number of retries for failed operations.
+    ///
+    /// The connector performs retries on several levels: individual S3 operations, Delta Lake transaction commits,
+    /// and overall operation retries. This setting controls the overall operation retries. When a write to the table
+    /// fails, because of an S3 timeout or any other reason that was not resolved by lower-level retries, the connector
+    /// will retry the entire operation.
+    ///
+    /// When not specified, the connector performs infinite retries. When set to 0, the connector doesn't
+    /// retry failed operations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_retries: Option<u32>,
+
+    /// Number of parallel threads used by the connector.
+    ///
+    /// Increasing this value can improve Delta Lake write throughput
+    /// by enabling concurrent writes.
+    ///
+    /// Default: 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(minimum = 1)]
+    pub threads: Option<usize>,
+
     /// Storage options for configuring backend object store.
     ///
     /// For specific options available for different storage backends, see:
@@ -43,6 +65,15 @@ pub struct DeltaTableWriterConfig {
     /// * [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)
     #[serde(flatten)]
     pub object_store_config: HashMap<String, String>,
+}
+
+impl DeltaTableWriterConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.threads.is_some_and(|t| t == 0) {
+            return Err("threads must be greater than 0".to_string());
+        }
+        Ok(())
+    }
 }
 
 /// Delta table read mode.
@@ -89,7 +120,7 @@ impl Display for DeltaTableIngestMode {
         match self {
             DeltaTableIngestMode::Snapshot => write!(f, "snapshot"),
             DeltaTableIngestMode::Follow => write!(f, "follow"),
-            DeltaTableIngestMode::SnapshotAndFollow => write!(f, "shapshot_and_follow"),
+            DeltaTableIngestMode::SnapshotAndFollow => write!(f, "snapshot_and_follow"),
             DeltaTableIngestMode::Cdc => write!(f, "cdc"),
         }
     }
@@ -340,6 +371,18 @@ fn test_delta_reader_config_serde() {
         serde_json::from_str::<serde_json::Value>(&serialized_config).unwrap(),
         serde_json::from_str::<serde_json::Value>(expected).unwrap()
     );
+}
+
+#[cfg(test)]
+#[test]
+fn test_delta_table_ingest_mode_display() {
+    assert_eq!(DeltaTableIngestMode::Snapshot.to_string(), "snapshot");
+    assert_eq!(DeltaTableIngestMode::Follow.to_string(), "follow");
+    assert_eq!(
+        DeltaTableIngestMode::SnapshotAndFollow.to_string(),
+        "snapshot_and_follow"
+    );
+    assert_eq!(DeltaTableIngestMode::Cdc.to_string(), "cdc");
 }
 
 impl DeltaTableReaderConfig {

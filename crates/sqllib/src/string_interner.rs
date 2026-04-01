@@ -8,13 +8,13 @@ use std::{
 
 use dbsp::{
     Circuit, DynZWeight, OrdZSet, RootCircuit, Runtime, Stream, ZWeight,
-    circuit::LocalStoreMarker,
+    circuit::{LocalStoreMarker, WorkerLocation, WorkerLocations},
     dynamic::{DowncastTrait, DynData},
-    operator::communication::new_exchange_operators,
+    operator::communication::{Mailbox, new_exchange_operators},
     storage::file::to_bytes,
     trace::{
         BatchReader, BatchReaderFactories, Cursor, OrdIndexedWSet as DynOrdIndexedWSet,
-        OrdIndexedWSetFactories, SpineSnapshot, unaligned_deserialize,
+        OrdIndexedWSetFactories, SpineSnapshot, aligned_deserialize,
     },
     utils::Tup1,
 };
@@ -295,13 +295,21 @@ pub fn build_string_interner(
         Some(Location::caller()),
         empty_by_id,
         move |spine: SpineSnapshot<_>, outputs| {
-            outputs.push(spine.clone());
-            for _ in 1..Runtime::num_workers() {
-                outputs.push(empty_by_id());
+            let mut locations = WorkerLocations::new();
+            match locations.next().unwrap() {
+                WorkerLocation::Local => outputs.push(Mailbox::Plain(spine.clone())),
+                WorkerLocation::Remote => outputs.push(Mailbox::Tx(to_bytes(&spine).unwrap())),
+            };
+            for location in locations {
+                match location {
+                    WorkerLocation::Local => outputs.push(Mailbox::Plain(empty_by_id())),
+                    WorkerLocation::Remote => {
+                        outputs.push(Mailbox::Tx(to_bytes(&empty_by_id()).unwrap()))
+                    }
+                }
             }
         },
-        |value| to_bytes(&value).unwrap().into_vec(),
-        |data| unaligned_deserialize(&data[..]),
+        |data| aligned_deserialize(&data[..]),
         |snapshot, remote_snapshot| {
             if Runtime::worker_index() == 0 {
                 snapshot.extend(remote_snapshot);

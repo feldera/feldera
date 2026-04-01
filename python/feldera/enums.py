@@ -27,6 +27,11 @@ class CompilationProfile(Enum):
     The optimized compilation profile, the default for this API.
     """
 
+    OPTIMIZED_SYMBOLS = "optimized_symbols"
+    """
+    The optimized symbols compilation profile, good for profiling and debugging.
+    """
+
 
 class BuildMode(Enum):
     CREATE = 1
@@ -352,6 +357,13 @@ class BootstrapPolicy(Enum):
     AWAIT_APPROVAL = "await_approval"
     ALLOW = "allow"
     REJECT = "reject"
+
+    @staticmethod
+    def from_str(value):
+        for member in BootstrapPolicy:
+            if member.name.lower() == value.lower():
+                return member
+        raise ValueError(f"Unknown value '{value}' for enum {BootstrapPolicy.__name__}")
 
 
 class CompletionTokenStatus(Enum):

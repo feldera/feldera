@@ -21,4 +21,9 @@ SELECT ALL + CASE - 59 WHEN + 55 * - 56 + - - 95 THEN - 78 + 98 * CASE - COUNT (
 SELECT ALL - ( 27 ) * - 92 / + + 0 / CASE + ( + 27 ) WHEN - 36 THEN NULL WHEN - NULLIF ( - COUNT ( + 36 ), - 78 ) THEN + 46 ELSE NULL END * + 53 + - - 8
 // test/random/expr/slt_good_99.test: test 5803, division by 0
 SELECT + MIN ( 95 ) / - + 0 * + CASE - - COUNT ( + 54 ) WHEN + 27 * + ( - - 48 ) - - 45 THEN COUNT ( * ) * + 21 ELSE NULL END * 41
-
+// test/random/expr/slt_good_100.test: test 8766, division by zero
+SELECT ALL - 29 * + 42 - + + 30 / - - 0 / CASE + 46 WHEN - 96 + - + 73 THEN NULL WHEN 94 THEN - NULLIF ( 37, 90 ) END - - 97
+// test/random/expr/slt_good_24.test: test 6834: overflow in integer multiplication. Same result produced by Postgres
+SELECT + - NULLIF ( CAST ( NULL AS REAL ), - - ( + 87 ) + 95 ) + - - COUNT ( * ) * - + 85 AS col1, - CAST ( - SUM ( DISTINCT + 79 ) AS INTEGER ) + - + CASE - - 4 WHEN + - NULLIF ( + 75, 13 ) + - 98 + - + 96 * - 52 + 87 * + ( - 92 ) * + 34 * 5 * - ( 29 ) * + 92 * + - 81 / NULLIF ( - CASE + 4 WHEN + + 88 THEN + 87 ELSE + CAST ( + + 90 AS REAL ) + 54 END, + - 35 - - + 70 ) + + 89 * + 92 + + + AVG ( DISTINCT - 11 ) THEN NULL ELSE 40 END, - 6 AS col1
+// test/random/expr/slt_good_24.test: test 8150: overflow in integer multiplication. Same result produced by Postgres
+SELECT + 41 + - 61 + - ( + + 35 ) + + 83 - 35 - + + CAST ( 55 AS INTEGER ) * + - 70 * - 75 * - 20 * - CASE - 11 WHEN SUM ( ALL - 35 ) * - CASE - ( - 83 ) WHEN 40 THEN + 72 + 2 END THEN NULL ELSE - 73 * 52 END * + CASE 59 WHEN 92 + AVG ( 19 ) THEN 36 / - 77 + + 90 * 96 END

@@ -90,6 +90,8 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
             long start = System.currentTimeMillis();
             long startId = DBSPNode.outerId;
             circuit = pass.apply(circuit);
+            if (this.compiler.messages.exitCode != 0)
+                break;
             long endId = DBSPNode.outerId;
             long end = System.currentTimeMillis();
             Logger.INSTANCE.belowLevel(this, 1)
@@ -98,7 +100,8 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
                     .append(end - start)
                     .append("ms, created ")
                     .append(String.format("%,d", endId - startId))
-                    .append(" nodes")
+                    .append(" node")
+                    .append((endId - startId != 1) ? "s" : "")
                     .newline();
             if (this.getDebugLevel() >= 3) {
                 String name = String.format("%02d-", dumped++) + pass.toString().replace(" ", "_") + ".png";

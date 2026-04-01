@@ -14,7 +14,6 @@ use log::{debug, error, info, trace, warn};
 use reqwest::StatusCode;
 use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use serde_json::json;
-use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::fs::File;
 use std::io::{ErrorKind, Read, Write, stdout};
@@ -467,8 +466,7 @@ fn patch_runtime_config(
             rc.io_workers = Some(value.parse().map_err(|_| ())?);
         }
         RuntimeConfigKey::DevTweaks => {
-            rc.dev_tweaks = serde_json::from_str::<BTreeMap<String, serde_json::Value>>(value)
-                .map_err(|_| ())?;
+            rc.dev_tweaks = serde_json::from_str(value).map_err(|_| ())?;
         }
     };
 
@@ -716,6 +714,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             no_wait,
             initial,
             bootstrap_policy,
+            no_dismiss_error,
         } => {
             if initial != "standby" && initial != "paused" && initial != "running" {
                 eprintln!("Unsupported `--initial`: {}", initial);
@@ -815,11 +814,27 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 sleep(Duration::from_millis(500)).await;
             }
 
+            if !no_dismiss_error {
+                let response = client
+                    .post_pipeline_dismiss_error()
+                    .pipeline_name(name.clone())
+                    .send()
+                    .await
+                    .map_err(handle_errors_fatal(
+                        client.baseurl().clone(),
+                        "Failed to dismiss pipeline deployment error",
+                        1,
+                    ))
+                    .unwrap();
+                trace!("{:#?}", response);
+            }
+
             let response = client
                 .post_pipeline_start()
                 .pipeline_name(name.clone())
                 .initial(&initial)
                 .bootstrap_policy(&bootstrap_policy)
+                .dismiss_error(false) // It has already been separately dismissed
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
@@ -986,6 +1001,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             no_wait,
             initial,
             bootstrap_policy,
+            no_dismiss_error,
         } => {
             let current_status = client
                 .get_pipeline()
@@ -1032,6 +1048,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     no_wait,
                     initial,
                     bootstrap_policy,
+                    no_dismiss_error,
                 },
                 client,
             ))
@@ -1618,6 +1635,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             start,
             initial,
             bootstrap_policy,
+            no_dismiss_error,
         } => {
             let client2 = client.clone();
             if start {
@@ -1629,6 +1647,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         no_wait: false,
                         initial,
                         bootstrap_policy,
+                        no_dismiss_error,
                     },
                     client,
                 ))
@@ -1864,6 +1883,21 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             println!("Initiated rebalancing for pipeline {name}.");
         }
         PipelineAction::Bench { args } => bench::bench(client, format, args).await,
+        PipelineAction::DismissError { name } => {
+            let response = client
+                .post_pipeline_dismiss_error()
+                .pipeline_name(name.clone())
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to dismiss pipeline deployment error",
+                    1,
+                ))
+                .unwrap();
+            println!("Pipeline deployment error dismissed successfully.");
+            trace!("{:#?}", response);
+        }
     }
 }
 
@@ -1899,7 +1933,9 @@ async fn connector(
         .iter()
         .any(|(name, _c)| *name == full_connector_name);
     if !relation_is_table && !relation_is_view {
-        eprintln!("No connector named {connector} found in pipeline {pipeline_name}");
+        eprintln!(
+            "No connector named {connector} found for relation {relation} in pipeline {pipeline_name}"
+        );
         std::process::exit(1);
     }
 
@@ -1950,40 +1986,26 @@ async fn connector(
                 .unwrap();
             println!("Table {relation} connector {connector} paused successfully.");
         }
-        ConnectorAction::Stats => {
-            let response = if relation_is_table {
-                client
-                    .get_pipeline_input_connector_status()
-                    .pipeline_name(pipeline_name)
-                    .table_name(relation)
-                    .connector_name(connector)
-                    .send()
-                    .await
-                    .map_err(handle_errors_fatal(
-                        client.baseurl().clone(),
-                        "Failed to get table connector stats",
-                        1,
-                    ))
-                    .unwrap()
-            } else {
-                client
-                    .get_pipeline_output_connector_status()
-                    .pipeline_name(pipeline_name)
-                    .view_name(relation)
-                    .connector_name(connector)
-                    .send()
-                    .await
-                    .map_err(handle_errors_fatal(
-                        client.baseurl().clone(),
-                        "Failed to get view connector stats",
-                        1,
-                    ))
-                    .unwrap()
-            };
+        ConnectorAction::Stats if relation_is_table => {
+            let response = client
+                .get_pipeline_input_connector_status()
+                .pipeline_name(pipeline_name)
+                .table_name(relation)
+                .connector_name(connector)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to get table connector stats",
+                    1,
+                ))
+                .unwrap();
 
             match format {
                 OutputFormat::Text => {
-                    let table = json_to_table(&serde_json::Value::Object(response.into_inner()))
+                    let stats_value = serde_json::to_value(response.as_ref())
+                        .expect("Failed to serialize input connector stats");
+                    let table = json_to_table(&stats_value)
                         .collapse()
                         .into_pool_table()
                         .to_string();
@@ -1992,8 +2014,46 @@ async fn connector(
                 OutputFormat::Json => {
                     println!(
                         "{}",
-                        serde_json::to_string_pretty(&response.into_inner())
-                            .expect("Failed to serialize pipeline stats")
+                        serde_json::to_string_pretty(response.as_ref())
+                            .expect("Failed to serialize input connector stats")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
+        ConnectorAction::Stats => {
+            let response = client
+                .get_pipeline_output_connector_status()
+                .pipeline_name(pipeline_name)
+                .view_name(relation)
+                .connector_name(connector)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to get view connector stats",
+                    1,
+                ))
+                .unwrap();
+
+            match format {
+                OutputFormat::Text => {
+                    let stats_value = serde_json::to_value(response.as_ref())
+                        .expect("Failed to serialize output connector stats");
+                    let table = json_to_table(&stats_value)
+                        .collapse()
+                        .into_pool_table()
+                        .to_string();
+                    println!("{}", table);
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(response.as_ref())
+                            .expect("Failed to serialize output connector stats")
                     );
                 }
                 _ => {

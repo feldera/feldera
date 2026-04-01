@@ -1,7 +1,10 @@
 <script lang="ts">
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import type { Snippet } from '$lib/types/svelte'
 
-  const { dialog, onClose }: { dialog: Snippet | null; onClose: () => void } = $props()
+  const { dialog }: { dialog: Snippet | null } = $props()
+
+  const globalDialog = useGlobalDialog()
 
   let contentNode = $state<HTMLElement>()
   const onclick = (e: MouseEvent) => {
@@ -11,7 +14,12 @@
     if (contentNode.contains(e.target as any)) {
       return
     }
-    onClose()
+    const handler = globalDialog.onClickAway
+    if (handler) {
+      handler()
+    } else {
+      globalDialog.dialog = null
+    }
   }
   $effect(() => {
     window.addEventListener('click', onclick, { capture: true })
@@ -41,7 +49,6 @@
       <div
         class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0"
         role="presentation"
-        onclick={onClose}
       >
         <!--
         Modal panel, show/hide based on modal state.
@@ -54,7 +61,7 @@
           To: "opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
       -->
         <div
-          class="relative scrollbar w-full transform rounded-container bg-white text-left shadow-xl transition-all sm:my-8 sm:max-w-2xl dark:bg-dark"
+          class="relative w-full transform rounded-container bg-white text-left shadow-xl transition-all sm:max-w-2xl dark:bg-dark"
           role="presentation"
           onclick={(e) => {
             e.stopPropagation()

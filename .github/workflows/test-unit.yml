@@ -2,10 +2,20 @@ name: Unit Tests
 
 on:
   workflow_call:
+    inputs:
+      artifacts_run_id:
+        description: "Run ID to download build artifacts from (empty = current run)"
+        type: string
+        required: false
+        default: ""
   workflow_dispatch:
 
 env:
   RUST_BACKTRACE: 1
+
+permissions:
+  actions: read
+  contents: read
 
 jobs:
   rust-unit-tests:
@@ -22,20 +32,22 @@ jobs:
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-db53e1302c944e29edd6d2af516fff7032b90e3b
+      image: ghcr.io/feldera/feldera-dev:sha-06a694400a6aea1f568da04eaf786bfe84e0a869
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download Test Binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: feldera-test-binaries-${{ matrix.target }}
           path: build
+          run-id: ${{ inputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download Compiler Binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: feldera-sql-compiler
           path: sql-build
@@ -43,6 +55,9 @@ jobs:
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
       - name: Make binaries executable
         run: chmod +x ./build/*
+
+      - name: List binaries
+        run: ls -l build
 
         # Copy the sql2dbsp-jar-with-dependencies.jar to the target directory
         # This is needed for (pipeline-manager) tests
@@ -53,7 +68,7 @@ jobs:
 
       - name: Python SDK unit-tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/unit -vv
+        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/unit -vv ${{ vars.PYTEST_EXTRA }}
         working-directory: python
 
       - name: feldera-types

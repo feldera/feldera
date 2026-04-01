@@ -72,20 +72,31 @@ use crate::{
     dynamic::{ArchivedDBData, DynVec, LeanVec},
     storage::buffer_cache::{FBuf, FBufSerializer},
 };
-use rkyv::de::deserializers::SharedDeserializeMap;
-use rkyv::de::{SharedDeserializeRegistry, SharedPointer};
 use rkyv::{
-    Archive, Archived, Deserialize, Fallible, Serialize,
+    AlignedBytes,
+    de::deserializers::SharedDeserializeMap,
     ser::{
-        Serializer as _,
+        ScratchSpace,
         serializers::{
-            AllocScratch, CompositeSerializer, FallbackScratch, HeapScratch, SharedSerializeMap,
+            AllocScratchError, BufferScratch, CompositeSerializerError, SharedSerializeMapError,
         },
     },
 };
-use std::cell::RefCell;
-use std::fmt::Debug;
+use rkyv::{
+    Archive, Archived, Deserialize, Fallible, Serialize,
+    ser::{Serializer as _, serializers::AllocScratch},
+};
+use rkyv::{
+    de::{SharedDeserializeRegistry, SharedPointer},
+    ser::SharedSerializeRegistry,
+};
+use std::{
+    alloc::{Layout, alloc_zeroed},
+    cell::RefCell,
+    collections::{HashMap, hash_map::Entry},
+};
 use std::{any::Any, sync::Arc};
+use std::{fmt::Debug, ptr::NonNull};
 
 pub mod format;
 mod item;
@@ -258,8 +269,8 @@ impl AnyFactories {
 }
 
 /// Trait for data that can be serialized and deserialized with [`rkyv`].
-pub trait Rkyv: Archive + Serialize<Serializer> + Deserializable {}
-impl<T> Rkyv for T where T: Archive + Serialize<Serializer> + Deserializable {}
+pub trait Rkyv: Archive + for<'a> Serialize<DbspSerializer<'a>> + Deserializable {}
+impl<T> Rkyv for T where T: Archive + for<'a> Serialize<DbspSerializer<'a>> + Deserializable {}
 
 /// Trait for data that can be deserialized with [`rkyv`].
 pub trait Deserializable: Archive<Archived = Self::ArchivedDeser> + Sized {
@@ -273,11 +284,286 @@ where
     type ArchivedDeser = Archived<T>;
 }
 
-/// The particular [`rkyv::ser::Serializer`] that we use.
-pub type Serializer = CompositeSerializer<FBufSerializer<FBuf>, DbspScratch, SharedSerializeMap>;
+/// Temporary storage needed during serialization.
+///
+/// We have this as a separate structure because it is a bit expensive to
+/// allocate it for the purpose of serializing a single small data item.
+pub struct SerializerInner {
+    scratch: DbspScratch,
+    shared_resolvers: HashMap<*const u8, usize>,
+}
 
-/// The particular [`rkyv::ser::ScratchSpace`] that we use.
-pub type DbspScratch = FallbackScratch<HeapScratch<65536>, AllocScratch>;
+impl SerializerInner {
+    /// Constructs a new `SerializerInner`.
+    pub fn new() -> Self {
+        Self {
+            scratch: DbspScratch::default(),
+            shared_resolvers: HashMap::new(),
+        }
+    }
+
+    /// Constructs a `DbspSerializer` with this `SerializerInner` and
+    /// `serializer`, and calls `f` on it, passing along its return value.
+    pub fn with<F, R>(&mut self, serializer: FBufSerializer<&mut FBuf>, f: F) -> R
+    where
+        F: FnOnce(&mut DbspSerializer) -> R,
+    {
+        self.scratch.clear();
+        self.shared_resolvers.clear();
+
+        let mut serializer = DbspSerializer {
+            serializer,
+            inner: self,
+        };
+        f(&mut serializer)
+    }
+
+    /// Constructs a `DbspSerializer` with a thread-local `SerializerInner` and
+    /// `serializer`, and calls `f` on it, passing along its return value.
+    pub fn with_thread_local<F, R>(serializer: FBufSerializer<&mut FBuf>, f: F) -> R
+    where
+        F: FnOnce(&mut DbspSerializer) -> R,
+    {
+        thread_local! {
+            static INNER: RefCell<SerializerInner> = RefCell::new(SerializerInner::new());
+        }
+        INNER.with_borrow_mut(|inner| inner.with(serializer, f))
+    }
+
+    /// Constructs a `DbspSerializer` with a thread-local `SerializerInner` and
+    /// a new [FBuf], and calls `f` on it, returning the [FBuf].
+    ///
+    /// # Panic
+    ///
+    /// Panics if `f` returns an error.
+    pub fn to_fbuf_with_thread_local<F, E, R>(f: F) -> FBuf
+    where
+        F: FnOnce(&mut DbspSerializer) -> Result<R, E>,
+        E: Debug,
+    {
+        let mut fbuf = FBuf::default();
+        Self::with_thread_local(FBufSerializer::new(&mut fbuf), f).unwrap();
+        fbuf
+    }
+}
+
+impl Default for SerializerInner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// SAFETY: SerializerInner is safe to send to another thread
+// This trait is not automatically implemented because the struct contains a pointer
+unsafe impl Send for SerializerInner {}
+
+// SAFETY: SerializerInner is safe to share between threads
+// This trait is not automatically implemented because the struct contains a pointer
+unsafe impl Sync for SerializerInner {}
+
+/// The [rkyv::ser::Serializer] used by DBSP.
+pub struct DbspSerializer<'a> {
+    /// The actual serializer.
+    serializer: FBufSerializer<&'a mut FBuf>,
+
+    /// The extra data we need temporarily during serialization.
+    inner: &'a mut SerializerInner,
+}
+
+impl Fallible for DbspSerializer<'_> {
+    type Error = CompositeSerializerError<
+        <FBufSerializer<FBuf> as Fallible>::Error,
+        <DbspScratch as Fallible>::Error,
+        SharedSerializeMapError,
+    >;
+}
+
+impl rkyv::ser::Serializer for DbspSerializer<'_> {
+    fn pos(&self) -> usize {
+        self.serializer.pos()
+    }
+
+    fn write(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
+        self.serializer
+            .write(bytes)
+            .map_err(CompositeSerializerError::SerializerError)
+    }
+}
+
+impl ScratchSpace for DbspSerializer<'_> {
+    unsafe fn push_scratch(&mut self, layout: Layout) -> Result<NonNull<[u8]>, Self::Error> {
+        unsafe { self.inner.scratch.push_scratch(layout) }
+            .map_err(CompositeSerializerError::ScratchSpaceError)
+    }
+
+    unsafe fn pop_scratch(&mut self, ptr: NonNull<u8>, layout: Layout) -> Result<(), Self::Error> {
+        unsafe { self.inner.scratch.pop_scratch(ptr, layout) }
+            .map_err(CompositeSerializerError::ScratchSpaceError)
+    }
+}
+
+impl SharedSerializeRegistry for DbspSerializer<'_> {
+    fn get_shared_ptr(&self, value: *const u8) -> Option<usize> {
+        self.inner.shared_resolvers.get(&value).copied()
+    }
+
+    fn add_shared_ptr(&mut self, value: *const u8, pos: usize) -> Result<(), Self::Error> {
+        match self.inner.shared_resolvers.entry(value) {
+            Entry::Occupied(_) => Err(CompositeSerializerError::SharedError(
+                SharedSerializeMapError::DuplicateSharedPointer(value),
+            )),
+            Entry::Vacant(e) => {
+                e.insert(pos);
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Scratch space type used by DBSP.
+///
+/// This is `FallbackScratch<HeapScratch<SCRATCH_SIZE>, AllocScratch>` with the
+/// added ability to clear it.
+pub struct DbspScratch {
+    main: BufferScratch<Box<AlignedBytes<SCRATCH_SIZE>>>,
+    fallback: ReusableAllocScratch,
+}
+
+impl Default for DbspScratch {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DbspScratch {
+    fn new() -> Self {
+        Self {
+            main: {
+                // This code is copied from `rkyv::ser::serializers::HeapScratch::new`.
+                let layout = Layout::new::<AlignedBytes<SCRATCH_SIZE>>();
+                unsafe {
+                    // SAFETY: `layout` does have nonzero size.
+                    let ptr = alloc_zeroed(layout).cast::<AlignedBytes<SCRATCH_SIZE>>();
+                    assert!(!ptr.is_null());
+                    // SAFETY: We are using the raw pointer only once and the memory is
+                    // allocated by the global allocator using a layout for the correct type.
+                    BufferScratch::new(Box::from_raw(ptr))
+                }
+            },
+            fallback: ReusableAllocScratch::new(),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.main.clear();
+        self.fallback.clear();
+    }
+}
+
+impl Fallible for DbspScratch {
+    type Error = <AllocScratch as Fallible>::Error;
+}
+
+impl ScratchSpace for DbspScratch {
+    #[inline]
+    unsafe fn push_scratch(&mut self, layout: Layout) -> Result<NonNull<[u8]>, Self::Error> {
+        unsafe {
+            // SAFETY: This passes the safety constraints to the inner implementations.
+            self.main
+                .push_scratch(layout)
+                .or_else(|_| self.fallback.push_scratch(layout))
+        }
+    }
+
+    #[inline]
+    unsafe fn pop_scratch(&mut self, ptr: NonNull<u8>, layout: Layout) -> Result<(), Self::Error> {
+        unsafe {
+            // SAFETY: This passes the safety constraints to the inner implementations.
+            self.main
+                .pop_scratch(ptr, layout)
+                .or_else(|_| self.fallback.pop_scratch(ptr, layout))
+        }
+    }
+}
+
+/// Scratch space that always uses the global allocator.
+///
+/// This allocator will panic if scratch is popped that it did not allocate. For this reason, it
+/// should only ever be used as a fallback allocator.
+#[derive(Debug, Default)]
+struct ReusableAllocScratch {
+    allocations: Vec<(*mut u8, Layout)>,
+}
+
+// SAFETY: ReusableAllocScratch is safe to send to another thread
+// This trait is not automatically implemented because the struct contains a pointer
+unsafe impl Send for ReusableAllocScratch {}
+
+// SAFETY: ReusableAllocScratch is safe to share between threads
+// This trait is not automatically implemented because the struct contains a pointer
+unsafe impl Sync for ReusableAllocScratch {}
+
+impl ReusableAllocScratch {
+    /// Creates a new scratch allocator.
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn clear(&mut self) {
+        for (ptr, layout) in self.allocations.drain(..).rev() {
+            unsafe {
+                std::alloc::dealloc(ptr, layout);
+            }
+        }
+    }
+}
+
+impl Drop for ReusableAllocScratch {
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
+impl Fallible for ReusableAllocScratch {
+    type Error = AllocScratchError;
+}
+
+impl ScratchSpace for ReusableAllocScratch {
+    #[inline]
+    unsafe fn push_scratch(&mut self, layout: Layout) -> Result<NonNull<[u8]>, Self::Error> {
+        // SAFETY: The trait definition's safety comments require that `layout`
+        // be nonzero size.
+        let result_ptr = unsafe { std::alloc::alloc(layout) };
+        assert!(!result_ptr.is_null());
+        self.allocations.push((result_ptr, layout));
+        let result_slice = ptr_meta::from_raw_parts_mut(result_ptr.cast(), layout.size());
+        // SAFETY: We asserted that the pointer is nonnull.
+        let result = unsafe { NonNull::new_unchecked(result_slice) };
+        Ok(result)
+    }
+
+    #[inline]
+    unsafe fn pop_scratch(&mut self, ptr: NonNull<u8>, layout: Layout) -> Result<(), Self::Error> {
+        if let Some(&(last_ptr, last_layout)) = self.allocations.last() {
+            if ptr.as_ptr() == last_ptr && layout == last_layout {
+                // SAFETY: The `if` condition ensures that the callee's safety
+                // constraints are met.
+                unsafe { std::alloc::dealloc(ptr.as_ptr(), layout) };
+                self.allocations.pop();
+                Ok(())
+            } else {
+                Err(AllocScratchError::NotPoppedInReverseOrder {
+                    expected: last_ptr,
+                    expected_layout: last_layout,
+                    actual: ptr.as_ptr(),
+                    actual_layout: layout,
+                })
+            }
+        } else {
+            Err(AllocScratchError::NoAllocationsToPop)
+        }
+    }
+}
 
 /// The particular [`rkyv`] deserializer that we use.
 #[derive(Debug)]
@@ -289,6 +575,12 @@ pub struct Deserializer {
 impl Deserializer {
     /// Create a deserializer configured for the given file format version.
     pub fn new(version: u32) -> Self {
+        // Proper error is returned in reader.rs, this is a sanity check.
+        assert!(
+            version >= format::VERSION_NUMBER,
+            "Unable to read old (pre-v{}) checkpoint data on this feldera version, pipeline needs to backfilled to start.",
+            format::VERSION_NUMBER
+        );
         Self {
             version,
             inner: SharedDeserializeMap::new(),
@@ -333,56 +625,37 @@ impl SharedDeserializeRegistry for Deserializer {
     }
 }
 
-/// Creates an instance of [Serializer] that will serialize to `serializer` and
-/// passes it to `f`. Returns a tuple of the `FBuf` from the [Serializer] and
-/// the return value of `f`.
+/// Scratch space size.
 ///
-/// This is useful because it reuses the scratch space from one serializer to
-/// the next, which is valuable because it saves an allocation and free per
-/// serialization.
-pub fn with_serializer<F, R>(serializer: FBufSerializer<FBuf>, f: F) -> (FBuf, R)
-where
-    F: FnOnce(&mut Serializer) -> R,
-{
-    thread_local! {
-        static SCRATCH: RefCell<Option<DbspScratch>> = RefCell::new(Some(Default::default()));
-    }
-
-    let mut serializer = Serializer::new(serializer, SCRATCH.take().unwrap(), Default::default());
-    let result = f(&mut serializer);
-    let (serializer, scratch, _shared) = serializer.into_components();
-    SCRATCH.replace(Some(scratch));
-    (serializer.into_inner(), result)
-}
+/// This is the amount of space we allocate as base scratch space for rkyv
+/// serialization.  If more is needed for a particular serialization, then we
+/// fall back to [AllocScratch].
+pub const SCRATCH_SIZE: usize = 65536;
 
 /// Serializes the given value and returns the resulting bytes.
 ///
 /// This is like [`rkyv::to_bytes`], but that function only works with one
-/// particular serializer whereas this function works with our [`Serializer`].
-pub fn to_bytes<T>(value: &T) -> Result<FBuf, <Serializer as Fallible>::Error>
+/// particular serializer whereas this function works with [`DbspSerializer`].
+pub fn to_bytes<T>(value: &T) -> Result<FBuf, <DbspSerializer<'_> as Fallible>::Error>
 where
-    T: Serialize<Serializer>,
+    T: for<'a> Serialize<DbspSerializer<'a>>,
 {
-    let (bytes, result) = with_serializer(FBufSerializer::default(), |serializer| {
+    Ok(SerializerInner::to_fbuf_with_thread_local(|serializer| {
         serializer.serialize_value(value)
-    });
-    result?;
-    Ok(bytes)
+    }))
 }
 
 /// Serializes the given value and returns the resulting bytes.
 ///
 /// This is like [`rkyv::to_bytes`], but that function only works with one
-/// particular serializer whereas this function works with our [`Serializer`].
-pub fn to_bytes_dyn<T>(value: &T) -> Result<FBuf, <Serializer as Fallible>::Error>
+/// particular serializer whereas this function works with [`DbspSerializer`].
+pub fn to_bytes_dyn<T>(value: &T) -> Result<FBuf, <DbspSerializer<'_> as Fallible>::Error>
 where
     T: ArchivedDBData,
 {
-    let (bytes, result) = with_serializer(FBufSerializer::default(), |serializer| {
+    Ok(SerializerInner::to_fbuf_with_thread_local(|serializer| {
         serializer.serialize_value(value)
-    });
-    result?;
-    Ok(bytes)
+    }))
 }
 
 #[cfg(test)]

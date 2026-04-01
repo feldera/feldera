@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 use dbsp::dynamic::DynData;
 use dbsp::storage::backend::StorageBackend;
+use dbsp::storage::file::format::BatchMetadata;
 use dbsp::storage::file::format::Compression;
 use dbsp::storage::file::format::VERSION_NUMBER;
 use dbsp::storage::file::writer::{Parameters, Writer1};
@@ -16,8 +17,8 @@ use dbsp::storage::file::Factories;
 use feldera_types::config::{StorageConfig, StorageOptions};
 
 use storage_test_compat::{
-    buffer_cache, golden_row, golden_row_small, storage_base_and_path, GoldenRow, GoldenRowSmall,
-    DEFAULT_ROWS,
+    buffer_cache, golden_aux, golden_row, golden_row_small, storage_base_and_path, GoldenRow,
+    GoldenRowSmall, DEFAULT_ROWS,
 };
 
 #[derive(Copy, Clone)]
@@ -94,7 +95,7 @@ where
         &StorageOptions::default(),
     )?;
 
-    let factories = Factories::<DynData, DynData>::new::<T, ()>();
+    let factories = Factories::<DynData, DynData>::new::<T, i64>();
     let parameters = Parameters::default().with_compression(compression);
     let mut writer = Writer1::new(
         &factories,
@@ -106,12 +107,12 @@ where
 
     for row in 0..rows {
         let key = row_builder(row);
-        let aux = ();
+        let aux = golden_aux(row);
         writer.write0((&key, &aux))?;
     }
 
     let tmp_path = writer.path().clone();
-    let (_file_handle, _bloom_filter) = writer.close()?;
+    let (_file_handle, _bloom_filter, _key_bounds) = writer.close(BatchMetadata::default())?;
     let content = storage_backend.read(&tmp_path)?;
     storage_backend.write(&output_storage_path, (*content).clone())?;
     storage_backend.delete(&tmp_path)?;

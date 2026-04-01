@@ -321,6 +321,10 @@ impl FileInputReader {
 }
 
 impl InputReader for FileInputReader {
+    fn as_any(self: std::sync::Arc<Self>) -> std::sync::Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
     fn request(&self, command: super::InputReaderCommand) {
         let _ = self.sender.send(command);
         self.unparker.unpark();

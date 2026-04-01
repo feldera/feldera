@@ -2,11 +2,11 @@ from http import HTTPStatus
 
 from .helper import (
     API_PREFIX,
+    cleanup_pipeline,
+    gen_pipeline_name,
+    patch_json,
     post_json,
     put_json,
-    patch_json,
-    gen_pipeline_name,
-    cleanup_pipeline,
 )
 
 
@@ -50,6 +50,10 @@ def test_pipeline_runtime_config(pipeline_name):
             and rc.get("resources", {}).get("storage_mb_max") == 2000
             and rc.get("resources", {}).get("storage_class") == "normal",
         ),
+        (
+            {"env": {"TEST_ENV": "value"}},
+            lambda rc: rc.get("env", {}).get("TEST_ENV") == "value",
+        ),
     ]
 
     for idx, (runtime_config, predicate) in enumerate(valid_cases):
@@ -70,6 +74,7 @@ def test_pipeline_runtime_config(pipeline_name):
     invalid_cases = [
         {"workers": "not-a-number"},
         {"resources": {"storage_mb_max": "not-a-number"}},
+        {"env": {"TOKIO_WORKER_THREADS": "1"}},
     ]
     for invalid in invalid_cases:
         body = {

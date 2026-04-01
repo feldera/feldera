@@ -116,10 +116,31 @@ The following attributes are common to all connectors:
   circuit pauses execution until the backlog subsides.  By default,
   this is 1,000,000.
 
-* <a name="max_batch_size">`max_batch_size`</a> - For an input
-  connector, the approximate maximum number of records that the
-  pipeline will process in a single pipeline step.  By default, this
-  is 10,000.
+* <a name="max_batch_size">`max_batch_size`</a> - Maximum number of records from this connector to process in a single batch.
+
+  When set, this caps how many records are taken from the connector’s input
+  buffer and pushed through the circuit at once.
+
+  This is typically configured lower than `max_queued_records` to allow the
+  connector time to restart and refill its buffer while a batch is being
+  processed.
+
+  Not all input adapters honor this limit.
+
+  If this is not set, the batch size is derived from `max_worker_batch_size`.
+
+* <a name="max_worker_batch_size">`max_worker_batch_size`</a> - Maximum number of records processed per batch, per worker thread.
+
+  When `max_batch_size` is not set, this setting is used to cap
+  the number of records that can be taken from the connector’s input
+  buffer and pushed through the circuit at once.  The effective batch size is computed as:
+  `max_worker_batch_size × workers`.
+
+  This provides an alternative to `max_batch_size` that automatically adjusts batch
+  size as the number of worker threads changes to maintain constant amount of
+  work per worker per batch.
+
+  Defaults to 10,000 records per worker.
 
 * `index` – *(Output connectors only)* The name of an index created by a SQL
   CREATE INDEX statement that defines

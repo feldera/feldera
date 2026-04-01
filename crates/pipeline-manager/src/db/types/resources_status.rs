@@ -1,8 +1,10 @@
 use crate::db::error::DBError;
 use crate::db::types::storage::StorageStatus;
+use feldera_types::error::ErrorResponse;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Display;
+use tracing::error;
 use utoipa::ToSchema;
 
 /// Pipeline resources status.
@@ -173,7 +175,7 @@ pub fn validate_resources_status_transition(
     // Check rules on transitioning resources status
     if matches!(
         (storage_status, current_status, new_status),
-        (StorageStatus::Cleared | StorageStatus::InUse,  ResourcesStatus::Stopped, ResourcesStatus::Provisioning)
+        (StorageStatus::Cleared | StorageStatus::InUse, ResourcesStatus::Stopped, ResourcesStatus::Provisioning)
         | (StorageStatus::Cleared | StorageStatus::InUse, ResourcesStatus::Stopped, ResourcesStatus::Stopping)
         | (StorageStatus::InUse, ResourcesStatus::Provisioning, ResourcesStatus::Provisioning)
         | (StorageStatus::InUse, ResourcesStatus::Provisioning, ResourcesStatus::Provisioned)
@@ -182,6 +184,16 @@ pub fn validate_resources_status_transition(
         | (StorageStatus::InUse, ResourcesStatus::Provisioned, ResourcesStatus::Stopping)
         | (StorageStatus::Cleared | StorageStatus::InUse, ResourcesStatus::Stopping, ResourcesStatus::Stopped)
     ) {
+        Ok(())
+    } else if matches!(
+        (storage_status, current_status, new_status),
+        (_, ResourcesStatus::Stopped | ResourcesStatus::Provisioning | ResourcesStatus::Provisioned, ResourcesStatus::Stopping)
+        | (_, ResourcesStatus::Stopping, ResourcesStatus::Stopped)
+    ) {
+        // As a fail-safe, it's always possible to transition from any other status to Stopping and
+        // from Stopping to Stopped. This however should not occur (instead the first matches should
+        // have already caught them).
+        error!("The resources status transition {current_status:?} -> {new_status:?} (storage status: {storage_status:?}) is taking place. This is due to an internal error, and is permitted only in order to recover from an invalid status. Please file a bug report.");
         Ok(())
     } else {
         Err(DBError::InvalidResourcesStatusTransition {
@@ -194,8 +206,10 @@ pub fn validate_resources_status_transition(
 
 /// Validates the resources desired status transition from current status to a new one.
 pub fn validate_resources_desired_status_transition(
+    storage_status: StorageStatus,
     status: ResourcesStatus,
     current_desired_status: ResourcesDesiredStatus,
+    new_deployment_error: Option<ErrorResponse>,
     new_desired_status: ResourcesDesiredStatus,
 ) -> Result<(), DBError> {
     // Check rules on changing desired resources status
@@ -216,6 +230,14 @@ pub fn validate_resources_desired_status_transition(
                     hint: "Cannot restart the pipeline while it is stopping. Wait until it is stopped before starting the pipeline again.".to_string(),
                 });
             };
+            if new_deployment_error.is_some() {
+                // If it experienced an error, it needs to be dismissed first
+                return Err(DBError::CannotStartWithUndismissedError);
+            }
+            if storage_status == StorageStatus::Clearing {
+                // If it is still clearing storage, wait for that to complete
+                return Err(DBError::CannotStartWhileClearingStorage);
+            }
             Ok(())
         }
     }

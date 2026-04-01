@@ -1,5 +1,7 @@
 use crate::{
     Controller, PipelineConfig,
+    controller::TransactionInfo,
+    preprocess::{DecryptionPreprocessorFactory, PassthroughPreprocessorFactory},
     test::{
         DEFAULT_TIMEOUT_MS, TestStruct, generate_test_batch, init_test_logger, test_circuit, wait,
     },
@@ -10,6 +12,7 @@ use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
 use feldera_types::{
     config::{InputEndpointConfig, OutputEndpointConfig},
     constants::STATE_FILE,
+    memory_pressure::MemoryPressure,
 };
 use serde_json::json;
 use std::{
@@ -29,6 +32,7 @@ use tempfile::{NamedTempFile, TempDir};
 use tokio::sync::oneshot;
 use tracing::info;
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use proptest::prelude::*;
 
 #[test]
@@ -2080,25 +2084,13 @@ fn test_external_controller_status_serialization() {
         }))
         .unwrap();
 
-        let mut status = ControllerStatus::new(config, 998500, None);
+        let mut status = ControllerStatus::new(config, 998500, None, Uuid::nil());
 
         // Configure global metrics using available public API
         status.set_state(PipelineState::Paused);
         status.set_bootstrap_in_progress(false);
 
         // Set public atomic fields
-        status
-            .global_metrics
-            .rss_bytes
-            .store(1024 * 1024 * 512, Ordering::Relaxed); // 512 MB
-        status
-            .global_metrics
-            .cpu_msecs
-            .store(45000, Ordering::Relaxed);
-        status
-            .global_metrics
-            .uptime_msecs
-            .store(120000, Ordering::Relaxed);
         status.global_metrics.start_time = Utc.timestamp_opt(1700000000, 0).unwrap();
         status.global_metrics.incarnation_uuid =
             Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
@@ -2143,16 +2135,6 @@ fn test_external_controller_status_serialization() {
             .global_metrics
             .total_completed_records
             .store(998000, Ordering::Relaxed);
-        status
-            .global_metrics
-            .pipeline_complete
-            .store(false, Ordering::Relaxed);
-
-        // Set suspend error (std::sync::Mutex returns Result, so we need to unwrap)
-        *status.suspend_error.lock().unwrap() = Some(SuspendError::Permanent(vec![
-            PermanentSuspendError::StorageRequired,
-            PermanentSuspendError::UnsupportedInputEndpoint("kafka_input".to_string()),
-        ]));
 
         // Add input endpoints
         let mut inputs = status.inputs.write();
@@ -2209,6 +2191,7 @@ fn test_external_controller_status_serialization() {
         kafka_endpoint.set_paused_by_user(true);
         kafka_endpoint.transport_error(
             true,
+            None,
             &anyhow!("Connection refused: Unable to connect to Kafka broker"),
         );
         inputs.insert(0, kafka_endpoint);
@@ -2316,7 +2299,19 @@ fn test_external_controller_status_serialization() {
     let controller_status = create_mock_status();
 
     // Convert to ExternalControllerStatus using the to_api_type method
-    let external_status = controller_status.to_api_type();
+    let mut external_status = controller_status.to_api_type(
+        Err(SuspendError::Permanent(vec![
+            PermanentSuspendError::StorageRequired,
+            PermanentSuspendError::UnsupportedInputEndpoint("kafka_input".to_string()),
+        ])),
+        false,
+        TransactionInfo::default(),
+        MemoryPressure::default(),
+        0,
+    );
+    external_status.global_metrics.rss_bytes = 1024 * 1024 * 512; // 512 MB
+    external_status.global_metrics.cpu_msecs = 45_000;
+    external_status.global_metrics.uptime_msecs = 120_000;
 
     // Serialize the ExternalControllerStatus to JSON
     let external_json = serde_json::to_value(&external_status)
@@ -2417,4 +2412,627 @@ fn test_external_controller_status_serialization() {
         json!(8),
         "http_output should have 8 encode errors"
     );
+}
+
+/// Test that custom connector metrics registered via `set_custom_metrics` are
+/// included in the Prometheus output produced by the custom-metrics loop in
+/// `write_metrics`.
+#[test]
+fn test_custom_connector_metrics_prometheus_output() {
+    use crate::{
+        ControllerStatus,
+        controller::{stats::InputEndpointStatus, write_custom_metrics},
+        server::metrics::{LabelStack, MetricsWriter, PrometheusFormatter},
+    };
+    use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    struct MockMetrics;
+
+    impl ConnectorMetrics for MockMetrics {
+        fn metrics(&self) -> Vec<(&'static str, &'static str, ValueType, f64)> {
+            vec![
+                (
+                    "kafka_consumer_lag",
+                    "Consumer lag for the Kafka topic partition.",
+                    ValueType::Gauge,
+                    42.0,
+                ),
+                (
+                    "kafka_messages_fetched_total",
+                    "Total number of messages fetched from Kafka.",
+                    ValueType::Counter,
+                    1000.0,
+                ),
+            ]
+        }
+    }
+
+    let config = serde_json::from_value(json!({
+        "name": "test_custom_metrics",
+        "workers": 1,
+    }))
+    .unwrap();
+
+    let status = ControllerStatus::new(config, 0, None, Uuid::nil());
+
+    let endpoint = InputEndpointStatus::new(
+        "kafka_in",
+        serde_json::from_value(json!({
+            "stream": "s",
+            "transport": { "name": "kafka_input", "config": { "topics": ["t"], "bootstrap.servers": "localhost:9092" } },
+            "format": { "name": "json", "config": {} }
+        }))
+        .unwrap(),
+        None,
+        None,
+    );
+    status.inputs.write().insert(0, endpoint);
+
+    // Register custom metrics on the endpoint.
+    status.set_custom_metrics(0, Arc::new(MockMetrics));
+
+    let mut writer = MetricsWriter::<PrometheusFormatter>::new();
+    let labels = LabelStack::new();
+    write_custom_metrics(&status, &mut writer, &labels);
+    let output = writer.into_output();
+
+    // Verify custom metric names and values appear with the endpoint label.
+    assert!(
+        output.contains("kafka_consumer_lag"),
+        "output missing kafka_consumer_lag:\n{output}"
+    );
+    assert!(
+        output.contains("kafka_messages_fetched_total"),
+        "output missing kafka_messages_fetched_total:\n{output}"
+    );
+    assert!(
+        output.contains(r#"endpoint="kafka_in""#),
+        "output missing endpoint label:\n{output}"
+    );
+    assert!(
+        output.contains("42"),
+        "output missing gauge value 42:\n{output}"
+    );
+    assert!(
+        output.contains("1000"),
+        "output missing counter value 1000:\n{output}"
+    );
+}
+
+/// Test that when two endpoints register the same custom metric name, the
+/// grouping logic emits a single `# TYPE` header for that metric (Prometheus
+/// format violation fix).
+#[test]
+fn test_custom_connector_metrics_prometheus_grouping() {
+    use crate::{
+        ControllerStatus,
+        controller::{stats::InputEndpointStatus, write_custom_metrics},
+        server::metrics::{LabelStack, MetricsWriter, PrometheusFormatter},
+    };
+    use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    struct MockMetrics;
+
+    impl ConnectorMetrics for MockMetrics {
+        fn metrics(&self) -> Vec<(&'static str, &'static str, ValueType, f64)> {
+            vec![(
+                "kafka_consumer_lag",
+                "Consumer lag for the Kafka topic partition.",
+                ValueType::Gauge,
+                42.0,
+            )]
+        }
+    }
+
+    let config = serde_json::from_value(json!({
+        "name": "test_grouping",
+        "workers": 1,
+    }))
+    .unwrap();
+
+    let status = ControllerStatus::new(config, 0, None, Uuid::nil());
+
+    for (id, name) in [(0u64, "kafka_in_1"), (1u64, "kafka_in_2")] {
+        let endpoint = InputEndpointStatus::new(
+            name,
+            serde_json::from_value(json!({
+                "stream": "s",
+                "transport": { "name": "kafka_input", "config": { "topics": ["t"], "bootstrap.servers": "localhost:9092" } },
+                "format": { "name": "json", "config": {} }
+            }))
+            .unwrap(),
+            None,
+            None,
+        );
+        status.inputs.write().insert(id, endpoint);
+        status.set_custom_metrics(id, Arc::new(MockMetrics));
+    }
+
+    let mut writer = MetricsWriter::<PrometheusFormatter>::new();
+    let labels = LabelStack::new();
+    write_custom_metrics(&status, &mut writer, &labels);
+    let output = writer.into_output();
+
+    // `# TYPE kafka_consumer_lag gauge` must appear exactly once.
+    let type_header = "# TYPE kafka_consumer_lag gauge";
+    let occurrences = output.matches(type_header).count();
+    assert_eq!(
+        occurrences, 1,
+        "expected exactly one '# TYPE kafka_consumer_lag gauge', got {occurrences}:\n{output}"
+    );
+
+    // Both endpoint labels must appear in the output.
+    assert!(
+        output.contains(r#"endpoint="kafka_in_1""#),
+        "output missing kafka_in_1 label:\n{output}"
+    );
+    assert!(
+        output.contains(r#"endpoint="kafka_in_2""#),
+        "output missing kafka_in_2 label:\n{output}"
+    );
+
+    // There must be no second `# TYPE` header between the two endpoint values.
+    let first_pos = output.find(r#"endpoint="kafka_in_1""#).unwrap();
+    let second_pos = output.find(r#"endpoint="kafka_in_2""#).unwrap();
+    let between = &output[first_pos.min(second_pos)..first_pos.max(second_pos)];
+    assert!(
+        !between.contains("# TYPE"),
+        "unexpected '# TYPE' header between endpoint values:\n{output}"
+    );
+}
+
+#[test]
+fn test_preprocessor() {
+    init_test_logger();
+
+    // Create test JSON data with various strings that will be filtered and transformed
+    let temp_input_file = NamedTempFile::new().unwrap();
+    temp_input_file
+        .as_file()
+        .write_all(
+            br#"[
+            {"id": 1, "b": true, "s": "one"},
+            {"id": 2, "b": false, "s": "two"}
+        ]"#,
+        )
+        .unwrap();
+
+    // Controller configuration with a preprocessor :
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test_preprocessor",
+        "workers": 1,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": temp_input_file.path(),
+                        "follow": false
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "array": true,
+                        "update_format": "raw"
+                    }
+                },
+                "preprocessor": [
+                    {
+                        "name": "passthrough",
+                        "message_oriented": true,
+                        "config": {}
+                    }
+                ]
+            }
+        }
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            let (circuit, catalog) =
+                test_circuit::<TestStruct>(circuit_config, &TestStruct::schema(), &[None]);
+            // Register the factory before connectors are initialized.
+            catalog
+                .preprocessor_registry()
+                .lock()
+                .unwrap()
+                .register("passthrough", Box::new(PassthroughPreprocessorFactory));
+            Ok((circuit, catalog))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    controller.start();
+    wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS).unwrap();
+
+    let result = controller
+        .execute_query_text_sync("select * from test_output1 order by id")
+        .unwrap();
+
+    let expected = r#"+----+-------+---+-----+
+| id | b     | i | s   |
++----+-------+---+-----+
+| 1  | true  |   | one |
+| 2  | false |   | two |
++----+-------+---+-----+"#;
+
+    assert_eq!(&result, expected);
+    controller.stop().unwrap();
+}
+
+#[test]
+fn test_decryption_preprocessor() {
+    use crate::preprocess::aes256gcm_encrypt;
+
+    init_test_logger();
+
+    // AES-256 key (32 bytes) and nonce (12 bytes).
+    let key = b"0123456789abcdef0123456789abcdef";
+    let nonce = b"test_nonce_1";
+
+    // Encrypt JSON data that the pipeline will decrypt and parse.
+    let json_input = br#"[
+        {"id": 1, "b": true, "s": "one"},
+        {"id": 2, "b": false, "s": "two"}
+    ]"#;
+    let encrypted = aes256gcm_encrypt(key, nonce, json_input);
+
+    let temp_input_file = NamedTempFile::new().unwrap();
+    temp_input_file.as_file().write_all(&encrypted).unwrap();
+
+    let key_b64 = BASE64.encode(key);
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test_decryption_preprocessor",
+        "workers": 1,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": temp_input_file.path(),
+                        "follow": false
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "array": true,
+                        "update_format": "raw"
+                    }
+                },
+                "preprocessor": [
+                    {
+                        "name": "decryption",
+                        "message_oriented": true,
+                        "config": {
+                            "key": key_b64
+                        }
+                    }
+                ]
+            }
+        }
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            let (circuit, catalog) =
+                test_circuit::<TestStruct>(circuit_config, &TestStruct::schema(), &[None]);
+            // Register the factory before connectors are initialized.
+            catalog
+                .preprocessor_registry()
+                .lock()
+                .unwrap()
+                .register("decryption", Box::new(DecryptionPreprocessorFactory));
+            Ok((circuit, catalog))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    controller.start();
+    wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS).unwrap();
+
+    let result = controller
+        .execute_query_text_sync("select * from test_output1 order by id")
+        .unwrap();
+
+    let expected = r#"+----+-------+---+-----+
+| id | b     | i | s   |
++----+-------+---+-----+
+| 1  | true  |   | one |
+| 2  | false |   | two |
++----+-------+---+-----+"#;
+
+    assert_eq!(&result, expected);
+    controller.stop().unwrap();
+}
+
+// ---------------------------------------------------------------------------
+// Helpers for `test_base64_csv_preprocessor`
+// ---------------------------------------------------------------------------
+
+use crate::format::{LineSplitter, SpongeSplitter};
+use feldera_adapterlib::format::Splitter;
+use feldera_adapterlib::preprocess::{Preprocessor, PreprocessorCreateError, PreprocessorFactory};
+use feldera_types::preprocess::PreprocessorConfig;
+
+/// Preprocessor that base64-decodes each line it receives.
+///
+/// The [`NewlineSplitter`] above ensures that `process` is called with exactly
+/// one base64-encoded line (including the trailing `\n`) at a time.
+/// `process` strips the newline and decodes the rest, returning the original
+/// CSV bytes (e.g. `b"1,true,,one\n"`).
+#[cfg(test)]
+struct Base64LinePreprocessor;
+
+#[cfg(test)]
+impl Preprocessor for Base64LinePreprocessor {
+    fn process(&mut self, data: &[u8]) -> (Vec<u8>, Vec<crate::format::ParseError>) {
+        let without_newline = data.strip_suffix(b"\n").unwrap_or(data);
+        match BASE64.decode(without_newline) {
+            Ok(decoded) => (decoded, vec![]),
+            Err(e) => (
+                vec![],
+                vec![crate::format::ParseError::bin_envelope_error(
+                    format!("base64 decode error: {e}"),
+                    without_newline,
+                    None,
+                )],
+            ),
+        }
+    }
+
+    fn fork(&self) -> Box<dyn Preprocessor> {
+        Box::new(Base64LinePreprocessor)
+    }
+
+    fn splitter(&self) -> Option<Box<dyn Splitter>> {
+        Some(Box::new(LineSplitter))
+    }
+}
+
+#[cfg(test)]
+struct Base64LinePreprocessorFactory;
+
+#[cfg(test)]
+impl PreprocessorFactory for Base64LinePreprocessorFactory {
+    fn create(
+        &self,
+        _config: &PreprocessorConfig,
+    ) -> Result<Box<dyn Preprocessor>, PreprocessorCreateError> {
+        Ok(Box::new(Base64LinePreprocessor))
+    }
+}
+
+/// Verify that [`PreprocessedParser`] exercises both the preprocessor splitter
+/// and the parser splitter in the same pipeline.
+///
+/// **Input format**: the file contains newline-separated base64-encoded CSV rows.
+///
+/// **Preprocessor splitter** (`NewlineSplitter`): the file transport calls
+/// `PreprocessedParser::splitter()`, which returns the preprocessor's splitter.
+/// That splitter finds `\n` boundaries in the raw byte stream so that each
+/// call to `PreprocessedParser::parse` receives exactly one base64-encoded
+/// line.
+///
+/// **Parser splitter** (`CsvSplitter`): inside `PreprocessedParser::parse`,
+/// after `process` decodes a base64 line back to a CSV row (e.g.
+/// `b"1,true,,one\n"`), the result is appended to the internal
+/// `StreamSplitter`, which uses the CSV parser's own splitter to find the
+/// CSV record boundary before forwarding the complete row to `CsvParser`.
+#[test]
+fn test_base64_csv_preprocessor() {
+    init_test_logger();
+
+    // Two CSV rows for `TestStruct { id: u32, b: bool, i: Option<i64>, s: String }`.
+    // `i` is None, which serialises as an empty field in CSV.
+    let rows: &[&[u8]] = &[b"1,true,,one\n", b"2,false,,two\n"];
+
+    // Build the input file: each CSV row is base64-encoded, one per line.
+    let mut file_contents = Vec::new();
+    for row in rows {
+        file_contents.extend_from_slice(BASE64.encode(row).as_bytes());
+        file_contents.push(b'\n');
+    }
+    // skip newline after last row
+    file_contents.pop();
+
+    let temp_input_file = NamedTempFile::new().unwrap();
+    temp_input_file.as_file().write_all(&file_contents).unwrap();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test_base64_csv_preprocessor",
+        "workers": 1,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": temp_input_file.path(),
+                        "follow": false
+                    }
+                },
+                "format": {
+                    "name": "csv",
+                    "config": {}
+                },
+                "preprocessor": [
+                    {
+                        "name": "base64LinePreprocessor",
+                        "message_oriented": true,
+                        "config": {}
+                    }
+                ]
+            }
+        }
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            let (circuit, catalog) =
+                test_circuit::<TestStruct>(circuit_config, &TestStruct::schema(), &[None]);
+            catalog.preprocessor_registry().lock().unwrap().register(
+                "base64LinePreprocessor",
+                Box::new(Base64LinePreprocessorFactory),
+            );
+            Ok((circuit, catalog))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    controller.start();
+    wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS).unwrap();
+
+    let result = controller
+        .execute_query_text_sync("select * from test_output1 order by id")
+        .unwrap();
+
+    let expected = r#"+----+-------+---+-----+
+| id | b     | i | s   |
++----+-------+---+-----+
+| 1  | true  |   | one |
+| 2  | false |   | two |
++----+-------+---+-----+"#;
+
+    assert_eq!(&result, expected);
+    controller.stop().unwrap();
+}
+
+/// Preprocessor that base64-decodes the input it receives.
+#[cfg(test)]
+struct Base64SpongePreprocessor;
+
+#[cfg(test)]
+impl Preprocessor for Base64SpongePreprocessor {
+    fn process(&mut self, data: &[u8]) -> (Vec<u8>, Vec<crate::format::ParseError>) {
+        let without_newline = data.strip_suffix(b"\n").unwrap_or(data);
+        match BASE64.decode(without_newline) {
+            Ok(decoded) => (decoded, vec![]),
+            Err(e) => (
+                vec![],
+                vec![crate::format::ParseError::bin_envelope_error(
+                    format!("base64 decode error: {e}"),
+                    without_newline,
+                    None,
+                )],
+            ),
+        }
+    }
+
+    fn fork(&self) -> Box<dyn Preprocessor> {
+        Box::new(Base64SpongePreprocessor)
+    }
+
+    fn splitter(&self) -> Option<Box<dyn Splitter>> {
+        Some(Box::new(SpongeSplitter))
+    }
+}
+
+#[cfg(test)]
+struct Base64SpongePreprocessorFactory;
+
+#[cfg(test)]
+impl PreprocessorFactory for Base64SpongePreprocessorFactory {
+    fn create(
+        &self,
+        _config: &PreprocessorConfig,
+    ) -> Result<Box<dyn Preprocessor>, PreprocessorCreateError> {
+        Ok(Box::new(Base64SpongePreprocessor))
+    }
+}
+
+/// Like the previous test, but use a SpongeSplitter in the preprocessor and
+/// uudecode everything, not at line boundaries.
+#[test]
+fn test_base64_sponge_csv_preprocessor() {
+    init_test_logger();
+
+    // Two CSV rows for `TestStruct { id: u32, b: bool, i: Option<i64>, s: String }`.
+    // `i` is None, which serialises as an empty field in CSV.
+    let rows: &[u8] = b"1,true,,one\n2,false,,two";
+
+    // Build the input file: each CSV row is base64-encoded, one per line.
+    let mut file_contents = Vec::new();
+    file_contents.extend_from_slice(BASE64.encode(rows).as_bytes());
+
+    let temp_input_file = NamedTempFile::new().unwrap();
+    temp_input_file.as_file().write_all(&file_contents).unwrap();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test_base64_sponge_csv_preprocessor",
+        "workers": 1,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": temp_input_file.path(),
+                        "follow": false
+                    }
+                },
+                "format": {
+                    "name": "csv",
+                    "config": {}
+                },
+                "preprocessor": [
+                    {
+                        "name": "base64SpongePreprocessor",
+                        "message_oriented": true,
+                        "config": {}
+                    }
+                ]
+            }
+        }
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            let (circuit, catalog) =
+                test_circuit::<TestStruct>(circuit_config, &TestStruct::schema(), &[None]);
+            catalog.preprocessor_registry().lock().unwrap().register(
+                "base64SpongePreprocessor",
+                Box::new(Base64SpongePreprocessorFactory),
+            );
+            Ok((circuit, catalog))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    controller.start();
+    wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS).unwrap();
+
+    let result = controller
+        .execute_query_text_sync("select * from test_output1 order by id")
+        .unwrap();
+
+    let expected = r#"+----+-------+---+-----+
+| id | b     | i | s   |
++----+-------+---+-----+
+| 1  | true  |   | one |
+| 2  | false |   | two |
++----+-------+---+-----+"#;
+
+    assert_eq!(&result, expected);
+    controller.stop().unwrap();
 }

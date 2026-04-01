@@ -7,10 +7,10 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
@@ -32,25 +32,21 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
-import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
-import org.junit.Ignore;
 import org.junit.Test;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-/** Regression tests that failed in incremental mode using the Catalog API */
+/** Regression tests that executed in incremental mode */
 public class IncrementalRegressionTests extends SqlIoTest {
     @Override
     public CompilerOptions testOptions() {
         CompilerOptions options = super.testOptions();
+        options.languageOptions.throwOnError = false;
         options.languageOptions.incrementalize = true;
         options.languageOptions.optimizationLevel = 2;
         // This will make the generated code use SourceSet operators:
@@ -816,66 +812,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
         });
     }
 
-    // Tests that are not in the repository; run manually
-    // TODO: Remove this in favor of the qaTests below.
-    @Test @Ignore
-    public void extraTests() throws IOException {
-        // Logger.INSTANCE.setLoggingLevel(CalciteOptimizer.class, 2);
-        // this.showFinal();
-        String dir = "../extra";
-        File file = new File(dir);
-        if (file.exists()) {
-            File[] toCompile = file.listFiles();
-            if (toCompile == null)
-                return;
-            Arrays.sort(toCompile);
-            for (File c: toCompile) {
-                if (!c.getName().contains("temp-program.sql")) continue;
-                if (c.getName().contains("sql")) {
-                    System.out.println("Compiling " + c);
-                    String sql = Utilities.readFile(c.getPath());
-                    this.compileRustTestCase(sql);
-                }
-            }
-        }
-    }
-
-    // Tests that are in the feldera-qa repository.
-    // The assumption is that this repository has been checked out in parallel with feldera.
-    // Note that this test is disabled by default, since it generates a huge rust program,
-    // concatenating all compiled programs.
-    @Test @Ignore
-    public void qaTests() throws IOException {
-        String dir = "../../../feldera-qa";
-        File file = new File(dir);
-        if (file.exists()) {
-            File[] directories = file.listFiles();
-            if (directories == null)
-                return;
-            Arrays.sort(directories);
-            for (File d: directories) {
-                File[] files = d.listFiles();
-                if (files == null)
-                    continue;
-                for (File c: files) {
-                    // The following eliminate some fda scripts
-                    if (c.getName().contains("adhoc")) continue;
-                    if (c.getName().matches("query.*view.sql")) continue;
-                    if (c.getName().endsWith(".sql")) {
-                        System.out.println("Compiling " + c);
-                        String sql = Utilities.readFile(c.getPath());
-                        try {
-                            this.compileRustTestCase(sql);
-                        } catch (UnsupportedException ex) {
-                            // This is probably a file containing an ad-hoc query
-                            System.out.println("Skipped due to unsupported features.");
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     @Test
     public void issue5491() {
         this.getCCS("""
@@ -983,12 +919,12 @@ public class IncrementalRegressionTests extends SqlIoTest {
               SELECT id FROM test_agg;""");
     }
 
-    Set<String> collectHashes(CompilerCircuit cc) {
-        HashSet<String> result = new HashSet<>();
+    Map<String, String> collectHashes(CompilerCircuit cc) {
+        HashMap<String, String> result = new HashMap<>();
         CircuitVisitor vis = new CircuitVisitor(cc.compiler) {
             @Override
-            public void postorder(DBSPOperator ignored) {
-                result.add(ignored.getNodeName(true));
+            public void postorder(DBSPOperator operator) {
+                result.put(operator.getNodeName(true), operator.getNodeName(false));
             }
         };
         cc.getCircuit().accept(vis);
@@ -1005,15 +941,15 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
                 CREATE MATERIALIZED VIEW v2 AS SELECT COUNT(*) AS c FROM t1;""");
         // Check that all hashes from cc1 appear unchanged in cc1
-        Set<String> hash0 = this.collectHashes(cc0);
-        Set<String> hash1 = this.collectHashes(cc1);
-        Assert.assertTrue(hash1.containsAll(hash0));
+        Map<String, String> hash0 = this.collectHashes(cc0);
+        Map<String, String> hash1 = this.collectHashes(cc1);
+        Assert.assertTrue(hash1.keySet().containsAll(hash0.keySet()));
         Assert.assertEquals(hash0.size() + 1, hash1.size());
     }
 
     @Test
     public void testHashes2() {
-        String common = """
+        final String tables = """
                 CREATE TABLE LINEITEM (
                         L_ORDERKEY    INTEGER NOT NULL,
                         L_PARTKEY     INTEGER NOT NULL,
@@ -1104,8 +1040,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         R_REGIONKEY  INTEGER NOT NULL,
                         R_NAME       CHAR(25) NOT NULL,
                         R_COMMENT    VARCHAR(152)
-                );
-                
+                );""";
+        final String q1 = """                
                 -- Pricing Summary Report
                 create materialized view q1
                 as select
@@ -1128,8 +1064,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         l_linestatus
                 order by
                         l_returnflag,
-                        l_linestatus;
-                
+                        l_linestatus;""";
+        final String q2 = """
                 -- Minimum Cost Supplier
                 create materialized view q2
                 as select
@@ -1175,8 +1111,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         n_name,
                         s_name,
                         p_partkey
-                limit 100;
-                
+                limit 100;""";
+        final String q3 = """
                 -- Shipping Priority
                 create materialized view q3
                 as select
@@ -1201,8 +1137,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 order by
                         revenue desc,
                         o_orderdate
-                limit 10;
-                
+                limit 10;""";
+        final String q4 = """
                 -- Order Priority Checking
                 create materialized view q4
                 as select
@@ -1225,8 +1161,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 group by
                         o_orderpriority
                 order by
-                        o_orderpriority;
-                
+                        o_orderpriority;""";
+        final String q5 = """
                 create materialized view q5
                 as select
                         n_name,
@@ -1251,8 +1187,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 group by
                         n_name
                 order by
-                        revenue desc;
-                
+                        revenue desc;""";
+        final String q6 = """
                 -- Forecasting Revenue Change
                 create materialized view q6
                 as select
@@ -1263,8 +1199,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         l_shipdate >= date '1994-01-01'
                         and l_shipdate < date '1994-01-01' + interval '1' year
                         and l_discount between .06 - 0.01 and .06 + 0.01
-                        and l_quantity < 24;
-                
+                        and l_quantity < 24;""";
+        final String q7 = """
                 -- Volume Shipping
                 create materialized view q7
                 as select
@@ -1305,52 +1241,49 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 order by
                         supp_nation,
                         cust_nation,
-                        l_year;
-                
-                -- Unfortunately this does not work for q8: there is a
-                -- shared join (followed by 2 projections) between q8 and q10 which causes
-                -- the plans for q8 to differ when compiled with and without q10
-                --
-                ---- National Market Share
-                --create materialized view q8
-                --as select
-                --        o_year,
-                --        sum(case
-                --                when nation = 'BRAZIL' then volume
-                --                else 0
-                --        end) / sum(volume) as mkt_share
-                --from
-                --        (
-                --                select
-                --                        year(o_orderdate) as o_year,
-                --                        l_extendedprice * (1 - l_discount) as volume,
-                --                        n2.n_name as nation
-                --                from
-                --                        part,
-                --                        supplier,
-                --                        lineitem,
-                --                        orders,
-                --                        customer,
-                --                        nation n1,
-                --                        nation n2,
-                --                        region
-                --                where
-                --                        p_partkey = l_partkey
-                --                        and s_suppkey = l_suppkey
-                --                        and l_orderkey = o_orderkey
-                --                        and o_custkey = c_custkey
-                --                        and c_nationkey = n1.n_nationkey
-                --                        and n1.n_regionkey = r_regionkey
-                --                        and r_name = 'AMERICA'
-                --                        and s_nationkey = n2.n_nationkey
-                --                        and o_orderdate between date '1995-01-01' and date '1996-12-31'
-                --                        and p_type = 'ECONOMY ANODIZED STEEL'
-                --        ) as all_nations
-                --group by
-                --        o_year
-                --order by
-                --        o_year;
-                
+                        l_year;""";
+        final String q8 = """                
+                -- National Market Share
+                create materialized view q8
+                as select
+                        o_year,
+                        sum(case
+                                when nation = 'BRAZIL' then volume
+                                else 0
+                        end) / sum(volume) as mkt_share
+                from
+                        (
+                                select
+                                        year(o_orderdate) as o_year,
+                                        l_extendedprice * (1 - l_discount) as volume,
+                                        n2.n_name as nation
+                                from
+                                        part,
+                                        supplier,
+                                        lineitem,
+                                        orders,
+                                        customer,
+                                        nation n1,
+                                        nation n2,
+                                        region
+                                where
+                                        p_partkey = l_partkey
+                                        and s_suppkey = l_suppkey
+                                        and l_orderkey = o_orderkey
+                                        and o_custkey = c_custkey
+                                        and c_nationkey = n1.n_nationkey
+                                        and n1.n_regionkey = r_regionkey
+                                        and r_name = 'AMERICA'
+                                        and s_nationkey = n2.n_nationkey
+                                        and o_orderdate between date '1995-01-01' and date '1996-12-31'
+                                        and p_type = 'ECONOMY ANODIZED STEEL'
+                        ) as all_nations
+                group by
+                        o_year
+                order by
+                        o_year;""";
+
+        final String q9 = """
                 -- Product Type Profit Measure
                 create materialized view q9
                 as select
@@ -1384,9 +1317,9 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         o_year
                 order by
                         nation,
-                        o_year desc;
-                """;
-        String extra = """
+                        o_year desc;""";
+
+        final String q10 = """
                 create materialized view q10
                 as select
                       c_custkey,
@@ -1419,14 +1352,21 @@ public class IncrementalRegressionTests extends SqlIoTest {
                       c_comment
                 order by
                       revenue desc
-                limit 20;
-                """;
+                limit 20;""";
 
-        var cc0 = this.getCC(common);
-        var cc1 = this.getCC(common + extra);
-        Set<String> hash0 = this.collectHashes(cc0);
-        Set<String> hash1 = this.collectHashes(cc1);
-        Assert.assertTrue(hash1.containsAll(hash0));
+        String common = tables + q1 + q2 + q3 + q4 + q5 + q7 + q8 + q9 + q10;
+        var cc0 = this.getCCS(common);
+        System.out.println(cc0.compiler.messages);
+        Map<String, String> hash0 = this.collectHashes(cc0);
+        Set<String> hash0keys = new HashSet<>(hash0.keySet());
+        var cc1 = this.getCCS(common + q6);
+        Map<String, String> hash1 = this.collectHashes(cc1);
+
+        hash0keys.removeAll(hash1.keySet());
+        for (String k : hash0keys)
+            // Nothing should be printed
+            System.out.println(hash0.get(k));
+        Assert.assertTrue(hash1.keySet().containsAll(hash0.keySet()));
     }
 
     @Test
@@ -2033,5 +1973,150 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 FROM V, UNNEST(V.colC) AS t(k, val)
                 WHERE t.val.type not like '%.com%';""");
         this.checkNarrow(cc, 10);
+    }
+
+    @Test
+    public void projectionBug() {
+        this.getCCS("""
+                CREATE TABLE flows(ts TIMESTAMP NOT NULL LATENESS INTERVAL 5 SECONDS)
+                WITH ('append_only' = 'true');
+                
+                CREATE LOCAL VIEW tumble AS SELECT
+                            MIN(ts) AS ts_min,
+                            MAX(ts) AS ts_max,
+                            window_start,
+                            window_end
+                FROM TABLE(
+                        TUMBLE(
+                            TABLE flows,
+                            DESCRIPTOR(ts),
+                            INTERVAL '1' MINUTES
+                        )
+                    )
+                    GROUP BY window_start, window_end;
+                
+                CREATE VIEW final
+                    WITH ('emit_final' = 'window_end')
+                    AS SELECT window_start, window_end
+                    FROM tumble""");
+    }
+
+    @Test
+    public void starJoinFlatmapTest() {
+        // Check GC for StarJoinFilterMapOperator
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT, y INT LATENESS 1);
+                CREATE VIEW V WITH ('emit_final' = 'y')
+                AS SELECT
+                y,
+                MIN(x),
+                MAX(x),
+                STDDEV(x),
+                ARG_MAX(y, x)
+                FROM T GROUP BY y
+                HAVING y > 1;""");
+        // Because of emit_final nothing is emitted in the first step
+        ccs.step("INSERT INTO T VALUES(0, 0), (1, 2), (2, 2)", """
+                 y | min | max | stddev | arg_max | weight
+                -------------------------------------------""");
+        // Insert one tuple which produces no output yet; output for
+        // data inserted so far is now emitted.
+        ccs.step("INSERT INTO T VALUES(1, 5)", """
+                 y | min | max | stddev | arg_max | weight
+                -------------------------------------------
+                 2 |   1 |   2 |      1 |       2 | 1""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            int joins = 0;
+
+            @Override
+            public void postorder(DBSPStarJoinFilterMapOperator operator) {
+                this.joins++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.joins);
+            }
+        });
+    }
+
+    @Test
+    public void starJoinFlatmapOptOutTest() {
+        // Test that we can inhibit the use of star joins using options
+        // This test may eventually be removed
+        var ccs = this.getCCS("""
+                SET FELDERA_AVOID_STAR_JOINS = ON;
+                
+                CREATE TABLE T(x INT, y INT);
+                CREATE VIEW V AS SELECT
+                y,
+                MIN(x),
+                MAX(x),
+                STDDEV(x),
+                ARG_MAX(y, x)
+                FROM T GROUP BY y
+                HAVING y > 1;""");
+        ccs.step("INSERT INTO T VALUES(0, 0), (1, 2), (2, 2)", """
+                 y | min | max | stddev | arg_max | weight
+                -------------------------------------------
+                 2 |   1 |   2 |      1 |       2 | 1""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            int joins = 0;
+
+            @Override
+            public void postorder(DBSPStarJoinFilterMapOperator operator) {
+                this.joins++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(0, this.joins);
+            }
+        });
+    }
+
+    @Test
+    public void testEmitFinalStarJoin() {
+        // Test waterline propagation through star join.
+        // This will fail if propagation is not good enough because of the 'emit_final' view annotation.
+        this.getCCS("""
+                SET FELDERA_AVOID_STAR_JOINS = ON;
+                
+                CREATE TABLE T (
+                  ts TIMESTAMP NOT NULL LATENESS INTERVAL 5 MINUTE,
+                  a VARCHAR NOT NULL
+                );
+                
+                CREATE TABLE flows (
+                    ts TIMESTAMP NOT NULL LATENESS INTERVAL 5 SECONDS,
+                    src VARCHAR NOT NULL,
+                    sequence_number BIGINT
+                );
+                
+                CREATE LOCAL VIEW tumble AS
+                    SELECT
+                            window_start,
+                            window_end,
+                            MIN(ts) AS ts_min,
+                            MAX(ts) AS ts_max,
+                            window_end - INTERVAL 5 MINUTE as delayed_window_end,
+                            src,
+                            MAX(sequence_number) AS sequence_number
+                    FROM TABLE(
+                        TUMBLE(
+                            TABLE flows,
+                            DESCRIPTOR(ts),
+                            INTERVAL '1' MINUTES
+                        )
+                    )
+                    GROUP BY src, window_start, window_end;
+                
+                CREATE VIEW final
+                    WITH ('emit_final' = 'delayed_window_end')
+                    AS SELECT *
+                    FROM tumble
+                     LEFT ASOF JOIN T
+                        MATCH_CONDITION(tumble.delayed_window_end >= T.ts)
+                        ON tumble.src = T.a;""");
     }
 }

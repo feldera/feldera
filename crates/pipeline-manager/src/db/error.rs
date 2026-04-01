@@ -175,6 +175,7 @@ pub enum DBError {
     },
     StorageStatusImmutableUnlessStopped {
         resources_status: ResourcesStatus,
+        resources_desired_status: ResourcesDesiredStatus,
         current_status: StorageStatus,
         new_status: StorageStatus,
     },
@@ -198,6 +199,9 @@ pub enum DBError {
     InvalidBootstrap(String),
     NoRuntimeStatusWhileProvisioned,
     PreconditionViolation(String),
+    CannotStartWithUndismissedError,
+    CannotStartWhileClearingStorage,
+    DismissErrorRestrictedToFullyStopped,
     InitialImmutableUnlessStopped,
     InitialStandbyNotAllowed,
     InvalidMonitorStatus(String),
@@ -205,6 +209,11 @@ pub enum DBError {
         event_id: ClusterMonitorEventId,
     },
     NoClusterMonitorEventsAvailable,
+    UnnecessaryResourcesStatusTransition {
+        current_status: ResourcesStatus,
+        new_status: ResourcesStatus,
+        current_desired_status: ResourcesDesiredStatus,
+    },
 }
 
 impl DBError {
@@ -585,13 +594,14 @@ impl Display for DBError {
             }
             DBError::StorageStatusImmutableUnlessStopped {
                 resources_status,
+                resources_desired_status,
                 current_status,
                 new_status,
             } => {
                 write!(
                     f,
-                    "Cannot transition storage status from '{current_status}' to '{new_status}' with resources status '{resources_status}'. \
-                    Storage status cannot be changed unless the pipeline is stopped."
+                    "Cannot transition storage status from '{current_status}' to '{new_status}' with resources status '{resources_status}' and desired status '{resources_desired_status}'. \
+                    Storage status cannot be changed unless the pipeline is fully stopped."
                 )
             }
             DBError::IllegalPipelineAction {
@@ -650,6 +660,27 @@ impl Display for DBError {
                     "Cannot delete pipeline unless its storage is cleared. Clear storage first using `/clear`."
                 )
             }
+            DBError::CannotStartWithUndismissedError => {
+                write!(
+                    f,
+                    "Cannot process `/start?dismiss_error=false` if the `deployment_error` is set. \
+                    You can dismiss the error by calling `/start?dismiss_error=true`, or alternatively \
+                    first call `/dismiss_error`, after which `/start?dismiss_error=false` is again possible."
+                )
+            }
+            DBError::CannotStartWhileClearingStorage => {
+                write!(
+                    f,
+                    "Cannot process `/start` if the `storage_status` is `Clearing`. \
+                    Wait for the storage to become cleared before trying again."
+                )
+            }
+            DBError::DismissErrorRestrictedToFullyStopped => {
+                write!(
+                    f,
+                    "The pipeline must have both status `Stopped` and desired status `Stopped` to dismiss the `deployment_error` if it is set."
+                )
+            }
             DBError::InitialImmutableUnlessStopped => {
                 write!(
                     f,
@@ -672,6 +703,16 @@ impl Display for DBError {
             }
             DBError::NoClusterMonitorEventsAvailable => {
                 write!(f, "There are not yet any cluster monitor events recorded")
+            }
+            DBError::UnnecessaryResourcesStatusTransition {
+                current_status,
+                new_status,
+                current_desired_status,
+            } => {
+                write!(
+                    f,
+                    "Unnecessary to transition from deployment resources status '{current_status}' to '{new_status}' given desired status is '{current_desired_status}'"
+                )
             }
         }
     }
@@ -764,11 +805,19 @@ impl DetailedError for DBError {
             Self::NoRuntimeStatusWhileProvisioned => Cow::from("NoRuntimeStatusWhileProvisioned"),
             Self::PreconditionViolation(..) => Cow::from("PreconditionViolation"),
             Self::ResumeWhileNotProvisioned => Cow::from("ResumeWhileNotProvisioned"),
+            Self::CannotStartWithUndismissedError => Cow::from("CannotStartWithUndismissedError"),
+            Self::CannotStartWhileClearingStorage => Cow::from("CannotStartWhileClearingStorage"),
+            Self::DismissErrorRestrictedToFullyStopped => {
+                Cow::from("DismissErrorRestrictedToFullyStopped")
+            }
             Self::InitialImmutableUnlessStopped => Cow::from("InitialImmutableUnlessStopped"),
             Self::InitialStandbyNotAllowed => Cow::from("InitialStandbyNotAllowed"),
             Self::InvalidMonitorStatus(..) => Cow::from("InvalidMonitorStatus"),
             Self::UnknownClusterMonitorEvent { .. } => Cow::from("UnknownClusterMonitorEvent"),
             Self::NoClusterMonitorEventsAvailable => Cow::from("NoClusterMonitorEventsAvailable"),
+            Self::UnnecessaryResourcesStatusTransition { .. } => {
+                Cow::from("UnnecessaryResourcesStatusTransition")
+            }
         }
     }
 }
@@ -834,11 +883,15 @@ impl ResponseError for DBError {
             Self::InvalidBootstrap(..) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::NoRuntimeStatusWhileProvisioned => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PreconditionViolation(..) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::CannotStartWithUndismissedError => StatusCode::BAD_REQUEST,
+            Self::CannotStartWhileClearingStorage => StatusCode::BAD_REQUEST,
+            Self::DismissErrorRestrictedToFullyStopped => StatusCode::BAD_REQUEST,
             Self::InitialImmutableUnlessStopped => StatusCode::BAD_REQUEST,
             Self::InitialStandbyNotAllowed => StatusCode::BAD_REQUEST,
             Self::InvalidMonitorStatus(..) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::UnknownClusterMonitorEvent { .. } => StatusCode::NOT_FOUND,
             Self::NoClusterMonitorEventsAvailable => StatusCode::NOT_FOUND,
+            Self::UnnecessaryResourcesStatusTransition { .. } => StatusCode::BAD_REQUEST,
         }
     }
 

@@ -3,6 +3,12 @@ name: Platform Integration Tests
 
 on:
   workflow_call:
+    inputs:
+      artifacts_run_id:
+        description: "Run ID to download build artifacts from (empty = current run)"
+        type: string
+        required: false
+        default: ""
   workflow_dispatch:
     inputs:
       run_id:
@@ -73,7 +79,7 @@ jobs:
       OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install the latest version of uv
         uses: astral-sh/setup-uv@v6
@@ -147,6 +153,10 @@ jobs:
   oss-platform-tests:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'oss-platform-tests') }}
     name: Platform Integration Tests (OSS Docker Image)
+    permissions:
+      actions: read
+      contents: read
+      packages: read
     strategy:
       matrix:
         include:
@@ -165,9 +175,11 @@ jobs:
       OIDC_TEST_CLIENT_SECRET: ${{ secrets.OIDC_TEST_CLIENT_SECRET }}
       OIDC_TEST_USERNAME: ${{ secrets.OIDC_TEST_USERNAME }}
       OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
+      FELDERA_TLS_INSECURE: true
+      FELDERA_HOST: https://localhost:8080
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-db53e1302c944e29edd6d2af516fff7032b90e3b
+      image: ghcr.io/feldera/feldera-dev:sha-06a694400a6aea1f568da04eaf786bfe84e0a869
     services:
       pipeline-manager:
         image: ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
@@ -178,14 +190,14 @@ jobs:
           FELDERA_AUTH_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
           RUST_LOG: info
           RUST_BACKTRACE: 1
+          FELDERA_ENABLE_HTTPS: true
           # Needed by test_update_runtime.py
           FELDERA_UNSTABLE_FEATURES: "testing"
         options: >-
-          --health-cmd "curl --fail --request GET --url http://localhost:8080/healthz || exit 1"
+          --health-cmd "curl --insecure --fail --request GET --url https://localhost:8080/healthz || exit 1"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-          --cap-add=PERFMON
 
     steps:
       - name: Show Kubernetes node
@@ -194,7 +206,7 @@ jobs:
           echo "K8S node: ${K8S_NODE_NAME}"
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Check OIDC configuration and connectivity
         if: vars.OIDC_TEST_ISSUER != '' && vars.OIDC_TEST_CLIENT_ID != ''
@@ -210,17 +222,15 @@ jobs:
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: |
           (cd crates/pipeline-manager/demos && uv run validate-preamble.py sql/*.sql)
-          uv run crates/pipeline-manager/demos/run.py --api-url http://localhost:8080
+          uv run crates/pipeline-manager/demos/run.py --api-url https://localhost:8080
         env:
           PYTHONPATH: ${{ github.workspace }}/python
-          FELDERA_HTTPS_TLS_CERT: ../test-tls/tls_test.crt
 
       - name: Run platform tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/platform --timeout=1500 -vv
+        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/platform --timeout=1500 -vv ${{ vars.PYTEST_EXTRA }}
         working-directory: python
         env:
-          FELDERA_HOST: http://localhost:8080
           PYTHONPATH: ${{ github.workspace }}/python
           IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
           FELDERA_HTTPS_TLS_CERT: ../test-tls/tls_test.crt

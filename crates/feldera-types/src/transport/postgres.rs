@@ -30,6 +30,43 @@ impl Display for PostgresWriteMode {
     }
 }
 
+/// TLS/SSL configuration for PostgreSQL connectors.
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema, Default)]
+pub struct PostgresTlsConfig {
+    /// A sequence of CA certificates in PEM format.
+    pub ssl_ca_pem: Option<String>,
+
+    /// Path to a file containing a sequence of CA certificates in PEM format.
+    pub ssl_ca_location: Option<String>,
+
+    /// The client certificate in PEM format.
+    pub ssl_client_pem: Option<String>,
+
+    /// Path to the client certificate.
+    pub ssl_client_location: Option<String>,
+
+    /// The client certificate key in PEM format.
+    pub ssl_client_key: Option<String>,
+
+    /// Path to the client certificate key.
+    pub ssl_client_key_location: Option<String>,
+
+    /// The path to the certificate chain file.
+    /// The file must contain a sequence of PEM-formatted certificates,
+    /// the first being the leaf certificate, and the remainder forming
+    /// the chain of certificates up to and including the trusted root certificate.
+    pub ssl_certificate_chain_location: Option<String>,
+
+    /// True to enable hostname verification when using TLS. True by default.
+    pub verify_hostname: Option<bool>,
+}
+
+impl PostgresTlsConfig {
+    pub fn has_tls(&self) -> bool {
+        self.ssl_ca_pem.is_some() || self.ssl_ca_location.is_some()
+    }
+}
+
 /// Postgres input connector configuration.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct PostgresReaderConfig {
@@ -39,6 +76,11 @@ pub struct PostgresReaderConfig {
 
     /// Query that specifies what data to fetch from postgres.
     pub query: String,
+
+    /// TLS/SSL configuration.
+    #[serde(flatten)]
+    #[schema(inline)]
+    pub tls: PostgresTlsConfig,
 }
 
 /// Postgres output connector configuration.
@@ -83,32 +125,10 @@ pub struct PostgresWriterConfig {
     #[schema(default = default_cdc_ts_column)]
     pub cdc_ts_column: String,
 
-    /// A sequence of CA certificates in PEM format.
-    pub ssl_ca_pem: Option<String>,
-
-    /// Path to a file containing a sequence of CA certificates in PEM format.
-    pub ssl_ca_location: Option<String>,
-
-    /// The client certificate in PEM format.
-    pub ssl_client_pem: Option<String>,
-
-    /// Path to the client certificate.
-    pub ssl_client_location: Option<String>,
-
-    /// The client certificate key in PEM format.
-    pub ssl_client_key: Option<String>,
-
-    /// Path to the client certificate key.
-    pub ssl_client_key_location: Option<String>,
-
-    /// The path to the certificate chain file.
-    /// The file must contain a sequence of PEM-formatted certificates,
-    /// the first being the leaf certificate, and the remainder forming
-    /// the chain of certificates up to and including the trusted root certificate.
-    pub ssl_certificate_chain_location: Option<String>,
-
-    /// True to enable hostname verification when using TLS. True by default.
-    pub verify_hostname: Option<bool>,
+    /// TLS/SSL configuration.
+    #[serde(flatten)]
+    #[schema(inline)]
+    pub tls: PostgresTlsConfig,
 
     /// The maximum number of records in a single buffer.
     pub max_records_in_buffer: Option<usize>,
@@ -136,10 +156,21 @@ pub struct PostgresWriterConfig {
     /// Default: `false`
     #[serde(default)]
     pub on_conflict_do_nothing: bool,
+
+    /// The number of threads to use during encoding.
+    ///
+    /// Default: 1
+    #[serde(default = "default_writer_threads")]
+    #[schema(default = default_writer_threads)]
+    pub threads: usize,
 }
 
 fn default_max_buffer_size() -> usize {
     usize::pow(2, 20)
+}
+
+fn default_writer_threads() -> usize {
+    1
 }
 
 fn default_cdc_op_column() -> String {
@@ -190,6 +221,10 @@ impl PostgresWriterConfig {
                 }
             }
         };
+
+        if self.threads == 0 {
+            return Err("threads must be at least 1".to_string());
+        }
 
         Ok(())
     }

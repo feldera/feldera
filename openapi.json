@@ -10,7 +10,7 @@
     "license": {
       "name": "MIT OR Apache-2.0"
     },
-    "version": "0.239.0"
+    "version": "0.278.0"
   },
   "paths": {
     "/config/authentication": {
@@ -583,6 +583,7 @@
                     "platform_version": "v0",
                     "runtime_config": {
                       "workers": 16,
+                      "max_rss_mb": null,
                       "hosts": 1,
                       "storage": {
                         "backend": {
@@ -620,6 +621,7 @@
                       "checkpoint_during_suspend": true,
                       "http_workers": null,
                       "io_workers": null,
+                      "env": {},
                       "dev_tweaks": {},
                       "logging": null,
                       "pipeline_template_configmap": null
@@ -670,6 +672,7 @@
                     "platform_version": "v0",
                     "runtime_config": {
                       "workers": 10,
+                      "max_rss_mb": null,
                       "hosts": 1,
                       "storage": {
                         "backend": {
@@ -707,6 +710,7 @@
                       "checkpoint_during_suspend": false,
                       "http_workers": null,
                       "io_workers": null,
+                      "env": {},
                       "dev_tweaks": {},
                       "logging": null,
                       "pipeline_template_configmap": null
@@ -787,6 +791,7 @@
                 "description": "Description of the pipeline example1",
                 "runtime_config": {
                   "workers": 16,
+                  "max_rss_mb": null,
                   "hosts": 1,
                   "storage": {
                     "backend": {
@@ -824,6 +829,7 @@
                   "checkpoint_during_suspend": true,
                   "http_workers": null,
                   "io_workers": null,
+                  "env": {},
                   "dev_tweaks": {},
                   "logging": null,
                   "pipeline_template_configmap": null
@@ -858,6 +864,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "max_rss_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
@@ -895,6 +902,7 @@
                     "checkpoint_during_suspend": true,
                     "http_workers": null,
                     "io_workers": null,
+                    "env": {},
                     "dev_tweaks": {},
                     "logging": null,
                     "pipeline_template_configmap": null
@@ -1038,6 +1046,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "max_rss_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
@@ -1075,6 +1084,7 @@
                     "checkpoint_during_suspend": true,
                     "http_workers": null,
                     "io_workers": null,
+                    "env": {},
                     "dev_tweaks": {},
                     "logging": null,
                     "pipeline_template_configmap": null
@@ -1182,6 +1192,7 @@
                 "description": "Description of the pipeline example1",
                 "runtime_config": {
                   "workers": 16,
+                  "max_rss_mb": null,
                   "hosts": 1,
                   "storage": {
                     "backend": {
@@ -1219,6 +1230,7 @@
                   "checkpoint_during_suspend": true,
                   "http_workers": null,
                   "io_workers": null,
+                  "env": {},
                   "dev_tweaks": {},
                   "logging": null,
                   "pipeline_template_configmap": null
@@ -1253,6 +1265,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "max_rss_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
@@ -1290,6 +1303,7 @@
                     "checkpoint_during_suspend": true,
                     "http_workers": null,
                     "io_workers": null,
+                    "env": {},
                     "dev_tweaks": {},
                     "logging": null,
                     "pipeline_template_configmap": null
@@ -1350,6 +1364,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "max_rss_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
@@ -1387,6 +1402,7 @@
                     "checkpoint_during_suspend": true,
                     "http_workers": null,
                     "io_workers": null,
+                    "env": {},
                     "dev_tweaks": {},
                     "logging": null,
                     "pipeline_template_configmap": null
@@ -1616,6 +1632,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "max_rss_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
@@ -1653,6 +1670,7 @@
                     "checkpoint_during_suspend": true,
                     "http_workers": null,
                     "io_workers": null,
+                    "env": {},
                     "dev_tweaks": {},
                     "logging": null,
                     "pipeline_template_configmap": null
@@ -2292,7 +2310,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CheckpointStatus"
+                  "$ref": "#/components/schemas/CheckpointSyncStatus"
                 }
               }
             }
@@ -3251,6 +3269,74 @@
           },
           "404": {
             "description": "Pipeline with that name does not exist or dataflow graph is not available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/dismiss_error": {
+      "post": {
+        "tags": [
+          "Pipeline Lifecycle"
+        ],
+        "summary": "Dismiss Pipeline Deployment Error",
+        "description": "Clears the `deployment_error` field of the pipeline, such that a subsequent call to\n`/start?dismiss_error=false` succeeds. It will return an error if the pipeline is not fully\nstopped (i.e., both current and desired status must be `Stopped`) AND a deployment error\nis present.",
+        "operationId": "post_pipeline_dismiss_error",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deployment error has been dismissed"
+          },
+          "400": {
+            "description": "Action could not be performed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -4695,6 +4781,14 @@
             "schema": {
               "$ref": "#/components/schemas/BootstrapPolicy"
             }
+          },
+          {
+            "name": "dismiss_error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -5483,7 +5577,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/InputEndpointStatus"
                 }
               }
             }
@@ -6072,6 +6166,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "max_rss_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
@@ -6109,6 +6204,7 @@
                     "checkpoint_during_suspend": true,
                     "http_workers": null,
                     "io_workers": null,
+                    "env": {},
                     "dev_tweaks": {},
                     "logging": null,
                     "pipeline_template_configmap": null
@@ -6259,7 +6355,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/OutputEndpointStatus"
                 }
               }
             }
@@ -6502,6 +6598,23 @@
           "await_approval"
         ]
       },
+      "BufferCacheAllocationStrategy": {
+        "type": "string",
+        "description": "Controls how caches are shared across a foreground/background worker pair.",
+        "enum": [
+          "shared_per_worker_pair",
+          "per_thread",
+          "global"
+        ]
+      },
+      "BufferCacheStrategy": {
+        "type": "string",
+        "description": "Selects which eviction strategy backs a cache instance.",
+        "enum": [
+          "s3_fifo",
+          "lru"
+        ]
+      },
       "BuildInformation": {
         "type": "object",
         "description": "Information about the build of the platform.",
@@ -6730,6 +6843,51 @@
             "description": "Most recently successful checkpoint.",
             "nullable": true,
             "minimum": 0
+          }
+        }
+      },
+      "CheckpointSyncFailure": {
+        "type": "object",
+        "description": "Information about a failed checkpoint sync.",
+        "required": [
+          "uuid",
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message associated with the failure."
+          },
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the failed checkpoint."
+          }
+        }
+      },
+      "CheckpointSyncStatus": {
+        "type": "object",
+        "description": "Checkpoint status returned by the `/checkpoint/sync_status` endpoint.",
+        "properties": {
+          "failure": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CheckpointSyncFailure"
+              }
+            ],
+            "nullable": true
+          },
+          "periodic": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Most recently successful automated periodic checkpoint sync.",
+            "nullable": true
+          },
+          "success": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Most recently successful checkpoint sync.",
+            "nullable": true
           }
         }
       },
@@ -6964,6 +7122,49 @@
           "Stopping"
         ]
       },
+      "CommitProgressSummary": {
+        "type": "object",
+        "description": "Summary of transaction commit progress.",
+        "required": [
+          "completed",
+          "in_progress",
+          "remaining",
+          "in_progress_processed_records",
+          "in_progress_total_records"
+        ],
+        "properties": {
+          "completed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of operators that have been fully flushed.",
+            "minimum": 0
+          },
+          "in_progress": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of operators that are currently being flushed.",
+            "minimum": 0
+          },
+          "in_progress_processed_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of records processed by operators that are currently being flushed.",
+            "minimum": 0
+          },
+          "in_progress_total_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total number of records that operators that are currently being flushed need to process.",
+            "minimum": 0
+          },
+          "remaining": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of operators that haven't started flushing.",
+            "minimum": 0
+          }
+        }
+      },
       "CompilationProfile": {
         "type": "string",
         "description": "Enumeration of possible compilation profiles that can be passed to the Rust compiler\nas an argument via `cargo build --profile <>`. A compilation profile affects among\nother things the compilation speed (how long till the program is ready to be run)\nand runtime speed (the performance while running).",
@@ -6986,10 +7187,12 @@
         "properties": {
           "completed_at": {
             "type": "string",
+            "format": "date-time",
             "description": "Timestamp when all outputs produced from this input have been pushed to all output endpoints."
           },
           "ingested_at": {
             "type": "string",
+            "format": "date-time",
             "description": "Timestamp when the data was ingested from the wire."
           },
           "metadata": {
@@ -6998,6 +7201,7 @@
           },
           "processed_at": {
             "type": "string",
+            "format": "date-time",
             "description": "Timestamp when the data was processed by the circuit."
           }
         }
@@ -7032,6 +7236,13 @@
         "properties": {
           "status": {
             "$ref": "#/components/schemas/CompletionStatus"
+          },
+          "step": {
+            "type": "integer",
+            "format": "int64",
+            "description": "If all of the data associated with the token has been processed through\nthe pipeline, this is the final step that includes at least one record.\nWhen the pipeline's `total_completed_steps` reaches this value, the\ntoken has been completed.\n\nThis is `None` before the data associated with the token has been\nprocessed through the pipeline.",
+            "nullable": true,
+            "minimum": 0
           }
         }
       },
@@ -7201,7 +7412,8 @@
               "max_batch_size": {
                 "type": "integer",
                 "format": "int64",
-                "description": "Maximum batch size, in records.\n\nThis is the maximum number of records to process in one batch through\nthe circuit.  The time and space cost of processing a batch is\nasymptotically superlinear in the size of the batch, but very small\nbatches are less efficient due to constant factors.\n\nThis should usually be less than `max_queued_records`, to give the\nconnector a round-trip time to restart and refill the buffer while\nbatches are being processed.\n\nSome input adapters might not honor this setting.\n\nThe default is 10,000.",
+                "description": "Maximum number of records from this connector to process in a single batch.\n\nWhen set, this caps how many records are taken from the connector’s input\nbuffer and pushed through the circuit at once.\n\nThis is typically configured lower than `max_queued_records` to allow the\nconnector time to restart and refill its buffer while a batch is being\nprocessed.\n\nNot all input adapters honor this limit.\n\nIf this is not set, the batch size is derived from `max_worker_batch_size`.",
+                "nullable": true,
                 "minimum": 0
               },
               "max_queued_records": {
@@ -7210,9 +7422,23 @@
                 "description": "Backpressure threshold.\n\nMaximal number of records queued by the endpoint before the endpoint\nis paused by the backpressure mechanism.\n\nFor input endpoints, this setting bounds the number of records that have\nbeen received from the input transport but haven't yet been consumed by\nthe circuit since the circuit, since the circuit is still busy processing\nprevious inputs.\n\nFor output endpoints, this setting bounds the number of records that have\nbeen produced by the circuit but not yet sent via the output transport endpoint\nnor stored in the output buffer (see `enable_output_buffer`).\n\nNote that this is not a hard bound: there can be a small delay between\nthe backpressure mechanism is triggered and the endpoint is paused, during\nwhich more data may be queued.\n\nThe default is 1 million.",
                 "minimum": 0
               },
+              "max_worker_batch_size": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Maximum number of records processed per batch, per worker thread.\n\nWhen `max_batch_size` is not set, this setting is used to cap\nthe number of records that can be taken from the connector’s input\nbuffer and pushed through the circuit at once.  The effective batch size is computed as:\n`max_worker_batch_size × workers`.\n\nThis provides an alternative to `max_batch_size` that automatically adjusts batch\nsize as the number of worker threads changes to maintain constant amount of\nwork per worker per batch.\n\nDefaults to 10,000 records per worker.",
+                "nullable": true,
+                "minimum": 0
+              },
               "paused": {
                 "type": "boolean",
                 "description": "Create connector in paused state.\n\nThe default is `false`."
+              },
+              "preprocessor": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PreprocessorConfig"
+                },
+                "nullable": true
               },
               "start_after": {
                 "type": "array",
@@ -7229,6 +7455,58 @@
           }
         ],
         "description": "A data connector's configuration"
+      },
+      "ConnectorError": {
+        "type": "object",
+        "required": [
+          "timestamp",
+          "index",
+          "message"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Sequence number of the error.\n\nThe client can use this field to detect gaps in the error list reported\nby the pipeline. When the connector reports a large number of errors, the\npipeline will only preserve and report the most recent errors of each kind.",
+            "minimum": 0
+          },
+          "message": {
+            "type": "string",
+            "description": "Error message."
+          },
+          "tag": {
+            "type": "string",
+            "description": "Optional tag for the error.\n\nThe tag is used to group errors by their type.",
+            "nullable": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the error occurred, serialized as RFC3339 with microseconds."
+          }
+        }
+      },
+      "ConnectorHealth": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/ConnectorHealthStatus"
+          }
+        }
+      },
+      "ConnectorHealthStatus": {
+        "type": "string",
+        "enum": [
+          "Healthy",
+          "Unhealthy"
+        ]
       },
       "ConnectorStats": {
         "type": "object",
@@ -7427,6 +7705,13 @@
             "type": "integer",
             "format": "int64",
             "description": "Optional seed for the random generator.\n\nSetting this to a fixed value will make the generator produce the same sequence of records\nevery time the pipeline is run.\n\n# Notes\n- To ensure the set of generated input records is deterministic across multiple runs,\napart from setting a seed, `workers` also needs to remain unchanged.\n- The input will arrive in non-deterministic order if `workers > 1`.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "transaction_size": {
+            "type": "integer",
+            "description": "By default, the data generator does not request [transactions].  Set\nthis to a nonzero value for the data generator to automatically\norchestrate transactions of approximately the specified number of rows.\n\n[transactions]: https://docs.feldera.com/pipelines/transactions",
             "default": null,
             "nullable": true,
             "minimum": 0
@@ -7712,8 +7997,21 @@
           "uri"
         ],
         "properties": {
+          "max_retries": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum number of retries for failed operations.\n\nThe connector performs retries on several levels: individual S3 operations, Delta Lake transaction commits,\nand overall operation retries. This setting controls the overall operation retries. When a write to the table\nfails, because of an S3 timeout or any other reason that was not resolved by lower-level retries, the connector\nwill retry the entire operation.\n\nWhen not specified, the connector performs infinite retries. When set to 0, the connector doesn't\nretry failed operations.",
+            "nullable": true,
+            "minimum": 0
+          },
           "mode": {
             "$ref": "#/components/schemas/DeltaTableWriteMode"
+          },
+          "threads": {
+            "type": "integer",
+            "description": "Number of parallel threads used by the connector.\n\nIncreasing this value can improve Delta Lake write throughput\nby enabling concurrent writes.\n\nDefault: 1.",
+            "nullable": true,
+            "minimum": 1
           },
           "uri": {
             "type": "string",
@@ -7759,6 +8057,153 @@
           "udf_toml": {
             "type": "string",
             "description": "User defined function (UDF) TOML dependencies."
+          }
+        }
+      },
+      "DevTweaks": {
+        "type": "object",
+        "description": "Optional settings for tweaking Feldera internals.\n\nThese settings reflect experiments that may come and go and change from\nversion to version.  Users should not consider them to be stable.",
+        "properties": {
+          "adaptive_joins": {
+            "type": "boolean",
+            "description": "Enable adaptive joins.\n\nAdaptive joins dynamically change their partitioning policy to avoid skew.\n\nAdaptive joins are disabled by default.",
+            "default": null,
+            "nullable": true
+          },
+          "balancer_balance_tax": {
+            "type": "number",
+            "format": "double",
+            "description": "Factor that discourages the use of the Balance policy in a perfectly balanced collection.\n\nAssuming a perfectly balanced key distribution, the Balance policy is slightly less efficient than Shard,\nsince it requires computing the hash of the entire key/value pair. This factor discourages the use of this policy\nif the skew is `<balancer_balance_tax`.\n\nThe default value is 1.1.",
+            "default": null,
+            "nullable": true
+          },
+          "balancer_key_distribution_refresh_threshold": {
+            "type": "number",
+            "format": "double",
+            "description": "The balancer threshold for checking for an improved partitioning policy for a stream.\n\nFinding a good partitioning policy for a circuit involves solving an optimization problem,\nwhich can be relatively expensive. Instead of doing this on every step, the balancer only\nchecks for an improved partitioning policy if the key distribution of a stream has changed\nsignificantly since the current solution was computed.  Specifically, it only kicks in when\nthe size of at least one shard of at least one stream in the cluster has changed by more than\nthis threshold.\n\nThe default value is 0.1.",
+            "default": null,
+            "nullable": true
+          },
+          "balancer_min_absolute_improvement_threshold": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The minimum absolute improvement threshold for the balancer.\n\nThe join balancer is a component that dynamically chooses an optimal\npartitioning policy for adaptive join operators.  This parameter\nprevents the join balancer from making changes to the partitioning\npolicy if the improvement is not significant, since the overhead of such\nrebalancing, especially when performed frequently, can exceed the\nbenefits.\n\nA rebalancing is considered significant if the absolute estimated\nimprovement for the cluster of joins where the rebalancing is applied is\nat least this threshold. The cost model used by the balancer is based on\nthe number of records in the largest partition of a collection.\n\nA rebalancing is applied if both this threshold and\n`balancer_min_relative_improvement_threshold` are met.\n\nThe default value is 10,000.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "balancer_min_relative_improvement_threshold": {
+            "type": "number",
+            "format": "double",
+            "description": "The minimum relative improvement threshold for the join balancer.\n\nThe join balancer is a component that dynamically chooses an optimal\npartitioning policy for adaptive join operators.  This parameter\nprevents the join balancer from making changes to the partitioning\npolicy if the improvement is not significant, since the overhead of such\nrebalancing, especially when performed frequently, can exceed the\nbenefits.\n\nA rebalancing is considered significant if the relative estimated\nimprovement for the cluster of joins where the rebalancing is applied is\nat least this threshold.\n\nA rebalancing is applied if both this threshold and\n`balancer_min_absolute_improvement_threshold` are met.\n\nThe default value is 1.2.",
+            "default": null,
+            "nullable": true
+          },
+          "bloom_false_positive_rate": {
+            "type": "number",
+            "format": "double",
+            "description": "False-positive rate for Bloom filters on batches on storage, as a\nfraction f, where 0 < f < 1.\n\nThe false-positive rate trades off between the amount of memory used by\nBloom filters and how frequently storage needs to be searched for keys\nthat are not actually present.  Typical false-positive rates and their\ncorresponding memory costs are:\n\n- 0.1: 4.8 bits per key\n- 0.01: 9.6 bits per key\n- 0.001: 14.4 bits per key\n- 0.0001: 19.2 bits per key (default)\n\nValues outside the valid range, such as 0.0, disable Bloom filters.",
+            "default": null,
+            "nullable": true
+          },
+          "buffer_cache_allocation_strategy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BufferCacheAllocationStrategy"
+              }
+            ],
+            "default": null,
+            "nullable": true
+          },
+          "buffer_cache_strategy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BufferCacheStrategy"
+              }
+            ],
+            "default": null,
+            "nullable": true
+          },
+          "buffer_max_buckets": {
+            "type": "integer",
+            "description": "Override the number of buckets/shards used by sharded buffer caches.\n\nThis only applies when `buffer_cache_strategy = \"s3_fifo\"`. Values are\nrounded up to the next power of two because the current implementation\nshards by `hash(key) & (n - 1)`.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "fbuf_slab_bytes_per_class": {
+            "type": "integer",
+            "description": "Target number of cached bytes retained in each `FBuf` slab size class.\n\nThe default is 16 MiB.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "fetch_distinct": {
+            "type": "boolean",
+            "description": "Whether to asynchronously fetch keys needed for the distinct operator\nfrom storage.  Asynchronous fetching should be faster for high-latency\nstorage, such as object storage, but it could use excessive amounts of\nmemory if the number of keys fetched is very large.",
+            "default": null,
+            "nullable": true
+          },
+          "fetch_join": {
+            "type": "boolean",
+            "description": "Whether to asynchronously fetch keys needed for the join operator from\nstorage.  Asynchronous fetching should be faster for high-latency\nstorage, such as object storage, but it could use excessive amounts of\nmemory if the number of keys fetched is very large.",
+            "default": null,
+            "nullable": true
+          },
+          "max_level0_batch_size_records": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum batch size in records for level 0 merges.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "merger": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MergerType"
+              }
+            ],
+            "default": null,
+            "nullable": true
+          },
+          "merger_threads": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The number of merger threads.\n\nThe default value is equal to the number of worker threads.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "negative_weight_multiplier": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Additional bias the merger assigns to records with negative weights\n(retractions) to promote them to higher levels of the LSM tree sooner.\n\nReasonable values for this parameter are in the range [0, 10].\n\nThe default value is 0, which means that retractions are not given\nany additional bias.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "splitter_chunk_size_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Controls the maximal number of records output by splitter operators\n(joins, distinct, aggregation, rolling window and group operators) at\neach step.\n\nThe default value is 10,000 records.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "stack_overflow_backtrace": {
+            "type": "boolean",
+            "description": "Attempt to print a stack trace on stack overflow.\n\nTo be used for debugging only; do not enable in production.",
+            "default": null,
+            "nullable": true
+          },
+          "storage_mb_max": {
+            "type": "integer",
+            "format": "int64",
+            "description": "If set, the maximum amount of storage, in MiB, for the POSIX backend to\nallow to be in use before failing all writes with [StorageFull].  This\nis useful for testing on top of storage that does not implement its own\nquota mechanism.\n\n[StorageFull]: std::io::ErrorKind::StorageFull",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
           }
         }
       },
@@ -8110,6 +8555,8 @@
           "transaction_id",
           "transaction_initiators",
           "rss_bytes",
+          "memory_pressure",
+          "memory_pressure_epoch",
           "cpu_msecs",
           "uptime_msecs",
           "start_time",
@@ -8125,6 +8572,9 @@
           "total_processed_records",
           "total_processed_bytes",
           "total_completed_records",
+          "output_stall_msecs",
+          "total_initiated_steps",
+          "total_completed_steps",
           "pipeline_complete"
         ],
         "properties": {
@@ -8144,6 +8594,14 @@
             "description": "Total number of records currently buffered by all endpoints.",
             "minimum": 0
           },
+          "commit_progress": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CommitProgressSummary"
+              }
+            ],
+            "nullable": true
+          },
           "cpu_msecs": {
             "type": "integer",
             "format": "int64",
@@ -8159,6 +8617,21 @@
             "type": "integer",
             "format": "int64",
             "description": "Time at which the pipeline process from which we resumed started, in seconds since the epoch.",
+            "minimum": 0
+          },
+          "memory_pressure": {
+            "$ref": "#/components/schemas/MemoryPressure"
+          },
+          "memory_pressure_epoch": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Memory pressure epoch.",
+            "minimum": 0
+          },
+          "output_stall_msecs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "If the pipeline is stalled because one or more output connectors' output\nbuffers are full, this is the number of milliseconds that the current\nstall has lasted.\n\nIf this is nonzero, then the output connectors causing the stall can be\nidentified by noticing `ExternalOutputEndpointMetrics::queued_records`\nis greater than or equal to `ConnectorConfig::max_queued_records`.\n\nIn the ordinary case, the pipeline is not stalled, and this value is 0.",
             "minimum": 0
           },
           "pipeline_complete": {
@@ -8204,6 +8677,18 @@
             "description": "Total number of input records processed to completion.",
             "minimum": 0
           },
+          "total_completed_steps": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of steps whose input records have been processed to completion.\n\nA record is processed to completion if it has been processed by the DBSP engine and\nall outputs derived from it have been processed by all output connectors.\n\n# Interpretation\n\nThis is a count, not a step number.  If `total_completed_steps` is 0, no\nsteps have been processed to completion.  If `total_completed_steps >\n0`, then the last step whose input records have been processed to\ncompletion is `total_completed_steps - 1`. A record that was ingested\nwhen `total_initiated_steps` was `n` is fully processed when\n`total_completed_steps >= n`.",
+            "minimum": 0
+          },
+          "total_initiated_steps": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of steps that have been initiated.\n\n# Interpretation\n\nThis is a count, not a step number.  If `total_initiated_steps` is 0, no\nsteps have been initiated.  If `total_initiated_steps > 0`, then step\n`total_initiated_steps - 1` has been started and all steps previous to\nthat have been completely processed by the circuit.",
+            "minimum": 0
+          },
           "total_input_bytes": {
             "type": "integer",
             "format": "int64",
@@ -8236,13 +8721,27 @@
           "transaction_initiators": {
             "$ref": "#/components/schemas/TransactionInitiators"
           },
+          "transaction_msecs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Elapsed time in milliseconds, according to `transaction_status`:\n\n- [TransactionStatus::TransactionInProgress]: Time that this transaction\nhas been in progress.\n\n- [TransactionStatus::CommitInProgress]: Time that this transaction has\nbeen committing.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "transaction_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of records in this transaction, according to\n`transaction_status`:\n\n- [TransactionStatus::TransactionInProgress]: Number of records added so\nfar.  More records might be added.\n\n- [TransactionStatus::CommitInProgress]: Final number of records.",
+            "nullable": true,
+            "minimum": 0
+          },
           "transaction_status": {
             "$ref": "#/components/schemas/TransactionStatus"
           },
           "uptime_msecs": {
             "type": "integer",
             "format": "int64",
-            "description": "Time since the pipeline process started, in milliseconds.",
+            "description": "Time since the pipeline process started, including time that the\npipeline was running or paused.\n\nThis is the elapsed time since `start_time`.",
             "minimum": 0
           }
         }
@@ -8519,12 +9018,36 @@
             "description": "The first fatal error that occurred at the endpoint.",
             "nullable": true
           },
+          "health": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConnectorHealth"
+              }
+            ],
+            "nullable": true
+          },
           "metrics": {
             "$ref": "#/components/schemas/InputEndpointMetrics"
+          },
+          "parse_errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectorError"
+            },
+            "description": "Recent parse errors on this endpoint.",
+            "nullable": true
           },
           "paused": {
             "type": "boolean",
             "description": "Endpoint has been paused by the user."
+          },
+          "transport_errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectorError"
+            },
+            "description": "Recent transport errors on this endpoint.",
+            "nullable": true
           }
         }
       },
@@ -8665,6 +9188,10 @@
           },
           "start_from": {
             "$ref": "#/components/schemas/KafkaStartFromConfig"
+          },
+          "synchronize_partitions": {
+            "type": "boolean",
+            "description": "When lateness is enabled on a Feldera table, Feldera only produces\ncorrect output if input arrives approximately in order within the bounds\nof the lateness.  The Feldera Kafka input connector can reorder input\nwhen there are multiple partitions:\n\n- If partitions start at different times, then reading all the\npartitions in parallel will naturally consume data out of order.\n\n- Even if they start at the same time, partitions might contain events\nat different rates.\n\n- Even if the partitions start at the same time and have the same number\nof events per unit time, if partitions are spread across brokers,\ndifferent brokers may fetch data at different rates.\n\n- Even if all of the partitions are on a single broker, one cannot\nexpect all of the partitions to naturally remain exactly in sync\nforever.\n\nSetting this option to `true` addresses the issue by synchronizing\ningestion across partitions, ingesting records in order of their Kafka\nevent timestamps.\n\nPitfalls of this solution include:\n\n- Kafka event timestamps are not necessarily monotonically increasing\neven within a single partition.  If timestamps jump backward beyond\nthe lateness, then this can also cause correctness problems.\n\n(This can be avoided by keeping clocks on Kafka producers and brokers\nsynchronized.)\n\n- If an event with a timestamp far in the future is added to a\npartition, that event, and all those that follow it, will never be\nprocessed.\n\n- If one or a few partitions have timestamps far behind the others, only\nthose partitions will be processed until all the old events are\nprocessed.  (This is the flip side of the previous pitfall.)\n\n- One or more empty partitions will prevent any data from being\nprocessed at all, because there is no way to know the timestamp for\nthe first event that will be added to that partition.\n\n- In a topic with `N` nonempty partitions, at least `N - 1` events will\nalways be left unprocessed (one in each of `N - 1` partitions), because\nthere is no way to know the timestamp for the next event to be added to\nthe partition whose events have been completely processed."
           },
           "topic": {
             "type": "string",
@@ -8887,6 +9414,24 @@
           }
         ]
       },
+      "MemoryPressure": {
+        "type": "string",
+        "description": "Memory pressure level.\n\nThe current memory pressure level is computed as a function of the current process\nresident set size (RSS) and the user-configured memory limit (`max_rss`).\n\nAs the memory pressure level increases, the system will apply increasing backpressure to\npush state cached in memory to storage.\n\n- `Low`: less than 85% of the user-configured memory limit has been allocated.\n- `Moderate`: between 85% and 90% of the user-configured memory limit has been allocated.\n- `High`: between 90% and 95% of the user-configured memory limit has been allocated.\n- `Critical`: more than 95% of the user-configured memory limit has been allocated.",
+        "enum": [
+          "low",
+          "moderate",
+          "high",
+          "critical"
+        ]
+      },
+      "MergerType": {
+        "type": "string",
+        "description": "Which merger to use.",
+        "enum": [
+          "push_merger",
+          "list_merger"
+        ]
+      },
       "MetricsFormat": {
         "type": "string",
         "description": "Circuit metrics output format.\n- `prometheus`: [format](https://github.com/prometheus/docs/blob/4b1b80f5f660a2f8dc25a54f52a65a502f31879a/docs/instrumenting/exposition_formats.md) expected by Prometheus\n- `json`: JSON format",
@@ -9012,6 +9557,18 @@
           },
           "consumer_config": {
             "$ref": "#/components/schemas/ConsumerConfig"
+          },
+          "inactivity_timeout_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Maximum time in seconds to wait for the next message before running\na stream/server health check. Must be at least 1.",
+            "minimum": 0
+          },
+          "retry_interval_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Delay between automatic reconnect attempts while in retry mode.\nMust be at least 1.",
+            "minimum": 0
           },
           "stream_name": {
             "type": "string"
@@ -9224,6 +9781,7 @@
           "num_encode_errors",
           "num_transport_errors",
           "total_processed_input_records",
+          "total_processed_steps",
           "memory"
         ],
         "properties": {
@@ -9272,7 +9830,13 @@
           "total_processed_input_records": {
             "type": "integer",
             "format": "int64",
-            "description": "The number of input records processed by the circuit.",
+            "description": "The number of input records processed by the circuit.\n\nThis metric tracks the end-to-end progress of the pipeline: the output\nof this endpoint is equal to the output of the circuit after\nprocessing `total_processed_input_records` records.\n\nIn a multihost pipeline, this count reflects only the input records\nprocessed on the same host as the output endpoint, which is not usually\nmeaningful.",
+            "minimum": 0
+          },
+          "total_processed_steps": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The number of steps whose input records have been processed by the\nendpoint.\n\nThis is meaningful in a multihost pipeline because steps are\nsynchronized across all of the hosts.\n\n# Interpretation\n\nThis is a count, not a step number.  If `total_processed_steps` is 0, no\nsteps have been processed to completion.  If `total_processed_steps >\n0`, then the last step whose input records have been processed to\ncompletion is `total_processed_steps - 1`. A record that was ingested in\nstep `n` is fully processed when `total_processed_steps > n`.",
             "minimum": 0
           },
           "transmitted_bytes": {
@@ -9301,6 +9865,14 @@
           "config": {
             "$ref": "#/components/schemas/ShortEndpointConfig"
           },
+          "encode_errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectorError"
+            },
+            "description": "Recent encoding errors on this endpoint.",
+            "nullable": true
+          },
           "endpoint_name": {
             "type": "string",
             "description": "Endpoint name."
@@ -9310,8 +9882,24 @@
             "description": "The first fatal error that occurred at the endpoint.",
             "nullable": true
           },
+          "health": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConnectorHealth"
+              }
+            ],
+            "nullable": true
+          },
           "metrics": {
             "$ref": "#/components/schemas/OutputEndpointMetrics"
+          },
+          "transport_errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectorError"
+            },
+            "description": "Recent transport errors on this endpoint.",
+            "nullable": true
           }
         }
       },
@@ -9443,10 +10031,20 @@
                 "default": true
               },
               "dev_tweaks": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DevTweaks"
+                  }
+                ],
+                "default": {}
+              },
+              "env": {
                 "type": "object",
-                "description": "Optional settings for tweaking Feldera internals.\n\nThe available key-value pairs change from one version of Feldera to\nanother, so users should not depend on particular settings being\navailable, or on their behavior.",
+                "description": "Environment variables for the pipeline process.\n\nThese are key-value pairs injected into the pipeline process environment.\nSome variable names are reserved by the platform and cannot be overridden\n(for example `RUST_LOG`, and variables in the `FELDERA_`,\n`KUBERNETES_`, and `TOKIO_` namespaces).",
                 "default": {},
-                "additionalProperties": {}
+                "additionalProperties": {
+                  "type": "string"
+                }
               },
               "fault_tolerance": {
                 "allOf": [
@@ -9502,6 +10100,14 @@
                 "type": "integer",
                 "format": "int64",
                 "description": "The maximum number of connectors initialized in parallel during pipeline\nstartup.\n\nAt startup, the pipeline must initialize all of its input and output connectors.\nDepending on the number and types of connectors, this can take a long time.\nTo accelerate the process, multiple connectors are initialized concurrently.\nThis option controls the maximum number of connectors that can be initialized\nin parallel.\n\nThe default is 10.",
+                "default": null,
+                "nullable": true,
+                "minimum": 0
+              },
+              "max_rss_mb": {
+                "type": "integer",
+                "format": "int64",
+                "description": "The maximum amount of memory, in Megabytes, that the pipeline is allowed to use\non each host.\n\nSetting this property activates memory pressure monitoring and backpressure\nmechanisms. The pipeline will track the amount of remaining memory and\nreport the memory pressure level via the `memory_pressure` metric.\n\nAs the memory pressure increases, the system will apply increasing backpressure\nto push state cached in memory to storage, preventing the pipeline from running\nout of memory at the cost of some performance degradation.\n\nIt is strongly recommended to set this property to prevent the pipeline from\nrunning out of memory. The setting should not exceed the memory limit of the pipeline\ninstance.\n\nWhen `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the\nlatter is used as the effective memory cap for the pipeline.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
                 "default": null,
                 "nullable": true,
                 "minimum": 0
@@ -10180,73 +10786,77 @@
         }
       },
       "PostgresReaderConfig": {
-        "type": "object",
-        "description": "Postgres input connector configuration.",
-        "required": [
-          "uri",
-          "query"
-        ],
-        "properties": {
-          "query": {
-            "type": "string",
-            "description": "Query that specifies what data to fetch from postgres."
-          },
-          "uri": {
-            "type": "string",
-            "description": "Postgres URI.\nSee: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>"
-          }
-        }
-      },
-      "PostgresWriteMode": {
-        "type": "string",
-        "description": "PostgreSQL write mode.\n\nDetermines how the PostgreSQL output connector writes data to the target table.",
-        "enum": [
-          "materialized",
-          "cdc"
-        ]
-      },
-      "PostgresWriterConfig": {
-        "type": "object",
-        "description": "Postgres output connector configuration.",
-        "required": [
-          "uri",
-          "table"
-        ],
-        "properties": {
-          "cdc_op_column": {
-            "type": "string",
-            "description": "Name of the operation metadata column in CDC mode.\n\nOnly used when `mode = \"cdc\"`. This column will contain:\n- `\"i\"` for insert operations\n- `\"u\"` for upsert operations\n- `\"d\"` for delete operations\n\nDefault: `\"__feldera_op\"`",
-            "default": "__feldera_op"
-          },
-          "cdc_ts_column": {
-            "type": "string",
-            "description": "Name of the timestamp metadata column in CDC mode.\n\nOnly used when `mode = \"cdc\"`. This column will contain the timestamp\n(in RFC 3339 format) when the batch of updates was output\nby the pipeline.\n\nDefault: `\"__feldera_ts\"`",
-            "default": "__feldera_ts"
-          },
-          "max_buffer_size_bytes": {
-            "type": "integer",
-            "description": "The maximum buffer size in for a single operation.\nNote that the buffers of `INSERT`, `UPDATE` and `DELETE` queries are\nseparate.\nDefault: 1 MiB",
-            "default": 1048576,
-            "minimum": 0
-          },
-          "max_records_in_buffer": {
-            "type": "integer",
-            "description": "The maximum number of records in a single buffer.",
-            "nullable": true,
-            "minimum": 0
-          },
-          "mode": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/PostgresWriteMode"
+        "allOf": [
+          {
+            "type": "object",
+            "description": "TLS/SSL configuration for PostgreSQL connectors.",
+            "properties": {
+              "ssl_ca_location": {
+                "type": "string",
+                "description": "Path to a file containing a sequence of CA certificates in PEM format.",
+                "nullable": true
+              },
+              "ssl_ca_pem": {
+                "type": "string",
+                "description": "A sequence of CA certificates in PEM format.",
+                "nullable": true
+              },
+              "ssl_certificate_chain_location": {
+                "type": "string",
+                "description": "The path to the certificate chain file.\nThe file must contain a sequence of PEM-formatted certificates,\nthe first being the leaf certificate, and the remainder forming\nthe chain of certificates up to and including the trusted root certificate.",
+                "nullable": true
+              },
+              "ssl_client_key": {
+                "type": "string",
+                "description": "The client certificate key in PEM format.",
+                "nullable": true
+              },
+              "ssl_client_key_location": {
+                "type": "string",
+                "description": "Path to the client certificate key.",
+                "nullable": true
+              },
+              "ssl_client_location": {
+                "type": "string",
+                "description": "Path to the client certificate.",
+                "nullable": true
+              },
+              "ssl_client_pem": {
+                "type": "string",
+                "description": "The client certificate in PEM format.",
+                "nullable": true
+              },
+              "verify_hostname": {
+                "type": "boolean",
+                "description": "True to enable hostname verification when using TLS. True by default.",
+                "nullable": true
               }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "uri",
+              "query"
             ],
-            "default": "materialized"
-          },
-          "on_conflict_do_nothing": {
-            "type": "boolean",
-            "description": "Specifies how the connector handles conflicts when executing an `INSERT`\ninto a table with a primary key. By default, an existing row with the same\nkey is overwritten. Setting this flag to `true` preserves the existing row\nand ignores the new insert.\n\nThis setting does not affect `UPDATE` statements, which always replace the\nvalue associated with the key.\n\nThis setting is not supported when `mode = \"cdc\"`, since all operations\nare performed as append-only `INSERT`s into the target table.\nAny conflict in CDC mode will result in an error.\n\nDefault: `false`"
-          },
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "Query that specifies what data to fetch from postgres."
+              },
+              "uri": {
+                "type": "string",
+                "description": "Postgres URI.\nSee: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>"
+              }
+            }
+          }
+        ],
+        "description": "Postgres input connector configuration."
+      },
+      "PostgresTlsConfig": {
+        "type": "object",
+        "description": "TLS/SSL configuration for PostgreSQL connectors.",
+        "properties": {
           "ssl_ca_location": {
             "type": "string",
             "description": "Path to a file containing a sequence of CA certificates in PEM format.",
@@ -10282,18 +10892,148 @@
             "description": "The client certificate in PEM format.",
             "nullable": true
           },
-          "table": {
-            "type": "string",
-            "description": "The table to write the output to."
-          },
-          "uri": {
-            "type": "string",
-            "description": "Postgres URI.\nSee: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>"
-          },
           "verify_hostname": {
             "type": "boolean",
             "description": "True to enable hostname verification when using TLS. True by default.",
             "nullable": true
+          }
+        }
+      },
+      "PostgresWriteMode": {
+        "type": "string",
+        "description": "PostgreSQL write mode.\n\nDetermines how the PostgreSQL output connector writes data to the target table.",
+        "enum": [
+          "materialized",
+          "cdc"
+        ]
+      },
+      "PostgresWriterConfig": {
+        "allOf": [
+          {
+            "type": "object",
+            "description": "TLS/SSL configuration for PostgreSQL connectors.",
+            "properties": {
+              "ssl_ca_location": {
+                "type": "string",
+                "description": "Path to a file containing a sequence of CA certificates in PEM format.",
+                "nullable": true
+              },
+              "ssl_ca_pem": {
+                "type": "string",
+                "description": "A sequence of CA certificates in PEM format.",
+                "nullable": true
+              },
+              "ssl_certificate_chain_location": {
+                "type": "string",
+                "description": "The path to the certificate chain file.\nThe file must contain a sequence of PEM-formatted certificates,\nthe first being the leaf certificate, and the remainder forming\nthe chain of certificates up to and including the trusted root certificate.",
+                "nullable": true
+              },
+              "ssl_client_key": {
+                "type": "string",
+                "description": "The client certificate key in PEM format.",
+                "nullable": true
+              },
+              "ssl_client_key_location": {
+                "type": "string",
+                "description": "Path to the client certificate key.",
+                "nullable": true
+              },
+              "ssl_client_location": {
+                "type": "string",
+                "description": "Path to the client certificate.",
+                "nullable": true
+              },
+              "ssl_client_pem": {
+                "type": "string",
+                "description": "The client certificate in PEM format.",
+                "nullable": true
+              },
+              "verify_hostname": {
+                "type": "boolean",
+                "description": "True to enable hostname verification when using TLS. True by default.",
+                "nullable": true
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "uri",
+              "table"
+            ],
+            "properties": {
+              "cdc_op_column": {
+                "type": "string",
+                "description": "Name of the operation metadata column in CDC mode.\n\nOnly used when `mode = \"cdc\"`. This column will contain:\n- `\"i\"` for insert operations\n- `\"u\"` for upsert operations\n- `\"d\"` for delete operations\n\nDefault: `\"__feldera_op\"`",
+                "default": "__feldera_op"
+              },
+              "cdc_ts_column": {
+                "type": "string",
+                "description": "Name of the timestamp metadata column in CDC mode.\n\nOnly used when `mode = \"cdc\"`. This column will contain the timestamp\n(in RFC 3339 format) when the batch of updates was output\nby the pipeline.\n\nDefault: `\"__feldera_ts\"`",
+                "default": "__feldera_ts"
+              },
+              "max_buffer_size_bytes": {
+                "type": "integer",
+                "description": "The maximum buffer size in for a single operation.\nNote that the buffers of `INSERT`, `UPDATE` and `DELETE` queries are\nseparate.\nDefault: 1 MiB",
+                "default": 1048576,
+                "minimum": 0
+              },
+              "max_records_in_buffer": {
+                "type": "integer",
+                "description": "The maximum number of records in a single buffer.",
+                "nullable": true,
+                "minimum": 0
+              },
+              "mode": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PostgresWriteMode"
+                  }
+                ],
+                "default": "materialized"
+              },
+              "on_conflict_do_nothing": {
+                "type": "boolean",
+                "description": "Specifies how the connector handles conflicts when executing an `INSERT`\ninto a table with a primary key. By default, an existing row with the same\nkey is overwritten. Setting this flag to `true` preserves the existing row\nand ignores the new insert.\n\nThis setting does not affect `UPDATE` statements, which always replace the\nvalue associated with the key.\n\nThis setting is not supported when `mode = \"cdc\"`, since all operations\nare performed as append-only `INSERT`s into the target table.\nAny conflict in CDC mode will result in an error.\n\nDefault: `false`"
+              },
+              "table": {
+                "type": "string",
+                "description": "The table to write the output to."
+              },
+              "threads": {
+                "type": "integer",
+                "description": "The number of threads to use during encoding.\n\nDefault: 1",
+                "default": 1,
+                "minimum": 0
+              },
+              "uri": {
+                "type": "string",
+                "description": "Postgres URI.\nSee: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>"
+              }
+            }
+          }
+        ],
+        "description": "Postgres output connector configuration."
+      },
+      "PreprocessorConfig": {
+        "type": "object",
+        "description": "Configuration for describing a preprocessor",
+        "required": [
+          "name",
+          "message_oriented",
+          "config"
+        ],
+        "properties": {
+          "config": {
+            "description": "Arbitrary additional configuration."
+          },
+          "message_oriented": {
+            "type": "boolean",
+            "description": "True if the preprocessor is message-oriented: true if each preprocessor\noutput record corresponds to a whole number of of parser records."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the preprocessor.\nAll preprocessors with the same name will perform the same task."
           }
         }
       },
@@ -10997,10 +11737,20 @@
             "default": true
           },
           "dev_tweaks": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DevTweaks"
+              }
+            ],
+            "default": {}
+          },
+          "env": {
             "type": "object",
-            "description": "Optional settings for tweaking Feldera internals.\n\nThe available key-value pairs change from one version of Feldera to\nanother, so users should not depend on particular settings being\navailable, or on their behavior.",
+            "description": "Environment variables for the pipeline process.\n\nThese are key-value pairs injected into the pipeline process environment.\nSome variable names are reserved by the platform and cannot be overridden\n(for example `RUST_LOG`, and variables in the `FELDERA_`,\n`KUBERNETES_`, and `TOKIO_` namespaces).",
             "default": {},
-            "additionalProperties": {}
+            "additionalProperties": {
+              "type": "string"
+            }
           },
           "fault_tolerance": {
             "allOf": [
@@ -11056,6 +11806,14 @@
             "type": "integer",
             "format": "int64",
             "description": "The maximum number of connectors initialized in parallel during pipeline\nstartup.\n\nAt startup, the pipeline must initialize all of its input and output connectors.\nDepending on the number and types of connectors, this can take a long time.\nTo accelerate the process, multiple connectors are initialized concurrently.\nThis option controls the maximum number of connectors that can be initialized\nin parallel.\n\nThe default is 10.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "max_rss_mb": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The maximum amount of memory, in Megabytes, that the pipeline is allowed to use\non each host.\n\nSetting this property activates memory pressure monitoring and backpressure\nmechanisms. The pipeline will track the amount of remaining memory and\nreport the memory pressure level via the `memory_pressure` metric.\n\nAs the memory pressure increases, the system will apply increasing backpressure\nto push state cached in memory to storage, preventing the pipeline from running\nout of memory at the cost of some performance degradation.\n\nIt is strongly recommended to set this property to prevent the pipeline from\nrunning out of memory. The setting should not exceed the memory limit of the pipeline\ninstance.\n\nWhen `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the\nlatter is used as the effective memory cap for the pipeline.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
             "default": null,
             "nullable": true,
             "minimum": 0
@@ -11928,6 +12686,11 @@
             "description": "The interval (in seconds) between each push of checkpoints to object store.\n\nDefault: disabled (no periodic push).",
             "nullable": true,
             "minimum": 0
+          },
+          "read_bucket": {
+            "type": "string",
+            "description": "A read-only bucket used as a fallback checkpoint source.\n\nWhen the pipeline has no local checkpoint and `bucket` contains no\ncheckpoint either, it will attempt to fetch the checkpoint from this\nlocation instead.  All connection settings (`endpoint`, `region`,\n`provider`, `access_key`, `secret_key`) are shared with `bucket`.\n\nThe pipeline **never writes** to `read_bucket`.\n\nMust point to a different location than `bucket`.",
+            "nullable": true
           },
           "region": {
             "type": "string",

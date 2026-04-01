@@ -39,6 +39,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.ImplementStatics;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CreateRuntimeErrorWrappers;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareIndexes;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareInputIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.intern.Intern;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.recursive.RecursiveComponents;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.recursive.ValidateRecursiveOperators;
@@ -68,7 +70,7 @@ public class CircuitOptimizer extends Passes {
     }
 
     void createOptimizer() {
-        CompilerOptions options = this.compiler().options;
+        CompilerOptions options = this.compiler.options;
         // Example dumping circuit to a png file
         // this.dump(3);
         // First part of optimizations may still synthesize some circuit components
@@ -84,16 +86,18 @@ public class CircuitOptimizer extends Passes {
             this.add(new EnsureDistinctOutputs(compiler));
         this.add(new PropagateEmptySources(compiler));
         this.add(new MergeSums(compiler));
+        this.add(new Conditional(compiler, new CreateStarJoins(compiler), () -> !this.compiler.metadata.noStarJoins()));
         this.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
         AnalyzedSet<DBSPOperator> operatorsAnalyzed = new AnalyzedSet<>();
         this.add(new OptimizeWithGraph(compiler,
-                g -> new OptimizeMaps(compiler, true, g, operatorsAnalyzed), 1));
+                g -> new OptimizeProjections(compiler, true, g, operatorsAnalyzed), 1));
         this.add(new RemoveViewOperators(compiler, false));
         this.add(new UnusedFields(compiler));
         this.add(new Intern(compiler));
         this.add(new CSE(compiler));
         this.add(new ExpandAggregates(compiler, compiler.weightVar));
         this.add(new ExpandAggregateZero(compiler));
+        this.add(new Conditional(compiler, new RemoveStarJoins(compiler), this.compiler.metadata::noStarJoins));
         this.add(new DeadCode(compiler, true));
         this.add(new OptimizeDistinctVisitor(compiler));
         // This is useful even without incrementalization if we have recursion
@@ -106,10 +110,12 @@ public class CircuitOptimizer extends Passes {
         this.add(new RemoveIAfterD(compiler));
         this.add(new DeadCode(compiler, true));
         this.add(new Simplify(compiler).circuitRewriter(true));
-        this.add(new RemoveFilters(compiler));
+        this.add(new RemoveConstantFilters(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new OptimizeProjectionVisitor(compiler, g)));
         this.add(new OptimizeWithGraph(compiler,
-                g -> new OptimizeMaps(compiler, true, g, operatorsAnalyzed)));
+                g -> new OptimizeProjections(compiler, true, g, operatorsAnalyzed)));
+        this.add(new ShareIndexes(compiler));
+        // Combining Joins with subsequent filters can improve the precision of the monotonicity analysis
         this.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
         this.add(new MonotoneAnalyzer(compiler));
         // Can remove this table after the monotone analysis only
@@ -118,7 +124,7 @@ public class CircuitOptimizer extends Passes {
 
         this.add(new OptimizeWithGraph(compiler, g -> new CloneOperatorsWithFanout(compiler, g)));
         this.add(new LinearPostprocessRetainKeys(compiler));
-        this.add(new IndexedInputs(compiler));
+        this.add(new ExpandIndexedInputs(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
         this.add(new DeadCode(compiler, true));
         this.add(new Simplify(compiler).circuitRewriter(true));
@@ -129,9 +135,10 @@ public class CircuitOptimizer extends Passes {
         this.add(new RemoveDeindexOperators(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
         this.add(new RemoveIdentityOperators(compiler));
+        this.add(new ShareInputIndexes(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
         this.add(new OptimizeWithGraph(compiler,
-                g -> new OptimizeMaps(compiler, false, g, operatorsAnalyzed)));
+                g -> new OptimizeProjections(compiler, false, g, operatorsAnalyzed)));
         this.add(new SimplifyWaterline(compiler)
                 .circuitRewriter(node -> node.hasAnnotation(a -> a.is(Waterline.class))));
         this.add(new EliminateDump(compiler).circuitRewriter(false));
@@ -147,7 +154,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new ImplementChains(compiler));
         this.add(new ExpandCasts(compiler));
         this.add(new Simplify(compiler).getCircuitRewriter(true));
-        this.add(new ExpandJoins(compiler));
+        this.add(new ImplementJoins(compiler));
         this.add(new RemoveViewOperators(compiler, true));
         this.add(new OptimizeWithGraph(compiler, g -> new PushDifferentialsUp(compiler, g)));
         this.add(new CSE(compiler));

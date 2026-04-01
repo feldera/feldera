@@ -45,6 +45,9 @@ Usage: sql-to-dbsp [options] Input file to compile
       Generate an input for each CREATE TABLE, even if the table is not used
       by any view
       Default: false
+    --anonymize
+      Produce in the output file an anonymized version of the input program
+      Default: false
     --correlatedColumns
       Dump information about the columns that are used in join equality
       comparisons
@@ -69,9 +72,6 @@ Usage: sql-to-dbsp [options] Input file to compile
     --ignoreOrder
       Ignore ORDER BY clauses at the end
       Default: false
-    --jdbcSource
-      Connection string to a database that contains table metadata
-      Default: <empty string>
     --je, -je
       Emit error messages as a JSON array to the error output
       Default: false

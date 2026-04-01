@@ -34,7 +34,11 @@ import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlOperatorTable;
+import org.apache.calcite.sql.SqlWriter;
+import org.apache.calcite.sql.SqlWriterConfig;
+import org.apache.calcite.sql.dialect.CalciteSqlDialect;
 import org.apache.calcite.sql.parser.SqlParseException;
+import org.apache.calcite.sql.pretty.SqlPrettyWriter;
 import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.apache.calcite.sql.validate.SqlUserDefinedAggFunction;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
@@ -51,6 +55,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RenameIdentifiers;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
@@ -86,11 +91,14 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -198,7 +206,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             stream.append("\"").append(Utilities.escapeDoubleQuotes(e.name())).append("\"");
             stream.append(": ");
             RelNode rel = cv.getRel();
-            RelJsonWriter planWriter = new RelJsonWriter(result);
+            RelJsonWriter planWriter = new RelJsonWriter(result, options.ioOptions.verbosity);
             rel.explain(planWriter);
             String json = planWriter.asString();
             stream.appendIndentedStrings(json);
@@ -274,6 +282,18 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.messages.setErrorContext(range);
     }
 
+    static final String WARNINGS_ARE_ERRORS = "FELDERA_WARNINGS_ARE_ERRORS";
+
+    boolean warningsAreErrors() {
+        return this.metadata.hasValue(WARNINGS_ARE_ERRORS) && !this.metadata.isFalsy(WARNINGS_ARE_ERRORS);
+    }
+
+    boolean warningIsSilenced(String warning) {
+        String variable = warning.replace(" ", "_");
+        variable = "FELDERA_IGNORE_WARNING_" + variable;
+        return this.metadata.hasValue(variable) && !this.metadata.isFalsy(variable);
+    }
+
     /**
      * Report an error or warning during compilation.
      * @param range      Position in source where error is located.
@@ -284,6 +304,12 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
      */
     public void reportProblem(SourcePositionRange range, boolean warning, boolean continuation,
                               String errorType, String message) {
+        if (warning) {
+            if (this.warningIsSilenced(errorType))
+                return;
+        }
+        if (this.warningsAreErrors())
+            warning = false;
         if (warning)
             this.hasWarnings = true;
         this.messages.reportProblem(range, warning, continuation, errorType, message);
@@ -506,10 +532,48 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return true;
     }
 
+    void renameIdentifiers(List<ParsedStatement> statements) {
+        final PrintStream outputStream;
+        try {
+            @Nullable String outputFile = this.options.ioOptions.outputFile;
+            if (outputFile.isEmpty()) {
+                outputStream = System.out;
+            } else {
+                outputStream = new PrintStream(Files.newOutputStream(Paths.get(outputFile)));
+            }
+        } catch (IOException e) {
+            this.compiler().reportError(SourcePositionRange.INVALID,
+                    "Error writing to output file", e.getMessage());
+            return;
+        }
+
+        RenameIdentifiers renamer = new RenameIdentifiers();
+        for (ParsedStatement stat: statements) {
+            if (stat.visible()) {
+                SqlNode renamed = renamer.visitNode(stat.statement());
+                Utilities.enforce(renamed != null);
+                final SqlWriter sqlWriter = new SqlPrettyWriter(
+                        SqlWriterConfig.of()
+                                .withDialect(CalciteSqlDialect.DEFAULT)
+                                .withQuoteAllIdentifiers(false)
+                );
+                renamed.unparse(sqlWriter, 0, 0);
+                outputStream.println(sqlWriter + ";");
+            }
+        }
+        outputStream.close();
+    }
+
     @Nullable DBSPCircuit runAllCompilerStages() {
         List<ParsedStatement> parsed = this.runParser();
         if (this.hasErrors())
             return null;
+
+        if (this.options.ioOptions.anonymize) {
+            this.renameIdentifiers(parsed);
+            return null;
+        }
+
         try {
             // across all tables
             List<ForeignKey> foreignKeys = new ArrayList<>();
@@ -567,8 +631,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     this.relToDBSPCompiler.compile(stat);
                 }
                 if (node.statement() instanceof SqlLateness lateness) {
-                    ProgramIdentifier view = Utilities.toIdentifier(lateness.getView());
-                    ProgramIdentifier column = Utilities.toIdentifier(lateness.getColumn());
+                    ProgramIdentifier view = ProgramIdentifier.fromSqlId(lateness.getView());
+                    ProgramIdentifier column = ProgramIdentifier.fromSqlId(lateness.getColumn());
                     Map<ProgramIdentifier, SqlLateness> perView = this.viewLateness.computeIfAbsent(view, (k) -> new HashMap<>());
                     if (perView.containsKey(column)) {
                         SourcePositionRange range = new SourcePositionRange(lateness.getParserPosition());
@@ -609,7 +673,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
                 RelStatement fe;
                 if (node.statement() instanceof SqlCreateView cv) {
-                    ProgramIdentifier viewName = Utilities.toIdentifier(cv.name);
+                    ProgramIdentifier viewName = ProgramIdentifier.fromSqlId(cv.name);
                     Map<ProgramIdentifier, SqlLateness> late = this.viewLateness.getOrDefault(viewName, new HashMap<>());
                     fe = this.sqlToRelCompiler.compileCreateView(node, late, this.sources);
                 } else {
@@ -686,8 +750,12 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     }
 
     static final Pattern ITEM_ERROR = Pattern.compile("Cannot apply 'ITEM' to arguments of type 'ITEM\\(([^,]+), ([^']+)\\)'(.*)", Pattern.DOTALL);
-    static final Pattern HOP_ERROR = Pattern.compile("Cannot apply 'feldera_hop' to arguments of type (.*)", Pattern.DOTALL);
-    static final Pattern TUMBLE_ERROR = Pattern.compile("Cannot apply 'feldera_tumble' to arguments of type (.*)", Pattern.DOTALL);
+
+    static SourcePositionRange getRange(CalciteContextException e) {
+        return new SourcePositionRange(
+                new SourcePosition(e.getPosLine(), e.getPosColumn()),
+                new SourcePosition(e.getEndPosLine(), e.getEndPosColumn()));
+    }
 
     /** Rewrite the error message for some Calcite errors which are confusing */
     private CompilationError improveErrorMessage(CalciteContextException e) {
@@ -699,29 +767,19 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 String index = matcher.group(2);
                 String tail = matcher.group(3);
                 String newMessage = "Cannot apply indexing to arguments of type " + source + "[" + index + "]" + tail;
-                return new CompilationError(
-                        newMessage,
-                        new SourcePositionRange(
-                                new SourcePosition(e.getPosLine(), e.getPosColumn()),
-                                new SourcePosition(e.getEndPosLine(), e.getEndPosColumn())));
+                return new CompilationError(newMessage, getRange(e));
             }
-            matcher = HOP_ERROR.matcher(message);
-            if (matcher.find()) {
-                String newMessage = "Cannot apply 'HOP' to arguments of type " + matcher.group(1);
-                return new CompilationError(
-                        newMessage,
-                        new SourcePositionRange(
-                                new SourcePosition(e.getPosLine(), e.getPosColumn()),
-                                new SourcePosition(e.getEndPosLine(), e.getEndPosColumn())));
-            }
-            matcher = TUMBLE_ERROR.matcher(message);
-            if (matcher.find()) {
-                String newMessage = "Cannot apply 'TUMBLE' to arguments of type " + matcher.group(1);
-                return new CompilationError(
-                        newMessage,
-                        new SourcePositionRange(
-                                new SourcePosition(e.getPosLine(), e.getPosColumn()),
-                                new SourcePosition(e.getEndPosLine(), e.getEndPosColumn())));
+            if (message.contains("'TIMESTAMPDIFF'.")) {
+                // The Calcite parser replaces DATEDIFF with TIMESTAMPDIFF
+                // Try to figure out whether this is what happened and rewrite it.
+                // This heuristic may fail... but will work in general.
+                SourcePositionRange range = getRange(e);
+                String fragment = this.sources.getFragment(range, false);
+                String lower = fragment.toLowerCase(Locale.ENGLISH);
+                if (lower.contains("datediff") && !lower.contains("timestampdiff")) {
+                    message = message.replace("TIMESTAMPDIFF", "DATEDIFF");
+                    return new CompilationError(message, range);
+                }
             }
         }
         return new CompilationError(e);

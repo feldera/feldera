@@ -7,7 +7,7 @@ use crate::{
     algebra::{HasOne, OrdIndexedZSet},
     circuit::{
         Scope,
-        metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL, OperatorMeta},
+        metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::Operator,
         splitter_output_chunk_size,
     },
@@ -372,8 +372,8 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
-            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
+            INPUT_BATCHES_STATS => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_STATS => self.output_batch_stats.borrow().metadata(),
         });
     }
 
@@ -575,7 +575,7 @@ mod test {
         OrdPartitionedRadixTree, PartitionCursor, PartitionedRadixTreeCursor,
     };
     use crate::{
-        DBData, DynZWeight, RootCircuit, Stream, ZWeight,
+        DBData, DynZWeight, Runtime, Stream, ZWeight,
         algebra::{AddAssignByRef, DefaultSemigroup, OrdZSet, Semigroup},
         dynamic::{DowncastTrait, DynData, DynDataTyped, DynPair, Erase},
         operator::{
@@ -663,7 +663,7 @@ mod test {
         let contents = Arc::new(Mutex::new(BTreeMap::new()));
         let contents_clone = contents.clone();
 
-        let (circuit, input) = RootCircuit::build(move |circuit| {
+        let (mut circuit, input) = Runtime::init_circuit(1, move |circuit| {
             let (input, input_handle) = circuit
                 .dyn_add_input_indexed_zset::<DynData/*<u64>*/, DynPair<DynDataTyped<u64>, DynData/*<u64>*/>>(
                     &AddInputIndexedZSetFactories::new::<u64, Tup2<u64, u64>>(),

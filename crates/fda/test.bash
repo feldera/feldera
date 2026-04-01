@@ -38,7 +38,11 @@ compare_output() {
   return 0
 }
 
-EDITION=`curl -H "Authorization: Bearer ${FELDERA_API_KEY}" "${FELDERA_HOST%/}/v0/config" | jq .edition | sed s/\"//g`
+curl_opts=()
+if [[ "${FELDERA_TLS_INSECURE:-}" == "1" || "${FELDERA_TLS_INSECURE:-}" == "true" ]]; then
+  curl_opts+=(--insecure)
+fi
+EDITION=`curl "${curl_opts[@]}" -H "Authorization: Bearer ${FELDERA_API_KEY}" "${FELDERA_HOST%/}/v0/config" | jq .edition | sed s/\"//g`
 echo "Edition: $EDITION"
 case $EDITION in
     Enterprise) enterprise=true ;;
@@ -92,6 +96,8 @@ compare_output "fda program get p1 --udf-rs" "fda program get p2 --udf-rs"
 
 fda config p1
 
+fda dismiss-error p1
+fda start p1 --no-dismiss-error
 fda start p1
 fda --format json stats p1 | jq '.metrics'
 fda log p1

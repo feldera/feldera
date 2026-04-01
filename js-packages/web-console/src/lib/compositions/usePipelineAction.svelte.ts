@@ -55,7 +55,7 @@ export const usePipelineAction = () => {
   const data: { preloaded: { pipelines: PipelineThumb[] } } = page.data as any
   const api = usePipelineManager()
   const pipelineList = usePipelineList(data.preloaded)
-  const { updatePipeline } = useUpdatePipelineList()
+  const { updatePipeline, discardPendingListRefresh } = useUpdatePipelineList()
 
   const ignoreStatuses: NamesInUnion<PipelineStatus>[] = [
     'Preparing',
@@ -103,6 +103,13 @@ export const usePipelineAction = () => {
       updatePipeline(pipeline_name, (p) => ({ ...p, storageStatus: 'Clearing' }))
     }
 
+    // Discard possibly delayed in-flight status polling response from before the action was triggered
+    // so it doesn't overwrite the optimistic status update with a stale pipeline status.
+    // This avoids receiving an unexpected status when waiting for the desired status
+    // (e.g. receiving `Stopped` status while waiting for `Running` after `start` action optimistically updated status to `Preparing`).
+    // We can't do this only when waitFor is called, because the delayed response can arrive between the action call and the waitFor call.
+    discardPendingListRefresh()
+
     // Handle 'start' action with hidden paused intermediate state
     if (action === 'start') {
       // Optimization: Skip pause-unpause sequence if no relations are selected in Change Stream tab
@@ -118,7 +125,10 @@ export const usePipelineAction = () => {
           predicate: (ps) => {
             const p = ps.find((p) => p.name === pipeline_name)
             if (!p) {
-              throw new Error('Pipeline not found in pipelines list')
+              console.log(
+                `Pipeline ${pipeline_name} not found in pipelines list (probably deleted) while waiting for action "${action}" to complete`
+              )
+              return { value: false }
             }
             if (ignoreStatuses.includes(unionName(p.status))) {
               return null
@@ -133,9 +143,10 @@ export const usePipelineAction = () => {
             if (p.status === 'Stopped') {
               return { value: false }
             }
-            throw new Error(
-              `Unexpected status ${JSON.stringify(p.status)} while waiting for pipeline ${pipeline_name} to reach paused state`
+            console.log(
+              `Pipeline ${pipeline_name} entered unexpected state ${JSON.stringify(p.status)}/${JSON.stringify(p.storageStatus)} while waiting to complete action "start_paused"`
             )
+            return { value: false }
           }
         })
 
@@ -160,11 +171,14 @@ export const usePipelineAction = () => {
         updatePipeline(pipeline_name, (p) => ({ ...p, status: 'Initializing' }))
         await callbacks?.onPausedReady?.(pipeline_name)
 
+        // Discard refresh before requesting a pipeline action again — one update was already discarded when waiting for the intermediate paused state
+        discardPendingListRefresh()
+
         // Then start normally
         await api.postPipelineAction(pipeline_name, 'resume')
       } else {
         // No relations selected, start directly without pausing first
-        await api.postPipelineAction(pipeline_name, 'start')
+        await api.postPipelineAction(pipeline_name, action)
       }
     } else {
       await api.postPipelineAction(pipeline_name, action)
@@ -207,7 +221,10 @@ export const usePipelineAction = () => {
           predicate: (ps) => {
             const p = ps.find((p) => p.name === pipeline_name)
             if (!p) {
-              throw new Error('Pipeline not found in pipelines list')
+              console.log(
+                `Pipeline ${pipeline_name} not found in pipelines list (probably deleted) while waiting for action "${action}" to complete`
+              )
+              return { value: false }
             }
             if (isDesiredState(p)) {
               return { value: true }
@@ -215,9 +232,10 @@ export const usePipelineAction = () => {
             if (isIntermediateState(p)) {
               return null
             }
-            throw new Error(
-              `Unexpected status ${JSON.stringify(p.status)}/${JSON.stringify(p.storageStatus)} while waiting for pipeline ${pipeline_name} to complete action ${action}`
+            console.log(
+              `Pipeline ${pipeline_name} entered unexpected state ${JSON.stringify(p.status)}/${JSON.stringify(p.storageStatus)} while waiting to complete action "${action}"`
             )
+            return { value: false }
           }
         })
         return waiter.waitFor()

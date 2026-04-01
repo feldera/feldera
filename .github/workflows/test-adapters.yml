@@ -2,11 +2,21 @@ name: Adapter Tests
 
 on:
   workflow_call:
+    inputs:
+      artifacts_run_id:
+        description: "Run ID to download build artifacts from (empty = current run)"
+        type: string
+        required: false
+        default: ""
   workflow_dispatch:
     inputs:
       run_id:
         description: "ID of the workflow run that uploaded the artifact"
         required: true
+
+permissions:
+  actions: read
+  contents: read
 
 jobs:
   adapter-tests:
@@ -23,7 +33,7 @@ jobs:
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-db53e1302c944e29edd6d2af516fff7032b90e3b
+      image: ghcr.io/feldera/feldera-dev:sha-06a694400a6aea1f568da04eaf786bfe84e0a869
     services:
       postgres:
         image: postgres:15
@@ -53,14 +63,14 @@ jobs:
           --health-retries 5
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download Test Binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: feldera-test-binaries-${{ matrix.target }}
           path: build
-          run-id: ${{ github.event.inputs.run_id || github.run_id }}
+          run-id: ${{ inputs.artifacts_run_id || github.event.inputs.run_id || github.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
@@ -98,6 +108,9 @@ jobs:
           ICEBERG_TEST_AWS_SECRET_ACCESS_KEY: ${{ secrets.delta_table_test_aws_secret_access_key }}
           DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID: ${{ secrets.delta_table_test_aws_access_key_id }}
           DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY: ${{ secrets.delta_table_test_aws_secret_access_key }}
+          POSTGRES_SSL_URL: postgres://postgres:${{ secrets.ci_postgres_password }}@ci-postgres-internal.postgres.svc.cluster.local:5432/postgres?sslmode=require
+          POSTGRES_SSL_CA_PEM: ${{ secrets.ci_postgres_tls_crt }}
+          POSTGRES_SSL_VERIFY_HOSTNAME: "false"
 
       - name: Show Kubernetes node
         if: always()
@@ -113,7 +126,7 @@ jobs:
     runs-on: ubuntu-latest-amd64
     services:
       pubsub:
-        image: thekevjames/gcloud-pubsub-emulator:e852273e07
+        image: ghcr.io/feldera/gcloud-pubsub-emulator:e852273e07
         ports:
           - 8681:8681
         options: >-
@@ -129,14 +142,14 @@ jobs:
           echo "K8S node: ${K8S_NODE_NAME}"
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download Test Binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: feldera-test-binaries-x86_64-unknown-linux-gnu
           path: build
-          run-id: ${{ github.event.inputs.run_id || github.run_id }}
+          run-id: ${{ inputs.artifacts_run_id || github.event.inputs.run_id || github.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed

@@ -95,7 +95,7 @@ First, make sure you have [Docker](https://docs.docker.com/) installed. Then run
 following command:
 
 ```text
-docker run -p 8080:8080 --tty --rm -it ghcr.io/feldera/pipeline-manager:latest
+docker run -p 8080:8080 --tty --rm -it images.feldera.com/feldera/pipeline-manager:latest
 ```
 
 Once the container image downloads and you see the Feldera logo on your terminal, visit
@@ -190,3 +190,4 @@ The model provides two things:
    with its formal semantics) and efficiently. Efficiency here means, in a
    nutshell, that the cost of processing a set of input events is proportional to
    the size of the input rather than the entire state of the database.
+

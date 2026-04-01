@@ -31,6 +31,8 @@ use utoipa::{IntoParams, ToSchema};
 const COLLECTION_TIMEOUT: Duration = Duration::from_secs(120);
 const SKIPPED_BY_USER: &str = "Skipped due to user request";
 
+const EXTENDED_RESPONSE_SIZE_LIMIT: usize = 300 * 1024 * 1024; // Applies to profiles which can be very large
+
 type BundleResult<T> = Result<T, String>;
 
 fn collect() -> bool {
@@ -105,6 +107,7 @@ async fn fetch_pipeline_data(
     pipeline_name: &str,
     endpoint: &str,
     timeout_duration: Option<Duration>,
+    body_size_limit: Option<usize>,
 ) -> Result<HttpResponse, ManagerError> {
     state
         .runner
@@ -116,6 +119,7 @@ async fn fetch_pipeline_data(
             endpoint,
             "",
             timeout_duration,
+            body_size_limit,
         )
         .await
 }
@@ -478,6 +482,7 @@ impl SupportBundleData {
             pipeline_name,
             "dump_profile",
             Some(COLLECTION_TIMEOUT),
+            Some(EXTENDED_RESPONSE_SIZE_LIMIT),
         )
         .await;
 
@@ -497,19 +502,20 @@ impl SupportBundleData {
             pipeline_name,
             "dump_json_profile",
             Some(COLLECTION_TIMEOUT),
+            Some(EXTENDED_RESPONSE_SIZE_LIMIT),
         )
         .await;
 
         // Transform the response based on Content-Type:
         // - Old pipelines return application/zip with profile.json inside
-        // - New pipelines return application/json
-        // Both are normalized to gzip-compressed JSON for storage
+        // - New pipelines return plain JSON
+        // Both are normalized to gzip-compressed JSON for storage.
         response_to_bundle_result_with_transform(response, |body_bytes, content_type| {
             if content_type.contains("application/zip") {
                 // Extract JSON from ZIP, then compress for storage
                 extract_from_zip(&body_bytes, "profile.json").and_then(gz_compress)
             } else {
-                // Assume JSON, compress for storage
+                // Plain JSON, compress for storage
                 gz_compress(body_bytes)
             }
         })
@@ -529,6 +535,7 @@ impl SupportBundleData {
             pipeline_name,
             "heap_profile",
             Some(COLLECTION_TIMEOUT),
+            Some(EXTENDED_RESPONSE_SIZE_LIMIT),
         )
         .await;
 
@@ -548,6 +555,7 @@ impl SupportBundleData {
             pipeline_name,
             "metrics",
             Some(COLLECTION_TIMEOUT),
+            None,
         )
         .await;
 
@@ -578,6 +586,7 @@ impl SupportBundleData {
             pipeline_name,
             "stats",
             Some(COLLECTION_TIMEOUT),
+            None,
         )
         .await;
 
@@ -1463,6 +1472,7 @@ mod tests {
                 "test_pipeline",
                 RuntimeDesiredStatus::Running,
                 BootstrapPolicy::default(),
+                false,
             )
             .await
             .unwrap();
@@ -1663,6 +1673,7 @@ mod tests {
                 "test_pipeline",
                 RuntimeDesiredStatus::Running,
                 BootstrapPolicy::default(),
+                false,
             )
             .await
             .unwrap();
@@ -1844,6 +1855,7 @@ mod tests {
                 "test_pipeline",
                 RuntimeDesiredStatus::Running,
                 BootstrapPolicy::default(),
+                false,
             )
             .await
             .unwrap();
@@ -1955,6 +1967,7 @@ mod tests {
                 "test_pipeline",
                 RuntimeDesiredStatus::Running,
                 BootstrapPolicy::default(),
+                false,
             )
             .await
             .unwrap();

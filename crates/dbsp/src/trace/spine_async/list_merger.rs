@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, sync::Arc};
+use std::sync::Arc;
 
 use ouroboros::self_referencing;
 
@@ -8,8 +8,9 @@ use crate::{
     time::Timestamp,
     trace::{
         Batch, BatchFactories, BatchReaderFactories, Builder, Filter, GroupFilter, MergeCursor,
-        SpineSnapshot, spine_async::index_set::IndexSet,
+        SpineSnapshot,
     },
+    utils::binary_heap::BinaryHeap,
 };
 
 pub struct ArcListMerger<B>(ArcMergerInner<B>)
@@ -81,10 +82,25 @@ where
     B: Batch,
 {
     cursors: Vec<C>,
+
+    /// Indexes of cursors that hold the current minimum key and their positions in the key heap.
+    current_key: Vec<(usize, usize)>,
+
+    /// A binary heap containing the indexes of cursors sorted by key.
+    key_heap: Vec<usize>,
+
+    /// Indexes of cursors that hold the current minimum value and their positions in the value heap.
+    current_val: Vec<(usize, usize)>,
+
+    /// A binary heap containing the indexes of cursors sorted by value.
+    val_heap: Vec<usize>,
+
     any_values: bool,
     has_mut: Vec<bool>,
     tmp_weight: Box<B::R>,
     time_diffs: Option<Box<DynWeightedPairs<DynDataTyped<B::Time>, B::R>>>,
+
+    scratch: Vec<usize>,
 }
 
 impl<C, B> ListMerger<C, B>
@@ -102,36 +118,146 @@ where
 
     /// Creates a new merger for `cursors`.
     pub fn new(factories: &B::Factories, cursors: Vec<C>) -> Self {
-        // [IndexSet] supports a maximum of 64 batches.
-        assert!(cursors.len() <= 64);
-
         let time_diffs = factories.time_diffs_factory().map(|f| f.default_box());
         let has_mut = cursors.iter().map(|c| c.has_mut()).collect();
+        let num_cursors = cursors.len();
 
-        ListMerger {
+        let mut merger = ListMerger {
             cursors,
+            current_key: Vec::new(),
+            key_heap: Vec::new(),
+            current_val: Vec::new(),
+            val_heap: Vec::new(),
             any_values: false,
             has_mut,
             tmp_weight: factories.weight_factory().default_box(),
             time_diffs,
+            scratch: Vec::with_capacity(num_cursors),
+        };
+
+        merger.init_key_heap();
+
+        merger
+    }
+
+    /// Called once when initializing the merger to build the initial key heap.
+    fn init_key_heap(&mut self) {
+        self.key_heap.clear();
+
+        let cmp = |a: &usize, b: &usize| self.cursors[*b].key().cmp(self.cursors[*a].key());
+        for (index, cursor) in self.cursors.iter().enumerate() {
+            if cursor.key_valid() {
+                self.key_heap.push(index);
+            }
         }
+
+        let heap = BinaryHeap::from_vec(std::mem::take(&mut self.key_heap), cmp);
+        self.key_heap = heap.into_vec();
+        self.update_key_heap();
+    }
+
+    /// Adjust the ordering of elements in the key heap after advancing cursors in `current_key`; update `current_key` list.
+    ///
+    /// Assumes that only the cursors in `current_key` were advanced forward; other cursors must be in the same position
+    /// as when the heap was last updated.
+    ///
+    /// Update the position of cursors in `current_key` by either sifting them down or removing them from the heap if the
+    /// cursor is exhausted. Determines the new set of cursors with minimum keys and updates `current_key` accordingly.
+    fn update_key_heap(&mut self) {
+        let cmp = |a: &usize, b: &usize| self.cursors[*b].key().cmp(self.cursors[*a].key());
+
+        let mut heap =
+            unsafe { BinaryHeap::from_vec_unchecked(std::mem::take(&mut self.key_heap), cmp) };
+
+        // This is a subtle part: we iterate over the indexes previously returned by peek_all in reverse order, which
+        // guarantees the modifying or removing the elements does not affect the positions of the remaining min elements,
+        // which guarantees that this loop leaves the heap in a valid state.
+        for (index, pos) in self.current_key.iter().rev() {
+            if unsafe { self.cursors.get_unchecked(*index).key_valid() } {
+                unsafe { heap.sift_down(*pos) };
+            } else {
+                heap.remove(*pos);
+            }
+        }
+
+        // Compute new current_key.
+        self.current_key.clear();
+        heap.peek_all(
+            |pos, &index| {
+                self.current_key.push((index, pos));
+            },
+            &mut self.scratch,
+        );
+
+        self.key_heap = heap.into_vec();
+
+        self.init_val_heap();
+    }
+
+    /// Called every time the current set of current_keys is updated to initialize the value heap.
+    fn init_val_heap(&mut self) {
+        self.val_heap.clear();
+
+        let cmp = |a: &usize, b: &usize| self.cursors[*b].val().cmp(self.cursors[*a].val());
+
+        for &(index, _pos) in self.current_key.iter() {
+            debug_assert!(self.cursors[index].key_valid());
+            // TODO: can we debug_assert cursors[index].val_valid() here instead?
+            // Well-behaved cursors should not expose keys without values.
+            if self.cursors[index].val_valid() {
+                self.val_heap.push(index);
+            }
+        }
+
+        let heap = BinaryHeap::from_vec(std::mem::take(&mut self.val_heap), cmp);
+
+        self.current_val.clear();
+        heap.peek_all(
+            |pos, &index| {
+                self.current_val.push((index, pos));
+            },
+            &mut self.scratch,
+        );
+
+        self.val_heap = heap.into_vec();
+    }
+
+    /// Adjust the ordering of elements in the value heap after advancing cursors in `current_val`; update `current_val` list.
+    ///
+    /// Assumes that only the cursors in `current_val` were advanced forward; other cursors must be in the same position
+    /// as when the heap was last updated.
+    ///
+    /// Update the position of cursors in `current_val` by either sifting them down or removing them from the heap if the
+    /// cursor is exhausted. Determines the new set of cursors with minimum values and updates `current_val` accordingly.
+    fn update_val_heap(&mut self) {
+        let cmp = |a: &usize, b: &usize| self.cursors[*b].val().cmp(self.cursors[*a].val());
+
+        let mut heap =
+            unsafe { BinaryHeap::from_vec_unchecked(std::mem::take(&mut self.val_heap), cmp) };
+
+        for (index, pos) in self.current_val.iter().rev() {
+            if unsafe { self.cursors.get_unchecked(*index).val_valid() } {
+                unsafe { heap.sift_down(*pos) };
+            } else {
+                heap.remove(*pos);
+            }
+        }
+
+        self.current_val.clear();
+        heap.peek_all(
+            |pos, &index| {
+                self.current_val.push((index, pos));
+            },
+            &mut self.scratch,
+        );
+
+        self.val_heap = heap.into_vec();
     }
 
     /// Perform `fuel` amount of work.
     ///
     /// When the function returns and fuel > 0, the batches should be guaranteed to be fully merged.
     pub fn work(&mut self, builder: &mut B::Builder, frontier: &B::Time, fuel: &mut isize) {
-        assert!(self.cursors.len() <= 64);
-        let mut remaining_cursors = self
-            .cursors
-            .iter()
-            .enumerate()
-            .filter_map(|(index, cursor)| cursor.key_valid().then_some(index))
-            .collect::<IndexSet>();
-        if remaining_cursors.is_empty() {
-            return;
-        }
-
         let advance_func = |t: &mut DynDataTyped<B::Time>| t.join_assign(frontier);
 
         let time_map_func = if frontier == &B::Time::minimum() {
@@ -141,49 +267,18 @@ where
         };
 
         // As long as there are multiple cursors...
-        while remaining_cursors.is_long() && *fuel > 0 {
-            // Find the indexes of the cursors with minimum keys, among the
-            // remaining cursors.
-            let orig_min_keys = find_min_indexes(
-                remaining_cursors
-                    .into_iter()
-                    .map(|index| (index, self.cursors[index].key())),
-            );
-
-            // If we're resuming after stopping due to running out of fuel in a
-            // previous call, then we might have exhausted the values in some of
-            // the keys, so drop them.  We still need them in `orig_min_keys` so
-            // we can advance the key for all of them later.
-            let mut min_keys = if self.any_values {
-                orig_min_keys
-                    .into_iter()
-                    .filter(|index| self.cursors[*index].val_valid())
-                    .collect::<IndexSet>()
-            } else {
-                orig_min_keys
-            };
-
+        while self.key_heap.len() > 1 && *fuel > 0 {
             // As long as there is more than one cursor with minimum keys...
-            while min_keys.is_long() {
-                // ...Find the indexes of the cursors with minimum values, among
-                // those with minimum keys, and copy their time-diff pairs and
-                // value into the output.
-                let min_vals = find_min_indexes(
-                    min_keys
-                        .into_iter()
-                        .map(|index| (index, self.cursors[index].val())),
-                );
-                self.any_values =
-                    self.copy_times(builder, time_map_func, min_vals, fuel) || self.any_values;
+            while self.val_heap.len() > 1 {
+                self.any_values = self.copy_times(builder, time_map_func, fuel) || self.any_values;
 
                 // Then go on to the next value in each cursor, dropping the keys
                 // for which we've exhausted the values.
-                for index in min_vals {
-                    self.cursors[index].step_val();
-                    if !self.cursors[index].val_valid() {
-                        min_keys.remove(index);
-                    }
+                for (index, _pos) in self.current_val.iter() {
+                    self.cursors[*index].step_val();
                 }
+                self.update_val_heap();
+
                 if *fuel <= 0 {
                     return;
                 }
@@ -191,23 +286,27 @@ where
 
             // If there's exactly one cursor left with minimum key, copy its
             // values into the output.
-            if let Some(index) = min_keys.first() {
+            if let Some(&index) = self.val_heap.first() {
+                debug_assert_eq!(self.current_val.len(), 1);
                 loop {
                     self.any_values =
-                        self.copy_times(builder, time_map_func, min_keys, fuel) || self.any_values;
+                        self.copy_times(builder, time_map_func, fuel) || self.any_values;
                     self.cursors[index].step_val();
+                    if !self.cursors[index].val_valid() {
+                        self.val_heap.clear();
+                        self.current_val.clear();
+                        break;
+                    }
+
                     if *fuel <= 0 {
                         return;
-                    }
-                    if !self.cursors[index].val_valid() {
-                        break;
                     }
                 }
             }
 
             // If we wrote any values for these minimum keys, write the key.
             if self.any_values {
-                let index = orig_min_keys.first().unwrap();
+                let index = self.current_key.first().unwrap().0;
                 if self.has_mut[index] {
                     builder.push_key_mut(self.cursors[index].key_mut());
                 } else {
@@ -218,26 +317,22 @@ where
 
             // Advance each minimum-key cursor, dropping the cursors for which
             // we've exhausted the data.
-            for index in orig_min_keys {
-                self.cursors[index].step_key();
-                if !self.cursors[index].key_valid() {
-                    remaining_cursors.remove(index);
-                }
+            for (index, _pos) in self.current_key.iter() {
+                self.cursors[*index].step_key();
             }
+            self.update_key_heap();
         }
 
         // If there is a cursor left (there's either one or none), copy it
         // directly to the output.
-        if let Some(index) = remaining_cursors.first() {
+        if let Some(&(index, _pos)) = self.current_key.first() {
             while *fuel > 0 {
-                loop {
+                debug_assert_eq!(self.current_key.len(), 1);
+                debug_assert_eq!(self.current_val.len(), 1);
+                while self.cursors[index].val_valid() {
                     self.any_values =
-                        self.copy_times(builder, time_map_func, remaining_cursors, fuel)
-                            || self.any_values;
+                        self.copy_times(builder, time_map_func, fuel) || self.any_values;
                     self.cursors[index].step_val();
-                    if !self.cursors[index].val_valid() {
-                        break;
-                    }
                     if *fuel <= 0 {
                         return;
                     }
@@ -256,6 +351,8 @@ where
                 }
                 self.cursors[index].step_key();
                 if !self.cursors[index].key_valid() {
+                    self.current_key.clear();
+                    self.key_heap.clear();
                     break;
                 }
             }
@@ -266,7 +363,6 @@ where
         &mut self,
         builder: &mut B::Builder,
         map_func: Option<&dyn Fn(&mut DynDataTyped<B::Time>)>,
-        indexes: IndexSet,
         fuel: &mut isize,
     ) -> bool {
         // If this is a timed batch, we must consolidate the (time, weight) array; otherwise we
@@ -274,8 +370,8 @@ where
         if let Some(time_diffs) = &mut self.time_diffs {
             if let Some(map_func) = map_func {
                 time_diffs.clear();
-                for i in indexes {
-                    self.cursors[i].map_times(&mut |time, w| {
+                for (i, _pos) in self.current_val.iter() {
+                    self.cursors[*i].map_times(&mut |time, w| {
                         let mut time: B::Time = time.clone();
                         map_func(&mut time);
 
@@ -289,10 +385,10 @@ where
                 for (time, diff) in time_diffs.dyn_iter().map(|td| td.split()) {
                     builder.push_time_diff(time, diff);
                 }
-            } else if indexes.is_long() {
+            } else if self.current_val.len() > 1 {
                 time_diffs.clear();
-                for i in indexes {
-                    self.cursors[i].map_times(&mut |time, w| {
+                for (i, _pos) in self.current_val.iter() {
+                    self.cursors[*i].map_times(&mut |time, w| {
                         time_diffs.push_refs((time, w));
                     });
                 }
@@ -304,17 +400,17 @@ where
                     builder.push_time_diff(time, diff);
                 }
             } else {
-                debug_assert_eq!(indexes.len(), 1);
-                for i in indexes {
-                    self.cursors[i].map_times(&mut |time, w| {
+                debug_assert_eq!(self.current_val.len(), 1);
+                for (i, _pos) in self.current_val.iter() {
+                    self.cursors[*i].map_times(&mut |time, w| {
                         builder.push_time_diff(time, w);
                     });
                 }
             }
         } else {
             self.tmp_weight.set_zero();
-            for i in indexes {
-                self.cursors[i].map_times(&mut |_time, weight| {
+            for (i, _pos) in self.current_val.iter() {
+                self.cursors[*i].map_times(&mut |_time, weight| {
                     self.tmp_weight.add_assign(weight);
                 });
             }
@@ -324,7 +420,7 @@ where
             builder.push_time_diff_mut(&mut B::Time::default(), &mut self.tmp_weight);
         }
 
-        let index = indexes.first().unwrap();
+        let index = self.current_val.first().unwrap().0;
         if self.has_mut[index] {
             builder.push_val_mut(self.cursors[index].val_mut());
         } else {
@@ -333,28 +429,6 @@ where
         *fuel -= 1;
         true
     }
-}
-
-fn find_min_indexes<Item>(mut iterator: impl Iterator<Item = (usize, Item)>) -> IndexSet
-where
-    Item: Ord,
-{
-    let (min_index, mut min_value) = iterator.next().unwrap();
-    let mut min_indexes = IndexSet::for_index(min_index);
-
-    for (index, value) in iterator {
-        match value.cmp(&min_value) {
-            Ordering::Less => {
-                min_value = value;
-                min_indexes = IndexSet::for_index(index);
-            }
-            Ordering::Equal => {
-                min_indexes.add(index);
-            }
-            Ordering::Greater => (),
-        }
-    }
-    min_indexes
 }
 
 #[cfg(test)]

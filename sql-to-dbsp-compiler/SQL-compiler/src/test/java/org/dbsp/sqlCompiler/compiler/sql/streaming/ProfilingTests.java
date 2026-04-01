@@ -8,7 +8,6 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.File;
@@ -38,6 +37,7 @@ public class ProfilingTests extends StreamingTestBase {
             mainFile.print(main);
         }
         try {
+            BaseSQLTests.setupCargoLock();
             Utilities.compileAndTestRust(RUST_DIRECTORY, true, "--release");
             // After executing this Rust program the output is in file "mem.txt"
             // It contains three numbers: time taken (ms), memory used (bytes), and late records.
@@ -249,23 +249,6 @@ public class ProfilingTests extends StreamingTestBase {
         }
     }
 
-    @Test @Ignore("Used to generate data for testing the profile visualization tool")
-    public void emptyJsonProfiles() throws SQLException, IOException, InterruptedException {
-        String name = "rec";
-        String profilerData = "../../profiler/data";
-        File file = new File("../extra/" + name + ".sql");
-        String str = this.getEmptyJsonProfile(file);
-        Path target = Paths.get(profilerData, file.getName().replace(".sql", ".json"));
-        Utilities.writeFile(target, str);
-        String df = "dataflow-" + name + ".json";
-
-        target = Paths.get(profilerData, df);
-        // File may not exist, so we don't expect success
-        //noinspection ResultOfMethodCallIgnored
-        target.toFile().delete();
-        Files.move(Paths.get(".", df), target);
-    }
-
     @Test
     public void profileLateness() throws IOException, InterruptedException, SQLException {
         String sql = """
@@ -399,13 +382,15 @@ public class ProfilingTests extends StreamingTestBase {
                 SELECT t.*
                 FROM transaction as t JOIN feedback as f
                 ON t.id = f.id
-                WHERE t.unix_time >= f.unix_time - 3600 * 24 * 7 ;
+                WHERE t.unix_time >= f.unix_time - 3600 * 24 * 7;
                 """;
 
         String main = this.createMain("""
                 let _ = circuit.transaction().expect("could not run circuit");
                 let _ = circuit.transaction().expect("could not run circuit");
                 """);
+        if (BaseSQLTests.skipRust)
+            return;
         this.measure(sql, main);
     }
 }

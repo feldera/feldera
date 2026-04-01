@@ -81,6 +81,16 @@ export type AuthProvider =
 export type BootstrapPolicy = 'allow' | 'reject' | 'await_approval'
 
 /**
+ * Controls how caches are shared across a foreground/background worker pair.
+ */
+export type BufferCacheAllocationStrategy = 'shared_per_worker_pair' | 'per_thread' | 'global'
+
+/**
+ * Selects which eviction strategy backs a cache instance.
+ */
+export type BufferCacheStrategy = 's3_fifo' | 'lru'
+
+/**
  * Information about the build of the platform.
  */
 export type BuildInformation = {
@@ -162,6 +172,39 @@ export type CheckpointFailure = {
 }
 
 /**
+ * Holds meta-data about a checkpoint that was taken for persistent storage
+ * and recovery of a circuit's state.
+ */
+export type CheckpointMetadata = {
+  /**
+   * Fingerprint of the circuit at the time of the checkpoint.
+   */
+  fingerprint: number
+  /**
+   * An optional name for the checkpoint.
+   */
+  identifier?: string | null
+  /**
+   * Total number of records processed.
+   */
+  processed_records?: number | null
+  /**
+   * Total size of the checkpoint files in bytes.
+   */
+  size?: number | null
+  /**
+   * Total number of steps made.
+   */
+  steps?: number | null
+  /**
+   * A unique identifier for the given checkpoint.
+   *
+   * This is used to identify the checkpoint in the file-system hierarchy.
+   */
+  uuid: string
+}
+
+/**
  * Response to a checkpoint request.
  */
 export type CheckpointResponse = {
@@ -177,6 +220,35 @@ export type CheckpointStatus = {
    * Most recently successful checkpoint.
    */
   success?: number | null
+}
+
+/**
+ * Information about a failed checkpoint sync.
+ */
+export type CheckpointSyncFailure = {
+  /**
+   * Error message associated with the failure.
+   */
+  error: string
+  /**
+   * UUID of the failed checkpoint.
+   */
+  uuid: string
+}
+
+/**
+ * Checkpoint status returned by the `/checkpoint/sync_status` endpoint.
+ */
+export type CheckpointSyncStatus = {
+  failure?: CheckpointSyncFailure | null
+  /**
+   * Most recently successful automated periodic checkpoint sync.
+   */
+  periodic?: string | null
+  /**
+   * Most recently successful checkpoint sync.
+   */
+  success?: string | null
 }
 
 /**
@@ -320,6 +392,7 @@ export type CombinedStatus =
   | 'Stopped'
   | 'Provisioning'
   | 'Unavailable'
+  | 'Coordination'
   | 'Standby'
   | 'AwaitingApproval'
   | 'Initializing'
@@ -329,6 +402,32 @@ export type CombinedStatus =
   | 'Running'
   | 'Suspended'
   | 'Stopping'
+
+/**
+ * Summary of transaction commit progress.
+ */
+export type CommitProgressSummary = {
+  /**
+   * Number of operators that have been fully flushed.
+   */
+  completed: number
+  /**
+   * Number of operators that are currently being flushed.
+   */
+  in_progress: number
+  /**
+   * Number of records processed by operators that are currently being flushed.
+   */
+  in_progress_processed_records: number
+  /**
+   * Total number of records that operators that are currently being flushed need to process.
+   */
+  in_progress_total_records: number
+  /**
+   * Number of operators that haven't started flushing.
+   */
+  remaining: number
+}
 
 /**
  * Enumeration of possible compilation profiles that can be passed to the Rust compiler
@@ -383,6 +482,16 @@ export type CompletionStatusArgs = {
  */
 export type CompletionStatusResponse = {
   status: CompletionStatus
+  /**
+   * If all of the data associated with the token has been processed through
+   * the pipeline, this is the final step that includes at least one record.
+   * When the pipeline's `total_completed_steps` reaches this value, the
+   * token has been completed.
+   *
+   * This is `None` before the data associated with the token has been
+   * processed through the pipeline.
+   */
+  step?: number | null
 }
 
 /**
@@ -446,8 +555,27 @@ export type Configuration = {
   version: string
 }
 
+/**
+ * Options for connecting to a NATS server.
+ */
 export type ConnectOptions = {
   auth?: Auth
+  /**
+   * Connection timeout
+   *
+   * How long to wait when establishing the initial connection to the
+   * NATS server.
+   */
+  connection_timeout_secs?: number
+  /**
+   * Request timeout in seconds.
+   *
+   * How long to wait for responses to requests.
+   */
+  request_timeout_secs?: number
+  /**
+   * NATS server URL (e.g., "nats://localhost:4222").
+   */
   server_url: string
 }
 
@@ -481,22 +609,20 @@ export type ConnectorConfig = OutputBufferConfig & {
    */
   labels?: Array<string>
   /**
-   * Maximum batch size, in records.
+   * Maximum number of records from this connector to process in a single batch.
    *
-   * This is the maximum number of records to process in one batch through
-   * the circuit.  The time and space cost of processing a batch is
-   * asymptotically superlinear in the size of the batch, but very small
-   * batches are less efficient due to constant factors.
+   * When set, this caps how many records are taken from the connector’s input
+   * buffer and pushed through the circuit at once.
    *
-   * This should usually be less than `max_queued_records`, to give the
-   * connector a round-trip time to restart and refill the buffer while
-   * batches are being processed.
+   * This is typically configured lower than `max_queued_records` to allow the
+   * connector time to restart and refill its buffer while a batch is being
+   * processed.
    *
-   * Some input adapters might not honor this setting.
+   * Not all input adapters honor this limit.
    *
-   * The default is 10,000.
+   * If this is not set, the batch size is derived from `max_worker_batch_size`.
    */
-  max_batch_size?: number
+  max_batch_size?: number | null
   /**
    * Backpressure threshold.
    *
@@ -520,11 +646,27 @@ export type ConnectorConfig = OutputBufferConfig & {
    */
   max_queued_records?: number
   /**
+   * Maximum number of records processed per batch, per worker thread.
+   *
+   * When `max_batch_size` is not set, this setting is used to cap
+   * the number of records that can be taken from the connector’s input
+   * buffer and pushed through the circuit at once.  The effective batch size is computed as:
+   * `max_worker_batch_size × workers`.
+   *
+   * This provides an alternative to `max_batch_size` that automatically adjusts batch
+   * size as the number of worker threads changes to maintain constant amount of
+   * work per worker per batch.
+   *
+   * Defaults to 10,000 records per worker.
+   */
+  max_worker_batch_size?: number | null
+  /**
    * Create connector in paused state.
    *
    * The default is `false`.
    */
   paused?: boolean
+  preprocessor?: Array<PreprocessorConfig> | null
   /**
    * Start the connector after all connectors with specified labels.
    *
@@ -535,6 +677,38 @@ export type ConnectorConfig = OutputBufferConfig & {
   start_after?: Array<string> | null
   transport: TransportConfig
 }
+
+export type ConnectorError = {
+  /**
+   * Sequence number of the error.
+   *
+   * The client can use this field to detect gaps in the error list reported
+   * by the pipeline. When the connector reports a large number of errors, the
+   * pipeline will only preserve and report the most recent errors of each kind.
+   */
+  index: number
+  /**
+   * Error message.
+   */
+  message: string
+  /**
+   * Optional tag for the error.
+   *
+   * The tag is used to group errors by their type.
+   */
+  tag?: string | null
+  /**
+   * Timestamp when the error occurred, serialized as RFC3339 with microseconds.
+   */
+  timestamp: string
+}
+
+export type ConnectorHealth = {
+  description?: string | null
+  status: ConnectorHealthStatus
+}
+
+export type ConnectorHealthStatus = 'Healthy' | 'Unhealthy'
 
 /**
  * Aggregated connector error statistics.
@@ -650,6 +824,14 @@ export type DatagenInputConfig = {
    * - The input will arrive in non-deterministic order if `workers > 1`.
    */
   seed?: number | null
+  /**
+   * By default, the data generator does not request [transactions].  Set
+   * this to a nonzero value for the data generator to automatically
+   * orchestrate transactions of approximately the specified number of rows.
+   *
+   * [transactions]: https://docs.feldera.com/pipelines/transactions
+   */
+  transaction_size?: number | null
   /**
    * Number of workers to use for generating data.
    */
@@ -1005,12 +1187,24 @@ export type DeltaTableWriteMode = 'append' | 'truncate' | 'error_if_exists'
  * Delta table output connector configuration.
  */
 export type DeltaTableWriterConfig = {
+  /**
+   * Maximum number of retries for failed operations.
+   *
+   * The connector performs retries on several levels: individual S3 operations, Delta Lake transaction commits,
+   * and overall operation retries. This setting controls the overall operation retries. When a write to the table
+   * fails, because of an S3 timeout or any other reason that was not resolved by lower-level retries, the connector
+   * will retry the entire operation.
+   *
+   * When not specified, the connector performs infinite retries. When set to 0, the connector doesn't
+   * retry failed operations.
+   */
+  max_retries?: number | null
   mode?: DeltaTableWriteMode
   /**
    * Table URI.
    */
   uri: string
-  [key: string]: string | DeltaTableWriteMode | undefined
+  [key: string]: string | number | null | DeltaTableWriteMode | undefined
 }
 
 export type Demo = {
@@ -1038,6 +1232,155 @@ export type Demo = {
    * User defined function (UDF) TOML dependencies.
    */
   udf_toml: string
+}
+
+/**
+ * Optional settings for tweaking Feldera internals.
+ */
+export type DevTweaks = {
+  /**
+   * Enable adaptive joins.
+   *
+   * Adaptive joins dynamically change their partitioning policy to avoid skew.
+   *
+   * Adaptive joins are disabled by default.
+   */
+  adaptive_joins?: boolean | null
+  /**
+   * Factor that discourages the use of the Balance policy in a perfectly balanced collection.
+   *
+   * Assuming a perfectly balanced key distribution, the Balance policy is slightly less efficient than Shard,
+   * since it requires computing the hash of the entire key/value pair. This factor discourages the use of this policy
+   * if the skew is `<balancer_balance_tax`.
+   *
+   * The default value is 1.1.
+   */
+  balancer_balance_tax?: number | null
+  /**
+   * The balancer threshold for checking for an improved partitioning policy for a stream.
+   *
+   * Finding a good partitioning policy for a circuit involves solving an optimization problem,
+   * which can be relatively expensive. Instead of doing this on every step, the balancer only
+   * checks for an improved partitioning policy if the key distribution of a stream has changed
+   * significantly since the current solution was computed.  Specifically, it only kicks in when
+   * the size of at least one shard of at least one stream in the cluster has changed by more than
+   * this threshold.
+   *
+   * The default value is 0.1.
+   */
+  balancer_key_distribution_refresh_threshold?: number | null
+  /**
+   * The minimum absolute improvement threshold for the balancer.
+   *
+   * This parameter prevents the join balancer from making changes to the
+   * partitioning policy if the improvement is not significant, since the overhead
+   * of such rebalancing, especially when performed frequently, can exceed the benefits.
+   *
+   * A rebalancing is considered significant if the absolute estimated improvement for the cluster
+   * of joins where the rebalancing is applied is at least this threshold. The cost model used by
+   * the balancer is based on the number of records in the largest partition of a collection.
+   *
+   * A rebalancing is applied if both this threshold and `balancer_min_relative_improvement_threshold` are met.
+   *
+   * The default value is 10,000.
+   */
+  balancer_min_absolute_improvement_threshold?: number | null
+  /**
+   * The minimum relative improvement threshold for the join balancer.
+   *
+   * This parameter prevents the join balancer from making changes to the
+   * partitioning policy if the improvement is not significant, since the overhead
+   * of such rebalancing, especially when performed frequently, can exceed the benefits.
+   *
+   * A rebalancing is considered significant if the relative estimated improvement for the cluster
+   * of joins where the rebalancing is applied is at least this threshold.
+   *
+   * A rebalancing is applied if both this threshold and `balancer_min_absolute_improvement_threshold` are met.
+   *
+   * The default value is 1.2.
+   */
+  balancer_min_relative_improvement_threshold?: number | null
+  /**
+   * False-positive rate for Bloom filters on batches on storage, as a
+   * fraction f, where 0 < f < 1.
+   *
+   * The false-positive rate trades off between the amount of memory used by
+   * Bloom filters and how frequently storage needs to be searched for keys
+   * that are not actually present.  Typical false-positive rates and their
+   * corresponding memory costs are:
+   *
+   * - 0.1: 4.8 bits per key
+   * - 0.01: 9.6 bits per key
+   * - 0.001: 14.4 bits per key
+   * - 0.0001: 19.2 bits per key (default)
+   *
+   * Values outside the valid range, such as 0.0, disable Bloom filters.
+   */
+  bloom_false_positive_rate?: number | null
+  buffer_cache_allocation_strategy?: BufferCacheAllocationStrategy | null
+  buffer_cache_strategy?: BufferCacheStrategy | null
+  /**
+   * Override the number of buckets/shards used by sharded buffer caches.
+   *
+   * This only applies when `buffer_cache_strategy = "s3_fifo"`. Values are
+   * rounded up to the next power of two because the current implementation
+   * shards by `hash(key) & (n - 1)`.
+   */
+  buffer_max_buckets?: number | null
+  /**
+   * Target number of cached bytes retained in each `FBuf` slab size class.
+   *
+   * The default value is [`FBufSlabs::DEFAULT_BYTES_PER_CLASS`].
+   */
+  fbuf_slab_bytes_per_class?: number | null
+  /**
+   * Whether to asynchronously fetch keys needed for the distinct operator
+   * from storage.  Asynchronous fetching should be faster for high-latency
+   * storage, such as object storage, but it could use excessive amounts of
+   * memory if the number of keys fetched is very large.
+   */
+  fetch_distinct?: boolean | null
+  /**
+   * Whether to asynchronously fetch keys needed for the join operator from
+   * storage.  Asynchronous fetching should be faster for high-latency
+   * storage, such as object storage, but it could use excessive amounts of
+   * memory if the number of keys fetched is very large.
+   */
+  fetch_join?: boolean | null
+  /**
+   * Maximum batch size in records for level 0 merges.
+   */
+  max_level0_batch_size_records?: number | null
+  merger?: MergerType | null
+  /**
+   * The number of merger threads.
+   *
+   * The default value is equal to the number of worker threads.
+   */
+  merger_threads?: number | null
+  /**
+   * Controls the maximal number of records output by splitter operators
+   * (joins, distinct, aggregation, rolling window and group operators) at
+   * each step.
+   *
+   * The default value is 10,000 records.
+   */
+  splitter_chunk_size_records?: number | null
+  /**
+   * Attempt to print a stack trace on stack overflow.
+   *
+   * To be used for debugging only; do not enable in production.
+   */
+  stack_overflow_backtrace?: boolean | null
+  /**
+   * If set, the maximum amount of storage, in MiB, for the POSIX backend to
+   * allow to be in use before failing all writes with [StorageFull].  This
+   * is useful for testing on top of storage that does not implement its own
+   * quota mechanism.
+   *
+   * [StorageFull]: std::io::ErrorKind::StorageFull
+   */
+  storage_mb_max?: number | null
 }
 
 export type DisplaySchedule =
@@ -1317,6 +1660,7 @@ export type GlobalControllerMetrics = {
    * Total number of records currently buffered by all endpoints.
    */
   buffered_input_records: number
+  commit_progress?: CommitProgressSummary | null
   /**
    * CPU time used by the pipeline across all threads, in milliseconds.
    */
@@ -1329,6 +1673,23 @@ export type GlobalControllerMetrics = {
    * Time at which the pipeline process from which we resumed started, in seconds since the epoch.
    */
   initial_start_time: number
+  memory_pressure: MemoryPressure
+  /**
+   * Memory pressure epoch.
+   */
+  memory_pressure_epoch: number
+  /**
+   * If the pipeline is stalled because one or more output connectors' output
+   * buffers are full, this is the number of milliseconds that the current
+   * stall has lasted.
+   *
+   * If this is nonzero, then the output connectors causing the stall can be
+   * identified by noticing `ExternalOutputEndpointMetrics::queued_records`
+   * is greater than or equal to `ConnectorConfig::max_queued_records`.
+   *
+   * In the ordinary case, the pipeline is not stalled, and this value is 0.
+   */
+  output_stall_msecs: number
   /**
    * True if the pipeline has processed all input data to completion.
    */
@@ -1359,6 +1720,33 @@ export type GlobalControllerMetrics = {
    */
   total_completed_records: number
   /**
+   * Number of steps whose input records have been processed to completion.
+   *
+   * A record is processed to completion if it has been processed by the DBSP engine and
+   * all outputs derived from it have been processed by all output connectors.
+   *
+   * # Interpretation
+   *
+   * This is a count, not a step number.  If `total_completed_steps` is 0, no
+   * steps have been processed to completion.  If `total_completed_steps >
+   * 0`, then the last step whose input records have been processed to
+   * completion is `total_completed_steps - 1`. A record that was ingested
+   * when `total_initiated_steps` was `n` is fully processed when
+   * `total_completed_steps >= n`.
+   */
+  total_completed_steps: number
+  /**
+   * Number of steps that have been initiated.
+   *
+   * # Interpretation
+   *
+   * This is a count, not a step number.  If `total_initiated_steps` is 0, no
+   * steps have been initiated.  If `total_initiated_steps > 0`, then step
+   * `total_initiated_steps - 1` has been started and all steps previous to
+   * that have been completely processed by the circuit.
+   */
+  total_initiated_steps: number
+  /**
    * Total number of bytes received from all endpoints.
    */
   total_input_bytes: number
@@ -1379,9 +1767,32 @@ export type GlobalControllerMetrics = {
    */
   transaction_id: number
   transaction_initiators: TransactionInitiators
+  /**
+   * Elapsed time in milliseconds, according to `transaction_status`:
+   *
+   * - [TransactionStatus::TransactionInProgress]: Time that this transaction
+   * has been in progress.
+   *
+   * - [TransactionStatus::CommitInProgress]: Time that this transaction has
+   * been committing.
+   */
+  transaction_msecs?: number | null
+  /**
+   * Number of records in this transaction, according to
+   * `transaction_status`:
+   *
+   * - [TransactionStatus::TransactionInProgress]: Number of records added so
+   * far.  More records might be added.
+   *
+   * - [TransactionStatus::CommitInProgress]: Final number of records.
+   */
+  transaction_records?: number | null
   transaction_status: TransactionStatus
   /**
-   * Time since the pipeline process started, in milliseconds.
+   * Time since the pipeline process started, including time that the
+   * pipeline was running or paused.
+   *
+   * This is the elapsed time since `start_time`.
    */
   uptime_msecs: number
 }
@@ -1634,11 +2045,20 @@ export type InputEndpointStatus = {
    * The first fatal error that occurred at the endpoint.
    */
   fatal_error?: string | null
+  health?: ConnectorHealth | null
   metrics: InputEndpointMetrics
+  /**
+   * Recent parse errors on this endpoint.
+   */
+  parse_errors?: Array<ConnectorError> | null
   /**
    * Endpoint has been paused by the user.
    */
   paused: boolean
+  /**
+   * Recent transport errors on this endpoint.
+   */
+  transport_errors?: Array<ConnectorError> | null
 }
 
 /**
@@ -1840,6 +2260,57 @@ export type KafkaInputConfig = {
   resume_earliest_if_data_expires: boolean
   start_from?: KafkaStartFromConfig
   /**
+   * When lateness is enabled on a Feldera table, Feldera only produces
+   * correct output if input arrives approximately in order within the bounds
+   * of the lateness.  The Feldera Kafka input connector can reorder input
+   * when there are multiple partitions:
+   *
+   * - If partitions start at different times, then reading all the
+   * partitions in parallel will naturally consume data out of order.
+   *
+   * - Even if they start at the same time, partitions might contain events
+   * at different rates.
+   *
+   * - Even if the partitions start at the same time and have the same number
+   * of events per unit time, if partitions are spread across brokers,
+   * different brokers may fetch data at different rates.
+   *
+   * - Even if all of the partitions are on a single broker, one cannot
+   * expect all of the partitions to naturally remain exactly in sync
+   * forever.
+   *
+   * Setting this option to `true` addresses the issue by synchronizing
+   * ingestion across partitions, ingesting records in order of their Kafka
+   * event timestamps.
+   *
+   * Pitfalls of this solution include:
+   *
+   * - Kafka event timestamps are not necessarily monotonically increasing
+   * even within a single partition.  If timestamps jump backward beyond
+   * the lateness, then this can also cause correctness problems.
+   *
+   * (This can be avoided by keeping clocks on Kafka producers and brokers
+   * synchronized.)
+   *
+   * - If an event with a timestamp far in the future is added to a
+   * partition, that event, and all those that follow it, will never be
+   * processed.
+   *
+   * - If one or a few partitions have timestamps far behind the others, only
+   * those partitions will be processed until all the old events are
+   * processed.  (This is the flip side of the previous pitfall.)
+   *
+   * - One or more empty partitions will prevent any data from being
+   * processed at all, because there is no way to know the timestamp for
+   * the first event that will be added to that partition.
+   *
+   * - In a topic with `N` nonempty partitions, at least `N - 1` events will
+   * always be left unprocessed (one in each of `N - 1` partitions), because
+   * there is no way to know the timestamp for the next event to be added to
+   * the partition whose events have been completely processed.
+   */
+  synchronize_partitions?: boolean
+  /**
    * Topic to subscribe to.
    */
   topic: string
@@ -2016,6 +2487,27 @@ export type LicenseValidity =
     }
 
 /**
+ * Memory pressure level.
+ *
+ * The current memory pressure level is computed as a function of the current process
+ * resident set size (RSS) and the user-configured memory limit (`max_rss`).
+ *
+ * As the memory pressure level increases, the system will apply increasing backpressure to
+ * push state cached in memory to storage.
+ *
+ * - `Low`: less than 85% of the user-configured memory limit has been allocated.
+ * - `Moderate`: between 85% and 90% of the user-configured memory limit has been allocated.
+ * - `High`: between 90% and 95% of the user-configured memory limit has been allocated.
+ * - `Critical`: more than 95% of the user-configured memory limit has been allocated.
+ */
+export type MemoryPressure = 'low' | 'moderate' | 'high' | 'critical'
+
+/**
+ * Which merger to use.
+ */
+export type MergerType = 'push_merger' | 'list_merger'
+
+/**
  * Circuit metrics output format.
  * - `prometheus`: [format](https://github.com/prometheus/docs/blob/4b1b80f5f660a2f8dc25a54f52a65a502f31879a/docs/instrumenting/exposition_formats.md) expected by Prometheus
  * - `json`: JSON format
@@ -2083,6 +2575,16 @@ export type MultihostConfig = {
 export type NatsInputConfig = {
   connection_config: ConnectOptions
   consumer_config: ConsumerConfig
+  /**
+   * Maximum time in seconds to wait for the next message before running
+   * a stream/server health check. Must be at least 1.
+   */
+  inactivity_timeout_secs?: number
+  /**
+   * Delay between automatic reconnect attempts while in retry mode.
+   * Must be at least 1.
+   */
+  retry_interval_secs?: number
   stream_name: string
 }
 
@@ -2310,8 +2812,32 @@ export type OutputEndpointMetrics = {
   queued_records: number
   /**
    * The number of input records processed by the circuit.
+   *
+   * This metric tracks the end-to-end progress of the pipeline: the output
+   * of this endpoint is equal to the output of the circuit after
+   * processing `total_processed_input_records` records.
+   *
+   * In a multihost pipeline, this count reflects only the input records
+   * processed on the same host as the output endpoint, which is not usually
+   * meaningful.
    */
   total_processed_input_records: number
+  /**
+   * The number of steps whose input records have been processed by the
+   * endpoint.
+   *
+   * This is meaningful in a multihost pipeline because steps are
+   * synchronized across all of the hosts.
+   *
+   * # Interpretation
+   *
+   * This is a count, not a step number.  If `total_processed_steps` is 0, no
+   * steps have been processed to completion.  If `total_processed_steps >
+   * 0`, then the last step whose input records have been processed to
+   * completion is `total_processed_steps - 1`. A record that was ingested in
+   * step `n` is fully processed when `total_processed_steps > n`.
+   */
+  total_processed_steps: number
   /**
    * Bytes sent on the underlying transport.
    */
@@ -2328,6 +2854,10 @@ export type OutputEndpointMetrics = {
 export type OutputEndpointStatus = {
   config: ShortEndpointConfig
   /**
+   * Recent encoding errors on this endpoint.
+   */
+  encode_errors?: Array<ConnectorError> | null
+  /**
    * Endpoint name.
    */
   endpoint_name: string
@@ -2335,7 +2865,12 @@ export type OutputEndpointStatus = {
    * The first fatal error that occurred at the endpoint.
    */
   fatal_error?: string | null
+  health?: ConnectorHealth | null
   metrics: OutputEndpointMetrics
+  /**
+   * Recent transport errors on this endpoint.
+   */
+  transport_errors?: Array<ConnectorError> | null
 }
 
 /**
@@ -2419,21 +2954,26 @@ export type PipelineConfig = {
    * The default value is `true`.
    */
   cpu_profiler?: boolean
+  dev_tweaks?: DevTweaks
   /**
-   * Optional settings for tweaking Feldera internals.
+   * Environment variables for the pipeline process.
    *
-   * The available key-value pairs change from one version of Feldera to
-   * another, so users should not depend on particular settings being
-   * available, or on their behavior.
+   * These are key-value pairs injected into the pipeline process environment.
+   * Some variable names are reserved by the platform and cannot be overridden
+   * (for example `RUST_LOG`, and variables in the `FELDERA_`,
+   * `KUBERNETES_`, and `TOKIO_` namespaces).
    */
-  dev_tweaks?: {
-    [key: string]: unknown
+  env?: {
+    [key: string]: string
   }
   fault_tolerance?: FtConfig
   /**
    * Number of DBSP hosts.
    *
-   * The worker threads are evenly divided among the hosts.
+   * The worker threads are evenly divided among the hosts.  For single-host
+   * deployments, this should be 1 (the default).
+   *
+   * Multihost pipelines are an enterprise-only preview feature.
    */
   hosts?: number
   /**
@@ -2492,6 +3032,29 @@ export type PipelineConfig = {
    * The default is 10.
    */
   max_parallel_connector_init?: number | null
+  /**
+   * The maximum amount of memory, in Megabytes, that the pipeline is allowed to use
+   * on each host.
+   *
+   * Setting this property activates memory pressure monitoring and backpressure
+   * mechanisms. The pipeline will track the amount of remaining memory and
+   * report the memory pressure level via the `memory_pressure` metric.
+   *
+   * As the memory pressure increases, the system will apply increasing backpressure
+   * to push state cached in memory to storage, preventing the pipeline from running
+   * out of memory at the cost of some performance degradation.
+   *
+   * It is strongly recommended to set this property to prevent the pipeline from
+   * running out of memory. The setting should not exceed the memory limit of the pipeline
+   * instance.
+   *
+   * When `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the
+   * latter is used as the effective memory cap for the pipeline.
+   *
+   * See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
+   * for more details.
+   */
+  max_rss_mb?: number | null
   /**
    * Minimal input batch size.
    *
@@ -2765,6 +3328,42 @@ export type PostStopPipelineParameters = {
  */
 export type PostgresReaderConfig = {
   /**
+   * Path to a file containing a sequence of CA certificates in PEM format.
+   */
+  ssl_ca_location?: string | null
+  /**
+   * A sequence of CA certificates in PEM format.
+   */
+  ssl_ca_pem?: string | null
+  /**
+   * The path to the certificate chain file.
+   * The file must contain a sequence of PEM-formatted certificates,
+   * the first being the leaf certificate, and the remainder forming
+   * the chain of certificates up to and including the trusted root certificate.
+   */
+  ssl_certificate_chain_location?: string | null
+  /**
+   * The client certificate key in PEM format.
+   */
+  ssl_client_key?: string | null
+  /**
+   * Path to the client certificate key.
+   */
+  ssl_client_key_location?: string | null
+  /**
+   * Path to the client certificate.
+   */
+  ssl_client_location?: string | null
+  /**
+   * The client certificate in PEM format.
+   */
+  ssl_client_pem?: string | null
+  /**
+   * True to enable hostname verification when using TLS. True by default.
+   */
+  verify_hostname?: boolean | null
+} & {
+  /**
    * Query that specifies what data to fetch from postgres.
    */
   query: string
@@ -2773,6 +3372,47 @@ export type PostgresReaderConfig = {
    * See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>
    */
   uri: string
+}
+
+/**
+ * TLS/SSL configuration for PostgreSQL connectors.
+ */
+export type PostgresTlsConfig = {
+  /**
+   * Path to a file containing a sequence of CA certificates in PEM format.
+   */
+  ssl_ca_location?: string | null
+  /**
+   * A sequence of CA certificates in PEM format.
+   */
+  ssl_ca_pem?: string | null
+  /**
+   * The path to the certificate chain file.
+   * The file must contain a sequence of PEM-formatted certificates,
+   * the first being the leaf certificate, and the remainder forming
+   * the chain of certificates up to and including the trusted root certificate.
+   */
+  ssl_certificate_chain_location?: string | null
+  /**
+   * The client certificate key in PEM format.
+   */
+  ssl_client_key?: string | null
+  /**
+   * Path to the client certificate key.
+   */
+  ssl_client_key_location?: string | null
+  /**
+   * Path to the client certificate.
+   */
+  ssl_client_location?: string | null
+  /**
+   * The client certificate in PEM format.
+   */
+  ssl_client_pem?: string | null
+  /**
+   * True to enable hostname verification when using TLS. True by default.
+   */
+  verify_hostname?: boolean | null
 }
 
 /**
@@ -2786,6 +3426,42 @@ export type PostgresWriteMode = 'materialized' | 'cdc'
  * Postgres output connector configuration.
  */
 export type PostgresWriterConfig = {
+  /**
+   * Path to a file containing a sequence of CA certificates in PEM format.
+   */
+  ssl_ca_location?: string | null
+  /**
+   * A sequence of CA certificates in PEM format.
+   */
+  ssl_ca_pem?: string | null
+  /**
+   * The path to the certificate chain file.
+   * The file must contain a sequence of PEM-formatted certificates,
+   * the first being the leaf certificate, and the remainder forming
+   * the chain of certificates up to and including the trusted root certificate.
+   */
+  ssl_certificate_chain_location?: string | null
+  /**
+   * The client certificate key in PEM format.
+   */
+  ssl_client_key?: string | null
+  /**
+   * Path to the client certificate key.
+   */
+  ssl_client_key_location?: string | null
+  /**
+   * Path to the client certificate.
+   */
+  ssl_client_location?: string | null
+  /**
+   * The client certificate in PEM format.
+   */
+  ssl_client_pem?: string | null
+  /**
+   * True to enable hostname verification when using TLS. True by default.
+   */
+  verify_hostname?: boolean | null
+} & {
   /**
    * Name of the operation metadata column in CDC mode.
    *
@@ -2836,49 +3512,40 @@ export type PostgresWriterConfig = {
    */
   on_conflict_do_nothing?: boolean
   /**
-   * Path to a file containing a sequence of CA certificates in PEM format.
-   */
-  ssl_ca_location?: string | null
-  /**
-   * A sequence of CA certificates in PEM format.
-   */
-  ssl_ca_pem?: string | null
-  /**
-   * The path to the certificate chain file.
-   * The file must contain a sequence of PEM-formatted certificates,
-   * the first being the leaf certificate, and the remainder forming
-   * the chain of certificates up to and including the trusted root certificate.
-   */
-  ssl_certificate_chain_location?: string | null
-  /**
-   * The client certificate key in PEM format.
-   */
-  ssl_client_key?: string | null
-  /**
-   * Path to the client certificate key.
-   */
-  ssl_client_key_location?: string | null
-  /**
-   * Path to the client certificate.
-   */
-  ssl_client_location?: string | null
-  /**
-   * The client certificate in PEM format.
-   */
-  ssl_client_pem?: string | null
-  /**
    * The table to write the output to.
    */
   table: string
+  /**
+   * The number of threads to use during encoding.
+   *
+   * Default: 1
+   */
+  threads?: number
   /**
    * Postgres URI.
    * See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>
    */
   uri: string
+}
+
+/**
+ * Configuration for describing a preprocessor
+ */
+export type PreprocessorConfig = {
   /**
-   * True to enable hostname verification when using TLS. True by default.
+   * Arbitrary additional configuration.
    */
-  verify_hostname?: boolean | null
+  config: unknown
+  /**
+   * True if the preprocessor is message-oriented: true if each preprocessor
+   * output record corresponds to a whole number of of parser records.
+   */
+  message_oriented: boolean
+  /**
+   * Name of the preprocessor.
+   * All preprocessors with the same name will perform the same task.
+   */
+  name: string
 }
 
 /**
@@ -3423,21 +4090,26 @@ export type RuntimeConfig = {
    * The default value is `true`.
    */
   cpu_profiler?: boolean
+  dev_tweaks?: DevTweaks
   /**
-   * Optional settings for tweaking Feldera internals.
+   * Environment variables for the pipeline process.
    *
-   * The available key-value pairs change from one version of Feldera to
-   * another, so users should not depend on particular settings being
-   * available, or on their behavior.
+   * These are key-value pairs injected into the pipeline process environment.
+   * Some variable names are reserved by the platform and cannot be overridden
+   * (for example `RUST_LOG`, and variables in the `FELDERA_`,
+   * `KUBERNETES_`, and `TOKIO_` namespaces).
    */
-  dev_tweaks?: {
-    [key: string]: unknown
+  env?: {
+    [key: string]: string
   }
   fault_tolerance?: FtConfig
   /**
    * Number of DBSP hosts.
    *
-   * The worker threads are evenly divided among the hosts.
+   * The worker threads are evenly divided among the hosts.  For single-host
+   * deployments, this should be 1 (the default).
+   *
+   * Multihost pipelines are an enterprise-only preview feature.
    */
   hosts?: number
   /**
@@ -3496,6 +4168,29 @@ export type RuntimeConfig = {
    * The default is 10.
    */
   max_parallel_connector_init?: number | null
+  /**
+   * The maximum amount of memory, in Megabytes, that the pipeline is allowed to use
+   * on each host.
+   *
+   * Setting this property activates memory pressure monitoring and backpressure
+   * mechanisms. The pipeline will track the amount of remaining memory and
+   * report the memory pressure level via the `memory_pressure` metric.
+   *
+   * As the memory pressure increases, the system will apply increasing backpressure
+   * to push state cached in memory to storage, preventing the pipeline from running
+   * out of memory at the cost of some performance degradation.
+   *
+   * It is strongly recommended to set this property to prevent the pipeline from
+   * running out of memory. The setting should not exceed the memory limit of the pipeline
+   * instance.
+   *
+   * When `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the
+   * latter is used as the effective memory cap for the pipeline.
+   *
+   * See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
+   * for more details.
+   */
+  max_rss_mb?: number | null
   /**
    * Minimal input batch size.
    *
@@ -4011,6 +4706,19 @@ export type SyncConfig = {
    * Default: disabled (no periodic push).
    */
   push_interval?: number | null
+  /**
+   * A read-only bucket used as a fallback checkpoint source.
+   *
+   * When the pipeline has no local checkpoint and `bucket` contains no
+   * checkpoint either, it will attempt to fetch the checkpoint from this
+   * location instead.  All connection settings (`endpoint`, `region`,
+   * `provider`, `access_key`, `secret_key`) are shared with `bucket`.
+   *
+   * The pipeline **never writes** to `read_bucket`.
+   *
+   * Must point to a different location than `bucket`.
+   */
+  read_bucket?: string | null
   /**
    * The region that this bucket is in.
    *
@@ -4922,7 +5630,7 @@ export type GetCheckpointSyncStatusResponses = {
   /**
    * Checkpoint sync status retrieved successfully
    */
-  200: CheckpointStatus
+  200: CheckpointSyncStatus
 }
 
 export type GetCheckpointSyncStatusResponse =
@@ -4960,6 +5668,38 @@ export type GetCheckpointStatusResponses = {
 
 export type GetCheckpointStatusResponse =
   GetCheckpointStatusResponses[keyof GetCheckpointStatusResponses]
+
+export type GetCheckpointsData = {
+  body?: never
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: never
+  url: '/v0/pipelines/{pipeline_name}/checkpoints'
+}
+
+export type GetCheckpointsErrors = {
+  /**
+   * Pipeline with that name does not exist
+   */
+  404: ErrorResponse
+  500: ErrorResponse
+  503: ErrorResponse
+}
+
+export type GetCheckpointsError = GetCheckpointsErrors[keyof GetCheckpointsErrors]
+
+export type GetCheckpointsResponses = {
+  /**
+   * Checkpoints retrieved successfully
+   */
+  200: CheckpointMetadata
+}
+
+export type GetCheckpointsResponse = GetCheckpointsResponses[keyof GetCheckpointsResponses]
 
 export type GetPipelineCircuitJsonProfileData = {
   body?: never
@@ -5179,6 +5919,40 @@ export type GetPipelineDataflowGraphResponses = {
 
 export type GetPipelineDataflowGraphResponse =
   GetPipelineDataflowGraphResponses[keyof GetPipelineDataflowGraphResponses]
+
+export type PostPipelineDismissErrorData = {
+  body?: never
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: never
+  url: '/v0/pipelines/{pipeline_name}/dismiss_error'
+}
+
+export type PostPipelineDismissErrorErrors = {
+  /**
+   * Action could not be performed
+   */
+  400: ErrorResponse
+  /**
+   * Pipeline with that name does not exist
+   */
+  404: ErrorResponse
+  500: ErrorResponse
+}
+
+export type PostPipelineDismissErrorError =
+  PostPipelineDismissErrorErrors[keyof PostPipelineDismissErrorErrors]
+
+export type PostPipelineDismissErrorResponses = {
+  /**
+   * Deployment error has been dismissed
+   */
+  200: unknown
+}
 
 export type HttpOutputData = {
   body?: never
@@ -5542,13 +6316,18 @@ export type GetPipelineSamplyProfileData = {
      * Unique pipeline name
      */
     pipeline_name: string
+  }
+  query?: {
     /**
-     * If true, returns 307 redirect if profile collection is in progress.
+     * In a multihost pipeline, the ordinal of the pipeline to sample.
+     */
+    ordinal?: number
+    /**
+     * If true, returns 204 redirect with Retry-After header if profile collection is in progress.
      * If false or not provided, returns the last collected profile.
      */
-    latest: boolean
+    latest?: boolean
   }
-  query?: never
   url: '/v0/pipelines/{pipeline_name}/samply_profile'
 }
 
@@ -5570,13 +6349,9 @@ export type GetPipelineSamplyProfileError =
 
 export type GetPipelineSamplyProfileResponses = {
   /**
-   * Samply profile as a gzip containing the profile that can be inspected by the samply tool
+   * Samply profile as a gzip containing the profile that can be inspected by the samply tool. Note: may return 204 No Content with Retry-After header if latest=true and profiling is in progress.
    */
   200: Blob | File
-  /**
-   * Samply profile collection is in progress. Check the Retry-After header for expected completion time.
-   */
-  204: void
 }
 
 export type GetPipelineSamplyProfileResponse =
@@ -5591,6 +6366,13 @@ export type StartSamplyProfileData = {
     pipeline_name: string
   }
   query?: {
+    /**
+     * In a multihost pipeline, the ordinal of the pipeline to sample.
+     */
+    ordinal?: number
+    /**
+     * The number of seconds to sample for the profile.
+     */
     duration_secs?: number
   }
   url: '/v0/pipelines/{pipeline_name}/samply_profile'
@@ -5633,6 +6415,7 @@ export type PostPipelineStartData = {
      */
     initial?: string
     bootstrap_policy?: BootstrapPolicy
+    dismiss_error?: boolean
   }
   url: '/v0/pipelines/{pipeline_name}/start'
 }
@@ -5922,9 +6705,7 @@ export type GetPipelineInputConnectorStatusResponses = {
   /**
    * Input connector status retrieved successfully
    */
-  200: {
-    [key: string]: unknown
-  }
+  200: InputEndpointStatus
 }
 
 export type GetPipelineInputConnectorStatusResponse =
@@ -6140,9 +6921,7 @@ export type GetPipelineOutputConnectorStatusResponses = {
   /**
    * Output connector status retrieved successfully
    */
-  200: {
-    [key: string]: unknown
-  }
+  200: OutputEndpointStatus
 }
 
 export type GetPipelineOutputConnectorStatusResponse =

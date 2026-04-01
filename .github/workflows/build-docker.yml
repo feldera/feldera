@@ -2,10 +2,17 @@ name: Build and Publish Docker Image
 
 on:
   workflow_call:
+    inputs:
+      artifacts_run_id:
+        description: "Run ID to download build artifacts from (empty = current run)"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
   packages: write
+  actions: read
 
 env:
   REGISTRY: ghcr.io
@@ -34,7 +41,7 @@ jobs:
             docker_platform: linux/arm64
     runs-on: ${{ matrix.runner }}
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-db53e1302c944e29edd6d2af516fff7032b90e3b
+      image: ghcr.io/feldera/feldera-dev:sha-06a694400a6aea1f568da04eaf786bfe84e0a869
 
     steps:
       - name: Show Kubernetes node
@@ -43,17 +50,17 @@ jobs:
           echo "K8S node: ${K8S_NODE_NAME}"
 
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
 
-      - name: Download Binaries
+      - name: Download fda
         id: binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
-          name: feldera-binaries-${{ matrix.rust_target }}
+          name: fda-${{ matrix.rust_target }}
           path: build
 
       - name: Download pipeline-manager
@@ -63,10 +70,12 @@ jobs:
           path: build
 
       - name: Download Compiler Binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: feldera-sql-compiler
           path: build
+          run-id: ${{ inputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
       - name: Make binaries executable
@@ -124,7 +133,7 @@ jobs:
           touch "$RUNNER_TEMP/digests/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digests-${{ env.PLATFORM_PAIR }}
           path: ${{ runner.temp }}/digests/*
@@ -140,7 +149,7 @@ jobs:
     needs: build-docker
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: ${{ runner.temp }}/digests
           pattern: digests-*
@@ -178,7 +187,7 @@ jobs:
         run: |
           docker buildx imagetools inspect ${{ vars.FELDERA_IMAGE_NAME }}:${{ steps.meta.outputs.version }}
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
@@ -188,3 +197,15 @@ jobs:
             "${{ vars.FELDERA_IMAGE_NAME }}" \
             "${{ steps.meta.outputs.version }}" \
             "amd64,arm64"
+
+      # Upload after the image is verified so check-prior-build knows the
+      # sha-{sha} tag actually exists in GHCR (not just that digests were pushed).
+      - name: Signal docker image ready
+        run: echo "${{ steps.meta.outputs.version }}" > /tmp/docker-image-ready.txt
+
+      - name: Upload docker-image-ready artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: docker-image-ready
+          path: /tmp/docker-image-ready.txt
+          retention-days: 7

@@ -1,0 +1,94 @@
+name: Find Run with Artifacts
+description: >
+  Searches prior workflow runs for the given commit and returns the ID of the
+  first run that contains all specified non-expired artifacts.
+  When run-id is provided, only that specific run is checked instead of
+  searching all prior runs.
+
+inputs:
+  required-artifacts:
+    description: Newline-separated list of artifact names that must all be present.
+    required: true
+  token:
+    description: GitHub token with actions:read permission.
+    required: true
+  workflow-file:
+    description: >
+      Workflow filename to search when no run-id is provided (e.g. ci.yml).
+      Ignored when run-id is set.
+    required: false
+    default: ci.yml
+  run-id:
+    description: >
+      If set, check only this specific run rather than searching all prior runs
+      for the commit.
+    required: false
+    default: ""
+
+outputs:
+  run-id:
+    description: >
+      Run ID of the eligible run that contains all required artifacts, or empty
+      string if none was found.
+    value: ${{ steps.find.outputs.run_id }}
+
+runs:
+  using: composite
+  steps:
+    - name: Find run with all artifacts
+      id: find
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REQUIRED_ARTIFACTS: ${{ inputs.required-artifacts }}
+        WORKFLOW_FILE: ${{ inputs.workflow-file }}
+        CHECK_RUN_ID: ${{ inputs.run-id }}
+        CURRENT_RUN_ID: ${{ github.run_id }}
+        REPOSITORY: ${{ github.repository }}
+        SHA: ${{ github.sha }}
+      run: |
+        mapfile -t required < <(
+          printf '%s\n' "$REQUIRED_ARTIFACTS" \
+            | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+            | grep -v '^$'
+        )
+
+        # Build the list of run IDs to check.
+        if [ -n "$CHECK_RUN_ID" ]; then
+          run_ids="$CHECK_RUN_ID"
+        else
+          run_ids=$(curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/runs?head_sha=${SHA}&per_page=20" \
+            | jq -r --argjson cur "$CURRENT_RUN_ID" \
+              '.workflow_runs[] | select(.id != $cur) | .id') || true
+        fi
+
+        found_run_id=""
+        for run_id in $run_ids; do
+          names=$(curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=200" \
+            | jq -r '.artifacts[] | select(.expired == false) | .name') || continue
+
+          all_found=true
+          for artifact in "${required[@]}"; do
+            if ! printf '%s\n' "$names" | grep -qx "$artifact"; then
+              all_found=false
+              break
+            fi
+          done
+
+          if $all_found; then
+            echo "Found all required artifacts in run $run_id"
+            found_run_id="$run_id"
+            break
+          fi
+        done
+
+        if [ -z "$found_run_id" ]; then
+          echo "No run found with all required artifacts"
+        fi
+        echo "run_id=${found_run_id}" >> "$GITHUB_OUTPUT"

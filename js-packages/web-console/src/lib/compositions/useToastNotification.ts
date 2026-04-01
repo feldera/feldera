@@ -1,9 +1,10 @@
 import { toast } from 'svelte-french-toast'
 
 export const useToast = () => {
-  const toastError = (error: Error, durationMs?: number) => {
+  const showToastError = (scope: string, error: Error, durationMs?: number) => {
     try {
-      toast.error(error.message, {
+      const message = scope ? `${scope}: ${error.message}` : error.message
+      toast.error(message, {
         className: 'text-lg !max-w-[500px] whitespace-pre-wrap',
         duration: durationMs
       })
@@ -12,16 +13,19 @@ export const useToast = () => {
       console.log('Original error: ', error)
     }
   }
+  const toastError = (scope: string) => (error: Error, durationMs?: number) => {
+    showToastError(scope, error, durationMs)
+  }
   return {
     toastError,
-    catchError<Args extends any[], R>(f: (...args: Args) => R, durationMs?: number) {
+    catchError<Args extends any[], R>(scope: string, f: (...args: Args) => R, durationMs?: number) {
       return (...args: Args) => {
         try {
           return f(...args)
         } catch (e) {
           if (e instanceof Error) {
             requestAnimationFrame(() => {
-              toastError(e, durationMs)
+              showToastError(scope, e, durationMs)
             })
           }
           return undefined

@@ -70,12 +70,22 @@ but always return a Boolean value (sometimes nullable):
     <td>result is not nullable</td>
   </tr>
   <tr>
-    <td><a id="between"></a><code>BETWEEN ... AND ...</code></td>
+    <td><a id="between"></a><code>BETWEEN [ASYMMETRIC] ... AND ...</code></td>
     <td><code>x BETWEEN a AND b</code> is the same as <code>a &lt;= x AND x &lt;= b</code></td>
     <td>inclusive at both endpoints</td>
   </tr>
   <tr>
-    <td><a id="notbetween"></a><code>NOT BETWEEN ... AND ...</code></td>
+    <td><a id="notbetween"></a><code>NOT BETWEEN [ASYMMETRIC] ... AND ...</code></td>
+    <td>The <code>NOT</code> of the previous operator</td>
+    <td>not inclusive at either endpoints</td>
+  </tr>
+  <tr>
+    <td><a id="symmetric-between"></a><code>BETWEEN SYMMETRIC ... AND ...</code></td>
+    <td><code>x BETWEEN a AND b</code> is the same as <code>(a &lt;= x AND x &lt;= b) OR (b &lt;= x AND x &lt;= a)</code></td>
+    <td>inclusive at both endpoints; order of endpoints does not matter</td>
+  </tr>
+  <tr>
+    <td><a id="symmetric-notbetween"></a><code>NOT BETWEEN SYMMETRIC ... AND ...</code></td>
     <td>The <code>NOT</code> of the previous operator</td>
     <td>not inclusive at either endpoint</td>
   </tr>

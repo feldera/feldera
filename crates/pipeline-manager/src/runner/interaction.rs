@@ -24,10 +24,10 @@ use crate::db::types::resources_status::ResourcesStatus;
 use actix_http::encoding::Decoder;
 use feldera_types::runtime_status::RuntimeStatus;
 
-/// Max non-streaming HTTP response body returned by the pipeline.
+/// Max non-streaming decompressed HTTP response body size returned by the pipeline.
 /// The awc default is 2MiB, which is not enough to, for example, retrieve
 /// a large circuit profile.
-const RESPONSE_SIZE_LIMIT: usize = 20 * 1024 * 1024;
+const RESPONSE_SIZE_LIMIT: usize = 50 * 1024 * 1024;
 
 pub(crate) struct CachedPipelineDescr {
     pipeline: ExtendedPipelineDescrMonitoring,
@@ -211,6 +211,7 @@ impl RunnerInteraction {
         endpoint: &str,
         query_string: &str,
         timeout: Option<Duration>,
+        body_size_limit: Option<usize>,
     ) -> Result<HttpResponse, ManagerError> {
         // Perform request to the pipeline
         let url = format_pipeline_url(
@@ -263,21 +264,24 @@ impl RunnerInteraction {
         // Build the HTTP response with the original status
         let mut response_builder = HttpResponse::build(status);
 
-        // Add all the same headers as the original response,
-        // excluding `Connection` as this is proxy, as per:
-        // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection#Directives
-        for (header_name, header_value) in original_response
-            .headers()
-            .iter()
-            .filter(|(h, _)| *h != "connection")
-        {
+        // Add all the same headers as the original response, excluding:
+        // - `connection`: hop-by-hop header, must not be forwarded by proxies
+        //   (https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection#Directives)
+        // - `content-encoding`: awc auto-decompresses the body, so the body we forward is already
+        //   decoded — forwarding the original Content-Encoding would make the caller try to
+        //   decompress an already-plain body.
+        // - `content-length`: after decompression the body size differs from the
+        //   original Content-Length; let actix-web recompute it.
+        for (header_name, header_value) in original_response.headers().iter().filter(|(h, _)| {
+            *h != "connection" && *h != "content-length" && *h != "content-encoding"
+        }) {
             response_builder.insert_header((header_name.clone(), header_value.clone()));
         }
 
         // Copy over the original response body
         let response_body = original_response
             .body()
-            .limit(RESPONSE_SIZE_LIMIT)
+            .limit(body_size_limit.unwrap_or(RESPONSE_SIZE_LIMIT))
             .await
             .map_err(|e| RunnerError::PipelineInteractionInvalidResponse {
                 pipeline_name: pipeline_name.to_string(),
@@ -301,6 +305,7 @@ impl RunnerInteraction {
         endpoint: &str,
         query_string: &str,
         timeout: Option<Duration>,
+        body_size_limit: Option<usize>,
     ) -> Result<HttpResponse, ManagerError> {
         let (location, cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
         let r = RunnerInteraction::forward_http_request_to_pipeline(
@@ -312,6 +317,7 @@ impl RunnerInteraction {
             endpoint,
             query_string,
             timeout,
+            body_size_limit,
         )
         .await;
 
@@ -339,6 +345,7 @@ impl RunnerInteraction {
                         endpoint,
                         query_string,
                         timeout,
+                        body_size_limit,
                     ))
                     .await
                 }
@@ -482,8 +489,6 @@ impl RunnerInteraction {
         timeout: Option<Duration>, // If no timeout is specified, a default timeout is used
     ) -> Result<HttpResponse, ManagerError> {
         let (location, _cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
-
-        // Build new request to pipeline
         let url = format_pipeline_url(
             if self.common_config.enable_https {
                 "https"
@@ -495,62 +500,7 @@ impl RunnerInteraction {
             request.query_string(),
         );
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
-        let mut new_request = client
-            .request(request.method().clone(), &url)
-            .timeout(timeout)
-            .force_close();
-
-        // Add headers of the original request
-        for header in request
-            .headers()
-            .into_iter()
-            .filter(|(h, _)| *h != "connection")
-        {
-            new_request = new_request.append_header(header);
-        }
-
-        let new_request = new_request.with_sentry_tracing();
-        let request_str = Self::format_request(&new_request);
-
-        // Perform request to the pipeline
-        let response = new_request.send_stream(body).await.map_err(|e| match e {
-            SendRequestError::Timeout => RunnerError::PipelineInteractionUnreachable {
-                pipeline_name: pipeline_name.to_string(),
-                request: request_str.to_string(),
-                error: format_timeout_error_message(timeout, e),
-            },
-            SendRequestError::Connect(ConnectError::Disconnected) => {
-                RunnerError::PipelineInteractionUnreachable {
-                    pipeline_name: pipeline_name.to_string(),
-                    request: request_str.to_string(),
-                    error: format_disconnected_error_message(e),
-                }
-            }
-            _ => RunnerError::PipelineInteractionUnreachable {
-                pipeline_name: pipeline_name.to_string(),
-                request: request_str.to_string(),
-                error: format!("{e}"),
-            },
-        })?;
-
-        let status = response.status();
-
-        if !status.is_success() {
-            info!(
-                pipeline = pipeline_name,
-                pipeline_id = "N/A",
-                "HTTP request to pipeline returned status code {status}. Failed request: {request_str}"
-            );
-        }
-
-        // Build the new HTTP response with the same status, headers and streaming body
-        let mut builder = HttpResponseBuilder::new(status);
-        for header in response.headers().into_iter() {
-            builder.append_header(header);
-        }
-        // Disable compression to avoid gzip frame buffering that causes clients to block
-        builder.insert_header(actix_http::ContentEncoding::Identity);
-        Ok(builder.streaming(response))
+        streaming_proxy(client, &url, pipeline_name, &request, body, timeout).await
     }
 
     pub(crate) async fn get_logs_from_pipeline(
@@ -628,12 +578,184 @@ impl RunnerInteraction {
     }
 
     /// Format HTTP request for logging.
-    fn format_request(request: &ClientRequest) -> String {
+    pub(crate) fn format_request(request: &ClientRequest) -> String {
         format!(
             "{:?} {} {}",
             request.get_version(),
             request.get_method(),
             request.get_uri()
         )
+    }
+}
+
+/// Core streaming proxy: forwards `request` + `body` to `url` and streams
+/// the response back. Extracted from [`RunnerInteraction`] so it can be
+/// unit-tested without a database.
+///
+/// Strips the client's `Accept-Encoding` and forces `Content-Encoding: identity`
+/// on the response (prevents gzip frame buffering that blocks streaming clients).
+pub(crate) async fn streaming_proxy(
+    client: &awc::Client,
+    url: &str,
+    pipeline_name: &str,
+    request: &HttpRequest,
+    body: Payload,
+    timeout: Duration,
+) -> Result<HttpResponse, ManagerError> {
+    let mut new_request = client
+        .request(request.method().clone(), url)
+        .timeout(timeout)
+        .force_close()
+        .no_decompress();
+
+    // Strip `Accept-Encoding` to prevent compressed responses from the pipeline —
+    // compression causes gzip frame buffering that blocks streaming clients (see the
+    // `Content-Encoding: identity` override below). `.no_decompress()` above suppresses
+    // awc's own `Accept-Encoding` header; here we also strip the client's.
+    for header in request
+        .headers()
+        .into_iter()
+        .filter(|(h, _)| *h != "connection" && *h != "accept-encoding")
+    {
+        new_request = new_request.append_header(header);
+    }
+
+    let new_request = new_request.with_sentry_tracing();
+    let request_str = RunnerInteraction::format_request(&new_request);
+
+    // Perform request to the pipeline
+    let response = new_request.send_stream(body).await.map_err(|e| match e {
+        SendRequestError::Timeout => RunnerError::PipelineInteractionUnreachable {
+            pipeline_name: pipeline_name.to_string(),
+            request: request_str.to_string(),
+            error: format_timeout_error_message(timeout, e),
+        },
+        SendRequestError::Connect(ConnectError::Disconnected) => {
+            RunnerError::PipelineInteractionUnreachable {
+                pipeline_name: pipeline_name.to_string(),
+                request: request_str.to_string(),
+                error: format_disconnected_error_message(e),
+            }
+        }
+        _ => RunnerError::PipelineInteractionUnreachable {
+            pipeline_name: pipeline_name.to_string(),
+            request: request_str.to_string(),
+            error: format!("{e}"),
+        },
+    })?;
+
+    let status = response.status();
+
+    if !status.is_success() {
+        info!(
+            pipeline = pipeline_name,
+            pipeline_id = "N/A",
+            "HTTP request to pipeline returned status code {status}. Failed request: {request_str}"
+        );
+    }
+
+    // Build the new HTTP response with the same status, headers and streaming body
+    let mut builder = HttpResponseBuilder::new(status);
+    for header in response.headers().into_iter() {
+        builder.append_header(header);
+    }
+    // Disable compression to avoid gzip frame buffering that causes clients to block
+    builder.insert_header(actix_http::ContentEncoding::Identity);
+    Ok(builder.streaming(response))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::body::to_bytes;
+    use actix_web::test::TestRequest;
+    use wiremock::matchers::{header_exists, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn setup() {
+        crate::ensure_default_crypto_provider();
+    }
+
+    /// Build `(HttpRequest, web::Payload)` for a GET with optional headers.
+    fn test_get_request(headers: &[(&str, &str)]) -> (HttpRequest, Payload) {
+        use actix_web::FromRequest as _;
+        let mut builder = TestRequest::get();
+        for &(k, v) in headers {
+            builder = builder.insert_header((k, v));
+        }
+        let (req, mut inner_payload) = builder.to_http_parts();
+        // web::Payload has a private inner field, so use the FromRequest impl
+        // (which is `ready(Ok(Payload(payload.take())))`) to construct it safely.
+        let web_payload = Payload::from_request(&req, &mut inner_payload)
+            .into_inner()
+            .unwrap();
+        (req, web_payload)
+    }
+
+    /// Read the full body of an HttpResponse returned by `streaming_proxy`.
+    async fn read_body(resp: HttpResponse) -> Vec<u8> {
+        to_bytes(resp.into_body()).await.unwrap().to_vec()
+    }
+
+    /// Test that streaming_proxy strips Accept-Encoding from the forwarded request
+    /// (verified via wiremock expect(0)) and forces Content-Encoding: identity
+    /// on the response.
+    #[actix_web::test]
+    async fn test_streaming_proxy() {
+        setup();
+        let mock_server = MockServer::start().await;
+
+        let plain = b"{\"profile\":\"data\"}";
+
+        // Fallback: matches any GET regardless of headers, returns the plain body.
+        // Registered first so wiremock checks it *last*.
+        Mock::given(method("GET"))
+            .and(path("/dump_json_profile"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(plain.to_vec())
+                    .insert_header("content-type", "application/json"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        // Registered second so wiremock checks it *first*: if accept-encoding
+        // is present this more-specific mock matches instead of the fallback.
+        // expect(0) makes the test fail if this mock is ever hit — proving the
+        // proxy stripped the header before it reached the upstream.
+        Mock::given(method("GET"))
+            .and(path("/dump_json_profile"))
+            .and(header_exists("accept-encoding"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(0)
+            .named("should-not-receive-accept-encoding")
+            .mount(&mock_server)
+            .await;
+
+        let url = format!("{}/dump_json_profile", mock_server.uri());
+        let client = awc::Client::default();
+
+        // Even though the original client sends Accept-Encoding, the proxy strips it.
+        let (req, payload) = test_get_request(&[("accept-encoding", "gzip")]);
+        let resp = streaming_proxy(
+            &client,
+            &url,
+            "test-pipeline",
+            &req,
+            payload,
+            Duration::from_secs(10),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(resp.status(), 200);
+        assert_eq!(
+            resp.headers().get("content-encoding").unwrap(),
+            "identity",
+            "streaming_proxy must force Content-Encoding: identity"
+        );
+        let body = read_body(resp).await;
+        assert_eq!(body, plain);
+        // Dropping mock_server verifies the expect(0) assertion.
     }
 }

@@ -9,7 +9,6 @@ import org.apache.calcite.sql.SqlOperandCountRange;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.type.SqlOperandMetadata;
 import org.apache.calcite.sql.type.SqlOperandTypeChecker;
-import org.apache.calcite.sql.type.SqlOperandTypeInference;
 import org.apache.calcite.sql.validate.SqlUserDefinedAggFunction;
 import org.apache.calcite.util.Optionality;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -63,11 +62,6 @@ public class SqlUserDefinedAggregationFunction extends SqlUserDefinedAggFunction
 
     public boolean isLinear() {
         return this.description.linear;
-    }
-
-    @Override
-    public @Nullable SqlOperandTypeInference getOperandTypeInference() {
-        return super.getOperandTypeInference();
     }
 
     @Override

@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.StubsWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCratesWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
+import org.dbsp.sqlCompiler.compiler.sql.MultiCrateTests;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
@@ -55,19 +56,30 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Base class for SQL-based tests. */
+/** Base class for SQL-based tests: collects all tests that generate Rust from a single derived class
+ * and generates a single Rust file. */
 public class BaseSQLTests {
+    public static final String CARGO_LOCK = "Cargo.lock";
+
     // Debugging: set to true to only compile SQL
     public static final boolean skipRust = false;
     // Debugging: set to only accept some tests
     public static final Predicate<CompilerCircuitStream> acceptTest = x -> true;
+
+    public static void setupCargoLock() throws IOException {
+        Files.copy(Path.of(BaseSQLTests.PROJECT_DIRECTORY, "..", BaseSQLTests.CARGO_LOCK),
+                Path.of(BaseSQLTests.RUST_DIRECTORY, "..", BaseSQLTests.CARGO_LOCK),
+                StandardCopyOption.REPLACE_EXISTING);
+    }
 
     /** Override this method to prepare the tables on
      * which the tests are built. */
@@ -99,27 +111,27 @@ public class BaseSQLTests {
     }
 
     @SuppressWarnings("unused")
-    protected void showPlan() {
+    public static void showPlan() {
         Logger.INSTANCE.setLoggingLevel(SqlToRelCompiler.class, 2);
     }
 
     @SuppressWarnings("unused")
-    protected void instrumentApply() {
+    public static void instrumentApply() {
         Logger.INSTANCE.setLoggingLevel(LowerCircuitVisitor.class, 2);
     }
 
     @SuppressWarnings("unused")
-    protected void showMonotone() {
+    public static void showMonotone() {
         Logger.INSTANCE.setLoggingLevel(MonotoneAnalyzer.class, 2);
     }
 
     @SuppressWarnings("unused")
-    protected void showFinal() {
+    public static void showFinal() {
         Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 1);
     }
 
     @SuppressWarnings("unused")
-    protected void showFinalVerbose(int verbosity) {
+    public static void showFinalVerbose(int verbosity) {
         Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, verbosity);
     }
 
@@ -164,12 +176,22 @@ public class BaseSQLTests {
     }
 
     public void statementsFailingInCompilation(String statements, String substring) {
+        Utilities.enforce(!substring.isEmpty(), () -> "Missing expected error string in test");
         this.statementsFailingInCompilation(statements, substring, false);
     }
 
     public static void compileAndTestRust(boolean quiet) throws IOException, InterruptedException {
-        if (!BaseSQLTests.skipRust)
+        if (!BaseSQLTests.skipRust) {
+            BaseSQLTests.setupCargoLock();
             Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, quiet);
+        }
+    }
+
+    public static void compileAndCheckRust(boolean quiet) throws IOException, InterruptedException {
+        if (!BaseSQLTests.skipRust) {
+            BaseSQLTests.setupCargoLock();
+            Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, quiet);
+        }
     }
 
     /** Compile a set of statements that are expected to give a warning at compile time.
@@ -230,6 +252,34 @@ public class BaseSQLTests {
         script.println(contents);
         script.close();
         return file;
+    }
+
+    /** Enumerate the SQL files in the QA repository.
+     * The assumption is that this repository has been checked out in parallel with feldera. */
+    public static List<File> getQATests() {
+        List<File> result = new ArrayList<>();
+        String dir = "../../../feldera-qa";
+        File file = new File(dir);
+        if (file.exists()) {
+            File[] directories = file.listFiles();
+            if (directories == null)
+                return result;
+            Arrays.sort(directories);
+            for (File d: directories) {
+                File[] files = d.listFiles();
+                if (files == null)
+                    continue;
+                for (File c: files) {
+                    // The following eliminate some fda scripts
+                    if (c.getName().contains("adhoc")) continue;
+                    if (c.getName().matches("query.*view.sql")) continue;
+                    if (c.getName().endsWith(".sql")) {
+                        result.add(c);
+                    }
+                }
+            }
+        }
+        return result;
     }
 
     public static File createInputScript(String contents) throws IOException {
@@ -313,6 +363,11 @@ public class BaseSQLTests {
             outputStream.close();
         stubsWriter.write(compiler);
         if (!skipRust) {
+            if (multiCrates) {
+                MultiCrateTests.setupCargoLock();
+            } else {
+                BaseSQLTests.setupCargoLock();
+            }
             if (check) {
                 Utilities.compileAndCheckRust(directory, true, testCrate);
             } else {
@@ -352,7 +407,7 @@ public class BaseSQLTests {
 
     public CompilerOptions testOptions() {
         CompilerOptions options = new CompilerOptions();
-        if (System.getenv("CI") != null)
+        if (Utilities.inCI())
             // Set to compile to multiple crates
             options.ioOptions.crates = "x";
         options.languageOptions.throwOnError = true;

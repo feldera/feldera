@@ -84,7 +84,7 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
         this.interned = interned;
     }
 
-    private SqlExtendedColumnDeclaration(
+    public SqlExtendedColumnDeclaration(
             SqlParserPos pos, SqlIdentifier name, SqlDataTypeSpec dataType, @Nullable SqlNode expression,
             ColumnStrategy strategy, List<SqlIdentifier> foreignKeyTables, List<SqlIdentifier> foreignKeyColumns,
             boolean primaryKey, @Nullable SqlNode lateness, @Nullable SqlNode watermark, @Nullable SqlNode defaultValue,

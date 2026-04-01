@@ -191,7 +191,7 @@ pub(crate) async fn http_output(
             &endpoint,
             req,
             body,
-            None,
+            Some(Duration::MAX),
         )
         .await
 }
@@ -296,6 +296,7 @@ pub(crate) async fn post_pipeline_input_connector_action(
             &format!("input_endpoints/{encoded_endpoint_name}/{action}"),
             "",
             None,
+            None,
         )
         .await?;
 
@@ -326,7 +327,7 @@ pub(crate) async fn post_pipeline_input_connector_action(
         (status = OK
             , description = "Input connector status retrieved successfully"
             , content_type = "application/json"
-            , body = Object),
+            , body = InputEndpointStatus),
         (status = NOT_FOUND
             , body = ErrorResponse
             , description = "Pipeline, table and/or input connector with that name does not exist"
@@ -378,6 +379,7 @@ pub(crate) async fn get_pipeline_input_connector_status(
             &format!("input_endpoints/{encoded_endpoint_name}/stats"),
             "",
             None,
+            None,
         )
         .await?;
 
@@ -399,7 +401,7 @@ pub(crate) async fn get_pipeline_input_connector_status(
         (status = OK
             , description = "Output connector status retrieved successfully"
             , content_type = "application/json"
-            , body = Object),
+            , body = OutputEndpointStatus),
         (status = NOT_FOUND
             , body = ErrorResponse
             , description = "Pipeline, view and/or output connector with that name does not exist"
@@ -450,6 +452,7 @@ pub(crate) async fn get_pipeline_output_connector_status(
             Method::GET,
             &format!("output_endpoints/{encoded_endpoint_name}/stats"),
             "",
+            None,
             None,
         )
         .await?;
@@ -506,6 +509,7 @@ pub(crate) async fn get_pipeline_stats(
             "stats",
             request.query_string(),
             None,
+            None,
         )
         .await
 }
@@ -561,6 +565,7 @@ pub(crate) async fn get_pipeline_metrics(
             "metrics",
             request.query_string(),
             None,
+            None,
         )
         .await
 }
@@ -613,6 +618,7 @@ pub(crate) async fn get_pipeline_time_series(
             Method::GET,
             "time_series",
             request.query_string(),
+            None,
             None,
         )
         .await
@@ -673,7 +679,7 @@ pub(crate) async fn get_pipeline_time_series_stream(
             "time_series_stream",
             request,
             body,
-            None,
+            Some(Duration::MAX),
         )
         .await
 }
@@ -716,17 +722,18 @@ pub(crate) async fn get_pipeline_circuit_profile(
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
+    body: web::Payload,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
     state
         .runner
-        .forward_http_request_to_pipeline_by_name(
+        .forward_streaming_http_request_to_pipeline_by_name(
             client.as_ref(),
             *tenant_id,
             &pipeline_name,
-            Method::GET,
             "dump_profile",
-            request.query_string(),
+            request,
+            body,
             Some(Duration::from_secs(120)),
         )
         .await
@@ -770,20 +777,19 @@ pub(crate) async fn get_pipeline_circuit_json_profile(
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
+    body: web::Payload,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
 
-    // Get the JSON profile from the pipeline and return it directly
-    // The Compress middleware will automatically compress the response based on Accept-Encoding
     state
         .runner
-        .forward_http_request_to_pipeline_by_name(
+        .forward_streaming_http_request_to_pipeline_by_name(
             client.as_ref(),
             *tenant_id,
             &pipeline_name,
-            Method::GET,
             "dump_json_profile",
-            request.query_string(),
+            request,
+            body,
             Some(Duration::from_secs(120)),
         )
         .await
@@ -912,6 +918,7 @@ pub(crate) async fn post_pipeline_rebalance(
             "rebalance",
             "",
             Some(Duration::from_secs(120)),
+            None,
         )
         .await
 }
@@ -976,6 +983,7 @@ pub(crate) async fn sync_checkpoint(
                 "checkpoint/sync",
                 request.query_string(),
                 Some(Duration::from_secs(120)),
+                None,
             )
             .await
     }
@@ -1044,6 +1052,7 @@ pub(crate) async fn checkpoint_pipeline(
                 "checkpoint",
                 request.query_string(),
                 Some(Duration::from_secs(120)),
+                None,
             )
             .await
     }
@@ -1099,6 +1108,7 @@ pub(crate) async fn get_checkpoint_status(
             "checkpoint_status",
             request.query_string(),
             None,
+            None,
         )
         .await
 }
@@ -1116,7 +1126,7 @@ pub(crate) async fn get_checkpoint_status(
         (status = OK
          , description = "Checkpoint sync status retrieved successfully"
          , content_type = "application/json"
-         , body = CheckpointStatus),
+         , body = CheckpointSyncStatus),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
@@ -1152,6 +1162,7 @@ pub(crate) async fn get_checkpoint_sync_status(
             Method::GET,
             "checkpoint/sync_status",
             request.query_string(),
+            None,
             None,
         )
         .await
@@ -1206,6 +1217,7 @@ pub(crate) async fn get_checkpoints(
             Method::GET,
             "checkpoints",
             request.query_string(),
+            None,
             None,
         )
         .await
@@ -1262,6 +1274,7 @@ pub(crate) async fn start_samply_profile(
             Method::POST,
             "samply_profile",
             request.query_string(),
+            None,
             None,
         )
         .await
@@ -1383,6 +1396,7 @@ pub(crate) async fn get_pipeline_heap_profile(
             "heap_profile",
             request.query_string(),
             None,
+            None,
         )
         .await
 }
@@ -1430,6 +1444,7 @@ pub(crate) async fn post_pipeline_pause(
             Method::GET,
             "pause",
             "",
+            None,
             None,
         )
         .await?;
@@ -1494,6 +1509,7 @@ pub(crate) async fn post_pipeline_resume(
             Method::GET,
             "start", // For backward compatibility this is not changed
             "",
+            None,
             None,
         )
         .await?;
@@ -1583,6 +1599,7 @@ pub(crate) async fn post_pipeline_activate(
                 "activate",
                 request.query_string(),
                 None,
+                None,
             )
             .await?;
         state
@@ -1659,6 +1676,7 @@ pub(crate) async fn post_pipeline_approve(
                 Method::POST,
                 "approve",
                 request.query_string(),
+                None,
                 None,
             )
             .await?;
@@ -1836,6 +1854,7 @@ pub(crate) async fn completion_token(
             &format!("input_endpoints/{encoded_endpoint_name}/completion_token"),
             "",
             None,
+            None,
         )
         .await?;
 
@@ -1908,6 +1927,7 @@ pub(crate) async fn completion_status(
             "completion_status",
             request.query_string(),
             None,
+            None,
         )
         .await?;
 
@@ -1965,6 +1985,7 @@ pub(crate) async fn start_transaction(
             "start_transaction",
             request.query_string(),
             None,
+            None,
         )
         .await?;
 
@@ -2020,6 +2041,7 @@ pub(crate) async fn commit_transaction(
             Method::POST,
             "commit_transaction",
             request.query_string(),
+            None,
             None,
         )
         .await?;

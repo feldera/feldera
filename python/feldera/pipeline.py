@@ -33,7 +33,7 @@ from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.rest.sql_table import SQLTable
 from feldera.rest.sql_view import SQLView
 from feldera.runtime_config import RuntimeConfig
-from feldera.stats import PipelineStatistics
+from feldera.stats import InputEndpointStatus, OutputEndpointStatus, PipelineStatistics
 from feldera.types import CheckpointMetadata
 
 
@@ -84,14 +84,13 @@ class Pipeline:
         :param timeout: Maximum time to wait in seconds. If None, waits forever (default: None)
         :raises TimeoutError: If the expected status is not reached within the timeout
         """
-        start_time = time.time()
-
+        start_time = time.monotonic()
         while True:
             current_status = self.status()
             if current_status == expected_status:
                 return
 
-            if timeout is not None and time.time() - start_time >= timeout:
+            if timeout is not None and time.monotonic() - start_time >= timeout:
                 raise TimeoutError(
                     f"Pipeline did not reach {expected_status.name} status within {timeout} seconds"
                 )
@@ -168,7 +167,7 @@ class Pipeline:
         update_format: str = "raw",
         force: bool = False,
         wait: bool = True,
-    ):
+    ) -> str:
         """
         Push this JSON data to the specified table of the pipeline.
 
@@ -183,6 +182,8 @@ class Pipeline:
         :param force: `True` to push data even if the pipeline is paused. `False` by default.
         :param wait: If True, blocks until this input has been processed by the pipeline
 
+        :returns: The completion token to this input.
+
         :raises ValueError: If the update format is invalid.
         :raises FelderaAPIError: If the pipeline is not in a valid state to push data.
         :raises RuntimeError: If the pipeline is paused and `force` is not set to `True`.
@@ -196,7 +197,7 @@ class Pipeline:
             raise ValueError("update_format must be one of raw or insert_delete")
 
         array = True if isinstance(data, list) else False
-        self.client.push_to_pipeline(
+        return self.client.push_to_pipeline(
             self.name,
             table_name,
             "json",
@@ -244,6 +245,26 @@ class Pipeline:
         """
 
         self.client.resume_connector(self.name, table_name, connector_name)
+
+    def input_connector_stats(
+        self, table_name: str, connector_name: str
+    ) -> InputEndpointStatus:
+        """
+        Get the status of the specified input connector.
+        """
+        return InputEndpointStatus.from_dict(
+            self.client.input_connector_stats(self.name, table_name, connector_name)
+        )
+
+    def output_connector_stats(
+        self, view_name: str, connector_name: str
+    ) -> OutputEndpointStatus:
+        """
+        Get the status of the specified output connector.
+        """
+        return OutputEndpointStatus.from_dict(
+            self.client.output_connector_stats(self.name, view_name, connector_name)
+        )
 
     def listen(self, view_name: str) -> OutputHandler:
         """
@@ -392,7 +413,7 @@ class Pipeline:
         have been processed).
 
         :param idle_interval_s: Idle interval duration (default is 5.0 seconds).
-        :param timeout_s: Timeout waiting for idle (default is 600.0 seconds).
+        :param timeout_s: Timeout waiting for idle (`None` = no timeout is enforced).
         :param poll_interval_s: Polling interval, should be set substantially
             smaller than the idle interval (default is 0.2 seconds).
         :raises ValueError: If idle interval is larger than timeout, poll interval
@@ -475,6 +496,7 @@ metrics"""
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
+        dismiss_error: bool = True,
     ):
         """
         .. _start:
@@ -489,12 +511,17 @@ metrics"""
         :param timeout_s: The maximum time (in seconds) to wait for the
             pipeline to start.
         :param wait: Set True to wait for the pipeline to start. True by default
-
+        :param dismiss_error: Set True to dismiss any deployment error before starting;
+            set False to make it fail in that case. True by default.
         :raises RuntimeError: If the pipeline is not in STOPPED state.
         """
 
         self.client.start_pipeline(
-            self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s
+            self.name,
+            bootstrap_policy=bootstrap_policy,
+            wait=wait,
+            timeout_s=timeout_s,
+            dismiss_error=dismiss_error,
         )
 
     def start_paused(
@@ -502,13 +529,25 @@ metrics"""
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
+        dismiss_error: bool = True,
     ):
         """
         Starts the pipeline in the paused state.
+
+        :param bootstrap_policy: The bootstrap policy to use.
+        :param wait: Set True to wait for the pipeline to start. True by default.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            pipeline to start (defaults to `None` = no timeout is enforced).
+        :param dismiss_error: Set True to dismiss any deployment error before starting;
+            set False to make it fail in that case. True by default.
         """
 
         return self.client.start_pipeline_as_paused(
-            self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s
+            self.name,
+            bootstrap_policy=bootstrap_policy,
+            wait=wait,
+            timeout_s=timeout_s,
+            dismiss_error=dismiss_error,
         )
 
     def start_standby(
@@ -516,19 +555,32 @@ metrics"""
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
+        dismiss_error: bool = True,
     ):
         """
         Starts the pipeline in the standby state.
+
+        :param bootstrap_policy: The bootstrap policy to use.
+        :param wait: Set True to wait for the pipeline to start. True by default.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            pipeline to start (defaults to `None` = no timeout is enforced).
+        :param dismiss_error: Set True to dismiss any deployment error before starting;
+            set False to make it fail in that case. True by default.
         """
 
         self.client.start_pipeline_as_standby(
-            self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s
+            self.name,
+            bootstrap_policy=bootstrap_policy,
+            wait=wait,
+            timeout_s=timeout_s,
+            dismiss_error=dismiss_error,
         )
 
     def restart(
         self,
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         timeout_s: Optional[float] = None,
+        dismiss_error: bool = True,
     ):
         """
         Restarts the pipeline.
@@ -540,10 +592,16 @@ metrics"""
         :param bootstrap_policy: The bootstrap policy to use.
         :param timeout_s: The maximum time (in seconds) to wait for the
             pipeline to restart.
+        :param dismiss_error: Set True to dismiss any deployment error before starting;
+            set False to make it fail in that case. True by default.
         """
 
         self.stop(force=True, timeout_s=timeout_s)
-        self.start(bootstrap_policy=bootstrap_policy, timeout_s=timeout_s)
+        self.start(
+            bootstrap_policy=bootstrap_policy,
+            timeout_s=timeout_s,
+            dismiss_error=dismiss_error,
+        )
 
     def pause(self, wait: bool = True, timeout_s: Optional[float] = None):
         """
@@ -577,6 +635,13 @@ metrics"""
         self.client.stop_pipeline(
             self.name, force=force, wait=wait, timeout_s=timeout_s
         )
+
+    def dismiss_error(self):
+        """
+        Dismisses the `deployment_error` of the pipeline.
+        """
+
+        self.client.dismiss_error_pipeline(self.name)
 
     def approve(self):
         """
@@ -717,7 +782,7 @@ metrics"""
 
         :param wait: If true, will block until the checkpoint completes.
         :param timeout_s: The maximum time (in seconds) to wait for the
-            checkpoint to complete.
+            checkpoint to complete (defaults to `None` = no timeout is enforced).
 
         :return: The checkpoint sequence number.
 
@@ -980,15 +1045,27 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         gen = self.query_tabular(query)
         deque(gen, maxlen=0)
 
-    def clear_storage(self):
+    def clear_storage(
+        self,
+        wait: bool = True,
+        timeout_s: float | None = None,
+        poll_interval_s: float = 0.25,
+    ):
         """
-        Clears the storage of the pipeline if it is currently in use.
-        This action cannot be canceled, and will delete all the pipeline
-        storage.
+        Clears the storage of the pipeline.
+        Once started, this action cannot be canceled, and will delete all the pipeline storage.
+
+        :param wait: Set `True` to wait for the pipeline storage to become cleared,
+            or set `False` to immediately return. Default is `True`.
+        :param timeout_s: Timeout waiting for storage to become cleared.
+            `None` = no timeout is enforced (default). Not used if `wait=False`.
+        :param poll_interval_s: Polling interval at which to check while waiting
+            if storage is cleared (default is every 0.25 seconds). Not used if `wait=False`.
         """
 
-        if self.storage_status() == StorageStatus.INUSE:
-            self.client.clear_storage(self.name)
+        self.client.clear_storage(
+            self.name, wait=wait, timeout_s=timeout_s, poll_interval_s=poll_interval_s
+        )
 
     @property
     def name(self) -> str:
@@ -1236,6 +1313,17 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         self.refresh(PipelineFieldSelector.ALL)
         return self._inner.deployment_config
+
+    def bootstrap_policy(self) -> Optional[BootstrapPolicy]:
+        """
+        Return the bootstrap policy of the pipeline.
+        """
+
+        self.refresh(PipelineFieldSelector.STATUS)
+        if self._inner.bootstrap_policy is None:
+            return None
+        else:
+            return BootstrapPolicy.from_str(self._inner.bootstrap_policy)
 
     def deployment_desired_status(self) -> DeploymentDesiredStatus:
         """

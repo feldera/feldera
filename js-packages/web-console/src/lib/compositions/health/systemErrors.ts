@@ -1,8 +1,7 @@
-import JSONbig from 'true-json-bigint'
-import { groupBy } from '$lib/functions/common/array'
+import { count, groupBy } from '$lib/functions/common/array'
+import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
 import { resolve } from '$lib/functions/svelte'
 import { defaultGithubReportSections, type ReportDetails } from '$lib/services/githubReport'
-import type { ControllerStatus } from '$lib/services/manager'
 import type {
   CompilerOutput,
   ExtendedPipeline,
@@ -25,50 +24,23 @@ export type SystemError<T = any, Report = ReportDetails> = Error & {
 const limitMessage = (text: string | null | undefined, max: number, prefix: string) =>
   ((t) => (t.length > max ? prefix : '') + t.slice(Math.max(0, t.length - max)))(text || '')
 
-export const extractPipelineErrors = (pipeline: ExtendedPipeline): SystemError[] => {
-  if (!pipeline.deploymentError) {
-    return []
-  }
-  const error = pipeline.deploymentError
-  return [
-    (() => ({
-      name: `Error running pipeline ${pipeline.name}`,
-      message: error.message,
-      cause: {
-        entityName: pipeline.name,
-        tag: 'pipelineError',
-        source: resolve(`/pipelines/${pipeline.name}/`),
-        report: {
-          ...defaultGithubReportSections,
-          name: 'Report: pipeline execution error',
-          '1-description':
-            '```\n' + limitMessage(error.message, 1000, '\n...Beginning of the error...') + '\n```',
-          '6-extra': (() => {
-            const programCode =
-              'SQL:\n```\n' +
-              limitMessage(pipeline.programCode, 6600, '\n...Beginning of the code...') +
-              '\n```'
-            const pipelineConfig =
-              'Pipelince config:\n```\n' +
-              JSONbig.stringify(pipeline.runtimeConfig, undefined, '\t') +
-              '\n```\n'
-            return pipelineConfig + programCode
-          })()
-        } as ReportDetails,
-        body: error.details
-      }
-    }))()
-  ]
-}
-export const extractPipelineStderr = (pipeline: ExtendedPipeline): string[] => {
-  if (!pipeline.deploymentError) {
-    return []
-  }
-  return [
-    `Pipeline process returned an error code ${pipeline.deploymentError.error_code}:\n
-${pipeline.deploymentError.message}
-${Object.entries(pipeline.deploymentError.details as Record<string, string>).map((k, v) => `${k}: ${v}\n`)}`
-  ]
+export const numConnectorsWithProblems = (metrics: PipelineMetrics) => {
+  return (
+    count(
+      metrics.inputs,
+      (i) =>
+        (i.metrics.num_parse_errors ?? 0) > 0 ||
+        (i.metrics.num_transport_errors ?? 0) > 0 ||
+        i.health?.status === 'Unhealthy'
+    ) +
+    count(
+      metrics.outputs,
+      (o) =>
+        (o.metrics.num_encode_errors ?? 0) > 0 ||
+        (o.metrics.num_transport_errors ?? 0) > 0 ||
+        o.health?.status === 'Unhealthy'
+    )
+  )
 }
 
 export const programErrorReport = (pipeline: Pipeline) => (pipelineName: string, message: string) =>
@@ -316,139 +288,3 @@ export const programErrorsPerFile = <Report>(errors: SystemError<any, Report>[])
   )
 
 export const pipelineFileNameRegex = '[\\w-_\\.]+'
-
-export const extractPipelineXgressErrors = ({
-  pipelineName,
-  status
-}: {
-  pipelineName: string
-  status: Pick<ControllerStatus, 'inputs' | 'outputs'> | null | 'not running'
-}): SystemError[] => {
-  const stats = status == null || status === 'not running' ? { inputs: [], outputs: [] } : status
-  const source = resolve(`/pipelines/${pipelineName}/`)
-  const stringifyConfig = (config: any) =>
-    `Connector config:\n\`\`\`\n${JSONbig.stringify(config, undefined, '\t')}\n\`\`\`\n`
-  return stats.inputs
-    .flatMap((input) => [
-      ...(input.metrics.num_parse_errors
-        ? [
-            {
-              name: `${input.metrics.num_parse_errors} connector parse errors in ${pipelineName}`,
-              message: `${input.metrics.num_parse_errors} parse errors in the input connector ${input.endpoint_name} of ${pipelineName}`,
-              cause: {
-                entityName: pipelineName,
-                tag: 'xgressError',
-                source,
-                report: {
-                  ...defaultGithubReportSections,
-                  name: `Report: input connector parse errors`,
-                  '6-extra': stringifyConfig(input.config)
-                } as ReportDetails,
-                body: ''
-              }
-            }
-          ]
-        : []),
-      ...(input.metrics.num_transport_errors
-        ? [
-            {
-              name: `${input.metrics.num_transport_errors} connector transport errors in ${pipelineName}`,
-              message: `${input.metrics.num_transport_errors} transport errors in the input connector ${input.endpoint_name} of ${pipelineName}`,
-              cause: {
-                entityName: pipelineName,
-                tag: 'xgressError',
-                source,
-                report: {
-                  ...defaultGithubReportSections,
-                  name: `Report: input connector transport errors`,
-                  '6-extra': stringifyConfig(input.config)
-                } as ReportDetails,
-                body: ''
-              }
-            }
-          ]
-        : [])
-    ])
-    .concat(
-      stats.outputs.flatMap((output) => [
-        ...(output.metrics.num_encode_errors
-          ? [
-              {
-                name: `${output.metrics.num_encode_errors} connector encode errors in ${pipelineName}`,
-                message: `${output.metrics.num_encode_errors} encode errors in the output connector ${output.endpoint_name} of ${pipelineName}`,
-                cause: {
-                  entityName: pipelineName,
-                  tag: 'xgressError',
-                  source,
-                  report: {
-                    ...defaultGithubReportSections,
-                    name: `Report: output connector encode errors`,
-                    '6-extra': stringifyConfig(output.config)
-                  } as ReportDetails,
-                  body: ''
-                }
-              }
-            ]
-          : []),
-        ...(output.metrics.num_transport_errors
-          ? [
-              {
-                name: `${output.metrics.num_transport_errors} connector transport errors in ${pipelineName}`,
-                message: `${output.metrics.num_transport_errors} transport errors in the output connector ${output.endpoint_name} of ${pipelineName}`,
-                cause: {
-                  entityName: pipelineName,
-                  tag: 'xgressError',
-                  source,
-                  report: {
-                    ...defaultGithubReportSections,
-                    name: `Report: output connector transport errors`,
-                    '6-extra': stringifyConfig(output.config)
-                  } as ReportDetails,
-                  body: ''
-                }
-              }
-            ]
-          : [])
-      ])
-    )
-}
-
-export const extractPipelineXgressStderr = ({
-  pipelineName,
-  status
-}: {
-  pipelineName: string
-  status: Pick<ControllerStatus, 'inputs' | 'outputs'> | null | 'not running'
-}): string[] => {
-  const stats = status == null || status === 'not running' ? { inputs: [], outputs: [] } : status
-  return [
-    stats.inputs
-      .flatMap((input) => [
-        ...(input.metrics.num_parse_errors
-          ? [
-              `${input.metrics.num_parse_errors} parse errors in the input connector ${input.endpoint_name} of ${pipelineName}`
-            ]
-          : []),
-        ...(input.metrics.num_transport_errors
-          ? [
-              `${input.metrics.num_transport_errors} transport errors in the input connector ${input.endpoint_name} of ${pipelineName}`
-            ]
-          : [])
-      ])
-      .concat(
-        stats.outputs.flatMap((output) => [
-          ...(output.metrics.num_encode_errors
-            ? [
-                `${output.metrics.num_encode_errors} encode errors in the output connector ${output.endpoint_name} of ${pipelineName}`
-              ]
-            : []),
-          ...(output.metrics.num_transport_errors
-            ? [
-                `${output.metrics.num_transport_errors} transport errors in the output connector ${output.endpoint_name} of ${pipelineName}`
-              ]
-            : [])
-        ])
-      )
-      .join('\n')
-  ]
-}

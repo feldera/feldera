@@ -14,11 +14,12 @@ use chrono::NaiveDate;
 use dbsp::typed_batch::DynBatchReader;
 use dbsp::utils::Tup2;
 use dbsp::{DBData, OrdZSet};
+use delta_kernel::engine::arrow_conversion::TryFromArrow;
 use deltalake::datafusion::prelude::SessionContext;
 use deltalake::kernel::{DataType, StructField};
 use deltalake::operations::create::CreateBuilder;
 use deltalake::protocol::SaveMode;
-use deltalake::{DeltaOps, DeltaTable, DeltaTableBuilder};
+use deltalake::{DeltaTable, DeltaTableBuilder, ensure_table_uri};
 use feldera_sqllib::Variant;
 use feldera_types::config::PipelineConfig;
 use feldera_types::format::json::JsonFlavor;
@@ -231,7 +232,7 @@ where
     .unwrap();
 
     // Write it to the input table.
-    DeltaOps(table)
+    table
         .write(vec![batch])
         .with_save_mode(SaveMode::Append)
         .await
@@ -545,6 +546,7 @@ fn delta_table_output_test(
     table_uri: &str,
     object_store_config: &HashMap<String, String>,
     verify: bool,
+    threads: Option<usize>,
 ) {
     init_logging();
 
@@ -569,12 +571,15 @@ fn delta_table_output_test(
         input_file.write_all(b"\n").unwrap();
     }
 
-    let mut storage_options = object_store_config.clone();
-    storage_options.insert("uri".into(), table_uri.into());
-    storage_options.insert("mode".into(), "truncate".into());
+    let mut storage_options: serde_json::Value = serde_json::to_value(object_store_config).unwrap();
+    storage_options["uri"] = json!(table_uri);
+    storage_options["mode"] = json!("truncate");
+    if let Some(threads) = threads {
+        storage_options["threads"] = json!(threads);
+    }
 
     println!(
-        "delta_table_output_test: {} records, input file: {}, table uri: {table_uri}",
+        "delta_table_output_test: {} records, input file: {}, table uri: {table_uri}, threads: {threads:?}",
         data.len(),
         input_file.path().display(),
     );
@@ -615,9 +620,11 @@ fn delta_table_output_test(
 
     let controller = Controller::with_test_config(
         |workers| {
-            Ok(test_circuit::<DeltaTestStruct>(
+            Ok(test_circuit_with_index::<DeltaTestStruct, DeltaTestKey, _>(
                 workers,
                 &DeltaTestStruct::schema(),
+                &[SqlIdentifier::from("bigint")],
+                |x: &DeltaTestStruct| DeltaTestKey { bigint: x.bigint },
                 &[None],
             ))
         },
@@ -781,7 +788,7 @@ async fn test_follow(
     let mut struct_fields: Vec<_> = vec![];
 
     for f in arrow_schema.fields.iter() {
-        let data_type = DataType::try_from(f.data_type()).unwrap();
+        let data_type = DataType::try_from_arrow(f.data_type()).unwrap();
         struct_fields.push(StructField::new(f.name(), data_type, f.is_nullable()));
     }
 
@@ -798,7 +805,7 @@ async fn test_follow(
         0
     };
 
-    println!("initial table version: {}", input_table.version());
+    println!("initial table version: {}", input_table.version().unwrap());
 
     // Start parquet-to-parquet pipeline.
     let mut input_config = storage_options
@@ -835,8 +842,10 @@ async fn test_follow(
     .await;
 
     // Connect to `output_table_uri`.
+    println!("connecting to output table: {output_table_uri}");
     let mut output_table = Arc::new(
-        DeltaTableBuilder::from_uri(output_table_uri)
+        DeltaTableBuilder::from_url(ensure_table_uri(output_table_uri).unwrap())
+            .unwrap()
             .with_storage_options(storage_options.clone())
             .load()
             .await
@@ -891,7 +900,7 @@ async fn test_follow(
     wait(
         || {
             if let Some(version) = completed_version(&pipeline) {
-                let expected = input_table.version();
+                let expected = input_table.version().unwrap();
                 debug!(
                     "pipeline completed version {version}, expected (initial version) {expected}, waterlines: {:?}",
                     pipeline
@@ -918,7 +927,7 @@ async fn test_follow(
         total_count += chunk.len();
         input_table = write_data_to_table(input_table, &arrow_schema, chunk).await;
 
-        if !test_end_version || input_table.version() <= end_version {
+        if !test_end_version || input_table.version().unwrap() <= end_version {
             expected_output = data[0..total_count]
                 .iter()
                 .filter_map(|x| {
@@ -953,9 +962,9 @@ async fn test_follow(
                 || {
                     if let Some(version) = completed_version(&pipeline) {
                         let expected = if test_end_version {
-                            min(input_table.version(), end_version)
+                            min(input_table.version().unwrap(), end_version)
                         } else {
-                            input_table.version()
+                            input_table.version().unwrap()
                         };
                         debug!("pipeline completed version {version}, expected {expected}, waterlines: {:?}", pipeline.status().input_status().values().next().unwrap().completed_frontier.debug());
                         version == expected
@@ -969,7 +978,7 @@ async fn test_follow(
             .unwrap();
 
         // Wait a bit to make sure the pipeline doesn't process data beyond end_version.
-        if test_end_version && input_table.version() > end_version {
+        if test_end_version && input_table.version().unwrap() > end_version {
             sleep(Duration::from_millis(1000)).await;
         }
 
@@ -1590,7 +1599,7 @@ proptest! {
         // Uncomment to inspect output parquet files produced by the test.
         forget(table_dir);
 
-        delta_table_output_test(data.clone(), &table_uri, &HashMap::new(), true);
+        delta_table_output_test(data.clone(), &table_uri, &HashMap::new(), true, None);
 
 
         // Read delta table unordered.
@@ -1751,8 +1760,8 @@ proptest! {
 
         let table_uri = format!("s3://feldera-delta-table-test/{uuid}/");
         // TODO: enable verification when it's supported for S3.
-        delta_table_output_test(data.clone(), &table_uri, &object_store_config, false);
-        //delta_table_output_test(data.clone(), &table_uri, &object_store_config, false);
+        delta_table_output_test(data.clone(), &table_uri, &object_store_config, false, None);
+        //delta_table_output_test(data.clone(), &table_uri, &object_store_config, false, None);
 
         let mut json_file = delta_table_snapshot_to_json::<DeltaTestStruct>(
             &table_uri,

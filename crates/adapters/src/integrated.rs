@@ -3,14 +3,14 @@ use crate::transport::IntegratedInputEndpoint;
 use crate::{ControllerError, Encoder, InputConsumer, OutputEndpoint};
 use feldera_types::config::{ConnectorConfig, TransportConfig};
 use feldera_types::program_schema::Relation;
-use postgres::PostgresOutputEndpoint;
 use std::sync::Weak;
 
 #[cfg(feature = "with-deltalake")]
-mod delta_table;
+pub mod delta_table;
 mod postgres;
 
 use crate::integrated::postgres::PostgresInputEndpoint;
+pub use crate::integrated::postgres::PostgresOutputEndpoint;
 
 /// An integrated output connector implements both transport endpoint
 /// (`OutputEndpoint`) and `Encoder` traits.  It is used to implement

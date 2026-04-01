@@ -58,8 +58,7 @@
 //!
 //! * An array of "child sizes", one for each of
 //!   [`IndexBlockHeader::n_children`].  Each one of these is the size of the
-//!   corresponding child block, expressed in 512-byte units.  Each block must
-//!   be less than 2 GiB.
+//!   corresponding child block, expressed in 512-byte units.
 //!
 //! # Compression
 //!
@@ -135,6 +134,14 @@ impl BlockHeader {
     }
 }
 
+/// Additional metadata added to the file by the writer.
+#[binrw]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BatchMetadata {
+    /// The number of records with negative weights in the batch.
+    pub negative_weight_count: u64,
+}
+
 /// File trailer block.
 ///
 /// Padded with zeros to exactly fill a 4-kB block.
@@ -166,10 +173,14 @@ pub struct FileTrailer {
 
     /// File offset in bytes of the [FilterBlock].
     ///
-    /// This is 0 if there is no filter block.
+    /// This is 0 if there is no filter block, or if the filter block size is
+    /// bigger than `i32::MAX`.
     pub filter_offset: u64,
 
     /// Size in bytes of the [FilterBlock].
+    ///
+    /// This is 0 if there is no filter block, or if the filter block size is
+    /// bigger than `i32::MAX`.
     pub filter_size: u32,
 
     /// Compatible feature bitmap.
@@ -179,8 +190,7 @@ pub struct FileTrailer {
     /// still read the file (and log that a feature that it does not support is
     /// in use).
     ///
-    /// No compatible features are currently defined.  This bitmap is for future
-    /// expansion.
+    /// One compatible feature is set: [COMPATIBLE_FEATURE_FILTER64].
     pub compatible_features: u64,
 
     /// Incompatible feature bitmap.
@@ -194,7 +204,60 @@ pub struct FileTrailer {
     /// No incompatible features are currently defined.  This bitmap is for
     /// future expansion.
     pub incompatible_features: u64,
+
+    /// File offset in bytes of the [FilterBlock].
+    ///
+    /// This is 0 if there is no filter block, or if the filter block size is
+    /// less than `i32::MAX`.  If this is nonzero, then
+    /// [COMPATIBLE_FEATURE_FILTER64] is set to 1 in
+    /// [FileTrailer::compatible_features].
+    pub filter_offset64: u64,
+
+    /// Size in bytes of the [FilterBlock].
+    ///
+    /// This is 0 if there is no filter block, or if the filter block size is
+    /// less than `i32::MAX`.  If this is nonzero, then
+    /// [COMPATIBLE_FEATURE_FILTER64] is set to 1 in
+    /// [FileTrailer::compatible_features].
+    pub filter_size64: u64,
+
+    /// Additional metadata added to the file by the writer.
+    pub metadata: BatchMetadata,
 }
+
+impl FileTrailer {
+    /// Returns the unsupported compatible features, if any.
+    pub fn unsupported_compatible_features(&self) -> Option<u64> {
+        let unsupported_compatible_features = self.compatible_features
+            & !COMPATIBLE_FEATURE_FILTER64
+            & !COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT;
+        if unsupported_compatible_features != 0 {
+            Some(unsupported_compatible_features)
+        } else {
+            None
+        }
+    }
+
+    /// Returns true if `feature` is set in the compatible feature bitmap.
+    pub fn has_compatible_feature(&self, feature: u64) -> bool {
+        (self.compatible_features & feature) != 0
+    }
+
+    /// Returns true if this file trailer has a 64-bit filter.
+    pub fn has_filter64(&self) -> bool {
+        self.has_compatible_feature(COMPATIBLE_FEATURE_FILTER64)
+    }
+}
+
+/// Bit set to 1 in [FileTrailer::compatible_features] if a file has a Bloom
+/// filter whose size does not fit in 32 bits.
+pub const COMPATIBLE_FEATURE_FILTER64: u64 = 1 << 0;
+
+/// Bit set to 1 in [FileTrailer::compatible_features] if the writer
+/// added the `metadata` field to the trailer, including the `negative_weight_count` field.
+/// This feature is backward and forward compatible, as trailers without this field will be
+/// deserialized as if its value is 0. Conversely, old readers will simply ignore the field.
+pub const COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT: u64 = 1 << 1;
 
 /// Information about a column.
 ///

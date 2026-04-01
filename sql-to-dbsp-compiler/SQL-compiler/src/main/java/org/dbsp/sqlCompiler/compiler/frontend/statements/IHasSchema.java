@@ -25,12 +25,15 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.Properties;
+import org.dbsp.util.Result;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 /** An interface implemented by objects which have a name and a schema */
 public interface IHasSchema extends IHasCalciteObject, ICastable {
@@ -53,8 +56,46 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
 
     /** Return the index of the specified column; -1 if columns is not found */
     default int getColumnIndex(SqlIdentifier id) {
-        ProgramIdentifier ident = Utilities.toIdentifier(id);
+        ProgramIdentifier ident = ProgramIdentifier.fromSqlId(id);
         return this.getColumnIndex(ident);
+    }
+
+    /** Collect the names of all preprocessors from the Properties */
+    default void collectPreprocessors(Set<String> result) {
+        Properties props = this.getProperties();
+        if (props != null) {
+            var connectors = props.getPropertyValue(CreateTableStatement.CONNECTORS);
+            if (connectors != null) {
+                Result<JsonNode> validation = Utilities.validateJson(connectors);
+                if (validation.isErr())
+                    // Validation errors are handled in the compiler front-end,
+                    // so this should not really happen.
+                    return;
+
+                JsonNode json = validation.data();
+                Utilities.enforce(json != null);
+                // None of these "if" statements should "fail" after validation
+                if (json.isArray()) {
+                    for (Iterator<JsonNode> it = json.elements(); it.hasNext(); ) {
+                        JsonNode connector = it.next();
+                        JsonNode preprocess = connector.get(CreateTableStatement.PREPROCESSOR);
+                        if (preprocess != null) {
+                            if (preprocess.isArray()) {
+                                for (Iterator<JsonNode> p = preprocess.elements(); p.hasNext(); ) {
+                                    JsonNode config = p.next();
+                                    if (config.has("name")) {
+                                        JsonNode name = config.get("name");
+                                        if (name.isTextual()) {
+                                            result.add(name.asText());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /** A reduced version of IHasSchema which contains only information that can be obtained from

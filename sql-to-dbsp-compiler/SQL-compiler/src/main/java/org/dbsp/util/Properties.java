@@ -73,7 +73,7 @@ public class Properties implements IJson {
         return result;
     }
 
-    /** Serializatino as JSON for reading back the circuit; different
+    /** Serialization as JSON for reading back the circuit; different
      * from the one above. */
     @Override
     public void asJson(ToJsonInnerVisitor visitor) {
@@ -87,11 +87,8 @@ public class Properties implements IJson {
 
     public static Properties fromJson(JsonNode node) {
         Properties result = new Properties();
-        var it = node.fields();
-        while (it.hasNext()) {
-            var entry = it.next();
+        for (var entry: node.properties())
             result.propertyValue.put(entry.getKey(), new PropertyValue(entry.getValue().asText()));
-        }
         return result;
     }
 }

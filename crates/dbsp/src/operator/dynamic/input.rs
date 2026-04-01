@@ -1,7 +1,5 @@
-use itertools::Itertools;
-
 use crate::{
-    Circuit, DBData, DynZWeight, NumEntries, Stream, ZWeight,
+    Circuit, DBData, DynZWeight, NumEntries, Runtime, Stream, ZWeight,
     algebra::{
         IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet, OrdZSetFactories, ZSet,
     },
@@ -165,7 +163,7 @@ where
     B: IndexedZSet,
     U: DataTrait + ?Sized,
 {
-    upsert_factories: InputUpsertFactories<B>,
+    upsert_factories: InputUpsertFactories<B, U>,
     input_pair_factory: &'static dyn Factory<DynPair<B::Key, DynUpdate<B::Val, U>>>,
     input_pairs_factory: &'static dyn Factory<DynPairs<B::Key, DynUpdate<B::Val, U>>>,
     upsert_pair_factory: &'static dyn Factory<DynPair<B::Key, DynOpt<DynUnit>>>,
@@ -183,7 +181,7 @@ where
         UType: DBData + Erase<U>,
     {
         Self {
-            upsert_factories: InputUpsertFactories::new::<KType, VType>(),
+            upsert_factories: InputUpsertFactories::new::<KType, VType, UType>(),
             input_pair_factory: WithFactory::<Tup2<KType, Update<VType, UType>>>::FACTORY,
             input_pairs_factory: WithFactory::<LeanVec<Tup2<KType, Update<VType, UType>>>>::FACTORY,
             upsert_pair_factory: WithFactory::<Tup2<KType, Option<()>>>::FACTORY,
@@ -212,7 +210,7 @@ where
     U: DataTrait + ?Sized,
     E: DataTrait + ?Sized,
 {
-    upsert_factories: InputUpsertWithWaterlineFactories<B, E>,
+    upsert_factories: InputUpsertWithWaterlineFactories<B, U, E>,
     input_pair_factory: &'static dyn Factory<DynPair<B::Key, DynUpdate<B::Val, U>>>,
     input_pairs_factory: &'static dyn Factory<DynPairs<B::Key, DynUpdate<B::Val, U>>>,
     upsert_pair_factory: &'static dyn Factory<DynPair<B::Key, DynOpt<DynUnit>>>,
@@ -232,7 +230,8 @@ where
         EType: DBData + Erase<E>,
     {
         Self {
-            upsert_factories: InputUpsertWithWaterlineFactories::new::<KType, VType, EType>(),
+            upsert_factories: InputUpsertWithWaterlineFactories::new::<KType, VType, UType, EType>(
+            ),
             input_pair_factory: WithFactory::<Tup2<KType, Update<VType, UType>>>::FACTORY,
             input_pairs_factory: WithFactory::<LeanVec<Tup2<KType, Update<VType, UType>>>>::FACTORY,
             upsert_pair_factory: WithFactory::<Tup2<KType, Option<()>>>::FACTORY,
@@ -567,20 +566,21 @@ impl RootCircuit {
         V: DataTrait + ?Sized,
         U: DataTrait + ?Sized,
     {
-        let sorted = input_stream
-            .apply_owned(move |mut upserts| {
-                // Sort the vectors by key, preserving the history of updates for each key.
-                // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
-                upserts.retain_mut(|pairs| {
-                    pairs.sort_by_key();
-                    !pairs.is_empty()
-                });
+        let sorted = input_stream.apply_owned(move |mut upserts| {
+            // Sort the vectors by key, preserving the history of updates for each key.
+            // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
+            upserts.retain_mut(|pairs| {
+                pairs.sort_by_key();
+                !pairs.is_empty()
+            });
 
-                upserts
-            })
-            // UpsertHandle shards its inputs.
-            .mark_sharded();
+            upserts
+        });
 
+        if Runtime::runtime().is_none_or(|rt| rt.layout().is_solo()) {
+            // UpsertHandle shards its inputs across workers on the current host only.
+            sorted.mark_sharded();
+        }
         sorted.input_upsert::<B>(persistent_id, &factories.upsert_factories, patch_func)
     }
 
@@ -611,19 +611,21 @@ impl RootCircuit {
         E: DataTrait + ?Sized,
         Box<W>: Checkpoint + Clone + NumEntries + Rkyv,
     {
-        let sorted = input_stream
-            .apply_owned(move |mut upserts| {
-                // Sort the vectors by key, preserving the history of updates for each key.
-                // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
-                upserts.retain_mut(|pairs| {
-                    pairs.sort_by_key();
-                    !pairs.is_empty()
-                });
+        let sorted = input_stream.apply_owned(move |mut upserts| {
+            // Sort the vectors by key, preserving the history of updates for each key.
+            // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
+            upserts.retain_mut(|pairs| {
+                pairs.sort_by_key();
+                !pairs.is_empty()
+            });
 
-                upserts
-            })
-            // UpsertHandle shards its inputs.
-            .mark_sharded();
+            upserts
+        });
+
+        if Runtime::runtime().is_none_or(|rt| rt.layout().is_solo()) {
+            // UpsertHandle shards its inputs across workers on the current host only.
+            sorted.mark_sharded();
+        }
 
         sorted.input_upsert_with_waterline::<B, W, E>(
             persistent_id,
@@ -981,13 +983,10 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> CollectionHandle<K, V> {
             1 => 0,
             n => self.next_worker.fetch_add(1, Ordering::AcqRel) % n,
         };
-        self.input_handle.update_for_worker(
-            next_worker + self.input_handle.workers().start,
-            |tuples| {
-                tuple.from_vals(k, v);
-                tuples.first_mut().unwrap().push_val(&mut *tuple);
-            },
-        );
+        self.input_handle.update_for_worker(next_worker, |tuples| {
+            tuple.from_vals(k, v);
+            tuples.first_mut().unwrap().push_val(&mut *tuple);
+        });
     }
 
     /// Push multiple `(key,value)` pairs to the input stream.
@@ -1023,14 +1022,13 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> CollectionHandle<K, V> {
         // rest will receive `quotient`.
         let quotient = vals.len() / num_partitions;
         let remainder = vals.len() % num_partitions;
-        let worker_ofs = self.input_handle.workers().start;
         for i in 0..num_partitions {
             let mut partition_size = quotient;
             if i < remainder {
                 partition_size += 1;
             }
 
-            let worker = (next_worker + i) % num_partitions + worker_ofs;
+            let worker = (next_worker + i) % num_partitions;
             if partition_size == vals.len() {
                 self.input_handle.update_for_worker(worker, |tuples| {
                     let tuples = tuples.first_mut().unwrap();
@@ -1124,7 +1122,7 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> CollectionHandle<K, V> {
     /// This has the same concurrency implications as [Self::dyn_append],
     /// although on a per-worker basis it is atomic.
     pub fn dyn_append_staged(&self, vals: Vec<Box<DynPairs<K, V>>>) {
-        for (vals, worker) in vals.into_iter().zip_eq(0..self.num_partitions()) {
+        for (worker, vals) in vals.into_iter().enumerate() {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
@@ -1345,7 +1343,7 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> UpsertHandle<K, V> {
     /// This has the same concurrency implications as [Self::dyn_append],
     /// although on a per-worker basis it is atomic.
     pub fn dyn_append_staged(&self, vals: Vec<Box<DynPairs<K, V>>>) {
-        for (vals, worker) in vals.into_iter().zip_eq(0..self.num_partitions()) {
+        for (worker, vals) in vals.into_iter().enumerate() {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
@@ -1380,7 +1378,8 @@ mod test {
         dynamic::{DowncastTrait, DynData, Erase},
         indexed_zset,
         operator::{
-            IndexedZSetHandle, MapHandle, SetHandle, Update, ZSetHandle, input::InputHandle,
+            IndexedZSetHandle, MapHandle, SetHandle, StagedBuffers, Update, ZSetHandle,
+            input::InputHandle,
         },
         trace::{BatchReaderFactories, Builder, Cursor},
         typed_batch::{
@@ -1391,7 +1390,7 @@ mod test {
         zset,
     };
     use anyhow::Result as AnyResult;
-    use std::{cmp::max, iter::once, ops::Mul};
+    use std::{cmp::max, collections::VecDeque, iter::once, ops::Mul};
 
     fn input_batches() -> Vec<OrdZSet<u64>> {
         vec![
@@ -1732,16 +1731,16 @@ mod test {
 
     #[test]
     fn set_test_st() {
-        let (circuit, mut input_handle) =
-            RootCircuit::build(move |circuit| set_test_circuit(circuit)).unwrap();
+        let (mut circuit, mut input_handle) =
+            Runtime::init_circuit(1, move |circuit| set_test_circuit(circuit)).unwrap();
 
         for mut vec in input_set_updates().into_iter() {
             input_handle.append(&mut vec);
             circuit.transaction().unwrap();
         }
 
-        let (circuit, input_handle) =
-            RootCircuit::build(move |circuit| set_test_circuit(circuit)).unwrap();
+        let (mut circuit, input_handle) =
+            Runtime::init_circuit(1, move |circuit| set_test_circuit(circuit)).unwrap();
 
         for vec in input_set_updates().into_iter() {
             for Tup2(k, b) in vec.into_iter() {
@@ -1960,18 +1959,20 @@ mod test {
     // without filtering.
     #[test]
     fn map_test_st() {
-        let (circuit, mut input_handle) =
-            RootCircuit::build(move |circuit| map_test_circuit(circuit, output_map_updates1))
-                .unwrap();
+        let (mut circuit, mut input_handle) = Runtime::init_circuit(1, move |circuit| {
+            map_test_circuit(circuit, output_map_updates1)
+        })
+        .unwrap();
 
         for mut vec in input_map_updates1().into_iter() {
             input_handle.append(&mut vec);
             circuit.transaction().unwrap();
         }
 
-        let (circuit, input_handle) =
-            RootCircuit::build(move |circuit| map_test_circuit(circuit, output_map_updates1))
-                .unwrap();
+        let (mut circuit, input_handle) = Runtime::init_circuit(1, move |circuit| {
+            map_test_circuit(circuit, output_map_updates1)
+        })
+        .unwrap();
 
         for vec in input_map_updates1().into_iter() {
             for Tup2(k, v) in vec.into_iter() {
@@ -2029,6 +2030,92 @@ mod test {
     fn map_test_mt4() {
         map_test_mt(4, input_map_updates1, output_map_updates1);
         map_test_mt(4, input_map_updates2, output_map_updates2);
+    }
+
+    /// There was a bug in InputUpsert where if within the same step the operator received two
+    /// vectors with updates, where the first vector contained a key that was deleted and the second
+    /// vector contained the same key that was inserted, the output would be incorrect because we
+    /// reordered the insert and the delete.
+    #[test]
+    fn map_reinsert_within_step_accumulate_output() {
+        let (mut dbsp, (input_handle, output_handle)) = Runtime::init_circuit(1, |circuit| {
+            let (stream, handle) =
+                circuit.add_input_map::<u64, u64, i64, _>(|v, u| *v = ((*v as i64) + u) as u64);
+            Ok((handle, stream.accumulate_output()))
+        })
+        .unwrap();
+
+        // Seed the map with a few keys.
+        let initial_batch = vec![
+            Tup2(1, Update::Insert(10)),
+            Tup2(2, Update::Insert(20)),
+            Tup2(3, Update::Insert(30)),
+        ];
+        // Use stage instead of append to make sure the updates don't get merged in a single vector.
+        input_handle
+            .stage(vec![VecDeque::from(initial_batch)])
+            .flush();
+        dbsp.transaction().unwrap();
+        assert_eq!(
+            output_handle.concat().consolidate(),
+            indexed_zset! { 1 => {10 => 1}, 2 => {20 => 1}, 3 => {30 => 1} }
+        );
+
+        // Step 1:
+        // - first batch deletes existing keys
+        // - second batch reinserts them and adds one extra key
+        let delete_batch_1 = vec![
+            Tup2(1, Update::Delete),
+            Tup2(2, Update::Delete),
+            Tup2(3, Update::Delete),
+        ];
+        input_handle
+            .stage(vec![VecDeque::from(delete_batch_1)])
+            .flush();
+        let reinsert_batch_1 = vec![
+            Tup2(1, Update::Insert(10)),
+            Tup2(2, Update::Insert(20)),
+            Tup2(3, Update::Insert(30)),
+            Tup2(4, Update::Insert(40)),
+        ];
+        input_handle
+            .stage(vec![VecDeque::from(reinsert_batch_1)])
+            .flush();
+        dbsp.transaction().unwrap();
+        assert_eq!(
+            output_handle.concat().consolidate(),
+            indexed_zset! { 4 => {40 => 1} }
+        );
+
+        // Step 2: repeat with one more additional key.
+        let delete_batch_2 = vec![
+            Tup2(1, Update::Delete),
+            Tup2(2, Update::Delete),
+            Tup2(3, Update::Delete),
+            Tup2(4, Update::Delete),
+        ];
+        input_handle
+            .stage(vec![VecDeque::from(delete_batch_2)])
+            .flush();
+        let reinsert_batch_2 = vec![
+            Tup2(1, Update::Insert(10)),
+            Tup2(2, Update::Insert(20)),
+            Tup2(3, Update::Insert(30)),
+            Tup2(4, Update::Insert(40)),
+            Tup2(5, Update::Insert(50)),
+        ];
+        input_handle
+            .stage(vec![VecDeque::from(reinsert_batch_2)])
+            .flush();
+        dbsp.transaction().unwrap();
+        assert_eq!(
+            output_handle.concat().consolidate(),
+            indexed_zset! {
+                5 => {50 => 1}
+            }
+        );
+
+        dbsp.kill().unwrap();
     }
 
     fn map_with_waterline_test_circuit(

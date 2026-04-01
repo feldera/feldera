@@ -98,8 +98,10 @@ public class Catalog extends AbstractSchema {
         return this.functionMap;
     }
 
-    public void dropTable(ProgramIdentifier tableName) {
-        this.tableMap.remove(tableName.name());
+    public boolean dropTable(ProgramIdentifier tableName) {
+        Table original = this.tableMap.remove(tableName.name());
+        this.definition.remove(tableName.name());
+        return original != null;
     }
 
     public boolean addType(ProgramIdentifier name, IErrorReporter reporter, RelStatement statement) {

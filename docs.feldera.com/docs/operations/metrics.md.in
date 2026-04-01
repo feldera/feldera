@@ -56,7 +56,7 @@ which Feldera is built.
 
 [DBSP]: https://docs.rs/dbsp/latest/dbsp/
 
-{{dbsp_|compaction_}}
+{{dbsp_|compaction_|output_stall_}}
 
 ## Record Processing
 
@@ -117,3 +117,11 @@ These metrics report the status of [checkpoint synchronization].
 [checkpoint synchronization]: /pipelines/checkpoint-sync.md
 
 {{checkpoint_sync_}}
+
+## Transactions
+
+These metrics report the status of [transactions].
+
+[transactions]: /pipelines/transactions.md
+
+{{transaction_}}

@@ -94,10 +94,9 @@ public final class DBSPCircuit extends DBSPNode
         this.allOperators.sort(comparator);
     }
 
-    /** Sort the nodes to be compatible with a topological order
-     * on the specified graph.
-     * @param graph Topological order to enforce.
-     *              Mutated by the method. */
+    /** Sort the nodes to be compatible with a topological order on the specified graph.
+     * Preserves the order of inputs and outputs with respect to each other.
+     * @param graph Topological order to enforce.  Mutated by the method. */
     public void resort(CircuitGraph graph) {
         this.allOperators.clear();
         DBSPOperator previous = null;

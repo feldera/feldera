@@ -29,7 +29,9 @@ use crate::db::types::utils::{
 use crate::db::types::version::Version;
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
-use feldera_types::config::{FtConfig, PipelineConfig, ProgramIr, ResourceConfig, RuntimeConfig};
+use feldera_types::config::{
+    DevTweaks, FtConfig, PipelineConfig, ProgramIr, ResourceConfig, RuntimeConfig,
+};
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{
@@ -272,6 +274,7 @@ struct RuntimeConfigPropVal {
     val18: Option<u64>,
     val19: Option<u64>,
     val20: usize,
+    val21: Option<u64>,
 }
 type ProgramConfigPropVal = (u8, bool, bool, bool);
 type ProgramInfoPropVal = (u8, u8, u8);
@@ -293,6 +296,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
     } else {
         serde_json::to_value(RuntimeConfig {
             workers: val.val0,
+            max_rss_mb: val.val21,
             hosts: val.val20,
             cpu_profiler: val.val1,
             min_batch_size_records: val.val2,
@@ -319,7 +323,8 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
             checkpoint_during_suspend: val.val17,
             http_workers: val.val18,
             io_workers: val.val19,
-            dev_tweaks: BTreeMap::new(),
+            env: BTreeMap::new(),
+            dev_tweaks: DevTweaks::default(),
             logging: None,
             pipeline_template_configmap: None,
         })
@@ -1176,6 +1181,7 @@ async fn pipeline_versioning() {
     // Edit runtime configuration -> increment version and refresh_version
     let new_runtime_config = serde_json::to_value(RuntimeConfig {
         workers: 100,
+        max_rss_mb: None,
         hosts: 1,
         storage: None,
         fault_tolerance: FtConfig::default(),
@@ -1202,7 +1208,8 @@ async fn pipeline_versioning() {
         checkpoint_during_suspend: true,
         http_workers: None,
         io_workers: None,
-        dev_tweaks: BTreeMap::new(),
+        env: BTreeMap::new(),
+        dev_tweaks: DevTweaks::default(),
         logging: None,
         pipeline_template_configmap: None,
     })
@@ -1467,6 +1474,188 @@ async fn pipeline_program_compilation() {
     );
 }
 
+/// Tests the following sequence of events:
+/// - Pipeline is compiled
+/// - User calls /start
+/// - Automaton starts with work to transition from Stopped to Provisioning/Stopping
+/// - User call /stop
+/// - Automaton finishes work to transition from Stopped to Provisioning/Stopping, and tries to
+///   store this in the database
+#[tokio::test]
+async fn pipeline_transition_after_quick_stop() {
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+    let pipeline1 = handle
+        .db
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            "v0",
+            PipelineDescr {
+                name: "example1".to_string(),
+                description: "d1".to_string(),
+                runtime_config: json!({}),
+                program_code: "c1".to_string(),
+                udf_rust: "r1".to_string(),
+                udf_toml: "t2".to_string(),
+                program_config: json!({}),
+            },
+        )
+        .await
+        .unwrap();
+
+    // "Compile" the program of pipeline1
+    assert_eq!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline1.id)
+            .await
+            .unwrap()
+            .refresh_version,
+        Version(1)
+    );
+    handle
+        .db
+        .transit_program_status_to_compiling_sql(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_sql_compiled(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            &SqlCompilationInfo {
+                exit_code: 0,
+                messages: vec![],
+            },
+            &serde_json::to_value(ProgramInfo {
+                schema: ProgramSchema {
+                    inputs: vec![],
+                    outputs: vec![],
+                },
+                main_rust: "".to_string(),
+                udf_stubs: "".to_string(),
+                input_connectors: BTreeMap::new(),
+                output_connectors: BTreeMap::new(),
+                dataflow: None,
+            })
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline1.id)
+            .await
+            .unwrap()
+            .refresh_version,
+        Version(2)
+    );
+    handle
+        .db
+        .transit_program_status_to_compiling_rust(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_success(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            &RustCompilationInfo {
+                exit_code: 0,
+                stdout: "".to_string(),
+                stderr: "".to_string(),
+            },
+            "def",
+            "123",
+            "456",
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline1.id)
+            .await
+            .unwrap()
+            .refresh_version,
+        Version(3)
+    );
+
+    // Start pipeline1
+    handle
+        .db
+        .set_deployment_resources_desired_status_provisioned(
+            tenant_id,
+            "example1",
+            RuntimeDesiredStatus::Paused,
+            BootstrapPolicy::default(),
+            false,
+        )
+        .await
+        .unwrap();
+
+    // Stop pipeline1
+    handle
+        .db
+        .set_deployment_resources_desired_status_stopped_if_not_provisioned(tenant_id, "example1")
+        .await
+        .unwrap();
+
+    // Automaton: attempt to proceed to Provisioning anyway
+    assert!(matches!(
+        handle
+            .db
+            .transit_deployment_resources_status_to_provisioning(
+                tenant_id,
+                pipeline1.id,
+                Version(1),
+                Uuid::nil(),
+                serde_json::to_value(generate_pipeline_config(
+                    pipeline1.id,
+                    &pipeline1.name,
+                    &serde_json::from_value(pipeline1.runtime_config.clone()).unwrap(),
+                    None,
+                ))
+                .unwrap(),
+            )
+            .await
+            .unwrap_err(),
+        DBError::UnnecessaryResourcesStatusTransition {
+            current_status: ResourcesStatus::Stopped,
+            new_status: ResourcesStatus::Provisioning,
+            current_desired_status: ResourcesDesiredStatus::Stopped,
+        }
+    ));
+
+    // Automaton: attempt to proceed to Stopping anyway
+    assert!(matches!(
+        handle
+            .db
+            .transit_deployment_resources_status_to_stopping(
+                tenant_id,
+                pipeline1.id,
+                Version(1),
+                Some(ErrorResponse {
+                    message: "ABC".to_string(),
+                    error_code: Default::default(),
+                    details: Default::default(),
+                }),
+                None
+            )
+            .await
+            .unwrap_err(),
+        DBError::UnnecessaryResourcesStatusTransition {
+            current_status: ResourcesStatus::Stopped,
+            new_status: ResourcesStatus::Stopping,
+            current_desired_status: ResourcesDesiredStatus::Stopped,
+        }
+    ));
+}
+
 /// Deployment of a pipeline by starting it and progressing through various deployment statuses.
 #[tokio::test]
 async fn pipeline_deployment() {
@@ -1580,6 +1769,7 @@ async fn pipeline_deployment() {
             "example1",
             RuntimeDesiredStatus::Paused,
             BootstrapPolicy::default(),
+            false,
         )
         .await
         .unwrap();
@@ -1704,9 +1894,18 @@ async fn pipeline_deployment() {
             "example1",
             RuntimeDesiredStatus::Paused,
             BootstrapPolicy::default(),
+            false,
         )
         .await
         .unwrap();
+    assert!(matches!(
+        handle
+            .db
+            .transit_storage_status_to_clearing_if_not_cleared(tenant_id, "example1",)
+            .await
+            .unwrap_err(),
+        DBError::StorageStatusImmutableUnlessStopped { .. }
+    ));
     handle
         .db
         .transit_deployment_resources_status_to_provisioning(
@@ -1717,7 +1916,7 @@ async fn pipeline_deployment() {
             serde_json::to_value(generate_pipeline_config(
                 pipeline1.id,
                 &pipeline1.name,
-                &serde_json::from_value(pipeline1.runtime_config).unwrap(),
+                &serde_json::from_value(pipeline1.runtime_config.clone()).unwrap(),
                 Some(&ProgramInfo::default()),
             ))
             .unwrap(),
@@ -1774,6 +1973,155 @@ async fn pipeline_deployment() {
     handle
         .db
         .transit_deployment_resources_status_to_stopped(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_storage_status_to_clearing_if_not_cleared(tenant_id, &pipeline1.name)
+        .await
+        .unwrap();
+    assert!(matches!(
+        handle
+            .db
+            .set_deployment_resources_desired_status_provisioned(
+                tenant_id,
+                "example1",
+                RuntimeDesiredStatus::Paused,
+                BootstrapPolicy::default(),
+                false,
+            )
+            .await
+            .unwrap_err(),
+        DBError::CannotStartWhileClearingStorage { .. }
+    ));
+    handle
+        .db
+        .transit_storage_status_to_cleared(tenant_id, pipeline1.id)
+        .await
+        .unwrap();
+    handle
+        .db
+        .set_deployment_resources_desired_status_provisioned(
+            tenant_id,
+            "example1",
+            RuntimeDesiredStatus::Paused,
+            BootstrapPolicy::default(),
+            false,
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_resources_status_to_provisioning(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            Uuid::nil(),
+            serde_json::to_value(generate_pipeline_config(
+                pipeline1.id,
+                &pipeline1.name,
+                &serde_json::from_value(pipeline1.runtime_config).unwrap(),
+                Some(&ProgramInfo::default()),
+            ))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_resources_status_to_provisioned(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            "location1",
+            json!({ "a": "1" }),
+            ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::Initializing,
+                runtime_status_details: json!(""),
+                runtime_desired_status: RuntimeDesiredStatus::Paused,
+            },
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_resources_status_to_stopping(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            Some(ErrorResponse {
+                message: "abc".to_string(),
+                error_code: Cow::from("Def"),
+                details: json!("ghi"),
+            }),
+            None,
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_resources_status_to_stopped(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    assert!(matches!(
+        handle
+            .db
+            .set_deployment_resources_desired_status_provisioned(
+                tenant_id,
+                "example1",
+                RuntimeDesiredStatus::Paused,
+                BootstrapPolicy::default(),
+                false,
+            )
+            .await
+            .unwrap_err(),
+        DBError::CannotStartWithUndismissedError
+    ));
+    handle
+        .db
+        .dismiss_deployment_error(tenant_id, &pipeline1.name)
+        .await
+        .unwrap();
+    handle
+        .db
+        .set_deployment_resources_desired_status_provisioned(
+            tenant_id,
+            "example1",
+            RuntimeDesiredStatus::Paused,
+            BootstrapPolicy::default(),
+            false,
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_resources_status_to_stopping(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            Some(ErrorResponse {
+                message: "abc".to_string(),
+                error_code: Cow::from("Def"),
+                details: json!("ghi"),
+            }),
+            None,
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_resources_status_to_stopped(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .set_deployment_resources_desired_status_provisioned(
+            tenant_id,
+            "example1",
+            RuntimeDesiredStatus::Paused,
+            BootstrapPolicy::default(),
+            true,
+        )
         .await
         .unwrap();
 }
@@ -1859,6 +2207,26 @@ async fn pipeline_provision_version_guard() {
         .await
         .unwrap();
 
+    // Set desired status to `Provisioned`
+    handle
+        .db
+        .set_deployment_resources_desired_status_provisioned(
+            tenant_id,
+            &pipeline.name,
+            RuntimeDesiredStatus::Running,
+            BootstrapPolicy::default(),
+            false,
+        )
+        .await
+        .unwrap();
+
+    // Set desired status to `Stopped`
+    handle
+        .db
+        .set_deployment_resources_desired_status_stopped(tenant_id, &pipeline.name)
+        .await
+        .unwrap();
+
     // Update pipeline to v2
     handle
         .db
@@ -1872,6 +2240,7 @@ async fn pipeline_provision_version_guard() {
             &Some(
                 serde_json::to_value(RuntimeConfig {
                     workers: 10,
+                    max_rss_mb: None,
                     hosts: 1,
                     storage: None,
                     fault_tolerance: FtConfig::default(),
@@ -1887,9 +2256,10 @@ async fn pipeline_provision_version_guard() {
                     max_parallel_connector_init: None,
                     init_containers: None,
                     checkpoint_during_suspend: false,
-                    dev_tweaks: BTreeMap::new(),
+                    dev_tweaks: DevTweaks::default(),
                     http_workers: None,
                     io_workers: None,
+                    env: BTreeMap::new(),
                     logging: None,
                     pipeline_template_configmap: None,
                 })
@@ -1899,6 +2269,19 @@ async fn pipeline_provision_version_guard() {
             &None,
             &None,
             &None,
+        )
+        .await
+        .unwrap();
+
+    // Set desired status to `Provisioned`
+    handle
+        .db
+        .set_deployment_resources_desired_status_provisioned(
+            tenant_id,
+            &pipeline.name,
+            RuntimeDesiredStatus::Paused,
+            BootstrapPolicy::Allow,
+            false,
         )
         .await
         .unwrap();
@@ -2091,6 +2474,7 @@ enum StorageAction {
         TenantId,
         #[proptest(strategy = "limited_pipeline_name()")] String,
         #[proptest(strategy = "arbitrary_runtime_desired_status()")] RuntimeDesiredStatus,
+        bool,
     ),
     SetDeploymentResourcesDesiredStatusStoppedIfNotProvisioned(
         TenantId,
@@ -2164,6 +2548,10 @@ enum StorageAction {
         #[proptest(strategy = "limited_new_cluster_monitor_event()")] NewClusterMonitorEvent,
     ),
     DeleteClusterMonitorEventsBeyondRetention(u16, u16),
+    DismissDeploymentError(
+        TenantId,
+        #[proptest(strategy = "limited_pipeline_name()")] String,
+    ),
 }
 
 /// Alias for a result from the database.
@@ -2707,10 +3095,10 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.transit_program_status_to_system_error(tenant_id, pipeline_id, program_version_guard, &system_error).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::SetDeploymentResourcesDesiredStatusProvisioned(tenant_id, pipeline_name, initial) => {
+                            StorageAction::SetDeploymentResourcesDesiredStatusProvisioned(tenant_id, pipeline_name, initial, dismiss_error) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.set_deployment_resources_desired_status_provisioned(tenant_id, &pipeline_name, initial, BootstrapPolicy::default()).await;
-                                let impl_response = handle.db.set_deployment_resources_desired_status_provisioned(tenant_id, &pipeline_name, initial, BootstrapPolicy::default()).await;
+                                let model_response = model.set_deployment_resources_desired_status_provisioned(tenant_id, &pipeline_name, initial, BootstrapPolicy::default(), dismiss_error).await;
+                                let impl_response = handle.db.set_deployment_resources_desired_status_provisioned(tenant_id, &pipeline_name, initial, BootstrapPolicy::default(), dismiss_error).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::SetDeploymentResourcesDesiredStatusStoppedIfNotProvisioned(tenant_id, pipeline_name) => {
@@ -2851,6 +3239,12 @@ fn db_impl_behaves_like_model() {
                             StorageAction::DeleteClusterMonitorEventsBeyondRetention(retention_hours, retention_num) => {
                                 let model_response = model.delete_cluster_monitor_events_beyond_retention(retention_hours, retention_num).await;
                                 let impl_response = handle.db.delete_cluster_monitor_events_beyond_retention(retention_hours, retention_num).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::DismissDeploymentError(tenant_id, pipeline_name) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.dismiss_deployment_error(tenant_id, &pipeline_name).await;
+                                let impl_response = handle.db.dismiss_deployment_error(tenant_id, &pipeline_name).await;
                                 check_responses(i, model_response, impl_response);
                             }
                         }
@@ -3889,13 +4283,21 @@ impl Storage for Mutex<DbModel> {
         pipeline_name: &str,
         initial: RuntimeDesiredStatus,
         bootstrap_policy: BootstrapPolicy,
+        dismiss_error: bool,
     ) -> Result<PipelineId, DBError> {
         // Validate
         let mut pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
+        let new_deployment_error = if dismiss_error {
+            None
+        } else {
+            pipeline.deployment_error.clone()
+        };
         let new_resources_desired_status = ResourcesDesiredStatus::Provisioned;
         validate_resources_desired_status_transition(
+            pipeline.storage_status,
             pipeline.deployment_resources_status,
             pipeline.deployment_resources_desired_status,
+            new_deployment_error.clone(),
             new_resources_desired_status,
         )?;
         if pipeline.deployment_initial.is_some_and(|v| v != initial) {
@@ -3925,6 +4327,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.bootstrap_policy = Some(bootstrap_policy);
         pipeline.deployment_resources_desired_status = new_resources_desired_status;
         pipeline.deployment_resources_desired_status_since = Utc::now();
+        pipeline.deployment_error = new_deployment_error;
         self.lock()
             .await
             .pipelines
@@ -3942,8 +4345,10 @@ impl Storage for Mutex<DbModel> {
         if pipeline.deployment_resources_status != ResourcesStatus::Provisioned {
             let new_resources_desired_status = ResourcesDesiredStatus::Stopped;
             validate_resources_desired_status_transition(
+                pipeline.storage_status,
                 pipeline.deployment_resources_status,
                 pipeline.deployment_resources_desired_status,
+                pipeline.deployment_error.clone(),
                 new_resources_desired_status,
             )?;
 
@@ -3975,8 +4380,10 @@ impl Storage for Mutex<DbModel> {
         let mut pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
         let new_resources_desired_status = ResourcesDesiredStatus::Stopped;
         validate_resources_desired_status_transition(
+            pipeline.storage_status,
             pipeline.deployment_resources_status,
             pipeline.deployment_resources_desired_status,
+            pipeline.deployment_error.clone(),
             new_resources_desired_status,
         )?;
 
@@ -4007,8 +4414,18 @@ impl Storage for Mutex<DbModel> {
     ) -> Result<(), DBError> {
         // Validate
         let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
+        if pipeline.deployment_resources_status == ResourcesStatus::Stopped
+            && pipeline.deployment_resources_desired_status == ResourcesDesiredStatus::Stopped
+        {
+            return Err(DBError::UnnecessaryResourcesStatusTransition {
+                current_status: pipeline.deployment_resources_status,
+                new_status: ResourcesStatus::Provisioning,
+                current_desired_status: pipeline.deployment_resources_desired_status,
+            });
+        }
         validate_storage_status_transition(
             pipeline.deployment_resources_status,
+            pipeline.deployment_resources_desired_status,
             pipeline.storage_status,
             StorageStatus::InUse,
         )?;
@@ -4030,6 +4447,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.storage_status = StorageStatus::InUse;
         pipeline.deployment_id = Some(deployment_id);
         // Retain: pipeline.deployment_initial
+        // Retain: pipeline.bootstrap_policy
         pipeline.deployment_config = Some(deployment_config);
         pipeline.deployment_location = None;
         pipeline.deployment_error = None;
@@ -4103,6 +4521,7 @@ impl Storage for Mutex<DbModel> {
         // Apply changes
         // Retain: pipeline.deployment_id
         // Retain: pipeline.deployment_initial
+        // Retain: pipeline.bootstrap_policy
         // Retain: pipeline.deployment_config
         pipeline.deployment_location = Some(deployment_location.to_string());
         pipeline.deployment_error = None;
@@ -4168,6 +4587,15 @@ impl Storage for Mutex<DbModel> {
     ) -> Result<(), DBError> {
         // Validate
         let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
+        if pipeline.deployment_resources_status == ResourcesStatus::Stopped
+            && pipeline.deployment_resources_desired_status == ResourcesDesiredStatus::Stopped
+        {
+            return Err(DBError::UnnecessaryResourcesStatusTransition {
+                current_status: pipeline.deployment_resources_status,
+                new_status: ResourcesStatus::Stopping,
+                current_desired_status: pipeline.deployment_resources_desired_status,
+            });
+        }
         let new_resources_status = ResourcesStatus::Stopping;
         validate_new_deployment_resources_status(
             &pipeline,
@@ -4179,6 +4607,7 @@ impl Storage for Mutex<DbModel> {
         // Apply changes
         pipeline.deployment_id = None;
         pipeline.deployment_initial = None;
+        pipeline.bootstrap_policy = None;
         pipeline.deployment_config = None;
         pipeline.deployment_location = None;
         pipeline.deployment_error = deployment_error;
@@ -4192,7 +4621,6 @@ impl Storage for Mutex<DbModel> {
         pipeline.deployment_runtime_status_since = None;
         pipeline.deployment_runtime_desired_status = None;
         pipeline.deployment_runtime_desired_status_since = None;
-        pipeline.bootstrap_policy = None;
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
             .await
@@ -4247,6 +4675,7 @@ impl Storage for Mutex<DbModel> {
         // Apply changes
         pipeline.deployment_id = None;
         pipeline.deployment_initial = None;
+        pipeline.bootstrap_policy = None;
         pipeline.deployment_config = None;
         pipeline.deployment_location = None;
         // Retain: pipeline.deployment_error
@@ -4279,6 +4708,7 @@ impl Storage for Mutex<DbModel> {
             let new_status = StorageStatus::Clearing;
             validate_storage_status_transition(
                 pipeline.deployment_resources_status,
+                pipeline.deployment_resources_desired_status,
                 pipeline.storage_status,
                 new_status,
             )?;
@@ -4303,6 +4733,7 @@ impl Storage for Mutex<DbModel> {
         let new_status = StorageStatus::Cleared;
         validate_storage_status_transition(
             pipeline.deployment_resources_status,
+            pipeline.deployment_resources_desired_status,
             pipeline.storage_status,
             new_status,
         )?;
@@ -4720,5 +5151,25 @@ impl Storage for Mutex<DbModel> {
         db_model.cluster_events = new_cluster_events;
 
         Ok((s1 - s2, s2 - s3))
+    }
+
+    async fn dismiss_deployment_error(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<(), DBError> {
+        let mut pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
+        if (pipeline.deployment_resources_status != ResourcesStatus::Stopped
+            || pipeline.deployment_resources_desired_status != ResourcesDesiredStatus::Stopped)
+            && pipeline.deployment_error.is_some()
+        {
+            return Err(DBError::DismissErrorRestrictedToFullyStopped);
+        }
+        pipeline.deployment_error = None;
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 }

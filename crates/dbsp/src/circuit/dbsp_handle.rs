@@ -1,30 +1,28 @@
 use crate::circuit::GlobalNodeId;
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
-use crate::circuit::runtime::ThreadType;
-use crate::circuit::schedule::{CommitProgress, CommitProgressSummary};
+use crate::circuit::schedule::CommitProgress;
 use crate::monitor::visual_graph::Graph;
-use crate::operator::dynamic::balance::{
-    BALANCE_TAX, BalancerHint, KEY_DISTRIBUTION_REFRESH_THRESHOLD,
-    MIN_ABSOLUTE_IMPROVEMENT_THRESHOLD, MIN_RELATIVE_IMPROVEMENT_THRESHOLD, PartitioningPolicy,
-};
+use crate::operator::dynamic::balance::{BalancerHint, PartitioningPolicy};
 use crate::storage::backend::StorageError;
-use crate::storage::file::BLOOM_FILTER_FALSE_POSITIVE_RATE;
-use crate::trace::MergerType;
+use crate::trace::spine_async::MAX_LEVEL0_BATCH_SIZE_RECORDS;
 use crate::{
     Error as DbspError, RootCircuit, Runtime, RuntimeError, circuit::runtime::RuntimeHandle,
     profile::Profiler,
 };
 use anyhow::Error as AnyError;
 use crossbeam::channel::{Receiver, Select, Sender, TryRecvError, bounded};
+use feldera_buffer_cache::ThreadType;
 use feldera_ir::LirCircuit;
 use feldera_storage::{FileCommitter, StorageBackend, StoragePath};
 use feldera_types::checkpoint::CheckpointMetadata;
+use feldera_types::config::DevTweaks;
+use feldera_types::config::dev_tweaks::{BufferCacheAllocationStrategy, BufferCacheStrategy};
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
+use feldera_types::transaction::CommitProgressSummary;
 use itertools::Either;
-use serde::Deserialize;
-use serde_json::Value;
 use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -49,6 +47,9 @@ use crate::profile::{DbspProfile, GraphProfile, WorkerProfile};
 use super::SchedulerError;
 use super::circuit_builder::BootstrapInfo;
 use super::runtime::WorkerPanicInfo;
+
+/// Default ratio of merger threads to worker threads.
+const DEFAULT_MERGER_THREAD_RATIO: usize = 1;
 
 /// A host for some workers in the [`Layout`] for a multi-host DBSP circuit.
 #[allow(clippy::manual_non_exhaustive)]
@@ -207,6 +208,20 @@ impl Layout {
     pub fn is_solo(&self) -> bool {
         matches!(self, Self::Solo { .. })
     }
+
+    pub fn n_hosts(&self) -> usize {
+        match self {
+            Layout::Solo { .. } => 1,
+            Layout::Multihost { hosts, .. } => hosts.len(),
+        }
+    }
+
+    pub fn local_host_idx(&self) -> usize {
+        match self {
+            Layout::Solo { .. } => 0,
+            Layout::Multihost { local_host_idx, .. } => *local_host_idx,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -265,6 +280,10 @@ pub struct CircuitConfig {
     /// How the circuit is laid out across one or multiple machines.
     pub layout: Layout,
 
+    /// The maximum amount of memory, in bytes, that the process is allowed to use.
+    /// Used to calculate the memory pressure level.
+    pub max_rss_bytes: Option<u64>,
+
     /// Optionally, CPU numbers for pinning the worker threads.
     pub pin_cpus: Vec<usize>,
 
@@ -277,182 +296,43 @@ pub struct CircuitConfig {
     pub dev_tweaks: DevTweaks,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(default)]
-pub struct DevTweaks {
-    /// Whether to asynchronously fetch keys needed for the join operator from
-    /// storage.  Asynchronous fetching should be faster for high-latency
-    /// storage, such as object storage, but it could use excessive amounts of
-    /// memory if the number of keys fetched is very large.
-    pub fetch_join: bool,
-
-    /// Whether to asynchronously fetch keys needed for the distinct operator
-    /// from storage.  Asynchronous fetching should be faster for high-latency
-    /// storage, such as object storage, but it could use excessive amounts of
-    /// memory if the number of keys fetched is very large.
-    pub fetch_distinct: bool,
-
-    /// Which merger to use.
-    pub merger: MergerType,
-
-    /// If set, the maximum amount of storage, in MiB, for the POSIX backend to
-    /// allow to be in use before failing all writes with [StorageFull].  This
-    /// is useful for testing on top of storage that does not implement its own
-    /// quota mechanism.
-    ///
-    /// [StorageFull]: std::io::ErrorKind::StorageFull
-    pub storage_mb_max: Option<u64>,
-
-    /// Attempt to print a stack trace on stack overflow.
-    ///
-    /// To be used for debugging only; do not enable in production.
-    // NOTE: this flag is handled manually in `adapters/src/server.rs` before
-    // parsing DevTweaks. If the name or type of this field changes, make sure to
-    // adjust `server.rs` accordingly.
-    pub stack_overflow_backtrace: bool,
-
-    /// Controls the maximal number of records output by splitter operators
-    /// (joins, distinct, aggregation, rolling window and group operators) at
-    /// each step.
-    ///
-    /// The default value is 10,000 records.
-    // TODO: splitter_chunk_size_bytes, per-operator chunk size.
-    pub splitter_chunk_size_records: u64,
-
-    /// Enable adaptive joins.
-    ///
-    /// Adaptive joins dynamically change their partitioning policy to avoid skew.
-    ///
-    /// Adaptive joins are disabled by default.
-    pub adaptive_joins: bool,
-
-    /// The minimum relative improvement threshold for the join balancer.
-    ///
-    /// This parameter prevents the join balancer from making changes to the
-    /// partitioning policy if the improvement is not significant, since the overhead
-    /// of such rebalancing, especially when performed frequently, can exceed the benefits.
-    ///
-    /// A rebalancing is considered significant if the relative estimated improvement for the cluster
-    /// of joins where the rebalancing is applied is at least this threshold.
-    ///
-    /// A rebalancing is applied if both this threshold and `balancer_min_absolute_improvement_threshold` are met.
-    ///
-    /// The default value is 1.2.
-    pub balancer_min_relative_improvement_threshold: f64,
-
-    /// The minimum absolute improvement threshold for the balancer.
-    ///
-    /// This parameter prevents the join balancer from making changes to the
-    /// partitioning policy if the improvement is not significant, since the overhead
-    /// of such rebalancing, especially when performed frequently, can exceed the benefits.
-    ///
-    /// A rebalancing is considered significant if the absolute estimated improvement for the cluster
-    /// of joins where the rebalancing is applied is at least this threshold. The cost model used by
-    /// the balancer is based on the number of records in the largest partition of a collection.
-    ///
-    /// A rebalancing is applied if both this threshold and `balancer_min_relative_improvement_threshold` are met.
-    ///
-    /// The default value is 10,000.
-    pub balancer_min_absolute_improvement_threshold: u64,
-
-    /// Factor that discourages the use of the Balance policy in a perfectly balanced collection.
-    ///
-    /// Assuming a perfectly balanced key distribution, the Balance policy is slightly less efficient than Shard,
-    /// since it requires computing the hash of the entire key/value pair. This factor discourages the use of this policy
-    /// if the skew is `<balancer_balance_tax`.
-    ///
-    /// The default value is 1.1.
-    pub balancer_balance_tax: f64,
-
-    /// The balancer threshold for checking for an improved partitioning policy for a stream.
-    ///
-    /// Finding a good partitioning policy for a circuit involves solving an optimization problem,
-    /// which can be relatively expensive. Instead of doing this on every step, the balancer only
-    /// checks for an improved partitioning policy if the key distribution of a stream has changed
-    /// significantly since the current solution was computed.  Specifically, it only kicks in when
-    /// the size of at least one shard of at least one stream in the cluster has changed by more than
-    /// this threshold.
-    ///
-    /// The default value is 0.1.
-    pub balancer_key_distribution_refresh_threshold: f64,
-
-    /// False-positive rate for Bloom filters on batches on storage, as a
-    /// fraction f, where 0 < f < 1.
-    ///
-    /// The false-positive rate trades off between the amount of memory used by
-    /// Bloom filters and how frequently storage needs to be searched for keys
-    /// that are not actually present.  Typical false-positive rates and their
-    /// corresponding memory costs are:
-    ///
-    /// - 0.1: 4.8 bits per key
-    /// - 0.01: 9.6 bits per key
-    /// - 0.001: 14.4 bits per key
-    /// - 0.0001: 19.2 bits per key (default)
-    ///
-    /// Values outside the valid range, such as 0.0, disable Bloom filters.
-    pub bloom_false_positive_rate: f64,
-}
-
-impl Default for DevTweaks {
-    fn default() -> Self {
-        Self {
-            fetch_join: false,
-            fetch_distinct: false,
-            merger: MergerType::default(),
-            storage_mb_max: None,
-            stack_overflow_backtrace: false,
-            splitter_chunk_size_records: 10_000,
-            bloom_false_positive_rate: BLOOM_FILTER_FALSE_POSITIVE_RATE,
-            balancer_min_relative_improvement_threshold: MIN_RELATIVE_IMPROVEMENT_THRESHOLD,
-            balancer_min_absolute_improvement_threshold: MIN_ABSOLUTE_IMPROVEMENT_THRESHOLD,
-            balancer_balance_tax: BALANCE_TAX,
-            balancer_key_distribution_refresh_threshold: KEY_DISTRIBUTION_REFRESH_THRESHOLD,
-            adaptive_joins: false,
-        }
-    }
-}
-
-impl DevTweaks {
-    pub fn from_config(config: &BTreeMap<String, Value>) -> Self {
-        let tweaks = serde_json::to_value(config)
-            .and_then(serde_json::from_value)
-            .inspect_err(|error| {
-                tracing::error!("falling back to default `dev_tweaks` due to error ({error}) with configuration: {config:#?}")
-            })
-            .unwrap_or_default();
-        if tweaks != DevTweaks::default() {
-            info!("using non-default `dev_tweaks`: {tweaks:#?}")
-        }
-        tweaks
-    }
-}
-
 /// Returns the chunk size for splitter operators, in records.
 ///
 /// Operators that split their output into multiple chunks, such as joins, distinct, and aggregation,
 /// should attempt to limit their output to this chunk size.
 pub fn splitter_output_chunk_size() -> usize {
-    Runtime::with_dev_tweaks(|d| d.splitter_chunk_size_records as usize)
+    Runtime::with_dev_tweaks(|d| d.splitter_chunk_size_records() as usize)
 }
 
 pub fn balancer_min_absolute_improvement_threshold() -> u64 {
-    Runtime::with_dev_tweaks(|d| d.balancer_min_absolute_improvement_threshold)
+    Runtime::with_dev_tweaks(|d| d.balancer_min_absolute_improvement_threshold())
 }
 
 pub fn balancer_min_relative_improvement_threshold() -> f64 {
-    Runtime::with_dev_tweaks(|d| d.balancer_min_relative_improvement_threshold)
+    Runtime::with_dev_tweaks(|d| d.balancer_min_relative_improvement_threshold())
 }
 
 pub fn balancer_balance_tax() -> f64 {
-    Runtime::with_dev_tweaks(|d| d.balancer_balance_tax)
+    Runtime::with_dev_tweaks(|d| d.balancer_balance_tax())
 }
 
 pub fn balancer_key_distribution_refresh_threshold() -> f64 {
-    Runtime::with_dev_tweaks(|d| d.balancer_key_distribution_refresh_threshold)
+    Runtime::with_dev_tweaks(|d| d.balancer_key_distribution_refresh_threshold())
 }
 
 pub fn adaptive_joins_enabled() -> bool {
-    Runtime::with_dev_tweaks(|d| d.adaptive_joins)
+    Runtime::with_dev_tweaks(|d| d.adaptive_joins())
+}
+
+pub fn max_level0_batch_size_records() -> u16 {
+    Runtime::with_dev_tweaks(|d| {
+        d.max_level0_batch_size_records
+            .unwrap_or(MAX_LEVEL0_BATCH_SIZE_RECORDS)
+    })
+}
+
+pub fn negative_weight_multiplier() -> u16 {
+    Runtime::with_dev_tweaks(|d| d.negative_weight_multiplier())
 }
 
 /// Configuration for storage in a [Runtime]-hosted circuit.
@@ -509,11 +389,17 @@ impl CircuitConfig {
     pub fn with_workers(n: usize) -> Self {
         Self {
             layout: Layout::new_solo(n),
+            max_rss_bytes: None,
             pin_cpus: Vec::new(),
             mode: Mode::Ephemeral,
             storage: None,
             dev_tweaks: DevTweaks::default(),
         }
+    }
+
+    pub fn with_max_rss_bytes(mut self, max_rss: Option<u64>) -> Self {
+        self.max_rss_bytes = max_rss;
+        self
     }
 
     pub fn with_mode(mut self, mode: Mode) -> Self {
@@ -527,22 +413,46 @@ impl CircuitConfig {
     }
 
     pub fn with_splitter_chunk_size_records(mut self, records: u64) -> Self {
-        self.dev_tweaks.splitter_chunk_size_records = records;
+        self.dev_tweaks.splitter_chunk_size_records = Some(records);
+        self
+    }
+
+    pub fn with_buffer_cache_strategy(mut self, strategy: BufferCacheStrategy) -> Self {
+        self.dev_tweaks.buffer_cache_strategy = Some(strategy);
+        self
+    }
+
+    pub fn with_buffer_max_buckets(mut self, max_buckets: Option<usize>) -> Self {
+        self.dev_tweaks.buffer_max_buckets = max_buckets;
+        self
+    }
+
+    pub fn with_buffer_cache_allocation_strategy(
+        mut self,
+        strategy: BufferCacheAllocationStrategy,
+    ) -> Self {
+        self.dev_tweaks.buffer_cache_allocation_strategy = Some(strategy);
+        self
+    }
+
+    #[cfg(test)]
+    pub fn with_fbuf_slab_bytes_per_class(mut self, bytes_per_class: usize) -> Self {
+        self.dev_tweaks.fbuf_slab_bytes_per_class = Some(bytes_per_class);
         self
     }
 
     pub fn with_balancer_min_relative_improvement_threshold(mut self, threshold: f64) -> Self {
-        self.dev_tweaks.balancer_min_relative_improvement_threshold = threshold;
+        self.dev_tweaks.balancer_min_relative_improvement_threshold = Some(threshold);
         self
     }
 
     pub fn with_balancer_min_absolute_improvement_threshold(mut self, threshold: u64) -> Self {
-        self.dev_tweaks.balancer_min_absolute_improvement_threshold = threshold;
+        self.dev_tweaks.balancer_min_absolute_improvement_threshold = Some(threshold);
         self
     }
 
     pub fn with_balancer_balance_tax(mut self, tax: f64) -> Self {
-        self.dev_tweaks.balancer_balance_tax = tax;
+        self.dev_tweaks.balancer_balance_tax = Some(tax);
         self
     }
 
@@ -562,6 +472,15 @@ impl CircuitConfig {
             ..self
         }
     }
+
+    /// The number of merger threads per host.
+    pub(crate) fn num_merger_threads(&self) -> usize {
+        let num_workers = self.layout.local_workers().len();
+        match self.dev_tweaks.merger_threads {
+            Some(threads) => threads as usize,
+            None => num_workers * DEFAULT_MERGER_THREAD_RATIO,
+        }
+    }
 }
 
 impl From<&CircuitConfig> for CircuitConfig {
@@ -573,6 +492,12 @@ impl From<&CircuitConfig> for CircuitConfig {
 impl From<usize> for CircuitConfig {
     fn from(n_workers: usize) -> Self {
         Self::with_workers(n_workers)
+    }
+}
+
+impl From<NonZeroUsize> for CircuitConfig {
+    fn from(n_workers: NonZeroUsize) -> Self {
+        Self::with_workers(n_workers.get())
     }
 }
 
@@ -1730,6 +1655,7 @@ pub(crate) mod tests {
     use super::{CircuitStorageConfig, Mode};
     use crate::circuit::checkpointer::Checkpointer;
     use crate::circuit::dbsp_handle::DevTweaks;
+    use crate::circuit::runtime::TOKIO_WORKER_INDEX;
     use crate::circuit::{CircuitConfig, Layout};
     use crate::dynamic::{ClonableTrait, DowncastTrait, DynData, Erase};
     use crate::operator::Generator;
@@ -1742,6 +1668,7 @@ pub(crate) mod tests {
         OutputHandle, Runtime, RuntimeError, ZSetHandle, ZWeight,
     };
     use anyhow::anyhow;
+    use feldera_buffer_cache::ThreadType;
     use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
     use tempfile::{TempDir, tempdir};
     use uuid::Uuid;
@@ -1828,6 +1755,57 @@ pub(crate) mod tests {
         if let DbspError::Runtime(err) = handle.transaction().unwrap_err() {
             // println!("error: {err}");
             matches!(err, RuntimeError::WorkerPanic { .. });
+        } else {
+            panic!();
+        }
+    }
+
+    /// Check that a panic in the tokio merger runtime is propagated to the client.
+    #[test]
+    fn test_panic_in_tokio_merger_runtime() {
+        let (panic_tx, panic_rx) = std::sync::mpsc::channel();
+        let (mut handle, _) = Runtime::init_circuit(1, move |circuit| {
+            let (_stream, _input_handle) = circuit.add_input_map::<u64, u64, i64, _>(|v, u| {
+                *v = ((*v as i64) + *u) as u64;
+            });
+
+            if Runtime::worker_index() == 0 {
+                let runtime = Runtime::runtime().unwrap();
+                let panic_tx = panic_tx.clone();
+                runtime.tokio_merger_runtime().spawn(async move {
+                    TOKIO_WORKER_INDEX
+                        .scope(0, async move {
+                            let _ = std::panic::catch_unwind(|| {
+                                panic!("panic from tokio merger runtime task");
+                            });
+                            let _ = panic_tx.send(());
+                        })
+                        .await;
+                });
+            }
+
+            Ok(())
+        })
+        .unwrap();
+
+        panic_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("timed out waiting for panic task to complete");
+
+        if let DbspError::Runtime(err) = handle.transaction().unwrap_err() {
+            println!("error: {err}");
+            match err {
+                RuntimeError::WorkerPanic { panic_info } => {
+                    assert!(
+                        panic_info
+                            .iter()
+                            .any(|(_worker, thread_type, _info)| *thread_type
+                                == ThreadType::Background),
+                        "expected WorkerPanic to include background worker panic info"
+                    );
+                }
+                _ => panic!(),
+            }
         } else {
             panic!();
         }
@@ -1988,6 +1966,7 @@ pub(crate) mod tests {
         let temp = tempdir().expect("Can't create temp dir for storage");
         let cconf = CircuitConfig {
             layout: Layout::new_solo(1),
+            max_rss_bytes: None,
             mode: Mode::Ephemeral,
             pin_cpus: Vec::new(),
             storage: Some(

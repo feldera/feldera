@@ -2,7 +2,7 @@
 
 set -e
 
-: "${CALCITE_BUILD_DIR:=/tmp/calcite}"
+: "${CALCITE_BUILD_DIR:=./calcite-build}"
 : "${CALCITE_CURRENT:=1.41.0}"
 
 # Load environment overrides from calcite_version.env file, if present
@@ -33,7 +33,19 @@ if [ "${CALCITE_BUILD_NEXT}" = "y" ]; then
         echo "Cloning Calcite into ${CALCITE_BUILD_DIR}"
         git clone --depth 1 --quiet --single-branch --branch "${CALCITE_BRANCH}" ${GIT_ARGS} "${CALCITE_REPO}" "${CALCITE_BUILD_DIR}"
     else
-        echo "Using existing Calcite source in ${CALCITE_BUILD_DIR}"
+        # Check if there is a valid checkout of Calcite
+        REPO=`git -C ${CALCITE_BUILD_DIR} rev-parse --show-toplevel`
+        REPO_PATH=$(realpath -- "${REPO}")
+        CALCITE_PATH=$(realpath -- "${CALCITE_BUILD_DIR}")
+        if [ "${REPO_PATH}" = "${CALCITE_PATH}" ]; then
+            # This looks like a valid checkout of Calcite (* checks that REPO is a suffix of CALCITE_BUILD_DIR
+            echo "Using existing Calcite source in ${CALCITE_BUILD_DIR}"
+        else
+            # No, clone it again
+            rm -rf "${CALCITE_BUILD_DIR}"
+            echo "Cloning Calcite into ${CALCITE_BUILD_DIR}"
+            git clone --depth 1 --quiet --single-branch --branch "${CALCITE_BRANCH}" ${GIT_ARGS} "${CALCITE_REPO}" "${CALCITE_BUILD_DIR}"
+        fi
     fi
 
     if [[ -n "${CALCITE_NEXT_COMMIT}" ]]; then
@@ -47,18 +59,18 @@ if [ "${CALCITE_BUILD_NEXT}" = "y" ]; then
     pushd "${CALCITE_BUILD_DIR}" >/dev/null
     jvm_version=$(./gradlew --version | sed -n 's/^JVM: *//p')
     case $jvm_version in
-	19* | 20* | 21*) ;;
-	2[5-9]*)
-	    echo >&2 "*** ERROR *** Java version 25+ does not work with Calcite"
-	    exit 1
-	    ;;
-	*)
-	    echo "*** WARNING *** Only Java versions 19, 20, and 21 are known to work with Calcite but you have $jvm_version"
-	    ;;
+        19* | 20* | 21*) ;;
+        2[5-9]*)
+            echo >&2 "*** ERROR *** Java version 25+ does not work with Calcite"
+            exit 1
+            ;;
+        *)
+            echo "*** WARNING *** Only Java versions 19, 20, and 21 are known to work with Calcite but you have $jvm_version"
+            ;;
     esac
     ./gradlew build -x test -x checkStyleMain -x autoStyleJavaCheck build --console=plain -Dorg.gradle.logging.level=quiet
 
-    for DIR in core server linq4j; do
+    for DIR in core linq4j; do
         ARTIFACT=calcite-${DIR}
         mvn install:install-file \
             -Dfile="${DIR}/build/libs/${ARTIFACT}-${CALCITE_NEXT}-SNAPSHOT.jar" \

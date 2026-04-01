@@ -26,7 +26,6 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
-import org.dbsp.sqlCompiler.circuit.operator.IMultiOutput;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
@@ -244,6 +243,9 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     public void postorder(DBSPApplyOperator operator) { this.replace(operator); }
 
     @Override
+    public void postorder(DBSPApplyNOperator operator) { this.replace(operator); }
+
+    @Override
     public void postorder(DBSPDeltaOperator operator) { this.replace(operator); }
 
     @Override
@@ -394,6 +396,21 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     }
 
     @Override
+    public void postorder(DBSPStarJoinOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinIndexOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinFilterMapOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
     public void postorder(DBSPLeftJoinOperator operator) {
         this.replace(operator);
     }
@@ -439,7 +456,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     }
 
     @Override
-    public void postorder(DBSPDistinctIncrementalOperator operator) {
+    public void postorder(DBSPBinaryDistinctOperator operator) {
         this.replace(operator);
     }
 

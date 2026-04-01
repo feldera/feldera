@@ -5,6 +5,7 @@
 //! endpoint configs.  We represent these configs as opaque JSON values, so
 //! that the entire configuration tree can be deserialized from a JSON file.
 
+use crate::preprocess::PreprocessorConfig;
 use crate::program_schema::ProgramSchema;
 use crate::secret_resolver::default_secrets_directory;
 use crate::transport::adhoc::AdHocInputConfig;
@@ -36,6 +37,9 @@ use std::{borrow::Cow, cmp::max, collections::BTreeMap};
 use utoipa::ToSchema;
 use utoipa::openapi::{ObjectBuilder, OneOfBuilder, Ref, RefOr, Schema, SchemaType};
 
+pub mod dev_tweaks;
+pub use dev_tweaks::DevTweaks;
+
 const DEFAULT_MAX_PARALLEL_CONNECTOR_INIT: u64 = 10;
 
 /// Default value of `ConnectorConfig::max_queued_records`.
@@ -43,13 +47,7 @@ pub const fn default_max_queued_records() -> u64 {
     1_000_000
 }
 
-/// Default maximum batch size for connectors, in records.
-///
-/// If you change this then update the comment on
-/// [ConnectorConfig::max_batch_size].
-pub const fn default_max_batch_size() -> u64 {
-    10_000
-}
+pub const DEFAULT_MAX_WORKER_BATCH_SIZE: u64 = 10_000;
 
 pub const DEFAULT_CLOCK_RESOLUTION_USECS: u64 = 1_000_000;
 
@@ -586,6 +584,19 @@ pub struct SyncConfig {
     #[schema(default = default_retention_min_age)]
     #[serde(default = "default_retention_min_age")]
     pub retention_min_age: u32,
+
+    /// A read-only bucket used as a fallback checkpoint source.
+    ///
+    /// When the pipeline has no local checkpoint and `bucket` contains no
+    /// checkpoint either, it will attempt to fetch the checkpoint from this
+    /// location instead.  All connection settings (`endpoint`, `region`,
+    /// `provider`, `access_key`, `secret_key`) are shared with `bucket`.
+    ///
+    /// The pipeline **never writes** to `read_bucket`.
+    ///
+    /// Must point to a different location than `bucket`.
+    #[serde(default)]
+    pub read_bucket: Option<String>,
 }
 
 fn default_pull_interval() -> u64 {
@@ -606,6 +617,15 @@ impl SyncConfig {
             return Err(r#"invalid sync config: `standby` set to `true` but `start_from_checkpoint` not set.
 Standby mode requires `start_from_checkpoint` to be set.
 Consider setting `start_from_checkpoint` to `"latest"`."#.to_owned());
+        }
+
+        if let Some(ref rb) = self.read_bucket
+            && rb == &self.bucket
+        {
+            return Err(
+                "invalid sync config: `read_bucket` and `bucket` must point to different locations"
+                    .to_owned(),
+            );
         }
 
         Ok(())
@@ -759,6 +779,28 @@ pub struct RuntimeConfig {
     /// used during a step.
     pub workers: u16,
 
+    /// The maximum amount of memory, in Megabytes, that the pipeline is allowed to use
+    /// on each host.
+    ///
+    /// Setting this property activates memory pressure monitoring and backpressure
+    /// mechanisms. The pipeline will track the amount of remaining memory and
+    /// report the memory pressure level via the `memory_pressure` metric.
+    ///
+    /// As the memory pressure increases, the system will apply increasing backpressure
+    /// to push state cached in memory to storage, preventing the pipeline from running
+    /// out of memory at the cost of some performance degradation.
+    ///
+    /// It is strongly recommended to set this property to prevent the pipeline from
+    /// running out of memory. The setting should not exceed the memory limit of the pipeline
+    /// instance.
+    ///
+    /// When `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the
+    /// latter is used as the effective memory cap for the pipeline.
+    ///
+    /// See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
+    /// for more details.
+    pub max_rss_mb: Option<u64>,
+
     /// Number of DBSP hosts.
     ///
     /// The worker threads are evenly divided among the hosts.  For single-host
@@ -877,12 +919,17 @@ pub struct RuntimeConfig {
     /// If not specified, the default is set to `workers`.
     pub io_workers: Option<u64>,
 
-    /// Optional settings for tweaking Feldera internals.
+    /// Environment variables for the pipeline process.
     ///
-    /// The available key-value pairs change from one version of Feldera to
-    /// another, so users should not depend on particular settings being
-    /// available, or on their behavior.
-    pub dev_tweaks: BTreeMap<String, serde_json::Value>,
+    /// These are key-value pairs injected into the pipeline process environment.
+    /// Some variable names are reserved by the platform and cannot be overridden
+    /// (for example `RUST_LOG`, and variables in the `FELDERA_`,
+    /// `KUBERNETES_`, and `TOKIO_` namespaces).
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+
+    /// Optional settings for tweaking Feldera internals.
+    pub dev_tweaks: DevTweaks,
 
     /// Log filtering directives.
     ///
@@ -1015,6 +1062,7 @@ impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
             workers: 8,
+            max_rss_mb: None,
             hosts: 1,
             storage: Some(StorageOptions::default()),
             fault_tolerance: FtConfig::default(),
@@ -1036,7 +1084,8 @@ impl Default for RuntimeConfig {
             checkpoint_during_suspend: true,
             io_workers: None,
             http_workers: None,
-            dev_tweaks: BTreeMap::default(),
+            env: BTreeMap::default(),
+            dev_tweaks: DevTweaks::default(),
             logging: None,
             pipeline_template_configmap: None,
         }
@@ -1345,6 +1394,9 @@ pub struct ConnectorConfig {
     /// Transport endpoint configuration.
     pub transport: TransportConfig,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preprocessor: Option<Vec<PreprocessorConfig>>,
+
     /// Parser configuration.
     pub format: Option<FormatConfig>,
 
@@ -1368,22 +1420,35 @@ pub struct ConnectorConfig {
     #[serde(flatten)]
     pub output_buffer_config: OutputBufferConfig,
 
-    /// Maximum batch size, in records.
+    /// Maximum number of records from this connector to process in a single batch.
     ///
-    /// This is the maximum number of records to process in one batch through
-    /// the circuit.  The time and space cost of processing a batch is
-    /// asymptotically superlinear in the size of the batch, but very small
-    /// batches are less efficient due to constant factors.
+    /// When set, this caps how many records are taken from the connector’s input
+    /// buffer and pushed through the circuit at once.
     ///
-    /// This should usually be less than `max_queued_records`, to give the
-    /// connector a round-trip time to restart and refill the buffer while
-    /// batches are being processed.
+    /// This is typically configured lower than `max_queued_records` to allow the
+    /// connector time to restart and refill its buffer while a batch is being
+    /// processed.
     ///
-    /// Some input adapters might not honor this setting.
+    /// Not all input adapters honor this limit.
     ///
-    /// The default is 10,000.
-    #[serde(default = "default_max_batch_size")]
-    pub max_batch_size: u64,
+    /// If this is not set, the batch size is derived from `max_worker_batch_size`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_batch_size: Option<u64>,
+
+    /// Maximum number of records processed per batch, per worker thread.
+    ///
+    /// When `max_batch_size` is not set, this setting is used to cap
+    /// the number of records that can be taken from the connector’s input
+    /// buffer and pushed through the circuit at once.  The effective batch size is computed as:
+    /// `max_worker_batch_size × workers`.
+    ///
+    /// This provides an alternative to `max_batch_size` that automatically adjusts batch
+    /// size as the number of worker threads changes to maintain constant amount of
+    /// work per worker per batch.
+    ///
+    /// Defaults to 10,000 records per worker.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_worker_batch_size: Option<u64>,
 
     /// Backpressure threshold.
     ///
@@ -1602,6 +1667,10 @@ impl TransportConfig {
                 | TransportConfig::HttpOutput
                 | TransportConfig::ClockInput(_)
         )
+    }
+
+    pub fn is_http_input(&self) -> bool {
+        matches!(self, TransportConfig::HttpInput(_))
     }
 }
 

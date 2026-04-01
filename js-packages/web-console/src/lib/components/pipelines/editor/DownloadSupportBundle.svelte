@@ -1,11 +1,10 @@
 <script lang="ts">
-  import { Progress, Switch } from '@skeletonlabs/skeleton-svelte'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import DownloadProgressDisplay from '$lib/components/dialogs/DownloadProgressDisplay.svelte'
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { humanSize } from '$lib/functions/common/string'
   import type { SupportBundleOptions } from '$lib/services/pipelineManager'
 
   const { pipelineName }: { pipelineName: string } = $props()
@@ -105,32 +104,16 @@
 
 {#snippet supportBundleDialog()}
   <GenericDialog
-    onApply={submitHandler}
-    onClose={() => {
-      cancelDownload?.()
-      globalDialog.dialog = null
+    content={{
+      title: 'Download Support Bundle',
+      onSuccess: { name: 'Download', callback: submitHandler },
+      onCancel: { callback: () => cancelDownload?.() }
     }}
-    confirmLabel="Download"
     disabled={isDownloading}
   >
-    {#snippet title()}
-      Download Support Bundle
-    {/snippet}
     <div class="-mt-2 pb-2 font-semibold">{pipelineName}</div>
     {#if isDownloading}
-      <div class="flex flex-col items-center gap-3 py-4">
-        <Progress class="h-1" value={progress.percent} max={100}>
-          <Progress.Track>
-            <Progress.Range class="bg-primary-500" />
-          </Progress.Track>
-        </Progress>
-        <div class="flex w-full justify-between gap-2">
-          <span>Downloading support bundle...</span>
-          {#if progress.percent}
-            <span>{humanSize(progress.bytes.downloaded)} / {humanSize(progress.bytes.total)}</span>
-          {/if}
-        </div>
-      </div>
+      <DownloadProgressDisplay {progress} label="Downloading support bundle..." />
     {:else}
       Select the details you want to include in the bundle
       {@render supportBundleForm()}

@@ -3,11 +3,14 @@ use std::sync::Arc;
 
 use dbsp::DBData;
 use dbsp::algebra::{F32, F64};
-use dbsp::dynamic::{DynData, Erase};
+use dbsp::dynamic::{DowncastTrait, DynData, Erase};
 use dbsp::storage::backend::memory_impl::MemoryBackend;
 use dbsp::storage::buffer_cache::BufferCache;
 use dbsp::storage::file::Factories;
-use dbsp::storage::file::writer::{Parameters, Writer1};
+use dbsp::storage::file::{
+    format::BatchMetadata,
+    writer::{Parameters, Writer1},
+};
 use feldera_sqllib::{
     Array, ByteArray, Date, GeoPoint, LongInterval, Map, ShortInterval, SqlDecimal, SqlString,
     Time, Timestamp, Uuid, Variant, to_array, to_map,
@@ -262,14 +265,14 @@ const MAX_COLLECTION_LEN: usize = 24;
 fn roundtrip_eq<T>(value: &T) -> Result<(), TestCaseError>
 where
     T: rkyv::Archive
-        + rkyv::Serialize<dbsp::storage::file::Serializer>
+        + for<'a> rkyv::Serialize<dbsp::storage::file::DbspSerializer<'a>>
         + PartialEq
         + core::fmt::Debug,
     rkyv::Archived<T>: rkyv::Deserialize<T, dbsp::storage::file::Deserializer>,
 {
     let bytes = dbsp::storage::file::to_bytes(value)
         .map_err(|err| TestCaseError::fail(format!("serialize failed: {err:?}")))?;
-    let restored: T = dbsp::trace::unaligned_deserialize(&bytes[..]);
+    let restored: T = dbsp::trace::aligned_deserialize(&bytes[..]);
     prop_assert_eq!(value, &restored);
     Ok(())
 }
@@ -277,7 +280,7 @@ where
 fn roundtrip_all<T>(values: &[T]) -> Result<(), TestCaseError>
 where
     T: rkyv::Archive
-        + rkyv::Serialize<dbsp::storage::file::Serializer>
+        + for<'a> rkyv::Serialize<dbsp::storage::file::DbspSerializer<'a>>
         + PartialEq
         + core::fmt::Debug,
     rkyv::Archived<T>: rkyv::Deserialize<T, dbsp::storage::file::Deserializer>,
@@ -312,9 +315,21 @@ where
             .map_err(|err| TestCaseError::fail(format!("write failed: {err:?}")))?;
     }
 
-    let reader = writer
-        .into_reader()
+    let (reader, filters) = writer
+        .into_reader(BatchMetadata::default())
         .map_err(|err| TestCaseError::fail(format!("reader init failed: {err:?}")))?;
+    match (values.first(), values.last(), filters.key_bounds()) {
+        (None, None, None) => {}
+        (Some(expected_min), Some(expected_max), Some((min, max))) => {
+            prop_assert_eq!(min.downcast_checked::<T>(), expected_min);
+            prop_assert_eq!(max.downcast_checked::<T>(), expected_max);
+        }
+        _ => {
+            return Err(TestCaseError::fail(
+                "writer returned unexpected filter bounds for sorted input".to_string(),
+            ));
+        }
+    }
     prop_assert_eq!(reader.n_rows(0) as usize, values.len());
 
     let mut bulk = reader

@@ -29,14 +29,14 @@ public class TrimWindows extends CircuitCloneWithGraphsVisitor {
             // We must preserve keys unchanged, but we can project away any fields of the value which are
             // unused on the left input of the window
 
-            FindUnusedFields mapFinder = new FindUnusedFields(this.compiler);
-            mapFunction = mapFinder.findUnusedFields(mapFunction);
-            FieldUseMap mapUsed = mapFinder.parameterFieldMap.get(mapParam);
+            FindUsedFields mapFinder = new FindUsedFields(this.compiler);
+            ParameterFieldUse use = mapFinder.findUsedFields(mapFunction);
+            FieldUseMap mapUsed = use.get(mapParam);
             mapUsed.setUsed(0);  // pretend all key fields are used
             if (mapUsed.hasUnusedFields(2)) {
                 DBSPClosureExpression preProjection = mapUsed.getProjection(2);
                 Utilities.enforce(preProjection != null);
-                RewriteFields mapRewriter = mapFinder.getFieldRewriter(2);
+                RewriteFields mapRewriter = use.getFieldRewriter(this.compiler, 2);
                 DBSPClosureExpression post = mapRewriter.rewriteClosure(mapFunction);
 
                 DBSPMapIndexOperator pre = new DBSPMapIndexOperator(window.getRelNode(),
@@ -44,8 +44,7 @@ public class TrimWindows extends CircuitCloneWithGraphsVisitor {
                 this.addOperator(pre);
 
                 DBSPWindowOperator newWindow = new DBSPWindowOperator(
-                        window.getRelNode(), window.getFunctionNode(),
-                        window.lowerInclusive, window.upperInclusive, pre.outputPort(), window.right());
+                        window.getRelNode(), window.lowerInclusive, window.upperInclusive, pre.outputPort(), window.right());
                 newWindow.setDerivedFrom(window);
                 this.addOperator(newWindow);
 
