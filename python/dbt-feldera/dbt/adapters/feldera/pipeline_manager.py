@@ -1,10 +1,11 @@
 import logging
 import threading
+import time
 from typing import Dict, List, Optional, Tuple
 
 import agate
 
-from feldera.enums import CompilationProfile, PipelineStatus
+from feldera.enums import CompilationProfile, PipelineFieldSelector, PipelineStatus, ProgramStatus
 from feldera.pipeline import Pipeline
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.rest.errors import FelderaAPIError
@@ -312,10 +313,7 @@ class PipelineStateManager:
 
             # Update SQL and wait for recompilation
             p.modify(sql=full_sql)
-            inner = client._wait_for_compilation(pipeline, timeout_s=timeout)
-
-            # Recreate pipeline wrapper from compiled result
-            p = Pipeline._from_inner(inner, client)
+            self._wait_for_compilation(p, timeout)
 
             logger.info("Pipeline '%s' recompiled with views, starting...", pipeline)
 
@@ -352,6 +350,75 @@ class PipelineStateManager:
         from dbt.adapters.feldera.sqlglot_parser import parser
 
         return parser.extract_table_names(table_ddls)
+
+    @staticmethod
+    def _wait_for_compilation(
+        pipeline: Pipeline,
+        timeout: int,
+        poll_interval: float = 1.0,
+    ) -> None:
+        """
+        Wait for a pipeline to finish compiling using the public Pipeline API.
+
+        Polls ``pipeline.program_status()`` until compilation succeeds or
+        fails, raising on error or timeout.
+
+        :param pipeline: The Pipeline object to monitor.
+        :param timeout: Maximum seconds to wait for compilation.
+        :param poll_interval: Seconds between status polls.
+        :raises TimeoutError: If compilation does not finish within *timeout*.
+        :raises RuntimeError: If compilation fails (SQL error, Rust error, etc.).
+        """
+        compiling_states = {
+            ProgramStatus.Pending,
+            ProgramStatus.CompilingSql,
+            ProgramStatus.SqlCompiled,
+            ProgramStatus.CompilingRust,
+        }
+
+        start_time = time.monotonic()
+        while True:
+            elapsed = time.monotonic() - start_time
+            if elapsed > timeout:
+                raise TimeoutError(f"Timed out waiting for pipeline '{pipeline.name}' to compile after {timeout}s")
+
+            status = pipeline.program_status()
+
+            if status == ProgramStatus.Success:
+                pipeline.refresh(PipelineFieldSelector.ALL)
+                return
+
+            if status not in compiling_states:
+                error = pipeline.program_error()
+                error_message = f"Pipeline '{pipeline.name}' failed to compile: {status}\n"
+
+                sql_errors = error.get("sql_compilation", {}).get("messages")
+                if sql_errors:
+                    for sql_error in sql_errors:
+                        error_message += (
+                            f"{sql_error.get('error_type', '')}\n"
+                            f"{sql_error.get('message', '')}\n"
+                            f"Code snippet:\n{sql_error.get('snippet', '')}\n"
+                        )
+                    raise RuntimeError(error_message)
+
+                rust_error = error.get("rust_compilation")
+                if rust_error is not None:
+                    error_message += f"Rust Error: {rust_error}\n"
+
+                system_error = error.get("system_error")
+                if system_error is not None:
+                    error_message += f"System Error: {system_error}"
+
+                raise RuntimeError(error_message)
+
+            logger.debug(
+                "Pipeline '%s' still compiling (status=%s), waiting %.1fs",
+                pipeline.name,
+                status,
+                poll_interval,
+            )
+            time.sleep(poll_interval)
 
     def has_pending_views(self) -> bool:
         """

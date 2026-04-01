@@ -12,6 +12,8 @@ from dbt.adapters.feldera.connections import FelderaConnectionHandle, FelderaCon
 from dbt.adapters.feldera.credentials import FelderaCredentials
 from dbt.adapters.feldera.pipeline_manager import PipelineStateManager
 from dbt.adapters.feldera.relation import FelderaRelation
+from feldera.pipeline import Pipeline
+from feldera.rest.errors import FelderaAPIError
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +128,7 @@ class FelderaAdapter(BaseAdapter):
         """
         try:
             client = self._get_client()
-            pipelines = client.pipelines()
+            pipelines = Pipeline.all(client)
             return [p.name for p in pipelines]
         except Exception as exc:
             logger.warning("Failed to list schemas: %s", exc)
@@ -172,12 +174,11 @@ class FelderaAdapter(BaseAdapter):
         client = self._get_client()
         _pipeline_state.stop(client, pipeline_name)
         try:
-            from feldera.enums import PipelineFieldSelector
-
-            inner = client.get_pipeline(pipeline_name, PipelineFieldSelector.STATUS)
-            if inner is not None:
-                client.delete_pipeline(pipeline_name)
-                logger.info("Deleted pipeline '%s'", pipeline_name)
+            p = Pipeline.get(pipeline_name, client)
+            p.delete()
+            logger.info("Deleted pipeline '%s'", pipeline_name)
+        except FelderaAPIError:
+            logger.debug("Pipeline '%s' not found for deletion", pipeline_name)
         except Exception as exc:
             logger.debug("Pipeline '%s' not found for deletion: %s", pipeline_name, exc)
 
@@ -232,19 +233,14 @@ class FelderaAdapter(BaseAdapter):
         client = self._get_client()
 
         try:
-            from feldera.enums import PipelineFieldSelector
-
-            inner = client.get_pipeline(pipeline_name, PipelineFieldSelector.ALL)
-            if inner is None:
-                return []
-
+            p = Pipeline.get(pipeline_name, client)
             target_name = relation.identifier.lower() if relation.identifier else ""
 
-            for table in inner.tables:
+            for table in p.tables():
                 if table.name.lower() == target_name:
                     return [FelderaColumn.from_feldera_field(f) for f in table.fields]
 
-            for view in inner.views:
+            for view in p.views():
                 if view.name.lower() == target_name:
                     return [FelderaColumn.from_feldera_field(f) for f in view.fields]
 
@@ -282,13 +278,9 @@ class FelderaAdapter(BaseAdapter):
 
         relations = []
         try:
-            from feldera.enums import PipelineFieldSelector
+            p = Pipeline.get(pipeline_name, client)
 
-            inner = client.get_pipeline(pipeline_name, PipelineFieldSelector.ALL)
-            if inner is None:
-                return []
-
-            for table in inner.tables:
+            for table in p.tables():
                 relations.append(
                     self.Relation.create(
                         database=schema_relation.database,
@@ -298,7 +290,7 @@ class FelderaAdapter(BaseAdapter):
                     )
                 )
 
-            for view in inner.views:
+            for view in p.views():
                 relations.append(
                     self.Relation.create(
                         database=schema_relation.database,
@@ -472,14 +464,10 @@ class FelderaAdapter(BaseAdapter):
         """
         client = self._get_client()
         try:
-            client.push_to_pipeline(
-                pipeline_name=pipeline_name,
-                table_name=table_name,
-                format="json",
-                data=data,
-                array=True,
-                update_format="raw",
-            )
+            p = _pipeline_state.get_pipeline(client, pipeline_name)
+            if p is None:
+                p = Pipeline.get(pipeline_name, client)
+            p.input_json(table_name, data)
             logger.info("Pushed %d rows to '%s.%s'", len(data), pipeline_name, table_name)
         except Exception as exc:
             logger.error("Failed to push seed data to '%s.%s': %s", pipeline_name, table_name, exc)
