@@ -40,7 +40,7 @@ echo "============================================"
 
 echo ""
 echo "[0/6] Downloading seed data from GitHub Gist..."
-python3 "${SCRIPT_DIR}/download_seeds.py" "${PROJECT_DIR}/seeds"
+python3 "${SCRIPT_DIR}/download_seeds.py" "${PROJECT_DIR}"
 
 echo ""
 echo "[1/6] Starting Feldera via Docker Compose..."

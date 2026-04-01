@@ -20,11 +20,11 @@ MANIFEST = "ci_seeds.yaml"
 
 
 def _seeds_dir_default() -> Path:
-    return Path(__file__).resolve().parent.parent / "dbt-adventureworks" / "seeds"
+    return Path(__file__).resolve().parent.parent / "dbt-adventureworks"
 
 
-def _load_manifest(seeds_dir: Path) -> dict:
-    path = seeds_dir / MANIFEST
+def _load_manifest(project_dir: Path) -> dict:
+    path = project_dir / MANIFEST
     if not path.exists():
         raise SystemExit(f"ERROR: manifest not found at {path}")
     text = path.read_text()
@@ -41,14 +41,14 @@ def _load_manifest(seeds_dir: Path) -> dict:
     return {"gist_id": gist_id_m.group(1), "gist_owner": gist_owner_m.group(1), "files": files}
 
 
-def main(seeds_dir: Path | None = None) -> int:
-    seeds_dir = (seeds_dir or _seeds_dir_default()).resolve()
-    manifest = _load_manifest(seeds_dir)
+def main(project_dir: Path | None = None) -> int:
+    project_dir = (project_dir or _seeds_dir_default()).resolve()
+    manifest = _load_manifest(project_dir)
     base_url = f"https://gist.githubusercontent.com/{manifest['gist_owner']}/{manifest['gist_id']}/raw"
 
     downloaded = skipped = failed = 0
     for entry in manifest["files"]:
-        dest = seeds_dir / entry["path"]
+        dest = project_dir / entry["path"]
         if dest.exists():
             skipped += 1
             continue
