@@ -21,6 +21,7 @@ class FelderaCursor:
         self._pipeline_name = pipeline_name
         self._results: Optional[List[Dict[str, Any]]] = None
         self._columns: Optional[List[str]] = None
+        self._column_types: Optional[List[Optional[str]]] = None
         self._rowcount: int = -1
         self._closed: bool = False
 
@@ -36,10 +37,16 @@ class FelderaCursor:
 
         Each description is a 7-tuple: (name, type_code, display_size,
         internal_size, precision, scale, null_ok).
+
+        Type codes are inferred from the Python types in the first result row.
         """
         if not self._columns:
             return None
-        return [(col, None, None, None, None, None, None) for col in self._columns]
+        types = self._column_types or [None] * len(self._columns)
+        return [
+            (col, types[i] if i < len(types) else None, None, None, None, None, None)
+            for i, col in enumerate(self._columns)
+        ]
 
     def execute(self, sql: str, bindings: Optional[Sequence] = None) -> None:
         """
@@ -57,6 +64,7 @@ class FelderaCursor:
         if intent == SqlIntent.NO_OP:
             self._results = []
             self._columns = []
+            self._column_types = None
             self._rowcount = 0
             return
 
@@ -65,15 +73,44 @@ class FelderaCursor:
         elif intent == SqlIntent.PIPELINE_DDL:
             self._results = []
             self._columns = []
+            self._column_types = None
             self._rowcount = 0
             logger.debug("Pipeline DDL captured (not executed directly): %s", sql[:200])
         elif intent == SqlIntent.DATA_INGRESS:
             self._results = []
             self._columns = []
+            self._column_types = None
             self._rowcount = 0
             logger.debug("Data ingress captured: %s", sql[:200])
         elif intent == SqlIntent.METADATA:
             self._execute_adhoc_query(sql)
+
+    def _infer_column_types(self) -> List[Optional[str]]:
+        """Infer SQL type codes from the first result row's Python types."""
+        if not self._results or not self._columns:
+            return [None] * len(self._columns) if self._columns else []
+
+        first_row = self._results[0]
+        types: List[Optional[str]] = []
+        for col in self._columns:
+            val = first_row.get(col)
+            if val is None:
+                types.append(None)
+            elif isinstance(val, bool):
+                types.append("BOOLEAN")
+            elif isinstance(val, int):
+                types.append("INTEGER")
+            elif isinstance(val, float):
+                types.append("DOUBLE")
+            elif isinstance(val, str):
+                types.append("VARCHAR")
+            elif isinstance(val, list):
+                types.append("ARRAY")
+            elif isinstance(val, dict):
+                types.append("MAP")
+            else:
+                types.append(None)
+        return types
 
     def _execute_adhoc_query(self, sql: str) -> None:
         """
@@ -94,12 +131,14 @@ class FelderaCursor:
                 self._columns = []
 
             self._rowcount = len(self._results)
+            self._column_types = self._infer_column_types()
             logger.debug("Ad-hoc query returned %d rows", self._rowcount)
 
         except Exception as exc:
             logger.error("Ad-hoc query failed: %s", exc)
             self._results = []
             self._columns = []
+            self._column_types = None
             self._rowcount = 0
             raise
 
@@ -144,3 +183,4 @@ class FelderaCursor:
         self._closed = True
         self._results = None
         self._columns = None
+        self._column_types = None

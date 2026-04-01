@@ -59,5 +59,67 @@ class TestFelderaAdapterPluginRegistration(unittest.TestCase):
         self.assertTrue(os.path.isfile(dbt_project))
 
 
+class TestConvertAgateRows(unittest.TestCase):
+    """Unit tests for FelderaAdapter._convert_agate_rows NaN/Infinity handling."""
+
+    def _make_table(self, rows, column_names, column_types=None):
+        import agate
+
+        if column_types is None:
+            column_types = [agate.data_types.Number()] * len(column_names)
+        return agate.Table(rows=rows, column_names=column_names, column_types=column_types)
+
+    def test_nan_decimal_becomes_none(self):
+        from decimal import Decimal
+
+        table = self._make_table([(Decimal("NaN"),)], ["value"])
+        result = FelderaAdapter._convert_agate_rows(table)
+        self.assertIsNone(result[0]["value"])
+
+    def test_infinity_decimal_becomes_none(self):
+        from decimal import Decimal
+
+        table = self._make_table([(Decimal("Infinity"),)], ["value"])
+        result = FelderaAdapter._convert_agate_rows(table)
+        self.assertIsNone(result[0]["value"])
+
+    def test_negative_infinity_decimal_becomes_none(self):
+        from decimal import Decimal
+
+        table = self._make_table([(Decimal("-Infinity"),)], ["value"])
+        result = FelderaAdapter._convert_agate_rows(table)
+        self.assertIsNone(result[0]["value"])
+
+    def test_normal_decimal_integer_becomes_int(self):
+        from decimal import Decimal
+
+        table = self._make_table([(Decimal("42"),)], ["value"])
+        result = FelderaAdapter._convert_agate_rows(table)
+        self.assertEqual(result[0]["value"], 42)
+        self.assertIsInstance(result[0]["value"], int)
+
+    def test_normal_decimal_float_becomes_float(self):
+        from decimal import Decimal
+
+        table = self._make_table([(Decimal("3.14"),)], ["value"])
+        result = FelderaAdapter._convert_agate_rows(table)
+        self.assertAlmostEqual(result[0]["value"], 3.14)
+        self.assertIsInstance(result[0]["value"], float)
+
+    def test_nan_with_float_caster_becomes_none(self):
+        from decimal import Decimal
+
+        table = self._make_table([(Decimal("NaN"),)], ["value"])
+        result = FelderaAdapter._convert_agate_rows(table, column_types={"value": "DOUBLE"})
+        self.assertIsNone(result[0]["value"])
+
+    def test_infinity_with_float_caster_becomes_none(self):
+        from decimal import Decimal
+
+        table = self._make_table([(Decimal("Infinity"),)], ["value"])
+        result = FelderaAdapter._convert_agate_rows(table, column_types={"value": "FLOAT"})
+        self.assertIsNone(result[0]["value"])
+
+
 if __name__ == "__main__":
     unittest.main()
