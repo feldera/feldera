@@ -1,9 +1,0 @@
-version: 2
-seeds:
-- name: productsubcategory
-  config:
-    column_types:
-      productsubcategoryid: INT
-      productcategoryid: INT
-      name: VARCHAR
-      modifieddate: TIMESTAMP

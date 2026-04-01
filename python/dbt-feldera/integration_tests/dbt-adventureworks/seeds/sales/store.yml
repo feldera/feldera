@@ -1,9 +1,0 @@
-version: 2
-seeds:
-- name: store
-  config:
-    column_types:
-      businessentityid: INT
-      storename: VARCHAR
-      salespersonid: INT
-      modifieddate: TIMESTAMP

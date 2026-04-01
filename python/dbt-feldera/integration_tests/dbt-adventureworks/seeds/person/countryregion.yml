@@ -1,8 +1,0 @@
-version: 2
-seeds:
-- name: countryregion
-  config:
-    column_types:
-      countryregioncode: VARCHAR
-      modifieddate: TIMESTAMP
-      name: VARCHAR

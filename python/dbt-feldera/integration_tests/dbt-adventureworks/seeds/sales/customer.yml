@@ -1,9 +1,0 @@
-version: 2
-seeds:
-- name: customer
-  config:
-    column_types:
-      customerid: INT
-      personid: INT
-      storeid: INT
-      territoryid: INT
