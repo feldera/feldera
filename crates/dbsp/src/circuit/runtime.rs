@@ -1326,7 +1326,6 @@ impl Consensus {
 pub(crate) enum Broadcast<T> {
     SingleThreaded,
     MultiThreaded {
-        notify_sender: Arc<Notify>,
         notify_receiver: Arc<Notify>,
         exchange: Arc<Exchange<T>>,
     },
@@ -1348,21 +1347,14 @@ where
                     Box::new(|data| rmp_serde::from_slice(&data).unwrap()),
                 );
 
-                let notify_sender = Arc::new(Notify::new());
-                let notify_sender_clone = notify_sender.clone();
                 let notify_receiver = Arc::new(Notify::new());
                 let notify_receiver_clone = notify_receiver.clone();
-
-                exchange.register_sender_callback(worker_index, move || {
-                    notify_sender_clone.notify_one()
-                });
 
                 exchange.register_receiver_callback(worker_index, move || {
                     notify_receiver_clone.notify_one()
                 });
 
                 Self::MultiThreaded {
-                    notify_sender,
                     notify_receiver,
                     exchange,
                 }
@@ -1380,23 +1372,27 @@ where
         match self {
             Self::SingleThreaded => Ok(vec![local]),
             Self::MultiThreaded {
-                notify_sender,
                 notify_receiver,
                 exchange,
             } => {
-                while !exchange.try_send_all_with_serializer(
-                    Runtime::worker_index(),
-                    repeat(local.clone()),
-                    |local| {
-                        let mut fbuf = FBuf::new();
-                        rmp_serde::encode::write(&mut fbuf, &local).unwrap();
-                        fbuf
-                    },
-                ) {
+                let sender_notify = exchange.sender_notify(Runtime::worker_index());
+                loop {
+                    let notified = sender_notify.notified();
+                    if exchange.try_send_all_with_serializer(
+                        Runtime::worker_index(),
+                        repeat(local.clone()),
+                        |local| {
+                            let mut fbuf = FBuf::new();
+                            rmp_serde::encode::write(&mut fbuf, &local).unwrap();
+                            fbuf
+                        },
+                    ) {
+                        break;
+                    }
                     if Runtime::kill_in_progress() {
                         return Err(SchedulerError::Killed);
                     }
-                    notify_sender.notified().await;
+                    notified.await;
                 }
                 // Receive and collect the status of each peer.
                 let mut result = Vec::with_capacity(Runtime::num_workers());
