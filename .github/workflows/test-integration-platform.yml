@@ -3,12 +3,6 @@ name: Platform Integration Tests
 
 on:
   workflow_call:
-    inputs:
-      artifacts_run_id:
-        description: "Run ID to download build artifacts from (empty = current run)"
-        type: string
-        required: false
-        default: ""
   workflow_dispatch:
     inputs:
       run_id:
@@ -239,8 +233,6 @@ jobs:
         with:
           name: fda-${{ matrix.target }}
           path: build
-          run-id: ${{ inputs.artifacts_run_id || github.event.inputs.run_id || github.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
       - name: Make fda binary executable
