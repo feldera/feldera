@@ -445,15 +445,13 @@ struct InnerExchange {
     sender_counters: Vec<CachePadded<AtomicUsize>>,
     /// Callback invoked when all `npeers` mailboxes are available.
     sender_callbacks: Vec<Callback>,
+    /// Notified when all `npeers` mailboxes are available.
+    sender_notifies: Vec<Notify>,
     /// The number of workers that have already sent their messages in the
     /// current round.
     sent: AtomicUsize,
     /// The RPC clients to contact remote hosts.
     clients: Arc<Clients>,
-    /// This allows the `exchange` RPC to wait until the receiver has taken its
-    /// data out of the mailbox.  There are `n_remote_workers * n_local_workers`
-    /// elements.
-    sender_notifies: Vec<Notify>,
     /// A callback that takes the raw data exchanged over RPC and deserializes
     /// and delivers it to the receiver's mailbox.
     deliver: Box<dyn Fn(AlignedVec, usize, usize) + Send + Sync + 'static>,
@@ -466,20 +464,16 @@ impl InnerExchange {
         clients: Arc<Clients>,
     ) -> InnerExchange {
         let runtime = Runtime::runtime().unwrap();
-        let npeers = Runtime::num_workers();
-        let local_workers = runtime.layout().local_workers();
-        let n_local_workers = local_workers.len();
-        let n_remote_workers = npeers - n_local_workers;
+        let layout = runtime.layout();
+        let npeers = layout.n_workers();
         Self {
             exchange_id,
             npeers,
-            local_workers,
+            local_workers: layout.local_workers(),
             clients,
             receiver_counters: (0..npeers).map(|_| AtomicUsize::new(0)).collect(),
             receiver_callbacks: (0..npeers).map(|_| Callback::empty()).collect(),
-            sender_notifies: (0..n_local_workers * n_remote_workers)
-                .map(|_| Notify::new())
-                .collect(),
+            sender_notifies: (0..npeers).map(|_| Notify::new()).collect(),
             sender_counters: (0..npeers)
                 .map(|_| CachePadded::new(AtomicUsize::new(npeers)))
                 .collect(),
@@ -492,21 +486,6 @@ impl InnerExchange {
     #[allow(dead_code)]
     fn exchange_id(&self) -> ExchangeId {
         self.exchange_id
-    }
-
-    /// Returns the `sender_notify` for a sender/receiver pair.  `receiver`
-    /// must be a local worker ID, and `sender` must be a remote worker ID.
-    fn sender_notify(&self, sender: usize, receiver: usize) -> &Notify {
-        debug_assert!(sender < self.npeers && !self.local_workers.contains(&sender));
-        debug_assert!(self.local_workers.contains(&receiver));
-        let n_local_workers = self.local_workers.len();
-        let sender_ofs = if sender >= self.local_workers.start {
-            sender - n_local_workers
-        } else {
-            sender
-        };
-        let receiver_ofs = receiver - self.local_workers.start;
-        &self.sender_notifies[sender_ofs * n_local_workers + receiver_ofs]
     }
 
     /// Receives messages sent from all of the worker threads in `senders` to
@@ -526,6 +505,17 @@ impl InnerExchange {
 
         // Deliver all of the data into the exchange's mailboxes.
         for (sender, data) in senders.clone().zip(data.into_iter()) {
+            // Wait for the receivers to have empty mailboxes first.
+            if !self.ready_to_send(sender) {
+                loop {
+                    let notify = self.sender_notifies[sender].notified();
+                    if self.ready_to_send(sender) {
+                        break;
+                    }
+                    notify.await;
+                }
+            }
+
             assert_eq!(data.len(), receivers.len());
             for (receiver, data) in receivers.clone().zip(data.into_iter()) {
                 (self.deliver)(data, sender, receiver);
@@ -538,13 +528,6 @@ impl InnerExchange {
             let old_counter = self.receiver_counters[receiver].fetch_add(n, Ordering::AcqRel);
             if old_counter >= self.npeers - n {
                 self.receiver_callbacks[receiver].call();
-            }
-        }
-
-        // Wait for the receivers to pick up their mail before returning.
-        for sender in senders {
-            for receiver in receivers.clone() {
-                self.sender_notify(sender, receiver).notified().await;
             }
         }
     }
@@ -909,6 +892,7 @@ where
                 let old_counter = this.inner.sender_counters[sender].fetch_add(n, Ordering::AcqRel);
                 if old_counter >= npeers - n {
                     this.inner.sender_callbacks[sender].call();
+                    this.inner.sender_notifies[sender].notify_waiters();
                 }
             }
         });
@@ -982,13 +966,11 @@ where
 
         for (sender, data) in data.into_iter().enumerate() {
             cb(data);
-            if self.inner.local_workers.contains(&sender) {
-                let old_counter = self.inner.sender_counters[sender].fetch_add(1, Ordering::AcqRel);
-                if old_counter >= self.inner.npeers - 1 {
-                    self.inner.sender_callbacks[sender].call();
-                }
-            } else {
-                self.inner.sender_notify(sender, receiver).notify_one();
+
+            let old_counter = self.inner.sender_counters[sender].fetch_add(1, Ordering::AcqRel);
+            if old_counter >= self.inner.npeers - 1 {
+                self.inner.sender_callbacks[sender].call();
+                self.inner.sender_notifies[sender].notify_waiters();
             }
         }
         true
@@ -1013,6 +995,12 @@ where
         F: Fn() + Send + Sync + 'static,
     {
         self.inner.register_sender_callback(sender, cb)
+    }
+
+    /// Returns a `Notify` that is notified whenever the `ready_to_send`
+    /// condition becomes true for `sender`.
+    pub(crate) fn sender_notify(&self, sender: usize) -> &Notify {
+        &self.inner.sender_notifies[sender]
     }
 
     /// Register callback to be invoked whenever the `ready_to_receive`
