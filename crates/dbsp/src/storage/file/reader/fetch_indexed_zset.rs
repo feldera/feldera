@@ -50,7 +50,7 @@ where
 {
     pub(super) fn new(
         reader: &'a Reader<(&'static K0, &'static A0, (&'static K1, &'static A1, ()))>,
-        keys: &'b DynVec<K0>,
+        keys: FilteredKeys<'b, K0>,
     ) -> Result<Self, Error> {
         Ok(Self(FetchIndexedZSetInner::Column0(Some(Fetch0::new(
             reader, keys,
@@ -172,7 +172,7 @@ where
 {
     fn new(
         reader: &'a Reader<(&'static K, &'static A, N)>,
-        keys: &'b DynVec<K>,
+        keys: FilteredKeys<'b, K>,
     ) -> Result<Self, Error> {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         let factories = reader.columns[0].factories.factories();
@@ -185,7 +185,7 @@ where
         key_stack.reserve_exact(10);
 
         let mut this = Self {
-            keys: FilteredKeys::new(reader, keys),
+            keys,
             reader,
             cache: (reader.file.cache)(),
             factories,

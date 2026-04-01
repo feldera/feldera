@@ -517,7 +517,7 @@ where
             let mut builder = Z::Builder::with_capacity(&self.input_factories, self.chunk_size, self.chunk_size);
             let mut delta_cursor = delta.cursor();
 
-            let fetched = if Runtime::with_dev_tweaks(|d| d.fetch_distinct) {
+            let fetched = if Runtime::with_dev_tweaks(|d| d.fetch_distinct == Some(true)) {
                 delayed_integral.as_ref().unwrap().fetch(&delta).await
             } else {
                 None

@@ -1,5 +1,5 @@
 use crate::storage::buffer_cache::CacheStats;
-use crate::storage::tracking_bloom_filter::BloomFilterStats;
+use crate::storage::filter_stats::FilterStats;
 use crate::trace::BatchLocation;
 use crate::trace::cursor::Position;
 use crate::trace::ord::file::UnwrapStorage;
@@ -17,7 +17,7 @@ use crate::{
     },
     trace::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, WeightedItem,
-        ord::merge_batcher::MergeBatcher,
+        ord::{batch_filter::BatchFilters, merge_batcher::MergeBatcher},
     },
     utils::Tup2,
 };
@@ -212,7 +212,10 @@ where
     #[size_of(skip)]
     #[debug(skip)]
     factories: FileValBatchFactories<K, V, T, R>,
+    #[debug(skip)]
     pub file: RawValBatch<K, V, T, R>,
+    #[debug(skip)]
+    filters: BatchFilters<K>,
 }
 
 impl<K, V, T, R> Clone for FileValBatch<K, V, T, R>
@@ -226,6 +229,27 @@ where
         Self {
             factories: self.factories.clone(),
             file: self.file.clone(),
+            filters: self.filters.clone(),
+        }
+    }
+}
+
+impl<K, V, T, R> FileValBatch<K, V, T, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    fn from_parts(
+        factories: FileValBatchFactories<K, V, T, R>,
+        file: RawValBatch<K, V, T, R>,
+        filters: BatchFilters<K>,
+    ) -> Self {
+        Self {
+            factories,
+            file,
+            filters,
         }
     }
 }
@@ -297,8 +321,12 @@ where
         self.file.byte_size().unwrap_storage() as usize
     }
 
-    fn filter_stats(&self) -> BloomFilterStats {
-        self.file.filter_stats()
+    fn membership_filter_stats(&self) -> FilterStats {
+        self.filters.stats().membership_filter
+    }
+
+    fn range_filter_stats(&self) -> FilterStats {
+        self.filters.stats().range_filter
     }
 
     #[inline]
@@ -333,10 +361,6 @@ where
             }
         }
     }
-
-    fn maybe_contains_key(&self, hash: u64) -> bool {
-        self.file.maybe_contains_key(hash)
-    }
 }
 
 impl<K, V, T, R> Batch for FileValBatch<K, V, T, R>
@@ -358,16 +382,16 @@ where
     fn from_path(factories: &Self::Factories, path: &StoragePath) -> Result<Self, ReaderError> {
         let any_factory0 = factories.factories0.any_factories();
         let any_factory1 = factories.factories1.any_factories();
-        let file = Arc::new(Reader::open(
+        let (file, membership_filter) = Reader::open_with_filter(
             &[&any_factory0, &any_factory1],
             Runtime::buffer_cache,
             &*Runtime::storage_backend().unwrap_storage(),
             path,
-        )?);
-        Ok(Self {
-            factories: factories.clone(),
-            file,
-        })
+        )?;
+        let file = Arc::new(file);
+        let key_range = file.key_range()?.map(Into::into);
+        let filters = BatchFilters::from_file(key_range, membership_filter);
+        Ok(Self::from_parts(factories.clone(), file, filters))
     }
 
     fn negative_weight_count(&self) -> Option<u64> {
@@ -577,8 +601,7 @@ where
     }
 
     fn seek_key_exact(&mut self, key: &K, hash: Option<u64>) -> bool {
-        let hash = hash.unwrap_or_else(|| key.default_hash());
-        if !self.batch.maybe_contains_key(hash) {
+        if !self.batch.filters.maybe_contains_key(key, hash) {
             return false;
         }
         self.seek_key(key);
@@ -703,10 +726,9 @@ where
     }
 
     fn done(self) -> FileValBatch<K, V, T, R> {
-        FileValBatch {
-            factories: self.factories,
-            file: Arc::new(self.writer.into_reader(self.stats).unwrap_storage()),
-        }
+        let (file, filters) = self.writer.into_reader(self.stats).unwrap_storage();
+        let file = Arc::new(file);
+        FileValBatch::from_parts(self.factories, file, filters)
     }
 
     fn push_key(&mut self, key: &K) {

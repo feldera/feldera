@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use dbsp::DBData;
 use dbsp::algebra::{F32, F64};
-use dbsp::dynamic::{DynData, Erase};
+use dbsp::dynamic::{DowncastTrait, DynData, Erase};
 use dbsp::storage::backend::memory_impl::MemoryBackend;
 use dbsp::storage::buffer_cache::BufferCache;
 use dbsp::storage::file::Factories;
@@ -315,9 +315,21 @@ where
             .map_err(|err| TestCaseError::fail(format!("write failed: {err:?}")))?;
     }
 
-    let reader = writer
+    let (reader, filters) = writer
         .into_reader(BatchMetadata::default())
         .map_err(|err| TestCaseError::fail(format!("reader init failed: {err:?}")))?;
+    match (values.first(), values.last(), filters.key_bounds()) {
+        (None, None, None) => {}
+        (Some(expected_min), Some(expected_max), Some((min, max))) => {
+            prop_assert_eq!(min.downcast_checked::<T>(), expected_min);
+            prop_assert_eq!(max.downcast_checked::<T>(), expected_max);
+        }
+        _ => {
+            return Err(TestCaseError::fail(
+                "writer returned unexpected filter bounds for sorted input".to_string(),
+            ));
+        }
+    }
     prop_assert_eq!(reader.n_rows(0) as usize, values.len());
 
     let mut bulk = reader

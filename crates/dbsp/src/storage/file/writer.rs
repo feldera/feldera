@@ -47,6 +47,7 @@ use crate::{
     Runtime,
     dynamic::{DataTrait, DeserializeDyn, SerializeDyn},
     storage::file::ItemFactory,
+    trace::ord::{BatchFilters, key_range::KeyRange},
 };
 
 struct VarintWriter {
@@ -238,7 +239,7 @@ impl ColumnWriter {
         &mut self,
         block_writer: &mut BlockWriter,
         serializer: &mut SerializerInner,
-    ) -> Result<FileTrailerColumn, StorageError>
+    ) -> Result<(FileTrailerColumn, Option<(Box<K>, Box<K>)>), StorageError>
     where
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
@@ -255,29 +256,50 @@ impl ColumnWriter {
             if level == self.index_blocks.len() - 1 && self.index_blocks[level].entries.len() == 1 {
                 let builder = &self.index_blocks[level];
                 let entry = &builder.entries[0];
-                return Ok(FileTrailerColumn {
-                    node_type: builder.child_type,
-                    node_offset: entry.child.offset,
-                    node_size: entry.child.size.try_into().unwrap_or_else(|_| {
-                        unreachable!(
-                            "Individual blocks should be much less than 4 GiB, tried to write {:?}",
-                            &entry.child
-                        )
-                    }),
-                    n_rows: entry.row_total,
-                });
+                return Ok((
+                    FileTrailerColumn {
+                        node_type: builder.child_type,
+                        node_offset: entry.child.offset,
+                        node_size: entry.child.size.try_into().unwrap_or_else(|_| {
+                            unreachable!(
+                                "Individual blocks should be much less than 4 GiB, tried to write {:?}",
+                                &entry.child
+                            )
+                        }),
+                        n_rows: entry.row_total,
+                    },
+                    Some(self.key_bounds::<K>(&builder.raw, entry)),
+                ));
             } else if !self.index_blocks[level].is_empty() {
                 let index_block = self.index_blocks[level].build();
                 self.write_index_block::<K>(block_writer, index_block, level, serializer)?;
             }
             level += 1;
         }
-        Ok(FileTrailerColumn {
-            node_type: NodeType::Data,
-            node_offset: 0,
-            node_size: 0,
-            n_rows: 0,
-        })
+        Ok((
+            FileTrailerColumn {
+                node_type: NodeType::Data,
+                node_offset: 0,
+                node_size: 0,
+                n_rows: 0,
+            },
+            None,
+        ))
+    }
+
+    fn key_bounds<K>(&self, raw: &FBuf, entry: &IndexEntry) -> (Box<K>, Box<K>)
+    where
+        K: DataTrait + ?Sized,
+    {
+        let key_factory = self.factories.key_factory::<K>();
+
+        let mut min = key_factory.default_box();
+        rkyv_deserialize(raw, entry.min_offset, min.as_mut());
+
+        let mut max = key_factory.default_box();
+        rkyv_deserialize(raw, entry.max_offset, max.as_mut());
+
+        (min, max)
     }
 
     fn get_index_block(&mut self, level: usize) -> &mut IndexBlockBuilder {
@@ -1126,7 +1148,7 @@ struct Writer {
 
 impl Writer {
     fn bloom_false_positive_rate() -> Option<f64> {
-        let rate = Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.bloom_false_positive_rate);
+        let rate = Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.bloom_false_positive_rate());
         let rate = (rate > 0.0 && rate < 1.0).then_some(rate);
 
         static ONCE: Once = Once::new();
@@ -1205,7 +1227,10 @@ impl Writer {
         self.cws[column].add_item(&mut self.writer, item, &row_group, &mut self.serializer)
     }
 
-    pub fn finish_column<K, A>(&mut self, column: usize) -> Result<(), StorageError>
+    pub fn finish_column<K, A>(
+        &mut self,
+        column: usize,
+    ) -> Result<Option<(Box<K>, Box<K>)>, StorageError>
     where
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
@@ -1215,9 +1240,10 @@ impl Writer {
             assert!(cw.rows.is_empty());
         }
 
-        self.finished_columns
-            .push(self.cws[column].finish::<K, A>(&mut self.writer, &mut self.serializer)?);
-        Ok(())
+        let (trailer, key_bounds) =
+            self.cws[column].finish::<K, A>(&mut self.writer, &mut self.serializer)?;
+        self.finished_columns.push(trailer);
+        Ok(key_bounds)
     }
 
     pub fn close(
@@ -1393,8 +1419,8 @@ where
         self.inner.n_rows()
     }
 
-    /// Finishes writing the layer file and returns the writer passed to
-    /// [`new`](Self::new).
+    /// Finishes writing the layer file and returns the file handle, optional
+    /// bloom filter, and column-0 key bounds.
     ///
     /// # Arguments
     ///
@@ -1402,9 +1428,17 @@ where
     pub fn close(
         mut self,
         metadata: BatchMetadata,
-    ) -> Result<(Arc<dyn FileReader>, Option<TrackingBloomFilter>), StorageError> {
-        self.inner.finish_column::<K0, A0>(0)?;
-        self.inner.close(metadata)
+    ) -> Result<
+        (
+            Arc<dyn FileReader>,
+            Option<TrackingBloomFilter>,
+            Option<(Box<K0>, Box<K0>)>,
+        ),
+        StorageError,
+    > {
+        let key_bounds = self.inner.finish_column::<K0, A0>(0)?;
+        let (file_handle, bloom_filter) = self.inner.close(metadata)?;
+        Ok((file_handle, bloom_filter, key_bounds))
     }
 
     /// Returns the path for the file being written.
@@ -1417,21 +1451,32 @@ where
         self.inner.storage()
     }
 
-    /// Finishes writing the layer file and returns a reader for it.
-    ///
-    /// # Arguments
-    ///
-    /// * `metadata` - Batch metadata to include in the trailer.
-    pub fn into_reader(
+    fn into_reader_impl(
         self,
         metadata: BatchMetadata,
-    ) -> Result<Reader<(&'static K0, &'static A0, ())>, super::reader::Error> {
+    ) -> Result<(Reader<(&'static K0, &'static A0, ())>, BatchFilters<K0>), super::reader::Error>
+    {
         let any_factories = self.factories.any_factories();
 
         let cache = self.inner.cache;
-        let (file_handle, bloom_filter) = self.close(metadata)?;
+        let (file_handle, bloom_filter, key_bounds) = self.close(metadata)?;
+        let key_range = key_bounds
+            .as_ref()
+            .map(|(min, max)| KeyRange::from_refs(min.as_ref(), max.as_ref()));
+        let (reader, membership_filter) =
+            Reader::new_with_filter(&[&any_factories], cache, file_handle, bloom_filter)?;
+        let filters = BatchFilters::from_file(key_range, membership_filter);
+        Ok((reader, filters))
+    }
 
-        Reader::new(&[&any_factories], cache, file_handle, bloom_filter)
+    /// Finishes writing the layer file and returns a reader for it together
+    /// with exact-seek filters.
+    pub fn into_reader(
+        self,
+        metadata: BatchMetadata,
+    ) -> Result<(Reader<(&'static K0, &'static A0, ())>, BatchFilters<K0>), super::reader::Error>
+    {
+        self.into_reader_impl(metadata)
     }
 }
 
@@ -1577,8 +1622,8 @@ where
         self.inner.n_rows()
     }
 
-    /// Finishes writing the layer file and returns the writer passed to
-    /// [`new`](Self::new).
+    /// Finishes writing the layer file and returns the file handle, optional
+    /// bloom filter, and column-0 key bounds.
     ///
     /// This function will panic if [`write1`](Self::write1) has been called
     /// without a subsequent call to [`write0`](Self::write0).
@@ -1589,10 +1634,18 @@ where
     pub fn close(
         mut self,
         metadata: BatchMetadata,
-    ) -> Result<(Arc<dyn FileReader>, Option<TrackingBloomFilter>), StorageError> {
-        self.inner.finish_column::<K0, A0>(0)?;
-        self.inner.finish_column::<K1, A1>(1)?;
-        self.inner.close(metadata)
+    ) -> Result<
+        (
+            Arc<dyn FileReader>,
+            Option<TrackingBloomFilter>,
+            Option<(Box<K0>, Box<K0>)>,
+        ),
+        StorageError,
+    > {
+        let key_bounds = self.inner.finish_column::<K0, A0>(0)?;
+        let _ = self.inner.finish_column::<K1, A1>(1)?;
+        let (file_handle, bloom_filter) = self.inner.close(metadata)?;
+        Ok((file_handle, bloom_filter, key_bounds))
     }
 
     /// Returns the storage used for this writer.
@@ -1605,28 +1658,46 @@ where
         self.inner.path()
     }
 
-    /// Finishes writing the layer file and returns a reader for it.
-    ///
-    /// # Arguments
-    ///
-    /// * `metadata` - Batch metadata to include in the trailer.
-    #[allow(clippy::type_complexity)]
-    pub fn into_reader(
+    fn into_reader_impl(
         self,
         metadata: BatchMetadata,
     ) -> Result<
-        Reader<(&'static K0, &'static A0, (&'static K1, &'static A1, ()))>,
+        (
+            Reader<(&'static K0, &'static A0, (&'static K1, &'static A1, ()))>,
+            BatchFilters<K0>,
+        ),
         super::reader::Error,
     > {
         let any_factories0 = self.factories0.any_factories();
         let any_factories1 = self.factories1.any_factories();
         let cache = self.inner.cache;
-        let (file_handle, bloom_filter) = self.close(metadata)?;
-        Reader::new(
+        let (file_handle, bloom_filter, key_bounds) = self.close(metadata)?;
+        let key_range = key_bounds
+            .as_ref()
+            .map(|(min, max)| KeyRange::from_refs(min.as_ref(), max.as_ref()));
+        let (reader, membership_filter) = Reader::new_with_filter(
             &[&any_factories0, &any_factories1],
             cache,
             file_handle,
             bloom_filter,
-        )
+        )?;
+        let filters = BatchFilters::from_file(key_range, membership_filter);
+        Ok((reader, filters))
+    }
+
+    /// Finishes writing the layer file and returns a reader for it together
+    /// with exact-seek filters.
+    #[allow(clippy::type_complexity)]
+    pub fn into_reader(
+        self,
+        metadata: BatchMetadata,
+    ) -> Result<
+        (
+            Reader<(&'static K0, &'static A0, (&'static K1, &'static A1, ()))>,
+            BatchFilters<K0>,
+        ),
+        super::reader::Error,
+    > {
+        self.into_reader_impl(metadata)
     }
 }

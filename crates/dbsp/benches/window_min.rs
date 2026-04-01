@@ -7,7 +7,8 @@ use anyhow::{Context, Result, anyhow};
 use dbsp::circuit::CircuitConfig;
 use dbsp::operator::Min;
 use dbsp::utils::Tup2;
-use dbsp::{Runtime, TypedBox, ZWeight, circuit::DevTweaks};
+use dbsp::{Runtime, TypedBox, ZWeight};
+use feldera_types::config::DevTweaks;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::time::{Duration, Instant};
@@ -43,7 +44,7 @@ fn main() -> Result<()> {
 fn run_workload(negative_weight_multiplier: u16) -> Result<RunSummary> {
     let mut config = CircuitConfig::from(WORKERS);
     config.dev_tweaks = DevTweaks {
-        negative_weight_multiplier,
+        negative_weight_multiplier: Some(negative_weight_multiplier),
         ..DevTweaks::default()
     };
 

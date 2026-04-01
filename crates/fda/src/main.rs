@@ -14,7 +14,6 @@ use log::{debug, error, info, trace, warn};
 use reqwest::StatusCode;
 use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use serde_json::json;
-use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::fs::File;
 use std::io::{ErrorKind, Read, Write, stdout};
@@ -467,8 +466,7 @@ fn patch_runtime_config(
             rc.io_workers = Some(value.parse().map_err(|_| ())?);
         }
         RuntimeConfigKey::DevTweaks => {
-            rc.dev_tweaks = serde_json::from_str::<BTreeMap<String, serde_json::Value>>(value)
-                .map_err(|_| ())?;
+            rc.dev_tweaks = serde_json::from_str(value).map_err(|_| ())?;
         }
     };
 

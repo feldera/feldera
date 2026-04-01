@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use enum_map::{Enum, EnumMap};
 use feldera_buffer_cache::{
-    BufferCacheAllocationStrategy, BufferCacheBuilder, BufferCacheStrategy, CacheEntry, LruCache,
-    SharedBufferCache, ThreadType,
+    BufferCacheBuilder, CacheEntry, LruCache, SharedBufferCache, ThreadType,
 };
+use feldera_types::config::dev_tweaks::{BufferCacheAllocationStrategy, BufferCacheStrategy};
 use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
 

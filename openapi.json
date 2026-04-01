@@ -10,7 +10,7 @@
     "license": {
       "name": "MIT OR Apache-2.0"
     },
-    "version": "0.276.0"
+    "version": "0.277.0"
   },
   "paths": {
     "/config/authentication": {
@@ -6598,6 +6598,23 @@
           "await_approval"
         ]
       },
+      "BufferCacheAllocationStrategy": {
+        "type": "string",
+        "description": "Controls how caches are shared across a foreground/background worker pair.",
+        "enum": [
+          "shared_per_worker_pair",
+          "per_thread",
+          "global"
+        ]
+      },
+      "BufferCacheStrategy": {
+        "type": "string",
+        "description": "Selects which eviction strategy backs a cache instance.",
+        "enum": [
+          "s3_fifo",
+          "lru"
+        ]
+      },
       "BuildInformation": {
         "type": "object",
         "description": "Information about the build of the platform.",
@@ -8037,6 +8054,153 @@
           }
         }
       },
+      "DevTweaks": {
+        "type": "object",
+        "description": "Optional settings for tweaking Feldera internals.\n\nThese settings reflect experiments that may come and go and change from\nversion to version.  Users should not consider them to be stable.",
+        "properties": {
+          "adaptive_joins": {
+            "type": "boolean",
+            "description": "Enable adaptive joins.\n\nAdaptive joins dynamically change their partitioning policy to avoid skew.\n\nAdaptive joins are disabled by default.",
+            "default": null,
+            "nullable": true
+          },
+          "balancer_balance_tax": {
+            "type": "number",
+            "format": "double",
+            "description": "Factor that discourages the use of the Balance policy in a perfectly balanced collection.\n\nAssuming a perfectly balanced key distribution, the Balance policy is slightly less efficient than Shard,\nsince it requires computing the hash of the entire key/value pair. This factor discourages the use of this policy\nif the skew is `<balancer_balance_tax`.\n\nThe default value is 1.1.",
+            "default": null,
+            "nullable": true
+          },
+          "balancer_key_distribution_refresh_threshold": {
+            "type": "number",
+            "format": "double",
+            "description": "The balancer threshold for checking for an improved partitioning policy for a stream.\n\nFinding a good partitioning policy for a circuit involves solving an optimization problem,\nwhich can be relatively expensive. Instead of doing this on every step, the balancer only\nchecks for an improved partitioning policy if the key distribution of a stream has changed\nsignificantly since the current solution was computed.  Specifically, it only kicks in when\nthe size of at least one shard of at least one stream in the cluster has changed by more than\nthis threshold.\n\nThe default value is 0.1.",
+            "default": null,
+            "nullable": true
+          },
+          "balancer_min_absolute_improvement_threshold": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The minimum absolute improvement threshold for the balancer.\n\nThe join balancer is a component that dynamically chooses an optimal\npartitioning policy for adaptive join operators.  This parameter\nprevents the join balancer from making changes to the partitioning\npolicy if the improvement is not significant, since the overhead of such\nrebalancing, especially when performed frequently, can exceed the\nbenefits.\n\nA rebalancing is considered significant if the absolute estimated\nimprovement for the cluster of joins where the rebalancing is applied is\nat least this threshold. The cost model used by the balancer is based on\nthe number of records in the largest partition of a collection.\n\nA rebalancing is applied if both this threshold and\n`balancer_min_relative_improvement_threshold` are met.\n\nThe default value is 10,000.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "balancer_min_relative_improvement_threshold": {
+            "type": "number",
+            "format": "double",
+            "description": "The minimum relative improvement threshold for the join balancer.\n\nThe join balancer is a component that dynamically chooses an optimal\npartitioning policy for adaptive join operators.  This parameter\nprevents the join balancer from making changes to the partitioning\npolicy if the improvement is not significant, since the overhead of such\nrebalancing, especially when performed frequently, can exceed the\nbenefits.\n\nA rebalancing is considered significant if the relative estimated\nimprovement for the cluster of joins where the rebalancing is applied is\nat least this threshold.\n\nA rebalancing is applied if both this threshold and\n`balancer_min_absolute_improvement_threshold` are met.\n\nThe default value is 1.2.",
+            "default": null,
+            "nullable": true
+          },
+          "bloom_false_positive_rate": {
+            "type": "number",
+            "format": "double",
+            "description": "False-positive rate for Bloom filters on batches on storage, as a\nfraction f, where 0 < f < 1.\n\nThe false-positive rate trades off between the amount of memory used by\nBloom filters and how frequently storage needs to be searched for keys\nthat are not actually present.  Typical false-positive rates and their\ncorresponding memory costs are:\n\n- 0.1: 4.8 bits per key\n- 0.01: 9.6 bits per key\n- 0.001: 14.4 bits per key\n- 0.0001: 19.2 bits per key (default)\n\nValues outside the valid range, such as 0.0, disable Bloom filters.",
+            "default": null,
+            "nullable": true
+          },
+          "buffer_cache_allocation_strategy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BufferCacheAllocationStrategy"
+              }
+            ],
+            "default": null,
+            "nullable": true
+          },
+          "buffer_cache_strategy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BufferCacheStrategy"
+              }
+            ],
+            "default": null,
+            "nullable": true
+          },
+          "buffer_max_buckets": {
+            "type": "integer",
+            "description": "Override the number of buckets/shards used by sharded buffer caches.\n\nThis only applies when `buffer_cache_strategy = \"s3_fifo\"`. Values are\nrounded up to the next power of two because the current implementation\nshards by `hash(key) & (n - 1)`.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "fbuf_slab_bytes_per_class": {
+            "type": "integer",
+            "description": "Target number of cached bytes retained in each `FBuf` slab size class.\n\nThe default is 16 MiB.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "fetch_distinct": {
+            "type": "boolean",
+            "description": "Whether to asynchronously fetch keys needed for the distinct operator\nfrom storage.  Asynchronous fetching should be faster for high-latency\nstorage, such as object storage, but it could use excessive amounts of\nmemory if the number of keys fetched is very large.",
+            "default": null,
+            "nullable": true
+          },
+          "fetch_join": {
+            "type": "boolean",
+            "description": "Whether to asynchronously fetch keys needed for the join operator from\nstorage.  Asynchronous fetching should be faster for high-latency\nstorage, such as object storage, but it could use excessive amounts of\nmemory if the number of keys fetched is very large.",
+            "default": null,
+            "nullable": true
+          },
+          "max_level0_batch_size_records": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum batch size in records for level 0 merges.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "merger": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MergerType"
+              }
+            ],
+            "default": null,
+            "nullable": true
+          },
+          "merger_threads": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The number of merger threads.\n\nThe default value is equal to the number of worker threads.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "negative_weight_multiplier": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Additional bias the merger assigns to records with negative weights\n(retractions) to promote them to higher levels of the LSM tree sooner.\n\nReasonable values for this parameter are in the range [0, 10].\n\nThe default value is 0, which means that retractions are not given\nany additional bias.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "splitter_chunk_size_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Controls the maximal number of records output by splitter operators\n(joins, distinct, aggregation, rolling window and group operators) at\neach step.\n\nThe default value is 10,000 records.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "stack_overflow_backtrace": {
+            "type": "boolean",
+            "description": "Attempt to print a stack trace on stack overflow.\n\nTo be used for debugging only; do not enable in production.",
+            "default": null,
+            "nullable": true
+          },
+          "storage_mb_max": {
+            "type": "integer",
+            "format": "int64",
+            "description": "If set, the maximum amount of storage, in MiB, for the POSIX backend to\nallow to be in use before failing all writes with [StorageFull].  This\nis useful for testing on top of storage that does not implement its own\nquota mechanism.\n\n[StorageFull]: std::io::ErrorKind::StorageFull",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          }
+        }
+      },
       "DisplaySchedule": {
         "oneOf": [
           {
@@ -9254,6 +9418,14 @@
           "critical"
         ]
       },
+      "MergerType": {
+        "type": "string",
+        "description": "Which merger to use.",
+        "enum": [
+          "push_merger",
+          "list_merger"
+        ]
+      },
       "MetricsFormat": {
         "type": "string",
         "description": "Circuit metrics output format.\n- `prometheus`: [format](https://github.com/prometheus/docs/blob/4b1b80f5f660a2f8dc25a54f52a65a502f31879a/docs/instrumenting/exposition_formats.md) expected by Prometheus\n- `json`: JSON format",
@@ -9853,10 +10025,12 @@
                 "default": true
               },
               "dev_tweaks": {
-                "type": "object",
-                "description": "Optional settings for tweaking Feldera internals.\n\nThe available key-value pairs change from one version of Feldera to\nanother, so users should not depend on particular settings being\navailable, or on their behavior.",
-                "default": {},
-                "additionalProperties": {}
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DevTweaks"
+                  }
+                ],
+                "default": {}
               },
               "env": {
                 "type": "object",
@@ -11557,10 +11731,12 @@
             "default": true
           },
           "dev_tweaks": {
-            "type": "object",
-            "description": "Optional settings for tweaking Feldera internals.\n\nThe available key-value pairs change from one version of Feldera to\nanother, so users should not depend on particular settings being\navailable, or on their behavior.",
-            "default": {},
-            "additionalProperties": {}
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DevTweaks"
+              }
+            ],
+            "default": {}
           },
           "env": {
             "type": "object",

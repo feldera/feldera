@@ -1,38 +1,11 @@
 use crate::ThreadType;
 use crate::{CacheEntry, LruCache, S3FifoCache, SharedBufferCache};
 use enum_map::{Enum, EnumMap};
-use serde::{Deserialize, Serialize};
+use feldera_types::config::dev_tweaks::{BufferCacheAllocationStrategy, BufferCacheStrategy};
 use std::fmt::Debug;
 use std::hash::{BuildHasher, Hash, RandomState};
 use std::marker::PhantomData;
 use tracing::warn;
-
-/// Selects which eviction strategy backs a cache instance.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BufferCacheStrategy {
-    /// Use the sharded S3-FIFO cache backed by `quick_cache`.
-    #[default]
-    S3Fifo,
-
-    /// Use the mutex-protected weighted LRU cache.
-    Lru,
-}
-
-/// Controls how caches are shared across a foreground/background worker pair.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BufferCacheAllocationStrategy {
-    /// Share one cache across a foreground/background worker pair.
-    #[default]
-    SharedPerWorkerPair,
-
-    /// Create a separate cache for each foreground/background thread.
-    PerThread,
-
-    /// Share one cache across all foreground/background threads.
-    Global,
-}
 
 /// Builds the cache layout used by DBSP runtime worker pairs.
 pub struct BufferCacheBuilder<K, V, S = RandomState> {

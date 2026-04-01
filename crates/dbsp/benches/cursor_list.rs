@@ -7,7 +7,7 @@
 //!
 //! Run with: cargo bench -p dbsp --bench cursor_list
 
-use dbsp::circuit::{CircuitConfig, CircuitStorageConfig, DevTweaks, Layout, Mode};
+use dbsp::circuit::{CircuitConfig, CircuitStorageConfig, Layout, Mode};
 use dbsp::{
     OrdIndexedZSet, Runtime, ZWeight,
     trace::cursor::CursorList,
@@ -102,7 +102,7 @@ fn bench(storage: bool) {
             )
             .expect("failed to configure POSIX storage"),
         ),
-        dev_tweaks: DevTweaks::default(),
+        dev_tweaks: Default::default(),
     };
 
     let results: Arc<Mutex<Vec<BenchResult>>> = Arc::new(Mutex::new(Vec::new()));

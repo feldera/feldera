@@ -17,7 +17,8 @@ use crate::{
             MERGE_BACKPRESSURE_WAIT_TIME_SECONDS, MERGE_REDUCTION_PERCENT, MERGING_BATCHES_COUNT,
             MERGING_MEMORY_RECORDS_COUNT, MERGING_SIZE_BYTES, MERGING_STORAGE_RECORDS_COUNT,
             MetaItem, MetricId, MetricReading, NEGATIVE_WEIGHT_COUNT, OperatorMeta,
-            SPINE_BATCHES_COUNT, SPINE_STORAGE_SIZE_BYTES,
+            RANGE_FILTER_HIT_RATE_PERCENT, RANGE_FILTER_HITS_COUNT, RANGE_FILTER_MISSES_COUNT,
+            RANGE_FILTER_SIZE_BYTES, SPINE_BATCHES_COUNT, SPINE_STORAGE_SIZE_BYTES,
         },
         metrics::COMPACTION_STALL_TIME_NANOSECONDS,
         negative_weight_multiplier,
@@ -25,7 +26,10 @@ use crate::{
     },
     dynamic::{DynVec, Factory, Weight},
     samply::SamplySpan,
-    storage::buffer_cache::{BufferCache, CacheStats},
+    storage::{
+        buffer_cache::{BufferCache, CacheStats},
+        filter_stats::FilterStats,
+    },
     time::Timestamp,
     trace::{
         Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, GroupFilter, Trace,
@@ -40,15 +44,14 @@ use crate::{
 
 use crate::storage::file::{Deserializer, to_bytes};
 use crate::trace::CommittedSpine;
-use dbsp::storage::tracking_bloom_filter::BloomFilterStats;
 use enum_map::EnumMap;
 use feldera_buffer_cache::ThreadType;
 use feldera_storage::{
     FileCommitter, StoragePath,
     fbuf::slab::{FBufSlabs, TOKIO_FBUF_SLABS},
 };
-use feldera_types::checkpoint::PSpineBatches;
 use feldera_types::memory_pressure::MemoryPressure;
+use feldera_types::{checkpoint::PSpineBatches, config::dev_tweaks::MergerType};
 use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
@@ -551,7 +554,7 @@ where
                     let idle = Arc::clone(&idle);
                     let no_backpressure = Arc::clone(&no_backpressure);
                     let mut merger = None;
-                    let merger_type = Runtime::with_dev_tweaks(|tweaks| tweaks.merger);
+                    let merger_type = Runtime::with_dev_tweaks(|tweaks| tweaks.merger());
                     let notify = state.lock().unwrap().slots[level].notify.clone();
 
                     loop {
@@ -777,11 +780,13 @@ where
         let mut cache_stats = spine_stats.cache_stats;
         let mut storage_size = 0;
         let mut merging_size = 0;
-        let mut filter_stats = BloomFilterStats::default();
+        let mut membership_filter_stats = FilterStats::default();
+        let mut range_filter_stats = FilterStats::default();
         let mut storage_records = 0;
         for (batch, merging) in batches {
             cache_stats += batch.cache_stats();
-            filter_stats += batch.filter_stats();
+            membership_filter_stats += batch.membership_filter_stats();
+            range_filter_stats += batch.range_filter_stats();
             let on_storage = batch.location() == BatchLocation::Storage;
             if on_storage || merging {
                 let size = batch.approximate_byte_size();
@@ -796,7 +801,8 @@ where
         }
 
         if storage_records > 0 {
-            let bits_per_key = filter_stats.size_byte as f64 * 8.0 / storage_records as f64;
+            let bits_per_key =
+                membership_filter_stats.size_byte as f64 * 8.0 / storage_records as f64;
             let bits_per_key = bits_per_key as usize;
             meta.extend(metadata! {
                 BLOOM_FILTER_BITS_PER_KEY => MetaItem::Int(bits_per_key)
@@ -833,24 +839,48 @@ where
             MetricReading::new(
                 BLOOM_FILTER_SIZE_BYTES,
                 Vec::new(),
-                MetaItem::bytes(filter_stats.size_byte),
+                MetaItem::bytes(membership_filter_stats.size_byte),
             ),
             MetricReading::new(
                 BLOOM_FILTER_HITS_COUNT,
                 Vec::new(),
-                MetaItem::Count(filter_stats.hits),
+                MetaItem::Count(membership_filter_stats.hits),
             ),
             MetricReading::new(
                 BLOOM_FILTER_MISSES_COUNT,
                 Vec::new(),
-                MetaItem::Count(filter_stats.misses),
+                MetaItem::Count(membership_filter_stats.misses),
             ),
             MetricReading::new(
                 BLOOM_FILTER_HIT_RATE_PERCENT,
                 Vec::new(),
                 MetaItem::Percent {
-                    numerator: filter_stats.hits as u64,
-                    denominator: filter_stats.hits as u64 + filter_stats.misses as u64,
+                    numerator: membership_filter_stats.hits as u64,
+                    denominator: membership_filter_stats.hits as u64
+                        + membership_filter_stats.misses as u64,
+                },
+            ),
+            MetricReading::new(
+                RANGE_FILTER_SIZE_BYTES,
+                Vec::new(),
+                MetaItem::bytes(range_filter_stats.size_byte),
+            ),
+            MetricReading::new(
+                RANGE_FILTER_HITS_COUNT,
+                Vec::new(),
+                MetaItem::Count(range_filter_stats.hits),
+            ),
+            MetricReading::new(
+                RANGE_FILTER_MISSES_COUNT,
+                Vec::new(),
+                MetaItem::Count(range_filter_stats.misses),
+            ),
+            MetricReading::new(
+                RANGE_FILTER_HIT_RATE_PERCENT,
+                Vec::new(),
+                MetaItem::Percent {
+                    numerator: range_filter_stats.hits as u64,
+                    denominator: range_filter_stats.hits as u64 + range_filter_stats.misses as u64,
                 },
             ),
         ]);
@@ -998,19 +1028,6 @@ impl WorkerState {
     fn avg_slot0_merge_fuel(&self) -> isize {
         self.avg_slot0_merge_fuel.load(Ordering::Relaxed)
     }
-}
-
-/// Which merger to use.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MergerType {
-    /// Newer merger, which should be faster for high-latency storage, such as
-    /// object storage, but it likely needs tuning.
-    PushMerger,
-
-    /// The old standby, with known performance.
-    #[default]
-    ListMerger,
 }
 
 /// A single merge in progress in an [AsyncMerger].
@@ -1365,11 +1382,19 @@ where
             .sum()
     }
 
-    fn filter_stats(&self) -> BloomFilterStats {
+    fn membership_filter_stats(&self) -> FilterStats {
         self.merger
             .get_batches()
             .iter()
-            .map(|batch| batch.filter_stats())
+            .map(|batch| batch.membership_filter_stats())
+            .sum()
+    }
+
+    fn range_filter_stats(&self) -> FilterStats {
+        self.merger
+            .get_batches()
+            .iter()
+            .map(|batch| batch.range_filter_stats())
             .sum()
     }
 

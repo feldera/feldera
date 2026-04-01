@@ -58,7 +58,7 @@ use dbsp::circuit::metrics::{
     DBSP_STEP_LATENCY_MICROSECONDS, FILES_CREATED, FILES_DELETED, TOTAL_LATE_RECORDS,
 };
 use dbsp::circuit::tokio::TOKIO;
-use dbsp::circuit::{CheckpointCommitter, CircuitStorageConfig, DevTweaks, Mode};
+use dbsp::circuit::{CheckpointCommitter, CircuitStorageConfig, Mode};
 use dbsp::samply::{MARKER_BYTES, Markers, SamplySpan};
 use dbsp::storage::backend::{StorageBackend, StoragePath};
 use dbsp::utils::process_rss_bytes;
@@ -159,8 +159,8 @@ pub use feldera_types::config::{
     RuntimeConfig, TransportConfig,
 };
 use feldera_types::config::{
-    DEFAULT_MAX_WORKER_BATCH_SIZE, FileBackendConfig, FtConfig, FtModel, OutputBufferConfig,
-    StorageBackendConfig, SyncConfig,
+    DEFAULT_MAX_WORKER_BATCH_SIZE, DevTweaks, FileBackendConfig, FtConfig, FtModel,
+    OutputBufferConfig, StorageBackendConfig, SyncConfig,
 };
 use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
@@ -4400,7 +4400,10 @@ impl ControllerInit {
         pipeline_config: &PipelineConfig,
         storage: Option<CircuitStorageConfig>,
     ) -> Result<CircuitConfig, ControllerError> {
-        let dev_tweaks = DevTweaks::from_config(&pipeline_config.global.dev_tweaks);
+        let dev_tweaks = pipeline_config.global.dev_tweaks.clone();
+        if dev_tweaks != DevTweaks::default() {
+            info!("using non-default `dev_tweaks`: {dev_tweaks:#?}")
+        }
 
         let mut max_rss_mb = pipeline_config.global.max_rss_mb;
 
