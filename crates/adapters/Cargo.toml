@@ -246,3 +246,7 @@ required-features = ["with-avro"]
 name = "postgres_output"
 harness = false
 required-features = ["bench-mode"]
+
+[[bench]]
+name = "delta_encoder"
+harness = false

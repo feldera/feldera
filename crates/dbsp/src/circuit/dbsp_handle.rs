@@ -22,6 +22,7 @@ pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOption
 use feldera_types::transaction::CommitProgressSummary;
 use itertools::Either;
 use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -491,6 +492,12 @@ impl From<&CircuitConfig> for CircuitConfig {
 impl From<usize> for CircuitConfig {
     fn from(n_workers: usize) -> Self {
         Self::with_workers(n_workers)
+    }
+}
+
+impl From<NonZeroUsize> for CircuitConfig {
+    fn from(n_workers: NonZeroUsize) -> Self {
+        Self::with_workers(n_workers.get())
     }
 }
 

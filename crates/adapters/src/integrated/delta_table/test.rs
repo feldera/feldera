@@ -546,6 +546,7 @@ fn delta_table_output_test(
     table_uri: &str,
     object_store_config: &HashMap<String, String>,
     verify: bool,
+    threads: Option<usize>,
 ) {
     init_logging();
 
@@ -570,12 +571,15 @@ fn delta_table_output_test(
         input_file.write_all(b"\n").unwrap();
     }
 
-    let mut storage_options = object_store_config.clone();
-    storage_options.insert("uri".into(), table_uri.into());
-    storage_options.insert("mode".into(), "truncate".into());
+    let mut storage_options: serde_json::Value = serde_json::to_value(object_store_config).unwrap();
+    storage_options["uri"] = json!(table_uri);
+    storage_options["mode"] = json!("truncate");
+    if let Some(threads) = threads {
+        storage_options["threads"] = json!(threads);
+    }
 
     println!(
-        "delta_table_output_test: {} records, input file: {}, table uri: {table_uri}",
+        "delta_table_output_test: {} records, input file: {}, table uri: {table_uri}, threads: {threads:?}",
         data.len(),
         input_file.path().display(),
     );
@@ -616,9 +620,11 @@ fn delta_table_output_test(
 
     let controller = Controller::with_test_config(
         |workers| {
-            Ok(test_circuit::<DeltaTestStruct>(
+            Ok(test_circuit_with_index::<DeltaTestStruct, DeltaTestKey, _>(
                 workers,
                 &DeltaTestStruct::schema(),
+                &[SqlIdentifier::from("bigint")],
+                |x: &DeltaTestStruct| DeltaTestKey { bigint: x.bigint },
                 &[None],
             ))
         },
@@ -1593,7 +1599,7 @@ proptest! {
         // Uncomment to inspect output parquet files produced by the test.
         forget(table_dir);
 
-        delta_table_output_test(data.clone(), &table_uri, &HashMap::new(), true);
+        delta_table_output_test(data.clone(), &table_uri, &HashMap::new(), true, None);
 
 
         // Read delta table unordered.
@@ -1754,8 +1760,8 @@ proptest! {
 
         let table_uri = format!("s3://feldera-delta-table-test/{uuid}/");
         // TODO: enable verification when it's supported for S3.
-        delta_table_output_test(data.clone(), &table_uri, &object_store_config, false);
-        //delta_table_output_test(data.clone(), &table_uri, &object_store_config, false);
+        delta_table_output_test(data.clone(), &table_uri, &object_store_config, false, None);
+        //delta_table_output_test(data.clone(), &table_uri, &object_store_config, false, None);
 
         let mut json_file = delta_table_snapshot_to_json::<DeltaTestStruct>(
             &table_uri,

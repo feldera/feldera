@@ -47,6 +47,16 @@ pub struct DeltaTableWriterConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
 
+    /// Number of parallel threads used by the connector.
+    ///
+    /// Increasing this value can improve Delta Lake write throughput
+    /// by enabling concurrent writes.
+    ///
+    /// Default: 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(minimum = 1)]
+    pub threads: Option<usize>,
+
     /// Storage options for configuring backend object store.
     ///
     /// For specific options available for different storage backends, see:
@@ -55,6 +65,15 @@ pub struct DeltaTableWriterConfig {
     /// * [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)
     #[serde(flatten)]
     pub object_store_config: HashMap<String, String>,
+}
+
+impl DeltaTableWriterConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.threads.is_some_and(|t| t == 0) {
+            return Err("threads must be greater than 0".to_string());
+        }
+        Ok(())
+    }
 }
 
 /// Delta table read mode.
