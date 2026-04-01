@@ -32,8 +32,12 @@ class FelderaAdapter(BaseAdapter):
 
     @classmethod
     def date_function(cls) -> str:
-        """Return the SQL date function for Feldera (Calcite SQL)."""
-        return "CURRENT_TIMESTAMP"
+        """Return the SQL date function for Feldera.
+
+        See Also:
+            https://docs.feldera.com/sql/datetime/#now
+        """
+        return "NOW()"
 
     @classmethod
     def is_cancelable(cls) -> bool:

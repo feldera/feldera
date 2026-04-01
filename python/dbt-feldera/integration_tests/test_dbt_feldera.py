@@ -40,6 +40,7 @@ EXPECTED_ROW_COUNTS = {
     "dim_date": 731,
     "dim_order_status": 1,
     "dim_product": 504,
+    "fct_recent_sales": 1566,
     "fct_sales": 5675,
     "obt_sales": 5675,
 }

@@ -1,7 +1,7 @@
 {# Utility macros for Feldera adapter #}
 
 {% macro feldera__current_timestamp() %}
-    CURRENT_TIMESTAMP
+    NOW()
 {% endmacro %}
 
 {% macro feldera__create_table_as(temporary, relation, compiled_code, language='sql') %}
