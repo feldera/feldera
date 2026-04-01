@@ -8,6 +8,7 @@ Usage:
     python download_seeds.py                   # run from this script's directory
     python download_seeds.py /path/to/seeds    # explicit seeds directory
 """
+
 from __future__ import annotations
 
 import re

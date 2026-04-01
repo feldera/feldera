@@ -23,8 +23,8 @@ import shutil
 import subprocess
 import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -159,9 +159,7 @@ def _wait_for_delta_tables(
         parquet_files = list(table_path.glob("*.parquet")) if table_path.exists() else []
         if not parquet_files:
             missing.append(table)
-    raise TimeoutError(
-        f"Delta tables not ready after {timeout}s. Missing data: {missing}"
-    )
+    raise TimeoutError(f"Delta tables not ready after {timeout}s. Missing data: {missing}")
 
 
 # ---------------------------------------------------------------------------
@@ -194,9 +192,7 @@ def _produce_to_kafka(records: list[dict], topic: str, kafka_proxy_url: str) -> 
                 raise RuntimeError(f"Kafka produce errors: {errors}")
             logger.info("Produced %d records to topic '%s'", len(records), topic)
     except urllib.error.HTTPError as exc:
-        raise RuntimeError(
-            f"Kafka proxy POST to {url} failed ({exc.code}): {exc.read().decode()}"
-        ) from exc
+        raise RuntimeError(f"Kafka proxy POST to {url} failed ({exc.code}): {exc.read().decode()}") from exc
 
 
 def _ensure_kafka_topic(topic: str, kafka_proxy_url: str) -> None:
@@ -217,11 +213,21 @@ def _ensure_kafka_topic(topic: str, kafka_proxy_url: str) -> None:
     try:
         result = subprocess.run(
             [
-                "docker", "compose", "-f", compose_file,
-                "-p", "feldera-dbt-test",
-                "exec", "-T", "redpanda",
-                "rpk", "topic", "create", topic,
-                "--brokers", "localhost:29092",
+                "docker",
+                "compose",
+                "-f",
+                compose_file,
+                "-p",
+                "feldera-dbt-test",
+                "exec",
+                "-T",
+                "redpanda",
+                "rpk",
+                "topic",
+                "create",
+                topic,
+                "--brokers",
+                "localhost:29092",
             ],
             capture_output=True,
             text=True,
@@ -264,18 +270,20 @@ def _generate_sales_records(count: int, start_order_id: int = 99001) -> list[dic
     """
     records = []
     for i in range(count):
-        records.append({
-            "salesorderid": start_order_id + i,
-            "salesorderdetailid": 200_000 + i,
-            "productid": random.choice(_VALID_PRODUCT_IDS),
-            "customerid": random.choice(_VALID_CUSTOMER_IDS),
-            "creditcardid": random.choice(_VALID_CREDIT_CARD_IDS),
-            "shiptoaddressid": random.choice(_VALID_ADDRESS_IDS),
-            "order_status": 5,
-            "orderdate": "2024-01-15",
-            "orderqty": random.randint(1, 10),
-            "unitprice": round(random.uniform(10.0, 2000.0), 2),
-        })
+        records.append(
+            {
+                "salesorderid": start_order_id + i,
+                "salesorderdetailid": 200_000 + i,
+                "productid": random.choice(_VALID_PRODUCT_IDS),
+                "customerid": random.choice(_VALID_CUSTOMER_IDS),
+                "creditcardid": random.choice(_VALID_CREDIT_CARD_IDS),
+                "shiptoaddressid": random.choice(_VALID_ADDRESS_IDS),
+                "order_status": 5,
+                "orderdate": "2024-01-15",
+                "orderqty": random.randint(1, 10),
+                "unitprice": round(random.uniform(10.0, 2000.0), 2),
+            }
+        )
     return records
 
 
@@ -353,17 +361,16 @@ def _wait_for_delta_net_count(
             if last_count >= min_net_count:
                 logger.info(
                     "Delta net count reached %d (target: %d) after %.1fs",
-                    last_count, min_net_count, time.time() - start,
+                    last_count,
+                    min_net_count,
+                    time.time() - start,
                 )
                 return last_count
         except Exception as exc:
             logger.debug("Delta read failed (retrying): %s", exc)
         time.sleep(poll_interval)
 
-    raise TimeoutError(
-        f"Delta net count did not reach {min_net_count} within {timeout}s "
-        f"(last count: {last_count})"
-    )
+    raise TimeoutError(f"Delta net count did not reach {min_net_count} within {timeout}s (last count: {last_count})")
 
 
 def _stop_feldera_pipeline(feldera_url: str, pipeline_name: str) -> None:
@@ -495,9 +502,7 @@ class TestDbtFelderaIntegration:
         conn.close()
 
         if errors:
-            pytest.fail(
-                "Delta Lake output correctness check failed:\n" + "\n".join(f"  - {e}" for e in errors)
-            )
+            pytest.fail("Delta Lake output correctness check failed:\n" + "\n".join(f"  - {e}" for e in errors))
 
     def test_kafka_ivm_auto_consume(self, docker_feldera, dbt_project_dir, delta_output_dir, kafka_proxy_url):
         """
@@ -525,7 +530,10 @@ class TestDbtFelderaIntegration:
 
         logger.info(
             "Pre-Kafka state: obt_sales=%d net rows (v%d, %d files), fct_sales=%d net rows",
-            pre_obt_net, pre_obt_version, len(pre_obt_files), pre_fct_net,
+            pre_obt_net,
+            pre_obt_version,
+            len(pre_obt_files),
+            pre_fct_net,
         )
 
         kafka_batch_1 = _generate_sales_records(count=10, start_order_id=99001)
@@ -551,17 +559,19 @@ class TestDbtFelderaIntegration:
             f"Delta version did not increase: {pre_obt_version} → {post_obt_version}"
         )
         assert pre_obt_files.issubset(post_obt_files), (
-            f"Existing Parquet files were removed (not incremental). "
-            f"Missing: {pre_obt_files - post_obt_files}"
+            f"Existing Parquet files were removed (not incremental). Missing: {pre_obt_files - post_obt_files}"
         )
         new_files = post_obt_files - pre_obt_files
         assert new_files, "No new Parquet files were added (expected incremental write)"
 
         logger.info(
-            "IVM auto-consume: obt_sales v%d→v%d, %d new Parquet files, "
-            "net rows %d→%d (+%d from Kafka)",
-            pre_obt_version, post_obt_version, len(new_files),
-            pre_obt_net, actual_obt_net, len(kafka_batch_1),
+            "IVM auto-consume: obt_sales v%d→v%d, %d new Parquet files, net rows %d→%d (+%d from Kafka)",
+            pre_obt_version,
+            post_obt_version,
+            len(new_files),
+            pre_obt_net,
+            actual_obt_net,
+            len(kafka_batch_1),
         )
 
     def test_kafka_ivm_restart_resume(self, docker_feldera, dbt_project_dir, delta_output_dir, kafka_proxy_url):
@@ -588,7 +598,9 @@ class TestDbtFelderaIntegration:
 
         logger.info(
             "Pre-restart state: obt_sales=%d net rows (v%d), fct_sales=%d net rows",
-            pre_obt_net, pre_obt_version, pre_fct_net,
+            pre_obt_net,
+            pre_obt_version,
+            pre_fct_net,
         )
 
         _stop_feldera_pipeline(docker_feldera, "adventureworks")
@@ -624,13 +636,14 @@ class TestDbtFelderaIntegration:
             f"Delta version did not increase: {pre_obt_version} → {post_obt_version}"
         )
         assert pre_obt_files.issubset(post_obt_files), (
-            f"Existing Parquet files were removed (not incremental). "
-            f"Missing: {pre_obt_files - post_obt_files}"
+            f"Existing Parquet files were removed (not incremental). Missing: {pre_obt_files - post_obt_files}"
         )
 
         logger.info(
-            "IVM restart-resume: obt_sales v%d→v%d, "
-            "net rows %d→%d (+%d from Kafka after restart)",
-            pre_obt_version, post_obt_version,
-            pre_obt_net, actual_obt_net, len(kafka_batch_2),
+            "IVM restart-resume: obt_sales v%d→v%d, net rows %d→%d (+%d from Kafka after restart)",
+            pre_obt_version,
+            post_obt_version,
+            pre_obt_net,
+            actual_obt_net,
+            len(kafka_batch_2),
         )

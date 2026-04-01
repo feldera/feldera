@@ -8,6 +8,7 @@ Usage:
     python upload_seeds.py --update           # update existing gist from ci_seeds.yaml
     python upload_seeds.py /path/to/seeds     # explicit seeds dir
 """
+
 from __future__ import annotations
 
 import re
@@ -29,10 +30,7 @@ def _find_files(project_dir: Path) -> list[Path]:
     for d in SCAN_DIRS:
         target = project_dir / d
         if target.is_dir():
-            files.extend(
-                p for p in target.rglob("*")
-                if p.is_file() and p.suffix in EXTS and p.name != MANIFEST
-            )
+            files.extend(p for p in target.rglob("*") if p.is_file() and p.suffix in EXTS and p.name != MANIFEST)
     return sorted(files)
 
 
@@ -82,7 +80,7 @@ def main() -> int:
 
     files = _find_files(project_dir)
     if not files:
-        print(f"No seed files found in {seeds_dir}", file=sys.stderr)
+        print(f"No seed files found in {project_dir}", file=sys.stderr)
         return 1
     print(f"Found {len(files)} seed files")
 
@@ -97,9 +95,14 @@ def main() -> int:
         _gh(*cmd)
     else:
         print("Creating new public gist ...")
-        url = _gh("gist", "create", "--public", "-d",
-                   "dbt-adventureworks seed data for feldera integration tests",
-                   *[str(f) for f in files])
+        url = _gh(
+            "gist",
+            "create",
+            "--public",
+            "-d",
+            "dbt-adventureworks seed data for feldera integration tests",
+            *[str(f) for f in files],
+        )
         gist_id = url.rstrip("/").rsplit("/", 1)[-1]
         print(f"Gist created: {url}")
 
