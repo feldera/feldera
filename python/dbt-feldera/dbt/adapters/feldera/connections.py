@@ -74,11 +74,23 @@ class FelderaConnectionManager(BaseConnectionManager):
         )
 
     def begin(self) -> None:
-        """No-op: Feldera is non-transactional."""
+        """
+        No-op: Feldera has transaction support, but the adapter does not currently
+        implement it as most dbt backend warehouse implementations do not support this.
+
+        See Also:
+            https://docs.feldera.com/api/begin-transaction
+        """
         pass
 
     def commit(self) -> None:
-        """No-op: Feldera is non-transactional."""
+        """
+        No-op: Feldera has transaction support, but the adapter does not currently
+        implement it as most dbt backend warehouse implementations do not support this.
+
+        See Also:
+            https://docs.feldera.com/api/commit-transaction
+        """
         pass
 
     def cancel_open(self) -> Optional[list[str]]:
