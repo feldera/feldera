@@ -38,7 +38,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: feldera-sql-compiler
-          path: build
+          path: sql-build
 
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
       - name: Make binaries executable
@@ -49,7 +49,7 @@ jobs:
       - name: Copy feldera-sql-compiler JAR
         run: |
           mkdir -p sql-to-dbsp-compiler/SQL-compiler/target
-          cp build/sql2dbsp-jar-with-dependencies.jar sql-to-dbsp-compiler/SQL-compiler/target
+          cp sql-build/sql2dbsp-jar-with-dependencies.jar sql-to-dbsp-compiler/SQL-compiler/target
 
       - name: Python SDK unit-tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}

@@ -55,9 +55,12 @@ jobs:
         with:
           name: feldera-binaries-${{ matrix.rust_target }}
           path: build
-          #run-id: ${{ inputs.run-id }}
-          # Token is only needed when run-id is set
-          #github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download pipeline-manager
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-manager-${{ matrix.rust_target }}
+          path: build
 
       - name: Download Compiler Binaries
         uses: actions/download-artifact@v4

@@ -230,3 +230,54 @@ jobs:
           OIDC_TEST_CLIENT_SECRET: ${{ secrets.OIDC_TEST_CLIENT_SECRET }}
           OIDC_TEST_USERNAME: ${{ secrets.OIDC_TEST_USERNAME }}
           OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
+
+      - name: Download fda binary
+        uses: actions/download-artifact@v4
+        with:
+          name: fda-${{ matrix.target }}
+          path: build
+
+      # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
+      - name: Make fda binary executable
+        run: chmod +x ./build/fda
+
+      - name: Create API key for CLI tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_KEY=$(uv run --locked python - <<'PY'
+          import os
+          import uuid
+          from feldera import FelderaClient
+          from feldera.testutils_oidc import setup_token_cache
+          import contextlib
+          import io
+
+          host = os.environ.get("FELDERA_HOST", "https://localhost:8080")
+          name = f"ci-fda-cli-{os.environ.get('GITHUB_RUN_ID', 'local')}-{uuid.uuid4().hex[:8]}"
+
+          token = None
+          if os.environ.get("OIDC_TEST_ISSUER") and os.environ.get("OIDC_TEST_CLIENT_ID"):
+              # Suppress auth helper output to keep GITHUB_ENV clean
+              with contextlib.redirect_stdout(io.StringIO()):
+                  token_data = setup_token_cache()
+              if token_data is not None:
+                  token = token_data.get("access_token")
+
+          client = FelderaClient(url=host, api_key=token)
+          resp = client.create_api_key(name)
+          print(resp["api_key"])
+          PY
+          )
+          echo "FELDERA_API_KEY=$API_KEY" >> "$GITHUB_ENV"
+        working-directory: python
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+
+      - name: Run fda CLI tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: bash test.bash
+        working-directory: crates/fda
+        env:
+          FDA_BINARY: ${{ github.workspace }}/build/fda
