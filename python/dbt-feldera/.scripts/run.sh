@@ -23,11 +23,12 @@ declare -A TARGETS=(
     ["fix"]="ruff auto-fix + format"
     ["lint"]="ruff check + format"
     ["unit-test"]="pytest unit tests"
+    ["seed-ci"]="Download seed data from GitHub Gist"
     ["integration-test"]="pytest integration with Feldera in Docker"
     ["e2e"]="dbt CLI end-to-end with Feldera in Docker"
     ["all"]="Run all targets in sequence"
 )
-TARGET_ORDER=("venv" "build" "fix" "lint" "unit-test" "integration-test" "e2e")
+TARGET_ORDER=("venv" "build" "fix" "lint" "unit-test" "seed-ci" "integration-test" "e2e")
 
 print_usage() {
     echo
@@ -65,6 +66,13 @@ run_build()            { ensure_venv; cd "${PROJECT_DIR}"; rm -rf dist/; uv buil
 run_fix()              { ensure_venv; cd "${PROJECT_DIR}"; uv run ruff check --fix dbt/ tests/; uv run ruff format dbt/ tests/; }
 run_lint()             { ensure_venv; cd "${PROJECT_DIR}"; uv run ruff check dbt/ tests/; uv run ruff format --check dbt/ tests/; }
 run_unit_test()        { ensure_venv; cd "${PROJECT_DIR}"; uv run pytest tests/ -vv; }
+
+run_seed_ci() {
+    ensure_venv
+    cd "${PROJECT_DIR}"
+    echo "Downloading seed data from GitHub Gist..."
+    uv run python integration_tests/scripts/download_seeds.py
+}
 
 start_feldera() {
     docker compose -f "${DOCKER_COMPOSE_FILE}" \
@@ -128,6 +136,8 @@ run_integration_test() {
     ensure_venv
     cd "${PROJECT_DIR}"
 
+    run_seed_ci
+
     local delta_dir="${PROJECT_DIR}/integration_tests/dbt-adventureworks/delta-output"
     rm -rf "${delta_dir}"
     mkdir -p "${delta_dir}"
@@ -160,7 +170,12 @@ run_integration_test() {
     return $rc
 }
 
-run_e2e()              { cd "${PROJECT_DIR}"; bash integration_tests/scripts/run-dbt-local.sh; }
+run_e2e() {
+    ensure_venv
+    cd "${PROJECT_DIR}"
+    run_seed_ci
+    bash integration_tests/scripts/run-dbt-local.sh
+}
 
 echo "=== dbt-feldera: ${TARGET} ==="
 

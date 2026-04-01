@@ -39,7 +39,11 @@ echo " Target: ${TARGET}"
 echo "============================================"
 
 echo ""
-echo "[0/5] Starting Feldera via Docker Compose..."
+echo "[0/6] Downloading seed data from GitHub Gist..."
+python3 "${SCRIPT_DIR}/download_seeds.py" "${PROJECT_DIR}/seeds"
+
+echo ""
+echo "[1/6] Starting Feldera via Docker Compose..."
 _teardown
 _compose up -d --wait --wait-timeout 300
 echo "  Feldera is ready."
@@ -52,7 +56,7 @@ export FELDERA_URL
 echo "  Using FELDERA_URL=${FELDERA_URL}"
 
 echo ""
-echo "[1/5] Building dbt-feldera wheel..."
+echo "[2/6] Building dbt-feldera wheel..."
 cd "${ADAPTER_DIR}"
 rm -rf dist/
 uv build --wheel 2>&1 | tail -3
@@ -60,7 +64,7 @@ WHEEL=$(ls dist/*.whl | head -1)
 echo "  Built: ${WHEEL}"
 
 echo ""
-echo "[2/5] Setting up virtual environment..."
+echo "[3/6] Setting up virtual environment..."
 rm -rf "${VENV_DIR}"
 uv venv "${VENV_DIR}"
 
@@ -72,16 +76,16 @@ cd "${PROJECT_DIR}"
 export DBT_PROFILES_DIR="${PROJECT_DIR}"
 
 echo ""
-echo "[3/5] Running dbt debug..."
+echo "[4/6] Running dbt debug..."
 dbt debug --target "${TARGET}"
 
 echo ""
-echo "[4/5] Running dbt seed + build..."
+echo "[5/6] Running dbt seed + build..."
 dbt seed --target "${TARGET}" --full-refresh
 dbt build --exclude resource_type:seed --target "${TARGET}"
 
 echo ""
-echo "[5/5] Generating docs..."
+echo "[6/6] Generating docs..."
 dbt docs generate --target "${TARGET}"
 
 DBT_DOCS_PORT="${DBT_DOCS_PORT:-18081}"
