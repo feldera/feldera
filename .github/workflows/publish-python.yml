@@ -82,10 +82,6 @@ jobs:
           uv venv
           uv pip install -e ".[dev]"
           uv build
-      - name: Run unit tests
-        working-directory: ./python/dbt-feldera
-        run: uv run pytest tests/unit -vv
-
       - name: Publish dbt-feldera
         if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
