@@ -21,79 +21,13 @@ jobs:
   # jobs, so invoke-build-docker lists it in `needs:` and checks its result in
   # `if:`. Without that explicit gate, the Docker build can start before the
   # cancel propagates and waste expensive runner time.
-
-  # Checks whether all build artifacts already exist in a prior run for this
-  # commit. If so, downstream build jobs are skipped and tests download
-  # artifacts from that prior run instead of the current one.
-  # NOTE: No cancel sentinel is needed for this job — it is designed to always
-  # succeed. Individual steps use continue-on-error and the final 'result'
-  # step runs unconditionally, so the job never leaves the workflow in a
-  # failed state.
-  check-prior-build:
-    name: Check for Prior Build Artifacts
-    runs-on: ubuntu-latest-amd64
-    permissions:
-      actions: read
-    # Outputs are set by the final 'result' step so this job always succeeds
-    # and never blocks downstream jobs even if individual checks fail.
-    outputs:
-      artifacts_run_id: ${{ steps.result.outputs.artifacts_run_id }}
-      skip_docker: ${{ steps.result.outputs.skip_docker }}
-    steps:
-      - uses: actions/checkout@v6
-
-      # Finds the first prior run for this commit that has all Rust/Java build
-      # artifacts. If found, its run ID is used by downstream jobs to download
-      # artifacts instead of rebuilding.
-      - name: Find prior run with all Rust/Java build artifacts
-        id: find-builds
-        continue-on-error: true
-        uses: ./.github/actions/find-artifacts-run
-        with:
-          required-artifacts: |
-            fda-x86_64-unknown-linux-gnu
-            fda-aarch64-unknown-linux-gnu
-            fda-x86_64-pc-windows-msvc
-            pipeline-manager-x86_64-unknown-linux-gnu
-            pipeline-manager-aarch64-unknown-linux-gnu
-            feldera-test-binaries-x86_64-unknown-linux-gnu
-            feldera-test-binaries-aarch64-unknown-linux-gnu
-            feldera-sql-compiler
-          token: ${{ github.token }}
-
-      # Checks whether the run found above also has the Docker image artifact.
-      # This artifact is uploaded by merge-manifests only after the image is
-      # verified in GHCR, so its presence guarantees the sha-{sha} tag exists.
-      - name: Check if Docker image artifact also present
-        id: find-docker
-        if: steps.find-builds.outputs.run-id != ''
-        continue-on-error: true
-        uses: ./.github/actions/find-artifacts-run
-        with:
-          required-artifacts: docker-image-ready
-          token: ${{ github.token }}
-          run-id: ${{ steps.find-builds.outputs.run-id }}
-
-      # Consolidates outputs so both are always set even if a find step failed.
-      # Defaults: artifacts_run_id='' (run builds), skip_docker=false (run Docker build).
-      - name: Consolidate outputs
-        id: result
-        if: always()
-        run: |
-          echo "artifacts_run_id=${{ steps.find-builds.outputs.run-id }}" >> "$GITHUB_OUTPUT"
-          echo "skip_docker=${{ steps.find-docker.outputs.run-id != '' && 'true' || 'false' }}" >> "$GITHUB_OUTPUT"
-
   invoke-build-rust:
     name: Build Rust
-    needs: [check-prior-build]
-    if: needs.check-prior-build.outputs.artifacts_run_id == ''
     uses: ./.github/workflows/build-rust.yml
     secrets: inherit
 
   invoke-build-java:
     name: Build Java
-    needs: [check-prior-build]
-    if: needs.check-prior-build.outputs.artifacts_run_id == ''
     uses: ./.github/workflows/build-java.yml
     secrets: inherit
 
@@ -109,47 +43,30 @@ jobs:
 
   invoke-tests-unit:
     name: Unit Tests
-    needs: [check-prior-build, invoke-build-rust, invoke-build-java]
-    if: |
-      always() &&
-      (needs.invoke-build-rust.result == 'success' || needs.invoke-build-rust.result == 'skipped') &&
-      (needs.invoke-build-java.result == 'success' || needs.invoke-build-java.result == 'skipped')
+    needs: [invoke-build-rust, invoke-build-java]
     uses: ./.github/workflows/test-unit.yml
-    with:
-      artifacts_run_id: ${{ needs.check-prior-build.outputs.artifacts_run_id }}
     secrets: inherit
 
   invoke-tests-adapter:
     name: Adapter Tests
-    needs: [check-prior-build, invoke-build-rust]
-    if: |
-      always() &&
-      (needs.invoke-build-rust.result == 'success' || needs.invoke-build-rust.result == 'skipped')
+    needs: [invoke-build-rust]
     uses: ./.github/workflows/test-adapters.yml
-    with:
-      artifacts_run_id: ${{ needs.check-prior-build.outputs.artifacts_run_id }}
     secrets: inherit
 
   invoke-build-docker:
     name: Build Docker
-    needs: [check-prior-build, invoke-build-rust, invoke-build-java, invoke-tests-web-console-unit]
+    needs: [invoke-build-rust, invoke-build-java, invoke-tests-web-console-unit]
     if: |
       always() &&
-      needs.check-prior-build.outputs.skip_docker != 'true' &&
       (needs.invoke-build-rust.result == 'success' || needs.invoke-build-rust.result == 'skipped') &&
       (needs.invoke-build-java.result == 'success' || needs.invoke-build-java.result == 'skipped') &&
       (needs.invoke-tests-web-console-unit.result == 'success' || needs.invoke-tests-web-console-unit.result == 'skipped')
     uses: ./.github/workflows/build-docker.yml
-    with:
-      artifacts_run_id: ${{ needs.check-prior-build.outputs.artifacts_run_id }}
     secrets: inherit
 
   invoke-generate-sbom:
     name: Generate SBOMs
     needs: [invoke-build-docker]
-    if: |
-      always() &&
-      (needs.invoke-build-docker.result == 'success' || needs.invoke-build-docker.result == 'skipped')
     uses: ./.github/workflows/generate-sbom.yml
     secrets: inherit
 
@@ -164,39 +81,25 @@ jobs:
 
   invoke-tests-integration-platform:
     name: Integration Tests
-    needs: [check-prior-build, invoke-build-docker]
-    if: |
-      always() &&
-      (needs.invoke-build-docker.result == 'success' || needs.invoke-build-docker.result == 'skipped')
+    needs: [invoke-build-docker]
     uses: ./.github/workflows/test-integration-platform.yml
-    with:
-      artifacts_run_id: ${{ needs.check-prior-build.outputs.artifacts_run_id }}
     secrets: inherit
 
   invoke-tests-integration-runtime:
     name: Integration Tests
-    needs: [check-prior-build, invoke-build-java]
-    if: |
-      always() &&
-      (needs.invoke-build-java.result == 'success' || needs.invoke-build-java.result == 'skipped')
+    needs: [invoke-build-java]
     uses: ./.github/workflows/test-integration-runtime.yml
     secrets: inherit
 
   invoke-tests-java:
     name: Java Tests
-    needs: [check-prior-build, invoke-build-java]
-    if: |
-      always() &&
-      (needs.invoke-build-java.result == 'success' || needs.invoke-build-java.result == 'skipped')
+    needs: [invoke-build-java]
     uses: ./.github/workflows/test-java.yml
     secrets: inherit
 
   invoke-publish-crates-dry-run:
     name: Publish Crates (Dry Run)
-    needs: [check-prior-build, invoke-build-rust]
-    if: |
-      always() &&
-      (needs.invoke-build-rust.result == 'success' || needs.invoke-build-rust.result == 'skipped')
+    needs: [invoke-build-rust]
     uses: ./.github/workflows/publish-crates.yml
     with:
       environment: ci
@@ -389,7 +292,6 @@ jobs:
     if: always()
     runs-on: ubuntu-latest-amd64
     needs:
-      - check-prior-build
       - invoke-build-rust
       - invoke-build-java
       - invoke-build-docs
