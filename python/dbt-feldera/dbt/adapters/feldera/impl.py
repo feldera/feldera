@@ -267,7 +267,12 @@ class FelderaAdapter(BaseAdapter):
         goal: FelderaRelation,
         current: FelderaRelation,
     ) -> None:
-        """No-op: Feldera handles type widening automatically."""
+        """
+        No-op: This is currently not supported in this dbt adapter.
+
+        See Also:
+            https://github.com/dbt-labs/dbt-adapters/blob/8518ddf7dcc66e14826e837f3fcbe31e3483d30b/dbt-bigquery/src/dbt/adapters/bigquery/impl.py#L354
+        """
         pass
 
     @available
