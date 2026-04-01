@@ -88,6 +88,13 @@ models:
               config:
                 uri: "/data/delta/dim_product"
                 mode: append
+      fct_recent_sales:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/fct_recent_sales"
+                mode: append
       fct_sales:
         +connectors:
           - transport:

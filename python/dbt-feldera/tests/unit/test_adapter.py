@@ -7,7 +7,7 @@ class TestFelderaAdapterStaticMethods(unittest.TestCase):
     """Unit tests for FelderaAdapter static/class methods."""
 
     def test_date_function(self):
-        self.assertEqual(FelderaAdapter.date_function(), "CURRENT_TIMESTAMP")
+        self.assertEqual(FelderaAdapter.date_function(), "NOW()")
 
     def test_is_cancelable(self):
         self.assertFalse(FelderaAdapter.is_cancelable())
