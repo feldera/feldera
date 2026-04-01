@@ -398,6 +398,16 @@ const formats = {
     ]
 };
 
+const fault_tolerance = {
+    type: 'category',
+    label: 'Fault Tolerance & DR',
+    items: [
+        "pipelines/fault-tolerance-overview",
+        "pipelines/fault-tolerance",
+        "pipelines/checkpoint-sync",
+    ],
+}
+
 // Pipelines section
 const pipelines = {
     type: 'category',
@@ -411,6 +421,7 @@ const pipelines = {
         sql,
         connectors,
         formats,
+        fault_tolerance,
         {
             type: 'doc',
             label: "Reference: Pipeline Lifecycle",
@@ -421,13 +432,11 @@ const pipelines = {
             label: "Settings",
             id: "pipelines/configuration",
         },
-        "pipelines/fault-tolerance",
         {
             type: 'doc',
             label: "Modifying a Pipeline",
             id: "pipelines/modifying",
         },
-        "pipelines/checkpoint-sync",
         "pipelines/transactions",
         "pipelines/latency",
         {
