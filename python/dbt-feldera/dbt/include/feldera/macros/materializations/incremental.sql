@@ -1,7 +1,7 @@
 {#
     Incremental IVM materialization for Feldera.
 
-    Instead of dbt's watermark-based incremental strategy, this materialization 
+    Instead of dbt's watermark-based incremental strategy, this materialization
     leverages Feldera's DBSP engine for automatic incremental view maintenance (IVM).
 
     The model SQL is installed as a standing query. DBSP automatically
