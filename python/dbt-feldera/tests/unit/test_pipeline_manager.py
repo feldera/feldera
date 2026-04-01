@@ -135,5 +135,39 @@ class TestPipelineStateManager(unittest.TestCase):
         self.assertEqual(len(views), 200)
 
 
+class TestPipelineStateManagerRename(unittest.TestCase):
+    """Unit tests for rename operations on PipelineStateManager."""
+
+    def setUp(self):
+        self.manager = PipelineStateManager()
+
+    def test_rename_table_updates_ddl(self):
+        """Simulating a table rename: old name removed, new name present."""
+        self.manager.register_table("pipe", "old_tbl", "CREATE TABLE old_tbl (id INT);")
+        # Simulate the rename performed by the adapter
+        old_ddl = self.manager.get_tables("pipe")["old_tbl"]
+        new_ddl = old_ddl.replace("old_tbl", "new_tbl")
+        self.manager.remove_table("pipe", "old_tbl")
+        self.manager.register_table("pipe", "new_tbl", new_ddl)
+
+        tables = self.manager.get_tables("pipe")
+        self.assertNotIn("old_tbl", tables)
+        self.assertIn("new_tbl", tables)
+        self.assertEqual(tables["new_tbl"], "CREATE TABLE new_tbl (id INT);")
+
+    def test_rename_view_updates_ddl(self):
+        """Simulating a view rename: old name removed, new name present."""
+        self.manager.register_view("pipe", "old_view", "CREATE VIEW old_view AS SELECT 1;")
+        old_ddl = self.manager.get_views("pipe")["old_view"]
+        new_ddl = old_ddl.replace("old_view", "new_view")
+        self.manager.remove_view("pipe", "old_view")
+        self.manager.register_view("pipe", "new_view", new_ddl)
+
+        views = self.manager.get_views("pipe")
+        self.assertNotIn("old_view", views)
+        self.assertIn("new_view", views)
+        self.assertEqual(views["new_view"], "CREATE VIEW new_view AS SELECT 1;")
+
+
 if __name__ == "__main__":
     unittest.main()

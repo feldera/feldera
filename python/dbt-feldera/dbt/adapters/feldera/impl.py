@@ -1,4 +1,5 @@
 import logging
+import math
 from typing import FrozenSet, List, Optional, Set, Tuple
 
 import agate
@@ -24,6 +25,16 @@ class FelderaAdapter(BaseAdapter):
 
     Routes dbt operations to Feldera's REST API, leveraging DBSP for
     automatic incremental view maintenance.
+
+    Concept mapping between dbt and Feldera:
+
+    * **database** → Feldera API host / instance (set via ``host`` in profile).
+    * **schema**   → Feldera **pipeline** (a named, compiled SQL program).
+    * **relation** → a **table** or **view** inside a pipeline's SQL program.
+
+    dbt passes a :class:`FelderaRelation` object to most adapter methods.
+    ``relation.schema`` yields the pipeline name, while
+    ``relation.identifier`` yields the table/view name within that pipeline.
     """
 
     ConnectionManager = FelderaConnectionManager
@@ -138,7 +149,8 @@ class FelderaAdapter(BaseAdapter):
 
         This is a soft create: if the pipeline already exists, it is a no-op.
 
-        :param relation: The relation whose schema (pipeline) to create.
+        :param relation: A dbt relation used only to extract the pipeline name
+            via ``relation.schema``.
         """
         pipeline_name = self._get_pipeline_name(relation.schema)
         if self.check_schema_exists(relation.database, pipeline_name):
@@ -152,7 +164,9 @@ class FelderaAdapter(BaseAdapter):
 
         Stops and deletes the pipeline from Feldera.
 
-        :param relation: The relation whose schema (pipeline) to drop.
+        :param relation: A dbt relation used only to extract the pipeline name
+            via ``relation.schema``.  The relation's identifier (table/view)
+            is not relevant here — the entire pipeline is dropped.
         """
         pipeline_name = self._get_pipeline_name(relation.schema)
         client = self._get_client()
@@ -203,31 +217,8 @@ class FelderaAdapter(BaseAdapter):
     ) -> None:
         """
         Rename a relation within the pipeline.
-
-        Removes the old name and registers under the new name with the same DDL.
-
-        :param from_relation: The source relation.
-        :param to_relation: The target relation.
         """
-        from dbt.adapters.feldera.sqlglot_parser import parser
-
-        pipeline = self._get_pipeline_name(from_relation.schema)
-        old_name = from_relation.identifier
-        new_name = to_relation.identifier
-
-        tables = _pipeline_state.get_tables(pipeline)
-        views = _pipeline_state.get_views(pipeline)
-
-        if old_name in tables:
-            ddl = parser.rename_in_ddl(tables[old_name], old_name, new_name)
-            _pipeline_state.remove_table(pipeline, old_name)
-            _pipeline_state.register_table(pipeline, new_name, ddl)
-        elif old_name in views:
-            ddl = parser.rename_in_ddl(views[old_name], old_name, new_name)
-            _pipeline_state.remove_view(pipeline, old_name)
-            _pipeline_state.register_view(pipeline, new_name, ddl)
-
-        logger.debug("Renamed '%s' to '%s' in pipeline '%s'", old_name, new_name, pipeline)
+        raise NotImplementedError("`rename_relation` is currently not supported by the Feldera adapter.")
 
     @available
     def get_columns_in_relation(self, relation: FelderaRelation) -> List[FelderaColumn]:
@@ -601,6 +592,13 @@ class FelderaAdapter(BaseAdapter):
         column_types = column_types or {}
         column_names = agate_table.column_names
 
+        def _sanitize_float(v):
+            """Convert NaN/Infinity to None for JSON compatibility."""
+            f = float(v)
+            if math.isnan(f) or math.isinf(f):
+                return None
+            return f
+
         # Build a per-column cast function based on SQL type overrides
         _INT_TYPES = {"INT", "INTEGER", "SMALLINT", "TINYINT", "BIGINT"}
         _FLOAT_TYPES = {"DOUBLE", "FLOAT", "REAL", "DECIMAL", "NUMERIC"}
@@ -613,7 +611,7 @@ class FelderaAdapter(BaseAdapter):
             if upper in _INT_TYPES:
                 return lambda v: int(v) if v is not None else None
             if upper in _FLOAT_TYPES:
-                return lambda v: float(v) if v is not None else None
+                return lambda v: _sanitize_float(v) if v is not None else None
             if upper in _BOOL_TYPES:
                 return lambda v: bool(v) if v is not None else None
             # VARCHAR, TIMESTAMP, DATE — keep as string
@@ -644,7 +642,9 @@ class FelderaAdapter(BaseAdapter):
 
                 # Fallback: auto-convert based on Python type
                 if isinstance(value, Decimal):
-                    if value == int(value):
+                    if value.is_nan() or value.is_infinite():
+                        row_dict[col_name] = None
+                    elif value == int(value):
                         row_dict[col_name] = int(value)
                     else:
                         row_dict[col_name] = float(value)
