@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from dbt.adapters.feldera.sql_parser import SqlIntent
 from dbt.adapters.feldera.sqlglot_parser import parser as _parser
+from feldera.pipeline import Pipeline
 from feldera.rest.feldera_client import FelderaClient
 
 logger = logging.getLogger(__name__)
@@ -14,16 +15,30 @@ class FelderaCursor:
 
     Routes SQL execution to the appropriate Feldera API endpoint based on
     the classified intent of the SQL statement.
+
+    The cursor lazily resolves a :class:`Pipeline` object on the first
+    ad-hoc query, avoiding unnecessary API calls for DDL-only cursors.
     """
 
     def __init__(self, client: FelderaClient, pipeline_name: str) -> None:
         self._client = client
         self._pipeline_name = pipeline_name
+        self._pipeline: Optional[Pipeline] = None
         self._results: Optional[List[Dict[str, Any]]] = None
         self._columns: Optional[List[str]] = None
         self._column_types: Optional[List[Optional[str]]] = None
         self._rowcount: int = -1
         self._closed: bool = False
+
+    def _get_pipeline(self) -> Pipeline:
+        """
+        Lazily resolve and cache the Pipeline object for ad-hoc queries.
+
+        :return: The Pipeline instance for the configured pipeline name.
+        """
+        if self._pipeline is None:
+            self._pipeline = Pipeline.get(self._pipeline_name, self._client)
+        return self._pipeline
 
     @property
     def rowcount(self) -> int:
@@ -117,11 +132,13 @@ class FelderaCursor:
         Execute an ad-hoc SQL query against a running pipeline.
 
         Uses Feldera's ad-hoc query endpoint backed by Datafusion.
+        Lazily resolves a :class:`Pipeline` object on first use.
 
         :param sql: The SELECT query to execute.
         """
         try:
-            rows = list(self._client.query_as_json(self._pipeline_name, sql))
+            pipeline = self._get_pipeline()
+            rows = list(pipeline.query(sql))
 
             self._results = [dict(r) for r in rows]
 
