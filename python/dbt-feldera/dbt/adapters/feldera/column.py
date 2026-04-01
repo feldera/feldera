@@ -16,11 +16,11 @@ class FelderaColumn(Column):
         "INTEGER": "integer",
         "INT": "integer",
         "BIGINT": "integer",
-        "REAL": "number",
-        "FLOAT": "number",
-        "DOUBLE": "number",
-        "DECIMAL": "number",
-        "NUMERIC": "number",
+        "REAL": "float",
+        "FLOAT": "float",
+        "DOUBLE": "float",
+        "DECIMAL": "numeric",
+        "NUMERIC": "numeric",
         "VARCHAR": "text",
         "STRING": "text",
         "CHAR": "text",
@@ -72,9 +72,13 @@ class FelderaColumn(Column):
         return self.translate_type(self.dtype) == "integer"
 
     def is_number(self) -> bool:
-        """Return True if this column is a numeric type."""
-        return self.translate_type(self.dtype) in ("integer", "number")
+        """Return True if this column is any numeric type."""
+        return any([self.is_integer(), self.is_numeric(), self.is_float()])
 
     def is_float(self) -> bool:
-        """Return True if this column is a floating-point type."""
-        return self.translate_type(self.dtype) == "number"
+        """Return True if this column is an IEEE floating-point type (REAL, FLOAT, DOUBLE)."""
+        return self.translate_type(self.dtype) == "float"
+
+    def is_numeric(self) -> bool:
+        """Return True if this column is a fixed-precision numeric type (DECIMAL, NUMERIC)."""
+        return self.translate_type(self.dtype) == "numeric"
