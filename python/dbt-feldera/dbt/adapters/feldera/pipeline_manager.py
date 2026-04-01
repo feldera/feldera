@@ -369,12 +369,12 @@ class PipelineStateManager:
         :raises TimeoutError: If compilation does not finish within *timeout*.
         :raises RuntimeError: If compilation fails (SQL error, Rust error, etc.).
         """
-        compiling_states = {
+        compiling_states = (
             ProgramStatus.Pending,
             ProgramStatus.CompilingSql,
             ProgramStatus.SqlCompiled,
             ProgramStatus.CompilingRust,
-        }
+        )
 
         start_time = time.monotonic()
         while True:
