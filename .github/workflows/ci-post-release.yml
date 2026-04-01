@@ -108,6 +108,11 @@ jobs:
         run: |
           sed -i "s/version = \"${{ env.CURRENT_VERSION }}\"/version = \"${{ env.NEXT_VERSION }}\"/g" pyproject.toml
           uv sync
+      - name: Adjust dbt-feldera version
+        working-directory: ./python/dbt-feldera
+        run: |
+          sed -i "s/version = \"${{ env.CURRENT_VERSION }}\"/version = \"${{ env.NEXT_VERSION }}\"/g" pyproject.toml
+          sed -i "s/version: '${{ env.CURRENT_VERSION }}'/version: '${{ env.NEXT_VERSION }}'/g" dbt/include/feldera/dbt_project.yml
       - name: List changes
         run: |
           git diff

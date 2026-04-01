@@ -1,5 +1,5 @@
 name: 'dbt_feldera'
-version: '0.1.0'
+version: '0.277.0'
 config-version: 2
 
 macro-paths: ["macros"]
