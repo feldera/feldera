@@ -1,6 +1,8 @@
-# Felderize — Spark SQL to Feldera SQL Translator
+# Felderize — SQL to Feldera SQL Translator
 
-felderize attempts to translate Spark SQL schemas and queries into valid [Feldera](https://www.feldera.com/) SQL using LLM-based translation with optional compiler validation.
+felderize translates SQL from various dialects into valid [Feldera](https://www.feldera.com/) SQL using LLM-based translation with optional compiler validation.
+
+> **Dialects:** Spark SQL is currently the only supported dialect. Support for additional dialects is planned.
 
 ## Setup
 
