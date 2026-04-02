@@ -39,6 +39,8 @@ These are systematic differences between Spark and Feldera to be aware of during
 
 - **[GBD-ARRAY-ORDER] Array function element order:** Feldera's set-based array functions (`ARRAY_UNION`, `ARRAY_EXCEPT`) return elements in sorted order. Spark preserves the original element order. Results contain the same elements but may be in different positions.
 
+- **[GBD-FLOAT-GROUP] ORDER BY on special float values:** `ORDER BY` on DOUBLE columns containing `NaN`, `+Inf`, `-Inf`, or `-0.0` produces different row order. Spark follows IEEE 754 (`-Inf` < finite < `+Inf`, NaN last); Feldera uses a different sort order (e.g. `0` sorts before `-Inf`). Both engines group these values correctly — only the output ordering differs. Avoid `ORDER BY` on float columns containing special values, or add a secondary sort key.
+
 ## Type Mappings
 
 | Spark | Feldera | Notes |
@@ -54,6 +56,7 @@ These are systematic differences between Spark and Feldera to be aware of during
 | `DATE` | `DATE` | Same |
 | `TIMESTAMP` | `TIMESTAMP` | Same |
 | `MAP<K, V>` | `MAP<K, V>` | Translate inner types |
+| `BINARY` | `VARBINARY` | Use `VARBINARY` for binary columns; `x'...'` hex literals work in both |
 | `ARRAY<T>` | `T ARRAY` | Suffix syntax; see rules below |
 | `STRUCT<a: T, b: U>` | `ROW(a T, b U)` | |
 
@@ -167,8 +170,8 @@ These Spark functions exist in Feldera — translate directly:
 | `AVG(col)` | `AVG(CAST(col AS DOUBLE))` if col is integer type; `AVG(col)` otherwise | Integer input: rewrite to return DOUBLE matching Spark. Decimal/float: leave as-is → [GBD-AGG-TYPE] scale mismatch |
 | `STDDEV_SAMP(col)` | Same | → [GBD-AGG-TYPE]: decimal input preserves scale, not widened to DOUBLE |
 | `STDDEV_POP(col)` | Same | → [GBD-AGG-TYPE]: decimal input preserves scale, not widened to DOUBLE |
-| `every(col)` | Same | Alias for `bool_and` — supported in Feldera |
-| `some(col)` | Same | Supported in Feldera |
+| `every(col)` | Same | Alias for `bool_and` — supported in Feldera. **`every`/`bool_and`/`bool_or` as window functions with `ORDER BY` on a BOOLEAN column are not supported in Feldera.** |
+| `some(col)` | Same | Supported in Feldera as an aggregate, but **not as a window function** |
 | `bit_and(col)` — aggregate | `BIT_AND(col)` | Aggregate: bitwise AND over all rows in group |
 | `bit_or(col)` — aggregate | `BIT_OR(col)` | Aggregate: bitwise OR over all rows in group |
 | `bit_xor(col)` — aggregate | `BIT_XOR(col)` | Aggregate: bitwise XOR over all rows in group |
@@ -187,7 +190,6 @@ These Spark functions exist in Feldera — translate directly:
 | `RLIKE(s, pattern)` | Same | Infix `s RLIKE pattern` also works |
 | `OCTET_LENGTH(s)` | Same | Returns byte length of string |
 | `overlay(str placing repl from pos for len)` | `OVERLAY(str PLACING repl FROM pos FOR len)` | Same syntax |
-| `SPLIT_PART(s, delimiter, n)` | `SPLIT_PART(s, delimiter, n)` | Feldera does not support negative indices |
 
 #### Array functions
 
@@ -263,17 +265,29 @@ Results are always `VARIANT` — cast to get a concrete type: `CAST(v['age'] AS 
 | `json_array_length(s)` | `CARDINALITY(CAST(PARSE_JSON(s) AS VARIANT ARRAY))` | |
 
 Notes:
-- **Feldera supports lateral aliases in SELECT.** Parse once and reuse: `SELECT PARSE_JSON(col) AS v, v['field1'] AS f1, v['field2'] AS f2 ...`
+- **When translating JSON extraction: avoid exposing the parsed JSON object as a view column.** Feldera supports lateral aliases, so you can write `PARSE_JSON(col) AS v` and reuse `v` in the same SELECT. **CRITICAL: `v` becomes a real output column of the view.** Only include columns that were in the original Spark query — wrap in a subquery to hide `v`:
 
-Simple SELECT — parse once with lateral alias:
+Simple SELECT — parse inline (preferred when only extracting fields):
 
 ```sql
 SELECT
-  PARSE_JSON(payload)                    AS v,
-  CAST(v['user_id']  AS VARCHAR)         AS user_id,
-  CAST(v['amount']   AS DOUBLE)          AS amount,
-  CAST(v['currency'] AS VARCHAR)         AS currency
+  id,
+  CAST(PARSE_JSON(payload)['user_id']  AS VARCHAR) AS user_id,
+  CAST(PARSE_JSON(payload)['amount']   AS DOUBLE)  AS amount
 FROM raw_events;
+```
+
+Simple SELECT — lateral alias with subquery (use when parsing once is needed for performance):
+
+```sql
+SELECT id, user_id, amount FROM (
+  SELECT
+    id,
+    PARSE_JSON(payload)                    AS v,
+    CAST(v['user_id']  AS VARCHAR)         AS user_id,
+    CAST(v['amount']   AS DOUBLE)          AS amount
+  FROM raw_events
+);
 ```
 
 - **With GROUP BY: use a CTE to pre-parse.** Repeat PARSE_JSON in GROUP BY too, or use a CTE. The CTE goes *inside* `CREATE VIEW ... AS`, not before it:
@@ -372,7 +386,7 @@ These require translation but ARE supported.
 
 | Spark | Feldera | Notes |
 |-------|---------|-------|
-| `get_json_object(s, '$.key')` | `CAST(PARSE_JSON(s)['key'] AS <type>)` | Cast to the appropriate type (VARCHAR, INTEGER, DOUBLE, etc.). Array indexing supported: `$.tags[0]` → `PARSE_JSON(s)['tags'][0]`. |
+| `get_json_object(s, '$.key')` | `CAST(PARSE_JSON(s)['key'] AS <type>)` | Cast to the appropriate type. **For JSON numbers cast to DOUBLE/INT, not VARCHAR** — `CAST(VARIANT_number AS VARCHAR)` returns NULL in Feldera. If the result must be a string, use `CAST(CAST(PARSE_JSON(s)['key'] AS DOUBLE) AS VARCHAR)`. Array indexing supported: `$.tags[0]` → `PARSE_JSON(s)['tags'][0]`. |
 
 ### Array / UNNEST
 
@@ -396,7 +410,8 @@ These require translation but ARE supported.
 | Spark | Feldera | Notes |
 |-------|---------|-------|
 | `any(col)` | `bool_or(col)` | `any` is a reserved keyword in Feldera — rewrite as `bool_or` |
-| `collect_list(col)` | `ARRAY_AGG(col)` | Order difference only when source collection is ordered — Spark preserves insertion order; Feldera order depends on input collection order |
+| `collect_list(col)` | `ARRAY_AGG(col)` | → [GBD-ARRAY-ORDER]: Spark preserves insertion order; Feldera does not guarantee order — use `ARRAY_AGG(col ORDER BY col)` if order matters |
+| `ARRAY_AGG(col)` | Same | → [GBD-ARRAY-ORDER]: same ordering caveat as `collect_list` — Feldera does not guarantee insertion order |
 | `collect_set(col)` | `ARRAY_AGG(DISTINCT col)` | |
 | `PIVOT(COUNT(col) FOR x IN ('A', 'B', 'C'))` | `NULLIF(COUNT(CASE WHEN x = 'A' THEN col END), 0) AS "A", ...` | Spark PIVOT returns NULL for pivot values with no matching rows; plain `COUNT(CASE WHEN ...)` returns 0. Use `NULLIF(..., 0)` to match Spark's NULL semantics. Example: `SELECT region, NULLIF(COUNT(CASE WHEN priority = 'LOW' THEN case_id END), 0) AS "LOW", NULLIF(COUNT(CASE WHEN priority = 'MEDIUM' THEN case_id END), 0) AS "MEDIUM" FROM t GROUP BY region` |
 
@@ -471,8 +486,8 @@ These require translation but ARE supported.
 | `isnan(x)` | `IS_NAN(x)` | |
 | `log2(x)` | `LOG(x, 2)` | |
 | `log(base, x)` | `LOG(x, base)` | **CRITICAL — arg order reversed. ALWAYS swap both arguments.** Spark: first arg=base, second arg=value. Feldera: first arg=value, second arg=base. `LOG(a, b)` in Spark → `LOG(b, a)` in Feldera — mechanical swap, no exceptions, regardless of column names. Examples: `LOG(amplitude, 2)` in Spark → `LOG(2, amplitude)` in Feldera. `LOG(col, 10)` in Spark → `LOG(10, col)` in Feldera. Do NOT be misled by column alias names like `log2_col` — follow the rule, not the alias. |
-| `positive(x)` | `x` | Unary no-op |
-| `negative(x)` | `-x` | Unary negation |
+| `positive(x)` | `x` | Unary no-op — drop the function call, keep the argument as-is. |
+| `negative(x)` | `-x` | Unary negation — replace with `-x`. |
 
 ### Null handling
 
@@ -585,6 +600,19 @@ Spark allows `FROM VALUES (...)` directly; Feldera requires VALUES wrapped in pa
 
 **Rule**: always wrap `VALUES (...)` in parentheses: `FROM (VALUES ...) AS alias(cols)`.
 
+**CRITICAL — preserve implicit column names:** When Spark uses `FROM VALUES (...)` without an explicit column alias, Spark assigns implicit names like `col1`, `col2`. If the SELECT references those names, the alias in `AS t(...)` must use the same names — not generic names like `x`, `y`. Example:
+```sql
+-- Spark: VALUES column is implicitly named 'col1'
+SELECT 1 AS col1, col1 FROM VALUES (10) ORDER BY col1;
+
+-- Feldera WRONG — renamed to x, but Spark query references 'col1'
+SELECT 1 AS col1, x FROM (VALUES (10)) AS t(x) ORDER BY col1;
+-- Error: col1 not found
+
+-- Feldera CORRECT — preserve 'col1' so all references still work
+SELECT 1 AS col1, col1 FROM (VALUES (10)) AS t(col1) ORDER BY col1;
+```
+
 #### SELECT with GROUP BY / HAVING but no FROM
 
 Spark allows `SELECT expr GROUP BY ... HAVING ...` with no table. Feldera requires a FROM clause. Add a dummy single-row table:
@@ -643,6 +671,20 @@ SELECT col1 AS a, col1 AS b FROM t
 #### SELECT alias shadowing in HAVING / GROUP BY
 
 Feldera follows standard SQL: a name in HAVING/GROUP BY that existed before the alias is resolved to the source column, not the alias — same behavior as Spark. No rewrite needed.
+
+**Exception — GROUPING SETS/CUBE/ROLLUP + alias collision:** When the SELECT alias reuses the name of a GROUP BY source column, Feldera resolves HAVING to the aggregate alias; Spark resolves it to the source column:
+
+```sql
+-- Data: VALUES (1, 10), (2, 20) AS T(a, b)
+-- 'b' is both a source column (values 10, 20) and a SELECT alias for SUM(a) (values 1, 2)
+
+-- Spark: HAVING b → column b (10 or 20) → rows where 10>10 (false) and 20>10 (true) → 1 row returned
+-- Feldera: HAVING b → alias SUM(a) (1 or 2) → 1>10 (false) and 2>10 (false) → 0 rows returned
+SELECT SUM(a) AS b FROM T GROUP BY GROUPING SETS ((b), (a, b)) HAVING b > 10;
+
+-- Workaround: reference the source column explicitly in HAVING (no alias ambiguity)
+SELECT SUM(a) AS b FROM T GROUP BY GROUPING SETS ((b), (a, b)) HAVING MAX(b) > 10;
+```
 
 #### Struct field access
 
@@ -709,7 +751,8 @@ Rationale: a partial translation produces incorrect results, which is worse than
 | `validate_utf8(str)` / `try_validate_utf8(str)` / `make_valid_utf8(str)` | UTF-8 validation/repair — not supported in Feldera |
 | `quote(str)` | SQL quoting function — not supported in Feldera |
 | `split(str, delim, limit)` | 3-argument form with limit — not supported. Use 2-argument `SPLIT(str, delim)` instead (drops the limit). |
-| `hex(x)` | `TO_HEX(x)` only when input is `BINARY`; for integer or string inputs `TO_HEX` is not supported (Feldera's `TO_HEX` accepts `BINARY` only) |
+| `split(str, regex_pattern)` | `SPLIT(str, regex_pattern)` | Feldera's `SPLIT` does not support regex patterns — only literal string delimiters work. If the pattern is a regex (e.g. `[1-9]+`, `\\s+`), there is no Feldera equivalent — mark unsupported. |
+| `hex(x)` | `UPPER(TO_HEX(x))` when input is `BINARY`/`VARBINARY` — Feldera `TO_HEX` returns lowercase; Spark `hex()` returns uppercase; ALWAYS wrap with `UPPER()`. Use `UPPER(TO_HEX(CAST(x AS VARBINARY)))` if the column type is `BINARY`. For integer or string inputs, `TO_HEX` is not supported in Feldera — mark as unsupported. |
 | `unhex(s)` | Binary hex decoding — not supported in Feldera |
 | `encode(str, charset)` / `decode(bytes, charset)` | Binary encode/decode — not supported in Feldera |
 | `REGEXP_EXTRACT` | Do NOT approximate with REGEXP_REPLACE |

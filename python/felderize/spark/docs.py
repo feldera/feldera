@@ -54,15 +54,15 @@ def _build_categories_from_index(
     """Parse function-index.md.
 
     Returns:
-        cats:         category → [\\bFUNC\\b, ...] trigger patterns
+        categories:   category → [\\bFUNC\\b, ...] trigger patterns
         func_anchors: FUNC_NAME_UPPER → [(doc_filename, anchor_id), ...]
     """
     known = set(_DOC_FILES) - {"types"}
-    cats: dict[str, list[str]] = {cat: [] for cat in _DOC_FILES}
+    categories: dict[str, list[str]] = {cat: [] for cat in _DOC_FILES}
     func_anchors: dict[str, list[tuple[str, str]]] = {}
 
     if not index_path.is_file():
-        return cats, func_anchors
+        return categories, func_anchors
 
     func_re = re.compile(r"^\* `([A-Z_][A-Z_0-9 ]*)`", re.IGNORECASE)
     link_re = re.compile(r"\[([a-z]+)\]\(([^)#]+)(?:#([^)]+))?\)")
@@ -79,12 +79,12 @@ def _build_categories_from_index(
             anchor = link_m.group(3)  # e.g. "upper" (may be None)
             if cat in known:
                 keyword = rf"\b{re.escape(func_name)}\b"
-                if keyword not in cats[cat]:
-                    cats[cat].append(keyword)
+                if keyword not in categories[cat]:
+                    categories[cat].append(keyword)
             if anchor:
                 func_anchors.setdefault(func_upper, []).append((doc_file, anchor))
 
-    return cats, func_anchors
+    return categories, func_anchors
 
 
 _DEFAULT_DOCS_DIR = (
@@ -92,33 +92,33 @@ _DEFAULT_DOCS_DIR = (
 )
 
 # Cache: docs_dir → (categories, func_anchors)
-_cats_cache: dict[
+_categories_cache: dict[
     Path, tuple[dict[str, list[str]], dict[str, list[tuple[str, str]]]]
 ] = {}
 
 
-def _get_cats_and_anchors(
+def _get_categories_and_anchors(
     docs_dir: Path,
 ) -> tuple[dict[str, list[str]], dict[str, list[tuple[str, str]]]]:
     """Return (categories, func_anchors) for the given docs_dir, cached per path."""
-    if docs_dir not in _cats_cache:
-        cats, func_anchors = _build_categories_from_index(
+    if docs_dir not in _categories_cache:
+        categories, func_anchors = _build_categories_from_index(
             docs_dir / "function-index.md"
         )
         for source in (_EXTRA_PATTERNS, _SPARK_ALIASES):
             for cat, patterns in source.items():
-                seen = set(cats.get(cat, []))
+                seen = set(categories.get(cat, []))
                 for p in patterns:
                     if p not in seen:
-                        cats.setdefault(cat, []).append(p)
+                        categories.setdefault(cat, []).append(p)
                         seen.add(p)
-        _cats_cache[docs_dir] = (cats, func_anchors)
-    return _cats_cache[docs_dir]
+        _categories_cache[docs_dir] = (categories, func_anchors)
+    return _categories_cache[docs_dir]
 
 
 # Module-level categories for load_examples() (which has no docs_dir).
 # Built from the default docs location; func_anchors not needed for examples.
-_CATEGORIES, _ = _get_cats_and_anchors(_DEFAULT_DOCS_DIR)
+_CATEGORIES, _ = _get_categories_and_anchors(_DEFAULT_DOCS_DIR)
 
 # ── Section-level doc parsing ────────────────────────────────────────────────
 
@@ -213,11 +213,11 @@ def _load_relevant_sections(doc_path: Path, relevant_anchors: set[str]) -> str:
 
 def _detect_categories(
     sql: str,
-    cats: dict[str, list[str]] | None = None,
+    categories: dict[str, list[str]] | None = None,
 ) -> set[str]:
     """Return set of category names whose trigger patterns match the SQL."""
     matched = {"types"}  # Always include types
-    for category, patterns in (cats if cats is not None else _CATEGORIES).items():
+    for category, patterns in (categories if categories is not None else _CATEGORIES).items():
         if not patterns:
             continue
         for pattern in patterns:
@@ -248,13 +248,13 @@ def load_docs(sql: str, docs_dir: Path | None = None) -> str:
     if not docs_dir.is_dir():
         return ""
 
-    cats, func_anchors = _get_cats_and_anchors(docs_dir)
-    categories = _detect_categories(sql, cats)
+    categories, func_anchors = _get_categories_and_anchors(docs_dir)
+    detected = _detect_categories(sql, categories)
     sql_funcs = _detect_sql_functions(sql)
 
     result_sections: list[str] = []
 
-    for category in sorted(categories):
+    for category in sorted(detected):
         if category not in _DOC_FILES:
             continue
         doc_filename = _DOC_FILES[category]
@@ -285,13 +285,13 @@ def load_examples(sql: str, examples_dir: Path | None = None) -> str:
     if not examples_dir.is_dir():
         return ""
 
-    categories = _detect_categories(sql)
+    detected = _detect_categories(sql)
     sections: list[str] = []
 
     for filepath in sorted(examples_dir.glob("*.md")):
         if filepath not in _example_cache:
             raw = filepath.read_text()
-            cats: set[str] = set()
+            file_categories: set[str] = set()
             body = raw
             if raw.startswith("---"):
                 parts = raw.split("---", 2)
@@ -299,14 +299,14 @@ def load_examples(sql: str, examples_dir: Path | None = None) -> str:
                     try:
                         meta = yaml.safe_load(parts[1])
                         if isinstance(meta, dict):
-                            cats = set(meta.get("categories", []))
+                            file_categories = set(meta.get("categories", []))
                     except yaml.YAMLError:
                         pass
                     body = parts[2].strip()
-            _example_cache[filepath] = (cats, body)
+            _example_cache[filepath] = (file_categories, body)
 
-        cats, body = _example_cache[filepath]
-        if cats & categories:
+        file_categories, body = _example_cache[filepath]
+        if file_categories & detected:
             sections.append(body)
 
     return "\n\n---\n\n".join(sections)

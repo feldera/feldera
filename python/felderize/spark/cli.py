@@ -234,7 +234,8 @@ def example(
 
 _CONTACT_MESSAGE = (
     "\n  Some Spark SQL features are not yet supported in Feldera.\n"
-    "  Contact us at support@feldera.com to request support for these features."
+    "  Contact us at support@feldera.com to request support for these features or "
+    "  consider filing an issue at github.com/feldera/feldera/issue. "
 )
 
 _ERROR_CONTACT_MESSAGE = "\n  Contact us at support@feldera.com for assistance."
