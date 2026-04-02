@@ -451,8 +451,8 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
-    public void stripProperties() throws IOException, SQLException {
-        // Test that the properties are stripped from the generated Rust
+    public void stripConnectors() throws IOException, SQLException {
+        // Test that the connectors are stripped from the generated Rust
         String sql = """
                CREATE TABLE T (
                   COL1 INT
@@ -472,14 +472,6 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         String rust = Utilities.readFile(BaseSQLTests.TEST_FILE_PATH);
         Assert.assertFalse(rust.contains(CreateTableStatement.CONNECTORS));
-
-        sql = """
-               CREATE TABLE T (COL1 INT);
-               CREATE VIEW V AS SELECT * FROM T;""";
-        file = createInputScript(sql);
-        CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
-        String rust0 = Utilities.readFile(getTestFilePath());
-        Assert.assertEquals(rust, rust0);
     }
 
     @Test
