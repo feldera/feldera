@@ -140,11 +140,11 @@ pub fn storage_base_and_path(output: &Path) -> (PathBuf, StoragePath) {
     )
 }
 
-pub fn buffer_cache() -> Arc<BufferCache> {
+pub fn buffer_cache() -> Option<Arc<BufferCache>> {
     thread_local! {
         static BUFFER_CACHE: Arc<BufferCache> = Arc::new(BufferCache::new(1024 * 1024));
     }
-    BUFFER_CACHE.with(|cache| cache.clone())
+    Some(BUFFER_CACHE.with(|cache| cache.clone()))
 }
 
 fn maybe<T>(row: usize, value: T) -> Option<T> {

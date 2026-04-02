@@ -547,7 +547,7 @@ where
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
         let start = Instant::now();
-        let cache = (file.cache)();
+        let cache = file.cache();
         #[allow(clippy::borrow_deref_ref)]
         let (access, entry) = match cache.get(&*file.file_handle, node.location) {
             Some(entry) => (
@@ -1030,7 +1030,7 @@ where
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
         let start = Instant::now();
-        let cache = (file.cache)();
+        let cache = file.cache();
         let first_row = node.rows.start;
         #[allow(clippy::borrow_deref_ref)]
         let (access, entry) = match cache.get(&*file.file_handle, node.location) {
@@ -1311,13 +1311,13 @@ impl FileTrailer {
         })
     }
     fn new(
-        cache: fn() -> Arc<BufferCache>,
+        cache: fn() -> Option<Arc<BufferCache>>,
         file_handle: &dyn FileReader,
         location: BlockLocation,
         stats: &AtomicCacheStats,
     ) -> Result<Arc<FileTrailer>, Error> {
         let start = Instant::now();
-        let cache = cache();
+        let cache = cache().expect("Should have a buffer cache");
         #[allow(clippy::borrow_deref_ref)]
         let (access, entry) = match cache.get(&*file_handle, location) {
             Some(entry) => {
@@ -1397,7 +1397,7 @@ impl Column {
 /// Encapsulates storage and a file handle.
 #[derive(SizeOf)]
 struct ImmutableFileRef {
-    cache: fn() -> Arc<BufferCache>,
+    cache: fn() -> Option<Arc<BufferCache>>,
     #[size_of(skip)]
     file_handle: Arc<dyn FileReader>,
     compression: Option<Compression>,
@@ -1412,15 +1412,17 @@ impl Debug for ImmutableFileRef {
 }
 impl Drop for ImmutableFileRef {
     fn drop(&mut self) {
-        if Arc::strong_count(&self.file_handle) == 1 {
-            self.evict();
+        if Arc::strong_count(&self.file_handle) == 1
+            && let Some(cache) = (self.cache)()
+        {
+            cache.evict(&*self.file_handle);
         }
     }
 }
 
 impl ImmutableFileRef {
     fn new(
-        cache: fn() -> Arc<BufferCache>,
+        cache: fn() -> Option<Arc<BufferCache>>,
         file_handle: Arc<dyn FileReader>,
         compression: Option<Compression>,
         stats: AtomicCacheStats,
@@ -1435,8 +1437,13 @@ impl ImmutableFileRef {
         }
     }
 
+    fn cache(&self) -> Arc<BufferCache> {
+        (self.cache)().expect("Should have a buffer cache")
+    }
+
+    #[cfg(test)]
     pub fn evict(&self) {
-        (self.cache)().evict(&*self.file_handle);
+        self.cache().evict(&*self.file_handle);
     }
 
     pub fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, Error> {
@@ -1573,7 +1580,7 @@ where
     /// Creates and returns a new `Reader` for `file`.
     pub(crate) fn new(
         factories: &[&AnyFactories],
-        cache: fn() -> Arc<BufferCache>,
+        cache: fn() -> Option<Arc<BufferCache>>,
         file: Arc<dyn FileReader>,
     ) -> Result<Self, Error> {
         let (reader, _membership_filter) = Self::new_with_filter(factories, cache, file, None)?;
@@ -1582,7 +1589,7 @@ where
 
     pub(crate) fn new_with_filter(
         factories: &[&AnyFactories],
-        cache: fn() -> Arc<BufferCache>,
+        cache: fn() -> Option<Arc<BufferCache>>,
         file: Arc<dyn FileReader>,
         membership_filter: Option<TrackingBloomFilter>,
     ) -> Result<(Self, Option<TrackingBloomFilter>), Error> {
@@ -1709,7 +1716,7 @@ where
     /// Instantiates a reader given an existing path.
     pub fn open(
         factories: &[&AnyFactories],
-        cache: fn() -> Arc<BufferCache>,
+        cache: fn() -> Option<Arc<BufferCache>>,
         storage_backend: &dyn StorageBackend,
         path: &StoragePath,
     ) -> Result<Self, Error> {
@@ -1718,7 +1725,7 @@ where
 
     pub(crate) fn open_with_filter(
         factories: &[&AnyFactories],
-        cache: fn() -> Arc<BufferCache>,
+        cache: fn() -> Option<Arc<BufferCache>>,
         storage_backend: &dyn StorageBackend,
         path: &StoragePath,
     ) -> Result<(Self, Option<TrackingBloomFilter>), Error> {

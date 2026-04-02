@@ -814,7 +814,10 @@ impl Runtime {
             })
     }
 
-    /// Returns this thread's buffer-cache handle, but:
+    /// Returns this thread's buffer-cache handle:
+    ///
+    /// - If the thread is a foreground thread or a background task, returns
+    ///   that thread or task's buffer cache.
     ///
     /// - If the thread's [Runtime] does not have storage configured, the cache
     ///   size is trivially small.
@@ -823,49 +826,58 @@ impl Runtime {
     ///   all such threads. (Such a thread might be in a circuit that uses
     ///   storage, but there's no way to know because only [Runtime] makes that
     ///   available at a thread level.)
-    pub fn buffer_cache() -> Arc<BufferCache> {
-        // This cache is shared by all auxiliary threads in the runtime.
-        // In particular, output connector threads use it to maintain their output buffers.
-
-        // FIXME: We may need a tunable strategy for aux threads. We cannot simply give each of them the
-        // same cache as DBSP worker threads, as there can be dozens of aux threads (currently one per
-        // output connector), which do not necessarily need a large cache. OTOH, sharing the same cache
-        // across all of them may potentially cause performance issues.
-        static AUXILIARY_CACHE: LazyLock<Arc<BufferCache>> =
-            LazyLock::new(|| Arc::new(BufferCache::new(1024 * 1024 * 256)));
-
-        // Fast path, look up from TLS
-
-        if current_thread_type() == Some(ThreadType::Background) {
-            // The TOKIO_BUFFER_CACHE variable should be set on task startup.
-            return TOKIO_BUFFER_CACHE.get().clone();
-        } else if let Some(buffer_cache) = BUFFER_CACHE.with(|bc| bc.borrow().clone()) {
-            return buffer_cache;
-        }
-
-        // Slow path for initializing the thread-local.
-        if let Some(rt) = Runtime::runtime() {
-            match current_thread_type() {
-                None => {
-                    let buffer_cache = AUXILIARY_CACHE.clone();
-                    BUFFER_CACHE.set(Some(buffer_cache.clone()));
-                    buffer_cache
-                }
-                Some(ThreadType::Background) => {
-                    // The TOKIO_BUFFER_CACHE variable should be set on task startup.
-                    panic!("background thread should not call buffer_cache()");
-                }
-                Some(thread_type) => {
+    ///
+    /// - If the thread is a background thread, but no buffer cache is set, this
+    ///   ordinarily indicates a bug.  However, this can happen when a
+    ///   background task is dropped, because it's normal for task-local
+    ///   variables to be unavailable in `Drop` during task shutdown.  The
+    ///   function returns `None` in this case (and only in this case).
+    pub fn buffer_cache() -> Option<Arc<BufferCache>> {
+        if let Some(buffer_cache) = BUFFER_CACHE.with(|bc| bc.borrow().clone()) {
+            // Fast path common case for foreground threads.
+            Some(buffer_cache)
+        } else if let Ok(buffer_cache) = TOKIO_BUFFER_CACHE.try_get() {
+            // Background tasks case.
+            Some(buffer_cache)
+        } else if let Some(rt) = Runtime::runtime()
+            && let Some(thread_type) = current_thread_type()
+        {
+            // Slow path for threads running in a [Runtime].
+            match thread_type {
+                ThreadType::Foreground => {
                     let buffer_cache =
                         rt.get_buffer_cache(Runtime::local_worker_offset(), thread_type);
                     BUFFER_CACHE.set(Some(buffer_cache.clone()));
-                    buffer_cache
+                    Some(buffer_cache)
+                }
+                ThreadType::Background => {
+                    // We are in a background thread in a Tokio runtime but no
+                    // buffer cache is set in [TOKIO_BUFFER_CACHE].  This is
+                    // probably a bug, but it can happen when a background task
+                    // is canceled.  It is the reason that this function returns
+                    // an `Option`.
+                    None
                 }
             }
         } else {
-            // TODO: We shouldn't create batches outside of a runtime. This should probably
-            // be converted into a panic.
-            AUXILIARY_CACHE.clone()
+            // Fallback path for threads outside a [Runtime].
+            //
+            // This cache is shared by all auxiliary threads in the runtime.  In
+            // particular, output connector threads use it to maintain their
+            // output buffers.
+            //
+            // FIXME: We may need a tunable strategy for aux threads. We cannot
+            // simply give each of them the same cache as DBSP worker threads,
+            // as there can be dozens of aux threads (currently one per output
+            // connector), which do not necessarily need a large cache. OTOH,
+            // sharing the same cache across all of them may potentially cause
+            // performance issues.
+            static AUXILIARY_CACHE: LazyLock<Arc<BufferCache>> =
+                LazyLock::new(|| Arc::new(BufferCache::new(1024 * 1024 * 256)));
+
+            let buffer_cache = AUXILIARY_CACHE.clone();
+            BUFFER_CACHE.set(Some(buffer_cache.clone()));
+            Some(buffer_cache)
         }
     }
 

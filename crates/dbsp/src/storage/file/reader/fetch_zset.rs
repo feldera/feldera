@@ -68,7 +68,7 @@ where
         let mut this = Self {
             keys,
             reader,
-            cache: (reader.file.cache)(),
+            cache: reader.file.cache(),
             factories,
             sender,
             receiver,
