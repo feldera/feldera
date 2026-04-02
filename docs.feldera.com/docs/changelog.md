@@ -65,6 +65,14 @@ import TabItem from '@theme/TabItem';
         transient failures while fetching JetStream stream metadata are now treated as retryable,
         while logical sequence-range validation failures remain fatal.
 
+        ## v0.278.0
+
+        ### Checkpoint sync: remote checkpoints older than v0.225.0 are no longer supported
+
+        Checkpoints pushed to object storage by a Feldera pipeline older than v0.225.0 can no
+        longer be used with Feldera v0.278.0 or later. Remote checkpoints must be stored as zip
+        archives; the legacy unzipped format is no longer accepted.
+
         ## v0.263.0
 
         Added connector error list to input/output connector stats.
