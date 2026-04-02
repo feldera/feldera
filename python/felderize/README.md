@@ -18,7 +18,7 @@ Create a `.env` file:
 ```bash
 ANTHROPIC_API_KEY=your-key-here
 FELDERA_COMPILER=/path/to/sql-to-dbsp  # in Feldera repo: ../../sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
-FELDERIZE_MODEL=claude-sonnet-4-5
+FELDERIZE_MODEL=claude-sonnet-4-6
 ```
 
 The `FELDERA_COMPILER` path is required for validation. Without it, translation still works but output SQL is not verified. You can also pass it per-command with `--compiler PATH`.
@@ -118,6 +118,7 @@ Environment variables (set in `.env`):
 | `ANTHROPIC_API_KEY` | Anthropic API key | (required) |
 | `FELDERIZE_MODEL` | LLM model to use (can also be set with `--model`) | (required, set in `.env`) |
 | `FELDERA_COMPILER` | Path to sql-to-dbsp compiler (can also be set with `--compiler`) | (required for validation) |
+| `ANTHROPIC_BASE_URL` | Override Anthropic API base URL (for proxies or alternate endpoints) | (optional) |
 
 ## How it works
 

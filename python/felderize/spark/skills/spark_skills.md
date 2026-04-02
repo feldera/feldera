@@ -186,8 +186,8 @@ These Spark functions exist in Feldera — translate directly:
 | Spark | Feldera | Notes |
 |-------|---------|-------|
 | `AVG(col)` | `AVG(CAST(col AS DOUBLE))` if col is integer type; `AVG(col)` otherwise | Integer input: rewrite to return DOUBLE matching Spark. Decimal/float: leave as-is → [GBD-AGG-TYPE] scale mismatch |
-| `STDDEV_SAMP(col)` | Same | → [GBD-AGG-TYPE]: decimal input preserves scale, not widened to DOUBLE |
-| `STDDEV_POP(col)` | Same | → [GBD-AGG-TYPE]: decimal input preserves scale, not widened to DOUBLE |
+| `STDDEV_SAMP(col)` | `STDDEV_SAMP(CAST(col AS DOUBLE))` if col is non-DOUBLE; `STDDEV_SAMP(col)` otherwise | → [GBD-AGG-TYPE]: Spark always returns DOUBLE; Feldera preserves input type. Rewrite for INT/BIGINT/DECIMAL inputs. |
+| `STDDEV_POP(col)` | `STDDEV_POP(CAST(col AS DOUBLE))` if col is non-DOUBLE; `STDDEV_POP(col)` otherwise | → [GBD-AGG-TYPE]: Spark always returns DOUBLE; Feldera preserves input type. Rewrite for INT/BIGINT/DECIMAL inputs. |
 | `every(col)` | Same | Alias for `bool_and` — supported as aggregate; as window function → [GBD-BOOL-WINDOW] |
 | `some(col)` | Same | Supported as aggregate only; as window function → [GBD-BOOL-WINDOW] |
 | `bit_and(col)` — aggregate | `BIT_AND(col)` | Aggregate: bitwise AND over all rows in group |
@@ -211,9 +211,13 @@ These Spark functions exist in Feldera — translate directly:
 | Spark | Feldera | Notes |
 |-------|---------|-------|
 | `TRIM(s)` | Same | → [GBD-WHITESPACE] |
-| `RLIKE(s, pattern)` | Same | Infix `s RLIKE pattern` also works |
+| `RLIKE(s, pattern)` | Same | Infix `s RLIKE pattern` also works → [GBD-REGEX-ESCAPE] |
 | `OCTET_LENGTH(s)` | Same | Returns byte length of string |
 | `overlay(str placing repl from pos for len)` | `OVERLAY(str PLACING repl FROM pos FOR len)` | Same syntax |
+
+#### ⚠️ Behavioral differences (Spark vs Feldera)
+
+- **[GBD-REGEX-ESCAPE]** `RLIKE` / `REGEXP_REPLACE` regex pattern escaping: Spark SQL string literals apply Java-style `\\` backslash escaping, so `'\\.'` passes the regex `\.` (escaped dot) to the engine. Feldera SQL follows the SQL standard and does **not** interpret `\\` as an escape, so `'\\.'` is the two-character sequence `\.` in the regex — which may match differently. Use POSIX character classes instead: `[.]` for literal dot, `[+]` for literal plus, `[*]` for literal star, etc.
 
 #### 📝 Notes
 
@@ -232,7 +236,7 @@ These Spark functions exist in Feldera — translate directly:
 | `arrays_overlap(a, b)` | `ARRAYS_OVERLAP(a, b)` | |
 | `array_repeat(val, n)` | `ARRAY_REPEAT(val, n)` | |
 | `array_union(a, b)` | `ARRAY_UNION(a, b)` | → [GBD-ARRAY-ORDER]: Feldera returns elements in sorted order; Spark preserves input order. |
-| `array_intersect(a, b)` | `ARRAY_INTERSECT(a, b)` | |
+| `array_intersect(a, b)` | `ARRAY_INTERSECT(a, b)` | → [GBD-ARRAY-ORDER]: Feldera returns elements in sorted order; Spark preserves input order. |
 | `array_except(a, b)` | `ARRAY_EXCEPT(a, b)` | → [GBD-ARRAY-ORDER]: Feldera returns elements in sorted order; Spark preserves input order. |
 | `array_join(arr, sep)` | `ARRAY_JOIN(arr, sep)` | Alias for ARRAY_TO_STRING |
 | `size(arr)` | `COALESCE(CARDINALITY(arr), -1)` | → [GBD-SIZE-NULL] |
@@ -359,6 +363,8 @@ GROUP BY CAST(v['user_id'] AS VARCHAR);
 | `EXP(x)` | Same | Input/output: DOUBLE |
 | `SIGN(x)` | Same | Returns -1, 0, or 1 |
 | `sec(x)` | `SEC(x)` | |
+| `csc(x)` | `CSC(x)` | |
+| `cot(x)` | `COT(x)` | |
 
 #### ⚠️ Behavioral differences (Spark vs Feldera)
 
@@ -369,8 +375,6 @@ GROUP BY CAST(v['user_id'] AS VARCHAR);
 #### 📝 Notes
 
 - `ABS`, `POWER`, `SQRT` work identically — no translation needed
-| `csc(x)` | `CSC(x)` | |
-| `cot(x)` | `COT(x)` | |
 
 #### Null handling
 
@@ -550,7 +554,7 @@ GROUP BY region
 | `TRY_CAST(expr AS type)` | `SAFE_CAST(expr AS type)` | → [GBD-SAFE-CAST] |
 | `CAST(string AS DATE)` | `CAST(string AS DATE)` | Pass through unchanged — Spark returns NULL for invalid inputs; Feldera may panic at runtime. Use `SAFE_CAST` if NULL-on-failure is required. |
 | `CAST(string AS TIMESTAMP)` | `CAST(string AS TIMESTAMP)` | Pass through unchanged — same rules as CAST to DATE. Use `SAFE_CAST` if NULL-on-failure is required. |
-| `CAST(numeric AS TIMESTAMP)` | `CAST(numeric AS TIMESTAMP)` | Pass through unchanged — Feldera compiler accepts this syntax including edge cases like `CAST(CAST('inf' AS DOUBLE) AS TIMESTAMP)`. Do not mark as unsupported based on runtime semantics — if it compiles, translate it. |
+| `CAST(numeric AS TIMESTAMP)` | `CAST(numeric AS TIMESTAMP)` | ⚠️ **Semantics differ**: Spark interprets the numeric as **seconds** since epoch; Feldera interprets it as **microseconds** since epoch. Results differ by a factor of 1,000,000. Mark unsupported if the numeric value represents seconds (the common Spark case). Only translate if the source is already in microseconds. |
 | `CAST('<value>' AS INTERVAL <unit>)` | `INTERVAL '<value>' <unit>` | For constant strings: drop the CAST, use interval literal directly (`INTERVAL '3' DAY`, `INTERVAL '3-1' YEAR TO MONTH`). For string expressions: `CAST(col AS INTERVAL DAY)` or `INTERVAL col DAY` both work in Feldera when used inside arithmetic (e.g. `d + CAST(col AS INTERVAL DAY)`). |
 | `CAST(INTERVAL '...' <unit> AS <numeric>)` | Same | Pass through unchanged. Single time units (SECOND, MINUTE, HOUR, DAY, MONTH, YEAR) to any numeric type are supported. Compound intervals (`YEAR TO MONTH`, `DAY TO SECOND`) to numeric are unsupported. |
 
@@ -941,6 +945,7 @@ Rationale: a partial translation produces incorrect results, which is worse than
 | `SELECT CAST(... AS INTERVAL ...)` as final output | `INTERVAL` cannot be a view column output type — mark unsupported even if the literal rewrite applies. Do NOT use `CREATE LOCAL VIEW` as a workaround — it changes semantics. |
 | `CAST(INTERVAL 'x-y' YEAR TO MONTH AS numeric)` | Compound interval (YEAR TO MONTH, DAY TO SECOND, HOUR TO SECOND) to numeric — not supported |
 | `CAST(str AS BOOLEAN)` where `str` contains `\t`, `\n`, `\r` whitespace | → [GBD-WHITESPACE] — Feldera only strips spaces before parsing, so `'\t\t true \n\r '` returns `False`. Mark unsupported if input may contain non-space whitespace. |
+| `CAST(numeric AS TIMESTAMP)` where numeric is **seconds** since epoch | Spark interprets as **seconds**; Feldera interprets as **microseconds** — off by factor of 1,000,000. Mark unsupported when the numeric value represents seconds (the typical Spark use case). |
 | `CAST(numeric AS INTERVAL ...)` | Numeric-to-interval — not supported |
 | `CAST(TIME '...' AS numeric/decimal)` | TIME to numeric or decimal — not supported |
 
