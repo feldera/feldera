@@ -1429,19 +1429,39 @@ def tpch_test(config: TPCHTestConfig):
 
     elif config.mode == "transaction":
         pipeline = run_workload(
-            unique_pipeline_name("tpc-h-transaction"), tables, views, transaction=True, stop=False
+            unique_pipeline_name("tpc-h-transaction"),
+            tables,
+            views,
+            transaction=True,
+            stop=False,
         )
-        count = next(pipeline.query("SELECT COUNT(*) as cnt FROM REGION WHERE R_COMMENT IS NOT NULL"))["cnt"]
+        count = next(
+            pipeline.query(
+                "SELECT COUNT(*) as cnt FROM REGION WHERE R_COMMENT IS NOT NULL"
+            )
+        )["cnt"]
         if count != 0:
-            raise RuntimeError(f"REGION.R_COMMENT is not NULL despite 'skip_unused_columns' = 'true': {count}")
+            raise RuntimeError(
+                f"REGION.R_COMMENT is not NULL despite 'skip_unused_columns' = 'true': {count}"
+            )
         pipeline.stop(force=True)
     elif config.mode == "stream":
         pipeline = run_workload(
-            unique_pipeline_name("tpc-h-stream"), tables, views, transaction=False, stop=False
+            unique_pipeline_name("tpc-h-stream"),
+            tables,
+            views,
+            transaction=False,
+            stop=False,
         )
-        count = next(pipeline.query("SELECT COUNT(*) as cnt FROM REGION WHERE R_COMMENT IS NOT NULL"))["cnt"]
+        count = next(
+            pipeline.query(
+                "SELECT COUNT(*) as cnt FROM REGION WHERE R_COMMENT IS NOT NULL"
+            )
+        )["cnt"]
         if count != 0:
-            raise RuntimeError(f"REGION.R_COMMENT is not NULL despite 'skip_unused_columns' = 'true': {count}")
+            raise RuntimeError(
+                f"REGION.R_COMMENT is not NULL despite 'skip_unused_columns' = 'true': {count}"
+            )
         pipeline.stop(force=True)
     else:
         raise RuntimeError(f"Unknown mode: {config.mode}")
