@@ -171,11 +171,13 @@
   </button>
 {/snippet}
 
-<div class="flex h-9 flex-wrap gap-2">
-  {#each actions as action}
-    {@render action()}
-  {/each}
-</div>
+{#if actions.length}
+  <div class="flex h-9 flex-wrap gap-2">
+    {#each actions as action}
+      {@render action()}
+    {/each}
+  </div>
+{/if}
 
 {#snippet deleteDialog()}
   <DeleteDialog

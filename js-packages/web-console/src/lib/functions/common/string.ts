@@ -62,6 +62,14 @@ export function humanSize(bytes: number): string {
   return bytes.toFixed(1) + ' ' + units[u]
 }
 
+/**
+ * Case-insensitive substring match. Returns true if `text` contains `search`,
+ * or if `search` is empty.
+ */
+export function matchesSubstring(text: string, search: string): boolean {
+  return !search || text.toLowerCase().includes(search.toLowerCase())
+}
+
 export function nthIndexOf(
   str: string,
   substring: string,
