@@ -64,18 +64,22 @@ These are systematic differences between Spark and Feldera to be aware of during
 
 Feldera uses suffix syntax — fix DDL before addressing query-level issues:
 
-```text
-ARRAY<T>           →  T ARRAY
-ARRAY<ARRAY<T>>    →  T ARRAY ARRAY
-ARRAY<ROW(...)>    →  ROW(...) ARRAY
-MAP<K, ARRAY<V>>   →  MAP<K, V ARRAY>
-```
+| Spark | Feldera |
+|-------|---------|
+| `ARRAY<T>` | `T ARRAY` |
+| `ARRAY<ARRAY<T>>` | `T ARRAY ARRAY` |
+| `ARRAY<ROW(...)>` | `ROW(...) ARRAY` |
+| `MAP<K, ARRAY<V>>` | `MAP<K, V ARRAY>` |
 
-- Array literals use `ARRAY[...]` or `ARRAY(...)`.
-- Array indexes are 1-based.
-- Never emit `ARRAY<...>` in Feldera DDL.
+#### 🔄 Translation rules
 
-If the compiler reports `Encountered "<" ... ARRAY<VARCHAR>`: rewrite ALL `ARRAY<...>` to suffix form first, then re-validate.
+- Never emit `ARRAY<...>` in Feldera DDL — always use suffix `T ARRAY` form
+- Array literals: use `ARRAY[...]` or `ARRAY(...)`
+
+#### 📝 Notes
+
+- Array indexes are 1-based in both engines
+- Compiler error `Encountered "<" ... ARRAY<VARCHAR>`: rewrite ALL `ARRAY<...>` to suffix form first, then re-validate
 
 ## DDL Rewrites
 
@@ -91,16 +95,18 @@ If the compiler reports `Encountered "<" ... ARRAY<VARCHAR>`: rewrite ALL `ARRAY
 
 ### PRIMARY KEY rules
 
-**CRITICAL: Never invent a PRIMARY KEY.** Only carry over a PRIMARY KEY that is explicitly declared in the Spark schema (e.g. `CONSTRAINT pk PRIMARY KEY (col)` or bare `PRIMARY KEY (col)`). Do NOT add a PRIMARY KEY just because a column is named `id`, `transaction_id`, or similar — if the Spark schema has no PRIMARY KEY, the Feldera schema must have none either. Adding a spurious PRIMARY KEY causes Feldera to deduplicate rows, silently corrupting all results.
+#### ⚠️ Behavioral differences (Spark vs Feldera)
 
-Two constraints Feldera enforces that Spark does not:
+- Spark accepts `CONSTRAINT name PRIMARY KEY (col)` — Feldera rejects the named wrapper
+- Spark allows nullable PK columns — Feldera requires all PK columns to be `NOT NULL`
 
-1. **No `CONSTRAINT name` wrapper** — Feldera rejects `CONSTRAINT pk PRIMARY KEY (col)`. Use bare `PRIMARY KEY (col)`.
-2. **All PK columns must be `NOT NULL`** — Feldera rejects nullable PK columns:
+#### 🔄 Translation rules
 
-```
-error: PRIMARY KEY cannot be nullable: PRIMARY KEY column 'borrowerid' has type VARCHAR, which is nullable
-```
+- **Never invent a PRIMARY KEY** — only carry over a PK that is explicitly declared in the Spark schema (`CONSTRAINT pk PRIMARY KEY (col)` or bare `PRIMARY KEY (col)`). Do NOT add a PK just because a column is named `id` or `transaction_id`. Adding a spurious PK causes Feldera to deduplicate rows, silently corrupting results.
+- Drop the `CONSTRAINT name` wrapper — use bare `PRIMARY KEY (col)`
+- Add `NOT NULL` to all PK columns
+
+#### 📌 Example
 
 ```sql
 -- Spark (both issues)
@@ -118,9 +124,23 @@ CREATE TABLE orders (
 );
 ```
 
+#### 📝 Notes
+
+- Compiler error when PK column is nullable: `PRIMARY KEY cannot be nullable: PRIMARY KEY column 'borrowerid' has type VARCHAR, which is nullable`
+
 ### Reserved words as column names must be quoted
 
-Quote column names that clash with SQL reserved words (e.g. `timestamp`, `date`, `time`) — apply consistently in both `CREATE TABLE` and every query reference. Do not quote ordinary identifiers — quoting non-reserved words makes them case-sensitive and adds noise.
+#### ⚠️ Behavioral differences (Spark vs Feldera)
+
+- Spark is permissive with reserved words as column names; Feldera requires them to be quoted
+
+#### 🔄 Translation rules
+
+- Quote column names that clash with SQL reserved words (e.g. `timestamp`, `date`, `time`)
+- Apply quoting consistently in both `CREATE TABLE` and every query reference
+- Do not quote ordinary identifiers — quoting non-reserved words makes them case-sensitive and adds noise
+
+#### 📌 Example
 
 ```sql
 -- Schema: only "TimeStamp" is quoted — it clashes with the TIMESTAMP type keyword
@@ -163,15 +183,13 @@ These Spark functions exist in Feldera — translate directly:
 
 #### Aggregate functions
 
-`COUNT`, `SUM`, `MIN`, `MAX`, `COUNT(DISTINCT ...)`, `bool_or`, `bool_and` work identically in Feldera — no translation needed.
-
 | Spark | Feldera | Notes |
 |-------|---------|-------|
 | `AVG(col)` | `AVG(CAST(col AS DOUBLE))` if col is integer type; `AVG(col)` otherwise | Integer input: rewrite to return DOUBLE matching Spark. Decimal/float: leave as-is → [GBD-AGG-TYPE] scale mismatch |
 | `STDDEV_SAMP(col)` | Same | → [GBD-AGG-TYPE]: decimal input preserves scale, not widened to DOUBLE |
 | `STDDEV_POP(col)` | Same | → [GBD-AGG-TYPE]: decimal input preserves scale, not widened to DOUBLE |
-| `every(col)` | Same | Alias for `bool_and` — supported in Feldera. **`every`/`bool_and`/`bool_or` as window functions with `ORDER BY` on a BOOLEAN column are not supported in Feldera.** |
-| `some(col)` | Same | Supported in Feldera as an aggregate, but **not as a window function** |
+| `every(col)` | Same | Alias for `bool_and` — supported as aggregate; as window function → [GBD-BOOL-WINDOW] |
+| `some(col)` | Same | Supported as aggregate only; as window function → [GBD-BOOL-WINDOW] |
 | `bit_and(col)` — aggregate | `BIT_AND(col)` | Aggregate: bitwise AND over all rows in group |
 | `bit_or(col)` — aggregate | `BIT_OR(col)` | Aggregate: bitwise OR over all rows in group |
 | `bit_xor(col)` — aggregate | `BIT_XOR(col)` | Aggregate: bitwise XOR over all rows in group |
@@ -180,9 +198,15 @@ These Spark functions exist in Feldera — translate directly:
 | `CUBE(a, b)` | Same | |
 | `grouping_id(col, ...)` | Same | Returns integer bitmask identifying which columns are aggregated |
 
-#### String functions
+#### ⚠️ Behavioral differences (Spark vs Feldera)
 
-`UPPER`, `LOWER`, `LENGTH`, `SUBSTRING`, `CONCAT`, `CONCAT_WS`, `REPLACE`, `REGEXP_REPLACE`, `INITCAP`, `REVERSE`, `REPEAT`, `LEFT`, `RIGHT`, `MD5`, `ASCII`, `CHR` work identically in Feldera — no translation needed.
+- **[GBD-BOOL-WINDOW]** `every`/`bool_and`/`bool_or`/`some` as window functions with `ORDER BY` on a BOOLEAN column are not supported in Feldera — compiler error: "OVER currently cannot sort on columns with type 'BOOL'" 
+
+#### 📝 Notes
+
+- `COUNT`, `SUM`, `MIN`, `MAX`, `COUNT(DISTINCT ...)`, `bool_or`, `bool_and` work identically — no translation needed
+
+#### String functions
 
 | Spark | Feldera | Notes |
 |-------|---------|-------|
@@ -190,6 +214,10 @@ These Spark functions exist in Feldera — translate directly:
 | `RLIKE(s, pattern)` | Same | Infix `s RLIKE pattern` also works |
 | `OCTET_LENGTH(s)` | Same | Returns byte length of string |
 | `overlay(str placing repl from pos for len)` | `OVERLAY(str PLACING repl FROM pos FOR len)` | Same syntax |
+
+#### 📝 Notes
+
+- `UPPER`, `LOWER`, `LENGTH`, `SUBSTRING`, `CONCAT`, `CONCAT_WS`, `REPLACE`, `REGEXP_REPLACE`, `INITCAP`, `REVERSE`, `REPEAT`, `LEFT`, `RIGHT`, `MD5`, `ASCII`, `CHR` work identically — no translation needed
 
 #### Array functions
 
@@ -207,8 +235,12 @@ These Spark functions exist in Feldera — translate directly:
 | `array_intersect(a, b)` | `ARRAY_INTERSECT(a, b)` | |
 | `array_except(a, b)` | `ARRAY_EXCEPT(a, b)` | → [GBD-ARRAY-ORDER]: Feldera returns elements in sorted order; Spark preserves input order. |
 | `array_join(arr, sep)` | `ARRAY_JOIN(arr, sep)` | Alias for ARRAY_TO_STRING |
-| `size(arr)` | `COALESCE(CARDINALITY(arr), -1)` | Spark `size()` returns `-1` for NULL input; Feldera `CARDINALITY` returns `NULL`. If column is NOT NULL, `CARDINALITY(arr)` alone is sufficient. |
+| `size(arr)` | `COALESCE(CARDINALITY(arr), -1)` | → [GBD-SIZE-NULL] |
 | `array(v1, v2)` | `ARRAY(v1, v2)` | |
+
+#### ⚠️ Behavioral differences (Spark vs Feldera)
+
+- **[GBD-SIZE-NULL]** `size(arr)` returns `-1` for NULL input in Spark; Feldera `CARDINALITY` returns `NULL`. Rewrite as `COALESCE(CARDINALITY(arr), -1)`. If the column is `NOT NULL`, `CARDINALITY(arr)` alone is sufficient.
 
 #### Higher-order array functions
 
@@ -216,7 +248,9 @@ These Spark functions exist in Feldera — translate directly:
 |-------|---------|-------|
 | `transform(arr, x -> expr)` | `TRANSFORM(arr, x -> expr)` | |
 
-Others (`filter`, `zip_with`, `exists`, etc.) are unsupported or require rewriting — see Rewritable patterns and Unsupported sections.
+#### 📝 Notes
+
+- `filter`, `zip_with`, `exists`, and other higher-order functions are unsupported or require rewriting — see Rewritable patterns and Unsupported sections.
 
 #### Map functions
 
@@ -228,13 +262,19 @@ Others (`filter`, `zip_with`, `exists`, etc.) are unsupported or require rewriti
 
 #### Date/Time functions
 
-`YEAR`, `MONTH`, `HOUR`, `MINUTE`, `SECOND` work identically in Feldera — no translation needed.
-
 | Spark | Feldera | Notes |
 |-------|---------|-------|
 | `DAYOFMONTH(d)` | Same | Alias for EXTRACT(DAY FROM d) |
 | `DAYOFWEEK(d)` | Same | Alias for EXTRACT(DOW FROM d); 1=Sunday…7=Saturday |
-| `CURRENT_TIMESTAMP` | `NOW()` | Non-deterministic — value is captured at execution time and will differ between Spark and Feldera runs. |
+| `CURRENT_TIMESTAMP` | `NOW()` | → [GBD-NONDETERMINISTIC] |
+
+#### ⚠️ Behavioral differences (Spark vs Feldera)
+
+- **[GBD-NONDETERMINISTIC]** `CURRENT_TIMESTAMP` / `NOW()` — value is captured at execution time and will differ between Spark and Feldera runs
+
+#### 📝 Notes
+
+- `YEAR`, `MONTH`, `HOUR`, `MINUTE`, `SECOND` work identically — no translation needed
 
 #### JSON functions
 
@@ -256,16 +296,16 @@ VARIANT access patterns:
 | Dot syntax | `variant.field` | `v.name` |
 | Case-sensitive | Quote field name | `v."lastName"` |
 
-Results are always `VARIANT` — cast to get a concrete type: `CAST(v['age'] AS INT)`.
-
 | Spark | Feldera | Notes |
 |-------|---------|-------|
 | `parse_json(s)` | `PARSE_JSON(s)` | Returns VARIANT |
 | `to_json(v)` | `TO_JSON(v)` | |
 | `json_array_length(s)` | `CARDINALITY(CAST(PARSE_JSON(s) AS VARIANT ARRAY))` | |
 
-Notes:
-- **When translating JSON extraction: avoid exposing the parsed JSON object as a view column.** Feldera supports lateral aliases, so you can write `PARSE_JSON(col) AS v` and reuse `v` in the same SELECT. **CRITICAL: `v` becomes a real output column of the view.** Only include columns that were in the original Spark query — wrap in a subquery to hide `v`:
+#### 🔄 Translation rules
+
+- JSON field access (e.g. `v['age']`) always returns `VARIANT` — always cast to the target type before use: `CAST(v['age'] AS INT)`, `CAST(v['name'] AS VARCHAR)`, etc.
+- When translating JSON extraction: avoid exposing the parsed JSON object as a view column. Feldera supports lateral aliases (`PARSE_JSON(col) AS v`), but `v` becomes a real output column of the view. Only include columns that were in the original Spark query — wrap in a subquery to hide `v`:
 
 Simple SELECT — parse inline (preferred when only extracting fields):
 
@@ -290,7 +330,7 @@ SELECT id, user_id, amount FROM (
 );
 ```
 
-- **With GROUP BY: use a CTE to pre-parse.** Repeat PARSE_JSON in GROUP BY too, or use a CTE. The CTE goes *inside* `CREATE VIEW ... AS`, not before it:
+- **With GROUP BY:** use a CTE to pre-parse. The CTE goes *inside* `CREATE VIEW ... AS`, not before it:
 
 ```sql
 CREATE VIEW summary AS
@@ -307,32 +347,42 @@ GROUP BY CAST(v['user_id'] AS VARCHAR);
 
 #### Math functions
 
-`ABS`, `POWER`, `SQRT` work identically in Feldera — no translation needed.
-
 | Spark | Feldera | Notes |
 |-------|---------|-------|
-| `CEIL(x)` | Same | For float/double input: Spark returns BIGINT, Feldera returns DOUBLE |
-| `FLOOR(x)` | Same | For float/double input: Spark returns BIGINT, Feldera returns DOUBLE |
-| `ROUND(x, d)` | Same | Rounding differs: Spark rounds half-up (0.5 → 1), Feldera rounds half-to-even (0.5 → 0, 1.5 → 2) |
+| `CEIL(x)` | Same | → [GBD-CEIL-FLOOR] |
+| `FLOOR(x)` | Same | → [GBD-CEIL-FLOOR] |
+| `ROUND(x, d)` | Same | → [GBD-ROUNDING] |
 | `BROUND(x, d)` | Same | Banker's rounding (half-to-even); Feldera supports decimal only |
 | `MOD(a, b)` / `a % b` | Same | Supported for both integer and DECIMAL |
-| `LN(x)` | Same | Spark returns NULL for 0 or negative input; Feldera returns -inf for 0 and drops the row (WorkerPanic) for negative |
-| `LOG10(x)` | Same | Spark returns NULL for 0 or negative input; Feldera returns -inf for 0 and panics for negative input |
+| `LN(x)` | Same | → [GBD-LOG-DOMAIN] |
+| `LOG10(x)` | Same | → [GBD-LOG-DOMAIN] |
 | `EXP(x)` | Same | Input/output: DOUBLE |
 | `SIGN(x)` | Same | Returns -1, 0, or 1 |
 | `sec(x)` | `SEC(x)` | |
+
+#### ⚠️ Behavioral differences (Spark vs Feldera)
+
+- **[GBD-CEIL-FLOOR]** `CEIL`/`FLOOR` on float/double input: Spark returns `BIGINT`; Feldera returns `DOUBLE`
+- **[GBD-ROUNDING]** `ROUND`: Spark rounds half-up (`0.5 → 1`); Feldera rounds half-to-even (`0.5 → 0`, `1.5 → 2`)
+- **[GBD-LOG-DOMAIN]** `LN`/`LOG10` on invalid input: Spark returns `NULL`; Feldera returns `-inf` for 0 and panics (WorkerPanic) for negative values
+
+#### 📝 Notes
+
+- `ABS`, `POWER`, `SQRT` work identically — no translation needed
 | `csc(x)` | `CSC(x)` | |
 | `cot(x)` | `COT(x)` | |
 
 #### Null handling
-
-`COALESCE` works identically in Feldera — no translation needed.
 
 | Spark | Feldera | Notes |
 |-------|---------|-------|
 | `NULLIF(a, b)` | Same | |
 | `IFNULL(a, b)` | Same | Equivalent to COALESCE(left, right) |
 | `a <=> b` | Same | Null-safe equality — returns true when both sides are NULL |
+
+#### 📝 Notes
+
+- `COALESCE` works identically — no translation needed
 
 #### Joins
 
@@ -343,15 +393,21 @@ GROUP BY CAST(v['user_id'] AS VARCHAR);
 
 #### Window functions (general)
 
-`LAG`, `LEAD`, `SUM`, `AVG`, `COUNT`, `MIN`, `MAX` window functions work identically in Feldera and can be freely combined in the same query.
-
 | Spark | Feldera | Notes |
 |-------|---------|-------|
-| `FIRST_VALUE(expr) OVER (...)` | Same | IGNORE NULLS not supported; ROWS/RANGE frame clauses not supported — partition must be unbounded |
-| `LAST_VALUE(expr) OVER (...)` | Same | IGNORE NULLS not supported; ROWS/RANGE frame clauses not supported — partition must be unbounded |
+| `FIRST_VALUE(expr) OVER (...)` | Same | → [GBD-WINDOW-FIRST-LAST] |
+| `LAST_VALUE(expr) OVER (...)` | Same | → [GBD-WINDOW-FIRST-LAST] |
 | `SUM/AVG/... OVER (... RANGE BETWEEN ... AND ...)` | Same | `RANGE BETWEEN` fully supported |
 
-The `QUALIFY` clause filters rows based on a window function result — supported directly in Feldera:
+#### ⚠️ Behavioral differences (Spark vs Feldera)
+
+- **[GBD-WINDOW-FIRST-LAST]** `FIRST_VALUE`/`LAST_VALUE`: `IGNORE NULLS` not supported; `ROWS` frame clauses not supported — partition must be unbounded
+
+#### 📝 Notes
+
+- `LAG`, `LEAD`, `SUM`, `AVG`, `COUNT`, `MIN`, `MAX` window functions work identically and can be freely combined in the same query
+- The `QUALIFY` clause is supported directly in Feldera:
+
 ```sql
 SELECT *, RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS rnk
 FROM employees
@@ -362,11 +418,12 @@ QUALIFY rnk = 1
 
 | Spark | Feldera | Notes |
 |-------|---------|-------|
-| `ROW_NUMBER()` | Same | Must be in subquery with WHERE filter on result |
-| `RANK()` | Same | Must be in subquery with WHERE filter on result |
-| `DENSE_RANK()` | Same | Must be in subquery with WHERE filter on result |
+| `ROW_NUMBER()` | Same | → [GBD-TOPK-FILTER] |
+| `RANK()` | Same | → [GBD-TOPK-FILTER] |
+| `DENSE_RANK()` | Same | → [GBD-TOPK-FILTER] |
 
-Valid TopK example:
+#### 📌 Example
+
 ```sql
 SELECT * FROM (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY col1 ORDER BY col2) AS rn
@@ -375,7 +432,10 @@ SELECT * FROM (
 WHERE rn <= 10
 ```
 
-Without the outer WHERE filter, these are UNSUPPORTED.
+#### ⚠️ Behavioral differences (Spark vs Feldera)
+
+- **[GBD-TOPK-FILTER]** `ROW_NUMBER`/`RANK`/`DENSE_RANK` without an outer WHERE filter on the result are not supported in Feldera — always wrap in a subquery and filter on the result
+
 
 
 ## Rewritable patterns (Spark syntax → Feldera syntax)
@@ -386,18 +446,37 @@ These require translation but ARE supported.
 
 | Spark | Feldera | Notes |
 |-------|---------|-------|
-| `get_json_object(s, '$.key')` | `CAST(PARSE_JSON(s)['key'] AS <type>)` | Cast to the appropriate type. **For JSON numbers cast to DOUBLE/INT, not VARCHAR** — `CAST(VARIANT_number AS VARCHAR)` returns NULL in Feldera. If the result must be a string, use `CAST(CAST(PARSE_JSON(s)['key'] AS DOUBLE) AS VARCHAR)`. Array indexing supported: `$.tags[0]` → `PARSE_JSON(s)['tags'][0]`. |
+| `get_json_object(s, '$.key')` | `CAST(PARSE_JSON(s)['key'] AS <type>)` | Cast to the appropriate type. Array indexing supported: `$.tags[0]` → `PARSE_JSON(s)['tags'][0]`. → [GBD-JSON-CAST] |
+
+#### ⚠️ Behavioral differences (Spark vs Feldera)
+
+**[GBD-JSON-CAST]** `CAST(VARIANT AS VARCHAR)` returns NULL for numeric and boolean JSON values.
+
+- In Spark: `get_json_object(s, '$.num')` returns a string like `"42"` regardless of the JSON type.
+- In Feldera: `CAST(PARSE_JSON(s)['num'] AS VARCHAR)` returns NULL when the JSON value is a number or boolean — cast to the numeric type first, then to VARCHAR if a string is needed.
+
+```sql
+-- Feldera correct: cast number to DOUBLE first, then to VARCHAR
+CAST(CAST(PARSE_JSON(s)['num'] AS DOUBLE) AS VARCHAR)
+
+-- Feldera wrong: returns NULL for numeric JSON values
+CAST(PARSE_JSON(s)['num'] AS VARCHAR)
+```
 
 ### Array / UNNEST
 
 | Spark | Feldera | Notes |
 |-------|---------|-------|
 | `EXPLODE` / `LATERAL VIEW explode(arr)` | `UNNEST(arr) AS t(col)` | |
-| `LATERAL VIEW OUTER explode(arr)` | `UNNEST(arr) AS t(col)` | OUTER semantics not replicated — NULL/empty array rows are dropped; add a warning |
+| `LATERAL VIEW OUTER explode(arr)` | `UNNEST(arr) AS t(col)` | → [GBD-OUTER-EXPLODE]: OUTER semantics not replicated — add a warning |
 | `LATERAL VIEW explode(map)` | `CROSS JOIN UNNEST(map) AS t(k, v)` | |
 | `posexplode(arr)` | `SELECT pos - 1 AS pos, val FROM UNNEST(arr) WITH ORDINALITY AS t(val, pos)` | Spark pos is **0-based**; `WITH ORDINALITY` is 1-based — subtract 1. Reorder: Spark outputs (pos, col); Feldera UNNEST yields (val, pos). |
 | `inline(arr_of_structs)` | `UNNEST(arr) AS t(f1, f2, ...)` | |
 | `exists(arr, x -> expr)` | `ARRAY_EXISTS(arr, x -> expr)` | |
+
+#### ⚠️ Behavioral differences (Spark vs Feldera)
+
+**[GBD-OUTER-EXPLODE]** `LATERAL VIEW OUTER explode` — Feldera has no OUTER equivalent. Rows where the array is NULL or empty are dropped. Add a warning when translating OUTER.
 
 ### Structs
 
@@ -413,22 +492,33 @@ These require translation but ARE supported.
 | `collect_list(col)` | `ARRAY_AGG(col)` | → [GBD-ARRAY-ORDER]: Spark preserves insertion order; Feldera does not guarantee order — use `ARRAY_AGG(col ORDER BY col)` if order matters |
 | `ARRAY_AGG(col)` | Same | → [GBD-ARRAY-ORDER]: same ordering caveat as `collect_list` — Feldera does not guarantee insertion order |
 | `collect_set(col)` | `ARRAY_AGG(DISTINCT col)` | |
-| `PIVOT(COUNT(col) FOR x IN ('A', 'B', 'C'))` | `NULLIF(COUNT(CASE WHEN x = 'A' THEN col END), 0) AS "A", ...` | Spark PIVOT returns NULL for pivot values with no matching rows; plain `COUNT(CASE WHEN ...)` returns 0. Use `NULLIF(..., 0)` to match Spark's NULL semantics. Example: `SELECT region, NULLIF(COUNT(CASE WHEN priority = 'LOW' THEN case_id END), 0) AS "LOW", NULLIF(COUNT(CASE WHEN priority = 'MEDIUM' THEN case_id END), 0) AS "MEDIUM" FROM t GROUP BY region` |
+| `PIVOT(COUNT(col) FOR x IN ('A', 'B', 'C'))` | `NULLIF(COUNT(CASE WHEN x = 'A' THEN col END), 0) AS "A", ...` | → [GBD-PIVOT-NULL] |
+
+#### ⚠️ Behavioral differences (Spark vs Feldera)
+
+**[GBD-PIVOT-NULL]** Spark `PIVOT` returns NULL for pivot values with no matching rows; plain `COUNT(CASE WHEN ...)` returns 0. Use `NULLIF(..., 0)` to match Spark's NULL semantics.
+
+```sql
+-- Feldera equivalent of PIVOT(COUNT(case_id) FOR priority IN ('LOW', 'MEDIUM'))
+SELECT region,
+  NULLIF(COUNT(CASE WHEN priority = 'LOW'    THEN case_id END), 0) AS "LOW",
+  NULLIF(COUNT(CASE WHEN priority = 'MEDIUM' THEN case_id END), 0) AS "MEDIUM"
+FROM t
+GROUP BY region
+```
 
 ### Date / Time
-
-> **Timezone note:** Feldera treats `TIMESTAMP` as UTC; Spark uses the session timezone. Epoch↔timestamp conversions are only equivalent when `spark.sql.session.timeZone=UTC`.
 
 | Spark | Feldera | Notes |
 |-------|---------|-------|
 | `DAY(d)` | `DAYOFMONTH(d)` | |
-| `CURRENT_DATE` | `CAST(NOW() AS DATE)` | Non-deterministic — may return different dates if Spark and Feldera run across a midnight boundary or in different timezones. |
+| `CURRENT_DATE` | `CAST(NOW() AS DATE)` | → [GBD-NONDETERMINISTIC] |
 | `date_add(d, n)` | `d + INTERVAL 'n' DAY` or `d + INTERVAL n DAY` | For literal n use either form; for column n use `d + n * INTERVAL '1' DAY` |
 | `date_sub(d, n)` | `d - INTERVAL 'n' DAY` or `d - INTERVAL n DAY` | For literal n use either form; for column n use `d - n * INTERVAL '1' DAY` |
 | `quarter(d)` | `QUARTER(d)` | |
 | `trunc(d, 'Q')` / `date_trunc('QUARTER', d)` | `DATE_TRUNC(d, QUARTER)` | |
 | `datediff(end, start)` | `DATEDIFF(DAY, start, end)` | Feldera takes 3 args (unit, start, end); Spark takes 2 — argument order is also reversed |
-| `months_between(end, start[, roundOff])` | `DATEDIFF(MONTH, start, end)` | **WARNING**: Spark returns fractional months rounded to 8 digits (e.g. `3.94959677`); Feldera returns integer months. Add warning if result is used in arithmetic. Optional `roundOff` arg not supported — mark unsupported if present. |
+| `months_between(end, start[, roundOff])` | `DATEDIFF(MONTH, start, end)` | → [GBD-MONTHS-BETWEEN] |
 | `date_trunc('MONTH', d)` | `DATE_TRUNC(d, MONTH)` | |
 | `date_trunc('MONTH', ts)` | `TIMESTAMP_TRUNC(ts, MONTH)` | |
 | `trunc(d, 'YYYY'/'YY')` | `DATE_TRUNC(d, YEAR)` | String arg → keyword unit |
@@ -438,27 +528,35 @@ These require translation but ARE supported.
 | `add_months(d, n)` | `d + INTERVAL 'n' MONTH` | For literal n; for column n use `n * INTERVAL '1' MONTH` |
 | `last_day(d)` | `DATE_TRUNC(d, MONTH) + INTERVAL '1' MONTH - INTERVAL '1' DAY` | |
 | `MAKE_DATE(y, m, d)` | `PARSE_DATE('%Y-%m-%d', CONCAT(CAST(y AS VARCHAR), '-', RIGHT(CONCAT('0', CAST(m AS VARCHAR)), 2), '-', RIGHT(CONCAT('0', CAST(d AS VARCHAR)), 2)))` | Zero-pads month/day; years < 1000 may produce wrong results |
-| `unix_timestamp(ts)` | `EXTRACT(EPOCH FROM ts)` | See timezone note above. |
-| `unix_millis(ts)` | `CAST(EXTRACT(EPOCH FROM ts) * 1000 AS BIGINT)` | See timezone note above. |
-| `unix_micros(ts)` | `CAST(EXTRACT(EPOCH FROM ts) * 1000000 AS BIGINT)` | See timezone note above. |
-| `from_unixtime(n[, fmt])` | no fmt: `TIMESTAMPADD(SECOND, n, DATE '1970-01-01')`; with fmt: `FORMAT_TIMESTAMP(strftime_fmt, TIMESTAMPADD(SECOND, n, DATE '1970-01-01'))` | See timezone note above. Translate Java fmt → strftime. No-fmt rewrite returns TIMESTAMP; fmt rewrite returns VARCHAR matching Spark. |
+| `unix_timestamp(ts)` | `EXTRACT(EPOCH FROM ts)` | → [GBD-TIMEZONE] |
+| `unix_millis(ts)` | `CAST(EXTRACT(EPOCH FROM ts) * 1000 AS BIGINT)` | → [GBD-TIMEZONE] |
+| `unix_micros(ts)` | `CAST(EXTRACT(EPOCH FROM ts) * 1000000 AS BIGINT)` | → [GBD-TIMEZONE] |
+| `from_unixtime(n[, fmt])` | no fmt: `TIMESTAMPADD(SECOND, n, DATE '1970-01-01')`; with fmt: `FORMAT_TIMESTAMP(strftime_fmt, TIMESTAMPADD(SECOND, n, DATE '1970-01-01'))` | → [GBD-TIMEZONE]. Translate Java fmt → strftime. No-fmt rewrite returns TIMESTAMP; fmt rewrite returns VARCHAR matching Spark. |
 | `make_timestamp(y,mo,d,h,mi,s)` | `PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CONCAT(CAST(y AS VARCHAR), '-', RIGHT(CONCAT('0', CAST(mo AS VARCHAR)), 2), '-', RIGHT(CONCAT('0', CAST(d AS VARCHAR)), 2), ' ', RIGHT(CONCAT('0', CAST(h AS VARCHAR)), 2), ':', RIGHT(CONCAT('0', CAST(mi AS VARCHAR)), 2), ':', RIGHT(CONCAT('0', CAST(s AS VARCHAR)), 2)))` | Pads all components to 2 digits |
 | `to_timestamp(s[, fmt])` | `PARSE_TIMESTAMP(fmt, s)` | Argument order reversed; default fmt is `%Y-%m-%d %H:%M:%S`; translate Java fmt to strftime |
 | `to_date(str, fmt)` | `PARSE_DATE(strptime_fmt, str)` | Translate Java fmt → strftime (e.g. `yyyy-MM-dd` → `%Y-%m-%d`). Use `PARSE_DATE` (NOT `PARSE_TIMESTAMP`) — `PARSE_TIMESTAMP` panics on date-only strings. No-format variant: `CAST(str AS DATE)`. |
 | `date_format(d, fmt)` | `FORMAT_TIMESTAMP(strftime_fmt, d)` | Arg order reversed; translate Java fmt → strftime (`yyyy`→`%Y`, `MM`→`%m`, `dd`→`%d`, `HH`→`%H`, `mm`→`%M`, `ss`→`%S`). For date-only inputs use `FORMAT_DATE(strftime_fmt, d)`. |
 
-### CAST
+#### ⚠️ Behavioral differences (Spark vs Feldera)
 
-#### Supported / rewritable
+**[GBD-TIMEZONE]** Feldera treats `TIMESTAMP` as UTC; Spark uses the session timezone. Epoch↔timestamp conversions (`unix_timestamp`, `from_unixtime`, etc.) are only equivalent when `spark.sql.session.timeZone=UTC`.
+
+**[GBD-MONTHS-BETWEEN]** Spark `months_between` returns fractional months rounded to 8 decimal digits (e.g. `3.94959677`); Feldera `DATEDIFF(MONTH, ...)` returns integer months. Add a warning if the result is used in arithmetic. The optional `roundOff` argument is not supported — mark unsupported if present.
+
+### CAST
 
 | Spark | Feldera | Notes |
 |-------|---------|-------|
-| `TRY_CAST(expr AS type)` | `SAFE_CAST(expr AS type)` | Equivalent for integer, date, and timestamp types. **Limitation:** `SAFE_CAST` returns a type default (`0` for numeric, `false` for boolean) instead of `NULL` on failure for REAL/DOUBLE/BOOLEAN types — no exact equivalent for those. |
+| `TRY_CAST(expr AS type)` | `SAFE_CAST(expr AS type)` | → [GBD-SAFE-CAST] |
 | `CAST(string AS DATE)` | `CAST(string AS DATE)` | Pass through unchanged — Spark returns NULL for invalid inputs; Feldera may panic at runtime. Use `SAFE_CAST` if NULL-on-failure is required. |
 | `CAST(string AS TIMESTAMP)` | `CAST(string AS TIMESTAMP)` | Pass through unchanged — same rules as CAST to DATE. Use `SAFE_CAST` if NULL-on-failure is required. |
 | `CAST(numeric AS TIMESTAMP)` | `CAST(numeric AS TIMESTAMP)` | Pass through unchanged — Feldera compiler accepts this syntax including edge cases like `CAST(CAST('inf' AS DOUBLE) AS TIMESTAMP)`. Do not mark as unsupported based on runtime semantics — if it compiles, translate it. |
 | `CAST('<value>' AS INTERVAL <unit>)` | `INTERVAL '<value>' <unit>` | For constant strings: drop the CAST, use interval literal directly (`INTERVAL '3' DAY`, `INTERVAL '3-1' YEAR TO MONTH`). For string expressions: `CAST(col AS INTERVAL DAY)` or `INTERVAL col DAY` both work in Feldera when used inside arithmetic (e.g. `d + CAST(col AS INTERVAL DAY)`). |
-| `CAST(INTERVAL '...' <unit> AS <numeric>)` | Same | **SUPPORTED — do not mark unsupported.** Single-unit interval → numeric; pass through unchanged. Feldera compiler accepts this. Works for any single time unit (SECOND, MINUTE, HOUR, DAY, MONTH, YEAR) and any numeric target (DECIMAL, TINYINT, SMALLINT, INT, BIGINT). Examples: `CAST(INTERVAL '1' YEAR AS TINYINT)` ✓, `CAST(INTERVAL '10.5' SECOND AS DECIMAL)` ✓, `CAST(INTERVAL -'10.5' SECOND AS DOUBLE)` ✓. **YEAR is a single unit** — `INTERVAL '1' YEAR` is single-unit, not compound. Only compound intervals (`YEAR TO MONTH`, `DAY TO SECOND`) to numeric are unsupported. |
+| `CAST(INTERVAL '...' <unit> AS <numeric>)` | Same | Pass through unchanged. Single time units (SECOND, MINUTE, HOUR, DAY, MONTH, YEAR) to any numeric type are supported. Compound intervals (`YEAR TO MONTH`, `DAY TO SECOND`) to numeric are unsupported. |
+
+#### ⚠️ Behavioral differences (Spark vs Feldera)
+
+**[GBD-SAFE-CAST]** `SAFE_CAST` is not a perfect equivalent of Spark's `TRY_CAST` for all types. For REAL/DOUBLE/BOOLEAN targets, `SAFE_CAST` returns the type default (`0` for numeric, `false` for boolean) instead of NULL on failure — there is no exact NULL-on-failure equivalent for those types in Feldera.
 
 ### String
 
@@ -471,12 +569,34 @@ These require translation but ARE supported.
 | `LPAD(s, n[, pad])` | `CASE WHEN LENGTH(s) >= n THEN SUBSTRING(s,1,n) ELSE CONCAT(REPEAT(pad, n-LENGTH(s)), s) END` | `pad` is optional in Spark (defaults to space `' '`). For 2-arg form use `REPEAT(' ', n-LENGTH(s))`. |
 | `RPAD(s, n[, pad])` | `CASE WHEN LENGTH(s) >= n THEN SUBSTRING(s,1,n) ELSE CONCAT(s, REPEAT(pad, n-LENGTH(s))) END` | `pad` is optional in Spark (defaults to space `' '`). For 2-arg form use `REPEAT(' ', n-LENGTH(s))`. |
 | `LOCATE(substr, str)` | `POSITION(substr IN str)` | |
-| `LOCATE(substr, str, pos)` | `CASE WHEN POSITION(substr IN SUBSTRING(str, pos)) = 0 THEN 0 ELSE POSITION(substr IN SUBSTRING(str, pos)) + pos - 1 END` | **CRITICAL when `pos` is itself a `LOCATE(...)` expression:** keep `substr` distinct from the inner expression. E.g. `LOCATE('.', email, LOCATE('@', email))` → `CASE WHEN POSITION('.' IN SUBSTRING(email, POSITION('@' IN email))) = 0 THEN 0 ELSE POSITION('.' IN SUBSTRING(email, POSITION('@' IN email))) + POSITION('@' IN email) - 1 END`. Never substitute the wrong character for `substr`. |
+| `LOCATE(substr, str, pos)` | `CASE WHEN POSITION(substr IN SUBSTRING(str, pos)) = 0 THEN 0 ELSE POSITION(substr IN SUBSTRING(str, pos)) + pos - 1 END` | See Notes below — CRITICAL for nested LOCATE. |
 | `startswith(s, prefix)` | `LEFT(s, LENGTH(prefix)) = prefix` | String args only — if either arg is a binary (`x'...'`) literal, mark unsupported (`LEFT` does not work on binary types) |
 | `endswith(s, suffix)` | `RIGHT(s, LENGTH(suffix)) = suffix` | String args only — binary args unsupported for the same reason |
 | `contains(s, sub)` | `POSITION(sub IN s) > 0` | Returns NULL if either arg is NULL. Works with `x'...'` binary literals too — `contains(x'aa', x'bb')` → `POSITION(x'bb' IN x'aa') > 0` |
 | `BIT_LENGTH(s)` | `OCTET_LENGTH(s) * 8` | Returns bit length; Feldera has OCTET_LENGTH (bytes) |
-| `translate(s, from, to)` | Chain of `REGEXP_REPLACE` per character | e.g. `translate(s, 'aei', '123')` → `REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(s, 'a', '1'), 'e', '2'), 'i', '3')`. **WARNING**: `REGEXP_REPLACE` treats each character as a regex pattern — escape special regex chars (`.` → `[.]`, `*` → `[*]`, etc.) if they appear in the `from` string. If `from` contains many special chars, mark unsupported. |
+| `translate(s, from, to)` | Chain of `REGEXP_REPLACE` per character | See Notes below — escape regex special chars. |
+
+#### 📝 Notes
+
+**LOCATE(substr, str, pos) — nested LOCATE:** When `pos` is itself a `LOCATE(...)` expression, keep `substr` distinct from the inner expression. Never substitute the wrong character for `substr`.
+
+```sql
+-- Spark
+LOCATE('.', email, LOCATE('@', email))
+
+-- Feldera
+CASE WHEN POSITION('.' IN SUBSTRING(email, POSITION('@' IN email))) = 0
+     THEN 0
+     ELSE POSITION('.' IN SUBSTRING(email, POSITION('@' IN email))) + POSITION('@' IN email) - 1
+END
+```
+
+**translate(s, from, to):** `REGEXP_REPLACE` treats each character as a regex pattern — escape special regex chars (`.` → `[.]`, `*` → `[*]`, etc.) if they appear in the `from` string. If `from` contains many special chars, mark unsupported.
+
+```sql
+-- translate(s, 'aei', '123')
+REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(s, 'a', '1'), 'e', '2'), 'i', '3')
+```
 
 ### Math
 
@@ -485,9 +605,21 @@ These require translation but ARE supported.
 | `pmod(a, b)` | `CASE WHEN MOD(a, b) < 0 AND b > 0 THEN MOD(a, b) + b ELSE MOD(a, b) END` | With positive divisor: result is always ≥ 0. With negative divisor: result has same sign as dividend. |
 | `isnan(x)` | `IS_NAN(x)` | |
 | `log2(x)` | `LOG(x, 2)` | |
-| `log(base, x)` | `LOG(x, base)` | **CRITICAL — arg order reversed. ALWAYS swap both arguments.** Spark: first arg=base, second arg=value. Feldera: first arg=value, second arg=base. `LOG(a, b)` in Spark → `LOG(b, a)` in Feldera — mechanical swap, no exceptions, regardless of column names. Examples: `LOG(amplitude, 2)` in Spark → `LOG(2, amplitude)` in Feldera. `LOG(col, 10)` in Spark → `LOG(10, col)` in Feldera. Do NOT be misled by column alias names like `log2_col` — follow the rule, not the alias. |
+| `log(base, x)` | `LOG(x, base)` | **CRITICAL — arg order reversed.** See Notes below. |
 | `positive(x)` | `x` | Unary no-op — drop the function call, keep the argument as-is. |
 | `negative(x)` | `-x` | Unary negation — replace with `-x`. |
+
+#### 📝 Notes
+
+**log(base, x) — arg order is reversed:** Spark: first arg = base, second arg = value. Feldera: first arg = value, second arg = base. Always swap both arguments — no exceptions, regardless of column names or alias hints.
+
+```sql
+-- Spark
+LOG(amplitude, 2)   →  Feldera: LOG(2, amplitude)
+LOG(col, 10)        →  Feldera: LOG(10, col)
+```
+
+Do NOT be misled by column alias names like `log2_col` — follow the rule, not the alias.
 
 ### Null handling
 
@@ -508,28 +640,19 @@ These require translation but ARE supported.
 
 ### UNNEST details
 
-Feldera `UNNEST` expands an array or map into rows:
+#### 📝 Notes
 
-```sql
--- Array
-FROM table, UNNEST(array_col) AS alias(col_name)
--- Map (two columns)
-FROM table CROSS JOIN UNNEST(map_col) AS alias(key_col, val_col)
--- With position index
-FROM table, UNNEST(array_col) WITH ORDINALITY AS alias(val_col, pos_col)
-```
-
-Key rules:
 - `UNNEST` on NULL returns no rows (empty).
 - For arrays of ROW values, UNNEST expands struct fields as output columns automatically.
 - Always provide explicit column aliases.
 - `WITH ORDINALITY`: ordinal column comes **after** the value column — opposite of Spark's `posexplode` which puts position first; reorder in SELECT.
+- `EXPLODE(sequence(...))` for date range generation — `sequence()` is unsupported; mark the entire pattern unsupported.
+- `LATERAL VIEW OUTER` — see [GBD-OUTER-EXPLODE].
 
-`LATERAL VIEW OUTER explode` — Feldera has no OUTER equivalent; rows where the array is NULL/empty will be dropped. Add a warning when translating OUTER.
+#### 📌 Example
 
-Multi-level unnest example:
 ```sql
--- Spark
+-- Spark: inline(arr_of_structs)
 SELECT o.id, item.product_id, item.qty
 FROM orders o LATERAL VIEW inline(o.line_items) item AS product_id, qty
 
@@ -538,13 +661,26 @@ SELECT o.id, item.product_id, item.qty
 FROM orders o, UNNEST(o.line_items) AS item(product_id, qty)
 ```
 
-When NOT to use UNNEST:
-- `EXPLODE(sequence(...))` for date range generation — `sequence()` is unsupported, mark entire pattern unsupported.
-- `LATERAL VIEW OUTER` when preserving NULL rows is required — add a warning diagnostic.
+#### 🔄 Translation rules
+
+```sql
+-- Array
+FROM table, UNNEST(array_col) AS alias(col_name)
+-- Map (two columns)
+FROM table CROSS JOIN UNNEST(map_col) AS alias(key_col, val_col)
+-- With position index (1-based; subtract 1 to match Spark's 0-based posexplode)
+FROM table, UNNEST(array_col) WITH ORDINALITY AS alias(val_col, pos_col)
+```
 
 ### DATE_ADD / DATE_SUB — wrong forms to avoid
 
-`date_add` and `date_sub` take exactly 2 args: `(date_expr, integer_days)` → `expr ± INTERVAL 'n' DAY`. Do NOT emit these:
+#### 🔄 Translation rules
+
+`date_add` and `date_sub` take exactly 2 args: `(date_expr, integer_days)` → `expr ± INTERVAL 'n' DAY`. For unit-first 3-arg form use `TIMESTAMPADD(DAY, 30, d)` — it is a different function.
+
+#### ⚠️ Behavioral differences (Spark vs Feldera)
+
+Do NOT emit these wrong forms:
 
 ```sql
 DATE_ADD(d, 30, 'DAY')                  -- 3-arg hybrid: wrong
@@ -552,14 +688,16 @@ DATE_ADD(d, INTERVAL '30' DAY, 'DAY')   -- 3-arg hybrid: wrong
 DATE_ADD(DAY, 30, d)                    -- TIMESTAMPADD signature: wrong
 ```
 
-For unit-first 3-arg form use `TIMESTAMPADD(DAY, 30, d)` — it is a different function.
-
 ### named_struct field access
+
+#### 🔄 Translation rules
 
 `named_struct('a', v1, 'b', v2)` → `CAST(ROW(v1, v2) AS ROW(a T, b S))` when field names matter, or plain `ROW(v1, v2)` when they don't.
 
 - Named ROW field access: `row_val.field_name`
 - Anonymous ROW field access (no CAST): `row_val[1]` (1-based index)
+
+#### 📌 Example
 
 ```sql
 -- Spark
@@ -579,35 +717,46 @@ FROM pair_events GROUP BY source
 
 #### Hex binary literals
 
-`x'...'` hex binary literals (e.g. `x'537061726b'`) are **supported** in Feldera. Do NOT mark them unsupported. They can be used in POSITION, comparisons, and binary-typed expressions.
+#### 📝 Notes
+
+##### Supported
+
+`x'...'` literals in POSITION, comparisons, and binary-typed expressions.
 
 ```sql
--- Supported
 SELECT POSITION(x'537061726b' IN x'537061726b2053514c') > 0;
 SELECT contains(x'aa', x'bb');  -- rewrite: POSITION(x'bb' IN x'aa') > 0
 ```
 
-What is NOT supported: passing `x'...'` to VARCHAR-expecting functions like `RPAD(varchar, n, x'...')` — the type mismatch fails.
+##### Not supported
+
+Passing `x'...'` to VARCHAR-expecting functions — type mismatch fails.
+
+```sql
+RPAD(varchar_col, n, x'...')  -- wrong: binary literal where VARCHAR expected
+```
 
 #### VALUES as table source
-
-Spark allows `FROM VALUES (...)` directly; Feldera requires VALUES wrapped in parentheses with an alias.
 
 | Spark | Feldera |
 |-------|---------|
 | `SELECT a FROM VALUES (1), (2) AS t(a)` | `SELECT a FROM (VALUES (1), (2)) AS t(a)` |
 | `SELECT a FROM VALUES (1, 2) AS T(a, b)` | `SELECT a FROM (VALUES (1, 2)) AS T(a, b)` |
 
-**Rule**: always wrap `VALUES (...)` in parentheses: `FROM (VALUES ...) AS alias(cols)`.
+#### 🔄 Translation rules
 
-**CRITICAL — preserve implicit column names:** When Spark uses `FROM VALUES (...)` without an explicit column alias, Spark assigns implicit names like `col1`, `col2`. If the SELECT references those names, the alias in `AS t(...)` must use the same names — not generic names like `x`, `y`. Example:
+Always wrap `VALUES (...)` in parentheses and add an alias: `FROM (VALUES ...) AS alias(cols)`.
+
+#### 📝 Notes
+
+**Preserve implicit column names:** When Spark uses `FROM VALUES (...)` without explicit column aliases, it assigns implicit names like `col1`, `col2`. If the query references those names, the alias in `AS t(...)` must use the same names.
+
 ```sql
 -- Spark: VALUES column is implicitly named 'col1'
 SELECT 1 AS col1, col1 FROM VALUES (10) ORDER BY col1;
 
 -- Feldera WRONG — renamed to x, but Spark query references 'col1'
 SELECT 1 AS col1, x FROM (VALUES (10)) AS t(x) ORDER BY col1;
--- Error: col1 not found
 
 -- Feldera CORRECT — preserve 'col1' so all references still work
 SELECT 1 AS col1, col1 FROM (VALUES (10)) AS t(col1) ORDER BY col1;
@@ -615,7 +764,11 @@ SELECT 1 AS col1, col1 FROM (VALUES (10)) AS t(col1) ORDER BY col1;
 
 #### SELECT with GROUP BY / HAVING but no FROM
 
-Spark allows `SELECT expr GROUP BY ... HAVING ...` with no table. Feldera requires a FROM clause. Add a dummy single-row table:
+#### 🔄 Translation rules
+
+When `GROUP BY` or `HAVING` is present but there is no `FROM` clause, add `FROM (VALUES (1)) AS t(x)`.
+
+#### 📌 Example
 
 ```sql
 -- Spark (valid)
@@ -624,8 +777,6 @@ SELECT 1 GROUP BY COALESCE(1, 1) HAVING COALESCE(1, 1) = 1;
 -- Feldera (add dummy FROM)
 SELECT 1 AS col1 FROM (VALUES (1)) AS t(x) GROUP BY COALESCE(1, 1) HAVING COALESCE(1, 1) = 1;
 ```
-
-**Rule**: when `GROUP BY` or `HAVING` is present but there is no `FROM` clause, add `FROM (VALUES (1)) AS t(x)`.
 
 #### Operators
 
@@ -636,28 +787,32 @@ SELECT 1 AS col1 FROM (VALUES (1)) AS t(x) GROUP BY COALESCE(1, 1) HAVING COALES
 
 #### Scalar subquery shorthand in HAVING / WHERE
 
-Spark allows `(SELECT expr)` with no FROM clause as a shorthand. When `expr` references only outer-query columns, strip the wrapper:
+#### 🔄 Translation rules
+
+- If `(SELECT expr)` has no `FROM`, rewrite as just `expr`.
+- If the subquery has a `FROM` clause, leave it as-is — it is a regular or correlated subquery, not this shorthand.
+- `(SELECT 1 WHERE cond)` returns 1 if `cond` is true, NULL otherwise — so `a = (SELECT 1 WHERE cond)` simplifies to `a = 1 AND cond`.
+
+#### 📌 Example
 
 ```sql
 -- Spark
 HAVING (SELECT col1.a = 1)   →  HAVING col1.a = 1
 WHERE  (SELECT x > 0)        →  WHERE  x > 0
-```
 
-**Rule**: if `(SELECT expr)` has no `FROM`, rewrite as just `expr`. If the subquery has a `FROM` clause, leave it as-is — it is a regular or correlated subquery, not this shorthand.
-
-`(SELECT 1 WHERE cond)` with no FROM returns 1 if `cond` is true, NULL otherwise. So `a == (SELECT 1 WHERE cond)` simplifies to `a = 1 AND cond`:
-
-```sql
 -- Spark
 HAVING MAX(col2) == (SELECT 1 WHERE MAX(col2) = 1)
--- Feldera: both sides must equal 1, so simplify to:
+-- Feldera
 HAVING MAX(col2) = 1
 ```
 
 #### SELECT alias chaining
 
-Spark allows a later expression in SELECT to reference an alias defined earlier. Feldera supports this.
+#### 🔄 Translation rules
+
+If an expression is just an alias name from an earlier column (`a AS b` where `a` was defined as `col1 AS a`), replace with the original expression (`col1 AS b`).
+
+#### 📌 Example
 
 ```sql
 -- Spark: valid
@@ -666,38 +821,41 @@ SELECT col1 AS a, a AS b FROM t
 SELECT col1 AS a, col1 AS b FROM t
 ```
 
-**Rule**: if an expression is just an alias name from an earlier column (`a AS b` where `a` was defined as `col1 AS a`), replace with the original expression (`col1 AS b`).
-
 #### SELECT alias shadowing in HAVING / GROUP BY
 
-Feldera follows standard SQL: a name in HAVING/GROUP BY that existed before the alias is resolved to the source column, not the alias — same behavior as Spark. No rewrite needed.
+No rewrite needed in general — Feldera resolves names in HAVING/GROUP BY to the source column, same as Spark.
 
-**Exception — GROUPING SETS/CUBE/ROLLUP + alias collision:** When the SELECT alias reuses the name of a GROUP BY source column, Feldera resolves HAVING to the aggregate alias; Spark resolves it to the source column:
+#### ⚠️ Behavioral differences (Spark vs Feldera)
+
+When the SELECT alias reuses a GROUP BY source column name with GROUPING SETS/CUBE/ROLLUP, Feldera resolves HAVING to the aggregate alias; Spark resolves it to the source column. Workaround: reference the source column explicitly in HAVING.
+
+#### 📌 Example
 
 ```sql
 -- Data: VALUES (1, 10), (2, 20) AS T(a, b)
 -- 'b' is both a source column (values 10, 20) and a SELECT alias for SUM(a) (values 1, 2)
 
--- Spark: HAVING b → column b (10 or 20) → rows where 10>10 (false) and 20>10 (true) → 1 row returned
--- Feldera: HAVING b → alias SUM(a) (1 or 2) → 1>10 (false) and 2>10 (false) → 0 rows returned
+-- Spark: HAVING b → column b (10 or 20) → 1 row returned
+-- Feldera: HAVING b → alias SUM(a) (1 or 2) → 0 rows returned
 SELECT SUM(a) AS b FROM T GROUP BY GROUPING SETS ((b), (a, b)) HAVING b > 10;
 
--- Workaround: reference the source column explicitly in HAVING (no alias ambiguity)
+-- Workaround: reference the source column explicitly
 SELECT SUM(a) AS b FROM T GROUP BY GROUPING SETS ((b), (a, b)) HAVING MAX(b) > 10;
 ```
 
 #### Struct field access
 
-In ORDER BY or HAVING, always prefix struct column access with the table alias to avoid misparsing:
+#### 🔄 Translation rules
+
+- In ORDER BY or HAVING, always prefix struct column access with the table alias to avoid misparsing.
+- Non-aggregate HAVING with struct field → move to WHERE.
+
+#### 📌 Example
 
 ```sql
 ORDER BY t.col.field   -- correct
 ORDER BY col.field     -- may fail (Feldera misparses as table.column)
-```
 
-Non-aggregate HAVING with struct field → move to WHERE:
-
-```sql
 -- Spark
 SELECT col1 FROM t GROUP BY col1 HAVING col1.a = 1
 -- Feldera
@@ -741,7 +899,7 @@ Rationale: a partial translation produces incorrect results, which is worse than
 | `substring(str, -n)` / `substr(str, -n)` | Negative position counts from end in Spark (`substring('Spark SQL', -3)` → `'SQL'`); Feldera returns full string or wrong result. Mark unsupported when position is negative. |
 | `DECODE(expr, s1, r1, s2, r2, ..., default)` | Not supported in Feldera — DECODE uses Oracle-style NULL-safe equality where `NULL = NULL` is TRUE; a correct rewrite requires `IS NOT DISTINCT FROM` instead of `=`, which Feldera does not support. A naive `CASE WHEN expr = s1` rewrite silently breaks NULL-matching branches. |
 | `substring_index` | No equivalent |
-| `uuid()` | Non-deterministic — not supported in Feldera |
+| `uuid()` | → [GBD-NONDETERMINISTIC] — not supported in Feldera |
 | `contains(bool, ...)` | `contains()` does not work on boolean args in Feldera — mark unsupported |
 | `startswith(x'...', x'...')` / `endswith(x'...', x'...')` | Binary hex literal args not supported — `LEFT`/`RIGHT` do not work on binary types |
 | `to_number(str, fmt)` | Numeric parsing with format string — not supported in Feldera |
@@ -751,7 +909,7 @@ Rationale: a partial translation produces incorrect results, which is worse than
 | `validate_utf8(str)` / `try_validate_utf8(str)` / `make_valid_utf8(str)` | UTF-8 validation/repair — not supported in Feldera |
 | `quote(str)` | SQL quoting function — not supported in Feldera |
 | `split(str, delim, limit)` | 3-argument form with limit — not supported. Use 2-argument `SPLIT(str, delim)` instead (drops the limit). |
-| `split(str, regex_pattern)` | `SPLIT(str, regex_pattern)` | Feldera's `SPLIT` does not support regex patterns — only literal string delimiters work. If the pattern is a regex (e.g. `[1-9]+`, `\\s+`), there is no Feldera equivalent — mark unsupported. |
+| `split(str, regex_pattern)` | Feldera's `SPLIT` does not support regex patterns — only literal string delimiters work. If the pattern is a regex (e.g. `[1-9]+`, `\\s+`), there is no Feldera equivalent — mark unsupported. |
 | `hex(x)` | `UPPER(TO_HEX(x))` when input is `BINARY`/`VARBINARY` — Feldera `TO_HEX` returns lowercase; Spark `hex()` returns uppercase; ALWAYS wrap with `UPPER()`. Use `UPPER(TO_HEX(CAST(x AS VARBINARY)))` if the column type is `BINARY`. For integer or string inputs, `TO_HEX` is not supported in Feldera — mark as unsupported. |
 | `unhex(s)` | Binary hex decoding — not supported in Feldera |
 | `encode(str, charset)` / `decode(bytes, charset)` | Binary encode/decode — not supported in Feldera |
@@ -789,17 +947,14 @@ Rationale: a partial translation produces incorrect results, which is worse than
 
 | Function | Notes |
 |----------|-------|
-| `approx_count_distinct`, `APPROX_DISTINCT` | Approximate aggregates not supported |
-| `percentile_approx`, `approx_percentile` | Approximate aggregates not supported |
+| `approx_count_distinct`, `APPROX_DISTINCT`, `percentile_approx`, `approx_percentile` | Approximate aggregates — not supported |
 | `CORR` | Statistical aggregate — not supported |
 
 #### Window
 
 | Function | Notes |
 |----------|-------|
-| `PERCENT_RANK`, `CUME_DIST` | Not implemented |
-| `NTILE` | Not implemented |
-| `NTH_VALUE` | Not implemented |
+| `PERCENT_RANK`, `CUME_DIST`, `NTILE`, `NTH_VALUE` | Not implemented |
 | `ROW_NUMBER()` / `RANK()` / `DENSE_RANK()` without TopK | Must be in subquery with WHERE filter on result |
 | `ROWS BETWEEN ... AND ...` | Not supported |
 
