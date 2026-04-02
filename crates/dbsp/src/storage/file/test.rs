@@ -193,11 +193,11 @@ fn tup65_from_bits(bits: u128) -> Tup65OptString {
     )
 }
 
-fn test_buffer_cache() -> Arc<BufferCache> {
+fn test_buffer_cache() -> Option<Arc<BufferCache>> {
     thread_local! {
         static BUFFER_CACHE: Arc<BufferCache> = Arc::new(BufferCache::new(1024 * 1024));
     }
-    BUFFER_CACHE.with(|cache| cache.clone())
+    Some(BUFFER_CACHE.with(|cache| cache.clone()))
 }
 
 fn for_each_compression_type<F>(parameters: Parameters, f: F)

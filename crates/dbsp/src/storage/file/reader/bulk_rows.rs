@@ -137,7 +137,7 @@ where
         let (sender, receiver) = channel();
         let mut this = Self {
             reader,
-            cache: (reader.file.cache)(),
+            cache: reader.file.cache(),
             factories: reader.columns[column].factories.factories(),
             column,
             row: 0,
