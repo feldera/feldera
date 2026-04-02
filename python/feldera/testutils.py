@@ -347,7 +347,11 @@ def number_of_processed_records(pipeline: Pipeline) -> int:
 
 
 def run_workload(
-    pipeline_name: str, tables: dict, views: List[ViewSpec], transaction: bool = True, stop: bool = True
+    pipeline_name: str,
+    tables: dict,
+    views: List[ViewSpec],
+    transaction: bool = True,
+    stop: bool = True,
 ) -> Pipeline:
     """
     Helper to run a pipeline to completion and validate the views afterwards using ad-hoc queries.
