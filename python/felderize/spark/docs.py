@@ -217,7 +217,9 @@ def _detect_categories(
 ) -> set[str]:
     """Return set of category names whose trigger patterns match the SQL."""
     matched = {"types"}  # Always include types
-    for category, patterns in (categories if categories is not None else _CATEGORIES).items():
+    for category, patterns in (
+        categories if categories is not None else _CATEGORIES
+    ).items():
         if not patterns:
             continue
         for pattern in patterns:

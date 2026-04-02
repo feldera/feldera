@@ -200,7 +200,7 @@ These Spark functions exist in Feldera — translate directly:
 
 #### ⚠️ Behavioral differences (Spark vs Feldera)
 
-- **[GBD-BOOL-WINDOW]** `every`/`bool_and`/`bool_or`/`some` as window functions with `ORDER BY` on a BOOLEAN column are not supported in Feldera — compiler error: "OVER currently cannot sort on columns with type 'BOOL'" 
+- **[GBD-BOOL-WINDOW]** `every`/`bool_and`/`bool_or`/`some` as window functions with `ORDER BY` on a BOOLEAN column are not supported in Feldera — compiler error: "OVER currently cannot sort on columns with type 'BOOL'"
 
 #### 📝 Notes
 
