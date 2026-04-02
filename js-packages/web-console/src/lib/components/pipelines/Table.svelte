@@ -9,6 +9,7 @@
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
   import ThSort from '$lib/components/pipelines/table/ThSort.svelte'
   import { dateMax } from '$lib/functions/common/date'
+  import { matchesSubstring } from '$lib/functions/common/string'
   import { type NamesInUnion, unionName } from '$lib/functions/common/union'
   import { formatDateTime, useElapsedTime } from '$lib/functions/format'
   import type {
@@ -38,7 +39,7 @@
     selectBy: 'name'
   })
   $effect(() => {
-    table.setRows(pipelinesWithLastChange)
+    table.setRows(pipelinesFiltered)
   })
   $effect(() => {
     selectedPipelines = table.selected as string[]
@@ -67,13 +68,29 @@
     ['Compiling', ['Queued', 'CompilingSql', 'SqlCompiled', 'CompilingRust']],
     ['Failed', ['SystemError', 'SqlError', 'RustError']]
   ]
+
+  let nameSearch = $state('')
+  const pipelinesFiltered = $derived(
+    pipelinesWithLastChange.filter((p) => matchesSubstring(p.name, nameSearch))
+  )
+
   const { formatElapsedTime } = useElapsedTime()
   const td = 'py-1 text-base border-t-[0.5px]'
 </script>
 
-<div class="relative -mt-7 mb-6 flex flex-col items-center justify-end gap-4 md:mb-0 md:flex-row">
+<div class="relative mb-2 flex flex-col items-stretch gap-2 sm:flex-row sm:items-end sm:justify-end sm:gap-4 lg:-mt-7 lg:mb-0">
+  <input
+    data-testid="input-pipeline-search"
+    class="input h-9 sm:w-60"
+    type="search"
+    placeholder="Search pipelines..."
+    oninput={(e) => {
+      nameSearch = e.currentTarget.value
+    }}
+  />
   <select
-    class="h_-9 select ml-auto w-40 md:ml-0"
+    data-testid="select-pipeline-status"
+    class="h_-9 select sm:w-40"
     onchange={(e) => {
       statusFilter.value = filterStatuses.find((v) => e.currentTarget.value === v[0])![0]
       statusFilter.set()
@@ -83,9 +100,7 @@
       <option value={filter[0]}>{filter[0]}</option>
     {/each}
   </select>
-  <div class="ml-auto flex gap-4 md:ml-0">
-    {@render preHeaderEnd?.()}
-  </div>
+  {@render preHeaderEnd?.()}
 </div>
 <Datatable headless {table}>
   <table class="p-1">
@@ -136,7 +151,7 @@
     </thead>
     <tbody>
       {#each table.rows as pipeline}
-        <tr class="group"
+        <tr class="group" data-testid="box-row-{pipeline.name}"
           ><td class="{td} border-surface-100-900 px-2 group-hover:bg-surface-50-950">
             <input
               class="checkbox"
@@ -219,7 +234,7 @@
       {:else}
         <tr>
           <td class={td}></td>
-          <td class={td} colspan={99}>No pipelines with the specified status</td>
+          <td class={td} colspan={99}>No pipelines found</td>
         </tr>
       {/each}
     </tbody>
