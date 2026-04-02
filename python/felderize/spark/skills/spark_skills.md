@@ -37,7 +37,7 @@ These are systematic differences between Spark and Feldera to be aware of during
 
 - **[GBD-FP-PREC] Floating point precision:** Spark (JVM) and Feldera (Rust) use different algorithms for rounding when converting floating-point values to strings, so results can differ. Results may also differ between CPU architectures (Intel vs ARM).
 
-- **[GBD-ARRAY-ORDER] Array function element order:** Feldera's set-based array functions (`ARRAY_UNION`, `ARRAY_EXCEPT`) return elements in sorted order. Spark preserves the original element order. Results contain the same elements but may be in different positions.
+- **[GBD-ARRAY-ORDER] Array/map function element order:** Feldera returns elements in sorted order for set-based and aggregation functions; Spark preserves the original element order. Affected: `ARRAY_UNION`, `ARRAY_EXCEPT`, `ARRAY_INTERSECT`, `MAP_KEYS`, `MAP_VALUES`, `ARRAY_AGG` / `collect_list`, `ARRAY_AGG(DISTINCT)` / `collect_set`. Results contain the same elements but may be in different positions.
 
 - **[GBD-FLOAT-GROUP] ORDER BY on special float values:** `ORDER BY` on DOUBLE columns containing `NaN`, `+Inf`, `-Inf`, or `-0.0` produces different row order. Spark follows IEEE 754 (`-Inf` < finite < `+Inf`, NaN last); Feldera uses a different sort order (e.g. `0` sorts before `-Inf`). Both engines group these values correctly — only the output ordering differs. Avoid `ORDER BY` on float columns containing special values, or add a secondary sort key.
 
@@ -835,7 +835,7 @@ When the SELECT alias reuses a GROUP BY source column name with GROUPING SETS/CU
 -- Data: VALUES (1, 10), (2, 20) AS T(a, b)
 -- 'b' is both a source column (values 10, 20) and a SELECT alias for SUM(a) (values 1, 2)
 
--- Spark: HAVING b → column b (10 or 20) → 1 row returned
+-- Spark: HAVING b → column b (10 or 20) → 2 rows returned (b=20 > 10, appears twice in GROUPING SETS)
 -- Feldera: HAVING b → alias SUM(a) (1 or 2) → 0 rows returned
 SELECT SUM(a) AS b FROM T GROUP BY GROUPING SETS ((b), (a, b)) HAVING b > 10;
 
@@ -910,6 +910,7 @@ Rationale: a partial translation produces incorrect results, which is worse than
 | `quote(str)` | SQL quoting function — not supported in Feldera |
 | `split(str, delim, limit)` | 3-argument form with limit — not supported. Use 2-argument `SPLIT(str, delim)` instead (drops the limit). |
 | `split(str, regex_pattern)` | Feldera's `SPLIT` does not support regex patterns — only literal string delimiters work. If the pattern is a regex (e.g. `[1-9]+`, `\\s+`), there is no Feldera equivalent — mark unsupported. |
+| `split_part(str, delim, n)` where `delim` contains regex special chars (`.`, `*`, `+`, `[`, etc.) | Feldera bug: delimiter is interpreted as regex, producing wrong results. Mark unsupported if delimiter contains regex metacharacters. Plain alphanumeric delimiters work correctly. |
 | `hex(x)` | `UPPER(TO_HEX(x))` when input is `BINARY`/`VARBINARY` — Feldera `TO_HEX` returns lowercase; Spark `hex()` returns uppercase; ALWAYS wrap with `UPPER()`. Use `UPPER(TO_HEX(CAST(x AS VARBINARY)))` if the column type is `BINARY`. For integer or string inputs, `TO_HEX` is not supported in Feldera — mark as unsupported. |
 | `unhex(s)` | Binary hex decoding — not supported in Feldera |
 | `encode(str, charset)` / `decode(bytes, charset)` | Binary encode/decode — not supported in Feldera |
