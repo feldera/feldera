@@ -128,7 +128,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --pr
 RUN cargo install --locked cargo-machete@0.7.0 cargo-edit@0.13.1 just@1.40.0
 
 # Install uv
-RUN curl -LsSf https://astral.sh/uv/0.6.5/install.sh | sh
+RUN curl -LsSf https://astral.sh/uv/0.11.3/install.sh | sh
 RUN uv python install 3.10
 RUN uv tool install pre-commit --with pre-commit-uv --force-reinstall
 

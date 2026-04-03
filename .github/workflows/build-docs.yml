@@ -13,7 +13,7 @@ jobs:
           node-version: 25
 
       - name: Install required-version defined in pyproject.toml
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v8
         with:
           pyproject-file: "python/pyproject.toml"
 
