@@ -76,7 +76,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@v8
+        uses: astral-sh/setup-uv@v6
 
       - name: Login to GHCR with GITHUB_TOKEN
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -173,7 +173,7 @@ jobs:
       FELDERA_HOST: https://localhost:8080
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-06a694400a6aea1f568da04eaf786bfe84e0a869
+      image: ghcr.io/feldera/feldera-dev:sha-13b176e3436b4c753c4cf8287caba6be847f6d1b
     services:
       pipeline-manager:
         image: ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
