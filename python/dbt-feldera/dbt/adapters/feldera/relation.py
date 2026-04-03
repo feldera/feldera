@@ -1,11 +1,12 @@
 from dataclasses import dataclass, field
 
+from dbt_common.dataclass_schema import StrEnum
+
 from dbt.adapters.base.relation import BaseRelation
 from dbt.adapters.contracts.relation import (
     ComponentName,
     Policy,
 )
-from dbt_common.dataclass_schema import StrEnum
 
 
 class FelderaRelationType(StrEnum):

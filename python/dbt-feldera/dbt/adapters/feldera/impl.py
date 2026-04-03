@@ -3,10 +3,10 @@ import math
 from typing import FrozenSet, List, Optional, Set, Tuple
 
 import agate
+
 from dbt.adapters.base import BaseAdapter, available
 from dbt.adapters.base.relation import InformationSchema
 from dbt.adapters.contracts.relation import RelationType
-
 from dbt.adapters.feldera.column import FelderaColumn
 from dbt.adapters.feldera.connections import FelderaConnectionHandle, FelderaConnectionManager
 from dbt.adapters.feldera.credentials import FelderaCredentials
