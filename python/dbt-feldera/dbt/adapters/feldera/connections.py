@@ -5,14 +5,14 @@ from contextlib import contextmanager
 from typing import Any, ContextManager, Optional
 
 import agate
+from dbt_common.exceptions import DbtRuntimeError
+
 from dbt.adapters.base import BaseConnectionManager
 from dbt.adapters.contracts.connection import (
     AdapterResponse,
     Connection,
     ConnectionState,
 )
-from dbt_common.exceptions import DbtRuntimeError
-
 from dbt.adapters.feldera.cursor import FelderaCursor
 from feldera.rest.feldera_client import FelderaClient
 
