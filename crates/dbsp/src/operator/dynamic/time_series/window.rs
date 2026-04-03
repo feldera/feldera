@@ -514,6 +514,7 @@ mod test {
     use anyhow::Error as AnyError;
     use size_of::SizeOf;
     use std::vec;
+    use tempfile::tempdir;
 
     type Time = u64;
 
@@ -980,7 +981,7 @@ mod test {
     /// This test exercises the checkpoint/restore path of the Window operator.
     #[test]
     fn window_checkpointing() {
-        let (_temp, mut cconf) = mkconfig();
+        let _temp = tempdir().expect("Can't create temp dir for storage");
 
         let mut input = vec![
             vec![
@@ -1021,11 +1022,15 @@ mod test {
             ]
             .into_iter();
 
+        let mut checkpoint = None;
         for clock in 1000..1006 {
             println!("clock: {clock}");
 
+            let mut cconf = mkconfig(_temp.path());
+            cconf.storage.as_mut().unwrap().init_checkpoint = checkpoint;
+
             let (mut circuit, (bounds_handle, index1_handle, output_handle)) =
-                Runtime::init_circuit(&cconf, move |circuit| {
+                Runtime::init_circuit(cconf, move |circuit| {
                     let (bounds, bounds_handle) = circuit.add_input_stream::<(Time, Time)>();
                     let (index1, index1_handle) = circuit.add_input_indexed_zset::<Time, String>();
 
@@ -1053,7 +1058,7 @@ mod test {
             );
 
             let cpm = circuit.checkpoint().run().unwrap();
-            cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
+            checkpoint = Some(cpm.uuid);
             circuit.kill().unwrap();
         }
     }

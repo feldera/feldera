@@ -275,7 +275,6 @@ pub enum Mode {
 /// As opposed to `RuntimeConfig`, this struct stores state about which hosts
 /// run the circuit and where they store data, e.g., state typically not
 /// tunable/exposed by the user.
-#[derive(Clone)]
 pub struct CircuitConfig {
     /// How the circuit is laid out across one or multiple machines.
     pub layout: Layout,
@@ -483,12 +482,6 @@ impl CircuitConfig {
     }
 }
 
-impl From<&CircuitConfig> for CircuitConfig {
-    fn from(value: &CircuitConfig) -> Self {
-        value.clone()
-    }
-}
-
 impl From<usize> for CircuitConfig {
     fn from(n_workers: usize) -> Self {
         Self::with_workers(n_workers)
@@ -569,7 +562,9 @@ impl Runtime {
         let (status_senders, status_receivers): (Vec<_>, Vec<_>) =
             (0..nworkers).map(|_| bounded(1)).unzip();
 
-        let runtime = Self::run(&config, move |parker| {
+        let storage = config.storage.clone();
+
+        let runtime = Self::run(config, move |parker| {
             let worker_index = Runtime::local_worker_offset();
 
             // Drop all but one channels.  This makes sure that if one of the worker panics
@@ -787,8 +782,7 @@ impl Runtime {
             Ok(result) => result,
         };
 
-        let (backend, init_checkpoint) = config
-            .storage
+        let (backend, init_checkpoint) = storage
             .map(|storage| (storage.backend.clone(), storage.init_checkpoint))
             .unzip();
         let mut dbsp = DBSPHandle::new(
@@ -1670,7 +1664,7 @@ pub(crate) mod tests {
     use anyhow::anyhow;
     use feldera_buffer_cache::ThreadType;
     use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
-    use tempfile::{TempDir, tempdir};
+    use tempfile::tempdir;
     use uuid::Uuid;
 
     // Panic during initialization in worker thread.
@@ -1872,7 +1866,7 @@ pub(crate) mod tests {
         InputHandle<usize>,
     );
 
-    fn mkcircuit(cconf: &CircuitConfig) -> Result<(DBSPHandle, CircuitHandle), DbspError> {
+    fn mkcircuit(cconf: CircuitConfig) -> Result<(DBSPHandle, CircuitHandle), DbspError> {
         Runtime::init_circuit(cconf, move |circuit| {
             let (stream, handle) = circuit.add_input_indexed_zset::<i32, i32>();
             let (sample_size_stream, sample_size_handle) = circuit.add_input_stream::<usize>();
@@ -1895,9 +1889,7 @@ pub(crate) mod tests {
         })
     }
 
-    fn mkcircuit_different(
-        cconf: &CircuitConfig,
-    ) -> Result<(DBSPHandle, CircuitHandle), DbspError> {
+    fn mkcircuit_different(cconf: CircuitConfig) -> Result<(DBSPHandle, CircuitHandle), DbspError> {
         Runtime::init_circuit(cconf, move |circuit| {
             let map_factories = BatchReaderFactories::new::<Tup2<i32, i32>, (), ZWeight>();
             let (stream, handle) = circuit.add_input_indexed_zset::<i32, i32>();
@@ -1936,7 +1928,7 @@ pub(crate) mod tests {
 
     #[allow(clippy::type_complexity)]
     fn mkcircuit_with_bounds(
-        cconf: &CircuitConfig,
+        cconf: CircuitConfig,
     ) -> Result<(DBSPHandle, CircuitHandle), DbspError> {
         Runtime::init_circuit(cconf, move |circuit| {
             let (stream, handle) = circuit.add_input_indexed_zset::<i32, i32>();
@@ -1962,9 +1954,8 @@ pub(crate) mod tests {
         })
     }
 
-    pub(crate) fn mkconfig() -> (TempDir, CircuitConfig) {
-        let temp = tempdir().expect("Can't create temp dir for storage");
-        let cconf = CircuitConfig {
+    pub(crate) fn mkconfig(path: &Path) -> CircuitConfig {
+        CircuitConfig {
             layout: Layout::new_solo(1),
             max_rss_bytes: None,
             mode: Mode::Ephemeral,
@@ -1972,7 +1963,7 @@ pub(crate) mod tests {
             storage: Some(
                 CircuitStorageConfig::for_config(
                     StorageConfig {
-                        path: temp.path().to_string_lossy().into_owned(),
+                        path: path.to_string_lossy().into_owned(),
                         cache: StorageCacheConfig::default(),
                     },
                     StorageOptions {
@@ -1983,8 +1974,7 @@ pub(crate) mod tests {
                 .unwrap(),
             ),
             dev_tweaks: DevTweaks::default(),
-        };
-        (temp, cconf)
+        }
     }
 
     /// Utility function that runs a circuit and takes a checkpoint at every
@@ -1993,11 +1983,12 @@ pub(crate) mod tests {
     /// point.
     fn generic_checkpoint_restore(
         input: Vec<Vec<Tup2<i32, Tup2<i32, i64>>>>,
-        circuit_fun: fn(&CircuitConfig) -> Result<(DBSPHandle, CircuitHandle), DbspError>,
+        circuit_fun: fn(CircuitConfig) -> Result<(DBSPHandle, CircuitHandle), DbspError>,
     ) {
         const SAMPLE_SIZE: usize = 25; // should be bigger than #keys
         assert!(input.len() < SAMPLE_SIZE, "input should be <SAMPLE_SIZE");
-        let (_temp, mut cconf) = mkconfig();
+        let _temp = tempdir().expect("Can't create temp dir for storage");
+        let cconf = mkconfig(_temp.path());
 
         let mut committed = vec![];
         let mut checkpoints = vec![];
@@ -2006,7 +1997,7 @@ pub(crate) mod tests {
         // step.
         {
             let (mut dbsp, (input_handle, output_handle, sample_size_handle)) =
-                circuit_fun(&cconf).unwrap();
+                circuit_fun(cconf).unwrap();
             for mut batch in input.clone() {
                 let cpm = dbsp.checkpoint().run().expect("commit shouldn't fail");
                 checkpoints.push(cpm);
@@ -2025,9 +2016,10 @@ pub(crate) mod tests {
         // what we would expect it to be at the given point we restored it to
         let mut batches_to_insert = input.clone();
         for (i, cpm) in checkpoints.iter().enumerate() {
+            let mut cconf = mkconfig(_temp.path());
             cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
             let (mut dbsp, (input_handle, output_handle, sample_size_handle)) =
-                mkcircuit(&cconf).unwrap();
+                mkcircuit(cconf).unwrap();
             sample_size_handle.set_for_all(SAMPLE_SIZE);
             input_handle.append(&mut batches_to_insert[i]);
             dbsp.transaction().unwrap();
@@ -2041,8 +2033,9 @@ pub(crate) mod tests {
     /// Smoke test for `gather_batches_for_checkpoint`.
     #[test]
     fn can_find_batches_for_checkpoint() {
-        let (_temp, cconf) = mkconfig();
-        let (mut dbsp, (input_handle, _, _)) = mkcircuit(&cconf).unwrap();
+        let _temp = tempdir().expect("Can't create temp dir for storage");
+        let cconf = mkconfig(_temp.path());
+        let (mut dbsp, (input_handle, _, _)) = mkcircuit(cconf).unwrap();
         let mut batch = vec![Tup2(1, Tup2(2, 1))];
         input_handle.append(&mut batch);
         dbsp.transaction().unwrap();
@@ -2062,11 +2055,11 @@ pub(crate) mod tests {
     /// restarts.
     #[test]
     fn checkpoint_file() {
-        let (_temp, cconf) = mkconfig();
+        let _temp = tempdir().expect("Can't create temp dir for storage");
 
         {
             let (mut dbsp, (_input_handle, _output_handle, sample_size_handle)) =
-                mkcircuit(&cconf).unwrap();
+                mkcircuit(mkconfig(_temp.path())).unwrap();
             sample_size_handle.set_for_all(2);
             dbsp.transaction().unwrap();
             dbsp.checkpoint()
@@ -2078,7 +2071,7 @@ pub(crate) mod tests {
         }
 
         {
-            let (dbsp, _) = mkcircuit(&cconf).unwrap();
+            let (dbsp, _) = mkcircuit(mkconfig(_temp.path())).unwrap();
             let cpm = &dbsp
                 .checkpointer
                 .as_ref()
@@ -2108,10 +2101,10 @@ pub(crate) mod tests {
     /// directory twice because the directory is locked.
     #[test]
     fn circuit_takes_ownership_of_storage_dir() {
-        let (_temp, cconf) = mkconfig();
-        let (_dbsp, _) = mkcircuit(&cconf).unwrap();
+        let _temp = tempdir().expect("Can't create temp dir for storage");
+        let (_dbsp, _) = mkcircuit(mkconfig(_temp.path())).unwrap();
 
-        let r = Runtime::init_circuit(cconf, |_circuit| Ok(()));
+        let r = Runtime::init_circuit(mkconfig(_temp.path()), |_circuit| Ok(()));
         assert!(matches!(
             r,
             Err(DbspError::Storage(StorageError::StorageLocked(_, _)))
@@ -2121,13 +2114,14 @@ pub(crate) mod tests {
     /// We should fail if we revert to a checkpoint that doesn't exist.
     #[test]
     fn revert_to_unknown_checkpoint() {
-        let (_temp, mut cconf) = mkconfig();
-        let (dbsp, _) = mkcircuit(&cconf).unwrap();
+        let _temp = tempdir().expect("Can't create temp dir for storage");
+        let (dbsp, _) = mkcircuit(mkconfig(_temp.path())).unwrap();
         drop(dbsp); // makes sure we can take ownership of storage dir again
 
+        let mut cconf = mkconfig(_temp.path());
         cconf.storage.as_mut().unwrap().init_checkpoint = Some(Uuid::now_v7()); // this checkpoint doesn't exist
 
-        let res = mkcircuit(&cconf);
+        let res = mkcircuit(cconf);
         let Err(err) = res else {
             panic!("revert_to_unknown_checkpoint is supposed to fail");
         };
@@ -2142,18 +2136,19 @@ pub(crate) mod tests {
     #[test]
     #[should_panic]
     fn revert_to_partial_checkpoint() {
-        let (temp, mut cconf) = mkconfig();
-        let (dbsp, _) = mkcircuit(&cconf).unwrap();
+        let temp = tempdir().expect("Can't create temp dir for storage");
+        let (dbsp, _) = mkcircuit(mkconfig(temp.path())).unwrap();
         drop(dbsp); // makes sure we can take ownership of storage dir again
 
         let init_checkpoint = Uuid::now_v7(); // A made-up checkpoint, that does not have the necessary files
+        let mut cconf = mkconfig(temp.path());
         cconf.storage.as_mut().unwrap().init_checkpoint = Some(init_checkpoint);
         let checkpoint_dir = temp.path().join(init_checkpoint.to_string());
         create_dir_all(checkpoint_dir).expect("can't create checkpoint dir");
 
         // Initializing this circuit again will panic because it won't find the
         // necessary files in the checkpoint directory.
-        mkcircuit(&cconf).unwrap();
+        mkcircuit(cconf).unwrap();
     }
 
     fn init_test_tracing() {
@@ -2165,7 +2160,8 @@ pub(crate) mod tests {
     #[test]
     fn gc_commits() {
         init_test_tracing();
-        let (temp, cconf) = mkconfig();
+        let temp = tempdir().expect("Can't create temp dir for storage");
+        let cconf = mkconfig(temp.path());
 
         fn count_directory_entries<P: AsRef<Path>>(path: P) -> io::Result<usize> {
             let mut file_count = 0;
@@ -2177,7 +2173,7 @@ pub(crate) mod tests {
             Ok(file_count)
         }
 
-        let (mut dbsp, (input_handle, _, _)) = mkcircuit(&cconf).unwrap();
+        let (mut dbsp, (input_handle, _, _)) = mkcircuit(cconf).unwrap();
 
         let _cpm = dbsp.checkpoint().run().expect("commit failed");
         let mut batches: Vec<Vec<Tup2<i32, Tup2<i32, i64>>>> = vec![
@@ -2216,8 +2212,8 @@ pub(crate) mod tests {
     fn gc_on_startup() {
         init_test_tracing();
 
-        let (temp, cconf) = mkconfig();
-        let (mut dbsp, (input_handle, _, _)) = mkcircuit(&cconf).unwrap();
+        let temp = tempdir().expect("Can't create temp dir for storage");
+        let (mut dbsp, (input_handle, _, _)) = mkcircuit(mkconfig(temp.path())).unwrap();
 
         let mut batch: Vec<Tup2<i32, Tup2<i32, i64>>> = vec![Tup2(1, Tup2(2, 1))];
         input_handle.append(&mut batch);
@@ -2237,7 +2233,7 @@ pub(crate) mod tests {
 
         // Initializing this circuit again will remove the
         // unnecessary files in the checkpoint directory.
-        let (_dbsp, _) = mkcircuit(&cconf).unwrap();
+        let (_dbsp, _) = mkcircuit(mkconfig(temp.path())).unwrap();
 
         assert!(!incomplete_checkpoint_dir.exists());
         assert!(!incomplete_batch_path.exists());
@@ -2282,14 +2278,23 @@ pub(crate) mod tests {
     /// Make sure two circuits end up with a different fingerprint.
     #[test]
     fn fingerprint_is_different() {
-        let (_tempdir, cconf) = mkconfig();
-        let fid1 = mkcircuit(&cconf).unwrap().0.fingerprint();
-        let fid2 = mkcircuit_different(&cconf).unwrap().0.fingerprint();
+        let _tempdir = tempdir().expect("Can't create temp dir for storage");
+        let fid1 = mkcircuit(mkconfig(_tempdir.path()))
+            .unwrap()
+            .0
+            .fingerprint();
+        let fid2 = mkcircuit_different(mkconfig(_tempdir.path()))
+            .unwrap()
+            .0
+            .fingerprint();
         assert_ne!(fid1, fid2);
 
         // Unfortunately, the fingerprint isn't perfect, e.g., it thinks these two
         // circuits are the same:
-        let fid3 = mkcircuit_with_bounds(&cconf).unwrap().0.fingerprint();
+        let fid3 = mkcircuit_with_bounds(mkconfig(_tempdir.path()))
+            .unwrap()
+            .0
+            .fingerprint();
         assert_eq!(fid1, fid3); // Ideally, should be assert_ne
     }
 
@@ -2298,16 +2303,17 @@ pub(crate) mod tests {
     #[test]
     #[should_panic]
     fn reject_different_fingerprint() {
-        let (_temp, mut cconf) = mkconfig();
-        let (mut dbsp, (input_handle, _, _)) = mkcircuit(&cconf).unwrap();
+        let _temp = tempdir().expect("Can't create temp dir for storage");
+        let (mut dbsp, (input_handle, _, _)) = mkcircuit(mkconfig(_temp.path())).unwrap();
         let mut batch: Vec<Tup2<i32, Tup2<i32, i64>>> = vec![Tup2(1, Tup2(2, 1))];
         input_handle.append(&mut batch);
         let cpi = dbsp.checkpoint().run().expect("commit shouldn't fail");
         drop(dbsp);
 
+        let mut cconf = mkconfig(_temp.path());
         cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpi.uuid);
         let (dbsp_different, (_input_handle, _, _sample_size_handle)) =
-            mkcircuit_different(&cconf).unwrap();
+            mkcircuit_different(cconf).unwrap();
         drop(dbsp_different);
     }
 
@@ -2315,12 +2321,12 @@ pub(crate) mod tests {
     #[test]
     #[allow(clippy::borrowed_box)]
     fn test_z1_checkpointing() {
-        let (_temp, mut cconf) = mkconfig();
+        let _temp = tempdir().expect("Can't create temp dir for storage");
 
         //let expected_waterlines = vec![115, 115, 125, 145];
         let expected_waterlines = vec![115, 115, 125, 145];
         fn mkcircuit(
-            cconf: &CircuitConfig,
+            cconf: CircuitConfig,
             mut expected_waterline: vec::IntoIter<i32>,
         ) -> (DBSPHandle, ZSetHandle<i32>) {
             Runtime::init_circuit(cconf, move |circuit| {
@@ -2348,14 +2354,17 @@ pub(crate) mod tests {
             vec![Tup2(130, 1), Tup2(140, 1), Tup2(0, 1)],
         ];
 
+        let mut checkpoint = None;
         for (idx, mut batch) in batches.into_iter().enumerate() {
             let expected_waterlines = expected_waterlines.clone();
             let expected_waterlines: Vec<i32> = expected_waterlines[idx..].into();
-            let (mut dbsp, input_handle) = mkcircuit(&cconf, expected_waterlines.into_iter());
+            let mut cconf = mkconfig(_temp.path());
+            cconf.storage.as_mut().unwrap().init_checkpoint = checkpoint;
+            let (mut dbsp, input_handle) = mkcircuit(cconf, expected_waterlines.into_iter());
             input_handle.append(&mut batch);
             dbsp.transaction().unwrap();
             let cpm = dbsp.checkpoint().run().unwrap();
-            cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
+            checkpoint = Some(cpm.uuid);
             dbsp.kill().unwrap();
         }
     }
