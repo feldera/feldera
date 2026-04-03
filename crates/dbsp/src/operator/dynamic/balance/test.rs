@@ -1,8 +1,8 @@
 use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use proptest::collection::vec;
 use proptest::prelude::*;
-use std::hash::Hasher;
-use tempfile::{TempDir, tempdir};
+use std::{hash::Hasher, path::Path};
+use tempfile::tempdir;
 
 use crate::{
     Circuit, IndexedZSetHandle, OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit, Runtime,
@@ -374,23 +374,20 @@ struct JoinTestStep {
     expected_right_policy: Option<PartitioningPolicy>,
 }
 
-pub(crate) fn mkconfig(workers: usize) -> (TempDir, CircuitConfig) {
-    let temp = tempdir().expect("Can't create temp dir for storage");
-
-    let storage = CircuitStorageConfig::for_config(
-        StorageConfig {
-            path: temp.path().to_string_lossy().into_owned(),
-            cache: StorageCacheConfig::default(),
-        },
-        StorageOptions::default(),
-    )
-    .unwrap();
-
-    let cconf = CircuitConfig::from(workers)
+fn mkconfig(path: &Path, workers: usize) -> CircuitConfig {
+    CircuitConfig::from(workers)
         .with_splitter_chunk_size_records(2)
         .with_balancer_min_absolute_improvement_threshold(0)
-        .with_storage(storage);
-    (temp, cconf)
+        .with_storage(
+            CircuitStorageConfig::for_config(
+                StorageConfig {
+                    path: path.to_string_lossy().into_owned(),
+                    cache: StorageCacheConfig::default(),
+                },
+                StorageOptions::default(),
+            )
+            .unwrap(),
+        )
 }
 
 fn test_join_with_balancer(
@@ -410,7 +407,7 @@ fn test_join_with_balancer(
     assert!(inputs.last().unwrap().expected_left_policy.is_some());
     assert!(inputs.last().unwrap().expected_right_policy.is_some());
 
-    let (_temp, mut cconf) = mkconfig(workers);
+    let temp = tempdir().expect("Can't create temp dir for storage");
 
     let constructor = if left_join {
         left_join_with_balancer_test_circuit
@@ -427,7 +424,7 @@ fn test_join_with_balancer(
             mut right_input_node_id,
             mut output_integral_handle,
         ),
-    ) = Runtime::init_circuit(cconf.clone(), constructor).unwrap();
+    ) = Runtime::init_circuit(mkconfig(temp.path(), workers), constructor).unwrap();
     circuit.set_auto_rebalance(auto_rebalance).unwrap();
 
     let mut all_left_tuples: Vec<Tup2<Tup2<u64, u64>, ZWeight>> = vec![];
@@ -536,6 +533,7 @@ fn test_join_with_balancer(
                 circuit.kill().unwrap();
 
                 // start from the checkpoint
+                let mut cconf = mkconfig(temp.path(), workers);
                 cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
 
                 (
@@ -547,7 +545,7 @@ fn test_join_with_balancer(
                         right_input_node_id,
                         output_integral_handle,
                     ),
-                ) = Runtime::init_circuit(cconf.clone(), constructor).unwrap();
+                ) = Runtime::init_circuit(cconf, constructor).unwrap();
             }
         }
     }
@@ -590,7 +588,7 @@ fn test_circular_dependency(
     // Can't make checkpoints mid-transaction.
     assert!(!(checkpoints && transaction));
 
-    let (_temp, mut cconf) = mkconfig(num_workers);
+    let temp = tempdir().expect("Can't create temp dir for storage");
 
     let (
         mut circuit,
@@ -606,7 +604,11 @@ fn test_circular_dependency(
             mut output_handle7_ref,
             mut output_handle8_ref,
         ),
-    ) = Runtime::init_circuit(cconf.clone(), circular_dependency_test_circuit).unwrap();
+    ) = Runtime::init_circuit(
+        mkconfig(temp.path(), num_workers),
+        circular_dependency_test_circuit,
+    )
+    .unwrap();
 
     if transaction {
         circuit.start_transaction().unwrap();
@@ -654,6 +656,7 @@ fn test_circular_dependency(
                 circuit.kill().unwrap();
 
                 // start from the checkpoint
+                let mut cconf = mkconfig(temp.path(), num_workers);
                 cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
 
                 (
@@ -670,7 +673,7 @@ fn test_circular_dependency(
                         output_handle7_ref,
                         output_handle8_ref,
                     ),
-                ) = Runtime::init_circuit(cconf.clone(), circular_dependency_test_circuit).unwrap();
+                ) = Runtime::init_circuit(cconf, circular_dependency_test_circuit).unwrap();
             }
         }
     }

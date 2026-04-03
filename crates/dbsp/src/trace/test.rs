@@ -8,6 +8,7 @@ use std::{
 
 use proptest::{collection::vec, prelude::*, strategy::BoxedStrategy};
 use size_of::SizeOf;
+use tempfile::tempdir;
 
 use crate::{
     DynZWeight, Runtime, ZWeight,
@@ -827,7 +828,8 @@ fn run_in_circuit_with_storage<F>(f: F)
 where
     F: FnOnce() + Clone + Send + 'static,
 {
-    let (_temp_dir, config) = mkconfig();
+    let _temp_dir = tempdir().expect("Can't create temp dir for storage");
+    let config = mkconfig(_temp_dir.path());
     let count = Arc::new(AtomicUsize::new(0));
     Runtime::init_circuit(config, {
         let count = count.clone();
