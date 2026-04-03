@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -25,6 +27,20 @@ public class CircuitDispatcher extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPSimpleOperator operator) {
+        this.innerVisitor.setOperatorContext(operator);
+        operator.accept(this.innerVisitor);
+        this.innerVisitor.setOperatorContext(null);
+    }
+
+    @Override
+    public void postorder(DBSPOperatorWithError operator) {
+        this.innerVisitor.setOperatorContext(operator);
+        operator.accept(this.innerVisitor);
+        this.innerVisitor.setOperatorContext(null);
+    }
+
+    @Override
+    public void postorder(DBSPOperator operator) {
         this.innerVisitor.setOperatorContext(operator);
         operator.accept(this.innerVisitor);
         this.innerVisitor.setOperatorContext(null);
