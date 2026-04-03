@@ -885,4 +885,22 @@ public class Regression2Tests extends SqlIoTest {
                  36 | 0.36""");
     }
 
+    @Test
+    public void issue5989() {
+        this.getCCS("""
+                CREATE TABLE ee (
+                    ab VARCHAR(110) NOT NULL PRIMARY KEY,
+                    b VARCHAR(70) NOT NULL,
+                    c SMALLINT NOT NULL,
+                    d BIGINT NOT NULL PRIMARY KEY LATENESS 67::BIGINT,
+                    e VARCHAR(60) NOT NULL ,
+                    f VARCHAR(60) NOT NULL ,
+                    g DECIMAL(38, 10),
+                    h DECIMAL(38, 10),
+                    i INT,
+                    j INT,
+                    k BOOLEAN,
+                    l TIMESTAMP
+                ) WITH ('materialized' = 'true');""");
+    }
 }
