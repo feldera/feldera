@@ -816,6 +816,7 @@ mod test {
     use std::{
         cmp::Ordering,
         collections::{BTreeMap, HashMap},
+        path::Path,
     };
 
     use anyhow::Result as AnyResult;
@@ -1414,24 +1415,26 @@ mod test {
             seed in any::<u64>(),
             num_batches in 1usize..=50usize,
         ) {
-            let _storage_dir = tempdir().expect("temp dir for circuit storage");
-            let storage = CircuitStorageConfig::for_config(
-                StorageConfig {
-                    path: _storage_dir.path().to_string_lossy().into_owned(),
-                    cache: StorageCacheConfig::default(),
-                },
-                StorageOptions::default(),
-            )
-            .expect("storage backend");
-            let config = CircuitConfig::from(2)
-                .with_splitter_chunk_size_records(2)
-                .with_storage(storage);
+            let storage_dir = tempdir().expect("temp dir for circuit storage");
+            fn circuit_config(path: &Path) -> CircuitConfig {
+                let storage = CircuitStorageConfig::for_config(
+                    StorageConfig {
+                        path: path.to_string_lossy().into_owned(),
+                        cache: StorageCacheConfig::default(),
+                    },
+                    StorageOptions::default(),
+                )
+                    .expect("storage backend");
+                CircuitConfig::from(2)
+                    .with_splitter_chunk_size_records(2)
+                    .with_storage(storage)
+            }
 
             let mut rng = StdRng::seed_from_u64(seed);
             let mut multiset: HashMap<(u64, Tup2<u64, u64>), ZWeight> = HashMap::new();
 
             let (mut dbsp, (mut input, mut ranked, mut dense_ranked)) =
-                Runtime::init_circuit(config.clone(), rank_custom_order_tup2_test_circuit).unwrap();
+                Runtime::init_circuit(circuit_config(storage_dir.path()), rank_custom_order_tup2_test_circuit).unwrap();
 
             for i in 0..num_batches {
                 let mut tmp = multiset.clone();
@@ -1521,7 +1524,7 @@ mod test {
                         let checkpoint = dbsp.checkpoint().run().unwrap();
                         dbsp.kill().unwrap();
 
-                        let mut config = config.clone();
+                        let mut config = circuit_config(storage_dir.path());
                         config.storage.as_mut().unwrap().init_checkpoint = Some(checkpoint.uuid);
 
                         let (dbsp, (input, ranked, dense_ranked)) = Runtime::init_circuit(config, rank_custom_order_tup2_test_circuit).unwrap();
