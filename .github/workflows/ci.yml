@@ -310,3 +310,4 @@ jobs:
         run: echo "All tasks completed!"
       - if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1
+
