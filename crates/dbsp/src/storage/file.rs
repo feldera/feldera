@@ -584,9 +584,8 @@ impl Deserializer {
     pub fn new(version: u32) -> Self {
         // Proper error is returned in reader.rs, this is a sanity check.
         assert!(
-            version >= format::VERSION_NUMBER,
-            "Unable to read old (pre-v{}) checkpoint data on this feldera version, pipeline needs to backfilled to start.",
-            format::VERSION_NUMBER
+            version >= format::MIN_SUPPORTED_VERSION,
+            "Unable to read checkpoint data with unsupported old storage format version {version} on this feldera version.",
         );
         Self {
             version,
