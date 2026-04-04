@@ -67,7 +67,7 @@ impl OutputConsumer for MockOutputConsumer {
         self.max_buffer_size_bytes
     }
 
-    fn batch_start(&mut self, _step: Step) {}
+    fn batch_start(&mut self, _step: Step, _processed_records: usize) {}
     fn push_buffer(&mut self, buffer: &[u8], _num_records: usize) {
         self.data
             .lock()

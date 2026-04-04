@@ -692,7 +692,7 @@ impl OutputConsumer for PostgresOutputEndpoint {
         self.config.max_buffer_size_bytes
     }
 
-    fn batch_start(&mut self, _step: Step) {
+    fn batch_start(&mut self, _step: Step, _processed_records: usize) {
         self.txn_start = std::time::Instant::now();
 
         match self.broadcast_and_collect(BroadcastCommand::BatchStart) {
@@ -1272,7 +1272,7 @@ mod tests {
         }
 
         fn encode_batch(endpoint: &mut PostgresOutputEndpoint, batch: &Arc<dyn SerBatch>) {
-            endpoint.consumer().batch_start(0);
+            endpoint.consumer().batch_start(0, 0);
             endpoint
                 .encode(batch.clone().arc_as_batch_reader())
                 .unwrap();

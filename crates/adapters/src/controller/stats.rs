@@ -484,6 +484,16 @@ impl ControllerStatus {
         self.global_metrics.state.load(Ordering::Relaxed)
     }
 
+    pub fn metadata_as_of(&self, offset: u64) -> BTreeMap<String, Option<WatermarkListEntry>> {
+        let mut result = BTreeMap::new();
+
+        for (endpoint_id, input_status) in self.inputs.read().iter() {
+            result.insert(endpoint_id.to_string(), input_status.metadata_as_of(offset));
+        }
+
+        result
+    }
+
     /// Set the state to `desired`.
     ///
     /// Setting the state to [PipelineState::Terminated] is permanent; the state
@@ -1712,6 +1722,10 @@ impl WatermarkTracker {
     pub fn completed_watermark(&self) -> Option<CompletedWatermark> {
         self.0.lock().unwrap().completed_watermark.clone()
     }
+
+    pub fn metadata_as_of(&self, offset: u64) -> Option<WatermarkListEntry> {
+        self.0.lock().unwrap().as_of(offset)
+    }
 }
 
 /// Bound the number of tracked watermarks to avoid unbounded memory growth.
@@ -1860,10 +1874,22 @@ impl WatermarkTrackerInner {
             }
         }
     }
+
+    fn as_of(&self, offset: u64) -> Option<WatermarkListEntry> {
+        let mut watermark = None;
+        for entry in self.watermark_with_metadata_list.iter() {
+            if entry.global_offset <= offset {
+                watermark = Some(entry.clone());
+            } else {
+                break;
+            }
+        }
+        watermark
+    }
 }
 
-#[derive(Debug)]
-struct WatermarkListEntry {
+#[derive(Debug, Clone)]
+pub struct WatermarkListEntry {
     watermark: Watermark,
     global_offset: u64,
     processed_at: Option<DateTime<Utc>>,
@@ -1964,6 +1990,10 @@ impl InputEndpointStatus {
             barrier: self.is_barrier(),
             completed_frontier: self.completed_frontier.completed_watermark(),
         }
+    }
+
+    pub fn metadata_as_of(&self, offset: u64) -> Option<WatermarkListEntry> {
+        self.completed_frontier.metadata_as_of(offset)
     }
 }
 

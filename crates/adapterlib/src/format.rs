@@ -682,7 +682,7 @@ pub trait OutputConsumer: Send {
     /// The encoder should not generate buffers exceeding this size.
     fn max_buffer_size_bytes(&self) -> usize;
 
-    fn batch_start(&mut self, step: Step);
+    fn batch_start(&mut self, step: Step, processed_records: usize);
 
     /// See OutputEndpoint::push_buffer.
     fn push_buffer(&mut self, buffer: &[u8], num_records: usize);

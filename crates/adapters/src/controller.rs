@@ -6253,9 +6253,10 @@ impl ControllerInner {
         endpoint_name: &str,
         encoder: &mut dyn Encoder,
         step: Step,
+        processed_records: usize,
         controller: &ControllerInner,
     ) {
-        encoder.consumer().batch_start(step);
+        encoder.consumer().batch_start(step, processed_records);
         encoder.encode(batch).unwrap_or_else(|e| {
             controller.encode_error(endpoint_id, endpoint_name, e, Some("encoder_error"))
         });
@@ -6300,6 +6301,9 @@ impl ControllerInner {
                     &endpoint_name,
                     encoder.as_mut(),
                     output_buffer.buffered_step,
+                    output_buffer
+                        .buffered_processed_records
+                        .total_processed_input_records as usize,
                     &controller,
                 );
 
@@ -6346,6 +6350,9 @@ impl ControllerInner {
                             &endpoint_name,
                             encoder.as_mut(),
                             step,
+                            processed_records
+                                .map(|r| r.total_processed_input_records as usize)
+                                .unwrap_or(0),
                             &controller,
                         );
                     }
@@ -7127,7 +7134,7 @@ impl OutputConsumer for OutputProbe {
         self.endpoint.max_buffer_size_bytes()
     }
 
-    fn batch_start(&mut self, step: Step) {
+    fn batch_start(&mut self, step: Step, _processed_records: usize) {
         self.endpoint.batch_start(step).unwrap_or_else(|e| {
             self.controller.output_transport_error(
                 self.endpoint_id,

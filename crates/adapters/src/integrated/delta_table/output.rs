@@ -35,6 +35,8 @@ use serde::Serialize;
 use serde_arrow::ArrayBuilder;
 use serde_arrow::schema::SerdeArrowSchema;
 use std::cmp::min;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use tokio::time::{Duration, sleep};
 use tracing::{Instrument, info, info_span, warn};
@@ -62,6 +64,7 @@ struct DeltaTableWriterInner {
     key_schema: Option<Relation>,
     value_schema: Relation,
     controller: Weak<ControllerInner>,
+    processed_records: AtomicUsize,
 }
 
 pub struct DeltaTableWriter {
@@ -141,6 +144,7 @@ impl DeltaTableWriter {
             key_schema: key_schema.clone(),
             value_schema: value_schema.clone(),
             controller,
+            processed_records: AtomicUsize::new(0),
         });
         // Create or open the delta table.
         // Panic safety: block_on() panics if called from a tokio async context.
@@ -525,7 +529,15 @@ async fn stream_encode_and_write(
 
         while cursor.key_valid() {
             let op = indexed_operation_type(&inner.value_schema.name, index_name, &mut cursor)
-                .map_err(WriteError::Deterministic)?;
+                .map_err(|e| {
+                    if let Some(controller) = inner.controller.upgrade() {
+                        let metadata = controller
+                            .status
+                            .metadata_as_of(inner.processed_records.load(Ordering::Relaxed) as u64);
+                        println!("metadata: {:?}", metadata);
+                    };
+                    WriteError::Deterministic(e)
+                })?;
 
             if let Some(op) = op {
                 cursor.rewind_vals();
@@ -634,9 +646,12 @@ impl OutputConsumer for DeltaTableWriter {
         usize::MAX
     }
 
-    fn batch_start(&mut self, _step: Step) {
+    fn batch_start(&mut self, _step: Step, processed_records: usize) {
         self.pending_actions.clear();
         self.num_rows = 0;
+        self.inner
+            .processed_records
+            .store(processed_records, Ordering::Relaxed);
     }
 
     fn push_buffer(&mut self, _buffer: &[u8], _num_records: usize) {
@@ -1038,7 +1053,7 @@ mod parallel {
     }
 
     fn encode_batch(endpoint: &mut DeltaTableWriter, batch: &Arc<dyn SerBatch>) {
-        endpoint.consumer().batch_start(0);
+        endpoint.consumer().batch_start(0, 0);
         endpoint
             .encode(batch.clone().arc_as_batch_reader())
             .unwrap();
@@ -1376,7 +1391,7 @@ mod parallel {
         // Make directory read-only to trigger write failure.
         std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
 
-        endpoint.consumer().batch_start(0);
+        endpoint.consumer().batch_start(0, 0);
         let result = endpoint.encode(batch.arc_as_batch_reader());
 
         // Restore permissions before asserting (so TempDir cleanup succeeds).
@@ -1415,7 +1430,7 @@ mod parallel {
         // Make directory read-only to trigger write failure.
         std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
 
-        endpoint.consumer().batch_start(0);
+        endpoint.consumer().batch_start(0, 0);
         let result = endpoint.encode(batch.arc_as_batch_reader());
 
         // Restore permissions.

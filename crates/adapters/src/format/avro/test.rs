@@ -1259,7 +1259,7 @@ where
         })
         .collect::<Vec<_>>();
     for (step, zset) in zsets.into_iter().enumerate() {
-        encoder.consumer().batch_start(step as u64);
+        encoder.consumer().batch_start(step as u64, 0);
         encoder.encode(zset.arc_as_batch_reader()).unwrap();
         encoder.consumer().batch_end();
     }
@@ -1356,7 +1356,7 @@ fn test_raw_avro_output_indexed<K, T>(
         })
         .collect::<Vec<_>>();
     for (step, zset) in zsets.into_iter().enumerate() {
-        encoder.consumer().batch_start(step as u64);
+        encoder.consumer().batch_start(step as u64, 0);
         encoder.encode(zset.arc_as_batch_reader()).unwrap();
         encoder.consumer().batch_end();
     }
@@ -1448,7 +1448,7 @@ fn test_confluent_avro_output<K, V, KF>(
         })
         .collect::<Vec<_>>();
     for (step, zset) in zsets.into_iter().enumerate() {
-        encoder.consumer().batch_start(step as u64);
+        encoder.consumer().batch_start(step as u64, 0);
         encoder.encode(zset.arc_as_batch_reader()).unwrap();
         encoder.consumer().batch_end();
     }
@@ -1557,7 +1557,7 @@ fn test_confluent_avro_output_indexed<K, V>(
         .collect::<Vec<_>>();
 
     for (step, zset) in zsets.into_iter().enumerate() {
-        encoder.consumer().batch_start(step as u64);
+        encoder.consumer().batch_start(step as u64, 0);
         encoder.encode(zset.arc_as_batch_reader()).unwrap();
         encoder.consumer().batch_end();
     }
@@ -1644,7 +1644,7 @@ fn test_non_unique_keys() {
     let zset = OrdIndexedZSet::from_tuples((), vec![Tup2(Tup2(k1.clone(), v1.clone()), 2)]);
     let zset = Arc::new(<SerBatchImpl<_, KeyStruct, TestStruct>>::new(zset)) as Arc<dyn SerBatch>;
 
-    encoder.consumer().batch_start(0);
+    encoder.consumer().batch_start(0, 0);
     let err = encoder.encode(zset.arc_as_batch_reader()).unwrap_err();
     assert!(err.to_string().contains(r#"is inserted 2 times"#));
     encoder.consumer().batch_end();
@@ -1652,7 +1652,7 @@ fn test_non_unique_keys() {
     let zset = OrdIndexedZSet::from_tuples((), vec![Tup2(Tup2(k1.clone(), v1.clone()), -2)]);
     let zset = Arc::new(<SerBatchImpl<_, KeyStruct, TestStruct>>::new(zset)) as Arc<dyn SerBatch>;
 
-    encoder.consumer().batch_start(0);
+    encoder.consumer().batch_start(0, 0);
     let err = encoder.encode(zset.arc_as_batch_reader()).unwrap_err();
     assert!(err.to_string().contains(r#"is deleted 2 times"#));
     encoder.consumer().batch_end();
@@ -1666,7 +1666,7 @@ fn test_non_unique_keys() {
     );
     let zset = Arc::new(<SerBatchImpl<_, KeyStruct, TestStruct>>::new(zset)) as Arc<dyn SerBatch>;
 
-    encoder.consumer().batch_start(0);
+    encoder.consumer().batch_start(0, 0);
     let err = encoder.encode(zset.arc_as_batch_reader()).unwrap_err();
     println!("{err}");
     assert!(
@@ -1684,7 +1684,7 @@ fn test_non_unique_keys() {
     );
     let zset = Arc::new(<SerBatchImpl<_, KeyStruct, TestStruct>>::new(zset)) as Arc<dyn SerBatch>;
 
-    encoder.consumer().batch_start(0);
+    encoder.consumer().batch_start(0, 0);
     let err = encoder.encode(zset.arc_as_batch_reader()).unwrap_err();
     println!("{err}");
     assert!(
@@ -1788,7 +1788,7 @@ fn run_avro_encoder_spine_snapshot_indexed<K, V>(
     )
     .unwrap();
 
-    encoder.consumer().batch_start(0);
+    encoder.consumer().batch_start(0, 0);
     encoder.encode(snapshot).unwrap();
     encoder.consumer().batch_end();
 

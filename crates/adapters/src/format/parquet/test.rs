@@ -156,7 +156,7 @@ fn parquet_output() {
     );
 
     let zset = Arc::new(SerBatchImpl::<_, TestStruct2, ()>::new(zset)) as Arc<dyn SerBatchReader>;
-    encoder.consumer().batch_start(0);
+    encoder.consumer().batch_start(0, 0);
     encoder.encode(zset).unwrap();
     encoder.consumer().batch_end();
 

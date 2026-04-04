@@ -674,7 +674,7 @@ mod test {
             })
             .collect::<Vec<_>>();
         for (step, zset) in zsets.into_iter().enumerate() {
-            encoder.consumer().batch_start(step as u64);
+            encoder.consumer().batch_start(step as u64, 0);
             encoder.encode(zset.arc_as_batch_reader()).unwrap();
             encoder.consumer().batch_end();
         }
