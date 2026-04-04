@@ -605,9 +605,9 @@ fn join_circuit1(
     let (input_stream2, input_handle2) = circuit.add_input_zset::<u64>();
     input_stream2.set_persistent_id(Some("input2"));
 
-    // These integrals will be used for replay input streams.
-    input_stream1.integrate_trace();
-    input_stream2.integrate_trace();
+    // // These integrals will be used for replay input streams.
+    // input_stream1.integrate_trace();
+    // input_stream2.integrate_trace();
 
     let input_stream1_indexed = input_stream1
         .map_index(|x| (*x, *x))
@@ -647,10 +647,10 @@ fn join_circuit2(
     let (input_stream3, input_handle3) = circuit.add_input_zset::<u64>();
     input_stream3.set_persistent_id(Some("input3"));
 
-    // These integrals will be used for replay input streams.
-    input_stream1.integrate_trace();
-    input_stream2.integrate_trace();
-    input_stream3.integrate_trace();
+    // // These integrals will be used for replay input streams.
+    // input_stream1.integrate_trace();
+    // input_stream2.integrate_trace();
+    // input_stream3.integrate_trace();
 
     let input_stream1_indexed = input_stream1
         .map_index(|x| (*x, *x))
