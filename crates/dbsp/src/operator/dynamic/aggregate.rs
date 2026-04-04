@@ -464,8 +464,6 @@ where
         let circuit = self.circuit();
         circuit
             .region("aggregate", || {
-                let stream = self.dyn_shard(&factories.input_factories);
-
                 // We construct the following circuit.  See `AggregateIncremental` documentation
                 // for details.
                 //
@@ -487,8 +485,8 @@ where
                             aggregator,
                             circuit.clone(),
                         )),
-                        &stream.dyn_accumulate(&factories.input_factories),
-                        &stream.dyn_accumulate_trace(
+                        &self.dyn_shard_accumulate(&factories.input_factories),
+                        &self.dyn_shard_accumulate_trace(
                             &factories.trace_factories,
                             &factories.input_factories,
                         ),

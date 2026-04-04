@@ -322,20 +322,19 @@ where
         OB: IndexedZSet<Key = B::Key>,
     {
         let circuit = self.circuit();
-        let stream = self.dyn_shard(input_factories);
 
         // ```
-        //       ┌────────────────────────────────────────────┐
-        //       │                                            │
-        //       │                                            ▼
-        // stream│  ┌─────────────────────────┐        ┌──────────────┐  output    ┌──────────────────┐
-        // ──────┴─►│integrate().delay_trace()├───────►│GroupTransform├────────────┤UntimedTraceAppend├───┐
-        //          └─────────────────────────┘        └──────────────┘            └──────────────────┘   │
-        //                                                    ▲                          ▲                │
-        //                                                    │                          │                │
-        //                                                    │        delayed_trace   ┌─┴──┐             │
-        //                                                    └────────────────────────┤Z^-1│◄────────────┘
-        //                                                                             └────┘
+        //                                  ┌────────────────────────────────────────────┐
+        //                                  │                                            │
+        //                                  │                                            ▼
+        // stream┌────────────────────────┐ │  ┌─────────────────────────┐        ┌──────────────┐  output    ┌──────────────────┐
+        // ─────►│    shard_accumulate    ├─┴─►│integrate().delay_trace()├───────►│GroupTransform├────────────┤UntimedTraceAppend├───┐
+        //       └────────────────────────┘    └─────────────────────────┘        └──────────────┘            └──────────────────┘   │
+        //                                                                               ▲                          ▲                │
+        //                                                                               │                          │                │
+        //                                                                               │        delayed_trace   ┌─┴──┐             │
+        //                                                                               └────────────────────────┤Z^-1│◄────────────┘
+        //                                                                                                        └────┘
         // ```
         let bounds = TraceBounds::unbounded();
         let feedback = circuit.add_accumulate_integrate_trace_feedback::<Spine<OB>>(
@@ -347,9 +346,9 @@ where
         let output = circuit
             .add_ternary_operator(
                 StreamingTernaryWrapper::new(GroupTransform::new(output_factories, transform)),
-                &stream.dyn_accumulate(input_factories),
-                &stream
-                    .dyn_accumulate_integrate_trace(input_factories)
+                &self.dyn_shard_accumulate(input_factories),
+                &self
+                    .dyn_shard_accumulate_integrate_trace(input_factories)
                     .accumulate_delay_trace(),
                 &feedback.delayed_trace,
             )
