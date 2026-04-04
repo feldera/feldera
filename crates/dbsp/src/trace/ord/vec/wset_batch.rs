@@ -1,4 +1,4 @@
-use crate::storage::filter_stats::FilterStats;
+use crate::storage::file::FilterStats;
 use crate::{
     DBData, DBWeight, NumEntries,
     algebra::{NegByRef, ZRingValue},
@@ -361,6 +361,10 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
 
     fn membership_filter_stats(&self) -> FilterStats {
         FilterStats::default()
+    }
+
+    fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)> {
+        Some((self.layer.keys.first()?, self.layer.keys.last()?))
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)

@@ -59,6 +59,10 @@ impl TrackingFilterStats {
         }
     }
 
+    pub(crate) fn set_size_byte(&mut self, size_byte: usize) {
+        self.size_byte = size_byte;
+    }
+
     /// Records the result of one filter probe.
     pub fn record(&self, is_hit: bool) {
         if is_hit {

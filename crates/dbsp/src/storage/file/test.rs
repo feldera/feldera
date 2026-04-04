@@ -1,28 +1,29 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::{io::Cursor, marker::PhantomData, sync::Arc};
 
 use crate::{
     DBWeight,
     dynamic::{DataTrait, DowncastTrait, DynWeight, Factory, LeanVec, Vector, WithFactory},
     storage::{
-        backend::StorageBackend,
+        backend::{BlockLocation, StorageBackend},
         buffer_cache::BufferCache,
         file::{
-            format::{BatchMetadata, Compression},
+            format::{
+                BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, Compression, FileTrailer,
+                ROARING_BITMAP_FILTER_BLOCK_MAGIC,
+            },
             reader::{BulkRows, FilteredKeys, Reader},
         },
     },
     trace::{
         BatchReaderFactories, Builder, VecIndexedWSetFactories, VecWSetFactories,
-        ord::{
-            batch_filter::BatchFilters,
-            vec::{indexed_wset_batch::VecIndexedWSetBuilder, wset_batch::VecWSetBuilder},
-        },
+        filter::BatchFilters,
+        ord::vec::{indexed_wset_batch::VecIndexedWSetBuilder, wset_batch::VecWSetBuilder},
     },
-    utils::test::init_test_logger,
+    utils::{Tup1, test::init_test_logger},
 };
 
 use super::{
-    Factories,
+    Factories, FilterPlan,
     reader::{ColumnSpec, RowGroup},
     writer::{Parameters, Writer1, Writer2},
 };
@@ -31,6 +32,7 @@ use crate::{
     DBData,
     dynamic::{DynData, Erase},
 };
+use binrw::BinRead;
 use feldera_types::config::{StorageConfig, StorageOptions};
 use rand::{Rng, seq::SliceRandom, thread_rng};
 use tempfile::tempdir;
@@ -712,6 +714,73 @@ fn test_key_range<K, A, Aux, N>(
     assert_eq!(max.downcast_checked::<K>(), &expected_max);
 }
 
+fn filter_block_magic<K, A, N>(reader: &Reader<(&'static K, &'static A, N)>) -> Option<[u8; 4]>
+where
+    K: DataTrait + ?Sized,
+    A: DataTrait + ?Sized,
+    (&'static K, &'static A, N): ColumnSpec,
+{
+    let file_size = reader.byte_size().unwrap() as usize;
+    let trailer_block = reader
+        .file_handle()
+        .read_block(BlockLocation::new((file_size - 512) as u64, 512).unwrap())
+        .unwrap();
+    let trailer = FileTrailer::read_le(&mut Cursor::new(trailer_block.as_slice())).unwrap();
+    let offset = if trailer.has_filter64() {
+        trailer.filter_offset64
+    } else {
+        trailer.filter_offset
+    };
+    let size = if trailer.has_filter64() {
+        trailer.filter_size64 as usize
+    } else {
+        trailer.filter_size as usize
+    };
+    if offset == 0 {
+        return None;
+    }
+
+    let filter_block = reader
+        .file_handle()
+        .read_block(BlockLocation::new(offset, size).unwrap())
+        .unwrap();
+    let mut magic = [0u8; 4];
+    magic.copy_from_slice(&filter_block[4..8]);
+    Some(magic)
+}
+
+fn incompatible_features<K, A, N>(reader: &Reader<(&'static K, &'static A, N)>) -> u64
+where
+    K: DataTrait + ?Sized,
+    A: DataTrait + ?Sized,
+    (&'static K, &'static A, N): ColumnSpec,
+{
+    let file_size = reader.byte_size().unwrap() as usize;
+    let trailer_block = reader
+        .file_handle()
+        .read_block(BlockLocation::new((file_size - 512) as u64, 512).unwrap())
+        .unwrap();
+    let trailer = FileTrailer::read_le(&mut Cursor::new(trailer_block.as_slice())).unwrap();
+    trailer.incompatible_features
+}
+
+fn sampled_filter_plan<K>(
+    factories: &Factories<DynData, DynData>,
+    keys: &[K],
+) -> FilterPlan<DynData>
+where
+    K: DBData + Erase<DynData>,
+{
+    let mut sampled_keys = factories.keys_factory.default_box();
+    sampled_keys.reserve(keys.len());
+    for key in keys {
+        sampled_keys.push_ref(key.erase());
+    }
+
+    FilterPlan::from_bounds(keys.first().unwrap().erase(), keys.last().unwrap().erase())
+        .with_sampled_keys(sampled_keys)
+}
+
 fn test_two_columns<T>(parameters: Parameters)
 where
     T: TwoColumns,
@@ -734,7 +803,7 @@ where
         test_buffer_cache,
         &*storage_backend,
         parameters,
-        T::n0(),
+        FilterPlan::<DynData>::decide_filter(None, T::n0()),
     )
     .unwrap();
     let n0 = T::n0();
@@ -800,7 +869,7 @@ where
         test_buffer_cache,
         &*storage_backend,
         parameters,
-        T::n0(),
+        FilterPlan::<DynData>::decide_filter(None, T::n0()),
     )
     .unwrap();
     let n0 = T::n0();
@@ -945,7 +1014,7 @@ where
             test_buffer_cache,
             &*storage_backend,
             parameters.clone(),
-            n,
+            FilterPlan::<DynData>::decide_filter(None, n),
         )
         .unwrap();
         for row in 0..n {
@@ -956,7 +1025,7 @@ where
         let (reader, filters) = if reopen {
             println!("closing writer and reopening as reader");
             let path = writer.path().clone();
-            let (_file_handle, _bloom_filter, _key_bounds) =
+            let (_file_handle, _key_filter, _key_bounds) =
                 writer.close(BatchMetadata::default()).unwrap();
             let (reader, membership_filter) = Reader::open_with_filter(
                 &[&factories.any_factories()],
@@ -1006,7 +1075,7 @@ fn test_one_column_zset<K, A>(
             test_buffer_cache,
             &*storage_backend,
             parameters.clone(),
-            n,
+            FilterPlan::<DynData>::decide_filter(None, n),
         )
         .unwrap();
         for row in 0..n {
@@ -1017,7 +1086,7 @@ fn test_one_column_zset<K, A>(
         let reader = if reopen {
             println!("closing writer and reopening as reader");
             let path = writer.path().clone();
-            let (_file_handle, _bloom_filter, _key_bounds) =
+            let (_file_handle, _key_filter, _key_bounds) =
                 writer.close(BatchMetadata::default()).unwrap();
             Reader::open(
                 &[&factories.any_factories()],
@@ -1063,7 +1132,7 @@ fn one_column_key_range() {
                 test_buffer_cache,
                 &*storage_backend,
                 Parameters::default(),
-                keys.len(),
+                FilterPlan::<DynData>::decide_filter(None, keys.len()),
             )
             .unwrap();
             for key in keys {
@@ -1072,7 +1141,7 @@ fn one_column_key_range() {
 
             let reader = if reopen {
                 let path = writer.path().clone();
-                let (_file_handle, _bloom_filter, _key_bounds) =
+                let (_file_handle, _key_filter, _key_bounds) =
                     writer.close(BatchMetadata::default()).unwrap();
                 Reader::open(
                     &[&factories.any_factories()],
@@ -1097,6 +1166,390 @@ fn one_column_key_range() {
             );
         }
     }
+}
+
+#[test]
+fn test_bloom_filter_roundtrip_and_block_kind() {
+    init_test_logger();
+
+    for reopen in [false, true] {
+        let factories = Factories::<DynData, DynData>::new::<i64, ()>();
+        let tempdir = tempdir().unwrap();
+        let storage_backend = <dyn StorageBackend>::new(
+            &StorageConfig {
+                path: tempdir.path().to_string_lossy().to_string(),
+                cache: Default::default(),
+            },
+            &StorageOptions::default(),
+        )
+        .unwrap();
+
+        let mut writer = Writer1::new(
+            &factories,
+            test_buffer_cache,
+            &*storage_backend,
+            Parameters::default(),
+            FilterPlan::<DynData>::decide_filter(None, 3),
+        )
+        .unwrap();
+        for key in [1i64, 3, 7] {
+            writer.write0((&key, &())).unwrap();
+        }
+
+        let (reader, filters) = if reopen {
+            let path = writer.path().clone();
+            let (_file_handle, _key_filter, _key_bounds) =
+                writer.close(BatchMetadata::default()).unwrap();
+            let (reader, membership_filter) = Reader::open_with_filter(
+                &[&factories.any_factories()],
+                test_buffer_cache,
+                &*storage_backend,
+                &path,
+            )
+            .unwrap();
+            let key_range = reader.key_range().unwrap().map(Into::into);
+            let filters = BatchFilters::from_file(key_range, membership_filter);
+            (reader, filters)
+        } else {
+            writer.into_reader(BatchMetadata::default()).unwrap()
+        };
+
+        for key in [1i64, 3, 7] {
+            assert!(filters.maybe_contains_key(key.erase(), None));
+        }
+        assert_eq!(filter_block_magic(&reader), Some(BLOOM_FILTER_BLOCK_MAGIC));
+        assert_eq!(incompatible_features(&reader), 0);
+    }
+}
+
+#[test]
+fn test_roaring_u32_filter_roundtrip_exact_and_block_kind() {
+    init_test_logger();
+
+    for reopen in [false, true] {
+        let factories = Factories::<DynData, DynData>::new::<u32, ()>();
+        let tempdir = tempdir().unwrap();
+        let storage_backend = <dyn StorageBackend>::new(
+            &StorageConfig {
+                path: tempdir.path().to_string_lossy().to_string(),
+                cache: Default::default(),
+            },
+            &StorageOptions::default(),
+        )
+        .unwrap();
+
+        let filter_plan = sampled_filter_plan(&factories, &[1u32, 3, 7]);
+        let mut writer = Writer1::new(
+            &factories,
+            test_buffer_cache,
+            &*storage_backend,
+            Parameters::default(),
+            FilterPlan::decide_filter(Some(&filter_plan), 3),
+        )
+        .unwrap();
+        for key in [1u32, 3, 7] {
+            writer.write0((&key, &())).unwrap();
+        }
+
+        let (reader, filters) = if reopen {
+            let path = writer.path().clone();
+            let (_file_handle, _key_filter, _key_bounds) =
+                writer.close(BatchMetadata::default()).unwrap();
+            let (reader, membership_filter) = Reader::open_with_filter(
+                &[&factories.any_factories()],
+                test_buffer_cache,
+                &*storage_backend,
+                &path,
+            )
+            .unwrap();
+            let key_range = reader.key_range().unwrap().map(Into::into);
+            let filters = BatchFilters::from_file(key_range, membership_filter);
+            (reader, filters)
+        } else {
+            writer.into_reader(BatchMetadata::default()).unwrap()
+        };
+
+        for key in [1u32, 3, 7] {
+            assert!(filters.maybe_contains_key(key.erase(), None));
+        }
+        for key in [0u32, 2, 9] {
+            assert!(!filters.maybe_contains_key(key.erase(), None));
+        }
+        assert_eq!(
+            filter_block_magic(&reader),
+            Some(ROARING_BITMAP_FILTER_BLOCK_MAGIC)
+        );
+        assert_ne!(incompatible_features(&reader), 0);
+    }
+}
+
+#[test]
+fn test_roaring_tup1_i32_filter_roundtrip_exact_and_block_kind() {
+    init_test_logger();
+
+    for reopen in [false, true] {
+        let factories = Factories::<DynData, DynData>::new::<Tup1<i32>, ()>();
+        let tempdir = tempdir().unwrap();
+        let storage_backend = <dyn StorageBackend>::new(
+            &StorageConfig {
+                path: tempdir.path().to_string_lossy().to_string(),
+                cache: Default::default(),
+            },
+            &StorageOptions::default(),
+        )
+        .unwrap();
+
+        let filter_plan = sampled_filter_plan(&factories, &[Tup1(-7i32), Tup1(1), Tup1(3)]);
+        let mut writer = Writer1::new(
+            &factories,
+            test_buffer_cache,
+            &*storage_backend,
+            Parameters::default(),
+            FilterPlan::decide_filter(Some(&filter_plan), 3),
+        )
+        .unwrap();
+        for key in [Tup1(-7i32), Tup1(1), Tup1(3)] {
+            writer.write0((&key, &())).unwrap();
+        }
+
+        let (reader, filters) = if reopen {
+            let path = writer.path().clone();
+            let (_file_handle, _key_filter, _key_bounds) =
+                writer.close(BatchMetadata::default()).unwrap();
+            let (reader, membership_filter) = Reader::open_with_filter(
+                &[&factories.any_factories()],
+                test_buffer_cache,
+                &*storage_backend,
+                &path,
+            )
+            .unwrap();
+            let key_range = reader.key_range().unwrap().map(Into::into);
+            let filters = BatchFilters::from_file(key_range, membership_filter);
+            (reader, filters)
+        } else {
+            writer.into_reader(BatchMetadata::default()).unwrap()
+        };
+
+        for key in [Tup1(-7i32), Tup1(1), Tup1(3)] {
+            assert!(filters.maybe_contains_key(key.erase(), None));
+        }
+        for key in [Tup1(-8i32), Tup1(0), Tup1(9)] {
+            assert!(!filters.maybe_contains_key(key.erase(), None));
+        }
+        assert_eq!(
+            filter_block_magic(&reader),
+            Some(ROARING_BITMAP_FILTER_BLOCK_MAGIC)
+        );
+        assert_ne!(incompatible_features(&reader), 0);
+    }
+}
+
+#[test]
+fn test_writer_without_filter_plan_uses_bloom_filter() {
+    init_test_logger();
+
+    let factories = Factories::<DynData, DynData>::new::<u32, ()>();
+    let tempdir = tempdir().unwrap();
+    let storage_backend = <dyn StorageBackend>::new(
+        &StorageConfig {
+            path: tempdir.path().to_string_lossy().to_string(),
+            cache: Default::default(),
+        },
+        &StorageOptions::default(),
+    )
+    .unwrap();
+
+    let mut writer = Writer1::new(
+        &factories,
+        test_buffer_cache,
+        &*storage_backend,
+        Parameters::default(),
+        FilterPlan::<DynData>::decide_filter(None, 2),
+    )
+    .unwrap();
+    for key in [5u32, 8] {
+        writer.write0((&key, &())).unwrap();
+    }
+
+    let (reader, _filters) = writer.into_reader(BatchMetadata::default()).unwrap();
+    assert_eq!(filter_block_magic(&reader), Some(BLOOM_FILTER_BLOCK_MAGIC));
+}
+
+#[test]
+fn test_filter_plan_without_sample_falls_back_to_bloom() {
+    init_test_logger();
+
+    let filter_plan = FilterPlan::from_bounds((&1u32) as &DynData, (&7u32) as &DynData);
+    assert!(matches!(
+        FilterPlan::decide_filter(Some(&filter_plan), 3),
+        Some(super::BatchKeyFilter::Bloom(_))
+    ));
+}
+
+#[test]
+fn test_filter_plan_predictor_prefers_roaring_for_dense_sample() {
+    init_test_logger();
+
+    let factories = Factories::<DynData, DynData>::new::<u32, ()>();
+    let keys: Vec<u32> = (0..50_000).collect();
+    let filter_plan = sampled_filter_plan(&factories, keys.as_slice());
+
+    assert!(matches!(
+        FilterPlan::decide_filter(Some(&filter_plan), keys.len()),
+        Some(super::BatchKeyFilter::RoaringU32(_))
+    ));
+}
+
+#[test]
+fn test_filter_plan_predictor_prefers_bloom_for_sparse_wide_sample() {
+    init_test_logger();
+
+    let factories = Factories::<DynData, DynData>::new::<u32, ()>();
+    let keys: Vec<u32> = (0..50_000).map(|index| index << 16).collect();
+    let filter_plan = sampled_filter_plan(&factories, keys.as_slice());
+
+    assert!(matches!(
+        FilterPlan::decide_filter(Some(&filter_plan), keys.len()),
+        Some(super::BatchKeyFilter::Bloom(_))
+    ));
+}
+
+#[test]
+fn test_roaring_i64_filter_roundtrip_uses_batch_min_offset() {
+    init_test_logger();
+
+    for reopen in [false, true] {
+        let factories = Factories::<DynData, DynData>::new::<i64, ()>();
+        let tempdir = tempdir().unwrap();
+        let storage_backend = <dyn StorageBackend>::new(
+            &StorageConfig {
+                path: tempdir.path().to_string_lossy().to_string(),
+                cache: Default::default(),
+            },
+            &StorageOptions::default(),
+        )
+        .unwrap();
+
+        let min = (i64::from(u32::MAX) * 4) + 10;
+        let keys = [min, min + 3, min + 7];
+        let filter_plan = sampled_filter_plan(&factories, &keys);
+        let mut writer = Writer1::new(
+            &factories,
+            test_buffer_cache,
+            &*storage_backend,
+            Parameters::default(),
+            FilterPlan::decide_filter(Some(&filter_plan), keys.len()),
+        )
+        .unwrap();
+        for key in keys {
+            writer.write0((&key, &())).unwrap();
+        }
+
+        let (reader, filters) = if reopen {
+            let path = writer.path().clone();
+            let (_file_handle, _key_filter, _key_bounds) =
+                writer.close(BatchMetadata::default()).unwrap();
+            let (reader, membership_filter) = Reader::open_with_filter(
+                &[&factories.any_factories()],
+                test_buffer_cache,
+                &*storage_backend,
+                &path,
+            )
+            .unwrap();
+            let key_range = reader.key_range().unwrap().map(Into::into);
+            let filters = BatchFilters::from_file(key_range, membership_filter);
+            (reader, filters)
+        } else {
+            writer.into_reader(BatchMetadata::default()).unwrap()
+        };
+
+        for key in keys {
+            assert!(filters.maybe_contains_key((&key) as &DynData, None));
+        }
+        for key in [min - 1, min + 4, min + 9] {
+            assert!(!filters.maybe_contains_key((&key) as &DynData, None));
+        }
+        assert_eq!(
+            filter_block_magic(&reader),
+            Some(ROARING_BITMAP_FILTER_BLOCK_MAGIC)
+        );
+    }
+}
+
+#[test]
+fn test_roaring_u64_filter_roundtrip_uses_batch_min_offset() {
+    init_test_logger();
+
+    let factories = Factories::<DynData, DynData>::new::<u64, ()>();
+    let tempdir = tempdir().unwrap();
+    let storage_backend = <dyn StorageBackend>::new(
+        &StorageConfig {
+            path: tempdir.path().to_string_lossy().to_string(),
+            cache: Default::default(),
+        },
+        &StorageOptions::default(),
+    )
+    .unwrap();
+
+    let base = (u64::from(u32::MAX) << 8) + 11;
+    let keys = [base, base + 2, base + 9];
+    let filter_plan = sampled_filter_plan(&factories, &keys);
+    let mut writer = Writer1::new(
+        &factories,
+        test_buffer_cache,
+        &*storage_backend,
+        Parameters::default(),
+        FilterPlan::decide_filter(Some(&filter_plan), keys.len()),
+    )
+    .unwrap();
+    for key in keys {
+        writer.write0((&key, &())).unwrap();
+    }
+
+    let (reader, filters) = writer.into_reader(BatchMetadata::default()).unwrap();
+    for key in keys {
+        assert!(filters.maybe_contains_key((&key) as &DynData, None));
+    }
+    for key in [base - 1, base + 3, base + 20] {
+        assert!(!filters.maybe_contains_key((&key) as &DynData, None));
+    }
+    assert_eq!(
+        filter_block_magic(&reader),
+        Some(ROARING_BITMAP_FILTER_BLOCK_MAGIC)
+    );
+}
+
+#[test]
+fn test_i64_keys_fallback_to_bloom_when_span_exceeds_u32() {
+    init_test_logger();
+
+    let factories = Factories::<DynData, DynData>::new::<i64, ()>();
+    let tempdir = tempdir().unwrap();
+    let storage_backend = <dyn StorageBackend>::new(
+        &StorageConfig {
+            path: tempdir.path().to_string_lossy().to_string(),
+            cache: Default::default(),
+        },
+        &StorageOptions::default(),
+    )
+    .unwrap();
+
+    let max = i64::from(u32::MAX) + 1;
+    let filter_plan = FilterPlan::from_bounds((&0i64) as &DynData, (&max) as &DynData);
+    let mut writer = Writer1::new(
+        &factories,
+        test_buffer_cache,
+        &*storage_backend,
+        Parameters::default(),
+        FilterPlan::decide_filter(Some(&filter_plan), 2),
+    )
+    .unwrap();
+    for key in [0i64, max] {
+        writer.write0((&key, &())).unwrap();
+    }
+
+    let (reader, _filters) = writer.into_reader(BatchMetadata::default()).unwrap();
+    assert_eq!(filter_block_magic(&reader), Some(BLOOM_FILTER_BLOCK_MAGIC));
 }
 
 fn test_i64_helper(parameters: Parameters) {

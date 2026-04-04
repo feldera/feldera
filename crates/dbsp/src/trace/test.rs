@@ -12,14 +12,15 @@ use size_of::SizeOf;
 use crate::{
     DynZWeight, Runtime, ZWeight,
     algebra::{
-        IndexedZSet, NegByRef, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet, OrdZSetFactories,
-        ZBatch, ZSet,
+        AddByRef, IndexedZSet, NegByRef, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet,
+        OrdZSetFactories, ZBatch, ZSet,
     },
     circuit::{CircuitConfig, mkconfig},
     dynamic::{DowncastTrait, DynData, DynUnit, DynWeightedPairs, Erase, LeanVec, pair::DynPair},
+    storage::{buffer_cache::CacheStats, file::FilterKind},
     trace::{
-        Batch, BatchReader, BatchReaderFactories, Builder, FileIndexedWSetFactories,
-        FileWSetFactories, GroupFilter, Spine, Trace,
+        Batch, BatchLocation, BatchReader, BatchReaderFactories, Builder, FileIndexedWSetFactories,
+        FileWSetFactories, GroupFilter, ListMerger, Spine, Trace,
         cursor::{Cursor, CursorPair},
         ord::{
             FileIndexedWSet, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
@@ -31,7 +32,7 @@ use crate::{
             assert_trace_eq, test_batch_sampling, test_trace_sampling,
         },
     },
-    utils::{Tup2, Tup3, Tup4},
+    utils::{Tup1, Tup2, Tup3, Tup4},
 };
 
 use super::Filter;
@@ -828,6 +829,13 @@ where
     F: FnOnce() + Clone + Send + 'static,
 {
     let (_temp_dir, config) = mkconfig();
+    run_in_circuit_with_storage_config(config, f);
+}
+
+fn run_in_circuit_with_storage_config<F>(config: CircuitConfig, f: F)
+where
+    F: FnOnce() + Clone + Send + 'static,
+{
     let count = Arc::new(AtomicUsize::new(0));
     Runtime::init_circuit(config, {
         let count = count.clone();
@@ -841,6 +849,145 @@ where
 
     // Make sure that the callback executes exactly once.
     assert_eq!(count.load(Ordering::Relaxed), 1);
+}
+
+fn total_cache_accesses(stats: CacheStats) -> u64 {
+    stats
+        .0
+        .iter()
+        .map(|(_, accesses)| accesses.iter().map(|(_, counts)| counts.count).sum::<u64>())
+        .sum()
+}
+
+fn build_file_wset_u32(keys: &[u32]) -> FileWSet<DynData, DynZWeight> {
+    let factories = <FileWSetFactories<DynData, DynZWeight>>::new::<u32, (), ZWeight>();
+    let mut builder =
+        <FileWSet<DynData, DynZWeight> as Batch>::Builder::with_capacity(&factories, keys.len(), 0);
+
+    for key in keys {
+        let weight: ZWeight = 1;
+        builder.push_time_diff(&(), weight.erase());
+        builder.push_key(key.erase());
+    }
+
+    builder.done()
+}
+
+fn build_file_wset_tup1_i32(keys: &[i32]) -> FileWSet<DynData, DynZWeight> {
+    let factories = <FileWSetFactories<DynData, DynZWeight>>::new::<Tup1<i32>, (), ZWeight>();
+    let mut builder =
+        <FileWSet<DynData, DynZWeight> as Batch>::Builder::with_capacity(&factories, keys.len(), 0);
+
+    for key in keys {
+        let weight: ZWeight = 1;
+        builder.push_time_diff(&(), weight.erase());
+        builder.push_key(Tup1(*key).erase());
+    }
+
+    builder.done()
+}
+
+fn build_fallback_wset_i32(keys: &[i32]) -> crate::trace::FallbackWSet<DynI32, DynZWeight> {
+    let factories =
+        <crate::trace::FallbackWSetFactories<DynI32, DynZWeight>>::new::<i32, (), ZWeight>();
+    let mut erased_tuples = zset_tuples(keys.iter().copied().map(|key| Tup2(key, 1)).collect());
+    crate::trace::FallbackWSet::<DynI32, DynZWeight>::dyn_from_tuples(
+        &factories,
+        (),
+        &mut erased_tuples,
+    )
+}
+
+#[test]
+fn test_file_wset_roaring_u32_seek_key_exact_skips_absent_reads() {
+    let (_temp_dir, mut config) = mkconfig();
+    config.dev_tweaks.enable_roaring = Some(true);
+
+    run_in_circuit_with_storage_config(config, move || {
+        let batch = build_file_wset_u32(&[1, 3, 7]);
+        let mut cursor = batch.cursor();
+        let before = total_cache_accesses(batch.cache_stats());
+
+        let missing = 2u32;
+        assert!(!cursor.seek_key_exact(missing.erase(), None));
+        assert_eq!(total_cache_accesses(batch.cache_stats()), before);
+
+        let present = 3u32;
+        assert!(cursor.seek_key_exact(present.erase(), None));
+    });
+}
+
+#[test]
+fn test_file_wset_tup1_i32_roaring_seek_key_exact_skips_absent_reads() {
+    let (_temp_dir, mut config) = mkconfig();
+    config.dev_tweaks.enable_roaring = Some(true);
+
+    run_in_circuit_with_storage_config(config, move || {
+        let batch = build_file_wset_tup1_i32(&[-7, 1, 3]);
+        let mut cursor = batch.cursor();
+        let before = total_cache_accesses(batch.cache_stats());
+
+        let missing = Tup1(2i32);
+        assert!(!cursor.seek_key_exact(missing.erase(), None));
+        assert_eq!(total_cache_accesses(batch.cache_stats()), before);
+
+        let present = Tup1(3i32);
+        assert!(cursor.seek_key_exact(present.erase(), None));
+    });
+}
+
+#[test]
+fn test_file_wset_roaring_filter_rebuilt_after_merge() {
+    let (_temp_dir, mut config) = mkconfig();
+    config.dev_tweaks.enable_roaring = Some(true);
+
+    run_in_circuit_with_storage_config(config, move || {
+        let lhs = build_file_wset_u32(&[1, 5]);
+        let rhs = build_file_wset_u32(&[3, 7]);
+        let merged = lhs.add_by_ref(&rhs);
+
+        let mut cursor = merged.cursor();
+        let before = total_cache_accesses(merged.cache_stats());
+
+        let missing = 4u32;
+        assert!(!cursor.seek_key_exact(missing.erase(), None));
+        assert_eq!(total_cache_accesses(merged.cache_stats()), before);
+
+        let present = 7u32;
+        assert!(cursor.seek_key_exact(present.erase(), None));
+    });
+}
+
+#[test]
+fn test_fallback_wset_roaring_filter_rebuilt_after_storage_merge() {
+    let (_temp_dir, mut config) = mkconfig();
+    config.dev_tweaks.enable_roaring = Some(true);
+    config.storage.as_mut().unwrap().options.min_storage_bytes = Some(0);
+
+    run_in_circuit_with_storage_config(config, move || {
+        let lhs = build_fallback_wset_i32(&[1, 5]);
+        let rhs = build_fallback_wset_i32(&[3, 7]);
+        let factories =
+            <crate::trace::FallbackWSetFactories<DynI32, DynZWeight>>::new::<i32, (), ZWeight>();
+        let merged: crate::trace::FallbackWSet<DynI32, DynZWeight> = ListMerger::merge(
+            &factories,
+            <crate::trace::FallbackWSet<DynI32, DynZWeight> as Batch>::Builder::for_merge(
+                &factories,
+                [&lhs, &rhs],
+                Some(BatchLocation::Storage),
+            ),
+            vec![lhs.merge_cursor(None, None), rhs.merge_cursor(None, None)],
+        );
+
+        assert_eq!(merged.membership_filter_kind(), FilterKind::Roaring);
+
+        let mut cursor = merged.cursor();
+        let before = total_cache_accesses(merged.cache_stats());
+
+        let missing = 4i32;
+        assert!(!cursor.seek_key_exact(missing.erase(), None));
+        assert_eq!(total_cache_accesses(merged.cache_stats()), before);
+    });
 }
 
 proptest! {

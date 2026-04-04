@@ -167,7 +167,7 @@ pub const PREFIX_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("prefix_batche
 pub const INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("input_integral_records_count"));
 
-pub const CIRCUIT_METRICS: [CircuitMetric; 70] = [
+pub const CIRCUIT_METRICS: [CircuitMetric; 74] = [
     // State
     CircuitMetric {
         name: USED_MEMORY_BYTES,
@@ -269,7 +269,7 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 70] = [
         name: BLOOM_FILTER_BITS_PER_KEY,
         category: CircuitMetricCategory::State,
         advanced: false,
-        description: "Average number of bits per key in the Bloom filter.",
+        description: "Average number of bits per key across batches that use a Bloom filter.",
     },
     CircuitMetric {
         name: BLOOM_FILTER_SIZE_BYTES,
@@ -294,6 +294,30 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 70] = [
         category: CircuitMetricCategory::State,
         advanced: false,
         description: "Hit rate of the Bloom filter.",
+    },
+    CircuitMetric {
+        name: ROARING_FILTER_SIZE_BYTES,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "Size of the bitmap filter in bytes.",
+    },
+    CircuitMetric {
+        name: ROARING_FILTER_HITS_COUNT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "The number of hits across all bitmap filters. The hits are summed across the bitmap filters for all batches in the spine.",
+    },
+    CircuitMetric {
+        name: ROARING_FILTER_MISSES_COUNT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "The number of misses across all bitmap filters. The misses are summed across the bitmap filters for all batches in the spine.",
+    },
+    CircuitMetric {
+        name: ROARING_FILTER_HIT_RATE_PERCENT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "Hit rate of the bitmap filter.",
     },
     CircuitMetric {
         name: RANGE_FILTER_SIZE_BYTES,

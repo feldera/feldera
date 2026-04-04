@@ -13,7 +13,7 @@ use dbsp::storage::file::format::BatchMetadata;
 use dbsp::storage::file::format::Compression;
 use dbsp::storage::file::format::VERSION_NUMBER;
 use dbsp::storage::file::writer::{Parameters, Writer1};
-use dbsp::storage::file::Factories;
+use dbsp::storage::file::{Factories, FilterPlan};
 use feldera_types::config::{StorageConfig, StorageOptions};
 
 use storage_test_compat::{
@@ -102,7 +102,7 @@ where
         buffer_cache,
         &*storage_backend,
         parameters,
-        rows,
+        FilterPlan::<DynData>::decide_filter(None, rows),
     )?;
 
     for row in 0..rows {
@@ -112,7 +112,7 @@ where
     }
 
     let tmp_path = writer.path().clone();
-    let (_file_handle, _bloom_filter, _key_bounds) = writer.close(BatchMetadata::default())?;
+    let (_file_handle, _key_filter, _key_bounds) = writer.close(BatchMetadata::default())?;
     let content = storage_backend.read(&tmp_path)?;
     storage_backend.write(&output_storage_path, (*content).clone())?;
     storage_backend.delete(&tmp_path)?;

@@ -6,14 +6,15 @@
 use crate::{
     dynamic::{DataTrait, DynVec},
     storage::{
-        file::reader::FilteredKeys,
-        filter_stats::{FilterStats, TrackingFilterStats},
+        file::{
+            BatchKeyFilter, FilterKind, FilterStats, TrackingFilterStats, TrackingRoaringBitmap,
+            reader::FilteredKeys,
+        },
         tracking_bloom_filter::TrackingBloomFilter,
     },
-    trace::ord::key_range::KeyRange,
+    trace::filter::key_range::KeyRange,
 };
 use size_of::SizeOf;
-use smallvec::SmallVec;
 use std::sync::Arc;
 
 /// A cheap, in-memory precheck used by `seek_key_exact`.
@@ -109,14 +110,10 @@ where
     /// pay the hash or bloom lookup cost.
     pub(crate) fn from_file(
         key_range: Option<KeyRange<K>>,
-        membership_filter: Option<TrackingBloomFilter>,
+        membership_filter: Option<BatchKeyFilter>,
     ) -> Self {
-        Self::new(
-            key_range,
-            membership_filter
-                .map(Arc::new)
-                .map(|filter| filter as Arc<dyn BatchFilter<K>>),
-        )
+        let membership_filter = membership_filter.map(Arc::<dyn BatchFilter<K>>::from);
+        Self::new(key_range, membership_filter)
     }
 
     /// Returns cumulative statistics for the range and membership filters.
@@ -141,9 +138,7 @@ where
     pub(crate) fn filtered_keys<'a>(&self, keys: &'a DynVec<K>) -> FilteredKeys<'a, K> {
         debug_assert!(keys.is_sorted_by(&|a, b| a.cmp(b)));
 
-        // Preserve the old `FilteredKeys` heuristic: if too many keys pass,
-        // avoid allocating the index vector and just keep the original slice.
-        let mut filter_pass_keys = SmallVec::<[_; 50]>::new();
+        let mut filter_pass_keys = Vec::with_capacity(keys.len().min(50));
         for (index, key) in keys.dyn_iter().enumerate() {
             if self.maybe_contains_key(key, None) {
                 filter_pass_keys.push(index);
@@ -153,7 +148,7 @@ where
             }
         }
 
-        FilteredKeys::with_filter_pass_keys(keys, Some(filter_pass_keys.into_vec()))
+        FilteredKeys::with_filter_pass_keys(keys, Some(filter_pass_keys))
     }
 
     /// Returns `false` only when `key` is definitely not present.
@@ -227,12 +222,35 @@ where
     }
 }
 
+impl<K> BatchFilter<K> for TrackingRoaringBitmap
+where
+    K: DataTrait + ?Sized,
+{
+    fn maybe_contains_key(&self, key: &K, _hash: &mut Option<u64>) -> bool {
+        self.maybe_contains_key(key)
+    }
+
+    fn stats(&self) -> FilterStats {
+        TrackingRoaringBitmap::stats(self)
+    }
+}
+
+impl<K> From<BatchKeyFilter> for Arc<dyn BatchFilter<K>>
+where
+    K: DataTrait + ?Sized,
+{
+    fn from(filter: BatchKeyFilter) -> Self {
+        match filter {
+            BatchKeyFilter::Bloom(filter) => Arc::new(filter),
+            BatchKeyFilter::RoaringU32(filter) => Arc::new(filter),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{BatchFilter, TrackedRangeFilter};
-    use crate::{
-        dynamic::DynData, storage::filter_stats::FilterStats, trace::ord::key_range::KeyRange,
-    };
+    use crate::{dynamic::DynData, storage::file::FilterStats, trace::filter::key_range::KeyRange};
     use std::sync::Arc;
 
     #[test]

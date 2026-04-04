@@ -1,5 +1,5 @@
 use crate::storage::file::format::BatchMetadata;
-use crate::storage::filter_stats::FilterStats;
+use crate::storage::file::{FilterKind, FilterStats};
 use crate::{
     DBData, DBWeight, NumEntries, Runtime,
     algebra::{AddAssignByRef, AddByRef, NegByRef},
@@ -10,7 +10,7 @@ use crate::{
     storage::{
         buffer_cache::CacheStats,
         file::{
-            Factories as FileFactories,
+            Factories as FileFactories, FilterPlan,
             reader::{BulkRows, Cursor as FileCursor, Error as ReaderError, Reader},
             writer::Writer1,
         },
@@ -19,8 +19,9 @@ use crate::{
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
         DbspSerializer, Deserializer, FileKeyBatch, VecWSetFactories, WeightedItem,
         cursor::{CursorFactoryWrapper, Pending, Position, PushCursor},
+        filter::BatchFilters,
         merge_batches_by_reference,
-        ord::{batch_filter::BatchFilters, file::UnwrapStorage, merge_batcher::MergeBatcher},
+        ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
     },
 };
 use crate::{DynZWeight, ZWeight};
@@ -258,7 +259,7 @@ where
             Runtime::buffer_cache,
             &*Runtime::storage_backend().unwrap(),
             Runtime::file_writer_parameters(),
-            self.key_count(),
+            FilterPlan::<K>::decide_filter(None, self.key_count()),
         )
         .unwrap_storage();
 
@@ -389,6 +390,10 @@ where
 
     fn range_filter_stats(&self) -> FilterStats {
         self.filters.stats().range_filter
+    }
+
+    fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)> {
+        self.filters.key_bounds()
     }
 
     #[inline]
@@ -826,7 +831,38 @@ where
                 Runtime::buffer_cache,
                 &*Runtime::storage_backend().unwrap_storage(),
                 Runtime::file_writer_parameters(),
-                key_capacity,
+                FilterPlan::<K>::decide_filter(None, key_capacity),
+            )
+            .unwrap_storage(),
+            weight: factories.weight_factory().default_box(),
+            num_tuples: 0,
+            stats: BatchMetadata::default(),
+        }
+    }
+
+    fn for_merge<'a, B, I>(
+        factories: &<FileWSet<K, R> as BatchReader>::Factories,
+        batches: I,
+        _location: Option<BatchLocation>,
+    ) -> Self
+    where
+        B: BatchReader<Key = K, Val = DynUnit, Time = (), R = R>,
+        I: IntoIterator<Item = &'a B> + Clone,
+    {
+        let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
+        let filter_plan = FilterPlan::from_batches(batches.clone());
+        let key_filter = filter_plan.map_or_else(
+            || FilterPlan::<K>::decide_filter(None, key_capacity),
+            |filter_plan| FilterPlan::decide_filter(Some(&filter_plan), key_capacity),
+        );
+        Self {
+            factories: factories.clone(),
+            writer: Writer1::new(
+                &factories.file_factories,
+                Runtime::buffer_cache,
+                &*Runtime::storage_backend().unwrap_storage(),
+                Runtime::file_writer_parameters(),
+                key_filter,
             )
             .unwrap_storage(),
             weight: factories.weight_factory().default_box(),

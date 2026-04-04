@@ -3,7 +3,7 @@
 //! So far, only methods/traits used in tests have been implemented.
 #![allow(clippy::type_complexity)]
 
-use crate::storage::filter_stats::FilterStats;
+use crate::storage::file::FilterStats;
 use crate::{
     DBData, DBWeight, NumEntries, Timestamp,
     dynamic::{

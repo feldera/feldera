@@ -3,9 +3,14 @@
 //! Filters are used by the garbage collector to discard unused records.
 //! We support different several types of filters for keys and values.
 
+pub(crate) mod batch;
+pub(crate) mod key_range;
+
 use dyn_clone::DynClone;
 
 use crate::{circuit::metadata::MetaItem, dynamic::Factory};
+
+pub(crate) use batch::BatchFilters;
 
 pub trait FilterFunc<V: ?Sized>: Fn(&V) -> bool + DynClone + Send + Sync {}
 
