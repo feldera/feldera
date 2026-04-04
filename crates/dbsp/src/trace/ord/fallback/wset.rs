@@ -281,6 +281,13 @@ where
         }
     }
 
+    fn membership_filter_kind(&self) -> FilterKind {
+        match &self.inner {
+            Inner::File(file) => file.membership_filter_kind(),
+            Inner::Vec(vec) => vec.membership_filter_kind(),
+        }
+    }
+
     fn range_filter_stats(&self) -> FilterStats {
         match &self.inner {
             Inner::File(file) => file.range_filter_stats(),

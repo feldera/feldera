@@ -399,6 +399,10 @@ where
         self.filters.stats().membership_filter
     }
 
+    fn membership_filter_kind(&self) -> FilterKind {
+        self.filters.membership_filter_kind()
+    }
+
     fn range_filter_stats(&self) -> FilterStats {
         self.filters.stats().range_filter
     }
