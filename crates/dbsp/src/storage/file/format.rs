@@ -90,11 +90,15 @@ use size_of::SizeOf;
 /// - v3: Bloom filter format change.
 /// - v4: Tup None optimizations.
 /// - v5: Change in representation for Timestamp, ShortInterval
+/// - v6: Roaring bitmap filter blocks.
 ///
 /// When a new version is created, make sure to generate new golden
 /// files for it in crate `storage-test-compat` to check for
 /// backwards compatibility.
-pub const VERSION_NUMBER: u32 = 5;
+pub const VERSION_NUMBER: u32 = 6;
+
+/// Oldest layer file format version this binary can read.
+pub const MIN_SUPPORTED_VERSION: u32 = 5;
 
 /// Magic number for data blocks.
 pub const DATA_BLOCK_MAGIC: [u8; 4] = *b"LFDB";
@@ -244,6 +248,17 @@ impl FileTrailer {
         (self.compatible_features & feature) != 0
     }
 
+    /// Returns the unknown incompatible features, if any.
+    pub fn unknown_incompatible_features(&self) -> Option<u64> {
+        let unknown_incompatible_features =
+            self.incompatible_features & !INCOMPATIBLE_FEATURE_ROARING_FILTERS;
+        if unknown_incompatible_features != 0 {
+            Some(unknown_incompatible_features)
+        } else {
+            None
+        }
+    }
+
     /// Returns true if this file trailer has a 64-bit filter.
     pub fn has_filter64(&self) -> bool {
         self.has_compatible_feature(COMPATIBLE_FEATURE_FILTER64)
@@ -259,6 +274,10 @@ pub const COMPATIBLE_FEATURE_FILTER64: u64 = 1 << 0;
 /// This feature is backward and forward compatible, as trailers without this field will be
 /// deserialized as if its value is 0. Conversely, old readers will simply ignore the field.
 pub const COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT: u64 = 1 << 1;
+
+/// Bit set to 1 in [FileTrailer::incompatible_features] if the file contains
+/// roaring bitmap membership filter blocks.
+pub const INCOMPATIBLE_FEATURE_ROARING_FILTERS: u64 = 1 << 0;
 
 /// Information about a column.
 ///
