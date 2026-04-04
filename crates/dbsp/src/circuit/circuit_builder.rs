@@ -7174,7 +7174,11 @@ impl CircuitHandle {
             //             } else {
             //                 None
             //             };
-            //             Some(crate::utils::DotNodeAttributes::new().with_color(color))
+            //             Some(
+            //                 crate::utils::DotNodeAttributes::new()
+            //                     .with_color(color)
+            //                     .with_label(&format!("{}: {}", node.global_id(), node.name())),
+            //             )
             //         },
             //         |edge| {
             //             let style = if edge.is_dependency() {

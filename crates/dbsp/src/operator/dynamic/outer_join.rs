@@ -86,17 +86,21 @@ where
         // - we set the `SATURATE` parameter to `true` for the first join operator.
 
         self.circuit().region("left_join", || {
-            let left = self.dyn_shard(&factories.left_factories);
-            let right = other.dyn_shard(&factories.right_factories);
+            let left = self;
+            let right = other;
             let right_saturated = right
                 //.inspect(|s| println!("right: {:?}", s))
                 .dyn_saturate(&factories.right_factories);
             //.inspect(|s| println!("right_saturated: {:?}", s));
 
-            let left_trace = left
-                .dyn_accumulate_trace(&factories.left_trace_factories, &factories.left_factories);
-            let right_trace = right
-                .dyn_accumulate_trace(&factories.right_trace_factories, &factories.right_factories);
+            let left_trace = left.dyn_shard_accumulate_trace(
+                &factories.left_trace_factories,
+                &factories.left_factories,
+            );
+            let right_trace = right.dyn_shard_accumulate_trace(
+                &factories.right_trace_factories,
+                &factories.right_factories,
+            );
 
             let left = self.circuit().add_binary_operator(
                 StreamingBinaryWrapper::new(JoinTrace::new(
@@ -109,7 +113,7 @@ where
                     Location::caller(),
                     self.circuit().clone(),
                 )),
-                &left.dyn_accumulate(&factories.left_factories),
+                &left.dyn_shard_accumulate(&factories.left_factories),
                 &right_trace,
             );
 

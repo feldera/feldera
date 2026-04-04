@@ -253,7 +253,7 @@ where
         V: DataTrait + ?Sized,
         O: PartitionedRadixTreeBatch<TS, Acc, Key = Z::Key>,
     {
-        let stream = self.dyn_shard(&factories.input_factories);
+        //let stream = self.dyn_shard(&factories.input_factories);
 
         self.circuit()
             .region("partitioned_tree_aggregate", move || {
@@ -294,8 +294,8 @@ where
                         StreamingTernaryWrapper::new(PartitionedRadixTreeAggregate::new(
                             factories, aggregator,
                         )),
-                        &stream.dyn_accumulate(&factories.input_factories),
-                        &stream.dyn_accumulate_integrate_trace(&factories.stored_factories),
+                        &self.dyn_shard_accumulate(&factories.input_factories),
+                        &self.dyn_shard_accumulate_integrate_trace(&factories.stored_factories),
                         &feedback.delayed_trace,
                     )
                     .mark_sharded();

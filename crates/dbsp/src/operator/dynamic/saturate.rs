@@ -63,33 +63,31 @@ where
         // its output with the original stream to obtain the complete saturated stream.
         //
         // ```text
-        //                        ┌───────────────────────────────┐
-        //                        │                               │
-        //                        │                               │
-        //                        │                               ▼      ghost
-        //  stream ┌──────────┐   │   ┌─────┐  delayed trace  ┌────────┐ tuples    ┌──────────┐
-        // ───────►│accumulate├───┴──►│trace├────────────────►│Saturate├──────────►│accumulate│
-        //         └────┬─────┘       └─────┘                 └────────┘           └─────┬────┘
-        //              │                                                                │
-        //              │                                                                ▼
-        //              │                                                            ┌──────┐
-        //              └───────────────────────────────────────────────────────────►│  +   ├──────►
-        //                                                                           └──────┘
+        //                              ┌───────────────────────────────┐
+        //                              │                               │
+        //                              │                               │
+        //                              │                               ▼      ghost
+        //  stream ┌───------───────┐   │   ┌─────┐  delayed trace  ┌────────┐ tuples    ┌──────────┐
+        // ───────►│shard_accumulate├───┴──►│trace├────────────────►│Saturate├──────────►│accumulate│
+        //         └───------─┬─────┘       └─────┘                 └────────┘           └─────┬────┘
+        //                    │                                                                │
+        //                    │                                                                ▼
+        //                    │                                                            ┌──────┐
+        //                    └───────────────────────────────────────────────────────────►│  +   ├──────►
+        //                                                                                 └──────┘
         // ```
 
         self.circuit()
             .cache_get_or_insert_with(SaturateId::new(self.stream_id()), || {
                 self.circuit()
                     .region("saturate", || {
-                        let stream = self.dyn_shard(factories);
-
-                        let delayed_trace = stream
-                            .dyn_accumulate_trace(factories, factories)
+                        let delayed_trace = self
+                            .dyn_shard_accumulate_trace(factories, factories)
                             .accumulate_delay_trace();
 
                         let ghost = self.circuit().add_binary_operator(
                             StreamingBinaryWrapper::new(Saturate::new(factories)),
-                            &stream.dyn_accumulate(factories),
+                            &self.dyn_shard_accumulate(factories),
                             &delayed_trace,
                         );
 
@@ -98,7 +96,7 @@ where
                         let output_factories = factories.clone();
 
                         // Plus
-                        let result = stream.circuit().add_binary_operator(
+                        let result = self.circuit().add_binary_operator(
                             AccumulateApply2::new(
                                 move |stream, saturation| {
                                     SpineSnapshot::concat(
@@ -108,13 +106,13 @@ where
                                 },
                                 Location::caller(),
                             ),
-                            &stream.dyn_accumulate(factories),
+                            &self.dyn_shard_accumulate(factories),
                             &ghost.dyn_accumulate(factories),
                         );
 
                         // `result` is also the saturated version of the sharded stream.
                         self.circuit()
-                            .cache_insert(SaturateId::new(stream.stream_id()), result.clone());
+                            .cache_insert(SaturateId::new(self.stream_id()), result.clone());
                         result.mark_sharded();
                         result
                     })
