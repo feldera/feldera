@@ -1,30 +1,14 @@
 import { expect, test } from '@playwright/test'
-import { client } from '$lib/services/manager/client.gen'
+import { getExtendedPipeline, postPipelineAction, putPipeline } from '$lib/services/pipelineManager'
 import {
-  deletePipeline,
-  type ExtendedPipeline,
-  getExtendedPipeline,
-  postPipelineAction,
-  putPipeline
-} from '$lib/services/pipelineManager'
+  cleanupPipeline,
+  configureTestClient,
+  waitForExtendedPipeline
+} from '$lib/services/testPipelineHelpers'
 
-const API_ORIGIN = (process.env.PLAYWRIGHT_API_ORIGIN ?? 'http://localhost:8080').replace(/\/$/, '')
-client.setConfig({ baseUrl: API_ORIGIN })
+configureTestClient()
 
 const PIPELINE_NAME = `test-clear-storage-${Date.now()}`
-
-async function waitForStatus(predicate: (p: ExtendedPipeline) => boolean, timeoutMs = 120_000) {
-  const start = Date.now()
-  while (Date.now() - start < timeoutMs) {
-    const pipeline = await getExtendedPipeline(PIPELINE_NAME)
-    if (predicate(pipeline)) return pipeline
-    await new Promise((r) => setTimeout(r, 1000))
-  }
-  const pipeline = await getExtendedPipeline(PIPELINE_NAME)
-  throw new Error(
-    `Timed out. deploy=${pipeline.deploymentStatus} status=${JSON.stringify(pipeline.status)} storage=${pipeline.storageStatus}`
-  )
-}
 
 async function createPipelineWithStorage() {
   await putPipeline(PIPELINE_NAME, {
@@ -37,32 +21,15 @@ async function createPipelineWithStorage() {
     },
     program_config: { profile: 'unoptimized' }
   })
-  await waitForStatus((p) => p.status === 'Stopped')
+  await waitForExtendedPipeline(PIPELINE_NAME, (p) => p.status === 'Stopped')
 }
 
 async function startAndStopToCreateStorage() {
   await postPipelineAction(PIPELINE_NAME, 'start')
-  await waitForStatus((p) => p.deploymentStatus === 'Running')
+  await waitForExtendedPipeline(PIPELINE_NAME, (p) => p.deploymentStatus === 'Running')
   await postPipelineAction(PIPELINE_NAME, 'kill')
-  await waitForStatus((p) => p.deploymentStatus === 'Stopped')
-  await waitForStatus((p) => p.storageStatus !== 'Cleared', 10_000)
-}
-
-async function cleanupPipeline() {
-  try {
-    const p = await getExtendedPipeline(PIPELINE_NAME)
-    if (p.deploymentStatus !== 'Stopped') {
-      await postPipelineAction(PIPELINE_NAME, 'kill')
-      await waitForStatus((p) => p.deploymentStatus === 'Stopped', 30_000)
-    }
-    if (p.storageStatus !== 'Cleared') {
-      await postPipelineAction(PIPELINE_NAME, 'clear')
-      await waitForStatus((p) => p.storageStatus === 'Cleared', 30_000)
-    }
-  } catch {}
-  try {
-    await deletePipeline(PIPELINE_NAME)
-  } catch {}
+  await waitForExtendedPipeline(PIPELINE_NAME, (p) => p.deploymentStatus === 'Stopped')
+  await waitForExtendedPipeline(PIPELINE_NAME, (p) => p.storageStatus !== 'Cleared', 10_000)
 }
 
 /** Intercept the next PATCH to return a storage-not-cleared error, then open
@@ -108,14 +75,14 @@ test.describe('Clear storage dialog', () => {
 
   test.beforeAll(async ({}, testInfo) => {
     testInfo.setTimeout(120_000)
-    await cleanupPipeline()
+    await cleanupPipeline(PIPELINE_NAME)
     await createPipelineWithStorage()
     await startAndStopToCreateStorage()
   })
 
   test.afterAll(async ({}, testInfo) => {
     testInfo.setTimeout(60_000)
-    await cleanupPipeline()
+    await cleanupPipeline(PIPELINE_NAME)
   })
 
   test('changing config triggers clear storage dialog and completes the flow', async ({ page }) => {

@@ -7,7 +7,11 @@ import { playwright } from '@vitest/browser-playwright'
 import { type PluginOption } from 'vite'
 import devtoolsJson from 'vite-plugin-devtools-json'
 import virtual from 'vite-plugin-virtual'
-import { defineConfig, type TestProjectInlineConfiguration, type ViteUserConfigExport } from 'vitest/config'
+import {
+  defineConfig,
+  type TestProjectInlineConfiguration,
+  type ViteUserConfigExport
+} from 'vitest/config'
 import { felderaApiJsonSchemas } from './src/lib/functions/felderaApiJsonSchemas'
 import { svelteCssVirtualModuleFallback } from './src/lib/vite-plugins/svelte-css-virtual-module-fallback'
 
@@ -228,12 +232,16 @@ export default defineConfig(async () => {
           test: {
             name: 'integration',
             environment: 'node',
+            globalSetup: ['src/lib/vitest-integration-setup.ts'],
             include: ['src/**/*.test.{js,ts}'],
             exclude: ['src/**/*.svelte.test.{js,ts}']
           }
         },
 
-        browserTestProject({ name: 'integration-client', include: ['src/**/*.svelte.test.{js,ts}'] })
+        browserTestProject({
+          name: 'integration-client',
+          include: ['src/**/*.svelte.test.{js,ts}']
+        })
       ]
     }
   } satisfies ViteUserConfigExport

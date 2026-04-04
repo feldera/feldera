@@ -5,6 +5,7 @@
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   import InlineDrawer from '$lib/components/layout/InlineDrawer.svelte'
+  import { getCaseDependentName } from '$lib/functions/felderaRelation'
   import { formatDateTime } from '$lib/functions/format'
   import {
     type ConnectorError,
@@ -12,7 +13,6 @@
     type OutputEndpointStatus
   } from '$lib/services/manager'
   import { getInputConnectorStatus, getOutputConnectorStatus } from '$lib/services/pipelineManager'
-  import { getCaseDependentName } from '$lib/functions/felderaRelation'
 
   export type ConnectorErrorFilter = 'all' | 'parse' | 'transport' | 'encode'
 
@@ -62,7 +62,9 @@
     tagsFilter = filter
   })
 
-  const strippedConnectorName = $derived(connectorName.slice(getCaseDependentName(relationName).name.length + 1))
+  const strippedConnectorName = $derived(
+    connectorName.slice(getCaseDependentName(relationName).name.length + 1)
+  )
 
   $effect(() => {
     pipelineName
