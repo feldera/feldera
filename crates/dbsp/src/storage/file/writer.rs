@@ -12,9 +12,9 @@ use crate::storage::{
         format::{
             BatchMetadata, BlockHeader, BloomFilterBlockRef, COMPATIBLE_FEATURE_FILTER64,
             COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT, DATA_BLOCK_MAGIC, DataBlockHeader,
-            FILE_TRAILER_BLOCK_MAGIC, FileTrailer, FileTrailerColumn, FixedLen, INDEX_BLOCK_MAGIC,
-            IndexBlockHeader, NodeType, ROARING_BITMAP_FILTER_BLOCK_MAGIC,
-            RoaringBitmapFilterBlockRef, VERSION_NUMBER, Varint,
+            FILE_TRAILER_BLOCK_MAGIC, FileTrailer, FileTrailerColumn, FixedLen,
+            INCOMPATIBLE_FEATURE_ROARING_FILTERS, INDEX_BLOCK_MAGIC, IndexBlockHeader, NodeType,
+            ROARING_BITMAP_FILTER_BLOCK_MAGIC, RoaringBitmapFilterBlockRef, VERSION_NUMBER, Varint,
         },
         reader::TreeNode,
     },
@@ -1291,6 +1291,7 @@ impl Writer {
         }
 
         // Write the batch key filter.
+        let mut incompatible_features = 0;
         let filter_location = if let Some(key_filter) = &self.key_filter {
             match key_filter {
                 BatchKeyFilter::Bloom(filter) => {
@@ -1309,6 +1310,7 @@ impl Writer {
                         .1
                 }
                 BatchKeyFilter::RoaringU32(filter) => {
+                    incompatible_features |= INCOMPATIBLE_FEATURE_ROARING_FILTERS;
                     let mut data = Vec::with_capacity(filter.serialized_size());
                     filter
                         .serialize_into(&mut data)
@@ -1339,7 +1341,7 @@ impl Writer {
             filter_offset: 0,
             filter_size: 0,
             compatible_features: COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT,
-            incompatible_features: 0,
+            incompatible_features,
             filter_offset64: 0,
             filter_size64: 0,
             metadata,

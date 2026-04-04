@@ -1,6 +1,6 @@
 use super::utils::{copy_to_builder, pick_merge_destination};
 use crate::storage::file::SerializerInner;
-use crate::storage::filter_stats::FilterStats;
+use crate::storage::filter_stats::{FilterKind, FilterStats};
 use crate::{
     DBWeight, Error, NumEntries,
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
@@ -280,6 +280,13 @@ where
         match &self.inner {
             Inner::File(file) => file.membership_filter_stats(),
             Inner::Vec(vec) => vec.membership_filter_stats(),
+        }
+    }
+
+    fn membership_filter_kind(&self) -> FilterKind {
+        match &self.inner {
+            Inner::File(file) => file.membership_filter_kind(),
+            Inner::Vec(vec) => vec.membership_filter_kind(),
         }
     }
 

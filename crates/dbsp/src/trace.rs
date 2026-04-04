@@ -29,6 +29,7 @@
 use crate::circuit::metadata::OperatorMeta;
 use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 use crate::storage::buffer_cache::CacheStats;
+use crate::storage::filter_stats::{FilterKind, FilterStats};
 use crate::storage::file::SerializerInner;
 pub use crate::storage::file::{DbspSerializer, Deserializable, Deserializer, Rkyv};
 use crate::trace::cursor::{
@@ -77,7 +78,6 @@ use crate::{
     algebra::MonoidValue,
     dynamic::{DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
     storage::file::reader::Error as ReaderError,
-    storage::filter_stats::FilterStats,
 };
 pub use cursor::{Cursor, MergeCursor};
 pub use filter::{Filter, GroupFilter};
@@ -475,13 +475,22 @@ where
     /// [Cursor::seek_key_exact] after the range filter.
     ///
     /// Today this is usually a Bloom filter. Batches without such a filter
-    /// should return `FilterStats::default()`.
-    fn membership_filter_stats(&self) -> FilterStats;
+    /// should return zero/default stats.
+    fn membership_filter_stats(&self) -> FilterStats {
+        FilterStats::default()
+    }
+
+    /// Filter kind for the secondary membership filter used by
+    /// [Cursor::seek_key_exact].
+    fn membership_filter_kind(&self) -> FilterKind {
+        FilterKind::None
+    }
 
     /// Statistics of the in-memory range filter used by
     /// [Cursor::seek_key_exact].
     ///
-    /// Batches without a range filter should return `FilterStats::default()`.
+    /// Returns range-filter stats. Batches without a range filter should
+    /// return zeroed range stats.
     fn range_filter_stats(&self) -> FilterStats {
         FilterStats::default()
     }
@@ -661,6 +670,9 @@ where
     }
     fn membership_filter_stats(&self) -> FilterStats {
         (**self).membership_filter_stats()
+    }
+    fn membership_filter_kind(&self) -> FilterKind {
+        (**self).membership_filter_kind()
     }
     fn range_filter_stats(&self) -> FilterStats {
         (**self).range_filter_stats()

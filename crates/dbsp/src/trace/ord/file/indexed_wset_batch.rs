@@ -1,5 +1,5 @@
 use crate::storage::file::format::BatchMetadata;
-use crate::storage::filter_stats::FilterStats;
+use crate::storage::filter_stats::{FilterKind, FilterStats};
 use crate::{
     DBData, DBWeight, NumEntries, Runtime,
     algebra::{AddAssignByRef, AddByRef, NegByRef},
@@ -396,6 +396,10 @@ where
 
     fn membership_filter_stats(&self) -> FilterStats {
         self.filters.stats().membership_filter
+    }
+
+    fn membership_filter_kind(&self) -> FilterKind {
+        self.filters.membership_filter_kind()
     }
 
     fn range_filter_stats(&self) -> FilterStats {

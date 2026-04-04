@@ -10,8 +10,8 @@ use crate::storage::{
     backend::StorageError,
     buffer_cache::{BufferCache, FBuf},
     file::format::{
-        BatchMetadata, DataBlockHeader, FileTrailerColumn, IndexBlockHeader, NodeType,
-        VERSION_NUMBER, Varint,
+        BatchMetadata, DataBlockHeader, FileTrailerColumn, IndexBlockHeader, MIN_SUPPORTED_VERSION,
+        NodeType, Varint,
     },
     file::item::ArchivedItem,
 };
@@ -111,12 +111,14 @@ pub enum CorruptionError {
     },
 
     /// Invalid version number in file trailer.
-    #[error("File has invalid version {version} (expected {expected_version})")]
+    #[error(
+        "File has unsupported storage format version {version}; supported versions are {min_supported_version} and newer"
+    )]
     InvalidVersion {
         /// Version in file.
         version: u32,
-        /// Expected version ([`VERSION_NUMBER`]).
-        expected_version: u32,
+        /// Minimum supported version.
+        min_supported_version: u32,
     },
 
     /// Invalid version number in file trailer.
@@ -1668,12 +1670,10 @@ where
             &stats,
         )?;
 
-        // v4/v5 isn't backwards compatible. do not attempt to support
-        // older formats.
-        if file_trailer.version < VERSION_NUMBER {
+        if file_trailer.version < MIN_SUPPORTED_VERSION {
             return Err(CorruptionError::InvalidVersion {
                 version: file_trailer.version,
-                expected_version: VERSION_NUMBER,
+                min_supported_version: MIN_SUPPORTED_VERSION,
             }
             .into());
         }
@@ -1685,9 +1685,9 @@ where
             );
         }
 
-        if file_trailer.incompatible_features != 0 {
+        if let Some(features) = file_trailer.unknown_incompatible_features() {
             return Err(CorruptionError::UnsupportedIncompatibleFeatures(
-                file_trailer.incompatible_features,
+                features,
             )
             .into());
         }

@@ -18,7 +18,9 @@ use crate::{
             MERGING_MEMORY_RECORDS_COUNT, MERGING_SIZE_BYTES, MERGING_STORAGE_RECORDS_COUNT,
             MetaItem, MetricId, MetricReading, NEGATIVE_WEIGHT_COUNT, OperatorMeta,
             RANGE_FILTER_HIT_RATE_PERCENT, RANGE_FILTER_HITS_COUNT, RANGE_FILTER_MISSES_COUNT,
-            RANGE_FILTER_SIZE_BYTES, SPINE_BATCHES_COUNT, SPINE_STORAGE_SIZE_BYTES,
+            RANGE_FILTER_SIZE_BYTES, ROARING_FILTER_HIT_RATE_PERCENT,
+            ROARING_FILTER_HITS_COUNT, ROARING_FILTER_MISSES_COUNT,
+            ROARING_FILTER_SIZE_BYTES, SPINE_BATCHES_COUNT, SPINE_STORAGE_SIZE_BYTES,
         },
         metrics::COMPACTION_STALL_TIME_NANOSECONDS,
         negative_weight_multiplier,
@@ -28,7 +30,7 @@ use crate::{
     samply::SamplySpan,
     storage::{
         buffer_cache::{BufferCache, CacheStats},
-        filter_stats::FilterStats,
+        filter_stats::{FilterKind, FilterStats},
     },
     time::Timestamp,
     trace::{
@@ -780,12 +782,15 @@ where
         let mut cache_stats = spine_stats.cache_stats;
         let mut storage_size = 0;
         let mut merging_size = 0;
-        let mut membership_filter_stats = FilterStats::default();
+        let mut membership_filter_stats = BTreeMap::<FilterKind, FilterStats>::new();
         let mut range_filter_stats = FilterStats::default();
         let mut storage_records = 0;
         for (batch, merging) in batches {
             cache_stats += batch.cache_stats();
-            membership_filter_stats += batch.membership_filter_stats();
+            let kind = batch.membership_filter_kind();
+            if kind != FilterKind::None {
+                *membership_filter_stats.entry(kind).or_default() += batch.membership_filter_stats();
+            }
             range_filter_stats += batch.range_filter_stats();
             let on_storage = batch.location() == BatchLocation::Storage;
             if on_storage || merging {
@@ -800,9 +805,15 @@ where
             }
         }
 
+        let bloom_filter_stats = membership_filter_stats
+            .remove(&FilterKind::Bloom)
+            .unwrap_or_default();
+        let roaring_filter_stats = membership_filter_stats
+            .remove(&FilterKind::Roaring)
+            .unwrap_or_default();
+
         if storage_records > 0 {
-            let bits_per_key =
-                membership_filter_stats.size_byte as f64 * 8.0 / storage_records as f64;
+            let bits_per_key = bloom_filter_stats.size_byte as f64 * 8.0 / storage_records as f64;
             let bits_per_key = bits_per_key as usize;
             meta.extend(metadata! {
                 BLOOM_FILTER_BITS_PER_KEY => MetaItem::Int(bits_per_key)
@@ -839,25 +850,49 @@ where
             MetricReading::new(
                 BLOOM_FILTER_SIZE_BYTES,
                 Vec::new(),
-                MetaItem::bytes(membership_filter_stats.size_byte),
+                MetaItem::bytes(bloom_filter_stats.size_byte),
             ),
             MetricReading::new(
                 BLOOM_FILTER_HITS_COUNT,
                 Vec::new(),
-                MetaItem::Count(membership_filter_stats.hits),
+                MetaItem::Count(bloom_filter_stats.hits),
             ),
             MetricReading::new(
                 BLOOM_FILTER_MISSES_COUNT,
                 Vec::new(),
-                MetaItem::Count(membership_filter_stats.misses),
+                MetaItem::Count(bloom_filter_stats.misses),
             ),
             MetricReading::new(
                 BLOOM_FILTER_HIT_RATE_PERCENT,
                 Vec::new(),
                 MetaItem::Percent {
-                    numerator: membership_filter_stats.hits as u64,
-                    denominator: membership_filter_stats.hits as u64
-                        + membership_filter_stats.misses as u64,
+                    numerator: bloom_filter_stats.hits as u64,
+                    denominator: bloom_filter_stats.hits as u64
+                        + bloom_filter_stats.misses as u64,
+                },
+            ),
+            MetricReading::new(
+                ROARING_FILTER_SIZE_BYTES,
+                Vec::new(),
+                MetaItem::bytes(roaring_filter_stats.size_byte),
+            ),
+            MetricReading::new(
+                ROARING_FILTER_HITS_COUNT,
+                Vec::new(),
+                MetaItem::Count(roaring_filter_stats.hits),
+            ),
+            MetricReading::new(
+                ROARING_FILTER_MISSES_COUNT,
+                Vec::new(),
+                MetaItem::Count(roaring_filter_stats.misses),
+            ),
+            MetricReading::new(
+                ROARING_FILTER_HIT_RATE_PERCENT,
+                Vec::new(),
+                MetaItem::Percent {
+                    numerator: roaring_filter_stats.hits as u64,
+                    denominator: roaring_filter_stats.hits as u64
+                        + roaring_filter_stats.misses as u64,
                 },
             ),
             MetricReading::new(
@@ -1379,14 +1414,6 @@ where
             .get_batches()
             .iter()
             .map(|batch| batch.approximate_byte_size())
-            .sum()
-    }
-
-    fn membership_filter_stats(&self) -> FilterStats {
-        self.merger
-            .get_batches()
-            .iter()
-            .map(|batch| batch.membership_filter_stats())
             .sum()
     }
 

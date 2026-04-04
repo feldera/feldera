@@ -751,6 +751,21 @@ where
     Some(magic)
 }
 
+fn incompatible_features<K, A, N>(reader: &Reader<(&'static K, &'static A, N)>) -> u64
+where
+    K: DataTrait + ?Sized,
+    A: DataTrait + ?Sized,
+    (&'static K, &'static A, N): ColumnSpec,
+{
+    let file_size = reader.byte_size().unwrap() as usize;
+    let trailer_block = reader
+        .file_handle()
+        .read_block(BlockLocation::new((file_size - 512) as u64, 512).unwrap())
+        .unwrap();
+    let trailer = FileTrailer::read_le(&mut Cursor::new(trailer_block.as_slice())).unwrap();
+    trailer.incompatible_features
+}
+
 fn test_two_columns<T>(parameters: Parameters)
 where
     T: TwoColumns,
@@ -1188,6 +1203,7 @@ fn test_bloom_filter_roundtrip_and_block_kind() {
             assert!(filters.maybe_contains_key(key.erase(), None));
         }
         assert_eq!(filter_block_magic(&reader), Some(BLOOM_FILTER_BLOCK_MAGIC));
+        assert_eq!(incompatible_features(&reader), 0);
     }
 }
 
@@ -1247,6 +1263,7 @@ fn test_roaring_u32_filter_roundtrip_exact_and_block_kind() {
             filter_block_magic(&reader),
             Some(ROARING_BITMAP_FILTER_BLOCK_MAGIC)
         );
+        assert_ne!(incompatible_features(&reader), 0);
     }
 }
 
@@ -1306,6 +1323,7 @@ fn test_roaring_tup1_i32_filter_roundtrip_exact_and_block_kind() {
             filter_block_magic(&reader),
             Some(ROARING_BITMAP_FILTER_BLOCK_MAGIC)
         );
+        assert_ne!(incompatible_features(&reader), 0);
     }
 }
 

@@ -1,6 +1,15 @@
 use crossbeam::utils::CachePadded;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub enum FilterKind {
+    #[default]
+    None,
+    Bloom,
+    Roaring,
+    Range,
+}
+
 /// Statistics about an in-memory key filter.
 ///
 /// The statistics implement addition such that they can be summed across

@@ -64,11 +64,7 @@ mod tests {
         assert!(filter.num_hashes() >= 1);
         assert_eq!(
             filter.stats(),
-            FilterStats {
-                size_byte: 96 + 8192 / 8,
-                hits: 0,
-                misses: 0,
-            }
+            FilterStats { size_byte: 96 + 8192 / 8, hits: 0, misses: 0 }
         );
         filter.insert_hash(123);
         assert!(filter.contains_hash(123));
@@ -76,11 +72,7 @@ mod tests {
         assert!(!filter.contains_hash(789));
         assert_eq!(
             filter.stats(),
-            FilterStats {
-                size_byte: 96 + 8192 / 8,
-                hits: 1,
-                misses: 2,
-            }
+            FilterStats { size_byte: 96 + 8192 / 8, hits: 1, misses: 2 }
         );
     }
 
@@ -88,11 +80,7 @@ mod tests {
     fn tracking_bloom_filter_stats_default() {
         assert_eq!(
             FilterStats::default(),
-            FilterStats {
-                size_byte: 0,
-                hits: 0,
-                misses: 0,
-            }
+            FilterStats { size_byte: 0, hits: 0, misses: 0 }
         );
     }
 
@@ -114,9 +102,6 @@ mod tests {
             misses: 1089,
         };
         assert_eq!(stats1 + stats2, stats3);
-        assert_eq!(
-            vec![stats1, stats2].into_iter().sum::<FilterStats>(),
-            stats3
-        );
+        assert_eq!(vec![stats1, stats2].into_iter().sum::<FilterStats>(), stats3);
     }
 }

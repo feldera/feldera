@@ -228,13 +228,6 @@ where
             .fold(0, |acc, batch| acc + batch.approximate_byte_size())
     }
 
-    fn membership_filter_stats(&self) -> FilterStats {
-        self.batches
-            .iter()
-            .map(|b| b.membership_filter_stats())
-            .sum()
-    }
-
     fn range_filter_stats(&self) -> FilterStats {
         self.batches.iter().map(|b| b.range_filter_stats()).sum()
     }

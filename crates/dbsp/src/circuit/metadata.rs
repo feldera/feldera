@@ -136,6 +136,14 @@ pub const BLOOM_FILTER_MISSES_COUNT: MetricId =
 pub const BLOOM_FILTER_HIT_RATE_PERCENT: MetricId =
     MetricId(Cow::Borrowed("bloom_filter_hit_rate_percent"));
 pub const BLOOM_FILTER_SIZE_BYTES: MetricId = MetricId(Cow::Borrowed("bloom_filter_size_bytes"));
+pub const ROARING_FILTER_HITS_COUNT: MetricId =
+    MetricId(Cow::Borrowed("roaring_filter_hits_count"));
+pub const ROARING_FILTER_MISSES_COUNT: MetricId =
+    MetricId(Cow::Borrowed("roaring_filter_misses_count"));
+pub const ROARING_FILTER_HIT_RATE_PERCENT: MetricId =
+    MetricId(Cow::Borrowed("roaring_filter_hit_rate_percent"));
+pub const ROARING_FILTER_SIZE_BYTES: MetricId =
+    MetricId(Cow::Borrowed("roaring_filter_size_bytes"));
 pub const RANGE_FILTER_HITS_COUNT: MetricId = MetricId(Cow::Borrowed("range_filter_hits_count"));
 pub const RANGE_FILTER_MISSES_COUNT: MetricId =
     MetricId(Cow::Borrowed("range_filter_misses_count"));
