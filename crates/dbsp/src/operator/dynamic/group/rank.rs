@@ -191,9 +191,7 @@ where
             // The above map_index preserves sharding.
             stream.mark_sharded_if(self);
 
-            let stream = stream.dyn_shard(&factories.inner_factories);
-
-            let accumulated = stream.dyn_accumulate(&factories.inner_factories);
+            let accumulated = stream.dyn_shard_accumulate(&factories.inner_factories);
 
             let (delayed_trace, z1feedback) = circuit.add_feedback_persistent(
                 persistent_id

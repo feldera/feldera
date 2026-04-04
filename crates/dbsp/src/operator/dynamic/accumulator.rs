@@ -27,6 +27,7 @@ use crate::{
 };
 
 circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>)));
+circuit_cache_key!(ShardedAccumulatorId<C, B: Batch>(StreamId => Stream<C, Option<Spine<B>>>));
 
 /// `TypedMapKey` entry used to share `enable_count` across instances of the same accumulator in multiple workers.
 #[derive(Hash, PartialEq, Eq)]
@@ -49,6 +50,21 @@ where
     C: Circuit,
     B: Batch,
 {
+    pub fn dyn_shard_accumulate(&self, factories: &B::Factories) -> Stream<C, Option<Spine<B>>>
+    where
+        B: Batch<Time = ()>,
+    {
+        if let Some(sharded) = self.get_sharded_version() {
+            sharded.dyn_accumulate(factories)
+        } else {
+            self.circuit()
+                .cache_get_or_insert_with(ShardedAccumulatorId::new(self.stream_id()), || {
+                    self.dyn_shard(factories).dyn_accumulate(factories)
+                })
+                .clone()
+        }
+    }
+
     /// See [`Stream::accumulate`].
     pub fn dyn_accumulate(&self, factories: &B::Factories) -> Stream<C, Option<Spine<B>>> {
         let (stream, enable_count) = self.dyn_accumulate_with_enable_count(factories);

@@ -98,6 +98,37 @@ where
     result
 }
 
+/// Concatenates a collection of accumulated streams.
+pub fn dyn_concat_accumulated<C, Z, I>(input_factories: &Z::Factories, streams: I) -> Stream<C, Z>
+where
+    C: Circuit,
+    Z: IndexedZSet,
+    I: IntoIterator<Item = (Stream<C, Option<Spine<Z>>>, bool)>,
+{
+    let (streams, polarities): (Vec<_>, Vec<_>) = streams.into_iter().unzip();
+
+    let streams = streams
+        .into_iter()
+        .map(|stream| stream.try_sharded_version())
+        .collect::<Vec<_>>();
+    assert!(!streams.is_empty());
+
+    let sharded = streams.iter().all(|stream| stream.is_sharded());
+
+    let circuit = streams[0].circuit();
+
+    let result = circuit.add_nary_operator(
+        StreamingNaryWrapper::new(AccumulateConcatZSets::new(input_factories, &polarities)),
+        &streams,
+    );
+
+    if sharded {
+        result.mark_sharded();
+    }
+
+    result
+}
+
 struct AccumulateConcatZSets<Z>
 where
     Z: ZBatch,

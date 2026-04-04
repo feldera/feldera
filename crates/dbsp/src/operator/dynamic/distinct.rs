@@ -297,7 +297,7 @@ where
     {
         let circuit = self.circuit();
         circuit.region("distinct", || {
-            let stream = self.dyn_shard(&factories.input_factories);
+            let stream = self.try_sharded_version();
 
             circuit
                 .cache_get_or_insert_with(DistinctIncrementalId::new(stream.stream_id()), || {
@@ -313,7 +313,7 @@ where
     {
         let circuit = self.circuit();
 
-        assert!(self.is_sharded());
+        //assert!(self.is_sharded());
 
         if circuit.root_scope() == 0 {
             // Use an implementation optimized to work in the root scope.
@@ -322,9 +322,9 @@ where
                     Location::caller(),
                     &factories.input_factories,
                 )),
-                &self.dyn_accumulate(&factories.input_factories),
+                &self.dyn_shard_accumulate(&factories.input_factories),
                 &self
-                    .dyn_accumulate_integrate_trace(&factories.input_factories)
+                    .dyn_shard_accumulate_integrate_trace(&factories.input_factories)
                     .accumulate_delay_trace(),
             )
         } else {
@@ -343,9 +343,12 @@ where
                     &factories.aux_factories,
                     circuit.clone(),
                 )),
-                &self.dyn_accumulate(&factories.input_factories),
+                &self.dyn_shard_accumulate(&factories.input_factories),
                 // TODO use OrdIndexedZSetSpine if `Z::Val = ()`
-                &self.dyn_accumulate_trace(&factories.trace_factories, &factories.input_factories),
+                &self.dyn_shard_accumulate_trace(
+                    &factories.trace_factories,
+                    &factories.input_factories,
+                ),
             )
         }
         .mark_sharded()
