@@ -1,11 +1,7 @@
-pub(crate) mod batch_filter;
 pub mod fallback;
 pub mod file;
-pub(crate) mod key_range;
 pub mod merge_batcher;
 pub mod vec;
-
-pub use batch_filter::{BatchFilterStats, BatchFilters};
 pub use fallback::{
     indexed_wset::{
         FallbackIndexedWSet, FallbackIndexedWSet as OrdIndexedWSet, FallbackIndexedWSetBuilder,

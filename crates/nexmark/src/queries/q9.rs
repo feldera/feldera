@@ -43,6 +43,7 @@ pub struct Q9Output(
 );
 
 dbsp::never_none!(Q9Output);
+dbsp::never_roaring_filter!(Q9Output);
 
 type Q9Stream = Stream<RootCircuit, OrdZSet<Q9Output>>;
 

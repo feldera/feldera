@@ -1,5 +1,5 @@
 use crate::storage::buffer_cache::CacheStats;
-use crate::storage::filter_stats::FilterStats;
+use crate::storage::file::{FilterKind, FilterStats};
 use crate::trace::BatchLocation;
 use crate::trace::cursor::Position;
 use crate::trace::ord::file::UnwrapStorage;
@@ -10,14 +10,14 @@ use crate::{
         Factory, LeanVec, WeightTrait, WithFactory,
     },
     storage::file::{
-        Factories as FileFactories,
+        Factories as FileFactories, FilterPlan,
         format::BatchMetadata,
         reader::{Cursor as FileCursor, Error as ReaderError, Reader},
         writer::Writer2,
     },
     trace::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, WeightedItem,
-        ord::{batch_filter::BatchFilters, merge_batcher::MergeBatcher},
+        filter::BatchFilters, ord::merge_batcher::MergeBatcher,
     },
     utils::Tup2,
 };
@@ -394,6 +394,10 @@ where
         Ok(Self::from_parts(factories.clone(), file, filters))
     }
 
+    fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)> {
+        self.filters.key_bounds()
+    }
+
     fn negative_weight_count(&self) -> Option<u64> {
         None
     }
@@ -716,7 +720,39 @@ where
                 Runtime::buffer_cache,
                 &*Runtime::storage_backend().unwrap_storage(),
                 Runtime::file_writer_parameters(),
-                key_capacity,
+                FilterPlan::<K>::decide_filter(None, key_capacity),
+            )
+            .unwrap_storage(),
+            time_diffs: factories.timediff_factory.default_box(),
+            num_tuples: 0,
+            stats: BatchMetadata::default(),
+        }
+    }
+
+    fn for_merge<'a, B, I>(
+        factories: &FileValBatchFactories<K, V, T, R>,
+        batches: I,
+        _location: Option<BatchLocation>,
+    ) -> Self
+    where
+        B: Batch<Key = K, Val = V, Time = T, R = R>,
+        I: IntoIterator<Item = &'a B> + Clone,
+    {
+        let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
+        let filter_plan = FilterPlan::from_batches(batches.clone());
+        let key_filter = filter_plan.map_or_else(
+            || FilterPlan::<K>::decide_filter(None, key_capacity),
+            |filter_plan| FilterPlan::decide_filter(Some(&filter_plan), key_capacity),
+        );
+        Self {
+            factories: factories.clone(),
+            writer: Writer2::new(
+                &factories.factories0,
+                &factories.factories1,
+                Runtime::buffer_cache,
+                &*Runtime::storage_backend().unwrap_storage(),
+                Runtime::file_writer_parameters(),
+                key_filter,
             )
             .unwrap_storage(),
             time_diffs: factories.timediff_factory.default_box(),

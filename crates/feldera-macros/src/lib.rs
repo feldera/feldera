@@ -1,4 +1,4 @@
-//! Procedural macros for Feldera tuple types and `IsNone`.
+//! Procedural macros for Feldera tuple types and utility traits.
 //!
 //! The `declare_tuple!` macro decides which layout to use based on tuple size
 //! and the active storage format rules.
@@ -51,6 +51,8 @@ pub fn derive_not_none(item: TokenStream) -> TokenStream {
                 inner
             }
         }
+
+        impl #impl_generics ::dbsp::utils::SupportsRoaring for #ident #ty_generics #where_clause {}
     };
 
     TokenStream::from(expanded)

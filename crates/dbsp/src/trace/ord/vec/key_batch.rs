@@ -1,4 +1,4 @@
-use crate::storage::filter_stats::FilterStats;
+use crate::storage::file::FilterStats;
 use crate::trace::ord::merge_batcher::MergeBatcher;
 use crate::{
     DBData, DBWeight, NumEntries, Timestamp,
@@ -334,7 +334,6 @@ where
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
-        Self::Time: PartialEq<()>,
         RG: Rng,
     {
         self.layer.sample_keys(rng, sample_size, sample);
@@ -353,6 +352,10 @@ where
     type Builder = VecKeyBuilder<K, T, R, O>;
     fn file_reader(&self) -> Option<Arc<dyn FileReader>> {
         unimplemented!()
+    }
+
+    fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)> {
+        Some((self.layer.keys.first()?, self.layer.keys.last()?))
     }
 
     fn negative_weight_count(&self) -> Option<u64> {

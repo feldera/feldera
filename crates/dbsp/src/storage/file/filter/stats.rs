@@ -1,6 +1,20 @@
 use crossbeam::utils::CachePadded;
+use enum_map::Enum;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+/// Kind of filter attached to a batch.
+#[derive(Clone, Copy, Debug, Default, Enum, Eq, PartialEq, Ord, PartialOrd)]
+pub enum FilterKind {
+    /// No filter is present.
+    #[default]
+    None,
+    /// Bloom membership filter.
+    Bloom,
+    /// Roaring bitmap membership filter.
+    Roaring,
+    /// Min/max range filter.
+    Range,
+}
 /// Statistics about an in-memory key filter.
 ///
 /// The statistics implement addition such that they can be summed across
@@ -57,6 +71,10 @@ impl TrackingFilterStats {
             hits: self.counts.hits.load(Ordering::Relaxed),
             misses: self.counts.misses.load(Ordering::Relaxed),
         }
+    }
+
+    pub(crate) fn set_size_byte(&mut self, size_byte: usize) {
+        self.size_byte = size_byte;
     }
 
     /// Records the result of one filter probe.
