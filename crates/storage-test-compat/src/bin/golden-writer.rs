@@ -5,77 +5,41 @@
 ///
 /// This writes both large (Tup65) and small (Tup10) batches, in compressed
 /// and uncompressed variants, under `crates/storage-test-compat/golden-files/`.
-use std::path::PathBuf;
-
 use dbsp::dynamic::DynData;
 use dbsp::storage::backend::StorageBackend;
 use dbsp::storage::file::format::BatchMetadata;
 use dbsp::storage::file::format::Compression;
-use dbsp::storage::file::format::VERSION_NUMBER;
-use dbsp::storage::file::writer::{Parameters, Writer1};
-use dbsp::storage::file::Factories;
+use dbsp::storage::file::writer::{Parameters, Writer1, Writer2};
+use dbsp::storage::file::BatchKeyFilter;
+use dbsp::storage::file::{Factories, FilterPlan};
+use dbsp::{dynamic::Erase, DBData};
 use feldera_types::config::{StorageConfig, StorageOptions};
 
 use storage_test_compat::{
-    buffer_cache, golden_aux, golden_row, golden_row_small, storage_base_and_path, GoldenRow,
-    GoldenRowSmall, DEFAULT_ROWS,
+    buffer_cache, golden_aux, golden_file_specs, golden_row, golden_row_small, golden_writer2_key,
+    storage_base_and_path, GoldenFileSpec, GoldenRow, GoldenRowSmall, GoldenSize, GoldenWriterKind,
+    DEFAULT_ROWS,
 };
-
-#[derive(Copy, Clone)]
-enum GoldenSize {
-    Large,
-    Small,
-}
-
-impl GoldenSize {
-    fn suffix(self) -> &'static str {
-        match self {
-            GoldenSize::Large => "large",
-            GoldenSize::Small => "small",
-        }
-    }
-}
 
 struct Config {
     rows: usize,
-    compression: Option<Compression>,
-    size: GoldenSize,
-}
-
-impl Config {
-    fn output(&self) -> PathBuf {
-        let mut file_name = format!("golden-batch-v{VERSION_NUMBER}");
-        match self.compression {
-            Some(Compression::Snappy) => {
-                file_name += "-snappy";
-            }
-            None => (),
-        }
-        file_name += "-";
-        file_name += self.size.suffix();
-        file_name += ".feldera";
-
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("golden-files")
-            .join(file_name)
-    }
+    spec: GoldenFileSpec,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        let rows = DEFAULT_ROWS;
-        let compression = Some(Compression::Snappy);
-        let size = GoldenSize::Large;
-
         Config {
-            rows,
-            compression,
-            size,
+            rows: DEFAULT_ROWS,
+            spec: GoldenFileSpec {
+                writer: GoldenWriterKind::Writer1Bloom,
+                compression: Some(Compression::Snappy),
+                size: GoldenSize::Large,
+            },
         }
     }
 }
 
-fn write_golden<T>(
+fn write_writer1_golden<T>(
     output: &std::path::Path,
     rows: usize,
     compression: Option<Compression>,
@@ -102,7 +66,7 @@ where
         buffer_cache,
         &*storage_backend,
         parameters,
-        rows,
+        FilterPlan::<DynData>::decide_filter(None, rows),
     )?;
 
     for row in 0..rows {
@@ -112,7 +76,84 @@ where
     }
 
     let tmp_path = writer.path().clone();
-    let (_file_handle, _bloom_filter, _key_bounds) = writer.close(BatchMetadata::default())?;
+    let (_file_handle, key_filter, _key_bounds) = writer.close(BatchMetadata::default())?;
+    assert!(
+        matches!(key_filter, Some(BatchKeyFilter::Bloom(_))),
+        "writer1 golden files must persist a Bloom filter",
+    );
+    let content = storage_backend.read(&tmp_path)?;
+    storage_backend.write(&output_storage_path, (*content).clone())?;
+    storage_backend.delete(&tmp_path)?;
+
+    println!("wrote {} rows to {}", rows, output.display());
+    Ok(())
+}
+
+fn sampled_filter_plan<K>(
+    factories: &Factories<DynData, DynData>,
+    keys: &[K],
+) -> FilterPlan<DynData>
+where
+    K: DBData + Erase<DynData>,
+{
+    let mut sampled_keys = factories.keys_factory.default_box();
+    sampled_keys.reserve(keys.len());
+    for key in keys {
+        sampled_keys.push_ref(key.erase());
+    }
+
+    FilterPlan::from_bounds(keys.first().unwrap().erase(), keys.last().unwrap().erase())
+        .with_sampled_keys(sampled_keys.as_ref())
+}
+
+fn write_writer2_golden<T>(
+    output: &std::path::Path,
+    rows: usize,
+    compression: Option<Compression>,
+    row_builder: fn(usize) -> T,
+) -> Result<(), Box<dyn std::error::Error>>
+where
+    T: dbsp::DBData,
+{
+    let (base_dir, output_storage_path) = storage_base_and_path(output);
+    std::fs::create_dir_all(&base_dir)?;
+
+    let storage_backend = <dyn StorageBackend>::new(
+        &StorageConfig {
+            path: base_dir.to_string_lossy().to_string(),
+            cache: Default::default(),
+        },
+        &StorageOptions::default(),
+    )?;
+
+    let factories0 = Factories::<DynData, DynData>::new::<i64, ()>();
+    let factories1 = Factories::<DynData, DynData>::new::<T, i64>();
+    let parameters = Parameters::default().with_compression(compression);
+    let keys: Vec<i64> = (0..rows).map(golden_writer2_key).collect();
+    let filter_plan = sampled_filter_plan(&factories0, &keys);
+    let mut writer = Writer2::new(
+        &factories0,
+        &factories1,
+        buffer_cache,
+        &*storage_backend,
+        parameters,
+        FilterPlan::decide_filter(Some(&filter_plan), rows),
+    )?;
+
+    for row in 0..rows {
+        let key0 = golden_writer2_key(row);
+        let key1 = row_builder(row);
+        let aux1 = golden_aux(row);
+        writer.write1((&key1, &aux1))?;
+        writer.write0((&key0, &()))?;
+    }
+
+    let tmp_path = writer.path().clone();
+    let (_file_handle, key_filter, _key_bounds) = writer.close(BatchMetadata::default())?;
+    assert!(
+        matches!(key_filter, Some(BatchKeyFilter::RoaringU32(_))),
+        "writer2 golden files must persist a roaring filter",
+    );
     let content = storage_backend.read(&tmp_path)?;
     storage_backend.write(&output_storage_path, (*content).clone())?;
     storage_backend.delete(&tmp_path)?;
@@ -123,27 +164,46 @@ where
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::default();
-    for size in [GoldenSize::Large, GoldenSize::Small] {
-        config.size = size;
-        for compression in [None, Some(Compression::Snappy)] {
-            config.compression = compression;
+    for spec in golden_file_specs() {
+        config.spec = spec;
+        let output = if config.spec.path().is_absolute() {
+            config.spec.path()
+        } else {
+            std::env::current_dir()?.join(config.spec.path())
+        };
 
-            let output = if config.output().is_absolute() {
-                config.output()
-            } else {
-                std::env::current_dir()?.join(config.output())
-            };
-
-            match config.size {
-                GoldenSize::Large => {
-                    write_golden::<GoldenRow>(&output, config.rows, config.compression, golden_row)?
-                }
-                GoldenSize::Small => write_golden::<GoldenRowSmall>(
+        match (config.spec.writer, config.spec.size) {
+            (GoldenWriterKind::Writer1Bloom, GoldenSize::Large) => {
+                write_writer1_golden::<GoldenRow>(
                     &output,
                     config.rows,
-                    config.compression,
+                    config.spec.compression,
+                    golden_row,
+                )?
+            }
+            (GoldenWriterKind::Writer1Bloom, GoldenSize::Small) => {
+                write_writer1_golden::<GoldenRowSmall>(
+                    &output,
+                    config.rows,
+                    config.spec.compression,
                     golden_row_small,
-                )?,
+                )?
+            }
+            (GoldenWriterKind::Writer2Roaring, GoldenSize::Large) => {
+                write_writer2_golden::<GoldenRow>(
+                    &output,
+                    config.rows,
+                    config.spec.compression,
+                    golden_row,
+                )?
+            }
+            (GoldenWriterKind::Writer2Roaring, GoldenSize::Small) => {
+                write_writer2_golden::<GoldenRowSmall>(
+                    &output,
+                    config.rows,
+                    config.spec.compression,
+                    golden_row_small,
+                )?
             }
         }
     }

@@ -170,6 +170,11 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bloom_false_positive_rate: Option<f64>,
 
+    /// Whether file-backed batches may use roaring membership filters when the
+    /// key type supports them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_roaring: Option<bool>,
+
     /// Maximum batch size in records for level 0 merges.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_level0_batch_size_records: Option<u16>,
@@ -239,6 +244,11 @@ impl DevTweaks {
     }
     pub fn bloom_false_positive_rate(&self) -> f64 {
         self.bloom_false_positive_rate.unwrap_or(0.0001)
+    }
+    pub fn enable_roaring(&self) -> bool {
+        // Roaring is enabled by default, but `enable_roaring = false` remains
+        // available as a kill switch while the feature is still being tuned.
+        self.enable_roaring.unwrap_or(true)
     }
     pub fn negative_weight_multiplier(&self) -> u16 {
         self.negative_weight_multiplier.unwrap_or(0)

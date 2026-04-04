@@ -11055,6 +11055,7 @@ dependencies = [
  "feldera-size-of",
  "feldera-sqllib",
  "feldera-types",
+ "rand 0.8.5",
  "rkyv",
  "serde",
  "uuid",

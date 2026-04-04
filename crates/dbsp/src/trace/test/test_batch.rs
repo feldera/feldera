@@ -3,7 +3,7 @@
 //! So far, only methods/traits used in tests have been implemented.
 #![allow(clippy::type_complexity)]
 
-use crate::storage::filter_stats::FilterStats;
+use crate::storage::file::FilterStats;
 use crate::{
     DBData, DBWeight, NumEntries, Timestamp,
     dynamic::{
@@ -1247,6 +1247,12 @@ where
     /*fn consumer(self) -> Self::Consumer {
         todo!()
     }*/
+
+    fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)> {
+        let min = self.data.keys().next()?.0.as_ref();
+        let max = self.data.keys().next_back()?.0.as_ref();
+        Some((min, max))
+    }
 
     fn key_count(&self) -> usize {
         self.data
