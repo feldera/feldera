@@ -664,14 +664,14 @@ impl<B> Stream<RootCircuit, B> {
         V: DataTrait + ?Sized,
     {
         let circuit = self.circuit();
-        let stream = self.dyn_shard(&factories.input_factories);
-        let stream_window = self_window.dyn_shard(&factories.input_factories);
+        //let stream = self.dyn_shard(&factories.input_factories);
+        //let stream_window = self_window.dyn_shard(&factories.input_factories);
 
         let partitioned_tree_aggregate_name =
             partition_id.map(|name| format!("{name}-tree_aggregate"));
 
         // Build the radix tree over the bounded window.
-        let tree = stream_window
+        let tree = self_window
             .partitioned_tree_aggregate::<TS, V, Acc, Out>(
                 partitioned_tree_aggregate_name.as_deref(),
                 &factories.partitioned_tree_aggregate_factories,
@@ -680,7 +680,8 @@ impl<B> Stream<RootCircuit, B> {
             .set_persistent_id(partitioned_tree_aggregate_name.as_deref())
             .dyn_accumulate_integrate_trace(&factories.radix_tree_factories);
 
-        let input_trace = stream_window.dyn_accumulate_integrate_trace(&factories.input_factories);
+        let input_trace =
+            self_window.dyn_shard_accumulate_integrate_trace(&factories.input_factories);
 
         // Truncate timestamps `< bound` in the output trace.
         let bounds = TraceBounds::new();
@@ -702,7 +703,7 @@ impl<B> Stream<RootCircuit, B> {
                         aggregator,
                     ),
                 ),
-                &stream.dyn_accumulate(&factories.input_factories),
+                &self.dyn_shard_accumulate(&factories.input_factories),
                 &input_trace,
                 &tree,
                 &feedback.delayed_trace,

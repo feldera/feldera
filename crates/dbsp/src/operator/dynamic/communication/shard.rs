@@ -523,13 +523,16 @@ where
             .cache_contains(&ShardId::<C, T>::new((self.stream_id(), all_workers())))
     }
 
+    pub fn get_sharded_version(&self) -> Option<Self> {
+        self.circuit()
+            .cache_get(&ShardId::<C, T>::new((self.stream_id(), all_workers())))
+    }
+
     /// Returns the sharded version of the stream if it exists
     /// (which may be the stream itself or the result of applying
     /// the `shard` operator to it).  Otherwise, returns `self`.
     pub fn try_sharded_version(&self) -> Self {
-        self.circuit()
-            .cache_get(&ShardId::new((self.stream_id(), all_workers())))
-            .unwrap_or_else(|| self.clone())
+        self.get_sharded_version().unwrap_or_else(|| self.clone())
     }
 
     /// Returns the unsharded version of the stream if it exists, and otherwise
