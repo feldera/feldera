@@ -512,7 +512,6 @@ where
             .chain(others.iter().cloned())
             .zip(factories.input_factories.iter())
             .map(|((stream, saturate), (batch_factories, trace_factories))| {
-                let stream = stream.dyn_shard(batch_factories);
                 let saturated = if saturate {
                     Some(stream.dyn_saturate(batch_factories))
                 } else {
@@ -527,7 +526,7 @@ where
             .iter()
             .map(|(stream, saturated, (batch_factories, trace_factories))| {
                 (
-                    stream.dyn_accumulate_trace(trace_factories, batch_factories),
+                    stream.dyn_shard_accumulate_trace(trace_factories, batch_factories),
                     saturated.is_some(),
                     batch_factories,
                 )
@@ -577,7 +576,7 @@ where
                                 &match_factories,
                                 self.circuit().global_node_id().child(node_id),
                                 self.circuit().clone(),
-                                stream.dyn_accumulate(batch_factories),
+                                stream.dyn_shard_accumulate(batch_factories),
                                 StarJoinMatchFunc::new(join_func, others.len()),
                             )
                         };
@@ -645,12 +644,6 @@ where
         let streams = std::iter::once(self)
             .chain(others.iter())
             .zip(factories.input_factories.iter())
-            .map(|(stream, (batch_factories, trace_factories))| {
-                (
-                    stream.dyn_shard(batch_factories),
-                    (batch_factories, trace_factories),
-                )
-            })
             .collect::<Vec<_>>();
 
         // Traces
@@ -658,7 +651,7 @@ where
             .iter()
             .map(|(stream, (batch_factories, trace_factories))| {
                 (
-                    stream.dyn_accumulate_trace(trace_factories, batch_factories),
+                    stream.dyn_shard_accumulate_trace(trace_factories, batch_factories),
                     batch_factories,
                 )
             })
@@ -691,7 +684,7 @@ where
                         &match_factories,
                         self.circuit().global_node_id().child(node_id),
                         self.circuit().clone(),
-                        stream.dyn_accumulate(batch_factories),
+                        stream.dyn_shard_accumulate(batch_factories),
                         StarJoinMatchFunc::new(join_func, others.len()),
                     );
                     delayed.iter().for_each(|(trace, batch_factories)| {

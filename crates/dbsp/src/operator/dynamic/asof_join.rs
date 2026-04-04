@@ -187,14 +187,14 @@ where
         Z: IndexedZSet,
     {
         self.circuit().region("asof_join", || {
-            let left = self.dyn_shard(&factories.left_factories);
-            let right = other.dyn_shard(&factories.right_factories);
+            let left = self;
+            let right = other;
 
             let left_trace = left
-                .dyn_accumulate_integrate_trace(&factories.left_factories)
+                .dyn_shard_accumulate_integrate_trace(&factories.left_factories)
                 .accumulate_delay_trace();
             let right_trace = right
-                .dyn_accumulate_integrate_trace(&factories.right_factories)
+                .dyn_shard_accumulate_integrate_trace(&factories.right_factories)
                 .accumulate_delay_trace();
 
             self.circuit().add_quaternary_operator(
@@ -206,9 +206,9 @@ where
                     join_func,
                     Location::caller(),
                 )),
-                &left.dyn_accumulate(&factories.left_factories),
+                &left.dyn_shard_accumulate(&factories.left_factories),
                 &left_trace,
-                &right.dyn_accumulate(&factories.right_factories),
+                &right.dyn_shard_accumulate(&factories.right_factories),
                 &right_trace,
             )
         })
