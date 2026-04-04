@@ -1,4 +1,4 @@
-use crate::storage::filter_stats::{FilterStats, TrackingFilterStats};
+use crate::storage::file::{FilterStats, TrackingFilterStats};
 use fastbloom::BloomFilter;
 
 /// Bloom filter which tracks the number of hits and misses when lookups are performed.
@@ -53,7 +53,7 @@ impl TrackingBloomFilter {
 #[cfg(test)]
 mod tests {
     use super::TrackingBloomFilter;
-    use crate::storage::filter_stats::FilterStats;
+    use crate::storage::file::FilterStats;
     use fastbloom::BloomFilter;
 
     #[test]
@@ -67,7 +67,7 @@ mod tests {
             FilterStats {
                 size_byte: 96 + 8192 / 8,
                 hits: 0,
-                misses: 0,
+                misses: 0
             }
         );
         filter.insert_hash(123);
@@ -79,7 +79,7 @@ mod tests {
             FilterStats {
                 size_byte: 96 + 8192 / 8,
                 hits: 1,
-                misses: 2,
+                misses: 2
             }
         );
     }
@@ -91,7 +91,7 @@ mod tests {
             FilterStats {
                 size_byte: 0,
                 hits: 0,
-                misses: 0,
+                misses: 0
             }
         );
     }

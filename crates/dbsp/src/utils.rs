@@ -6,6 +6,7 @@ mod consolidation;
 mod graph;
 mod is_none;
 mod sort;
+mod supports_roaring;
 pub mod tuple;
 
 #[cfg(test)]
@@ -31,6 +32,7 @@ pub use consolidation::{
 pub use graph::components;
 
 pub use is_none::IsNone;
+pub use supports_roaring::SupportsRoaring;
 
 #[allow(unused_imports)]
 pub use dot::{DotEdgeAttributes, DotNodeAttributes};

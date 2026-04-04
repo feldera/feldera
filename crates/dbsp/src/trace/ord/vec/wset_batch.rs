@@ -1,4 +1,4 @@
-use crate::storage::filter_stats::FilterStats;
+use crate::storage::file::FilterStats;
 use crate::{
     DBData, DBWeight, NumEntries,
     algebra::{NegByRef, ZRingValue},
@@ -389,6 +389,10 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Batch for VecWSet<K, R> {
     type Timed<T: crate::Timestamp> = VecKeyBatch<K, T, R>;
     type Batcher = MergeBatcher<Self>;
     type Builder = VecWSetBuilder<K, R>;
+
+    fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)> {
+        Some((self.layer.keys.first()?, self.layer.keys.last()?))
+    }
 
     fn negative_weight_count(&self) -> Option<u64> {
         Some(self.negative_weight_count)

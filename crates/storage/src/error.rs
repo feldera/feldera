@@ -37,9 +37,13 @@ pub enum StorageError {
     /// Cannot perform operation because storage is not enabled.
     #[error("Cannot perform operation because storage is not enabled.")]
     StorageDisabled,
-    /// Error while creating a bloom filter.
-    #[error("Failed to serialize/deserialize bloom filter.")]
+    /// Error while creating a batch key filter.
+    #[error("Failed to serialize/deserialize batch key filter.")]
     BloomFilter,
+
+    /// Error while serializing a roaring bitmap batch key filter.
+    #[error("Failed to serialize roaring bitmap batch key filter.")]
+    RoaringBitmapFilter,
 
     /// Path is not valid in storage.
     ///
@@ -147,7 +151,7 @@ impl StorageError {
             StorageError::NoPersistentId(_) => ErrorKind::Other,
             StorageError::CheckpointNotFound(_) => ErrorKind::NotFound,
             StorageError::StorageDisabled => ErrorKind::Other,
-            StorageError::BloomFilter => ErrorKind::Other,
+            StorageError::BloomFilter | StorageError::RoaringBitmapFilter => ErrorKind::Other,
             StorageError::InvalidPath(_) => ErrorKind::Other,
             StorageError::InvalidURL(_) => ErrorKind::Other,
             StorageError::ObjectStore { kind, .. } => *kind,
