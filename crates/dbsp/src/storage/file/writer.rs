@@ -8,12 +8,13 @@ use crate::storage::{
     backend::{BlockLocation, FileReader, FileWriter, StorageBackend, StorageError},
     buffer_cache::{BufferCache, FBuf, FBufSerializer, LimitExceeded},
     file::{
-        BLOOM_FILTER_SEED, SerializerInner,
+        SerializerInner,
         format::{
-            BatchMetadata, BlockHeader, COMPATIBLE_FEATURE_FILTER64,
+            BatchMetadata, BlockHeader, BloomFilterBlockRef, COMPATIBLE_FEATURE_FILTER64,
             COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT, DATA_BLOCK_MAGIC, DataBlockHeader,
-            FILE_TRAILER_BLOCK_MAGIC, FileTrailer, FileTrailerColumn, FilterBlockRef, FixedLen,
-            INDEX_BLOCK_MAGIC, IndexBlockHeader, NodeType, VERSION_NUMBER, Varint,
+            FILE_TRAILER_BLOCK_MAGIC, FileTrailer, FileTrailerColumn, FixedLen, INDEX_BLOCK_MAGIC,
+            IndexBlockHeader, NodeType, ROARING_BITMAP_FILTER_BLOCK_MAGIC,
+            RoaringBitmapFilterBlockRef, VERSION_NUMBER, Varint,
         },
         reader::TreeNode,
     },
@@ -25,7 +26,6 @@ use binrw::{
 use crc32c::crc32c;
 #[cfg(debug_assertions)]
 use dyn_clone::clone_box;
-use fastbloom::BloomFilter;
 use feldera_buffer_cache::CacheEntry;
 use feldera_storage::StoragePath;
 use snap::raw::{Encoder, max_compress_len};
@@ -41,8 +41,7 @@ use std::{
 use tracing::info;
 
 use super::format::Compression;
-use super::{AnyFactories, Factories, reader::Reader};
-use crate::storage::tracking_bloom_filter::TrackingBloomFilter;
+use super::{AnyFactories, BatchKeyFilter, Factories, reader::Reader};
 use crate::{
     Runtime,
     dynamic::{DataTrait, DeserializeDyn, SerializeDyn},
@@ -1140,13 +1139,37 @@ impl BlockWriter {
 struct Writer {
     cache: fn() -> Arc<BufferCache>,
     writer: BlockWriter,
-    bloom_filter: Option<TrackingBloomFilter>,
+    key_filter: Option<BatchKeyFilter>,
+    key_filter_selected: bool,
+    estimated_keys: usize,
     cws: Vec<ColumnWriter>,
     finished_columns: Vec<FileTrailerColumn>,
     serializer: SerializerInner,
 }
 
 impl Writer {
+    fn log_filter_selection(key_filter: Option<&BatchKeyFilter>, enable_roaring: bool) {
+        match key_filter {
+            Some(BatchKeyFilter::RoaringU32(_)) => {
+                static ONCE: Once = Once::new();
+                ONCE.call_once(|| info!("Using roaring_u32 batch membership filter"));
+            }
+            Some(BatchKeyFilter::Bloom(_)) if enable_roaring => {
+                static ONCE: Once = Once::new();
+                ONCE.call_once(|| {
+                    info!("Roaring disabled for this batch; falling back to Bloom filter")
+                });
+            }
+            None if enable_roaring => {
+                static ONCE: Once = Once::new();
+                ONCE.call_once(|| {
+                    info!("Roaring requested for this batch, but Bloom filters are disabled; membership filtering disabled")
+                });
+            }
+            _ => {}
+        }
+    }
+
     fn bloom_false_positive_rate() -> Option<f64> {
         let rate = Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.bloom_false_positive_rate());
         let rate = (rate > 0.0 && rate < 1.0).then_some(rate);
@@ -1162,6 +1185,25 @@ impl Writer {
         rate
     }
 
+    fn select_key_filter<K>(&mut self, key: &K)
+    where
+        K: DataTrait + ?Sized,
+    {
+        if self.key_filter_selected {
+            return;
+        }
+
+        let enable_roaring = Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.enable_roaring());
+        let bloom_false_positive_rate = Self::bloom_false_positive_rate();
+        self.key_filter = if enable_roaring && key.supports_roaring32() {
+            Some(BatchKeyFilter::new_roaring_u32())
+        } else {
+            BatchKeyFilter::new_bloom(self.estimated_keys, bloom_false_positive_rate)
+        };
+        Self::log_filter_selection(self.key_filter.as_ref(), enable_roaring);
+        self.key_filter_selected = true;
+    }
+
     pub fn new(
         factories: &[&AnyFactories],
         cache: fn() -> Arc<BufferCache>,
@@ -1172,18 +1214,6 @@ impl Writer {
     ) -> Result<Self, StorageError> {
         assert_eq!(factories.len(), n_columns);
 
-        let bloom_filter = Self::bloom_false_positive_rate().map(|bloom_false_positive_rate| {
-            TrackingBloomFilter::new(
-                BloomFilter::with_false_pos(bloom_false_positive_rate)
-                    .seed(&BLOOM_FILTER_SEED)
-                    .expected_items({
-                        // `.max(64)` works around a fastbloom bug that hangs when the
-                        // expected number of items is zero (see
-                        // https://github.com/tomtomwombat/fastbloom/issues/17).
-                        estimated_keys.max(64)
-                    }),
-            )
-        });
         let parameters = Arc::new(parameters);
         let cws = factories
             .iter()
@@ -1194,7 +1224,9 @@ impl Writer {
         let writer = Self {
             cache,
             writer: BlockWriter::new(cache(), storage_backend.create_with_prefix(&worker.into())?),
-            bloom_filter,
+            key_filter: None,
+            key_filter_selected: false,
+            estimated_keys,
             cws,
             finished_columns,
             serializer: SerializerInner::new(),
@@ -1216,10 +1248,12 @@ impl Writer {
         };
 
         if column == 0 {
-            // Add `key` to bloom filter.
-            if let Some(bloom_filter) = &mut self.bloom_filter {
-                bloom_filter.insert_hash(item.0.default_hash());
-            }
+            self.select_key_filter(item.0);
+        }
+        if column == 0
+            && let Some(key_filter) = &mut self.key_filter
+        {
+            key_filter.insert_key(item.0);
         }
 
         // Add `value` to row group for column.
@@ -1249,22 +1283,48 @@ impl Writer {
     pub fn close(
         mut self,
         metadata: BatchMetadata,
-    ) -> Result<(Arc<dyn FileReader>, Option<TrackingBloomFilter>), StorageError> {
+    ) -> Result<(Arc<dyn FileReader>, Option<BatchKeyFilter>), StorageError> {
         debug_assert_eq!(self.cws.len(), self.finished_columns.len());
 
-        // Write the Bloom filter.
-        let filter_location = if let Some(bloom_filter) = &self.bloom_filter {
-            let filter_block = FilterBlockRef::from(bloom_filter);
-            // std::mem::size_of::<FilterBlockRef>() should be an
-            // upper bound: in-memory struct size + bloom payload bytes.
-            let estimated_block_size = (std::mem::size_of::<FilterBlockRef>()
-                + std::mem::size_of_val(filter_block.data))
-            // our binrw min block size is 512 so we round it up to avoid another
-            // reallocation
-            .next_multiple_of(512);
-            self.writer
-                .write_block(filter_block.into_block(estimated_block_size), None)?
-                .1
+        if let Some(key_filter) = &mut self.key_filter {
+            key_filter.finalize();
+        }
+
+        // Write the batch key filter.
+        let filter_location = if let Some(key_filter) = &self.key_filter {
+            match key_filter {
+                BatchKeyFilter::Bloom(filter) => {
+                    let filter_block = BloomFilterBlockRef {
+                        header: BlockHeader::new(
+                            &crate::storage::file::format::BLOOM_FILTER_BLOCK_MAGIC,
+                        ),
+                        num_hashes: filter.num_hashes(),
+                        data: filter.as_slice(),
+                    };
+                    let estimated_block_size = (std::mem::size_of::<BloomFilterBlockRef>()
+                        + std::mem::size_of_val(filter_block.data))
+                    .next_multiple_of(512);
+                    self.writer
+                        .write_block(filter_block.into_block(estimated_block_size), None)?
+                        .1
+                }
+                BatchKeyFilter::RoaringU32(filter) => {
+                    let mut data = Vec::with_capacity(filter.serialized_size());
+                    filter
+                        .serialize_into(&mut data)
+                        .map_err(|_| StorageError::RoaringBitmapFilter)?;
+                    let filter_block = RoaringBitmapFilterBlockRef {
+                        header: BlockHeader::new(&ROARING_BITMAP_FILTER_BLOCK_MAGIC),
+                        data: &data,
+                    };
+                    let estimated_block_size = (std::mem::size_of::<RoaringBitmapFilterBlockRef>()
+                        + data.len())
+                    .next_multiple_of(512);
+                    self.writer
+                        .write_block(filter_block.into_block(estimated_block_size), None)?
+                        .1
+                }
+            }
         } else {
             BlockLocation { offset: 0, size: 0 }
         };
@@ -1302,7 +1362,7 @@ impl Writer {
         self.writer
             .insert_cache_entry(location, Arc::new(file_trailer));
 
-        Ok((self.writer.complete()?, self.bloom_filter))
+        Ok((self.writer.complete()?, self.key_filter))
     }
 
     pub fn n_columns(&self) -> usize {
@@ -1431,7 +1491,7 @@ where
     ) -> Result<
         (
             Arc<dyn FileReader>,
-            Option<TrackingBloomFilter>,
+            Option<BatchKeyFilter>,
             Option<(Box<K0>, Box<K0>)>,
         ),
         StorageError,
@@ -1459,12 +1519,12 @@ where
         let any_factories = self.factories.any_factories();
 
         let cache = self.inner.cache;
-        let (file_handle, bloom_filter, key_bounds) = self.close(metadata)?;
+        let (file_handle, key_filter, key_bounds) = self.close(metadata)?;
         let key_range = key_bounds
             .as_ref()
             .map(|(min, max)| KeyRange::from_refs(min.as_ref(), max.as_ref()));
         let (reader, membership_filter) =
-            Reader::new_with_filter(&[&any_factories], cache, file_handle, bloom_filter)?;
+            Reader::new_with_filter(&[&any_factories], cache, file_handle, key_filter)?;
         let filters = BatchFilters::from_file(key_range, membership_filter);
         Ok((reader, filters))
     }
@@ -1637,7 +1697,7 @@ where
     ) -> Result<
         (
             Arc<dyn FileReader>,
-            Option<TrackingBloomFilter>,
+            Option<BatchKeyFilter>,
             Option<(Box<K0>, Box<K0>)>,
         ),
         StorageError,
@@ -1671,7 +1731,7 @@ where
         let any_factories0 = self.factories0.any_factories();
         let any_factories1 = self.factories1.any_factories();
         let cache = self.inner.cache;
-        let (file_handle, bloom_filter, key_bounds) = self.close(metadata)?;
+        let (file_handle, key_filter, key_bounds) = self.close(metadata)?;
         let key_range = key_bounds
             .as_ref()
             .map(|(min, max)| KeyRange::from_refs(min.as_ref(), max.as_ref()));
@@ -1679,7 +1739,7 @@ where
             &[&any_factories0, &any_factories1],
             cache,
             file_handle,
-            bloom_filter,
+            key_filter,
         )?;
         let filters = BatchFilters::from_file(key_range, membership_filter);
         Ok((reader, filters))

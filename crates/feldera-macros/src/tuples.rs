@@ -247,6 +247,32 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         }
     };
 
+    let roaring_u32_key_impl = if num_elements == 1 {
+        let inner = &elements[0];
+        quote! {
+            impl<#inner: ::dbsp::utils::SupportsRoaring> ::dbsp::utils::SupportsRoaring for #name<#inner> {
+                #[inline]
+                fn supports_roaring32(&self) -> bool {
+                    self.0.supports_roaring32()
+                }
+
+                #[inline]
+                fn into_roaring_u32(&self, min: &Self) -> Option<u32> {
+                    self.0.into_roaring_u32(&min.0)
+                }
+
+                #[inline]
+                fn roaring_u32_value(&self) -> Option<u32> {
+                    self.0.roaring_u32_value()
+                }
+            }
+        }
+    } else {
+        quote! {
+            impl<#(#generics),*> ::dbsp::utils::SupportsRoaring for #name<#(#generics),*> {}
+        }
+    };
+
     let sparse_get_methods = fields
         .iter()
         .enumerate()
@@ -969,6 +995,7 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         #copy_impl
         #checkpoint_impl
         #not_an_option
+        #roaring_u32_key_impl
     });
 
     expanded

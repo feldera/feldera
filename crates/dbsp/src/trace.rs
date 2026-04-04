@@ -35,7 +35,7 @@ use crate::trace::cursor::{
     DefaultPushCursor, FilteredMergeCursor, FilteredMergeCursorWithSnapshot, PushCursor,
     UnfilteredMergeCursor,
 };
-use crate::utils::IsNone;
+use crate::utils::{IsNone, SupportsRoaring};
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::CursorFactory;
 use enum_map::Enum;
@@ -102,6 +102,7 @@ pub trait DBData:
     + Debug
     + ArchivedDBData
     + IsNone<Inner: ArchivedDBData>
+    + SupportsRoaring
     + 'static
 {
 }
@@ -119,6 +120,7 @@ impl<T> DBData for T where
         + Debug
         + ArchivedDBData
         + IsNone<Inner: ArchivedDBData>
+        + SupportsRoaring
         + 'static
 {
 }

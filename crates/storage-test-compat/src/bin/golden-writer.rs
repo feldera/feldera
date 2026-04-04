@@ -112,7 +112,7 @@ where
     }
 
     let tmp_path = writer.path().clone();
-    let (_file_handle, _bloom_filter, _key_bounds) = writer.close(BatchMetadata::default())?;
+    let (_file_handle, _key_filter, _key_bounds) = writer.close(BatchMetadata::default())?;
     let content = storage_backend.read(&tmp_path)?;
     storage_backend.write(&output_storage_path, (*content).clone())?;
     storage_backend.delete(&tmp_path)?;

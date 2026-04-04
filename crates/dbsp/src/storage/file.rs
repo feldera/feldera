@@ -36,8 +36,10 @@
 //! value and for sequential reads.  It should be possible to disable indexing
 //! by data value for workloads that don't require it.
 //!
-//! Layer files support approximate set membership query in `~O(1)` time using
-//! [a filter block](format::FilterBlock).
+//! Layer files support cheap key-membership tests using a per-batch filter
+//! block. The default filter is Bloom-based; key types that can be mapped
+//! exactly into a `u32` or `u64` filter domain can alternatively use an exact
+//! roaring bitmap or treemap filter.
 //!
 //! Layer files should support 1 TB data size.
 //!
@@ -98,6 +100,7 @@ use std::{
 use std::{any::Any, sync::Arc};
 use std::{fmt::Debug, ptr::NonNull};
 
+mod filter;
 pub mod format;
 mod item;
 pub mod reader;
@@ -108,6 +111,8 @@ use crate::{
     dynamic::{DataTrait, Erase, Factory, WithFactory},
     storage::file::item::RefTup2Factory,
 };
+pub use filter::BatchKeyFilter;
+pub use filter::TrackingRoaringBitmap;
 pub use item::{ArchivedItem, Item, ItemFactory, WithItemFactory};
 
 const BLOOM_FILTER_SEED: u128 = 42;

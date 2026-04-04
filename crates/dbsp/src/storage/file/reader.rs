@@ -2,17 +2,16 @@
 //!
 //! [`Reader`] is the top-level interface for reading layer files.
 
-use super::format::{Compression, FileTrailer};
-use super::{AnyFactories, Deserializer, Factories};
+use super::format::{BloomFilterBlock, Compression, FileTrailer, RoaringBitmapFilterBlock};
+use super::{AnyFactories, BatchKeyFilter, Deserializer, Factories};
 use crate::dynamic::{DynVec, WeightTrait};
 use crate::storage::buffer_cache::CacheAccess;
-use crate::storage::file::format::{BatchMetadata, FilterBlock};
-use crate::storage::tracking_bloom_filter::TrackingBloomFilter;
 use crate::storage::{
     backend::StorageError,
     buffer_cache::{BufferCache, FBuf},
     file::format::{
-        DataBlockHeader, FileTrailerColumn, IndexBlockHeader, NodeType, VERSION_NUMBER, Varint,
+        BatchMetadata, DataBlockHeader, FileTrailerColumn, IndexBlockHeader, NodeType,
+        VERSION_NUMBER, Varint,
     },
     file::item::ArchivedItem,
 };
@@ -327,6 +326,35 @@ pub enum CorruptionError {
     /// Invalid filter block location.
     #[error("Invalid file block location ({0}).")]
     InvalidFilterLocation(InvalidBlockLocation),
+
+    /// Filter block payload could not be decoded.
+    #[error("Invalid {kind} filter encoding in block ({location}): {inner}")]
+    InvalidFilterEncoding {
+        /// Block location.
+        location: BlockLocation,
+        /// Filter kind.
+        kind: &'static str,
+        /// Underlying parse error.
+        inner: String,
+    },
+
+    /// Roaring bitmap filter block payload could not be decoded.
+    #[error("Invalid roaring bitmap filter encoding in block ({location}): {inner}")]
+    InvalidRoaringBitmapFilterEncoding {
+        /// Block location.
+        location: BlockLocation,
+        /// Underlying parse error.
+        inner: String,
+    },
+
+    /// Filter block magic is unknown.
+    #[error("Unknown filter block magic {magic:?} in block ({location}).")]
+    UnknownFilterBlockMagic {
+        /// Block location.
+        location: BlockLocation,
+        /// Unknown magic.
+        magic: [u8; 4],
+    },
 }
 
 /// Reader for an array of [Varint]s in a storage file.
@@ -1347,19 +1375,6 @@ struct Column {
     n_rows: u64,
 }
 
-impl FilterBlock {
-    fn new(file_handle: &dyn FileReader, location: BlockLocation) -> Result<Self, Error> {
-        let block = file_handle.read_block(location)?;
-        Self::read_le(&mut io::Cursor::new(block.as_slice())).map_err(|e| {
-            Error::Corruption(CorruptionError::Binrw {
-                location,
-                block_type: "filter",
-                inner: e.to_string(),
-            })
-        })
-    }
-}
-
 impl Column {
     fn new(factories: &AnyFactories, info: &FileTrailerColumn) -> Result<Self, Error> {
         let FileTrailerColumn {
@@ -1502,6 +1517,60 @@ fn decompress(
     Ok(raw)
 }
 
+fn parse_filter_block<T: for<'a> BinRead<Args<'a> = ()>>(
+    block: &FBuf,
+    location: BlockLocation,
+    block_type: &'static str,
+) -> Result<T, Error> {
+    T::read_le(&mut io::Cursor::new(block.as_slice())).map_err(|e| {
+        Error::Corruption(CorruptionError::Binrw {
+            location,
+            block_type,
+            inner: e.to_string(),
+        })
+    })
+}
+
+fn read_filter_block(
+    file_handle: &dyn FileReader,
+    location: BlockLocation,
+) -> Result<BatchKeyFilter, Error> {
+    let block = file_handle.read_block(location)?;
+    if block.len() < 8 {
+        return Err(Error::Corruption(CorruptionError::InvalidFilterEncoding {
+            location,
+            kind: "unknown",
+            inner: format!("block too short: {} bytes", block.len()),
+        }));
+    }
+
+    let mut magic = [0u8; 4];
+    magic.copy_from_slice(&block[4..8]);
+
+    match magic {
+        crate::storage::file::format::BLOOM_FILTER_BLOCK_MAGIC => {
+            let block: BloomFilterBlock = parse_filter_block(&block, location, "bloom filter")?;
+            Ok(BatchKeyFilter::from_bloom_parts(
+                block.num_hashes,
+                block.data,
+            ))
+        }
+        crate::storage::file::format::ROARING_BITMAP_FILTER_BLOCK_MAGIC => {
+            let block: RoaringBitmapFilterBlock =
+                parse_filter_block(&block, location, "roaring bitmap filter")?;
+            BatchKeyFilter::from_roaring_u32_bytes(&block.data).map_err(|e| {
+                Error::Corruption(CorruptionError::InvalidRoaringBitmapFilterEncoding {
+                    location,
+                    inner: e.to_string(),
+                })
+            })
+        }
+        magic => Err(Error::Corruption(
+            CorruptionError::UnknownFilterBlockMagic { location, magic },
+        )),
+    }
+}
+
 /// Layer file column specification.
 ///
 /// A column specification must take the form `K0, A0, N0`, where `(K0, A0)` is
@@ -1584,8 +1653,8 @@ where
         factories: &[&AnyFactories],
         cache: fn() -> Arc<BufferCache>,
         file: Arc<dyn FileReader>,
-        membership_filter: Option<TrackingBloomFilter>,
-    ) -> Result<(Self, Option<TrackingBloomFilter>), Error> {
+        membership_filter: Option<BatchKeyFilter>,
+    ) -> Result<(Self, Option<BatchKeyFilter>), Error> {
         let file_size = file.get_size()?;
         if file_size < 512 || (file_size % 512) != 0 {
             return Err(CorruptionError::InvalidFileSize(file_size).into());
@@ -1653,29 +1722,28 @@ where
             }
         }
 
-        fn read_filter_block(
+        fn read_filter_block_at(
             file_handle: &dyn FileReader,
             offset: u64,
             size: usize,
-        ) -> Result<TrackingBloomFilter, Error> {
-            Ok(FilterBlock::new(
+        ) -> Result<BatchKeyFilter, Error> {
+            read_filter_block(
                 file_handle,
                 BlockLocation::new(offset, size).map_err(|error: InvalidBlockLocation| {
                     Error::Corruption(CorruptionError::InvalidFilterLocation(error))
                 })?,
-            )?
-            .into())
+            )
         }
         let membership_filter = if let Some(membership_filter) = membership_filter {
             Some(membership_filter)
         } else if file_trailer.has_filter64() {
-            Some(read_filter_block(
+            Some(read_filter_block_at(
                 &*file,
                 file_trailer.filter_offset64,
                 file_trailer.filter_size64 as usize,
             )?)
         } else if file_trailer.filter_offset != 0 {
-            Some(read_filter_block(
+            Some(read_filter_block_at(
                 &*file,
                 file_trailer.filter_offset,
                 file_trailer.filter_size as usize,
@@ -1721,7 +1789,7 @@ where
         cache: fn() -> Arc<BufferCache>,
         storage_backend: &dyn StorageBackend,
         path: &StoragePath,
-    ) -> Result<(Self, Option<TrackingBloomFilter>), Error> {
+    ) -> Result<(Self, Option<BatchKeyFilter>), Error> {
         Self::new_with_filter(factories, cache, storage_backend.open(path)?, None)
     }
 
