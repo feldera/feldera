@@ -32,6 +32,9 @@ where
     /// filters pays that cost at most once.
     fn maybe_contains_key(&self, key: &K, hash: &mut Option<u64>) -> bool;
 
+    /// Filter kind for observability.
+    fn kind(&self) -> FilterKind;
+
     /// Statistics for this filter.
     fn stats(&self) -> FilterStats;
 }
@@ -141,6 +144,13 @@ where
         }
     }
 
+    pub fn membership_filter_kind(&self) -> FilterKind {
+        self.membership_filter
+            .as_ref()
+            .map(|filter| filter.kind())
+            .unwrap_or(FilterKind::None)
+    }
+
     /// Returns the cached key bounds, when available.
     pub fn key_bounds(&self) -> Option<(&K, &K)> {
         self.range_filter.range.as_ref().map(|range| range.bounds())
@@ -221,6 +231,10 @@ where
         is_hit
     }
 
+    fn kind(&self) -> FilterKind {
+        FilterKind::Range
+    }
+
     fn stats(&self) -> FilterStats {
         self.as_ref().stats()
     }
@@ -235,6 +249,10 @@ where
         self.contains_hash(*hash)
     }
 
+    fn kind(&self) -> FilterKind {
+        FilterKind::Bloom
+    }
+
     fn stats(&self) -> FilterStats {
         TrackingBloomFilter::stats(self)
     }
@@ -246,6 +264,10 @@ where
 {
     fn maybe_contains_key(&self, key: &K, _hash: &mut Option<u64>) -> bool {
         self.maybe_contains_key(key)
+    }
+
+    fn kind(&self) -> FilterKind {
+        FilterKind::Roaring
     }
 
     fn stats(&self) -> FilterStats {
