@@ -549,10 +549,10 @@ where
     async fn eval(
         &mut self,
         trace: &T,
-        updates: &Vec<Box<DynPairs<T::Key, DynUpdate<T::Val, U>>>>,
+        input_updates: &Vec<Box<DynPairs<T::Key, DynUpdate<T::Val, U>>>>,
     ) -> B {
         // Inputs must be sorted by key
-        let mut updates = updates
+        let mut updates = input_updates
             .iter()
             .filter_map(|updates| {
                 if !updates.is_empty() {
@@ -618,6 +618,14 @@ where
                     if !key_updates.is_empty() {
                         for pair in key_updates.dyn_iter_mut() {
                             let (v, d) = pair.split_mut();
+                            if **d > 1 {
+                                println!(
+                                    "invalid update key: {:?}, value: {:?}, weight: {:?}",
+                                    cur_key, v, d
+                                );
+                                println!("inputs: {:?}", input_updates);
+                                panic!();
+                            }
                             builder.push_val_diff_mut(v, d);
                         }
                         builder.push_key(cur_key);
@@ -684,6 +692,15 @@ where
             if !key_updates.is_empty() {
                 for pair in key_updates.dyn_iter_mut() {
                     let (v, d) = pair.split_mut();
+                    if **d > 1 {
+                        println!(
+                            "invalid update key: {:?}, value: {:?}, weight: {:?}",
+                            cur_key, v, d
+                        );
+                        println!("inputs: {:?}", input_updates);
+                        panic!();
+                    }
+
                     builder.push_val_diff_mut(v, d);
                 }
                 builder.push_key(cur_key);
