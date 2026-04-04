@@ -31,11 +31,12 @@ use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 use crate::storage::buffer_cache::CacheStats;
 use crate::storage::file::SerializerInner;
 pub use crate::storage::file::{DbspSerializer, Deserializable, Deserializer, Rkyv};
+use crate::storage::file::{FilterKind, FilterStats};
 use crate::trace::cursor::{
     DefaultPushCursor, FilteredMergeCursor, FilteredMergeCursorWithSnapshot, PushCursor,
     UnfilteredMergeCursor,
 };
-use crate::utils::IsNone;
+use crate::utils::{IsNone, SupportsRoaring};
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::CursorFactory;
 use enum_map::Enum;
@@ -52,7 +53,9 @@ pub mod cursor;
 pub mod filter;
 pub mod layers;
 pub mod ord;
+mod sampling;
 pub mod spine_async;
+pub(crate) use sampling::sample_keys_from_batches;
 pub use spine_async::{BatchReaderWithSnapshot, ListMerger, Spine, SpineSnapshot, WithSnapshot};
 
 #[cfg(test)]
@@ -80,7 +83,7 @@ use crate::{
     storage::filter_stats::FilterStats,
 };
 pub use cursor::{Cursor, MergeCursor};
-pub use filter::{Filter, GroupFilter};
+pub use filter::{BatchFilterStats, BatchFilters, Filter, GroupFilter};
 pub use layers::Trie;
 
 /// Trait for data stored in batches.
@@ -102,6 +105,7 @@ pub trait DBData:
     + Debug
     + ArchivedDBData
     + IsNone<Inner: ArchivedDBData>
+    + SupportsRoaring
     + 'static
 {
 }
@@ -119,6 +123,7 @@ impl<T> DBData for T where
         + Debug
         + ArchivedDBData
         + IsNone<Inner: ArchivedDBData>
+        + SupportsRoaring
         + 'static
 {
 }
@@ -534,7 +539,6 @@ where
     /// * The output sample contains keys sorted in ascending order.
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
-        Self::Time: PartialEq<()>,
         RG: Rng;
 
     /// Returns num_partitions-1 keys from the batch that partition the batch into num_partitions
@@ -674,7 +678,6 @@ where
     }
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
-        Self::Time: PartialEq<()>,
         RG: Rng,
     {
         (**self).sample_keys(rng, sample_size, sample)
@@ -878,6 +881,16 @@ where
         Err(ReaderError::Unsupported)
     }
 
+    /// Minimum and maximum keys in this batch.
+    ///
+    /// File-backed batches materialize these bounds at write time. In-memory
+    /// batches compute them from their ordered key storage. Merge builders
+    /// use these bounds to decide whether a batch span can be encoded into a
+    /// roaring bitmap.
+    ///
+    /// Returns `None` for empty batches.
+    fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)>;
+
     /// The number of tuples with negative weights in the batch.
     ///
     /// This metric is used in merger heuristics. Negative weights are likely to cancel out
@@ -998,7 +1011,7 @@ where
         location: Option<BatchLocation>,
     ) -> Self
     where
-        B: BatchReader,
+        B: Batch<Key = Output::Key, Val = Output::Val, Time = Output::Time, R = Output::R>,
         I: IntoIterator<Item = &'a B> + Clone,
     {
         let _ = location;

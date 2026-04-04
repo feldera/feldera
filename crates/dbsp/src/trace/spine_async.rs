@@ -18,17 +18,19 @@ use crate::{
             MERGING_MEMORY_RECORDS_COUNT, MERGING_SIZE_BYTES, MERGING_STORAGE_RECORDS_COUNT,
             MetaItem, MetricId, MetricReading, NEGATIVE_WEIGHT_COUNT, OperatorMeta,
             RANGE_FILTER_HIT_RATE_PERCENT, RANGE_FILTER_HITS_COUNT, RANGE_FILTER_MISSES_COUNT,
-            RANGE_FILTER_SIZE_BYTES, SPINE_BATCHES_COUNT, SPINE_STORAGE_SIZE_BYTES,
+            RANGE_FILTER_SIZE_BYTES, ROARING_FILTER_HIT_RATE_PERCENT, ROARING_FILTER_HITS_COUNT,
+            ROARING_FILTER_MISSES_COUNT, ROARING_FILTER_SIZE_BYTES, SPINE_BATCHES_COUNT,
+            SPINE_STORAGE_SIZE_BYTES,
         },
         metrics::COMPACTION_STALL_TIME_NANOSECONDS,
         negative_weight_multiplier,
         runtime::{TOKIO_BUFFER_CACHE, TOKIO_WORKER_INDEX},
     },
-    dynamic::{DynVec, Factory, Weight},
+    dynamic::{DynVec, Factory},
     samply::SamplySpan,
     storage::{
         buffer_cache::{BufferCache, CacheStats},
-        filter_stats::FilterStats,
+        file::{FilterKind, FilterStats},
     },
     time::Timestamp,
     trace::{
@@ -36,6 +38,7 @@ use crate::{
         cursor::{CursorList, Position},
         merge_batches,
         ord::fallback::pick_insert_destination,
+        sample_keys_from_batches,
         spine_async::{
             list_merger::ArcListMerger, push_merger::ArcPushMerger, snapshot::FetchList,
         },
@@ -68,7 +71,6 @@ use std::{
 use std::{collections::VecDeque, sync::atomic::Ordering};
 use std::{
     fmt::{self, Debug, Display, Formatter},
-    ops::DerefMut,
     sync::Condvar,
 };
 use std::{ops::RangeInclusive, sync::Mutex};
@@ -780,19 +782,24 @@ where
         let mut cache_stats = spine_stats.cache_stats;
         let mut storage_size = 0;
         let mut merging_size = 0;
-        let mut membership_filter_stats = FilterStats::default();
+        let mut membership_filter_stats = EnumMap::<FilterKind, FilterStats>::default();
         let mut range_filter_stats = FilterStats::default();
-        let mut storage_records = 0;
+        let mut bloom_filter_records = 0;
         for (batch, merging) in batches {
             cache_stats += batch.cache_stats();
-            membership_filter_stats += batch.membership_filter_stats();
+            let kind = batch.membership_filter_kind();
+            if kind != FilterKind::None {
+                membership_filter_stats[kind] += batch.membership_filter_stats();
+            }
+            if kind == FilterKind::Bloom {
+                bloom_filter_records += batch.key_count();
+            }
             range_filter_stats += batch.range_filter_stats();
             let on_storage = batch.location() == BatchLocation::Storage;
             if on_storage || merging {
                 let size = batch.approximate_byte_size();
                 if on_storage {
                     storage_size += size;
-                    storage_records += batch.key_count();
                 }
                 if merging {
                     merging_size += size;
@@ -800,9 +807,12 @@ where
             }
         }
 
-        if storage_records > 0 {
+        let bloom_filter_stats = membership_filter_stats[FilterKind::Bloom];
+        let roaring_filter_stats = membership_filter_stats[FilterKind::Roaring];
+
+        if bloom_filter_records > 0 {
             let bits_per_key =
-                membership_filter_stats.size_byte as f64 * 8.0 / storage_records as f64;
+                bloom_filter_stats.size_byte as f64 * 8.0 / bloom_filter_records as f64;
             let bits_per_key = bits_per_key as usize;
             meta.extend(metadata! {
                 BLOOM_FILTER_BITS_PER_KEY => MetaItem::Int(bits_per_key)
@@ -839,25 +849,48 @@ where
             MetricReading::new(
                 BLOOM_FILTER_SIZE_BYTES,
                 Vec::new(),
-                MetaItem::bytes(membership_filter_stats.size_byte),
+                MetaItem::bytes(bloom_filter_stats.size_byte),
             ),
             MetricReading::new(
                 BLOOM_FILTER_HITS_COUNT,
                 Vec::new(),
-                MetaItem::Count(membership_filter_stats.hits),
+                MetaItem::Count(bloom_filter_stats.hits),
             ),
             MetricReading::new(
                 BLOOM_FILTER_MISSES_COUNT,
                 Vec::new(),
-                MetaItem::Count(membership_filter_stats.misses),
+                MetaItem::Count(bloom_filter_stats.misses),
             ),
             MetricReading::new(
                 BLOOM_FILTER_HIT_RATE_PERCENT,
                 Vec::new(),
                 MetaItem::Percent {
-                    numerator: membership_filter_stats.hits as u64,
-                    denominator: membership_filter_stats.hits as u64
-                        + membership_filter_stats.misses as u64,
+                    numerator: bloom_filter_stats.hits as u64,
+                    denominator: bloom_filter_stats.hits as u64 + bloom_filter_stats.misses as u64,
+                },
+            ),
+            MetricReading::new(
+                ROARING_FILTER_SIZE_BYTES,
+                Vec::new(),
+                MetaItem::bytes(roaring_filter_stats.size_byte),
+            ),
+            MetricReading::new(
+                ROARING_FILTER_HITS_COUNT,
+                Vec::new(),
+                MetaItem::Count(roaring_filter_stats.hits),
+            ),
+            MetricReading::new(
+                ROARING_FILTER_MISSES_COUNT,
+                Vec::new(),
+                MetaItem::Count(roaring_filter_stats.misses),
+            ),
+            MetricReading::new(
+                ROARING_FILTER_HIT_RATE_PERCENT,
+                Vec::new(),
+                MetaItem::Percent {
+                    numerator: roaring_filter_stats.hits as u64,
+                    denominator: roaring_filter_stats.hits as u64
+                        + roaring_filter_stats.misses as u64,
                 },
             ),
             MetricReading::new(
@@ -1073,7 +1106,8 @@ where
         snapshot: Option<Arc<SpineSnapshot<B>>>,
     ) -> Self {
         let factories = batches[0].factories();
-        let builder = B::Builder::for_merge(&factories, &batches, None);
+        let batch_refs: Vec<&B> = batches.iter().map(|b| b.as_ref()).collect();
+        let builder = B::Builder::for_merge(&factories, batch_refs, None);
         Self {
             builder,
             fuel: 0,
@@ -1291,57 +1325,6 @@ where
     }
 }
 
-/// Samples `sample_size` keys from a set of batches.
-///
-/// See [`BatchReader::sample_keys`](`crate::trace::BatchReader::sample_keys`) for more details.
-pub(crate) fn sample_keys_from_batches<B, RG>(
-    factories: &B::Factories,
-    batches: &[Arc<B>],
-    rng: &mut RG,
-    sample_size: usize,
-    sample: &mut DynVec<B::Key>,
-) where
-    B: Batch,
-    B::Time: PartialEq<()>,
-    RG: Rng,
-{
-    let total_keys = batches.iter().map(|batch| batch.key_count()).sum::<usize>();
-
-    if sample_size == 0 || total_keys == 0 {
-        // Avoid division by zero.
-        return;
-    }
-
-    // Sample each batch, picking the number of keys proportional to
-    // batch size.
-    let mut intermediate = factories.keys_factory().default_box();
-    intermediate.reserve(sample_size);
-
-    for batch in batches {
-        batch.sample_keys(
-            rng,
-            ((batch.key_count() as u128) * (sample_size as u128) / (total_keys as u128)) as usize,
-            intermediate.as_mut(),
-        );
-    }
-
-    // Drop duplicate keys and keys that appear with 0 weight, i.e.,
-    // get canceled out across multiple batches.
-    intermediate.deref_mut().sort_unstable();
-    intermediate.dedup();
-
-    let mut cursor = SpineCursor::new_cursor(factories, batches.to_vec());
-    for key in intermediate.dyn_iter_mut() {
-        cursor.seek_key(key);
-        if let Some(current_key) = cursor.get_key()
-            && current_key == key
-        {
-            debug_assert!(cursor.val_valid() && !cursor.weight().is_zero());
-            sample.push_ref(key);
-        }
-    }
-}
-
 impl<B> BatchReader for Spine<B>
 where
     B: Batch,
@@ -1382,14 +1365,6 @@ where
             .sum()
     }
 
-    fn membership_filter_stats(&self) -> FilterStats {
-        self.merger
-            .get_batches()
-            .iter()
-            .map(|batch| batch.membership_filter_stats())
-            .sum()
-    }
-
     fn range_filter_stats(&self) -> FilterStats {
         self.merger
             .get_batches()
@@ -1404,14 +1379,23 @@ where
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
-        Self::Time: PartialEq<()>,
         RG: Rng,
     {
+        let batches = self.merger.get_batches();
+        let total_keys = batches.iter().map(|batch| batch.key_count()).sum::<usize>();
+        let batch_refs: Vec<_> = batches.iter().map(Arc::as_ref).collect();
         sample_keys_from_batches(
             &self.factories,
-            &self.merger.get_batches(),
+            &batch_refs,
             rng,
-            sample_size,
+            |batch| {
+                if sample_size == 0 || total_keys == 0 {
+                    0
+                } else {
+                    ((batch.key_count() as u128) * (sample_size as u128) / (total_keys as u128))
+                        as usize
+                }
+            },
             sample,
         );
     }
@@ -1698,8 +1682,9 @@ where
                 && pick_insert_destination(&batch) == BatchLocation::Storage
             {
                 let factories = batch.factories();
+                let batch_ref: &B = &batch;
                 let builder =
-                    B::Builder::for_merge(&factories, [&batch], Some(BatchLocation::Storage));
+                    B::Builder::for_merge(&factories, [batch_ref], Some(BatchLocation::Storage));
                 let (key_filter, value_filter) = self.merger.state.lock().unwrap().get_filters();
                 Arc::new(ListMerger::merge(
                     &factories,

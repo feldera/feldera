@@ -13,10 +13,12 @@ use size_of::SizeOf;
 use super::SpineCursor;
 use crate::NumEntries;
 use crate::dynamic::{DynVec, Factory};
-use crate::storage::filter_stats::FilterStats;
+use crate::storage::file::FilterStats;
 use crate::trace::cursor::{CursorFactory, CursorList};
-use crate::trace::spine_async::sample_keys_from_batches;
-use crate::trace::{Batch, BatchReader, BatchReaderFactories, Cursor, Spine, merge_batches};
+use crate::trace::{
+    Batch, BatchReader, BatchReaderFactories, Cursor, Spine, merge_batches,
+    sample_keys_from_batches,
+};
 
 pub trait WithSnapshot: Sized {
     type Batch: Batch;
@@ -241,14 +243,26 @@ where
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
-        Self::Time: PartialEq<()>,
         RG: Rng,
     {
+        let total_keys = self
+            .batches
+            .iter()
+            .map(|batch| batch.key_count())
+            .sum::<usize>();
+        let batch_refs: Vec<_> = self.batches.iter().map(Arc::as_ref).collect();
         sample_keys_from_batches(
             &self.factories,
-            self.batches.as_slice(),
+            &batch_refs,
             rng,
-            sample_size,
+            |batch| {
+                if sample_size == 0 || total_keys == 0 {
+                    0
+                } else {
+                    ((batch.key_count() as u128) * (sample_size as u128) / (total_keys as u128))
+                        as usize
+                }
+            },
             sample,
         );
     }

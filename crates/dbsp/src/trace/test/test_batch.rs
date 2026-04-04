@@ -3,7 +3,7 @@
 //! So far, only methods/traits used in tests have been implemented.
 #![allow(clippy::type_complexity)]
 
-use crate::storage::filter_stats::FilterStats;
+use crate::storage::file::FilterStats;
 use crate::{
     DBData, DBWeight, NumEntries, Timestamp,
     dynamic::{
@@ -1286,6 +1286,12 @@ where
     type Timed<T2: Timestamp> = TestBatch<K, V, T2, R>;
     type Batcher = TestBatchBatcher<K, V, T, R>;
     type Builder = TestBatchBuilder<K, V, T, R>;
+
+    fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)> {
+        let min = self.data.keys().next()?.0.as_ref();
+        let max = self.data.keys().next_back()?.0.as_ref();
+        Some((min, max))
+    }
 
     fn negative_weight_count(&self) -> Option<u64> {
         None
