@@ -90,6 +90,13 @@ class FelderaCursor:
         """
         Execute a SQL statement by routing to the appropriate Feldera endpoint.
 
+        For queries that return results, the query is routed to the ad-hoc query
+        endpoint backed by Datafusion.
+
+        For queries that perform data manipulation, the query is currently logged
+        but not executed directly against the pipeline query endpoint, as the adapter
+        currently expects the dbt adapter run to handle these operations.
+
         :param sql: The SQL statement to execute.
         :param bindings: Optional parameter bindings (not supported by Feldera).
         """
