@@ -1,0 +1,111 @@
+# Manifest for downloading dbt-adventureworks project files from GitHub Gist.
+# Used by integration_tests/scripts/download_seeds.py
+#
+# Raw URL pattern:
+#   https://gist.githubusercontent.com/{gist_owner}/{gist_id}/raw/{filename}
+
+gist_id: "7d8edd90bd3cf703f9a7b34f8c494347"
+gist_owner: "mdrakiburrahman"
+
+files:
+  # macros
+  - path: macros/surrogate_key.sql
+    filename: surrogate_key.sql
+
+  # models/intermediate
+  - path: models/intermediate/int_kafka_sales.sql
+    filename: int_kafka_sales.sql
+
+  # models/kafka
+  - path: models/kafka/kafka_sales.sql
+    filename: kafka_sales.sql
+
+  # models/marts
+  - path: models/marts/dim_address.sql
+    filename: dim_address.sql
+  - path: models/marts/dim_credit_card.sql
+    filename: dim_credit_card.sql
+  - path: models/marts/dim_customer.sql
+    filename: dim_customer.sql
+  - path: models/marts/dim_date.sql
+    filename: dim_date.sql
+  - path: models/marts/dim_order_status.sql
+    filename: dim_order_status.sql
+  - path: models/marts/dim_product.sql
+    filename: dim_product.sql
+  - path: models/marts/fct_recent_sales.sql
+    filename: fct_recent_sales.sql
+  - path: models/marts/fct_sales.sql
+    filename: fct_sales.sql
+  - path: models/marts/obt_sales.sql
+    filename: obt_sales.sql
+  - path: models/marts/sources.yml
+    filename: sources.yml
+
+  # seeds/date
+  - path: seeds/date/calendar_date.csv
+    filename: calendar_date.csv
+  - path: seeds/date/calendar_date.yml
+    filename: calendar_date.yml
+
+  # seeds/person
+  - path: seeds/person/address.csv
+    filename: address.csv
+  - path: seeds/person/address.yml
+    filename: address.yml
+  - path: seeds/person/countryregion.csv
+    filename: countryregion.csv
+  - path: seeds/person/countryregion.yml
+    filename: countryregion.yml
+  - path: seeds/person/person.csv
+    filename: person.csv
+  - path: seeds/person/person.yml
+    filename: person.yml
+  - path: seeds/person/stateprovince.csv
+    filename: stateprovince.csv
+  - path: seeds/person/stateprovince.yml
+    filename: stateprovince.yml
+
+  # seeds/production
+  - path: seeds/production/product.csv
+    filename: product.csv
+  - path: seeds/production/product.yml
+    filename: product.yml
+  - path: seeds/production/productcategory.csv
+    filename: productcategory.csv
+  - path: seeds/production/productcategory.yml
+    filename: productcategory.yml
+  - path: seeds/production/productsubcategory.csv
+    filename: productsubcategory.csv
+  - path: seeds/production/productsubcategory.yml
+    filename: productsubcategory.yml
+
+  # seeds/sales
+  - path: seeds/sales/creditcard.csv
+    filename: creditcard.csv
+  - path: seeds/sales/creditcard.yml
+    filename: creditcard.yml
+  - path: seeds/sales/customer.csv
+    filename: customer.csv
+  - path: seeds/sales/customer.yml
+    filename: customer.yml
+  - path: seeds/sales/salesorderdetail.csv
+    filename: salesorderdetail.csv
+  - path: seeds/sales/salesorderdetail.yml
+    filename: salesorderdetail.yml
+  - path: seeds/sales/salesorderheader.csv
+    filename: salesorderheader.csv
+  - path: seeds/sales/salesorderheader.yml
+    filename: salesorderheader.yml
+  - path: seeds/sales/salesorderheadersalesreason.csv
+    filename: salesorderheadersalesreason.csv
+  - path: seeds/sales/salesorderheadersalesreason.yml
+    filename: salesorderheadersalesreason.yml
+  - path: seeds/sales/salesreason.csv
+    filename: salesreason.csv
+  - path: seeds/sales/salesreason.yml
+    filename: salesreason.yml
+  - path: seeds/sales/store.csv
+    filename: store.csv
+  - path: seeds/sales/store.yml
+    filename: store.yml
