@@ -46,7 +46,7 @@ feldera = "dbt.adapters.feldera"
 dev = [
     "pytest>=8.3.5",
     "pytest-timeout>=2.3.1",
-    "ruff>=0.6.9",
+    "ruff==0.9.10",
 ]
 test = [
     "pytest>=8.3.5",
