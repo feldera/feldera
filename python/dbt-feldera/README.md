@@ -12,13 +12,34 @@ the DBSP incremental computation engine. It automatically incrementalizes
 _every_ SQL query without watermarks, scans, or `MERGE`. When input data
 changes, only affected output rows are recomputed.
 
+> [!IMPORTANT]
+> **This adapter deploys
+> [continuous pipelines](https://docs.feldera.com/pipelines), not
+> [ad-hoc queries](https://docs.feldera.com/sql/ad-hoc).**
+>
+> Feldera supports two modes of query execution:
+>
+> - **Continuous pipelines** compile SQL into an incremental dataflow that runs
+>   indefinitely, processing every input change as it arrives in near real-time.
+>
+> - **Ad-hoc queries** are one-shot batch queries executed by
+>   [DataFusion](https://datafusion.apache.org/) against the state of
+>   [materialized tables and views](https://docs.feldera.com/sql/materialized).
+>   They exist primarily for development and debugging.
+>
+> When you run `dbt run`, this adapter assembles your models into a Feldera
+> pipeline program, compiles it, and **starts a continuously running pipeline**.
+> The pipeline keeps processing input changes and updating outputs until it is
+> explicitly stopped. This differs from typical batch-oriented dbt adapters where `dbt run` executes
+> a query once, processes a batch of data and exits.
+
 ## Key features
 
 - **Automatic incremental view maintenance (IVM)** — Feldera's DBSP engine
   incrementalizes any SQL query out of the box. No manual merge logic or
   watermark tuning required.
-- **Streaming-native materializations** — first-class support for continuous
-  pipelines alongside standard dbt materializations.
+- **Continuous pipeline deployment** — `dbt run` compiles and starts a
+  long-running Feldera pipeline; it does not execute one-shot queries.
 - **Connector integration** — attach Kafka, Delta Lake, S3, and HTTP
   connectors directly to models via configuration.
 - **Easy setup** — pure Python adapter with no ODBC driver needed.
@@ -59,16 +80,18 @@ my_project:
 ### Concept mapping
 
 Feldera uses different terminology than traditional databases. Here's how dbt
-concepts map to Feldera:
+concepts map to Feldera. Every materialization contributes SQL to a
+**continuously running pipeline** — nothing is executed as a one-shot batch
+query.
 
-| dbt concept                   | Feldera concept   | Description                                     |
-| ----------------------------- | ----------------- | ----------------------------------------------- |
-| `database`                    | _(unused)_        | Set to any string (e.g. `"default"`)            |
-| `schema`                      | Pipeline name     | Each dbt schema maps to one Feldera pipeline    |
-| `table` materialization       | Input table       | External data source (Kafka, HTTP, S3)          |
-| `view` materialization        | View              | Intermediate SQL transform                      |
-| `incremental` materialization | Materialized view | IVM-backed output, queryable ad-hoc             |
-| `seed`                        | Table + HTTP push | Schema registered, data pushed via HTTP ingress |
+| dbt concept                   | Feldera concept   | Description                                                                                                                    |
+| ----------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `database`                    | _(unused)_        | Set to any string (e.g. `"default"`)                                                                                           |
+| `schema`                      | Pipeline name     | Each dbt schema maps to one [Feldera pipeline](https://docs.feldera.com/pipelines) (a continuously running SQL program)        |
+| `table` materialization       | Input table       | External data source (Kafka, HTTP, S3)                                                                                         |
+| `view` materialization        | View              | Intermediate SQL transform inside the continuous pipeline                                                                      |
+| `incremental` materialization | Materialized view | IVM-backed output, also queryable via [ad-hoc queries](https://docs.feldera.com/sql/ad-hoc) for debugging                     |
+| `seed`                        | Table + HTTP push | Schema registered, data pushed via HTTP ingress                                                                                |
 
 ### Configuration options
 
@@ -211,6 +234,9 @@ dbt seed --full-refresh # drop and recreate, then push
 ## Documentation
 
 - **[Feldera documentation](https://docs.feldera.com/)** — platform docs, SQL reference, connectors
+  - [Pipelines (continuous queries)](https://docs.feldera.com/pipelines) — how Feldera compiles SQL into an incremental dataflow
+  - [Ad-hoc queries](https://docs.feldera.com/sql/ad-hoc) — one-shot DataFusion queries for debugging materialized state
+  - [Materialized tables and views](https://docs.feldera.com/sql/materialized) — prerequisite for ad-hoc query access
 - **[dbt documentation](https://docs.getdbt.com/)** — general dbt usage and concepts
 
 ## Contributing
