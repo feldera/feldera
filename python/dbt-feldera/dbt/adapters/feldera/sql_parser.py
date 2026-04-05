@@ -10,14 +10,17 @@ from typing import List, Set
 
 
 class SqlIntent(Enum):
-    """How a SQL statement should be routed inside the Feldera dbt adapter.
+    """
+    How a SQL statement should be routed inside the Feldera dbt adapter,
+    via the ad-hoc DataFusion query endpoint, the pipeline API.
 
     Members
     -------
     ADHOC_QUERY
         ``SELECT``, ``WITH``, ``UNION``, set operations, and anything
         the parser does not recognise.  Routed to Feldera's ad-hoc query
-        endpoint (DataFusion-backed).
+        endpoint (DataFusion-backed) - the pipeline endpoint does not support
+        these statements.
     PIPELINE_DDL
         ``CREATE``, ``DROP``, ``ALTER`` — structural changes collected by
         the pipeline state manager and compiled as a single program.
