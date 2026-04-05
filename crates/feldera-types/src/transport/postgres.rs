@@ -67,6 +67,31 @@ impl PostgresTlsConfig {
     }
 }
 
+/// Postgres CDC input connector configuration.
+///
+/// Uses logical replication to capture ongoing changes from a Postgres database.
+/// Requires a pre-created publication and a user with REPLICATION privilege.
+/// Tables must have primary keys and `REPLICA IDENTITY FULL` is recommended
+/// for UPDATE/DELETE support.
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+pub struct PostgresCdcReaderConfig {
+    /// Postgres connection URI. The user must have REPLICATION privilege.
+    /// See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>
+    pub uri: String,
+
+    /// Name of the pre-created Postgres publication to replicate from.
+    pub publication: String,
+
+    /// Postgres table to replicate (e.g. "public.orders").
+    /// Must be included in the publication.
+    pub source_table: String,
+
+    /// TLS/SSL configuration.
+    #[serde(flatten)]
+    #[schema(inline)]
+    pub tls: PostgresTlsConfig,
+}
+
 /// Postgres input connector configuration.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct PostgresReaderConfig {

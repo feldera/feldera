@@ -7080,6 +7080,10 @@ impl InputConsumer for InputProbe {
         self.transaction_in_progress.store(false, Ordering::Release);
     }
 
+    fn completion_watcher(&self) -> Option<tokio::sync::watch::Receiver<Completion>> {
+        Some(self.controller.status.completion_notifier.subscribe())
+    }
+
     fn error(&self, fatal: bool, error: AnyError, tag: Option<&str>) {
         self.controller.input_transport_error(
             self.endpoint_id,
