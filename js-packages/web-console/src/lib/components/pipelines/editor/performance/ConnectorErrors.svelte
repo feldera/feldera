@@ -5,6 +5,7 @@
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   import InlineDrawer from '$lib/components/layout/InlineDrawer.svelte'
+  import { getCaseDependentName } from '$lib/functions/felderaRelation'
   import { formatDateTime } from '$lib/functions/format'
   import {
     type ConnectorError,
@@ -61,6 +62,10 @@
     tagsFilter = filter
   })
 
+  const strippedConnectorName = $derived(
+    connectorName.slice(getCaseDependentName(relationName).name.length + 1)
+  )
+
   $effect(() => {
     pipelineName
     relationName
@@ -69,11 +74,10 @@
     loading = true
     status = null
 
-    const stripped = connectorName.slice(connectorName.indexOf('.') + 1)
     const request =
       direction === 'input'
-        ? getInputConnectorStatus(pipelineName, relationName, stripped)
-        : getOutputConnectorStatus(pipelineName, relationName, stripped)
+        ? getInputConnectorStatus(pipelineName, relationName, strippedConnectorName)
+        : getOutputConnectorStatus(pipelineName, relationName, strippedConnectorName)
 
     request.then((s) => {
       status = s
@@ -137,7 +141,7 @@
   <div class="bg-white-dark flex h-full flex-col gap-2 rounded p-4">
     <div class="flex items-start justify-between">
       <div>
-        <div class="font-medium">{connectorName.replace('.', ' · ')}</div>
+        <div class="font-medium">{relationName} · {strippedConnectorName}</div>
       </div>
       <button class="fd fd-x text-[20px]" onclick={() => (open = false)} aria-label="Close"
       ></button>

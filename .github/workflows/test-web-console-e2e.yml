@@ -44,6 +44,13 @@ jobs:
       - name: Verify pipeline-manager is reachable
         run: curl -fsSL --retry 5 --retry-delay 2 --retry-connrefused http://localhost:8080/healthz
 
+      - name: Run vitest integration tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: bun run test-integration
+        working-directory: js-packages/web-console
+        env:
+          FELDERA_API_URL: http://localhost:8080
+
       - name: Run Playwright e2e tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: bun run test-e2e

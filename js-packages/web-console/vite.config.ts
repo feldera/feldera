@@ -7,7 +7,11 @@ import { playwright } from '@vitest/browser-playwright'
 import { type PluginOption } from 'vite'
 import devtoolsJson from 'vite-plugin-devtools-json'
 import virtual from 'vite-plugin-virtual'
-import { defineConfig, type ViteUserConfigExport } from 'vitest/config'
+import {
+  defineConfig,
+  type TestProjectInlineConfiguration,
+  type ViteUserConfigExport
+} from 'vitest/config'
 import { felderaApiJsonSchemas } from './src/lib/functions/felderaApiJsonSchemas'
 import { svelteCssVirtualModuleFallback } from './src/lib/vite-plugins/svelte-css-virtual-module-fallback'
 
@@ -60,6 +64,36 @@ const testOptimizeDepsInclude = [
   'valibot',
   'virtua/svelte'
 ]
+
+const browserTestProject = ({
+  name,
+  include,
+  exclude
+}: {
+  name: string
+  include: string[]
+  exclude?: string[]
+}): TestProjectInlineConfiguration => ({
+  extends: './vite.config.ts',
+  test: {
+    name,
+    browser: {
+      enabled: true,
+      provider: playwright({ contextOptions: {} }),
+      instances: [{ browser: 'chromium', headless: true }],
+      expect: {
+        toMatchScreenshot: {
+          resolveScreenshotPath({ testFileName, arg, ext }) {
+            return path.join(snapshotsDir, 'component', testFileName, `${arg}${ext}`)
+          }
+        }
+      }
+    },
+    setupFiles: ['src/lib/vitest-browser-setup.ts'],
+    include,
+    exclude: exclude ?? ['src/lib/server/**']
+  }
+})
 
 // TODO: remove Prettier
 export default defineConfig(async () => {
@@ -179,39 +213,35 @@ export default defineConfig(async () => {
         )
       },
       projects: [
-        {
-          extends: './vite.config.ts',
-          test: {
-            name: 'client',
-            browser: {
-              enabled: true,
-              provider: playwright({
-                contextOptions: {}
-              }),
-              instances: [{ browser: 'chromium', headless: true }],
-              expect: {
-                toMatchScreenshot: {
-                  resolveScreenshotPath({ testFileName, arg, ext }) {
-                    return path.join(snapshotsDir, 'component', testFileName, `${arg}${ext}`)
-                  }
-                }
-              }
-            },
-            setupFiles: ['src/lib/vitest-browser-setup.ts'],
-            include: ['src/**/*.svelte.{test,spec}.{js,ts}'],
-            exclude: ['src/lib/server/**']
-          }
-        },
+        // Unit tests: *.spec.ts (run with `bun run test`)
+        browserTestProject({ name: 'client', include: ['src/**/*.svelte.spec.{js,ts}'] }),
 
         {
           extends: './vite.config.ts',
           test: {
             name: 'server',
             environment: 'node',
-            include: ['src/**/*.{test,spec}.{js,ts}'],
-            exclude: ['src/**/*.svelte.{test,spec}.{js,ts}']
+            include: ['src/**/*.spec.{js,ts}'],
+            exclude: ['src/**/*.svelte.spec.{js,ts}']
           }
-        }
+        },
+
+        // Integration tests: *.test.ts (require a Feldera instance, run with `bun run test-integration`)
+        {
+          extends: './vite.config.ts',
+          test: {
+            name: 'integration',
+            environment: 'node',
+            globalSetup: ['src/lib/vitest-integration-setup.ts'],
+            include: ['src/**/*.test.{js,ts}'],
+            exclude: ['src/**/*.svelte.test.{js,ts}']
+          }
+        },
+
+        browserTestProject({
+          name: 'integration-client',
+          include: ['src/**/*.svelte.test.{js,ts}']
+        })
       ]
     }
   } satisfies ViteUserConfigExport

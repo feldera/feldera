@@ -54,7 +54,7 @@
   },
   "resolutions": {
     "openapi-to-postmanv2": "^5.4.0",
-    "lodash": "^4.17.23",
+    "lodash": "^4.18.0",
     "serialize-javascript": "^7.0.5",
     "gray-matter/js-yaml": "3.14.2",
     "json-refs/js-yaml": "3.14.2",

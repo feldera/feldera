@@ -6,7 +6,7 @@ use futures::Stream as AsyncStream;
 use std::{
     any::TypeId,
     borrow::Cow,
-    cell::RefCell,
+    cell::{Cell, RefCell},
     cmp::{Ordering, min},
     collections::BTreeMap,
     marker::PhantomData,
@@ -815,9 +815,9 @@ where
             >,
     >,
     // The last input batch was empty - used in fixedpoint computation.
-    empty_input: RefCell<bool>,
+    empty_input: Cell<bool>,
     // The last output batch was empty - used in fixedpoint computation.
-    empty_output: RefCell<bool>,
+    empty_output: Cell<bool>,
     // Keys that may need updating at future times.
     keys_of_interest: RefCell<BTreeMap<<IT::Batch as BatchReader>::Time, Box<DynSet<Z::Key>>>>,
 
@@ -858,8 +858,8 @@ where
             output_pairs_factory,
             clock,
             aggregator: clone_box(aggregator),
-            empty_input: RefCell::new(false),
-            empty_output: RefCell::new(false),
+            empty_input: Cell::new(false),
+            empty_output: Cell::new(false),
             keys_of_interest: RefCell::new(BTreeMap::new()),
             input_batch_stats: RefCell::new(BatchSizeStats::new()),
             output_batch_stats: RefCell::new(BatchSizeStats::new()),
@@ -989,8 +989,8 @@ where
 
     fn clock_start(&mut self, scope: Scope) {
         if scope == 0 {
-            *self.empty_input.borrow_mut() = false;
-            *self.empty_output.borrow_mut() = false;
+            self.empty_input.set(false);
+            self.empty_output.set(false);
         }
     }
 
@@ -1016,8 +1016,8 @@ where
     fn fixedpoint(&self, scope: Scope) -> bool {
         let epoch_end = self.clock.time().epoch_end(scope);
 
-        *self.empty_input.borrow()
-            && *self.empty_output.borrow()
+        self.empty_input.get()
+            && self.empty_output.get()
             && self
                 .keys_of_interest
                 .borrow()
@@ -1073,8 +1073,8 @@ where
             //     Runtime::worker_index(),
             //     self.time
             // );
-            *self.empty_input.borrow_mut() = delta.is_empty();
-            *self.empty_output.borrow_mut() = true;
+            self.empty_input.set(delta.is_empty());
+            self.empty_output.set(true);
 
             let mut result = self.output_pairs_factory.default_box();
             result.reserve(chunk_size);
@@ -1142,7 +1142,7 @@ where
 
                 if result.len() >= chunk_size {
                     // println!("yield {:?}", result);
-                    *self.empty_output.borrow_mut() &= result.is_empty();
+                    self.empty_output.update(|empty_output| empty_output & result.is_empty());
                     self.output_batch_stats.borrow_mut().add_batch(result.len());
                     yield (result, false, delta_cursor.position());
                     result = self.output_pairs_factory.default_box();
@@ -1165,7 +1165,7 @@ where
                 if result.len() >= chunk_size {
                     // println!("yield {:?}", result);
 
-                    *self.empty_output.borrow_mut() &= result.is_empty();
+                    self.empty_output.update(|empty_output| empty_output & result.is_empty());
                     self.output_batch_stats.borrow_mut().add_batch(result.len());
                     yield (result, false, delta_cursor.position());
                     result = self.output_pairs_factory.default_box();
@@ -1188,7 +1188,7 @@ where
                 if result.len() >= chunk_size {
                     // println!("yield {:?}", result);
 
-                    *self.empty_output.borrow_mut() &= result.is_empty();
+                    self.empty_output.update(|empty_output| empty_output & result.is_empty());
                     self.output_batch_stats.borrow_mut().add_batch(result.len());
                     yield (result, !(delta_cursor.key_valid() || key_of_interest.is_some()), delta_cursor.position());
                     result = self.output_pairs_factory.default_box();

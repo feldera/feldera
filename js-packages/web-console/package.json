@@ -132,7 +132,8 @@
     "test-prepare": "git clone --depth 1 https://github.com/feldera/playwright-snapshots.git || true && mkdir -p playwright-snapshots/e2e playwright-snapshots/component",
     "test-update-snapshots": "bun run test -- --update && bun playwright test --update-snapshots",
     "test-unit": "vitest",
-    "test": "bun run test-unit -- --run"
+    "test-integration": "vitest --run --project integration --project integration-client",
+    "test": "bun run test-unit -- --run --project client --project server"
   },
   "trustedDependencies": ["@axa-fr/oidc-client", "sk-oidc-oauth", "svelte-preprocess"],
   "type": "module"

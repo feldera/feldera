@@ -21,10 +21,7 @@ export const normalizeCaseIndependentName = ({
 export const getCaseDependentName = (caseIndependentName: string) => {
   const case_sensitive = isCaseSensitive(caseIndependentName)
   return {
-    name: normalizeCaseIndependentName({
-      name: caseIndependentName.replaceAll('"', ''),
-      case_sensitive
-    }),
+    name: caseIndependentName.replaceAll('"', ''),
     case_sensitive
   }
 }

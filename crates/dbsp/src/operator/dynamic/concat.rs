@@ -17,7 +17,11 @@ use crate::{
     },
 };
 use async_stream::stream;
-use std::{borrow::Cow, cell::RefCell, marker::PhantomData};
+use std::{
+    borrow::Cow,
+    cell::{Cell, RefCell},
+    marker::PhantomData,
+};
 
 impl RootCircuit {
     /// See [`RootCircuit::accumulate_concat_indexed_zsets`].
@@ -103,7 +107,7 @@ where
     input_batch_stats: RefCell<Vec<BatchSizeStats>>,
     output_batch_stats: RefCell<BatchSizeStats>,
     polarity: Vec<bool>,
-    flush: RefCell<bool>,
+    flush: Cell<bool>,
     phantom: PhantomData<fn(&Z)>,
 }
 
@@ -118,7 +122,7 @@ where
             input_batch_stats: RefCell::new(Vec::new()),
             output_batch_stats: RefCell::new(BatchSizeStats::new()),
             polarity: polarity.to_vec(),
-            flush: RefCell::new(false),
+            flush: Cell::new(false),
             phantom: PhantomData,
         }
     }
@@ -154,7 +158,7 @@ where
     }
 
     fn flush(&mut self) {
-        *self.flush.borrow_mut() = true;
+        self.flush.set(true);
     }
 }
 
@@ -191,8 +195,7 @@ impl<Z: IndexedZSet> StreamingNaryOperator<Option<Spine<Z>>, Z> for AccumulateCo
         }
         drop(snapshots);
 
-        let flush = *self.flush.borrow();
-        *self.flush.borrow_mut() = false;
+        let flush = self.flush.replace(false);
         let factories = self.factories.clone();
 
         let snapshots = if flush {

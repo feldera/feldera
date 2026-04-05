@@ -36,7 +36,7 @@ use crate::{
 };
 use crate::{DynZWeight, NestedCircuit, Position, Runtime};
 use async_stream::stream;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::{
     borrow::Cow,
@@ -1267,14 +1267,14 @@ where
     >,
     location: &'static Location<'static>,
     delta: RefCell<Option<SpineSnapshot<I::Batch>>>,
-    flush: RefCell<bool>,
+    flush: Cell<bool>,
     // Future updates computed ahead of time, indexed by time
     // when each set of updates should be output.
     future_outputs: RefCell<HashMap<T::Time, Spine<Z>>>,
     // True if empty input batch was received at the current clock cycle.
-    empty_input: RefCell<bool>,
+    empty_input: Cell<bool>,
     // True if empty output was produced at the current clock cycle.
-    empty_output: RefCell<bool>,
+    empty_output: Cell<bool>,
     stats: RefCell<JoinStats>,
     _types: PhantomData<(I, B, T, Z)>,
 }
@@ -1317,10 +1317,10 @@ where
             join_func: RefCell::new(join_func),
             location,
             delta: RefCell::new(None),
-            flush: RefCell::new(false),
+            flush: Cell::new(false),
             future_outputs: RefCell::new(HashMap::new()),
-            empty_input: RefCell::new(false),
-            empty_output: RefCell::new(false),
+            empty_input: Cell::new(false),
+            empty_output: Cell::new(false),
             stats: RefCell::new(JoinStats::new()),
             _types: PhantomData,
         }
@@ -1345,8 +1345,8 @@ where
 
     fn clock_start(&mut self, scope: Scope) {
         if scope == 0 {
-            *self.empty_input.borrow_mut() = false;
-            *self.empty_output.borrow_mut() = false;
+            self.empty_input.set(false);
+            self.empty_output.set(false);
         }
     }
 
@@ -1419,7 +1419,7 @@ where
     }
 
     fn flush(&mut self) {
-        *self.flush.borrow_mut() = true;
+        self.flush.set(true);
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
@@ -1427,8 +1427,8 @@ where
         // We're in a stable state if input and output at the current clock cycle are
         // both empty, and there are no precomputed outputs before the end of the
         // clock epoch.
-        *self.empty_input.borrow()
-            && *self.empty_output.borrow()
+        self.empty_input.get()
+            && self.empty_output.get()
             && self
                 .future_outputs
                 .borrow()
@@ -1538,7 +1538,7 @@ where
 
         let delta = delta.as_ref().map(|b| b.ro_snapshot());
 
-        let trace = if *self.flush.borrow() {
+        let trace = if self.flush.get() {
             Some(trace.ro_snapshot())
         } else {
             None
@@ -1550,9 +1550,7 @@ where
         }
 
         stream! {
-            if *self.flush.borrow() {
-                *self.flush.borrow_mut() = false;
-            } else {
+            if !self.flush.replace(false) {
                 // println!("yield empty");
                 yield(Z::dyn_empty(&self.output_factories), true, None);
                 return;
@@ -1564,8 +1562,8 @@ where
             let trace = trace.unwrap();
             let trace_len = if self.saturate { usize::MAX } else { trace.len() };
 
-            *self.empty_input.borrow_mut() = delta.is_empty();
-            *self.empty_output.borrow_mut() = true;
+            self.empty_input.set(delta.is_empty());
+            self.empty_output.set(true);
             self.stats.borrow_mut().lhs_tuples += delta.len();
             self.stats.borrow_mut().rhs_tuples = trace.len();
 
@@ -1725,7 +1723,7 @@ where
                                 batcher.push_batch(&mut output_tuples);
 
                                 if batcher.tuples() >= chunk_size {
-                                    *self.empty_output.borrow_mut() = false;
+                                    self.empty_output.set(false);
                                     let batch = batcher.seal();
                                     self.stats.borrow_mut().add_output_batch(&batch);
 
@@ -1760,7 +1758,7 @@ where
             self.stats.borrow_mut().add_output_batch(&batch);
 
             if !batch.is_empty() {
-                *self.empty_output.borrow_mut() = false;
+                self.empty_output.set(false);
             }
 
             yield (batch, true, joint_cursor.position())

@@ -3,12 +3,6 @@ name: Platform Integration Tests
 
 on:
   workflow_call:
-    inputs:
-      artifacts_run_id:
-        description: "Run ID to download build artifacts from (empty = current run)"
-        type: string
-        required: false
-        default: ""
   workflow_dispatch:
     inputs:
       run_id:
@@ -179,7 +173,7 @@ jobs:
       FELDERA_HOST: https://localhost:8080
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-06a694400a6aea1f568da04eaf786bfe84e0a869
+      image: ghcr.io/feldera/feldera-dev:sha-13b176e3436b4c753c4cf8287caba6be847f6d1b
     services:
       pipeline-manager:
         image: ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
@@ -239,8 +233,6 @@ jobs:
         with:
           name: fda-${{ matrix.target }}
           path: build
-          run-id: ${{ inputs.artifacts_run_id || github.event.inputs.run_id || github.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
       - name: Make fda binary executable

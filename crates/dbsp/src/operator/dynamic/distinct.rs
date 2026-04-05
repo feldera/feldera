@@ -33,7 +33,7 @@ use crate::{NestedCircuit, Position, RootCircuit};
 use async_stream::stream;
 use futures::Stream as AsyncStream;
 use size_of::SizeOf;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::panic::Location;
 use std::rc::Rc;
 use std::{
@@ -619,9 +619,9 @@ where
         RefCell<KeysOfInterest<<T::Batch as BatchReader>::Time, Z::Key, Z::Val, Z::R>>,
     // True if the operator received empty input during the last clock
     // tick.
-    empty_input: RefCell<bool>,
+    empty_input: Cell<bool>,
     // True if the operator produced empty output at the last clock tick.
-    empty_output: RefCell<bool>,
+    empty_output: Cell<bool>,
     // Used in computing partial derivatives
     // (we keep it here to reuse allocations across `eval_keyval` calls).
     distinct_vals: RefCell<Vec<(Option<<T::Batch as BatchReader>::Time>, ZWeight)>>,
@@ -660,8 +660,8 @@ where
             aux_factories: aux_factories.clone(),
             clock,
             keys_of_interest: RefCell::new(BTreeMap::new()),
-            empty_input: RefCell::new(false),
-            empty_output: RefCell::new(false),
+            empty_input: Cell::new(false),
+            empty_output: Cell::new(false),
             distinct_vals: RefCell::new(vec![(None, HasZero::zero()); 2 << depth]),
             input_batch_stats: RefCell::new(BatchSizeStats::new()),
             output_batch_stats: RefCell::new(BatchSizeStats::new()),
@@ -847,7 +847,8 @@ where
             );
 
             let result = builder.done();
-            *self.empty_output.borrow_mut() &= result.is_empty();
+            self.empty_output
+                .update(|empty_output| empty_output & result.is_empty());
             self.output_batch_stats.borrow_mut().add_batch(result.len());
 
             Some((result, false, delta_cursor.position()))
@@ -928,8 +929,8 @@ where
 
     fn clock_start(&mut self, scope: Scope) {
         if scope == 0 {
-            *self.empty_input.borrow_mut() = false;
-            *self.empty_output.borrow_mut() = false;
+            self.empty_input.set(false);
+            self.empty_output.set(false);
         }
     }
 
@@ -948,8 +949,8 @@ where
     fn fixedpoint(&self, scope: Scope) -> bool {
         let epoch_end = self.clock.time().epoch_end(scope);
 
-        *self.empty_input.borrow()
-            && *self.empty_output.borrow()
+        self.empty_input.get()
+            && self.empty_output.get()
             && self
                 .keys_of_interest
                 .borrow()
@@ -982,7 +983,7 @@ where
             None
         };
 
-        *self.empty_output.borrow_mut() = true;
+        self.empty_output.set(true);
 
         stream! {
             let Some(delta) = delta else {
@@ -994,7 +995,7 @@ where
             self.input_batch_stats.borrow_mut().add_batch(delta.len());
 
             Self::init_distinct_vals(&mut self.distinct_vals.borrow_mut(), Some(time.clone()));
-            *self.empty_input.borrow_mut() = delta.is_empty();
+            self.empty_input.set(delta.is_empty());
 
             // We iterate over keys and values in order, so it is safe to use `Builder`.
             let result_builder = Z::Builder::with_capacity(&self.input_factories, self.chunk_size, self.chunk_size);
@@ -1190,7 +1191,7 @@ where
             }
 
             let result = result_builder.done();
-            *self.empty_output.borrow_mut() &= result.is_empty();
+            self.empty_output.update(|empty_output| empty_output & result.is_empty());
             self.output_batch_stats.borrow_mut().add_batch(result.len());
             yield (result, true, delta_cursor.position());
         }

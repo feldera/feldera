@@ -291,8 +291,11 @@ where
     Ok(())
 }
 
-fn buffer_cache() -> Arc<BufferCache> {
-    Arc::new(BufferCache::new(1024 * 1024))
+fn buffer_cache() -> Option<Arc<BufferCache>> {
+    thread_local! {
+        static BUFFER_CACHE: Arc<BufferCache> = Arc::new(BufferCache::new(1024 * 1024));
+    }
+    Some(BUFFER_CACHE.with(|cache| cache.clone()))
 }
 
 fn storage_roundtrip_eq<T>(mut values: Vec<T>) -> Result<(), TestCaseError>
