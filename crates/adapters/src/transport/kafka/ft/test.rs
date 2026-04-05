@@ -749,6 +749,10 @@ impl InputConsumer for DummyInputConsumer {
         });
     }
 
+    fn completion_watcher(&self) -> Option<tokio::sync::watch::Receiver<feldera_types::coordination::Completion>> {
+        None
+    }
+
     fn error(&self, fatal: bool, error: AnyError, _tag: Option<&'static str>) {
         info!("error: {error}");
         self.called(ConsumerCall::Error(fatal));

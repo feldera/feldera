@@ -2,7 +2,7 @@ use dbsp::{Runtime, utils::Tup1};
 use feldera_sqllib::Variant;
 use feldera_types::{
     deserialize_table_record,
-    program_schema::{Relation, SqlIdentifier},
+    program_schema::{ColumnType, Field, Relation, SqlIdentifier},
     serde_with_context::{SerializeWithContext, SqlSerdeConfig},
     serialize_table_record,
     transport::postgres::{PostgresTlsConfig, PostgresWriteMode},
@@ -2113,4 +2113,859 @@ fn test_pg_input_tls() {
     client
         .execute(&format!("DROP TABLE {table_name}"), &[])
         .unwrap();
+}
+
+// ===================================================================
+// Postgres CDC input connector integration tests
+//
+// These tests require:
+// - wal_level=logical on the Postgres instance
+// - The connecting user must have REPLICATION privilege
+// - The `with-postgres-cdc` feature must be enabled
+//
+// They are gated behind #[ignore] so they don't run in normal CI.
+// Run with: cargo test -p dbsp_adapters --features with-postgres-cdc -- --ignored
+// ===================================================================
+
+#[cfg(feature = "with-postgres-cdc")]
+mod cdc_tests {
+    use super::*;
+    use crate::test::wait;
+    use pg::pg_connect;
+
+    /// Helper: creates a table, publication, and sets REPLICA IDENTITY FULL.
+    /// Returns a connected client for further DML operations.
+    /// On drop, cleans up the publication and table.
+    struct CdcTestTable {
+        client: postgres::Client,
+        table_name: String,
+        publication_name: String,
+    }
+
+    impl CdcTestTable {
+        fn new_simple(table_name: &str, publication_name: &str, url: &str) -> Self {
+            let mut client = pg_connect(url, &None);
+
+            // Clean up any leftover objects from previous runs.
+            let _ = client.execute(
+                &format!("DROP PUBLICATION IF EXISTS {publication_name}"),
+                &[],
+            );
+            let _ = client.execute(&format!("DROP TABLE IF EXISTS {table_name}"), &[]);
+
+            client
+                .execute(
+                    &format!(
+                        r#"CREATE TABLE {table_name} (
+    id   INTEGER PRIMARY KEY,
+    b    BOOLEAN NOT NULL,
+    i    BIGINT,
+    s    VARCHAR NOT NULL
+)"#
+                    ),
+                    &[],
+                )
+                .expect("failed to create CDC test table");
+
+            client
+                .execute(
+                    &format!("ALTER TABLE {table_name} REPLICA IDENTITY FULL"),
+                    &[],
+                )
+                .expect("failed to set REPLICA IDENTITY FULL");
+
+            client
+                .execute(
+                    &format!("CREATE PUBLICATION {publication_name} FOR TABLE {table_name}"),
+                    &[],
+                )
+                .expect("failed to create publication");
+
+            CdcTestTable {
+                client,
+                table_name: table_name.to_string(),
+                publication_name: publication_name.to_string(),
+            }
+        }
+
+        /// Creates a table with many Postgres types for data type coverage testing.
+        fn new_all_types(table_name: &str, publication_name: &str, url: &str) -> Self {
+            let mut client = pg_connect(url, &None);
+
+            let _ = client.execute(
+                &format!("DROP PUBLICATION IF EXISTS {publication_name}"),
+                &[],
+            );
+            let _ = client.execute(&format!("DROP TABLE IF EXISTS {table_name}"), &[]);
+
+            client
+                .execute(
+                    &format!(
+                        r#"CREATE TABLE {table_name} (
+    id              SERIAL PRIMARY KEY,
+    col_text        TEXT,
+    col_integer     INTEGER,
+    col_bigint      BIGINT,
+    col_boolean     BOOLEAN,
+    col_real        REAL,
+    col_double      DOUBLE PRECISION,
+    col_date        DATE,
+    col_time        TIME,
+    col_timestamp   TIMESTAMP,
+    col_timestamptz TIMESTAMPTZ,
+    col_uuid        UUID,
+    col_jsonb       JSONB,
+    col_bytea       BYTEA,
+    col_numeric     NUMERIC(10,2),
+    col_smallint    SMALLINT,
+    col_int_array   INTEGER[]
+)"#
+                    ),
+                    &[],
+                )
+                .expect("failed to create CDC all-types test table");
+
+            client
+                .execute(
+                    &format!("ALTER TABLE {table_name} REPLICA IDENTITY FULL"),
+                    &[],
+                )
+                .expect("failed to set REPLICA IDENTITY FULL");
+
+            client
+                .execute(
+                    &format!("CREATE PUBLICATION {publication_name} FOR TABLE {table_name}"),
+                    &[],
+                )
+                .expect("failed to create publication");
+
+            CdcTestTable {
+                client,
+                table_name: table_name.to_string(),
+                publication_name: publication_name.to_string(),
+            }
+        }
+
+        fn execute(&mut self, query: &str) {
+            self.client
+                .execute(query, &[])
+                .unwrap_or_else(|e| panic!("failed to execute '{query}': {e}"));
+        }
+    }
+
+    impl Drop for CdcTestTable {
+        fn drop(&mut self) {
+            // Drop replication slots that etl may have created for this publication.
+            // etl creates slots with names based on the publication name.
+            let slots: Vec<String> = self
+                .client
+                .query(
+                    "SELECT slot_name FROM pg_replication_slots WHERE slot_name LIKE $1",
+                    &[&format!("%{}%", &self.publication_name)],
+                )
+                .unwrap_or_default()
+                .into_iter()
+                .map(|r| r.get::<_, String>("slot_name"))
+                .collect();
+            for slot in slots {
+                let _ = self.client.execute(
+                    &format!("SELECT pg_drop_replication_slot('{slot}')"),
+                    &[],
+                );
+            }
+            let _ = self.client.execute(
+                &format!("DROP PUBLICATION IF EXISTS {}", self.publication_name),
+                &[],
+            );
+            let _ = self.client.execute(
+                &format!("DROP TABLE IF EXISTS {}", self.table_name),
+                &[],
+            );
+        }
+    }
+
+    /// Build a test circuit that reads from CDC input and writes to a file output.
+    /// The input schema matches the "simple" table (id, b, i, s).
+    fn cdc_simple_test_circuit(
+        url: &str,
+        publication: &str,
+        source_table: &str,
+        output_path: &Path,
+    ) -> (Controller, crossbeam::channel::Receiver<String>) {
+        let schema = TestStruct::schema();
+        let config = serde_json::from_value(json!({
+            "name": "cdc_test",
+            "workers": 1,
+            "inputs": {
+                "cdc_in": {
+                    "stream": "test_input1",
+                    "transport": {
+                        "name": "postgres_cdc_input",
+                        "config": {
+                            "uri": url,
+                            "publication": publication,
+                            "source_table": source_table,
+                        },
+                    },
+                },
+            },
+            "outputs": {
+                "test_output1": {
+                    "stream": "test_output1",
+                    "transport": {
+                        "name": "file_output",
+                        "config": {
+                            "path": output_path,
+                        }
+                    },
+                    "format": {
+                        "name": "json",
+                        "config": {
+                            "update_format": "insert_delete",
+                            "array": false,
+                        }
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        let (err_sender, err_receiver) = crossbeam::channel::unbounded();
+        let controller = Controller::with_test_config(
+            move |workers| {
+                Ok({
+                    let (circuit, catalog) = Runtime::init_circuit(workers, move |circuit| {
+                        let mut catalog = Catalog::new();
+                        let (input, hinput) = circuit.add_input_zset::<TestStruct>();
+
+                        let input_schema = serde_json::to_string(&Relation::new(
+                            "test_input1".into(),
+                            schema.clone(),
+                            false,
+                            BTreeMap::new(),
+                        ))
+                        .unwrap();
+
+                        let output_schema = serde_json::to_string(&Relation::new(
+                            "test_output1".into(),
+                            schema,
+                            false,
+                            BTreeMap::new(),
+                        ))
+                        .unwrap();
+
+                        catalog.register_materialized_input_zset::<_, TestStruct>(
+                            input.clone(),
+                            hinput,
+                            &input_schema,
+                        );
+
+                        catalog.register_materialized_output_zset::<_, TestStruct>(
+                            input,
+                            &output_schema,
+                        );
+
+                        Ok(catalog)
+                    })
+                    .unwrap();
+                    (circuit, Box::new(catalog))
+                })
+            },
+            &config,
+            Box::new(move |e, _| {
+                let msg = format!("cdc_test: error: {e}");
+                println!("{msg}");
+                err_sender.send(msg).unwrap()
+            }),
+        )
+        .unwrap();
+
+        (controller, err_receiver)
+    }
+
+    /// Helper struct for the all-types test. Uses simple JSON deserialization
+    /// since the CDC connector produces JSON.
+    #[derive(
+        Debug,
+        Default,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        serde::Serialize,
+        serde::Deserialize,
+        Clone,
+        Hash,
+        size_of::SizeOf,
+        rkyv::Archive,
+        rkyv::Serialize,
+        rkyv::Deserialize,
+        feldera_macros::IsNone,
+    )]
+    #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    struct CdcAllTypesStruct {
+        id: i32,
+        col_text: Option<String>,
+        col_integer: Option<i32>,
+        col_bigint: Option<i64>,
+        col_boolean: Option<bool>,
+        col_real: Option<feldera_sqllib::F32>,
+        col_double: Option<feldera_sqllib::F64>,
+        col_date: Option<String>,
+        col_time: Option<String>,
+        col_timestamp: Option<String>,
+        col_timestamptz: Option<String>,
+        col_uuid: Option<String>,
+        col_jsonb: Option<feldera_sqllib::Variant>,
+        col_bytea: Option<String>,
+        col_numeric: Option<String>,
+        col_smallint: Option<i16>,
+        col_int_array: Option<Vec<Option<i32>>>,
+    }
+
+    feldera_types::deserialize_table_record!(CdcAllTypesStruct["CdcAllTypesStruct", Variant, 17] {
+        (id, "id", false, i32, |_| None),
+        (col_text, "col_text", true, Option<String>, |_| Some(None)),
+        (col_integer, "col_integer", true, Option<i32>, |_| Some(None)),
+        (col_bigint, "col_bigint", true, Option<i64>, |_| Some(None)),
+        (col_boolean, "col_boolean", true, Option<bool>, |_| Some(None)),
+        (col_real, "col_real", true, Option<feldera_sqllib::F32>, |_| Some(None)),
+        (col_double, "col_double", true, Option<feldera_sqllib::F64>, |_| Some(None)),
+        (col_date, "col_date", true, Option<String>, |_| Some(None)),
+        (col_time, "col_time", true, Option<String>, |_| Some(None)),
+        (col_timestamp, "col_timestamp", true, Option<String>, |_| Some(None)),
+        (col_timestamptz, "col_timestamptz", true, Option<String>, |_| Some(None)),
+        (col_uuid, "col_uuid", true, Option<String>, |_| Some(None)),
+        (col_jsonb, "col_jsonb", true, Option<feldera_sqllib::Variant>, |_| Some(None)),
+        (col_bytea, "col_bytea", true, Option<String>, |_| Some(None)),
+        (col_numeric, "col_numeric", true, Option<String>, |_| Some(None)),
+        (col_smallint, "col_smallint", true, Option<i16>, |_| Some(None)),
+        (col_int_array, "col_int_array", true, Option<Vec<Option<i32>>>, |_| Some(None))
+    });
+
+    feldera_types::serialize_table_record!(CdcAllTypesStruct[17]{
+        id["id"]: i32,
+        col_text["col_text"]: Option<String>,
+        col_integer["col_integer"]: Option<i32>,
+        col_bigint["col_bigint"]: Option<i64>,
+        col_boolean["col_boolean"]: Option<bool>,
+        col_real["col_real"]: Option<feldera_sqllib::F32>,
+        col_double["col_double"]: Option<feldera_sqllib::F64>,
+        col_date["col_date"]: Option<String>,
+        col_time["col_time"]: Option<String>,
+        col_timestamp["col_timestamp"]: Option<String>,
+        col_timestamptz["col_timestamptz"]: Option<String>,
+        col_uuid["col_uuid"]: Option<String>,
+        col_jsonb["col_jsonb"]: Option<feldera_sqllib::Variant>,
+        col_bytea["col_bytea"]: Option<String>,
+        col_numeric["col_numeric"]: Option<String>,
+        col_smallint["col_smallint"]: Option<i16>,
+        col_int_array["col_int_array"]: Option<Vec<Option<i32>>>
+    });
+
+    impl CdcAllTypesStruct {
+        fn schema() -> Vec<Field> {
+            vec![
+                Field::new("id".into(), ColumnType::int(false)),
+                Field::new("col_text".into(), ColumnType::varchar(true)),
+                Field::new("col_integer".into(), ColumnType::int(true)),
+                Field::new("col_bigint".into(), ColumnType::bigint(true)),
+                Field::new("col_boolean".into(), ColumnType::boolean(true)),
+                Field::new("col_real".into(), ColumnType::real(true)),
+                Field::new("col_double".into(), ColumnType::double(true)),
+                Field::new("col_date".into(), ColumnType::varchar(true)),
+                Field::new("col_time".into(), ColumnType::varchar(true)),
+                Field::new("col_timestamp".into(), ColumnType::varchar(true)),
+                Field::new("col_timestamptz".into(), ColumnType::varchar(true)),
+                Field::new("col_uuid".into(), ColumnType::varchar(true)),
+                Field::new("col_jsonb".into(), ColumnType::variant(true)),
+                Field::new("col_bytea".into(), ColumnType::varchar(true)),
+                Field::new("col_numeric".into(), ColumnType::varchar(true)),
+                Field::new("col_smallint".into(), ColumnType::smallint(true)),
+                Field::new(
+                    "col_int_array".into(),
+                    ColumnType::array(true, ColumnType::int(true)),
+                ),
+            ]
+        }
+    }
+
+    fn cdc_all_types_test_circuit(
+        url: &str,
+        publication: &str,
+        source_table: &str,
+        output_path: &Path,
+    ) -> (Controller, crossbeam::channel::Receiver<String>) {
+        let schema = CdcAllTypesStruct::schema();
+        let config = serde_json::from_value(json!({
+            "name": "cdc_all_types_test",
+            "workers": 1,
+            "inputs": {
+                "cdc_in": {
+                    "stream": "test_input1",
+                    "transport": {
+                        "name": "postgres_cdc_input",
+                        "config": {
+                            "uri": url,
+                            "publication": publication,
+                            "source_table": source_table,
+                        },
+                    },
+                },
+            },
+            "outputs": {
+                "test_output1": {
+                    "stream": "test_output1",
+                    "transport": {
+                        "name": "file_output",
+                        "config": {
+                            "path": output_path,
+                        }
+                    },
+                    "format": {
+                        "name": "json",
+                        "config": {
+                            "update_format": "insert_delete",
+                            "array": false,
+                        }
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        let (err_sender, err_receiver) = crossbeam::channel::unbounded();
+        let controller = Controller::with_test_config(
+            move |workers| {
+                Ok({
+                    let (circuit, catalog) =
+                        Runtime::init_circuit(workers, move |circuit| {
+                            let mut catalog = Catalog::new();
+                            let (input, hinput) =
+                                circuit.add_input_zset::<CdcAllTypesStruct>();
+
+                            let input_schema = serde_json::to_string(&Relation::new(
+                                "test_input1".into(),
+                                schema.clone(),
+                                false,
+                                BTreeMap::new(),
+                            ))
+                            .unwrap();
+
+                            let output_schema = serde_json::to_string(&Relation::new(
+                                "test_output1".into(),
+                                schema,
+                                false,
+                                BTreeMap::new(),
+                            ))
+                            .unwrap();
+
+                            catalog.register_materialized_input_zset::<_, CdcAllTypesStruct>(
+                                input.clone(),
+                                hinput,
+                                &input_schema,
+                            );
+
+                            catalog.register_materialized_output_zset::<_, CdcAllTypesStruct>(
+                                input,
+                                &output_schema,
+                            );
+
+                            Ok(catalog)
+                        })
+                        .unwrap();
+                    (circuit, Box::new(catalog))
+                })
+            },
+            &config,
+            Box::new(move |e, _| {
+                let msg = format!("cdc_all_types_test: error: {e}");
+                println!("{msg}");
+                err_sender.send(msg).unwrap()
+            }),
+        )
+        .unwrap();
+
+        (controller, err_receiver)
+    }
+
+    /// Helper: read output file lines as JSON values.
+    fn read_output_json(path: &Path) -> Vec<serde_json::Value> {
+        let content = std::fs::read_to_string(path).unwrap_or_default();
+        content
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
+    }
+
+    /// Helper: count the number of "insert" entries in the output.
+    fn count_inserts(rows: &[serde_json::Value]) -> usize {
+        rows.iter().filter(|r| r.get("insert").is_some()).count()
+    }
+
+    /// Helper: count the number of "delete" entries in the output.
+    fn count_deletes(rows: &[serde_json::Value]) -> usize {
+        rows.iter().filter(|r| r.get("delete").is_some()).count()
+    }
+
+    // -------------------------------------------------------------------
+    // Test 1: Basic CDC insert test
+    // -------------------------------------------------------------------
+
+    /// Tests that the CDC connector picks up rows inserted into a Postgres table
+    /// via the initial snapshot and/or logical replication stream.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege.
+    #[test]
+    #[serial]
+    #[ignore]
+    fn test_cdc_basic_insert() {
+        let url = postgres_url();
+        let table_name = "cdc_test_basic_insert";
+        let publication = "cdc_pub_basic_insert";
+
+        // Pre-insert some rows before starting the pipeline (tests snapshot).
+        let mut table = CdcTestTable::new_simple(table_name, publication, &url);
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (1, true, NULL, 'hello')"
+        ));
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (2, false, 42, 'world')"
+        ));
+
+        let output_file = NamedTempFile::new().unwrap();
+        let output_path = output_file.path().to_owned();
+
+        let (controller, err_receiver) = cdc_simple_test_circuit(
+            &url,
+            publication,
+            &format!("public.{table_name}"),
+            &output_path,
+        );
+
+        controller.start();
+
+        // Wait for the snapshot data to appear in the output.
+        wait(
+            || {
+                let rows = read_output_json(&output_path);
+                count_inserts(&rows) >= 2 || !err_receiver.is_empty()
+            },
+            60_000,
+        )
+        .expect("timeout: CDC basic insert test did not receive snapshot rows");
+
+        assert!(
+            err_receiver.is_empty(),
+            "unexpected errors in CDC pipeline"
+        );
+
+        // Now insert more rows while the pipeline is running (tests replication).
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (3, true, 100, 'streaming')"
+        ));
+
+        wait(
+            || {
+                let rows = read_output_json(&output_path);
+                count_inserts(&rows) >= 3 || !err_receiver.is_empty()
+            },
+            60_000,
+        )
+        .expect("timeout: CDC basic insert test did not receive streamed row");
+
+        let rows = read_output_json(&output_path);
+        assert!(count_inserts(&rows) >= 3);
+
+        // Verify the content of the rows
+        let inserts: Vec<&serde_json::Value> = rows
+            .iter()
+            .filter_map(|r| r.get("insert"))
+            .collect();
+
+        // Check that we have rows with ids 1, 2, 3
+        let ids: Vec<i64> = inserts
+            .iter()
+            .filter_map(|r| r.get("id").and_then(|v| v.as_i64()))
+            .collect();
+        assert!(ids.contains(&1), "missing row with id=1");
+        assert!(ids.contains(&2), "missing row with id=2");
+        assert!(ids.contains(&3), "missing row with id=3");
+
+        controller.stop().unwrap();
+    }
+
+    // -------------------------------------------------------------------
+    // Test 2: Data type coverage test
+    // -------------------------------------------------------------------
+
+    /// Tests CDC replication of all common Postgres data types.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege.
+    #[test]
+    #[serial]
+    #[ignore]
+    fn test_cdc_all_data_types() {
+        let url = postgres_url();
+        let table_name = "cdc_test_all_types";
+        let publication = "cdc_pub_all_types";
+
+        let mut table = CdcTestTable::new_all_types(table_name, publication, &url);
+
+        // Insert a row with all types populated.
+        table.execute(&format!(
+            r#"INSERT INTO {table_name} (
+                id, col_text, col_integer, col_bigint, col_boolean,
+                col_real, col_double, col_date, col_time,
+                col_timestamp, col_timestamptz, col_uuid, col_jsonb,
+                col_bytea, col_numeric, col_smallint, col_int_array
+            ) VALUES (
+                1, 'hello world', 42, 9876543210, true,
+                3.14, 2.718281828, '2024-06-15', '14:30:00',
+                '2024-01-01 12:00:00', '2024-01-01 12:00:00+00', '550e8400-e29b-41d4-a716-446655440000',
+                '{{"key": "value", "nested": {{"a": 1}}}}',
+                E'\\xDEADBEEF', 12345.67, 7, ARRAY[1, 2, 3]
+            )"#
+        ));
+
+        // Insert a row with NULLs for nullable columns.
+        table.execute(&format!(
+            r#"INSERT INTO {table_name} (id) VALUES (2)"#
+        ));
+
+        let output_file = NamedTempFile::new().unwrap();
+        let output_path = output_file.path().to_owned();
+
+        let (controller, err_receiver) = cdc_all_types_test_circuit(
+            &url,
+            publication,
+            &format!("public.{table_name}"),
+            &output_path,
+        );
+
+        controller.start();
+
+        // Wait for both rows to appear.
+        wait(
+            || {
+                let rows = read_output_json(&output_path);
+                count_inserts(&rows) >= 2 || !err_receiver.is_empty()
+            },
+            60_000,
+        )
+        .expect("timeout: CDC all-types test did not receive rows");
+
+        assert!(
+            err_receiver.is_empty(),
+            "unexpected errors in CDC all-types pipeline"
+        );
+
+        let rows = read_output_json(&output_path);
+        let inserts: Vec<&serde_json::Value> = rows
+            .iter()
+            .filter_map(|r| r.get("insert"))
+            .collect();
+
+        // Find the fully-populated row (id=1).
+        let row1 = inserts
+            .iter()
+            .find(|r| r.get("id").and_then(|v| v.as_i64()) == Some(1))
+            .expect("missing row with id=1");
+
+        // Verify types are present and correctly encoded.
+        assert_eq!(row1["col_text"], json!("hello world"));
+        assert_eq!(row1["col_integer"], json!(42));
+        assert_eq!(row1["col_bigint"], json!(9876543210i64));
+        assert_eq!(row1["col_boolean"], json!(true));
+        // Float values: compare approximately
+        assert!(row1["col_real"].as_f64().unwrap() > 3.13);
+        assert!(row1["col_real"].as_f64().unwrap() < 3.15);
+        assert!(row1["col_double"].as_f64().unwrap() > 2.71);
+        assert!(row1["col_double"].as_f64().unwrap() < 2.72);
+        // Date, time, timestamp are encoded as strings
+        assert!(
+            row1["col_date"].as_str().unwrap().contains("2024-06-15"),
+            "col_date mismatch: {:?}",
+            row1["col_date"]
+        );
+        assert!(
+            row1["col_time"].as_str().unwrap().contains("14:30"),
+            "col_time mismatch: {:?}",
+            row1["col_time"]
+        );
+        assert!(
+            row1["col_timestamp"].as_str().unwrap().contains("2024-01-01"),
+            "col_timestamp mismatch: {:?}",
+            row1["col_timestamp"]
+        );
+        assert!(
+            row1["col_timestamptz"].as_str().unwrap().contains("2024"),
+            "col_timestamptz mismatch: {:?}",
+            row1["col_timestamptz"]
+        );
+        // UUID
+        assert_eq!(
+            row1["col_uuid"].as_str().unwrap(),
+            "550e8400-e29b-41d4-a716-446655440000"
+        );
+        // JSONB - should be passed through as JSON
+        assert!(row1["col_jsonb"].is_object() || row1["col_jsonb"].is_string());
+        // BYTEA - encoded as hex string
+        assert!(
+            row1["col_bytea"].as_str().is_some(),
+            "col_bytea should be a string: {:?}",
+            row1["col_bytea"]
+        );
+        // NUMERIC - encoded as string to preserve precision
+        assert!(
+            row1["col_numeric"].as_str().is_some(),
+            "col_numeric should be a string: {:?}",
+            row1["col_numeric"]
+        );
+        assert_eq!(row1["col_smallint"], json!(7));
+        // Integer array
+        assert!(row1["col_int_array"].is_array());
+        let arr = row1["col_int_array"].as_array().unwrap();
+        assert_eq!(arr.len(), 3);
+
+        // Find the NULL row (id=2).
+        let row2 = inserts
+            .iter()
+            .find(|r| r.get("id").and_then(|v| v.as_i64()) == Some(2))
+            .expect("missing row with id=2");
+
+        assert!(row2["col_text"].is_null());
+        assert!(row2["col_integer"].is_null());
+        assert!(row2["col_bigint"].is_null());
+        assert!(row2["col_boolean"].is_null());
+        assert!(row2["col_uuid"].is_null());
+        assert!(row2["col_jsonb"].is_null());
+        assert!(row2["col_bytea"].is_null());
+
+        controller.stop().unwrap();
+    }
+
+    // -------------------------------------------------------------------
+    // Test 3: Update and delete test
+    // -------------------------------------------------------------------
+
+    /// Tests that the CDC connector correctly captures UPDATE and DELETE operations.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege, REPLICA IDENTITY FULL.
+    #[test]
+    #[serial]
+    #[ignore]
+    fn test_cdc_update_delete() {
+        let url = postgres_url();
+        let table_name = "cdc_test_upd_del";
+        let publication = "cdc_pub_upd_del";
+
+        let mut table = CdcTestTable::new_simple(table_name, publication, &url);
+
+        let output_file = NamedTempFile::new().unwrap();
+        let output_path = output_file.path().to_owned();
+
+        let (controller, err_receiver) = cdc_simple_test_circuit(
+            &url,
+            publication,
+            &format!("public.{table_name}"),
+            &output_path,
+        );
+
+        controller.start();
+
+        // Give the pipeline a moment to start and establish the replication connection.
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        // Phase 1: Insert rows.
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (1, true, 10, 'alpha')"
+        ));
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (2, false, 20, 'beta')"
+        ));
+
+        wait(
+            || {
+                let rows = read_output_json(&output_path);
+                count_inserts(&rows) >= 2 || !err_receiver.is_empty()
+            },
+            60_000,
+        )
+        .expect("timeout: CDC update/delete test did not receive initial inserts");
+
+        // Phase 2: Update a row.
+        table.execute(&format!(
+            "UPDATE {table_name} SET s = 'alpha_updated', i = 11 WHERE id = 1"
+        ));
+
+        // An UPDATE with REPLICA IDENTITY FULL should produce a delete of the old
+        // row and an insert of the new row in Feldera's insert/delete model.
+        wait(
+            || {
+                let rows = read_output_json(&output_path);
+                // We should see at least one delete (the old row) and one more insert
+                // (the new row) beyond the initial 2 inserts.
+                let ins = count_inserts(&rows);
+                let dels = count_deletes(&rows);
+                (ins >= 3 && dels >= 1) || !err_receiver.is_empty()
+            },
+            60_000,
+        )
+        .expect("timeout: CDC update/delete test did not receive update events");
+
+        // Phase 3: Delete a row.
+        table.execute(&format!("DELETE FROM {table_name} WHERE id = 2"));
+
+        wait(
+            || {
+                let rows = read_output_json(&output_path);
+                let dels = count_deletes(&rows);
+                dels >= 2 || !err_receiver.is_empty()
+            },
+            60_000,
+        )
+        .expect("timeout: CDC update/delete test did not receive delete event");
+
+        assert!(
+            err_receiver.is_empty(),
+            "unexpected errors in CDC update/delete pipeline"
+        );
+
+        let rows = read_output_json(&output_path);
+
+        // Verify the delete for id=2 is present.
+        let deletes: Vec<&serde_json::Value> = rows
+            .iter()
+            .filter_map(|r| r.get("delete"))
+            .collect();
+        let deleted_ids: Vec<i64> = deletes
+            .iter()
+            .filter_map(|r| r.get("id").and_then(|v| v.as_i64()))
+            .collect();
+        assert!(
+            deleted_ids.contains(&2),
+            "missing delete for id=2, got deletes: {:?}",
+            deleted_ids
+        );
+
+        // Verify the updated row (id=1, s='alpha_updated') is present in inserts.
+        let inserts: Vec<&serde_json::Value> = rows
+            .iter()
+            .filter_map(|r| r.get("insert"))
+            .collect();
+        let updated = inserts
+            .iter()
+            .find(|r| {
+                r.get("id").and_then(|v| v.as_i64()) == Some(1)
+                    && r.get("s").and_then(|v| v.as_str()) == Some("alpha_updated")
+            });
+        assert!(
+            updated.is_some(),
+            "missing updated row (id=1, s='alpha_updated') in inserts"
+        );
+
+        controller.stop().unwrap();
+    }
 }
