@@ -24,6 +24,7 @@ default = [
     "with-pubsub",
     "with-redis",
     "with-nats",
+    "with-postgres-cdc",
 ]
 with-kafka = ["rdkafka"]
 with-deltalake = ["deltalake", "deltalake-catalog-unity"]
@@ -52,6 +53,7 @@ iceberg-tests-glue = []
 iceberg-tests-rest = []
 fips = ["rustls/fips"]
 bench-mode = []
+with-postgres-cdc = ["etl", "etl-config", "etl-postgres"]
 
 [dependencies]
 feldera-types = { workspace = true }
@@ -200,6 +202,9 @@ zip = { workspace = true }
 smallvec = { workspace = true }
 delta_kernel = { workspace = true }
 flate2 = { workspace = true }
+etl = { workspace = true, optional = true }
+etl-config = { workspace = true, optional = true }
+etl-postgres = { workspace = true, optional = true }
 
 [package.metadata.cargo-machete]
 ignored = ["num-traits"]
