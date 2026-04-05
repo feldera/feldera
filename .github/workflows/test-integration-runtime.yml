@@ -64,3 +64,4 @@ jobs:
           FELDERA_TLS_INSECURE: true
           KAFKA_BOOTSTRAP_SERVERS: ${{ vars.CI_KAFKA_BOOTSTRAP }}
           SCHEMA_REGISTRY_URL: ${{ vars.CI_SCHEMA_REGISTRY }}
+          RUN_ID: 1 # we use this to run a single variant of the Kafka tests in test_kafka_avro.py
