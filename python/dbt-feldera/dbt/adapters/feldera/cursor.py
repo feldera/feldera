@@ -1,5 +1,6 @@
 import logging
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from decimal import Decimal
+from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from dbt.adapters.feldera.sql_parser import SqlIntent
 from dbt.adapters.feldera.sqlglot_parser import parser as _parser
@@ -7,6 +8,24 @@ from feldera.pipeline import Pipeline
 from feldera.rest.feldera_client import FelderaClient
 
 logger = logging.getLogger(__name__)
+
+#: Maximum number of rows to scan when inferring column types.
+#
+_TYPE_SCAN_LIMIT = 50
+
+
+class ColumnDescription(NamedTuple):
+    """
+    DB-API 2.0 compatibtle column description.
+    """
+
+    name: str
+    type_code: Optional[str] = None
+    display_size: None = None
+    internal_size: None = None
+    precision: None = None
+    scale: None = None
+    null_ok: None = None
 
 
 class FelderaCursor:
@@ -46,20 +65,24 @@ class FelderaCursor:
         return self._rowcount
 
     @property
-    def description(self) -> Optional[List[Tuple]]:
+    def description(self) -> Optional[List[ColumnDescription]]:
         """
-        Return column descriptions for DB-API 2.0 compatibility.
+        Column descriptions for the last query result.
 
-        Each description is a 7-tuple: (name, type_code, display_size,
-        internal_size, precision, scale, null_ok).
+        Returns a list of :class:`ColumnDescription` when there are columns,
+        or ``None`` when there are no columns (DDL, INSERT, empty).
 
-        Type codes are inferred from the Python types in the first result row.
+        Read by ``dbt test`` (via ``_get_result_table`` — uses ``name``),
+        ``dbt run`` with model contracts, and ``dbt snapshot``.
         """
         if not self._columns:
             return None
         types = self._column_types or [None] * len(self._columns)
         return [
-            (col, types[i] if i < len(types) else None, None, None, None, None, None)
+            ColumnDescription(
+                name=col,
+                type_code=types[i] if i < len(types) else None,
+            )
             for i, col in enumerate(self._columns)
         ]
 
@@ -101,31 +124,52 @@ class FelderaCursor:
             self._execute_adhoc_query(sql)
 
     def _infer_column_types(self) -> List[Optional[str]]:
-        """Infer SQL type codes from the first result row's Python types."""
+        """Infer SQL type names from Python values in the result set.
+
+        Scans up to :data:`_TYPE_SCAN_LIMIT` rows so that a leading
+        ``None`` doesn't hide the real type.  Handles ``Decimal`` values
+        returned by the Feldera SDK (``json.loads(..., parse_float=Decimal)``).
+        """
         if not self._results or not self._columns:
             return [None] * len(self._columns) if self._columns else []
 
-        first_row = self._results[0]
-        types: List[Optional[str]] = []
-        for col in self._columns:
-            val = first_row.get(col)
-            if val is None:
-                types.append(None)
-            elif isinstance(val, bool):
-                types.append("BOOLEAN")
-            elif isinstance(val, int):
-                types.append("INTEGER")
-            elif isinstance(val, float):
-                types.append("DOUBLE")
-            elif isinstance(val, str):
-                types.append("VARCHAR")
-            elif isinstance(val, list):
-                types.append("ARRAY")
-            elif isinstance(val, dict):
-                types.append("MAP")
-            else:
-                types.append(None)
+        types: List[Optional[str]] = [None] * len(self._columns)
+        resolved = 0
+        target = len(self._columns)
+
+        for row in self._results[:_TYPE_SCAN_LIMIT]:
+            if resolved >= target:
+                break
+            for idx, col in enumerate(self._columns):
+                if types[idx] is not None:
+                    continue
+                val = row.get(col)
+                inferred = self._python_type_to_sql(val)
+                if inferred is not None:
+                    types[idx] = inferred
+                    resolved += 1
         return types
+
+    @staticmethod
+    def _python_type_to_sql(val: object) -> Optional[str]:
+        """Map a Python value to a Feldera SQL type name, or ``None``."""
+        if val is None:
+            return None
+        if isinstance(val, bool):
+            return "BOOLEAN"
+        if isinstance(val, int):
+            return "INTEGER"
+        if isinstance(val, Decimal):
+            return "DECIMAL"
+        if isinstance(val, float):
+            return "DOUBLE"
+        if isinstance(val, str):
+            return "VARCHAR"
+        if isinstance(val, list):
+            return "ARRAY"
+        if isinstance(val, dict):
+            return "MAP"
+        return None
 
     def _execute_adhoc_query(self, sql: str) -> None:
         """
