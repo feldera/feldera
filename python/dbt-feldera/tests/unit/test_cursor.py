@@ -1,6 +1,7 @@
 import unittest
+from decimal import Decimal
 
-from dbt.adapters.feldera.cursor import FelderaCursor
+from dbt.adapters.feldera.cursor import ColumnDescription, FelderaCursor
 from dbt.adapters.feldera.sql_parser import SqlIntent
 from dbt.adapters.feldera.sqlglot_parser import parser
 
@@ -196,6 +197,15 @@ class TestFelderaCursorDescription(unittest.TestCase):
         desc = cursor.description
         self.assertEqual(desc[0][1], "DOUBLE")
 
+    def test_description_infers_decimal_type(self):
+        """The Feldera SDK deserializes JSON floats as Decimal objects."""
+        cursor = self._make_cursor()
+        cursor._results = [{"amount": Decimal("3.14")}]
+        cursor._columns = ["amount"]
+        cursor._column_types = cursor._infer_column_types()
+        desc = cursor.description
+        self.assertEqual(desc[0][1], "DECIMAL")
+
     def test_description_null_value_gives_none_type(self):
         cursor = self._make_cursor()
         cursor._results = [{"val": None}]
@@ -260,6 +270,69 @@ class TestFelderaCursorDescription(unittest.TestCase):
         desc = cursor.description
         self.assertEqual(desc[0][0], "id")
         self.assertIsNone(desc[0][1])
+
+    def test_description_returns_named_tuples(self):
+        """Each entry is a ColumnDescription NamedTuple with named fields."""
+        cursor = self._make_cursor()
+        cursor._results = [{"id": 1, "name": "alice"}]
+        cursor._columns = ["id", "name"]
+        cursor._column_types = cursor._infer_column_types()
+        desc = cursor.description
+        entry = desc[0]
+        self.assertIsInstance(entry, ColumnDescription)
+        self.assertEqual(entry.name, "id")
+        self.assertEqual(entry.type_code, "INTEGER")
+        self.assertIsNone(entry.display_size)
+        self.assertIsNone(entry.internal_size)
+        self.assertIsNone(entry.precision)
+        self.assertIsNone(entry.scale)
+        self.assertIsNone(entry.null_ok)
+
+    def test_description_named_tuple_unpackable_like_raw_tuple(self):
+        """NamedTuple is still positionally unpackable per PEP 249."""
+        cursor = self._make_cursor()
+        cursor._results = [{"id": 1}]
+        cursor._columns = ["id"]
+        cursor._column_types = cursor._infer_column_types()
+        desc = cursor.description
+        # dbt unpacks with: for column_name, column_type_code, *_ in desc
+        column_name, column_type_code, *rest = desc[0]
+        self.assertEqual(column_name, "id")
+        self.assertEqual(column_type_code, "INTEGER")
+        self.assertEqual(len(rest), 5)
+        self.assertTrue(all(r is None for r in rest))
+
+    def test_null_scan_resolves_type_from_later_row(self):
+        """When the first row has None, scan subsequent rows for the type."""
+        cursor = self._make_cursor()
+        cursor._results = [
+            {"val": None},
+            {"val": None},
+            {"val": 42},
+        ]
+        cursor._columns = ["val"]
+        cursor._column_types = cursor._infer_column_types()
+        self.assertEqual(cursor._column_types, ["INTEGER"])
+
+    def test_all_null_column_gives_none_type(self):
+        """A column that is None in every row still returns type_code None."""
+        cursor = self._make_cursor()
+        cursor._results = [{"val": None}, {"val": None}]
+        cursor._columns = ["val"]
+        cursor._column_types = cursor._infer_column_types()
+        self.assertIsNone(cursor._column_types[0])
+
+    def test_null_scan_mixed_columns(self):
+        """Columns resolve independently during multi-row scanning."""
+        cursor = self._make_cursor()
+        cursor._results = [
+            {"a": None, "b": "hello"},
+            {"a": Decimal("1.5"), "b": None},
+        ]
+        cursor._columns = ["a", "b"]
+        cursor._column_types = cursor._infer_column_types()
+        self.assertEqual(cursor._column_types[0], "DECIMAL")
+        self.assertEqual(cursor._column_types[1], "VARCHAR")
 
 
 if __name__ == "__main__":
