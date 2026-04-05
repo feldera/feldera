@@ -153,7 +153,8 @@ class FelderaConnectionManager(BaseConnectionManager):
         Execute SQL against Feldera.
 
         Routes the SQL through FelderaCursor which classifies the intent
-        (DDL, ad-hoc query, etc.) and dispatches accordingly.
+        (DDL, ad-hoc query, etc.) and dispatches accordingly to the pipeline
+        query or the ad-hoc query endpoint.
 
         :param sql: The SQL to execute.
         :param auto_begin: Currently ignored.
