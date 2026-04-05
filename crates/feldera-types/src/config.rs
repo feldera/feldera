@@ -18,7 +18,9 @@ use crate::transport::iceberg::IcebergReaderConfig;
 use crate::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
 use crate::transport::nats::NatsInputConfig;
 use crate::transport::nexmark::NexmarkInputConfig;
-use crate::transport::postgres::{PostgresReaderConfig, PostgresWriterConfig};
+use crate::transport::postgres::{
+    PostgresCdcReaderConfig, PostgresReaderConfig, PostgresWriterConfig,
+};
 use crate::transport::pubsub::PubSubInputConfig;
 use crate::transport::redis::RedisOutputConfig;
 use crate::transport::s3::S3InputConfig;
@@ -1619,6 +1621,7 @@ pub enum TransportConfig {
     // Prevent rust from complaining about large size difference between enum variants.
     IcebergInput(Box<IcebergReaderConfig>),
     PostgresInput(PostgresReaderConfig),
+    PostgresCdcInput(PostgresCdcReaderConfig),
     PostgresOutput(PostgresWriterConfig),
     Datagen(DatagenInputConfig),
     Nexmark(NexmarkInputConfig),
@@ -1646,6 +1649,7 @@ impl TransportConfig {
             TransportConfig::DeltaTableOutput(_) => "delta_table_output".to_string(),
             TransportConfig::IcebergInput(_) => "iceberg_input".to_string(),
             TransportConfig::PostgresInput(_) => "postgres_input".to_string(),
+            TransportConfig::PostgresCdcInput(_) => "postgres_cdc_input".to_string(),
             TransportConfig::PostgresOutput(_) => "postgres_output".to_string(),
             TransportConfig::Datagen(_) => "datagen".to_string(),
             TransportConfig::Nexmark(_) => "nexmark".to_string(),

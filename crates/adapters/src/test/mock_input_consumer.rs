@@ -132,6 +132,12 @@ impl InputConsumer for MockInputConsumer {
     }
 
     fn update_connector_health(&self, _health: ConnectorHealth) {}
+
+    fn completion_watcher(
+        &self,
+    ) -> Option<tokio::sync::watch::Receiver<feldera_types::coordination::Completion>> {
+        None
+    }
 }
 
 pub struct MockInputParserState {
