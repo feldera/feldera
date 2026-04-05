@@ -25,7 +25,8 @@ class SqlIntent(Enum):
         ``CREATE``, ``DROP``, ``ALTER`` — structural changes collected by
         the pipeline state manager and compiled as a single program.
     DATA_INGRESS
-        ``INSERT`` — row-level writes pushed via HTTP ingress.
+        ``INSERT`` — row-level writes pushed via HTTP ingress. Both the ad-hoc
+        engine and the ingress API support ``INSERT``.
     METADATA
         Reserved for future catalog / ``INFORMATION_SCHEMA`` queries.
     NO_OP
