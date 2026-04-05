@@ -129,6 +129,10 @@ impl InputConsumer for MockInputConsumer {
     fn commit_transaction(&self) {
         self.state().transaction_in_progress = false;
     }
+
+    fn completion_watcher(&self) -> Option<tokio::sync::watch::Receiver<feldera_types::coordination::Completion>> {
+        None
+    }
 }
 
 pub struct MockInputParserState {
