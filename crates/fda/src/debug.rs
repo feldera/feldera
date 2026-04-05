@@ -258,7 +258,10 @@ async fn unbundle_support_bundle(
         let udf_rust = config["udf_rust"].as_str().unwrap_or("").to_string();
         let udf_toml = config["udf_toml"].as_str().unwrap_or("").to_string();
         let description = config["description"].as_str().map(|s| s.to_string());
-        let platform_version = config["platform_version"].as_str().map(|s| s.to_string());
+        let platform_version = config["platform_version"]
+            .as_str()
+            .split_once('+')
+            .map_or(s.to_string(), |(before, _)| before.to_string());
         let runtime_config: Option<RuntimeConfig> =
             serde_json::from_value(config["runtime_config"].clone()).ok();
 
