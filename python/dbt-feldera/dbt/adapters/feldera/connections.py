@@ -125,7 +125,7 @@ class FelderaConnectionManager(BaseConnectionManager):
         Required by dbt's seed materialization (``load_csv_rows``).
 
         :param sql: The SQL to execute.
-        :param auto_begin: Ignored (Feldera is non-transactional).
+        :param auto_begin: Currently ignored.
         :param bindings: Optional bindings (not used).
         :param abridge_sql_log: Whether to truncate SQL in logs.
         :return: Tuple of (connection, cursor).
@@ -156,7 +156,7 @@ class FelderaConnectionManager(BaseConnectionManager):
         (DDL, ad-hoc query, etc.) and dispatches accordingly.
 
         :param sql: The SQL to execute.
-        :param auto_begin: Ignored (Feldera is non-transactional).
+        :param auto_begin: Currently ignored.
         :param fetch: Whether to fetch results.
         :param limit: Max rows to return.
         :return: Tuple of (AdapterResponse, agate.Table).
