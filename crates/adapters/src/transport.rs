@@ -117,6 +117,7 @@ pub fn input_transport_config_to_endpoint(
         | TransportConfig::DeltaTableInput(_)
         | TransportConfig::DeltaTableOutput(_)
         | TransportConfig::PostgresInput(_)
+        | TransportConfig::PostgresCdcInput(_)
         | TransportConfig::PostgresOutput(_)
         | TransportConfig::HttpOutput
         | TransportConfig::RedisOutput(_)

@@ -11070,6 +11070,79 @@
           }
         }
       },
+      "PostgresCdcReaderConfig": {
+        "allOf": [
+          {
+            "type": "object",
+            "description": "TLS/SSL configuration for PostgreSQL connectors.",
+            "properties": {
+              "ssl_ca_location": {
+                "type": "string",
+                "description": "Path to a file containing a sequence of CA certificates in PEM format.",
+                "nullable": true
+              },
+              "ssl_ca_pem": {
+                "type": "string",
+                "description": "A sequence of CA certificates in PEM format.",
+                "nullable": true
+              },
+              "ssl_certificate_chain_location": {
+                "type": "string",
+                "description": "The path to the certificate chain file.\nThe file must contain a sequence of PEM-formatted certificates,\nthe first being the leaf certificate, and the remainder forming\nthe chain of certificates up to and including the trusted root certificate.",
+                "nullable": true
+              },
+              "ssl_client_key": {
+                "type": "string",
+                "description": "The client certificate key in PEM format.",
+                "nullable": true
+              },
+              "ssl_client_key_location": {
+                "type": "string",
+                "description": "Path to the client certificate key.",
+                "nullable": true
+              },
+              "ssl_client_location": {
+                "type": "string",
+                "description": "Path to the client certificate.",
+                "nullable": true
+              },
+              "ssl_client_pem": {
+                "type": "string",
+                "description": "The client certificate in PEM format.",
+                "nullable": true
+              },
+              "verify_hostname": {
+                "type": "boolean",
+                "description": "True to enable hostname verification when using TLS. True by default.",
+                "nullable": true
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "uri",
+              "publication",
+              "source_table"
+            ],
+            "properties": {
+              "publication": {
+                "type": "string",
+                "description": "Name of the pre-created Postgres publication to replicate from."
+              },
+              "source_table": {
+                "type": "string",
+                "description": "Postgres table to replicate (e.g. \"public.orders\").\nMust be included in the publication."
+              },
+              "uri": {
+                "type": "string",
+                "description": "Postgres connection URI. The user must have REPLICATION privilege.\nSee: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>"
+              }
+            }
+          }
+        ],
+        "description": "Postgres CDC input connector configuration.\n\nUses logical replication to capture ongoing changes from a Postgres database.\nRequires a pre-created publication and a user with REPLICATION privilege.\nTables must have primary keys and `REPLICA IDENTITY FULL` is recommended\nfor UPDATE/DELETE support."
+      },
       "PostgresReaderConfig": {
         "allOf": [
           {
@@ -13382,6 +13455,24 @@
                 "type": "string",
                 "enum": [
                   "postgres_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/PostgresCdcReaderConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "postgres_cdc_input"
                 ]
               }
             }

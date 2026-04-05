@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 use dyn_clone::DynClone;
 use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::config::FtModel;
+use feldera_types::coordination::Completion;
 use feldera_types::program_schema::Relation;
 use rmpv::{Value as RmpValue, ext::Error as RmpDecodeError};
 use serde::Deserialize;
@@ -765,6 +766,19 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// will be polled on every scrape.  The default implementation is a no-op,
     /// so connectors that have no custom metrics need not override it.
     fn set_custom_metrics(&self, _metrics: Arc<dyn ConnectorMetrics>) {}
+
+    /// Returns a watch receiver that tracks completion of pipeline steps.
+    ///
+    /// The receiver yields [`Completion`] values whose `total_completed_steps`
+    /// field indicates how many steps have been fully processed (circuit
+    /// execution + all output connectors).
+    ///
+    /// Input adapters that need to defer acknowledgment until data is durably
+    /// processed (e.g., CDC adapters controlling a replication slot) can use
+    /// this to detect when their data has been consumed.
+    ///
+    /// Return `None` if the consumer does not support completion tracking.
+    fn completion_watcher(&self) -> Option<tokio::sync::watch::Receiver<Completion>>;
 
     /// Endpoint failed.
     ///
