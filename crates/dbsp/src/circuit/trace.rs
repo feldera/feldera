@@ -18,7 +18,12 @@
 
 use super::{GlobalNodeId, NodeId, OwnershipPreference, circuit_builder::Node};
 use crate::circuit::metadata::OperatorLocation;
-use std::{borrow::Cow, fmt, fmt::Display, hash::Hash};
+use std::{
+    borrow::Cow,
+    fmt::{self, Display},
+    hash::Hash,
+    time::Duration,
+};
 
 /// Type of edge in a circuit graph.
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
@@ -496,12 +501,25 @@ impl Display for CircuitEvent {
 ///              StepEnd      EvalEnd(id)    WaitEnd
 /// ```
 pub enum SchedulerEvent<'a> {
-    EvalStart { node: &'a dyn Node },
-    EvalEnd { node: &'a dyn Node },
-    WaitStart { circuit_id: &'a GlobalNodeId },
-    WaitEnd { circuit_id: &'a GlobalNodeId },
-    StepStart { circuit_id: &'a GlobalNodeId },
-    StepEnd { circuit_id: &'a GlobalNodeId },
+    EvalStart {
+        node: &'a dyn Node,
+    },
+    EvalEnd {
+        node: &'a dyn Node,
+        duration: Duration,
+    },
+    WaitStart {
+        circuit_id: &'a GlobalNodeId,
+    },
+    WaitEnd {
+        circuit_id: &'a GlobalNodeId,
+    },
+    StepStart {
+        circuit_id: &'a GlobalNodeId,
+    },
+    StepEnd {
+        circuit_id: &'a GlobalNodeId,
+    },
     ClockStart,
     ClockEnd,
 }
@@ -513,8 +531,8 @@ impl<'a> SchedulerEvent<'a> {
     }
 
     /// Create a [`SchedulerEvent::EvalEnd`] event instance.
-    pub fn eval_end(node: &'a dyn Node) -> Self {
-        Self::EvalEnd { node }
+    pub fn eval_end(node: &'a dyn Node, duration: Duration) -> Self {
+        Self::EvalEnd { node, duration }
     }
 
     /// Create a [`SchedulerEvent::WaitStart`] event instance.
@@ -554,8 +572,13 @@ impl Display for SchedulerEvent<'_> {
             Self::EvalStart { node } => {
                 write!(f, "EvalStart({})", node.global_id())
             }
-            Self::EvalEnd { node } => {
-                write!(f, "EvalEnd({})", node.global_id())
+            Self::EvalEnd { node, duration } => {
+                write!(
+                    f,
+                    "EvalEnd({}, {}μs)",
+                    node.global_id(),
+                    duration.as_micros()
+                )
             }
             Self::WaitStart { circuit_id } => {
                 write!(f, "WaitStart({circuit_id})")
