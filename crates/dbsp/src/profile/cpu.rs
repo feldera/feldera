@@ -61,7 +61,6 @@ pub struct CircuitCPUProfile {
 
 #[derive(Default, Debug)]
 struct CPUProfilerInner {
-    start_times: HashMap<GlobalNodeId, Instant>,
     operators: HashMap<GlobalNodeId, OperatorCPUProfile>,
     wait_start_times: HashMap<GlobalNodeId, Instant>,
     step_start_times: HashMap<GlobalNodeId, Instant>,
@@ -97,21 +96,15 @@ impl CPUProfilerInner {
                 self.step_end_times
                     .insert((*circuit_id).clone(), Instant::now());
             }
-            SchedulerEvent::EvalStart { node } => {
-                self.start_times
-                    .insert(node.global_id().clone(), Instant::now());
-            }
-            SchedulerEvent::EvalEnd { node } => {
-                if let Some(start_time) = self.start_times.remove(node.global_id()) {
-                    let duration = Instant::now().duration_since(start_time);
-                    let op_profile = self
-                        .operators
-                        .entry(node.global_id().clone())
-                        .or_insert_with(Default::default);
-                    op_profile.add_event(duration);
-                    // println!("{}:{}:{:?}", crate::Runtime::worker_index(),
-                    // node.global_id(), duration);
-                };
+            SchedulerEvent::EvalStart { .. } => {}
+            SchedulerEvent::EvalEnd { node, duration } => {
+                let op_profile = self
+                    .operators
+                    .entry(node.global_id().clone())
+                    .or_insert_with(Default::default);
+                op_profile.add_event(*duration);
+                // println!("{}:{}:{:?}", crate::Runtime::worker_index(),
+                // node.global_id(), duration);
             }
             SchedulerEvent::WaitStart { circuit_id } => {
                 self.wait_start_times

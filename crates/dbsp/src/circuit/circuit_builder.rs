@@ -58,6 +58,7 @@ use dyn_clone::{DynClone, clone_box};
 use feldera_ir::{LirCircuit, LirNodeId};
 use feldera_samply::Span;
 use feldera_storage::{FileCommitter, StoragePath};
+use pin_project_lite::pin_project;
 use serde::{Deserialize, Serialize, Serializer, de::DeserializeOwned};
 use std::{
     any::{Any, TypeId, type_name_of_val},
@@ -68,13 +69,15 @@ use std::{
     future::Future,
     io::ErrorKind,
     marker::PhantomData,
-    mem::transmute,
+    mem::{take, transmute},
     ops::Deref,
     panic::Location,
     pin::Pin,
     rc::Rc,
     sync::Arc,
+    task::{Context, Poll},
     thread::panicking,
+    time::{Duration, Instant},
 };
 use tokio::{runtime::Runtime as TokioRuntime, task::LocalSet};
 use tracing::debug;
@@ -3638,11 +3641,13 @@ where
                 let node = nodes[id.0].borrow();
                 format!("{} {}", node.name(), node.global_id())
             });
-        let progress = circuit.nodes.borrow()[id.0].borrow_mut().eval().await?;
+        let (result, duration) = Timed::new(circuit.nodes.borrow()[id.0].borrow_mut().eval()).await;
+        let progress = result?;
         span.record();
 
         circuit.log_scheduler_event(&SchedulerEvent::eval_end(
             circuit.nodes.borrow()[id.0].borrow().as_ref(),
+            duration,
         ));
 
         Ok(progress)
@@ -7566,6 +7571,52 @@ impl CircuitHandle {
 
     pub fn rebalance(&self) {
         self.circuit.rebalance()
+    }
+}
+
+pin_project! {
+    /// An async task that measures its runtime.
+    ///
+    /// This uses the same wrapper technique as [tokio_metrics::Instrumented] or
+    /// [tracing::Instrument]: by implementing [Future] manually, it wraps each
+    /// poll with elapsed time measurement.  When the future eventually
+    /// completes, it outputs the wrapped future's output value plus the total
+    /// elapsed time.
+    ///
+    /// [tokio_metrics::Instrumented]: https://docs.rs/tokio-metrics/latest/tokio_metrics/struct.Instrumented.html
+    /// [tracing::Instrument]: https://docs.rs/tracing/latest/tracing/trait.Instrument.html
+    #[derive(Debug)]
+    pub struct Timed<T> {
+        // The task being instrumented
+        #[pin]
+        task: T,
+
+        // Time spent running this task.
+        elapsed: Duration,
+    }
+}
+
+impl<T> Timed<T> {
+    fn new(task: T) -> Self {
+        Self {
+            task,
+            elapsed: Duration::ZERO,
+        }
+    }
+}
+
+impl<T> Future for Timed<T>
+where
+    T: Future,
+{
+    type Output = (T::Output, Duration);
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let start = Instant::now();
+        let ret = this.task.poll(cx);
+        *this.elapsed += start.elapsed();
+        ret.map(|value| (value, take(&mut *this.elapsed)))
     }
 }
 

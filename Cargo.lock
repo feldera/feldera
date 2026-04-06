@@ -3788,6 +3788,7 @@ dependencies = [
  "ouroboros",
  "paste",
  "petgraph 0.6.5",
+ "pin-project-lite",
  "pprof",
  "pretty_assertions",
  "proptest",
