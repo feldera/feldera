@@ -20,9 +20,18 @@
 
   let {
     pipelines,
+    header,
     preHeaderEnd,
     selectedPipelines = $bindable()
-  }: { pipelines: PipelineThumb[]; preHeaderEnd?: Snippet; selectedPipelines: string[] } = $props()
+  }: {
+    pipelines: PipelineThumb[]
+    header?: Snippet
+    preHeaderEnd?: Snippet
+    selectedPipelines: string[]
+  } = $props()
+
+  let controlsHeight = $state(0)
+
   const pipelinesWithLastChange = $derived(
     pipelines.map((pipeline) => ({
       ...pipeline,
@@ -78,165 +87,191 @@
   const td = 'py-1 text-base border-t-[0.5px]'
 </script>
 
-<div class="relative mb-2 flex flex-col items-stretch gap-2 sm:flex-row sm:items-end sm:justify-end sm:gap-4 lg:-mt-7 lg:mb-0">
-  <input
-    data-testid="input-pipeline-search"
-    class="input h-9 sm:w-60"
-    type="search"
-    placeholder="Search pipelines..."
-    oninput={(e) => {
-      nameSearch = e.currentTarget.value
-    }}
-  />
-  <select
-    data-testid="select-pipeline-status"
-    class="h_-9 select sm:w-40"
-    onchange={(e) => {
-      statusFilter.value = filterStatuses.find((v) => e.currentTarget.value === v[0])![0]
-      statusFilter.set()
-    }}
-  >
-    {#each filterStatuses as filter (filter[0])}
-      <option value={filter[0]}>{filter[0]}</option>
-    {/each}
-  </select>
-  {@render preHeaderEnd?.()}
-</div>
-<Datatable headless {table}>
-  <table class="p-1">
-    <thead>
-      <tr>
-        <th class="w-10 px-2 text-left"
-          ><input
-            class="checkbox"
-            type="checkbox"
-            checked={table.isAllSelected}
-            onclick={() => table.selectAll()}
-          /></th
+<div class="pipeline-table-wrapper bg-white-dark">
+  <div class="bg-white-dark sticky top-0 z-10 pb-2" bind:clientHeight={controlsHeight}>
+    <div class="sticky left-0 max-w-[100cqi] px-2 md:px-8">
+      {#if header}
+        {@render header()}
+      {/if}
+      <div
+        class="relative mt-2 flex items-stretch gap-2 flex-row sm:items-end sm:justify-end sm:gap-4"
+        class:lg:-mt-7={!!header}
+        class:lg:mb-0={!!header}
+      >
+        <input
+          data-testid="input-pipeline-search"
+          class="input h-9 sm:w-60"
+          type="search"
+          placeholder="Search pipelines..."
+          oninput={(e) => {
+            nameSearch = e.currentTarget.value
+          }}
+        />
+        <select
+          data-testid="select-pipeline-status"
+          class="h_-9 select sm:w-40"
+          onchange={(e) => {
+            statusFilter.value = filterStatuses.find((v) => e.currentTarget.value === v[0])![0]
+            statusFilter.set()
+          }}
         >
-        <ThSort class="px-1 py-1" {table} field="name"
-          ><span class="text-base font-normal text-surface-950-50">Pipeline name</span></ThSort
-        >
-        <th class="px-1 py-1 text-left"
-          ><span class="text-base font-normal text-surface-950-50">Storage</span></th
-        >
-        <ThSort {table} class="px-1 py-1" field="status"
-          ><span class="ml-8 text-base font-normal text-surface-950-50">Status</span></ThSort
-        >
-        <th class="px-1 py-1 text-left"
-          ><span class="text-base font-normal text-surface-950-50">Message</span></th
-        >
-        <ThSort
-          {table}
-          class="w-20 py-1 pr-4 text-right xl:w-32"
-          field={(p) => p.connectors?.numErrors}
-        >
-          <span class="text-base font-normal text-surface-950-50">
-            <span class="inline xl:hidden">Errors</span>
-            <span class="hidden xl:!inline">Runtime errors</span>
-          </span>
-        </ThSort>
-        <ThSort {table} class="w-20 px-1 py-1 xl:w-32" field="platformVersion">
-          <span class="text-base font-normal text-surface-950-50">
-            Runtime <span class="hidden xl:!inline">version</span>
-          </span>
-        </ThSort>
-        <ThSort {table} class="px-1 py-1" field="lastStatusSince"
-          ><span class="text-base font-normal text-surface-950-50">Status changed</span></ThSort
-        >
-        <ThSort {table} class="px-1 py-1" field="deploymentResourcesStatusSince"
-          ><span class="text-base font-normal text-surface-950-50">Deployed on</span></ThSort
-        >
-      </tr>
-    </thead>
-    <tbody>
-      {#each table.rows as pipeline}
-        <tr class="group" data-testid="box-row-{pipeline.name}"
-          ><td class="{td} border-surface-100-900 px-2 group-hover:bg-surface-50-950">
-            <input
+          {#each filterStatuses as filter (filter[0])}
+            <option value={filter[0]}>{filter[0]}</option>
+          {/each}
+        </select>
+        {@render preHeaderEnd?.()}
+      </div>
+    </div>
+  </div>
+  <Datatable headless {table}>
+    <table class="md:px-6">
+      <thead style="top: {controlsHeight}px; z-index: 1;">
+        <tr>
+          <th class="w-10 px-2 text-left"
+            ><input
               class="checkbox"
               type="checkbox"
-              checked={table.selected.includes(pipeline.name)}
-              onclick={() => table.select(pipeline.name)}
-            />
-          </td>
-          <td class="{td} relative w-3/12 border-surface-100-900 group-hover:bg-surface-50-950"
-            ><a
-              class=" absolute top-2 w-full overflow-hidden overflow-ellipsis whitespace-nowrap"
-              href="/pipelines/{pipeline.name}/">{pipeline.name}</a
-            ></td
+              checked={table.isAllSelected}
+              onclick={() => table.selectAll()}
+            /></th
           >
-          <td class="{td} relative w-12 border-surface-100-900 group-hover:bg-surface-50-950">
-            <div
-              class="fd {pipeline.storageStatus === 'Cleared'
-                ? 'fd-database-off text-surface-500'
-                : 'fd-database'} text-center text-[20px]"
-            ></div>
-            <Tooltip
-              >{match(pipeline.storageStatus)
-                .with('InUse', () => 'Storage in use')
-                .with('Clearing', () => 'Clearing storage')
-                .with('Cleared', () => 'Storage cleared')
-                .exhaustive()}</Tooltip
-            >
-          </td>
-          <td class="pr-2 {td} w-36 border-surface-100-900 group-hover:bg-surface-50-950"
-            ><PipelineStatus status={pipeline.status}></PipelineStatus></td
+          <ThSort class="px-1 py-1" {table} field="name"
+            ><span class="text-base font-normal text-surface-950-50">Pipeline name</span></ThSort
           >
-          <td
-            class="{td} relative border-surface-100-900 whitespace-pre-wrap group-hover:bg-surface-50-950"
+          <th class="px-1 py-1 text-left"
+            ><span class="text-base font-normal text-surface-950-50">Storage</span></th
           >
-            <span
-              class="absolute top-1.5 w-full overflow-hidden align-middle overflow-ellipsis whitespace-nowrap"
-            >
-              {#if pipeline.deploymentError}
-                {@const message = pipeline.deploymentError.message}
-                <span class="fd fd-circle-alert pr-2 text-[20px] text-error-500"></span>
-                <Popover class="z-10" strategy="fixed">
-                  <div
-                    class="scrollbar flex max-h-[50vh] max-w-[80vw] overflow-auto whitespace-pre-wrap"
-                  >
-                    {message}
-                  </div>
-                </Popover>
-                {message.slice(0, ((idx) => (idx > 0 ? idx : undefined))(message.indexOf('\n')))}
-              {/if}
+          <ThSort {table} class="px-1 py-1" field="status"
+            ><span class="ml-8 text-base font-normal text-surface-950-50">Status</span></ThSort
+          >
+          <th class="px-1 py-1 text-left"
+            ><span class="text-base font-normal text-surface-950-50">Message</span></th
+          >
+          <ThSort
+            {table}
+            class="w-20 py-1 pr-4 text-right xl:w-32"
+            field={(p) => p.connectors?.numErrors}
+          >
+            <span class="text-base font-normal text-surface-950-50">
+              <span class="inline xl:hidden">Errors</span>
+              <span class="hidden xl:!inline">Runtime errors</span>
             </span>
-          </td>
-          <td class="{td} border-surface-100-900 pr-4 group-hover:bg-surface-50-950">
-            <div class="text-right text-nowrap">
-              {pipeline.connectors?.numErrors ?? '-'}
-            </div>
-          </td>
-          <td class="{td} relative border-surface-100-900 group-hover:bg-surface-50-950">
-            <div class="flex w-full flex-nowrap items-center gap-2 text-nowrap">
-              <PipelineVersion
-                pipelineName={pipeline.name}
-                runtimeVersion={pipeline.platformVersion}
-                baseRuntimeVersion={page.data.feldera!.version}
-                configuredRuntimeVersion={pipeline.programConfig.runtime_version}
-              ></PipelineVersion>
-            </div>
-          </td>
-          <td class="{td} relative w-28 border-surface-100-900 group-hover:bg-surface-50-950">
-            <div class="w-32 text-right text-nowrap">
-              {formatElapsedTime(pipeline.lastStatusSince, 'dhm')} ago
-            </div>
-          </td>
-          <td class="{td} relative w-40 border-surface-100-900 group-hover:bg-surface-50-950">
-            <div class="pr-1 text-right text-nowrap">
-              {pipeline.deploymentResourcesStatus === 'Provisioned'
-                ? formatDateTime(pipeline.deploymentResourcesStatusSince)
-                : ''}
-            </div>
-          </td>
+          </ThSort>
+          <ThSort {table} class="w-20 px-1 py-1 xl:w-32" field="platformVersion">
+            <span class="text-base font-normal text-surface-950-50">
+              Runtime <span class="hidden xl:!inline">version</span>
+            </span>
+          </ThSort>
+          <ThSort {table} class="px-1 py-1" field="lastStatusSince"
+            ><span class="text-base font-normal text-surface-950-50">Status changed</span></ThSort
+          >
+          <ThSort {table} class="px-1 py-1" field="deploymentResourcesStatusSince"
+            ><span class="text-base font-normal text-surface-950-50">Deployed on</span></ThSort
+          >
         </tr>
-      {:else}
-        <tr>
-          <td class={td}></td>
-          <td class={td} colspan={99}>No pipelines found</td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
-</Datatable>
+      </thead>
+      <tbody>
+        {#each table.rows as pipeline}
+          <tr class="group" data-testid="box-row-{pipeline.name}"
+            ><td class="{td} border-surface-100-900 px-2 group-hover:bg-surface-50-950">
+              <input
+                class="checkbox"
+                type="checkbox"
+                checked={table.selected.includes(pipeline.name)}
+                onclick={() => table.select(pipeline.name)}
+              />
+            </td>
+            <td class="{td} relative w-3/12 border-surface-100-900 group-hover:bg-surface-50-950"
+              ><a
+                class=" absolute top-2 w-full overflow-hidden overflow-ellipsis whitespace-nowrap"
+                href="/pipelines/{pipeline.name}/">{pipeline.name}</a
+              ></td
+            >
+            <td class="{td} relative w-12 border-surface-100-900 group-hover:bg-surface-50-950">
+              <div
+                class="fd {pipeline.storageStatus === 'Cleared'
+                  ? 'fd-database-off text-surface-500'
+                  : 'fd-database'} text-center text-[20px]"
+              ></div>
+              <Tooltip
+                >{match(pipeline.storageStatus)
+                  .with('InUse', () => 'Storage in use')
+                  .with('Clearing', () => 'Clearing storage')
+                  .with('Cleared', () => 'Storage cleared')
+                  .exhaustive()}</Tooltip
+              >
+            </td>
+            <td class="pr-2 {td} w-36 border-surface-100-900 group-hover:bg-surface-50-950"
+              ><PipelineStatus status={pipeline.status}></PipelineStatus></td
+            >
+            <td
+              class="{td} relative border-surface-100-900 whitespace-pre-wrap group-hover:bg-surface-50-950"
+            >
+              <span
+                class="absolute top-1.5 w-full overflow-hidden align-middle overflow-ellipsis whitespace-nowrap"
+              >
+                {#if pipeline.deploymentError}
+                  {@const message = pipeline.deploymentError.message}
+                  <span class="fd fd-circle-alert pr-2 text-[20px] text-error-500"></span>
+                  <Popover class="z-10" strategy="fixed">
+                    <div
+                      class="scrollbar flex max-h-[50vh] max-w-[80vw] overflow-auto whitespace-pre-wrap"
+                    >
+                      {message}
+                    </div>
+                  </Popover>
+                  {message.slice(0, ((idx) => (idx > 0 ? idx : undefined))(message.indexOf('\n')))}
+                {/if}
+              </span>
+            </td>
+            <td class="{td} border-surface-100-900 pr-4 group-hover:bg-surface-50-950">
+              <div class="text-right text-nowrap">
+                {pipeline.connectors?.numErrors ?? '-'}
+              </div>
+            </td>
+            <td class="{td} relative border-surface-100-900 group-hover:bg-surface-50-950">
+              <div class="flex w-full flex-nowrap items-center gap-2 text-nowrap">
+                <PipelineVersion
+                  pipelineName={pipeline.name}
+                  runtimeVersion={pipeline.platformVersion}
+                  baseRuntimeVersion={page.data.feldera!.version}
+                  configuredRuntimeVersion={pipeline.programConfig.runtime_version}
+                ></PipelineVersion>
+              </div>
+            </td>
+            <td class="{td} relative w-28 border-surface-100-900 group-hover:bg-surface-50-950">
+              <div class="w-32 text-right text-nowrap">
+                {formatElapsedTime(pipeline.lastStatusSince, 'dhm')} ago
+              </div>
+            </td>
+            <td class="{td} relative w-40 border-surface-100-900 group-hover:bg-surface-50-950">
+              <div class="pr-1 text-right text-nowrap">
+                {pipeline.deploymentResourcesStatus === 'Provisioned'
+                  ? formatDateTime(pipeline.deploymentResourcesStatusSince)
+                  : ''}
+              </div>
+            </td>
+          </tr>
+        {:else}
+          <tr>
+            <td class={td}></td>
+            <td class={td} colspan={99}>No pipelines found</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </Datatable>
+</div>
+
+<style>
+  .pipeline-table-wrapper {
+    width: fit-content;
+    min-width: 100%;
+  }
+  .pipeline-table-wrapper :global(article.thin-scrollbar) {
+    overflow: visible !important;
+  }
+  .pipeline-table-wrapper :global(table) {
+    background: inherit;
+  }
+</style>

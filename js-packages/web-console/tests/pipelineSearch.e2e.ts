@@ -1,10 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { client } from '$lib/services/manager/client.gen'
-import {
-  deletePipeline,
-  getExtendedPipeline,
-  putPipeline
-} from '$lib/services/pipelineManager'
+import { deletePipeline, getExtendedPipeline, putPipeline } from '$lib/services/pipelineManager'
 
 const API_ORIGIN = (process.env.PLAYWRIGHT_API_ORIGIN ?? 'http://localhost:8080').replace(/\/$/, '')
 client.setConfig({ baseUrl: API_ORIGIN })
