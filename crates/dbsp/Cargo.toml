@@ -104,6 +104,7 @@ serde_json_path_to_error = { workspace = true }
 flate2 = { workspace = true }
 nix = { workspace = true, features = ["process", "time"] }
 thread-id = { workspace = true }
+pin-project-lite = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }
