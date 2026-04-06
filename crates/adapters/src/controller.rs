@@ -2960,8 +2960,9 @@ impl CircuitThread {
         } else {
             debug!("circuit thread: calling 'circuit.transaction'");
             self.controller.increment_transaction_number();
-            // FIXME: we're using "span" for both step() (above) and transaction() (here).
             SamplySpan::new("step")
+                .with_category("Step")
+                .with_tooltip(|| format!("step {}", self.step))
                 .in_scope(|| self.circuit.transaction())
                 .unwrap_or_else(|e| self.controller.error(Arc::new(e.into()), None));
             debug!("circuit thread: 'circuit.transaction' returned");
