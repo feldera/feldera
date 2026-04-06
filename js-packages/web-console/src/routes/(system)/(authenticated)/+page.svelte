@@ -77,104 +77,112 @@
   {/snippet}
 </AppHeader>
 <div class="scrollbar flex h-full flex-col justify-between overflow-y-auto">
-  <div class="flex flex-col gap-8 p-2 pt-0 md:p-8 md:pt-0">
-    {#if !welcomed.value}
-      <div class="relative flex min-h-40 w-full gap-4 p-6 sm:gap-12">
-        <div class="absolute top-0 left-0 -z-10 flex h-full w-full overflow-clip card">
-          <div
-            class="w-1/2 bg-gradient-to-br from-fuchsia-300 via-amber-50 to-orange-300 dark:from-fuchsia-700 dark:via-amber-950 dark:to-orange-700"
-          ></div>
-          <div
-            class="w-1/2 bg-gradient-to-tr from-orange-300 via-amber-50 to-amber-50 dark:from-orange-700 dark:via-amber-950 dark:to-amber-950"
-          ></div>
-        </div>
-        {#if darkMode.current === 'dark'}
-          <FelderaLogomarkDark class="hidden h-full max-h-28 sm:inline"></FelderaLogomarkDark>
-        {:else}
-          <FelderaLogomarkLight class="hidden h-full max-h-28 sm:inline"></FelderaLogomarkLight>
-        {/if}
-        <div class="flex w-full flex-col justify-between gap-y-4">
-          <div class="flex flex-nowrap justify-between">
-            <div class="text-2xl font-semibold">Explore our communities and documentation</div>
-            <button
-              class="fd fd-x w-7 text-[24px]"
-              aria-label="Close"
-              onclick={() => (welcomed.value = !welcomed.value)}
-            ></button>
-          </div>
-
-          <div class="flex flex-col gap-x-8 gap-y-4 lg:flex-row">
-            {#each featured as link}
-              <a
-                class="bg-white-dark btn px-6! py-3!"
-                href={link.href}
-                target="_blank"
-                rel="noreferrer"
-                ><link.icon class="h-6 w-6 fill-surface-950-50"></link.icon>{link.title}</a
-              >
-            {/each}
-          </div>
-        </div>
-      </div>
-    {/if}
-    <div class="flex flex-col">
-      <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
-        <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
-      </div>
-      {#if pipelines.pipelines.length}
-        <PipelineTable pipelines={pipelines.pipelines} bind:selectedPipelines>
-          {#snippet preHeaderEnd()}
-            <AvailableActions pipelines={pipelines.pipelines} bind:selectedPipelines
-            ></AvailableActions>
-            {#if !selectedPipelines.length}
-              <CreatePipelineButton
-                inputClass="max-w-64"
-                btnClass="hidden sm:flex preset-filled-surface-50-950"
-              ></CreatePipelineButton>
+  <div class="@container">
+    <div class="flex flex-col gap-8 pb-2 md:pb-8" style="width: max-content; min-width: 100%;">
+      {#if !welcomed.value}
+        <div class="sticky left-0 max-w-[100cqi] px-2 pt-0 md:px-8">
+          <div class="relative flex min-h-40 w-full gap-4 p-6 sm:gap-12">
+            <div class="absolute top-0 left-0 -z-10 flex h-full w-full overflow-clip card">
+              <div
+                class="w-1/2 bg-gradient-to-br from-fuchsia-300 via-amber-50 to-orange-300 dark:from-fuchsia-700 dark:via-amber-950 dark:to-orange-700"
+              ></div>
+              <div
+                class="w-1/2 bg-gradient-to-tr from-orange-300 via-amber-50 to-amber-50 dark:from-orange-700 dark:via-amber-950 dark:to-amber-950"
+              ></div>
+            </div>
+            {#if darkMode.current === 'dark'}
+              <FelderaLogomarkDark class="hidden h-full max-h-28 sm:inline"></FelderaLogomarkDark>
+            {:else}
+              <FelderaLogomarkLight class="hidden h-full max-h-28 sm:inline"></FelderaLogomarkLight>
             {/if}
-          {/snippet}
-        </PipelineTable>
-      {:else}
-        <div class="flex w-full flex-col items-center gap-4 pt-8 sm:pt-16">
-          <ImageBox class="h-9 fill-surface-200-800"></ImageBox>
-          <div class="">Your pipelines will appear here</div>
-          <div class="relative flex gap-5">
-            <CreatePipelineButton btnClass="preset-filled-surface-50-950"></CreatePipelineButton>
-            <a class="btn preset-tonal-surface" href="https://docs.feldera.com">
-              <span class="fd fd-book-open text-2xl"></span>
-              Documentation
-            </a>
+            <div class="flex w-full flex-col justify-between gap-y-4">
+              <div class="flex flex-nowrap justify-between">
+                <div class="text-2xl font-semibold">Explore our communities and documentation</div>
+                <button
+                  class="fd fd-x w-7 text-[24px]"
+                  aria-label="Close"
+                  onclick={() => (welcomed.value = !welcomed.value)}
+                ></button>
+              </div>
+
+              <div class="flex flex-col gap-x-8 gap-y-4 lg:flex-row">
+                {#each featured as link}
+                  <a
+                    class="bg-white-dark btn px-6! py-3!"
+                    href={link.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    ><link.icon class="h-6 w-6 fill-surface-950-50"></link.icon>{link.title}</a
+                  >
+                {/each}
+              </div>
+            </div>
           </div>
         </div>
       {/if}
-    </div>
-    {#if data.demos.length}
-      <div>
-        <InlineDropdown bind:open={showSuggestedDemos.value}>
-          {#snippet header(open, toggle)}
-            <div
-              class="flex w-fit cursor-pointer items-center gap-2 py-2"
-              onclick={toggle}
-              role="presentation"
-            >
-              <div
-                class={'fd fd-chevron-down text-[20px] transition-transform ' +
-                  (open ? 'rotate-180' : '')}
-              ></div>
-
-              <div class="flex flex-nowrap items-center gap-4">
-                <div class="text-xl font-semibold">Explore use cases and tutorials</div>
-                <a
-                  class="whitespace-nowrap text-primary-500"
-                  href={resolve('/demos/')}
-                  onclick={(e) => e.stopPropagation()}>View all</a
-                >
+      <div class="flex flex-col">
+        {#if pipelines.pipelines.length}
+          <PipelineTable pipelines={pipelines.pipelines} bind:selectedPipelines>
+            {#snippet header()}
+              <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
+                <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
               </div>
+            {/snippet}
+            {#snippet preHeaderEnd()}
+              <AvailableActions pipelines={pipelines.pipelines} bind:selectedPipelines
+              ></AvailableActions>
+              {#if !selectedPipelines.length}
+                <CreatePipelineButton
+                  inputClass="max-w-64"
+                  btnClass="hidden sm:flex preset-filled-surface-50-950"
+                ></CreatePipelineButton>
+              {/if}
+            {/snippet}
+          </PipelineTable>
+        {:else}
+          <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
+            <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
+          </div>
+          <div class="flex w-full flex-col items-center gap-4 pt-8 sm:pt-16">
+            <ImageBox class="h-9 fill-surface-200-800"></ImageBox>
+            <div class="">Your pipelines will appear here</div>
+            <div class="relative flex gap-5">
+              <CreatePipelineButton btnClass="preset-filled-surface-50-950"></CreatePipelineButton>
+              <a class="btn preset-tonal-surface" href="https://docs.feldera.com">
+                <span class="fd fd-book-open text-2xl"></span>
+                Documentation
+              </a>
             </div>
-          {/snippet}
-          {#snippet content()}
-            <div transition:slide={{ duration: 150 }}>
+          </div>
+        {/if}
+      </div>
+      {#if data.demos.length}
+        <div class="sticky left-0 max-w-[100cqi] px-2 md:px-8">
+          <InlineDropdown bind:open={showSuggestedDemos.value}>
+            {#snippet header(open, toggle)}
               <div
+                class="flex w-fit cursor-pointer items-center gap-2 py-2"
+                onclick={toggle}
+                role="presentation"
+              >
+                <div
+                  class={'fd fd-chevron-down text-[20px] transition-transform ' +
+                    (open ? 'rotate-180' : '')}
+                ></div>
+
+                <div class="flex flex-nowrap items-center gap-4">
+                  <div class="text-xl font-semibold">Explore use cases and tutorials</div>
+                  <a
+                    class="whitespace-nowrap text-primary-500"
+                    href={resolve('/demos/')}
+                    onclick={(e) => e.stopPropagation()}>View all</a
+                  >
+                </div>
+              </div>
+            {/snippet}
+            {#snippet content()}
+              <div
+                transition:slide={{ duration: 150 }}
                 class="grid grid-cols-1 gap-x-6 gap-y-5 py-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5"
               >
                 {#each data.demos.slice(0, maxShownDemos) as demo}
@@ -188,11 +196,11 @@
                   </a>
                 </div>
               </div>
-            </div>
-          {/snippet}
-        </InlineDropdown>
-      </div>
-    {/if}
+            {/snippet}
+          </InlineDropdown>
+        </div>
+      {/if}
+    </div>
   </div>
-  <Footer></Footer>
+  <div class="sticky left-0"><Footer></Footer></div>
 </div>
