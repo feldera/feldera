@@ -158,7 +158,6 @@ where
 type Layers<K, V, R, O> = Layer<K, Leaf<V, R>, O>;
 
 /// An immutable collection of update tuples.
-#[derive(SizeOf)]
 pub struct VecIndexedWSet<K, V, R, O = usize>
 where
     K: DataTrait + ?Sized,
@@ -169,9 +168,7 @@ where
     /// Where all the data is.
     #[doc(hidden)]
     pub layer: Layers<K, V, R, O>,
-    #[size_of(skip)]
     factories: VecIndexedWSetFactories<K, V, R>,
-    #[size_of(skip)]
     negative_weight_count: u64,
 }
 
@@ -200,6 +197,20 @@ where
             factories,
             negative_weight_count,
         }
+    }
+}
+
+impl<K, V, R, O> SizeOf for VecIndexedWSet<K, V, R, O>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    O: OrdOffset,
+{
+    fn size_of_children(&self, context: &mut size_of::Context) {
+        // This is only approximate but it is *much* cheaper than measuring all
+        // the elements individually.
+        context.add(self.approximate_byte_size());
     }
 }
 

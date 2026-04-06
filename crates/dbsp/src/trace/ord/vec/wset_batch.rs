@@ -113,7 +113,6 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchFactories<K, DynUnit, 
 }
 
 /// An immutable collection of `(key, weight)` pairs without timing information.
-#[derive(SizeOf)]
 pub struct VecWSet<K, R>
 where
     K: DataTrait + ?Sized,
@@ -121,9 +120,20 @@ where
 {
     #[doc(hidden)]
     pub layer: Leaf<K, R>,
-    #[size_of(skip)]
     factories: VecWSetFactories<K, R>,
     negative_weight_count: u64,
+}
+
+impl<K, R> SizeOf for VecWSet<K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn size_of_children(&self, context: &mut size_of::Context) {
+        // This is only approximate but it is *much* cheaper than measuring all
+        // the elements individually.
+        context.add(self.approximate_byte_size());
+    }
 }
 
 impl<K, R> VecWSet<K, R>
