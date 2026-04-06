@@ -4358,7 +4358,18 @@ impl ControllerInit {
             // transient HTTP and adhoc connectors, so that we can use them to
             // replay journaled inputs.
             inputs: if !modified {
-                checkpoint_config.inputs
+                checkpoint_config
+                    .inputs
+                    .into_iter()
+                    .filter(|(_, config)| {
+                        // The clock input connector will be automatically recreated and initialized
+                        // with the clock resolution from the pipeline config.
+                        !matches!(
+                            config.connector_config.transport,
+                            TransportConfig::ClockInput(_)
+                        )
+                    })
+                    .collect()
             } else {
                 config.inputs
             },
