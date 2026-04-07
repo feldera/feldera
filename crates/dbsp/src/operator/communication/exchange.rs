@@ -1518,7 +1518,6 @@ impl TypedMapKey<LocalStoreMarker> for DirectoryId {
 /// * `worker_index` - index of the current worker.
 /// * `partition` - partitioning logic that must push exactly
 ///   `runtime.num_workers()` values into its vector argument
-/// * `serialize` - serializes exchanged data for transmission across a network
 /// * `deserialize` - deserializes exchanged data that was transmitted across a network
 /// * `combine` - re-assemble logic that combines values received from all peers
 ///   into a single output value.
