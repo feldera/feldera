@@ -31,7 +31,9 @@ def _clock_input_endpoint(pipeline: Pipeline):
     raise AssertionError(f"clock input endpoint 'now' not found; have {names!r}")
 
 
-def _wait_clock_record_ticks(pipeline: Pipeline, count: int, *, timeout_s: float) -> None:
+def _wait_clock_record_ticks(
+    pipeline: Pipeline, count: int, *, timeout_s: float
+) -> None:
     """Wait until the clock connector's ingested record count increases by ``count``."""
     baseline = _clock_input_endpoint(pipeline).metrics.total_records
     assert baseline is not None
