@@ -289,7 +289,7 @@ pub struct CircuitConfig {
 
     pub mode: Mode,
 
-    /// Storage configuration. If present, then storage is enabled..
+    /// Storage configuration. If present, then storage is enabled.
     pub storage: Option<CircuitStorageConfig>,
 
     /// Parsed from `RuntimeConfig` for use by the circuit.

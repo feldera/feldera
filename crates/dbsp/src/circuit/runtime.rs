@@ -290,7 +290,7 @@ struct RuntimeInner {
     pin_cpus_bg: Vec<CoreId>,
     fbuf_slab_allocators: Vec<EnumMap<ThreadType, Arc<FBufSlabs>>>,
     worker_sequence_numbers: Vec<AtomicUsize>,
-    // Panic info collected from failed worker threads.
+    /// Panic info collected from failed worker threads.
     panic_info: Vec<EnumMap<ThreadType, RwLock<Option<WorkerPanicInfo>>>>,
     panicked: AtomicBool,
     replay_step_size: AtomicUsize,
