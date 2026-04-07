@@ -7997,6 +7997,13 @@
           "uri"
         ],
         "properties": {
+          "checkpoint_interval": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Checkpoint interval (i.e., the number of commits after which a new checkpoint should be created) for newly created Delta tables.\n\nThe option is only available when creating the Delta table (`mode = append` and there\nis no existing table at the target location or `mode = truncate`). It configures the `checkpointInterval`\ntable property, which determines the number of commits after which a new checkpoint should be created.\n\n0 means no checkpoints are created.\n\nDefault: 10.",
+            "nullable": true,
+            "minimum": 0
+          },
           "max_retries": {
             "type": "integer",
             "format": "int32",
