@@ -120,7 +120,7 @@
   ignoreAfterNavigate={() => false}
 ></SvelteKitTopLoader>
 <div
-  class="flex h-full w-full flex-col {api.isNetworkHealthy
+  class="flex h-full flex-col {api.isNetworkHealthy
     ? ''
     : 'disabled pointer-events-auto select-text [&_.monaco-editor-background]:pointer-events-none [&_[role="button"]]:pointer-events-none [&_[role="separator"]]:pointer-events-none [&_a]:pointer-events-none [&_button]:pointer-events-none'}"
   style={api.isNetworkHealthy ? '' : ''}

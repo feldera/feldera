@@ -148,7 +148,6 @@ pub type VecKeyBatchLayer<K, T, R, O> = Layer<K, Leaf<DynDataTyped<T>, R>, O>;
 
 /// An immutable collection of update tuples, from a contiguous interval of
 /// logical times.
-#[derive(SizeOf)]
 pub struct VecKeyBatch<K, T, R, O = usize>
 where
     K: DataTrait + ?Sized,
@@ -158,8 +157,21 @@ where
 {
     /// Where all the dataz is.
     pub layer: VecKeyBatchLayer<K, T, R, O>,
-    #[size_of(skip)]
     factories: VecKeyBatchFactories<K, T, R>,
+}
+
+impl<K, T, R, O> SizeOf for VecKeyBatch<K, T, R, O>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    T: Timestamp,
+    O: OrdOffset,
+{
+    fn size_of_children(&self, context: &mut size_of::Context) {
+        // This is only approximate but it is *much* cheaper than measuring all
+        // the elements individually.
+        context.add(self.approximate_byte_size());
+    }
 }
 
 impl<K, T, R, O> Debug for VecKeyBatch<K, T, R, O>

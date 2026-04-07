@@ -182,7 +182,6 @@ where
 
 /// An immutable collection of update tuples, from a contiguous interval of
 /// logical times.
-#[derive(SizeOf)]
 pub struct VecValBatch<K, V, T, R, O = usize>
 where
     K: DataTrait + ?Sized,
@@ -191,7 +190,6 @@ where
     T: Timestamp,
     O: OrdOffset,
 {
-    #[size_of(skip)]
     factories: VecValBatchFactories<K, V, T, R>,
 
     // #[size_of(skip)]
@@ -202,6 +200,21 @@ where
     // batch_item_factory: &'static BatchItemVTable<K, V, Pair<K, V>, R>,
     /// Where all the dataz is.
     pub layer: VecValBatchLayer<K, V, T, R, O>,
+}
+
+impl<K, V, T, R, O> SizeOf for VecValBatch<K, V, T, R, O>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    T: Timestamp,
+    O: OrdOffset,
+{
+    fn size_of_children(&self, context: &mut size_of::Context) {
+        // This is only approximate but it is *much* cheaper than measuring all
+        // the elements individually.
+        context.add(self.approximate_byte_size());
+    }
 }
 
 unsafe impl<K, V, T, R, O> Send for VecValBatch<K, V, T, R, O>
