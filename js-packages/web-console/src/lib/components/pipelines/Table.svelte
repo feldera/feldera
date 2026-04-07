@@ -94,7 +94,7 @@
         {@render header()}
       {/if}
       <div
-        class="relative mt-2 flex items-stretch gap-2 flex-row sm:items-end sm:justify-end sm:gap-4"
+        class="relative mt-2 flex flex-row items-stretch gap-2 sm:items-end sm:justify-end sm:gap-4"
         class:lg:-mt-7={!!header}
         class:lg:mb-0={!!header}
       >

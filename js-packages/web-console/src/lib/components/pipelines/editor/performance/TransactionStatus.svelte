@@ -12,7 +12,6 @@
   const global = $derived(metrics.current.global)
   const transactionStatus = $derived(global.transaction_status)
   const commitProgress = $derived(global.commit_progress)
-  const initiatedByApi = $derived(global.transaction_initiators?.initiated_by_api)
 
   const total = $derived(
     commitProgress
@@ -56,15 +55,14 @@
       </Progress>
     </div>
     <div
-      class="bg-white-dark scrollbar flex w-full overflow-x-auto"
-      transition:slide={{ axis: 'y' }}
+      class="bg-white-dark scrollbar flex h-19 w-full overflow-clip"
+      transition:slide={{ axis: 'x' }}
     >
       <table class="table h-min rounded text-base">
         <thead>
           <tr>
             <th>Transaction status</th>
             <th colspan={3}>Operators completed / in progress / total </th>
-            <th>API-initiated phase</th>
           </tr>
         </thead>
         <tbody>
@@ -88,21 +86,7 @@
               <td class="text-end font-dm-mono text-nowrap">-</td>
               <td class="text-end font-dm-mono text-nowrap">-</td>
               <td class="text-end font-dm-mono text-nowrap">-</td>
-              <td class="text-end font-dm-mono text-nowrap">-</td>
             {/if}
-            <td class="text-end">
-              {#if initiatedByApi === 'Started'}
-                <span class="fd fd-receipt-text mr-1 text-[16px] text-warning-500"></span>
-                <Tooltip placement="top">Transaction started</Tooltip>
-                Started
-              {:else if initiatedByApi === 'Committed'}
-                <span class="fd fd-receipt-text mr-1 text-[16px] text-success-500"></span>
-                <Tooltip placement="top">Ready to commit transaction</Tooltip>
-                Committed
-              {:else}
-                None
-              {/if}
-            </td>
           </tr>
         </tbody>
       </table>

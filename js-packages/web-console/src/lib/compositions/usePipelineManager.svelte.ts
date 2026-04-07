@@ -3,6 +3,7 @@ import { triggerFileDownload } from '$lib/services/browser'
 import {
   getPipelineSupportBundle as _getPipelineSupportBundle,
   adHocQuery,
+  checkpointPipeline,
   collectSamplyProfile,
   deleteApiKey,
   deletePipeline,
@@ -10,12 +11,15 @@ import {
   type FetchOptions,
   getApiKeys,
   getAuthConfig,
+  getCheckpointStatus,
+  getCheckpointSyncStatus,
   getClusterEvent,
   getClusterEvents,
   getConfig,
   getConfigSession,
   getDemos,
   getExtendedPipeline,
+  getPipelineCheckpoints,
   getPipelineDataflowGraph,
   getPipelineStats,
   getPipelineStatus,
@@ -31,7 +35,8 @@ import {
   putPipeline,
   relationEgressStream,
   relationIngress,
-  type SupportBundleOptions
+  type SupportBundleOptions,
+  syncCheckpoint
 } from '$lib/services/pipelineManager'
 
 const networkErrors = ['Failed to fetch', 'Network request failed', 'Timeout']
@@ -229,6 +234,26 @@ export const usePipelineManager = (options?: FetchOptions) => {
     ),
     getDemos: reportError(getDemos, () => `Failed to fetch available demos`),
     downloadPipelineSupportBundle,
+    getPipelineCheckpoints: reportError(
+      getPipelineCheckpoints,
+      (pipelineName) => `Failed to fetch checkpoints for ${pipelineName}`
+    ),
+    checkpointPipeline: reportError(
+      checkpointPipeline,
+      (pipelineName) => `Failed to initiate checkpoint for ${pipelineName}`
+    ),
+    getCheckpointStatus: reportError(
+      getCheckpointStatus,
+      (pipelineName) => `Failed to fetch checkpoint status for ${pipelineName}`
+    ),
+    syncCheckpoint: reportError(
+      syncCheckpoint,
+      (pipelineName) => `Failed to sync checkpoint for ${pipelineName}`
+    ),
+    getCheckpointSyncStatus: reportError(
+      getCheckpointSyncStatus,
+      (pipelineName) => `Failed to fetch checkpoint sync status for ${pipelineName}`
+    ),
     getPipelineDataflowGraph: reportError(
       getPipelineDataflowGraph,
       (pipelineName) => `Failed to load dataflow graph of pipeline ${pipelineName}`

@@ -6744,17 +6744,102 @@
           }
         }
       },
+      "CheckpointActivity": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "idle"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A checkpoint has been requested but is delayed for temporary reasons\n(e.g. replaying, bootstrapping, transaction in progress, or input\nendpoint barriers that require the coordinator to run steps).",
+            "required": [
+              "reasons",
+              "delayed_since",
+              "status"
+            ],
+            "properties": {
+              "delayed_since": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When the delay started (ISO 8601)."
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TemporarySuspendError"
+                },
+                "description": "Why the checkpoint cannot proceed yet."
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "delayed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A checkpoint is currently being written to storage.",
+            "required": [
+              "sequence_number",
+              "started_at",
+              "status"
+            ],
+            "properties": {
+              "sequence_number": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Sequence number of the in-flight checkpoint.",
+                "minimum": 0
+              },
+              "started_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When the checkpoint write started (ISO 8601)."
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "in_progress"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Current checkpoint activity state.",
+        "discriminator": {
+          "propertyName": "status"
+        }
+      },
       "CheckpointFailure": {
         "type": "object",
         "description": "Information about a failed checkpoint.",
         "required": [
           "sequence_number",
-          "error"
+          "error",
+          "failed_at"
         ],
         "properties": {
           "error": {
             "type": "string",
             "description": "Error message associated with the failure."
+          },
+          "failed_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the failure occurred (ISO 8601)."
           },
           "sequence_number": {
             "type": "integer",
@@ -7606,6 +7691,14 @@
           "outputs"
         ],
         "properties": {
+          "checkpoint_activity": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CheckpointActivity"
+              }
+            ],
+            "nullable": true
+          },
           "global_metrics": {
             "$ref": "#/components/schemas/GlobalControllerMetrics"
           },
@@ -7622,6 +7715,14 @@
               "$ref": "#/components/schemas/OutputEndpointStatus"
             },
             "description": "Output endpoint configs and metrics."
+          },
+          "permanent_checkpoint_errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermanentSuspendError"
+            },
+            "description": "If the pipeline fundamentally cannot checkpoint (e.g. storage is not\nconfigured, or an input endpoint does not support suspend), the reasons\nare listed here.  Unlike a checkpoint failure, this means *no*\ncheckpoint can succeed until the pipeline configuration changes.",
+            "nullable": true
           },
           "suspend_error": {
             "allOf": [

@@ -61,7 +61,8 @@ use feldera_types::completion_token::{
 };
 use feldera_types::constants::STATUS_FILE;
 use feldera_types::coordination::{
-    AdHocScan, CoordinationActivate, CoordinationStatus, Labels, RestartArgs, Step, StepRequest,
+    AdHocScan, CoordinationActivate, CoordinationStatus, Labels,
+    RestartArgs, Step, StepRequest,
 };
 use feldera_types::pipeline_diff::PipelineDiff;
 use feldera_types::query_params::{
@@ -189,18 +190,25 @@ struct CheckpointState {
     /// Sequence number for the next checkpoint request.
     next_seq: u64,
 
+    /// Sequence number of the currently in-flight checkpoint, if any.
+    /// This is only valid when exactly one checkpoint runs at a time.
+    current_seq: Option<u64>,
+
     /// The UUID of the last checkpoint.
     last_checkpoint: Option<uuid::Uuid>,
 
-    /// Status to report to user.
+    /// Status to report to user (success/failure only; `activity` is computed
+    /// live from the watch channel).
     status: CheckpointStatus,
 }
 
 impl CheckpointState {
-    /// Returns the sequence number to use for the next checkpoint request.
+    /// Returns the sequence number to use for the next checkpoint request and
+    /// records it as the in-flight checkpoint.
     fn next_seq(&mut self) -> u64 {
         let seq = self.next_seq;
         self.next_seq += 1;
+        self.current_seq = Some(seq);
         seq
     }
 
@@ -211,6 +219,7 @@ impl CheckpointState {
         seq: u64,
         result: Result<Option<CheckpointMetadata>, Arc<ControllerError>>,
     ) {
+        self.current_seq = None;
         match result {
             Ok(chk) => {
                 self.last_checkpoint = chk.map(|c| c.uuid);
@@ -228,6 +237,7 @@ impl CheckpointState {
                     self.status.failure = Some(CheckpointFailure {
                         sequence_number: seq,
                         error: error.to_string(),
+                        failed_at: Utc::now(),
                     });
                 }
             }
@@ -1902,7 +1912,8 @@ async fn checkpoint(state: WebData<ServerState>) -> Result<HttpResponse, Pipelin
 
 #[get("/checkpoint_status")]
 async fn checkpoint_status(state: WebData<ServerState>) -> impl Responder {
-    HttpResponse::Ok().json(state.checkpoint_state.lock().unwrap().status.clone())
+    let status = state.checkpoint_state.lock().unwrap().status.clone();
+    HttpResponse::Ok().json(status)
 }
 
 #[get("/checkpoints")]

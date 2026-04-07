@@ -125,7 +125,7 @@
 </script>
 
 <div class="absolute h-full w-full py-4">
-  <div class="pl-16 whitespace-nowrap">
+  <div class="px-4 pb-2 whitespace-nowrap">
     Throughput: {formatQty(throughput.current)} records/s
   </div>
   {#key pipelineName}

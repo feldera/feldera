@@ -1,8 +1,11 @@
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
+
+use crate::suspend::TemporarySuspendError;
 
 /// Checkpoint status returned by the `/checkpoint_status` endpoint.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, ToSchema)]
@@ -11,7 +14,38 @@ pub struct CheckpointStatus {
     pub success: Option<u64>,
 
     /// Most recently failed checkpoint, and the associated error.
+    ///
+    /// This tracks transient checkpoint failures (e.g. I/O errors during
+    /// writing).  A subsequent successful checkpoint will not clear this
+    /// field — it always reflects the *last* failure that occurred.
     pub failure: Option<CheckpointFailure>,
+}
+
+/// Current checkpoint activity state.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum CheckpointActivity {
+    /// No checkpoint is pending or in progress.
+    #[default]
+    Idle,
+
+    /// A checkpoint has been requested but is delayed for temporary reasons
+    /// (e.g. replaying, bootstrapping, transaction in progress, or input
+    /// endpoint barriers that require the coordinator to run steps).
+    Delayed {
+        /// Why the checkpoint cannot proceed yet.
+        reasons: Vec<TemporarySuspendError>,
+        /// When the delay started (ISO 8601).
+        delayed_since: DateTime<Utc>,
+    },
+
+    /// A checkpoint is currently being written to storage.
+    InProgress {
+        /// Sequence number of the in-flight checkpoint.
+        sequence_number: u64,
+        /// When the checkpoint write started (ISO 8601).
+        started_at: DateTime<Utc>,
+    },
 }
 
 /// Information about a failed checkpoint.
@@ -22,6 +56,9 @@ pub struct CheckpointFailure {
 
     /// Error message associated with the failure.
     pub error: String,
+
+    /// When the failure occurred (ISO 8601).
+    pub failed_at: DateTime<Utc>,
 }
 
 /// Response to a checkpoint request.

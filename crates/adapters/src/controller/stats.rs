@@ -60,10 +60,11 @@ use feldera_types::{
         ExternalInputEndpointStatus, ExternalOutputEndpointMetrics, ExternalOutputEndpointStatus,
         ShortEndpointConfig,
     },
+    checkpoint::CheckpointActivity,
     config::{FtModel, PipelineConfig},
     coordination::Completion,
     memory_pressure::MemoryPressure,
-    suspend::SuspendError,
+    suspend::{PermanentSuspendError, SuspendError},
     time_series::SampleStatistics,
     transaction::CommitProgressSummary,
 };
@@ -1181,6 +1182,8 @@ impl ControllerStatus {
     pub fn to_api_type(
         &self,
         suspend_error: Result<(), SuspendError>,
+        checkpoint_activity: CheckpointActivity,
+        permanent_checkpoint_errors: Option<Vec<PermanentSuspendError>>,
         pipeline_complete: bool,
         transaction_info: TransactionInfo,
         memory_pressure: MemoryPressure,
@@ -1315,6 +1318,8 @@ impl ControllerStatus {
         adapter_stats::ExternalControllerStatus {
             global_metrics,
             suspend_error: suspend_error.err(),
+            checkpoint_activity: Some(checkpoint_activity),
+            permanent_checkpoint_errors,
             inputs,
             outputs,
         }
