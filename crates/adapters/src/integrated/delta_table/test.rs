@@ -646,8 +646,14 @@ fn delta_table_output_test(
 
         let mut output_records = Vec::with_capacity(data.len());
         for parquet_file in parquet_files {
-            let mut records: Vec<DeltaTestStruct> = load_parquet_file(&parquet_file);
-            output_records.append(&mut records);
+            if !parquet_file
+                .display()
+                .to_string()
+                .ends_with(".checkpoint.parquet")
+            {
+                let mut records: Vec<DeltaTestStruct> = load_parquet_file(&parquet_file);
+                output_records.append(&mut records);
+            }
         }
 
         output_records.sort();
