@@ -63,6 +63,9 @@ where
     fn fixedpoint(&self, _scope: Scope) -> bool {
         self.time >= 2
     }
+    fn is_input(&self) -> bool {
+        true
+    }
 }
 
 impl<R, T> SourceOperator<OrdZSet<T>> for CsvSource<R, T>

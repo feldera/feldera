@@ -35,6 +35,9 @@ where
     fn fixedpoint(&self, _scope: Scope) -> bool {
         false
     }
+    fn is_input(&self) -> bool {
+        true
+    }
 }
 
 impl<T, F> SourceOperator<T> for Generator<T, F>
@@ -79,6 +82,9 @@ where
     }
     fn fixedpoint(&self, _scope: Scope) -> bool {
         false
+    }
+    fn is_input(&self) -> bool {
+        true
     }
 }
 
@@ -188,6 +194,9 @@ where
     }
     fn fixedpoint(&self, _scope: Scope) -> bool {
         // Always a fixed-point
+        true
+    }
+    fn is_input(&self) -> bool {
         true
     }
 }
