@@ -16,7 +16,7 @@ use dbsp::circuit::tokio::TOKIO;
 use delta_kernel::engine::arrow_conversion::TryFromArrow;
 use delta_kernel::table_properties::DataSkippingNumIndexedCols;
 use deltalake::DeltaTable;
-use deltalake::kernel::transaction::{CommitBuilder, TableReference};
+use deltalake::kernel::transaction::{CommitBuilder, CommitProperties, TableReference};
 use deltalake::kernel::{Action, Add, DataType, StructField};
 use deltalake::logstore::ObjectStoreRef;
 use deltalake::operations::create::CreateBuilder;
@@ -281,11 +281,20 @@ impl WriterTask {
             let mut operation_timeout: Duration = Duration::from_secs(60);
 
             loop {
+                let checkpoint_interval = match inner.config.checkpoint_interval {
+                    Some(0) => None,
+                    Some(interval) => Some(interval.to_string()),
+                    None => Some("10".to_string()),
+                };
                 let create_future = CreateBuilder::new()
                     .with_location(inner.config.uri.clone())
                     .with_save_mode(save_mode)
                     .with_storage_options(storage_options.clone())
-                    .with_columns(inner.struct_fields.clone());
+                    .with_columns(inner.struct_fields.clone())
+                    .with_configuration_property(
+                        deltalake::TableProperty::CheckpointInterval,
+                        checkpoint_interval,
+                    );
 
                 match tokio::time::timeout(operation_timeout, create_future).await {
                     Ok(Ok(table)) => break table,
@@ -357,7 +366,11 @@ impl WriterTask {
                 ))
             })?;
 
-        CommitBuilder::default()
+        // `CommitBuilder::default()` leaves `post_commit_hook` unset, so delta-rs skips the
+        // post-commit hook entirely and never writes `_last_checkpoint` / `*.checkpoint.parquet`,
+        // regardless of `delta.checkpointInterval`. Use default commit properties so checkpoint
+        // creation runs when `(version + 1) % checkpoint_interval == 0`.
+        CommitBuilder::from(CommitProperties::default())
             .with_actions(
                 actions
                     .iter()
@@ -988,6 +1001,7 @@ mod parallel {
                 max_retries: Some(0),
                 threads: Some(threads),
                 object_store_config: Default::default(),
+                checkpoint_interval: None,
             },
             &key_schema,
             &value_relation(),
@@ -1268,6 +1282,7 @@ mod parallel {
                 max_retries: Some(0),
                 threads: Some(4),
                 object_store_config: Default::default(),
+                checkpoint_interval: None,
             },
             &key_schema,
             &value_relation(),
@@ -1405,6 +1420,7 @@ mod parallel {
                 max_retries: Some(1),
                 threads: Some(1),
                 object_store_config: Default::default(),
+                checkpoint_interval: None,
             },
             &key_schema,
             &value_relation(),
@@ -1433,6 +1449,7 @@ mod parallel {
             max_retries: Some(0),
             threads: Some(0),
             object_store_config: Default::default(),
+            checkpoint_interval: None,
         };
         assert!(config.validate().is_err());
     }

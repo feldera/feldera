@@ -9,6 +9,8 @@ use utoipa::ToSchema;
 #[derive(Default, Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub enum DeltaTableWriteMode {
     /// New updates will be appended to the existing table at the target location.
+    ///
+    /// If the table doesn't exist, it is created.
     #[default]
     #[serde(rename = "append")]
     Append,
@@ -17,6 +19,8 @@ pub enum DeltaTableWriteMode {
     ///
     /// The connector truncates the table by outputting delete actions for all
     /// files in the latest snapshot of the table.
+    ///
+    /// If the table doesn't exist, it is created.
     #[serde(rename = "truncate")]
     Truncate,
 
@@ -34,6 +38,18 @@ pub struct DeltaTableWriterConfig {
     /// Determines how the Delta table connector handles an existing table at the target location.
     #[serde(default)]
     pub mode: DeltaTableWriteMode,
+
+    /// Checkpoint interval (i.e., the number of commits after which a new checkpoint should be created) for newly created Delta tables.
+    ///
+    /// The option is only available when creating the Delta table (`mode = append` and there
+    /// is no existing table at the target location or `mode = truncate`). It configures the `checkpointInterval`
+    /// table property, which determines the number of commits after which a new checkpoint should be created.
+    ///
+    /// 0 means no checkpoints are created.
+    ///
+    /// Default: 10.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint_interval: Option<u32>,
 
     /// Maximum number of retries for failed operations.
     ///
