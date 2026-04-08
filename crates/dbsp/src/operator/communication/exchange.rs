@@ -38,7 +38,7 @@ use std::{
     net::SocketAddr,
     ops::Range,
     sync::{
-        Arc, Mutex, OnceLock, RwLock,
+        Arc, Mutex, RwLock,
         atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant, SystemTime},
@@ -46,11 +46,11 @@ use std::{
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::{Notify, OnceCell as TokioOnceCell},
+    sync::{Notify, OnceCell},
     time::sleep,
 };
 use tokio_util::sync::{CancellationToken, DropGuard};
-use tracing::warn;
+use tracing::{info, warn};
 use typedmap::TypedMapKey;
 
 /// Current time in microseconds.
@@ -316,11 +316,11 @@ struct Clients {
     /// If we create it before we've completely initialized the circuit, then we
     /// might not have created all of the exchanges yet when some other host
     /// tries to send data to one.
-    listener: OnceLock<Option<ExchangeListener>>,
+    listener: OnceCell<Option<ExchangeListener>>,
 
     /// Maps from a range of worker IDs to the RPC client used to contact those
     /// workers.  Only worker IDs for remote workers appear in the map.
-    clients: Vec<(Host, TokioOnceCell<ExchangeServiceClient>)>,
+    clients: Vec<(Host, OnceCell<ExchangeServiceClient>)>,
 }
 
 impl Clients {
@@ -332,7 +332,7 @@ impl Clients {
             clients: runtime
                 .layout()
                 .other_hosts()
-                .map(|host| (host.clone(), TokioOnceCell::new()))
+                .map(|host| (host.clone(), OnceCell::new()))
                 .collect(),
         }
     }
@@ -340,20 +340,23 @@ impl Clients {
     /// Returns a client for `worker`, which must be a remote worker ID, first
     /// establishing a connection if there isn't one yet.
     async fn connect(&self, worker: usize) -> &ExchangeServiceClient {
-        self.listener.get_or_init(|| {
-            if let Some(runtime) = self.runtime.upgrade()
-                && let Some(local_address) = runtime.layout().local_address()
-            {
-                let directory = runtime.local_store().get(&DirectoryId).unwrap().clone();
-                Some(ExchangeListener::new(
-                    local_address,
-                    directory,
-                    self.local_workers.clone(),
-                ))
-            } else {
-                None
-            }
-        });
+        self.listener
+            .get_or_init(|| async {
+                if let Some(runtime) = self.runtime.upgrade()
+                    && let Some(local_address) = runtime.layout().local_address()
+                {
+                    let directory = runtime.local_store().get(&DirectoryId).unwrap().clone();
+                    Some(ExchangeListener::new(
+                        local_address,
+                        runtime.take_exchange_listener(),
+                        directory,
+                        self.local_workers.clone(),
+                    ))
+                } else {
+                    None
+                }
+            })
+            .await;
 
         let (host, cell) = self
             .clients
@@ -645,12 +648,26 @@ pub(crate) struct Exchange<T> {
 struct ExchangeListener(DropGuard);
 
 impl ExchangeListener {
-    fn new(address: SocketAddr, directory: ExchangeDirectory, receivers: Range<usize>) -> Self {
+    fn new(
+        local_address: SocketAddr,
+        exchange_listener: Option<std::net::TcpListener>,
+        directory: ExchangeDirectory,
+        receivers: Range<usize>,
+    ) -> Self {
         let token = CancellationToken::new();
         let drop = token.clone().drop_guard();
         TOKIO.spawn(async move {
-            println!("listening on {address}");
-            let listener = TcpListener::bind(address).await.unwrap();
+            info!("listening on {local_address}");
+            let listener = match exchange_listener {
+                Some(exchange_listener) => {
+                    exchange_listener
+                        .set_nonblocking(true)
+                        .expect("should be able to set nonblocking mode");
+                    TcpListener::from_std(exchange_listener).unwrap()
+                }
+                None => TcpListener::bind(local_address).await.unwrap(),
+            };
+
             while let Some(stream) = tokio::select! {
                 stream = listener.accept() => Some(stream),
                 _ = token.cancelled() => None,
@@ -666,7 +683,7 @@ impl ExchangeListener {
                             .serve(),
                         );
                     }
-                    Err(error) => warn!("Error accepting connection from {address}: {error}"),
+                    Err(error) => warn!("Error accepting connection: {error}"),
                 }
             }
         });

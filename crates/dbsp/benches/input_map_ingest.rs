@@ -55,6 +55,7 @@ fn main() -> Result<()> {
             .context("failed to configure POSIX storage backend")?,
         ),
         dev_tweaks: Default::default(),
+        exchange_listener: None,
     };
 
     let total_batches = (TOTAL_RECORDS / BATCH_SIZE as u64) as usize;
