@@ -10,6 +10,8 @@ pub mod delta_table;
 mod postgres;
 
 use crate::integrated::postgres::PostgresInputEndpoint;
+#[cfg(feature = "with-postgres-cdc")]
+use crate::integrated::postgres::PostgresCdcInputEndpoint;
 pub use crate::integrated::postgres::PostgresOutputEndpoint;
 
 /// An integrated output connector implements both transport endpoint
@@ -99,6 +101,10 @@ pub fn create_integrated_input_endpoint(
         ),
         TransportConfig::PostgresInput(config) => {
             Box::new(PostgresInputEndpoint::new(endpoint_name, config, consumer))
+        }
+        #[cfg(feature = "with-postgres-cdc")]
+        TransportConfig::PostgresCdcInput(config) => {
+            Box::new(PostgresCdcInputEndpoint::new(endpoint_name, config, consumer))
         }
         transport => {
             return Err(ControllerError::unknown_input_transport(
