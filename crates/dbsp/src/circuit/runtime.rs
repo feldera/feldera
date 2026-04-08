@@ -1353,12 +1353,7 @@ where
             Some(runtime) if Runtime::num_workers() > 1 => {
                 let worker_index = Runtime::worker_index();
                 let exchange_id = runtime.sequence_next().try_into().unwrap();
-                let exchange = Exchange::with_runtime(
-                    &runtime,
-                    exchange_id,
-                    // TODO: handle serialization/deserialization errors better.
-                    Box::new(|data| rmp_serde::from_slice(&data).unwrap()),
-                );
+                let exchange = Exchange::with_runtime(&runtime, exchange_id);
 
                 let notify_receiver = Arc::new(Notify::new());
                 let notify_receiver_clone = notify_receiver.clone();
@@ -1405,7 +1400,10 @@ where
                 }
                 // Receive and collect the status of each peer.
                 let mut result = Vec::with_capacity(Runtime::num_workers());
-                while !exchange.try_receive_all(|status| result.push(status)) {
+                while !exchange.try_receive_all(
+                    |status| result.push(status),
+                    |data| rmp_serde::from_slice(&data).unwrap(),
+                ) {
                     if Runtime::kill_in_progress() {
                         return Err(SchedulerError::Killed);
                     }
