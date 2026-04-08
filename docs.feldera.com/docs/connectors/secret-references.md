@@ -24,7 +24,7 @@ When the pipeline initializes, it replaces all references in the connector confi
 with their resolved values. Feldera resolves references when a pipeline starts, as well as
 each time it resumes. Feldera does not write resolved values to checkpoints or journals.
 
-Use environment variables for non-sensitive deployment configuration only. 
+Use environment variables for non-sensitive deployment configuration only.
 Storing secrets in environment variables is generally discouraged; use a dedicated secret manager or secret store instead.
 
 ## Kubernetes
