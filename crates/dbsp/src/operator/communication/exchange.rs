@@ -31,7 +31,7 @@ use rkyv::AlignedVec;
 use size_of::HumanBytes;
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     fmt::Debug,
     io::{Cursor, ErrorKind, IoSlice},
     iter::zip,
@@ -447,6 +447,20 @@ impl Callback {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ExchangeKind {
+    /// Senders and receivers operate in lockstep.
+    ///
+    /// Each sender sends exactly one message to each receiver in every step.
+    Sync,
+
+    /// Senders and receivers operate asynchronously.
+    ///
+    /// Senders send zero or more messages per step, and receivers receive
+    /// messages when they arrive.
+    Stream,
+}
+
 #[derive(Clone, Debug)]
 pub enum Mailbox<T> {
     Tx(FBuf),
@@ -484,6 +498,7 @@ impl<T> Mailbox<T> {
 /// incoming values are ready for the current round.
 pub(crate) struct Exchange<T> {
     exchange_id: ExchangeId,
+    kind: ExchangeKind,
 
     /// The number of communicating peers.
     npeers: usize,
@@ -491,16 +506,17 @@ pub(crate) struct Exchange<T> {
     /// Range of worker IDs on the local host.
     local_workers: Range<usize>,
 
-    /// Counts the number of messages received in the current round of
-    /// communication per receiver.  The receiver must wait until it has all
-    /// `npeers` messages before reading all of them from mailboxes in one
-    /// pass.
+    /// [Kind::Sync] only: counts the number of messages received in the current
+    /// round of communication, per receiver.  The receiver must wait until it
+    /// has all `npeers` messages before reading all of them from mailboxes in
+    /// one pass.
     receiver_counters: Vec<AtomicUsize>,
 
     /// Callback invoked when all `npeers` messages are ready for a receiver.
     receiver_callbacks: Vec<Callback>,
 
-    /// Notified when all `npeers` messages are ready for a receiver.
+    /// - [Kind::Sync]: Notified when all `npeers` messages are ready for a receiver.
+    /// - [Kind::Stream]: Notified when at least one message is ready for a receiver.
     receiver_notifies: Vec<Notify>,
 
     /// Counts the number of empty mailboxes ready to accept new data per
@@ -544,7 +560,7 @@ pub(crate) struct Exchange<T> {
     /// |         |     |RRRRR|     |     |
     /// v         |-----|-----|-----|-----|
     /// ```
-    mailboxes: Vec<Mutex<Option<Mailbox<T>>>>,
+    mailboxes: Vec<Mutex<VecDeque<Mailbox<T>>>>,
 
     /// The amount of time deserializing remote exchange data.
     deserialization_usecs: AtomicU64,
@@ -608,11 +624,12 @@ where
     /// Create a new exchange operator for `npeers` communicating threads.
     fn new(
         exchange_id: ExchangeId,
+        kind: ExchangeKind,
         clients: Arc<Clients>,
         directory: ExchangeDirectory,
     ) -> Arc<Self> {
         let npeers = Runtime::num_workers();
-        let mailboxes: Vec<Mutex<Option<Mailbox<T>>>> =
+        let mailboxes: Vec<Mutex<VecDeque<Mailbox<T>>>> =
             (0..npeers * npeers).map(|_| Default::default()).collect();
 
         let runtime = Runtime::runtime().unwrap();
@@ -621,6 +638,7 @@ where
 
         let exchange = Arc::new(Self {
             exchange_id,
+            kind,
             npeers,
             local_workers: layout.local_workers(),
             clients,
@@ -683,7 +701,7 @@ where
     /// can occur occasionally.  The user must check the status explicitly
     /// by calling `ready_to_receive` or be prepared that `receive_all`
     /// can fail.
-    pub(crate) fn register_receiver_callback<F>(&self, receiver: usize, cb: F)
+    fn register_receiver_callback<F>(&self, receiver: usize, cb: F)
     where
         F: Fn() + Send + Sync + 'static,
     {
@@ -693,7 +711,7 @@ where
     }
 
     /// Locks and returns the mailbox for the sender/receiver pair.
-    fn mailbox(&self, sender: usize, receiver: usize) -> MutexGuard<'_, Option<Mailbox<T>>> {
+    fn mailbox(&self, sender: usize, receiver: usize) -> MutexGuard<'_, VecDeque<Mailbox<T>>> {
         self.mailboxes[self.mailbox_index(sender, receiver)]
             .lock()
             .unwrap()
@@ -702,7 +720,11 @@ where
     /// Create a new `Exchange` instance if an instance with the same id
     /// (created by another thread) does not yet exist within `runtime`.
     /// The number of peers will be set to `runtime.num_workers()`.
-    pub(crate) fn with_runtime(runtime: &Runtime, exchange_id: ExchangeId) -> Arc<Self> {
+    pub(crate) fn with_runtime(
+        runtime: &Runtime,
+        exchange_id: ExchangeId,
+        kind: ExchangeKind,
+    ) -> Arc<Self> {
         let directory = runtime
             .local_store()
             .entry(DirectoryId)
@@ -721,7 +743,7 @@ where
         runtime
             .local_store()
             .entry(ExchangeCacheId::new(exchange_id))
-            .or_insert_with(|| Exchange::new(exchange_id, clients.clone(), directory))
+            .or_insert_with(|| Exchange::new(exchange_id, kind, clients.clone(), directory))
             .value()
             .clone()
     }
@@ -795,23 +817,28 @@ where
     }
 
     fn deliver(&self, sender: usize, receiver: usize, item: Mailbox<T>) {
-        let mut mailbox = self.mailbox(sender, receiver);
-        assert!(mailbox.is_none());
-        *mailbox = Some(item);
-
-        let old_counter = self.receiver_counters[receiver].fetch_add(1, Ordering::AcqRel);
-        if old_counter >= self.npeers - 1 {
+        let notify = {
+            let mut mailbox = self.mailbox(sender, receiver);
+            mailbox.push_back(item);
+            self.kind == ExchangeKind::Stream
+                || mailbox.len() == 1
+                    && self.receiver_counters[receiver].fetch_add(1, Ordering::AcqRel)
+                        >= self.npeers - 1
+        };
+        if notify {
             self.receiver_callbacks[receiver].call();
             self.receiver_notifies[receiver].notify_waiters();
         }
     }
 
-    /// Write all outgoing messages for this worker to mailboxes, first waiting
-    /// for the mailboxes to become available if any of them are not empty yet.
+    /// Write all outgoing messages for this worker to mailboxes.
     ///
     /// Values to be sent are retrieved from the `data` iterator, with the
     /// first value delivered to receiver 0, second value delivered to receiver
     /// 1, and so on.
+    ///
+    /// Returns an error if at least one of the sender's outgoing mailboxes is
+    /// not empty.
     ///
     /// # Panics
     ///
@@ -819,7 +846,9 @@ where
     pub(crate) async fn send_all(self: &Arc<Self>, mut data: impl Iterator<Item = Mailbox<T>>) {
         let sender = Runtime::worker_index();
 
-        self.wait_for_ready_to_send(sender).await;
+        if self.kind == ExchangeKind::Sync {
+            self.wait_for_ready_to_send(sender).await;
+        }
 
         let runtime = Runtime::runtime().unwrap();
         let layout = runtime.layout();
@@ -857,8 +886,8 @@ where
         }
     }
 
-    /// Read all incoming messages for this worker, waiting for data to arrive
-    /// as needed.
+    /// Read all incoming messages for this worker, or an error if any of the
+    /// receiver's incoming mailboxes is empty.
     pub(crate) async fn receive_all<D>(&self, deserialize: D) -> Vec<T>
     where
         D: Fn(AlignedVec) -> T,
@@ -879,16 +908,51 @@ where
             }
         }
 
+        let receiver = Runtime::worker_index();
+        let start = Instant::now();
+        let mut deserialized_bytes = 0;
         let mut data = Vec::with_capacity(self.npeers);
         for sender in 0..self.npeers {
-            let mailbox = self.mailbox(sender, receiver).take().unwrap();
-            data.push(mailbox.deserialize(&deserialize));
+            let mailbox = {
+                let mut mailbox = self.mailbox(sender, receiver);
+                let item = mailbox.pop_front().unwrap();
+                if !mailbox.is_empty() {
+                    self.receiver_counters[receiver].fetch_add(1, Ordering::AcqRel);
+                }
+                item
+            };
+            let item = match mailbox {
+                Mailbox::Plain(item) => item,
+                Mailbox::Tx(_) => unreachable!(),
+                Mailbox::Rx(bytes) => {
+                    deserialized_bytes += bytes.len();
+
+                    deserialize(bytes)
+                }
+            };
+            data.push(item);
             let old_counter = self.sender_counters[sender].fetch_add(1, Ordering::AcqRel);
             if old_counter + 1 >= self.local_workers.len() {
                 self.sender_callbacks[sender].call();
                 self.sender_notifies[sender].notify_waiters();
             }
         }
+        self.deserialized_bytes
+            .fetch_add(deserialized_bytes, Ordering::Relaxed);
+        self.deserialization_usecs
+            .fetch_add(start.elapsed().as_micros() as u64, Ordering::Relaxed);
+        SamplySpan::new("deserialize")
+            .with_category("Exchange")
+            .with_start(start)
+            .with_tooltip(|| {
+                format!(
+                    "exchange {} deserialize {}",
+                    self.exchange_id(),
+                    HumanBytes::from(deserialized_bytes)
+                )
+            })
+            .record();
+        assert_eq!(data.len(), self.npeers);
 
         data
     }
@@ -900,8 +964,6 @@ where
     T: Clone + Debug + Send + 'static,
 {
     async fn received(&self, sender: usize, data: Vec<AlignedVec>) {
-        self.wait_for_ready_to_send(sender).await;
-
         for (receiver, data) in zip(self.local_workers.clone(), data) {
             self.deliver(sender, receiver, Mailbox::Rx(data));
         }
@@ -1181,6 +1243,7 @@ where
     combine: L,
     exchange: Arc<Exchange<(T, bool)>>,
     flush_count: usize,
+    unflushed: Vec<usize>,
     flush_complete: bool,
     start_wait_usecs: Arc<AtomicU64>,
     total_wait_time: Arc<AtomicU64>,
@@ -1212,6 +1275,7 @@ where
             deserialize,
             exchange,
             flush_count: 0,
+            unflushed: (0..Runtime::num_workers()).collect(),
             flush_complete: false,
             output_batch_stats: BatchSizeStats::new(),
             start_wait_usecs,
@@ -1220,7 +1284,13 @@ where
     }
 
     fn is_ready(&self) -> bool {
-        self.exchange.ready_to_receive(self.worker_index)
+        match self.exchange.kind {
+            ExchangeKind::Sync => self.exchange.ready_to_receive(self.worker_index),
+            ExchangeKind::Stream => self
+                .unflushed
+                .iter()
+                .any(|sender| !self.exchange.mailbox(*sender, self.worker_index).is_empty()),
+        }
     }
 }
 
@@ -1259,10 +1329,11 @@ where
         let start_wait_usecs = self.start_wait_usecs.clone();
         let total_wait_time = self.total_wait_time.clone();
         let exchange = self.exchange.clone();
+        let kind = self.exchange.kind;
         let worker_index = self.worker_index;
 
         let cb = move || {
-            if exchange.ready_to_receive(worker_index) {
+            if kind == ExchangeKind::Sync && exchange.ready_to_receive(worker_index) {
                 // The callback can be invoked multiple times per step.
                 // Reset start_wait_usecs to 0 to make sure we don't double-count.
                 let start = start_wait_usecs.swap(0, Ordering::Acquire);
@@ -1334,23 +1405,47 @@ where
         };
 
         let mut combined = (self.init)();
-        let res = self.exchange.receive_all(deserialize).await;
-        for (data, flushed) in res {
-            if flushed {
-                self.flush_count += 1;
+        match self.exchange.kind {
+            ExchangeKind::Sync => {
+                let res = self.exchange.receive_all(deserialize).await;
+                for (data, flushed) in res {
+                    if flushed {
+                        self.flush_count += 1;
+                    }
+                    (self.combine)(&mut combined, data)
+                }
+
+                if self.flush_count == Runtime::num_workers() {
+                    // println!(
+                    //     "{} exchange_receiver::eval received all inputs",
+                    //     Runtime::worker_index()
+                    // );
+
+                    self.flush_complete = true;
+                    self.flush_count = 0;
+                }
             }
-            (self.combine)(&mut combined, data)
-        }
-
-        if self.flush_count == Runtime::num_workers() {
-            // println!(
-            //     "{} exchange_receiver::eval received all inputs",
-            //     Runtime::worker_index()
-            // );
-
-            self.flush_complete = true;
-            self.flush_count = 0;
-        }
+            ExchangeKind::Stream => {
+                let receiver = Runtime::worker_index();
+                let mut i = 0;
+                'receivers: while i < self.unflushed.len() {
+                    let sender = self.unflushed[i];
+                    while let Some(mailbox) = self.exchange.mailbox(sender, receiver).pop_front() {
+                        let (data, flushed) = mailbox.deserialize(&deserialize);
+                        (self.combine)(&mut combined, data);
+                        if flushed {
+                            self.unflushed.swap_remove(i);
+                            continue 'receivers;
+                        }
+                    }
+                    i += 1;
+                }
+                if self.unflushed.is_empty() {
+                    self.flush_complete = true;
+                    self.unflushed.extend(0..self.exchange.npeers);
+                }
+            }
+        };
 
         self.output_batch_stats
             .add_batch(combined.num_entries_deep());
@@ -1398,6 +1493,7 @@ impl TypedMapKey<LocalStoreMarker> for DirectoryId {
 /// * `CL` - Type of closure that folds `num_workers` values of type `TE` into a
 ///   value of type `TO`.
 pub fn new_exchange_operators<TI, TO, TE, IF, PL, CL, D>(
+    kind: ExchangeKind,
     location: OperatorLocation,
     init: IF,
     partition: PL,
@@ -1420,7 +1516,7 @@ where
 
     let exchange_id = runtime.sequence_next().try_into().unwrap();
     let start_wait_usecs = Arc::new(AtomicU64::new(0));
-    let exchange = Exchange::with_runtime(&runtime, exchange_id);
+    let exchange = Exchange::with_runtime(&runtime, exchange_id, kind);
     let sender = ExchangeSender::new(
         location,
         exchange.clone(),
@@ -1454,31 +1550,40 @@ mod tests {
         },
         operator::{
             Generator,
-            communication::{Mailbox, new_exchange_operators},
+            communication::{ExchangeKind, Mailbox, new_exchange_operators},
+            generator::IteratorGenerator,
         },
         storage::file::{to_bytes, to_bytes_dyn},
         trace::aligned_deserialize,
     };
     use std::{
-        iter::{repeat, zip},
+        iter::{repeat, repeat_n, zip},
+        mem::take,
         net::TcpListener,
+        sync::{Arc, Mutex},
     };
 
-    /// Number of rounds for exchange.
+    /// Number of rounds for synchronous exchange.
     ///
     /// We decrease the number of rounds we do when we're running under miri,
     /// otherwise it'll run forever
-    const ROUNDS: usize = if cfg!(miri) { 128 } else { 2048 };
+    const SYNC_ROUNDS: usize = if cfg!(miri) { 128 } else { 2048 };
 
-    // A circuit that iterates for `ROUNDS` rounds with each sender sending
+    /// Number of rounds for streaming exchange.
+    ///
+    /// We do fewer rounds for streaming exchange because the `n`th round does
+    /// `n` steps and exchanges `O(n**2)` data.
+    const STREAMING_ROUNDS: usize = 64;
+
+    // A circuit that iterates for `SYNC_ROUNDS` rounds with each sender sending
     // value `(sender, n)` to each receiver, where `sender` is the sender's
     // worker number in round `n`.
-    fn circuit() {
-        let exchange = Exchange::with_runtime(&Runtime::runtime().unwrap(), 0);
+    fn sync_circuit() {
+        let exchange = Exchange::with_runtime(&Runtime::runtime().unwrap(), 0, ExchangeKind::Sync);
         TOKIO.block_on(async {
             let sender = Runtime::worker_index();
             let n_workers = Runtime::num_workers();
-            for round in 0..ROUNDS {
+            for round in 0..SYNC_ROUNDS {
                 exchange
                     .send_all_with_serializer(repeat((sender, round)), |data| {
                         to_bytes(&data).unwrap()
@@ -1563,7 +1668,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn single_host() {
         for workers in [2, 4, 8] {
-            test_circuit(workers, 1, circuit);
+            test_circuit(workers, 1, sync_circuit);
         }
     }
 
@@ -1572,11 +1677,68 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn multihost() {
         for (workers, hosts) in [(2, 2), (4, 2), (8, 2), (3, 3), (4, 4), (16, 4)] {
-            test_circuit(workers, hosts, circuit);
+            test_circuit(workers, hosts, sync_circuit);
         }
     }
 
-    fn operator_circuit<S>()
+    fn streaming_operator_circuit<S>()
+    where
+        S: Scheduler + 'static,
+    {
+        let output = Arc::new(Mutex::new(Vec::<usize>::new()));
+        let output_clone = output.clone();
+        let circuit = RootCircuit::build_with_scheduler::<_, _, S>(move |circuit| {
+            let mut n: usize = 1;
+            let source = circuit.add_source(IteratorGenerator::new(move || {
+                let result = (0..n).map(Some);
+                n += 1;
+                result
+            }));
+
+            let (sender, receiver) = new_exchange_operators(
+                ExchangeKind::Stream,
+                None,
+                Vec::new,
+                move |n, vals| {
+                    for location in WorkerLocations::new() {
+                        match location {
+                            WorkerLocation::Local => vals.push(Mailbox::Plain(n)),
+                            WorkerLocation::Remote => {
+                                vals.push(Mailbox::Tx(to_bytes_dyn(&n).unwrap()))
+                            }
+                        }
+                    }
+                },
+                |data| aligned_deserialize(&data[..]),
+                |v: &mut Vec<Option<usize>>, n| v.push(n),
+            )
+            .unwrap();
+
+            circuit
+                .add_exchange(sender, receiver, &source)
+                .inspect(move |v| {
+                    output_clone
+                        .lock()
+                        .unwrap()
+                        .extend(v.iter().copied().flatten());
+                });
+            Ok(())
+        })
+        .unwrap()
+        .0;
+
+        for round in 0..STREAMING_ROUNDS {
+            circuit.transaction().unwrap();
+            let mut output = take(&mut *output.lock().unwrap());
+            output.sort();
+            let expected = (0..=round)
+                .flat_map(|value| repeat_n(value, Runtime::num_workers()))
+                .collect_vec();
+            assert_eq!(output, expected);
+        }
+    }
+
+    fn sync_operator_circuit<S>()
     where
         S: Scheduler + 'static,
     {
@@ -1589,6 +1751,7 @@ mod tests {
             }));
 
             let (sender, receiver) = new_exchange_operators(
+                ExchangeKind::Sync,
                 None,
                 Vec::new,
                 move |n, vals| {
@@ -1618,7 +1781,7 @@ mod tests {
         .unwrap()
         .0;
 
-        for _ in 1..ROUNDS {
+        for _ in 1..SYNC_ROUNDS {
             circuit.transaction().unwrap();
         }
     }
@@ -1649,13 +1812,25 @@ mod tests {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn operators_single_host_dynamic() {
-        test_operators_single_host(operator_circuit::<DynamicScheduler>);
+    fn sync_operators_single_host_dynamic() {
+        test_operators_single_host(sync_operator_circuit::<DynamicScheduler>);
     }
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn operators_multihost_dynamic() {
-        test_operators_multihost(operator_circuit::<DynamicScheduler>);
+    fn sync_operators_multihost_dynamic() {
+        test_operators_multihost(sync_operator_circuit::<DynamicScheduler>);
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn streaming_operators_single_host_dynamic() {
+        test_operators_single_host(streaming_operator_circuit::<DynamicScheduler>);
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn streaming_operators_multihost_dynamic() {
+        test_operators_multihost(streaming_operator_circuit::<DynamicScheduler>);
     }
 }

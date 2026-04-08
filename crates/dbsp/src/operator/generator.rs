@@ -50,6 +50,81 @@ where
     }
 }
 
+/// A source operator for testing transactions.
+///
+/// The generator function is called once per transaction at commit time.  It
+/// returns an iterator that returns the values to output in successive steps.
+/// The iterator must return at least one value because the scheduler always
+/// invokes the operator at least once.  When the iterator ends, the generator
+/// signals that flush is complete.
+///
+/// The value type must have a `Default` implementation so the operator has
+/// something to output when it is evaluated before it is notified about
+/// upstream flush.
+#[cfg(test)]
+pub struct IteratorGenerator<G, I, T> {
+    generator: G,
+    next: Option<T>,
+    iterator: Option<I>,
+}
+
+#[cfg(test)]
+impl<G, I, T> IteratorGenerator<G, I, T> {
+    pub fn new(generator: G) -> Self {
+        Self {
+            generator,
+            next: None,
+            iterator: None,
+        }
+    }
+}
+
+#[cfg(test)]
+impl<G, I, T> Operator for IteratorGenerator<G, I, T>
+where
+    G: FnMut() -> I + 'static,
+    I: Iterator<Item = T> + 'static,
+    T: 'static,
+{
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("IteratorGenerator")
+    }
+    fn fixedpoint(&self, _scope: Scope) -> bool {
+        false
+    }
+    fn flush(&mut self) {
+        let mut iterator = (self.generator)();
+        self.next = Some(
+            iterator
+                .next()
+                .expect("operator must produce at least one output"),
+        );
+        self.iterator = Some(iterator);
+    }
+    fn is_flush_complete(&self) -> bool {
+        self.next.is_none()
+    }
+}
+
+#[cfg(test)]
+impl<G, I, T> SourceOperator<T> for IteratorGenerator<G, I, T>
+where
+    G: FnMut() -> I + 'static,
+    I: Iterator<Item = T> + 'static,
+    T: Default + 'static,
+{
+    async fn eval(&mut self) -> T {
+        let result = self.next.take();
+        if let Some(iterator) = &mut self.iterator {
+            self.next = iterator.next();
+            if self.next.is_none() {
+                self.iterator = None;
+            }
+        };
+        result.unwrap_or_default()
+    }
+}
+
 /// A version of Generator that passes a flag to the generator function when `flush` has been called, giving it a chance
 /// to produce one output per transaction.
 pub struct TransactionGenerator<T, F> {

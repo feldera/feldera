@@ -16,7 +16,7 @@ use crate::{
     },
     circuit_cache_key,
     dynamic::{Data, DataTrait, DynPair, DynPairs, Factory},
-    operator::communication::{Mailbox, new_exchange_operators},
+    operator::communication::{ExchangeKind, Mailbox, new_exchange_operators},
     storage::file::SerializerInner,
     trace::{
         Batch, BatchReader, Builder, IndexedWSetSerializer, deserialize_indexed_wset, merge_batches,
@@ -117,6 +117,7 @@ where
 
                     let output = self.circuit().region("shard", || {
                         let (sender, receiver) = new_exchange_operators(
+                            ExchangeKind::Sync,
                             Some(location),
                             || Vec::new(),
                             move |batch: IB, batches: &mut Vec<Mailbox<OB>>| {
@@ -179,6 +180,7 @@ where
         let location = Location::caller();
 
         let (sender, receiver) = new_exchange_operators(
+            ExchangeKind::Sync,
             Some(location),
             Vec::new,
             move |input_pairs: Vec<Box<DynPairs<K, V>>>,
