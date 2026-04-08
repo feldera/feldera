@@ -68,6 +68,7 @@ public class CustomFunctions {
         this.functions.add(new ArraysOverlapFunction());
         this.functions.add(new BlackboxFunction());
         this.functions.add(new BroundFunction());
+        this.functions.add(new ConvertTimezoneFunction());
         this.functions.add(new FormatDateFunction());
         this.functions.add(new FormatTimestampFunction());
         this.functions.add(new FormatTimeFunction());
@@ -254,6 +255,16 @@ public class CustomFunctions {
                     ReturnTypes.VARIANT.andThen(SqlTypeTransforms.TO_NULLABLE),
                     OperandTypes.STRING,
                     SqlFunctionCategory.STRING, "json#parse_json", FunctionDocumentation.NO_FILE);
+        }
+    }
+
+    static class ConvertTimezoneFunction extends NonOptimizedFunction {
+        public ConvertTimezoneFunction() {
+            super("CONVERT_TIMEZONE",
+                    ReturnTypes.TIMESTAMP.andThen(SqlTypeTransforms.FORCE_NULLABLE),
+                    CHARACTER_CHARACTER_DATETIME,
+                    SqlFunctionCategory.TIMEDATE, "datetime#convert_timezone",
+                    FunctionDocumentation.NO_FILE);
         }
     }
 

@@ -1,5 +1,6 @@
 //! Support for SQL Timestamp and Date data types.
 
+use crate::error::{SqlResult, SqlRuntimeError};
 use crate::{
     FromInteger, SqlString, ToInteger,
     array::Array,
@@ -9,9 +10,10 @@ use crate::{
 };
 use chrono::format::ParseErrorKind;
 use chrono::{
-    DateTime, Datelike, Days, Duration, Months, NaiveDate, NaiveDateTime, NaiveTime, TimeZone,
-    Timelike, Utc,
+    DateTime, Datelike, Days, Duration, FixedOffset, Months, NaiveDate, NaiveDateTime, NaiveTime,
+    TimeZone, Timelike, Utc,
 };
+use chrono_tz::Tz;
 use core::fmt::Formatter;
 use dbsp::num_entries_scalar;
 use feldera_macros::IsNone;
@@ -19,6 +21,7 @@ use feldera_types::serde_with_context::{
     DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
     TimestampFormat,
 };
+use regex::Regex;
 use serde::{Deserialize, Deserializer, Serializer, de::Error as _, ser::Error as _};
 use size_of::SizeOf;
 use std::{
@@ -305,6 +308,275 @@ impl Timestamp {
             panic!("Timestamp out of range {}", self);
         }
     }
+}
+
+#[doc(hidden)]
+#[derive(Debug, Clone)]
+enum Zone {
+    Iana(Tz),
+    Offset(FixedOffset),
+}
+
+impl Zone {
+    #[doc(hidden)]
+    /// Parse either an IANA timezone or a numeric offset like "+09:00".
+    fn parse(s: &str) -> Option<Self> {
+        // Try IANA zone first
+        if let Ok(tz) = s.parse::<Tz>() {
+            return Some(Zone::Iana(tz));
+        }
+
+        // Try numeric offset: +HH, +HH:MM, +HH:MM:SS
+        if let Some(offset) = Self::parse_fixed_offset(s) {
+            return Some(Zone::Offset(offset));
+        }
+
+        tracing::warn!("convert_timezone: failed to parse timezone '{}'", s);
+        None
+    }
+
+    #[doc(hidden)]
+    /// Convert a string like +08:00 to a FixedOffset.
+    // Apparently there is no library function to do this, since the format is not standard
+    fn parse_fixed_offset(s: &str) -> Option<FixedOffset> {
+        static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
+            Regex::new(r"^([+-])([0-9]{2})(?::([0-9]{2})(?::([0-9]{2}))?)?$").unwrap()
+        });
+
+        let caps = RE.captures(s)?;
+        let sign = if &caps[1] == "+" { 1 } else { -1 };
+
+        let h: i32 = caps[2].parse().ok()?;
+        let m: i32 = caps
+            .get(3)
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(0);
+        let sec: i32 = caps
+            .get(4)
+            .and_then(|s| s.as_str().parse().ok())
+            .unwrap_or(0);
+
+        if h > 23 || m > 59 || sec > 59 {
+            return None;
+        }
+
+        let total = sign * (h * 3600 + m * 60 + sec);
+        FixedOffset::east_opt(total)
+    }
+
+    /// Interpret a NaiveDateTime in this zone.
+    fn local_to_utc(&self, ts: NaiveDateTime) -> SqlResult<DateTime<Utc>> {
+        match self {
+            Zone::Iana(tz) => {
+                let dt = tz.from_local_datetime(&ts).single().ok_or_else(|| {
+                    SqlRuntimeError::from_string(format!(
+                        "Cannot represent timestamp {} in timezone {:?}",
+                        ts, self
+                    ))
+                })?;
+                Ok(dt.with_timezone(&Utc))
+            }
+            Zone::Offset(off) => {
+                let dt = off.from_local_datetime(&ts).single().ok_or_else(|| {
+                    SqlRuntimeError::from_string(format!(
+                        "Cannot represent timestamp {} in timezone {:?}",
+                        ts, self
+                    ))
+                })?;
+                Ok(dt.with_timezone(&Utc))
+            }
+        }
+    }
+
+    /// Convert a UTC datetime into this zone.
+    #[doc(hidden)]
+    fn to_local(&self, utc: DateTime<Utc>) -> NaiveDateTime {
+        match self {
+            Zone::Iana(tz) => utc.with_timezone(tz).naive_local(),
+            Zone::Offset(off) => utc.with_timezone(off).naive_local(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::FixedOffset;
+
+    #[test]
+    fn test_valid_hours_only() {
+        assert_eq!(
+            Zone::parse_fixed_offset("+09"),
+            Some(FixedOffset::east_opt(9 * 3600).unwrap())
+        );
+        assert_eq!(
+            Zone::parse_fixed_offset("-05"),
+            Some(FixedOffset::west_opt(5 * 3600).unwrap())
+        );
+    }
+
+    #[test]
+    fn test_valid_hours_minutes() {
+        assert_eq!(
+            Zone::parse_fixed_offset("+09:30"),
+            Some(FixedOffset::east_opt(9 * 3600 + 30 * 60).unwrap())
+        );
+        assert_eq!(
+            Zone::parse_fixed_offset("-02:45"),
+            Some(FixedOffset::west_opt(2 * 3600 + 45 * 60).unwrap())
+        );
+    }
+
+    #[test]
+    fn test_valid_hours_minutes_seconds() {
+        assert_eq!(
+            Zone::parse_fixed_offset("+09:00:30"),
+            Some(FixedOffset::east_opt(9 * 3600 + 30).unwrap())
+        );
+        assert_eq!(
+            Zone::parse_fixed_offset("-01:02:03"),
+            Some(FixedOffset::west_opt(3600 + 2 * 60 + 3).unwrap())
+        );
+    }
+
+    #[test]
+    fn test_zero_offset() {
+        assert_eq!(
+            Zone::parse_fixed_offset("+00"),
+            Some(FixedOffset::east_opt(0).unwrap())
+        );
+        assert_eq!(
+            Zone::parse_fixed_offset("-00:00"),
+            Some(FixedOffset::east_opt(0).unwrap())
+        );
+    }
+
+    #[test]
+    fn test_invalid_missing_sign() {
+        assert_eq!(Zone::parse_fixed_offset("09"), None);
+        assert_eq!(Zone::parse_fixed_offset("09:00"), None);
+    }
+
+    #[test]
+    fn test_invalid_bad_format() {
+        assert_eq!(Zone::parse_fixed_offset("+9"), None);
+        assert_eq!(Zone::parse_fixed_offset("+0900"), None);
+        assert_eq!(Zone::parse_fixed_offset("+09:"), None);
+        assert_eq!(Zone::parse_fixed_offset("+:"), None);
+        assert_eq!(Zone::parse_fixed_offset("+09:0"), None);
+        assert_eq!(Zone::parse_fixed_offset("+09:00:0"), None);
+        assert_eq!(Zone::parse_fixed_offset("++09:00"), None);
+    }
+
+    #[test]
+    fn test_invalid_out_of_range() {
+        assert_eq!(Zone::parse_fixed_offset("+24"), None);
+        assert_eq!(Zone::parse_fixed_offset("+23:60"), None);
+        assert_eq!(Zone::parse_fixed_offset("+10:00:60"), None);
+        assert_eq!(Zone::parse_fixed_offset("-25:00"), None);
+    }
+
+    #[test]
+    fn test_valid_edge_boundaries() {
+        assert_eq!(
+            Zone::parse_fixed_offset("+23:59:59"),
+            Some(FixedOffset::east_opt(23 * 3600 + 59 * 60 + 59).unwrap())
+        );
+        assert_eq!(
+            Zone::parse_fixed_offset("-23:59:59"),
+            Some(FixedOffset::west_opt(23 * 3600 + 59 * 60 + 59).unwrap())
+        );
+    }
+}
+
+#[doc(hidden)]
+pub fn convert_timezone___(
+    source: SqlString,
+    target: SqlString,
+    ts: Timestamp,
+) -> Option<Timestamp> {
+    // TODO: should we log the parse errors?
+    let naive = ts.to_naiveDateTime();
+    let src_tz: Zone = Zone::parse(source.str())?;
+    let dst_tz: Zone = Zone::parse(target.str())?;
+    let utc = src_tz.local_to_utc(naive).ok()?;
+    let result = dst_tz.to_local(utc);
+    Some(Timestamp::from_naiveDateTime(result))
+}
+
+#[doc(hidden)]
+pub fn convert_timezoneN__(
+    source: Option<SqlString>,
+    target: SqlString,
+    ts: Timestamp,
+) -> Option<Timestamp> {
+    let source = source?;
+    convert_timezone___(source, target, ts)
+}
+
+#[doc(hidden)]
+pub fn convert_timezone_N_(
+    source: SqlString,
+    target: Option<SqlString>,
+    ts: Timestamp,
+) -> Option<Timestamp> {
+    let target = target?;
+    convert_timezone___(source, target, ts)
+}
+
+#[doc(hidden)]
+pub fn convert_timezone__N(
+    source: SqlString,
+    target: SqlString,
+    ts: Option<Timestamp>,
+) -> Option<Timestamp> {
+    let ts = ts?;
+    convert_timezone___(source, target, ts)
+}
+
+#[doc(hidden)]
+pub fn convert_timezoneNN_(
+    source: Option<SqlString>,
+    target: Option<SqlString>,
+    ts: Timestamp,
+) -> Option<Timestamp> {
+    let source = source?;
+    let target = target?;
+    convert_timezone___(source, target, ts)
+}
+
+#[doc(hidden)]
+pub fn convert_timezoneN_N(
+    source: Option<SqlString>,
+    target: SqlString,
+    ts: Option<Timestamp>,
+) -> Option<Timestamp> {
+    let source = source?;
+    let ts = ts?;
+    convert_timezone___(source, target, ts)
+}
+
+#[doc(hidden)]
+pub fn convert_timezone_NN(
+    source: SqlString,
+    target: Option<SqlString>,
+    ts: Option<Timestamp>,
+) -> Option<Timestamp> {
+    let target = target?;
+    let ts = ts?;
+    convert_timezone___(source, target, ts)
+}
+
+#[doc(hidden)]
+pub fn convert_timezoneNNN(
+    source: Option<SqlString>,
+    target: Option<SqlString>,
+    ts: Option<Timestamp>,
+) -> Option<Timestamp> {
+    let source = source?;
+    let target = target?;
+    let ts = ts?;
+    convert_timezone___(source, target, ts)
 }
 
 #[doc(hidden)]
