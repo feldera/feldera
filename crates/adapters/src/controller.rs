@@ -2753,6 +2753,15 @@ impl CircuitThread {
     ) -> Result<(), ControllerError> {
         let config = &self.controller.status.pipeline_config;
 
+        // Disable auto-rebalancing during the first step. This makes sure that the
+        // first step doesn't trigger an expensive rebalancing operation. We don't
+        // want to be stuck in the initialization state, when none of the monitoring
+        // features are enabled, for a long time.
+        if let Err(error) = self.circuit.set_auto_rebalance(false) {
+            let _ = init_status_sender.send(Err(error.into()));
+            return Ok(());
+        }
+
         // Initialize the step trigger with the bootstraping state,
         // so that if the first step() we perform below before entering the loop
         // ends up finishing bootstrapping, we will still perform an extra step to initialize
@@ -2772,13 +2781,26 @@ impl CircuitThread {
         // Run a single step, which is probably empty, before reporting that
         // initialization is complete.  This is needed to make ad-hoc snapshots
         // up-to-date before making them available to the user.
-        if let Err(error) = self.step() {
+        //
+        // Skip this during bootstrap to avoid a slow first step. We don't guarantee
+        // that view snapshots are up-to-date until bootstrap is complete.
+        if !self.circuit.bootstrap_in_progress()
+            && let Err(error) = self.step()
+        {
             let _ = init_status_sender.send(Err(error));
             return Ok(());
-        };
+        }
+
+        // Enable auto-rebalancing after the first step.
+        if let Err(error) = self.circuit.set_auto_rebalance(true) {
+            let _ = init_status_sender.send(Err(error.into()));
+            return Ok(());
+        }
+
         let _ = init_status_sender.send(Ok(self.controller.clone()));
 
         let mut output_backpressure_warning: Option<LongOperationWarning> = None;
+
         loop {
             // Run received commands.  Commands can initiate checkpoint
             // requests, so attempt to execute those afterward.  Executing a

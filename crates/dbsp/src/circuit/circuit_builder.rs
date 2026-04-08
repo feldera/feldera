@@ -1807,6 +1807,9 @@ pub trait CircuitBase: 'static {
     /// Return the balancer object associated with the circuit.
     fn balancer(&self) -> &Balancer;
 
+    /// Set the auto-rebalancing flag for the circuit.
+    fn set_auto_rebalance(&self, enable: bool) -> Result<(), DbspError>;
+
     /// Set the balancer hint for the operator with the given global node id.
     ///
     /// # Errors
@@ -3418,6 +3421,10 @@ where
 
     fn balancer(&self) -> &Balancer {
         &self.inner().balancer
+    }
+
+    fn set_auto_rebalance(&self, enable: bool) -> Result<(), DbspError> {
+        self.inner().balancer.set_auto_rebalance(enable)
     }
 
     fn set_balancer_hint(
@@ -7546,6 +7553,10 @@ impl CircuitHandle {
     /// Export circuit in LIR format.
     pub fn lir(&self) -> LirCircuit {
         (&self.circuit as &dyn CircuitBase).to_lir()
+    }
+
+    pub fn set_auto_rebalance(&self, enable: bool) -> Result<(), DbspError> {
+        self.circuit.set_auto_rebalance(enable)
     }
 
     pub fn set_balancer_hint(
