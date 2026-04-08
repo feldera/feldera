@@ -634,7 +634,6 @@ pub(crate) struct Exchange<T> {
     /// v         |-----|-----|-----|-----|
     /// ```
     mailboxes: Arc<Vec<Mutex<Option<Mailbox<T>>>>>,
-    deserialize: Box<dyn Fn(AlignedVec) -> T + Send + Sync>,
 
     /// The amount of time spent calling `deserialize`.
     deserialization_usecs: AtomicU64,
@@ -696,12 +695,7 @@ where
     T: Clone + Send + 'static,
 {
     /// Create a new exchange operator for `npeers` communicating threads.
-    fn new(
-        exchange_id: ExchangeId,
-        clients: Arc<Clients>,
-        directory: ExchangeDirectory,
-        deserialize: Box<dyn Fn(AlignedVec) -> T + Send + Sync>,
-    ) -> Self {
+    fn new(exchange_id: ExchangeId, clients: Arc<Clients>, directory: ExchangeDirectory) -> Self {
         let npeers = Runtime::num_workers();
         let mailboxes: Arc<Vec<Mutex<Option<Mailbox<T>>>>> =
             Arc::new((0..npeers * npeers).map(|_| Mutex::new(None)).collect());
@@ -723,7 +717,6 @@ where
         Self {
             inner,
             mailboxes,
-            deserialize,
             deserialization_usecs: AtomicU64::new(0),
             deserialized_bytes: AtomicUsize::new(0),
         }
@@ -742,11 +735,7 @@ where
     /// Create a new `Exchange` instance if an instance with the same id
     /// (created by another thread) does not yet exist within `runtime`.
     /// The number of peers will be set to `runtime.num_workers()`.
-    pub(crate) fn with_runtime(
-        runtime: &Runtime,
-        exchange_id: ExchangeId,
-        deserialize: Box<dyn Fn(AlignedVec) -> T + Send + Sync>,
-    ) -> Arc<Self> {
+    pub(crate) fn with_runtime(runtime: &Runtime, exchange_id: ExchangeId) -> Arc<Self> {
         let directory = runtime
             .local_store()
             .entry(DirectoryId)
@@ -765,14 +754,7 @@ where
         runtime
             .local_store()
             .entry(ExchangeCacheId::new(exchange_id))
-            .or_insert_with(|| {
-                Arc::new(Exchange::new(
-                    exchange_id,
-                    clients.clone(),
-                    directory,
-                    deserialize,
-                ))
-            })
+            .or_insert_with(|| Arc::new(Exchange::new(exchange_id, clients.clone(), directory)))
             .value()
             .clone()
     }
@@ -927,9 +909,10 @@ where
     /// # Errors
     ///
     /// Fails if at least one of the receiver's incoming mailboxes is empty.
-    pub(crate) fn try_receive_all<F>(&self, mut cb: F) -> bool
+    pub(crate) fn try_receive_all<F, D>(&self, mut cb: F, deserialize: D) -> bool
     where
         F: FnMut(T),
+        D: Fn(AlignedVec) -> T,
     {
         let receiver = Runtime::worker_index();
         let npeers = self.inner.npeers;
@@ -956,7 +939,7 @@ where
                     Mailbox::Rx(bytes) => {
                         deserialized_bytes += bytes.len();
 
-                        (self.deserialize)(bytes)
+                        deserialize(bytes)
                     }
                 }
             })
@@ -1321,13 +1304,14 @@ where
 /// for this worker in the current clock cycle.  The scheduler should use
 /// [`ExchangeReceiver::register_ready_callback`] to get notified when the
 /// operator becomes schedulable.
-pub struct ExchangeReceiver<IF, T, L>
+pub struct ExchangeReceiver<IF, T, L, D>
 where
     T: Send + 'static + Clone,
 {
     worker_index: usize,
     location: OperatorLocation,
     init: IF,
+    deserialize: D,
     combine: L,
     exchange: Arc<Exchange<(T, bool)>>,
     flush_count: usize,
@@ -1339,7 +1323,7 @@ where
     output_batch_stats: BatchSizeStats,
 }
 
-impl<IF, T, L> ExchangeReceiver<IF, T, L>
+impl<IF, T, L, D> ExchangeReceiver<IF, T, L, D>
 where
     T: Send + 'static + Clone,
 {
@@ -1349,6 +1333,7 @@ where
         exchange: Arc<Exchange<(T, bool)>>,
         init: IF,
         start_wait_usecs: Arc<AtomicU64>,
+        deserialize: D,
         combine: L,
     ) -> Self {
         debug_assert!(worker_index < Runtime::num_workers());
@@ -1358,6 +1343,7 @@ where
             location,
             init,
             combine,
+            deserialize,
             exchange,
             flush_count: 0,
             flush_complete: false,
@@ -1368,11 +1354,12 @@ where
     }
 }
 
-impl<D, T, L> Operator for ExchangeReceiver<D, T, L>
+impl<IF, T, L, D> Operator for ExchangeReceiver<IF, T, L, D>
 where
-    D: 'static,
+    IF: 'static,
     T: Send + 'static + Clone,
     L: 'static,
+    D: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("ExchangeReceiver")
@@ -1452,27 +1439,44 @@ where
     }
 }
 
-impl<D, IF, T, L> SourceOperator<D> for ExchangeReceiver<IF, T, L>
+fn pop_flushed(vec: &mut AlignedVec) -> bool {
+    match vec.pop().unwrap() {
+        0 => false,
+        1 => true,
+        _ => unreachable!(),
+    }
+}
+
+impl<O, IF, T, L, D> SourceOperator<O> for ExchangeReceiver<IF, T, L, D>
 where
-    D: NumEntries + 'static,
+    O: NumEntries + 'static,
     T: Clone + Send + 'static,
-    IF: Fn() -> D + 'static,
-    L: Fn(&mut D, T) + 'static,
+    IF: Fn() -> O + 'static,
+    L: Fn(&mut O, T) + 'static,
+    D: Fn(AlignedVec) -> T + Send + Sync + 'static,
 {
-    async fn eval(&mut self) -> D {
+    async fn eval(&mut self) -> O {
         debug_assert!(self.ready());
+        let deserialize = |mut vec: AlignedVec| {
+            let flushed = pop_flushed(&mut vec);
+            let value = (self.deserialize)(vec);
+            (value, flushed)
+        };
         let mut combined = (self.init)();
-        let res = self.exchange.try_receive_all(|(x, flushed)| {
-            // println!(
-            //     "{} exchange_receiver::eval received input with flushed={:?}",
-            //     Runtime::worker_index(),
-            //     flushed
-            // );
-            if flushed {
-                self.flush_count += 1;
-            }
-            (self.combine)(&mut combined, x)
-        });
+        let res = self.exchange.try_receive_all(
+            |(x, flushed)| {
+                // println!(
+                //     "{} exchange_receiver::eval received input with flushed={:?}",
+                //     Runtime::worker_index(),
+                //     flushed
+                // );
+                if flushed {
+                    self.flush_count += 1;
+                }
+                (self.combine)(&mut combined, x)
+            },
+            deserialize,
+        );
         if self.flush_count == Runtime::num_workers() {
             // println!(
             //     "{} exchange_receiver::eval received all inputs",
@@ -1536,7 +1540,7 @@ pub fn new_exchange_operators<TI, TO, TE, IF, PL, CL, D>(
     partition: PL,
     deserialize: D,
     combine: CL,
-) -> Option<(ExchangeSender<TI, TE, PL>, ExchangeReceiver<IF, TE, CL>)>
+) -> Option<(ExchangeSender<TI, TE, PL>, ExchangeReceiver<IF, TE, CL, D>)>
 where
     TO: Clone,
     TE: Send + 'static + Clone,
@@ -1553,18 +1557,7 @@ where
 
     let exchange_id = runtime.sequence_next().try_into().unwrap();
     let start_wait_usecs = Arc::new(AtomicU64::new(0));
-    let exchange = Exchange::with_runtime(
-        &runtime,
-        exchange_id,
-        Box::new(move |mut vec| {
-            let flush = match vec.pop().unwrap() {
-                0 => false,
-                1 => true,
-                _ => unreachable!(),
-            };
-            (deserialize(vec), flush)
-        }),
-    );
+    let exchange = Exchange::with_runtime(&runtime, exchange_id);
     let sender = ExchangeSender::new(
         worker_index,
         location,
@@ -1578,6 +1571,7 @@ where
         exchange,
         init,
         start_wait_usecs,
+        deserialize,
         combine,
     );
     Some((sender, receiver))
@@ -1617,11 +1611,7 @@ mod tests {
         const WORKERS: usize = 16;
 
         let hruntime = Runtime::run(WORKERS, |_parker| {
-            let exchange = Exchange::with_runtime(
-                &Runtime::runtime().unwrap(),
-                0,
-                Box::new(|data| aligned_deserialize(&data[..])),
-            );
+            let exchange = Exchange::with_runtime(&Runtime::runtime().unwrap(), 0);
 
             for round in 0..ROUNDS {
                 let output_data = vec![round; WORKERS];
@@ -1637,7 +1627,10 @@ mod tests {
 
                 let mut input_data = Vec::with_capacity(WORKERS);
                 loop {
-                    if exchange.try_receive_all(|x| input_data.push(x)) {
+                    if exchange.try_receive_all(
+                        |x| input_data.push(x),
+                        |data| aligned_deserialize(&data[..]),
+                    ) {
                         break;
                     }
 
