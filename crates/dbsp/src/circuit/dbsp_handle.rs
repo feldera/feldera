@@ -181,6 +181,18 @@ impl Layout {
         }
     }
 
+    /// Returns an iterator across the ranges of workers on all the hosts in
+    /// this layout.  A single-host layout will have a single range with all the
+    /// workers, a two-host layout will have two ranges, and so on.
+    pub fn all_hosts(&self) -> impl Iterator<Item = Range<usize>> {
+        match self {
+            Self::Solo { n_workers } => Either::Left(std::iter::once(0..*n_workers)),
+            Self::Multihost { hosts, .. } => {
+                Either::Right(hosts.iter().map(|host| host.workers.clone()))
+            }
+        }
+    }
+
     /// Returns the network address for the current machine, or `None` if this
     /// is a solo layout.
     pub fn local_address(&self) -> Option<SocketAddr> {
