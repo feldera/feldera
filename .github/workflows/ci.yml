@@ -73,9 +73,6 @@ jobs:
   invoke-tests-web-console-e2e:
     name: Web Console End-to-End Tests
     needs: [invoke-build-docker]
-    if: |
-      always() &&
-      (needs.invoke-build-docker.result == 'success' || needs.invoke-build-docker.result == 'skipped')
     uses: ./.github/workflows/test-web-console-e2e.yml
     secrets: inherit
 
