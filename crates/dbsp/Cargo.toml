@@ -106,6 +106,7 @@ flate2 = { workspace = true }
 nix = { workspace = true, features = ["process", "time"] }
 thread-id = { workspace = true }
 pin-project-lite = { workspace = true }
+async-trait = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }
