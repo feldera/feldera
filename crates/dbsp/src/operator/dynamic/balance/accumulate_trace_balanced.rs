@@ -1015,21 +1015,23 @@ where
         base.child(format!("rebalancing-exchange-{}.dat", persistent_id))
     }
 
-    fn send(
+    async fn send(
         &self,
         batches: impl IntoIterator<Item = B>,
         flush_complete: bool,
         serializer_inner: &mut Option<SerializerInner>,
     ) {
-        assert!(self.exchange.try_send_all_with_serializer(
-            batches.into_iter().map(|batch| (batch, flush_complete)),
-            |(batch, flush)| {
-                let mut fbuf =
-                    serialize_indexed_wset(&batch, serializer_inner.get_or_insert_default());
-                fbuf.push(flush as u8);
-                fbuf
-            }
-        ));
+        self.exchange
+            .send_all_with_serializer(
+                batches.into_iter().map(|batch| (batch, flush_complete)),
+                |(batch, flush)| {
+                    let mut fbuf =
+                        serialize_indexed_wset(&batch, serializer_inner.get_or_insert_default());
+                    fbuf.push(flush as u8);
+                    fbuf
+                },
+            )
+            .await;
     }
 }
 
@@ -1274,7 +1276,7 @@ where
                 // }
                 assert_eq!(self.current_policy.get().unwrap(), new_policy);
                 // ExchangeReceiver expects precisely one flush per transaction.
-                self.send(repeat(B::dyn_empty(&batch_factories)), false, &mut serializer_inner);
+                self.send(repeat(B::dyn_empty(&batch_factories)), false, &mut serializer_inner).await;
                 self.update_exchange_metadata();
                 yield (true, None);
                 return;
@@ -1302,7 +1304,7 @@ where
             // println!("{}: delta: {:?}", Runtime::worker_index(), batches);
 
             let flush_complete = ready_to_commit && self.rebalance_state.borrow().is_none();
-            self.send(batches, flush_complete, &mut serializer_inner);
+            self.send(batches, flush_complete, &mut serializer_inner).await;
 
             if !rebalance {
                 if flush_complete {
@@ -1342,7 +1344,7 @@ where
                 self.process_retractions(&mut integral_cursor, &mut builders[self.worker_index], chunk_size);
 
                 // println!("{}: integral retractions: {:?}", Runtime::worker_index(), batches);
-                self.send(builders.into_iter().map(|builder| builder.done()), false, &mut serializer_inner);
+                self.send(builders.into_iter().map(|builder| builder.done()), false, &mut serializer_inner).await;
                 builders = self.create_builders(chunk_size);
                 self.update_exchange_metadata();
                 self.update_total_rebalancing_time(&step_start_time);
@@ -1359,7 +1361,7 @@ where
                 self.repartition_after_unicast(&mut accumulator_cursor, &mut builders, chunk_size);
 
                 // println!("{}: acc insertions: {:?}", Runtime::worker_index(), batches);
-                self.send(builders.into_iter().map(|builder| builder.done()), false, &mut serializer_inner);
+                self.send(builders.into_iter().map(|builder| builder.done()), false, &mut serializer_inner).await;
                 builders = self.create_builders(chunk_size);
                 self.update_exchange_metadata();
                 self.update_total_rebalancing_time(&step_start_time);
@@ -1372,7 +1374,7 @@ where
                 self.repartition(trace_policy, &mut integral_cursor, &mut builders, chunk_size);
 
                 // println!("{}: integral insertions: {:?}", Runtime::worker_index(), batches);
-                self.send(builders.into_iter().map(|builder| builder.done()), !integral_cursor.key_valid(), &mut serializer_inner);
+                self.send(builders.into_iter().map(|builder| builder.done()), !integral_cursor.key_valid(), &mut serializer_inner).await;
                 builders = self.create_builders(chunk_size);
                 self.update_exchange_metadata();
 
@@ -1398,7 +1400,7 @@ where
             }
 
             // println!("{}: final batches: {:?}", Runtime::worker_index(), batches);
-            self.send(builders.into_iter().map(|builder| builder.done()), true, &mut serializer_inner);
+            self.send(builders.into_iter().map(|builder| builder.done()), true, &mut serializer_inner).await;
 
             // if Runtime::worker_index() == 0 {
             //     println!("{}: flush complete 3 ({:?})", self.input_node_id, *self.current_policy.borrow());
