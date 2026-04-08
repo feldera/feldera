@@ -38,7 +38,6 @@ where
 pub fn create_integrated_output_endpoint(
     endpoint_id: EndpointId,
     endpoint_name: &str,
-
     connector_config: &ConnectorConfig,
     key_schema: &Option<Relation>,
     schema: &Relation,

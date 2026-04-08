@@ -174,6 +174,7 @@ These metrics accumulate across checkpoint and resume.
 
 | Name | Type | Description |
 | :--- | :--- | :---------- |
+| <a name='output_connector_batch_records_written'>`output_connector_batch_records_written`</a> |gauge | Number of records written so far in the current output batch. Non-zero while a batch write is in progress. Resets to 0 after the batch is committed. |
 | <a name='output_connector_buffered_records'>`output_connector_buffered_records`</a> |gauge | Number of records currently buffered by the output connector. |
 | <a name='output_connector_bytes_total'>`output_connector_bytes_total`</a> |counter | Total number of bytes of records sent by the output connector. |
 | <a name='output_connector_errors_encode_total'>`output_connector_errors_encode_total`</a> |counter | Total number of errors encountered encoding records to send. |
