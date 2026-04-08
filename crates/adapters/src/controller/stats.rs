@@ -723,6 +723,21 @@ impl ControllerStatus {
         self.outputs.read_recursive()
     }
 
+    /// Register a batch-progress counter for an output endpoint.
+    ///
+    /// Called by integrated connectors (e.g. Delta Lake) that create their own
+    /// `Arc<AtomicU64>` progress counter.  The counter is stored in the
+    /// endpoint's metrics so that snapshots include it.
+    pub fn register_batch_progress_counter(
+        &self,
+        endpoint_id: &EndpointId,
+        counter: Arc<AtomicU64>,
+    ) {
+        if let Some(status) = self.outputs.write().get_mut(endpoint_id) {
+            status.metrics.batch_records_written = Some(counter);
+        }
+    }
+
     /// Number of records buffered by the endpoint or 0 if the endpoint
     /// doesn't exist (the latter is possible if the endpoint is being
     /// destroyed).
@@ -2251,6 +2266,15 @@ pub struct OutputEndpointMetrics {
     /// Extra memory in use beyond that used for queuing records.  Not all
     /// output connectors report this.
     pub memory: AtomicU64,
+
+    /// Number of records written so far while the connector is processing a
+    /// batch of updates.  Resets to 0 after the batch is committed.  This is
+    /// a transient metric and is not checkpointed.
+    ///
+    /// `None` when the connector does not support batch-progress reporting.
+    /// Wrapped in an `Arc` so that connectors can update the counter directly
+    /// without acquiring any lock on the metrics structure.
+    pub batch_records_written: Option<Arc<AtomicU64>>,
 }
 
 impl OutputEndpointMetrics {
@@ -2271,6 +2295,7 @@ impl OutputEndpointMetrics {
             total_processed_input_records: AtomicU64::new(total_processed_input_records),
             total_processed_steps: Atomic::new(0),
             memory: AtomicU64::new(0),
+            batch_records_written: None,
         }
     }
 
@@ -2307,6 +2332,10 @@ impl OutputEndpointMetrics {
                 .load(Ordering::Relaxed),
             total_processed_steps: self.total_processed_steps.load(Ordering::Relaxed),
             memory: self.memory.load(Ordering::Relaxed),
+            batch_records_written: self
+                .batch_records_written
+                .as_ref()
+                .map(|c| c.load(Ordering::Relaxed)),
         }
     }
 }
