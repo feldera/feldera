@@ -711,6 +711,12 @@ impl Runtime {
                             return;
                         }
                     }
+                    Ok(Command::SetAutoRebalance(enable)) => {
+                        let result = circuit.set_auto_rebalance(enable).map(|_| Response::Unit);
+                        if status_sender.send(result).is_err() {
+                            return;
+                        }
+                    }
                     Ok(Command::SetBalancerHints(hints)) => {
                         let results = hints
                             .into_iter()
@@ -831,6 +837,7 @@ enum Command {
     SetBalancerHints(Vec<(GlobalNodeId, BalancerHint)>),
     GetCurrentBalancerPolicy,
     Rebalance,
+    SetAutoRebalance(bool),
 }
 
 impl Debug for Command {
@@ -861,6 +868,9 @@ impl Debug for Command {
             }
             Command::GetCurrentBalancerPolicy => write!(f, "GetCurrentBalancerPolicy"),
             Command::Rebalance => write!(f, "Rebalance"),
+            Command::SetAutoRebalance(enable) => {
+                f.debug_tuple("SetAutoRebalance").field(enable).finish()
+            }
         }
     }
 }
@@ -1488,6 +1498,22 @@ impl DBSPHandle {
         }
 
         self.kill_inner()
+    }
+
+    /// Enable/disable automatic rebalancing of the circuit.
+    ///
+    /// When enabled, the circuit will automatically rebalance skewed joins based on internal
+    /// heuristics. Rebalancing can introduce pipeline stalls.
+    ///
+    /// When disabled, the circuit will not automatically rebalance skewed joins. Rebalancing can
+    /// be triggered explicitly by calling `rebalance`.
+    pub fn set_auto_rebalance(&mut self, enable: bool) -> Result<(), DbspError> {
+        self.broadcast_command(Command::SetAutoRebalance(enable), |_, resp| {
+            let Response::Unit = resp else {
+                panic!("Expected Unit response, got {resp:?}");
+            };
+        })?;
+        Ok(())
     }
 
     pub fn set_balancer_hint(

@@ -263,8 +263,7 @@ struct Cluster {
     /// Used to decide whether it's time to check for a better solution.
     last_distribution: BTreeMap<NodeId, KeyDistribution>,
 
-    /// Compute a new solution for the cluster before the next step. Set either after a hint has changed
-    /// or when the circuit was just started or restored from a checkpoint.
+    /// Compute a new solution for the cluster before the next step. Set after a hint has changed.
     refresh_requested: bool,
 }
 
@@ -323,6 +322,9 @@ struct BalancerInner {
 
     /// True between start_transaction and transaction_committed.
     transaction_in_progress: bool,
+
+    /// True if automatic rebalancing is enabled.
+    auto_rebalance_enabled: bool,
 }
 
 impl BalancerInner {
@@ -336,6 +338,7 @@ impl BalancerInner {
             stream_to_cluster: BTreeMap::new(),
             metadata_exchange: metadata_exchange.clone(),
             transaction_in_progress: false,
+            auto_rebalance_enabled: true,
         }
     }
 
@@ -453,12 +456,16 @@ impl BalancerInner {
     ///
     /// Returns true if either
     /// 1. cluster.refresh_requested is true, or
-    /// 2. the key distribution of at least one stream in the cluster has changed by more than
+    /// 2. auto-rebalancing is enabled and
+    ///    the key distribution of at least one stream in the cluster has changed by more than
     ///    `balancer_key_distribution_refresh_threshold`.
-    fn cluster_needs_refresh(&self, cluster_index: usize) -> bool {
+    fn cluster_needs_refresh(&self, cluster_index: usize, auto_rebalance: bool) -> bool {
         let cluster = &self.clusters[cluster_index];
         if cluster.refresh_requested {
             return true;
+        }
+        if !auto_rebalance {
+            return false;
         }
         cluster.streams.keys().any(|stream| {
             let Some(current_distribution) = self.key_distribution.get(stream) else {
@@ -639,9 +646,8 @@ impl BalancerInner {
         let mut solutions = BTreeMap::new();
 
         for i in 0..num_clusters {
-            // println!("{} solving cluster {i}", Runtime::worker_index());
             //let cluster = &mut self.clusters[cluster_index];
-            if !self.cluster_needs_refresh(i) {
+            if !self.cluster_needs_refresh(i, self.auto_rebalance_enabled) {
                 solutions.extend(self.clusters[i].solution.clone());
                 continue;
             }
@@ -1306,13 +1312,18 @@ impl Balancer {
             .into_iter()
             .map(|(nodes, joins)| {
                 let (layers, streams) = self.compute_layers(&dependencies, &nodes);
+                let solution = BTreeMap::from_iter(
+                    streams
+                        .keys()
+                        .map(|stream| (*stream, PartitioningPolicy::Shard)),
+                );
                 Cluster {
                     streams,
                     joins,
                     layers,
-                    solution: BTreeMap::new(),
+                    solution,
                     last_distribution: BTreeMap::new(),
-                    refresh_requested: true,
+                    refresh_requested: false,
                 }
             })
             .collect();
@@ -1337,6 +1348,11 @@ impl Balancer {
         // - Each join is in exactly one cluster.
         // - Each cluster has at least one stream.
         // - Each cluster has at least one join.
+    }
+
+    pub fn set_auto_rebalance(&self, enable: bool) -> Result<(), Error> {
+        self.inner.borrow_mut().auto_rebalance_enabled = enable;
+        Ok(())
     }
 
     pub fn set_hint(&self, node_id: NodeId, hint: BalancerHint) -> Result<(), Error> {
