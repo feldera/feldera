@@ -35,6 +35,7 @@ use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::convert::identity;
 use std::iter::repeat;
+use std::net::TcpListener;
 use std::ops::Range;
 use std::path::Path;
 use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize};
@@ -297,6 +298,16 @@ struct RuntimeInner {
 
     /// Tokio runtime that runs async merger tasks (see `AsyncMerger`).
     tokio_merger_runtime: Mutex<Option<TokioRuntime>>,
+
+    /// Optional socket for exchange to listen on.
+    ///
+    /// When exchange initializes, it takes this socket.
+    ///
+    /// Passing in a socket allows the client to let the kernel pick a port
+    /// number by binding to port 0.  Port numbers need to be known for all the
+    /// hosts before we start the circuit, so without this feature we couldn't
+    /// be sure that we'd have a set of available ports.
+    exchange_listener: Mutex<Option<TcpListener>>,
 }
 
 impl Drop for RuntimeInner {
@@ -490,6 +501,7 @@ impl RuntimeInner {
             panicked: AtomicBool::new(false),
             replay_step_size: AtomicUsize::new(DEFAULT_REPLAY_STEP_SIZE),
             tokio_merger_runtime: Mutex::new(None),
+            exchange_listener: Mutex::new(config.exchange_listener),
         })
     }
 
@@ -1300,6 +1312,14 @@ impl Runtime {
             .handle()
             .clone()
     }
+
+    /// Takes and returns the TCP listener socket configured via
+    /// [CircuitConfig], if any.
+    ///
+    /// [CircuitConfig]: crate::circuit::dbsp_handle::CircuitConfig
+    pub(crate) fn take_exchange_listener(&self) -> Option<TcpListener> {
+        self.inner().exchange_listener.lock().unwrap().take()
+    }
 }
 
 /// A synchronization primitive that allows multiple threads within a runtime to agree
@@ -1772,6 +1792,7 @@ mod tests {
                 .unwrap(),
             ),
             dev_tweaks: DevTweaks::default(),
+            exchange_listener: None,
         };
 
         let hruntime = Runtime::run(cconf, move |_parker| {

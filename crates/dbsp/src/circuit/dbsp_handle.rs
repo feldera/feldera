@@ -22,6 +22,7 @@ pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOption
 use feldera_types::transaction::CommitProgressSummary;
 use itertools::Either;
 use std::collections::BTreeMap;
+use std::net::TcpListener;
 use std::num::NonZeroUsize;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -293,6 +294,12 @@ pub struct CircuitConfig {
 
     /// Parsed from `RuntimeConfig` for use by the circuit.
     pub dev_tweaks: DevTweaks,
+
+    /// Optionally, the TCP socket on which to listen for exchange.  This is
+    /// relevant only if `layout` is multihost.  If it is provided, then the
+    /// socket must be listening on the port indicated for this host in
+    /// `layout`.
+    pub exchange_listener: Option<TcpListener>,
 }
 
 /// Returns the chunk size for splitter operators, in records.
@@ -393,6 +400,7 @@ impl CircuitConfig {
             mode: Mode::Ephemeral,
             storage: None,
             dev_tweaks: DevTweaks::default(),
+            exchange_listener: None,
         }
     }
 
@@ -479,6 +487,11 @@ impl CircuitConfig {
             Some(threads) => threads as usize,
             None => num_workers * DEFAULT_MERGER_THREAD_RATIO,
         }
+    }
+
+    pub fn with_exchange_listener(mut self, exchange_listener: TcpListener) -> Self {
+        self.exchange_listener = Some(exchange_listener);
+        self
     }
 }
 
@@ -2000,6 +2013,7 @@ pub(crate) mod tests {
                 .unwrap(),
             ),
             dev_tweaks: DevTweaks::default(),
+            exchange_listener: None,
         }
     }
 
