@@ -83,6 +83,7 @@ tracing = { workspace = true }
 snap = { workspace = true }
 enum-map = { workspace = true }
 fastbloom = { workspace = true }
+roaring = { workspace = true }
 core_affinity = { workspace = true }
 indexmap = { workspace = true }
 feldera-storage = { workspace = true }
@@ -163,6 +164,10 @@ harness = false
 
 [[bench]]
 name = "window_min"
+harness = false
+
+[[bench]]
+name = "filter_predictor"
 harness = false
 
 [[example]]
