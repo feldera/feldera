@@ -86,6 +86,7 @@ bytestring = "1.4.0"
 change-detection = "1.2"
 cached = { version = "0.43.0", features = ["async"] }
 chrono = { version = "0.4.43", default-features = false }
+chrono-tz = { version = "0.10.4" }
 circular-queue = "0.2.6"
 clap = { version = "4.5", features = ["derive", "env"] }
 clap_complete = "4.5"

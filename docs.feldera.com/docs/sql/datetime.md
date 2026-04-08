@@ -191,6 +191,15 @@ value as an (big integer) number of milliseconds since the Unix epoch.
 Conversely, a cast from a `TIMESTAMP` to a numeric value retrieves the
 number of milliseconds since the Unix epoch from the timestamp.
 
+<a id="convert_timezone"></a> `CONVERT_TIMEZONE`(tz1, tz2, timestamp).
+Converts the value of a timestamp from timezone tz1 to timezone tz2.
+The timezones are specified as `CHAR` values.  Example: `SELECT
+CONVERT_TIMEZONE('America/New_York', 'America/Los_Angeles', TIMESTAMP
+'2008-03-05 12:25:29')` returns `2008-03-05 09:25:29`.  If the
+conversion fails, or if a timezone cannot be parsed as as IANA
+timezone or as a fixed offset timezone (e.g, `+08:00`), the result is
+`NULL`.
+
 <a id="timestamp_trunc"></a>
 `TIMESTAMP_TRUNC(timestamp, <unit>)`, where `<unit>` is a time unit,
 as described above, between `MILLENNIUM` and `SECOND`.  Result is a

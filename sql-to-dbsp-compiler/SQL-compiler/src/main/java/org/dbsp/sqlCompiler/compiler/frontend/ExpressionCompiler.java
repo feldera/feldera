@@ -1639,6 +1639,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                                 node, method, type.withMayBeNull(nullable), ops.get(0), ops.get(1))
                                 .cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
                     }
+                    case "convert_timezone": {
+                        validateArgCount(node, operationName, ops.size(), 3);
+                        ensureString(ops, 0);
+                        ensureString(ops, 1);
+                        return compileStrictFunction(call, node, type, ops, 3);
+                    }
                 }
                 return this.compileUdfOrConstructor(node, call, type, ops);
             }
