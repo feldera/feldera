@@ -39,6 +39,7 @@ use crate::{
 };
 use async_stream::stream;
 use feldera_storage::{FileCommitter, StoragePath, fbuf::FBuf};
+use rkyv::AlignedVec;
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
@@ -132,7 +133,6 @@ where
                     let runtime = Runtime::runtime().unwrap();
                     let exchange_id = runtime.sequence_next().try_into().unwrap();
                     let worker_index = Runtime::worker_index();
-                    let batch_factories_clone = batch_factories.clone();
                     let start_wait_usecs = Arc::new(AtomicU64::new(0));
                     let balancer = circuit.balancer();
 
@@ -141,21 +141,8 @@ where
                     // Exchange object. The Boolean flag signals that the sender won't produce more outputs
                     // during the current transaction. It will be set to `true` exactly once per transaction.
                     // Once all senders are flushed, the receiver can report itself as flushed too.
-                    let exchange: Arc<Exchange<(B, bool)>> = Exchange::with_runtime(
-                        &runtime,
-                        exchange_id,
-                        Box::new(move |mut vec| {
-                            let flush = match vec.pop().unwrap() {
-                                0 => false,
-                                1 => true,
-                                _ => unreachable!(),
-                            };
-                            (
-                                deserialize_indexed_wset(&batch_factories_clone, &vec),
-                                flush,
-                            )
-                        }),
-                    );
+                    let exchange: Arc<Exchange<(B, bool)>> =
+                        Exchange::with_runtime(&runtime, exchange_id);
 
                     // Exchange receiver
                     let batch_factories_clone = batch_factories.clone();
@@ -166,9 +153,13 @@ where
                         exchange.clone(),
                         || Vec::new(),
                         start_wait_usecs.clone(),
+                        move |vec: AlignedVec| {
+                            deserialize_indexed_wset(&batch_factories_clone, &vec)
+                        },
                         |batches: &mut Vec<B>, batch: B| batches.push(batch),
                     ));
 
+                    let batch_factories_clone = batch_factories.clone();
                     let sharded_stream =
                         receiver.apply_owned_named("merge shards", move |batches| {
                             // TODO: instead of merging the batches here, modify the BalancingAccumulator operator to accept a vector of batches
