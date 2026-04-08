@@ -399,6 +399,7 @@ fn test_join_with_balancer(
     checkpoints: bool,
     inputs: Vec<JoinTestStep>,
     left_join: bool,
+    auto_rebalance: bool,
 ) {
     init_test_logger();
 
@@ -427,6 +428,7 @@ fn test_join_with_balancer(
             mut output_integral_handle,
         ),
     ) = Runtime::init_circuit(cconf.clone(), constructor).unwrap();
+    circuit.set_auto_rebalance(auto_rebalance).unwrap();
 
     let mut all_left_tuples: Vec<Tup2<Tup2<u64, u64>, ZWeight>> = vec![];
     let mut all_right_tuples: Vec<Tup2<Tup2<u64, u64>, ZWeight>> = vec![];
@@ -452,20 +454,26 @@ fn test_join_with_balancer(
             step, left_policy_hint, right_policy_hint
         );
 
-        circuit
-            .set_balancer_hints(vec![
-                (left_input_node_id.clone(), BalancerHint::Policy(None)),
-                (right_input_node_id.clone(), BalancerHint::Policy(None)),
-            ])
-            .unwrap();
+        if auto_rebalance {
+            circuit
+                .set_balancer_hints(vec![
+                    (left_input_node_id.clone(), BalancerHint::Policy(None)),
+                    (right_input_node_id.clone(), BalancerHint::Policy(None)),
+                ])
+                .unwrap();
+        }
 
-        if let Some(left_policy_hint) = left_policy_hint {
+        if let Some(left_policy_hint) = left_policy_hint
+            && auto_rebalance
+        {
             circuit
                 .set_balancer_hint(&left_input_node_id, BalancerHint::Policy(*left_policy_hint))
                 .unwrap();
         }
 
-        if let Some(right_policy_hint) = right_policy_hint {
+        if let Some(right_policy_hint) = right_policy_hint
+            && auto_rebalance
+        {
             circuit
                 .set_balancer_hint(
                     &right_input_node_id,
@@ -1016,7 +1024,7 @@ fn test_accumulate_trace_with_balancer_round_robin_big_step() {
 /// Join a large left collection with a small right collection. Both are skewed.
 /// The balancer should balance the left collection using Policy::Balance and the
 /// right collection using Policy::Broadcast.
-fn test_skewed_join_left(left_join: bool) {
+fn test_skewed_join_left(left_join: bool, auto_rebalance: bool) {
     let num_partitions = 4;
 
     let mut test_steps = vec![];
@@ -1045,29 +1053,45 @@ fn test_skewed_join_left(left_join: bool) {
             right: right_batch,
             left_policy_hint: None,
             right_policy_hint: None,
-            expected_left_policy: if i >= 5 {
+            expected_left_policy: if !auto_rebalance {
+                Some(PartitioningPolicy::Shard)
+            } else if i >= 5 {
                 Some(PartitioningPolicy::Balance)
             } else {
                 None
             },
-            expected_right_policy: if i >= 5 {
+            expected_right_policy: if !auto_rebalance {
+                Some(PartitioningPolicy::Shard)
+            } else if i >= 5 {
                 Some(PartitioningPolicy::Broadcast)
             } else {
                 None
             },
         });
     }
-    test_join_with_balancer(num_partitions, false, false, test_steps, left_join);
+    test_join_with_balancer(
+        num_partitions,
+        false,
+        false,
+        test_steps,
+        left_join,
+        auto_rebalance,
+    );
 }
 
 #[test]
 fn test_skewed_inner_join_left() {
-    test_skewed_join_left(false);
+    test_skewed_join_left(false, true);
+}
+
+#[test]
+fn test_skewed_inner_join_left_disable_auto_rebalance() {
+    test_skewed_join_left(false, false);
 }
 
 #[test]
 fn test_skewed_left_join_no_checkpoints() {
-    test_skewed_join_left(true);
+    test_skewed_join_left(true, true);
 }
 
 /// Join a small left collection with a large right collection. Both are skewed.
@@ -1123,7 +1147,14 @@ fn test_skewed_join_right(checkpoints: bool, left_join: bool) {
             },
         });
     }
-    test_join_with_balancer(num_partitions, false, checkpoints, test_steps, left_join);
+    test_join_with_balancer(
+        num_partitions,
+        false,
+        checkpoints,
+        test_steps,
+        left_join,
+        true,
+    );
 }
 
 #[test]
@@ -1191,22 +1222,22 @@ proptest! {
 
     #[test]
     fn proptest_join_with_balancer_small_step(inputs in generate_join_test_data(10, 10, 10, 30)) {
-        test_join_with_balancer(4, false, false, inputs, false);
+        test_join_with_balancer(4, false, false, inputs, false, true);
     }
 
     #[test]
     fn proptest_join_with_balancer_big_step(inputs in generate_join_test_data(10, 10, 10, 40)) {
-        test_join_with_balancer(4, true, false, inputs, false);
+        test_join_with_balancer(4, true, false, inputs, false, true);
     }
 
     #[test]
     fn proptest_left_join_with_balancer_small_step(inputs in generate_left_join_test_data(200, 10, 10, 30)) {
-        test_join_with_balancer(4, false, false, inputs, true);
+        test_join_with_balancer(4, false, false, inputs, true, true);
     }
 
     #[test]
     fn proptest_left_join_with_balancer_big_step(inputs in generate_left_join_test_data(200, 10, 10, 40)) {
-        test_join_with_balancer(4, true, false, inputs, true);
+        test_join_with_balancer(4, true, false, inputs, true, true);
     }
 
 }
