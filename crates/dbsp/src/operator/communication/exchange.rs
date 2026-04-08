@@ -147,12 +147,12 @@ impl ExchangeHeader {
     }
 }
 
-struct ExchangeServiceClient {
+struct ExchangeClient {
     receivers: Range<usize>,
     stream: tokio::sync::Mutex<TcpStream>,
 }
 
-impl ExchangeServiceClient {
+impl ExchangeClient {
     /// Sends messages in `exchange_id` from all of the worker threads in
     /// `senders` to all of the worker thread receivers in the server that
     /// processes the message.  The Bincode-encoded message from `sender` to
@@ -327,7 +327,7 @@ struct Clients {
 
     /// Maps from a range of worker IDs to the RPC client used to contact those
     /// workers.  Only worker IDs for remote workers appear in the map.
-    clients: Vec<(Host, OnceCell<ExchangeServiceClient>)>,
+    clients: Vec<(Host, OnceCell<ExchangeClient>)>,
 }
 
 impl Clients {
@@ -346,7 +346,7 @@ impl Clients {
 
     /// Returns a client for `worker`, which must be a remote worker ID, first
     /// establishing a connection if there isn't one yet.
-    async fn connect(&self, worker: usize) -> &ExchangeServiceClient {
+    async fn connect(&self, worker: usize) -> &ExchangeClient {
         self.listener
             .get_or_init(|| async {
                 if let Some(runtime) = self.runtime.upgrade()
@@ -383,7 +383,7 @@ impl Clients {
             };
             stream.set_nodelay(true).unwrap();
             stream.set_zero_linger().unwrap();
-            ExchangeServiceClient {
+            ExchangeClient {
                 receivers: self.local_workers.clone(),
                 stream: tokio::sync::Mutex::new(stream),
             }
