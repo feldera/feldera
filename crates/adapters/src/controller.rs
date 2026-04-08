@@ -4607,6 +4607,7 @@ Using the Kubernetes limit as the RSS memory limit."
             storage,
             mode: Mode::Persistent,
             dev_tweaks,
+            exchange_listener: None,
         })
     }
 
