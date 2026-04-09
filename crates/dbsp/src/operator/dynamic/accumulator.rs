@@ -211,40 +211,15 @@ where
     B: Batch,
 {
     async fn eval(&mut self, batch: &B) -> Option<Spine<B>> {
+        self.eval_owned(batch.clone()).await
+    }
+
+    async fn eval_owned(&mut self, batch: B) -> Option<Spine<B>> {
         // We don't have a start-of-transaction signal, so we sample enable_count when
         // we get the first non-empty batch.  This batch should belong to the next transaction
         // after the last one that was flushed, since the accumulator should not receive any
         // non-empty batches from the previous transaction at that point (in the top-level circuit).
         // This may not be the first batch in the transaction, but it's ok to admit some empty batches.
-        let len = batch.len();
-
-        if len > 0 {
-            if self.enabled_during_current_transaction.is_none() {
-                self.enabled_during_current_transaction =
-                    Some(self.enable_count.load(Ordering::Acquire) > 0);
-            }
-
-            if self.enabled_during_current_transaction == Some(true) {
-                self.input_batch_stats.add_batch(len);
-                self.state.insert(batch.clone());
-            }
-        }
-
-        if self.flush {
-            self.flush = false;
-            self.enabled_during_current_transaction = None;
-
-            let mut spine = Spine::<B>::new(&self.factories);
-            std::mem::swap(&mut self.state, &mut spine);
-
-            self.output_batch_stats.add_batch(spine.len());
-            Some(spine)
-        } else {
-            None
-        }
-    }
-
-    async fn eval_owned(&mut self, batch: B) -> Option<Spine<B>> {
         let len = batch.len();
 
         if len > 0 {
