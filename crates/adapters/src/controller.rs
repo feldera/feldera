@@ -3124,9 +3124,7 @@ impl CircuitThread {
         if *self.checkpoint_sender.borrow() != checkpoint_coordination {
             let now_ms = Utc::now().timestamp_millis();
             match &checkpoint_coordination {
-                Some(
-                    CheckpointCoordination::Delayed(_) | CheckpointCoordination::Barriers(_),
-                ) => {
+                Some(CheckpointCoordination::Delayed(_) | CheckpointCoordination::Barriers(_)) => {
                     // Only set the delay start time on the first transition
                     // into a delayed state (not on subsequent reason changes).
                     self.controller
@@ -3152,8 +3150,7 @@ impl CircuitThread {
                         .store(0, Ordering::Release);
                 }
             }
-            self.checkpoint_sender
-                .send_replace(checkpoint_coordination);
+            self.checkpoint_sender.send_replace(checkpoint_coordination);
         }
     }
 

@@ -61,8 +61,7 @@ use feldera_types::completion_token::{
 };
 use feldera_types::constants::STATUS_FILE;
 use feldera_types::coordination::{
-    AdHocScan, CoordinationActivate, CoordinationStatus, Labels,
-    RestartArgs, Step, StepRequest,
+    AdHocScan, CoordinationActivate, CoordinationStatus, Labels, RestartArgs, Step, StepRequest,
 };
 use feldera_types::pipeline_diff::PipelineDiff;
 use feldera_types::query_params::{

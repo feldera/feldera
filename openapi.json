@@ -6793,17 +6793,10 @@
             "type": "object",
             "description": "A checkpoint is currently being written to storage.",
             "required": [
-              "sequence_number",
               "started_at",
               "status"
             ],
             "properties": {
-              "sequence_number": {
-                "type": "integer",
-                "format": "int64",
-                "description": "Sequence number of the in-flight checkpoint.",
-                "minimum": 0
-              },
               "started_at": {
                 "type": "string",
                 "format": "date-time",
