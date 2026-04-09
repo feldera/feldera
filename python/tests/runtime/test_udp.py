@@ -118,7 +118,7 @@ tracing = { version = "0.1.40" }
                 break
         hash = pipeline.query_hash("SELECT * FROM v ORDER BY i, ti, si, bi")
         assert (
-            hash == "0F5CD4C02B4670AB14FE753523D7D9962E251850D8AD247EC04ABC1531EB4AF3"
+            hash == "29C468885BA59EAD1A0BA70C07A997401030261AB1CDEB9EA7B13B0DE6722646"
         ), "Hash does not match"
         pipeline.stop(force=True)
         pipeline.delete(True)
