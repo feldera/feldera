@@ -151,6 +151,7 @@ tokio-util = { workspace = true }
 tokio-stream = { workspace = true, features = ["sync"] }
 home = { workspace = true }
 datafusion = { workspace = true }
+ahash = { workspace = true }
 sha2 = { workspace = true }
 rmp-serde = { workspace = true }
 rmpv = { workspace = true, features = ["with-serde"] }
@@ -191,7 +192,6 @@ rustls = { workspace = true }
 serde_json_path_to_error = { workspace = true }
 smallstr = { workspace = true }
 dashmap = { workspace = true }
-arrow-digest = { workspace = true }
 thread-id = { workspace = true }
 parking_lot = { workspace = true }
 backoff = { workspace = true }
