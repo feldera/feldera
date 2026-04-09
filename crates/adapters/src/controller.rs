@@ -500,14 +500,15 @@ impl Command {
     }
 }
 
-/// Converts epoch milliseconds to a `DateTime<Utc>`, falling back to
-/// `Utc::now()` if the value is 0 or invalid.
+/// Converts epoch milliseconds to a `DateTime<Utc>`.
+///
+/// The caller must ensure `epoch_ms > 0`.  The atomics that feed this
+/// function are always set (via `set_checkpoint_coordination`) *before*
+/// the watch channel is updated, so any coordination state that implies
+/// a non-zero timestamp will always have one.
 fn epoch_ms_to_datetime(epoch_ms: i64) -> DateTime<Utc> {
-    if epoch_ms > 0 {
-        DateTime::from_timestamp_millis(epoch_ms).unwrap_or_else(Utc::now)
-    } else {
-        Utc::now()
-    }
+    DateTime::from_timestamp_millis(epoch_ms)
+        .expect("epoch_ms should be a valid positive timestamp set by set_checkpoint_coordination")
 }
 
 impl Controller {
@@ -969,10 +970,7 @@ impl Controller {
             Some(CheckpointCoordination::InProgress) => {
                 let epoch_ms = self.checkpoint_started_epoch_ms();
                 let started_at = epoch_ms_to_datetime(epoch_ms);
-                CheckpointActivity::InProgress {
-                    sequence_number: 0,
-                    started_at,
-                }
+                CheckpointActivity::InProgress { started_at }
             }
             None | Some(CheckpointCoordination::Done) | Some(CheckpointCoordination::Error(_)) => {
                 CheckpointActivity::Idle

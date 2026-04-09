@@ -41,8 +41,6 @@ pub enum CheckpointActivity {
 
     /// A checkpoint is currently being written to storage.
     InProgress {
-        /// Sequence number of the in-flight checkpoint.
-        sequence_number: u64,
         /// When the checkpoint write started (ISO 8601).
         started_at: DateTime<Utc>,
     },

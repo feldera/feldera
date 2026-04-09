@@ -40,8 +40,9 @@
         : e === 'EnterpriseFeature'
           ? 'Enterprise feature'
           : e
-    if ('UnsupportedInputEndpoint' in e)
+    if ('UnsupportedInputEndpoint' in e) {
       return `Input "${e.UnsupportedInputEndpoint}" does not support checkpointing`
+    }
     return String(e)
   }
 
@@ -81,20 +82,27 @@
       </thead>
       <tbody>
         {#if isPermanentlyUnavailable}
+          {@const errors = permanentErrors ?? []}
+          {@const firstReason = formatPermanentError(errors[0])}
+          {@const extraCount = errors.length - 1}
           <tr>
             <td>
               <div class="pointer-events-none chip w-full bg-error-50-950 uppercase">
                 Unavailable
               </div>
-              <Tooltip placement="top">
-                <ul class="list-disc pl-4">
-                  {#each permanentErrors ?? [] as err}
-                    <li>{formatPermanentError(err)}</li>
-                  {/each}
-                </ul>
-              </Tooltip>
             </td>
-            <td class="text-surface-500"> Checkpointing not supported </td>
+            <td class="">
+              {firstReason}{#if extraCount > 0} + {extraCount} other{extraCount !== 1 ? 's' : ''}{/if}
+              {#if extraCount > 0}
+                <Tooltip placement="top">
+                  <ul class="list-disc pl-4">
+                    {#each errors as err}
+                      <li>{formatPermanentError(err)}</li>
+                    {/each}
+                  </ul>
+                </Tooltip>
+              {/if}
+            </td>
             <td></td>
           </tr>
         {:else if activity.status === 'delayed'}
@@ -107,7 +115,7 @@
             <td class="font-dm-mono">
               {delayDuration}s
             </td>
-            <td class="text-surface-500">
+            <td class="">
               {activity.reasons.length} reason{activity.reasons.length !== 1 ? 's' : ''} (hover to view)
               <Tooltip placement="top">
                 <ul class="list-disc pl-4">

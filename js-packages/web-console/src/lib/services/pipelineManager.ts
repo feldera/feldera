@@ -575,7 +575,8 @@ export const getPipelineStats = async (pipeline_name: string, options?: FetchOpt
       if (SIMULATE_CHECKPOINTS && controllerStatus) {
         controllerStatus = {
           ...controllerStatus,
-          checkpoint_activity: _mockCheckpoints.getCheckpointActivity(pipeline_name)
+          checkpoint_activity: _mockCheckpoints.getCheckpointActivity(pipeline_name),
+          permanent_checkpoint_errors: null
         }
       }
       return {

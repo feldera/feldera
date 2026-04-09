@@ -1,8 +1,20 @@
 <script lang="ts">
+  import Dayjs from 'dayjs'
   import { slide } from 'svelte/transition'
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
   import { humanSize } from '$lib/functions/common/string'
   import type { CheckpointMetadata } from '$lib/services/manager'
+
+  /** Extracts the timestamp from a UUID v7 (first 48 bits = unix ms).
+   *  Returns null for non-v7 UUIDs. */
+  const uuidV7Timestamp = (uuid: string): string | null => {
+    // UUID v7: version nibble (char at index 14) must be '7'
+    if (uuid[14] !== '7') return null
+    const hex = uuid.replace(/-/g, '').slice(0, 12)
+    const ms = parseInt(hex, 16)
+    if (!Number.isFinite(ms) || ms <= 0) return null
+    return Dayjs(ms).format('MMM D, YYYY HH:mm:ss')
+  }
 
   const {
     checkpoints,
@@ -36,6 +48,7 @@
       {#each checkpoints as checkpoint}
         <InlineDropdown>
           {#snippet header(isOpen, toggle)}
+            {@const ts = uuidV7Timestamp(checkpoint.uuid)}
             <div
               class="flex w-full cursor-pointer items-center gap-2 py-2 pr-2"
               onclick={toggle}
@@ -48,7 +61,7 @@
               ></div>
               <div class="flex flex-1 flex-col overflow-hidden">
                 <div class="overflow-hidden text-nowrap text-ellipsis">
-                  {humanSize(checkpoint.size ?? 0)} · {checkpoint.identifier ?? '—'}
+                  {humanSize(checkpoint.size ?? 0)}{#if checkpoint.identifier} · {checkpoint.identifier}{/if}{#if ts} · <span class="text-surface-600-400">{ts}</span>{/if}
                 </div>
                 <div class="overflow-hidden text-sm text-nowrap text-ellipsis text-surface-500">
                   {checkpoint.uuid}
