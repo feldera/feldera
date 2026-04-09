@@ -7096,6 +7096,11 @@ impl InputConsumer for InputProbe {
             .status
             .set_custom_metrics(self.endpoint_id, metrics);
     }
+
+    fn update_connector_health(&self, health: ConnectorHealth) {
+        self.controller
+            .update_input_connector_health(self.endpoint_id, health);
+    }
 }
 
 /// An output probe inserted between the encoder and the output transport

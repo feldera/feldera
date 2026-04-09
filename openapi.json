@@ -7924,6 +7924,13 @@
             "nullable": true,
             "minimum": 0
           },
+          "max_retries": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum number of retries for failed object store operations.\n\nControls how many times the connector retries high-level storage operations,\nsuch as reading a Delta log entry or a Parquet file.\n\nThis is in addition to lower-level retries (e.g., individual S3 operation retries governed\nby storage options like `retry_timeout`). If those retries are exhausted\nor the failure is otherwise unrecoverable at the storage layer, the\nconnector retries the entire operation.\n\nDefaults to unlimited retries. Set to 0 to disable retries.",
+            "nullable": true,
+            "minimum": 0
+          },
           "mode": {
             "$ref": "#/components/schemas/DeltaTableIngestMode"
           },

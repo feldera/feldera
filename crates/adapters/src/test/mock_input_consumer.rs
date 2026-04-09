@@ -6,6 +6,7 @@ use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{Resume, Watermark};
+use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::config::FtModel;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -129,6 +130,8 @@ impl InputConsumer for MockInputConsumer {
     fn commit_transaction(&self) {
         self.state().transaction_in_progress = false;
     }
+
+    fn update_connector_health(&self, _health: ConnectorHealth) {}
 }
 
 pub struct MockInputParserState {

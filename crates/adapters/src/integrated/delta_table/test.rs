@@ -45,8 +45,8 @@ use std::fs::File;
 use std::io::Write;
 use std::mem::forget;
 use std::os::unix::ffi::OsStrExt;
-use std::path::Path;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tempfile::{NamedTempFile, TempDir};
 use tokio::sync::mpsc;
@@ -108,6 +108,7 @@ async fn wait_for_output_records<T>(
     expected_output: &[T],
     datafusion: &SessionContext,
     timeout_ms: u64,
+    dedup: bool,
 ) where
     T: for<'a> DeserializeWithContext<'a, SqlSerdeConfig, Variant> + DBData,
 {
@@ -144,8 +145,12 @@ async fn wait_for_output_records<T>(
             result.len()
         );
 
+        result.sort();
+        if dedup {
+            result.dedup();
+        }
+
         if result.len() == expected_output.len() {
-            result.sort();
             let mut expected_output = expected_output.to_vec();
             expected_output.sort();
             assert_eq!(result, expected_output);
@@ -713,6 +718,8 @@ async fn test_follow(
     test_end_version: bool,
     buffer_size: u64,
     buffer_timeout_ms: u64,
+    inject_failure: Option<Box<dyn Fn()>>,
+    clear_failure: Option<Box<dyn Fn()>>,
 ) {
     async fn suspend_pipeline(pipeline: Controller) {
         println!("start suspend");
@@ -897,6 +904,7 @@ async fn test_follow(
         &expected_output,
         &datafusion,
         20_000,
+        false,
     )
     .await;
 
@@ -948,6 +956,58 @@ async fn test_follow(
                 .collect::<Vec<_>>();
         };
 
+        // Run after the write so the test process can still update the table; the pipeline
+        // then fails to read the new snapshot until permissions are restored.
+        if let Some(inject_failure) = &inject_failure {
+            inject_failure();
+        }
+
+        if inject_failure.is_some() {
+            wait(
+                || {
+                    pipeline
+                        .input_endpoint_status("test_input1")
+                        .ok()
+                        .and_then(|s| s.health)
+                        .is_some_and(|h| {
+                            let unhealthy = matches!(
+                                h.status,
+                                feldera_types::adapter_stats::ConnectorHealthStatus::Unhealthy
+                            );
+                            if unhealthy {
+                                println!("unhealthy: {:?}", h);
+                            }
+                            unhealthy
+                        })
+                },
+                20_000,
+            )
+            .expect("timeout waiting for input connector health to become unhealthy");
+        }
+
+        if let Some(clear_failure) = &clear_failure {
+            clear_failure();
+        }
+
+        if clear_failure.is_some() {
+            wait(
+                || {
+                    pipeline
+                        .input_endpoint_status("test_input1")
+                        .ok()
+                        .and_then(|s| s.health)
+                        .is_some_and(|h| {
+                            matches!(
+                                h.status,
+                                feldera_types::adapter_stats::ConnectorHealthStatus::Healthy
+                            )
+                        })
+                },
+                20_000,
+            )
+            .expect("timeout waiting for input connector health to become healthy");
+        }
+
         if suspend {
             suspend_pipeline(pipeline).await;
 
@@ -995,6 +1055,7 @@ async fn test_follow(
             &expected_output,
             &datafusion,
             if suspend { 200_000 } else { 0 },
+            inject_failure.is_some(),
         )
         .await;
     }
@@ -1319,6 +1380,48 @@ fn delta_data(max_records: usize) -> impl Strategy<Value = Vec<DeltaTestStruct>>
     })
 }
 
+/// Remove owner read and execute on the delta table **root directory only**, and push that path
+/// and its original mode onto `saved` for [`restore_delta_input_table_read_permission`].
+///
+/// Without `r` and `x` on the root, the process cannot traverse into `_delta_log` or data paths
+/// even if inner files still have permissive modes.
+#[cfg(unix)]
+fn strip_delta_input_table_read_permission(
+    table_root: &Path,
+    saved: &mut Vec<(PathBuf, u32)>,
+) -> std::io::Result<()> {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    let meta = fs::metadata(table_root)?;
+    if !meta.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "delta input table path must be a directory",
+        ));
+    }
+
+    let mode = meta.permissions().mode();
+    saved.push((table_root.to_path_buf(), mode));
+
+    let new_mode = mode & !0o500;
+    let mut perms = meta.permissions();
+    perms.set_mode(new_mode);
+    fs::set_permissions(table_root, perms)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn restore_delta_input_table_read_permission(saved: Vec<(PathBuf, u32)>) -> std::io::Result<()> {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    for (path, mode) in saved.into_iter().rev() {
+        fs::set_permissions(&path, fs::Permissions::from_mode(mode))?;
+    }
+    Ok(())
+}
+
 async fn delta_table_follow_file_test_common(
     snapshot: bool,
     transaction_mode: DeltaTableTransactionMode,
@@ -1338,6 +1441,45 @@ async fn delta_table_follow_file_test_common(
     let output_table_dir: TempDir = TempDir::new().unwrap();
     let output_table_uri = output_table_dir.path().display().to_string();
 
+    // With `end_version`, the connector stops tailing the log before new versions appear, so
+    // stripping read permission would not drive the connector unhealthy (wait would time out).
+    #[cfg(unix)]
+    let (inject_failure, clear_failure): (Option<Box<dyn Fn()>>, Option<Box<dyn Fn()>>) =
+        if end_version {
+            (None, None)
+        } else {
+            let saved_modes: Arc<Mutex<Vec<(PathBuf, u32)>>> = Arc::new(Mutex::new(Vec::new()));
+            let input_root = input_table_dir.path().to_path_buf();
+
+            let inject_failure: Box<dyn Fn()> = {
+                let saved_modes = Arc::clone(&saved_modes);
+                let input_root = input_root.clone();
+                Box::new(move || {
+                    let mut guard = saved_modes.lock().unwrap();
+                    guard.clear();
+                    strip_delta_input_table_read_permission(&input_root, &mut *guard)
+                        .unwrap_or_else(|e| {
+                            panic!("inject_failure (strip read permission on input table): {e}")
+                        });
+                })
+            };
+
+            let clear_failure: Box<dyn Fn()> = {
+                let saved_modes = Arc::clone(&saved_modes);
+                Box::new(move || {
+                    let entries = std::mem::take(&mut *saved_modes.lock().unwrap());
+                    restore_delta_input_table_read_permission(entries).unwrap_or_else(|e| {
+                        panic!("clear_failure (restore read permission on input table): {e}")
+                    });
+                })
+            };
+
+            (Some(inject_failure), Some(clear_failure))
+        };
+
+    #[cfg(not(unix))]
+    let (inject_failure, clear_failure) = (None, None);
+
     test_follow(
         &relation_schema,
         &input_table_uri,
@@ -1350,6 +1492,8 @@ async fn delta_table_follow_file_test_common(
         end_version,
         1000,
         100,
+        inject_failure,
+        clear_failure,
     )
     .await;
 }
@@ -1565,6 +1709,8 @@ async fn delta_table_follow_s3_test_common(snapshot: bool, suspend: bool) {
         false,
         1000,
         100,
+        None,
+        None,
     )
     .await;
 }

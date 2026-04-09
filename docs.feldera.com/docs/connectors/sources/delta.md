@@ -36,6 +36,7 @@ exactly once fault tolerance.
 | `cdc_delete_filer`          | string |            | <p>A predicate that determines whether the record represents a deletion.</p><p>This setting is only valid in the `cdc` mode. It specifies a predicate applied to each row in the Delta table to determine whether the row represents a deletion event. Its value must be a valid Boolean SQL expression that can be used in a query of the form `SELECT * from <table> WHERE <cdc_delete_filter>`.</p>|
 | `cdc_order_by`              | string |            | <p>An expression that determines the ordering of updates in the Delta table.</p><p>This setting is only valid in the `cdc` mode. It specifies a predicate applied to each row in the Delta table to determine the order in which updates in the table should be applied. Its value must be a valid SQL expression that can be used in a query of the form `SELECT * from <table> ORDER BY <cdc_order_by>`.</p>|
 | `num_parsers`               | string |            | The number of parallel parsing tasks the connector uses to process data read from the table. Increasing this value can enhance performance by allowing more concurrent processing. Recommended range: 1–10. The default is 4.|
+| `max_retries`               | integer| unlimited retries| <p>Maximum number of retries for failed object store operations.</p><p>Controls how many times the connector retries high-level storage operations, such as reading a Delta log entry or a Parquet file.</p><p>This is in addition to lower-level retries (e.g., individual S3 operation retries governed by storage options like `retry_timeout`). If those retries are exhausted or the failure is otherwise unrecoverable at the storage layer, the connector retries the entire operation.</p><p>Defaults to unlimited retries. Set to 0 to disable retries.</p><p>See [retries and at-least-once delivery](#retries-and-at-least-once-delivery)</p>|
 | `skip_unused_columns` (<b>DEPRECATED</b>) | bool   | false | <p>This property is deprecated. Use the [table-level `skip_unused_columns` property](/sql/grammar#ignoring-unused-columns) instead.</p><p>Don't read unused columns from the Delta table.  When set to `true`, this option instructs the connector to avoid reading columns from the Delta table that are not used in any view definitions. To be skipped, the columns must be either nullable or have default values. This can improve ingestion performance, especially for wide tables.</p><p>Note: The simplest way to exclude unused columns is to omit them from the Feldera SQL table declaration. The connector never reads columns that aren't declared in the SQL schema. Additionally, the SQL compiler emits warnings for declared but unused columns—use these as a guide to optimize your schema.</p>|
 | `max_concurrent_readers`    | integer| 6          | <p>Maximum number of concurrent object store reads performed by all Delta Lake connectors.</p><p>This setting is used to limit the number of concurrent reads of the object store in a pipeline with a large number of Delta Lake connectors. When multiple connectors are simultaneously reading from the object store, this can lead to transport timeouts.</p><p>When enabled, this setting limits the number of concurrent reads across all connectors. This is a global setting that affects all Delta Lake connectors, and not just the connector where it is specified. It should therefore be used at most once in a pipeline.  If multiple connectors specify this setting, they must all use the same value.</p><p>The default value is 6.</p>|
 
@@ -167,6 +168,8 @@ Additional configuration options to configure HTTP client for remote object stor
 | `proxy_excludes`              | List of hosts that bypass proxy.                                                                                                                               |
 | `randomize_addresses`         | Randomize order addresses that the DNS resolution yields. This will spread the connections across more servers.                                                |
 | `timeout`                     | Request timeout. The timeout is applied from when the request starts connecting until the response body has finished. Format: `<number><units>`, e.g., `30s`, `1.5m`.|
+| `retry_timeout`               | The maximum length of time from the initial request after which no further retries will be attempted. This not only bounds the length of time before a server error will be surfaced to the application, but also bounds the length of time a request’s credentials must remain valid. As requests are retried without renewing credentials or regenerating request payloads, this number should be kept below 5 minutes to avoid errors due to expired credentials and/or request payloads|
+| `connect_timeout`             | Set a timeout for only the connect phase of a client. This is the time allowed for the client to establish a connection and if the connection is not established within this time, the client returns a timeout error.|
 | `user_agent`                  | User-Agent header to be used by this client.                                                                                                                   |
 
 ## Data type mapping
@@ -302,6 +305,39 @@ CREATE TABLE transaction(
   }
 ]');
 ```
+
+## Retries and at-least-once delivery
+
+When interacting with an object store such as Amazon S3, the Delta Lake connector must handle
+transient failures, including timeouts and expired authentication tokens.
+
+These errors are first handled at the level of individual object store operations, which are
+automatically retried when possible. This behavior is controlled by the
+[HTTP client configuration](#http-client-configuration) settings: `connect_timeout`,
+`timeout`, and `retry_timeout`.
+
+If these lower-level retries are exhausted—or if the error cannot be recovered at the storage
+layer—the connector retries the entire operation (for example, re-reading a Delta log entry).
+This behavior is controlled by the `max_retries` setting:
+
+* By default, the connector performs unbounded retries.
+* Set `max_retries = N` to limit the number of attempts.
+* Set `max_retries = 0` to disable retries entirely.
+
+If the connector cannot recover after `N` attempts, it fails with a fatal error and stops
+ingesting inputs.
+
+Because retries may occur after partial progress (e.g., after partially processing a Delta log entry),
+the same data may be ingested more than once. This is consistent with the connector’s **at-least-once delivery**
+guarantee.
+
+To ensure idempotent ingestion, we recommend defining [primary keys](/connectors/unique_keys).
+
+Retry activity is reflected in the connector’s [health status](https://docs.feldera.com/api/get-input-status/):
+it is marked **UNHEALTHY** while retrying failed operations.
+
+If the pipeline is stopped and restarted during a retry, the connector resumes from the last successfully
+ingested table version. This guarantees that no data loss occurs due to object store read errors.
 
 ## Additional examples
 
