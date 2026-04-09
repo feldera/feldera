@@ -11,11 +11,11 @@ use crate::{
             MetaItem, OUTPUT_BATCHES_STATS, OperatorLocation, OperatorMeta, SHARED_MEMORY_BYTES,
             STATE_RECORDS_COUNT, USED_MEMORY_BYTES,
         },
-        operator_traits::{Operator, UnaryOperator},
+        operator_traits::{BinaryOperator, Operator},
     },
     circuit_cache_key,
     operator::communication::ExchangeKind,
-    trace::{Batch, BatchReader, Spine, Trace},
+    trace::{Batch, BatchReader, Spine, Trace, eq_batch},
 };
 
 circuit_cache_key!(ShardedAccumulatorId<C, B: Batch>(StreamId => Stream<C, Option<Spine<B>>>));
@@ -45,8 +45,17 @@ where
                             ExchangeKind::Stream,
                         )
                         .unwrap();
+                    let expected = self
+                        .dyn_shard_bare(
+                            0..Runtime::num_workers(),
+                            factories.clone(),
+                            ExchangeKind::Sync,
+                        )
+                        .unwrap();
                     let accumulator = Accumulator::<B>::new(factories, Location::caller());
-                    let stream = self.circuit().add_unary_operator(accumulator, &sharded);
+                    let stream =
+                        self.circuit()
+                            .add_binary_operator(accumulator, &sharded, &expected);
                     stream.mark_sharded();
                     stream
                 })
@@ -61,6 +70,7 @@ where
 {
     factories: B::Factories,
     state: Spine<B>,
+    expected: Spine<B>,
     flush: bool,
     location: &'static Location<'static>,
 
@@ -79,6 +89,7 @@ where
         Self {
             factories: factories.clone(),
             state: Spine::new(factories),
+            expected: Spine::new(factories),
             flush: false,
             location,
             input_batch_stats: BatchSizeStats::new(),
@@ -133,6 +144,7 @@ where
     /// Clear the operator's state.
     fn clear_state(&mut self) -> Result<(), Error> {
         self.state = Spine::new(&self.factories);
+        self.expected = Spine::new(&self.factories);
         self.flush = false;
         Ok(())
     }
@@ -146,15 +158,15 @@ where
     }
 }
 
-impl<B> UnaryOperator<Vec<B>, Option<Spine<B>>> for Accumulator<B>
+impl<B> BinaryOperator<Vec<B>, Vec<B>, Option<Spine<B>>> for Accumulator<B>
 where
-    B: Batch,
+    B: Batch<Time = ()>,
 {
-    async fn eval(&mut self, batches: &Vec<B>) -> Option<Spine<B>> {
-        self.eval_owned(batches.clone()).await
+    async fn eval(&mut self, batches: &Vec<B>, expected: &Vec<B>) -> Option<Spine<B>> {
+        self.eval_owned(batches.clone(), expected.clone()).await
     }
 
-    async fn eval_owned(&mut self, batches: Vec<B>) -> Option<Spine<B>> {
+    async fn eval_owned(&mut self, batches: Vec<B>, expected: Vec<B>) -> Option<Spine<B>> {
         for batch in batches {
             let len = batch.len();
 
@@ -163,12 +175,16 @@ where
                 self.state.insert(batch);
             }
         }
+        for batch in expected {
+            self.expected.insert(batch);
+        }
 
         if self.flush {
             self.flush = false;
 
-            let mut spine = Spine::<B>::new(&self.factories);
-            std::mem::swap(&mut self.state, &mut spine);
+            let spine = std::mem::replace(&mut self.state, Spine::<B>::new(&self.factories));
+            let expected = std::mem::replace(&mut self.expected, Spine::<B>::new(&self.factories));
+            assert!(eq_batch(&spine, &expected));
 
             self.output_batch_stats.add_batch(spine.len());
             Some(spine)
