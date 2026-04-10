@@ -149,7 +149,10 @@ impl BatchHasher {
     /// and the two accumulated hashes.
     fn finalize(self, schema: &arrow::datatypes::Schema) -> String {
         let mut hasher = Sha256::new();
-        let schema_bytes = IpcSchemaEncoder::new().schema_to_fb(schema).finished_data().to_vec();
+        let schema_bytes = IpcSchemaEncoder::new()
+            .schema_to_fb(schema)
+            .finished_data()
+            .to_vec();
         hasher.update(&schema_bytes);
         hasher.update(self.row_count.to_le_bytes());
         hasher.update(self.acc1.to_le_bytes());
