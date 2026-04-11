@@ -74,6 +74,7 @@
 * `CONCAT_WS`: [string](string.md#concat_ws)
 * `CONNECTOR_METADATA`: [grammar](grammar.md#connector_metadata)
 * `CONTAINS`: [datetime](datetime.md#contains)
+* `CONVERT_TIMEZONE`: [datetime](datetime.md#convert_timezone)
 * `COS`: [float](float.md#cos)
 * `COSH`: [float](float.md#cosh)
 * `COT`: [float](float.md#cot)

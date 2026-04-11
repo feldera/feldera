@@ -21,6 +21,7 @@ base58 = { workspace = true }
 base64 = { workspace = true }
 blake3 = { workspace = true }
 chrono = { workspace = true }
+chrono-tz = { workspace = true }
 dbsp = { workspace = true }
 feldera-types = { workspace = true }
 flate2 = { workspace = true }
@@ -33,6 +34,7 @@ like = { workspace = true }
 md-5 = { workspace = true }
 num = { workspace = true }
 num-traits = { workspace = true, features = ["std"] }
+once_cell = { workspace = true }
 paste = { workspace = true }
 quick_cache = { workspace = true, features = ["stats"] }
 regex = { workspace = true }

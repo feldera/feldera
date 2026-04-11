@@ -107,6 +107,7 @@ pub struct DevTweaks {
     ///
     /// The default value is 1.2.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "crate::serde_via_value::deserialize")]
     pub balancer_min_relative_improvement_threshold: Option<f64>,
 
     /// The minimum absolute improvement threshold for the balancer.
@@ -138,6 +139,7 @@ pub struct DevTweaks {
     ///
     /// The default value is 1.1.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "crate::serde_via_value::deserialize")]
     pub balancer_balance_tax: Option<f64>,
 
     /// The balancer threshold for checking for an improved partitioning policy for a stream.
@@ -151,6 +153,7 @@ pub struct DevTweaks {
     ///
     /// The default value is 0.1.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "crate::serde_via_value::deserialize")]
     pub balancer_key_distribution_refresh_threshold: Option<f64>,
 
     /// False-positive rate for Bloom filters on batches on storage, as a
@@ -168,6 +171,7 @@ pub struct DevTweaks {
     ///
     /// Values outside the valid range, such as 0.0, disable Bloom filters.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "crate::serde_via_value::deserialize")]
     pub bloom_false_positive_rate: Option<f64>,
 
     /// Maximum batch size in records for level 0 merges.
@@ -283,4 +287,66 @@ pub enum MergerType {
     /// The old standby, with known performance.
     #[default]
     ListMerger,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::{PipelineConfig, RuntimeConfig};
+
+    use super::*;
+
+    /// Regression test: `Option<f64>` fields inside `DevTweaks` must
+    /// survive a JSON-string round-trip through `PipelineConfig`, which
+    /// uses `#[serde(flatten)]` on `RuntimeConfig`. With `serde_json`'s
+    /// `arbitrary_precision` feature enabled, the serde `Content` buffer
+    /// represents numbers as maps, which breaks plain `f64`
+    /// deserialization (serde-rs/json#1157). The `serde_via_value`
+    /// workaround on each `Option<f64>` field fixes this.
+    #[test]
+    fn dev_tweaks_f64_roundtrip_through_pipeline_config() {
+        let mut rc = RuntimeConfig::default();
+        rc.dev_tweaks = DevTweaks {
+            bloom_false_positive_rate: Some(0.0),
+            balancer_balance_tax: Some(1.1),
+            balancer_min_relative_improvement_threshold: Some(1.2),
+            balancer_key_distribution_refresh_threshold: Some(0.1),
+            ..Default::default()
+        };
+        let pc = PipelineConfig {
+            global: rc,
+            multihost: None,
+            name: Some("test-pipeline".into()),
+            given_name: None,
+            storage_config: None,
+            secrets_dir: None,
+            inputs: Default::default(),
+            outputs: Default::default(),
+            program_ir: None,
+        };
+
+        // JSON string round-trip (the path the pipeline process takes).
+        let json = serde_json::to_string_pretty(&pc).unwrap();
+        let pc2: PipelineConfig = serde_json::from_str(&json)
+            .expect("JSON string round-trip of PipelineConfig with f64 dev_tweaks must succeed");
+        assert_eq!(pc2.global.dev_tweaks.bloom_false_positive_rate, Some(0.0));
+        assert_eq!(pc2.global.dev_tweaks.balancer_balance_tax, Some(1.1));
+        assert_eq!(
+            pc2.global
+                .dev_tweaks
+                .balancer_min_relative_improvement_threshold,
+            Some(1.2)
+        );
+        assert_eq!(
+            pc2.global
+                .dev_tweaks
+                .balancer_key_distribution_refresh_threshold,
+            Some(0.1)
+        );
+
+        // serde_json::Value round-trip (the path the pipeline manager takes).
+        let value = serde_json::to_value(&pc).unwrap();
+        let pc3: PipelineConfig = serde_json::from_value(value)
+            .expect("Value round-trip of PipelineConfig with f64 dev_tweaks must succeed");
+        assert_eq!(pc3.global.dev_tweaks.bloom_false_positive_rate, Some(0.0));
+    }
 }

@@ -529,4 +529,38 @@ public class TimestampDiffTests extends SqlIoTest {
                  -1560
                 (1 row)""");
     }
+
+    @Test
+    public void issue5986() {
+        this.qs("""
+                SELECT CONVERT_TIMEZONE('America/New_York', 'America/Los_Angeles', TIMESTAMP '2008-03-05 12:25:29');
+                 r
+                ---
+                 2008-03-05 09:25:29
+                (1 row)
+                
+                SELECT CONVERT_TIMEZONE('Invalid', 'America/Los_Angeles', TIMESTAMP '2008-03-05 12:25:29');
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT CONVERT_TIMEZONE('America/New_York', 'America/Los_Angeles', NULL);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT CONVERT_TIMEZONE(NULL, 'America/Los_Angeles', TIMESTAMP '2020-10-10 00:00:00');
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT CONVERT_TIMEZONE('-05:00', '-08:00', TIMESTAMP '2008-03-05 12:25:29');
+                 r
+                ---
+                 2008-03-05 09:25:29
+                (1 row)""");
+    }
 }

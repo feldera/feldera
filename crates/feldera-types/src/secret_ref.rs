@@ -6,6 +6,33 @@ use thiserror::Error as ThisError;
 /// RFC 1123 specification for a DNS label, which is also used by Kubernetes.
 pub const PATTERN_RFC_1123_DNS_LABEL: &str = r"^[a-z0-9]+(-[a-z0-9]+)*$";
 
+/// POSIX pattern for an environment variable name.
+pub const PATTERN_ENV_VAR_NAME: &str = r"^[a-zA-Z_][a-zA-Z0-9_]*$";
+
+#[derive(Debug, Clone, PartialEq, Eq, ThisError)]
+pub enum EnvVarNameParseError {
+    #[error("cannot be empty")]
+    Empty,
+    #[error(
+        "must only contain alphanumeric characters and underscores (_), and start with a letter or underscore"
+    )]
+    InvalidFormat,
+}
+
+/// Validates it is a valid POSIX environment variable name.
+pub fn validate_env_var_name(name: &str) -> Result<(), EnvVarNameParseError> {
+    if name.is_empty() {
+        Err(EnvVarNameParseError::Empty)
+    } else {
+        let re = Regex::new(PATTERN_ENV_VAR_NAME).expect("valid regular expression");
+        if re.is_match(name) {
+            Ok(())
+        } else {
+            Err(EnvVarNameParseError::InvalidFormat)
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, ThisError)]
 pub enum KubernetesSecretNameParseError {
     #[error("cannot be empty")]
@@ -90,6 +117,11 @@ pub enum SecretRef {
         /// Key inside the `data:` section of the `Secret` object.
         data_key: String,
     },
+    /// Reference to a process environment variable.
+    EnvVar {
+        /// Name of the environment variable.
+        name: String,
+    },
 }
 
 impl Display for SecretRef {
@@ -97,6 +129,9 @@ impl Display for SecretRef {
         match self {
             SecretRef::Kubernetes { name, data_key } => {
                 write!(f, "${{secret:kubernetes:{name}/{data_key}}}")
+            }
+            SecretRef::EnvVar { name } => {
+                write!(f, "${{env:{name}}}")
             }
         }
     }
@@ -134,27 +169,45 @@ pub enum MaybeSecretRefParseError {
         data_key: String,
         e: KubernetesSecretDataKeyParseError,
     },
+    #[error(
+        "environment variable reference '{env_ref_str}' has name '{name}' which is not valid: {e}"
+    )]
+    InvalidEnvVarName {
+        env_ref_str: String,
+        name: String,
+        e: EnvVarNameParseError,
+    },
+    #[error("environment variable reference '{env_ref_str}' is not valid: name cannot be empty")]
+    EmptyEnvVarName { env_ref_str: String },
 }
 
 impl MaybeSecretRef {
-    /// Determines whether a string is just a plain string or a reference to a secret.
+    /// Determines whether a string is just a plain string, a reference to a secret,
+    /// or a reference to a process environment variable.
     ///
     /// - Secret reference: any string which starts with `${secret:` and ends with `}`
     ///   is regarded as an attempt to declare a secret reference
+    /// - Environment variable reference: any string which starts with `${env:` and ends with `}`
+    ///   is regarded as an attempt to declare an environment variable reference
     /// - Plain string: any other string
     ///
     /// A secret reference must follow the following pattern:
     /// `${secret:<provider>:<identifier>}`
     ///
-    /// An error is returned if a string is regarded as a secret reference (see above), but:
-    /// - Specifies a `<provider>` which does not exist
-    /// - Specifies a `<identifier>` which does not meet the provider-specific requirements
+    /// An environment variable reference must follow the following pattern:
+    /// `${env:<name>}`
+    ///
+    /// An error is returned if a string is regarded as a secret or env var reference (see above), but:
+    /// - Specifies a `<provider>` which does not exist (for secret refs)
+    /// - Specifies a `<name>` which does not meet the requirements
     ///
     /// Supported providers and their identifier expectations:
     /// - `${secret:kubernetes:<name>/<data key>}`
+    /// - `${env:<name>}` where `<name>` follows POSIX env var naming rules
     ///
-    /// Note that here is not checked whether the secret reference can actually be resolved.
+    /// Note that here is not checked whether the reference can actually be resolved.
     pub fn new(value: String) -> Result<MaybeSecretRef, MaybeSecretRefParseError> {
+        let env_prefix = "${env:";
         if value.starts_with("${secret:") && value.ends_with('}') {
             // Because the pattern only has ASCII characters, they are encoded as single bytes.
             // The secret reference is extracted by slicing away the first 9 bytes and the last byte.
@@ -191,6 +244,24 @@ impl MaybeSecretRef {
                     secret_ref_str: value,
                 })
             }
+        } else if value.starts_with(env_prefix) && value.ends_with('}') {
+            // Environment variable reference: `${env:<name>}`
+            // The content is extracted by slicing away the first 6 bytes ("${env:") and the last byte ("}").
+            let name = value
+                .trim_start_matches(env_prefix)
+                .trim_end_matches("}")
+                .to_string();
+            if name.is_empty() {
+                Err(MaybeSecretRefParseError::EmptyEnvVarName { env_ref_str: value })
+            } else if let Err(e) = validate_env_var_name(&name) {
+                Err(MaybeSecretRefParseError::InvalidEnvVarName {
+                    env_ref_str: value,
+                    name,
+                    e,
+                })
+            } else {
+                Ok(MaybeSecretRef::SecretRef(SecretRef::EnvVar { name }))
+            }
         } else {
             Ok(MaybeSecretRef::String(value))
         }
@@ -213,8 +284,9 @@ impl Display for MaybeSecretRef {
 #[cfg(test)]
 mod tests {
     use super::{
-        KubernetesSecretDataKeyParseError, KubernetesSecretNameParseError, MaybeSecretRef,
-        validate_kubernetes_secret_data_key, validate_kubernetes_secret_name,
+        EnvVarNameParseError, KubernetesSecretDataKeyParseError, KubernetesSecretNameParseError,
+        MaybeSecretRef, validate_env_var_name, validate_kubernetes_secret_data_key,
+        validate_kubernetes_secret_name,
     };
     use super::{MaybeSecretRefParseError, SecretRef};
 
@@ -227,6 +299,12 @@ mod tests {
                 data_key: "value".to_string(),
             }),
             "${secret:kubernetes:example/value}"
+        );
+        assert_eq!(
+            format!("{}", SecretRef::EnvVar {
+                name: "MY_VAR".to_string(),
+            }),
+            "${env:MY_VAR}"
         );
     }
 
@@ -452,5 +530,59 @@ mod tests {
         ] {
             assert_eq!(validate_kubernetes_secret_data_key(value), expectation);
         }
+    }
+
+    #[test]
+    #[rustfmt::skip] // Skip formatting to keep it short
+    fn env_var_name_validation() {
+        for (value, expectation) in vec![
+            ("A", Ok(())),
+            ("a", Ok(())),
+            ("_", Ok(())),
+            ("A1", Ok(())),
+            ("MY_VAR", Ok(())),
+            ("_MY_VAR", Ok(())),
+            ("MY_VAR_123", Ok(())),
+            ("", Err(EnvVarNameParseError::Empty)),
+            ("1A", Err(EnvVarNameParseError::InvalidFormat)),
+            ("MY-VAR", Err(EnvVarNameParseError::InvalidFormat)),
+            ("MY VAR", Err(EnvVarNameParseError::InvalidFormat)),
+            ("MY.VAR", Err(EnvVarNameParseError::InvalidFormat)),
+        ] {
+            assert_eq!(validate_env_var_name(value), expectation);
+        }
+    }
+
+    #[test]
+    #[rustfmt::skip] // Skip formatting to keep it short
+    fn maybe_secret_ref_parse_env_var() {
+        let values_and_expectations = vec![
+            // Valid env var references
+            ("${env:A}", Ok(MaybeSecretRef::SecretRef(SecretRef::EnvVar { name: "A".to_string() }))),
+            ("${env:MY_VAR}", Ok(MaybeSecretRef::SecretRef(SecretRef::EnvVar { name: "MY_VAR".to_string() }))),
+            ("${env:_MY_VAR}", Ok(MaybeSecretRef::SecretRef(SecretRef::EnvVar { name: "_MY_VAR".to_string() }))),
+            ("${env:MY_VAR_123}", Ok(MaybeSecretRef::SecretRef(SecretRef::EnvVar { name: "MY_VAR_123".to_string() }))),
+            // Empty name
+            ("${env:}", Err(MaybeSecretRefParseError::EmptyEnvVarName {
+                env_ref_str: "${env:}".to_string()
+            })),
+            // Invalid name: starts with digit
+            ("${env:1VAR}", Err(MaybeSecretRefParseError::InvalidEnvVarName {
+                env_ref_str: "${env:1VAR}".to_string(),
+                name: "1VAR".to_string(),
+                e: EnvVarNameParseError::InvalidFormat
+            })),
+            // Invalid name: contains hyphen
+            ("${env:MY-VAR}", Err(MaybeSecretRefParseError::InvalidEnvVarName {
+                env_ref_str: "${env:MY-VAR}".to_string(),
+                name: "MY-VAR".to_string(),
+                e: EnvVarNameParseError::InvalidFormat
+            })),
+            // Not an env var reference (no closing brace match for opening pattern)
+            ("${env:", Ok(MaybeSecretRef::String("${env:".to_string()))),
+            // Plain strings that look similar but are not env var references
+            ("$env:MY_VAR}", Ok(MaybeSecretRef::String("$env:MY_VAR}".to_string()))),
+        ];
+        test_values_and_expectations(values_and_expectations);
     }
 }
