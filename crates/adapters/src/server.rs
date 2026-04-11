@@ -1226,6 +1226,7 @@ where
         .service(start_input_endpoint)
         .service(input_endpoint_status)
         .service(output_endpoint_status)
+        .service(reset_output_endpoint)
         .service(rebalance)
         .service(coordination_activate_handler)
         .service(coordination_status)
@@ -2288,6 +2289,13 @@ async fn output_endpoint_status(
     path: web::Path<String>,
 ) -> Result<HttpResponse, PipelineError> {
     Ok(HttpResponse::Ok().json(state.controller()?.output_endpoint_status(&path)?))
+}
+
+#[post("/output_endpoints/{endpoint_name}/reset")]
+async fn reset_output_endpoint(path: web::Path<String>) -> Result<HttpResponse, PipelineError> {
+    Err(PipelineError::from(ControllerError::not_supported(
+        &format!("output endpoint '{}' does not support reset", path.as_str()),
+    )))
 }
 
 /// This service journals the paused state, but it does not wait for the journal
