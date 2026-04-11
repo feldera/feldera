@@ -66,8 +66,10 @@ public class CustomFunctions {
         this.functions.add(new ArrayTransformFunction());
         this.functions.add(new ArrayUnion());
         this.functions.add(new ArraysOverlapFunction());
+        this.functions.add(new Bin2Utf8Function());
         this.functions.add(new BlackboxFunction());
         this.functions.add(new BroundFunction());
+        this.functions.add(new ConnectorMetadataFunction());
         this.functions.add(new ConvertTimezoneFunction());
         this.functions.add(new FormatDateFunction());
         this.functions.add(new FormatTimestampFunction());
@@ -81,12 +83,11 @@ public class CustomFunctions {
         this.functions.add(new ParseJsonFunction());
         this.functions.add(new ParseTimeFunction());
         this.functions.add(new ParseTimestampFunction());
-        this.functions.add(new Bin2Utf8Function());
         this.functions.add(new RlikeFunction());
         this.functions.add(new SequenceFunction());
+        this.functions.add(new SplitPartFunction());
         this.functions.add(new ToIntFunction());
         this.functions.add(new ToJsonFunction());
-        this.functions.add(new ConnectorMetadataFunction());
         this.functions.add(new WriteLogFunction());
         this.udf = new HashMap<>();
         this.aggregates = new HashMap<>();
@@ -191,6 +192,12 @@ public class CustomFunctions {
                     "datetime#format_timestamp",
                     FunctionDocumentation.NO_FILE
             );
+        }
+    }
+
+    static class SplitPartFunction extends CalciteFunctionClone {
+        private SplitPartFunction() {
+            super(SqlLibraryOperators.SPLIT_PART, "string#split_part", FunctionDocumentation.NO_FILE);
         }
     }
 
