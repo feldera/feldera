@@ -1315,6 +1315,18 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             path=f"/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats"
         )
 
+    def reset_output_connector(
+        self, pipeline_name: str, view_name: str, connector_name: str
+    ) -> None:
+        """
+        Reset the specified output connector.
+
+        The connector must be configured in ``snapshot_and_follow`` mode.
+        """
+        self.http.post(
+            path=f"/pipelines/{quote(pipeline_name, safe='')}/views/{quote(view_name, safe='')}/connectors/{quote(connector_name, safe='')}/reset",
+        )
+
     def pause_connector(self, pipeline_name, table_name, connector_name):
         """
         Pause the specified input connector.

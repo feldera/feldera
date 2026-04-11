@@ -278,6 +278,14 @@ class Pipeline:
             self.client.output_connector_stats(self.name, view_name, connector_name)
         )
 
+    def reset_output_connector(self, view_name: str, connector_name: str) -> None:
+        """
+        Reset the specified output connector.
+
+        The connector must be configured in ``snapshot_and_follow`` mode.
+        """
+        self.client.reset_output_connector(self.name, view_name, connector_name)
+
     def listen(self, view_name: str) -> OutputHandler:
         """
         Follow the change stream (i.e., the output) of the provided view.
