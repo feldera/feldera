@@ -17,6 +17,7 @@ public class IncrementalRegression2Tests extends SqlIoTest {
         options.languageOptions.incrementalize = true;
         options.languageOptions.optimizationLevel = 2;
         options.languageOptions.ignoreOrderBy = true;
+        options.ioOptions.quiet = false;
         return options;
     }
 
@@ -562,5 +563,53 @@ public class IncrementalRegression2Tests extends SqlIoTest {
                 Assert.assertEquals(2, this.mapIndexCount);
             }
         });
+    }
+
+    @Test
+    public void failInLateness() {
+        this.getCC("""
+                CREATE TABLE ID_0 (
+                   ID_1 VARCHAR(90) NOT NULL PRIMARY KEY,
+                   ID_2 INTEGER NOT NULL,
+                   ID_3 VARCHAR(60) NOT NULL,
+                   ID_6 TIMESTAMP NOT NULL,
+                   ID_7 VARCHAR(60) NOT NULL
+                );
+                CREATE TABLE ID_20 (
+                   ID_1 VARCHAR(110) NOT NULL PRIMARY KEY,
+                   ID_2 SMALLINT NOT NULL,
+                   ID_21 VARCHAR(64),
+                   ID_22 DECIMAL(38, 0),
+                   ID_23 INTEGER,
+                   ID_24 BIGINT NOT NULL PRIMARY KEY LATENESS 216000 :: BIGINT,
+                   ID_25 TIMESTAMP NOT NULL
+                );
+                
+                CREATE LOCAL VIEW ID_26 AS
+                SELECT ID_2, ID_3 AS ID_21, CAST(ID_7 AS BIGINT UNSIGNED) AS ID_27, ID_6 AS ID_28
+                FROM ID_0;
+                
+                CREATE LOCAL VIEW ID_36 AS
+                SELECT
+                  ID_30.ID_2,
+                  ID_30.ID_21,
+                  SUM(CASE WHEN ID_30.ID_23 = 1 THEN ID_30.ID_22 ELSE 0 END) AS ID_37,
+                  SUM(CASE WHEN ID_30.ID_23 = 2 THEN ID_30.ID_22 ELSE 0 END) AS ID_38,
+                  MAX(ID_30.ID_24) AS ID_33, MAX(ID_30.ID_25) AS ID_34
+                FROM ID_20 AS ID_30
+                    INNER JOIN ID_26 AS ID_35 ON ID_30.ID_2 = ID_35.ID_2 AND ID_30.ID_21 = ID_35.ID_21
+                WHERE ID_30.ID_25 > ID_35.ID_28
+                GROUP BY ID_30.ID_2, ID_30.ID_21;
+                
+                CREATE VIEW ID_39 AS
+                SELECT
+                  ID_35.ID_2,
+                  ID_35.ID_21,
+                  COALESCE(ID_41.ID_37, 0) AS ID_31,
+                  COALESCE(ID_41.ID_38, 0) AS ID_32,
+                  COALESCE(ID_41.ID_33, 0) AS ID_33,
+                  ID_35.ID_27 + COALESCE(ID_41.ID_37, 0) - COALESCE(ID_41.ID_38, 0) AS ID_40
+                FROM ID_26 AS ID_35
+                    LEFT JOIN ID_36 AS ID_41 ON ID_35.ID_2 = ID_41.ID_2 AND ID_35.ID_21 = ID_41.ID_21;""");
     }
 }

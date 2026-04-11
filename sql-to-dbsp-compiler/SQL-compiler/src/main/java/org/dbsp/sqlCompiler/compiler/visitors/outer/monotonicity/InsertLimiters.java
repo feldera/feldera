@@ -1280,7 +1280,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 List<DBSPExpression> monotoneFields = new ArrayList<>();
                 for (int varIndex = 0, field = 0; field < leftValueSize; field++) {
                     int firstOutputField = iomap.firstOutputField(1, field);
-                    Utilities.enforce(firstOutputField >= 0);
+                    if (firstOutputField < 0) continue;  // Field not used in the output
                     IMaybeMonotoneType compareField = filterTuple.getField(firstOutputField);
                     value.add(compareField);
                     if (compareField.mayBeMonotone()) {
@@ -1305,7 +1305,6 @@ public class InsertLimiters extends CircuitCloneVisitor {
             }
         }
 
-        // Exact same procedure on the right hand side
         OutputPort rightLimiter = null;
         DBSPSimpleOperator rightMonotone = null;
         if (expansion.rightMap != null) {
@@ -1330,7 +1329,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 int varIndex = 0;
                 for (int field = 0; field < leftValueSize; field++) {
                     int firstOutputField = iomap.firstOutputField(1, field);
-                    Utilities.enforce(firstOutputField >= 0);
+                    if (firstOutputField < 0) continue; // field not used in the output
                     IMaybeMonotoneType compareField = filterTuple.getField(firstOutputField);
                     if (compareField.mayBeMonotone()) {
                         varIndex++;
@@ -1339,7 +1338,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
                 for (int field = 0; field < rightValueSize; field++) {
                     int firstOutputField = iomap.firstOutputField(2, field);
-                    Utilities.enforce(firstOutputField >= 0);
+                    if (firstOutputField < 0) continue;  // field not used in the output
                     IMaybeMonotoneType compareField = filterTuple.getField(firstOutputField);
                     value.add(compareField);
                     if (compareField.mayBeMonotone()) {
