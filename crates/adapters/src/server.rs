@@ -74,7 +74,9 @@ use feldera_types::runtime_status::{
 use feldera_types::suspend::{SuspendError, SuspendableResponse};
 use feldera_types::time_series::TimeSeries;
 use feldera_types::{
-    checkpoint::CheckpointMetadata, config::TransportConfig, transport::http::HttpInputConfig,
+    checkpoint::CheckpointMetadata,
+    config::{OutputMode, TransportConfig},
+    transport::http::HttpInputConfig,
 };
 use feldera_types::{query::AdhocQueryArgs, transport::http::SERVER_PORT_FILE};
 use futures::StreamExt;
@@ -2025,6 +2027,7 @@ async fn get_or_create_http_input_endpoint(
     let config = InputEndpointConfig {
         stream: Cow::from(table_name),
         connector_config: ConnectorConfig {
+            mode: OutputMode::default(),
             transport: TransportConfig::HttpInput(config),
             format: Some(format),
             preprocessor: None,
@@ -2181,6 +2184,10 @@ struct EgressArgs {
     /// 'json' etc.
     #[serde(default = "HttpOutputTransport::default_format")]
     format: String,
+
+    /// Output connector mode.
+    #[serde(default)]
+    mode: OutputMode,
 }
 
 #[post("/egress/{table_name}")]
@@ -2201,11 +2208,13 @@ async fn output_endpoint(
 
     // Create HTTP endpoint.
     let endpoint = HttpOutputEndpoint::new(&endpoint_name, &args.format, args.backpressure);
+    let response_receiver = endpoint.connect_stream();
 
     // Create endpoint config.
     let config = OutputEndpointConfig {
         stream: Cow::from(table_name),
         connector_config: ConnectorConfig {
+            mode: args.mode,
             transport: HttpOutputTransport::config(),
             format: Some(encoder_config_from_http_request(
                 &endpoint_name,
@@ -2248,19 +2257,22 @@ async fn output_endpoint(
 
     // Call endpoint to create a response with a streaming body, which will be
     // evaluated after we return the response object to actix.
-    Ok(endpoint.request(Box::new(move || {
-        // Delete endpoint on completion/error.
-        // We don't control the lifetime of the response object after
-        // returning it to actix, so the only way to run cleanup code
-        // when the HTTP request terminates is to piggyback on the
-        // destructor.
-        if let Some(state) = weak_state.upgrade()
-            && let Ok(controller) = state.controller()
-        {
-            controller.disconnect_output(&endpoint_id);
-            controller.unregister_api_connection();
-        }
-    })))
+    Ok(endpoint.request(
+        Some(response_receiver),
+        Box::new(move || {
+            // Delete endpoint on completion/error.
+            // We don't control the lifetime of the response object after
+            // returning it to actix, so the only way to run cleanup code
+            // when the HTTP request terminates is to piggyback on the
+            // destructor.
+            if let Some(state) = weak_state.upgrade()
+                && let Ok(controller) = state.controller()
+            {
+                controller.disconnect_output(&endpoint_id);
+                controller.unregister_api_connection();
+            }
+        }),
+    ))
 }
 
 /// This service journals the paused state, but it does not wait for the journal
@@ -2292,10 +2304,12 @@ async fn output_endpoint_status(
 }
 
 #[post("/output_endpoints/{endpoint_name}/reset")]
-async fn reset_output_endpoint(path: web::Path<String>) -> Result<HttpResponse, PipelineError> {
-    Err(PipelineError::from(ControllerError::not_supported(
-        &format!("output endpoint '{}' does not support reset", path.as_str()),
-    )))
+async fn reset_output_endpoint(
+    state: WebData<ServerState>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, PipelineError> {
+    state.controller()?.reset_output_endpoint(&path)?;
+    Ok(HttpResponse::Ok().into())
 }
 
 /// This service journals the paused state, but it does not wait for the journal
@@ -2709,12 +2723,15 @@ mod test_with_kafka {
         },
     };
     use actix_test::TestServer;
-    use actix_web::{App, http::StatusCode, middleware::Logger, web::Data as WebData};
+    use actix_web::{App, http::StatusCode, middleware::Logger, web::Bytes, web::Data as WebData};
+    use awc::error::PayloadError;
+    use csv::ReaderBuilder as CsvReaderBuilder;
     use feldera_types::runtime_status::RuntimeDesiredStatus;
     use feldera_types::{
         completion_token::{CompletionStatus, CompletionStatusResponse, CompletionTokenResponse},
         runtime_status::BootstrapPolicy,
     };
+    use futures::{Stream, StreamExt};
     use proptest::{
         strategy::{Strategy, ValueTree},
         test_runner::TestRunner,
@@ -2727,6 +2744,7 @@ mod test_with_kafka {
         time::{Duration, Instant},
     };
     use tempfile::NamedTempFile;
+    use tokio::time::timeout;
     use uuid::Uuid;
 
     async fn print_stats(server: &TestServer) {
@@ -2743,6 +2761,150 @@ mod test_with_kafka {
         .unwrap();
 
         println!("{stats}")
+    }
+
+    async fn start_test_server(config_str: &str) -> TestServer {
+        let mut config_file = NamedTempFile::new().unwrap();
+        config_file.write_all(config_str.as_bytes()).unwrap();
+
+        let state = WebData::new(ServerState::new(
+            PipelinePhase::Initializing(InitializationState::Starting),
+            String::new(),
+            RuntimeDesiredStatus::Paused,
+            BootstrapPolicy::Allow,
+            Uuid::new_v4(),
+            None,
+        ));
+        let state_clone = state.clone();
+
+        let args = ServerArgs {
+            config_file: config_file.path().display().to_string(),
+            metadata_file: None,
+            bind_address: "127.0.0.1".to_string(),
+            default_port: None,
+            storage_location: None,
+            enable_https: false,
+            https_tls_cert_path: None,
+            https_tls_key_path: None,
+            initial: RuntimeDesiredStatus::Paused,
+            bootstrap_policy: BootstrapPolicy::Allow,
+            deployment_id: Uuid::nil(),
+            host_id: None,
+        };
+
+        let config = parse_config(&args.config_file).unwrap();
+        let builder = ControllerBuilder::new(&config).unwrap();
+        thread::spawn(move || {
+            bootstrap(
+                builder,
+                Box::new(|workers| {
+                    Ok(test_circuit::<TestStruct>(
+                        workers,
+                        &TestStruct::schema(),
+                        &[None],
+                    ))
+                }),
+                state_clone,
+            )
+        });
+
+        let server =
+            actix_test::start(move || build_app(App::new().wrap(Logger::default()), state.clone()));
+
+        let start = Instant::now();
+        while server.get("/stats").send().await.unwrap().status() == StatusCode::SERVICE_UNAVAILABLE
+        {
+            assert!(start.elapsed() < Duration::from_millis(20_000));
+            sleep(Duration::from_millis(200));
+        }
+
+        server
+    }
+
+    fn flatten_and_sort_batches(data: &[Vec<TestStruct>]) -> Vec<TestStruct> {
+        let mut records = data
+            .iter()
+            .flat_map(|batch| batch.iter().cloned())
+            .collect::<Vec<_>>();
+        records.sort();
+        records
+    }
+
+    fn decode_chunk_records(chunk: &crate::transport::http::Chunk) -> Vec<TestStruct> {
+        let Some(csv) = &chunk.text_data else {
+            return Vec::new();
+        };
+
+        let mut reader = CsvReaderBuilder::new()
+            .has_headers(false)
+            .from_reader(csv.as_bytes());
+
+        reader
+            .deserialize::<(TestStruct, i32)>()
+            .map(Result::unwrap)
+            .map(|(record, weight)| {
+                assert_eq!(weight, 1);
+                record
+            })
+            .collect()
+    }
+
+    async fn collect_output_chunks<S>(
+        response: &mut S,
+        num_records: usize,
+    ) -> (Vec<crate::transport::http::Chunk>, Vec<TestStruct>)
+    where
+        S: Stream<Item = Result<Bytes, PayloadError>> + Unpin,
+    {
+        let mut chunks = Vec::new();
+        let mut records = Vec::with_capacity(num_records);
+        let mut data = Vec::new();
+
+        while records.len() < num_records {
+            let bytes = response.next().await.unwrap().unwrap();
+            data.extend_from_slice(&bytes);
+
+            if data.last() != Some(&b'\n') {
+                continue;
+            }
+
+            for chunk in serde_json::Deserializer::from_slice(&data)
+                .into_iter::<crate::transport::http::Chunk>()
+            {
+                let chunk = chunk.unwrap();
+                let chunk_records = decode_chunk_records(&chunk);
+                if chunk_records.is_empty() {
+                    continue;
+                }
+                records.extend(chunk_records);
+                chunks.push(chunk);
+            }
+
+            data.clear();
+        }
+
+        (chunks, records)
+    }
+
+    async fn wait_for_completion(server: &TestServer, token: &str) {
+        async_wait(
+            || async {
+                let resp = server
+                    .get(format!("/completion_status?token={token}"))
+                    .send()
+                    .await
+                    .unwrap()
+                    .body()
+                    .await
+                    .unwrap();
+                let CompletionStatusResponse { status, .. } =
+                    serde_json::from_slice(&resp).unwrap();
+                status == CompletionStatus::Complete
+            },
+            20_000,
+        )
+        .await
+        .unwrap();
     }
 
     #[actix_web::test]
@@ -3065,6 +3227,125 @@ outputs:
         let resp = server.get("/pause").send().await.unwrap();
         assert!(resp.status().is_success());
         sleep(Duration::from_millis(1000));
+
+        drop(buffer_consumer);
+        drop(kafka_resources);
+    }
+
+    #[actix_web::test]
+    async fn test_http_egress_snapshot_and_follow() {
+        ensure_default_crypto_provider();
+
+        let initial_data = vec![
+            vec![TestStruct::for_id(1), TestStruct::for_id(2)],
+            vec![TestStruct::for_id(3)],
+        ];
+        let follow_data = vec![vec![TestStruct::for_id(10), TestStruct::for_id(11)]];
+
+        let server = start_test_server(
+            r#"
+name: test
+inputs:
+outputs:
+"#,
+        )
+        .await;
+
+        let resp = server.get("/start").send().await.unwrap();
+        assert!(resp.status().is_success());
+
+        let CompletionTokenResponse { token } =
+            TestHttpSender::send_stream_deserialize_resp::<CompletionTokenResponse>(
+                server.post("/ingress/test_input1"),
+                &initial_data,
+            )
+            .await;
+        wait_for_completion(&server, &token).await;
+
+        let mut response = server
+            .post("/egress/test_output1?format=csv&backpressure=true&mode=snapshot_and_follow")
+            .send()
+            .await
+            .unwrap();
+        assert!(response.status().is_success());
+
+        let (snapshot_chunks, mut snapshot_records) = match timeout(
+            Duration::from_secs(10),
+            collect_output_chunks(&mut response, initial_data.iter().map(Vec::len).sum()),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(error) => {
+                print_stats(&server).await;
+                panic!("timed out waiting for snapshot output: {error:?}");
+            }
+        };
+        snapshot_records.sort();
+        assert_eq!(snapshot_records, flatten_and_sort_batches(&initial_data));
+        assert!(!snapshot_chunks.is_empty());
+        assert!(snapshot_chunks.iter().all(|chunk| chunk.snapshot));
+
+        TestHttpSender::send_stream(server.post("/ingress/test_input1"), &follow_data).await;
+
+        let (delta_chunks, mut delta_records) = timeout(
+            Duration::from_secs(10),
+            collect_output_chunks(&mut response, follow_data.iter().map(Vec::len).sum()),
+        )
+        .await
+        .expect("timed out waiting for follow output");
+        delta_records.sort();
+        assert_eq!(delta_records, flatten_and_sort_batches(&follow_data));
+        assert!(!delta_chunks.is_empty());
+        assert!(delta_chunks.iter().all(|chunk| !chunk.snapshot));
+    }
+
+    #[actix_web::test]
+    async fn test_reset_output_endpoint_replays_snapshot() {
+        ensure_default_crypto_provider();
+
+        let kafka_resources = KafkaResources::create_topics(&[("test_reset_output_topic", 1)]);
+        let buffer_consumer =
+            BufferConsumer::new("test_reset_output_topic", "csv", json!({}), None);
+
+        let server = start_test_server(
+            r#"
+name: test
+inputs:
+outputs:
+    test_output2:
+        stream: test_output1
+        mode: snapshot_and_follow
+        transport:
+            name: kafka_output
+            config:
+                topic: test_reset_output_topic
+        format:
+            name: csv
+"#,
+        )
+        .await;
+
+        let resp = server.get("/start").send().await.unwrap();
+        assert!(resp.status().is_success());
+
+        let data = vec![
+            vec![TestStruct::for_id(100), TestStruct::for_id(101)],
+            vec![TestStruct::for_id(102)],
+        ];
+
+        TestHttpSender::send_stream(server.post("/ingress/test_input1"), &data).await;
+        buffer_consumer.wait_for_output_unordered(&data);
+        buffer_consumer.clear();
+
+        let resp = server
+            .post("/output_endpoints/test_output2/reset")
+            .send()
+            .await
+            .unwrap();
+        assert!(resp.status().is_success());
+
+        buffer_consumer.wait_for_output_unordered(&data);
 
         drop(buffer_consumer);
         drop(kafka_resources);

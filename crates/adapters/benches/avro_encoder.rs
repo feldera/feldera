@@ -6,6 +6,7 @@ use bench_common::{
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use dbsp_adapters::Encoder;
 use dbsp_adapters::format::avro::output::AvroEncoder;
+use feldera_adapterlib::transport::OutputBatchType;
 use feldera_types::format::avro::{AvroEncoderConfig, AvroUpdateFormat};
 
 // ---------------------------------------------------------------------------
@@ -51,7 +52,7 @@ fn bench_indexed_encode(c: &mut Criterion) {
             |b, &workers| {
                 let mut encoder = create_indexed_encoder(workers);
                 b.iter(|| {
-                    encoder.consumer().batch_start(0);
+                    encoder.consumer().batch_start(0, OutputBatchType::Delta);
                     encoder.encode(batch.clone().arc_as_batch_reader()).unwrap();
                     encoder.consumer().batch_end();
                 });
@@ -78,7 +79,7 @@ fn bench_indexed_encode_scaling(c: &mut Criterion) {
                 |b, &workers| {
                     let mut encoder = create_indexed_encoder(workers);
                     b.iter(|| {
-                        encoder.consumer().batch_start(0);
+                        encoder.consumer().batch_start(0, OutputBatchType::Delta);
                         encoder.encode(batch.clone().arc_as_batch_reader()).unwrap();
                         encoder.consumer().batch_end();
                     });

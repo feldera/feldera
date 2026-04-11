@@ -16,7 +16,7 @@ use crate::{
 };
 use anyhow::{Context, Result as AnyResult, anyhow, bail};
 use feldera_adapterlib::catalog::SplitCursorBuilder;
-use feldera_adapterlib::transport::{AsyncErrorCallback, Step};
+use feldera_adapterlib::transport::{AsyncErrorCallback, OutputBatchType, Step};
 use feldera_types::{
     format::json::JsonFlavor,
     program_schema::{Relation, SqlIdentifier},
@@ -692,7 +692,7 @@ impl OutputConsumer for PostgresOutputEndpoint {
         self.config.max_buffer_size_bytes
     }
 
-    fn batch_start(&mut self, _step: Step) {
+    fn batch_start(&mut self, _step: Step, _batch_type: OutputBatchType) {
         self.txn_start = std::time::Instant::now();
 
         match self.broadcast_and_collect(BroadcastCommand::BatchStart) {
@@ -754,6 +754,32 @@ impl OutputConsumer for PostgresOutputEndpoint {
                     true,
                     anyhow!("failed to commit changes to Postgres: {err:#}"),
                     Some("pg_batch_end"),
+                );
+            }
+        }
+    }
+
+    fn reset(&mut self) {
+        match connect(&self.config, &self.endpoint_name)
+            .map_err(BackoffError::inner)
+            .and_then(|mut client| {
+                client
+                    .execute(&format!(r#"TRUNCATE TABLE "{}""#, self.config.table), &[])
+                    .map(|_| ())
+                    .map_err(|e| anyhow!("failed to truncate postgres table: {e}"))
+            }) {
+            Ok(()) => {}
+            Err(err) => {
+                let Some(controller) = self.controller.upgrade() else {
+                    tracing::warn!("controller is shutting down: aborting");
+                    return;
+                };
+                controller.output_transport_error(
+                    self.endpoint_id,
+                    &self.endpoint_name,
+                    true,
+                    err,
+                    Some("pg_reset"),
                 );
             }
         }
@@ -845,7 +871,7 @@ impl OutputEndpoint for PostgresOutputEndpoint {
         false
     }
 
-    fn batch_start(&mut self, _step: Step) -> AnyResult<()> {
+    fn batch_start(&mut self, _step: Step, _batch_type: OutputBatchType) -> AnyResult<()> {
         todo!()
     }
 
@@ -1272,7 +1298,9 @@ mod tests {
         }
 
         fn encode_batch(endpoint: &mut PostgresOutputEndpoint, batch: &Arc<dyn SerBatch>) {
-            endpoint.consumer().batch_start(0);
+            endpoint
+                .consumer()
+                .batch_start(0, feldera_adapterlib::transport::OutputBatchType::Delta);
             endpoint
                 .encode(batch.clone().arc_as_batch_reader())
                 .unwrap();

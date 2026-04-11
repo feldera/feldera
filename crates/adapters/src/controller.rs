@@ -71,7 +71,7 @@ use dbsp::{Runtime, WeakRuntime};
 use enum_map::EnumMap;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
-use feldera_adapterlib::transport::{InputReader, Resume, Watermark};
+use feldera_adapterlib::transport::{InputReader, OutputBatchType, Resume, Watermark};
 use feldera_ir::LirCircuit;
 use feldera_storage::fbuf::slab::FBufSlabsStats;
 use feldera_storage::histogram::{ExponentialHistogram, ExponentialHistogramSnapshot};
@@ -160,7 +160,7 @@ pub use feldera_types::config::{
 };
 use feldera_types::config::{
     DEFAULT_MAX_WORKER_BATCH_SIZE, DevTweaks, FileBackendConfig, FtConfig, FtModel,
-    OutputBufferConfig, StorageBackendConfig, SyncConfig,
+    OutputBufferConfig, OutputMode, StorageBackendConfig, SyncConfig,
 };
 use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
@@ -483,6 +483,13 @@ enum Command {
     Rebalance(RebalanceCallbackFn),
 }
 
+#[derive(Default)]
+struct OutputEndpointControl {
+    generation: AtomicU64,
+    reset_generation: AtomicU64,
+    snapshot_pending: AtomicBool,
+}
+
 impl Command {
     pub fn flush(self) {
         match self {
@@ -802,6 +809,10 @@ impl Controller {
         endpoint_name: &str,
     ) -> Result<ExternalOutputEndpointStatus, ControllerError> {
         self.inner.output_endpoint_status(endpoint_name)
+    }
+
+    pub fn reset_output_endpoint(&self, endpoint_name: &str) -> Result<(), ControllerError> {
+        self.inner.reset_output_endpoint(endpoint_name)
     }
 
     /// Returns the current controller status.
@@ -3517,12 +3528,51 @@ impl CircuitThread {
                     // We need to propagate processed_records to the connector for progress tracking.
                     endpoint.queue.push(BatchQueueEntry {
                         step: self.step,
+                        batch_type: OutputBatchType::Delta,
+                        generation: endpoint.control.generation.load(Ordering::Acquire),
                         data: None,
                         processed_records,
                     });
                     endpoint.unparker.unpark();
                     continue;
                 }
+
+                if endpoint.mode.snapshot()
+                    && endpoint.control.snapshot_pending.load(Ordering::Acquire)
+                    && endpoint
+                        .control
+                        .snapshot_pending
+                        .swap(false, Ordering::AcqRel)
+                {
+                    if !self.controller.enqueue_latest_snapshot(
+                        *endpoint_id,
+                        &endpoint.stream_name,
+                        &endpoint.queue,
+                        &endpoint.control,
+                        &endpoint.unparker,
+                        processed_records,
+                        Some(self.step),
+                    ) {
+                        let snapshot = output_handles
+                            .integrate_handle
+                            .as_ref()
+                            .expect("snapshot mode requires a materialized output")
+                            .concat();
+                        self.controller
+                            .status
+                            .enqueue_batch(*endpoint_id, snapshot.len());
+                        endpoint.queue.push(BatchQueueEntry {
+                            step: self.step,
+                            batch_type: OutputBatchType::Snapshot,
+                            generation: endpoint.control.generation.load(Ordering::Acquire),
+                            data: Some(snapshot),
+                            processed_records,
+                        });
+                        endpoint.unparker.unpark();
+                    }
+                    continue;
+                }
+
                 self.controller
                     .status
                     .enqueue_batch(*endpoint_id, num_delta_records);
@@ -3535,6 +3585,8 @@ impl CircuitThread {
 
                 endpoint.queue.push(BatchQueueEntry {
                     step: self.step,
+                    batch_type: OutputBatchType::Delta,
+                    generation: endpoint.control.generation.load(Ordering::Acquire),
                     data: Some(batch),
                     processed_records,
                 });
@@ -4677,6 +4729,12 @@ struct BatchQueueEntry {
     /// The step in which the output was produced.
     step: Step,
 
+    /// Whether this batch contains a delta or a full snapshot.
+    batch_type: OutputBatchType,
+
+    /// Output connector generation. Batches from older generations are discarded.
+    generation: u64,
+
     /// The output batch.
     ///
     /// This is `None` if the step produced no output.  We still create an entry
@@ -4713,6 +4771,12 @@ struct OutputEndpointDescr {
     /// FIFO queue of batches read from the stream.
     queue: Arc<BatchQueue>,
 
+    /// Connector mode controlling snapshot delivery semantics.
+    mode: OutputMode,
+
+    /// Cross-thread control flags for this endpoint.
+    control: Arc<OutputEndpointControl>,
+
     /// Used to notify the endpoint thread that the endpoint is being
     /// disconnected.
     disconnect_flag: Arc<AtomicBool>,
@@ -4725,6 +4789,7 @@ impl OutputEndpointDescr {
     pub fn new(
         endpoint_name: &str,
         stream_name: &str,
+        mode: OutputMode,
         created_during_transaction_number: u64,
         unparker: Unparker,
     ) -> Self {
@@ -4732,6 +4797,12 @@ impl OutputEndpointDescr {
             endpoint_name: endpoint_name.to_string(),
             stream_name: canonical_identifier(stream_name),
             queue: Arc::new(SegQueue::new()),
+            mode,
+            control: Arc::new(OutputEndpointControl {
+                generation: AtomicU64::new(0),
+                reset_generation: AtomicU64::new(0),
+                snapshot_pending: AtomicBool::new(mode.snapshot()),
+            }),
             disconnect_flag: Arc::new(AtomicBool::new(false)),
             created_during_transaction_number,
             unparker,
@@ -4920,6 +4991,13 @@ impl OutputBuffer {
     /// Return the contents of the buffer leaving it empty.
     fn take_buffer(&mut self) -> Option<Box<dyn SerTrace>> {
         self.buffer.take()
+    }
+
+    fn reset(&mut self) {
+        self.buffer = None;
+        self.buffered_step = 0;
+        self.buffer_since = Instant::now();
+        self.buffered_processed_records = ProcessedRecords::default();
     }
 }
 
@@ -6126,6 +6204,13 @@ impl ControllerInner {
             )
         };
 
+        if endpoint_config.connector_config.mode.snapshot() && handles.integrate_handle.is_none() {
+            return Err(ControllerError::invalid_transport_configuration(
+                endpoint_name,
+                "output mode 'snapshot_and_follow' requires a materialized output view",
+            ));
+        }
+
         let endpoint_id = self.next_output_id.fetch_add(1, Ordering::AcqRel);
         let endpoint_name_str = endpoint_name.to_string();
 
@@ -6197,11 +6282,14 @@ impl ControllerInner {
         let endpoint_descr = OutputEndpointDescr::new(
             endpoint_name,
             &stream_name,
+            endpoint_config.connector_config.mode,
             self.get_transaction_number(),
             parker.unparker().clone(),
         );
         let queue = endpoint_descr.queue.clone();
+        let control = endpoint_descr.control.clone();
         let disconnect_flag = endpoint_descr.disconnect_flag.clone();
+        let unparker = endpoint_descr.unparker.clone();
         let controller = self.clone();
 
         self.outputs
@@ -6214,6 +6302,8 @@ impl ControllerInner {
             .connector_config
             .output_buffer_config
             .clone();
+        let thread_queue = queue.clone();
+        let thread_control = control.clone();
 
         // Initialize endpoint stats.
         self.status.add_output(
@@ -6238,25 +6328,106 @@ impl ControllerInner {
                         output_buffer_config,
                         encoder,
                         parker,
-                        queue,
+                        thread_queue,
+                        thread_control,
                         disconnect_flag,
                         controller,
                     )
                 },
             );
 
+        if endpoint_config.connector_config.mode.snapshot()
+            && !self.enqueue_latest_snapshot(
+                endpoint_id,
+                &stream_name,
+                &queue,
+                &control,
+                &unparker,
+                None,
+                None,
+            )
+            && self.state() == PipelineState::Running
+        {
+            self.request_step();
+        }
+
         Ok(endpoint_id)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn enqueue_latest_snapshot(
+        &self,
+        endpoint_id: EndpointId,
+        stream_name: &str,
+        queue: &Arc<BatchQueue>,
+        control: &Arc<OutputEndpointControl>,
+        unparker: &Unparker,
+        processed_records: Option<ProcessedRecords>,
+        step: Option<Step>,
+    ) -> bool {
+        let snapshot_batches = {
+            let Ok(snapshots) = self.trace_snapshots.try_lock() else {
+                return false;
+            };
+            snapshots
+                .last_key_value()
+                .and_then(|(_, snapshot)| snapshot.get(&SqlIdentifier::from(stream_name)).cloned())
+        };
+
+        let Some(snapshot_batches) = snapshot_batches else {
+            return false;
+        };
+
+        control.snapshot_pending.store(false, Ordering::Release);
+
+        let processed_records = processed_records.or(Some(ProcessedRecords {
+            total_processed_input_records: self.status.num_total_processed_records(),
+            total_processed_steps: self.status.global_metrics.total_completed_steps(),
+        }));
+        let step = step.unwrap_or_else(|| {
+            processed_records
+                .as_ref()
+                .map(|processed| processed.total_processed_steps)
+                .unwrap_or_default()
+        });
+        let generation = control.generation.load(Ordering::Acquire);
+
+        if snapshot_batches.is_empty() {
+            self.status.enqueue_batch(endpoint_id, 0);
+            queue.push(BatchQueueEntry {
+                step,
+                batch_type: OutputBatchType::Snapshot,
+                generation,
+                data: None,
+                processed_records,
+            });
+        } else {
+            for batch in snapshot_batches {
+                self.status.enqueue_batch(endpoint_id, batch.len());
+                queue.push(BatchQueueEntry {
+                    step,
+                    batch_type: OutputBatchType::Snapshot,
+                    generation,
+                    data: Some(batch),
+                    processed_records,
+                });
+            }
+        }
+
+        unparker.unpark();
+        true
     }
 
     fn push_batch_to_encoder(
         batch: Arc<dyn SerBatchReader>,
+        batch_type: OutputBatchType,
         endpoint_id: EndpointId,
         endpoint_name: &str,
         encoder: &mut dyn Encoder,
         step: Step,
         controller: &ControllerInner,
     ) {
-        encoder.consumer().batch_start(step);
+        encoder.consumer().batch_start(step, batch_type);
         encoder.encode(batch).unwrap_or_else(|e| {
             controller.encode_error(endpoint_id, endpoint_name, e, Some("encoder_error"))
         });
@@ -6271,10 +6442,12 @@ impl ControllerInner {
         mut encoder: Box<dyn Encoder>,
         parker: Parker,
         queue: Arc<BatchQueue>,
+        control: Arc<OutputEndpointControl>,
         disconnect_flag: Arc<AtomicBool>,
         controller: Arc<ControllerInner>,
     ) {
         let mut output_buffer = OutputBuffer::new(&endpoint_name);
+        let mut generation = control.generation.load(Ordering::Acquire);
 
         loop {
             if controller.state() == PipelineState::Terminated {
@@ -6283,6 +6456,17 @@ impl ControllerInner {
 
             if disconnect_flag.load(Ordering::Acquire) {
                 return;
+            }
+
+            let current_generation = control.generation.load(Ordering::Acquire);
+            if current_generation != generation {
+                output_buffer.reset();
+                controller.status.clear_output_buffer(endpoint_id);
+                generation = current_generation;
+
+                if control.reset_generation.load(Ordering::Acquire) == generation {
+                    encoder.consumer().reset();
+                }
             }
 
             controller
@@ -6297,6 +6481,7 @@ impl ControllerInner {
                 // background merging.
                 Self::push_batch_to_encoder(
                     output_buffer.take_buffer().unwrap().snapshot(),
+                    OutputBatchType::Delta,
                     endpoint_id,
                     &endpoint_name,
                     encoder.as_mut(),
@@ -6310,6 +6495,8 @@ impl ControllerInner {
                 controller.circuit_thread_unparker.unpark()
             } else if let Some(BatchQueueEntry {
                 step,
+                batch_type,
+                generation: batch_generation,
                 data,
                 processed_records,
             }) = queue.pop()
@@ -6320,10 +6507,21 @@ impl ControllerInner {
 
                 let num_records = data.as_ref().map_or(0, |b| b.len());
 
+                if batch_generation != generation {
+                    controller.status.output_batch(
+                        endpoint_id,
+                        None,
+                        num_records,
+                        &controller.circuit_thread_unparker,
+                    );
+                    continue;
+                }
+
                 // trace!("Pushing {num_records} records to output endpoint {endpoint_name}");
 
                 // Buffer the new output if buffering is enabled.
-                if output_buffer_config.enable_output_buffer {
+                if output_buffer_config.enable_output_buffer && batch_type == OutputBatchType::Delta
+                {
                     output_buffer.insert(data, step, processed_records);
                     controller.status.buffer_batch(
                         endpoint_id,
@@ -6343,6 +6541,7 @@ impl ControllerInner {
                     if let Some(data) = data {
                         Self::push_batch_to_encoder(
                             data,
+                            batch_type,
                             endpoint_id,
                             &endpoint_name,
                             encoder.as_mut(),
@@ -6476,6 +6675,49 @@ impl ControllerInner {
     ) -> Result<ExternalOutputEndpointStatus, ControllerError> {
         let endpoint_id = self.output_endpoint_id_by_name(endpoint_name)?;
         Ok(self.status.output_status()[&endpoint_id].to_api_type(true))
+    }
+
+    fn reset_output_endpoint(&self, endpoint_name: &str) -> Result<(), ControllerError> {
+        self.fail_if_restoring()?;
+
+        let endpoint_id = self.output_endpoint_id_by_name(endpoint_name)?;
+        let outputs = self.outputs.read().unwrap();
+        let endpoint = outputs
+            .lookup_by_id(&endpoint_id)
+            .ok_or_else(|| ControllerError::unknown_output_endpoint(endpoint_name))?;
+
+        if !endpoint.mode.snapshot() {
+            return Err(ControllerError::invalid_transport_configuration(
+                endpoint_name,
+                "reset requires the output connector to be configured with mode 'snapshot_and_follow'",
+            ));
+        }
+
+        let generation = endpoint.control.generation.fetch_add(1, Ordering::AcqRel) + 1;
+        endpoint
+            .control
+            .reset_generation
+            .store(generation, Ordering::Release);
+        endpoint
+            .control
+            .snapshot_pending
+            .store(true, Ordering::Release);
+        endpoint.unparker.unpark();
+        let queued = self.enqueue_latest_snapshot(
+            endpoint_id,
+            &endpoint.stream_name,
+            &endpoint.queue,
+            &endpoint.control,
+            &endpoint.unparker,
+            None,
+            None,
+        );
+        drop(outputs);
+        if !queued {
+            self.request_step();
+        }
+
+        Ok(())
     }
 
     fn send_command(&self, command: Command) {
@@ -7128,16 +7370,18 @@ impl OutputConsumer for OutputProbe {
         self.endpoint.max_buffer_size_bytes()
     }
 
-    fn batch_start(&mut self, step: Step) {
-        self.endpoint.batch_start(step).unwrap_or_else(|e| {
-            self.controller.output_transport_error(
-                self.endpoint_id,
-                &self.endpoint_name,
-                false,
-                e,
-                Some("outprobe_batch_start"),
-            );
-        })
+    fn batch_start(&mut self, step: Step, batch_type: OutputBatchType) {
+        self.endpoint
+            .batch_start(step, batch_type)
+            .unwrap_or_else(|e| {
+                self.controller.output_transport_error(
+                    self.endpoint_id,
+                    &self.endpoint_name,
+                    false,
+                    e,
+                    Some("outprobe_batch_start"),
+                );
+            })
     }
 
     fn push_buffer(&mut self, buffer: &[u8], num_records: usize) {
@@ -7197,6 +7441,18 @@ impl OutputConsumer for OutputProbe {
                 false,
                 e,
                 Some("outprobe_batch_end"),
+            );
+        })
+    }
+
+    fn reset(&mut self) {
+        self.endpoint.reset().unwrap_or_else(|e| {
+            self.controller.output_transport_error(
+                self.endpoint_id,
+                &self.endpoint_name,
+                false,
+                e,
+                Some("outprobe_reset"),
             );
         })
     }

@@ -279,6 +279,7 @@ impl DataSink for AdHocTableSink {
         let config = InputEndpointConfig {
             stream: Cow::from(self.name.to_string()),
             connector_config: ConnectorConfig {
+                mode: Default::default(),
                 transport: TransportConfig::AdHocInput(config),
                 format: Some(FormatConfig {
                     name: Cow::from("parquet"),

@@ -134,6 +134,7 @@ pub(crate) async fn http_input(
         ("table_name" = String, Path,
             description = "SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program."),
         ("format" = String, Query, description = "Output data format, e.g., 'csv' or 'json'."),
+        ("mode" = Option<String>, Query, description = "Output connector mode. Use `snapshot_and_follow` to send a full snapshot of a materialized view before streaming incremental updates. The default is `follow`."),
         ("array" = Option<bool>, Query, description = "Set to `true` to group updates in this stream into JSON arrays (used in conjunction with `format=json`). The default value is `false`"),
         ("backpressure" = Option<bool>, Query, description = r#"Apply backpressure on the pipeline when the HTTP client cannot receive data fast enough.
         When this flag is set to false (the default), the HTTP connector drops data chunks if the client is not keeping up with its output.  This prevents a slow HTTP client from slowing down the entire pipeline.

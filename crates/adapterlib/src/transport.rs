@@ -938,6 +938,12 @@ where
 #[doc(hidden)]
 pub type AsyncErrorCallback = Box<dyn Fn(bool, AnyError, Option<&'static str>) + Send + Sync>;
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum OutputBatchType {
+    Delta,
+    Snapshot,
+}
+
 /// A configured output transport endpoint.
 ///
 /// Output endpoints come in two flavors:
@@ -983,7 +989,7 @@ pub trait OutputEndpoint: Send {
     ///
     /// 2. The output batch must not be made visible to downstream readers
     ///    before the next call to `batch_end`.
-    fn batch_start(&mut self, _step: Step) -> AnyResult<()> {
+    fn batch_start(&mut self, _step: Step, _batch_type: OutputBatchType) -> AnyResult<()> {
         Ok(())
     }
 
@@ -1012,6 +1018,11 @@ pub trait OutputEndpoint: Send {
     /// A fault-tolerant output endpoint may now make the output batch visible
     /// to readers.
     fn batch_end(&mut self) -> AnyResult<()> {
+        Ok(())
+    }
+
+    /// Reset endpoint-local state before sending a fresh snapshot.
+    fn reset(&mut self) -> AnyResult<()> {
         Ok(())
     }
 

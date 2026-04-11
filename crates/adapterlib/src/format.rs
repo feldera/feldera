@@ -22,7 +22,7 @@ use crate::ConnectorMetadata;
 use crate::catalog::{InputCollectionHandle, SerBatchReader};
 use crate::errors::controller::ControllerError;
 use crate::preprocess::Preprocessor;
-use crate::transport::Step;
+use crate::transport::{OutputBatchType, Step};
 
 /// Trait that represents a specific data format.
 ///
@@ -682,7 +682,7 @@ pub trait OutputConsumer: Send {
     /// The encoder should not generate buffers exceeding this size.
     fn max_buffer_size_bytes(&self) -> usize;
 
-    fn batch_start(&mut self, step: Step);
+    fn batch_start(&mut self, step: Step, batch_type: OutputBatchType);
 
     /// See OutputEndpoint::push_buffer.
     fn push_buffer(&mut self, buffer: &[u8], num_records: usize);
@@ -696,6 +696,8 @@ pub trait OutputConsumer: Send {
         num_records: usize,
     );
     fn batch_end(&mut self);
+
+    fn reset(&mut self) {}
 
     /// Returns the approximate amount of memory used by the connector's
     /// underlying implementation.  For the Kafka connectors, for example, this

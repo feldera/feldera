@@ -1071,6 +1071,12 @@ impl ControllerStatus {
         self.update_total_completed_records();
     }
 
+    pub fn clear_output_buffer(&self, endpoint_id: EndpointId) {
+        if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
+            endpoint_stats.clear_output_buffer();
+        }
+    }
+
     pub fn output_buffer(&self, endpoint_id: EndpointId, num_bytes: usize, num_records: usize) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
             endpoint_stats.output_buffer(num_bytes, num_records);
@@ -2538,6 +2544,11 @@ impl OutputEndpointStatus {
         self.metrics
             .total_processed_steps
             .store(processed.total_processed_steps, Ordering::Release);
+    }
+
+    fn clear_output_buffer(&self) {
+        self.metrics.buffered_records.store(0, Ordering::Release);
+        self.metrics.buffered_batches.store(0, Ordering::Release);
     }
 
     fn output_buffer(&self, num_bytes: usize, num_records: usize) {

@@ -2,6 +2,7 @@ use dbsp::OrdIndexedZSet;
 use dbsp::utils::Tup2;
 use dbsp_adapters::static_compile::seroutput::SerBatchImpl;
 use dbsp_adapters::{OutputConsumer, SerBatch};
+use feldera_adapterlib::transport::OutputBatchType;
 use feldera_macros::IsNone;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::{deserialize_without_context, serialize_struct};
@@ -130,12 +131,18 @@ impl BenchOutputConsumer {
     }
 }
 
+impl Default for BenchOutputConsumer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OutputConsumer for BenchOutputConsumer {
     fn max_buffer_size_bytes(&self) -> usize {
         usize::MAX
     }
 
-    fn batch_start(&mut self, _step: u64) {}
+    fn batch_start(&mut self, _step: u64, _batch_type: OutputBatchType) {}
 
     fn push_buffer(&mut self, buffer: &[u8], _num_records: usize) {
         self.data

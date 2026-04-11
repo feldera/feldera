@@ -22,6 +22,7 @@ pub struct HttpInputConfig {
 #[derive(Deserialize, ToSchema)]
 pub struct Chunk {
     pub sequence_number: u64,
+    pub snapshot: bool,
 
     // Exactly one of the following fields must be set.
     // This should be an enum inlined with `#[serde(flatten)]`, but `utoipa`

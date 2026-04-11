@@ -1389,8 +1389,44 @@ where
 }
 
 /// A data connector's configuration
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, ToSchema, Default)]
+pub enum OutputMode {
+    /// Continuously stream incremental updates to the sink.
+    #[default]
+    #[serde(rename = "follow")]
+    Follow,
+
+    /// Send a full snapshot of the materialized view before streaming incremental updates.
+    #[serde(rename = "snapshot_and_follow")]
+    SnapshotAndFollow,
+}
+
+impl Display for OutputMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Follow => write!(f, "follow"),
+            Self::SnapshotAndFollow => write!(f, "snapshot_and_follow"),
+        }
+    }
+}
+
+impl OutputMode {
+    pub fn snapshot(self) -> bool {
+        matches!(self, Self::SnapshotAndFollow)
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ConnectorConfig {
+    /// Output connector mode.
+    ///
+    /// - `follow` (default): Stream incremental updates only.
+    /// - `snapshot_and_follow`: Send a full snapshot of the materialized view
+    ///   before streaming incremental updates.
+    #[serde(default)]
+    #[schema(default = OutputMode::default)]
+    pub mode: OutputMode,
+
     /// Transport endpoint configuration.
     pub transport: TransportConfig,
 

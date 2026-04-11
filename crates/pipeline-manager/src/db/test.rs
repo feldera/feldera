@@ -1992,7 +1992,7 @@ async fn pipeline_deployment() {
             )
             .await
             .unwrap_err(),
-        DBError::CannotStartWhileClearingStorage { .. }
+        DBError::CannotStartWhileClearingStorage
     ));
     handle
         .db

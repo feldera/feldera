@@ -895,6 +895,7 @@ mod tests {
     fn test_connector_endpoint_name_determination() {
         // Reuse the configuration as it is not used in the function
         let config = ConnectorConfig {
+            mode: Default::default(),
             transport: TransportConfig::Datagen(DatagenInputConfig::default()),
             format: None,
             preprocessor: None,
