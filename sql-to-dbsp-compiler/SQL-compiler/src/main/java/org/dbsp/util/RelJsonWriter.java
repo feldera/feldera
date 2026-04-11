@@ -60,7 +60,7 @@ public class RelJsonWriter implements RelWriter {
         this.verbosity = verbosity;
     }
 
-    final Set<String> highVerbosity = Set.of("exprs", "aggs", "condition");
+    final Set<String> highVerbosity = Set.of("exprs", "aggs", "condition", "tuples");
 
     protected void explain_(RelNode rel, List<Pair<String, Object>> values) {
         Map<String, Object> map = this.jsonBuilder.map();

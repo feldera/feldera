@@ -2134,4 +2134,17 @@ public class MetadataTests extends BaseSQLTests {
             CREATE VIEW V AS SELECT x FROM T;""");
         Assert.assertEquals(0, cc.compiler.messages.messages.size());
     }
+
+    @Test
+    public void issue5896() throws IOException, SQLException {
+        String sql = "CREATE VIEW v AS select cot(0)";
+        File file = createInputScript(sql);
+        File json = this.createTempJsonFile();
+        CompilerMessages msg = CompilerMain.execute(
+                "--dataflow", json.getPath(), "--noRust", file.getPath());
+        Assert.assertEquals(0, msg.exitCode);
+        ObjectMapper mapper = Utilities.deterministicObjectMapper();
+        JsonNode parsed = mapper.readTree(json);
+        Assert.assertNotNull(parsed);
+    }
 }
