@@ -370,7 +370,8 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlLibraryOperators.LENGTH, "LENGTH", SqlLibrary.POSTGRESQL, "string#char_length", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.SUBSTR_BIG_QUERY, "SUBSTR", SqlLibrary.BIG_QUERY, "string#substr", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.SPLIT, "SPLIT", SqlLibrary.BIG_QUERY, "string#split", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.SPLIT_PART, "SPLIT_PART", SqlLibrary.POSTGRESQL, "string#split_part", FunctionDocumentation.NO_FILE, false),
+            // https://issues.apache.org/jira/browse/CALCITE-7468
+            // new Func(SqlLibraryOperators.SPLIT_PART, "SPLIT_PART", SqlLibrary.POSTGRESQL, "string#split_part", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.GREATEST, "GREATEST", SqlLibrary.BIG_QUERY, "comparisons#greatest", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.LEAST, "LEAST", SqlLibrary.BIG_QUERY, "comparisons#least", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.SAFE_CAST, "SAFE_CAST", SqlLibrary.BIG_QUERY, "casts#safe-casts", FunctionDocumentation.NO_FILE, false),
