@@ -130,6 +130,10 @@ export class OMap<K, V> {
     clear(): void {
         this.map.clear();
     }
+
+    [Symbol.iterator](): IterableIterator<[K, V]> {
+        return this.map[Symbol.iterator]();
+    }
 }
 
 /** A sublist which includes only specific elements from a list, identified by their indexes. */
