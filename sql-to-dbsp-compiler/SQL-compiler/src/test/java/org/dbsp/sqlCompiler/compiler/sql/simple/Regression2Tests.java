@@ -903,4 +903,20 @@ public class Regression2Tests extends SqlIoTest {
                     l TIMESTAMP
                 ) WITH ('materialized' = 'true');""");
     }
+
+    @Test
+    public void issue5981() {
+        this.qs("""
+                SELECT TO_HEX(x'48656c6c6f');
+                 r
+                ---
+                 48656c6c6f
+                (1 row)
+                
+                SELECT TO_HEX(x'0ABC');
+                 r
+                ---
+                 0abc
+                (1 row)""");
+    }
 }

@@ -111,8 +111,8 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
   </tr>
   <tr>
     <td><a id="to_hex"></a><code>TO_HEX</code>(binary)</td>
-    <td>Generate a `VARCHAR` string describing the value in hexadecimal</td>
-    <td><code>TO_HEX(x'0abc')</code> => <code>'0ABC'</code></td>
+    <td>Generate a `VARCHAR` string describing the value in hexadecimal (lowercase)</td>
+    <td><code>TO_HEX(x'0abc')</code> => <code>'0abc'</code></td>
   </tr>
   <tr>
     <td><a id="to_int"></a><a id="to_int"></a><code>TO_INT</code>(binary)</td>
