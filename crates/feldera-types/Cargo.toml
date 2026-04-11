@@ -31,7 +31,7 @@ erased-serde = { workspace = true }
 uuid = { workspace = true, features = ["v7"] }
 thiserror = { workspace = true }
 regex = { workspace = true }
-chrono = { workspace = true, features = ["serde"] }
+chrono = { workspace = true, features = ["serde", "alloc"] }
 feldera-ir = { workspace = true }
 time = { workspace = true }
 bytemuck = { workspace = true }
