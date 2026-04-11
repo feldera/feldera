@@ -1117,7 +1117,6 @@ public class PostgresStringTests extends SqlIoTest {
     }
 
 
-    // TODO: to_hex
     // TODO: sha, encode, decode
 
     @Test
