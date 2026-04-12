@@ -1,6 +1,7 @@
 use anyhow::{Error as AnyError, Result as AnyResult};
 use chrono::{DateTime, Utc};
 use dyn_clone::DynClone;
+use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use rmpv::{Value as RmpValue, ext::Error as RmpDecodeError};
@@ -773,6 +774,9 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// Optional tag that can be used for additional context
     /// e.g. for rate limiting
     fn error(&self, fatal: bool, error: AnyError, tag: Option<&'static str>);
+
+    /// Updates the health status of the connector.
+    fn update_connector_health(&self, health: ConnectorHealth);
 }
 
 /// Information needed to restart after or replay input.

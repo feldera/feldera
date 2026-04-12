@@ -25,6 +25,7 @@ use feldera_adapterlib::format::{BufferSize, flatten_nested};
 use feldera_adapterlib::transport::{Resume, Watermark};
 use feldera_macros::IsNone;
 use feldera_sqllib::{ByteArray, SqlString, Variant};
+use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::config::{
     ConnectorConfig, FormatConfig, FtModel, InputEndpointConfig, OutputBufferConfig,
     TransportConfig, default_max_queued_records,
@@ -763,6 +764,8 @@ impl InputConsumer for DummyInputConsumer {
     fn start_transaction(&self, _label: Option<&str>) {}
 
     fn commit_transaction(&self) {}
+
+    fn update_connector_health(&self, _health: ConnectorHealth) {}
 }
 
 #[test]
