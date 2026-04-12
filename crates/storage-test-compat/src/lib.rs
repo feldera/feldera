@@ -14,6 +14,7 @@ use std::sync::Arc;
 use dbsp::algebra::{F32, F64};
 use dbsp::storage::backend::StoragePath;
 use dbsp::storage::buffer_cache::BufferCache;
+use dbsp::storage::file::format::{Compression, VERSION_NUMBER};
 use dbsp::utils::Tup8;
 use uuid::Uuid as RawUuid;
 
@@ -113,6 +114,103 @@ pub type GoldenRowSmall = Tup8<u64, bool, i32, i64, F32, SqlString, Opt<i32>, Op
 
 pub const DEFAULT_ROWS: usize = 256;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum GoldenWriterKind {
+    Writer1Bloom,
+    Writer2Roaring,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum GoldenSize {
+    Large,
+    Small,
+}
+
+impl GoldenSize {
+    pub fn suffix(self) -> &'static str {
+        match self {
+            Self::Large => "large",
+            Self::Small => "small",
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct GoldenFileSpec {
+    pub writer: GoldenWriterKind,
+    pub compression: Option<Compression>,
+    pub size: GoldenSize,
+}
+
+impl GoldenFileSpec {
+    pub fn file_name(self) -> String {
+        let mut file_name = match self.writer {
+            GoldenWriterKind::Writer1Bloom => format!("writer1-golden-batch-v{VERSION_NUMBER}"),
+            GoldenWriterKind::Writer2Roaring => format!("writer2-golden-batch-v{VERSION_NUMBER}"),
+        };
+        if matches!(self.compression, Some(Compression::Snappy)) {
+            file_name += "-snappy";
+        }
+        file_name += "-";
+        file_name += self.size.suffix();
+        file_name += match self.writer {
+            GoldenWriterKind::Writer1Bloom => "-bloom.feldera",
+            GoldenWriterKind::Writer2Roaring => "-roaring.feldera",
+        };
+        file_name
+    }
+
+    pub fn path(self) -> PathBuf {
+        golden_file_directory().join(self.file_name())
+    }
+}
+
+pub fn golden_file_specs() -> impl Iterator<Item = GoldenFileSpec> {
+    [
+        GoldenFileSpec {
+            writer: GoldenWriterKind::Writer1Bloom,
+            compression: None,
+            size: GoldenSize::Large,
+        },
+        GoldenFileSpec {
+            writer: GoldenWriterKind::Writer1Bloom,
+            compression: Some(Compression::Snappy),
+            size: GoldenSize::Large,
+        },
+        GoldenFileSpec {
+            writer: GoldenWriterKind::Writer1Bloom,
+            compression: None,
+            size: GoldenSize::Small,
+        },
+        GoldenFileSpec {
+            writer: GoldenWriterKind::Writer1Bloom,
+            compression: Some(Compression::Snappy),
+            size: GoldenSize::Small,
+        },
+        GoldenFileSpec {
+            writer: GoldenWriterKind::Writer2Roaring,
+            compression: None,
+            size: GoldenSize::Large,
+        },
+        GoldenFileSpec {
+            writer: GoldenWriterKind::Writer2Roaring,
+            compression: Some(Compression::Snappy),
+            size: GoldenSize::Large,
+        },
+        GoldenFileSpec {
+            writer: GoldenWriterKind::Writer2Roaring,
+            compression: None,
+            size: GoldenSize::Small,
+        },
+        GoldenFileSpec {
+            writer: GoldenWriterKind::Writer2Roaring,
+            compression: Some(Compression::Snappy),
+            size: GoldenSize::Small,
+        },
+    ]
+    .into_iter()
+}
+
 pub fn golden_file_directory() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("golden-files")
 }
@@ -124,6 +222,10 @@ pub fn golden_aux(row: usize) -> i64 {
     x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
     x ^= x >> 31;
     i64::from_le_bytes(x.to_le_bytes())
+}
+
+pub fn golden_writer2_key(row: usize) -> i64 {
+    2 * (row as i64 + 1)
 }
 
 pub fn storage_base_and_path(output: &Path) -> (PathBuf, StoragePath) {
@@ -395,26 +497,30 @@ pub fn golden_row_small(row: usize) -> GoldenRowSmall {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
     use std::io;
 
     use super::{
-        buffer_cache, golden_aux, golden_file_directory, golden_row, golden_row_small, GoldenRow,
-        GoldenRowSmall,
+        buffer_cache, golden_aux, golden_file_directory, golden_file_specs, golden_row,
+        golden_row_small, golden_writer2_key, GoldenFileSpec, GoldenRow, GoldenRowSmall,
+        GoldenSize, GoldenWriterKind,
     };
     use dbsp::dynamic::{DowncastTrait, DynData, Erase};
     use dbsp::storage::backend::{StorageBackend, StoragePath};
     use dbsp::storage::file::format::BatchMetadata;
     use dbsp::storage::file::reader::Reader;
     use dbsp::storage::file::Factories;
+    use dbsp::storage::file::FilterKind;
+    use dbsp::trace::BatchFilters;
     use dbsp::DBData;
     use feldera_types::config::{StorageConfig, StorageOptions};
+    use rand::{thread_rng, Rng};
 
-    fn validate_key_range<T>(
-        reader: &Reader<(&'static DynData, &'static DynData, ())>,
+    fn validate_key_range<T, N>(
+        reader: &Reader<(&'static DynData, &'static DynData, N)>,
         row_builder: fn(usize) -> T,
     ) where
         T: DBData + Default + Erase<DynData>,
+        (&'static DynData, &'static DynData, N): dbsp::storage::file::reader::ColumnSpec,
     {
         let n_rows = reader.n_rows(0) as usize;
         let key_range = reader.key_range().unwrap();
@@ -433,7 +539,39 @@ mod tests {
         assert_eq!(max.downcast_checked::<T>(), &expected_max);
     }
 
-    fn validate_rows<T>(
+    fn validate_writer1_membership_filter<T>(
+        reader: &Reader<(&'static DynData, &'static DynData, ())>,
+        row_builder: fn(usize) -> T,
+    ) where
+        T: DBData + Default + Erase<DynData>,
+    {
+        let filter = BatchFilters::from_parts(
+            reader.key_range().unwrap(),
+            reader.membership_filter().unwrap(),
+        );
+        assert_eq!(filter.membership_filter_kind(), FilterKind::Bloom);
+        let n_rows = reader.n_rows(0) as usize;
+        for row in 0..n_rows {
+            let key = row_builder(row);
+            assert!(
+                filter.maybe_contains_key(key.erase(), None),
+                "membership filter rejected stored key at row {row}"
+            );
+        }
+
+        let false_positives = (0..64)
+            .filter(|offset| {
+                let key = row_builder(n_rows + offset);
+                filter.maybe_contains_key(key.erase(), None)
+            })
+            .count();
+        assert!(
+            false_positives <= 1,
+            "too many false positives in persisted Bloom filter: {false_positives}"
+        );
+    }
+
+    fn validate_writer1_rows<T>(
         storage_backend: &dyn StorageBackend,
         storage_path: StoragePath,
         row_builder: fn(usize) -> T,
@@ -453,6 +591,7 @@ mod tests {
 
         let n_rows = reader.n_rows(0) as usize;
         validate_key_range(&reader, row_builder);
+        validate_writer1_membership_filter(&reader, row_builder);
         let mut bulk = reader.bulk_rows().unwrap();
         let mut tmp_key = T::default();
         let mut tmp_aux = 0i64;
@@ -471,6 +610,93 @@ mod tests {
         }
 
         assert!(bulk.at_eof());
+    }
+
+    fn validate_writer2_rows<T>(
+        storage_backend: &dyn StorageBackend,
+        storage_path: StoragePath,
+        row_builder: fn(usize) -> T,
+        aux_builder: fn(usize) -> i64,
+    ) where
+        T: DBData + Default + Erase<DynData>,
+    {
+        let factories0 = Factories::<DynData, DynData>::new::<i64, ()>();
+        let factories1 = Factories::<DynData, DynData>::new::<T, i64>();
+        let reader: Reader<(
+            &'static DynData,
+            &'static DynData,
+            (&'static DynData, &'static DynData, ()),
+        )> = Reader::open(
+            &[&factories0.any_factories(), &factories1.any_factories()],
+            buffer_cache,
+            storage_backend,
+            &storage_path,
+        )
+        .unwrap();
+        assert_eq!(reader.metadata(), &BatchMetadata::default());
+
+        let n_rows = reader.n_rows(0) as usize;
+        validate_key_range(&reader, golden_writer2_key);
+
+        let filter = BatchFilters::from_parts(
+            reader.key_range().unwrap(),
+            reader.membership_filter().unwrap(),
+        );
+        assert_eq!(filter.membership_filter_kind(), FilterKind::Roaring);
+        for row in 0..n_rows {
+            let key = golden_writer2_key(row);
+            assert!(
+                filter.maybe_contains_key(key.erase(), None),
+                "membership filter rejected stored key at row {row}"
+            );
+        }
+        let max_key = golden_writer2_key(n_rows - 1);
+        for absent_key in (1..=max_key).filter(|key| key % 2 != 0) {
+            assert!(
+                !filter.maybe_contains_key(absent_key.erase(), None),
+                "roaring filter unexpectedly accepted odd in-range key {absent_key}"
+            );
+        }
+        for absent_key in [i64::MIN, 0, max_key + 1, i64::MAX] {
+            assert!(
+                !filter.maybe_contains_key(absent_key.erase(), None),
+                "roaring filter unexpectedly accepted absent key {absent_key}"
+            );
+        }
+        let mut rng = thread_rng();
+        for _ in 0..1_000 {
+            let absent_key = rng.gen_range((max_key + 2)..=i64::MAX);
+            assert!(
+                !filter.maybe_contains_key(absent_key.erase(), None),
+                "roaring filter unexpectedly accepted sampled absent key {absent_key}"
+            );
+        }
+
+        let rows0 = reader.rows();
+        let mut tmp_key0 = 0i64;
+        let mut tmp_aux0 = ();
+        let mut tmp_key1 = T::default();
+        let mut tmp_aux1 = 0i64;
+
+        for row in 0..n_rows {
+            let cursor0 = rows0.nth(row as u64).unwrap();
+            let mut expected_key0 = golden_writer2_key(row);
+            let mut expected_aux0 = ();
+            assert_eq!(
+                unsafe { cursor0.item((tmp_key0.erase_mut(), tmp_aux0.erase_mut())) },
+                Some((expected_key0.erase_mut(), expected_aux0.erase_mut()))
+            );
+
+            let rows1 = cursor0.next_column().unwrap();
+            assert_eq!(rows1.len(), 1);
+            let cursor1 = unsafe { rows1.first().unwrap() };
+            let mut expected_key1 = row_builder(row);
+            let mut expected_aux1 = aux_builder(row);
+            assert_eq!(
+                unsafe { cursor1.item((tmp_key1.erase_mut(), tmp_aux1.erase_mut())) },
+                Some((expected_key1.erase_mut(), expected_aux1.erase_mut()))
+            );
+        }
     }
 
     #[test]
@@ -492,25 +718,54 @@ mod tests {
         )
         .unwrap();
 
-        for file_path in fs::read_dir(golden_files)? {
-            let file_path = file_path?;
-            let file_name = file_path.file_name().to_string_lossy().to_string();
-            if !file_name.ends_with(".feldera") {
-                continue;
-            }
-            println!("processing {}", file_name);
+        let expected_files: Vec<_> = golden_file_specs().map(GoldenFileSpec::file_name).collect();
+        let mut actual_files = std::fs::read_dir(&golden_files)?
+            .map(|entry| entry.map(|entry| entry.file_name().to_string_lossy().to_string()))
+            .collect::<Result<Vec<_>, _>>()?;
+        actual_files.retain(|file_name| file_name.ends_with(".feldera"));
+        actual_files.sort_unstable();
+        let mut expected_files_sorted = expected_files.clone();
+        expected_files_sorted.sort_unstable();
+        assert_eq!(actual_files, expected_files_sorted);
 
-            let is_small = file_name.contains("-small");
+        for spec in golden_file_specs() {
+            let file_name = spec.file_name();
+            println!("processing {}", file_name);
             let storage_path = StoragePath::from(file_name);
-            if is_small {
-                validate_rows::<GoldenRowSmall>(
-                    &*storage_backend,
-                    storage_path,
-                    golden_row_small,
-                    golden_aux,
-                );
-            } else {
-                validate_rows::<GoldenRow>(&*storage_backend, storage_path, golden_row, golden_aux);
+
+            match (spec.writer, spec.size) {
+                (GoldenWriterKind::Writer1Bloom, GoldenSize::Large) => {
+                    validate_writer1_rows::<GoldenRow>(
+                        &*storage_backend,
+                        storage_path,
+                        golden_row,
+                        golden_aux,
+                    )
+                }
+                (GoldenWriterKind::Writer1Bloom, GoldenSize::Small) => {
+                    validate_writer1_rows::<GoldenRowSmall>(
+                        &*storage_backend,
+                        storage_path,
+                        golden_row_small,
+                        golden_aux,
+                    )
+                }
+                (GoldenWriterKind::Writer2Roaring, GoldenSize::Large) => {
+                    validate_writer2_rows::<GoldenRow>(
+                        &*storage_backend,
+                        storage_path,
+                        golden_row,
+                        golden_aux,
+                    )
+                }
+                (GoldenWriterKind::Writer2Roaring, GoldenSize::Small) => {
+                    validate_writer2_rows::<GoldenRowSmall>(
+                        &*storage_backend,
+                        storage_path,
+                        golden_row_small,
+                        golden_aux,
+                    )
+                }
             }
         }
 

@@ -1,5 +1,5 @@
 use crate::ZWeight;
-use crate::storage::filter_stats::FilterStats;
+use crate::storage::file::FilterStats;
 use crate::trace::cursor::Position;
 use crate::trace::ord::merge_batcher::MergeBatcher;
 use crate::{
@@ -394,9 +394,12 @@ where
         FilterStats::default()
     }
 
+    fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)> {
+        Some((self.layer.keys.first()?, self.layer.keys.last()?))
+    }
+
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
-        Self::Time: PartialEq<()>,
         RG: Rng,
     {
         self.layer.sample_keys(rng, sample_size, sample);

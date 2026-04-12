@@ -31,11 +31,12 @@ use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 use crate::storage::buffer_cache::CacheStats;
 use crate::storage::file::SerializerInner;
 pub use crate::storage::file::{DbspSerializer, Deserializable, Deserializer, Rkyv};
+use crate::storage::file::{FilterKind, FilterStats};
 use crate::trace::cursor::{
     DefaultPushCursor, FilteredMergeCursor, FilteredMergeCursorWithSnapshot, PushCursor,
     UnfilteredMergeCursor,
 };
-use crate::utils::IsNone;
+use crate::utils::{IsNone, SupportsRoaring};
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::CursorFactory;
 use enum_map::Enum;
@@ -52,7 +53,9 @@ pub mod cursor;
 pub mod filter;
 pub mod layers;
 pub mod ord;
+mod sampling;
 pub mod spine_async;
+pub(crate) use sampling::sample_keys_from_batches;
 pub use spine_async::{BatchReaderWithSnapshot, ListMerger, Spine, SpineSnapshot, WithSnapshot};
 
 #[cfg(test)]
@@ -77,10 +80,9 @@ use crate::{
     algebra::MonoidValue,
     dynamic::{DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
     storage::file::reader::Error as ReaderError,
-    storage::filter_stats::FilterStats,
 };
 pub use cursor::{Cursor, MergeCursor};
-pub use filter::{Filter, GroupFilter};
+pub use filter::{BatchFilterStats, BatchFilters, Filter, GroupFilter};
 pub use layers::Trie;
 
 /// Trait for data stored in batches.
@@ -102,6 +104,7 @@ pub trait DBData:
     + Debug
     + ArchivedDBData
     + IsNone<Inner: ArchivedDBData>
+    + SupportsRoaring
     + 'static
 {
 }
@@ -119,6 +122,7 @@ impl<T> DBData for T where
         + Debug
         + ArchivedDBData
         + IsNone<Inner: ArchivedDBData>
+        + SupportsRoaring
         + 'static
 {
 }
@@ -473,16 +477,35 @@ where
     /// [Cursor::seek_key_exact] after the range filter.
     ///
     /// Today this is usually a Bloom filter. Batches without such a filter
-    /// should return `FilterStats::default()`.
-    fn membership_filter_stats(&self) -> FilterStats;
+    /// should return zero/default stats.
+    fn membership_filter_stats(&self) -> FilterStats {
+        FilterStats::default()
+    }
+
+    /// Filter kind for the secondary membership filter used by
+    /// [Cursor::seek_key_exact].
+    fn membership_filter_kind(&self) -> FilterKind {
+        FilterKind::None
+    }
 
     /// Statistics of the in-memory range filter used by
     /// [Cursor::seek_key_exact].
     ///
-    /// Batches without a range filter should return `FilterStats::default()`.
+    /// Returns range-filter stats. Batches without a range filter should
+    /// return zeroed range stats.
     fn range_filter_stats(&self) -> FilterStats {
         FilterStats::default()
     }
+
+    /// Cached minimum and maximum keys for this batch, when available.
+    ///
+    /// File-backed batches materialize these bounds at write time. In-memory
+    /// batches can compute them from their ordered key storage. Merge builders
+    /// use these bounds to decide upfront whether a batch span can be encoded
+    /// into a roaring bitmap.
+    ///
+    /// Returns `None` only for empty batches.
+    fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)>;
 
     /// Where the batch's data is stored.
     fn location(&self) -> BatchLocation {
@@ -534,7 +557,6 @@ where
     /// * The output sample contains keys sorted in ascending order.
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
-        Self::Time: PartialEq<()>,
         RG: Rng;
 
     /// Returns num_partitions-1 keys from the batch that partition the batch into num_partitions
@@ -660,8 +682,14 @@ where
     fn membership_filter_stats(&self) -> FilterStats {
         (**self).membership_filter_stats()
     }
+    fn membership_filter_kind(&self) -> FilterKind {
+        (**self).membership_filter_kind()
+    }
     fn range_filter_stats(&self) -> FilterStats {
         (**self).range_filter_stats()
+    }
+    fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)> {
+        (**self).key_bounds()
     }
     fn location(&self) -> BatchLocation {
         (**self).location()
@@ -674,7 +702,6 @@ where
     }
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
-        Self::Time: PartialEq<()>,
         RG: Rng,
     {
         (**self).sample_keys(rng, sample_size, sample)
@@ -998,7 +1025,7 @@ where
         location: Option<BatchLocation>,
     ) -> Self
     where
-        B: BatchReader,
+        B: BatchReader<Key = Output::Key, Val = Output::Val, Time = Output::Time, R = Output::R>,
         I: IntoIterator<Item = &'a B> + Clone,
     {
         let _ = location;

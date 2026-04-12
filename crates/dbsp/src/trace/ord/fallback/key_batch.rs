@@ -1,5 +1,5 @@
 use super::utils::{copy_to_builder, pick_merge_destination};
-use crate::storage::filter_stats::FilterStats;
+use crate::storage::file::{FilterKind, FilterStats};
 use crate::{
     DBData, DBWeight, NumEntries, Timestamp,
     dynamic::{
@@ -275,10 +275,25 @@ where
     }
 
     #[inline]
+    fn membership_filter_kind(&self) -> FilterKind {
+        match &self.inner {
+            Inner::File(file) => file.membership_filter_kind(),
+            Inner::Vec(vec) => vec.membership_filter_kind(),
+        }
+    }
+
+    #[inline]
     fn range_filter_stats(&self) -> FilterStats {
         match &self.inner {
             Inner::File(file) => file.range_filter_stats(),
             Inner::Vec(vec) => vec.range_filter_stats(),
+        }
+    }
+
+    fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)> {
+        match &self.inner {
+            Inner::File(file) => file.key_bounds(),
+            Inner::Vec(vec) => vec.key_bounds(),
         }
     }
 
@@ -299,7 +314,6 @@ where
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
     where
-        Self::Time: PartialEq<()>,
         RG: Rng,
     {
         match &self.inner {
@@ -408,23 +422,23 @@ where
         location: Option<BatchLocation>,
     ) -> Self
     where
-        B: BatchReader,
+        B: BatchReader<Key = K, Val = DynUnit, Time = T, R = R>,
         I: IntoIterator<Item = &'a B> + Clone,
     {
         let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
         let value_capacity = batches.clone().into_iter().map(|b| b.len()).sum();
         Self {
             factories: factories.clone(),
-            inner: match pick_merge_destination(batches, location) {
+            inner: match pick_merge_destination(batches.clone(), location) {
                 BatchLocation::Memory => BuilderInner::Vec(VecKeyBuilder::with_capacity(
                     &factories.vec,
                     key_capacity,
                     value_capacity,
                 )),
-                BatchLocation::Storage => BuilderInner::File(FileKeyBuilder::with_capacity(
+                BatchLocation::Storage => BuilderInner::File(FileKeyBuilder::for_merge(
                     &factories.file,
-                    key_capacity,
-                    value_capacity,
+                    batches,
+                    location,
                 )),
             },
         }

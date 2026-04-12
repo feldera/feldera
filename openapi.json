@@ -8284,6 +8284,12 @@
             "nullable": true,
             "minimum": 0
           },
+          "enable_roaring": {
+            "type": "boolean",
+            "description": "Whether file-backed batches may use roaring membership filters when the\nkey type supports them.",
+            "default": null,
+            "nullable": true
+          },
           "fbuf_slab_bytes_per_class": {
             "type": "integer",
             "description": "Target number of cached bytes retained in each `FBuf` slab size class.\n\nThe default is 16 MiB.",
