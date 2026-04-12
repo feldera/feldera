@@ -270,11 +270,11 @@ impl Inner {
         }
     }
 
-    fn prepare<C>(circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<Self, Error>
+    fn prepare<C>(circuit: &C, active_nodes: Option<&BTreeSet<NodeId>>) -> Result<Self, Error>
     where
         C: Circuit,
     {
-        let nodes = nodes
+        let nodes = active_nodes
             .map(|nodes| nodes.iter().cloned().collect::<BTreeSet<_>>())
             .unwrap_or_else(|| BTreeSet::from_iter(circuit.node_ids()));
 
@@ -385,7 +385,7 @@ impl Inner {
         }
 
         if circuit.root_scope() == 0 {
-            circuit.balancer().prepare(circuit);
+            circuit.balancer().prepare(circuit, active_nodes);
         }
 
         Ok(scheduler)
