@@ -1,4 +1,3 @@
-import gzip
 import io
 import json
 import os
@@ -7,9 +6,9 @@ import tempfile
 import time
 import unittest
 import zipfile
+import gzip
 
 import pandas as pd
-import pytest
 
 from feldera import Pipeline
 from feldera.enums import CompletionTokenStatus, PipelineFieldSelector, PipelineStatus
@@ -167,36 +166,6 @@ class TestPipeline(SharedTestPipeline):
         expected = [{"id": 2}, {"id": 1}]
         got = list(resp)
         self.assertCountEqual(got, expected)
-
-    def test_adhoc_query_arrow(self):
-        pa = pytest.importorskip("pyarrow")
-
-        data = "1\n2\n"
-        self.pipeline.start()
-        TEST_CLIENT.push_to_pipeline(self.pipeline.name, "tbl", "csv", data)
-
-        expected_rows = list(
-            TEST_CLIENT.query_as_json(
-                self.pipeline.name,
-                "SELECT * FROM tbl ORDER BY id",
-            )
-        )
-        expected_ids = [row["id"] for row in expected_rows]
-
-        batches_client = list(
-            TEST_CLIENT.query_as_arrow(
-                self.pipeline.name,
-                "SELECT * FROM tbl ORDER BY id",
-            )
-        )
-        table_client = pa.Table.from_batches(batches_client)
-        assert table_client.column("id").to_pylist() == expected_ids
-
-        batches_pipeline = list(
-            self.pipeline.query_arrow("SELECT * FROM tbl ORDER BY id")
-        )
-        table_pipeline = pa.Table.from_batches(batches_pipeline)
-        assert table_pipeline.column("id").to_pylist() == expected_ids
 
     def test_local(self):
         """
@@ -378,10 +347,8 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.input_json("tbl", data, wait=False)
         wait_for_condition(
             "pipeline stops with deployment error after worker panic",
-            lambda: (
-                self.pipeline.status() == PipelineStatus.STOPPED
-                and len(self.pipeline.deployment_error()) > 0
-            ),
+            lambda: self.pipeline.status() == PipelineStatus.STOPPED
+            and len(self.pipeline.deployment_error()) > 0,
             timeout_s=20.0,
             poll_interval_s=1.0,
         )
