@@ -8,7 +8,7 @@ use crate::{
         runtime::{WorkerLocation, WorkerLocations},
     },
     circuit_cache_key,
-    operator::communication::{Mailbox, new_exchange_operators},
+    operator::communication::{ExchangeKind, Mailbox, new_exchange_operators},
     trace::{Batch, deserialize_indexed_wset, merge_batches, serialize_indexed_wset},
 };
 use arc_swap::ArcSwap;
@@ -125,6 +125,7 @@ where
 
                     let output = self.circuit().region("gather", || {
                         let (sender, receiver) = new_exchange_operators(
+                            ExchangeKind::Sync,
                             Some(location),
                             || Vec::new(),
                             move |batch: B, batches: &mut Vec<Mailbox<B>>| {

@@ -287,7 +287,8 @@ pub trait Operator: 'static {
     fn flush(&mut self) {}
 
     /// Invoked after `flush` after each `eval` call to check if all outputs
-    /// have been produced.
+    /// have been produced.  Because it is invoked only after calling `eval`,
+    /// every operator must produce at least one output.
     ///
     /// Once this method returns `true`, its downstream operators can be flushed.
     fn is_flush_complete(&self) -> bool {

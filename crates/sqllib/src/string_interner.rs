@@ -10,7 +10,7 @@ use dbsp::{
     Circuit, DynZWeight, OrdZSet, RootCircuit, Runtime, Stream, ZWeight,
     circuit::{LocalStoreMarker, WorkerLocation, WorkerLocations},
     dynamic::{DowncastTrait, DynData},
-    operator::communication::{Mailbox, new_exchange_operators},
+    operator::communication::{ExchangeKind, Mailbox, new_exchange_operators},
     storage::file::to_bytes,
     trace::{
         BatchReader, BatchReaderFactories, Cursor, OrdIndexedWSet as DynOrdIndexedWSet,
@@ -292,6 +292,7 @@ pub fn build_string_interner(
 
     // Collect spine snapshots from all workers and merge them into a single spine snapshot in worker 0.
     let exchange = new_exchange_operators(
+        ExchangeKind::Sync,
         Some(Location::caller()),
         empty_by_id,
         move |spine: SpineSnapshot<_>, outputs| {

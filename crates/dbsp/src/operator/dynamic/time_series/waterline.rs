@@ -5,7 +5,7 @@ use size_of::SizeOf;
 use crate::circuit::checkpointer::Checkpoint;
 use crate::circuit::runtime::{WorkerLocation, WorkerLocations};
 use crate::dynamic::{DynData, DynUnit};
-use crate::operator::communication::Mailbox;
+use crate::operator::communication::{ExchangeKind, Mailbox};
 use crate::operator::dynamic::{MonoIndexedZSet, MonoZSet};
 use crate::{
     Circuit, NumEntries, RootCircuit, Stream,
@@ -87,6 +87,7 @@ where
 
             let example = init();
             let exchange = new_exchange_operators(
+                ExchangeKind::Sync,
                 Some(Location::caller()),
                 init,
                 move |waterline: Box<TS>, waterlines: &mut Vec<Mailbox<Box<TS>>>| {
@@ -168,6 +169,7 @@ where
 
             let example = init();
             let exchange = new_exchange_operators(
+                ExchangeKind::Sync,
                 Some(Location::caller()),
                 init,
                 move |waterline: Box<TS>, waterlines: &mut Vec<Mailbox<Box<TS>>>| {

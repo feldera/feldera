@@ -11,7 +11,7 @@ use crate::{
     typed_batch::SpineSnapshot,
     utils::{Tup2, Tup3, test::init_test_logger},
 };
-use std::{fmt::Debug, marker::PhantomData, sync::Arc};
+use std::{fmt::Debug, marker::PhantomData, path::PathBuf, sync::Arc};
 
 use super::{CircuitConfig, dbsp_handle::Mode};
 
@@ -168,19 +168,24 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
 
     init_test_logger();
 
-    let mut circuit_config = CircuitConfig::with_workers(NUM_WORKERS)
-        .with_splitter_chunk_size_records(2)
-        .with_mode(Mode::Persistent);
     let path = tempfile::tempdir().unwrap().keep();
     println!("Running replay_test in {}", path.display());
 
-    let config = StorageConfig {
-        path: path.to_string_lossy().into_owned(),
-        cache: Default::default(),
-    };
-    let options = Default::default();
-
-    circuit_config.storage = Some(CircuitStorageConfig::for_config(config, options).unwrap());
+    fn circuit_config(path: &PathBuf) -> CircuitConfig {
+        CircuitConfig::with_workers(NUM_WORKERS)
+            .with_splitter_chunk_size_records(2)
+            .with_mode(Mode::Persistent)
+            .with_storage(
+                CircuitStorageConfig::for_config(
+                    StorageConfig {
+                        path: path.to_string_lossy().into_owned(),
+                        cache: Default::default(),
+                    },
+                    Default::default(),
+                )
+                .unwrap(),
+            )
+    }
 
     // Create both reference circuits, feed I1 and I2 to circuit1; feed I2 and I3 to circuit2.
     let mut reference_output1 = Vec::new();
@@ -191,7 +196,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
     {
         let circuit_constructor1_clone = circuit_constructor1.clone();
         let (mut circuit, (input_handles1, input_handles2, output_handles1, output_handles2)) =
-            Runtime::init_circuit(&circuit_config, move |circuit| {
+            Runtime::init_circuit(circuit_config(&path), move |circuit| {
                 Ok(circuit_constructor1_clone(circuit))
             })
             .unwrap();
@@ -218,7 +223,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
 
         let circuit_constructor2_clone = circuit_constructor2.clone();
         let (mut circuit, (input_handles2, input_handles3, output_handles2, output_handles3)) =
-            Runtime::init_circuit(&circuit_config, move |circuit| {
+            Runtime::init_circuit(circuit_config(&path), move |circuit| {
                 Ok(circuit_constructor2_clone(circuit))
             })
             .unwrap();
@@ -256,7 +261,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
         let circuit_constructor1_clone = circuit_constructor1.clone();
 
         let (mut circuit, (input_handles1, input_handles2, output_handles1, output_handles2)) =
-            Runtime::init_circuit(&circuit_config, move |circuit| {
+            Runtime::init_circuit(circuit_config(&path), move |circuit| {
                 Ok(circuit_constructor1_clone(circuit))
             })
             .unwrap();
@@ -284,13 +289,13 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
         println!("Restarting circuit from checkpoint {}", checkpoint.uuid);
 
         // Restart the second circuit from the checkpoint.
-        let mut circuit_config = circuit_config.clone();
+        let mut circuit_config = circuit_config(&path);
         circuit_config.storage.as_mut().unwrap().init_checkpoint = Some(checkpoint.uuid);
 
         let circuit_constructor2_clone = circuit_constructor2.clone();
 
         let (mut circuit, (input_handles2, input_handles3, output_handles2, output_handles3)) =
-            Runtime::init_circuit(&circuit_config, move |circuit| {
+            Runtime::init_circuit(circuit_config, move |circuit| {
                 Ok(circuit_constructor2_clone(circuit))
             })
             .unwrap();
@@ -605,9 +610,9 @@ fn join_circuit1(
     let (input_stream2, input_handle2) = circuit.add_input_zset::<u64>();
     input_stream2.set_persistent_id(Some("input2"));
 
-    // These integrals will be used for replay input streams.
-    input_stream1.integrate_trace();
-    input_stream2.integrate_trace();
+    // // These integrals will be used for replay input streams.
+    // input_stream1.integrate_trace();
+    // input_stream2.integrate_trace();
 
     let input_stream1_indexed = input_stream1
         .map_index(|x| (*x, *x))
@@ -647,10 +652,10 @@ fn join_circuit2(
     let (input_stream3, input_handle3) = circuit.add_input_zset::<u64>();
     input_stream3.set_persistent_id(Some("input3"));
 
-    // These integrals will be used for replay input streams.
-    input_stream1.integrate_trace();
-    input_stream2.integrate_trace();
-    input_stream3.integrate_trace();
+    // // These integrals will be used for replay input streams.
+    // input_stream1.integrate_trace();
+    // input_stream2.integrate_trace();
+    // input_stream3.integrate_trace();
 
     let input_stream1_indexed = input_stream1
         .map_index(|x| (*x, *x))

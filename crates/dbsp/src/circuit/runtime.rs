@@ -6,7 +6,7 @@ use super::dbsp_handle::{Layout, Mode};
 use crate::SchedulerError;
 use crate::circuit::checkpointer::Checkpointer;
 use crate::error::Error as DbspError;
-use crate::operator::communication::Exchange;
+use crate::operator::communication::{Exchange, ExchangeKind};
 use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
 use crate::storage::file::writer::Parameters;
@@ -35,7 +35,8 @@ use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::convert::identity;
 use std::iter::repeat;
-use std::ops::Range;
+use std::net::TcpListener;
+use std::ops::{Index, Range};
 use std::path::Path;
 use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize};
 use std::sync::{LazyLock, Mutex};
@@ -58,6 +59,7 @@ use std::{
 use tokio::runtime::Builder as TokioBuilder;
 use tokio::runtime::Runtime as TokioRuntime;
 use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 use typedmap::TypedDashMap;
 
@@ -280,6 +282,7 @@ struct RuntimeInner {
     storage: Option<RuntimeStorage>,
     store: LocalStore,
     kill_signal: AtomicBool,
+    cancellation_token: CancellationToken,
     aux_threads: Mutex<Vec<(JoinHandle<()>, Unparker)>>,
     buffer_caches: Vec<EnumMap<ThreadType, Arc<BufferCache>>>,
 
@@ -290,13 +293,23 @@ struct RuntimeInner {
     pin_cpus_bg: Vec<CoreId>,
     fbuf_slab_allocators: Vec<EnumMap<ThreadType, Arc<FBufSlabs>>>,
     worker_sequence_numbers: Vec<AtomicUsize>,
-    // Panic info collected from failed worker threads.
+    /// Panic info collected from failed worker threads.
     panic_info: Vec<EnumMap<ThreadType, RwLock<Option<WorkerPanicInfo>>>>,
     panicked: AtomicBool,
     replay_step_size: AtomicUsize,
 
     /// Tokio runtime that runs async merger tasks (see `AsyncMerger`).
     tokio_merger_runtime: Mutex<Option<TokioRuntime>>,
+
+    /// Optional socket for exchange to listen on.
+    ///
+    /// When exchange initializes, it takes this socket.
+    ///
+    /// Passing in a socket allows the client to let the kernel pick a port
+    /// number by binding to port 0.  Port numbers need to be known for all the
+    /// hosts before we start the circuit, so without this feature we couldn't
+    /// be sure that we'd have a set of available ports.
+    exchange_listener: Mutex<Option<TcpListener>>,
 }
 
 impl Drop for RuntimeInner {
@@ -473,6 +486,7 @@ impl RuntimeInner {
             storage,
             store: TypedDashMap::new(),
             kill_signal: AtomicBool::new(false),
+            cancellation_token: CancellationToken::new(),
             aux_threads: Mutex::new(Vec::new()),
             buffer_caches,
             fbuf_slab_allocators,
@@ -483,6 +497,7 @@ impl RuntimeInner {
             panicked: AtomicBool::new(false),
             replay_step_size: AtomicUsize::new(DEFAULT_REPLAY_STEP_SIZE),
             tokio_merger_runtime: Mutex::new(None),
+            exchange_listener: Mutex::new(config.exchange_listener),
         })
     }
 
@@ -1253,6 +1268,10 @@ impl Runtime {
         })
     }
 
+    pub fn cancellation_token(&self) -> CancellationToken {
+        self.inner().cancellation_token.clone()
+    }
+
     pub fn worker_panic_info(
         &self,
         worker: usize,
@@ -1293,6 +1312,14 @@ impl Runtime {
             .handle()
             .clone()
     }
+
+    /// Takes and returns the TCP listener socket configured via
+    /// [CircuitConfig], if any.
+    ///
+    /// [CircuitConfig]: crate::circuit::dbsp_handle::CircuitConfig
+    pub(crate) fn take_exchange_listener(&self) -> Option<TcpListener> {
+        self.inner().exchange_listener.lock().unwrap().take()
+    }
 }
 
 /// A synchronization primitive that allows multiple threads within a runtime to agree
@@ -1318,47 +1345,20 @@ impl Consensus {
 /// a value to all other workers.
 pub(crate) enum Broadcast<T> {
     SingleThreaded,
-    MultiThreaded {
-        notify_sender: Arc<Notify>,
-        notify_receiver: Arc<Notify>,
-        exchange: Arc<Exchange<T>>,
-    },
+    MultiThreaded { exchange: Arc<Exchange<T>> },
 }
 
 impl<T> Broadcast<T>
 where
-    T: Clone + Send + serde::Serialize + for<'de> serde::Deserialize<'de> + 'static,
+    T: Clone + Debug + Send + serde::Serialize + for<'de> serde::Deserialize<'de> + 'static,
 {
     pub fn new() -> Self {
         match Runtime::runtime() {
             Some(runtime) if Runtime::num_workers() > 1 => {
-                let worker_index = Runtime::worker_index();
                 let exchange_id = runtime.sequence_next().try_into().unwrap();
-                let exchange = Exchange::with_runtime(
-                    &runtime,
-                    exchange_id,
-                    // TODO: handle serialization/deserialization errors better.
-                    Box::new(|data| rmp_serde::from_slice(&data).unwrap()),
-                );
+                let exchange = Exchange::with_runtime(&runtime, exchange_id, ExchangeKind::Sync);
 
-                let notify_sender = Arc::new(Notify::new());
-                let notify_sender_clone = notify_sender.clone();
-                let notify_receiver = Arc::new(Notify::new());
-                let notify_receiver_clone = notify_receiver.clone();
-
-                exchange.register_sender_callback(worker_index, move || {
-                    notify_sender_clone.notify_one()
-                });
-
-                exchange.register_receiver_callback(worker_index, move || {
-                    notify_receiver_clone.notify_one()
-                });
-
-                Self::MultiThreaded {
-                    notify_sender,
-                    notify_receiver,
-                    exchange,
-                }
+                Self::MultiThreaded { exchange }
             }
             _ => Self::SingleThreaded,
         }
@@ -1372,38 +1372,24 @@ where
     pub async fn collect(&self, local: T) -> Result<Vec<T>, SchedulerError> {
         match self {
             Self::SingleThreaded => Ok(vec![local]),
-            Self::MultiThreaded {
-                notify_sender,
-                notify_receiver,
-                exchange,
-            } => {
-                while !exchange.try_send_all_with_serializer(
-                    Runtime::worker_index(),
-                    repeat(local.clone()),
-                    |local| {
-                        let mut fbuf = FBuf::new();
-                        rmp_serde::encode::write(&mut fbuf, &local).unwrap();
-                        fbuf
-                    },
-                ) {
-                    if Runtime::kill_in_progress() {
-                        return Err(SchedulerError::Killed);
-                    }
-                    notify_sender.notified().await;
-                }
-                // Receive and collect the status of each peer.
-                let mut result = Vec::with_capacity(Runtime::num_workers());
-                while !exchange
-                    .try_receive_all(Runtime::worker_index(), |status| result.push(status))
-                {
-                    if Runtime::kill_in_progress() {
-                        return Err(SchedulerError::Killed);
-                    }
-                    // Sleep if other threads are still working.
-                    notify_receiver.notified().await;
-                }
-                Ok(result)
-            }
+            Self::MultiThreaded { exchange } => Runtime::runtime()
+                .unwrap()
+                .cancellation_token()
+                .run_until_cancelled_owned(async {
+                    exchange
+                        .send_all_with_serializer(repeat(local.clone()), |local| {
+                            let mut fbuf = FBuf::new();
+                            rmp_serde::encode::write(&mut fbuf, &local).unwrap();
+                            fbuf
+                        })
+                        .await;
+
+                    exchange
+                        .receive_all(|data| rmp_serde::from_slice(&data).unwrap())
+                        .await
+                })
+                .await
+                .ok_or(SchedulerError::Killed),
         }
     }
 }
@@ -1453,6 +1439,7 @@ impl RuntimeHandle {
             .inner()
             .kill_signal
             .store(true, Ordering::SeqCst);
+        self.runtime.inner().cancellation_token.cancel();
         for (_worker, unparker) in self.workers.iter() {
             unparker.unpark();
         }
@@ -1591,11 +1578,7 @@ impl WorkerLocations {
     /// worker indexes.
     pub fn new() -> Self {
         if let Some(runtime) = Runtime::runtime() {
-            let layout = runtime.layout();
-            Self {
-                workers: 0..layout.n_workers(),
-                local_workers: layout.local_workers(),
-            }
+            Self::for_layout(runtime.layout())
         } else {
             Self {
                 workers: 0..1,
@@ -1604,13 +1587,29 @@ impl WorkerLocations {
         }
     }
 
+    /// Constructs a new iterator from `layout`.
+    pub fn for_layout(layout: &Layout) -> Self {
+        Self {
+            workers: 0..layout.n_workers(),
+            local_workers: layout.local_workers(),
+        }
+    }
+
     /// Returns the location of the worker with the given index.
     pub fn get(&self, worker: usize) -> WorkerLocation {
+        self[worker]
+    }
+}
+
+impl Index<usize> for WorkerLocations {
+    type Output = WorkerLocation;
+
+    fn index(&self, worker: usize) -> &Self::Output {
         debug_assert!(worker < self.workers.end);
         if self.local_workers.contains(&worker) {
-            WorkerLocation::Local
+            &WorkerLocation::Local
         } else {
-            WorkerLocation::Remote
+            &WorkerLocation::Remote
         }
     }
 }
@@ -1775,6 +1774,7 @@ mod tests {
                 .unwrap(),
             ),
             dev_tweaks: DevTweaks::default(),
+            exchange_listener: None,
         };
 
         let hruntime = Runtime::run(cconf, move |_parker| {

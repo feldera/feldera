@@ -14,10 +14,7 @@ pub struct Generator<T, F> {
     _t: PhantomData<T>,
 }
 
-impl<T, F> Generator<T, F>
-where
-    T: Clone,
-{
+impl<T, F> Generator<T, F> {
     /// Creates a generator
     pub fn new(g: F) -> Self {
         Self {
@@ -29,7 +26,7 @@ where
 
 impl<T, F> Operator for Generator<T, F>
 where
-    T: Data,
+    T: 'static,
     F: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -38,15 +35,93 @@ where
     fn fixedpoint(&self, _scope: Scope) -> bool {
         false
     }
+    fn is_input(&self) -> bool {
+        true
+    }
 }
 
 impl<T, F> SourceOperator<T> for Generator<T, F>
 where
     F: FnMut() -> T + 'static,
-    T: Data,
+    T: 'static,
 {
     async fn eval(&mut self) -> T {
         (self.generator)()
+    }
+}
+
+/// A source operator for testing transactions.
+///
+/// The generator function is called once per transaction at commit time.  It
+/// returns an iterator that returns the values to output in successive steps.
+/// The iterator must return at least one value because the scheduler always
+/// invokes the operator at least once.  When the iterator ends, the generator
+/// signals that flush is complete.
+///
+/// The value type must have a `Default` implementation so the operator has
+/// something to output when it is evaluated before it is notified about
+/// upstream flush.
+#[cfg(test)]
+pub struct IteratorGenerator<G, I, T> {
+    generator: G,
+    next: Option<T>,
+    iterator: Option<I>,
+}
+
+#[cfg(test)]
+impl<G, I, T> IteratorGenerator<G, I, T> {
+    pub fn new(generator: G) -> Self {
+        Self {
+            generator,
+            next: None,
+            iterator: None,
+        }
+    }
+}
+
+#[cfg(test)]
+impl<G, I, T> Operator for IteratorGenerator<G, I, T>
+where
+    G: FnMut() -> I + 'static,
+    I: Iterator<Item = T> + 'static,
+    T: 'static,
+{
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("IteratorGenerator")
+    }
+    fn fixedpoint(&self, _scope: Scope) -> bool {
+        false
+    }
+    fn flush(&mut self) {
+        let mut iterator = (self.generator)();
+        self.next = Some(
+            iterator
+                .next()
+                .expect("operator must produce at least one output"),
+        );
+        self.iterator = Some(iterator);
+    }
+    fn is_flush_complete(&self) -> bool {
+        self.next.is_none()
+    }
+}
+
+#[cfg(test)]
+impl<G, I, T> SourceOperator<T> for IteratorGenerator<G, I, T>
+where
+    G: FnMut() -> I + 'static,
+    I: Iterator<Item = T> + 'static,
+    T: Default + 'static,
+{
+    async fn eval(&mut self) -> T {
+        let result = self.next.take();
+        if let Some(iterator) = &mut self.iterator {
+            self.next = iterator.next();
+            if self.next.is_none() {
+                self.iterator = None;
+            }
+        };
+        result.unwrap_or_default()
     }
 }
 
@@ -58,10 +133,7 @@ pub struct TransactionGenerator<T, F> {
     _t: PhantomData<T>,
 }
 
-impl<T, F> TransactionGenerator<T, F>
-where
-    T: Clone,
-{
+impl<T, F> TransactionGenerator<T, F> {
     /// Creates a generator
     pub fn new(g: F) -> Self {
         Self {
@@ -74,7 +146,7 @@ where
 
 impl<T, F> Operator for TransactionGenerator<T, F>
 where
-    T: Data,
+    T: 'static,
     F: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -86,12 +158,15 @@ where
     fn fixedpoint(&self, _scope: Scope) -> bool {
         false
     }
+    fn is_input(&self) -> bool {
+        true
+    }
 }
 
 impl<T, F> SourceOperator<T> for TransactionGenerator<T, F>
 where
     F: FnMut(bool) -> T + 'static,
-    T: Data,
+    T: 'static,
 {
     async fn eval(&mut self) -> T {
         let result = (self.generator)(self.flush);
@@ -194,6 +269,9 @@ where
     }
     fn fixedpoint(&self, _scope: Scope) -> bool {
         // Always a fixed-point
+        true
+    }
+    fn is_input(&self) -> bool {
         true
     }
 }
