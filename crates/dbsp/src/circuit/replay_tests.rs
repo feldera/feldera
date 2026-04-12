@@ -189,6 +189,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
     let mut reference_output3 = Vec::new();
 
     {
+        println!("Running first circuit to get reference output");
         let circuit_constructor1_clone = circuit_constructor1.clone();
         let (mut circuit, (input_handles1, input_handles2, output_handles1, output_handles2)) =
             Runtime::init_circuit(&circuit_config, move |circuit| {
@@ -216,6 +217,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
 
         circuit.kill().unwrap();
 
+        println!("Running second circuit to get reference output");
         let circuit_constructor2_clone = circuit_constructor2.clone();
         let (mut circuit, (input_handles2, input_handles3, output_handles2, output_handles3)) =
             Runtime::init_circuit(&circuit_config, move |circuit| {
@@ -252,6 +254,8 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
     let mut actual_output3 = Vec::new();
 
     let checkpoint = {
+        println!("Running first circuit to create checkpoint");
+
         // Create the first circuit.
         let circuit_constructor1_clone = circuit_constructor1.clone();
 
@@ -310,6 +314,8 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
             actual_output2.push(O2::read_outputs(&output_handles2));
             actual_output3.push(O3::read_outputs(&output_handles3));
         }
+
+        println!("Additional transactions completed");
 
         circuit.kill().unwrap();
     }
