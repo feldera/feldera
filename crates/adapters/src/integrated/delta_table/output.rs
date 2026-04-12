@@ -35,6 +35,7 @@ use serde::Serialize;
 use serde_arrow::ArrayBuilder;
 use serde_arrow::schema::SerdeArrowSchema;
 use std::cmp::min;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use tokio::time::{Duration, sleep};
 use tracing::{Instrument, info, info_span, warn};
@@ -62,6 +63,14 @@ struct DeltaTableWriterInner {
     key_schema: Option<Relation>,
     value_schema: Relation,
     controller: Weak<ControllerInner>,
+    /// Running count of records written by all worker threads in the current batch.
+    /// Updated atomically by parallel tokio tasks during `flush_chunk`.
+    /// Reset to 0 at the start of each batch.
+    ///
+    /// Shared with the controller's `OutputEndpointMetrics` via `Arc`, so
+    /// progress is visible to the metrics snapshot without any extra
+    /// synchronisation.
+    records_written: Arc<AtomicU64>,
 }
 
 pub struct DeltaTableWriter {
@@ -141,7 +150,17 @@ impl DeltaTableWriter {
             key_schema: key_schema.clone(),
             value_schema: value_schema.clone(),
             controller,
+            records_written: Arc::new(AtomicU64::new(0)),
         });
+
+        // Register the progress counter with the controller's metrics.
+        // add_output() has already been called, so the metrics slot exists.
+        if let Some(controller) = inner.controller.upgrade() {
+            controller
+                .status
+                .register_batch_progress_counter(&inner.endpoint_id, inner.records_written.clone());
+        }
+
         // Create or open the delta table.
         // Panic safety: block_on() panics if called from a tokio async context.
         // new() is called from sync controller code (connect_output), so this is fine.
@@ -445,7 +464,17 @@ async fn encode_and_write_range(
     let max_backoff = Duration::from_secs(10);
 
     loop {
-        match stream_encode_and_write(&cursor_builder, &inner, object_store.clone(), micros).await {
+        let mut rows_written: u64 = 0;
+
+        match stream_encode_and_write(
+            &cursor_builder,
+            &inner,
+            object_store.clone(),
+            micros,
+            &mut rows_written,
+        )
+        .await
+        {
             Ok((ref actions, rows)) => {
                 if retry_count > 0 {
                     info!(
@@ -457,12 +486,14 @@ async fn encode_and_write_range(
                 return Ok((actions.clone(), rows));
             }
             Err(WriteError::Deterministic(e)) => {
+                rollback_progress(&inner, rows_written);
                 return Err(e);
             }
             Err(WriteError::Transient(e))
                 if inner.config.max_retries.is_none()
                     || retry_count < inner.config.max_retries.unwrap() =>
             {
+                rollback_progress(&inner, rows_written);
                 retry_count += 1;
                 let message = format!(
                     "Delta table write failed (attempt {retry_count}, retrying in {backoff:?}): {e:?}"
@@ -478,6 +509,7 @@ async fn encode_and_write_range(
                 backoff = std::cmp::min(backoff * 2, max_backoff);
             }
             Err(WriteError::Transient(e)) => {
+                rollback_progress(&inner, rows_written);
                 return Err(anyhow!(
                     "Delta table write failed after {retry_count} retries: {e}"
                 ));
@@ -486,20 +518,40 @@ async fn encode_and_write_range(
     }
 }
 
-/// Build a `RecordBatch` from `builder` (deterministic), write it via `writer` (transient I/O),
-/// and accumulate the row count in `total_rows`.
+/// Subtract a failed attempt's contribution from the shared progress counter.
+///
+/// On retry or terminal failure, this subtracts exactly what the failed
+/// attempt added (its `total_rows`) — no interference with other ranges.
+fn rollback_progress(inner: &DeltaTableWriterInner, written: u64) {
+    if written == 0 {
+        return;
+    }
+    inner.records_written.fetch_sub(written, Ordering::Relaxed);
+}
+
+/// Build a `RecordBatch` from `builder` (deterministic), write it via `writer`
+/// (transient I/O), and report progress.
+///
+/// `rows_written` accumulates the number of records successfully written to the
+/// object store across all chunks in this attempt. The caller uses it both as
+/// the return value (on success) and for rollback (on failure).
 async fn flush_chunk(
     builder: &mut ArrayBuilder,
     writer: &mut DeltaWriter,
-    total_rows: &mut usize,
+    inner: &DeltaTableWriterInner,
+    rows_written: &mut u64,
 ) -> Result<(), WriteError> {
     let batch = builder
         .to_record_batch()
         .map_err(|e| WriteError::Deterministic(anyhow!("error generating arrow arrays: {e}")))?;
-    *total_rows += batch.num_rows();
-    writer.write(&batch).await.map_err(|e| {
-        WriteError::Transient(anyhow!("error writing {} records: {e:?}", batch.num_rows()))
-    })?;
+    let num_rows = batch.num_rows();
+    writer
+        .write(&batch)
+        .await
+        .map_err(|e| WriteError::Transient(anyhow!("error writing {num_rows} records: {e:?}")))?;
+    let n = num_rows as u64;
+    *rows_written += n;
+    inner.records_written.fetch_add(n, Ordering::Relaxed);
     Ok(())
 }
 
@@ -508,6 +560,9 @@ async fn flush_chunk(
 /// Encodes records from the cursor in chunks of `CHUNK_SIZE` and writes each chunk
 /// to the `DeltaWriter` immediately, avoiding buffering all `RecordBatch`es in memory.
 ///
+/// `rows_written` accumulates how many records this attempt added to the shared
+/// `records_written` counter, so the caller can roll back on failure.
+///
 /// Returns [`WriteError::Deterministic`] for data-dependent failures (serialization,
 /// validation) and [`WriteError::Transient`] for I/O failures (object store writes).
 async fn stream_encode_and_write(
@@ -515,6 +570,7 @@ async fn stream_encode_and_write(
     inner: &DeltaTableWriterInner,
     object_store: ObjectStoreRef,
     micros: i64,
+    rows_written: &mut u64,
 ) -> Result<(Vec<Add>, usize), WriteError> {
     let num_indexed_cols = min(32, inner.arrow_schema.fields.len() as u64);
     let writer_config = WriterConfig::new(
@@ -530,7 +586,6 @@ async fn stream_encode_and_write(
     let mut insert_builder = ArrayBuilder::new(inner.serde_arrow_schema.clone())
         .map_err(|e| WriteError::Deterministic(anyhow!("error creating array builder: {e}")))?;
     let mut num_records = 0;
-    let mut total_rows = 0;
     let index_name = inner.key_schema.as_ref().map(|s| &s.name);
 
     if let Some(index_name) = index_name {
@@ -576,7 +631,7 @@ async fn stream_encode_and_write(
                 num_records += 1;
 
                 if num_records >= CHUNK_SIZE {
-                    flush_chunk(&mut insert_builder, &mut writer, &mut total_rows).await?;
+                    flush_chunk(&mut insert_builder, &mut writer, inner, rows_written).await?;
                     num_records = 0;
                 }
             };
@@ -623,7 +678,7 @@ async fn stream_encode_and_write(
                 num_records += 1;
 
                 if num_records >= CHUNK_SIZE {
-                    flush_chunk(&mut insert_builder, &mut writer, &mut total_rows).await?;
+                    flush_chunk(&mut insert_builder, &mut writer, inner, rows_written).await?;
                     num_records = 0;
                 }
             }
@@ -632,14 +687,14 @@ async fn stream_encode_and_write(
     }
 
     if num_records > 0 {
-        flush_chunk(&mut insert_builder, &mut writer, &mut total_rows).await?;
+        flush_chunk(&mut insert_builder, &mut writer, inner, rows_written).await?;
     }
 
     let actions = writer
         .close()
         .await
         .map_err(|e| WriteError::Transient(anyhow!("error closing writer: {e:?}")))?;
-    Ok((actions, total_rows))
+    Ok((actions, *rows_written as usize))
 }
 
 impl OutputConsumer for DeltaTableWriter {
@@ -650,6 +705,7 @@ impl OutputConsumer for DeltaTableWriter {
     fn batch_start(&mut self, _step: Step) {
         self.pending_actions.clear();
         self.num_rows = 0;
+        self.inner.records_written.store(0, Ordering::Relaxed);
     }
 
     fn push_buffer(&mut self, _buffer: &[u8], _num_records: usize) {
@@ -686,6 +742,7 @@ impl OutputConsumer for DeltaTableWriter {
         // Panic safety: block_on() panics if called from a tokio async context.
         // batch_end() is called from the dedicated output thread (output_thread_func).
         if let Err(e) = TOKIO.block_on(self.task.commit_with_retry(&actions)) {
+            self.inner.records_written.store(0, Ordering::Relaxed);
             if let Some(controller) = self.inner.controller.upgrade() {
                 controller.output_transport_error(
                     self.inner.endpoint_id,
@@ -698,6 +755,7 @@ impl OutputConsumer for DeltaTableWriter {
             return;
         }
 
+        self.inner.records_written.store(0, Ordering::Relaxed);
         if let Some(controller) = self.inner.controller.upgrade() {
             controller
                 .update_output_connector_health(self.inner.endpoint_id, ConnectorHealth::healthy());
@@ -810,6 +868,10 @@ impl Encoder for DeltaTableWriter {
             }
             self.pending_actions.clear();
             self.num_rows = 0;
+            // Failed ranges already rolled back their own contributions, but
+            // successful ranges' records are still counted. Since we're dropping
+            // all actions, reset to 0.
+            self.inner.records_written.store(0, Ordering::Relaxed);
             let msg = errors
                 .iter()
                 .map(|e| format!("{e:#}"))
@@ -1452,5 +1514,203 @@ mod parallel {
             checkpoint_interval: None,
         };
         assert!(config.validate().is_err());
+    }
+
+    // ── Progress counter tests ────────────────────────────────────
+
+    use std::sync::atomic::Ordering;
+
+    fn records_written(endpoint: &DeltaTableWriter) -> u64 {
+        endpoint.inner.records_written.load(Ordering::Relaxed)
+    }
+
+    #[test]
+    fn test_progress_counter_single_thread() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        let records = make_records(100);
+        let batch = build_insert_batch(&records);
+        let mut endpoint = make_endpoint(1, &table_uri, true);
+
+        assert_eq!(records_written(&endpoint), 0);
+        endpoint.consumer().batch_start(0);
+        endpoint
+            .encode(batch.clone().arc_as_batch_reader())
+            .unwrap();
+        assert_eq!(records_written(&endpoint), 100);
+        endpoint.consumer().batch_end();
+        assert_eq!(records_written(&endpoint), 0);
+    }
+
+    #[test]
+    fn test_progress_counter_multi_thread() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        let records = make_records(100);
+        let batch = build_insert_batch(&records);
+        let mut endpoint = make_endpoint(4, &table_uri, true);
+
+        endpoint.consumer().batch_start(0);
+        endpoint
+            .encode(batch.clone().arc_as_batch_reader())
+            .unwrap();
+        assert_eq!(records_written(&endpoint), 100);
+        endpoint.consumer().batch_end();
+        assert_eq!(records_written(&endpoint), 0);
+    }
+
+    #[test]
+    fn test_progress_counter_empty_batch() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        let batch = build_insert_batch(&[]);
+        let mut endpoint = make_endpoint(1, &table_uri, true);
+
+        endpoint.consumer().batch_start(0);
+        endpoint
+            .encode(batch.clone().arc_as_batch_reader())
+            .unwrap();
+        assert_eq!(records_written(&endpoint), 0);
+        endpoint.consumer().batch_end();
+        assert_eq!(records_written(&endpoint), 0);
+    }
+
+    #[test]
+    fn test_progress_counter_multiple_batches() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        let mut endpoint = make_endpoint(1, &table_uri, true);
+
+        // Batch 1: 50 records.
+        let records1 = make_records(50);
+        let batch1 = build_insert_batch(&records1);
+        endpoint.consumer().batch_start(0);
+        endpoint
+            .encode(batch1.clone().arc_as_batch_reader())
+            .unwrap();
+        assert_eq!(records_written(&endpoint), 50);
+        endpoint.consumer().batch_end();
+        assert_eq!(records_written(&endpoint), 0);
+
+        // Batch 2: 30 records (ids 50..80).
+        let records2: Vec<_> = (50..80).map(make_record).collect();
+        let batch2 = build_insert_batch(&records2);
+        endpoint.consumer().batch_start(1);
+        endpoint
+            .encode(batch2.clone().arc_as_batch_reader())
+            .unwrap();
+        assert_eq!(records_written(&endpoint), 30);
+        endpoint.consumer().batch_end();
+        assert_eq!(records_written(&endpoint), 0);
+    }
+
+    #[test]
+    fn test_progress_counter_resets_on_batch_start() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        let records = make_records(50);
+        let batch = build_insert_batch(&records);
+        let mut endpoint = make_endpoint(1, &table_uri, true);
+
+        endpoint.consumer().batch_start(0);
+        endpoint
+            .encode(batch.clone().arc_as_batch_reader())
+            .unwrap();
+        assert_eq!(records_written(&endpoint), 50);
+
+        // batch_start without batch_end resets the counter.
+        endpoint.consumer().batch_start(1);
+        assert_eq!(records_written(&endpoint), 0);
+    }
+
+    #[test]
+    fn test_progress_counter_resets_on_write_failure() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        let records = make_records(10);
+        let batch = build_insert_batch(&records);
+        let mut endpoint = make_endpoint(1, &table_uri, true);
+
+        // Make directory read-only to trigger write failure.
+        std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        endpoint.consumer().batch_start(0);
+        let result = endpoint.encode(batch.arc_as_batch_reader());
+
+        // Restore permissions before asserting.
+        std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert!(result.is_err());
+        // encode() resets progress to 0 on failure.
+        assert_eq!(records_written(&endpoint), 0);
+    }
+
+    #[test]
+    fn test_progress_counter_resets_after_retries() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        let records = make_records(10);
+        let batch = build_insert_batch(&records);
+
+        let key_schema = Some(key_relation());
+        let mut endpoint = DeltaTableWriter::new(
+            EndpointId::default(),
+            "test_endpoint",
+            &DeltaTableWriterConfig {
+                uri: table_uri.clone(),
+                mode: DeltaTableWriteMode::Truncate,
+                max_retries: Some(1),
+                threads: Some(1),
+                object_store_config: Default::default(),
+            },
+            &key_schema,
+            &value_relation(),
+            Weak::new(),
+        )
+        .expect("failed to create endpoint");
+
+        // Make directory read-only to trigger write failure with retries.
+        std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        endpoint.consumer().batch_start(0);
+        let result = endpoint.encode(batch.arc_as_batch_reader());
+
+        // Restore permissions.
+        std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert!(result.is_err(), "should fail after exhausting retries");
+        // encode() resets progress to 0 after all ranges fail.
+        assert_eq!(records_written(&endpoint), 0);
+    }
+
+    #[test]
+    fn test_progress_large_batch_increments() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        // Use > CHUNK_SIZE records to trigger multiple flush_chunk calls.
+        let num = super::CHUNK_SIZE + 500;
+        let records = make_records(num);
+        let batch = build_insert_batch(&records);
+        let mut endpoint = make_endpoint(1, &table_uri, true);
+
+        endpoint.consumer().batch_start(0);
+        endpoint
+            .encode(batch.clone().arc_as_batch_reader())
+            .unwrap();
+        assert_eq!(records_written(&endpoint), num as u64);
+
+        // Verify data was written correctly.
+        endpoint.consumer().batch_end();
+        assert_eq!(records_written(&endpoint), 0);
+        let output = read_output(&table_uri);
+        assert_eq!(output.len(), num);
     }
 }

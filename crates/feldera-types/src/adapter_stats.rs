@@ -294,6 +294,12 @@ pub struct ExternalOutputEndpointMetrics {
     pub total_processed_steps: Step,
     /// Extra memory in use beyond that used for queuing records.
     pub memory: u64,
+    /// Number of records written so far while the connector is processing a
+    /// batch of updates.  Resets to 0 after the batch is committed.
+    ///
+    /// `None` when the connector does not support batch-progress reporting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_records_written: Option<u64>,
 }
 
 /// Output endpoint status information.
@@ -487,5 +493,30 @@ mod tests {
 
         let json = serde_json::to_string(&error).unwrap();
         assert!(json.contains(r#""timestamp":"2026-03-08T05:26:42.442438Z""#));
+    }
+
+    #[test]
+    fn output_metrics_batch_records_written_serializes() {
+        use super::ExternalOutputEndpointMetrics;
+
+        let metrics = ExternalOutputEndpointMetrics {
+            batch_records_written: Some(42),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&metrics).unwrap();
+        assert!(json.contains(r#""batch_records_written":42"#));
+
+        let deserialized: ExternalOutputEndpointMetrics = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.batch_records_written, Some(42));
+    }
+
+    #[test]
+    fn output_metrics_batch_records_written_defaults_to_none() {
+        use super::ExternalOutputEndpointMetrics;
+
+        // Old JSON without batch_records_written defaults to None.
+        let json = r#"{"transmitted_records":0,"transmitted_bytes":0,"queued_records":0,"queued_batches":0,"buffered_records":0,"buffered_batches":0,"num_encode_errors":0,"num_transport_errors":0,"total_processed_input_records":0,"total_processed_steps":0,"memory":0}"#;
+        let metrics: ExternalOutputEndpointMetrics = serde_json::from_str(json).unwrap();
+        assert_eq!(metrics.batch_records_written, None);
     }
 }

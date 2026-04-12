@@ -9938,6 +9938,13 @@
           "memory"
         ],
         "properties": {
+          "batch_records_written": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of records written so far while the connector is processing a\nbatch of updates.  Resets to 0 after the batch is committed.\n\n`None` when the connector does not support batch-progress reporting.",
+            "nullable": true,
+            "minimum": 0
+          },
           "buffered_batches": {
             "type": "integer",
             "format": "int64",
