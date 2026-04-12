@@ -144,18 +144,30 @@
           }
         : {}}
   {#if barrier}
-    <span data-testid="box-icon-barrier" class="fd fd-construction text-[16px] text-warning-500"
+    <span
+      data-testid="box-icon-barrier"
+      class="fd fd-construction mr-1 text-[16px] text-warning-500"
     ></span>
     <Tooltip placement="top">Checkpointing is blocked by this connector</Tooltip>
+  {:else if hasErrors && onErrorClick}
+    <span
+      data-testid="btn-icon-input-errors"
+      class="fd fd-circle-alert mr-1 cursor-pointer text-[16px] text-error-500"
+      onclick={(e) => {
+        e.stopPropagation()
+        onErrorClick(e)
+      }}
+      role="button"
+      tabindex="0"
+      onkeydown={(e) => e.key === 'Enter' && onErrorClick(e)}
+    ></span>
+    <Tooltip placement="top">Parse or transport errors occurred — click to view</Tooltip>
   {:else if hasErrors}
     <span
       data-testid="btn-icon-input-errors"
-      class="fd fd-circle-alert text-[16px] text-error-500"
-      {...gotoErrorsBtnProps}
+      class="fd fd-circle-alert mr-1 text-[16px] text-error-500"
     ></span>
-    <Tooltip placement="top"
-      >Parse or transport errors occurred{onErrorClick ? ' — click to view' : ''}</Tooltip
-    >
+    <Tooltip placement="top">Parse or transport errors occurred</Tooltip>
   {/if}
   {#if endOfInput}
     <span
@@ -208,29 +220,25 @@
   hasFatalError: boolean
   onErrorClick?: (e: Event) => void
 })}
-  {#if hasErrors}
+  {#if hasErrors && onErrorClick}
     <span
       data-testid="btn-icon-output-errors"
-      class="fd {hasFatalError ? 'fd-circle-x' : 'fd-circle-alert'} text-[16px] text-error-500"
-      {...onErrorClick
-        ? {
-            onclick: (e) => {
-              e.stopPropagation()
-              onErrorClick?.(e)
-            },
-            role: 'button',
-            tabindex: 0,
-            onkeydown: (e) => e.key === 'Enter' && onErrorClick?.(e)
-          }
-        : {}}
+      class="fd fd-circle-alert mr-1 cursor-pointer text-[16px] text-error-500"
+      onclick={(e) => {
+        e.stopPropagation()
+        onErrorClick(e)
+      }}
+      role="button"
+      tabindex="0"
+      onkeydown={(e) => e.key === 'Enter' && onErrorClick(e)}
     ></span>
-    <Tooltip placement="top"
-      >{hasFatalError
-        ? onErrorClick
-          ? `Fatal error occurred — connector can't output more data — click to view`
-          : `Fatal error occurred in one of the connectors`
-        : `Encode or transport errors occurred${onErrorClick ? ' — click to view' : ''}`}</Tooltip
-    >
+    <Tooltip placement="top">Encode or transport errors occurred — click to view</Tooltip>
+  {:else if hasErrors}
+    <span
+      data-testid="btn-icon-output-errors"
+      class="fd fd-circle-alert mr-1 text-[16px] text-error-500"
+    ></span>
+    <Tooltip placement="top">Encode or transport errors occurred</Tooltip>
   {/if}
 {/snippet}
 

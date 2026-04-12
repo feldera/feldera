@@ -74,6 +74,7 @@ export type {
   BuildInformation,
   CalciteId,
   CalcitePlan,
+  CheckpointActivity,
   CheckpointFailure,
   CheckpointMetadata,
   CheckpointPipelineData,

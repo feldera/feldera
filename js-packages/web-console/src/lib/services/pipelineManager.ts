@@ -1,8 +1,12 @@
 import {
   type CombinedDesiredStatus as _CombinedDesiredStatus,
   type CombinedStatus as _CombinedStatus,
+  checkpointPipeline as _checkpointPipeline,
   deleteApiKey as _deleteApiKey,
   deletePipeline as _deletePipeline,
+  getCheckpointStatus as _getCheckpointStatus,
+  getCheckpointSyncStatus as _getCheckpointSyncStatus,
+  getCheckpoints as _getCheckpoints,
   getClusterEvent as _getClusterEvent,
   getConfig as _getConfig,
   getConfigSession as _getConfigSession,
@@ -17,6 +21,13 @@ import {
   postPipeline as _postPipeline,
   postUpdateRuntime as _postUpdateRuntime,
   putPipeline as _putPipeline,
+  syncCheckpoint as _syncCheckpoint,
+  type CheckpointActivity,
+  type CheckpointFailure,
+  type CheckpointMetadata,
+  type CheckpointResponse,
+  type CheckpointStatus,
+  type CommitProgressSummary,
   type ControllerStatus,
   type ErrorResponse,
   type GetPipelineSupportBundleData,
@@ -37,10 +48,16 @@ import {
   postPipelineResume,
   postPipelineStart,
   postPipelineStop,
-  startSamplyProfile
+  startSamplyProfile,
+  type TransactionStatus
 } from '$lib/services/manager'
 
 export type {
+  CheckpointActivity,
+  CheckpointFailure,
+  CheckpointMetadata,
+  CheckpointResponse,
+  CheckpointStatus,
   InputEndpointConfig,
   InputEndpointStatus,
   OutputEndpointConfig,
@@ -48,6 +65,22 @@ export type {
   RuntimeConfig,
   SqlCompilerMessage
 } from '$lib/services/manager'
+
+// Types missing from generated client (OpenAPI codegen maps them incorrectly)
+export type CheckpointSyncResponse = {
+  checkpoint_uuid: string
+}
+
+export type CheckpointSyncFailure = {
+  uuid: string
+  error: string
+}
+
+export type CheckpointSyncStatus = {
+  success?: string | null
+  failure?: CheckpointSyncFailure | null
+  periodic?: string | null
+}
 
 import { match, P } from 'ts-pattern'
 import type { XgressRecord } from '$lib/types/pipelineManager'
@@ -447,16 +480,110 @@ export const getPipelineStatus = async (pipeline_name: string, options?: FetchOp
   )
 }
 
+// ---------------------------------------------------------------------------
+// Transaction status simulator
+// Cycles every 15 s: 5 s NoTransaction → 2 s TransactionInProgress → 8 s CommitInProgress
+// Set to true to overlay simulated transaction state on top of real pipeline stats.
+// ---------------------------------------------------------------------------
+const SIMULATE_TRANSACTION_STATUS = false
+
+const TX_CYCLE_MS = 10_000
+const TX_NO_TX_MS = 2_000
+const TX_IN_PROGRESS_MS = 2_000
+const TX_COMMIT_MS = 6_000
+
+// Commit phase parameters
+const TX_SIM_TOTAL_OPERATORS = 50
+const TX_SIM_MAX_CONCURRENT = 3 // operators flushed in parallel
+const TX_SIM_RECORDS_PER_OPERATOR = 10_000
+
+/**
+ * Compute a simulated transaction state based on the current wall-clock time.
+ *
+ * Operators move through three stages that mirror the real CommitProgressSummary:
+ *
+ *   remaining → in_progress (up to MAX_CONCURRENT at once) → completed
+ *
+ * Within each "batch" of concurrent operators, in_progress_processed_records
+ * increases linearly from 0 to in_progress_total_records as the batch timer
+ * elapses, after which all operators in the batch become completed and the
+ * next batch begins.
+ */
+const computeSimulatedTransactionState = (): {
+  transaction_status: TransactionStatus
+  commit_progress: CommitProgressSummary | null
+} => {
+  const t = Date.now() % TX_CYCLE_MS
+
+  if (t < TX_NO_TX_MS) {
+    return { transaction_status: 'NoTransaction', commit_progress: null }
+  }
+
+  if (t < TX_NO_TX_MS + TX_IN_PROGRESS_MS) {
+    return { transaction_status: 'TransactionInProgress', commit_progress: null }
+  }
+
+  const commitElapsed = t - TX_NO_TX_MS - TX_IN_PROGRESS_MS
+  const totalBatches = Math.ceil(TX_SIM_TOTAL_OPERATORS / TX_SIM_MAX_CONCURRENT)
+  const batchDurationMs = TX_COMMIT_MS / totalBatches
+
+  // Which batch we are in (clamped to last batch during the final step)
+  const batchIndex = Math.min(Math.floor(commitElapsed / batchDurationMs), totalBatches - 1)
+  const batchElapsed = commitElapsed - batchIndex * batchDurationMs
+  const batchFraction = Math.min(batchElapsed / batchDurationMs, 1)
+
+  // Operators that finished before the current batch
+  const completed = batchIndex * TX_SIM_MAX_CONCURRENT
+
+  // Operators in the current batch (last batch may be smaller)
+  const in_progress = Math.min(TX_SIM_MAX_CONCURRENT, TX_SIM_TOTAL_OPERATORS - completed)
+
+  const remaining = Math.max(0, TX_SIM_TOTAL_OPERATORS - completed - in_progress)
+
+  const in_progress_total_records = in_progress * TX_SIM_RECORDS_PER_OPERATOR
+  const in_progress_processed_records = Math.floor(batchFraction * in_progress_total_records)
+
+  return {
+    transaction_status: 'CommitInProgress',
+    commit_progress: {
+      completed,
+      in_progress,
+      remaining,
+      in_progress_processed_records,
+      in_progress_total_records
+    }
+  }
+}
+
 export const getPipelineStats = async (pipeline_name: string, options?: FetchOptions) => {
   return mapResponse(
     _getPipelineStats({
       path: { pipeline_name },
       ...options
     }),
-    (status) => ({
-      pipelineName: pipeline_name,
-      status: status as ControllerStatus | null | 'not running'
-    }),
+    (status) => {
+      let controllerStatus = status as ControllerStatus | null
+      if (SIMULATE_TRANSACTION_STATUS && controllerStatus) {
+        controllerStatus = {
+          ...controllerStatus,
+          global_metrics: {
+            ...controllerStatus.global_metrics,
+            ...computeSimulatedTransactionState()
+          }
+        }
+      }
+      if (SIMULATE_CHECKPOINTS && controllerStatus) {
+        controllerStatus = {
+          ...controllerStatus,
+          checkpoint_activity: _mockCheckpoints.getCheckpointActivity(pipeline_name),
+          permanent_checkpoint_errors: null
+        }
+      }
+      return {
+        pipelineName: pipeline_name,
+        status: controllerStatus as ControllerStatus | null | 'not running'
+      }
+    },
     (e) => {
       if (e.error_code === 'PipelineInteractionNotDeployed') {
         return {
@@ -496,6 +623,225 @@ export const getOutputConnectorStatus = (
     }),
     (v) => v
   )
+
+// --- Mock simulator for checkpoint operations ---
+
+interface MockPipelineCheckpointState {
+  nextSeq: number
+  currentSeq: number | null
+  checkpointStatus: { success?: number | null; failure?: CheckpointFailure | null }
+  /** Checkpoint activity now lives in ControllerStatus (returned by /stats). */
+  activity: CheckpointActivity
+  syncStatus: CheckpointSyncStatus
+  checkpoints: CheckpointMetadata[]
+  syncCycleIndex: number
+}
+
+const generateMockCheckpoint = (index: number): CheckpointMetadata => ({
+  uuid: crypto.randomUUID(),
+  identifier: `checkpoint ${index}`,
+  fingerprint: Math.floor(Math.random() * 1e12),
+  size: Math.floor(Math.random() * 500e6) + 10e6,
+  steps: Math.floor(Math.random() * 1e6),
+  processed_records: Math.floor(Math.random() * 1e8)
+})
+
+/**
+ * Mock simulator for checkpoint APIs. Maintains a single source of truth per pipeline.
+ *
+ * Auto-cycles through states on a timer once a pipeline is first observed:
+ *   Idle (3s) → Delayed (4s) → InProgress (3s) → Idle (success) → repeat
+ * Every 3rd cycle the checkpoint "fails" instead of succeeding, to exercise
+ * the failure display path.
+ *
+ * - `checkpointPipeline` triggers an immediate cycle on top of the auto-cycle.
+ * - `syncCheckpoint` returns immediately, generates checkpoints cycling through counts [3, 5, 10].
+ * - `getCheckpointStatus` / `getCheckpointSyncStatus` / `getCheckpoints` reflect current state.
+ */
+class CheckpointMockSimulator {
+  private states = new Map<string, MockPipelineCheckpointState>()
+  private timers = new Map<string, ReturnType<typeof setTimeout>>()
+
+  private getState(pipelineName: string): MockPipelineCheckpointState {
+    let state = this.states.get(pipelineName)
+    if (!state) {
+      state = {
+        nextSeq: 0,
+        currentSeq: null,
+        checkpointStatus: {},
+        activity: { status: 'idle' },
+        syncStatus: {},
+        checkpoints: [],
+        syncCycleIndex: 0
+      }
+      this.states.set(pipelineName, state)
+    }
+    return state
+  }
+
+  /** Starts the auto-cycle timer for a pipeline if not already running. */
+  private ensureAutoCycle(pipelineName: string): void {
+    if (this.timers.has(pipelineName)) return
+    // Start the first cycle after a short idle period
+    this.scheduleNextCycle(pipelineName, 3_000)
+  }
+
+  private scheduleNextCycle(pipelineName: string, delayMs: number): void {
+    this.timers.set(
+      pipelineName,
+      setTimeout(() => {
+        this.timers.delete(pipelineName)
+        this.runCycle(pipelineName)
+      }, delayMs)
+    )
+  }
+
+  private runCycle(pipelineName: string): void {
+    const state = this.getState(pipelineName)
+    const seq = state.nextSeq++
+    state.currentSeq = seq
+    const willFail = seq % 3 === 2 // Every 3rd checkpoint fails
+
+    // Phase 1: Delayed (4s)
+    state.activity = {
+      status: 'delayed',
+      reasons: ['Replaying', { InputEndpointBarrier: 'kafka_in' }],
+      delayed_since: new Date().toISOString()
+    }
+
+    setTimeout(() => {
+      // Phase 2: InProgress (3s)
+      state.activity = {
+        status: 'in_progress',
+        sequence_number: seq,
+        started_at: new Date().toISOString()
+      }
+
+      setTimeout(() => {
+        // Phase 3: Complete or Fail → back to Idle
+        state.currentSeq = null
+        if (willFail) {
+          state.checkpointStatus.failure = {
+            sequence_number: seq,
+            error: `Simulated I/O error writing checkpoint #${seq}`,
+            failed_at: new Date().toISOString()
+          }
+        } else {
+          const checkpoint = generateMockCheckpoint(state.checkpoints.length)
+          state.checkpoints.push(checkpoint)
+          if (state.checkpointStatus.success == null || state.checkpointStatus.success < seq) {
+            state.checkpointStatus.success = seq
+          }
+        }
+        state.activity = { status: 'idle' }
+
+        // Schedule next cycle after 3s idle
+        this.scheduleNextCycle(pipelineName, 3_000)
+      }, 3_000)
+    }, 4_000)
+  }
+
+  checkpointPipeline(pipelineName: string): Promise<CheckpointResponse> {
+    // Cancel any pending auto-cycle timer and start an immediate cycle
+    const timer = this.timers.get(pipelineName)
+    if (timer) {
+      clearTimeout(timer)
+      this.timers.delete(pipelineName)
+    }
+    this.runCycle(pipelineName)
+    const state = this.getState(pipelineName)
+    return Promise.resolve({ checkpoint_sequence_number: state.nextSeq - 1 })
+  }
+
+  getCheckpointStatus(pipelineName: string): Promise<CheckpointStatus> {
+    const state = this.getState(pipelineName)
+    return Promise.resolve({ ...state.checkpointStatus })
+  }
+
+  /** Returns the current checkpoint activity for injection into ControllerStatus (/stats). */
+  getCheckpointActivity(pipelineName: string): CheckpointActivity {
+    this.ensureAutoCycle(pipelineName)
+    return this.getState(pipelineName).activity
+  }
+
+  syncCheckpoint(pipelineName: string): Promise<CheckpointSyncResponse> {
+    const state = this.getState(pipelineName)
+    const counts = [3, 5, 10]
+    const count = counts[state.syncCycleIndex % counts.length]
+    state.syncCycleIndex++
+
+    state.checkpoints = Array.from({ length: count }, (_, i) => generateMockCheckpoint(i))
+
+    const lastUuid = state.checkpoints.at(-1)!.uuid
+
+    setTimeout(() => {
+      state.syncStatus.success = lastUuid
+    }, 2_000)
+
+    return Promise.resolve({ checkpoint_uuid: lastUuid })
+  }
+
+  getCheckpointSyncStatus(pipelineName: string): Promise<CheckpointSyncStatus> {
+    return Promise.resolve({ ...this.getState(pipelineName).syncStatus })
+  }
+
+  getCheckpoints(pipelineName: string): Promise<CheckpointMetadata[]> {
+    return Promise.resolve([...this.getState(pipelineName).checkpoints])
+  }
+
+  reset(pipelineName: string): void {
+    const timer = this.timers.get(pipelineName)
+    if (timer) {
+      clearTimeout(timer)
+      this.timers.delete(pipelineName)
+    }
+    this.states.delete(pipelineName)
+  }
+}
+
+// Flip to `true` to use the mock simulator instead of real API calls
+const SIMULATE_CHECKPOINTS = false
+const _mockCheckpoints = new CheckpointMockSimulator()
+
+export const getPipelineCheckpoints = (pipeline_name: string, options?: FetchOptions) =>
+  SIMULATE_CHECKPOINTS
+    ? _mockCheckpoints.getCheckpoints(pipeline_name)
+    : mapResponse(
+        _getCheckpoints({ path: { pipeline_name }, ...options }),
+        (v) => v as unknown as CheckpointMetadata[]
+      )
+
+export const checkpointPipeline = (pipeline_name: string, options?: FetchOptions) =>
+  SIMULATE_CHECKPOINTS
+    ? _mockCheckpoints.checkpointPipeline(pipeline_name)
+    : mapResponse(
+        _checkpointPipeline({ path: { pipeline_name }, ...options }),
+        (v) => v as CheckpointResponse
+      )
+
+export const getCheckpointStatus = (pipeline_name: string, options?: FetchOptions) =>
+  SIMULATE_CHECKPOINTS
+    ? _mockCheckpoints.getCheckpointStatus(pipeline_name)
+    : mapResponse(
+        _getCheckpointStatus({ path: { pipeline_name }, ...options }),
+        (v) => v as CheckpointStatus
+      )
+
+export const syncCheckpoint = (pipeline_name: string, options?: FetchOptions) =>
+  SIMULATE_CHECKPOINTS
+    ? _mockCheckpoints.syncCheckpoint(pipeline_name)
+    : mapResponse(
+        _syncCheckpoint({ path: { pipeline_name }, ...options }),
+        (v) => v as unknown as CheckpointSyncResponse
+      )
+
+export const getCheckpointSyncStatus = (pipeline_name: string, options?: FetchOptions) =>
+  SIMULATE_CHECKPOINTS
+    ? _mockCheckpoints.getCheckpointSyncStatus(pipeline_name)
+    : mapResponse(
+        _getCheckpointSyncStatus({ path: { pipeline_name }, ...options }),
+        (v) => v as unknown as CheckpointSyncStatus
+      )
 
 export const deletePipeline = async (pipeline_name: string, options?: FetchOptions) => {
   await mapResponse(_deletePipeline({ path: { pipeline_name }, ...options }), (v) => v)

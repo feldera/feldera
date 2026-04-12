@@ -158,6 +158,36 @@ export type CalcitePlan = {
 }
 
 /**
+ * Current checkpoint activity state.
+ */
+export type CheckpointActivity =
+  | {
+      status: 'idle'
+    }
+  | {
+      /**
+       * When the delay started (ISO 8601).
+       */
+      delayed_since: string
+      /**
+       * Why the checkpoint cannot proceed yet.
+       */
+      reasons: Array<TemporarySuspendError>
+      status: 'delayed'
+    }
+  | {
+      /**
+       * Sequence number of the in-flight checkpoint.
+       */
+      sequence_number: number
+      /**
+       * When the checkpoint write started (ISO 8601).
+       */
+      started_at: string
+      status: 'in_progress'
+    }
+
+/**
  * Information about a failed checkpoint.
  */
 export type CheckpointFailure = {
@@ -165,6 +195,10 @@ export type CheckpointFailure = {
    * Error message associated with the failure.
    */
   error: string
+  /**
+   * When the failure occurred (ISO 8601).
+   */
+  failed_at: string
   /**
    * Sequence number of the failed checkpoint.
    */
@@ -766,6 +800,11 @@ export type ConsumerConfig = {
  * without requiring a direct dependency on the adapters crate.
  */
 export type ControllerStatus = {
+  /**
+   * Current checkpoint activity (idle, delayed, or in-progress).
+   * `null` when the pipeline binary predates checkpoint activity tracking.
+   */
+  checkpoint_activity?: CheckpointActivity | null
   global_metrics: GlobalControllerMetrics
   /**
    * Input endpoint configs and metrics.
@@ -775,6 +814,13 @@ export type ControllerStatus = {
    * Output endpoint configs and metrics.
    */
   outputs: Array<OutputEndpointStatus>
+  /**
+   * If the pipeline fundamentally cannot checkpoint (e.g. storage is not
+   * configured, or an input endpoint does not support suspend), the reasons
+   * are listed here.  Unlike a checkpoint failure, this means *no*
+   * checkpoint can succeed until the pipeline configuration changes.
+   */
+  permanent_checkpoint_errors?: Array<PermanentSuspendError> | null
   suspend_error?: SuspendError | null
 }
 
@@ -1201,10 +1247,19 @@ export type DeltaTableWriterConfig = {
   max_retries?: number | null
   mode?: DeltaTableWriteMode
   /**
+   * Number of parallel threads used by the connector.
+   *
+   * Increasing this value can improve Delta Lake write throughput
+   * by enabling concurrent writes.
+   *
+   * Default: 1.
+   */
+  threads?: number | null
+  /**
    * Table URI.
    */
   uri: string
-  [key: string]: string | number | null | DeltaTableWriteMode | undefined
+  [key: string]: string | number | null | DeltaTableWriteMode | number | null | undefined
 }
 
 export type Demo = {
@@ -1236,6 +1291,9 @@ export type Demo = {
 
 /**
  * Optional settings for tweaking Feldera internals.
+ *
+ * These settings reflect experiments that may come and go and change from
+ * version to version.  Users should not consider them to be stable.
  */
 export type DevTweaks = {
   /**
@@ -1272,15 +1330,20 @@ export type DevTweaks = {
   /**
    * The minimum absolute improvement threshold for the balancer.
    *
-   * This parameter prevents the join balancer from making changes to the
-   * partitioning policy if the improvement is not significant, since the overhead
-   * of such rebalancing, especially when performed frequently, can exceed the benefits.
+   * The join balancer is a component that dynamically chooses an optimal
+   * partitioning policy for adaptive join operators.  This parameter
+   * prevents the join balancer from making changes to the partitioning
+   * policy if the improvement is not significant, since the overhead of such
+   * rebalancing, especially when performed frequently, can exceed the
+   * benefits.
    *
-   * A rebalancing is considered significant if the absolute estimated improvement for the cluster
-   * of joins where the rebalancing is applied is at least this threshold. The cost model used by
-   * the balancer is based on the number of records in the largest partition of a collection.
+   * A rebalancing is considered significant if the absolute estimated
+   * improvement for the cluster of joins where the rebalancing is applied is
+   * at least this threshold. The cost model used by the balancer is based on
+   * the number of records in the largest partition of a collection.
    *
-   * A rebalancing is applied if both this threshold and `balancer_min_relative_improvement_threshold` are met.
+   * A rebalancing is applied if both this threshold and
+   * `balancer_min_relative_improvement_threshold` are met.
    *
    * The default value is 10,000.
    */
@@ -1288,14 +1351,19 @@ export type DevTweaks = {
   /**
    * The minimum relative improvement threshold for the join balancer.
    *
-   * This parameter prevents the join balancer from making changes to the
-   * partitioning policy if the improvement is not significant, since the overhead
-   * of such rebalancing, especially when performed frequently, can exceed the benefits.
+   * The join balancer is a component that dynamically chooses an optimal
+   * partitioning policy for adaptive join operators.  This parameter
+   * prevents the join balancer from making changes to the partitioning
+   * policy if the improvement is not significant, since the overhead of such
+   * rebalancing, especially when performed frequently, can exceed the
+   * benefits.
    *
-   * A rebalancing is considered significant if the relative estimated improvement for the cluster
-   * of joins where the rebalancing is applied is at least this threshold.
+   * A rebalancing is considered significant if the relative estimated
+   * improvement for the cluster of joins where the rebalancing is applied is
+   * at least this threshold.
    *
-   * A rebalancing is applied if both this threshold and `balancer_min_absolute_improvement_threshold` are met.
+   * A rebalancing is applied if both this threshold and
+   * `balancer_min_absolute_improvement_threshold` are met.
    *
    * The default value is 1.2.
    */
@@ -1330,7 +1398,7 @@ export type DevTweaks = {
   /**
    * Target number of cached bytes retained in each `FBuf` slab size class.
    *
-   * The default value is [`FBufSlabs::DEFAULT_BYTES_PER_CLASS`].
+   * The default is 16 MiB.
    */
   fbuf_slab_bytes_per_class?: number | null
   /**
@@ -1358,6 +1426,16 @@ export type DevTweaks = {
    * The default value is equal to the number of worker threads.
    */
   merger_threads?: number | null
+  /**
+   * Additional bias the merger assigns to records with negative weights
+   * (retractions) to promote them to higher levels of the LSM tree sooner.
+   *
+   * Reasonable values for this parameter are in the range [0, 10].
+   *
+   * The default value is 0, which means that retractions are not given
+   * any additional bias.
+   */
+  negative_weight_multiplier?: number | null
   /**
    * Controls the maximal number of records output by splitter operators
    * (joins, distinct, aggregation, rolling window and group operators) at
