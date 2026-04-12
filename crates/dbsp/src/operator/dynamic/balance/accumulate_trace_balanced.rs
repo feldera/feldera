@@ -361,7 +361,7 @@ impl KeyDistribution {
 /// Checkpointed state of the ExchangeSender operator.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct RebalanceExchangeSenderCheckpoint {
-    current_policy: PartitioningPolicy,
+    current_policy: Option<PartitioningPolicy>,
     key_distribution: KeyDistribution,
 }
 
@@ -402,7 +402,11 @@ where
     num_steps_in_transaction: Cell<usize>,
 
     /// Current partitioning policy.
-    current_policy: Cell<PartitioningPolicy>,
+    ///
+    /// The policy is not set when the operator is first created. It must
+    /// be set by the balance before the first step. It is also set when restoring
+    /// from a checkpoint.
+    current_policy: Cell<Option<PartitioningPolicy>>,
 
     /// When Some(), the policy has changed during the current transaction, and the operator must rebalance
     /// accumulator and integral state before committing the transaction.
@@ -461,7 +465,7 @@ where
             input_batch_stats: BatchSizeStats::new(),
             flush_state: Cell::new(FlushState::FlushCompleted),
             num_steps_in_transaction: Cell::new(0),
-            current_policy: Cell::new(PartitioningPolicy::Shard),
+            current_policy: Cell::new(None),
             rebalance_state: RefCell::new(None),
             rebalance_start_time: Cell::new(None),
             num_rebalancings: Cell::new(0),
@@ -538,21 +542,25 @@ where
     ///   of the integral.
     fn update_policy(&self, new_policy: PartitioningPolicy, delayed_accumulator: Vec<Arc<B>>) {
         let old_policy = self.current_policy.get();
-        if old_policy == new_policy {
+        if old_policy == Some(new_policy) {
             return;
         }
 
         // Only log rebalancing in worker 0 to avoid spamming the logs.
         if Runtime::worker_index() == 0 {
             info!(
-                "rebalancing stream {}: {}->{} (key distribution: {})",
+                "Rebalancing stream {}: {}->{} (key distribution: {})",
                 self.input_node_id,
-                old_policy,
-                new_policy,
+                if let Some(policy) = old_policy {
+                    policy.to_string()
+                } else {
+                    "none".to_string()
+                },
+                new_policy.to_string(),
                 self.key_distribution.borrow()
             );
         }
-        self.current_policy.set(new_policy);
+        self.current_policy.set(Some(new_policy));
         self.num_rebalancings.update(|value| value + 1);
 
         // Discard the accumulator state, so we don't need to retract it explicitly.
@@ -561,7 +569,7 @@ where
         // If the accumulator was populated with broadcast policy, we want to re-balance only
         // one copy of the data.
         let accumulator_batches =
-            if old_policy != PartitioningPolicy::Broadcast || self.worker_index == 0 {
+            if old_policy != Some(PartitioningPolicy::Broadcast) || self.worker_index == 0 {
                 delayed_accumulator
             } else {
                 vec![]
@@ -579,7 +587,7 @@ where
                         &self.batch_factories,
                         accumulator_batches,
                     ),
-                    trace_policy: old_policy,
+                    trace_policy: old_policy.unwrap_or(PartitioningPolicy::Shard),
                 });
             }
         }
@@ -589,7 +597,11 @@ where
     ///
     /// Update key distribution stats.
     fn partition_batch(&self, delta: B) -> Vec<B> {
-        match self.current_policy.get() {
+        match self
+            .current_policy
+            .get()
+            .expect("RebalancingExchangeSender::partition_batch: current_policy is not set")
+        {
             PartitioningPolicy::Shard => self.shard_batch(delta),
             PartitioningPolicy::Balance => self.balance_batch(delta),
             PartitioningPolicy::Broadcast => self.broadcast_batch(delta),
@@ -608,7 +620,8 @@ where
     ) where
         TS: Timestamp,
     {
-        assert!(old_policy != self.current_policy.get());
+        assert_ne!(self.current_policy.get(), None);
+        assert_ne!(old_policy, self.current_policy.get().unwrap());
 
         match old_policy {
             PartitioningPolicy::Broadcast => self.repartition_after_broadcast(
@@ -639,7 +652,9 @@ where
     {
         let shards = builders.len();
 
-        match self.current_policy.get() {
+        match self.current_policy.get().expect(
+            "RebalancingExchangeSender::repartition_after_unicast: current policy is not set",
+        ) {
             PartitioningPolicy::Shard => {
                 while cursor.key_valid() {
                     let b = &mut builders[cursor.key().default_hash() as usize % shards];
@@ -747,7 +762,9 @@ where
     {
         let shards = Runtime::num_workers();
 
-        match self.current_policy.get() {
+        match self.current_policy.get().expect(
+            "RebalancingExchangeSender::repartition_after_broadcast: current policy is not set",
+        ) {
             PartitioningPolicy::Shard => {
                 while cursor.key_valid() {
                     let shard = cursor.key().default_hash() as usize % shards;
@@ -1028,7 +1045,7 @@ pub struct RebalancingExchangeSenderExchangeMetadata {
     pub flush_state: FlushState,
 
     /// Currently selected sharding policy.
-    pub current_policy: PartitioningPolicy,
+    pub current_policy: Option<PartitioningPolicy>,
 
     /// Key distribution of the input stream computed based on the inputs received by the current worker.
     pub key_distribution: KeyDistribution,
@@ -1047,7 +1064,7 @@ where
         meta.extend(metadata! {
             INPUT_BATCHES_STATS => self.input_batch_stats.metadata(),
             KEY_DISTRIBUTION => self.key_distribution.borrow().meta_item(),
-            BALANCER_POLICY => MetaItem::String(self.current_policy.get().to_string()),
+            BALANCER_POLICY => MetaItem::String(self.current_policy.get().map(|policy| policy.to_string()).unwrap_or("none".to_string())),
             RABALANCINGS_COUNT => MetaItem::Count(self.num_rebalancings.get()),
             REBALANCING_IN_PROGRESS => MetaItem::Bool(self.rebalancing_in_progress()),
             ACCUMULATOR_RECORDS_TO_REPARTITION_COUNT => MetaItem::Count(self.rebalance_accumulator_size.get()),
@@ -1165,18 +1182,25 @@ where
             })?;
 
         self.current_policy.set(checkpoint.current_policy);
-        self.balancer
-            .set_policy_for_stream(self.input_node_id, checkpoint.current_policy);
-        *self.key_distribution.borrow_mut() = checkpoint.key_distribution;
 
-        // Report current policy to metadata_exchange. See invalidate_clusters_for_bootstrapping.
-        self.update_exchange_metadata();
+        if let Some(policy) = checkpoint.current_policy {
+            // Normally the current policy is communicated to the balancer before every step
+            // via metadata_exchange, but if the restored node is disabled during bootstrapping,
+            // it doesn't participate in steps, so we need to set the policy explicitly.
+            // This policy will be:
+            // - Used to determine if the cluster needs to be invalidated during bootstrapping
+            //   (see `BalancerInner::invalidate_clusters_for_bootstrapping`).
+            // - Frozen during replay (see `BalancerInner::get_fixed_policy`).
+            self.balancer
+                .set_policy_for_stream(self.input_node_id, policy);
+        }
+        *self.key_distribution.borrow_mut() = checkpoint.key_distribution;
 
         Ok(())
     }
 
     fn clear_state(&mut self) -> Result<(), crate::Error> {
-        self.current_policy.set(PartitioningPolicy::Shard);
+        self.current_policy.set(None);
         *self.key_distribution.borrow_mut() = KeyDistribution::new(Runtime::num_workers());
 
         // Clear the metadata. If the operator is deactivated during bootstrapping, its metadata
@@ -1255,7 +1279,7 @@ where
                 // if *self.current_policy.borrow() != new_policy  {
                 //     println!("{}: current_policy: {:?}, new_policy: {:?}", self.input_node_id, *self.current_policy.borrow(), new_policy);
                 // }
-                assert_eq!(self.current_policy.get(), new_policy);
+                assert_eq!(self.current_policy.get().unwrap(), new_policy);
                 // ExchangeReceiver expects precisely one flush per transaction.
                 assert!(self.exchange.try_send_all_with_serializer(
                     self.worker_index,
