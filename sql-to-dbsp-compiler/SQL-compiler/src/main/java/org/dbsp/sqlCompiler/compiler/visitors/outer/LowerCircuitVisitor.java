@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyNOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
@@ -17,6 +18,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
@@ -237,7 +239,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         // Instrument apply functions to print their parameters
         DBSPClosureExpression func = node.getClosureFunction();
         DBSPExpression print = new DBSPApplyExpression("println!", DBSPTypeAny.getDefault(),
-                new DBSPStrLiteral(func.parameters[0].name + "={:?}"), func.parameters[0].asVariable());
+                new DBSPStrLiteral(node.id + "={:?}"), func.parameters[0].asVariable());
         DBSPExpression block = new DBSPBlockExpression(
                 Linq.list(new DBSPExpressionStatement(print)),
                 func.body);
@@ -256,11 +258,40 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         // Instrument apply functions to print their parameters
         DBSPClosureExpression func = node.getClosureFunction();
         DBSPExpression print = new DBSPApplyExpression("println!", DBSPTypeAny.getDefault(),
-                new DBSPStrLiteral(func.parameters[0].name + "={:?}," + func.parameters[1].name + "={:?}"),
+                new DBSPStrLiteral(node.id + "=({:?},{:?})"),
                 func.parameters[0].asVariable(), func.parameters[1].asVariable());
         DBSPExpression block = new DBSPBlockExpression(
                 Linq.list(new DBSPExpressionStatement(print)),
                 func.body);
+        DBSPSimpleOperator instrumented = node.with(
+                block.closure(func.parameters), func.getResultType(),
+                Linq.map(node.inputs, this::mapped), false);
+        this.map(node, instrumented);
+    }
+
+    @Override
+    public void postorder(DBSPApplyNOperator node) {
+        if (this.getDebugLevel() < 1) {
+            super.postorder(node);
+            return;
+        }
+        // Instrument apply functions to print their parameters
+        DBSPClosureExpression func = node.getClosureFunction();
+        DBSPExpression[] arguments = new DBSPExpression[func.parameters.length + 1];
+        StringBuilder builder = new StringBuilder();
+        builder.append("=(");
+        int index = 1;
+        for (DBSPParameter param: func.parameters) {
+            arguments[index] = param.asVariable();
+            builder.append("{:?}, ");
+            index++;
+        }
+        builder.append(")");
+
+        arguments[0] = new DBSPStrLiteral(node.id + builder.toString());
+        DBSPExpression print = new DBSPApplyExpression("println!", DBSPTypeAny.getDefault(), arguments);
+        DBSPExpression block = new DBSPBlockExpression(
+                Linq.list(new DBSPExpressionStatement(print)), func.body);
         DBSPSimpleOperator instrumented = node.with(
                 block.closure(func.parameters), func.getResultType(),
                 Linq.map(node.inputs, this::mapped), false);

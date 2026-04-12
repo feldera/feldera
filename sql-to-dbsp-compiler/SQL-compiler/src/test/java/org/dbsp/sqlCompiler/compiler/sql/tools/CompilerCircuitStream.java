@@ -54,6 +54,10 @@ public class CompilerCircuitStream extends CompilerCircuit {
         this.compiler.clearTables();
         this.compiler.submitStatementsForCompilation(script);
         TableContents tableContents = this.compiler.getTableContents();
+        if (this.compiler.hasErrors()) {
+            System.err.println(this.compiler.messages);
+            throw new RuntimeException("Errors during compilation");
+        }
         return new Change(tableContents);
     }
 
