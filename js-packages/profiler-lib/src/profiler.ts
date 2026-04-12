@@ -281,10 +281,24 @@ export class Visualizer {
     }
 
     /**
-     * Search for a node by ID
+     * Search for a node by ID or a substring of the persistent ID.
      */
     search(query: string): void {
-        this.rendering?.search(query);
+        // First search by ID
+        let success = this.rendering?.search(query);
+        if (success) {
+            return;
+        }
+        if (!this.profile) {
+            return;
+        }
+
+        // Find ID of node with given persistent ID
+        for (const [pid, node] of this.profile.byPersistentId) {
+            if (pid.includes(query)) {
+                this.rendering?.search(node.id);
+            }
+        }
     }
 
     /**

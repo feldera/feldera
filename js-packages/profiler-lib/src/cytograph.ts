@@ -543,12 +543,15 @@ export class CytographRendering {
         return this.metadataSelection.metric;
     }
 
-    search(value: string) {
+    /** Search a node by ID, return 'true' if found. */
+    search(value: string): boolean {
         let el = this.cy.getElementById(value);
-        if (el === null) {
-            return;
+        // el may be an empty collection
+        if (!el.nonempty()) {
+            return false;
         }
         this.center(Option.some(value));
+        return true;
     }
 
     // Layout to use for the first graph rendering
