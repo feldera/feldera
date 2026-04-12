@@ -14,7 +14,12 @@ from feldera.enums import BootstrapPolicy
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 from tests import TEST_CLIENT, unique_pipeline_name
-from tests.platform.helper import API_PREFIX, http_request, wait_for_condition, wait_for_program_success
+from tests.platform.helper import (
+    API_PREFIX,
+    http_request,
+    wait_for_condition,
+    wait_for_program_success,
+)
 
 
 SQL_JOIN_AB = """
@@ -98,7 +103,9 @@ def _balancer_policy_values(profile: dict) -> list[str]:
     return out
 
 
-def _push_chunked_json(pipeline, table: str, rows: list[dict], chunk_size: int = 4000) -> None:
+def _push_chunked_json(
+    pipeline, table: str, rows: list[dict], chunk_size: int = 4000
+) -> None:
     for i in range(0, len(rows), chunk_size):
         pipeline.input_json(table, rows[i : i + chunk_size])
 
@@ -123,7 +130,9 @@ class TestAdaptiveJoins(unittest.TestCase):
         try:
             pipeline.start()
 
-            print("Single-join pipeline started; populating tables with balanced inputs")
+            print(
+                "Single-join pipeline started; populating tables with balanced inputs"
+            )
             # Uniform keys so both sides are ~evenly sharded (avoid k=0 used later for skew).
             n_uniform = 4000
             uniform_a = [{"k": i, "v": i} for i in range(1, n_uniform + 1)]
@@ -177,7 +186,7 @@ class TestAdaptiveJoins(unittest.TestCase):
             # with the existing skewed cluster.
             uniform_c = [{"k": i, "u": i} for i in range(1, n_uniform + 1)]
 
-            #skew_c = [{"k": 0, "u": i} for i in range(int(skew_n/2))]
+            # skew_c = [{"k": 0, "u": i} for i in range(int(skew_n/2))]
             _push_chunked_json(pipeline, "tab_c", uniform_c)
             pipeline.rebalance()
 
