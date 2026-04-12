@@ -56,11 +56,6 @@ jobs:
   invoke-build-docker:
     name: Build Docker
     needs: [invoke-build-rust, invoke-build-java, invoke-tests-web-console-unit]
-    if: |
-      always() &&
-      (needs.invoke-build-rust.result == 'success' || needs.invoke-build-rust.result == 'skipped') &&
-      (needs.invoke-build-java.result == 'success' || needs.invoke-build-java.result == 'skipped') &&
-      (needs.invoke-tests-web-console-unit.result == 'success' || needs.invoke-tests-web-console-unit.result == 'skipped')
     uses: ./.github/workflows/build-docker.yml
     secrets: inherit
 
