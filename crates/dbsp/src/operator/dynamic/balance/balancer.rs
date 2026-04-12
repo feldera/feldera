@@ -263,9 +263,15 @@ struct Cluster {
     /// Used to decide whether it's time to check for a better solution.
     last_distribution: BTreeMap<NodeId, KeyDistribution>,
 
-    /// Compute a new solution for the cluster before the next step. Set either after a hint has changed
-    /// or when the circuit was just started or restored from a checkpoint.
+    /// Compute a new solution for the cluster before the next step. Set after a hint has changed.
     refresh_requested: bool,
+}
+
+impl Cluster {
+    /// All streams in the cluster have a balancing policy assigned.
+    fn has_complete_solution(&self) -> bool {
+        self.solution.len() == self.streams.len()
+    }
 }
 
 /// Hints allow the user to alter the behavior of the balancer.
@@ -312,6 +318,9 @@ struct BalancerInner {
     /// join node id -> (left input node id, right input node id, is left join)
     joins: BTreeMap<NodeId, (NodeId, NodeId, bool)>,
 
+    /// Set the first time `prepare` is called and clusters are computed.
+    prepared: bool,
+
     /// Connected components of the join graph:
     clusters: Vec<Cluster>,
 
@@ -323,6 +332,13 @@ struct BalancerInner {
 
     /// True between start_transaction and transaction_committed.
     transaction_in_progress: bool,
+
+    /// True if automatic rebalancing is enabled.
+    auto_rebalance_enabled: bool,
+
+    /// When running in bootstrapping mode, this is the set of nodes that are active.
+    /// Non-active nodes cannot be rebalanced.
+    active_nodes: Option<BTreeSet<NodeId>>,
 }
 
 impl BalancerInner {
@@ -332,10 +348,13 @@ impl BalancerInner {
             metadata: BTreeMap::new(),
             key_distribution: BTreeMap::new(),
             joins: BTreeMap::new(),
+            prepared: false,
             clusters: Vec::new(),
             stream_to_cluster: BTreeMap::new(),
             metadata_exchange: metadata_exchange.clone(),
             transaction_in_progress: false,
+            auto_rebalance_enabled: true,
+            active_nodes: None,
         }
     }
 
@@ -388,12 +407,12 @@ impl BalancerInner {
                     .solution
                     .get(stream)
                     .map(|policy| format!(": <{policy:?}>"))
-                    .unwrap_or_default();
+                    .unwrap_or_else(|| ": <none>".to_string());
                 let distribution = self
                     .key_distribution
                     .get(stream)
                     .map(|distribution| format!(" distribution: {distribution}"))
-                    .unwrap_or_default();
+                    .unwrap_or_else(|| " distribution: <none>".to_string());
                 //let flushed = self.flushed_status_for_stream(*stream);
                 format!("{stream}{policy}{distribution}")
             })
@@ -453,12 +472,20 @@ impl BalancerInner {
     ///
     /// Returns true if either
     /// 1. cluster.refresh_requested is true, or
-    /// 2. the key distribution of at least one stream in the cluster has changed by more than
+    /// 2. Not all streams in the cluster have a balancing policy assigned.
+    /// 3. auto-rebalancing is enabled and
+    ///    the key distribution of at least one stream in the cluster has changed by more than
     ///    `balancer_key_distribution_refresh_threshold`.
-    fn cluster_needs_refresh(&self, cluster_index: usize) -> bool {
+    fn cluster_needs_refresh(&self, cluster_index: usize, auto_rebalance: bool) -> bool {
         let cluster = &self.clusters[cluster_index];
         if cluster.refresh_requested {
             return true;
+        }
+        if !cluster.has_complete_solution() {
+            return true;
+        }
+        if !auto_rebalance {
+            return false;
         }
         cluster.streams.keys().any(|stream| {
             let Some(current_distribution) = self.key_distribution.get(stream) else {
@@ -506,11 +533,12 @@ impl BalancerInner {
             if let Some(metadata) = exchange_sender_metadata
                 .first()
                 .and_then(|metadata| metadata.as_ref())
+                && let Some(policy) = metadata.current_policy
             {
-                current_effective_policy.insert(*stream, metadata.current_policy);
+                current_effective_policy.insert(*stream, policy);
             }
 
-            let fixed_policy = self.get_fixed_policy(&exchange_sender_metadata, hints)?;
+            let fixed_policy = self.get_fixed_policy(*stream, &exchange_sender_metadata, hints)?;
 
             // println!(
             //     "{} fixed_policy for {stream} (hints: {hints:?}): {:?}",
@@ -537,8 +565,8 @@ impl BalancerInner {
 
         // if Runtime::worker_index() == 0 {
         //     println!(
-        //         "found new solution: {:?}, current solution: {:?}",
-        //         solution, self.clusters[cluster_index].solution
+        //         "found new solution: {:?}, current solution: {:?}, current effective policy: {:?}",
+        //         solution, self.clusters[cluster_index].solution, current_effective_policy
         //     );
         // }
 
@@ -548,7 +576,12 @@ impl BalancerInner {
         if let Some(current_solution_cost) =
             self.validate_solution(&current_effective_policy, &domains)
         {
+            if !self.auto_rebalance_enabled {
+                return Ok(solution);
+            }
+
             let new_solution_cost = self.validate_solution(&solution, &domains).unwrap();
+            //println!("new_solution_cost: {:?}", new_solution_cost);
 
             if new_solution_cost.0 as f64 * balancer_min_relative_improvement_threshold()
                 < current_solution_cost.0 as f64
@@ -639,9 +672,8 @@ impl BalancerInner {
         let mut solutions = BTreeMap::new();
 
         for i in 0..num_clusters {
-            // println!("{} solving cluster {i}", Runtime::worker_index());
             //let cluster = &mut self.clusters[cluster_index];
-            if !self.cluster_needs_refresh(i) {
+            if !self.cluster_needs_refresh(i, self.auto_rebalance_enabled) {
                 solutions.extend(self.clusters[i].solution.clone());
                 continue;
             }
@@ -706,11 +738,14 @@ impl BalancerInner {
             (total_size, max_size)
         };
 
+        // We add +1 to broadcast and balance strategies below to break ties in favor of Shard.
+        // This makes sure that on startup, when all collections are empty, all streams get sharded
+        // until we detect skew.
         BTreeMap::from([
             // Shard: the cost is proportional to the maximum size of a partition.
             (PartitioningPolicy::Shard, Cost(max_size)),
             // Broadcast: every worker maintains the entire integral.
-            (PartitioningPolicy::Broadcast, Cost(total_size)),
+            (PartitioningPolicy::Broadcast, Cost(total_size + 1)),
             // Balance: every worker maintains an equal share of the integral.
             // Assuming a perfectly balanced key distribution, this policy is slightly less efficient than Shard,
             // since it requires computing a more expensive hash of the entire key/value pair.
@@ -720,7 +755,8 @@ impl BalancerInner {
                 PartitioningPolicy::Balance,
                 Cost(
                     ((total_size / Runtime::num_workers() as u64) as f64 * balancer_balance_tax())
-                        as u64,
+                        as u64
+                        + 1,
                 ),
             ),
         ])
@@ -855,15 +891,17 @@ impl BalancerInner {
 
     /// Check if the stream has a unique fixed policy that cannot change during the current transaction.
     ///
-    /// Given metadata collected from RebalancingExchangeSender instances in all workers
-    /// and current user hints, returns:
+    /// Given metadata collected from RebalancingExchangeSender instances in all workers,
+    /// current user hints, returns:
     /// * Some(policy) if the stream has a unique fixed policy that cannot change at the current step, i.e.:
     ///   - At least one of the workers has flushed the current transaction, and therefore can no longer rebalance
     ///   - Or the hint specifies a fixed policy
+    ///   - Or the stream is not active during bootstrapping and cannot change the policy until bootstrapping is complete (see `active_nodes`).
     /// * None if the stream doesn't have a fixed policy and can be rebalanced.
     /// * Error if the policy can no longer change during the current transaction and it contradicts the hint.
     fn get_fixed_policy(
         &self,
+        stream: NodeId,
         metadata: &[Option<RebalancingExchangeSenderExchangeMetadata>],
         hints: &BalancerHints,
     ) -> Result<Option<PartitioningPolicy>, BalancerError> {
@@ -873,6 +911,15 @@ impl BalancerInner {
         //     metadata,
         //     hints
         // );
+
+        // We're running in bootstrapping mode and the stream is not active.
+        // It cannot change the policy until bootstrapping is complete.
+        if let Some(active_nodes) = &self.active_nodes
+            && !active_nodes.contains(&stream)
+        {
+            //println!("stream {stream} is not active (policy: {:?})", self.get_policy_for_stream(stream));
+            return Ok(self.get_policy_for_stream(stream));
+        }
 
         // If any worker has started rebalancing its state, the policy for this stream cannot change until the next transaction.
         let any_flushed = metadata.iter().any(|metadata| {
@@ -897,7 +944,7 @@ impl BalancerInner {
                         && worker_metadata.as_ref().unwrap().current_policy
                             == metadata[0].as_ref().unwrap().current_policy)
             );
-            Some(metadata[0].as_ref().unwrap().current_policy)
+            metadata[0].as_ref().unwrap().current_policy
         } else {
             None
         };
@@ -939,10 +986,12 @@ impl BalancerInner {
         )
     }
 
-    /// Detect clusters whose state is inconsistent after restoring from checkpoint and add their
+    /// Detect clusters whose state is inconsistent after restoring from checkpoint
     /// and return the exchange sender node ids that need to be backfilled.
+    ///
+    /// Clears the current solution for the cluster.
     fn invalidate_clusters_for_bootstrapping(
-        &self,
+        &mut self,
         need_backfill: &BTreeSet<NodeId>,
     ) -> BTreeSet<NodeId> {
         let mut additional_need_backfill = BTreeSet::new();
@@ -960,14 +1009,11 @@ impl BalancerInner {
                 exchange_senders.insert(exchange_sender_id);
                 if !need_backfill.contains(&exchange_sender_id) {
                     // The operator reported its policy as part of the restore operation.
-                    let exchange_sender_metadata = self
-                        .metadata_exchange
-                        .get_local_operator_metadata_typed::<RebalancingExchangeSenderExchangeMetadata>(
-                        exchange_sender_id,
-                    ).unwrap();
-
-                    let policy = exchange_sender_metadata.current_policy;
-                    domains.insert(*stream_id, Self::fixed_policy_domain(policy));
+                    if let Some(policy) = self.get_policy_for_stream(*stream_id) {
+                        domains.insert(*stream_id, Self::fixed_policy_domain(policy));
+                    } else {
+                        domains.insert(*stream_id, Self::default_policy_domain());
+                    }
                 } else {
                     domains.insert(*stream_id, Self::default_policy_domain());
                 }
@@ -980,6 +1026,7 @@ impl BalancerInner {
                 info!(
                     "Cluster {cluster_index} has inconsistent partitioning policies after restoring from checkpoint; the state of the cluster will be discarded and backfilled"
                 );
+                self.clusters[cluster_index].solution.clear();
                 additional_need_backfill.extend(exchange_senders);
             }
         }
@@ -1086,17 +1133,39 @@ impl Balancer {
         need_backfill: &BTreeSet<NodeId>,
     ) -> BTreeSet<NodeId> {
         self.inner
-            .borrow()
+            .borrow_mut()
             .invalidate_clusters_for_bootstrapping(need_backfill)
     }
 
     /// Invoked after the circuit has been constructed and before it starts running.
-    pub fn prepare(&self, circuit: &dyn CircuitBase) {
-        // Compute connected components of the join graph.
-        self.compute_clusters(circuit);
+    ///
+    /// Can be invoked several times:
+    /// 1. When the circuit is first instantiated. `active_nodes` is None.
+    /// 2. (Optional) When the circuit is about to start bootstrapping. `active_nodes` contains
+    ///    the subset of nodes that will participate in bootstrapping.
+    /// 3. (Optional) When bootstrapping is complete, before normal execution. `active_nodes` is None.
+    pub fn prepare(&self, circuit: &dyn CircuitBase, active_nodes: Option<&BTreeSet<NodeId>>) {
+        // Don't recompute the clusters if already prepared -- during bootstrapping the clusters
+        // can contain the current balancing policies, which must be frozen during replay.
+        // These policies are set in AccumulateTraceBalanced::restore.
+        if !self.inner.borrow().prepared {
+            self.inner.borrow_mut().prepared = true;
+            // Compute connected components of the join graph.
+            self.compute_clusters(circuit);
+        }
+
+        if let Some(active_nodes) = active_nodes {
+            self.inner.borrow_mut().active_nodes = Some(active_nodes.clone());
+        } else {
+            self.inner.borrow_mut().active_nodes = None;
+        }
         if Runtime::worker_index() == 0 {
             info!("Join balancer state:\n{}", indent(&self.display(), 2));
         }
+    }
+
+    pub fn prepare_for_bootstrapping(&self, active_nodes: &BTreeSet<NodeId>) {
+        self.inner.borrow_mut().active_nodes = Some(active_nodes.clone());
     }
 
     // Invoked at the start of each transaction.
@@ -1312,7 +1381,7 @@ impl Balancer {
                     layers,
                     solution: BTreeMap::new(),
                     last_distribution: BTreeMap::new(),
-                    refresh_requested: true,
+                    refresh_requested: false,
                 }
             })
             .collect();
@@ -1337,6 +1406,11 @@ impl Balancer {
         // - Each join is in exactly one cluster.
         // - Each cluster has at least one stream.
         // - Each cluster has at least one join.
+    }
+
+    pub fn set_auto_rebalance(&self, enable: bool) -> Result<(), Error> {
+        self.inner.borrow_mut().auto_rebalance_enabled = enable;
+        Ok(())
     }
 
     pub fn set_hint(&self, node_id: NodeId, hint: BalancerHint) -> Result<(), Error> {

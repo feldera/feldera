@@ -1807,6 +1807,9 @@ pub trait CircuitBase: 'static {
     /// Return the balancer object associated with the circuit.
     fn balancer(&self) -> &Balancer;
 
+    /// Set the auto-rebalancing flag for the circuit.
+    fn set_auto_rebalance(&self, enable: bool) -> Result<(), DbspError>;
+
     /// Set the balancer hint for the operator with the given global node id.
     ///
     /// # Errors
@@ -3418,6 +3421,10 @@ where
 
     fn balancer(&self) -> &Balancer {
         &self.inner().balancer
+    }
+
+    fn set_auto_rebalance(&self, enable: bool) -> Result<(), DbspError> {
+        self.inner().balancer.set_auto_rebalance(enable)
     }
 
     fn set_balancer_hint(
@@ -7125,11 +7132,10 @@ impl CircuitHandle {
                 .collect::<Vec<NodeId>>()
         );
 
+        let replay_nodes = replay_sources.keys().cloned().collect::<BTreeSet<_>>();
+
         assert!(
-            replay_sources
-                .keys()
-                .cloned()
-                .collect::<BTreeSet<_>>()
+            replay_nodes
                 .intersection(&need_backfill)
                 .collect::<Vec<_>>()
                 .is_empty()
@@ -7138,13 +7144,13 @@ impl CircuitHandle {
         // Nodes that will be backfilled from upstream nodes, including need_backfill nodes
         // and their transitive ancestors.
         let nodes_to_backfill = participate_in_backfill
-            .difference(&replay_sources.keys().cloned().collect::<BTreeSet<_>>())
+            .difference(&replay_nodes)
             .cloned()
             .collect::<BTreeSet<_>>();
 
         if !participate_in_backfill.is_empty() {
             // Configure all `replay_nodes` to run in replay mode.
-            for node_id in replay_sources.keys() {
+            for node_id in replay_nodes.iter() {
                 self.circuit
                     .map_local_node_mut(*node_id, &mut |node| node.start_replay())?;
             }
@@ -7546,6 +7552,10 @@ impl CircuitHandle {
     /// Export circuit in LIR format.
     pub fn lir(&self) -> LirCircuit {
         (&self.circuit as &dyn CircuitBase).to_lir()
+    }
+
+    pub fn set_auto_rebalance(&self, enable: bool) -> Result<(), DbspError> {
+        self.circuit.set_auto_rebalance(enable)
     }
 
     pub fn set_balancer_hint(
