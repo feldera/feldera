@@ -7132,11 +7132,10 @@ impl CircuitHandle {
                 .collect::<Vec<NodeId>>()
         );
 
+        let replay_nodes = replay_sources.keys().cloned().collect::<BTreeSet<_>>();
+
         assert!(
-            replay_sources
-                .keys()
-                .cloned()
-                .collect::<BTreeSet<_>>()
+            replay_nodes
                 .intersection(&need_backfill)
                 .collect::<Vec<_>>()
                 .is_empty()
@@ -7145,13 +7144,13 @@ impl CircuitHandle {
         // Nodes that will be backfilled from upstream nodes, including need_backfill nodes
         // and their transitive ancestors.
         let nodes_to_backfill = participate_in_backfill
-            .difference(&replay_sources.keys().cloned().collect::<BTreeSet<_>>())
+            .difference(&replay_nodes)
             .cloned()
             .collect::<BTreeSet<_>>();
 
         if !participate_in_backfill.is_empty() {
             // Configure all `replay_nodes` to run in replay mode.
-            for node_id in replay_sources.keys() {
+            for node_id in replay_nodes.iter() {
                 self.circuit
                     .map_local_node_mut(*node_id, &mut |node| node.start_replay())?;
             }
