@@ -1,0 +1,8 @@
+name: 'dbt_feldera'
+version: '0.277.0'
+config-version: 2
+
+macro-paths: ["macros"]
+
+on-run-end:
+  - "{{ adapter.finalize_seeds() if execute else '' }}"

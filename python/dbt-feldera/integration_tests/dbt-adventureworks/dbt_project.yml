@@ -1,0 +1,111 @@
+name: "adventureworks"
+version: "1.0.0"
+config-version: 2
+
+profile: "adventureworks"
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  adventureworks:
+    +materialized: view
+    kafka:
+      +materialized: table
+      kafka_sales:
+        +connectors:
+          - transport:
+              name: kafka_input
+              config:
+                topic: sales_events
+                bootstrap.servers: "redpanda:29092"
+                start_from: latest
+                allow.auto.create.topics: "true"
+            format:
+              name: json
+              config:
+                update_format: raw
+                array: false
+    intermediate:
+      +materialized: view
+      int_kafka_sales:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/int_kafka_sales"
+                mode: append
+    marts:
+      +materialized: view
+      dim_address:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/dim_address"
+                mode: append
+      dim_credit_card:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/dim_credit_card"
+                mode: append
+      dim_customer:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/dim_customer"
+                mode: append
+      dim_date:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/dim_date"
+                mode: append
+      dim_order_status:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/dim_order_status"
+                mode: append
+      dim_product:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/dim_product"
+                mode: append
+      fct_recent_sales:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/fct_recent_sales"
+                mode: append
+      fct_sales:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/fct_sales"
+                mode: append
+      obt_sales:
+        +connectors:
+          - transport:
+              name: delta_table_output
+              config:
+                uri: "/data/delta/obt_sales"
+                mode: append

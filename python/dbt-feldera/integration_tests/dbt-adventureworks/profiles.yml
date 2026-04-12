@@ -1,0 +1,11 @@
+adventureworks:
+  target: local
+  outputs:
+    local:
+      type: feldera
+      host: "{{ env_var('FELDERA_URL', 'http://localhost:8080') }}"
+      database: "default"
+      schema: "adventureworks"
+      compilation_profile: dev
+      workers: 4
+      timeout: 600

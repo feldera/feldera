@@ -14,6 +14,24 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        ### New dbt adapter for Feldera (`dbt-feldera`)
+
+        A new [dbt](https://www.getdbt.com/) adapter that lets you build streaming data
+        pipelines using standard dbt workflows. Install from PyPI:
+
+        ```bash
+        pip install dbt-feldera
+        ```
+
+        Feldera's DBSP engine automatically incrementalizes every query, so `incremental` models
+        get true IVM without watermarks or manual merge logic.
+
+        Supported materializations: `table`, `view`, `incremental`, `seed`, and
+        `streaming_pipeline`.
+
+        See the [README](https://github.com/feldera/feldera/tree/main/python/dbt-feldera) for
+        configuration and usage details.
+
         Starting a pipeline while storage is still clearing (`storage_status=Clearing`) now returns
         `CannotStartWhileClearingStorage` instead of succeeding. Clearing storage while a start
         is in progress but hasn't yet transitioned to `Provisioning` now returns

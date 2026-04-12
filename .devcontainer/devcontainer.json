@@ -11,6 +11,11 @@
 	],
 	"workspaceFolder": "/workspaces/feldera",
 	"shutdownAction": "stopCompose",
+	"features": {
+		"ghcr.io/devcontainers/features/docker-from-docker:1": {
+			"moby": false
+		}
+	},
 	"customizations": {
 		"vscode": {
 			"extensions": [
