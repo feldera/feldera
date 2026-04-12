@@ -786,16 +786,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arrow-digest"
-version = "57.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "995a3d054d314de55301d19dca72edd487b7d53998fb56c15b34393b2be201b9"
-dependencies = [
- "arrow",
- "digest",
-]
-
-[[package]]
 name = "arrow-ipc"
 version = "57.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3845,10 +3835,10 @@ dependencies = [
  "actix-test",
  "actix-web",
  "actix-ws",
+ "ahash 0.8.12",
  "anyhow",
  "apache-avro 0.18.0",
  "arrow",
- "arrow-digest",
  "arrow-json",
  "async-channel 2.5.0",
  "async-nats",
