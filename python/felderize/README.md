@@ -1,0 +1,134 @@
+# Felderize — SQL to Feldera SQL Translator
+
+felderize translates SQL from various dialects into valid [Feldera](https://www.feldera.com/) SQL using LLM-based translation with optional compiler validation.
+
+> **Dialects:** Spark SQL is currently the only supported dialect. Support for additional dialects is planned.
+
+## Setup
+
+```bash
+cd python/felderize
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+> **Note:** `pip install -e .` is required before running `felderize`. It registers the package and CLI command.
+
+Create a `.env` file:
+
+```bash
+ANTHROPIC_API_KEY=your-key-here
+FELDERA_COMPILER=/path/to/sql-to-dbsp  # in Feldera repo: ../../sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
+FELDERIZE_MODEL=claude-sonnet-4-6
+```
+
+The `FELDERA_COMPILER` path is required for validation. Without it, translation still works but output SQL is not verified. You can also pass it per-command with `--compiler PATH`.
+
+The compiler must be built before use (requires Java 19–21 and Maven):
+
+```bash
+cd sql-to-dbsp-compiler
+./build.sh
+```
+
+## Usage
+
+### Run a built-in example
+
+```bash
+# List available examples
+felderize spark example
+
+# Translate an example (validates by default)
+felderize spark example simple
+
+# Without compiler validation
+felderize spark example simple --no-validate
+
+# Log SQL submitted to the validator at each attempt
+felderize spark example json --verbose
+
+# Use a specific compiler binary
+felderize spark example simple --compiler /path/to/sql-to-dbsp
+
+# Output as JSON
+felderize spark example simple --json-output
+```
+
+Available examples:
+
+| Name | Description |
+|------|-------------|
+| `simple` | Date truncation, GROUP BY |
+| `strings` | INITCAP, LPAD, NVL, CONCAT_WS |
+| `arrays` | array_contains, size, element_at |
+| `joins` | Null-safe equality (`<=>`) |
+| `windows` | LAG, running SUM OVER |
+| `aggregations` | COUNT DISTINCT, AVG, SUM, HAVING |
+| `json` | get_json_object → PARSE_JSON + VARIANT access *(combined file)* |
+| `topk` | ROW_NUMBER TopK, QUALIFY, datediff *(combined file)* |
+| `dates` | to_date → PARSE_DATE, date_format → FORMAT_DATE/EXTRACT *(combined file)* |
+| `arithmetic` | pmod, NULLIF division, subtraction *(combined file)* |
+
+The JSON output contains:
+
+```json
+{
+  "feldera_schema": "...",   // translated DDL (CREATE TABLE statements)
+  "feldera_query": "...",    // translated query (CREATE VIEW statements)
+  "unsupported": [...],      // unsupported Spark features found
+  "warnings": [...],         // non-fatal issues
+  "explanations": [...],     // explanations for translation decisions
+  "status": "success|unsupported|error"
+}
+```
+
+### Translate your own SQL
+
+Two input formats are supported:
+
+**Separate schema and query files:**
+```bash
+felderize spark translate path/to/schema.sql path/to/query.sql
+felderize spark translate path/to/schema.sql path/to/query.sql --validate
+```
+
+**Single combined file** (CREATE TABLE and CREATE VIEW statements in one file):
+```bash
+felderize spark translate-file path/to/combined.sql
+felderize spark translate-file path/to/combined.sql --validate
+```
+
+> **Note:** Running without `--validate` prints a warning — the output SQL has not been verified against the Feldera compiler.
+
+Both commands accept:
+- `--validate` to validate output against the Feldera compiler (opt-in; `example` validates by default, use `--no-validate` to skip)
+- `--compiler PATH` to specify the path to the Feldera compiler binary (overrides `FELDERA_COMPILER` env var)
+- `--model MODEL` to specify the LLM model (overrides `FELDERIZE_MODEL` env var)
+- `--no-docs` to disable Feldera SQL reference docs in the prompt
+- `--force-docs` to include docs on the first pass instead of only as a fallback
+- `--verbose` to log the SQL submitted to the validator at each repair attempt
+- `--json-output` to output results as JSON
+
+## Configuration
+
+Environment variables (set in `.env`):
+
+| Variable | Description | Default |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Anthropic API key | (required) |
+| `FELDERIZE_MODEL` | LLM model to use (can also be set with `--model`) | (required, set in `.env`) |
+| `FELDERA_COMPILER` | Path to sql-to-dbsp compiler (can also be set with `--compiler`) | (required for validation) |
+| `ANTHROPIC_BASE_URL` | Override Anthropic API base URL (for proxies or alternate endpoints) | (optional) |
+
+## How it works
+
+1. Loads translation rules from a single skill file (`spark/skills/spark_skills.md`)
+2. Sends Spark SQL to the LLM with rules, validated examples, and relevant Feldera SQL documentation (from `docs.feldera.com/docs/sql/`)
+3. Parses the translated Feldera SQL from the LLM response
+4. Optionally validates output against the Feldera compiler, retrying with error feedback if needed
+
+## Support
+
+Contact us at support@feldera.com for assistance with unsupported Spark SQL features.
