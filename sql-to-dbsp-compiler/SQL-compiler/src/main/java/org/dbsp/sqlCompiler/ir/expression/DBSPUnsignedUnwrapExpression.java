@@ -11,7 +11,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
-/** This is the dual of the UnsignedWrapExpression: it unwraps an unsigned number */
+/** This is the dual of {@link DBSPUnsignedWrapExpression}: it unwraps an unsigned number */
 public final class DBSPUnsignedUnwrapExpression extends DBSPExpression {
     public final DBSPExpression source;
     public final DBSPUnsignedWrapExpression.TypeSequence sequence;
@@ -51,12 +51,15 @@ public final class DBSPUnsignedUnwrapExpression extends DBSPExpression {
     }
 
     public String getMethod() {
-        return this.getType().mayBeNull ? "to_signed_option" : "to_signed";
+        if (this.sequence.dataConvertedType.signed)
+            return this.getType().mayBeNull ? "to_signed_option" : "to_signed";
+        else
+            return this.getType().mayBeNull ? "to_unsigned_option" : "to_unsigned";
     }
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append("UnsignedWrapper")
+        return builder.append(DBSPUnsignedWrapExpression.RUST_IMPLEMENTATION)
                 .append("::")
                 .append(this.getMethod())
                 .append("(")

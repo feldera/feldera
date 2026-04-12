@@ -318,10 +318,10 @@ public class Regression2Tests extends SqlIoTest {
                 SET T = 1;
                 CREATE TABLE T(x INT);
                 CREATE VIEW V AS SELECT * FROM t;""");
-        ccs.step("INSERT INTO T VALUES (1)", """
-                 x | weight
-                ------------
-                 1 | 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES (1)", """
+                 x
+                ---
+                 1""");
         Assert.assertEquals(1, ccs.compiler.messages.messages.size());
         Assert.assertTrue(ccs.compiler.messages.getMessage(0).toString().contains(
                 "warning: Unknown setting: Variable 't' does not control any known settings"));
@@ -353,10 +353,10 @@ public class Regression2Tests extends SqlIoTest {
             }
         });
 
-        ccs.step("INSERT INTO T VALUES(1), (2);", """
-                 min | weight
-                --------------
-                 1   | 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(1), (2);", """
+                 min
+                -----
+                 1""");
     }
 
     @Test
@@ -390,10 +390,10 @@ public class Regression2Tests extends SqlIoTest {
             }
         });
 
-        ccs.step("INSERT INTO T VALUES(1), (2);", """
-                 a | weight
-                --------------
-                 { 1, 2 } | 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(1), (2);", """
+                 a
+                ----------
+                 { 1, 2 }""");
     }
 
     @Test
@@ -427,10 +427,10 @@ public class Regression2Tests extends SqlIoTest {
             }
         });
 
-        ccs.step("INSERT INTO T VALUES(ROW(ROW(1, 2))), (ROW(ROW(3, 4)));", """
-                 min      | weight
-                -------------------
-                 { 1, 2 } | 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ROW(ROW(1, 2))), (ROW(ROW(3, 4)));", """
+                 min
+                ----------
+                 { 1, 2 }""");
     }
 
     @Test
@@ -456,11 +456,11 @@ public class Regression2Tests extends SqlIoTest {
             }
         });
 
-        ccs.step("INSERT INTO T VALUES(1, 2, 2), (2, 3, 2), (3, 0, 1);", """
-                 sum | y | weight
-                --------------
-                  3  | 2 | 1
-                  3  | 1 | 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(1, 2, 2), (2, 3, 2), (3, 0, 1);", """
+                 sum | y
+                ---------
+                  3  | 2
+                  3  | 1""");
         TestUtil.assertMessagesContain(compiler, "Column 'z' of table 't' is unused");
     }
 
@@ -651,7 +651,7 @@ public class Regression2Tests extends SqlIoTest {
                   ORDER BY buyer LIMIT 10
                 )) FROM auctions;""");
         // Output validated using postgres
-        ccs.step("""
+        ccs.stepWeightOne("""
                 INSERT INTO auctions (id, seller, item) VALUES
                   (1, 101, 'Vintage Camera'),
                   (2, 102, 'Mountain Bike'),
@@ -676,13 +676,13 @@ public class Regression2Tests extends SqlIoTest {
                 
                   -- Auction 5 intentionally has no bids
                   (12, 212, 2, 360);  -- extra competing bid on auction 2""", """
-                 id | arr                    | weight
-                ----------------------------------------
-                 1  | { 201, 202, 203 }      | 1
-                 2  | { 204, 205, 212 }      | 1
-                 3  | { 206, 207, 208, 209 } | 1
-                 4  | { 210, 211 }           | 1
-                 5  | NULL                   | 1""");
+                 id | arr
+                ----------------------------
+                 1  | { 201, 202, 203 }
+                 2  | { 204, 205, 212 }
+                 3  | { 206, 207, 208, 209 }
+                 4  | { 210, 211 }
+                 5  | NULL""");
     }
 
     @Test @Ignore("https://github.com/feldera/feldera/issues/2555")
@@ -918,5 +918,360 @@ public class Regression2Tests extends SqlIoTest {
                 ---
                  0abc
                 (1 row)""");
+    }
+
+    @Test
+    public void issue5890() {
+        String program = """
+                CREATE TABLE T (
+                  payment_id INT,
+                  customer_id INT,
+                  amount INT,
+                  seq INT UNSIGNED
+                );
+                
+                CREATE VIEW V AS SELECT
+                  customer_id,
+                  SUM(amount) OVER (PARTITION BY customer_id ORDER BY seq) AS previous
+                FROM T;""";
+        // Validated on postgres, which is NULLS LAST, so this needs explicit NULLS FIRST
+        String data = """
+                INSERT INTO T VALUES
+                  -- Customer 1: clean increasing seq
+                  (1, 1, 10, 1),
+                  (2, 1, 20, 2),
+                  (3, 1, -5, 3),
+                  -- Customer 2: out‑of‑order seq, zero amount
+                  (4, 2, 7,  5),
+                  (5, 2, 0,  2),
+                  (6, 2, 3,  4),
+                  -- Customer 3: single row partition
+                  (7, 3, 100, 10),
+                  -- Customer 4: duplicate seq values (tests deterministic ordering)
+                  (8, 4, 1,  1),
+                  (9, 4, 2,  1),
+                  (10,4, 3,  2),
+                  -- Null seq
+                  (11,1, 3, NULL);
+                """;
+        String expected = """
+                 customer_id | previous
+                ------------------------
+                 1 	         | 3
+                 1 	         | 13
+                 1 	         | 33
+                 1 	         | 28
+                 2 	         | 0
+                 2 	         | 3
+                 2 	         | 10
+                 3 	         | 100
+                 4 	         | 3
+                 4 	         | 3
+                 4 	         | 6""";
+
+        var ccs = this.getCCS(program);
+        ccs.stepWeightOne(data, expected);
+
+        var program1 = program.replace("ORDER BY seq", "ORDER BY seq NULLS FIRST");
+        ccs = this.getCCS(program1);
+        ccs.stepWeightOne(data, expected);
+
+        var program2 = program.replace("ORDER BY seq", "ORDER BY seq NULLS LAST");
+        ccs = this.getCCS(program2);
+        String expected2 = """
+                 customer_id | previous
+                ------------------------
+                 1 	         | 10
+                 1 	         | 30
+                 1 	         | 25
+                 1 	         | 28
+                 2 	         | 0
+                 2 	         | 3
+                 2 	         | 10
+                 3 	         | 100
+                 4 	         | 3
+                 4 	         | 3
+                 4 	         | 6""";
+        ccs.stepWeightOne(data, expected2);
+    }
+
+    @Test
+    public void issue5890a() {
+        // Validated on postgres
+        // same as before, non-nullable unsigned type for seq
+        String program = """
+                CREATE TABLE T (
+                  payment_id INT,
+                  customer_id INT,
+                  amount INT,
+                  seq INT UNSIGNED NOT NULL
+                );
+                
+                CREATE VIEW V AS SELECT
+                  customer_id,
+                  SUM(amount) OVER (PARTITION BY customer_id ORDER BY seq) AS previous
+                FROM T;""";
+        // Same data as before, without the NULL value
+        String data = """
+                INSERT INTO T VALUES
+                  -- Customer 1: clean increasing seq
+                  (1, 1, 10, 1),
+                  (2, 1, 20, 2),
+                  (3, 1, -5, 3),
+                  -- Customer 2: out‑of‑order seq, zero amount
+                  (4, 2, 7,  5),
+                  (5, 2, 0,  2),
+                  (6, 2, 3,  4),
+                  -- Customer 3: single row partition
+                  (7, 3, 100, 10),
+                  -- Customer 4: duplicate seq values (tests deterministic ordering)
+                  (8, 4, 1,  1),
+                  (9, 4, 2,  1),
+                  (10,4, 3,  2);
+                """;
+        String expected = """
+                 customer_id | previous
+                ------------------------
+                 1 	         | 10
+                 1 	         | 30
+                 1 	         | 25
+                 2 	         | 0
+                 2 	         | 3
+                 2 	         | 10
+                 3 	         | 100
+                 4 	         | 3
+                 4 	         | 3
+                 4 	         | 6""";
+
+        var ccs = this.getCCS(program);
+        ccs.stepWeightOne(data, expected);
+
+        // This should make no difference, since the sorted value is not nullable
+        var program1 = program.replace("ORDER BY seq", "ORDER BY seq NULLS FIRST");
+        ccs = this.getCCS(program1);
+        ccs.stepWeightOne(data, expected);
+
+        // This should make no difference
+        var program2 = program.replace("ORDER BY seq", "ORDER BY seq NULLS LAST");
+        ccs = this.getCCS(program2);
+        ccs.stepWeightOne(data, expected);
+    }
+
+    @Test
+    public void issue5890b() {
+        // Same test as before, with descending sorting
+        String program = """
+                CREATE TABLE T (
+                  payment_id INT,
+                  customer_id INT,
+                  amount INT,
+                  seq INT UNSIGNED
+                );
+                
+                CREATE VIEW V AS SELECT
+                  customer_id,
+                  SUM(amount) OVER (PARTITION BY customer_id ORDER BY seq DESC) AS previous
+                FROM T;""";
+        // Validated on postgres
+        String data = """
+                INSERT INTO T VALUES
+                  -- Customer 1: clean increasing seq
+                  (1, 1, 10, 1),
+                  (2, 1, 20, 2),
+                  (3, 1, -5, 3),
+                  -- Customer 2: out‑of‑order seq, zero amount
+                  (4, 2, 7,  5),
+                  (5, 2, 0,  2),
+                  (6, 2, 3,  4),
+                  -- Customer 3: single row partition
+                  (7, 3, 100, 10),
+                  -- Customer 4: duplicate seq values (tests deterministic ordering)
+                  (8, 4, 1,  1),
+                  (9, 4, 2,  1),
+                  (10,4, 3,  2),
+                  -- Null seq
+                  (11,1, 3, NULL);
+                """;
+        String expected = """
+                 customer_id | previous
+                ------------------------
+                 1 	         | -5
+                 1 	         | 15
+                 1 	         | 25
+                 1 	         | 28
+                 2 	         | 7
+                 2 	         | 10
+                 2 	         | 10
+                 3 	         | 100
+                 4 	         | 3
+                 4 	         | 6
+                 4 	         | 6""";
+
+        var ccs = this.getCCS(program);
+        ccs.stepWeightOne(data, expected);
+
+        var program1 = program.replace("ORDER BY seq DESC", "ORDER BY seq DESC NULLS FIRST");
+        ccs = this.getCCS(program1);
+        String expected1 = """
+                 customer_id | previous
+                ------------------------
+                 1 	         | 3
+                 1 	         | -2
+                 1 	         | 18
+                 1 	         | 28
+                 2 	         | 7
+                 2 	         | 10
+                 2 	         | 10
+                 3 	         | 100
+                 4 	         | 3
+                 4 	         | 6
+                 4 	         | 6""";
+        ccs.stepWeightOne(data, expected1);
+
+        var program2 = program.replace("ORDER BY seq DESC", "ORDER BY seq DESC NULLS LAST");
+        ccs = this.getCCS(program2);
+        ccs.stepWeightOne(data, expected);
+    }
+
+    @Test
+    public void issue5890c() {
+        // Sort over UUID
+        // Validated on postgres
+        String program = """
+                CREATE TABLE T (
+                  payment_id INT,
+                  customer_id INT,
+                  amount INT,
+                  seq UUID NOT NULL
+                );
+                
+                CREATE VIEW V AS SELECT
+                  customer_id,
+                  SUM(amount) OVER (PARTITION BY customer_id ORDER BY seq) AS previous
+                FROM T;""";
+        // The UUID values have been chosen so that they have the same order as the previous test
+        String data = """
+                INSERT INTO T VALUES
+                  -- Customer 1: clean increasing seq
+                  (1, 1, 10, UUID '1f6c1e4b-2b8d-4c3e-9f0a-1d6b2e4c7a91'),
+                  (2, 1, 20, UUID '2d92f0c7-8a44-4e0e-bc3d-0f6b1a2c9e55'),
+                  (3, 1, -5, UUID '31c4b8f2-6d3e-4f8a-9c77-2e0b4d1f3a28'),
+                  -- Customer 2: out‑of‑order seq, zero amount
+                  (4, 2, 7,  UUID '50b7c2d1-9e3a-4c55-8d11-7a9c0e2b4f66'),
+                  (5, 2, 0,  UUID '2d92f0c7-8a44-4e0e-bc3d-0f6b1a2c9e55'),
+                  (6, 2, 3,  UUID '4e1a7c9d-3b22-4f0d-8e44-5c7a1b9f0d33'),
+                  -- Customer 3: single row partition
+                  (7, 3, 100, UUID 'a1c4b8f2-6d3e-4f8a-9c77-2e0b4d1f3a28'),
+                  -- Customer 4: duplicate seq values (tests deterministic ordering)
+                  (8, 4, 1,  UUID '1f6c1e4b-2b8d-4c3e-9f0a-1d6b2e4c7a91'),
+                  (9, 4, 2,  UUID '1f6c1e4b-2b8d-4c3e-9f0a-1d6b2e4c7a91'),
+                  (10,4, 3,  UUID '2d92f0c7-8a44-4e0e-bc3d-0f6b1a2c9e55');
+                """;
+        String expected = """
+                 customer_id | previous
+                ------------------------
+                 1 	         | 10
+                 1 	         | 30
+                 1 	         | 25
+                 2 	         | 0
+                 2 	         | 3
+                 2 	         | 10
+                 3 	         | 100
+                 4 	         | 3
+                 4 	         | 3
+                 4 	         | 6""";
+
+        var ccs = this.getCCS(program);
+        ccs.stepWeightOne(data, expected);
+
+        // This should make no difference, since the sorted value is not nullable
+        var program1 = program.replace("ORDER BY seq", "ORDER BY seq NULLS FIRST");
+        ccs = this.getCCS(program1);
+        ccs.stepWeightOne(data, expected);
+
+        // This should make no difference
+        var program2 = program.replace("ORDER BY seq", "ORDER BY seq NULLS LAST");
+        ccs = this.getCCS(program2);
+        ccs.stepWeightOne(data, expected);
+    }
+
+    @Test
+    public void issue5890d() {
+        // Sort over UUID descending
+        // Validated on postgres
+        String program = """
+                CREATE TABLE T (
+                  payment_id INT,
+                  customer_id INT,
+                  amount INT,
+                  seq UUID NOT NULL
+                );
+                
+                CREATE VIEW V AS SELECT
+                  customer_id,
+                  SUM(amount) OVER (PARTITION BY customer_id ORDER BY seq DESC) AS previous
+                FROM T;""";
+        // The UUID values have been chosen so that they have the same order as the previous test
+        String data = """
+                INSERT INTO T VALUES
+                  -- Customer 1: clean increasing seq
+                  (1, 1, 10, UUID '1f6c1e4b-2b8d-4c3e-9f0a-1d6b2e4c7a91'),
+                  (2, 1, 20, UUID '2d92f0c7-8a44-4e0e-bc3d-0f6b1a2c9e55'),
+                  (3, 1, -5, UUID '31c4b8f2-6d3e-4f8a-9c77-2e0b4d1f3a28'),
+                  -- Customer 2: out‑of‑order seq, zero amount
+                  (4, 2, 7,  UUID '50b7c2d1-9e3a-4c55-8d11-7a9c0e2b4f66'),
+                  (5, 2, 0,  UUID '2d92f0c7-8a44-4e0e-bc3d-0f6b1a2c9e55'),
+                  (6, 2, 3,  UUID '4e1a7c9d-3b22-4f0d-8e44-5c7a1b9f0d33'),
+                  -- Customer 3: single row partition
+                  (7, 3, 100, UUID 'a1c4b8f2-6d3e-4f8a-9c77-2e0b4d1f3a28'),
+                  -- Customer 4: duplicate seq values (tests deterministic ordering)
+                  (8, 4, 1,  UUID '1f6c1e4b-2b8d-4c3e-9f0a-1d6b2e4c7a91'),
+                  (9, 4, 2,  UUID '1f6c1e4b-2b8d-4c3e-9f0a-1d6b2e4c7a91'),
+                  (10,4, 3,  UUID '2d92f0c7-8a44-4e0e-bc3d-0f6b1a2c9e55');
+                """;
+        String expected = """
+                 customer_id | previous
+                ------------------------
+                 1 	         | -5
+                 1 	         | 15
+                 1 	         | 25
+                 2 	         | 7
+                 2 	         | 10
+                 2 	         | 10
+                 3 	         | 100
+                 4 	         | 3
+                 4 	         | 6
+                 4 	         | 6""";
+
+        var ccs = this.getCCS(program);
+        ccs.stepWeightOne(data, expected);
+
+        // This should make no difference, since the sorted value is not nullable
+        var program1 = program.replace("ORDER BY seq DESC", "ORDER BY seq DESC NULLS FIRST");
+        ccs = this.getCCS(program1);
+        ccs.stepWeightOne(data, expected);
+
+        // This should make no difference
+        var program2 = program.replace("ORDER BY seq DESC", "ORDER BY seq DESC NULLS LAST");
+        ccs = this.getCCS(program2);
+        ccs.stepWeightOne(data, expected);
+    }
+
+    @Test
+    public void issue5890e() {
+        String program = """
+                CREATE TABLE T (
+                  payment_id INT,
+                  customer_id INT,
+                  amount INT,
+                  seq UUID
+                );
+                
+                CREATE VIEW V AS SELECT
+                  customer_id,
+                  SUM(amount) OVER (PARTITION BY customer_id ORDER BY seq DESC) AS previous
+                FROM T;""";
+        this.statementsFailingInCompilation(program, """
+                OVER currently cannot sort on columns with type UUID NULL""");
     }
 }
