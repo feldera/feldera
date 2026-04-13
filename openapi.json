@@ -8365,6 +8365,10 @@
             "nullable": true,
             "minimum": 0
           }
+        },
+        "additionalProperties": {
+          "description": "Options not understood by this particular version.\n\nThis allows the pipeline manager to take options that a custom or old\nruntime version accepts.",
+          "default": {}
         }
       },
       "DisplaySchedule": {

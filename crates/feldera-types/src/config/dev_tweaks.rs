@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -193,6 +195,13 @@ pub struct DevTweaks {
     /// any additional bias.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub negative_weight_multiplier: Option<u16>,
+
+    /// Options not understood by this particular version.
+    ///
+    /// This allows the pipeline manager to take options that a custom or old
+    /// runtime version accepts.
+    #[serde(flatten)]
+    pub other_options: BTreeMap<String, serde_json::Value>,
 }
 
 impl DevTweaks {
@@ -291,6 +300,8 @@ pub enum MergerType {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use crate::config::{PipelineConfig, RuntimeConfig};
 
     use super::*;
@@ -348,5 +359,19 @@ mod tests {
         let pc3: PipelineConfig = serde_json::from_value(value)
             .expect("Value round-trip of PipelineConfig with f64 dev_tweaks must succeed");
         assert_eq!(pc3.global.dev_tweaks.bloom_false_positive_rate, Some(0.0));
+    }
+
+    #[test]
+    fn other_options() {
+        let dt =
+            serde_json::from_value::<DevTweaks>(json!({"xyzzy": 1.0, "foobar": {"key": "value"}}))
+                .unwrap();
+        assert_eq!(
+            &dt.other_options,
+            &BTreeMap::from_iter([
+                (String::from("xyzzy"), json!(1.0)),
+                (String::from("foobar"), json!({"key": "value"}))
+            ]),
+        );
     }
 }
