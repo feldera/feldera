@@ -71,7 +71,7 @@ use dbsp::{Runtime, WeakRuntime};
 use enum_map::EnumMap;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
-use feldera_adapterlib::transport::{InputReader, Resume, Watermark};
+use feldera_adapterlib::transport::{CommandHandler, InputReader, Resume, Watermark};
 use feldera_ir::LirCircuit;
 use feldera_storage::fbuf::slab::FBufSlabsStats;
 use feldera_storage::histogram::{ExponentialHistogram, ExponentialHistogramSnapshot};
@@ -802,6 +802,15 @@ impl Controller {
         endpoint_name: &str,
     ) -> Result<ExternalOutputEndpointStatus, ControllerError> {
         self.inner.output_endpoint_status(endpoint_name)
+    }
+
+    /// Invoke a command on the output endpoint.
+    pub fn output_endpoint_command(
+        &self,
+        endpoint_name: &str,
+        command: serde_json::Value,
+    ) -> Result<serde_json::Value, ControllerError> {
+        self.inner.output_endpoint_command(endpoint_name, command)
     }
 
     /// Returns the current controller status.
@@ -4742,6 +4751,9 @@ struct OutputEndpointDescr {
     /// FIFO queue of batches read from the stream.
     queue: Arc<BatchQueue>,
 
+    /// Command handler for the endpoint.
+    command_handler: Option<Arc<dyn CommandHandler>>,
+
     /// Used to notify the endpoint thread that the endpoint is being
     /// disconnected.
     disconnect_flag: Arc<AtomicBool>,
@@ -4755,12 +4767,14 @@ impl OutputEndpointDescr {
         endpoint_name: &str,
         stream_name: &str,
         created_during_transaction_number: u64,
+        command_handler: Option<Arc<dyn CommandHandler>>,
         unparker: Unparker,
     ) -> Self {
         Self {
             endpoint_name: endpoint_name.to_string(),
             stream_name: canonical_identifier(stream_name),
             queue: Arc::new(SegQueue::new()),
+            command_handler,
             disconnect_flag: Arc::new(AtomicBool::new(false)),
             created_during_transaction_number,
             unparker,
@@ -6175,7 +6189,7 @@ impl ControllerInner {
             initial_statistics,
         );
 
-        let encoder = (|| -> Result<Box<dyn Encoder>, ControllerError> {
+        let (encoder, command_handler) = (|| {
             if let Some(mut endpoint) = endpoint {
                 endpoint
                     .connect(Box::new(
@@ -6192,6 +6206,8 @@ impl ControllerInner {
                         },
                     ))
                     .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
+
+                let command_handler = endpoint.command_handler();
 
                 // Create probe.
                 let probe = Box::new(OutputProbe::new(
@@ -6211,13 +6227,15 @@ impl ControllerInner {
                 let format = get_output_format(&format_config.name).ok_or_else(|| {
                     ControllerError::unknown_output_format(endpoint_name, &format_config.name)
                 })?;
-                Ok(format.new_encoder(
+                let encoder = format.new_encoder(
                     endpoint_name,
                     &resolved_connector_config,
                     &handles.key_schema,
                     &handles.value_schema,
                     probe,
-                )?)
+                )?;
+
+                Ok((encoder, command_handler))
             } else {
                 // `endpoint` is `None` - instantiate an integrated endpoint.
                 let endpoint = create_integrated_output_endpoint(
@@ -6229,10 +6247,12 @@ impl ControllerInner {
                     self_weak,
                 )?;
 
-                Ok(endpoint.into_encoder())
+                let command_handler = endpoint.command_handler();
+
+                Ok((endpoint.into_encoder(), command_handler))
             }
         })()
-        .inspect_err(|_e| {
+        .inspect_err(|_e: &ControllerError| {
             self.status.remove_output(&endpoint_id);
         })?;
 
@@ -6241,6 +6261,7 @@ impl ControllerInner {
             endpoint_name,
             &stream_name,
             self.get_transaction_number(),
+            command_handler,
             parker.unparker().clone(),
         );
         let queue = endpoint_descr.queue.clone();
@@ -6511,6 +6532,32 @@ impl ControllerInner {
     ) -> Result<ExternalOutputEndpointStatus, ControllerError> {
         let endpoint_id = self.output_endpoint_id_by_name(endpoint_name)?;
         Ok(self.status.output_status()[&endpoint_id].to_api_type(true))
+    }
+
+    fn output_endpoint_command(
+        &self,
+        endpoint_name: &str,
+        command: serde_json::Value,
+    ) -> Result<serde_json::Value, ControllerError> {
+        let command_handler = self
+            .outputs
+            .read()
+            .unwrap()
+            .lookup_by_name(endpoint_name)
+            .ok_or_else(|| ControllerError::unknown_output_endpoint(endpoint_name))?
+            .command_handler
+            .clone();
+
+        let Some(command_handler) = command_handler else {
+            return Err(ControllerError::command_error(
+                endpoint_name,
+                "this connector does not support custom commands",
+            ));
+        };
+
+        command_handler
+            .command(command)
+            .map_err(|e| ControllerError::command_error(endpoint_name, e.to_string().as_str()))
     }
 
     fn send_command(&self, command: Command) {

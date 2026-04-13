@@ -163,6 +163,13 @@ pub struct PostgresWriterConfig {
     #[serde(default = "default_writer_threads")]
     #[schema(default = default_writer_threads)]
     pub threads: usize,
+
+    /// The names of the extra columns in the Postgres table that are not part of the view schema.
+    ///
+    /// These connector can write user-defined values, configured using the `set_extra_columns` connector command,
+    /// to these columns.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_columns: Vec<String>,
 }
 
 fn default_max_buffer_size() -> usize {

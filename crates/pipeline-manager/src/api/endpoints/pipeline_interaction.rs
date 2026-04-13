@@ -539,6 +539,75 @@ pub(crate) async fn post_pipeline_output_connector_reset(
     Ok(response)
 }
 
+/// Send command to an output connector.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        ("view_name" = String, Path, description = "SQL view name"),
+        ("connector_name" = String, Path, description = "Output connector name"),
+    ),
+    request_body(
+        content = Object,
+        content_type = "text/json",
+        description = "Command to send to the output connector"),
+    responses(
+        (status = OK
+            , body = Object
+            , description = "Command has been processed. Response contains the result of the command."),
+        (status = NOT_FOUND
+            , body = ErrorResponse
+            , description = "Pipeline, view and/or output connector with that name does not exist"
+            , examples(
+                ("Pipeline with that name does not exist" = (value = json!(examples::error_unknown_pipeline_name()))),
+            )
+        ),
+        (status = BAD_REQUEST
+            , body = ErrorResponse
+            , description = "Command is not supported by the output connector or the connector failed to execute the command"),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Output Connectors"
+)]
+#[post("/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/command")]
+pub(crate) async fn post_pipeline_output_connector_command(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<(String, String, String)>,
+    req: HttpRequest,
+    body: web::Payload,
+) -> Result<HttpResponse, ManagerError> {
+    let (pipeline_name, view_name, connector_name) = path.into_inner();
+
+    let actual_view_name = SqlIdentifier::from(&view_name).name();
+    let endpoint_name = format!("{actual_view_name}.{connector_name}");
+    let encoded_endpoint_name = urlencoding::encode(&endpoint_name).to_string();
+
+    state
+        .runner
+        .forward_streaming_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            &format!("output_endpoints/{encoded_endpoint_name}/command"),
+            req,
+            body,
+            None,
+        )
+        .await
+}
+
 /// Get Pipeline Stats
 ///
 /// Retrieve statistics (e.g., performance counters) of a running or paused pipeline.

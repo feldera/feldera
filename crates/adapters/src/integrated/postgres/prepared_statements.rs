@@ -47,6 +47,12 @@ impl RawQueries {
                             let f = f.name.sql_name();
                             format!(r#" {f} = EXCLUDED.{f} "#)
                         })
+                        .chain(
+                            config
+                                .extra_columns
+                                .iter()
+                                .map(|k| format!(r#" "{k}" = EXCLUDED."{k}" "#)),
+                        )
                         .join(", ");
 
                     format!(" ({keys}) DO UPDATE SET {columns}")
@@ -87,6 +93,12 @@ impl RawQueries {
                         let f = f.name.sql_name();
                         format!("{f} = {new_alias}.{f}")
                     })
+                    .chain(
+                        config
+                            .extra_columns
+                            .iter()
+                            .map(|k| format!(r#""{k}" = {new_alias}."{k}""#)),
+                    )
                     .collect::<Vec<_>>()
                     .join(", ");
 

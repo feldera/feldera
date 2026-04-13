@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::{io::Write, str::FromStr, sync::Weak, time::Duration};
 
@@ -16,13 +17,15 @@ use crate::{
 };
 use anyhow::{Context, Result as AnyResult, anyhow, bail};
 use feldera_adapterlib::catalog::SplitCursorBuilder;
-use feldera_adapterlib::transport::{AsyncErrorCallback, Step};
+use feldera_adapterlib::transport::{AsyncErrorCallback, CommandHandler, Step};
 use feldera_types::{
     format::json::JsonFlavor,
     program_schema::{Relation, SqlIdentifier},
     transport::postgres::{PostgresWriteMode, PostgresWriterConfig},
 };
+use parking_lot::RwLock;
 use postgres::{Client, NoTls, Statement};
+use serde::Deserialize;
 
 /// Commands sent to all workers at once.
 #[derive(Clone, Copy)]
@@ -50,6 +53,7 @@ struct PostgresWorker {
     table: String,
     client: postgres::Client,
     config: PostgresWriterConfig,
+    extra_columns: Arc<RwLock<BTreeMap<String, Option<String>>>>,
     transaction: Option<postgres::Transaction<'static>>,
     prepared_statements: PreparedStatements,
     insert_buf: Vec<u8>,
@@ -94,11 +98,13 @@ fn connect(config: &PostgresWriterConfig, endpoint_name: &str) -> Result<Client,
 }
 
 impl PostgresWorker {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         idx: usize,
         endpoint_id: EndpointId,
         endpoint_name: &str,
         config: &PostgresWriterConfig,
+        extra_columns: Arc<RwLock<BTreeMap<String, Option<String>>>>,
         key_schema: &Relation,
         value_schema: &Relation,
         controller: Weak<ControllerInner>,
@@ -116,6 +122,7 @@ impl PostgresWorker {
             controller,
             table,
             config: config.clone(),
+            extra_columns,
             client,
             transaction: None,
             prepared_statements,
@@ -392,7 +399,11 @@ These statements were successfully prepared before reconnecting. Does the table 
     }
 
     /// Encode records from the cursor into postgres within the current transaction.
-    fn encode_cursor(&mut self, cursor: &mut dyn SerCursor) -> anyhow::Result<()> {
+    fn encode_cursor(
+        &mut self,
+        cursor: &mut dyn SerCursor,
+        extra_columns: BTreeMap<String, Option<String>>,
+    ) -> anyhow::Result<()> {
         while cursor.key_valid() {
             if let Some(op) = indexed_operation_type(self.view_name(), self.index_name(), cursor)? {
                 cursor.rewind_vals();
@@ -400,6 +411,8 @@ These statements were successfully prepared before reconnecting. Does the table 
                     IndexedOperationType::Insert => {
                         let mut buf = Vec::new();
                         cursor.serialize_val(&mut buf)?;
+                        self.serialize_extra_columns(&mut buf, &extra_columns)?;
+
                         if self.is_cdc() {
                             self.serialize_cdc_fields(op, &mut buf)?;
                         }
@@ -410,6 +423,7 @@ These statements were successfully prepared before reconnecting. Does the table 
 
                         if self.is_cdc() {
                             cursor.serialize_val(&mut buf)?;
+                            self.serialize_extra_columns(&mut buf, &extra_columns)?;
                             self.serialize_cdc_fields(op, &mut buf)?;
                         } else {
                             cursor.serialize_key(&mut buf)?;
@@ -424,6 +438,7 @@ These statements were successfully prepared before reconnecting. Does the table 
 
                         let mut buf: Vec<u8> = Vec::new();
                         cursor.serialize_val(&mut buf)?;
+                        self.serialize_extra_columns(&mut buf, &extra_columns)?;
                         if self.is_cdc() {
                             self.serialize_cdc_fields(op, &mut buf)?;
                         }
@@ -468,6 +483,32 @@ These statements were successfully prepared before reconnecting. Does the table 
 
         Ok(())
     }
+
+    fn serialize_extra_columns(
+        &self,
+        buf: &mut Vec<u8>,
+        extra_columns: &BTreeMap<String, Option<String>>,
+    ) -> Result<(), anyhow::Error> {
+        if extra_columns.is_empty() {
+            return Ok(());
+        }
+
+        let brace = buf.pop(); // Remove the trailing '}'
+
+        debug_assert_eq!(brace, Some(b'}'));
+
+        for (key, value) in extra_columns {
+            write!(
+                buf,
+                r#",{}:{}"#,
+                serde_json::to_string(key).unwrap(),
+                serde_json::to_string(value).unwrap()
+            )
+            .context("failed when encoding extra columns")?;
+        }
+        buf.push(b'}'); // Re-add the trailing '}'
+        Ok(())
+    }
 }
 
 impl PostgresWorker {
@@ -503,7 +544,8 @@ impl PostgresWorker {
                 },
                 WorkerCommand::Encode(cursor_builder) => {
                     let mut cursor = cursor_builder.build();
-                    match self.encode_cursor(&mut cursor) {
+                    let extra_columns = self.extra_columns.read().clone();
+                    match self.encode_cursor(&mut cursor, extra_columns) {
                         Ok(()) => {
                             let _ = result_tx.send(WorkerResult::Ok {
                                 num_bytes: 0,
@@ -558,11 +600,72 @@ pub struct PostgresOutputEndpoint {
     endpoint_id: EndpointId,
     endpoint_name: String,
     config: PostgresWriterConfig,
+    extra_columns: Arc<RwLock<BTreeMap<String, Option<String>>>>,
     controller: Weak<ControllerInner>,
     handles: Vec<WorkerHandle>,
     txn_start: std::time::Instant,
     num_bytes: usize,
     num_rows: usize,
+}
+
+/// Commands supported by the Postgres output connector.
+#[derive(Deserialize)]
+enum PostgresOutputEndpointCommand {
+    /// Set the values of a subset of extra columns.
+    #[serde(rename = "set_extra_columns")]
+    SetExtraColumns(BTreeMap<String, Option<String>>),
+}
+
+struct PostgresOutputEndpointCommandHandler {
+    extra_columns: Arc<RwLock<BTreeMap<String, Option<String>>>>,
+    allowed_extra_column_names: HashSet<String>,
+}
+
+impl PostgresOutputEndpointCommandHandler {
+    fn new(
+        extra_columns: Arc<RwLock<BTreeMap<String, Option<String>>>>,
+        config: &PostgresWriterConfig,
+    ) -> Self {
+        Self {
+            extra_columns,
+            allowed_extra_column_names: config.extra_columns.iter().cloned().collect(),
+        }
+    }
+}
+
+impl CommandHandler for PostgresOutputEndpointCommandHandler {
+    fn command(&self, command: serde_json::Value) -> AnyResult<serde_json::Value> {
+        let command = serde_json::from_value::<PostgresOutputEndpointCommand>(command.clone())
+            .map_err(|e| anyhow!("Postgres output connector failed to parse command '{command}' with the following error: {e}"))?;
+
+        match command {
+            PostgresOutputEndpointCommand::SetExtraColumns(extra_columns) => {
+                let unknown: Vec<&str> = extra_columns
+                    .keys()
+                    .filter(|k| !self.allowed_extra_column_names.contains(*k))
+                    .map(|s| s.as_str())
+                    .collect();
+                if !unknown.is_empty() {
+                    let mut allowed: Vec<&str> = self
+                        .allowed_extra_column_names
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect();
+                    allowed.sort_unstable();
+                    bail!(
+                        "set_extra_columns: unknown column name(s) {unknown:?}; allowed names from connector config field `extra_columns` are {allowed:?}"
+                    );
+                }
+
+                let mut configured_extra_columns = self.extra_columns.write();
+                for (key, value) in extra_columns {
+                    configured_extra_columns.insert(key, value);
+                }
+                Ok(serde_json::to_value(&*configured_extra_columns)
+                    .expect("Postgres output connector failed to serialize response"))
+            }
+        }
+    }
 }
 
 impl Drop for PostgresOutputEndpoint {
@@ -580,6 +683,39 @@ impl Drop for PostgresOutputEndpoint {
     }
 }
 
+/// Ensures `config.extra_columns` has no duplicates and no name matches a column in `value_schema`.
+fn validate_extra_columns_against_value_schema(
+    endpoint_name: &str,
+    config: &PostgresWriterConfig,
+    value_schema: &Relation,
+) -> Result<(), ControllerError> {
+    let value_sql_names: HashSet<String> = value_schema
+        .fields
+        .iter()
+        .map(|f| f.name.name().to_lowercase())
+        .collect();
+
+    let mut seen = HashSet::new();
+    for name in &config.extra_columns {
+        if !seen.insert(name) {
+            return Err(ControllerError::invalid_transport_configuration(
+                endpoint_name,
+                &format!("duplicate name in connector config field 'extra_columns': {name:?}"),
+            ));
+        }
+        if value_sql_names.contains(&name.to_lowercase()) {
+            return Err(ControllerError::invalid_transport_configuration(
+                endpoint_name,
+                &format!(
+                    "connector config 'extra_columns' includes {name:?}, which is already a column in the output view; \
+                     extra columns must not duplicate view columns"
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 impl PostgresOutputEndpoint {
     pub fn new(
         endpoint_id: EndpointId,
@@ -593,6 +729,8 @@ impl PostgresOutputEndpoint {
             ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string())
         })?;
 
+        validate_extra_columns_against_value_schema(endpoint_name, config, value_schema)?;
+
         let key_schema = key_schema
             .to_owned()
             .ok_or(ControllerError::not_supported(
@@ -602,12 +740,16 @@ impl PostgresOutputEndpoint {
         let num_threads = config.threads;
         let mut handles = Vec::with_capacity(num_threads);
 
+        // Extra columns are not set initially.
+        let extra_columns = Arc::new(RwLock::new(BTreeMap::new()));
+
         for i in 0..num_threads {
             let worker = PostgresWorker::new(
                 i,
                 endpoint_id,
                 endpoint_name,
                 config,
+                extra_columns.clone(),
                 &key_schema,
                 value_schema,
                 controller.clone(),
@@ -640,6 +782,7 @@ impl PostgresOutputEndpoint {
             endpoint_id,
             endpoint_name: endpoint_name.to_owned(),
             config: config.clone(),
+            extra_columns,
             controller,
             handles,
             txn_start: std::time::Instant::now(),
@@ -820,6 +963,13 @@ impl Encoder for PostgresOutputEndpoint {
 }
 
 impl OutputEndpoint for PostgresOutputEndpoint {
+    fn command_handler(&self) -> Option<Arc<dyn CommandHandler>> {
+        Some(Arc::new(PostgresOutputEndpointCommandHandler::new(
+            self.extra_columns.clone(),
+            &self.config,
+        )))
+    }
+
     fn connect(&mut self, _: AsyncErrorCallback) -> anyhow::Result<()> {
         todo!()
     }
@@ -925,6 +1075,7 @@ mod tests {
             mode: PostgresWriteMode::Materialized,
             cdc_op_column: "__feldera_op".to_owned(),
             cdc_ts_column: "__feldera_ts".to_owned(),
+            extra_columns: Vec::new(),
             threads: 4,
         }
     }
@@ -1078,6 +1229,7 @@ mod tests {
 
         use dbsp::OrdIndexedZSet;
         use dbsp::utils::Tup2;
+        use feldera_adapterlib::transport::OutputEndpoint;
         use feldera_macros::IsNone;
         use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
         use feldera_types::{deserialize_without_context, serialize_struct};
@@ -1158,6 +1310,36 @@ mod tests {
             id["id"]: i32
         });
 
+        #[derive(
+            Debug,
+            Default,
+            PartialEq,
+            Eq,
+            PartialOrd,
+            Ord,
+            serde::Serialize,
+            serde::Deserialize,
+            Clone,
+            Hash,
+            SizeOf,
+            rkyv::Archive,
+            rkyv::Serialize,
+            rkyv::Deserialize,
+            IsNone,
+        )]
+        #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+        struct TestRecordWithExtraColumns {
+            id: i32,
+            b: bool,
+            i: Option<i64>,
+            s: String,
+            #[serde(rename = "EXTRA.COLUMN1")]
+            extra_column1: Option<String>,
+            extra_column2: Option<String>,
+        }
+
+        deserialize_without_context!(TestRecordWithExtraColumns);
+
         // Helpers
 
         fn key_relation() -> Relation {
@@ -1214,7 +1396,33 @@ mod tests {
                 .expect("failed to truncate test table");
         }
 
-        fn make_config(threads: usize) -> PostgresWriterConfig {
+        fn setup_table_with_extra_columns(client: &mut postgres::Client) {
+            client
+                .execute(&format!(r#"DROP TABLE IF EXISTS "{TEST_TABLE}""#), &[])
+                .expect("failed to drop test table");
+
+            client
+                .execute(
+                    &format!(
+                        r#"
+                        CREATE TABLE "{TEST_TABLE}" (
+                            id int PRIMARY KEY,
+                            b bool NOT NULL,
+                            i int8,
+                            s varchar NOT NULL,
+                            "EXTRA.COLUMN1" varchar,
+                            extra_column2 varchar
+                        )"#
+                    ),
+                    &[],
+                )
+                .expect("failed to create test table");
+        }
+
+        fn make_config_with_extra_columns(
+            threads: usize,
+            extra_columns: Vec<String>,
+        ) -> PostgresWriterConfig {
             PostgresWriterConfig {
                 uri: postgres_url(),
                 table: TEST_TABLE.to_string(),
@@ -1226,19 +1434,27 @@ mod tests {
                 cdc_op_column: "__feldera_op".to_owned(),
                 cdc_ts_column: "__feldera_ts".to_owned(),
                 threads,
+                extra_columns,
             }
         }
 
-        fn make_endpoint(threads: usize) -> PostgresOutputEndpoint {
+        fn make_endpoint_with_extra_columns(
+            threads: usize,
+            extra_columns: Vec<String>,
+        ) -> PostgresOutputEndpoint {
             PostgresOutputEndpoint::new(
                 EndpointId::default(),
                 "test_endpoint",
-                &make_config(threads),
+                &make_config_with_extra_columns(threads, extra_columns),
                 &Some(key_relation()),
                 &value_relation(),
                 Weak::new(),
             )
             .expect("failed to create endpoint")
+        }
+
+        fn make_endpoint(threads: usize) -> PostgresOutputEndpoint {
+            make_endpoint_with_extra_columns(threads, Vec::new())
         }
 
         fn build_insert_batch(records: &[TestRecord]) -> Arc<dyn SerBatch> {
@@ -1292,6 +1508,27 @@ mod tests {
                     b: row.get(1),
                     i: row.get(2),
                     s: row.get(3),
+                })
+                .collect()
+        }
+
+        fn query_all_with_extra_columns(
+            client: &mut postgres::Client,
+        ) -> Vec<TestRecordWithExtraColumns> {
+            let rows = client
+                .query(
+                    &format!(r#"SELECT id, b, i, s, "EXTRA.COLUMN1", extra_column2 FROM "{TEST_TABLE}" ORDER BY id"#),
+                    &[],
+                )
+                .expect("failed to query");
+            rows.into_iter()
+                .map(|row| TestRecordWithExtraColumns {
+                    id: row.get(0),
+                    b: row.get(1),
+                    i: row.get(2),
+                    s: row.get(3),
+                    extra_column1: row.get(4),
+                    extra_column2: row.get(5),
                 })
                 .collect()
         }
@@ -1377,6 +1614,195 @@ mod tests {
                 })
                 .collect();
             assert_eq!(got, expected);
+        }
+
+        #[test]
+        #[serial_test::serial]
+        fn extra_columns_test() {
+            let mut client = pg_client();
+            setup_table_with_extra_columns(&mut client);
+
+            let records = make_records(100);
+            let batch1 = build_insert_batch(&records[..25]);
+            let batch2 = build_insert_batch(&records[25..50]);
+            let batch3 = build_insert_batch(&records[50..75]);
+            let batch4 = build_insert_batch(&records[75..100]);
+            let mut endpoint = make_endpoint_with_extra_columns(
+                2,
+                vec!["EXTRA.COLUMN1".to_string(), "extra_column2".to_string()],
+            );
+
+            encode_batch(&mut endpoint, &batch1);
+
+            endpoint
+                .command_handler()
+                .unwrap()
+                .command(serde_json::json!({
+                    "set_extra_columns": {
+                        "EXTRA.COLUMN1": "foo1",
+                        "extra_column2": "bar1",
+                    }
+                }))
+                .unwrap();
+
+            encode_batch(&mut endpoint, &batch2);
+
+            endpoint
+                .command_handler()
+                .unwrap()
+                .command(serde_json::json!({
+                    "set_extra_columns": {
+                        "EXTRA.COLUMN1": "foo2",
+                        "extra_column2": "bar2",
+                    }
+                }))
+                .unwrap();
+
+            encode_batch(&mut endpoint, &batch3);
+
+            endpoint
+                .command_handler()
+                .unwrap()
+                .command(serde_json::json!({
+                    "set_extra_columns": {
+                        "EXTRA.COLUMN1": null,
+                        "extra_column2": null,
+                    }
+                }))
+                .unwrap();
+
+            encode_batch(&mut endpoint, &batch4);
+
+            let got = query_all_with_extra_columns(&mut client);
+            let expected1: Vec<_> = records[..25]
+                .iter()
+                .map(|r| TestRecordWithExtraColumns {
+                    id: r.id,
+                    b: r.b,
+                    i: r.i,
+                    s: r.s.clone(),
+                    extra_column1: None,
+                    extra_column2: None,
+                })
+                .collect();
+            let expected2: Vec<_> = records[25..50]
+                .iter()
+                .map(|r| TestRecordWithExtraColumns {
+                    id: r.id,
+                    b: r.b,
+                    i: r.i,
+                    s: r.s.clone(),
+                    extra_column1: Some("foo1".to_string()),
+                    extra_column2: Some("bar1".to_string()),
+                })
+                .collect();
+            let expected3: Vec<_> = records[50..75]
+                .iter()
+                .map(|r| TestRecordWithExtraColumns {
+                    id: r.id,
+                    b: r.b,
+                    i: r.i,
+                    s: r.s.clone(),
+                    extra_column1: Some("foo2".to_string()),
+                    extra_column2: Some("bar2".to_string()),
+                })
+                .collect();
+            let expected4: Vec<_> = records[75..100]
+                .iter()
+                .map(|r| TestRecordWithExtraColumns {
+                    id: r.id,
+                    b: r.b,
+                    i: r.i,
+                    s: r.s.clone(),
+                    extra_column1: None,
+                    extra_column2: None,
+                })
+                .collect();
+            let expected: Vec<_> = expected1
+                .into_iter()
+                .chain(expected2)
+                .chain(expected3)
+                .chain(expected4)
+                .collect();
+            assert_eq!(got, expected);
+
+            // Update records
+            let updates: Vec<_> = records
+                .iter()
+                .map(|r| {
+                    let mut new = r.clone();
+                    new.s = format!("updated_{}", r.id);
+                    (r.clone(), new)
+                })
+                .collect();
+            let upsert_batch = build_upsert_batch(&updates);
+
+            endpoint
+                .command_handler()
+                .unwrap()
+                .command(serde_json::json!({
+                    "set_extra_columns": {
+                        "EXTRA.COLUMN1": "foo3",
+                        "extra_column2": "bar3",
+                    }
+                }))
+                .unwrap();
+
+            encode_batch(&mut endpoint, &upsert_batch);
+
+            let got = query_all_with_extra_columns(&mut client);
+            let expected: Vec<_> = expected
+                .into_iter()
+                .map(|r| {
+                    let mut new = r.clone();
+                    new.s = format!("updated_{}", r.id);
+                    new.extra_column1 = Some("foo3".to_string());
+                    new.extra_column2 = Some("bar3".to_string());
+                    new
+                })
+                .collect();
+            assert_eq!(got, expected);
+        }
+
+        #[test]
+        fn extra_columns_duplicate_names_in_config_rejected() {
+            let cfg = make_config_with_extra_columns(1, vec!["a".into(), "a".into()]);
+            let err = match PostgresOutputEndpoint::new(
+                EndpointId::default(),
+                "test_endpoint",
+                &cfg,
+                &Some(key_relation()),
+                &value_relation(),
+                Weak::new(),
+            ) {
+                Ok(_) => panic!("expected duplicate extra_columns to be rejected"),
+                Err(e) => e,
+            };
+            assert!(
+                err.to_string().contains("duplicate"),
+                "unexpected error: {err:?}"
+            );
+        }
+
+        #[test]
+        fn extra_columns_clash_with_view_column_rejected() {
+            let cfg = make_config_with_extra_columns(1, vec!["id".into()]);
+            let err = match PostgresOutputEndpoint::new(
+                EndpointId::default(),
+                "test_endpoint",
+                &cfg,
+                &Some(key_relation()),
+                &value_relation(),
+                Weak::new(),
+            ) {
+                Ok(_) => panic!("expected extra column name clash with view to be rejected"),
+                Err(e) => e,
+            };
+            let msg = err.to_string();
+            assert!(
+                msg.contains("extra_columns") && msg.contains("output view"),
+                "unexpected error: {err:?}"
+            );
         }
 
         #[test]

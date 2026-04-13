@@ -61,6 +61,7 @@ fn make_config(threads: usize) -> PostgresWriterConfig {
         mode: PostgresWriteMode::Materialized,
         cdc_op_column: "__feldera_op".to_string(),
         cdc_ts_column: "__feldera_ts".to_string(),
+        extra_columns: Vec::new(),
         tls: PostgresTlsConfig::default(),
         max_records_in_buffer: None,
         max_buffer_size_bytes: usize::pow(2, 20),

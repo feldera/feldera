@@ -11143,6 +11143,13 @@
                 "description": "Name of the timestamp metadata column in CDC mode.\n\nOnly used when `mode = \"cdc\"`. This column will contain the timestamp\n(in RFC 3339 format) when the batch of updates was output\nby the pipeline.\n\nDefault: `\"__feldera_ts\"`",
                 "default": "__feldera_ts"
               },
+              "extra_columns": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The names of the extra columns in the Postgres table that are not part of the view schema.\n\nThese connector can write user-defined values, configured using the `set_extra_columns` command,\nto these columns."
+              },
               "max_buffer_size_bytes": {
                 "type": "integer",
                 "description": "The maximum buffer size in for a single operation.\nNote that the buffers of `INSERT`, `UPDATE` and `DELETE` queries are\nseparate.\nDefault: 1 MiB",

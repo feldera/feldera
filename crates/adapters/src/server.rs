@@ -1226,6 +1226,7 @@ where
         .service(start_input_endpoint)
         .service(input_endpoint_status)
         .service(output_endpoint_status)
+        .service(output_endpoint_command)
         .service(reset_output_endpoint)
         .service(rebalance)
         .service(coordination_activate_handler)
@@ -2289,6 +2290,19 @@ async fn output_endpoint_status(
     path: web::Path<String>,
 ) -> Result<HttpResponse, PipelineError> {
     Ok(HttpResponse::Ok().json(state.controller()?.output_endpoint_status(&path)?))
+}
+
+#[post("/output_endpoints/{endpoint_name}/command")]
+async fn output_endpoint_command(
+    state: WebData<ServerState>,
+    path: web::Path<String>,
+    command: web::Json<serde_json::Value>,
+) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponse::Ok().json(
+        state
+            .controller()?
+            .output_endpoint_command(&path, command.into_inner())?,
+    ))
 }
 
 #[post("/output_endpoints/{endpoint_name}/reset")]
