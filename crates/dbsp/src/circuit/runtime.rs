@@ -459,6 +459,13 @@ impl RuntimeInner {
 
         let (pin_cpus_fg, pin_cpus_bg) = map_pin_cpus(&config);
 
+        if !config.dev_tweaks.other_options.is_empty() {
+            warn!(
+                "Circuit dev_tweaks includes unknown options: {:?}",
+                &config.dev_tweaks.other_options
+            );
+        }
+
         Ok(Self {
             pin_cpus_fg,
             pin_cpus_bg,
