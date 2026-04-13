@@ -942,6 +942,27 @@ where
 #[doc(hidden)]
 pub type AsyncErrorCallback = Box<dyn Fn(bool, AnyError, Option<&'static str>) + Send + Sync>;
 
+/// Command handler API exposed by connectors.
+///
+/// Connectors can support arbitrary connector-specific commands that can be
+/// invoked via the `/command` endpoint. These commands take and return arbitrary
+/// JSON values.
+///
+/// This API is not part of trait `Output[Input]Endpoint` because it can be invoked
+/// from any thread, and requires `Send + Sync`, while the `OutputEndpoint` API is
+/// not `Sync` and is meant to be called from the controller thread only.
+///
+/// The idea is that connectors that support custom commands create separate command
+/// handler objects that implement this trait and are returned by
+/// `OutputEndpoint::command_handler`.
+pub trait CommandHandler: Send + Sync {
+    /// Handle a command specified by the JSON objest.
+    ///
+    /// Fails if the connector does not support the command, the command is invalid,
+    /// or command execution fails.
+    fn command(&self, command: serde_json::Value) -> AnyResult<serde_json::Value>;
+}
+
 /// A configured output transport endpoint.
 ///
 /// Output endpoints come in two flavors:
@@ -959,6 +980,10 @@ pub type AsyncErrorCallback = Box<dyn Fn(bool, AnyError, Option<&'static str>) +
 /// * A non-fault-tolerant endpoint does not have a concept of steps and ignores
 ///   them.
 pub trait OutputEndpoint: Send {
+    fn command_handler(&self) -> Option<Arc<dyn CommandHandler>> {
+        None
+    }
+
     /// Finishes establishing the connection to the output endpoint.
     ///
     /// If the endpoint encounters any errors during output, now or later, it

@@ -727,6 +727,11 @@ pub enum ControllerError {
         error: AnyError,
     },
 
+    CommandError {
+        endpoint_name: String,
+        error: String,
+    },
+
     /// Error evaluating the DBSP circuit.
     DbspError {
         error: DbspError,
@@ -966,6 +971,7 @@ impl DbspDetailedError for ControllerError {
             Self::EncodeError { .. } => Cow::from("EncodeError"),
             Self::InputTransportError { .. } => Cow::from("InputTransportError"),
             Self::OutputTransportError { .. } => Cow::from("OutputTransportError"),
+            Self::CommandError { .. } => Cow::from("CommandError"),
             Self::PrometheusError { .. } => Cow::from("PrometheusError"),
             Self::DbspError { error } => error.error_code(),
             Self::DbspPanic => Cow::from("DbspPanic"),
@@ -1094,6 +1100,15 @@ impl Display for ControllerError {
                     "{}error on output endpoint '{endpoint_name}': {}",
                     if *fatal { "FATAL " } else { "" },
                     error.root_cause()
+                )
+            }
+            Self::CommandError {
+                endpoint_name,
+                error,
+            } => {
+                write!(
+                    f,
+                    "error executing command on output endpoint '{endpoint_name}': {error}"
                 )
             }
             Self::ParseError {
@@ -1482,6 +1497,13 @@ impl ControllerError {
         }
     }
 
+    pub fn command_error(endpoint_name: &str, error: &str) -> Self {
+        Self::CommandError {
+            endpoint_name: endpoint_name.to_owned(),
+            error: error.to_string(),
+        }
+    }
+
     pub fn parse_error(endpoint_name: &str, error: ParseError) -> Self {
         Self::ParseError {
             endpoint_name: endpoint_name.to_owned(),
@@ -1566,6 +1588,7 @@ impl ControllerError {
             | Self::EncodeError { .. }
             | Self::InputTransportError { .. }
             | Self::OutputTransportError { .. }
+            | Self::CommandError { .. }
             | Self::PrometheusError { .. }
             | Self::DbspPanic
             | Self::ControllerPanic
