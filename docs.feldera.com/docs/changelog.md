@@ -12,7 +12,20 @@ import TabItem from '@theme/TabItem';
     <TabItem className="changelogItem" value="enterprise"
         label="Enterprise">
 
-        ## Unreleased
+	## v0.288.0
+
+	Delta Lake input connector error handling behavior change:
+
+	In the past if the connector wasn't able to read a table version, it
+	signaled an error and moved to the next version. This could cause data loss.
+	With this change the connector will either retry forever or fail and stop
+	producing input after exhausting retry attempts.
+
+	The second behavioral change is that the connector can now produce
+	duplicate inputs even without a pipeline restart as the connector retries
+	processing delta log entries.
+
+        ## v0.281.0
 
         ### New dbt adapter for Feldera (`dbt-feldera`)
 

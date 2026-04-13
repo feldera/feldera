@@ -1834,6 +1834,24 @@ impl Controller {
             ValueType::Gauge,
             |m| &m.memory,
         );
+
+        // batch_records_written is Option<Arc<AtomicU64>> (only present for
+        // connectors that support it), so it can't use write_output_metric.
+        metrics.values(
+            "output_connector_batch_records_written",
+            "Number of records written so far in the current output batch. Non-zero while a batch write is in progress. Resets to 0 after the batch is committed.",
+            ValueType::Gauge,
+            |w| {
+                for output in status.output_status().values() {
+                    if let Some(counter) = &output.metrics.batch_records_written {
+                        w.write_value(
+                            &labels.with("endpoint", &output.endpoint_name),
+                            counter.as_ref(),
+                        );
+                    }
+                }
+            },
+        );
     }
 
     /// Execute a SQL query over materialized tables and views;
@@ -6137,61 +6155,75 @@ impl ControllerInner {
             .validate()
             .map_err(|e| ControllerError::invalid_output_buffer_configuration(endpoint_name, &e))?;
 
-        let encoder = if let Some(mut endpoint) = endpoint {
-            endpoint
-                .connect(Box::new(
-                    move |fatal: bool, e: AnyError, error_tag: Option<&str>| {
-                        if let Some(controller) = self_weak.upgrade() {
-                            controller.output_transport_error(
-                                endpoint_id,
-                                &endpoint_name_str,
-                                fatal,
-                                e,
-                                error_tag,
-                            )
-                        }
-                    },
-                ))
-                .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
+        // Initialize endpoint stats early so that connectors can register
+        // batch-progress counters (or other metrics) during construction.
+        self.status.add_output(
+            &endpoint_id,
+            endpoint_name,
+            endpoint_config,
+            initial_statistics,
+        );
 
-            // Create probe.
-            let probe = Box::new(OutputProbe::new(
-                endpoint_id,
-                endpoint_name,
-                endpoint,
-                self.clone(),
-            ));
+        let encoder = (|| -> Result<Box<dyn Encoder>, ControllerError> {
+            if let Some(mut endpoint) = endpoint {
+                endpoint
+                    .connect(Box::new(
+                        move |fatal: bool, e: AnyError, error_tag: Option<&str>| {
+                            if let Some(controller) = self_weak.upgrade() {
+                                controller.output_transport_error(
+                                    endpoint_id,
+                                    &endpoint_name_str,
+                                    fatal,
+                                    e,
+                                    error_tag,
+                                )
+                            }
+                        },
+                    ))
+                    .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
 
-            // Create encoder.
-            let format_config = resolved_connector_config
-                .format
-                .as_ref()
-                .ok_or_else(|| ControllerError::output_format_not_specified(endpoint_name))?
-                .clone();
+                // Create probe.
+                let probe = Box::new(OutputProbe::new(
+                    endpoint_id,
+                    endpoint_name,
+                    endpoint,
+                    self.clone(),
+                ));
 
-            let format = get_output_format(&format_config.name).ok_or_else(|| {
-                ControllerError::unknown_output_format(endpoint_name, &format_config.name)
-            })?;
-            format.new_encoder(
-                endpoint_name,
-                &resolved_connector_config,
-                &handles.key_schema,
-                &handles.value_schema,
-                probe,
-            )?
-        } else {
-            // `endpoint` is `None` - instantiate an integrated endpoint.
-            let endpoint = create_integrated_output_endpoint(
-                endpoint_id,
-                endpoint_name,
-                &resolved_connector_config,
-                &handles.key_schema,
-                &handles.value_schema,
-                self_weak,
-            )?;
+                // Create encoder.
+                let format_config = resolved_connector_config
+                    .format
+                    .as_ref()
+                    .ok_or_else(|| ControllerError::output_format_not_specified(endpoint_name))?
+                    .clone();
 
-            endpoint.into_encoder()
-        };
+                let format = get_output_format(&format_config.name).ok_or_else(|| {
+                    ControllerError::unknown_output_format(endpoint_name, &format_config.name)
+                })?;
+                Ok(format.new_encoder(
+                    endpoint_name,
+                    &resolved_connector_config,
+                    &handles.key_schema,
+                    &handles.value_schema,
+                    probe,
+                )?)
+            } else {
+                // `endpoint` is `None` - instantiate an integrated endpoint.
+                let endpoint = create_integrated_output_endpoint(
+                    endpoint_id,
+                    endpoint_name,
+                    &resolved_connector_config,
+                    &handles.key_schema,
+                    &handles.value_schema,
+                    self_weak,
+                )?;
+
+                Ok(endpoint.into_encoder())
+            }
+        })()
+        .inspect_err(|_e| {
+            self.status.remove_output(&endpoint_id);
+        })?;
 
         let parker = Parker::new();
         let endpoint_descr = OutputEndpointDescr::new(
@@ -6214,14 +6246,6 @@ impl ControllerInner {
             .connector_config
             .output_buffer_config
             .clone();
-
-        // Initialize endpoint stats.
-        self.status.add_output(
-            &endpoint_id,
-            endpoint_name,
-            endpoint_config,
-            initial_statistics,
-        );
 
         // Thread to run the output pipeline. We run it inside the DBSP runtime as an aux thread, so
         // that it can use the storage backend to maintain the output buffer.
@@ -7095,6 +7119,11 @@ impl InputConsumer for InputProbe {
         self.controller
             .status
             .set_custom_metrics(self.endpoint_id, metrics);
+    }
+
+    fn update_connector_health(&self, health: ConnectorHealth) {
+        self.controller
+            .update_input_connector_health(self.endpoint_id, health);
     }
 }
 

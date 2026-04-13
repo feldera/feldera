@@ -354,6 +354,20 @@ pub struct DeltaTableReaderConfig {
     #[serde(default)]
     pub verbose: u32,
 
+    /// Maximum number of retries for failed object store operations.
+    ///
+    /// Controls how many times the connector retries high-level storage operations,
+    /// such as reading a Delta log entry or a Parquet file.
+    ///
+    /// This is in addition to lower-level retries (e.g., individual S3 operation retries governed
+    /// by storage options like `retry_timeout`). If those retries are exhausted
+    /// or the failure is otherwise unrecoverable at the storage layer, the
+    /// connector retries the entire operation.
+    ///
+    /// Defaults to unlimited retries. Set to 0 to disable retries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_retries: Option<u32>,
+
     /// Storage options for configuring backend object store.
     ///
     /// For specific options available for different storage backends, see:
@@ -362,6 +376,12 @@ pub struct DeltaTableReaderConfig {
     /// * [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)
     #[serde(flatten)]
     pub object_store_config: HashMap<String, String>,
+}
+
+impl DeltaTableReaderConfig {
+    pub fn max_retries(&self) -> u32 {
+        self.max_retries.unwrap_or(u32::MAX)
+    }
 }
 
 #[cfg(test)]

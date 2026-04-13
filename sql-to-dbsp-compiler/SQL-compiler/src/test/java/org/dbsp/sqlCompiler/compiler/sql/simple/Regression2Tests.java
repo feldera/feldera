@@ -919,4 +919,13 @@ public class Regression2Tests extends SqlIoTest {
                  0abc
                 (1 row)""");
     }
+
+    @Test
+    public void issue5982() {
+        this.q("""
+                SELECT SPLIT_PART('11.12.13', '.', 2);
+                 r
+                ----
+                 12""");
+    }
 }

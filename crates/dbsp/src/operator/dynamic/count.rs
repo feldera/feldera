@@ -287,12 +287,12 @@ mod test {
             for k in K {
                 let mut v: Vec<u64> = V.collect();
                 let n = rng.gen_range(V);
-                v.partial_shuffle(&mut rng, n as usize);
+                let (shuffled, _) = v.partial_shuffle(&mut rng, n as usize);
 
                 let mut distinct_count = 0;
-                for &v in &v[0..n as usize] {
+                for v in shuffled {
                     let w = rng.gen_range(W);
-                    input_tuples.push(Tup2(k, Tup2(v as i64, w)));
+                    input_tuples.push(Tup2(k, Tup2(*v as i64, w)));
                     if w > 0 {
                         distinct_count += 1;
                     }
