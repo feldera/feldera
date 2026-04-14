@@ -1,6 +1,5 @@
 import logging
 import os
-import shutil
 import sys
 import time
 import urllib.request
@@ -10,6 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from docker_duckdb import DockerDuckDB
 from docker_manager import DockerManager
 
 logger = logging.getLogger(__name__)
@@ -79,47 +79,10 @@ def _resolve_kafka_proxy_url(base_url: str) -> str:
 
 
 @pytest.fixture(scope="session")
-def delta_output_dir(dbt_project_dir):
+def docker_feldera():
     """
-    Session-scoped fixture that prepares the Delta Lake output directory.
-
-    Cleans any stale Delta data from previous runs, creates a fresh
-    directory, and yields the path for tests to use.
-
-    This fixture must run before docker_feldera so the bind mount
-    ``./dbt-adventureworks/delta-output:/data/delta`` has a valid source.
-    """
-    delta_dir = Path(dbt_project_dir) / "delta-output"
-
-    if delta_dir.exists():
-        for child in delta_dir.iterdir():
-            try:
-                if child.is_dir():
-                    shutil.rmtree(child)
-                else:
-                    child.unlink()
-            except PermissionError:
-                logger.warning("Could not remove %s (permission denied)", child)
-    else:
-        delta_dir.mkdir(parents=True, exist_ok=True)
-
-    try:
-        delta_dir.chmod(0o777)
-    except PermissionError:
-        pass
-    logger.info("Prepared delta output directory at %s", delta_dir)
-
-    yield str(delta_dir)
-
-
-@pytest.fixture(scope="session")
-def docker_feldera(delta_output_dir):
-    """
-    Session-scoped fixture that starts Feldera and Kafka via Docker Compose
-    and tears them down after all tests complete.
-
-    Depends on ``delta_output_dir`` so the bind-mounted directory exists
-    before the container starts.
+    Session-scoped fixture that starts Feldera, Kafka, and the DuckDB
+    sidecar via Docker Compose and tears them down after all tests.
 
     Set FELDERA_SKIP_DOCKER=1 to skip Docker management (e.g., when
     Feldera is already running externally).
@@ -133,7 +96,7 @@ def docker_feldera(delta_output_dir):
     manager = DockerManager(compose_file=COMPOSE_FILE)
 
     try:
-        logger.info("Starting Feldera and Kafka via Docker Compose...")
+        logger.info("Starting Docker Compose...")
         manager.down(volumes=True)
         manager.up(detach=True, wait=True, timeout=300)
         manager.wait_for_healthy(timeout=300)
@@ -141,10 +104,20 @@ def docker_feldera(delta_output_dir):
         logger.info("Feldera is ready at %s", resolved)
         yield resolved
     finally:
-        logger.info("Stopping Feldera and Kafka...")
+        logger.info("Stopping Docker Compose...")
         logs = manager.logs(tail=50)
         logger.info("Feldera logs (last 50 lines):\n%s", logs)
         manager.down(volumes=True)
+
+
+@pytest.fixture(scope="session")
+def docker_duckdb(docker_feldera):
+    """
+    Session-scoped DuckDB client that queries Delta tables inside the
+    DuckDB sidecar container.  Depends on ``docker_feldera`` so the
+    compose stack is running.
+    """
+    return DockerDuckDB()
 
 
 @pytest.fixture(scope="session")
