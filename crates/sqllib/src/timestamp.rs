@@ -312,27 +312,29 @@ impl Timestamp {
 
 #[doc(hidden)]
 #[derive(Debug, Clone)]
-enum Zone {
+pub enum Zone {
     Iana(Tz),
     Offset(FixedOffset),
+    // Timezone string
+    Invalid(String),
 }
 
 impl Zone {
     #[doc(hidden)]
     /// Parse either an IANA timezone or a numeric offset like "+09:00".
-    fn parse(s: &str) -> Option<Self> {
+    fn parse(s: &str) -> Self {
         // Try IANA zone first
         if let Ok(tz) = s.parse::<Tz>() {
-            return Some(Zone::Iana(tz));
+            return Zone::Iana(tz);
         }
 
         // Try numeric offset: +HH, +HH:MM, +HH:MM:SS
         if let Some(offset) = Self::parse_fixed_offset(s) {
-            return Some(Zone::Offset(offset));
+            return Zone::Offset(offset);
         }
 
-        tracing::warn!("convert_timezone: failed to parse timezone '{}'", s);
-        None
+        tracing::warn!("failed to parse timezone '{}'", s);
+        Zone::Invalid(s.to_string())
     }
 
     #[doc(hidden)]
@@ -385,15 +387,21 @@ impl Zone {
                 })?;
                 Ok(dt.with_timezone(&Utc))
             }
+            Zone::Invalid(tz) => Err(SqlRuntimeError::from_string(format!(
+                "Cannot parse timezone {tz}"
+            ))),
         }
     }
 
     /// Convert a UTC datetime into this zone.
     #[doc(hidden)]
-    fn to_local(&self, utc: DateTime<Utc>) -> NaiveDateTime {
+    fn to_local(&self, utc: DateTime<Utc>) -> SqlResult<NaiveDateTime> {
         match self {
-            Zone::Iana(tz) => utc.with_timezone(tz).naive_local(),
-            Zone::Offset(off) => utc.with_timezone(off).naive_local(),
+            Zone::Iana(tz) => Ok(utc.with_timezone(tz).naive_local()),
+            Zone::Offset(off) => Ok(utc.with_timezone(off).naive_local()),
+            Zone::Invalid(tz) => Err(SqlRuntimeError::from_string(format!(
+                "Cannot parse timezone {tz}"
+            ))),
         }
     }
 }
@@ -490,54 +498,40 @@ mod tests {
 }
 
 #[doc(hidden)]
-pub fn convert_timezone___(
-    source: SqlString,
-    target: SqlString,
-    ts: Timestamp,
-) -> Option<Timestamp> {
-    // TODO: should we log the parse errors?
+pub fn parse_timezone_(tz: SqlString) -> Zone {
+    Zone::parse(tz.str())
+}
+
+#[doc(hidden)]
+pub fn parse_timezoneN(tz: Option<SqlString>) -> Option<Zone> {
+    let tz = tz?;
+    Some(parse_timezone_(tz))
+}
+
+#[doc(hidden)]
+pub fn convert_timezone___(src_tz: Zone, dst_tz: Zone, ts: Timestamp) -> Option<Timestamp> {
     let naive = ts.to_naiveDateTime();
-    let src_tz: Zone = Zone::parse(source.str())?;
-    let dst_tz: Zone = Zone::parse(target.str())?;
     let utc = src_tz.local_to_utc(naive).ok()?;
-    let result = dst_tz.to_local(utc);
+    let result = dst_tz.to_local(utc).ok()?;
     Some(Timestamp::from_naiveDateTime(result))
 }
 
 #[doc(hidden)]
-pub fn convert_timezoneN__(
-    source: Option<SqlString>,
-    target: SqlString,
-    ts: Timestamp,
-) -> Option<Timestamp> {
+pub fn convert_timezoneN__(source: Option<Zone>, target: Zone, ts: Timestamp) -> Option<Timestamp> {
     let source = source?;
     convert_timezone___(source, target, ts)
 }
 
 #[doc(hidden)]
-pub fn convert_timezone_N_(
-    source: SqlString,
-    target: Option<SqlString>,
-    ts: Timestamp,
-) -> Option<Timestamp> {
+pub fn convert_timezone_N_(source: Zone, target: Option<Zone>, ts: Timestamp) -> Option<Timestamp> {
     let target = target?;
     convert_timezone___(source, target, ts)
 }
 
 #[doc(hidden)]
-pub fn convert_timezone__N(
-    source: SqlString,
-    target: SqlString,
-    ts: Option<Timestamp>,
-) -> Option<Timestamp> {
-    let ts = ts?;
-    convert_timezone___(source, target, ts)
-}
-
-#[doc(hidden)]
 pub fn convert_timezoneNN_(
-    source: Option<SqlString>,
-    target: Option<SqlString>,
+    source: Option<Zone>,
+    target: Option<Zone>,
     ts: Timestamp,
 ) -> Option<Timestamp> {
     let source = source?;
@@ -547,8 +541,8 @@ pub fn convert_timezoneNN_(
 
 #[doc(hidden)]
 pub fn convert_timezoneN_N(
-    source: Option<SqlString>,
-    target: SqlString,
+    source: Option<Zone>,
+    target: Zone,
     ts: Option<Timestamp>,
 ) -> Option<Timestamp> {
     let source = source?;
@@ -558,8 +552,8 @@ pub fn convert_timezoneN_N(
 
 #[doc(hidden)]
 pub fn convert_timezone_NN(
-    source: SqlString,
-    target: Option<SqlString>,
+    source: Zone,
+    target: Option<Zone>,
     ts: Option<Timestamp>,
 ) -> Option<Timestamp> {
     let target = target?;
@@ -568,9 +562,15 @@ pub fn convert_timezone_NN(
 }
 
 #[doc(hidden)]
+pub fn convert_timezone__N(source: Zone, target: Zone, ts: Option<Timestamp>) -> Option<Timestamp> {
+    let ts = ts?;
+    convert_timezone___(source, target, ts)
+}
+
+#[doc(hidden)]
 pub fn convert_timezoneNNN(
-    source: Option<SqlString>,
-    target: Option<SqlString>,
+    source: Option<Zone>,
+    target: Option<Zone>,
     ts: Option<Timestamp>,
 ) -> Option<Timestamp> {
     let source = source?;

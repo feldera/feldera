@@ -234,18 +234,18 @@ public class WindowTests extends ScottBaseTests {
             query += tail;
 
             var ccs = this.getCCS(query);
-            ccs.step("""
+            ccs.stepWeightOne("""
                 INSERT INTO T VALUES('00', '2020-01-01 00:00:00', 100);
                 INSERT INTO T VALUES('00', '2020-01-01 00:10:00', 110);""", """
-                 daily_runtime_increment | account_id | weight
-                -----------------------------------------------
-                 100                     | 00|          1""");
-            ccs.step("""
+                 daily_runtime_increment | account_id
+                --------------------------------------
+                 100                     | 00""");
+            ccs.stepWeightOne("""
                 INSERT INTO T VALUES('01', '2020-01-01 00:00:00', 200);
                 INSERT INTO T VALUES('01', '2020-01-01 00:10:00', 210);""", """
-                 daily_runtime_increment | account_id | weight
-                -----------------------------------------------
-                 200                     | 01|          1""");
+                 daily_runtime_increment | account_id
+                --------------------------------------
+                 200                     | 01""");
         }
     }
 }

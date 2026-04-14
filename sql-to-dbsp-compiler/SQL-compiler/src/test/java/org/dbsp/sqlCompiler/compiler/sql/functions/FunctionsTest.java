@@ -1990,6 +1990,13 @@ public class FunctionsTest extends SqlIoTest {
                 (1 row)
                 """
         );
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x VARCHAR, r VARCHAR);
+                CREATE VIEW V AS SELECT RLIKE(x, r) FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES('string', 's..i.*')", """
+                 r
+                ---
+                 true""");
     }
 
     @Test

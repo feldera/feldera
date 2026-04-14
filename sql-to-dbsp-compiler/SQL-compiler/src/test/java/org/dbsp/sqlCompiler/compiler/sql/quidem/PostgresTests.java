@@ -78,12 +78,12 @@ public class PostgresTests extends SqlIoTest {
         var ccs = this.getCCS("""
                 CREATE TABLE T(x INT, y INT NOT NULL, z DECIMAL(10, 2));
                 CREATE VIEW V AS SELECT GREATEST(x, y, z), LEAST(x, y, z) FROM T;""");
-        ccs.step("INSERT INTO T VALUES(0, 1, 2), (NULL, 1, 2), (2, 3, NULL)", """
-                 greatest | least | weight
-                ---------------------------
-                 2        | 0     | 1
-                          |       | 1
-                          |       | 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(0, 1, 2), (NULL, 1, 2), (2, 3, NULL)", """
+                 greatest | least
+                ------------------
+                 2        | 0
+                          |
+                          |""");
     }
 
     @Test
@@ -91,11 +91,11 @@ public class PostgresTests extends SqlIoTest {
         var ccs = this.getCCS("""
                 CREATE TABLE T(x INT, y INT NOT NULL, z DECIMAL(10, 2));
                 CREATE VIEW V AS SELECT GREATEST_IGNORE_NULLS(x, y, z), LEAST_IGNORE_NULLS(x, y, z) FROM T;""");
-        ccs.step("INSERT INTO T VALUES(0, 1, 2), (NULL, 1, 2), (2, 3, NULL)", """
-                 greatest | least | weight
-                ---------------------------
-                 2        | 0     | 1
-                 2        | 1     | 1
-                 3        | 2     | 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(0, 1, 2), (NULL, 1, 2), (2, 3, NULL)", """
+                 greatest | least
+                ------------------
+                 2        | 0
+                 2        | 1
+                 3        | 2""");
     }
 }
