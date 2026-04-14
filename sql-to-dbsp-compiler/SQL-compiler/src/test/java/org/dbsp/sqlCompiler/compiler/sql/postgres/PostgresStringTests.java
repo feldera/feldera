@@ -1113,6 +1113,24 @@ public class PostgresStringTests extends SqlIoTest {
             -------
              abc
             (1 row)
+            
+            SELECT split_part('abc', '', 1) AS result;
+             result
+            -------
+             abc
+            (1 row)
+            
+            SELECT split_part('abc', '', 2) AS result;
+             result
+            -------
+            \s
+            (1 row)
+            
+            SELECT split_part('abc', NULL, 2) AS result;
+             result
+            -------
+            NULL
+            (1 row)
             """);
     }
 

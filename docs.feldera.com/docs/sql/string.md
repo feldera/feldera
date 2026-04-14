@@ -211,7 +211,7 @@ example.
     <td>Produce an array of strings, by splitting <code>string</code> at each occurrence of <code>delimiter</code>.
         If <code>delimiter</code> is empty, return an array containing just <code>string</code>.  If
         <code>string</code> is empty, return an empty array.  If either argument is NULL, return NULL.
-        If <code>delimiter</code> is absent assume it is the string <code>','</code>.</td>
+        If <code>delimiter</code> is absent, a single quote is used <code>','</code>.</td>
     <td><code>SPLIT('a|b|c|', '|')</code> => <code>['a', 'b', 'c', '']</code></td>
   </tr>
   <tr>
@@ -222,7 +222,9 @@ example.
             <li><code>n = 1</code> refers to the first part of <code>string</code> after splitting.</li>
             <li><code>n = 2</code> refers to the second part, and so on.</li>
             <li>If <code>n</code> is negative, it returns the <code>abs(n)</code>'th part from the end of <code>string</code>.</li>
+            <li>If <code>delimiter</code> is empty there is only one part, the entire string.</li>
             <li>If <code>n</code> is out of bounds, it returns an empty string.</li>
+            <li>If any argument is <code>NULL</code>, the result is <code>NULL</code></li>
         </ul>
     </td>
     <td>
