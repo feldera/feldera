@@ -485,151 +485,179 @@ public class PostgresStringTests extends SqlIoTest {
 
     @Test
     public void testLike2() {
-        this.q("""
+        this.qs("""
                 SELECT 'hawkeye' LIKE 'h%' AS "true";
                  true
                 ------
-                 t""");
-        this.q("""
+                 t
+                (1 row)
+
                 SELECT 'hawkeye' NOT LIKE 'h%' AS "false";
                  false
                 -------
-                 f""");
-        this.q("""
+                 f
+                (1 row)
+
                 SELECT 'hawkeye' LIKE 'H%' AS "false";
                  false
                 -------
-                 f""");
-        this.q("""
+                 f
+                (1 row)
+
                 SELECT 'hawkeye' NOT LIKE 'H%' AS "true";
                  true
                 ------
-                 t""");
-        this.q("""
+                 t
+                (1 row)
+
                 SELECT 'hawkeye' LIKE 'indio%' AS "false";
                  false
                 -------
-                 f""");
-        this.q("""
+                 f
+                (1 row)
+
                 SELECT 'hawkeye' NOT LIKE 'indio%' AS "true";
                  true
                 ------
-                 t""");
-        this.q("""
+                 t
+                (1 row)
+
                 SELECT 'hawkeye' LIKE 'h%eye' AS "true";
                  true
                 ------
-                 t""");
-        this.q("""
+                 t
+                (1 row)
+
                 SELECT 'hawkeye' NOT LIKE 'h%eye' AS "false";
                  false
                 -------
-                 f""");
-        this.q("""
+                 f
+                (1 row)
+
                 SELECT 'indio' LIKE '_ndio' AS "true";
                  true
                 ------
-                 t""");
-        this.q("""
+                 t
+                (1 row)
+
                 SELECT 'indio' NOT LIKE '_ndio' AS "false";
                  false
                 -------
-                 f""");
-        this.q("""
+                 f
+                (1 row)
+
                 SELECT 'indio' LIKE 'in__o' AS "true";
                  true
                 ------
-                 t""");
-        this.q("""
+                 t
+                (1 row)
+
                 SELECT 'indio' NOT LIKE 'in__o' AS "false";
                  false
                 -------
-                 f""");
-        this.q("""
+                 f
+                (1 row)
+
                 SELECT 'indio' LIKE 'in_o' AS "false";
                  false
                 -------
-                 f""");
-        this.q("""
+                 f
+                (1 row)
+
                 SELECT 'indio' NOT LIKE 'in_o' AS "true";
                  true
                 ------
-                 t""");
+                 t
+                (1 row)""");
     }
 
     @Test
     public void testRlike() {
         // This is not a postgres operator
-        this.q("""
+        this.qs("""
                 SELECT 'hawkeye' RLIKE 'h.*' AS "true";
                  true
                 ------
-                 t""");
-        this.q("""
+                 t
+                (1 row)
+
                 SELECT 'hawkeye' NOT RLIKE 'h.*' AS "false";
                  false
                 -------
-                 f""");
-        this.q("""
+                 f
+                (1 row)
+
                 SELECT 'hawkeye' RLIKE 'H.*' AS "false";
                  false
                 -------
-                 f""");
-        this.q("""
+                 f
+                (1 row)
+                
                 SELECT 'hawkeye' NOT RLIKE 'H.*' AS "true";
                  true
                 ------
-                 t""");
-        this.q("""
+                 t
+                (1 row)
+                
                 SELECT 'hawkeye' RLIKE 'indio.*' AS "false";
                  false
                 -------
-                 f""");
-        this.q("""
+                 f
+                (1 row)
+                
                 SELECT 'hawkeye' NOT RLIKE 'indio.*' AS "true";
                  true
                 ------
-                 t""");
-        this.q("""
+                 t
+                (1 row)
+
                 SELECT 'hawkeye' RLIKE 'h.*eye' AS "true";
                  true
                 ------
-                 t""");
-        this.q("""
+                 t
+                (1 row)
+
                 SELECT 'hawkeye' NOT RLIKE 'h.*eye' AS "false";
                  false
                 -------
-                 f""");
-        this.q("""
+                 f
+                (1 row)
+
                 SELECT 'indio' RLIKE '.ndio' AS "true";
                  true
                 ------
-                 t""");
-        this.q("""
+                 t
+                (1 row)
+
                 SELECT 'indio' NOT RLIKE '.ndio' AS "false";
                  false
                 -------
-                 f""");
-        this.q("""
+                 f
+                (1 row)
+
                 SELECT 'indio' RLIKE 'in..o' AS "true";
                  true
                 ------
-                 t""");
-        this.q("""
+                 t
+                (1 row)
+
                 SELECT 'indio' NOT RLIKE 'in..o' AS "false";
                  false
                 -------
-                 f""");
-        this.q("""
+                 f
+                (1 row)
+                
                 SELECT 'indio' RLIKE 'in.o' AS "false";
                  false
                 -------
-                 f""");
-        this.q("""
+                 f
+                (1 row)
+
                 SELECT 'indio' NOT RLIKE 'in.o' AS "true";
                  true
                 ------
-                 t""");
+                 t
+                (1 row)""");
     }
 
     @Test
@@ -1134,6 +1162,12 @@ public class PostgresStringTests extends SqlIoTest {
             """);
     }
 
+    @Test
+    public void invalidRegex() {
+        this.runtimeConstantFail(
+                "SELECT RLIKE('x', '(')",
+                "Invalid regular expression in RLIKE '(': regex parse error:");
+    }
 
     // TODO: sha, encode, decode
 
@@ -1193,9 +1227,7 @@ public class PostgresStringTests extends SqlIoTest {
     @Test
     public void testLikeTable() {
         String sql = """
-                CREATE TABLE example (
-                    name VARCHAR
-                );
+                CREATE TABLE example (name VARCHAR);
 
                 CREATE VIEW example_count AS
                 SELECT COUNT(*) FROM example WHERE name LIKE 'abc%' OR name LIKE name;

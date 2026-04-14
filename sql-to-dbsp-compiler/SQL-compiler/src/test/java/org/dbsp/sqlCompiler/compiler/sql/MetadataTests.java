@@ -722,39 +722,6 @@ public class MetadataTests extends BaseSQLTests {
         BaseSQLTests.compileAndTestRust(true);
     }
 
-    // Test that schema for a table can be retrieved from a JDBC data source
-    @Test @Ignore("Does not find system table")
-    public void jdbcSchemaTest() throws ClassNotFoundException, SQLException {
-        // Create a table in HSQLDB
-        Class.forName("org.hsqldb.jdbcDriver");
-        String jdbcUrl = "jdbc:hsqldb:mem:db";
-        Connection connection = DriverManager.getConnection(jdbcUrl, "", "");
-        try (Statement s = connection.createStatement()) {
-            s.execute("""
-                    create table mytable(
-                    id integer not null primary key,
-                    strcol varchar(25))
-                    """);
-        }
-
-        // Create a schema that retrieves data from HSQLDB
-        DataSource mockDataSource = JdbcSchema.dataSource(jdbcUrl, "org.hsqldb.jdbcDriver", "", "");
-        Connection executorConnection = DriverManager.getConnection("jdbc:calcite:");
-        CalciteConnection calciteConnection = executorConnection.unwrap(CalciteConnection.class);
-        SchemaPlus rootSchema = calciteConnection.getRootSchema();
-        JdbcSchema hsql = JdbcSchema.create(rootSchema, "schema", mockDataSource, null, null);
-
-        CompilerOptions options = new CompilerOptions();
-        options.languageOptions.throwOnError = true;
-        DBSPCompiler compiler = new DBSPCompiler(options);
-        compiler.addSchemaSource("schema", hsql);
-        compiler.submitStatementForCompilation("CREATE VIEW V AS SELECT * FROM mytable");
-        this.getCCS(compiler);
-        ObjectNode node = compiler.getIOMetadataAsJson();
-        String json = node.toPrettyString();
-        Assert.assertTrue(json.contains("MYTABLE"));
-    }
-
     @Test
     public void testUDFTypeError() throws IOException, SQLException {
         File file = createInputScript("""

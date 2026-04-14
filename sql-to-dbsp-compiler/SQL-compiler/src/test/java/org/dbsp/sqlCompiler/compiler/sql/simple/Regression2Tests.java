@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.util.HashString;
@@ -496,15 +497,15 @@ public class Regression2Tests extends SqlIoTest {
 
     @Test
     public void issue2998() {
-        var cc = this.getCC("""
+        var cc = this.getCCS("""
                 CREATE TABLE T(x VARCHAR);
                 CREATE VIEW V AS SELECT regexp_replace(x, '1', '2') FROM T;""");
 
         boolean[] found = new boolean[1];
         InnerVisitor hasRegexConstructor = new InnerVisitor(cc.compiler) {
             @Override
-            public void postorder(DBSPConstructorExpression expression) {
-                if (expression.function.toString().equalsIgnoreCase("Regex::new")) {
+            public void postorder(DBSPApplyExpression expression) {
+                if (expression.function.toString().equalsIgnoreCase("make_regex_")) {
                     found[0] = true;
                 }
             }

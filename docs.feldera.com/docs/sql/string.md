@@ -111,7 +111,7 @@ example.
     <td><a id="rlike"></a><code>string RLIKE pattern</code> and
         <code>string NOT RLIKE pattern</code></td>
     <td>The RLIKE expression returns true if <code>string</code> matches <code>pattern</code>.
-        The pattern is a standard Rust regular expression.</td>
+        The pattern is a standard Rust regular expression.  If the regular expression is invalid the program will crash with an error.</td>
     <td><code>'string' RLIKE 's..i.*'</code> => <code>TRUE</code></td>
   </tr>
   <tr>
@@ -183,7 +183,7 @@ example.
         specified by the pattern `pat` with the replacement string `repl`, and returns
         the resulting string. If any one of `expr`, `pat`, or `repl` is `NULL`, the return value is `NULL`.
         If `repl` is missing, it is assumed to be the empty string.  If the regular
-        expression is invalid, the original string is returned.</td>
+        expression is invalid, the program will crash at runtime with an error.</td>
     <td></td>
   </tr>
   <tr>
@@ -211,7 +211,7 @@ example.
     <td>Produce an array of strings, by splitting <code>string</code> at each occurrence of <code>delimiter</code>.
         If <code>delimiter</code> is empty, return an array containing just <code>string</code>.  If
         <code>string</code> is empty, return an empty array.  If either argument is NULL, return NULL.
-        If <code>delimiter</code> is absent, a single quote is used <code>','</code>.</td>
+        If <code>delimiter</code> is absent, a single comma is used <code>','</code>.</td>
     <td><code>SPLIT('a|b|c|', '|')</code> => <code>['a', 'b', 'c', '']</code></td>
   </tr>
   <tr>
@@ -348,7 +348,7 @@ The description below uses fragments from the [Postgres
 documentation](https://www.postgresql.org/docs/15/functions-matching.html#FUNCTIONS-POSIX-REGEXP),
 where credit is given to Henry Spencer.
 
-Currently, our compiler does *not* support `SIMILAR TO` regular
+Currently, Feldera does *not* support `SIMILAR TO` regular
 expressions.
 
 A regular expression is a character sequence that is an abbreviated
@@ -574,7 +574,8 @@ If `repl` is missing, it is assumed to be the empty string.
 Replaces occurrences in the string `expr` that match the regular
 expression specified by the pattern `pat` with the replacement string
 `repl`, and returns the resulting string.  If any of `expr`, `pat`, or
-`repl` is `NULL`, the return value is `NULL`.
+`repl` is `NULL`, the return value is `NULL`.  If the pattern cannot
+be parsed as a valid regular expression the program will crash at runtime.
 
 #### Replacement string syntax
 

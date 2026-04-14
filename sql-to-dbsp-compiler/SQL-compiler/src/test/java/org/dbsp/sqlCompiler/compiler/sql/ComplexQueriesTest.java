@@ -61,7 +61,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                    AND b55=a31;
                 """;
         var ccs = this.getCCS(sql);
-        ccs.step("""
+        ccs.stepWeightOne("""
                 INSERT INTO t29 VALUES(1,4,'table t29 row 1');
                 INSERT INTO t29 VALUES(2,2,'table t29 row 2');
                 INSERT INTO t29 VALUES(3,9,'table t29 row 3');
@@ -106,9 +106,9 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 INSERT INTO t55 VALUES(9,6,'table t55 row 9');
                 INSERT INTO t55 VALUES(10,2,'table t55 row 10');""",
                  """
-                 x29 | x31 | x51 | x55 | weight
+                 x29 | x31 | x51 | x55
                 ---------------------------------
-                 table t29 row 6| table t31 row 9| table t51 row 5| table t55 row 4| 1""");
+                 table t29 row 6| table t31 row 9| table t51 row 5| table t55 row 4""");
         InnerVisitor typeWidth = new InnerVisitor(ccs.compiler) {
             @Override
             public void postorder(DBSPTypeTupleBase type) {

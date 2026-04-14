@@ -862,16 +862,36 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         operandCount + " arguments is unknown", node);
     }
 
-    /** Compile a string literal into a static Regex object and return it. */
     @Nullable
-    DBSPExpression makeRegex(DBSPStringLiteral lit) {
-        DBSPTypeUser user = new DBSPTypeUser(CalciteObject.EMPTY, USER, "Regex", true);
-        // Here we lie about the type: new does not return a Regex, but a Result<Regex, Error>.
-        // We lie again that ok returns an unchanged type.  These two lies cancel out.
-        DBSPExpression init = user.constructor("new", lit.toStr());
-        init = init.applyMethod("ok", init.getType());
-        String name = DBSPStaticExpression.generateName(init, this.compiler);
-        return new DBSPStaticExpression(lit.getNode(), init, name).borrow();
+    DBSPExpression makeRegex(DBSPExpression arg) {
+        DBSPType argType = arg.getType();
+        if (!argType.is(DBSPTypeString.class)) {
+            this.compiler.reportWarning(arg.getSourcePosition(),
+                    "Suspicious argument",
+                    "Regular expression argument expression should have type CHAR, but it has type " + argType.asSqlString());
+            arg = arg.cast(arg.getNode(), DBSPTypeString.varchar(arg.getType().mayBeNull),
+                    DBSPCastExpression.CastType.SqlUnsafe);
+        }
+        DBSPTypeUser user = new DBSPTypeUser(CalciteObject.EMPTY, USER, "ParsedRegex", argType.mayBeNull);
+        return new DBSPApplyExpression(CalciteObject.EMPTY,
+                "make_regex" + argType.nullableUnderlineSuffix(),
+                user, arg);
+    }
+
+    @Nullable
+    DBSPExpression makeTimezone(DBSPExpression arg) {
+        DBSPType argType = arg.getType();
+        if (!argType.is(DBSPTypeString.class)) {
+            this.compiler.reportWarning(arg.getSourcePosition(),
+                    "Suspicious argument",
+                    "Timezone expression should have type CHAR, but it has type " + argType.asSqlString());
+            arg = arg.cast(arg.getNode(), DBSPTypeString.varchar(arg.getType().mayBeNull),
+                    DBSPCastExpression.CastType.SqlUnsafe);
+        }
+        DBSPTypeUser user = new DBSPTypeUser(CalciteObject.EMPTY, USER, "Zone", argType.mayBeNull);
+        return new DBSPApplyExpression(CalciteObject.EMPTY,
+                "parse_timezone" + argType.nullableUnderlineSuffix(),
+                user, arg);
     }
 
     /** Check for polymorphic strict functions: if any operand is the NULL literal, replace with NULL */
@@ -1528,15 +1548,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return new DBSPApplyExpression(node, "blackbox", ops.get(0).type, ops.toArray(new DBSPExpression[0]));
                     case "regexp_replace": {
                         validateArgCount(node, operationName, ops.size(), 2, 3);
-                        for (int i = 0; i < ops.size(); i++)
-                            this.ensureString(ops, i);
-                        if (ops.get(1).is(DBSPStringLiteral.class)) {
-                            DBSPStringLiteral lit = ops.get(1).to(DBSPStringLiteral.class);
-                            if (lit.isNull())
-                                return type.none();
-                            ops.set(1, this.makeRegex(lit));
-                            return compileFunction("regexp_replaceC", node, type, ops, 2, 3);
+                        for (int i = 0; i < ops.size(); i++) {
+                            if (i != 1)
+                                this.ensureString(ops, i);
                         }
+                        ops.set(1, this.makeRegex(ops.get(1)));
                         return compileStrictFunction(call, node, type, ops, 2, 3);
                     }
                     case "parse_date":
@@ -1641,8 +1657,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                     case "convert_timezone": {
                         validateArgCount(node, operationName, ops.size(), 3);
-                        ensureString(ops, 0);
-                        ensureString(ops, 1);
+                        ops.set(0, this.makeTimezone(ops.get(0)));
+                        ops.set(1, this.makeTimezone(ops.get(1)));
                         return compileStrictFunction(call, node, type, ops, 3);
                     }
                 }
@@ -1670,19 +1686,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             }
             case RLIKE: {
                 validateArgCount(node, operationName, ops.size(), 2);
-                for (int i = 0; i < 2; i++)
-                    // Calcite does not enforce the type of the arguments, why?
-                    this.ensureString(ops, i);
-                // if the second argument is a constant, compile it into a static
-                if (ops.get(1).is(DBSPStringLiteral.class)) {
-                    DBSPStringLiteral lit = ops.get(1).to(DBSPStringLiteral.class);
-                    if (lit.isNull())
-                        return type.none();
-                    ops.set(1, this.makeRegex(lit));
-                    return compileFunction("rlikeC", node, type, ops, 2);
-                } else {
-                    return compileFunction(call, node, type, ops, 2);
-                }
+                // Calcite does not enforce the type of the arguments, why?
+                this.ensureString(ops, 0);
+                ops.set(1, this.makeRegex(ops.get(1)));
+                return compileFunction(call, node, type, ops, 2);
             }
             case POSITION: {
                 validateArgCount(node, operationName, ops.size(), 2);

@@ -324,31 +324,17 @@ pub fn like2__(value: SqlString, pattern: SqlString) -> bool {
 
 some_function2!(like2, SqlString, SqlString, bool);
 
-// rlike with a Constant regular expression.
-// re is None when the regular expression expression is malformed,
-// In this case the result is false and not None.
-// The regular expression cannot be null - the compiler would detect that.
 #[doc(hidden)]
-pub fn rlikeC__(value: SqlString, re: &Option<Regex>) -> bool {
+pub fn rlike__(value: SqlString, re: ParsedRegex) -> bool {
     match re {
-        None => false,
-        Some(re) => re.is_match(value.str()),
+        ParsedRegex::Invalid(r, e) => {
+            panic!("Invalid regular expression in RLIKE '{}': {}", r, e);
+        }
+        ParsedRegex::Regex(re) => re.is_match(value.str()),
     }
 }
 
-#[doc(hidden)]
-pub fn rlikeCN_(value: Option<SqlString>, re: &Option<Regex>) -> Option<bool> {
-    let value = value?;
-    Some(rlikeC__(value, re))
-}
-
-#[doc(hidden)]
-pub fn rlike__(value: SqlString, pattern: SqlString) -> bool {
-    let re = Regex::new(pattern.str());
-    re.map_or_else(|_| false, |re| re.is_match(value.str()))
-}
-
-some_function2!(rlike, SqlString, SqlString, bool);
+some_function2!(rlike, SqlString, ParsedRegex, bool);
 
 #[doc(hidden)]
 pub fn like3___(value: SqlString, pattern: SqlString, escape: SqlString) -> bool {
@@ -722,69 +708,56 @@ pub fn to_json_nullN(_value: Option<()>) -> Option<SqlString> {
 }
 
 #[doc(hidden)]
-pub fn regexp_replace3___(str: SqlString, re: SqlString, repl: SqlString) -> SqlString {
-    let re = Regex::new(re.str()).ok();
-    regexp_replaceC3___(str, &re, repl)
+#[derive(Debug, Clone)]
+pub enum ParsedRegex {
+    Regex(Regex),
+    // The expression and the error produced while parsing
+    Invalid(String, String),
 }
 
-some_function3!(regexp_replace3, SqlString, SqlString, SqlString, SqlString);
-
 #[doc(hidden)]
-pub fn regexp_replace2__(str: SqlString, re: SqlString) -> SqlString {
-    regexp_replace3___(str, re, SqlString::new())
-}
-
-some_function2!(regexp_replace2, SqlString, SqlString, SqlString);
-
-#[doc(hidden)]
-pub fn regexp_replaceC3___(str: SqlString, re: &Option<Regex>, repl: SqlString) -> SqlString {
-    match re {
-        None => str,
-        Some(re) => SqlString::maybe_reuse(re.replace_all(str.str(), repl.str()).as_ref(), &str),
+pub fn make_regex_(re: SqlString) -> ParsedRegex {
+    match Regex::new(re.str()) {
+        Ok(r) => ParsedRegex::Regex(r),
+        Err(e) => {
+            tracing::warn!(
+                "failed to parse '{}' as a regular expression: {}",
+                re,
+                e.to_string()
+            );
+            ParsedRegex::Invalid(re.str().to_string(), e.to_string())
+        }
     }
 }
 
-#[doc(hidden)]
-pub fn regexp_replaceC3N__(
-    str: Option<SqlString>,
-    re: &Option<Regex>,
-    repl: SqlString,
-) -> Option<SqlString> {
-    let str = str?;
-    Some(regexp_replaceC3___(str, re, repl))
-}
+some_function1!(make_regex, SqlString, ParsedRegex);
 
 #[doc(hidden)]
-pub fn regexp_replaceC3__N(
-    str: SqlString,
-    re: &Option<Regex>,
-    repl: Option<SqlString>,
-) -> Option<SqlString> {
-    let repl = repl?;
-    Some(regexp_replaceC3___(str, re, repl))
+pub fn regexp_replace3___(str: SqlString, re: ParsedRegex, repl: SqlString) -> SqlString {
+    match re {
+        ParsedRegex::Invalid(r, e) => {
+            panic!("Invalid regular expression in REPLACE '{}': {}", r, e);
+        }
+        ParsedRegex::Regex(re) => {
+            SqlString::maybe_reuse(re.replace_all(str.str(), repl.str()).as_ref(), &str)
+        }
+    }
 }
 
-#[doc(hidden)]
-pub fn regexp_replaceC3N_N(
-    str: Option<SqlString>,
-    re: &Option<Regex>,
-    repl: Option<SqlString>,
-) -> Option<SqlString> {
-    let str = str?;
-    let repl = repl?;
-    Some(regexp_replaceC3___(str, re, repl))
-}
+some_function3!(
+    regexp_replace3,
+    SqlString,
+    ParsedRegex,
+    SqlString,
+    SqlString
+);
 
 #[doc(hidden)]
-pub fn regexp_replaceC2__(str: SqlString, re: &Option<Regex>) -> SqlString {
-    regexp_replaceC3___(str, re, SqlString::new())
+pub fn regexp_replace2__(str: SqlString, re: ParsedRegex) -> SqlString {
+    regexp_replace3___(str, re, SqlString::new())
 }
 
-#[doc(hidden)]
-pub fn regexp_replaceC2N_(str: Option<SqlString>, re: &Option<Regex>) -> Option<SqlString> {
-    let str = str?;
-    Some(regexp_replaceC3___(str, re, SqlString::new()))
-}
+some_function2!(regexp_replace2, SqlString, ParsedRegex, SqlString);
 
 #[doc(hidden)]
 pub fn concat_ws___(sep: SqlString, left: SqlString, right: SqlString) -> SqlString {

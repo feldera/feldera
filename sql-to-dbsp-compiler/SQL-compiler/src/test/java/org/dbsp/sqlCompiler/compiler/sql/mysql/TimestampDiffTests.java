@@ -561,6 +561,22 @@ public class TimestampDiffTests extends SqlIoTest {
                  r
                 ---
                  2008-03-05 09:25:29
+                (1 row)
+                
+                -- invalid timezone -> result is NULL
+                SELECT CONVERT_TIMEZONE('blah', 'blah', TIMESTAMP '2020-10-10 00:00:00');
+                 r
+                ---
+                NULL
                 (1 row)""");
+        // Test with non-constant values
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x TIMESTAMP, y VARCHAR);
+                CREATE VIEW V AS SELECT CONVERT_TIMEZONE(y, 'America/Los_Angeles', x) FROM T;
+                """);
+        ccs.stepWeightOne("INSERT INTO T VALUES(TIMESTAMP '2008-03-05 12:25:29', 'America/New_York');", """
+                 ts
+                ----
+                 2008-03-05 09:25:29""");
     }
 }

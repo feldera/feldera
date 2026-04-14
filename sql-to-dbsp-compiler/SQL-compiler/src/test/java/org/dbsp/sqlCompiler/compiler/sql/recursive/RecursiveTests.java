@@ -428,10 +428,10 @@ public class RecursiveTests extends BaseSQLTests {
                 DECLARE RECURSIVE VIEW V(v INT);
                 CREATE VIEW V AS SELECT v FROM V UNION SELECT 1;""";
         var ccs = this.getCCS(sql);
-        ccs.step("", """
-                 v | weight
-                ------------
-                 1 | 1""");
+        ccs.stepWeightOne("", """
+                 v
+                ---
+                 1""");
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int recursive = 0;
             @Override
@@ -454,17 +454,17 @@ public class RecursiveTests extends BaseSQLTests {
                 CREATE TABLE T(v INT);
                 CREATE VIEW V AS SELECT v FROM V UNION SELECT * FROM T;""";
         var ccs = this.getCCS(sql);
-        ccs.step("", """
-                 v | weight
-                ------------""");
-        ccs.step("INSERT INTO T VALUES(1)", """
-                 v | weight
-                ------------
-                 1 | 1""");
-        ccs.step("INSERT INTO T VALUES(2)", """
-                 v | weight
-                ------------
-                 2 | 1""");
+        ccs.stepWeightOne("", """
+                 v
+                ---""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(1)", """
+                 v
+                ---
+                 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(2)", """
+                 v
+                ---
+                 2""");
     }
 
     @Test
@@ -478,17 +478,17 @@ public class RecursiveTests extends BaseSQLTests {
                 CREATE LOCAL VIEW V AS SELECT v FROM V UNION SELECT * FROM X;
                 CREATE VIEW O AS SELECT v+1 FROM V;""";
         var ccs = this.getCCS(sql);
-        ccs.step("", """
-                 v | weight
-                ------------""");
-        ccs.step("INSERT INTO T VALUES(1)", """
-                 v | weight
-                ------------
-                 1 | 1""");
-        ccs.step("INSERT INTO T VALUES(2)", """
-                 v | weight
-                ------------
-                 2 | 1""");
+        ccs.stepWeightOne("", """
+                 v
+                ---""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(1)", """
+                 v
+                ---
+                 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(2)", """
+                 v
+                ---
+                 2""");
     }
 
     @Test
