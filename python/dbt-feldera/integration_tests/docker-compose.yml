@@ -31,6 +31,12 @@ services:
       retries: 30
       start_period: 10s
 
+  delta-init:
+    image: alpine
+    command: ["sh", "-c", "chmod 1777 /data/delta"]
+    volumes:
+      - delta-data:/data/delta
+
   pipeline-manager:
     image: "${FELDERA_IMAGE:-images.feldera.com/feldera/pipeline-manager:latest}"
     ports:
@@ -40,8 +46,10 @@ services:
     depends_on:
       redpanda:
         condition: service_healthy
+      delta-init:
+        condition: service_completed_successfully
     volumes:
-      - ./dbt-adventureworks/delta-output:/data/delta
+      - delta-data:/data/delta
     environment:
       - RUST_LOG=${RUST_LOG:-info}
       - RUST_BACKTRACE=1
@@ -51,3 +59,18 @@ services:
       timeout: 5s
       retries: 30
       start_period: 30s
+
+  duckdb:
+    image: datacatering/duckdb:v1.3.0
+    entrypoint: ["/bin/sh", "-c", "/duckdb -c 'INSTALL delta' && sleep infinity"]
+    volumes:
+      - delta-data:/data/delta:ro
+    healthcheck:
+      test: ["CMD", "/duckdb", "-c", "LOAD delta; SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 2s
+
+volumes:
+  delta-data:

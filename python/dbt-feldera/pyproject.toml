@@ -51,8 +51,6 @@ dev = [
 test = [
     "pytest>=8.3.5",
     "pytest-timeout>=2.3.1",
-    "duckdb>=1.0.0",
-    "deltalake>=0.18.0",
 ]
 
 [tool.pytest.ini_options]
