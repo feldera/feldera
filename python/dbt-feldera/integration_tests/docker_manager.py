@@ -1,3 +1,4 @@
+import enum
 import logging
 import subprocess
 import time
@@ -5,6 +6,22 @@ from pathlib import Path
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Shared constants for the Docker Compose integration-test stack
+# ---------------------------------------------------------------------------
+
+PROJECT_NAME = "feldera-dbt-test"
+"""Docker Compose project name used to isolate integration-test containers."""
+
+
+class Service(str, enum.Enum):
+    """Docker Compose service names defined in ``docker-compose.yml``."""
+
+    REDPANDA = "redpanda"
+    PIPELINE_MANAGER = "pipeline-manager"
+    DUCKDB = "duckdb"
+    DELTA_INIT = "delta-init"
 
 
 class DockerManager:
@@ -19,7 +36,7 @@ class DockerManager:
     def __init__(
         self,
         compose_file: str,
-        project_name: str = "feldera-dbt-test",
+        project_name: str = PROJECT_NAME,
     ) -> None:
         """
         Initialize the DockerManager.
@@ -103,7 +120,7 @@ class DockerManager:
         self._run(args, check=False, timeout=timeout)
         logger.info("Docker compose down completed")
 
-    def is_healthy(self, service: str = "pipeline-manager") -> bool:
+    def is_healthy(self, service: str = Service.PIPELINE_MANAGER) -> bool:
         """
         Check if a service container is healthy.
 
@@ -118,7 +135,7 @@ class DockerManager:
 
     def wait_for_healthy(
         self,
-        service: str = "pipeline-manager",
+        service: str = Service.PIPELINE_MANAGER,
         timeout: int = 300,
         interval: int = 5,
     ) -> None:

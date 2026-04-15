@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 DELTA_ROOT = "/data/delta"
 COMPOSE_FILE = str(Path(__file__).parent / "docker-compose.yml")
-PROJECT_NAME = "feldera-dbt-test"
+from docker_manager import PROJECT_NAME, Service
 
 
 class DockerDuckDB:
@@ -35,7 +35,7 @@ class DockerDuckDB:
         self,
         compose_file: str = COMPOSE_FILE,
         project_name: str = PROJECT_NAME,
-        service: str = "duckdb",
+        service: str = Service.DUCKDB,
     ) -> None:
         self._compose_file = compose_file
         self._project_name = project_name
