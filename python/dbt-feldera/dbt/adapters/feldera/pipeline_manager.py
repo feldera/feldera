@@ -265,17 +265,19 @@ class PipelineStateManager:
         compilation_profile: str = "dev",
         workers: int = 4,
         timeout: int = 300,
+        full_refresh: bool = False,
     ) -> Pipeline:
         """
         Update an existing pipeline with new views, preserving table data.
 
-        Unlike :meth:`deploy`, this does NOT call ``clear_storage``. It:
+        Unlike :meth:`deploy`, this does NOT call ``create_or_replace``. It:
 
         1. Stops the pipeline (if running).
         2. Fetches the existing SQL and extracts table DDLs.
         3. Replaces existing view DDLs with newly registered ones.
-        4. Recompiles via ``modify(sql=...)``.
-        5. Starts the pipeline.
+        4. Optionally clears storage (on ``--full-refresh``).
+        5. Recompiles via ``modify(sql=...)``.
+        6. Starts the pipeline.
 
         The pipeline can be running or stopped. Running pipelines are
         force-stopped before modification.
@@ -285,6 +287,8 @@ class PipelineStateManager:
         :param compilation_profile: The compilation profile to use.
         :param workers: Number of worker threads for the pipeline.
         :param timeout: Compilation timeout in seconds.
+        :param full_refresh: If True, clear all pipeline storage before
+            restarting so state is recomputed from scratch.
         :return: The updated Pipeline object.
         """
         with self._lock:
@@ -333,11 +337,20 @@ class PipelineStateManager:
                 len(full_sql),
             )
 
-            # Stop the pipeline (preserve data — no clear_storage)
+            # Stop the pipeline before modifying its SQL
             try:
                 p.stop(force=True)
             except Exception:
                 pass  # May already be stopped
+
+            # On full-refresh, clear all stored state so the pipeline
+            # recomputes everything from scratch when restarted.
+            if full_refresh:
+                try:
+                    p.clear_storage()
+                    logger.info("Cleared storage for pipeline '%s' (full-refresh)", pipeline)
+                except Exception as exc:
+                    logger.warning("Failed to clear storage for pipeline '%s': %s", pipeline, exc)
 
             # Update SQL and wait for recompilation
             p.modify(sql=full_sql)

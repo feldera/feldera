@@ -444,9 +444,6 @@ class FelderaAdapter(BaseAdapter):
         Assembles all registered tables and views into a SQL program,
         creates/updates the pipeline, waits for compilation, and starts it.
 
-        If the pipeline already exists, it is stopped, storage is cleared,
-        and it is redeployed from scratch (``create_or_replace`` semantics).
-
         :param pipeline_name: The pipeline (schema) name.
         :return: An empty string.
         """
@@ -540,7 +537,7 @@ class FelderaAdapter(BaseAdapter):
         return ""
 
     @available
-    def finalize_seeds(self) -> str:
+    def finalize_seeds(self, full_refresh: bool = False) -> str:
         """
         Deploy pipelines with pending seeds and push all stashed data,
         then update any pipelines with pending views.
@@ -555,10 +552,12 @@ class FelderaAdapter(BaseAdapter):
 
         For views: stops the existing pipeline, updates its SQL program
         with new view DDLs (preserving table data and connector offsets),
-        recompiles, and restarts.
+        recompiles, and restarts. On ``--full-refresh``, storage is cleared
+        before restarting so all state is recomputed from scratch.
 
         No-ops if there are neither pending seeds nor pending views.
 
+        :param full_refresh: Whether ``--full-refresh`` was passed to dbt.
         :return: An empty string.
         """
         client = self._get_client()
@@ -600,6 +599,7 @@ class FelderaAdapter(BaseAdapter):
                 compilation_profile=creds.compilation_profile,
                 workers=creds.workers,
                 timeout=creds.timeout,
+                full_refresh=full_refresh,
             )
 
         return ""
@@ -762,6 +762,5 @@ class FelderaAdapter(BaseAdapter):
             "Boolean": "BOOLEAN",
             "Date": "DATE",
             "DateTime": "TIMESTAMP",
-            "TimeDelta": "INTERVAL",
         }
         return mapping.get(type_name, "VARCHAR")

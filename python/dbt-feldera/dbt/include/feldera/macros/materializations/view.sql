@@ -39,8 +39,14 @@
 
     {{ adapter.register_view(pipeline_name, view_name, view_sql) }}
 
-    {# Deploy the pipeline (compile + start) #}
-    {{ adapter.deploy_pipeline(pipeline_name) }}
+    {# dbt requires a 'main' statement to be called during model execution #}
+    {% call statement('main') %}
+        -- Feldera: view '{{ view_name }}' registered (deployed on-run-end)
+    {% endcall %}
+
+    {# Deployment is deferred to the on-run-end hook (finalize_seeds),
+       which merges these views with existing table DDLs from prior
+       dbt seed runs via update_with_views(). #}
 
     {{ return({'relations': [this]}) }}
 {% endmaterialization %}

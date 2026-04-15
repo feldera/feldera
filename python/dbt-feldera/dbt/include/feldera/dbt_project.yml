@@ -5,4 +5,4 @@ config-version: 2
 macro-paths: ["macros"]
 
 on-run-end:
-  - "{{ adapter.finalize_seeds() if execute else '' }}"
+  - "{{ adapter.finalize_seeds(flags.FULL_REFRESH) if execute else '' }}"
