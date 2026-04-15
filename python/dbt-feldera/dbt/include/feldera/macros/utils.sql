@@ -26,9 +26,11 @@
 
 {% macro feldera__type_float() %}
     {# Required dbt dispatch hook. Without this override, dbt's default
-       returns FLOAT — which Feldera does not support. We return DOUBLE
-       (64-bit IEEE 754). #}
-    DOUBLE
+       returns FLOAT — which Feldera does not support. Feldera maps FLOAT
+       to Java's 32-bit float which is equivalent to REAL. 
+       to Java's 32-bit float which is equivalent to REAL. 
+       Use DOUBLE explicitly when 64-bit is needed. #}
+    REAL
 {% endmacro %}
 
 {% macro feldera__type_numeric() %}

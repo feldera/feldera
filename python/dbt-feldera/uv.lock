@@ -12,7 +12,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-04-07T11:21:33.328419133Z"
+exclude-newer = "2026-04-08T02:12:10.849349506Z"
 exclude-newer-span = "P1W"
 
 [[package]]
@@ -305,7 +305,7 @@ wheels = [
 
 [[package]]
 name = "dbt-feldera"
-version = "0.277.0"
+version = "0.288.0"
 source = { editable = "." }
 dependencies = [
     { name = "agate" },
