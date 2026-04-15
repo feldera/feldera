@@ -287,9 +287,8 @@ class PipelineStateManager:
         6. Starts the pipeline.
 
         The pipeline can be in any state. Running pipelines are
-        force-stopped before modification.
-        
-        If the pipeline does not exist, it is deployed first.
+        force-stopped before modification. If the pipeline does not
+        exist, it is deployed first.
 
         :param client: The Feldera REST client.
         :param pipeline: The pipeline (schema) name.
