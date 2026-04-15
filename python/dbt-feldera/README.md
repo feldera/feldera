@@ -224,7 +224,7 @@ dbt seed --full-refresh # stop, clear storage, redeploy, then push
 
 | Materialization                    | Feldera SQL                | Best for                                                                    |
 | ---------------------------------- | -------------------------- | --------------------------------------------------------------------------- |
-| `view`                             | `CREATE VIEW`              | Intermediate transforms                                                     |
+| `view`                             | `CREATE VIEW`              | Incrementally calculated views                                              |
 | `view` + `materialized_view: true` | `CREATE MATERIALIZED VIEW` | Queryable outputs, connectors                                               |
 | `table`                            | `CREATE TABLE`             | External input sources (Kafka, S3, HTTP)                                    |
 | `incremental`                      | `CREATE MATERIALIZED VIEW` | IVM-backed aggregations and joins                                           |
