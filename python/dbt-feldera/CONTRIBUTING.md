@@ -11,6 +11,7 @@ conventions.
 | Python                                | 3.10+   | Runtime                 |
 | [uv](https://github.com/astral-sh/uv) | latest  | Package & venv manager  |
 | Docker (with Compose v2)              | latest  | Integration & e2e tests |
+| gh CLI to interact with gists         | latest  | Integration & e2e tests |
 
 > Use the [vscode devcontainer](../../.devcontainer/devcontainer.json) to have a smoother onboarding experience!
 
