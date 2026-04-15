@@ -87,7 +87,7 @@ graph TB
 | Category        | Directory                    | Docker? | What it validates                                                                         |
 | --------------- | ---------------------------- | ------- | ----------------------------------------------------------------------------------------- |
 | **Unit**        | `tests/unit/`                | No      | Adapter internals: credentials, columns, cursor, relations, SQL parsing, pipeline manager |
-| **Integration** | `integration_tests/`         | Yes     | Full dbt ↔ Feldera round-trip: seed, run, test, incremental, Delta output, Kafka IVM      |
+| **Integration** | `integration_tests/`         | Yes     | Full dbt ↔ Feldera round-trip: seed, run, test, Delta output, Kafka IVM                   |
 | **End-to-end**  | `integration_tests/scripts/` | Yes     | dbt CLI lifecycle (`debug → seed → build → docs generate`) against a real instance        |
 
 ### Integration test fixtures (conftest.py)

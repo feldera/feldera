@@ -7,6 +7,9 @@
     is emitted instead, enabling ad-hoc queries and output connectors
     (e.g., Delta Lake, Kafka).
 
+    On ``--full-refresh``, the pipeline is stopped and all stored state
+    (including connector offsets) is cleared before redeployment.
+
     Configuration:
         materialized: 'view'
         pipeline_name: Pipeline name (defaults to schema)
@@ -18,6 +21,12 @@
     {%- set view_name = model.name -%}
     {%- set connectors = config.get('connectors', []) -%}
     {%- set materialized = config.get('materialized_view', false) or connectors -%}
+    {%- set full_refresh = flags.FULL_REFRESH -%}
+
+    {# On full refresh, stop and clear the pipeline #}
+    {%- if full_refresh -%}
+        {{ adapter.stop_pipeline(pipeline_name) }}
+    {%- endif -%}
 
     {%- set view_sql -%}
         CREATE {{ 'MATERIALIZED ' if materialized else '' }}VIEW {{ view_name }}
@@ -30,10 +39,8 @@
 
     {{ adapter.register_view(pipeline_name, view_name, view_sql) }}
 
-    {# dbt requires a 'main' statement to be called during model execution #}
-    {% call statement('main') %}
-        -- Feldera: view '{{ view_name }}' registered (deployed on-run-end)
-    {% endcall %}
+    {# Deploy the pipeline (compile + start) #}
+    {{ adapter.deploy_pipeline(pipeline_name) }}
 
     {{ return({'relations': [this]}) }}
 {% endmaterialization %}
