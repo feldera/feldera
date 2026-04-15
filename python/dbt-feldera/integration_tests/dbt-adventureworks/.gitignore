@@ -2,6 +2,3 @@ logs/*
 delta-output/
 seeds/**/*.csv
 seeds/**/*.yml
-macros/**/*.sql
-models/**/*.sql
-models/**/*.yml

@@ -21,7 +21,15 @@ logger = logging.getLogger(__name__)
 
 class FelderaConnectionManager(BaseConnectionManager):
     """
-    Manages connections to Feldera's REST API.
+    Manages connections to Feldera using the REST API.
+
+    Feldera supports two modes of query execution:
+
+    * **Continuous pipelines** (DBSP-backed) — what this adapter deploys.
+      SQL is compiled into an incremental dataflow that runs indefinitely.
+
+    * **Ad-hoc queries** (DataFusion-backed) — used only by ``dbt test``
+      to query materialized state.
     """
 
     TYPE = "feldera"

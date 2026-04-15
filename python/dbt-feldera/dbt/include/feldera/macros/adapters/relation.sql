@@ -6,7 +6,7 @@
 {% endmacro %}
 
 {% macro feldera__truncate_relation(relation) %}
-    {# Stop pipeline and clear storage #}
+    {# Stop pipeline and clear ALL stored state (pipeline-level operation) #}
     {{ adapter.truncate_relation(relation) }}
 {% endmacro %}
 

@@ -2,9 +2,9 @@
     Feldera seed macro overrides.
 
     Feldera seeds work differently from traditional databases:
-    - CREATE TABLE DDL is registered with the pipeline state manager
-    - Deployment is deferred until all seeds are registered on-run-end
-    - Data is pushed via HTTP ingress API after a single pipeline deploy
+    - A CREATE TABLE DDL is registered with the pipeline state manager
+    - Deployment (compilation + start) is deferred until the on-run-end hook
+    - After the pipeline is running, seed data is pushed via HTTP ingress
 
     These macros override dbt's default seed helpers via adapter dispatch.
 #}

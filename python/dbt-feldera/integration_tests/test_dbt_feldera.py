@@ -248,36 +248,27 @@ def _generate_sales_records(count: int, start_order_id: int = 99001) -> list[dic
 
 def _stop_feldera_pipeline(feldera_url: str, pipeline_name: str) -> None:
     """
-    Stop a Feldera pipeline via the REST API.
+    Stop a Feldera pipeline.
 
-    Uses a graceful stop (``force=false``) so a checkpoint is created
+    Uses a graceful stop (``force=False``) so a checkpoint is created
     before the pipeline shuts down.
 
     :param feldera_url: Base URL of the Feldera instance.
     :param pipeline_name: Name of the pipeline to stop.
+    :raises TimeoutError: If the pipeline does not stop within 60 seconds.
     """
-    url = f"{feldera_url}/v0/pipelines/{pipeline_name}/stop?force=false"
-    req = urllib.request.Request(url, method="POST", data=b"")
+    from feldera.enums import PipelineStatus
+    from feldera.pipeline import Pipeline as FelderaPipeline
+    from feldera.rest.feldera_client import FelderaClient
+
+    client = FelderaClient(url=feldera_url)
     try:
-        urllib.request.urlopen(req, timeout=30)
-        logger.info("Requested stop of pipeline '%s'", pipeline_name)
-    except urllib.error.HTTPError as exc:
-        logger.warning("Pipeline stop request failed (%d): %s", exc.code, exc.read().decode())
-
-    for _ in range(60):
-        try:
-            status_url = f"{feldera_url}/v0/pipelines/{pipeline_name}"
-            with urllib.request.urlopen(status_url, timeout=5) as resp:
-                info = json.loads(resp.read())
-                status = info.get("deployment_status", "")
-                if status.lower() in ("shutdown", "stopped"):
-                    logger.info("Pipeline '%s' is stopped", pipeline_name)
-                    return
-        except Exception:
-            pass
-        time.sleep(1)
-
-    logger.warning("Pipeline '%s' may not have fully stopped", pipeline_name)
+        p = FelderaPipeline.get(pipeline_name, client)
+        p.stop(force=False)
+        p.wait_for_status(PipelineStatus.SHUTDOWN, timeout=60)
+        logger.info("Pipeline '%s' is stopped", pipeline_name)
+    except Exception as exc:
+        logger.warning("Failed to stop pipeline '%s': %s", pipeline_name, exc)
 
 
 # ---------------------------------------------------------------------------

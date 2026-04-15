@@ -118,7 +118,7 @@ class TestFelderaColumn(unittest.TestCase):
                 self.assertTrue(col.is_number(), f"{dtype} should be classified as number")
 
     def test_is_number_includes_floats(self):
-        for dtype in ("REAL", "FLOAT", "DOUBLE", "DECIMAL", "NUMERIC"):
+        for dtype in ("REAL", "DOUBLE", "DECIMAL", "NUMERIC"):
             with self.subTest(dtype=dtype):
                 col = FelderaColumn(column="x", dtype=dtype)
                 self.assertTrue(col.is_number(), f"{dtype} should be classified as number")
@@ -141,8 +141,8 @@ class TestFelderaColumn(unittest.TestCase):
         self.assertTrue(col.is_float())
 
     def test_is_float_all_variants(self):
-        """is_float covers IEEE floating-point types only, not fixed-precision."""
-        for dtype in ("REAL", "FLOAT", "DOUBLE"):
+        """is_float covers IEEE floating-point types: REAL (32-bit) and DOUBLE (64-bit)."""
+        for dtype in ("REAL", "DOUBLE"):
             with self.subTest(dtype=dtype):
                 col = FelderaColumn(column="x", dtype=dtype)
                 self.assertTrue(col.is_float(), f"{dtype} should be classified as float")

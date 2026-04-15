@@ -54,7 +54,12 @@ class TestGetOneCatalog(unittest.TestCase):
         self.assertEqual(len(table), 0)
 
     def test_single_relation_with_columns(self):
-        """One relation with two columns → two catalog rows with correct data."""
+        """One relation with two columns to two catalog rows.
+
+        Columns come from FelderaColumn objects. In production:
+        Pipeline.get() -> p.tables()/p.views() -> field dicts -> FelderaColumn.
+        Here we mock the column list to test catalog assembly in isolation.
+        """
         rel = FelderaRelation.create(database="default", schema="my_pipeline", identifier="users")
         cols = [
             FelderaColumn(column="id", dtype="INTEGER"),
@@ -108,7 +113,12 @@ class TestGetOneCatalog(unittest.TestCase):
         self.assertIn("orders", names)
 
     def test_relation_with_no_columns(self):
-        """Relation with no columns → no rows for that relation."""
+        """Relation with no columns → no rows for that relation.
+
+        Feldera's SQL compiler does not support tables without columns.
+        This test verifies the catalog builder handles the edge case
+        gracefully rather than crashing.
+        """
         rel = FelderaRelation.create(database="default", schema="pipe", identifier="empty_table")
         adapter = self._build_adapter_mock([rel], {"empty_table": []})
         info = self._make_info_schema()

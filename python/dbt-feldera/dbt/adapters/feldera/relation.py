@@ -16,6 +16,8 @@ class FelderaRelationType(StrEnum):
     View = "view"
     MaterializedView = "materialized_view"
     External = "external"
+    """A relation that exists in a Feldera pipeline but is not managed
+    by this dbt project (e.g. declared via ``dbt source``)."""
 
 
 @dataclass(frozen=True, eq=False, repr=False)
@@ -45,8 +47,10 @@ class FelderaRelation(BaseRelation):
         """
         Render the relation as a bare identifier.
 
-        Feldera pipelines use a flat namespace — no database or schema
-        qualification is needed. Only the identifier matters.
+        Feldera pipelines currently use a flat namespace — no database or
+        schema qualification is needed. Only the identifier matters.
+
+        This may change in the future if Feldera adds multi-schema support.
         """
         if self.identifier:
             return self.quoted(self.identifier)

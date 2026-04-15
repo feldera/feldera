@@ -71,7 +71,7 @@ run_seed_ci() {
     ensure_venv
     cd "${PROJECT_DIR}"
     echo "Downloading seed data from GitHub Gist..."
-    uv run python integration_tests/scripts/download_seeds.py
+    uv run python integration_tests/scripts/download_seeds.py integration_tests/dbt-adventureworks
 }
 
 start_feldera() {

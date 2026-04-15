@@ -22,11 +22,12 @@
     {%- endif -%}
 
     {#
-        Parse the model SQL to extract individual CREATE TABLE and CREATE VIEW
-        statements and register them with the pipeline state manager.
-        The entire SQL body is treated as the pipeline program.
+        The entire SQL body is the pipeline program (tables + views).
+        We register it as a single entry keyed by __pipeline_program;
+        assemble_program() concatenates all entries, so this works
+        correctly even though it is not a single CREATE TABLE.
     #}
-    {{ adapter.register_table(pipeline_name, model.name ~ '__program', sql) }}
+    {{ adapter.register_table(pipeline_name, model.name ~ '__pipeline_program', sql) }}
 
     {# Deploy the full pipeline #}
     {{ adapter.deploy_pipeline(pipeline_name) }}

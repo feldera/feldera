@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Upload / update dbt-adventureworks seed files on GitHub Gist, then regenerate ci_seeds.yaml.
 
-Requires ``gh`` CLI (authenticated).
+Requires ``gh`` CLI (authenticated) — install from https://cli.github.com/.
+This is a developer-only tool; it is NOT run during normal dbt usage or CI.
 
 Usage:
     python upload_seeds.py                    # create new gist
@@ -12,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -73,6 +75,8 @@ def _write_manifest(project_dir: Path, gist_id: str, gist_owner: str, files: lis
 
 
 def main() -> int:
+    if not shutil.which("gh"):
+        raise SystemExit("ERROR: 'gh' CLI not found. Install from https://cli.github.com/")
     args = sys.argv[1:]
     update = "--update" in args
     args = [a for a in args if a != "--update"]

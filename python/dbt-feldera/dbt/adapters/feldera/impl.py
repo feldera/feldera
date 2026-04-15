@@ -1,5 +1,4 @@
 import logging
-import math
 from typing import FrozenSet, List, Optional, Set, Tuple
 
 import agate
@@ -19,6 +18,23 @@ logger = logging.getLogger(__name__)
 
 # Singleton for pipeline state shared across threads
 _pipeline_state = PipelineStateManager()
+
+# ── SQL type classification sets ──────────────────────────────────────
+# Used by _convert_agate_rows and related helpers.
+
+_INT_TYPES = frozenset({"INT", "INTEGER", "SMALLINT", "TINYINT", "BIGINT"})
+"""Integer types that should be cast via ``int()``."""
+
+_DECIMAL_TYPES = frozenset({"DECIMAL", "NUMERIC", "DOUBLE", "REAL"})
+"""Numeric types preserved as strings for exact representation.
+
+Includes both fixed-point (DECIMAL, NUMERIC) and IEEE floating-point
+(DOUBLE, REAL) types. All are serialized as strings to avoid precision
+loss during JSON ingress.
+"""
+
+_BOOL_TYPES = frozenset({"BOOLEAN", "BOOL"})
+"""Boolean types cast via ``bool()``."""
 
 
 class FelderaAdapter(BaseAdapter):
@@ -45,7 +61,9 @@ class FelderaAdapter(BaseAdapter):
 
     @classmethod
     def date_function(cls) -> str:
-        """Return the SQL date function for Feldera.
+        """Return the SQL timestamp function for Feldera.
+
+        ``NOW()`` returns a ``TIMESTAMP`` (date + time).
 
         See Also:
             https://docs.feldera.com/sql/datetime/#now
@@ -70,6 +88,15 @@ class FelderaAdapter(BaseAdapter):
 
     @classmethod
     def convert_number_type(cls, agate_table: agate.Table, col_idx: int) -> str:
+        """Map an agate Number column to a Feldera SQL type for seed DDL.
+
+        Checks if any value has a fractional part: if so, returns ``DOUBLE``
+        (IEEE 754 float); otherwise, returns ``BIGINT``.
+
+        .. note::
+            ``DECIMAL`` is not the same as ``DOUBLE``. For precise decimal values, use
+            ``column_types`` overrides in the seed config.
+        """
         # Check if any values have decimal parts
         for row in agate_table.rows:
             val = row[col_idx]
@@ -150,6 +177,7 @@ class FelderaAdapter(BaseAdapter):
         Create a schema (pipeline) if it does not exist.
 
         This is a soft create: if the pipeline already exists, it is a no-op.
+        Required by dbt's ``BaseAdapter`` interface; it behaves as ``create_if_not_exists``.
 
         :param relation: A dbt relation used only to extract the pipeline name
             via ``relation.schema``.
@@ -203,7 +231,11 @@ class FelderaAdapter(BaseAdapter):
         """
         Truncate a relation by stopping the pipeline and clearing its storage.
 
-        :param relation: The relation to truncate.
+        .. warning::
+            This clears **all** stored state in the pipeline, not just the
+            specified relation. Feldera manages storage at the pipeline level.
+
+        :param relation: The relation used to identify the pipeline.
         """
         pipeline_name = self._get_pipeline_name(relation.schema)
         client = self._get_client()
@@ -234,14 +266,14 @@ class FelderaAdapter(BaseAdapter):
 
         try:
             p = Pipeline.get(pipeline_name, client)
-            target_name = relation.identifier.lower() if relation.identifier else ""
+            target_name = relation.identifier or ""
 
             for table in p.tables():
-                if table.name.lower() == target_name:
+                if table.name.lower() == target_name.lower():
                     return [FelderaColumn.from_feldera_field(f) for f in table.fields]
 
             for view in p.views():
-                if view.name.lower() == target_name:
+                if view.name.lower() == target_name.lower():
                     return [FelderaColumn.from_feldera_field(f) for f in view.fields]
 
         except Exception as exc:
@@ -408,6 +440,9 @@ class FelderaAdapter(BaseAdapter):
         Assembles all registered tables and views into a SQL program,
         creates/updates the pipeline, waits for compilation, and starts it.
 
+        If the pipeline already exists, it is stopped, storage is cleared,
+        and it is redeployed from scratch (``create_or_replace`` semantics).
+
         :param pipeline_name: The pipeline (schema) name.
         :return: An empty string.
         """
@@ -423,12 +458,13 @@ class FelderaAdapter(BaseAdapter):
         return ""
 
     @available
-    def wait_for_pipeline(self, pipeline_name: str) -> str:
+    def wait_for_pipeline_running(self, pipeline_name: str) -> str:
         """
         Wait for a pipeline to reach the RUNNING state.
 
         :param pipeline_name: The pipeline (schema) name.
         :return: An empty string.
+        :raises TimeoutError: If the pipeline does not reach RUNNING within the timeout.
         """
         client = self._get_client()
         p = _pipeline_state.get_pipeline(client, pipeline_name)
@@ -510,10 +546,12 @@ class FelderaAdapter(BaseAdapter):
         in a single entry point.
 
         For seeds: creates the pipeline with ``create_or_replace`` (fresh
-        deploy), then pushes all stashed seed data via HTTP ingress.
+        deploy with storage cleared), then pushes all stashed seed data
+        via HTTP ingress.
 
-        For views: updates an existing pipeline with new view DDLs via
-        ``modify`` (preserving existing table data).
+        For views: stops the existing pipeline, updates its SQL program
+        with new view DDLs (preserving table data and connector offsets),
+        recompiles, and restarts.
 
         No-ops if there are neither pending seeds nor pending views.
 
@@ -565,11 +603,20 @@ class FelderaAdapter(BaseAdapter):
     @staticmethod
     def _convert_agate_rows(agate_table: agate.Table, column_types: dict | None = None) -> list:
         """
-        Convert agate table rows to JSON-serializable dicts.
+        Convert agate table rows to JSON-serializable dicts for HTTP ingress:
 
-        Uses column_types overrides from the seed config to cast values
-        to the correct Python types for JSON ingestion. Without overrides,
-        falls back to agate's inferred types.
+        1. If a ``column_types`` override exists for a column, build a
+           typed caster (int, float, str, bool) based on the SQL type.
+
+        2. Apply the caster.  On failure, fall through to step 3.
+
+        3. Auto-convert based on Python type:
+           - ``Decimal`` (NaN/Inf) → ``None``
+           - ``Decimal`` (integer) → ``int``
+           - ``Decimal`` (fractional) → ``str`` (exact representation)
+           - ``bool`` → ``bool``
+           - date/time → ISO 8601 string
+           - everything else → ``str``
 
         :param agate_table: The agate Table.
         :param column_types: Optional dict mapping column name to SQL type string.
@@ -580,30 +627,19 @@ class FelderaAdapter(BaseAdapter):
         column_types = column_types or {}
         column_names = agate_table.column_names
 
-        def _sanitize_float(v):
-            """Convert NaN/Infinity to None for JSON compatibility."""
-            f = float(v)
-            if math.isnan(f) or math.isinf(f):
-                return None
-            return f
-
-        # Build a per-column cast function based on SQL type overrides
-        _INT_TYPES = {"INT", "INTEGER", "SMALLINT", "TINYINT", "BIGINT"}
-        _FLOAT_TYPES = {"DOUBLE", "FLOAT", "REAL", "DECIMAL", "NUMERIC"}
-        _BOOL_TYPES = {"BOOLEAN", "BOOL"}
-
         def _make_caster(sql_type: str):
             from dbt.adapters.feldera.sqlglot_parser import parser
 
             upper = parser.sql_type_base_name(sql_type)
             if upper in _INT_TYPES:
                 return lambda v: int(v) if v is not None else None
-            if upper in _FLOAT_TYPES:
-                return lambda v: _sanitize_float(v) if v is not None else None
+            if upper in _DECIMAL_TYPES:
+                # Preserve exact representation as string for JSON ingress.
+                return lambda v: str(v) if v is not None else None
             if upper in _BOOL_TYPES:
                 return lambda v: bool(v) if v is not None else None
-            # VARCHAR, TIMESTAMP, DATE — keep as string
-            return None
+            # Everything else — convert to string
+            return lambda v: str(v) if v is not None else None
 
         casters = {}
         for col_name in column_names:
@@ -625,8 +661,13 @@ class FelderaAdapter(BaseAdapter):
                     try:
                         row_dict[col_name] = caster(value)
                         continue
-                    except (ValueError, TypeError):
-                        pass
+                    except (ValueError, TypeError) as exc:
+                        logger.warning(
+                            "Cast failed for column '%s' value '%r' with type override: %s",
+                            col_name,
+                            value,
+                            exc,
+                        )
 
                 # Fallback: auto-convert based on Python type
                 if isinstance(value, Decimal):
@@ -635,7 +676,8 @@ class FelderaAdapter(BaseAdapter):
                     elif value == int(value):
                         row_dict[col_name] = int(value)
                     else:
-                        row_dict[col_name] = float(value)
+                        # Preserve exact decimal representation as string.
+                        row_dict[col_name] = str(value)
                 elif isinstance(value, bool):
                     row_dict[col_name] = value
                 elif hasattr(value, "isoformat"):

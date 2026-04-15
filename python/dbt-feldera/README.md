@@ -21,7 +21,6 @@ changes, only affected output rows are recomputed.
 >
 > - **Continuous pipelines** compile SQL into an incremental dataflow that runs
 >   indefinitely, processing every input change as it arrives in near real-time.
->
 > - **Ad-hoc queries** are one-shot batch queries executed by
 >   [DataFusion](https://datafusion.apache.org/) against the state of
 >   [materialized tables and views](https://docs.feldera.com/sql/materialized).
@@ -84,25 +83,25 @@ concepts map to Feldera. Every materialization contributes SQL to a
 **continuously running pipeline** — nothing is executed as a one-shot batch
 query.
 
-| dbt concept                   | Feldera concept   | Description                                                                                                                    |
-| ----------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `database`                    | _(unused)_        | Set to any string (e.g. `"default"`)                                                                                           |
-| `schema`                      | Pipeline name     | Each dbt schema maps to one [Feldera pipeline](https://docs.feldera.com/pipelines) (a continuously running SQL program)        |
-| `table` materialization       | Input table       | External data source (Kafka, HTTP, S3)                                                                                         |
-| `view` materialization        | View              | Intermediate SQL transform inside the continuous pipeline                                                                      |
-| `incremental` materialization | Materialized view | IVM-backed output, also queryable via [ad-hoc queries](https://docs.feldera.com/sql/ad-hoc) for debugging                     |
-| `seed`                        | Table + HTTP push | Schema registered, data pushed via HTTP ingress                                                                                |
+| dbt concept                   | Feldera concept   | Description                                                                                                                       |
+| ----------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `database`                    | _(unused)_        | Set to any string (e.g. `"default"`)                                                                                              |
+| `schema`                      | Pipeline name     | Each dbt schema maps to one [Feldera pipeline](https://docs.feldera.com/pipelines) (a continuously running SQL program)           |
+| `table` materialization       | Input table       | External data source (Kafka, HTTP, S3)                                                                                            |
+| `view` materialization        | View              | SQL view inside the continuous pipeline (all views are incrementally maintained)                                                  |
+| `incremental` materialization | Materialized view | IVM-backed materialized view — queryable via [ad-hoc queries](https://docs.feldera.com/sql/ad-hoc) and supports output connectors |
+| `seed`                        | Table + HTTP push | Schema registered, data pushed via HTTP ingress                                                                                   |
 
 ### Configuration options
 
-| Option                | Default                 | Description                                                                                             |
-| --------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------- |
-| `host`                | `http://localhost:8080` | Feldera API base URL                                                                                    |
-| `api_key`             | _(none)_                | API key for authenticated Feldera instances                                                             |
-| `schema`              | _(required)_            | Pipeline name in Feldera                                                                                |
-| `compilation_profile` | `dev`                   | SQL compilation profile: `dev` (fast compile), `unoptimized`, or `optimized` (best runtime performance) |
-| `workers`             | `4`                     | Number of pipeline worker threads                                                                       |
-| `timeout`             | `300`                   | Pipeline operation timeout in seconds                                                                   |
+| Option                | Default                 | Description                                                                                                      |
+| --------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `host`                | `http://localhost:8080` | Feldera API base URL                                                                                             |
+| `api_key`             | _(none)_                | API key for authenticated Feldera instances                                                                      |
+| `schema`              | _(required)_            | Pipeline name in Feldera                                                                                         |
+| `compilation_profile` | `dev`                   | SQL compilation profile: `dev` (fast compile), `unoptimized`, or `optimized` (best runtime performance)          |
+| `workers`             | `4`                     | Number of pipeline worker threads                                                                                |
+| `timeout`             | `300`                   | Max wait (seconds) for pipeline compilation + startup                                                            |
 
 ## Materializations
 
@@ -121,7 +120,8 @@ JOIN {{ ref('customers') }} c ON o.customer_id = c.id
 ```
 
 Set `materialized_view: true` or attach `connectors` to promote to a
-`CREATE MATERIALIZED VIEW` (enables ad-hoc queries and output connectors):
+`CREATE MATERIALIZED VIEW` — a view backed by persistent storage, enabling
+ad-hoc queries and output connectors:
 
 ```sql
 {{ config(
@@ -179,8 +179,8 @@ FROM {{ ref('orders') }}
 GROUP BY region, product_category
 ```
 
-On `--full-refresh`, the pipeline is stopped, storage is cleared, and the
-pipeline is redeployed from scratch.
+On `--full-refresh`, the pipeline is stopped, all stored state (including
+connector offsets) is cleared, and the pipeline is redeployed from scratch.
 
 ### `streaming_pipeline` — Full pipeline as a single model
 
@@ -217,19 +217,19 @@ API after the pipeline is deployed. Use for small reference datasets (CSVs).
 
 ```bash
 dbt seed                # push seed data
-dbt seed --full-refresh # drop and recreate, then push
+dbt seed --full-refresh # stop, clear storage, redeploy, then push
 ```
 
 ### Summary
 
-| Materialization                    | Feldera SQL                | Best for                                    |
-| ---------------------------------- | -------------------------- | ------------------------------------------- |
-| `view`                             | `CREATE VIEW`              | Intermediate transforms                     |
-| `view` + `materialized_view: true` | `CREATE MATERIALIZED VIEW` | Queryable outputs, connectors               |
-| `table`                            | `CREATE TABLE`             | External input sources (Kafka, S3, HTTP)    |
-| `incremental`                      | `CREATE MATERIALIZED VIEW` | IVM-backed aggregations and joins           |
-| `streaming_pipeline`               | Full program               | Multi-table/view pipelines as a single unit |
-| `seed`                             | `CREATE TABLE` + HTTP push | Small reference datasets                    |
+| Materialization                    | Feldera SQL                | Best for                                                                    |
+| ---------------------------------- | -------------------------- | --------------------------------------------------------------------------- |
+| `view`                             | `CREATE VIEW`              | Intermediate transforms                                                     |
+| `view` + `materialized_view: true` | `CREATE MATERIALIZED VIEW` | Queryable outputs, connectors                                               |
+| `table`                            | `CREATE TABLE`             | External input sources (Kafka, S3, HTTP)                                    |
+| `incremental`                      | `CREATE MATERIALIZED VIEW` | IVM-backed aggregations and joins                                           |
+| `streaming_pipeline`               | Full program               | Multi-table/view pipelines as a single unit                                 |
+| `seed`                             | `CREATE TABLE` + data push | Small reference datasets (HTTP ingress; any connector can also be attached) |
 
 ## Documentation
 
