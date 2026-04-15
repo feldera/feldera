@@ -104,6 +104,15 @@ class TestConvertAgateRows(unittest.TestCase):
         self.assertIsNone(result[0]["value"])
 
     def test_normal_decimal_integer_becomes_int(self):
+        """Decimal("42") → int(42).
+
+        The seed pipeline does not inspect individual values to decide
+        between INT and BIGINT — all integers map to the same Python
+        ``int`` (unbounded).  The SQL type for the CREATE TABLE DDL is
+        chosen separately by ``convert_number_type`` (always BIGINT for
+        safety).  Users who need a narrower type should use the
+        ``column_types`` seed config override.
+        """
         from decimal import Decimal
 
         table = self._make_table([(Decimal("42"),)], ["value"])

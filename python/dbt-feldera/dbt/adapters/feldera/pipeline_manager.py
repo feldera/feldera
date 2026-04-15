@@ -43,17 +43,20 @@ class PipelineStateManager:
         """
         Register a CREATE TABLE statement for a pipeline.
 
-        If a table with the same name is already registered, it is silently
-        overwritten with the new DDL (a warning is logged).
+        Raises :class:`ValueError` if a table with the same name is already
+        registered for this pipeline.  Feldera's SQL compiler also rejects
+        duplicate table names (``Duplicate declaration``), so catching
+        duplicates here gives a clearer error earlier.
 
         :param pipeline: The pipeline (schema) name.
         :param name: The table name.
         :param ddl: The full CREATE TABLE DDL statement.
+        :raises ValueError: If a table with *name* is already registered.
         """
         with self._lock:
             existing = self._tables.get(pipeline, {})
             if name in existing:
-                logger.warning("Overwriting existing table '%s' in pipeline '%s'", name, pipeline)
+                raise ValueError(f"Table '{name}' is already registered in the pipeline: '{pipeline}'. ")
             self._tables.setdefault(pipeline, {})[name] = ddl
             logger.debug("Registered table '%s' in pipeline '%s'", name, pipeline)
 
@@ -69,11 +72,11 @@ class PipelineStateManager:
             self._views.setdefault(pipeline, {})[name] = ddl
             logger.debug("Registered view '%s' in pipeline '%s'", name, pipeline)
 
-    def remove_table(self, pipeline: str, name: str) -> None:
+    def remove_table_if_exists(self, pipeline: str, name: str) -> None:
         """
-        Remove a table from the pipeline state.
+        Remove a table from the pipeline state if it exists.
 
-        No-op if the table does not exist.
+        No-op when the table is not registered.
 
         :param pipeline: The pipeline (schema) name.
         :param name: The table name to remove.
@@ -82,11 +85,11 @@ class PipelineStateManager:
             if pipeline in self._tables:
                 self._tables[pipeline].pop(name, None)
 
-    def remove_view(self, pipeline: str, name: str) -> None:
+    def remove_view_if_exists(self, pipeline: str, name: str) -> None:
         """
-        Remove a view from the pipeline state.
+        Remove a view from the pipeline state if it exists.
 
-        No-op if the view does not exist.
+        No-op when the view is not registered.
 
         :param pipeline: The pipeline (schema) name.
         :param name: The view name to remove.
@@ -213,8 +216,10 @@ class PipelineStateManager:
         """
         Deploy the assembled pipeline to Feldera.
 
-        Creates or updates the pipeline with the current SQL, waits for
-        compilation, and starts the pipeline.
+        Creates or replaces the pipeline with the current SQL program, waits
+        for compilation to succeed, and starts the pipeline.  After
+        ``create_or_replace`` the pipeline is in a stopped state with storage
+        cleared, so ``start()`` brings it up from a clean slate.
 
         :param client: The Feldera REST client.
         :param pipeline: The pipeline (schema) name.
@@ -268,18 +273,20 @@ class PipelineStateManager:
         full_refresh: bool = False,
     ) -> Pipeline:
         """
-        Update an existing pipeline with new views, preserving table data.
+        Update and redeploy an existing pipeline with new views.
 
-        Unlike :meth:`deploy`, this does NOT call ``create_or_replace``. It:
+        Preserves table data and connector offsets unless *full_refresh* is
+        set.  Unlike :meth:`deploy`, this does **not** call
+        ``create_or_replace``. The full lifecycle is:
 
-        1. Stops the pipeline (if running).
+        1. Stops the pipeline if running, via ``force=True``.
         2. Fetches the existing SQL and extracts table DDLs.
         3. Replaces existing view DDLs with newly registered ones.
         4. Optionally clears storage (on ``--full-refresh``).
         5. Recompiles via ``modify(sql=...)``.
         6. Starts the pipeline.
 
-        The pipeline can be running or stopped. Running pipelines are
+        The pipeline can be in any state. Running pipelines are
         force-stopped before modification.
 
         :param client: The Feldera REST client.

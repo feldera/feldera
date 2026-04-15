@@ -98,6 +98,12 @@ class DockerDuckDB:
         """
         Return the net row count (inserts minus deletes) for a Delta table.
 
+        Uses DuckDB's ``delta_scan()`` which reads the **data** from the latest
+        transaction log version.
+
+        The ``__feldera_op`` column is a **data column** that Feldera writes in
+        every row (``'i'`` for insert, ``'d'`` for delete).
+
         :param table_name: The Delta table subdirectory name.
         :return: Net row count.
         """
