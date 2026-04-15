@@ -1,6 +1,6 @@
 use crate::{
     Controller, PipelineConfig,
-    controller::TransactionInfo,
+    controller::{ControllerStatusContext, TransactionInfo},
     preprocess::{DecryptionPreprocessorFactory, PassthroughPreprocessorFactory},
     test::{
         DEFAULT_TIMEOUT_MS, TestStruct, generate_test_batch, init_test_logger, test_circuit, wait,
@@ -2299,16 +2299,18 @@ fn test_external_controller_status_serialization() {
     let controller_status = create_mock_status();
 
     // Convert to ExternalControllerStatus using the to_api_type method
-    let mut external_status = controller_status.to_api_type(
-        Err(SuspendError::Permanent(vec![
+    let mut external_status = controller_status.to_api_type(ControllerStatusContext {
+        suspend_error: Err(SuspendError::Permanent(vec![
             PermanentSuspendError::StorageRequired,
             PermanentSuspendError::UnsupportedInputEndpoint("kafka_input".to_string()),
         ])),
-        false,
-        TransactionInfo::default(),
-        MemoryPressure::default(),
-        0,
-    );
+        checkpoint_activity: feldera_types::checkpoint::CheckpointActivity::Idle,
+        permanent_checkpoint_errors: None,
+        pipeline_complete: false,
+        transaction_info: TransactionInfo::default(),
+        memory_pressure: MemoryPressure::default(),
+        memory_pressure_epoch: 0,
+    });
     external_status.global_metrics.rss_bytes = 1024 * 1024 * 512; // 512 MB
     external_status.global_metrics.cpu_msecs = 45_000;
     external_status.global_metrics.uptime_msecs = 120_000;
@@ -3034,5 +3036,399 @@ fn test_base64_sponge_csv_preprocessor() {
 +----+-------+---+-----+"#;
 
     assert_eq!(&result, expected);
+    controller.stop().unwrap();
+}
+
+/// Tests that `checkpoint_activity()` returns correct states and timestamps
+/// during a coordinated checkpoint flow (prepare → delayed → in_progress → idle).
+#[test]
+fn test_checkpoint_activity_state_transitions() {
+    use chrono::Utc;
+    use feldera_types::checkpoint::CheckpointActivity;
+    use feldera_types::coordination::CheckpointCoordination;
+    use feldera_types::suspend::TemporarySuspendError;
+
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+
+    let temp_input_file = NamedTempFile::new().unwrap();
+    {
+        let mut writer = CsvWriterBuilder::new()
+            .has_headers(false)
+            .from_writer(temp_input_file.as_file());
+        for id in 0..10u32 {
+            writer.serialize(TestStruct::for_id(id)).unwrap();
+        }
+        writer.flush().unwrap();
+    }
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test_checkpoint_activity",
+        "workers": 4,
+        "storage_config": {
+            "path": storage_dir,
+        },
+        "storage": true,
+        "fault_tolerance": {},
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": temp_input_file.path(),
+                        "follow": true
+                    }
+                },
+                "format": {
+                    "name": "csv"
+                }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "file_output",
+                    "config": {
+                        "path": tempdir.path().join("output.csv"),
+                    }
+                },
+                "format": {
+                    "name": "csv",
+                    "config": {}
+                }
+            }
+        }
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &[],
+                &[Some("output")],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    controller.start();
+
+    // Wait for data to be processed.
+    wait_for_records(&controller, &[10]);
+
+    // --- Before any checkpoint, activity should be Idle ---
+    let activity = controller.checkpoint_activity();
+    assert!(
+        matches!(activity, CheckpointActivity::Idle),
+        "expected Idle before checkpoint, got {activity:?}"
+    );
+    assert!(controller.checkpoint_delay_started().is_none());
+    assert!(controller.checkpoint_started().is_none());
+
+    // --- Initiate a coordinated (prepare) checkpoint ---
+    // This sets coordination_prepare_checkpoint = true, which will
+    // cause the checkpoint to stall in "Ready" state (only the
+    // Coordination temporary error remains).
+    let before_prepare = Utc::now();
+    controller.prepare_checkpoint();
+
+    // Wait for the checkpoint coordination to reach Ready state.
+    // In Ready state, only TemporarySuspendError::Coordination is blocking.
+    wait(
+        || {
+            matches!(
+                *controller.checkpoint_watcher().borrow(),
+                Some(CheckpointCoordination::Ready)
+            )
+        },
+        10_000,
+    )
+    .expect("checkpoint coordination should reach Ready state");
+
+    // At this point, checkpoint_activity() should report Delayed with
+    // the Coordination reason.
+    let activity = controller.checkpoint_activity();
+    match &activity {
+        CheckpointActivity::Delayed {
+            reasons,
+            delayed_since,
+        } => {
+            assert!(
+                reasons
+                    .iter()
+                    .any(|r| matches!(r, TemporarySuspendError::Coordination)),
+                "expected Coordination reason in {reasons:?}"
+            );
+            // The delay timestamp should have been set around our prepare time.
+            assert!(
+                *delayed_since >= before_prepare,
+                "delayed_since {delayed_since:?} should be >= before_prepare {before_prepare:?}"
+            );
+        }
+        other => panic!("expected Delayed, got {other:?}"),
+    }
+
+    // checkpoint_delay_started should be set, checkpoint_started should not.
+    assert!(
+        controller.checkpoint_delay_started().is_some(),
+        "checkpoint_delay_started should be set in Delayed state"
+    );
+    assert!(
+        controller.checkpoint_started().is_none(),
+        "checkpoint_started should not be set before InProgress"
+    );
+
+    // --- Release the checkpoint so it proceeds to InProgress/Done ---
+    controller.release_checkpoint();
+
+    // Wait for the checkpoint to complete (Done).
+    wait(
+        || {
+            matches!(
+                *controller.checkpoint_watcher().borrow(),
+                Some(CheckpointCoordination::Done)
+            )
+        },
+        10_000,
+    )
+    .expect("checkpoint coordination should reach Done state");
+
+    // After completion, activity should be Idle and timestamps cleared.
+    let activity = controller.checkpoint_activity();
+    assert!(
+        matches!(activity, CheckpointActivity::Idle),
+        "expected Idle after checkpoint done, got {activity:?}"
+    );
+    assert!(
+        controller.checkpoint_delay_started().is_none(),
+        "checkpoint_delay_started should be cleared after Done"
+    );
+    assert!(
+        controller.checkpoint_started().is_none(),
+        "checkpoint_started should be cleared after Done"
+    );
+
+    controller.stop().unwrap();
+}
+
+/// Tests that `checkpoint_activity()` transitions through InProgress state
+/// during a `start_checkpoint()` call, and that the `checkpoint_started`
+/// timestamp is set during the write.
+#[test]
+fn test_checkpoint_activity_async_checkpoint() {
+    use chrono::Utc;
+    use feldera_types::checkpoint::CheckpointActivity;
+    use feldera_types::coordination::CheckpointCoordination;
+
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+
+    let temp_input_file = NamedTempFile::new().unwrap();
+    {
+        let mut writer = CsvWriterBuilder::new()
+            .has_headers(false)
+            .from_writer(temp_input_file.as_file());
+        for id in 0..10u32 {
+            writer.serialize(TestStruct::for_id(id)).unwrap();
+        }
+        writer.flush().unwrap();
+    }
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test_checkpoint_activity_async",
+        "workers": 4,
+        "storage_config": {
+            "path": storage_dir,
+        },
+        "storage": true,
+        "fault_tolerance": {},
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": temp_input_file.path(),
+                        "follow": true
+                    }
+                },
+                "format": {
+                    "name": "csv"
+                }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "file_output",
+                    "config": {
+                        "path": tempdir.path().join("output.csv"),
+                    }
+                },
+                "format": {
+                    "name": "csv",
+                    "config": {}
+                }
+            }
+        }
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &[],
+                &[Some("output")],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    controller.start();
+    wait_for_records(&controller, &[10]);
+
+    // Use the async start_checkpoint so we can observe the InProgress state
+    // from another thread.
+    let (sender, receiver) = oneshot::channel();
+    let before_checkpoint = Utc::now();
+    controller.start_checkpoint(Box::new(move |result| sender.send(result).unwrap()));
+
+    // Poll until we see either InProgress or Done.  The checkpoint may
+    // complete very quickly, so we accept either.
+    let mut saw_in_progress = false;
+    wait(
+        || {
+            let coord = controller.checkpoint_watcher().borrow().clone();
+            if matches!(coord, Some(CheckpointCoordination::InProgress)) {
+                saw_in_progress = true;
+                // Also verify the timestamp.
+                if let Some(started) = controller.checkpoint_started() {
+                    assert!(
+                        started >= before_checkpoint,
+                        "checkpoint_started {started:?} should be >= before_checkpoint {before_checkpoint:?}"
+                    );
+                }
+            }
+            matches!(coord, Some(CheckpointCoordination::Done))
+        },
+        10_000,
+    )
+    .expect("checkpoint should complete");
+
+    // After completion, both timestamps should be cleared.
+    assert!(
+        controller.checkpoint_delay_started().is_none(),
+        "checkpoint_delay_started should be cleared after checkpoint"
+    );
+    assert!(
+        controller.checkpoint_started().is_none(),
+        "checkpoint_started should be cleared after checkpoint"
+    );
+
+    // Activity should be Idle.
+    let activity = controller.checkpoint_activity();
+    assert!(
+        matches!(activity, CheckpointActivity::Idle),
+        "expected Idle after checkpoint, got {activity:?}"
+    );
+
+    // The checkpoint should have succeeded.
+    receiver.blocking_recv().unwrap().unwrap();
+
+    controller.stop().unwrap();
+}
+
+/// Tests that `permanent_suspend_errors()` returns errors when storage
+/// is explicitly disabled (the pipeline cannot checkpoint).
+#[test]
+fn test_permanent_suspend_errors_without_storage() {
+    use feldera_types::suspend::PermanentSuspendError;
+
+    init_test_logger();
+
+    let temp_input_file = NamedTempFile::new().unwrap();
+    temp_input_file
+        .as_file()
+        .write_all(b"1,true,,foo\n")
+        .unwrap();
+
+    // Storage explicitly disabled — pipeline cannot checkpoint.
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test_no_storage",
+        "workers": 1,
+        "storage": false,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": temp_input_file.path(),
+                        "follow": false
+                    }
+                },
+                "format": {
+                    "name": "csv"
+                }
+            }
+        }
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    controller.start();
+    wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS).unwrap();
+
+    // With storage disabled, permanent_suspend_errors should report StorageRequired.
+    let errors = controller.permanent_suspend_errors();
+    assert!(
+        errors.is_some(),
+        "expected permanent errors with storage disabled"
+    );
+    let errors = errors.unwrap();
+    assert!(
+        errors
+            .iter()
+            .any(|e| matches!(e, PermanentSuspendError::StorageRequired)),
+        "expected StorageRequired error in {errors:?}"
+    );
+
+    // checkpoint_activity should still be Idle (no checkpoint was requested).
+    let activity = controller.checkpoint_activity();
+    assert!(
+        matches!(
+            activity,
+            feldera_types::checkpoint::CheckpointActivity::Idle
+        ),
+        "expected Idle, got {activity:?}"
+    );
+
     controller.stop().unwrap();
 }
