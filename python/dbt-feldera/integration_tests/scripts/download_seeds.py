@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Download dbt-adventureworks seed files from GitHub Gist.
+"""Download seed data for a dbt project from GitHub Gist.
 
-Reads ci_seeds.yaml and idempotently downloads any missing files.
+Reads a ``ci_seeds.yaml`` manifest from the given project directory
+and idempotently downloads any missing files.
 Uses only Python stdlib — no extra dependencies required.
 
 Usage:
-    python download_seeds.py                   # run from this script's directory
-    python download_seeds.py /path/to/seeds    # explicit seeds directory
+    python download_seeds.py /path/to/dbt-project
 """
 
 from __future__ import annotations
@@ -18,10 +18,6 @@ import urllib.request
 from pathlib import Path
 
 MANIFEST = "ci_seeds.yaml"
-
-
-def _seeds_dir_default() -> Path:
-    return Path(__file__).resolve().parent.parent / "dbt-adventureworks"
 
 
 def _load_manifest(project_dir: Path) -> dict:
@@ -42,8 +38,8 @@ def _load_manifest(project_dir: Path) -> dict:
     return {"gist_id": gist_id_m.group(1), "gist_owner": gist_owner_m.group(1), "files": files}
 
 
-def main(project_dir: Path | None = None) -> int:
-    project_dir = (project_dir or _seeds_dir_default()).resolve()
+def main(project_dir: Path) -> int:
+    project_dir = project_dir.resolve()
     manifest = _load_manifest(project_dir)
     base_url = f"https://gist.githubusercontent.com/{manifest['gist_owner']}/{manifest['gist_id']}/raw"
 
@@ -54,11 +50,14 @@ def main(project_dir: Path | None = None) -> int:
             skipped += 1
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_suffix(dest.suffix + ".tmp")
         try:
-            urllib.request.urlretrieve(f"{base_url}/{entry['filename']}", dest)
+            urllib.request.urlretrieve(f"{base_url}/{entry['filename']}", tmp)
+            tmp.rename(dest)
             print(f"  Downloaded {entry['path']}")
             downloaded += 1
         except urllib.error.URLError as exc:
+            tmp.unlink(missing_ok=True)
             print(f"  FAILED {entry['path']}: {exc}", file=sys.stderr)
             failed += 1
 
@@ -68,4 +67,7 @@ def main(project_dir: Path | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(Path(sys.argv[1]) if len(sys.argv) > 1 else None))
+    if len(sys.argv) < 2:
+        print(f"Usage: {sys.argv[0]} <project-directory>", file=sys.stderr)
+        raise SystemExit(1)
+    raise SystemExit(main(Path(sys.argv[1])))

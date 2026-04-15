@@ -43,7 +43,6 @@ _KEY_TO_INTENT: dict[str, SqlIntent] = {
     "except": SqlIntent.ADHOC_QUERY,
     "create": SqlIntent.PIPELINE_DDL,
     "drop": SqlIntent.PIPELINE_DDL,
-    "alter": SqlIntent.PIPELINE_DDL,
     "insert": SqlIntent.DATA_INGRESS,
 }
 
@@ -123,10 +122,13 @@ class SqlglotParser(SqlParser):
         return table_ddls
 
     def extract_table_names(self, table_ddls: List[str]) -> Set[str]:
-        """Return lowercase table names from ``CREATE TABLE`` DDL strings.
+        """Return table names from ``CREATE TABLE`` DDL strings.
+
+        Quoted identifiers preserve their original case;
+        unquoted identifiers are lowercased.
 
         :param table_ddls: DDL strings, e.g. ``CREATE TABLE "foo" (…);``.
-        :return: A set of lowercase table names.
+        :return: A set of table names (case-sensitive for quoted, lowercase for unquoted).
         """
         names: Set[str] = set()
         for ddl in table_ddls:
@@ -136,7 +138,7 @@ class SqlglotParser(SqlParser):
                 continue
             tbl = parsed.find(exp.Table) if parsed else None
             if tbl and tbl.name:
-                names.add(tbl.name.lower())
+                names.add(self._normalize_identifier(tbl))
         return names
 
     def rename_in_ddl(self, ddl: str, old_name: str, new_name: str) -> str:
@@ -145,6 +147,9 @@ class SqlglotParser(SqlParser):
         Uses sqlglot to **validate** that the first ``CREATE`` target
         matches *old_name*, then performs a targeted ``str.replace`` on
         the original text to preserve Feldera-specific SQL extensions.
+
+        For quoted identifiers, comparison is case-sensitive; for unquoted
+        identifiers, comparison is case-insensitive.
 
         :param ddl: The full DDL statement string.
         :param old_name: The current table/view name.
@@ -160,7 +165,7 @@ class SqlglotParser(SqlParser):
             return ddl.replace(old_name, new_name, 1)
 
         tbl = parsed.find(exp.Table)
-        if tbl and tbl.name.lower() == old_name.lower():
+        if tbl and self._identifiers_match(tbl, old_name):
             return ddl.replace(old_name, new_name, 1)
 
         return ddl.replace(old_name, new_name, 1)
@@ -180,6 +185,31 @@ class SqlglotParser(SqlParser):
             return sql_type.split("(")[0].strip().upper()
 
     # -- internal helpers ---------------------------------------------------
+
+    @staticmethod
+    def _normalize_identifier(tbl: exp.Table) -> str:
+        """Normalize a table identifier respecting SQL quoting rules,
+        and preserves case.
+
+        Quoted identifiers preserve their original case; unquoted
+        identifiers are lowercased per the SQL standard.
+        """
+        this = tbl.this
+        if isinstance(this, exp.Identifier) and this.args.get("quoted"):
+            return tbl.name
+        return tbl.name.lower()
+
+    @staticmethod
+    def _identifiers_match(tbl: exp.Table, name: str) -> bool:
+        """Check whether *tbl*'s name matches *name*.
+
+        Quoted identifiers are compared case-sensitively; unquoted
+        identifiers are compared case-insensitively.
+        """
+        this = tbl.this
+        if isinstance(this, exp.Identifier) and this.args.get("quoted"):
+            return tbl.name == name
+        return tbl.name.lower() == name.lower()
 
     @staticmethod
     def _split_statements(sql: str) -> List[str]:

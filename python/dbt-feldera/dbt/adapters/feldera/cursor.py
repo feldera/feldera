@@ -61,7 +61,11 @@ class FelderaCursor:
 
     @property
     def rowcount(self) -> int:
-        """Return the number of rows affected by the last operation."""
+        """Return the number of rows returned by the last ad-hoc query.
+
+        For DDL and ingress operations, returns 0. The continuous pipeline
+        model does not have an equivalent "rows affected" count.
+        """
         return self._rowcount
 
     @property
@@ -212,7 +216,10 @@ class FelderaCursor:
 
     def fetchall(self) -> List[Tuple]:
         """
-        Fetch all remaining rows from the result set.
+        Fetch all remaining rows from the result set produced by an ad-hoc query.
+
+        The result set is a point-in-time snapshot from Feldera's DataFusion
+        ad-hoc query engine.
 
         :return: A list of row tuples.
         """

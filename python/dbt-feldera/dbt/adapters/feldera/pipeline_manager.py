@@ -29,20 +29,31 @@ class PipelineStateManager:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._tables: Dict[str, Dict[str, str]] = {}
+        """``{pipeline_name: {table_name: CREATE TABLE DDL}}``"""
         self._views: Dict[str, Dict[str, str]] = {}
+        """``{pipeline_name: {view_name: CREATE VIEW DDL}}``"""
         self._deployed_sql: Dict[str, str] = {}
+        """``{pipeline_name: last_deployed_sql_program}``"""
         self._pipelines: Dict[str, Pipeline] = {}
+        """``{pipeline_name: Pipeline SDK object}``"""
         self._pending_seeds: Dict[str, List[Tuple[str, agate.Table, dict]]] = {}
+        """``{pipeline_name: [(table_name, agate_table, {col: sql_type})]}``"""
 
     def register_table(self, pipeline: str, name: str, ddl: str) -> None:
         """
         Register a CREATE TABLE statement for a pipeline.
+
+        If a table with the same name is already registered, it is silently
+        overwritten with the new DDL (a warning is logged).
 
         :param pipeline: The pipeline (schema) name.
         :param name: The table name.
         :param ddl: The full CREATE TABLE DDL statement.
         """
         with self._lock:
+            existing = self._tables.get(pipeline, {})
+            if name in existing:
+                logger.warning("Overwriting existing table '%s' in pipeline '%s'", name, pipeline)
             self._tables.setdefault(pipeline, {})[name] = ddl
             logger.debug("Registered table '%s' in pipeline '%s'", name, pipeline)
 
@@ -60,7 +71,9 @@ class PipelineStateManager:
 
     def remove_table(self, pipeline: str, name: str) -> None:
         """
-        Remove a table from the pipeline.
+        Remove a table from the pipeline state.
+
+        No-op if the table does not exist.
 
         :param pipeline: The pipeline (schema) name.
         :param name: The table name to remove.
@@ -71,7 +84,9 @@ class PipelineStateManager:
 
     def remove_view(self, pipeline: str, name: str) -> None:
         """
-        Remove a view from the pipeline.
+        Remove a view from the pipeline state.
+
+        No-op if the view does not exist.
 
         :param pipeline: The pipeline (schema) name.
         :param name: The view name to remove.
@@ -85,7 +100,8 @@ class PipelineStateManager:
         Return a copy of all registered tables for a pipeline.
 
         :param pipeline: The pipeline (schema) name.
-        :return: A dict mapping table name to DDL.
+        :return: A dict mapping table name (``str``) to ``CREATE TABLE``
+            DDL string (``str``). Empty dict if the pipeline has no tables.
         """
         with self._lock:
             return dict(self._tables.get(pipeline, {}))
@@ -95,7 +111,8 @@ class PipelineStateManager:
         Return a copy of all registered views for a pipeline.
 
         :param pipeline: The pipeline (schema) name.
-        :return: A dict mapping view name to DDL.
+        :return: A dict mapping view name (``str``) to ``CREATE VIEW``
+            DDL string (``str``). Empty dict if the pipeline has no views.
         """
         with self._lock:
             return dict(self._views.get(pipeline, {}))
@@ -105,6 +122,9 @@ class PipelineStateManager:
         Assemble all registered tables and views into a pipeline SQL program.
 
         Tables are emitted first (inputs), then views (transforms).
+        Views are emitted in registration (insertion) order — dbt resolves
+        the dependency graph before calling materializations, so views
+        arrive in the correct dependency order.
 
         :param pipeline: The pipeline (schema) name.
         :return: The assembled SQL program string.
@@ -175,7 +195,9 @@ class PipelineStateManager:
         Pop and return all pending seeds for a pipeline.
 
         :param pipeline: The pipeline (schema) name.
-        :return: A list of (table_name, agate_table, column_types) tuples.
+        :return: A list of ``(table_name, agate_table, column_types)`` tuples
+            where *column_types* maps column name → SQL type string override.
+            Returns an empty list if no seeds are pending.
         """
         with self._lock:
             return self._pending_seeds.pop(pipeline, [])
@@ -247,10 +269,16 @@ class PipelineStateManager:
         """
         Update an existing pipeline with new views, preserving table data.
 
-        Unlike :meth:`deploy`, this does NOT call ``clear_storage``. It fetches
-        the existing pipeline's SQL, extracts table DDLs (preserving seed data),
-        replaces any existing view DDLs with the newly registered ones, and
-        recompiles.
+        Unlike :meth:`deploy`, this does NOT call ``clear_storage``. It:
+
+        1. Stops the pipeline (if running).
+        2. Fetches the existing SQL and extracts table DDLs.
+        3. Replaces existing view DDLs with newly registered ones.
+        4. Recompiles via ``modify(sql=...)``.
+        5. Starts the pipeline.
+
+        The pipeline can be running or stopped. Running pipelines are
+        force-stopped before modification.
 
         :param client: The Feldera REST client.
         :param pipeline: The pipeline (schema) name.
@@ -344,8 +372,11 @@ class PipelineStateManager:
         """
         Extract table names from a list of CREATE TABLE DDL statements.
 
+        Quoted identifiers preserve their original case; unquoted
+        identifiers are lowercased (SQL standard).
+
         :param table_ddls: List of DDL strings (e.g., ``CREATE TABLE "foo" (...);``).
-        :return: A set of lowercase table names.
+        :return: A set of table names (case-sensitive for quoted, lowercase for unquoted).
         """
         from dbt.adapters.feldera.sqlglot_parser import parser
 
@@ -358,7 +389,7 @@ class PipelineStateManager:
         poll_interval: float = 1.0,
     ) -> None:
         """
-        Wait for a pipeline to finish compiling using the public Pipeline API.
+        Wait for a pipeline to finish compiling using the Pipeline SDK.
 
         Polls ``pipeline.program_status()`` until compilation succeeds or
         fails, raising on error or timeout.

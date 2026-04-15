@@ -1,4 +1,4 @@
-# Manifest for downloading dbt-adventureworks project files from GitHub Gist.
+# Manifest for downloading dbt-adventureworks seed data from GitHub Gist.
 # Used by integration_tests/scripts/download_seeds.py
 #
 # Raw URL pattern:
@@ -8,40 +8,6 @@ gist_id: "7d8edd90bd3cf703f9a7b34f8c494347"
 gist_owner: "mdrakiburrahman"
 
 files:
-  # macros
-  - path: macros/surrogate_key.sql
-    filename: surrogate_key.sql
-
-  # models/intermediate
-  - path: models/intermediate/int_kafka_sales.sql
-    filename: int_kafka_sales.sql
-
-  # models/kafka
-  - path: models/kafka/kafka_sales.sql
-    filename: kafka_sales.sql
-
-  # models/marts
-  - path: models/marts/dim_address.sql
-    filename: dim_address.sql
-  - path: models/marts/dim_credit_card.sql
-    filename: dim_credit_card.sql
-  - path: models/marts/dim_customer.sql
-    filename: dim_customer.sql
-  - path: models/marts/dim_date.sql
-    filename: dim_date.sql
-  - path: models/marts/dim_order_status.sql
-    filename: dim_order_status.sql
-  - path: models/marts/dim_product.sql
-    filename: dim_product.sql
-  - path: models/marts/fct_recent_sales.sql
-    filename: fct_recent_sales.sql
-  - path: models/marts/fct_sales.sql
-    filename: fct_sales.sql
-  - path: models/marts/obt_sales.sql
-    filename: obt_sales.sql
-  - path: models/marts/sources.yml
-    filename: sources.yml
-
   # seeds/date
   - path: seeds/date/calendar_date.csv
     filename: calendar_date.csv

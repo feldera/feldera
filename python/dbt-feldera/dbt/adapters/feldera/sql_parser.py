@@ -22,13 +22,17 @@ class SqlIntent(Enum):
         endpoint (DataFusion-backed) - the pipeline endpoint does not support
         these statements.
     PIPELINE_DDL
-        ``CREATE``, ``DROP``, ``ALTER`` — structural changes collected by
+        ``CREATE``, ``DROP`` — structural changes collected by
         the pipeline state manager and compiled as a single program.
     DATA_INGRESS
         ``INSERT`` — row-level writes pushed via HTTP ingress. Both the ad-hoc
         engine and the ingress API support ``INSERT``.
     METADATA
         Reserved for future catalog / ``INFORMATION_SCHEMA`` queries.
+        The Feldera Python SDK's Pipeline object exposes table and view
+        metadata (via ``tables()`` and ``views()``) which could serve as
+        a catalog source.  See
+        https://docs.feldera.com/python/feldera.rest.html#module-feldera.rest.sql_table
     NO_OP
         Empty input, whitespace-only, or comment-only SQL.
     """

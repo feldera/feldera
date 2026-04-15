@@ -44,7 +44,6 @@ class FelderaColumn(Column):
         "INT": "integer",
         "BIGINT": "integer",
         "REAL": "float",
-        "FLOAT": "float",
         "DOUBLE": "float",
         "DECIMAL": "numeric",
         "NUMERIC": "numeric",
@@ -107,7 +106,7 @@ class FelderaColumn(Column):
         return any([self.is_integer(), self.is_numeric(), self.is_float()])
 
     def is_float(self) -> bool:
-        """Return True if this column is an IEEE floating-point type (REAL, FLOAT, DOUBLE)."""
+        """Return True if this column is an IEEE floating-point type (REAL, DOUBLE)."""
         return self.translate_type(self.dtype) == "float"
 
     def is_numeric(self) -> bool:

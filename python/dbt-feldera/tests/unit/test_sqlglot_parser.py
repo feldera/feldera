@@ -37,9 +37,13 @@ class TestClassifySqlIntent(unittest.TestCase):
         )
 
     def test_explain_falls_back_to_adhoc(self):
+        # EXPLAIN is not supported by Feldera's ad-hoc engine, but the
+        # parser correctly classifies it as ADHOC_QUERY.
         self.assertEqual(_parser.classify("EXPLAIN SELECT 1"), SqlIntent.ADHOC_QUERY)
 
     def test_unknown_keyword_falls_back_to_adhoc(self):
+        # SHOW TABLES is not supported by Feldera; classification as
+        # ADHOC_QUERY is the correct fallback.
         self.assertEqual(_parser.classify("SHOW TABLES"), SqlIntent.ADHOC_QUERY)
 
     # -- pipeline_ddl -------------------------------------------------------
@@ -66,14 +70,23 @@ class TestClassifySqlIntent(unittest.TestCase):
         self.assertEqual(_parser.classify("DROP TABLE foo"), SqlIntent.PIPELINE_DDL)
 
     def test_alter_table(self):
+        # Feldera does not support ALTER. It falls through to ADHOC_QUERY
+        # (default for unrecognized statement types).
         self.assertEqual(
             _parser.classify("ALTER TABLE foo ADD COLUMN bar INT"),
-            SqlIntent.PIPELINE_DDL,
+            SqlIntent.ADHOC_QUERY,
         )
 
     def test_create_case_insensitive(self):
         self.assertEqual(
             _parser.classify("create table foo (id int)"),
+            SqlIntent.PIPELINE_DDL,
+        )
+
+    def test_create_view_with_cte(self):
+        """CREATE VIEW with a CTE body should be DDL, not ADHOC_QUERY."""
+        self.assertEqual(
+            _parser.classify("CREATE VIEW v AS WITH cte AS (SELECT 1) SELECT * FROM cte"),
             SqlIntent.PIPELINE_DDL,
         )
 
@@ -166,8 +179,8 @@ class TestExtractTableDdls(unittest.TestCase):
         program = original + "\nCREATE VIEW v1 AS SELECT * FROM kafka_sales;"
         ddls = _parser.extract_table_ddls(program)
         self.assertEqual(len(ddls), 1)
-        # The quoted key must survive round-tripping.
-        self.assertIn("'connectors'", ddls[0])
+        # Exact verbatim match (modulo trailing semicolons that get normalized)
+        self.assertEqual(ddls[0], original)
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +202,13 @@ class TestExtractTableNames(unittest.TestCase):
     def test_case_normalized(self):
         ddls = ['CREATE TABLE "MyTable" (id INT);']
         names = _parser.extract_table_names(ddls)
+        # Quoted identifiers preserve original case (SQL standard)
+        self.assertIn("MyTable", names)
+
+    def test_unquoted_case_normalized(self):
+        ddls = ["CREATE TABLE MyTable (id INT);"]
+        names = _parser.extract_table_names(ddls)
+        # Unquoted identifiers are lowercased per SQL standard
         self.assertIn("mytable", names)
 
     def test_empty_list(self):
@@ -201,7 +221,14 @@ class TestExtractTableNames(unittest.TestCase):
     def test_quoted_names(self):
         ddls = ['CREATE TABLE "quoted_name" (id INT);']
         names = _parser.extract_table_names(ddls)
+        # Quoted names preserve original case
         self.assertIn("quoted_name", names)
+
+    def test_quoted_preserves_mixed_case(self):
+        ddls = ['CREATE TABLE "CaseSensitive" (id INT);']
+        names = _parser.extract_table_names(ddls)
+        self.assertIn("CaseSensitive", names)
+        self.assertNotIn("casesensitive", names)
 
 
 # ---------------------------------------------------------------------------
@@ -240,8 +267,16 @@ class TestRenameInDdl(unittest.TestCase):
     def test_no_match_falls_back(self):
         ddl = "CREATE TABLE completely_different (id INT)"
         result = _parser.rename_in_ddl(ddl, "nonexistent", "new_name")
-        # Falls back to str.replace which won't find a match
         self.assertIn("completely_different", result)
+
+    def test_rename_does_not_modify_with_clause_keywords(self):
+        """Renaming must not modify 'connectors' or 'name' inside WITH."""
+        ddl = "CREATE TABLE conn (id INT) WITH ('connectors' = '[{\"name\": \"kafka\"}]')"
+        result = _parser.rename_in_ddl(ddl, "conn", "new_conn")
+        self.assertIn("new_conn", result)
+        self.assertNotIn(" conn ", result.replace("new_conn", ""))
+        self.assertIn("'connectors'", result)
+        self.assertIn('"name"', result)
 
     def test_rename_with_view_body(self):
         ddl = "CREATE VIEW stats AS SELECT COUNT(*) AS cnt FROM events"
@@ -273,17 +308,15 @@ class TestSqlTypeBaseName(unittest.TestCase):
         self.assertEqual(_parser.sql_type_base_name("BOOLEAN"), "BOOLEAN")
         self.assertEqual(_parser.sql_type_base_name("BIGINT"), "BIGINT")
         self.assertEqual(_parser.sql_type_base_name("DOUBLE"), "DOUBLE")
-        self.assertEqual(_parser.sql_type_base_name("FLOAT"), "FLOAT")
-        # sqlglot normalizes REAL → FLOAT
-        self.assertEqual(_parser.sql_type_base_name("REAL"), "FLOAT")
+        # Feldera uses REAL (32-bit) and DOUBLE (64-bit).
+        self.assertEqual(_parser.sql_type_base_name("REAL"), "REAL")
         self.assertEqual(_parser.sql_type_base_name("DATE"), "DATE")
         self.assertEqual(_parser.sql_type_base_name("TIMESTAMP"), "TIMESTAMP")
 
     def test_parametric_types(self):
         self.assertEqual(_parser.sql_type_base_name("DECIMAL(10,2)"), "DECIMAL")
         self.assertEqual(_parser.sql_type_base_name("VARCHAR(255)"), "VARCHAR")
-        # sqlglot normalizes NUMERIC → DECIMAL
-        self.assertEqual(_parser.sql_type_base_name("NUMERIC(5,3)"), "DECIMAL")
+        self.assertEqual(_parser.sql_type_base_name("NUMERIC(5,3)"), "NUMERIC")
 
     def test_case_insensitive_input(self):
         self.assertEqual(_parser.sql_type_base_name("varchar"), "VARCHAR")
@@ -294,13 +327,21 @@ class TestSqlTypeBaseName(unittest.TestCase):
         self.assertEqual(_parser.sql_type_base_name("  INT  "), "INT")
 
     def test_integer_alias(self):
-        # sqlglot normalizes INTEGER → INT
         result = _parser.sql_type_base_name("INTEGER")
-        self.assertIn(result, ("INT", "INTEGER"))
+        self.assertEqual(result, "INTEGER")
 
     def test_array_type(self):
         result = _parser.sql_type_base_name("ARRAY")
         self.assertEqual(result, "ARRAY")
+
+    def test_map_type(self):
+        result = _parser.sql_type_base_name("MAP")
+        self.assertEqual(result, "MAP")
+
+    def test_row_type(self):
+        result = _parser.sql_type_base_name("ROW")
+        # ROW may not be recognized by sqlglot — fallback should still work
+        self.assertIn(result, ("ROW", "STRUCT"))
 
     def test_unknown_type_fallback(self):
         # Types sqlglot doesn't know should still return something reasonable

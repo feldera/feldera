@@ -25,6 +25,9 @@
 {% endmacro %}
 
 {% macro feldera__type_float() %}
+    {# Required dbt dispatch hook. Without this override, dbt's default
+       returns FLOAT — which Feldera does not support. We return DOUBLE
+       (64-bit IEEE 754). #}
     DOUBLE
 {% endmacro %}
 

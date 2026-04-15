@@ -36,10 +36,13 @@ class TestSqlIntentClassification(unittest.TestCase):
     def test_drop_is_ddl(self):
         self.assertEqual(parser.classify("DROP TABLE foo"), SqlIntent.PIPELINE_DDL)
 
-    def test_alter_is_ddl(self):
+    def test_alter_is_adhoc(self):
+        """
+        Feldera does not currently support ALTER — classified as ADHOC_QUERY (fallback).
+        """
         self.assertEqual(
             parser.classify("ALTER TABLE foo ADD COLUMN bar INT"),
-            SqlIntent.PIPELINE_DDL,
+            SqlIntent.ADHOC_QUERY,
         )
 
     def test_insert_is_ingress(self):
@@ -198,7 +201,11 @@ class TestFelderaCursorDescription(unittest.TestCase):
         self.assertEqual(desc[0][1], "DOUBLE")
 
     def test_description_infers_decimal_type(self):
-        """The Feldera SDK deserializes JSON floats as Decimal objects."""
+        """The Feldera SDK deserializes JSON floats as Decimal objects.
+
+        Feldera uses ``json.loads(..., parse_float=Decimal)`` so JSON
+        numbers like ``3.14`` arrive as ``Decimal`` objects.
+        """
         cursor = self._make_cursor()
         cursor._results = [{"amount": Decimal("3.14")}]
         cursor._columns = ["amount"]
@@ -244,6 +251,7 @@ class TestFelderaCursorDescription(unittest.TestCase):
         self.assertEqual(desc[0][1], "ARRAY")
 
     def test_description_infers_map_type(self):
+        """Both ROW and MAP deserialize as Python dict; MAP is the safe default."""
         cursor = self._make_cursor()
         cursor._results = [{"meta": {"k": "v"}}]
         cursor._columns = ["meta"]

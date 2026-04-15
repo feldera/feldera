@@ -34,9 +34,13 @@ class TestPipelineStateManager(unittest.TestCase):
         self.assertNotIn("v1", views)
 
     def test_remove_nonexistent_is_noop(self):
-        """Removing a non-existent item should not raise."""
+        """Removing a non-existent item should not raise or affect other state."""
+        self.manager.register_table("pipe", "keep_me", "CREATE TABLE keep_me (id INT);")
         self.manager.remove_table("pipe", "nonexistent")
         self.manager.remove_view("pipe", "nonexistent")
+        tables = self.manager.get_tables("pipe")
+        self.assertEqual(len(tables), 1)
+        self.assertIn("keep_me", tables)
 
     def test_get_tables_empty_pipeline(self):
         tables = self.manager.get_tables("nonexistent_pipeline")
@@ -167,6 +171,29 @@ class TestPipelineStateManagerRename(unittest.TestCase):
         self.assertNotIn("old_view", views)
         self.assertIn("new_view", views)
         self.assertEqual(views["new_view"], "CREATE VIEW new_view AS SELECT 1;")
+
+    def test_view_replacement_preserves_order(self):
+        """Re-registering a view preserves its position (Python dict semantics)."""
+        self.manager.register_view("pipe", "v1", "CREATE VIEW v1 AS SELECT 1")
+        self.manager.register_view("pipe", "v2", "CREATE VIEW v2 AS SELECT 2")
+        # Replace v1 with new DDL
+        self.manager.register_view("pipe", "v1", "CREATE VIEW v1 AS SELECT 'new'")
+        program = self.manager.assemble_program("pipe")
+        v1_pos = program.index("v1")
+        v2_pos = program.index("v2")
+        self.assertLess(v1_pos, v2_pos, "v1 should still come before v2 after replacement")
+
+    def test_view_order_preserved_in_assembly(self):
+        """Views emitted in registration (insertion) order."""
+        self.manager.register_view("pipe", "alpha", "CREATE VIEW alpha AS SELECT 1")
+        self.manager.register_view("pipe", "beta", "CREATE VIEW beta AS SELECT 2")
+        self.manager.register_view("pipe", "gamma", "CREATE VIEW gamma AS SELECT 3")
+        program = self.manager.assemble_program("pipe")
+        alpha_pos = program.index("alpha")
+        beta_pos = program.index("beta")
+        gamma_pos = program.index("gamma")
+        self.assertLess(alpha_pos, beta_pos)
+        self.assertLess(beta_pos, gamma_pos)
 
 
 if __name__ == "__main__":
