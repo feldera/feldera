@@ -33,7 +33,7 @@ class TestPipelineStateManager(unittest.TestCase):
         views = self.manager.get_views("pipe")
         self.assertNotIn("v1", views)
 
-    def test_remove_nonexistent_is_noop(self):
+    def test_remove_nonexistent_does_not_throw(self):
         """Removing a non-existent item should not raise or affect other state."""
         self.manager.register_table("pipe", "keep_me", "CREATE TABLE keep_me (id INT);")
         self.manager.remove_table_if_exists("pipe", "nonexistent")
