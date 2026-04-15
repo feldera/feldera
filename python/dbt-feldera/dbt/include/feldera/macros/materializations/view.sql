@@ -3,7 +3,7 @@
 
     Creates a view in the pipeline. By default, a non-materialized view is
     created (intermediate transform). When ``connectors`` are configured or
-    ``materialized_view`` is set to ``true``, a ``CREATE MATERIALIZED VIEW``
+    ``stored`` is set to ``true``, a ``CREATE MATERIALIZED VIEW``
     is emitted instead, enabling ad-hoc queries and output connectors
     (e.g., Delta Lake, Kafka).
 
@@ -13,14 +13,14 @@
     Configuration:
         materialized: 'view'
         pipeline_name: Pipeline name (defaults to schema)
-        materialized_view: true/false (default false, auto-promoted when connectors are set)
+        stored: true/false (default false, auto-promoted when connectors are set)
         connectors: Optional output connector config (list of connector dicts)
 #}
 {% materialization view, adapter='feldera' %}
     {%- set pipeline_name = config.get('pipeline_name', model.schema) -%}
     {%- set view_name = model.name -%}
     {%- set connectors = config.get('connectors', []) -%}
-    {%- set materialized = config.get('materialized_view', false) or connectors -%}
+    {%- set stored = config.get('stored', false) or connectors -%}
     {%- set full_refresh = flags.FULL_REFRESH -%}
 
     {# On full refresh, stop and clear the pipeline #}
@@ -29,7 +29,7 @@
     {%- endif -%}
 
     {%- set view_sql -%}
-        CREATE {{ 'MATERIALIZED ' if materialized else '' }}VIEW {{ view_name }}
+        CREATE {{ 'MATERIALIZED ' if stored else '' }}VIEW {{ view_name }}
         {%- if connectors %}
         WITH ('connectors' = '{{ connectors | tojson }}')
         {%- endif %}
