@@ -303,12 +303,11 @@ class TestSqlTypeBaseName(unittest.TestCase):
     """Tests for extracting the base type name from a SQL type string."""
 
     def test_simple_types(self):
-        self.assertEqual(_parser.sql_type_base_name("INT"), "INT")
+        self.assertEqual(_parser.sql_type_base_name("INT"), "INTEGER")
         self.assertEqual(_parser.sql_type_base_name("VARCHAR"), "VARCHAR")
         self.assertEqual(_parser.sql_type_base_name("BOOLEAN"), "BOOLEAN")
         self.assertEqual(_parser.sql_type_base_name("BIGINT"), "BIGINT")
         self.assertEqual(_parser.sql_type_base_name("DOUBLE"), "DOUBLE")
-        # Feldera uses REAL (32-bit) and DOUBLE (64-bit).
         self.assertEqual(_parser.sql_type_base_name("REAL"), "REAL")
         self.assertEqual(_parser.sql_type_base_name("DATE"), "DATE")
         self.assertEqual(_parser.sql_type_base_name("TIMESTAMP"), "TIMESTAMP")
@@ -316,7 +315,7 @@ class TestSqlTypeBaseName(unittest.TestCase):
     def test_parametric_types(self):
         self.assertEqual(_parser.sql_type_base_name("DECIMAL(10,2)"), "DECIMAL")
         self.assertEqual(_parser.sql_type_base_name("VARCHAR(255)"), "VARCHAR")
-        self.assertEqual(_parser.sql_type_base_name("NUMERIC(5,3)"), "NUMERIC")
+        self.assertEqual(_parser.sql_type_base_name("NUMERIC(5,3)"), "DECIMAL")
 
     def test_case_insensitive_input(self):
         self.assertEqual(_parser.sql_type_base_name("varchar"), "VARCHAR")
@@ -324,9 +323,10 @@ class TestSqlTypeBaseName(unittest.TestCase):
         self.assertEqual(_parser.sql_type_base_name("Bigint"), "BIGINT")
 
     def test_with_whitespace(self):
-        self.assertEqual(_parser.sql_type_base_name("  INT  "), "INT")
+        self.assertEqual(_parser.sql_type_base_name("  INT  "), "INTEGER")
 
     def test_integer_alias(self):
+        # INTEGER is Feldera's canonical name; INT is an alias.
         result = _parser.sql_type_base_name("INTEGER")
         self.assertEqual(result, "INTEGER")
 
@@ -347,6 +347,65 @@ class TestSqlTypeBaseName(unittest.TestCase):
         # Types sqlglot doesn't know should still return something reasonable
         result = _parser.sql_type_base_name("WEIRD_CUSTOM_TYPE")
         self.assertEqual(result, "WEIRD_CUSTOM_TYPE")
+
+    def test_float_rejected_by_feldera(self):
+        """FLOAT input must resolve to REAL."""
+        self.assertEqual(_parser.sql_type_base_name("FLOAT"), "REAL")
+
+
+class TestFelderaTypeRoundTrip(unittest.TestCase):
+    """Verify sql_type_base_name returns Feldera-canonical names for all types.
+
+    Expected values sourced from Feldera docs (docs.feldera.com/docs/sql/types.md).
+    """
+
+    # (input_sql_type, expected_feldera_canonical)
+    _CASES = [
+        # Boolean
+        ("BOOLEAN", "BOOLEAN"),
+        ("boolean", "BOOLEAN"),
+        # Integer family
+        ("TINYINT", "TINYINT"),
+        ("SMALLINT", "SMALLINT"),
+        ("INTEGER", "INTEGER"),
+        ("INT", "INTEGER"),
+        ("BIGINT", "BIGINT"),
+        # Floating point — FLOAT must become REAL
+        ("REAL", "REAL"),
+        ("DOUBLE", "DOUBLE"),
+        ("FLOAT", "REAL"),
+        # Fixed precision
+        ("DECIMAL", "DECIMAL"),
+        ("DECIMAL(10,2)", "DECIMAL"),
+        ("NUMERIC", "DECIMAL"),
+        ("NUMERIC(5,3)", "DECIMAL"),
+        # String
+        ("VARCHAR", "VARCHAR"),
+        ("VARCHAR(255)", "VARCHAR"),
+        ("CHAR", "CHAR"),
+        ("CHAR(10)", "CHAR"),
+        ("TEXT", "TEXT"),
+        # Binary
+        ("BINARY", "BINARY"),
+        ("VARBINARY", "VARBINARY"),
+        # Temporal
+        ("DATE", "DATE"),
+        ("TIME", "TIME"),
+        ("TIMESTAMP", "TIMESTAMP"),
+        # Complex
+        ("ARRAY", "ARRAY"),
+        ("MAP", "MAP"),
+    ]
+
+    def test_all_feldera_types(self):
+        for sql_type, expected in self._CASES:
+            with self.subTest(sql_type=sql_type):
+                result = _parser.sql_type_base_name(sql_type)
+                self.assertEqual(
+                    result,
+                    expected,
+                    f"sql_type_base_name({sql_type!r}) returned {result!r}, expected Feldera canonical {expected!r}",
+                )
 
 
 if __name__ == "__main__":
