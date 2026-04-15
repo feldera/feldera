@@ -5077,9 +5077,12 @@ dependencies = [
 name = "feldera-samply"
 version = "0.288.0"
 dependencies = [
+ "crossbeam",
  "feldera-size-of",
  "flate2",
+ "itertools 0.14.0",
  "libc",
+ "memory-stats",
  "nix 0.29.0",
  "serde",
  "serde_json",
