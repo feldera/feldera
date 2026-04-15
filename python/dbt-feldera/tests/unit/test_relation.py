@@ -15,9 +15,6 @@ class TestFelderaRelationType(unittest.TestCase):
     def test_materialized_view_type(self):
         self.assertEqual(FelderaRelationType.MaterializedView, "materialized_view")
 
-    def test_external_type(self):
-        self.assertEqual(FelderaRelationType.External, "external")
-
 
 class TestFelderaRelation(unittest.TestCase):
     """Unit tests for FelderaRelation."""

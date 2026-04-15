@@ -15,9 +15,6 @@ class FelderaRelationType(StrEnum):
     Table = "table"
     View = "view"
     MaterializedView = "materialized_view"
-    External = "external"
-    """A relation that exists in a Feldera pipeline but is not managed
-    by this dbt project (e.g. declared via ``dbt source``)."""
 
 
 @dataclass(frozen=True, eq=False, repr=False)
