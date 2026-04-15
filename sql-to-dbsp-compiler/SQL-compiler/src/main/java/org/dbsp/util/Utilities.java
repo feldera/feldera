@@ -437,11 +437,13 @@ public class Utilities {
         runProcess(directory, new HashMap<>(), commands);
     }
 
+    static HashMap<String, String> STACK = new HashMap<>() {{ put("RUST_MIN_STACK", "8388608"); }};
+
     static void compileAndTest(String directory, boolean quiet, String... extraArgs) throws IOException, InterruptedException {
         List<String> args = new ArrayList<>();
         args.add("cargo");
         args.add("test");
-        if (Utilities.inCI()) {
+        if (!Utilities.inCI()) {
             args.add("--jobs");
             args.add("6");
         }
@@ -452,7 +454,7 @@ public class Utilities {
             args.add("--");
             args.add("--show-output");
         }
-        runProcess(directory, args.toArray(new String[0]));
+        runProcess(directory, STACK, args.toArray(new String[0]));
     }
 
     static void addExtraArgs(List<String> args, String... packages) {

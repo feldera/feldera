@@ -1997,6 +1997,9 @@ public class FunctionsTest extends SqlIoTest {
                  r
                 ---
                  true""");
+
+        this.runtimeConstantFail("SELECT 'x' RLIKE '('",
+                "Invalid regular expression in RLIKE '(': regex parse error:");
     }
 
     @Test
