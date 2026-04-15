@@ -30,6 +30,7 @@ use std::{
     mem::{MaybeUninit, transmute},
     sync::Arc,
 };
+use tracing::warn;
 
 type StringRef = ArcStr;
 pub type InternedString = InternedStringId;
@@ -712,7 +713,7 @@ pub fn to_json_nullN(_value: Option<()>) -> Option<SqlString> {
 pub enum ParsedRegex {
     Regex(Regex),
     // The expression and the error produced while parsing
-    Invalid(String, String),
+    Invalid(SqlString, String),
 }
 
 #[doc(hidden)]
@@ -720,12 +721,12 @@ pub fn make_regex_(re: SqlString) -> ParsedRegex {
     match Regex::new(re.str()) {
         Ok(r) => ParsedRegex::Regex(r),
         Err(e) => {
-            tracing::warn!(
+            warn!(
                 "failed to parse '{}' as a regular expression: {}",
                 re,
                 e.to_string()
             );
-            ParsedRegex::Invalid(re.str().to_string(), e.to_string())
+            ParsedRegex::Invalid(re, e.to_string())
         }
     }
 }
