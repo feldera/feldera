@@ -45,6 +45,12 @@ EXPECTED_ROW_COUNTS = {
     "obt_sales": 5675,
 }
 
+# Test timeouts
+_DBT_COMMAND_TIMEOUT_SECONDS = 600
+_PIPELINE_IDLE_TIMEOUT_SECONDS = 120.0
+_PIPELINE_SHUTDOWN_TIMEOUT_SECONDS = 60
+_DUCKDB_TIMEOUT_SECONDS = 120
+
 # Valid FK references into seed dimension data for generating Kafka records.
 _VALID_PRODUCT_IDS = [776, 777, 778, 771, 772, 773, 774, 775]
 _VALID_CUSTOMER_IDS = [29825, 29672, 29734, 29994, 30089, 30052]
@@ -80,7 +86,7 @@ def _run_dbt(
     project_dir: str,
     args: list,
     feldera_url: str = "http://localhost:8080",
-    timeout: int = 600,
+    timeout: int = _DBT_COMMAND_TIMEOUT_SECONDS,
 ) -> subprocess.CompletedProcess:
     """
     Run a dbt command in the given project directory.
@@ -265,10 +271,86 @@ def _stop_feldera_pipeline(feldera_url: str, pipeline_name: str) -> None:
     try:
         p = FelderaPipeline.get(pipeline_name, client)
         p.stop(force=False)
-        p.wait_for_status(PipelineStatus.SHUTDOWN, timeout=60)
+        p.wait_for_status(PipelineStatus.SHUTDOWN, timeout=_PIPELINE_SHUTDOWN_TIMEOUT_SECONDS)
         logger.info("Pipeline '%s' is stopped", pipeline_name)
     except Exception as exc:
         logger.warning("Failed to stop pipeline '%s': %s", pipeline_name, exc)
+
+
+def _wait_for_pipeline_idle(
+    feldera_url: str,
+    pipeline_name: str,
+    timeout_s: float = _PIPELINE_IDLE_TIMEOUT_SECONDS,
+    poll_interval_s: float = 0.5,
+) -> None:
+    """
+    Poll the pipeline until all currently buffered input has been processed.
+
+    Takes a snapshot of ``total_input_records`` (which already includes all
+    data pushed by the preceding ``dbt`` command, since ``input_json`` is a
+    synchronous HTTP POST) and waits until ``total_processed_records``
+    catches up.  Returns as soon as the condition is met.
+
+    This intentionally avoids the two built-in SDK wait helpers:
+
+    * ``Pipeline.wait_for_idle()`` requires both counters to be
+      **unchanged** *and* **equal**.  Kafka connectors emit ~1 heartbeat
+      record per second, so both counters increment in lockstep and the
+      "unchanged" condition is never satisfied — causing a guaranteed
+      timeout.
+
+    * ``Pipeline.wait_for_completion()`` checks the ``pipeline_complete``
+      flag, which requires every input connector to signal end-of-input.
+      Streaming connectors like Kafka never do, so it blocks forever.
+
+    The snapshot approach sidesteps both issues: we capture the current
+    ``total_input_records`` (our processing target) and poll until
+    ``total_processed_records >= target``.  Kafka heartbeats that arrive
+    after the snapshot are irrelevant — we only need the seed data that
+    was already accepted to be fully processed.
+
+    :param feldera_url: Base URL of the Feldera instance.
+    :param pipeline_name: Name of the pipeline to poll.
+    :param timeout_s: Maximum time to wait before raising.
+    :param poll_interval_s: Seconds between polls.
+    :raises RuntimeError: If the pipeline does not catch up in time.
+    """
+    from feldera.pipeline import Pipeline as FelderaPipeline
+    from feldera.rest.feldera_client import FelderaClient
+
+    client = FelderaClient(url=feldera_url)
+    p = FelderaPipeline.get(pipeline_name, client)
+
+    # Snapshot: all seed data has been accepted by the time dbt returns,
+    # so total_input_records is our processing target.
+    target = p.stats().global_metrics.total_input_records
+    logger.info(
+        "Waiting for pipeline '%s' to process %d input records",
+        pipeline_name,
+        target,
+    )
+
+    start = time.time()
+    while True:
+        metrics = p.stats().global_metrics
+        processed = metrics.total_processed_records
+        if processed >= target:
+            logger.info(
+                "Pipeline '%s' caught up: processed=%d >= target=%d (%.1fs)",
+                pipeline_name,
+                processed,
+                target,
+                time.time() - start,
+            )
+            return
+
+        if time.time() - start > timeout_s:
+            raise RuntimeError(
+                f"Pipeline '{pipeline_name}' did not finish processing "
+                f"within {timeout_s}s (processed={processed}, target={target})"
+            )
+
+        time.sleep(poll_interval_s)
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +381,7 @@ class TestDbtFelderaIntegration:
 
     def test_dbt_test(self, docker_feldera, dbt_project_dir):
         """Run data tests against materialized views."""
+        _wait_for_pipeline_idle(docker_feldera, "adventureworks")
         result = _run_dbt(dbt_project_dir, ["test", "--target", "local"], feldera_url=docker_feldera)
         assert result.returncode in (0, 1), f"dbt test failed:\n{result.stdout}\n{result.stderr}"
 
@@ -319,6 +402,8 @@ class TestDbtFelderaIntegration:
         )
         assert result.returncode == 0, f"dbt build --full-refresh failed:\n{result.stdout}\n{result.stderr}"
 
+        _wait_for_pipeline_idle(docker_feldera, "adventureworks")
+
     def test_delta_output_correctness(self, docker_feldera, dbt_project_dir, docker_duckdb):
         """
         Verify that Delta Lake output tables contain the expected number of rows.
@@ -328,8 +413,10 @@ class TestDbtFelderaIntegration:
         the DuckDB sidecar to read the tables and assert net row counts
         (inserts minus deletes).
         """
+        _wait_for_pipeline_idle(docker_feldera, "adventureworks")
+
         table_names = list(EXPECTED_ROW_COUNTS.keys())
-        docker_duckdb.wait_for_tables(table_names, timeout=120)
+        docker_duckdb.wait_for_tables(table_names, timeout=_DUCKDB_TIMEOUT_SECONDS)
 
         errors = []
         for table_name, expected_count in EXPECTED_ROW_COUNTS.items():
@@ -359,7 +446,7 @@ class TestDbtFelderaIntegration:
         - Delta version increases (new commit with new Parquet files)
         - No existing Parquet files are removed (proves incremental write)
         """
-        docker_duckdb.wait_for_tables(["obt_sales", "fct_sales"], timeout=120)
+        docker_duckdb.wait_for_tables(["obt_sales", "fct_sales"], timeout=_DUCKDB_TIMEOUT_SECONDS)
 
         pre_obt_net = docker_duckdb.get_net_count("obt_sales")
         pre_fct_net = docker_duckdb.get_net_count("fct_sales")
@@ -378,8 +465,8 @@ class TestDbtFelderaIntegration:
         expected_fct_net = pre_fct_net + len(kafka_batch_1)
         expected_obt_net = pre_obt_net + len(kafka_batch_1)
 
-        actual_fct_net = docker_duckdb.wait_for_net_count("fct_sales", expected_fct_net, timeout=120)
-        actual_obt_net = docker_duckdb.wait_for_net_count("obt_sales", expected_obt_net, timeout=120)
+        actual_fct_net = docker_duckdb.wait_for_net_count("fct_sales", expected_fct_net, timeout=_DUCKDB_TIMEOUT_SECONDS)
+        actual_obt_net = docker_duckdb.wait_for_net_count("obt_sales", expected_obt_net, timeout=_DUCKDB_TIMEOUT_SECONDS)
 
         assert actual_fct_net == expected_fct_net, (
             f"fct_sales: expected {expected_fct_net} net rows, got {actual_fct_net}"
@@ -444,8 +531,8 @@ class TestDbtFelderaIntegration:
         expected_fct_net = pre_fct_net + len(kafka_batch_2)
         expected_obt_net = pre_obt_net + len(kafka_batch_2)
 
-        actual_fct_net = docker_duckdb.wait_for_net_count("fct_sales", expected_fct_net, timeout=120)
-        actual_obt_net = docker_duckdb.wait_for_net_count("obt_sales", expected_obt_net, timeout=120)
+        actual_fct_net = docker_duckdb.wait_for_net_count("fct_sales", expected_fct_net, timeout=_DUCKDB_TIMEOUT_SECONDS)
+        actual_obt_net = docker_duckdb.wait_for_net_count("obt_sales", expected_obt_net, timeout=_DUCKDB_TIMEOUT_SECONDS)
 
         assert actual_fct_net == expected_fct_net, (
             f"fct_sales: expected {expected_fct_net} net rows, got {actual_fct_net}"
