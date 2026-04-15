@@ -89,7 +89,7 @@ query.
 | `schema`                      | Pipeline name     | Each dbt schema maps to one [Feldera pipeline](https://docs.feldera.com/pipelines) (a continuously running SQL program)           |
 | `table` materialization       | Input table       | External data source (Kafka, HTTP, S3)                                                                                            |
 | `view` materialization        | View              | SQL view inside the continuous pipeline (all views are incrementally maintained)                                                  |
-| `incremental` materialization | Materialized view | IVM-backed materialized view — queryable via [ad-hoc queries](https://docs.feldera.com/sql/ad-hoc) and supports output connectors |
+| `view` + `materialized_view`  | Materialized view | Queryable via [ad-hoc queries](https://docs.feldera.com/sql/ad-hoc); supports output connectors                                   |
 | `seed`                        | Table + HTTP push | Schema registered, data pushed via HTTP ingress                                                                                   |
 
 ### Configuration options
@@ -105,7 +105,7 @@ query.
 
 ## Materializations
 
-### `view` — Intermediate transform
+### `view` — Intermediate transform / Materialized view
 
 Creates a `CREATE VIEW` in the pipeline. Use for intermediate transformations
 that don't need to be queried directly or connected to an output.
@@ -124,12 +124,32 @@ Set `materialized_view: true` or attach `connectors` to promote to a
 ad-hoc queries and output connectors:
 
 ```sql
+-- models/sales_summary.sql
 {{ config(
     materialized='view',
     materialized_view=true,
     connectors=[{'transport': {'name': 'my_delta_connector'}}]
 ) }}
+
+SELECT
+    region,
+    product_category,
+    SUM(amount) AS total_sales,
+    COUNT(*) AS order_count
+FROM {{ ref('orders') }}
+GROUP BY region, product_category
 ```
+
+> [!NOTE]
+> Every view in Feldera is automatically incrementally maintained by the DBSP
+> engine. When inputs change, only affected output rows are recomputed — no
+> watermarks, merge logic, or special configuration required. The
+> `materialized_view` flag controls only whether the view's state is
+> **queryable** (via ad-hoc queries) and can drive output connectors; it does
+> **not** change how the view is computed.
+
+On `--full-refresh`, the pipeline is stopped, all stored state (including
+connector offsets) is cleared, and the pipeline is redeployed from scratch.
 
 ### `table` — Input source
 
@@ -159,28 +179,18 @@ payload VARCHAR,
 created_at TIMESTAMP NOT NULL
 ```
 
-### `incremental` — Automatic IVM
+### `incremental` — Unsupported
 
-Leverages Feldera's DBSP engine for automatic incremental view maintenance.
-Unlike dbt's standard incremental strategy (which uses watermarks and merge),
-Feldera incrementalizes the query automatically — when inputs change, only
-affected output rows are recomputed.
-
-```sql
--- models/sales_summary.sql
-{{ config(materialized='incremental') }}
-
-SELECT
-    region,
-    product_category,
-    SUM(amount) AS total_sales,
-    COUNT(*) AS order_count
-FROM {{ ref('orders') }}
-GROUP BY region, product_category
-```
-
-On `--full-refresh`, the pipeline is stopped, all stored state (including
-connector offsets) is cleared, and the pipeline is redeployed from scratch.
+> [!IMPORTANT]
+> `dbt-feldera` does not support the `incremental` materialization because
+> **all** views in Feldera are natively maintained incrementally by the DBSP
+> engine.
+>
+> Use `materialized='view'` with `materialized_view=true` instead:
+>
+> ```sql
+> {{ config(materialized='view', materialized_view=true) }}
+> ```
 
 ### `streaming_pipeline` — Full pipeline as a single model
 
@@ -224,10 +234,9 @@ dbt seed --full-refresh # stop, clear storage, redeploy, then push
 
 | Materialization                    | Feldera SQL                | Best for                                                                    |
 | ---------------------------------- | -------------------------- | --------------------------------------------------------------------------- |
-| `view`                             | `CREATE VIEW`              | Incrementally calculated views                                              |
-| `view` + `materialized_view: true` | `CREATE MATERIALIZED VIEW` | Queryable outputs, connectors                                               |
+| `view`                             | `CREATE VIEW`              | Incrementally maintained intermediate transforms                            |
+| `view` + `materialized_view: true` | `CREATE MATERIALIZED VIEW` | Queryable outputs, output connectors                                        |
 | `table`                            | `CREATE TABLE`             | External input sources (Kafka, S3, HTTP)                                    |
-| `incremental`                      | `CREATE MATERIALIZED VIEW` | IVM-backed aggregations and joins                                           |
 | `streaming_pipeline`               | Full program               | Multi-table/view pipelines as a single unit                                 |
 | `seed`                             | `CREATE TABLE` + data push | Small reference datasets (HTTP ingress; any connector can also be attached) |
 
