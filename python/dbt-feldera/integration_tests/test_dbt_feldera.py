@@ -29,6 +29,8 @@ from pathlib import Path
 
 import pytest
 
+from docker_manager import DockerManager, PROJECT_NAME, Service
+
 logger = logging.getLogger(__name__)
 _ADAPTER_ROOT = str(Path(__file__).resolve().parent.parent)
 
@@ -50,6 +52,8 @@ _DBT_COMMAND_TIMEOUT_SECONDS = 600
 _PIPELINE_IDLE_TIMEOUT_SECONDS = 120.0
 _PIPELINE_SHUTDOWN_TIMEOUT_SECONDS = 60
 _DUCKDB_TIMEOUT_SECONDS = 120
+_KAFKA_TOPIC_VERIFY_TIMEOUT_SECONDS = 120
+_KAFKA_TOPIC_VERIFY_POLL_SECONDS = 5
 
 # Valid FK references into seed dimension data for generating Kafka records.
 _VALID_PRODUCT_IDS = [776, 777, 778, 771, 772, 773, 774, 775]
@@ -170,11 +174,12 @@ def _ensure_kafka_topic(topic: str, kafka_proxy_url: str) -> None:
 
     :param topic: The Kafka topic name.
     :param kafka_proxy_url: Base URL of the Kafka proxy (used to verify topic exists).
+    :raises RuntimeError: If the topic cannot be created or verified.
     """
     compose_file = str(Path(__file__).parent / "docker-compose.yml")
+    manager = DockerManager(compose_file=compose_file)
 
     # Try creating via rpk inside the Redpanda container (most reliable).
-    # Use `docker compose exec` to avoid hardcoding container names.
     try:
         result = subprocess.run(
             [
@@ -183,10 +188,10 @@ def _ensure_kafka_topic(topic: str, kafka_proxy_url: str) -> None:
                 "-f",
                 compose_file,
                 "-p",
-                "feldera-dbt-test",
+                PROJECT_NAME,
                 "exec",
                 "-T",
-                "redpanda",
+                Service.REDPANDA,
                 "rpk",
                 "topic",
                 "create",
@@ -208,7 +213,8 @@ def _ensure_kafka_topic(topic: str, kafka_proxy_url: str) -> None:
         logger.warning("rpk topic create failed: %s", exc)
 
     # Verify the topic exists via Kafka proxy
-    for attempt in range(10):
+    max_attempts = _KAFKA_TOPIC_VERIFY_TIMEOUT_SECONDS // _KAFKA_TOPIC_VERIFY_POLL_SECONDS
+    for attempt in range(max_attempts):
         try:
             with urllib.request.urlopen(f"{kafka_proxy_url}/topics", timeout=10) as resp:
                 topics = json.loads(resp.read())
@@ -217,9 +223,25 @@ def _ensure_kafka_topic(topic: str, kafka_proxy_url: str) -> None:
                     return
         except Exception as exc:
             logger.debug("Topic verification attempt %d failed: %s", attempt + 1, exc)
-        time.sleep(1)
+        time.sleep(_KAFKA_TOPIC_VERIFY_POLL_SECONDS)
 
-    logger.warning("Could not verify topic '%s' exists; proceeding anyway", topic)
+    # Fetch container logs for diagnostics before raising.
+    try:
+        container_logs = manager.logs(service=Service.REDPANDA)
+    except Exception as exc:
+        container_logs = f"(failed to retrieve container logs: {exc})"
+
+    logger.error(
+        "Failed to verify Kafka topic '%s' after %d attempts.\n"
+        "--- Redpanda container logs (last 100 lines) ---\n%s",
+        topic,
+        max_attempts,
+        container_logs,
+    )
+    raise RuntimeError(
+        f"Kafka topic '{topic}' could not be created or verified. "
+        f"See Redpanda container logs above for details."
+    )
 
 
 def _generate_sales_records(count: int, start_order_id: int = 99001) -> list[dict]:
