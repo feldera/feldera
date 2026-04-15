@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import List, Set
 
 import sqlglot
-from sqlglot import exp
+from sqlglot import exp, generator
 from sqlglot.dialects.dialect import Dialect
 
 from dbt.adapters.feldera.sql_parser import SqlIntent, SqlParser
@@ -22,14 +22,23 @@ from dbt.adapters.feldera.sql_parser import SqlIntent, SqlParser
 
 
 class FelderaDialect(Dialect):
-    """Minimal Feldera SQL dialect registered with sqlglot.
+    """Feldera SQL dialect registered with sqlglot.
 
-    Calcite uses double-quoted identifiers and standard SQL syntax, both
-    of which are already the sqlglot defaults.  Subclass exists so we can
-    customise tokenisation / generation later without changing callers.
+    Feldera uses Calcite SQL with double-quoted identifiers.
+    The custom :class:`Generator` ensures that type names
+    emitted by ``DataType.sql(dialect=...)`` match Feldera's canonical
+    type vocabulary:
+
+    * ``FLOAT`` -> ``REAL``
+    * ``INT`` -> ``INTEGER``
     """
 
-    pass  # inherits ANSI behaviour
+    class Generator(generator.Generator):
+        TYPE_MAPPING = {
+            **generator.Generator.TYPE_MAPPING,
+            exp.DataType.Type.FLOAT: "REAL",
+            exp.DataType.Type.INT: "INTEGER",
+        }
 
 
 _DIALECT: str = "felderadialect"
@@ -171,16 +180,21 @@ class SqlglotParser(SqlParser):
         return ddl.replace(old_name, new_name, 1)
 
     def sql_type_base_name(self, sql_type: str) -> str:
-        """Return the uppercase base type name from a SQL type string.
+        """Return the Feldera-canonical uppercase base type name.
 
-        Examples: ``"DECIMAL(10,2)"`` → ``"DECIMAL"``, ``"varchar"`` → ``"VARCHAR"``.
+        Uses the Feldera sqlglot dialect to render the type, ensuring
+        Feldera-native names are returned (e.g. ``REAL`` instead of
+        ``FLOAT``).  Parameters like precision and scale are stripped.
+
+        Examples: ``"DECIMAL(10,2)"`` -> ``"DECIMAL"``, ``"REAL"`` -> ``"REAL"``.
 
         :param sql_type: A SQL data-type string.
-        :return: The uppercase base type name.
+        :return: The uppercase base type name using Feldera conventions.
         """
         try:
             dt = exp.DataType.build(sql_type)
-            return dt.this.name
+            rendered = dt.sql(dialect=_DIALECT)
+            return rendered.split("(")[0].strip().upper()
         except Exception:
             return sql_type.split("(")[0].strip().upper()
 
