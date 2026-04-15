@@ -33,6 +33,22 @@ Includes both fixed-point (DECIMAL, NUMERIC) and IEEE floating-point
 loss during JSON ingress.
 """
 
+# ── Catalog metadata columns ─────────────────────────────────────────
+
+CATALOG_COLUMNS: tuple[str, ...] = (
+    "table_database",
+    "table_schema",
+    "table_name",
+    "table_type",
+    "table_comment",
+    "table_owner",
+    "column_name",
+    "column_index",
+    "column_type",
+    "column_comment",
+)
+"""Column names for the dbt catalog agate table produced by ``_get_one_catalog``."""
+
 _BOOL_TYPES = frozenset({"BOOLEAN", "BOOL"})
 """Boolean types cast via ``bool()``."""
 
@@ -351,18 +367,6 @@ class FelderaAdapter(BaseAdapter):
         """
         from dbt_common.clients.agate_helper import table_from_data
 
-        catalog_columns = [
-            "table_database",
-            "table_schema",
-            "table_name",
-            "table_type",
-            "table_comment",
-            "table_owner",
-            "column_name",
-            "column_index",
-            "column_type",
-            "column_comment",
-        ]
         rows = []
         for schema_name in schemas:
             schema_relation = self.Relation.create(
@@ -388,7 +392,7 @@ class FelderaAdapter(BaseAdapter):
                         }
                     )
 
-        table = table_from_data(rows, catalog_columns)
+        table = table_from_data(rows, CATALOG_COLUMNS)
         return self._catalog_filter_table(table, used_schemas)
 
     # ── Quoting ────────────────────────────────────────────────────────

@@ -2,21 +2,8 @@ import unittest
 from unittest.mock import MagicMock
 
 from dbt.adapters.feldera.column import FelderaColumn
-from dbt.adapters.feldera.impl import FelderaAdapter
+from dbt.adapters.feldera.impl import CATALOG_COLUMNS, FelderaAdapter
 from dbt.adapters.feldera.relation import FelderaRelation
-
-CATALOG_COLUMNS = [
-    "table_database",
-    "table_schema",
-    "table_name",
-    "table_type",
-    "table_comment",
-    "table_owner",
-    "column_name",
-    "column_index",
-    "column_type",
-    "column_comment",
-]
 
 
 class TestGetOneCatalog(unittest.TestCase):
@@ -44,7 +31,7 @@ class TestGetOneCatalog(unittest.TestCase):
         info = self._make_info_schema()
         table = adapter._get_one_catalog(info, set(), frozenset())
         self.assertEqual(len(table), 0)
-        self.assertEqual(list(table.column_names), CATALOG_COLUMNS)
+        self.assertEqual(list(table.column_names), list(CATALOG_COLUMNS))
 
     def test_schema_with_no_relations(self):
         """A schema exists but has no relations → empty catalog."""
@@ -75,7 +62,7 @@ class TestGetOneCatalog(unittest.TestCase):
         )
 
         self.assertEqual(len(table), 2)
-        self.assertEqual(list(table.column_names), CATALOG_COLUMNS)
+        self.assertEqual(list(table.column_names), list(CATALOG_COLUMNS))
 
         row0 = dict(zip(table.column_names, table.rows[0].values()))
         self.assertEqual(row0["table_database"], "default")
