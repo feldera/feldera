@@ -1,6 +1,6 @@
 use super::mock_framework::{STREAM_NAME, SUBJECT_NAME};
 use super::util;
-use crate::controller::TransactionInfo;
+use crate::controller::{ControllerStatusContext, TransactionInfo};
 use crate::test::{TestStruct, init_test_logger, test_circuit, wait};
 use crate::{Controller, PipelineConfig};
 use anyhow::Result as AnyResult;
@@ -266,11 +266,15 @@ outputs:
             println!(
                 "Controller status:\n{}",
                 serde_json::to_string_pretty(&controller.status().to_api_type(
-                    Ok(()),
-                    false,
-                    TransactionInfo::default(),
-                    MemoryPressure::default(),
-                    0,
+                    ControllerStatusContext {
+                        suspend_error: Ok(()),
+                        checkpoint_activity: feldera_types::checkpoint::CheckpointActivity::Idle,
+                        permanent_checkpoint_errors: None,
+                        pipeline_complete: false,
+                        transaction_info: TransactionInfo::default(),
+                        memory_pressure: MemoryPressure::default(),
+                        memory_pressure_epoch: 0,
+                    },
                 ))
                 .unwrap()
             );

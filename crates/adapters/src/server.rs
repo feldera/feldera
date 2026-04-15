@@ -192,12 +192,14 @@ struct CheckpointState {
     /// The UUID of the last checkpoint.
     last_checkpoint: Option<uuid::Uuid>,
 
-    /// Status to report to user.
+    /// Status to report to user (success/failure only; `activity` is computed
+    /// live from the watch channel).
     status: CheckpointStatus,
 }
 
 impl CheckpointState {
-    /// Returns the sequence number to use for the next checkpoint request.
+    /// Returns the sequence number to use for the next checkpoint request and
+    /// records it as the in-flight checkpoint.
     fn next_seq(&mut self) -> u64 {
         let seq = self.next_seq;
         self.next_seq += 1;
@@ -228,6 +230,7 @@ impl CheckpointState {
                     self.status.failure = Some(CheckpointFailure {
                         sequence_number: seq,
                         error: error.to_string(),
+                        failed_at: Utc::now(),
                     });
                 }
             }
@@ -1904,7 +1907,8 @@ async fn checkpoint(state: WebData<ServerState>) -> Result<HttpResponse, Pipelin
 
 #[get("/checkpoint_status")]
 async fn checkpoint_status(state: WebData<ServerState>) -> impl Responder {
-    HttpResponse::Ok().json(state.checkpoint_state.lock().unwrap().status.clone())
+    let status = state.checkpoint_state.lock().unwrap().status.clone();
+    HttpResponse::Ok().json(status)
 }
 
 #[get("/checkpoints")]

@@ -60,10 +60,11 @@ use feldera_types::{
         ExternalInputEndpointStatus, ExternalOutputEndpointMetrics, ExternalOutputEndpointStatus,
         ShortEndpointConfig,
     },
+    checkpoint::CheckpointActivity,
     config::{FtModel, PipelineConfig},
     coordination::Completion,
     memory_pressure::MemoryPressure,
-    suspend::SuspendError,
+    suspend::{PermanentSuspendError, SuspendError},
     time_series::SampleStatistics,
     transaction::CommitProgressSummary,
 };
@@ -455,6 +456,18 @@ pub struct ControllerStatus {
 
     /// Output endpoint configs and metrics.
     outputs: OutputsStatus,
+}
+
+/// Context needed by [`ControllerStatus::to_api_type`] to build the public
+/// API representation of pipeline status.
+pub struct ControllerStatusContext {
+    pub suspend_error: Result<(), SuspendError>,
+    pub checkpoint_activity: CheckpointActivity,
+    pub permanent_checkpoint_errors: Option<Vec<PermanentSuspendError>>,
+    pub pipeline_complete: bool,
+    pub transaction_info: TransactionInfo,
+    pub memory_pressure: MemoryPressure,
+    pub memory_pressure_epoch: u64,
 }
 
 impl ControllerStatus {
@@ -1195,11 +1208,7 @@ impl ControllerStatus {
     /// stay correlated with the original types and won't go out of sync.
     pub fn to_api_type(
         &self,
-        suspend_error: Result<(), SuspendError>,
-        pipeline_complete: bool,
-        transaction_info: TransactionInfo,
-        memory_pressure: MemoryPressure,
-        memory_pressure_epoch: u64,
+        ctx: ControllerStatusContext,
     ) -> feldera_types::adapter_stats::ExternalControllerStatus {
         use feldera_types::adapter_stats;
 
@@ -1220,7 +1229,7 @@ impl ControllerStatus {
                 .global_metrics
                 .bootstrap_in_progress
                 .load(Ordering::Acquire),
-            transaction_status: match transaction_info.transaction_state {
+            transaction_status: match ctx.transaction_info.transaction_state {
                 TransactionState::None => adapter_stats::TransactionStatus::NoTransaction,
                 TransactionState::Started { .. } => {
                     adapter_stats::TransactionStatus::TransactionInProgress
@@ -1229,18 +1238,20 @@ impl ControllerStatus {
                     adapter_stats::TransactionStatus::CommitInProgress
                 }
             },
-            transaction_msecs: transaction_info
+            transaction_msecs: ctx
+                .transaction_info
                 .transaction_state
                 .start_time()
                 .and_then(|start| start.elapsed().as_millis().try_into().ok()),
-            transaction_records: transaction_info
+            transaction_records: ctx
+                .transaction_info
                 .transaction_state
                 .processed_records()
                 .map(|n| total_processed_records - n),
-            transaction_id: if let Some(tid) = transaction_info.transaction_state.tid() {
+            transaction_id: if let Some(tid) = ctx.transaction_info.transaction_state.tid() {
                 // The current transaction ID.
                 tid
-            } else if let Some(tid) = transaction_info.initiators.transaction_id {
+            } else if let Some(tid) = ctx.transaction_info.initiators.transaction_id {
                 // The transaction that will start when we execute a step.
                 tid
             } else {
@@ -1248,7 +1259,7 @@ impl ControllerStatus {
                 0
             },
             commit_progress: self.global_metrics.commit_progress.lock().unwrap().clone(),
-            transaction_initiators: transaction_info.initiators.to_api_type(),
+            transaction_initiators: ctx.transaction_info.initiators.to_api_type(),
             start_time: self.global_metrics.start_time,
             incarnation_uuid: self.global_metrics.incarnation_uuid,
             initial_start_time: self.global_metrics.initial_start_time,
@@ -1262,8 +1273,8 @@ impl ControllerStatus {
                 error!("Failed to fetch process RSS");
                 0
             }),
-            memory_pressure,
-            memory_pressure_epoch,
+            memory_pressure: ctx.memory_pressure,
+            memory_pressure_epoch: ctx.memory_pressure_epoch,
             cpu_msecs: match ProcessTime::try_now() {
                 Ok(time) => time.as_duration().as_millis() as u64,
                 Err(e) => {
@@ -1308,7 +1319,7 @@ impl ControllerStatus {
                 .unwrap_or(u64::MAX),
             total_initiated_steps: self.global_metrics.total_initiated_steps(),
             total_completed_steps: self.global_metrics.total_completed_steps(),
-            pipeline_complete,
+            pipeline_complete: ctx.pipeline_complete,
         };
 
         // Convert input endpoints and sort by endpoint_name to match serialize_inputs behavior
@@ -1329,7 +1340,9 @@ impl ControllerStatus {
 
         adapter_stats::ExternalControllerStatus {
             global_metrics,
-            suspend_error: suspend_error.err(),
+            suspend_error: ctx.suspend_error.err(),
+            checkpoint_activity: Some(ctx.checkpoint_activity),
+            permanent_checkpoint_errors: ctx.permanent_checkpoint_errors,
             inputs,
             outputs,
         }

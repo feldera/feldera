@@ -83,7 +83,7 @@ use feldera_types::adapter_stats::{
     ConnectorHealth, ExternalControllerStatus, ExternalInputEndpointStatus,
     ExternalOutputEndpointStatus,
 };
-use feldera_types::checkpoint::CheckpointMetadata;
+use feldera_types::checkpoint::{CheckpointActivity, CheckpointMetadata};
 use feldera_types::coordination::{
     self, AdHocCatalog, AdHocTableType, CheckpointCoordination, Completion, StepAction, StepInputs,
     StepRequest, StepStatus, TransactionCoordination,
@@ -166,7 +166,7 @@ use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::{SqlIdentifier, canonical_identifier};
 pub use pipeline_diff::compute_pipeline_diff;
-pub use stats::{CompletionToken, ControllerStatus, InputEndpointStatus};
+pub use stats::{CompletionToken, ControllerStatus, ControllerStatusContext, InputEndpointStatus};
 
 /// Maximal number of concurrent API connections per circuit
 /// (including both input and output connections).
@@ -831,13 +831,18 @@ impl Controller {
             .map(|runtime| runtime.memory_pressure_epoch())
             .unwrap_or_default();
 
-        self.status().to_api_type(
-            self.can_suspend(),
-            self.pipeline_complete(),
-            self.inner.transaction_info.lock().unwrap().clone(),
+        let checkpoint_activity = self.checkpoint_activity();
+        let permanent_checkpoint_errors = self.permanent_suspend_errors();
+
+        self.status().to_api_type(ControllerStatusContext {
+            suspend_error: self.can_suspend(),
+            checkpoint_activity,
+            permanent_checkpoint_errors,
+            pipeline_complete: self.pipeline_complete(),
+            transaction_info: self.inner.transaction_info.lock().unwrap().clone(),
             memory_pressure,
             memory_pressure_epoch,
-        )
+        })
     }
 
     /// Returns the pipeline state.
@@ -908,6 +913,66 @@ impl Controller {
         &self,
     ) -> tokio::sync::watch::Receiver<Option<CheckpointCoordination>> {
         self.inner.checkpoint_receiver.clone()
+    }
+
+    /// Returns the time when the current checkpoint delay started, or `None`
+    /// if no checkpoint is delayed.
+    pub fn checkpoint_delay_started(&self) -> Option<DateTime<Utc>> {
+        *self.inner.checkpoint_delay_started.lock().unwrap()
+    }
+
+    /// Returns the time when the current in-progress checkpoint started
+    /// writing, or `None` if no checkpoint is in progress.
+    pub fn checkpoint_started(&self) -> Option<DateTime<Utc>> {
+        *self.inner.checkpoint_started.lock().unwrap()
+    }
+
+    /// Returns permanent suspend errors if the pipeline fundamentally cannot
+    /// checkpoint (e.g. storage not configured, unsupported input endpoint),
+    /// or `None` if checkpointing is possible.
+    pub fn permanent_suspend_errors(&self) -> Option<Vec<PermanentSuspendError>> {
+        match self.can_suspend() {
+            Err(SuspendError::Permanent(reasons)) => Some(reasons),
+            _ => None,
+        }
+    }
+
+    /// Computes the current [`CheckpointActivity`] from the coordination watch
+    /// channel and the timestamp mutexes.
+    pub fn checkpoint_activity(&self) -> CheckpointActivity {
+        let coordination = self.checkpoint_watcher().borrow().clone();
+        match coordination {
+            Some(
+                CheckpointCoordination::Delayed(reasons)
+                | CheckpointCoordination::Barriers(reasons),
+            ) => {
+                let delayed_since = self
+                    .checkpoint_delay_started()
+                    .expect("delay timestamp should be set when coordination is Delayed/Barriers");
+                CheckpointActivity::Delayed {
+                    reasons,
+                    delayed_since,
+                }
+            }
+            Some(CheckpointCoordination::Ready) => {
+                let delayed_since = self
+                    .checkpoint_delay_started()
+                    .expect("delay timestamp should be set when coordination is Ready");
+                CheckpointActivity::Delayed {
+                    reasons: vec![TemporarySuspendError::Coordination],
+                    delayed_since,
+                }
+            }
+            Some(CheckpointCoordination::InProgress) => {
+                let started_at = self
+                    .checkpoint_started()
+                    .expect("started timestamp should be set when coordination is InProgress");
+                CheckpointActivity::InProgress { started_at }
+            }
+            None | Some(CheckpointCoordination::Done) | Some(CheckpointCoordination::Error(_)) => {
+                CheckpointActivity::Idle
+            }
+        }
     }
 
     /// Returns an object for monitoring progress of transactions.
@@ -3065,12 +3130,38 @@ impl CircuitThread {
 
     /// Sets the value in `self.checkpoint_sender` to `checkpoint_coordination`,
     /// but only if that's a real change.  This suppresses lots of duplicate
-    /// sends.
+    /// sends.  Also maintains the timestamp mutexes for the HTTP-facing
+    /// `/checkpoint_status` endpoint.
     fn set_checkpoint_coordination(
         &mut self,
         checkpoint_coordination: Option<CheckpointCoordination>,
     ) {
         if *self.checkpoint_sender.borrow() != checkpoint_coordination {
+            let now = Utc::now();
+            match &checkpoint_coordination {
+                Some(
+                    CheckpointCoordination::Delayed(_)
+                    | CheckpointCoordination::Barriers(_)
+                    | CheckpointCoordination::Ready,
+                ) => {
+                    // Only set the delay start time on the first transition
+                    // into a delayed state (not on subsequent reason changes).
+                    // Ready is still "delayed" — waiting for the coordinator.
+                    let mut guard = self.controller.checkpoint_delay_started.lock().unwrap();
+                    if guard.is_none() {
+                        *guard = Some(now);
+                    }
+                }
+                Some(CheckpointCoordination::InProgress) => {
+                    *self.controller.checkpoint_delay_started.lock().unwrap() = None;
+                    *self.controller.checkpoint_started.lock().unwrap() = Some(now);
+                }
+                _ => {
+                    // None, Done, Error — clear both timestamps.
+                    *self.controller.checkpoint_delay_started.lock().unwrap() = None;
+                    *self.controller.checkpoint_started.lock().unwrap() = None;
+                }
+            }
             self.checkpoint_sender.send_replace(checkpoint_coordination);
         }
     }
@@ -5495,6 +5586,16 @@ pub struct ControllerInner {
 
     /// Is the circuit thread still restoring from a checkpoint (this includes the journal replay phase)?
     restoring: AtomicBool,
+
+    /// Wall-clock time when the checkpoint entered the Delayed or
+    /// Barriers state.  `None` means "not delayed".  Set by the circuit thread
+    /// in `set_checkpoint_coordination`, read by the HTTP thread.
+    checkpoint_delay_started: Mutex<Option<DateTime<Utc>>>,
+
+    /// Wall-clock time when the checkpoint entered the InProgress
+    /// state.  `None` means "not in progress".  Set by the circuit thread in
+    /// `set_checkpoint_coordination`, read by the HTTP thread.
+    checkpoint_started: Mutex<Option<DateTime<Utc>>>,
 }
 
 impl Drop for ControllerInner {
@@ -5567,6 +5668,8 @@ impl ControllerInner {
                 coordination_request: Mutex::new(is_multihost.then_some(StepRequest::new_idle(0))),
                 coordination_prepare_checkpoint: AtomicBool::new(false),
                 input_completion_notify: Arc::new(Notify::new()),
+                checkpoint_delay_started: Mutex::new(None),
+                checkpoint_started: Mutex::new(None),
             }
         });
 

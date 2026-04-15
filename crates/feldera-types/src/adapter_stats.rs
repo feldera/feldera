@@ -7,9 +7,10 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
+    checkpoint::CheckpointActivity,
     coordination::Step,
     memory_pressure::MemoryPressure,
-    suspend::SuspendError,
+    suspend::{PermanentSuspendError, SuspendError},
     transaction::{CommitProgressSummary, TransactionId},
 };
 
@@ -457,6 +458,14 @@ pub struct ExternalControllerStatus {
     pub global_metrics: ExternalGlobalControllerMetrics,
     /// Reason why the pipeline cannot be suspended or checkpointed (if any).
     pub suspend_error: Option<SuspendError>,
+    /// Current checkpoint activity (idle, delayed, or in-progress).
+    /// `None` when the pipeline binary predates checkpoint activity tracking.
+    pub checkpoint_activity: Option<CheckpointActivity>,
+    /// If the pipeline fundamentally cannot checkpoint (e.g. storage is not
+    /// configured, or an input endpoint does not support suspend), the reasons
+    /// are listed here.  Unlike a checkpoint failure, this means *no*
+    /// checkpoint can succeed until the pipeline configuration changes.
+    pub permanent_checkpoint_errors: Option<Vec<PermanentSuspendError>>,
     /// Input endpoint configs and metrics.
     #[schema(value_type = Vec<InputEndpointStatus>)]
     pub inputs: Vec<ExternalInputEndpointStatus>,
