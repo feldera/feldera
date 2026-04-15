@@ -42,17 +42,22 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::{Debug, Display},
     io::{Cursor, Read},
+    iter::{once, repeat_n},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicI64, Ordering},
     },
-    time::Instant,
+    thread::JoinHandle,
+    time::{Duration, Instant},
 };
 
+use crossbeam::sync::{Parker, Unparker};
 use flate2::{
     Compression,
     bufread::{GzDecoder, GzEncoder},
 };
+use itertools::Itertools;
+use memory_stats::memory_stats;
 use nix::time::{ClockId, clock_gettime};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -334,9 +339,19 @@ impl Event {
 }
 
 /// Options for capturing profile annotations.
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct CaptureOptions {
     memory_limit: Option<usize>,
+    record_rss: bool,
+}
+
+impl Default for CaptureOptions {
+    fn default() -> Self {
+        Self {
+            memory_limit: None,
+            record_rss: true,
+        }
+    }
 }
 
 impl CaptureOptions {
@@ -356,6 +371,14 @@ impl CaptureOptions {
             memory_limit,
             ..self
         }
+    }
+
+    /// Enables or disables recording the amount of memory in use (the resident
+    /// set size) during the capture.  By default, RSS is recorded every 100
+    /// milliseconds.  When this feature is enabled, capture runs a thread for
+    /// recording the data.
+    pub fn with_record_rss(self, record_rss: bool) -> Self {
+        Self { record_rss, ..self }
     }
 
     /// Starts capturing profile annotations, returning a [Capture] that can be
@@ -407,6 +430,9 @@ static CAPTURE_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(())
 /// Only one `Capture` may exist at one time.
 pub struct Capture {
     _guard: tokio::sync::MutexGuard<'static, ()>,
+    memory: Option<JoinHandle<Vec<(Timestamp, usize)>>>,
+    unparker: Unparker,
+    request_exit: Arc<AtomicBool>,
     block_limit: i64,
 }
 
@@ -421,16 +447,40 @@ impl Capture {
         let block_limit = params.memory_limit.map_or(i64::MAX, |memory_limit| {
             (memory_limit / BYTES_PER_BLOCK) as i64
         });
+        let parker = Parker::new();
+        let unparker = parker.unparker().clone();
+        let request_exit = Arc::new(AtomicBool::new(false));
+        let memory = params.record_rss.then(|| {
+            std::thread::Builder::new()
+                .name(String::from("capture-rss"))
+                .spawn({
+                    let request_exit = request_exit.clone();
+                    move || {
+                        let mut memory = Vec::new();
+                        while !request_exit.load(Ordering::Acquire) {
+                            if let Some(memory_stats) = memory_stats() {
+                                memory.push((Timestamp::now(), memory_stats.physical_mem));
+                            }
+                            parker.park_timeout(Duration::from_millis(100));
+                        }
+                        memory
+                    }
+                })
+                .expect("should be able to start a capture thread")
+        });
         FREE_BLOCKS.store(block_limit, Ordering::Relaxed);
         CAPTURING.store(true, Ordering::Release);
         Self {
             block_limit,
+            memory,
+            unparker,
+            request_exit,
             _guard: guard,
         }
     }
 
     /// Finishes recording profile annotations and returns what was recorded.
-    pub fn finish(self) -> Annotations {
+    pub fn finish(mut self) -> Annotations {
         CAPTURING.store(false, Ordering::Release);
         let remaining_blocks = FREE_BLOCKS.load(Ordering::Relaxed);
         if remaining_blocks <= 0 {
@@ -440,12 +490,10 @@ impl Capture {
             tracing::info!("marker capture used {}", HumanBytes::from(used_bytes));
         }
 
-        let all_threads = ALL_THREAD_MARKERS.lock().unwrap();
-        let mut markers = HashMap::new();
-        for thread in &*all_threads {
-            markers.insert(thread.tid, (thread.name.clone(), thread.queue.take()));
+        Annotations {
+            markers: self.take_markers(),
+            memory: self.take_memory(),
         }
-        Annotations(markers)
     }
 
     /// Aborts recording profile annotations.
@@ -464,10 +512,31 @@ impl Capture {
     pub fn is_active() -> bool {
         CAPTURING.load(Ordering::Acquire)
     }
+
+    fn take_markers(&mut self) -> HashMap<usize, (Option<String>, Blocks)> {
+        let all_threads = ALL_THREAD_MARKERS.lock().unwrap();
+        let mut markers = HashMap::new();
+        for thread in &*all_threads {
+            markers.insert(thread.tid, (thread.name.clone(), thread.queue.take()));
+        }
+        markers
+    }
+
+    fn take_memory(&mut self) -> Vec<(Timestamp, usize)> {
+        if let Some(memory) = self.memory.take() {
+            self.request_exit.store(true, Ordering::Release);
+            self.unparker.unpark();
+            memory.join().unwrap_or_default()
+        } else {
+            Default::default()
+        }
+    }
 }
 
 impl Drop for Capture {
     fn drop(&mut self) {
+        self.take_memory();
+
         // Might already have been done in [Capture::finish] but it doesn't hurt
         // to do it again (since the lock is still held).
         CAPTURING.store(false, Ordering::Release);
@@ -527,7 +596,10 @@ impl AnnotationOptions {
 /// Profile annotation data.
 ///
 /// Obtained from [Capture::finish].
-pub struct Annotations(HashMap<usize, (Option<String>, Blocks)>);
+pub struct Annotations {
+    markers: HashMap<usize, (Option<String>, Blocks)>,
+    memory: Vec<(Timestamp, usize)>,
+}
 
 impl Annotations {
     /// Applies these annotations with the given `options` to `profile`, which
@@ -598,7 +670,7 @@ impl Annotations {
             .map(|(index, category)| (category.name.clone(), index))
             .collect::<HashMap<_, _>>();
         for (category, color) in self
-            .0
+            .markers
             .values()
             .flat_map(|(_, markers)| markers.iter())
             .map(|marker| marker.category)
@@ -618,7 +690,7 @@ impl Annotations {
         for thread in &mut profile.threads {
             if let Some(tid) = &thread.tid
                 && let Ok(tid) = tid.parse::<usize>()
-                && let Some((name, markers)) = self.0.get(&tid)
+                && let Some((name, markers)) = self.markers.get(&tid)
             {
                 if let Some(name) = name {
                     thread.name = Some(name.clone());
@@ -641,6 +713,40 @@ impl Annotations {
             }
         }
 
+        if !self.memory.is_empty() {
+            profile.counters.push(RawCounter {
+                name: String::from("RSS"),
+                category: String::from("Memory"),
+                description: String::from("RSS in bytes"),
+                pid: profile.threads.first().unwrap().pid.clone(),
+                main_thread_index: 0,
+                samples: {
+                    RawCounterSamplesTable {
+                        time: self
+                            .memory
+                            .iter()
+                            .copied()
+                            .map(|(time, _rss)| time)
+                            .collect(),
+                        time_deltas: Vec::new(),
+                        number: repeat_n(0, self.memory.len()).collect(),
+                        count: once(self.memory[0].1 as i64)
+                            .chain(
+                                self.memory
+                                    .iter()
+                                    .map(|(_time, rss)| *rss as i64)
+                                    .tuple_windows()
+                                    .map(|(prev, next)| next - prev),
+                            )
+                            .collect(),
+                        length: self.memory.len(),
+                        other: Default::default(),
+                    }
+                },
+                other: Default::default(),
+            });
+        }
+
         // Produce the output, gzipping it if the input was gzipped.
         let output = serde_json::to_vec(&profile).unwrap();
         let output = if gzip {
@@ -660,6 +766,8 @@ impl Annotations {
         struct Profile {
             meta: Meta,
             threads: Vec<Thread>,
+            #[serde(default)]
+            counters: Vec<RawCounter>,
             shared: Shared,
             #[serde(flatten)]
             other: HashMap<String, Value>,
@@ -693,6 +801,7 @@ impl Annotations {
             #[serde(default)]
             markers: ProfileMarkers,
             tid: Option<String>,
+            pid: String,
             #[serde(flatten)]
             other: HashMap<String, Value>,
         }
@@ -731,6 +840,34 @@ impl Annotations {
                 self.string_array.push(name.into());
                 index
             }
+        }
+
+        #[derive(Default, Debug, Serialize, Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct RawCounter {
+            name: String,
+            category: String,
+            description: String,
+            pid: String,
+            main_thread_index: usize,
+            samples: RawCounterSamplesTable,
+            #[serde(flatten)]
+            other: HashMap<String, Value>,
+        }
+
+        #[derive(Default, Debug, Serialize, Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct RawCounterSamplesTable {
+            #[serde(default, skip_serializing_if = "Vec::is_empty")]
+            time: Vec<Timestamp>,
+            #[serde(default, skip_serializing_if = "Vec::is_empty")]
+            time_deltas: Vec<Timestamp>,
+            #[serde(default, skip_serializing_if = "Vec::is_empty")]
+            number: Vec<usize>,
+            count: Vec<i64>,
+            length: usize,
+            #[serde(flatten)]
+            other: HashMap<String, Value>,
         }
     }
 }
