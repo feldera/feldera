@@ -21,23 +21,23 @@ class TestPipelineStateManager(unittest.TestCase):
         views = self.manager.get_views("test_pipe")
         self.assertIn("stats", views)
 
-    def test_remove_table(self):
+    def test_remove_table_if_exists(self):
         self.manager.register_table("pipe", "t1", "CREATE TABLE t1 (id INT);")
-        self.manager.remove_table("pipe", "t1")
+        self.manager.remove_table_if_exists("pipe", "t1")
         tables = self.manager.get_tables("pipe")
         self.assertNotIn("t1", tables)
 
-    def test_remove_view(self):
+    def test_remove_view_if_exists(self):
         self.manager.register_view("pipe", "v1", "CREATE VIEW v1 AS SELECT 1;")
-        self.manager.remove_view("pipe", "v1")
+        self.manager.remove_view_if_exists("pipe", "v1")
         views = self.manager.get_views("pipe")
         self.assertNotIn("v1", views)
 
     def test_remove_nonexistent_is_noop(self):
         """Removing a non-existent item should not raise or affect other state."""
         self.manager.register_table("pipe", "keep_me", "CREATE TABLE keep_me (id INT);")
-        self.manager.remove_table("pipe", "nonexistent")
-        self.manager.remove_view("pipe", "nonexistent")
+        self.manager.remove_table_if_exists("pipe", "nonexistent")
+        self.manager.remove_view_if_exists("pipe", "nonexistent")
         tables = self.manager.get_tables("pipe")
         self.assertEqual(len(tables), 1)
         self.assertIn("keep_me", tables)
@@ -105,12 +105,11 @@ class TestPipelineStateManager(unittest.TestCase):
         self.assertIn("(a INT)", tables_a["t1"])
         self.assertIn("(b INT)", tables_b["t1"])
 
-    def test_overwrite_table(self):
-        """Re-registering a table should overwrite the previous DDL."""
+    def test_duplicate_table_raises(self):
+        """Re-registering a table in the same pipeline raises ValueError."""
         self.manager.register_table("pipe", "t1", "CREATE TABLE t1 (id INT)")
-        self.manager.register_table("pipe", "t1", "CREATE TABLE t1 (id BIGINT)")
-        tables = self.manager.get_tables("pipe")
-        self.assertIn("BIGINT", tables["t1"])
+        with self.assertRaises(ValueError):
+            self.manager.register_table("pipe", "t1", "CREATE TABLE t1 (id BIGINT)")
 
     def test_thread_safety(self):
         """Concurrent registrations should not corrupt state."""
@@ -151,7 +150,7 @@ class TestPipelineStateManagerRename(unittest.TestCase):
         # Simulate the rename performed by the adapter
         old_ddl = self.manager.get_tables("pipe")["old_tbl"]
         new_ddl = old_ddl.replace("old_tbl", "new_tbl")
-        self.manager.remove_table("pipe", "old_tbl")
+        self.manager.remove_table_if_exists("pipe", "old_tbl")
         self.manager.register_table("pipe", "new_tbl", new_ddl)
 
         tables = self.manager.get_tables("pipe")
@@ -164,7 +163,7 @@ class TestPipelineStateManagerRename(unittest.TestCase):
         self.manager.register_view("pipe", "old_view", "CREATE VIEW old_view AS SELECT 1;")
         old_ddl = self.manager.get_views("pipe")["old_view"]
         new_ddl = old_ddl.replace("old_view", "new_view")
-        self.manager.remove_view("pipe", "old_view")
+        self.manager.remove_view_if_exists("pipe", "old_view")
         self.manager.register_view("pipe", "new_view", new_ddl)
 
         views = self.manager.get_views("pipe")

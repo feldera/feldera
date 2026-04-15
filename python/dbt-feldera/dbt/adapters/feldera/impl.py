@@ -239,8 +239,8 @@ class FelderaAdapter(BaseAdapter):
         """
         pipeline_name = self._get_pipeline_name(relation.schema)
         name = relation.identifier
-        _pipeline_state.remove_table(pipeline_name, name)
-        _pipeline_state.remove_view(pipeline_name, name)
+        _pipeline_state.remove_table_if_exists(pipeline_name, name)
+        _pipeline_state.remove_view_if_exists(pipeline_name, name)
         logger.debug("Dropped relation '%s' from pipeline '%s'", name, pipeline_name)
 
     def truncate_relation(self, relation: FelderaRelation) -> None:

@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 #
 _TYPE_SCAN_LIMIT = 50
 
+#: Numeric type ordering for widening.  Lower rank = narrower type.
+#: Used by :meth:`FelderaCursor._widen_type` to resolve mixed-type columns.
+_NUMERIC_RANK: dict[str, int] = {"INTEGER": 0, "DECIMAL": 1, "DOUBLE": 2}
+
 
 class ColumnDescription(NamedTuple):
     """
@@ -137,33 +141,62 @@ class FelderaCursor:
     def _infer_column_types(self) -> List[Optional[str]]:
         """Infer SQL type names from Python values in the result set.
 
-        Scans up to :data:`_TYPE_SCAN_LIMIT` rows so that a leading
-        ``None`` doesn't hide the real type.  Handles ``Decimal`` values
-        returned by the Feldera SDK (``json.loads(..., parse_float=Decimal)``).
+        Scans up to :data:`_TYPE_SCAN_LIMIT` rows and applies type
+        widening within the numeric family (INTEGER < DECIMAL < DOUBLE).
+        Cross-family conflicts (e.g., BOOLEAN vs INTEGER) resolve to
+        ``None`` (unknown) rather than claiming an incorrect type.
+
+        Handles ``Decimal`` values returned by the Feldera SDK
+        (``json.loads(..., parse_float=Decimal)``).
         """
         if not self._results or not self._columns:
             return [None] * len(self._columns) if self._columns else []
 
         types: List[Optional[str]] = [None] * len(self._columns)
-        resolved = 0
-        target = len(self._columns)
 
         for row in self._results[:_TYPE_SCAN_LIMIT]:
-            if resolved >= target:
-                break
             for idx, col in enumerate(self._columns):
-                if types[idx] is not None:
-                    continue
                 val = row.get(col)
                 inferred = self._python_type_to_sql(val)
                 if inferred is not None:
-                    types[idx] = inferred
-                    resolved += 1
+                    types[idx] = self._widen_type(types[idx], inferred)
         return types
 
     @staticmethod
+    def _widen_type(current: Optional[str], new: Optional[str]) -> Optional[str]:
+        """Return the wider of two SQL types per the numeric type lattice.
+
+        Numeric types widen: INTEGER → DECIMAL → DOUBLE.
+        Identical types are preserved.  Cross-family mismatches (e.g.,
+        BOOLEAN vs INTEGER, ARRAY vs MAP) resolve to ``None`` because
+        claiming an incorrect type would mislead dbt contract checks.
+        """
+        if new is None:
+            return current
+        if current is None:
+            return new
+        if current == new:
+            return current
+
+        cur_rank = _NUMERIC_RANK.get(current)
+        new_rank = _NUMERIC_RANK.get(new)
+        if cur_rank is not None and new_rank is not None:
+            return current if cur_rank >= new_rank else new
+
+        # Cross-family conflict — no safe common type.
+        return None
+
+    @staticmethod
     def _python_type_to_sql(val: object) -> Optional[str]:
-        """Map a Python value to a Feldera SQL type name, or ``None``."""
+        """Map a Python value to a Feldera SQL type name, or ``None``.
+
+        .. note::
+            Both ROW and MAP deserialize as Python ``dict``.  Distinguishing
+            them requires schema-level type information from the pipeline
+            (ROW keys are fixed strings with heterogeneous value types;
+            MAP keys can be arbitrary types).  ``MAP`` is used as the safe
+            default for all dicts.
+        """
         if val is None:
             return None
         if isinstance(val, bool):

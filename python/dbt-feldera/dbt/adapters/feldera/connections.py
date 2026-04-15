@@ -132,6 +132,15 @@ class FelderaConnectionManager(BaseConnectionManager):
 
         Required by dbt's seed materialization (``load_csv_rows``).
 
+        The SQL is routed through :class:`FelderaCursor`, which classifies the
+        statement intent and dispatches accordingly:
+
+        * **DDL / ingress** — captured by the pipeline state manager for the
+          next continuous pipeline deployment.
+
+        * **SELECT / ad-hoc** — executed against the DataFusion ad-hoc query
+          engine on a running pipeline.
+
         :param sql: The SQL to execute.
         :param auto_begin: Currently ignored.
         :param bindings: Optional bindings (not used).
