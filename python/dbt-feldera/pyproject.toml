@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "dbt-feldera"
 readme = "README.md"
 description = "The dbt adapter for Feldera — DBSP-native incremental view maintenance"
-version = "0.277.0"
+version = "0.288.0"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
