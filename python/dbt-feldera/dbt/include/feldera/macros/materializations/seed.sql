@@ -2,7 +2,7 @@
     Feldera seed macro overrides.
 
     Feldera seeds work differently from traditional databases:
-    - A CREATE TABLE DDL is registered with the pipeline state manager
+    - A CREATE TABLE DDL is sent to the pipeline state manager
     - Deployment (compilation + start) is deferred until the on-run-end hook
     - After the pipeline is running, seed data is pushed via HTTP ingress
 
@@ -32,7 +32,7 @@
         )
     {%- endset -%}
 
-    {# Register the table DDL — deployment is deferred to on-run-end #}
+    {# Send the table DDL to the pipeline state manager — deployment is deferred to on-run-end #}
     {{ adapter.register_table(pipeline_name, table_name, table_sql) }}
 
     {{ return(table_sql) }}
