@@ -76,7 +76,7 @@ cd "${PROJECT_DIR}"
 export DBT_PROFILES_DIR="${PROJECT_DIR}"
 
 echo ""
-echo "[4/6] Running dbt debug..."
+echo "[4/6] Running dbt debug to confirm connectivity..."
 dbt debug --target "${TARGET}"
 
 echo ""

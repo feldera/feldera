@@ -4,7 +4,7 @@
     Feldera does not support the ``incremental`` materialization because all
     views in Feldera are natively maintained incrementally by the DBSP engine.
 
-    Use ``materialized='view'`` with ``materialized_view=true`` instead.
+    Use ``materialized='view'`` with ``stored=true`` instead.
 #}
 {% materialization incremental, adapter='feldera' %}
     {# Feldera does not need a separate incremental materialization because
@@ -17,9 +17,9 @@
         because all views in Feldera are natively maintained incrementally
         by the DBSP engine.
 
-        Use materialized='view' with materialized_view=true instead:
+        Use materialized='view' with stored=true instead:
 
-            {{ config(materialized='view', materialized_view=true) }}
+            {{ config(materialized='view', stored=true) }}
 
         See: https://docs.feldera.com/sql/materialized
         """

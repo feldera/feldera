@@ -89,7 +89,7 @@ query.
 | `schema`                      | Pipeline name     | Each dbt schema maps to one [Feldera pipeline](https://docs.feldera.com/pipelines) (a continuously running SQL program)           |
 | `table` materialization       | Input table       | External data source (Kafka, HTTP, S3)                                                                                            |
 | `view` materialization        | View              | SQL view inside the continuous pipeline (all views are incrementally maintained)                                                  |
-| `view` + `materialized_view`  | Materialized view | Queryable via [ad-hoc queries](https://docs.feldera.com/sql/ad-hoc); supports output connectors                                   |
+| `view` + `stored: true`       | Materialized view | Queryable via [ad-hoc queries](https://docs.feldera.com/sql/ad-hoc); supports output connectors                                   |
 | `seed`                        | Table + HTTP push | Schema registered, data pushed via HTTP ingress                                                                                   |
 
 ### Configuration options
@@ -119,7 +119,7 @@ FROM {{ ref('orders') }} o
 JOIN {{ ref('customers') }} c ON o.customer_id = c.id
 ```
 
-Set `materialized_view: true` or attach `connectors` to promote to a
+Set `stored: true` or attach `connectors` to promote to a
 `CREATE MATERIALIZED VIEW` — a view backed by persistent storage, enabling
 ad-hoc queries and output connectors:
 
@@ -127,7 +127,7 @@ ad-hoc queries and output connectors:
 -- models/sales_summary.sql
 {{ config(
     materialized='view',
-    materialized_view=true,
+    stored=true,
     connectors=[{'transport': {'name': 'my_delta_connector'}}]
 ) }}
 
@@ -144,7 +144,7 @@ GROUP BY region, product_category
 > Every view in Feldera is automatically incrementally maintained by the DBSP
 > engine. When inputs change, only affected output rows are recomputed — no
 > watermarks, merge logic, or special configuration required. The
-> `materialized_view` flag controls only whether the view's state is
+> `stored` flag controls only whether the view's state is
 > **queryable** (via ad-hoc queries) and can drive output connectors; it does
 > **not** change how the view is computed.
 
@@ -186,10 +186,10 @@ created_at TIMESTAMP NOT NULL
 > **all** views in Feldera are natively maintained incrementally by the DBSP
 > engine.
 >
-> Use `materialized='view'` with `materialized_view=true` instead:
+> Use `materialized='view'` with `stored=true` instead:
 >
 > ```sql
-> {{ config(materialized='view', materialized_view=true) }}
+> {{ config(materialized='view', stored=true) }}
 > ```
 
 ### `streaming_pipeline` — Full pipeline as a single model
@@ -235,7 +235,7 @@ dbt seed --full-refresh # stop, clear storage, redeploy, then push
 | Materialization                    | Feldera SQL                | Best for                                                                    |
 | ---------------------------------- | -------------------------- | --------------------------------------------------------------------------- |
 | `view`                             | `CREATE VIEW`              | Incrementally maintained intermediate transforms                            |
-| `view` + `materialized_view: true` | `CREATE MATERIALIZED VIEW` | Queryable outputs, output connectors                                        |
+| `view` + `stored: true`            | `CREATE MATERIALIZED VIEW` | Queryable outputs, output connectors                                        |
 | `table`                            | `CREATE TABLE`             | External input sources (Kafka, S3, HTTP)                                    |
 | `streaming_pipeline`               | Full program               | Multi-table/view pipelines as a single unit                                 |
 | `seed`                             | `CREATE TABLE` + data push | Small reference datasets (HTTP ingress; any connector can also be attached) |
