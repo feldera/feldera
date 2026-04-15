@@ -32,7 +32,7 @@
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
   import TransactionStatus from './performance/TransactionStatus.svelte'
 
-  const formatQty = (v: number) => format(',.0f')(v)
+  const formatQty = (v: number) => (typeof v === "number" && Number.isFinite(v) ? format(',.0f')(v) : 'unknown')
 
   const {
     pipeline,
