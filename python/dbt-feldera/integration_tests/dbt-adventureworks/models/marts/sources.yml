@@ -1,0 +1,44 @@
+version: 2
+
+sources:
+  - name: adventureworks_seed
+    description: "Seed data for the AdventureWorks project (loaded via dbt seed)"
+    schema: adventureworks
+    tables:
+      # Date
+      - name: calendar_date
+        description: "Date dimension seed data"
+
+      # Person
+      - name: address
+        description: "Address seed data"
+      - name: countryregion
+        description: "Country/Region seed data"
+      - name: person
+        description: "Person seed data"
+      - name: stateprovince
+        description: "State/Province seed data"
+
+      # Production
+      - name: product
+        description: "Product seed data"
+      - name: productcategory
+        description: "Product category seed data"
+      - name: productsubcategory
+        description: "Product subcategory seed data"
+
+      # Sales
+      - name: creditcard
+        description: "Credit card seed data"
+      - name: customer
+        description: "Customer seed data"
+      - name: salesorderdetail
+        description: "Sales order detail seed data"
+      - name: salesorderheader
+        description: "Sales order header seed data"
+      - name: salesorderheadersalesreason
+        description: "Sales order header sales reason seed data"
+      - name: salesreason
+        description: "Sales reason seed data"
+      - name: store
+        description: "Store seed data"
