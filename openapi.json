@@ -11148,7 +11148,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "The names of the extra columns in the Postgres table that are not part of the view schema.\n\nThese connector can write user-defined values, configured using the `set_extra_columns` command,\nto these columns."
+                "description": "The names of the extra columns in the Postgres table that are not part of the view schema.\n\nThese connector can write user-defined values, configured using the `set_extra_columns` connector command,\nto these columns."
               },
               "max_buffer_size_bytes": {
                 "type": "integer",
