@@ -89,7 +89,7 @@ query.
 | `schema`                      | Pipeline name     | Each dbt schema maps to one [Feldera pipeline](https://docs.feldera.com/pipelines) (a continuously running SQL program)           |
 | `table` materialization       | Input table       | External data source (Kafka, HTTP, S3)                                                                                            |
 | `view` materialization        | View              | SQL view inside the continuous pipeline (all views are incrementally maintained)                                                  |
-| `view` + `stored: true`       | Materialized view | Queryable via [ad-hoc queries](https://docs.feldera.com/sql/ad-hoc); supports output connectors                                   |
+| `view` + `stored: true`       | Materialized view | Queryable via [ad-hoc queries](https://docs.feldera.com/sql/ad-hoc)                                                               |
 | `seed`                        | Table + HTTP push | Schema registered, data pushed via HTTP ingress                                                                                   |
 
 ### Configuration options
@@ -119,9 +119,8 @@ FROM {{ ref('orders') }} o
 JOIN {{ ref('customers') }} c ON o.customer_id = c.id
 ```
 
-Set `stored: true` or attach `connectors` to promote to a
-`CREATE MATERIALIZED VIEW` — a view backed by persistent storage, enabling
-ad-hoc queries and output connectors:
+Set `stored: true` to promote to a `CREATE MATERIALIZED VIEW` — a view backed
+by persistent storage, enabling ad-hoc queries:
 
 ```sql
 -- models/sales_summary.sql
@@ -145,8 +144,8 @@ GROUP BY region, product_category
 > engine. When inputs change, only affected output rows are recomputed — no
 > watermarks, merge logic, or special configuration required. The
 > `stored` flag controls only whether the view's state is
-> **queryable** (via ad-hoc queries) and can drive output connectors; it does
-> **not** change how the view is computed.
+> **queryable** (via ad-hoc queries); it does **not** change how the view is
+> computed.
 
 On `--full-refresh`, the pipeline is stopped, all stored state (including
 connector offsets) is cleared, and the pipeline is redeployed from scratch.
@@ -235,7 +234,7 @@ dbt seed --full-refresh # stop, clear storage, redeploy, then push
 | Materialization                    | Feldera SQL                | Best for                                                                    |
 | ---------------------------------- | -------------------------- | --------------------------------------------------------------------------- |
 | `view`                             | `CREATE VIEW`              | Incrementally maintained intermediate transforms                            |
-| `view` + `stored: true`            | `CREATE MATERIALIZED VIEW` | Queryable outputs, output connectors                                        |
+| `view` + `stored: true`            | `CREATE MATERIALIZED VIEW` | Queryable outputs                                                           |
 | `table`                            | `CREATE TABLE`             | External input sources (Kafka, S3, HTTP)                                    |
 | `streaming_pipeline`               | Full program               | Multi-table/view pipelines as a single unit                                 |
 | `seed`                             | `CREATE TABLE` + data push | Small reference datasets (HTTP ingress; any connector can also be attached) |
