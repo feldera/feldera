@@ -113,6 +113,10 @@ jobs:
         run: |
           sed -i "s/version = \"${{ env.CURRENT_VERSION }}\"/version = \"${{ env.NEXT_VERSION }}\"/g" pyproject.toml
           sed -i "s/version: '${{ env.CURRENT_VERSION }}'/version: '${{ env.NEXT_VERSION }}'/g" dbt/include/feldera/dbt_project.yml
+      - name: Adjust sql compiler version
+        working-directory: ./sql-to-dbsp-compiler/SQL-compiler
+        run: |
+          sed -i "s|<project.version>${{ env.CURRENT_VERSION }}|<project.version>${{ env.NEXT_VERSION }}|g" pom.xml
       - name: List changes
         run: |
           git diff

@@ -115,6 +115,8 @@ Usage: sql-to-dbsp [options] Input file to compile
     --unaryPlusNoop
       Compile unary plus into a no-operation; similar to sqlite
       Default: false
+    --version
+      Print compiler version
     -O
       Optimization level (0, 1, or 2)
       Default: 2

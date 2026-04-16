@@ -57,6 +57,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.SQLException;
 import java.util.Map;
+import java.util.Properties;
 
 /** Main entry point of the SQL compiler. */
 public class CompilerMain {
@@ -67,13 +68,33 @@ public class CompilerMain {
     }
 
     void usage(JCommander commander) {
-        // JCommander mistakenly prints this as default value
-        // if it manages to parse it partially.
-        // this.options.ioOptions.loggingLevel.clear();
         commander.usage();
     }
 
-    int parseOptions(String[] argv) {
+    String getVersion() {
+        Properties props = new Properties();
+        try (InputStream input = CompilerMain.class.getResourceAsStream("/version.properties")) {
+            props.load(input);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        return props.getProperty("version", "unknown");
+    }
+
+    void showVersion() {
+        System.out.println("SQL to DBSP compiler version " + this.getVersion());
+    }
+
+    public enum ParseResult {
+        /** Error while parsing options */
+        Error,
+        /** Parsed options ok, continue compilation */
+        OkContinue,
+        /** Parsed options ok, stop compilation */
+        OkStop
+    }
+
+    ParseResult parseOptions(String[] argv) {
         JCommander commander = JCommander.newBuilder()
                 .addObject(this.options)
                 .build();
@@ -87,11 +108,15 @@ public class CompilerMain {
                 }
             }
             System.err.println(ex.getMessage());
-            return 1;
+            return ParseResult.Error;
         }
         if (this.options.help) {
             this.usage(commander);
-            return 1;
+            return ParseResult.OkStop;
+        }
+        if (this.options.ioOptions.showVersion) {
+            this.showVersion();
+            return ParseResult.OkStop;
         }
 
         for (Map.Entry<String, String> entry: options.ioOptions.loggingLevel.entrySet()) {
@@ -100,11 +125,11 @@ public class CompilerMain {
                 Logger.INSTANCE.setLoggingLevel(entry.getKey(), level);
             } catch (NumberFormatException ex) {
                 System.err.println("-T option must be followed by 'class=number'; could not parse " + entry);
-                return 1;
+                return ParseResult.Error;
             }
         }
 
-        return 0;
+        return ParseResult.OkContinue;
     }
 
     PrintStream getOutputStream() throws IOException {
@@ -277,15 +302,17 @@ public class CompilerMain {
 
     public static Pair<CompilerMessages, CompilerOptions> run(String... argv) throws SQLException {
         CompilerMain main = new CompilerMain();
-        int exitCode = main.parseOptions(argv);
+        var parseResult = main.parseOptions(argv);
         CompilerOptions options = main.options;
-        if (exitCode != 0) {
+        if (parseResult != ParseResult.OkContinue) {
             // return empty messages
             CompilerMessages result = new CompilerMessages(new DBSPCompiler(new CompilerOptions()));
+            int exitCode = parseResult == ParseResult.Error ? 1 : 0;
             result.setExitCode(exitCode);
             return new Pair<>(result, options);
         }
-        return new Pair<>(main.run(), options);
+        var messages = main.run();
+        return new Pair<>(messages, options);
     }
 
     public static CompilerMessages execute(String... argv) throws SQLException {

@@ -226,6 +226,8 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
 
         // Used only for internal testing
         public boolean nowStream = true;
+        @Parameter(names = "--version", description = "Print compiler version", help = true)
+        public boolean showVersion = false;
 
         /** Only compare fields that matter. */
         public boolean same(IO other) {

@@ -31,6 +31,7 @@ import org.junit.Test;
 import javax.sql.DataSource;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -150,6 +151,18 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMain.runAndReportErrors("--noRust", file.getPath(), "--errors", errorFile.getPath());
         String str = Utilities.readFile(errorFile.getPath());
         Assert.assertTrue(str.contains("Error parsing SQL"));
+    }
+
+    @Test
+    public void issue4626() throws SQLException {
+        PrintStream savedOut = System.out;
+        ByteArrayOutputStream capture = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(capture));
+        var result = CompilerMain.run("--version");
+        System.setOut(savedOut);
+        Assert.assertEquals(0, result.left.exitCode);
+        String str = capture.toString();
+        Assert.assertTrue(str.contains("SQL to DBSP compiler version"));
     }
 
     @Test
@@ -1280,6 +1293,8 @@ public class MetadataTests extends BaseSQLTests {
                     --unaryPlusNoop
                       Compile unary plus into a no-operation; similar to sqlite
                       Default: false
+                    --version
+                      Print compiler version
                     -O
                       Optimization level (0, 1, or 2)
                       Default: 2
