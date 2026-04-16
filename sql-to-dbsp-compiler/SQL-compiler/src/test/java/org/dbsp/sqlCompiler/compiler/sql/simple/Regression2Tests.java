@@ -318,10 +318,10 @@ public class Regression2Tests extends SqlIoTest {
                 SET T = 1;
                 CREATE TABLE T(x INT);
                 CREATE VIEW V AS SELECT * FROM t;""");
-        ccs.step("INSERT INTO T VALUES (1)", """
-                 x | weight
-                ------------
-                 1 | 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES (1)", """
+                 x
+                ---
+                 1""");
         Assert.assertEquals(1, ccs.compiler.messages.messages.size());
         Assert.assertTrue(ccs.compiler.messages.getMessage(0).toString().contains(
                 "warning: Unknown setting: Variable 't' does not control any known settings"));
@@ -353,10 +353,10 @@ public class Regression2Tests extends SqlIoTest {
             }
         });
 
-        ccs.step("INSERT INTO T VALUES(1), (2);", """
-                 min | weight
-                --------------
-                 1   | 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(1), (2);", """
+                 min
+                -----
+                 1""");
     }
 
     @Test
@@ -390,10 +390,10 @@ public class Regression2Tests extends SqlIoTest {
             }
         });
 
-        ccs.step("INSERT INTO T VALUES(1), (2);", """
-                 a | weight
-                --------------
-                 { 1, 2 } | 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(1), (2);", """
+                     a
+                ---------
+                 { 1, 2 }""");
     }
 
     @Test
@@ -427,10 +427,10 @@ public class Regression2Tests extends SqlIoTest {
             }
         });
 
-        ccs.step("INSERT INTO T VALUES(ROW(ROW(1, 2))), (ROW(ROW(3, 4)));", """
-                 min      | weight
-                -------------------
-                 { 1, 2 } | 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ROW(ROW(1, 2))), (ROW(ROW(3, 4)));", """
+                 min
+                ----------
+                 { 1, 2 }""");
     }
 
     @Test
@@ -456,11 +456,11 @@ public class Regression2Tests extends SqlIoTest {
             }
         });
 
-        ccs.step("INSERT INTO T VALUES(1, 2, 2), (2, 3, 2), (3, 0, 1);", """
-                 sum | y | weight
-                --------------
-                  3  | 2 | 1
-                  3  | 1 | 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(1, 2, 2), (2, 3, 2), (3, 0, 1);", """
+                 sum | y
+                ---------
+                  3  | 2
+                  3  | 1""");
         TestUtil.assertMessagesContain(compiler, "Column 'z' of table 't' is unused");
     }
 
@@ -651,7 +651,7 @@ public class Regression2Tests extends SqlIoTest {
                   ORDER BY buyer LIMIT 10
                 )) FROM auctions;""");
         // Output validated using postgres
-        ccs.step("""
+        ccs.stepWeightOne("""
                 INSERT INTO auctions (id, seller, item) VALUES
                   (1, 101, 'Vintage Camera'),
                   (2, 102, 'Mountain Bike'),
@@ -676,13 +676,13 @@ public class Regression2Tests extends SqlIoTest {
                 
                   -- Auction 5 intentionally has no bids
                   (12, 212, 2, 360);  -- extra competing bid on auction 2""", """
-                 id | arr                    | weight
-                ----------------------------------------
-                 1  | { 201, 202, 203 }      | 1
-                 2  | { 204, 205, 212 }      | 1
-                 3  | { 206, 207, 208, 209 } | 1
-                 4  | { 210, 211 }           | 1
-                 5  | NULL                   | 1""");
+                 id | arr
+                ----------------------------
+                 1  | { 201, 202, 203 }
+                 2  | { 204, 205, 212 }
+                 3  | { 206, 207, 208, 209 }
+                 4  | { 210, 211 }
+                 5  | NULL""");
     }
 
     @Test @Ignore("https://github.com/feldera/feldera/issues/2555")
@@ -867,11 +867,11 @@ public class Regression2Tests extends SqlIoTest {
                 CREATE TABLE E(hire_date DATE);
                 CREATE VIEW Q AS
                 SELECT DATE_TRUNC(hire_date, QUARTER) FROM E;""");
-        ccs.step("INSERT INTO E VALUES (DATE '2020-02-01') , (DATE '2020-05-01')", """
-                 trunc | weight
-                ----------------
-                 2020-01-01 | 1
-                 2020-04-01 | 1""");
+        ccs.stepWeightOne("INSERT INTO E VALUES (DATE '2020-02-01') , (DATE '2020-05-01')", """
+                 trunc
+                -------
+                 2020-01-01
+                 2020-04-01""");
     }
 
     @Test
@@ -927,5 +927,21 @@ public class Regression2Tests extends SqlIoTest {
                  r
                 ----
                  12""");
+    }
+
+    @Test
+    public void issue5036() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x DECIMAL(10, 2));
+                CREATE VIEW V AS SELECT CASE
+                    WHEN x < 0 THEN ROUND(
+                        CAST(1 AS DECIMAL) / CAST(ABS(x) AS DECIMAL (9, 5)),
+                        5)
+                    WHEN x > 0 THEN x
+                END FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(0.0);", """
+                 x
+                ---
+                NULL""");
     }
 }
