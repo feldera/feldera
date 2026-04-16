@@ -107,8 +107,8 @@ impl Serialize for Timestamp {
     where
         S: serde::Serializer,
     {
-        let microseconds = self.0 as f64 / 1_000_000.0;
-        microseconds.serialize(serializer)
+        let milliseconds = self.0 as f64 / 1_000_000.0;
+        milliseconds.serialize(serializer)
     }
 }
 
@@ -117,8 +117,8 @@ impl<'de> Deserialize<'de> for Timestamp {
     where
         D: serde::Deserializer<'de>,
     {
-        let microseconds = f64::deserialize(deserializer)?;
-        Ok(Self((microseconds * 1_000_000.0) as i64))
+        let milliseconds = f64::deserialize(deserializer)?;
+        Ok(Self((milliseconds * 1_000_000.0) as i64))
     }
 }
 
