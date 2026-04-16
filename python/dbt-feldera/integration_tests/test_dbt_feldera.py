@@ -28,8 +28,7 @@ import urllib.request
 from pathlib import Path
 
 import pytest
-
-from docker_manager import DockerManager, PROJECT_NAME, Service
+from docker_manager import PROJECT_NAME, DockerManager, Service
 
 logger = logging.getLogger(__name__)
 _ADAPTER_ROOT = str(Path(__file__).resolve().parent.parent)
@@ -233,15 +232,13 @@ def _ensure_kafka_topic(topic: str, kafka_proxy_url: str) -> None:
         container_logs = f"(failed to retrieve container logs: {exc})"
 
     logger.error(
-        "Failed to verify Kafka topic '%s' after %d attempts.\n"
-        "--- Redpanda container logs (last 100 lines) ---\n%s",
+        "Failed to verify Kafka topic '%s' after %d attempts.\n--- Redpanda container logs (last 100 lines) ---\n%s",
         topic,
         max_attempts,
         container_logs,
     )
     raise RuntimeError(
-        f"Kafka topic '{topic}' could not be created or verified. "
-        f"See Redpanda container logs above for details."
+        f"Kafka topic '{topic}' could not be created or verified. See Redpanda container logs above for details."
     )
 
 
@@ -488,8 +485,12 @@ class TestDbtFelderaIntegration:
         expected_fct_net = pre_fct_net + len(kafka_batch_1)
         expected_obt_net = pre_obt_net + len(kafka_batch_1)
 
-        actual_fct_net = docker_duckdb.wait_for_net_count("fct_sales", expected_fct_net, timeout=_DUCKDB_TIMEOUT_SECONDS)
-        actual_obt_net = docker_duckdb.wait_for_net_count("obt_sales", expected_obt_net, timeout=_DUCKDB_TIMEOUT_SECONDS)
+        actual_fct_net = docker_duckdb.wait_for_net_count(
+            "fct_sales", expected_fct_net, timeout=_DUCKDB_TIMEOUT_SECONDS
+        )
+        actual_obt_net = docker_duckdb.wait_for_net_count(
+            "obt_sales", expected_obt_net, timeout=_DUCKDB_TIMEOUT_SECONDS
+        )
 
         assert actual_fct_net == expected_fct_net, (
             f"fct_sales: expected {expected_fct_net} net rows, got {actual_fct_net}"
@@ -554,8 +555,12 @@ class TestDbtFelderaIntegration:
         expected_fct_net = pre_fct_net + len(kafka_batch_2)
         expected_obt_net = pre_obt_net + len(kafka_batch_2)
 
-        actual_fct_net = docker_duckdb.wait_for_net_count("fct_sales", expected_fct_net, timeout=_DUCKDB_TIMEOUT_SECONDS)
-        actual_obt_net = docker_duckdb.wait_for_net_count("obt_sales", expected_obt_net, timeout=_DUCKDB_TIMEOUT_SECONDS)
+        actual_fct_net = docker_duckdb.wait_for_net_count(
+            "fct_sales", expected_fct_net, timeout=_DUCKDB_TIMEOUT_SECONDS
+        )
+        actual_obt_net = docker_duckdb.wait_for_net_count(
+            "obt_sales", expected_obt_net, timeout=_DUCKDB_TIMEOUT_SECONDS
+        )
 
         assert actual_fct_net == expected_fct_net, (
             f"fct_sales: expected {expected_fct_net} net rows, got {actual_fct_net}"

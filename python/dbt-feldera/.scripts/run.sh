@@ -64,8 +64,8 @@ ensure_venv() {
 
 run_venv()             { create_venv; }
 run_build()            { ensure_venv; cd "${PROJECT_DIR}"; rm -rf dist/; uv build --wheel 2>&1 | tail -5; echo "  Built: $(ls dist/*.whl)"; }
-run_fix()              { ensure_venv; cd "${PROJECT_DIR}"; uv run ruff check --fix dbt/ tests/; uv run ruff format dbt/ tests/; }
-run_lint()             { ensure_venv; cd "${PROJECT_DIR}"; uv run ruff check dbt/ tests/; uv run ruff format --check dbt/ tests/; }
+run_fix()              { ensure_venv; cd "${PROJECT_DIR}"; uv run ruff check --fix dbt/ tests/ integration_tests/; uv run ruff format dbt/ tests/ integration_tests/; }
+run_lint()             { ensure_venv; cd "${PROJECT_DIR}"; uv run ruff check dbt/ tests/ integration_tests/; uv run ruff format --check dbt/ tests/ integration_tests/; }
 run_unit_test()        { ensure_venv; cd "${PROJECT_DIR}"; uv run pytest tests/ -vv; }
 
 run_seed_ci() {

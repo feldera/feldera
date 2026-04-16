@@ -12,11 +12,12 @@ import time
 from pathlib import Path
 from typing import Any
 
+from docker_manager import PROJECT_NAME, Service
+
 logger = logging.getLogger(__name__)
 
 DELTA_ROOT = "/data/delta"
 COMPOSE_FILE = str(Path(__file__).parent / "docker-compose.yml")
-from docker_manager import PROJECT_NAME, Service
 
 
 class DockerDuckDB:
