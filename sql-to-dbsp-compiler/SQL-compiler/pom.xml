@@ -19,6 +19,7 @@
         <calcite.version>1.42.0</calcite.version>
         <jackson.version>2.21.1</jackson.version>
         <janino.version>3.1.12</janino.version>
+        <project.version>0.288.0</project.version>
     </properties>
 
     <repositories>
@@ -188,6 +189,13 @@
                 </executions>
             </plugin>
         </plugins>
+        <!-- This substitutes the program.version from pom.xml to the resource file version.properties -->
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
     </build>
 
     <dependencies>
