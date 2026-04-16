@@ -44,12 +44,12 @@ feldera = "dbt.adapters.feldera"
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.3.5",
+    "pytest>=9.0.3",
     "pytest-timeout>=2.3.1",
     "ruff==0.9.10",
 ]
 test = [
-    "pytest>=8.3.5",
+    "pytest>=9.0.3",
     "pytest-timeout>=2.3.1",
 ]
 
