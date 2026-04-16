@@ -202,13 +202,11 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.IGNORE_NULLS, "IGNORE NULLS", SqlLibrary.STANDARD, "grammar#window-aggregates", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.RESPECT_NULLS, "RESPECT NULLS", SqlLibrary.STANDARD, "grammar#window-aggregates", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.MINUS_DATE, "-", SqlLibrary.STANDARD, "datetime", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.UNNEST, "UNNEST", SqlLibrary.STANDARD, "array#the-unnest-sql-operator,map#the-unnest-operator", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.UNNEST_WITH_ORDINALITY, "UNNEST WITH ORDINALITY", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE,
-//                 """
-//                 runtime_aggtest/complex_type_tests/test_{arr,arr_unnest,arr_arr_unnest,arr_row_unnest,row_arr_unnest,arr_map_unnest,arr_udt_unnest,arr_of_arr,arr_of_row,arr_of_map,arr_of_udt,row_of_arr,udt_of_arr,map_var_cmpx}.py|
-//                 runtime_aggtest/variant_tests/{row_of_cmpx_type,cpmx_variant,arr_cmpx_varnt_unnest,arr_of_cmpx_type,udt_of_cmpx_type,arr_unnest_varnt}.py
-//                 """,
-            false),
+            new Func(SqlStdOperatorTable.UNNEST, "UNNEST", SqlLibrary.STANDARD, "array#the-unnest-sql-operator,map#the-unnest-operator", """
+                 runtime_aggtest/complex_type_tests/test_{arr,arr_unnest,arr_arr_unnest,arr_row_unnest,row_arr_unnest,arr_map_unnest,arr_udt_unnest,arr_of_arr,arr_of_row,arr_of_map,arr_of_udt,row_of_arr,udt_of_arr,map_var_cmpx}.py|
+                 runtime_aggtest/variant_tests/{row_of_cmpx_type,cpmx_variant,arr_cmpx_varnt_unnest,arr_of_cmpx_type,udt_of_cmpx_type,arr_unnest_varnt}.py""", false),
+            // Unnest with ordinality is the same as UNNEST
+            new Func(SqlStdOperatorTable.UNNEST_WITH_ORDINALITY, "UNNEST WITH ORDINALITY", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.LATERAL, "LATERAL", SqlLibrary.STANDARD, "grammar#lateral", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.COLLECTION_TABLE, "TABLE", SqlLibrary.STANDARD, "grammar", FunctionDocumentation.NO_FILE, false),
 
