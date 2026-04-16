@@ -111,6 +111,7 @@ def _run_dbt(
         **os.environ,
         "DBT_PROFILES_DIR": project_dir,
         "FELDERA_URL": feldera_url,
+        "DBT_THREADS": os.environ.get("DBT_THREADS", "4"),
         "PYTHONPATH": os.pathsep.join(filter(None, [_ADAPTER_ROOT, os.environ.get("PYTHONPATH", "")])),
     }
 
