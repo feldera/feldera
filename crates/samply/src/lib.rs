@@ -103,6 +103,9 @@ impl Display for Timestamp {
 }
 
 impl Serialize for Timestamp {
+    /// Serializes the format used in the [Gecko profiler] format.
+    ///
+    /// [Gecko profiler]: https://github.com/firefox-devtools/profiler/blob/main/src/types/profile.ts
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -113,6 +116,9 @@ impl Serialize for Timestamp {
 }
 
 impl<'de> Deserialize<'de> for Timestamp {
+    /// Deserializes the format used in the [Gecko profiler] format.
+    ///
+    /// [Gecko profiler]: https://github.com/firefox-devtools/profiler/blob/main/src/types/profile.ts
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -761,6 +767,9 @@ impl Annotations {
 
         return Ok(output);
 
+        /// This is the [Gecko profiler] format.
+        ///
+        /// [Gecko profiler]: https://github.com/firefox-devtools/profiler/blob/main/src/types/profile.ts
         #[derive(Debug, Serialize, Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Profile {
