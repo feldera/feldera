@@ -326,6 +326,7 @@ public class Utilities {
     }
 
     public static String readFile(Path filename) throws IOException {
+        Utilities.enforce(!filename.toFile().isDirectory(), () -> filename + " is a directory");
         List<String> lines = Files.readAllLines(filename);
         return String.join(System.lineSeparator(), lines);
     }

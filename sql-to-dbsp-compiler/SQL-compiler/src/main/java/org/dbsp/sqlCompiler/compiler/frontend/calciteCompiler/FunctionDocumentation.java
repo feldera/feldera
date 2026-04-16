@@ -143,6 +143,8 @@ public class FunctionDocumentation {
                 File file = path.toFile();
                 if (!file.exists())
                     throw new RuntimeException("File " + file.getPath() + " does not exist");
+                if (!file.isFile())
+                    throw new RuntimeException("File " + file.getPath() + " is not a file");
                 String contents = fileContents.getContents(file.getPath());
                 if (!description.functionName().isEmpty() &&
                         !contents.toLowerCase().contains(description.functionName().toLowerCase()))
