@@ -135,7 +135,14 @@ def test_pipeline_stats(pipeline_name):
     assert r_stats.status_code == HTTPStatus.OK, (r_stats.status_code, r_stats.text)
     r_stats_json = r_stats.json()
     keys = sorted(r_stats_json.keys())
-    assert keys == ["checkpoint_activity", "global_metrics", "inputs", "outputs", "permanent_checkpoint_errors", "suspend_error"]
+    assert keys == [
+        "checkpoint_activity",
+        "global_metrics",
+        "inputs",
+        "outputs",
+        "permanent_checkpoint_errors",
+        "suspend_error",
+    ]
     stats = PipelineStatistics.from_dict(r_stats_json)
 
     gm = stats.global_metrics
