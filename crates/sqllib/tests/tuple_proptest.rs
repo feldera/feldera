@@ -8,6 +8,7 @@ use dbsp::storage::backend::memory_impl::MemoryBackend;
 use dbsp::storage::buffer_cache::BufferCache;
 use dbsp::storage::file::Factories;
 use dbsp::storage::file::{
+    FilterPlan,
     format::BatchMetadata,
     writer::{Parameters, Writer1},
 };
@@ -308,8 +309,14 @@ where
     let backend = MemoryBackend::new();
     let factories = Factories::<DynData, DynData>::new::<T, ()>();
     let parameters = Parameters::default();
-    let mut writer = Writer1::new(&factories, buffer_cache, &backend, parameters, values.len())
-        .map_err(|err| TestCaseError::fail(format!("writer init failed: {err:?}")))?;
+    let mut writer = Writer1::new(
+        &factories,
+        buffer_cache,
+        &backend,
+        parameters,
+        FilterPlan::<DynData>::decide_filter(None, values.len()),
+    )
+    .map_err(|err| TestCaseError::fail(format!("writer init failed: {err:?}")))?;
 
     let aux = ();
     for value in &values {

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use super::utils::{copy_to_builder, pick_merge_destination};
 use crate::storage::buffer_cache::CacheStats;
-use crate::storage::filter_stats::FilterStats;
+use crate::storage::file::{FilterKind, FilterStats};
 use crate::trace::cursor::{DelegatingCursor, PushCursor};
 use crate::trace::ord::file::val_batch::FileValBuilder;
 use crate::trace::ord::vec::val_batch::VecValBuilder;
@@ -282,6 +282,14 @@ where
     }
 
     #[inline]
+    fn membership_filter_kind(&self) -> FilterKind {
+        match &self.inner {
+            Inner::File(file) => file.membership_filter_kind(),
+            Inner::Vec(vec) => vec.membership_filter_kind(),
+        }
+    }
+
+    #[inline]
     fn range_filter_stats(&self) -> FilterStats {
         match &self.inner {
             Inner::File(file) => file.range_filter_stats(),
@@ -307,7 +315,6 @@ where
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
     where
         RG: Rng,
-        T: PartialEq<()>,
     {
         match &self.inner {
             Inner::Vec(vec) => vec.sample_keys(rng, sample_size, output),
@@ -360,6 +367,13 @@ where
                 path,
             )?),
         })
+    }
+
+    fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)> {
+        match &self.inner {
+            Inner::File(file) => file.key_bounds(),
+            Inner::Vec(vec) => vec.key_bounds(),
+        }
     }
 
     fn negative_weight_count(&self) -> Option<u64> {
@@ -425,23 +439,23 @@ where
         location: Option<BatchLocation>,
     ) -> Self
     where
-        B: BatchReader,
+        B: Batch<Key = K, Val = V, Time = T, R = R>,
         I: IntoIterator<Item = &'a B> + Clone,
     {
         let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
         let value_capacity = batches.clone().into_iter().map(|b| b.len()).sum();
         Self {
             factories: factories.clone(),
-            inner: match pick_merge_destination(batches, location) {
+            inner: match pick_merge_destination(batches.clone(), location) {
                 BatchLocation::Memory => BuilderInner::Vec(VecValBuilder::with_capacity(
                     &factories.vec,
                     key_capacity,
                     value_capacity,
                 )),
-                BatchLocation::Storage => BuilderInner::File(FileValBuilder::with_capacity(
+                BatchLocation::Storage => BuilderInner::File(FileValBuilder::for_merge(
                     &factories.file,
-                    key_capacity,
-                    value_capacity,
+                    batches,
+                    location,
                 )),
             },
         }

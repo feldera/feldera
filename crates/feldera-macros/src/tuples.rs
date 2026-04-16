@@ -247,6 +247,14 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         }
     };
 
+    let roaring_u32_key_impl = if num_elements == 1 {
+        quote! {}
+    } else {
+        quote! {
+            impl<#(#generics),*> ::dbsp::utils::SupportsRoaring for #name<#(#generics),*> {}
+        }
+    };
+
     let sparse_get_methods = fields
         .iter()
         .enumerate()
@@ -969,6 +977,7 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         #copy_impl
         #checkpoint_impl
         #not_an_option
+        #roaring_u32_key_impl
     });
 
     expanded

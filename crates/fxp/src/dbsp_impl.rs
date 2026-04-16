@@ -1,6 +1,6 @@
 use dbsp::NumEntries;
 use dbsp::algebra::{HasOne, HasZero, MulByRef, OptionWeightType};
-use dbsp::utils::IsNone;
+use dbsp::utils::{IsNone, SupportsRoaring};
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, serde_config::DecimalFormat,
 };
@@ -37,6 +37,8 @@ impl<const P: usize, const S: usize> IsNone for Fixed<P, S> {
         inner
     }
 }
+
+impl<const P: usize, const S: usize> SupportsRoaring for Fixed<P, S> {}
 
 impl<const P: usize, const S: usize> OptionWeightType for Fixed<P, S> {}
 impl<const P: usize, const S: usize> OptionWeightType for &Fixed<P, S> {}

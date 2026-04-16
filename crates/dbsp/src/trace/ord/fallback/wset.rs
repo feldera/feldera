@@ -1,5 +1,5 @@
 use super::utils::{copy_to_builder, pick_merge_destination};
-use crate::storage::filter_stats::FilterStats;
+use crate::storage::file::{FilterKind, FilterStats};
 use crate::{
     DBWeight, NumEntries,
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
@@ -281,6 +281,13 @@ where
         }
     }
 
+    fn membership_filter_kind(&self) -> FilterKind {
+        match &self.inner {
+            Inner::File(file) => file.membership_filter_kind(),
+            Inner::Vec(vec) => vec.membership_filter_kind(),
+        }
+    }
+
     fn range_filter_stats(&self) -> FilterStats {
         match &self.inner {
             Inner::File(file) => file.range_filter_stats(),
@@ -370,6 +377,13 @@ where
             factories: factories.clone(),
             inner: Inner::File(FileWSet::<K, R>::from_path(factories, path)?),
         })
+    }
+
+    fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)> {
+        match &self.inner {
+            Inner::File(file) => file.key_bounds(),
+            Inner::Vec(vec) => vec.key_bounds(),
+        }
     }
 
     fn negative_weight_count(&self) -> Option<u64> {
@@ -495,16 +509,22 @@ where
         location: Option<BatchLocation>,
     ) -> Self
     where
-        B: BatchReader,
+        B: Batch<Key = K, Val = DynUnit, Time = (), R = R>,
         I: IntoIterator<Item = &'a B> + Clone,
     {
+        let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
         Self {
             factories: factories.clone(),
-            inner: BuilderInner::new(
-                factories,
-                batches.clone().into_iter().map(|b| b.key_count()).sum(),
-                pick_merge_destination(batches, location).into(),
-            ),
+            inner: match pick_merge_destination(batches.clone(), location) {
+                BatchLocation::Memory => BuilderInner::Vec(VecWSetBuilder::with_capacity(
+                    &factories.vec_wset_factory,
+                    key_capacity,
+                    key_capacity,
+                )),
+                BatchLocation::Storage => {
+                    BuilderInner::File(FileWSetBuilder::for_merge(factories, batches, location))
+                }
+            },
         }
     }
 

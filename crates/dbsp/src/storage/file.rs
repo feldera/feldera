@@ -36,8 +36,10 @@
 //! value and for sequential reads.  It should be possible to disable indexing
 //! by data value for workloads that don't require it.
 //!
-//! Layer files support approximate set membership query in `~O(1)` time using
-//! [a filter block](format::FilterBlock).
+//! Layer files support cheap key-membership tests using a per-batch filter
+//! block. The default filter is Bloom-based; key types whose per-batch span
+//! fits in `u32` can alternatively use an exact roaring bitmap filter by
+//! storing keys relative to the batch minimum.
 //!
 //! Layer files should support 1 TB data size.
 //!
@@ -98,6 +100,7 @@ use std::{
 use std::{any::Any, sync::Arc};
 use std::{fmt::Debug, ptr::NonNull};
 
+mod filter;
 pub mod format;
 mod item;
 pub mod reader;
@@ -108,6 +111,10 @@ use crate::{
     dynamic::{DataTrait, Erase, Factory, WithFactory},
     storage::file::item::RefTup2Factory,
 };
+pub use filter::BatchKeyFilter;
+pub use filter::FilterPlan;
+pub use filter::TrackingRoaringBitmap;
+pub use filter::{FilterKind, FilterStats, TrackingFilterStats};
 pub use item::{ArchivedItem, Item, ItemFactory, WithItemFactory};
 
 const BLOOM_FILTER_SEED: u128 = 42;
@@ -577,9 +584,8 @@ impl Deserializer {
     pub fn new(version: u32) -> Self {
         // Proper error is returned in reader.rs, this is a sanity check.
         assert!(
-            version >= format::VERSION_NUMBER,
-            "Unable to read old (pre-v{}) checkpoint data on this feldera version, pipeline needs to backfilled to start.",
-            format::VERSION_NUMBER
+            version >= format::MIN_SUPPORTED_VERSION,
+            "Unable to read checkpoint data with unsupported old storage format version {version} on this feldera version.",
         );
         Self {
             version,

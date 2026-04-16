@@ -75,17 +75,15 @@
 //!
 //! Decompressing a compressed block yields the regular index or data block
 //! format starting with a [`BlockHeader`].
-use crate::storage::tracking_bloom_filter::TrackingBloomFilter;
-use crate::storage::{buffer_cache::FBuf, file::BLOOM_FILTER_SEED};
+use crate::storage::buffer_cache::FBuf;
 use binrw::{BinRead, BinResult, BinWrite, Error as BinError, binrw, binwrite};
 #[cfg(doc)]
 use crc32c;
-use fastbloom::BloomFilter;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use size_of::SizeOf;
 
-/// Increment this on each incompatible change.
+/// Increment this when the base file format itself changes incompatibly.
 ///
 /// - v1: Initial version.
 /// - v2: TODO.
@@ -93,10 +91,16 @@ use size_of::SizeOf;
 /// - v4: Tup None optimizations.
 /// - v5: Change in representation for Timestamp, ShortInterval
 ///
-/// When a new version is created, make sure to generate new golden
-/// files for it in crate `storage-test-compat` to check for
-/// backwards compatibility.
+/// Roaring bitmap filters are gated by
+/// [`INCOMPATIBLE_FEATURE_ROARING_FILTERS`] instead of a version bump, so
+/// Bloom-only files remain readable by older binaries that support v5.
+///
+/// When a new version is created, make sure to generate new golden files for
+/// it in crate `storage-test-compat` to check for backwards compatibility.
 pub const VERSION_NUMBER: u32 = 5;
+
+/// Oldest layer file format version this binary can read.
+pub const MIN_SUPPORTED_VERSION: u32 = 5;
 
 /// Magic number for data blocks.
 pub const DATA_BLOCK_MAGIC: [u8; 4] = *b"LFDB";
@@ -107,8 +111,11 @@ pub const INDEX_BLOCK_MAGIC: [u8; 4] = *b"LFIB";
 /// Magic number for the file trailer block.
 pub const FILE_TRAILER_BLOCK_MAGIC: [u8; 4] = *b"LFFT";
 
-/// Magic number for filter blocks.
-pub const FILTER_BLOCK_MAGIC: [u8; 4] = *b"LFFB";
+/// Magic number for Bloom filter blocks.
+pub const BLOOM_FILTER_BLOCK_MAGIC: [u8; 4] = *b"LFFB";
+
+/// Magic number for roaring bitmap filter blocks.
+pub const ROARING_BITMAP_FILTER_BLOCK_MAGIC: [u8; 4] = *b"LFFR";
 
 /// 8-byte header at the beginning of each block.
 ///
@@ -171,13 +178,13 @@ pub struct FileTrailer {
     #[br(count = n_columns)]
     pub columns: Vec<FileTrailerColumn>,
 
-    /// File offset in bytes of the [FilterBlock].
+    /// File offset in bytes of the filter block.
     ///
     /// This is 0 if there is no filter block, or if the filter block size is
     /// bigger than `i32::MAX`.
     pub filter_offset: u64,
 
-    /// Size in bytes of the [FilterBlock].
+    /// Size in bytes of the filter block.
     ///
     /// This is 0 if there is no filter block, or if the filter block size is
     /// bigger than `i32::MAX`.
@@ -201,11 +208,11 @@ pub struct FileTrailer {
     ///
     /// If any of these bits are set, the version number must be at least 3.
     ///
-    /// No incompatible features are currently defined.  This bitmap is for
-    /// future expansion.
+    /// One incompatible feature is set:
+    /// [`INCOMPATIBLE_FEATURE_ROARING_FILTERS`].
     pub incompatible_features: u64,
 
-    /// File offset in bytes of the [FilterBlock].
+    /// File offset in bytes of the filter block.
     ///
     /// This is 0 if there is no filter block, or if the filter block size is
     /// less than `i32::MAX`.  If this is nonzero, then
@@ -213,7 +220,7 @@ pub struct FileTrailer {
     /// [FileTrailer::compatible_features].
     pub filter_offset64: u64,
 
-    /// Size in bytes of the [FilterBlock].
+    /// Size in bytes of the filter block.
     ///
     /// This is 0 if there is no filter block, or if the filter block size is
     /// less than `i32::MAX`.  If this is nonzero, then
@@ -243,6 +250,17 @@ impl FileTrailer {
         (self.compatible_features & feature) != 0
     }
 
+    /// Returns the unknown incompatible features, if any.
+    pub fn unknown_incompatible_features(&self) -> Option<u64> {
+        let unknown_incompatible_features =
+            self.incompatible_features & !INCOMPATIBLE_FEATURE_ROARING_FILTERS;
+        if unknown_incompatible_features != 0 {
+            Some(unknown_incompatible_features)
+        } else {
+            None
+        }
+    }
+
     /// Returns true if this file trailer has a 64-bit filter.
     pub fn has_filter64(&self) -> bool {
         self.has_compatible_feature(COMPATIBLE_FEATURE_FILTER64)
@@ -258,6 +276,10 @@ pub const COMPATIBLE_FEATURE_FILTER64: u64 = 1 << 0;
 /// This feature is backward and forward compatible, as trailers without this field will be
 /// deserialized as if its value is 0. Conversely, old readers will simply ignore the field.
 pub const COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT: u64 = 1 << 1;
+
+/// Bit set to 1 in [FileTrailer::incompatible_features] if the file contains
+/// roaring bitmap membership filter blocks.
+pub const INCOMPATIBLE_FEATURE_ROARING_FILTERS: u64 = 1 << 0;
 
 /// Information about a column.
 ///
@@ -555,12 +577,15 @@ impl Compression {
 ///
 /// The Bloom filter contains a member for each key in column 0.
 #[binrw]
-pub struct FilterBlock {
+pub struct BloomFilterBlock {
     /// Block header with "LFFB" magic.
-    #[brw(assert(header.magic == FILTER_BLOCK_MAGIC, "filter block has bad magic"))]
+    #[brw(assert(
+        header.magic == BLOOM_FILTER_BLOCK_MAGIC,
+        "bloom filter block has bad magic"
+    ))]
     pub header: BlockHeader,
 
-    /// [BloomFilter::num_hashes].
+    /// Number of hashes used by the Bloom filter.
     pub num_hashes: u32,
 
     /// Number of elements in `data`.
@@ -572,24 +597,17 @@ pub struct FilterBlock {
     pub data: Vec<u64>,
 }
 
-impl From<FilterBlock> for TrackingBloomFilter {
-    fn from(block: FilterBlock) -> Self {
-        TrackingBloomFilter::new(
-            BloomFilter::from_vec(block.data)
-                .seed(&BLOOM_FILTER_SEED)
-                .hashes(block.num_hashes),
-        )
-    }
-}
-
 /// A block representing a Bloom filter (with data by reference).
 #[binwrite]
-pub struct FilterBlockRef<'a> {
+pub struct BloomFilterBlockRef<'a> {
     /// Block header with "LFFB" magic.
-    #[bw(assert(header.magic == FILTER_BLOCK_MAGIC, "filter block has bad magic"))]
+    #[bw(assert(
+        header.magic == BLOOM_FILTER_BLOCK_MAGIC,
+        "bloom filter block has bad magic"
+    ))]
     pub header: BlockHeader,
 
-    /// [BloomFilter::num_hashes].
+    /// Number of hashes used by the Bloom filter.
     pub num_hashes: u32,
 
     /// Number of elements in `data`.
@@ -600,12 +618,39 @@ pub struct FilterBlockRef<'a> {
     pub data: &'a [u64],
 }
 
-impl<'a> From<&'a TrackingBloomFilter> for FilterBlockRef<'a> {
-    fn from(value: &'a TrackingBloomFilter) -> Self {
-        FilterBlockRef {
-            header: BlockHeader::new(&FILTER_BLOCK_MAGIC),
-            num_hashes: value.num_hashes(),
-            data: value.as_slice(),
-        }
-    }
+/// A block representing a roaring bitmap filter.
+#[binrw]
+pub struct RoaringBitmapFilterBlock {
+    /// Block header with "LFFR" magic.
+    #[brw(assert(
+        header.magic == ROARING_BITMAP_FILTER_BLOCK_MAGIC,
+        "roaring filter block has bad magic"
+    ))]
+    pub header: BlockHeader,
+
+    /// Number of bytes in `data`.
+    #[bw(try_calc(u64::try_from(data.len())))]
+    pub len: u64,
+
+    /// Serialized roaring bitmap contents.
+    #[br(count = len)]
+    pub data: Vec<u8>,
+}
+
+/// A block representing a roaring bitmap filter (with data by reference).
+#[binwrite]
+pub struct RoaringBitmapFilterBlockRef<'a> {
+    /// Block header with "LFFR" magic.
+    #[bw(assert(
+        header.magic == ROARING_BITMAP_FILTER_BLOCK_MAGIC,
+        "roaring filter block has bad magic"
+    ))]
+    pub header: BlockHeader,
+
+    /// Number of bytes in `data`.
+    #[bw(try_calc(u64::try_from(data.len())))]
+    pub len: u64,
+
+    /// Serialized roaring bitmap contents.
+    pub data: &'a [u8],
 }
