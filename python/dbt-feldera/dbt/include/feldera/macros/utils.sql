@@ -28,7 +28,6 @@
     {# Required dbt dispatch hook. Without this override, dbt's default
        returns FLOAT — which Feldera does not support. Feldera maps FLOAT
        to Java's 32-bit float which is equivalent to REAL. 
-       to Java's 32-bit float which is equivalent to REAL. 
        Use DOUBLE explicitly when 64-bit is needed. #}
     REAL
 {% endmacro %}
