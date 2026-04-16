@@ -16,6 +16,7 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 VENV_DIR="${PROJECT_DIR}/.venv"
 DOCKER_COMPOSE_FILE="${PROJECT_DIR}/integration_tests/docker-compose.yml"
 DOCKER_PROJECT="feldera-dbt-test"
+export DBT_THREADS="${DBT_THREADS:-4}"
 
 declare -A TARGETS=(
     ["venv"]="Fresh venv + install deps"

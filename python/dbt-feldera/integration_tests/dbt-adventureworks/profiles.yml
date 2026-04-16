@@ -7,5 +7,6 @@ adventureworks:
       database: "default"
       schema: "adventureworks"
       compilation_profile: dev
+      threads: "{{ env_var('DBT_THREADS', '4') | int }}"
       workers: 4
       timeout: 600

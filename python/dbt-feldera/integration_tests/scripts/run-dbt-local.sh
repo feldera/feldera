@@ -18,6 +18,8 @@ ADAPTER_DIR="${SCRIPT_DIR}/../.."
 COMPOSE_FILE="${SCRIPT_DIR}/../docker-compose.yml"
 PROJECT_NAME="feldera-dbt-test"
 VENV_DIR="${SCRIPT_DIR}/.venv-dbt"
+DBT_THREADS="${DBT_THREADS:-4}"
+export DBT_THREADS
 
 _compose() {
     docker compose -f "${COMPOSE_FILE}" -p "${PROJECT_NAME}" "$@"
@@ -54,6 +56,7 @@ if ! curl -sf --connect-timeout 5 "${FELDERA_URL}/v0/config" >/dev/null 2>&1; th
 fi
 export FELDERA_URL
 echo "  Using FELDERA_URL=${FELDERA_URL}"
+echo "  Using DBT_THREADS=${DBT_THREADS}"
 
 echo ""
 echo "[2/6] Building dbt-feldera wheel..."
