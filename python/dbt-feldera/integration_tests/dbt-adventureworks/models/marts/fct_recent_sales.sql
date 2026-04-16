@@ -18,4 +18,3 @@ select
     order_status,
     orderdate
 from stg_salesorderheader
-where orderdate >= NOW() - INTERVAL 20 YEARS
