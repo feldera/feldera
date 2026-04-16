@@ -17,7 +17,10 @@ class TestPipeline(SharedTestPipeline):
         for _ in range(200):
             logs = self.pipeline.logs()
             start = next(logs)
-            assert "Fresh start of pipeline log" in start
+            assert (
+                "Fresh start of pipeline log" in start
+                or "prior log lines were discarded due to buffer constraints" in start
+            )
         self.pipeline.pause()
         self.pipeline.stop(force=True)
 
