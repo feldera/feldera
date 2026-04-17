@@ -138,19 +138,22 @@ jobs:
           retention-days: 7
 
   build-fda-native:
-    name: Build fda (Windows)
+    name: Build fda (native)
 
-    # Builds fda for Windows using GitHub-hosted larger runners.
-    # macOS arm64 will be added once self-hosted macOS runners are available.
+    # Builds fda for Windows and macOS using native runners.
     # Windows arm64 is skipped for now — the runner lacks Rust and MSVC.
     strategy:
       matrix:
         include:
+          - runner: macos-latest-arm64
+            target: aarch64-apple-darwin
+            fda_artifact: fda
           - runner: windows-latest-amd64
             target: x86_64-pc-windows-msvc
+            fda_artifact: fda.exe
     runs-on: ${{ matrix.runner }}
 
-    # sccache is not available on Windows GitHub-hosted runners
+    # sccache is not available on these runners
     env:
       RUSTC_WRAPPER: ""
 
@@ -178,5 +181,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: fda-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/fda.exe
+          path: target/${{ matrix.target }}/release/${{ matrix.fda_artifact }}
           retention-days: 7
