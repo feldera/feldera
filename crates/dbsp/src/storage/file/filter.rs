@@ -3,26 +3,17 @@ mod roaring;
 mod stats;
 
 use crate::{
-    Runtime,
-    dynamic::{DataTrait, DynData, DynVec},
-    storage::tracking_bloom_filter::TrackingBloomFilter,
-    trace::{Batch, BatchReaderFactories, sample_keys_from_batches},
+    Runtime, dynamic::DataTrait, storage::tracking_bloom_filter::TrackingBloomFilter, trace::Batch,
 };
 use dyn_clone::clone_box;
-use rand::SeedableRng;
-use rand_chacha::ChaCha8Rng;
 use std::io;
 use std::ops::Not;
 use std::sync::Once;
 use tracing::info;
 
+use roaring::RoaringLookupStats;
 pub use roaring::TrackingRoaringBitmap;
-pub(crate) use roaring::{
-    FILTER_PLAN_MIN_SAMPLE_SIZE, FILTER_PLAN_SAMPLE_PERCENT, RoaringLookupSampleStats,
-};
 pub use stats::{FilterKind, FilterStats, TrackingFilterStats};
-
-const FILTER_PLAN_SAMPLE_SEED: u64 = 0x67;
 
 /// In-memory representation of the per-batch key filter.
 #[derive(Debug)]
@@ -91,47 +82,36 @@ impl BatchKeyFilter {
 /// because it cannot switch filters after the first key is written. The plan
 /// therefore bundles:
 /// - the merged batch bounds, which tell us whether min-offset roaring fits;
-/// - a sampled subset of input keys, which lets us predict lookup behavior
-///   when Bloom and roaring are both enabled.
+/// - one 16-bit Roaring container span per input batch, relative to the merged
+///   minimum, which lets us conservatively predict lookup behavior.
 pub struct FilterPlan<K>
 where
     K: DataTrait + ?Sized,
 {
     min: Box<K>,
     max: Box<K>,
-    /// Pre-computed roaring u32 offsets (relative to `min`) from a key sample,
-    /// sorted and deduplicated. Used by the lookup predictor to decide between
-    /// Bloom and roaring filters.
-    sampled_offsets: Option<Vec<u32>>,
+    /// Inclusive 16-bit Roaring container spans, relative to `min`, for each
+    /// input batch that contributes to the merged batch.
+    container_spans: Option<Vec<(u32, u32)>>,
 }
 
 impl<K> FilterPlan<K>
 where
     K: DataTrait + ?Sized,
 {
-    fn sample_count_for_filter_plan(num_keys: usize) -> usize {
-        let scaled = ((num_keys as f64) * (FILTER_PLAN_SAMPLE_PERCENT / 100.0)).ceil() as usize;
-        scaled.max(FILTER_PLAN_MIN_SAMPLE_SIZE).min(num_keys)
-    }
-
     /// Builds a filter plan from the known minimum and maximum batch keys.
     pub fn from_bounds(min: &K, max: &K) -> Self {
-        Self {
+        let mut plan = Self {
             min: clone_box(min),
             max: clone_box(max),
-            sampled_offsets: None,
+            container_spans: None,
+        };
+        if plan.roaring_range_fits() {
+            plan.container_spans = plan
+                .container_span(min, max)
+                .map(|container_span| vec![container_span]);
         }
-    }
-
-    /// Converts a key sample into roaring u32 offsets and attaches them to the
-    /// plan.
-    ///
-    /// This is useful for callers that already have a representative set of
-    /// keys and want to reuse the same Bloom-vs-roaring decision logic as the
-    /// merge path without rebuilding the sample internally.
-    pub fn with_sampled_keys(mut self, sampled_keys: &DynVec<K>) -> Self {
-        self.sampled_offsets = Self::keys_to_offsets(self.min.as_data(), sampled_keys);
-        self
+        plan
     }
 
     pub(crate) fn from_batches<'a, B, I>(batches: I) -> Option<Self>
@@ -160,60 +140,27 @@ where
             let mut plan = Self {
                 min,
                 max,
-                sampled_offsets: None,
+                container_spans: None,
             };
             if plan.roaring_range_fits() {
-                plan.sampled_offsets =
-                    Self::collect_sampled_offsets_from_batches(plan.min.as_data(), &batches);
+                let container_spans = batches
+                    .iter()
+                    .map(|batch| {
+                        let (batch_min, batch_max) =
+                            batch.key_bounds().expect("bounds were checked above");
+                        plan.container_span(batch_min, batch_max)
+                    })
+                    .collect::<Option<Vec<_>>>();
+                plan.container_spans = container_spans.filter(|spans| spans.is_empty().not());
             }
             plan
         })
     }
 
-    /// Converts a dynamic key vector into sorted, deduplicated `u32` offsets
-    /// relative to `min`.
-    ///
-    /// Accepts unsorted input: the result is always sorted and deduplicated.
-    /// When the input is already sorted the offsets are monotonic (subtraction
-    /// from a fixed `min` preserves order), so the sort is a no-op.
-    ///
-    /// Returns `None` if any key cannot be mapped to a `u32` offset or if the
-    /// resulting vector is empty.
-    fn keys_to_offsets(min: &DynData, keys: &DynVec<K>) -> Option<Vec<u32>> {
-        let mut offsets = Vec::with_capacity(keys.len());
-        for i in 0..keys.len() {
-            offsets.push(keys.index(i).roaring_u32_offset_dyn(min)?);
-        }
-        offsets.sort_unstable();
-        offsets.dedup();
-        offsets.is_empty().not().then_some(offsets)
-    }
-
-    fn collect_sampled_offsets_from_batches<B>(min: &DynData, batches: &[&B]) -> Option<Vec<u32>>
-    where
-        B: Batch<Key = K>,
-    {
-        let first_batch = batches.first()?;
-        let factories = first_batch.factories();
-        let mut sampled_keys = factories.keys_factory().default_box();
-        let total_sample_size = batches
-            .iter()
-            .map(|batch| Self::sample_count_for_filter_plan(batch.key_count()))
-            .sum::<usize>();
-        sampled_keys.reserve(total_sample_size);
-
-        // Use a deterministic sampler here so rerunning the same workload on
-        // the same data does not flip batches between Bloom and roaring.
-        let mut rng = ChaCha8Rng::seed_from_u64(FILTER_PLAN_SAMPLE_SEED);
-        sample_keys_from_batches(
-            &factories,
-            batches,
-            &mut rng,
-            |batch| Self::sample_count_for_filter_plan(batch.key_count()),
-            sampled_keys.as_mut(),
-        );
-
-        Self::keys_to_offsets(min, sampled_keys.as_ref())
+    fn container_span(&self, batch_min: &K, batch_max: &K) -> Option<(u32, u32)> {
+        let start = batch_min.roaring_u32_offset_dyn(self.min.as_data())? >> 16;
+        let end = batch_max.roaring_u32_offset_dyn(self.min.as_data())? >> 16;
+        Some((start, end))
     }
 
     fn roaring_range_fits(&self) -> bool {
@@ -229,12 +176,12 @@ where
     }
 
     fn predict_lookup_prefers_roaring(&self, estimated_keys: usize) -> bool {
-        let offsets = match self.sampled_offsets.as_ref() {
-            Some(offsets) => offsets,
+        let container_spans = match self.container_spans.as_ref() {
+            Some(container_spans) => container_spans,
             None => return false,
         };
 
-        RoaringLookupSampleStats::from_sample(estimated_keys, offsets)
+        RoaringLookupStats::from_bounds(estimated_keys, container_spans)
             .map(|stats| stats.lookup_prefers_roaring())
             .unwrap_or(false)
     }
@@ -265,9 +212,9 @@ where
         // following rules:
         //
         // - If Bloom and roaring are both enabled, prefer roaring when the
-        //   plan proves the batch range fits in `u32` and the sampled-key
-        //   lookup predictor says roaring should beat Bloom. If sampling is
-        //   unavailable or the predictor cannot run, fall back to Bloom.
+        //   plan proves the batch range fits in `u32` and the lookup
+        //   predictor says roaring should beat Bloom. If the predictor cannot
+        //   run, fall back to Bloom.
         // - If only Bloom is enabled, always build Bloom.
         // - If only roaring is enabled, build roaring only when the plan
         //   proves the batch range fits in `u32`; otherwise build no
@@ -317,12 +264,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{BatchKeyFilter, FILTER_PLAN_SAMPLE_PERCENT, FilterPlan};
+    use super::{BatchKeyFilter, FilterPlan};
     use crate::{
-        DBData, DynZWeight, Runtime, ZWeight,
+        DynZWeight, Runtime, ZWeight,
         circuit::CircuitConfig,
         dynamic::{DynData, Erase},
-        storage::file::Factories,
         trace::{Batch, BatchReader, BatchReaderFactories, Builder, VecWSet, VecWSetFactories},
     };
 
@@ -340,23 +286,6 @@ mod tests {
         }
 
         builder.done()
-    }
-
-    fn sampled_filter_plan<K>(
-        factories: &Factories<DynData, DynData>,
-        keys: &[K],
-    ) -> FilterPlan<DynData>
-    where
-        K: DBData + Erase<DynData>,
-    {
-        let mut sampled_keys = factories.keys_factory.default_box();
-        sampled_keys.reserve(keys.len());
-        for key in keys {
-            sampled_keys.push_ref(key.erase());
-        }
-
-        FilterPlan::from_bounds(keys.first().unwrap().erase(), keys.last().unwrap().erase())
-            .with_sampled_keys(sampled_keys.as_ref())
     }
 
     fn with_roaring_enabled<F>(f: F)
@@ -418,67 +347,45 @@ mod tests {
         assert!(!unsupported_string.roaring_range_fits());
     }
 
-    /// Collecting sampled keys from disjoint positive-weight batches keeps
-    /// approximately `0.1%` of the total keys, and for exact integer-friendly
-    /// batch sizes here that means exactly `1024` samples per batch.
-    /// This is also the minimum of samples we'd collect in any case
-    /// so we avoid failures due to randomness.
     #[test]
-    fn collect_sampled_keys_from_batches_samples_point_one_percent() {
-        const KEYS_PER_BATCH: u32 = 1_024_000;
-        const EXPECTED_SAMPLES_PER_BATCH: usize = 1_024;
-        const EXPECTED_TOTAL_SAMPLES: usize = EXPECTED_SAMPLES_PER_BATCH * 2;
-
-        let batch1 = build_vec_wset_u32(0..KEYS_PER_BATCH);
-        let batch2 = build_vec_wset_u32(2_000_000..(2_000_000 + KEYS_PER_BATCH));
-        let plan = FilterPlan::from_batches([&batch1, &batch2]).expect("non-empty batches");
-        let sampled_offsets = plan
-            .sampled_offsets
-            .as_ref()
-            .expect("roaring-compatible batches should collect a sample");
-
-        assert_eq!(sampled_offsets.len(), EXPECTED_TOTAL_SAMPLES);
-
-        let total_keys = (batch1.key_count() + batch2.key_count()) as f64;
-        let sampled_fraction = sampled_offsets.len() as f64 / total_keys;
-        assert_eq!(sampled_fraction, FILTER_PLAN_SAMPLE_PERCENT / 100.0);
-    }
-
-    #[test]
-    fn filter_plan_without_sample_falls_back_to_bloom() {
+    fn filter_plan_prefers_roaring_for_dense_range() {
         with_roaring_enabled(|| {
-            let filter_plan = FilterPlan::from_bounds((&1u32) as &DynData, (&7u32) as &DynData);
+            let filter_plan =
+                FilterPlan::from_bounds((&0u32) as &DynData, (&49_999u32) as &DynData);
             assert!(matches!(
-                FilterPlan::decide_filter(Some(&filter_plan), 3),
-                Some(BatchKeyFilter::Bloom(_))
-            ));
-        });
-    }
-
-    #[test]
-    fn filter_plan_predictor_prefers_roaring_for_dense_sample() {
-        with_roaring_enabled(|| {
-            let factories = Factories::<DynData, DynData>::new::<u32, ()>();
-            let keys: Vec<u32> = (0..50_000).collect();
-            let filter_plan = sampled_filter_plan(&factories, keys.as_slice());
-
-            assert!(matches!(
-                FilterPlan::decide_filter(Some(&filter_plan), keys.len()),
+                FilterPlan::decide_filter(Some(&filter_plan), 50_000),
                 Some(BatchKeyFilter::RoaringU32(_))
             ));
         });
     }
 
     #[test]
-    fn filter_plan_predictor_prefers_bloom_for_sparse_wide_sample() {
+    fn filter_plan_prefers_bloom_for_sparse_wide_range() {
         with_roaring_enabled(|| {
-            let factories = Factories::<DynData, DynData>::new::<u32, ()>();
-            let keys: Vec<u32> = (0..50_000).map(|index| index << 16).collect();
-            let filter_plan = sampled_filter_plan(&factories, keys.as_slice());
+            let max = (49_999u32) << 16;
+            let filter_plan = FilterPlan::from_bounds((&0u32) as &DynData, (&max) as &DynData);
 
             assert!(matches!(
-                FilterPlan::decide_filter(Some(&filter_plan), keys.len()),
+                FilterPlan::decide_filter(Some(&filter_plan), 50_000),
                 Some(BatchKeyFilter::Bloom(_))
+            ));
+        });
+    }
+
+    #[test]
+    fn filter_plan_from_batches_prefers_roaring() {
+        with_roaring_enabled(|| {
+            let batch1 = build_vec_wset_u32(0..25_000);
+            let batch2 = build_vec_wset_u32(25_000..50_000);
+            let filter_plan = FilterPlan::from_batches([&batch1, &batch2])
+                .expect("dense roaring-compatible batches should build a plan");
+
+            assert!(matches!(
+                FilterPlan::decide_filter(
+                    Some(&filter_plan),
+                    batch1.key_count() + batch2.key_count()
+                ),
+                Some(BatchKeyFilter::RoaringU32(_))
             ));
         });
     }

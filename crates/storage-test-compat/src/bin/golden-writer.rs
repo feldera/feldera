@@ -89,21 +89,11 @@ where
     Ok(())
 }
 
-fn sampled_filter_plan<K>(
-    factories: &Factories<DynData, DynData>,
-    keys: &[K],
-) -> FilterPlan<DynData>
+fn filter_plan_from_keys<K>(keys: &[K]) -> FilterPlan<DynData>
 where
     K: DBData + Erase<DynData>,
 {
-    let mut sampled_keys = factories.keys_factory.default_box();
-    sampled_keys.reserve(keys.len());
-    for key in keys {
-        sampled_keys.push_ref(key.erase());
-    }
-
     FilterPlan::from_bounds(keys.first().unwrap().erase(), keys.last().unwrap().erase())
-        .with_sampled_keys(sampled_keys.as_ref())
 }
 
 fn write_writer2_golden<T>(
@@ -130,7 +120,7 @@ where
     let factories1 = Factories::<DynData, DynData>::new::<T, i64>();
     let parameters = Parameters::default().with_compression(compression);
     let keys: Vec<i64> = (0..rows).map(golden_writer2_key).collect();
-    let filter_plan = sampled_filter_plan(&factories0, &keys);
+    let filter_plan = filter_plan_from_keys(&keys);
     let mut writer = Writer2::new(
         &factories0,
         &factories1,

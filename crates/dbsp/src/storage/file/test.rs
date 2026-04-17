@@ -779,21 +779,11 @@ where
     trailer.incompatible_features
 }
 
-fn sampled_filter_plan<K>(
-    factories: &Factories<DynData, DynData>,
-    keys: &[K],
-) -> FilterPlan<DynData>
+fn filter_plan_from_keys<K>(keys: &[K]) -> FilterPlan<DynData>
 where
     K: DBData + Erase<DynData>,
 {
-    let mut sampled_keys = factories.keys_factory.default_box();
-    sampled_keys.reserve(keys.len());
-    for key in keys {
-        sampled_keys.push_ref(key.erase());
-    }
-
     FilterPlan::from_bounds(keys.first().unwrap().erase(), keys.last().unwrap().erase())
-        .with_sampled_keys(sampled_keys.as_ref())
 }
 
 fn test_two_columns<T>(parameters: Parameters)
@@ -1254,7 +1244,7 @@ fn roaring_u32_filter_roundtrip_exact_and_block_kind() {
             )
             .unwrap();
 
-            let filter_plan = sampled_filter_plan(&factories, &[1u32, 3, 7]);
+            let filter_plan = filter_plan_from_keys(&[1u32, 3, 7]);
             let mut writer = Writer1::new(
                 &factories,
                 test_buffer_cache,
@@ -1317,7 +1307,7 @@ fn roaring_tup1_i32_filter_roundtrip_exact_and_block_kind() {
             )
             .unwrap();
 
-            let filter_plan = sampled_filter_plan(&factories, &[Tup1(-7i32), Tup1(1), Tup1(3)]);
+            let filter_plan = filter_plan_from_keys(&[Tup1(-7i32), Tup1(1), Tup1(3)]);
             let mut writer = Writer1::new(
                 &factories,
                 test_buffer_cache,
@@ -1415,7 +1405,7 @@ fn roaring_i64_filter_roundtrip_uses_batch_min_offset() {
 
             let min = (i64::from(u32::MAX) * 4) + 10;
             let keys = [min, min + 3, min + 7];
-            let filter_plan = sampled_filter_plan(&factories, &keys);
+            let filter_plan = filter_plan_from_keys(&keys);
             let mut writer = Writer1::new(
                 &factories,
                 test_buffer_cache,
@@ -1478,7 +1468,7 @@ fn roaring_u64_filter_roundtrip_uses_batch_min_offset() {
 
         let base = (u64::from(u32::MAX) << 8) + 11;
         let keys = [base, base + 2, base + 9];
-        let filter_plan = sampled_filter_plan(&factories, &keys);
+        let filter_plan = filter_plan_from_keys(&keys);
         let mut writer = Writer1::new(
             &factories,
             test_buffer_cache,

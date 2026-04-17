@@ -5,12 +5,7 @@ use crate::{
 use dyn_clone::clone_box;
 use roaring::RoaringBitmap;
 use size_of::SizeOf;
-use std::{collections::HashMap, io, mem::size_of_val};
-
-/// Sample 0.1% of keys per batch when building a merge-time filter plan.
-pub(crate) const FILTER_PLAN_SAMPLE_PERCENT: f64 = 0.1;
-/// Never sample fewer than this many keys from a batch for the filter plan.
-pub(crate) const FILTER_PLAN_MIN_SAMPLE_SIZE: usize = 1_024;
+use std::{io, mem::size_of_val};
 
 /// Roaring bitmap wrapper that tracks hit/miss counts during membership probes.
 #[derive(Debug)]
@@ -130,101 +125,70 @@ impl TrackingRoaringBitmap {
     }
 }
 
-/// Sample-derived summary of how a batch's key distribution maps onto
-/// Roaring's container layout for lookup prediction.
+/// Summary of how a batch likely maps onto Roaring's 16-bit container layout
+/// for lookup prediction.
 ///
 /// This exists because Roaring is not uniformly "better than Bloom":
-/// - keys are first partitioned by their high 16 bits, so a `u32` domain is
-///   split into up to `2^16` containers;
-/// - within each touched container, roaring-rs keeps values in an array until
-///   the container reaches about 4096 entries, then upgrades it to a bitmap;
+/// - keys are partitioned by their high 16 offset bits, so a `u32` offset
+///   domain is split into up to `2^16` containers;
+/// - roaring-rs keeps container payloads in arrays until they reach about 4096
+///   entries, then upgrades them to bitmaps;
 /// - sparse batches therefore tend to pay binary-search costs in many small
 ///   array containers, while dense batches benefit from cheap bitmap probes.
 ///
-/// The predictor estimates two things from a sample:
+/// The predictor estimates two things from the merged key count and the
+/// per-input-batch container spans:
 /// - how many 16-bit containers the batch likely touches
 /// - how many keys each touched container likely holds
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct RoaringLookupSampleStats {
-    /// Estimated number of real keys per touched 16-bit container after
-    /// rescaling the sampled keys/container by the sample fraction.
+pub(crate) struct RoaringLookupStats {
+    /// Conservative estimate of real keys per touched 16-bit container.
     estimated_keys_per_container: f64,
-    /// Estimated number of distinct 16-bit containers touched by the full batch.
+    /// Conservative estimate of touched 16-bit containers after overlap
+    /// damping.
     estimated_touched_containers: f64,
 }
 
-impl RoaringLookupSampleStats {
+impl RoaringLookupStats {
     const ROARING_CONTAINER_CAPACITY: f64 = 65_536.0;
     const ROARING_BITMAP_UPGRADE_THRESHOLD: f64 = 4_096.0;
     const LOOKUP_ROARING_CONTAINER_PROBABILITY_THRESHOLD: f64 = 0.1;
     const LOOKUP_ROARING_BITMAP_CONTAINER_PROBABILITY_PENALTY: f64 = 0.1;
-    const LOOKUP_ROARING_ARRAY_CONTAINER_PROBABILITY_PENALTY_BASE: f64 = 0.25;
-    const LOOKUP_ROARING_ARRAY_CONTAINER_PROBABILITY_PENALTY_PER_LOG2_KEY: f64 = 0.15;
-    const TOUCHED_CONTAINERS_CHAO1_DAMPING: f64 = 0.25;
+    const LOOKUP_ROARING_ARRAY_CONTAINER_PROBABILITY_PENALTY_BASE: f64 = 0.20;
+    const LOOKUP_ROARING_ARRAY_CONTAINER_PROBABILITY_PENALTY_PER_LOG2_KEY: f64 = 0.10;
+    const OVERLAP_FACTOR_DAMPING: f64 = 0.25;
     const U32_CONTAINER_COUNT: usize = 1 << 16;
 
-    /// Estimate roaring friendliness for lookups from a small sample of keys.
+    /// Estimate roaring friendliness for lookups from batch-span metadata.
     ///
-    /// The estimator works is based on `crates/dbsp/benches/filter_predictor.rs`:
-    /// 1. Bucket sampled keys by their high 16 bits, which matches Roaring's
-    ///    top-level `u32` container layout.
-    /// 2. Rescale sampled keys/container by the sample fraction so large &
-    ///    dense batches do not look artificially sparse.
-    /// 3. Estimate the full-batch touched-container count by combining a
-    ///    uniform occupancy model with a Chao1 unseen-container correction.
+    /// The estimator follows the `benches/filter_predictor.rs` benchmark:
+    /// 1. Compute the exact union of 16-bit containers covered by the input
+    ///    batch spans.
+    /// 2. Compute an overlap factor from
+    ///    `sum(batch span containers) / union(batch span containers)`.
+    /// 3. Damp only the *excess* overlap so disjoint layouts stay at `1.0`,
+    ///    but heavily overlapping layouts remain conservative.
+    /// 4. Divide the merged key count by this effective touched-container
+    ///    count to estimate keys per container.
     ///
-    /// Example:
-    /// - If the batch has `1_000_000` keys and the sample contains `1_000`,
-    ///   the sample fraction is `0.001` (`0.1%`).
-    /// - If those `1_000` sampled keys touch `50` containers, then the sampled
-    ///   average is `20` keys/container and the rescaled estimate is
-    ///   `20 / 0.001 = 20_000` real keys/container.
-    /// - If many sampled containers are singletons, the Chao1 correction
-    ///   pushes the touched-container estimate upward because the sample
-    ///   likely missed many containers entirely.
-    pub(crate) fn from_sample(batch_keys: usize, sampled_keys: &[u32]) -> Option<Self> {
-        if batch_keys == 0 || sampled_keys.is_empty() {
+    /// Each span is inclusive and already expressed in Roaring's 16-bit
+    /// container space, relative to the merged batch minimum.
+    pub(crate) fn from_bounds(batch_keys: usize, container_spans: &[(u32, u32)]) -> Option<Self> {
+        if batch_keys == 0 || container_spans.is_empty() {
             return None;
         }
 
-        let sampled_key_count = sampled_keys.len();
-        let mut per_container: HashMap<u16, usize> = HashMap::new();
-        for &key in sampled_keys {
-            let container = (key >> 16) as u16;
-            *per_container.entry(container).or_insert(0) += 1;
-        }
-
-        let distinct_containers = per_container.len();
-        debug_assert_ne!(
-            distinct_containers, 0,
-            "non-empty sample must touch at least one container"
-        );
-
-        let sample_fraction = sampled_key_count as f64 / batch_keys as f64;
-        if sample_fraction <= 0.0 {
-            return None;
-        }
-
-        let avg_sample_keys_per_container = sampled_key_count as f64 / distinct_containers as f64;
-        // Without this rescaling, large but dense batches look artificially
-        // sparse and the predictor drifts toward Bloom.
-        let estimated_keys_per_container =
-            (avg_sample_keys_per_container / sample_fraction).min(Self::ROARING_CONTAINER_CAPACITY);
-        // Sparse, wide samples often show up as many singleton containers and
-        // very few doubletons. Those are exactly the signals the Chao1
-        // correction uses to estimate how many containers the sample likely
-        // missed entirely.
-        let sample_singleton_containers =
-            per_container.values().filter(|&&count| count == 1).count();
-        let sample_doubleton_containers =
-            per_container.values().filter(|&&count| count == 2).count();
-        let estimated_touched_containers = estimate_touched_containers(
-            batch_keys,
-            sampled_key_count,
-            distinct_containers,
-            sample_singleton_containers,
-            sample_doubleton_containers,
-        );
+        let distinct_containers = covered_container_union(container_spans);
+        let total_span_containers = container_spans
+            .iter()
+            .map(|(start, end)| (end - start + 1) as usize)
+            .sum::<usize>();
+        let overlap_factor = total_span_containers as f64 / distinct_containers as f64;
+        let damped_overlap_factor = 1.0 + Self::OVERLAP_FACTOR_DAMPING * (overlap_factor - 1.0);
+        let estimated_touched_containers = (distinct_containers as f64 * damped_overlap_factor)
+            .min(Self::U32_CONTAINER_COUNT as f64);
+        let estimated_keys_per_container = (batch_keys as f64 / estimated_touched_containers)
+            .min(Self::ROARING_CONTAINER_CAPACITY);
 
         Some(Self {
             estimated_keys_per_container,
@@ -262,136 +226,22 @@ impl RoaringLookupSampleStats {
     }
 }
 
-/// Estimate how many distinct 16-bit Roaring containers the full batch touches.
-///
-/// This combines:
-/// 1. A uniform occupancy estimate that works well when containers are
-///    populated fairly evenly.
-/// 2. A Chao1-style unseen-container estimate that reacts when the sample is
-///    full of singleton containers and is therefore likely missing many
-///    containers.
-///
-/// The blend exists because just doing a uniform-only estimate under-counts
-/// touched containers on sparse, wide distributions and makes random Roaring
-/// lookups look cheaper than they are.
-fn estimate_touched_containers(
-    batch_keys: usize,
-    sampled_keys: usize,
-    distinct_containers: usize,
-    sample_singleton_containers: usize,
-    sample_doubleton_containers: usize,
-) -> f64 {
-    if batch_keys == 0 || sampled_keys == 0 || distinct_containers == 0 {
-        return 0.0;
-    }
-    if sampled_keys >= batch_keys {
-        return distinct_containers as f64;
-    }
+fn covered_container_union(container_spans: &[(u32, u32)]) -> usize {
+    let mut intervals = container_spans.to_vec();
+    intervals.sort_unstable();
 
-    let uniform_estimate =
-        estimate_uniform_touched_containers(batch_keys, sampled_keys, distinct_containers);
-    let chao1_estimate = estimate_chao1_touched_containers(
-        distinct_containers,
-        sample_singleton_containers,
-        sample_doubleton_containers,
-    );
-    blend_touched_container_estimates(
-        uniform_estimate,
-        chao1_estimate,
-        RoaringLookupSampleStats::TOUCHED_CONTAINERS_CHAO1_DAMPING,
-    )
-}
-
-/// Estimate touched containers under a "roughly uniform occupancy" assumption.
-///
-/// Intuition:
-/// - assume the full batch touches `W` containers and spreads keys across
-///   them fairly evenly;
-/// - given the sample fraction, solve for the `W` that would yield the
-///   observed sampled distinct-container count.
-///
-/// This is the baseline estimate because it behaves sensibly on compact or
-/// moderately regular distributions. It falls apart on sparse wide batches,
-/// where many containers are touched so rarely that the sample never sees
-/// them.
-fn estimate_uniform_touched_containers(
-    batch_keys: usize,
-    sampled_keys: usize,
-    distinct_containers: usize,
-) -> f64 {
-    if batch_keys == 0 || sampled_keys == 0 || distinct_containers == 0 {
-        return 0.0;
-    }
-    if sampled_keys >= batch_keys {
-        return distinct_containers as f64;
-    }
-
-    let sample_fraction = sampled_keys as f64 / batch_keys as f64;
-    let mut low = distinct_containers as f64;
-    let mut high = batch_keys.min(RoaringLookupSampleStats::U32_CONTAINER_COUNT) as f64;
-
-    if low >= high {
-        return low;
-    }
-
-    let log_unseen = (-sample_fraction).ln_1p();
-    for _ in 0..100 {
-        let mid = (low + high) * 0.5;
-        let avg_keys_per_container = batch_keys as f64 / mid;
-        let observed_containers = mid * (1.0 - (avg_keys_per_container * log_unseen).exp());
-
-        if observed_containers < distinct_containers as f64 {
-            low = mid;
+    let mut merged_containers = 0usize;
+    let mut current = intervals[0];
+    for interval in intervals.into_iter().skip(1) {
+        if interval.0 <= current.1.saturating_add(1) {
+            current.1 = current.1.max(interval.1);
         } else {
-            high = mid;
+            merged_containers += (current.1 - current.0 + 1) as usize;
+            current = interval;
         }
     }
 
-    high
-}
-
-/// Estimate touched containers with a Chao1-style unseen-species correction.
-///
-/// Here the "species" are touched 16-bit containers:
-/// - `distinct_containers` is how many containers the sample observed
-/// - `sample_singleton_containers` counts containers seen exactly once
-/// - `sample_doubleton_containers` counts containers seen exactly twice
-///
-/// Raw Chao1 is intentionally not used directly in the final predictor because
-/// it can overreact when `f2` is tiny. We still compute it because it pushes
-/// the estimate upward in the cases we care about here: batches that touch
-/// many 16-bit containers, but only a few sampled keys land in each one.
-fn estimate_chao1_touched_containers(
-    distinct_containers: usize,
-    sample_singleton_containers: usize,
-    sample_doubleton_containers: usize,
-) -> f64 {
-    let chao1_estimate = if sample_doubleton_containers > 0 {
-        distinct_containers as f64
-            + (sample_singleton_containers * sample_singleton_containers) as f64
-                / (2.0 * sample_doubleton_containers as f64)
-    } else {
-        distinct_containers as f64
-            + (sample_singleton_containers
-                .saturating_mul(sample_singleton_containers.saturating_sub(1))
-                / 2) as f64
-    };
-
-    chao1_estimate
-        .max(distinct_containers as f64)
-        .min(RoaringLookupSampleStats::U32_CONTAINER_COUNT as f64)
-}
-
-/// Raw Chao1 reacts strongly to singleton-heavy samples, which is useful
-/// for sparse wide batches but too aggressive to use directly. Blend it
-/// toward the uniform estimate so the unseen-container correction only nudges
-/// the final estimate in the right direction.
-fn blend_touched_container_estimates(
-    uniform_estimate: f64,
-    chao1_estimate: f64,
-    alpha: f64,
-) -> f64 {
-    uniform_estimate + alpha * (chao1_estimate - uniform_estimate)
+    merged_containers + (current.1 - current.0 + 1) as usize
 }
 
 #[cfg(test)]

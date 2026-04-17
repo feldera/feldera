@@ -32,6 +32,7 @@ use binrw::{
     io::{Cursor, NoSeek},
 };
 use crc32c::crc32c;
+#[cfg(debug_assertions)]
 use dyn_clone::clone_box;
 use feldera_buffer_cache::CacheEntry;
 use feldera_storage::StoragePath;
