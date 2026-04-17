@@ -183,3 +183,18 @@ jobs:
           name: fda-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/${{ matrix.fda_artifact }}
           retention-days: 7
+
+  cancel-if-build-rust-failed:
+    name: Cancel if Rust Build Failed
+    needs: [build-rust]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
