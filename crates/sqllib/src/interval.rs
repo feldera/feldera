@@ -4,7 +4,7 @@
 use crate::{
     Date, SqlDecimal,
     operators::{eq, gt, gte, lt, lte, neq},
-    plus_Date_Date_LongInterval__, some_existing_operator, some_function2, some_operator,
+    plus_Date_Date_LongInterval__, sign, some_existing_operator, some_function2, some_operator,
     some_polymorphic_function1, some_polymorphic_function2,
     timestamp::{extract_epoch_Date, extract_quarter_Date},
 };
@@ -15,10 +15,8 @@ use feldera_types::serde_with_context::{
 };
 use serde::{Deserialize, Serialize, de::Error as _, ser::Error as _};
 use size_of::SizeOf;
-use std::{
-    fmt::Debug,
-    ops::{Add, Div, Mul, Neg, Sub},
-};
+use std::fmt;
+use std::ops::{Add, Div, Mul, Neg, Sub};
 
 #[cfg(doc)]
 use crate::{Time, Timestamp};
@@ -231,6 +229,30 @@ impl Div<i64> for ShortInterval {
     fn div(self, rhs: i64) -> Self {
         Self {
             microseconds: self.microseconds / rhs,
+        }
+    }
+}
+
+impl fmt::Display for ShortInterval {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (sign, interval) = self.into_sign_and_magnitude();
+        let days = extract_day_ShortInterval(interval);
+        let hours = extract_hour_ShortInterval(interval);
+        let minutes = extract_minute_ShortInterval(interval);
+        let seconds = extract_second_ShortInterval(interval);
+        let micro = interval.microseconds % 1_000_000;
+        if micro == 0 {
+            write!(
+                f,
+                "{sign}{} {:02}:{:02}:{:02}",
+                days, hours, minutes, seconds
+            )
+        } else {
+            write!(
+                f,
+                "{sign}{} {:02}:{:02}:{:02}.{:06}",
+                days, hours, minutes, seconds, micro
+            )
         }
     }
 }
@@ -489,6 +511,16 @@ impl LongInterval {
             (1, self.months())
         };
         (months / 12) * mul
+    }
+}
+
+impl fmt::Display for LongInterval {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let months = self.months();
+        let sign = sign(months < 0);
+        let years = months.unsigned_abs() / 12;
+        let months = months.unsigned_abs() % 12;
+        write!(f, "{sign}{years}-{months:02}")
     }
 }
 

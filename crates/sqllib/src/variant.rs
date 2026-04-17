@@ -3,7 +3,7 @@
 
 use crate::{
     Date, GeoPoint, LongInterval, ShortInterval, SqlDecimal, SqlString, Time, Timestamp, Uuid,
-    array::Array, binary::ByteArray, casts::*, error::*, map::Map, tn, ttn,
+    array::Array, binary::ByteArray, casts::*, error::*, map::Map, tn, to_hex_, ttn,
 };
 use dbsp::algebra::{F32, F64};
 use feldera_fxp::DynamicDecimal;
@@ -71,6 +71,7 @@ pub enum Variant {
     ShortInterval(ShortInterval),
     LongInterval(LongInterval),
     Binary(ByteArray),
+    // TODO: this should be called GeoPoint, not Geometry.
     Geometry(GeoPoint),
     Uuid(Uuid),
     #[size_of(skip, skip_bounds)]
@@ -609,11 +610,54 @@ where
 
 //////////////////// Reverse conversions Variant -> T
 
+// Conversion from Variant to a specific type
 macro_rules! into {
-    ($variant:ident, $type:ty) => {
+    ($variant:ident, $type:ty, $type_name: ident) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            impl TryFrom<Variant> for $type {
+                type Error = Box<SqlRuntimeError>;
+
+                #[doc(hidden)]
+                fn try_from(value: Variant) -> Result<Self, Self::Error> {
+                    match value {
+                        Variant::String(x) => [< cast_to_ $type_name _s>](x),
+                        Variant::$variant(x) => Ok(x),
+                        _ => Err(SqlRuntimeError::from_string(format!(
+                            "variant is {}, which cannot be converted to {}",
+                            typeof_(value),
+                            ttn!($type),
+                        ))),
+                    }
+                }
+            }
+
+            #[doc(hidden)]
+            impl TryFrom<Variant> for Option<$type> {
+                type Error = Box<SqlRuntimeError>;
+
+                #[doc(hidden)]
+                fn try_from(value: Variant) -> Result<Self, Self::Error> {
+                    match value {
+                        Variant::SqlNull => Ok(None),
+                        Variant::VariantNull => Ok(None),
+                        _ => match <$type>::try_from(value) {
+                            Ok(result) => Ok(Some(result)),
+                            Err(e) => Err(SqlRuntimeError::from_string(e.to_string())),
+                        },
+                    }
+                }
+            }
+        }
+    };
+}
+
+// Like into! but no string conversion
+macro_rules! into_no_string {
+    ($variant:ident, $type:ty, $type_name: ident) => {
         #[doc(hidden)]
         impl TryFrom<Variant> for $type {
-            type Error = Box<dyn Error>;
+            type Error = Box<SqlRuntimeError>;
 
             #[doc(hidden)]
             fn try_from(value: Variant) -> Result<Self, Self::Error> {
@@ -630,7 +674,7 @@ macro_rules! into {
 
         #[doc(hidden)]
         impl TryFrom<Variant> for Option<$type> {
-            type Error = Box<dyn Error>;
+            type Error = Box<SqlRuntimeError>;
 
             #[doc(hidden)]
             fn try_from(value: Variant) -> Result<Self, Self::Error> {
@@ -647,16 +691,16 @@ macro_rules! into {
     };
 }
 
-into!(Boolean, bool);
-into!(String, SqlString);
-into!(Date, Date);
-into!(Time, Time);
-into!(Timestamp, Timestamp);
-into!(ShortInterval, ShortInterval);
-into!(LongInterval, LongInterval);
-into!(Geometry, GeoPoint);
-into!(Binary, ByteArray);
-into!(Uuid, Uuid);
+into!(Boolean, bool, b);
+into!(Date, Date, Date);
+into!(Time, Time, Time);
+into!(Timestamp, Timestamp, Timestamp);
+into!(ShortInterval, ShortInterval, ShortInterval_DAYS_TO_MINUTES);
+into!(LongInterval, LongInterval, LongInterval_YEARS_TO_MONTHS);
+into!(Uuid, Uuid, Uuid);
+
+into_no_string!(Geometry, GeoPoint, GeoPoint);
+into_no_string!(Binary, ByteArray, bytes);
 
 macro_rules! into_numeric {
     ($type:ty, $type_name: ident) => {
@@ -668,6 +712,7 @@ macro_rules! into_numeric {
                 #[doc(hidden)]
                 fn try_from(value: Variant) -> Result<Self, Self::Error> {
                     match value {
+                        Variant::String(x) => [< cast_to_ $type_name _s>](x),
                         Variant::TinyInt(x) => [< cast_to_ $type_name _i8>](x),
                         Variant::SmallInt(x) => [< cast_to_ $type_name _i16>](x),
                         Variant::Int(x) => [< cast_to_ $type_name _i32 >](x),
@@ -725,6 +770,72 @@ into_numeric!(u32, u32);
 into_numeric!(u64, u64);
 into_numeric!(F32, f);
 into_numeric!(F64, d);
+
+#[doc(hidden)]
+impl TryFrom<Variant> for SqlString {
+    type Error = Box<SqlRuntimeError>;
+
+    #[doc(hidden)]
+    fn try_from(value: Variant) -> Result<Self, Self::Error> {
+        match value {
+            Variant::Boolean(x) => Ok(SqlString::from(if x { "true" } else { "false" })),
+            Variant::TinyInt(x) => Ok(SqlString::from(format!("{x}"))),
+            Variant::SmallInt(x) => Ok(SqlString::from(format!("{x}"))),
+            Variant::Int(x) => Ok(SqlString::from(format!("{x}"))),
+            Variant::BigInt(x) => Ok(SqlString::from(format!("{x}"))),
+            Variant::UTinyInt(x) => Ok(SqlString::from(format!("{x}"))),
+            Variant::USmallInt(x) => Ok(SqlString::from(format!("{x}"))),
+            Variant::UInt(x) => Ok(SqlString::from(format!("{x}"))),
+            Variant::UBigInt(x) => Ok(SqlString::from(format!("{x}"))),
+            Variant::SqlDecimal(x) => Ok(SqlString::from(format!(
+                "{}",
+                DynamicDecimal::new(x.0, x.1)
+            ))),
+            Variant::Real(x) => {
+                let mut buffer = ryu::Buffer::new();
+                let result = buffer.format(x.into_inner());
+                Ok(SqlString::from(result))
+            }
+            Variant::Double(x) => {
+                let mut buffer = ryu::Buffer::new();
+                let result = buffer.format(x.into_inner());
+                Ok(SqlString::from(result))
+            }
+            Variant::String(x) => Ok(x),
+            Variant::Date(x) => Ok(SqlString::from(x.to_string())),
+            Variant::Time(x) => Ok(SqlString::from(x.to_string())),
+            Variant::Timestamp(x) => Ok(SqlString::from(x.to_string())),
+            Variant::ShortInterval(x) => Ok(SqlString::from(x.to_string())),
+            Variant::LongInterval(x) => Ok(SqlString::from(x.to_string())),
+            Variant::Binary(x) => Ok(to_hex_(x)),
+            Variant::Uuid(x) => Ok(SqlString::from(format!("{x}"))),
+            // GeoPoint does not have a cast to string
+            // Map does not have a cast to string
+            // Array does not have a cast to string
+            _ => Err(SqlRuntimeError::from_string(format!(
+                "variant is {}, which cannot be converted to CHAR",
+                typeof_(value),
+            ))),
+        }
+    }
+}
+
+#[doc(hidden)]
+impl TryFrom<Variant> for Option<SqlString> {
+    type Error = Box<dyn Error>;
+
+    #[doc(hidden)]
+    fn try_from(value: Variant) -> Result<Self, Self::Error> {
+        match value {
+            Variant::SqlNull => Ok(None),
+            Variant::VariantNull => Ok(None),
+            _ => match SqlString::try_from(value) {
+                Ok(result) => Ok(Some(result)),
+                Err(e) => Err(SqlRuntimeError::from_string(e.to_string())),
+            },
+        }
+    }
+}
 
 #[doc(hidden)]
 impl<const P: usize, const S: usize> TryFrom<Variant> for SqlDecimal<P, S> {

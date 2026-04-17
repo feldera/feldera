@@ -6,10 +6,10 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableData;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
+import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
@@ -48,7 +48,7 @@ import org.junit.Test;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 
-public class VariantTests extends BaseSQLTests {
+public class VariantTests extends SqlIoTest {
     /** Return the default compiler used for testing. */
     @Override
     public CompilerOptions testOptions() {
@@ -280,17 +280,21 @@ public class VariantTests extends BaseSQLTests {
 
     @Test
     public void testCastVec() {
-        // This is a bug in Calcite, the array should be nullable, and the elements should be nullable too
+        this.testQuery("""
+                SELECT CAST(PARSE_JSON('["10:10:10"]') AS TIME ARRAY)""",
+                new DBSPArrayExpression(true,
+                        new DBSPTimeLiteral(
+                                CalciteObject.EMPTY, DBSPTypeTime.NULLABLE_INSTANCE, new TimeString("10:10:10"))));
         this.testQuery("""
                 SELECT CAST(ARRAY[NULL, 1] AS INT ARRAY)""",
                 new DBSPArrayExpression(false,
                         new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true).none(),
                         new DBSPI32Literal(1, true)));
-        // result is null, since 1 cannot be converted to a string
+        // result is null, since 1 cannot be converted to a TIME
         this.testQuery("""
-                SELECT CAST(PARSE_JSON('["a", 1]') AS STRING ARRAY)""",
+                SELECT CAST(PARSE_JSON('["10:10:10", 1]') AS TIME ARRAY)""",
                 new DBSPArrayExpression(
-                        new DBSPTypeArray(DBSPTypeString.varchar(true), true),
+                        new DBSPTypeArray(DBSPTypeTime.NULLABLE_INSTANCE, true),
                         true));
         this.testQuery("""
                 SELECT CAST(PARSE_JSON('["a", 1.0]') AS VARIANT ARRAY)""",
@@ -486,11 +490,142 @@ public class VariantTests extends BaseSQLTests {
                 -- extract and flatten the arrays from the DECODE view
                 CREATE VIEW OUT(name, "uuid") AS SELECT x.name, x."uuid" FROM DECODE, UNNEST(DECODE.rec.steps) AS x;
                 """);
-        ccs.step("INSERT INTO DATA VALUES (" + data + ")",
+        ccs.stepWeightOne("INSERT INTO DATA VALUES (" + data + ")",
                 """
-                         name | uuid| weight
-                        ---------------------
-                         blah| uuid0| 1
-                         boo|NULL   | 1""");
+                         name | uuid
+                        -------------
+                         blah| uuid0
+                         boo|NULL""");
+    }
+
+    @Test
+    public void issue5938() {
+        // type -> Variant -> string
+        this.qs("""
+                SELECT CAST(CAST(1 AS VARIANT) AS VARCHAR);
+                 r
+                ---
+                 1
+                (1 row)
+                
+                SELECT CAST(CAST('a' AS VARIANT) AS VARCHAR);
+                 r
+                ---
+                 a
+                (1 row)
+                
+                SELECT CAST(CAST(1.5 AS VARIANT) AS VARCHAR);
+                 r
+                ---
+                 1.5
+                (1 row)
+                
+                 SELECT CAST(CAST(1.5e0 AS VARIANT) AS VARCHAR);
+                 r
+                ---
+                 1.5
+                (1 row)
+                
+                SELECT CAST(CAST(TRUE AS VARIANT) AS VARCHAR);
+                 r
+                ---
+                 true
+                (1 row)
+                
+                SELECT CAST(CAST(UUID '123e4567-e89b-12d3-a456-426655440000' AS VARIANT) AS VARCHAR);
+                 r
+                ---
+                 123e4567-e89b-12d3-a456-426655440000
+                (1 row)
+                
+                SELECT CAST(CAST(INTERVAL '+1 10:10:10.123' DAYS TO SECONDS AS VARIANT) AS VARCHAR);
+                 r
+                ---
+                 +1 10:10:10.123000
+                (1 row)
+
+                SELECT CAST(CAST(x'0abc' AS VARIANT) AS VARCHAR);
+                 r
+                ---
+                 0abc
+                (1 row)
+                
+                SELECT CAST(CAST(TIME '10:00:00.123' AS VARIANT) AS VARCHAR);
+                 r
+                ---
+                 10:00:00.123000000
+                (1 row)
+                
+                SELECT CAST(CAST(TIMESTAMP '2024-02-02 10:00:00.123' AS VARIANT) AS VARCHAR);
+                 r
+                ---
+                 2024-02-02 10:00:00.123000
+                (1 row)
+
+                SELECT CAST(CAST(DATE '2024-02-02' AS VARIANT) AS VARCHAR);
+                 r
+                ---
+                 2024-02-02
+                (1 row)
+                """);
+    }
+
+    @Test
+    public void issue5938a() {
+        // String -> Variant -> type
+        this.qs("""
+                SELECT CAST(CAST('1' AS VARIANT) AS INT);
+                 r
+                ---
+                 1
+                (1 row)
+                
+                SELECT CAST(CAST('1.5' AS VARIANT) AS DECIMAL(10, 1));
+                 r
+                ---
+                 1.5
+                (1 row)
+                
+                SELECT CAST(CAST('1.5e0' AS VARIANT) AS DOUBLE);
+                 r
+                ---
+                 1.5
+                (1 row)
+                
+                SELECT CAST(CAST('TRUE' AS VARIANT) AS BOOLEAN);
+                 r
+                ---
+                 true
+                (1 row)
+                
+                SELECT CAST(CAST('123e4567-e89b-12d3-a456-426655440000' AS VARIANT) AS UUID);
+                 r
+                ---
+                 123e4567-e89b-12d3-a456-426655440000
+                (1 row)
+                
+                SELECT CAST(CAST('+1 10:10:10.123' AS VARIANT) AS INTERVAL DAYS TO SECONDS);
+                 r
+                ---
+                 1 days 10 hours 10 mins 10.123000 secs
+                (1 row)
+
+                SELECT CAST(CAST('10:00:00.123' AS VARIANT) AS TIME);
+                 r
+                ---
+                 10:00:00.123000000
+                (1 row)
+                
+                SELECT CAST(CAST('2024-02-02 10:00:00.123' AS VARIANT) AS TIMESTAMP);
+                 r
+                ---
+                 2024-02-02 10:00:00.123000
+                (1 row)
+
+                SELECT CAST(CAST('2024-02-02' AS VARIANT) AS DATE);
+                 r
+                ---
+                 2024-02-02
+                (1 row)""");
     }
 }

@@ -964,15 +964,19 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
             // https://github.com/feldera/feldera/issues/4700:
             // Disable all expression evaluations for TIME and TIMESTAMP values, since they are broken in Calcite:
             // Calcite does not support TIMESTAMP with precisions above 3
+            // Disable optimizations for VARIANT values, the evaluation rules are different
             SqlTypeName resultType = call.getType().getSqlTypeName();
             if (resultType == SqlTypeName.TIMESTAMP ||
                     resultType == SqlTypeName.TIME ||
+                    resultType == SqlTypeName.VARIANT ||
                     SqlTypeName.INTERVAL_TYPES.contains(resultType))
                 callConstancy = Constancy.NON_CONSTANT;
             for (int iOperand = 0; iOperand < operandCount; ++iOperand) {
                 RexNode operand = call.getOperands().get(iOperand);
                 SqlTypeName operandType = operand.getType().getSqlTypeName();
-                if (operandType == SqlTypeName.TIMESTAMP || operandType == SqlTypeName.TIME) {
+                if (operandType == SqlTypeName.TIMESTAMP
+                        || operandType == SqlTypeName.TIME
+                        || operandType == SqlTypeName.VARIANT) {
                     callConstancy = Constancy.NON_CONSTANT;
                 }
             }

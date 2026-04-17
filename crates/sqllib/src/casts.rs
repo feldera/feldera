@@ -17,7 +17,7 @@ use crate::{
     variant::*,
 };
 
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use dbsp::algebra::{F32, F64, HasOne, HasZero};
 use num::{One, Zero};
 use num_traits::cast::NumCast;
@@ -551,6 +551,7 @@ pub fn cast_to_SqlDecimalN_V<const P: usize, const S: usize>(
     value: Variant,
 ) -> SqlResult<Option<SqlDecimal<P, S>>> {
     match value {
+        Variant::String(x) => r2o(cast_to_SqlDecimal_s::<P, S>(x)),
         Variant::TinyInt(i) => r2o(cast_to_SqlDecimal_i8::<P, S>(i)),
         Variant::SmallInt(i) => r2o(cast_to_SqlDecimal_i16::<P, S>(i)),
         Variant::Int(i) => r2o(cast_to_SqlDecimal_i32::<P, S>(i)),
@@ -1147,37 +1148,19 @@ pub fn cast_to_s_s(value: SqlString, n_chars: i32, fixed: bool) -> SqlResult<Sql
 
 #[doc(hidden)]
 pub fn cast_to_s_Timestamp(value: Timestamp, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    let dt = value.to_dateTime();
-    let month = dt.month();
-    let day = dt.day();
-    let year = dt.year();
-    let hr = dt.hour();
-    let min = dt.minute();
-    let sec = dt.second();
-    let result = format!(
-        "{}-{:02}-{:02} {:02}:{:02}:{:02}",
-        year, month, day, hr, min, sec
-    );
+    let result = value.to_string();
     limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 pub fn cast_to_s_Date(value: Date, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    let dt = value.to_date();
-    let month = dt.month();
-    let day = dt.day();
-    let year = dt.year();
-    let result = format!("{}-{:02}-{:02}", year, month, day);
+    let result = value.to_string();
     limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 pub fn cast_to_s_Time(value: Time, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    let dt = value.to_time();
-    let hr = dt.hour();
-    let min = dt.minute();
-    let sec = dt.second();
-    let result = format!("{:02}:{:02}:{:02}", hr, min, sec);
+    let result = value.to_string();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -1329,7 +1312,7 @@ pub fn cast_to_s_LongInterval_YEARS(
 }
 
 #[doc(hidden)]
-const fn sign(negative: bool) -> &'static str {
+pub(crate) const fn sign(negative: bool) -> &'static str {
     if negative { "-" } else { "+" }
 }
 
@@ -1358,7 +1341,8 @@ pub fn cast_to_s_LongInterval_YEARS_TO_MONTHS(
 }
 
 impl ShortInterval {
-    fn into_sign_and_magnitude(self) -> (&'static str, Self) {
+    #[doc(hidden)]
+    pub(crate) fn into_sign_and_magnitude(self) -> (&'static str, Self) {
         if self.microseconds() < 0 {
             ("-", Self::from_microseconds(-self.microseconds()))
         } else {
@@ -1450,8 +1434,10 @@ pub fn cast_to_s_ShortInterval_SECONDS(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
+    let (sign, interval) = interval.into_sign_and_magnitude();
     let seconds = interval.microseconds() / 1_000_000;
-    let result = format_args!("{seconds:+}.{:06}", 0).to_small_string::<32>();
+    let micros = interval.microseconds() % 1_000_000;
+    let result = format_args!("{sign}{seconds}.{:06}", micros).to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -1461,16 +1447,7 @@ pub fn cast_to_s_ShortInterval_DAYS_TO_SECONDS(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let (sign, interval) = interval.into_sign_and_magnitude();
-    let days = extract_day_ShortInterval(interval);
-    let hours = extract_hour_ShortInterval(interval);
-    let minutes = extract_minute_ShortInterval(interval);
-    let seconds = extract_second_ShortInterval(interval);
-    let result = format_args!(
-        "{sign}{} {:02}:{:02}:{:02}.{:06}",
-        days, hours, minutes, seconds, 0
-    )
-    .to_small_string::<32>();
+    let result = interval.to_string();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -1485,12 +1462,13 @@ pub fn cast_to_s_ShortInterval_HOURS_TO_SECONDS(
     let hours = extract_hour_ShortInterval(interval);
     let minutes = extract_minute_ShortInterval(interval);
     let seconds = extract_second_ShortInterval(interval);
+    let micros = interval.microseconds() % 1_000_000;
     let result = format_args!(
         "{sign}{}:{:02}:{:02}.{:06}",
         days * 24 + hours,
         minutes,
         seconds,
-        0
+        micros
     )
     .to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
@@ -1507,11 +1485,12 @@ pub fn cast_to_s_ShortInterval_MINUTES_TO_SECONDS(
     let hours = extract_hour_ShortInterval(interval);
     let minutes = extract_minute_ShortInterval(interval);
     let seconds = extract_second_ShortInterval(interval);
+    let micros = interval.microseconds() % 1_000_000;
     let result = format_args!(
         "{sign}{:02}:{:02}.{:06}",
         (days * 24 + hours) * 60 + minutes,
         seconds,
-        0
+        micros
     )
     .to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
@@ -2548,6 +2527,15 @@ pub fn cast_to_ShortInterval_DAYS_TO_MINUTES_s(value: SqlString) -> SqlResult<Sh
 }
 
 #[doc(hidden)]
+pub fn cast_to_GeoPoint_s(_value: SqlString) -> SqlResult<GeoPoint> {
+    Err(SqlRuntimeError::from_strng(
+        "String cannot be cast to ST_POINT",
+    ))
+}
+
+cast_function!(GeoPoint, GeoPoint, s, SqlString);
+
+#[doc(hidden)]
 pub fn cast_to_ShortInterval_HOURS_TO_MINUTES_s(value: SqlString) -> SqlResult<ShortInterval> {
     if let Some(captures) = HOURS_TO_MINUTES.captures(value.str()) {
         let negative = negative(&captures);
@@ -3370,8 +3358,9 @@ macro_rules! cast_from_variant {
             #[doc(hidden)]
             pub fn [< cast_to_ $result_name N _V >](value: Variant) -> SqlResult<Option<$result_type>> {
                 match value {
+                    Variant::String(x) => r2o([< cast_to_ $result_name _s>](x)),
                     Variant::$enum(value) => Ok(Some(value)),
-                    _            => Ok(None),
+                    _ => Ok(None),
                 }
             }
 
@@ -3401,6 +3390,7 @@ macro_rules! cast_from_variant_numeric {
             #[doc(hidden)]
             pub fn [< cast_to_ $result_name N _V >](value: Variant) -> SqlResult<Option<$result_type>> {
                 match value {
+                    Variant::String(x) => r2o([< cast_to_ $result_name _s>](x)),
                     Variant::TinyInt(value) => r2o([< cast_to_ $result_name _i8 >](value)),
                     Variant::SmallInt(value) => r2o([< cast_to_ $result_name _i16 >](value)),
                     Variant::Int(value) => r2o([< cast_to_ $result_name _i32 >](value)),
@@ -3901,7 +3891,7 @@ mod tests {
         assert_eq!(
             cast_to_s_ShortInterval_SECONDS(ShortInterval::from_milliseconds(123456789), -1, false)
                 .unwrap(),
-            SqlString::from_ref("+123456.000000")
+            SqlString::from_ref("+123456.789000")
         );
         assert_eq!(
             cast_to_s_ShortInterval_SECONDS(
@@ -3910,7 +3900,7 @@ mod tests {
                 false
             )
             .unwrap(),
-            SqlString::from_ref("-123456.000000")
+            SqlString::from_ref("-123456.789000")
         );
         assert_eq!(
             cast_to_s_ShortInterval_DAYS_TO_SECONDS(
@@ -3919,7 +3909,7 @@ mod tests {
                 false
             )
             .unwrap(),
-            SqlString::from_ref("+1 10:17:36.000000")
+            SqlString::from_ref("+1 10:17:36.789000")
         );
         assert_eq!(
             cast_to_s_ShortInterval_DAYS_TO_SECONDS(
@@ -3928,7 +3918,7 @@ mod tests {
                 false
             )
             .unwrap(),
-            SqlString::from_ref("-1 10:17:36.000000")
+            SqlString::from_ref("-1 10:17:36.789000")
         );
         assert_eq!(
             cast_to_s_ShortInterval_HOURS_TO_SECONDS(
@@ -3937,7 +3927,7 @@ mod tests {
                 false
             )
             .unwrap(),
-            SqlString::from_ref("+34:17:36.000000")
+            SqlString::from_ref("+34:17:36.789000")
         );
         assert_eq!(
             cast_to_s_ShortInterval_HOURS_TO_SECONDS(
@@ -3946,7 +3936,7 @@ mod tests {
                 false
             )
             .unwrap(),
-            SqlString::from_ref("-34:17:36.000000")
+            SqlString::from_ref("-34:17:36.789000")
         );
         assert_eq!(
             cast_to_s_ShortInterval_MINUTES_TO_SECONDS(
@@ -3955,7 +3945,7 @@ mod tests {
                 false
             )
             .unwrap(),
-            SqlString::from_ref("+2057:36.000000")
+            SqlString::from_ref("+2057:36.789000")
         );
         assert_eq!(
             cast_to_s_ShortInterval_MINUTES_TO_SECONDS(
@@ -3964,7 +3954,7 @@ mod tests {
                 false
             )
             .unwrap(),
-            SqlString::from_ref("-2057:36.000000")
+            SqlString::from_ref("-2057:36.789000")
         );
     }
 

@@ -155,10 +155,13 @@ public final class DBSPCastExpression extends DBSPExpression {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append("((")
+        return builder
+                .append("((")
                 .append(this.type)
                 .append(")")
                 .append(this.source)
+                //.append(", ")
+                //.append(this.safe.name())
                 .append(")");
     }
 

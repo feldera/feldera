@@ -156,13 +156,13 @@ public class TimeTests extends BaseSQLTests {
     @Test
     public void castTimestampToString() {
         String query = "SELECT CAST(T.COL1 AS STRING) FROM T";
-        this.testQuery(query, new DBSPStringLiteral("1970-01-01 00:00:00"));
+        this.testQuery(query, new DBSPStringLiteral("1970-01-01 00:00:00.100000"));
     }
 
     @Test
     public void castTimestampToStringToTimestamp() {
         String query = "SELECT CAST(CAST(T.COL1 AS STRING) AS Timestamp) FROM T";
-        this.testQuery(query, DBSPTimestampLiteral.fromMilliseconds(0));
+        this.testQuery(query, DBSPTimestampLiteral.fromMilliseconds(100));
     }
 
     @Test

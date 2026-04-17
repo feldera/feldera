@@ -25,6 +25,17 @@ import TabItem from '@theme/TabItem';
         as expressions which never match.  The new behavior more closely
         aligns with other databases.
 
+        `CAST(variant AS VARCHAR)` will return a meaningful value for all
+        scalar variant values, and not just for `VARIANT` objects with a
+        string value.  In the past this cast used to return `NULL`.
+
+        `(CAST(string AS VARIANT) AS type)` will now behave like
+        `CAST(string AS type)`.  Previously the result was `NULL`.
+
+        Conversion of short intervals including seconds to strings will
+        now include the fractional seconds as well.  Previously the
+        fractional seconds were ignored.
+
         ## v0.288.0
 
         Delta Lake input connector error handling behavior change:

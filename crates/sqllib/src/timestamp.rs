@@ -98,7 +98,27 @@ impl Debug for Timestamp {
 
 impl fmt::Display for Timestamp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        <Self as Debug>::fmt(self, f)
+        let dt = self.to_dateTime();
+        let month = dt.month();
+        let day = dt.day();
+        let year = dt.year();
+        let hr = dt.hour();
+        let min = dt.minute();
+        let sec = dt.second();
+        let micro = dt.nanosecond() / 1000;
+        if micro == 0 {
+            write!(
+                f,
+                "{}-{:02}-{:02} {:02}:{:02}:{:02}",
+                year, month, day, hr, min, sec
+            )
+        } else {
+            write!(
+                f,
+                "{}-{:02}-{:02} {:02}:{:02}:{:02}.{:06}",
+                year, month, day, hr, min, sec, micro
+            )
+        }
     }
 }
 
@@ -1509,6 +1529,16 @@ impl fmt::Debug for Date {
     }
 }
 
+impl fmt::Display for Date {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let dt = self.to_date();
+        let month = dt.month();
+        let day = dt.day();
+        let year = dt.year();
+        write!(f, "{}-{:02}-{:02}", year, month, day)
+    }
+}
+
 #[doc(hidden)]
 impl ToInteger<i32> for Date {
     #[doc(hidden)]
@@ -2340,6 +2370,21 @@ some_polymorphic_function1!(date_trunc_day, Date, Date, Date);
 #[serde(transparent)]
 pub struct Time {
     nanoseconds: u64,
+}
+
+impl fmt::Display for Time {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let dt = self.to_time();
+        let hr = dt.hour();
+        let min = dt.minute();
+        let sec = dt.second();
+        let nanos = dt.nanosecond();
+        if nanos != 0 {
+            write!(f, "{:02}:{:02}:{:02}.{:09}", hr, min, sec, nanos)
+        } else {
+            write!(f, "{:02}:{:02}:{:02}", hr, min, sec)
+        }
+    }
 }
 
 #[doc(hidden)]

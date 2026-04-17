@@ -67,7 +67,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTimeAddSub;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
@@ -950,6 +949,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         return false;
     }
 
+    @SuppressWarnings("SameParameterValue")
     void checkFormatArg(List<DBSPExpression> args, int formatPosition) {
         if (formatPosition >= args.size())
             return;
@@ -1012,11 +1012,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 .appendSupplier(finalCall::toString)
                 .append(" ")
                 .appendSupplier(() -> finalCall.getType().toString());
-        if (call.op.kind == SqlKind.SEARCH) {
-            // TODO: Ideally the optimizer should do this before handing the expression to us.
-            // Then the rexBuilder won't be needed.
-            call = (RexCall) RexUtil.expandSearch(this.rexBuilder, null, call);
-        }
         List<DBSPExpression> ops = Linq.map(call.operands, e -> e.accept(this));
         String operationName = call.op.kind.sql;
         switch (call.op.kind) {
@@ -1103,6 +1098,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 }
                 DBSPCastExpression.CastType safe = call.op.kind == SqlKind.SAFE_CAST ?
                         DBSPCastExpression.CastType.SqlSafe : DBSPCastExpression.CastType.SqlUnsafe;
+                if (ops.get(0).getType().is(DBSPTypeVariant.class))
+                    // Casts from variant types are always safe
+                    safe = DBSPCastExpression.CastType.SqlSafe;
                 return ops.get(0).applyCloneIfNeeded().cast(node, type, safe);
             case IS_NULL:
             case IS_NOT_NULL: {
@@ -2040,7 +2038,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 for (int i = 0; i < tuple.size(); i++) {
                     converted.add(ops.get(i).cast(node, tuple.getFieldType(i), DBSPCastExpression.CastType.SqlUnsafe));
                 }
-                return new DBSPTupleExpression(node, converted);
+                return new DBSPTupleExpression(node, tuple, converted);
             }
             case COALESCE: {
                 if (ops.isEmpty()) {
@@ -2270,6 +2268,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 .append("Compiling ")
                 .appendSupplier(expression::toString)
                 .newline();
+        expression = RexUtil.expandSearch(this.rexBuilder, null, expression);
         DBSPExpression result = expression.accept(this);
         if (result == null)
             throw new InternalCompilerError("Unexpected Calcite expression " + expression,
