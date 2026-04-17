@@ -1,8 +1,12 @@
 import {
   type CombinedDesiredStatus as _CombinedDesiredStatus,
   type CombinedStatus as _CombinedStatus,
+  checkpointPipeline as _checkpointPipeline,
   deleteApiKey as _deleteApiKey,
   deletePipeline as _deletePipeline,
+  getCheckpointStatus as _getCheckpointStatus,
+  getCheckpointSyncStatus as _getCheckpointSyncStatus,
+  getCheckpoints as _getCheckpoints,
   getClusterEvent as _getClusterEvent,
   getConfig as _getConfig,
   getConfigSession as _getConfigSession,
@@ -17,6 +21,13 @@ import {
   postPipeline as _postPipeline,
   postUpdateRuntime as _postUpdateRuntime,
   putPipeline as _putPipeline,
+  syncCheckpoint as _syncCheckpoint,
+  type CheckpointActivity,
+  type CheckpointFailure,
+  type CheckpointMetadata,
+  type CheckpointResponse,
+  type CheckpointStatus,
+  type CommitProgressSummary,
   type ControllerStatus,
   type ErrorResponse,
   type GetPipelineSupportBundleData,
@@ -37,10 +48,16 @@ import {
   postPipelineResume,
   postPipelineStart,
   postPipelineStop,
-  startSamplyProfile
+  startSamplyProfile,
+  type TransactionStatus
 } from '$lib/services/manager'
 
 export type {
+  CheckpointActivity,
+  CheckpointFailure,
+  CheckpointMetadata,
+  CheckpointResponse,
+  CheckpointStatus,
   InputEndpointConfig,
   InputEndpointStatus,
   OutputEndpointConfig,
@@ -48,6 +65,22 @@ export type {
   RuntimeConfig,
   SqlCompilerMessage
 } from '$lib/services/manager'
+
+// Types missing from generated client (OpenAPI codegen maps them incorrectly)
+export type CheckpointSyncResponse = {
+  checkpoint_uuid: string
+}
+
+export type CheckpointSyncFailure = {
+  uuid: string
+  error: string
+}
+
+export type CheckpointSyncStatus = {
+  success?: string | null
+  failure?: CheckpointSyncFailure | null
+  periodic?: string | null
+}
 
 import { match, P } from 'ts-pattern'
 import type { XgressRecord } from '$lib/types/pipelineManager'
@@ -495,6 +528,36 @@ export const getOutputConnectorStatus = (
       ...options
     }),
     (v) => v
+  )
+
+export const getPipelineCheckpoints = (pipeline_name: string, options?: FetchOptions) =>
+  mapResponse(
+    _getCheckpoints({ path: { pipeline_name }, ...options }),
+    (v) => v as unknown as CheckpointMetadata[]
+  )
+
+export const checkpointPipeline = (pipeline_name: string, options?: FetchOptions) =>
+  mapResponse(
+    _checkpointPipeline({ path: { pipeline_name }, ...options }),
+    (v) => v as CheckpointResponse
+  )
+
+export const getCheckpointStatus = (pipeline_name: string, options?: FetchOptions) =>
+  mapResponse(
+    _getCheckpointStatus({ path: { pipeline_name }, ...options }),
+    (v) => v as CheckpointStatus
+  )
+
+export const syncCheckpoint = (pipeline_name: string, options?: FetchOptions) =>
+  mapResponse(
+    _syncCheckpoint({ path: { pipeline_name }, ...options }),
+    (v) => v as unknown as CheckpointSyncResponse
+  )
+
+export const getCheckpointSyncStatus = (pipeline_name: string, options?: FetchOptions) =>
+  mapResponse(
+    _getCheckpointSyncStatus({ path: { pipeline_name }, ...options }),
+    (v) => v as unknown as CheckpointSyncStatus
   )
 
 export const deletePipeline = async (pipeline_name: string, options?: FetchOptions) => {
