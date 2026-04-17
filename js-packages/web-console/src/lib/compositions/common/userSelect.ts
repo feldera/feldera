@@ -223,8 +223,7 @@ export const virtualSelect = (
       const anchorOffscreen = tracked.anchor.row < visible.min || tracked.anchor.row > visible.max
 
       if (anchorOffscreen) {
-        const focusOffscreen =
-          tracked.focus.row < visible.min || tracked.focus.row > visible.max
+        const focusOffscreen = tracked.focus.row < visible.min || tracked.focus.row > visible.max
         if (focusOffscreen) {
           // Both tracked endpoints are off-screen — the browser's anchor and focus
           // are both clamped values from reapplySelection. Preserve entire tracked
@@ -290,7 +289,8 @@ export const virtualSelect = (
       if (selection && selection.rangeCount && caretPosition) {
         // The click position is the focus for Range, or the anchor for Caret
         const clickNode = selection.type === 'Range' ? selection.focusNode : selection.anchorNode
-        const clickOffset = selection.type === 'Range' ? selection.focusOffset : selection.anchorOffset
+        const clickOffset =
+          selection.type === 'Range' ? selection.focusOffset : selection.anchorOffset
         if (!clickNode) {
           return
         }
@@ -413,8 +413,10 @@ export const virtualSelect = (
       if (visible) {
         const { anchor: tA, focus: tF } = currentSelection
         if (
-          tA.row < visible.min || tA.row > visible.max ||
-          tF.row < visible.min || tF.row > visible.max
+          tA.row < visible.min ||
+          tA.row > visible.max ||
+          tF.row < visible.min ||
+          tF.row > visible.max
         ) {
           return
         }

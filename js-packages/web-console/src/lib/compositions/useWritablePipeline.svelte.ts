@@ -52,6 +52,7 @@ export const useRefreshPipeline = ({
   update,
   getPreloaded,
   getPipelines,
+  getDeleted,
   onNotFound
 }: {
   getPipeline: () => { current: ExtendedPipeline }
@@ -59,6 +60,7 @@ export const useRefreshPipeline = ({
   update: (p: Partial<ExtendedPipeline>) => void
   getPreloaded: () => ExtendedPipeline
   getPipelines: () => PipelineThumb[]
+  getDeleted?: () => boolean
   onNotFound?: () => void
 }) => {
   const pipelineName = $derived(getPipeline().current.name)
@@ -89,9 +91,11 @@ export const useRefreshPipeline = ({
   $effect(() => {
     const ps = getPipelines()
     untrack(() => {
+      if (getDeleted?.()) return
       const pipeline = getPipeline().current
       const thumb = ps.find((p) => p.name === pipeline.name)
       if (!thumb) {
+        onNotFound?.()
         return
       }
       if (thumb.refreshVersion === pipeline.refreshVersion) {

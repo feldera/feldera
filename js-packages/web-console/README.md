@@ -58,6 +58,29 @@ Check that there are no type or syntax errors:
 bun run check
 ```
 
+### End-to-end tests (Playwright)
+
+Expects `pipeline-manager` running on `localhost:8080` (override with
+`PLAYWRIGHT_API_ORIGIN` / `PLAYWRIGHT_APP_ORIGIN`).
+
+```bash
+# Run the full e2e suite
+bun run test-e2e
+
+# Run a single spec file
+bun run test-e2e -- tests/pipelineDeleted.e2e.ts
+
+# Run a single test by name (regex, matches against test.describe + test titles)
+bun run test-e2e -- -g "shows Deleted chip"
+
+# Run a single test at a specific line in a file
+bun run test-e2e -- tests/pipelineDeleted.e2e.ts:42
+
+# Headed / debug modes (need a display)
+bun playwright test tests/pipelineDeleted.e2e.ts --headed
+bun playwright test tests/pipelineDeleted.e2e.ts --debug
+```
+
 ### Build issues
 
 If you experience unexpected build issues, run `bun run clean` from the repository root and make sure you have the supported Node.js (v20) and Bun.js (1.3.3) versions installed:

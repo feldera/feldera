@@ -29,7 +29,10 @@
   import { triggerFileDownload } from '$lib/services/browser'
   import DownloadProgressDisplay from '$lib/components/dialogs/DownloadProgressDisplay.svelte'
 
-  let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
+  let {
+    pipeline,
+    deleted = false
+  }: { pipeline: { current: ExtendedPipeline }; deleted?: boolean } = $props()
 
   let api = usePipelineManager()
   const globalDialog = useGlobalDialog()
@@ -53,7 +56,7 @@
   const maxDuration = 3600
 
   let pipelineNotRunning = $derived(!isPipelineInteractive(pipeline.current.status))
-  let disabled = $derived(pipelineNotRunning || profilingNotEnabledMessage !== null)
+  let disabled = $derived(deleted || pipelineNotRunning || profilingNotEnabledMessage !== null)
 
   // Time formatting: "Xm Ys" ignoring zeros
   const formatTime = (seconds: number) => {

@@ -71,10 +71,12 @@
 
   let {
     preloaded,
-    pipeline
+    pipeline,
+    deleted = false
   }: {
     preloaded: { pipelines: PipelineThumb[] }
     pipeline: WritablePipeline
+    deleted?: boolean
   } = $props()
 
   let runtimeVersion = $derived(
@@ -89,12 +91,14 @@
   )
 
   let editCodeDisabled = $derived(
-    nonNull(pipeline.current.status) &&
-      (!isPipelineCodeEditable(pipeline.current.status) ||
-        isUpgradeRequired(pipeline.current, runtimeVersion))
+    deleted ||
+      (nonNull(pipeline.current.status) &&
+        (!isPipelineCodeEditable(pipeline.current.status) ||
+          isUpgradeRequired(pipeline.current, runtimeVersion)))
   )
   let editConfigDisabled = $derived(
-    nonNull(pipeline.current.status) && !isPipelineConfigEditable(pipeline.current.status)
+    deleted ||
+      (nonNull(pipeline.current.status) && !isPipelineConfigEditable(pipeline.current.status))
   )
 
   const { updatePipelines } = useUpdatePipelineList()
@@ -119,7 +123,9 @@
     )
   )
 
-  let metrics = useAggregatePipelineStats(pipeline, 2000, 63000)
+  let metrics = useAggregatePipelineStats(pipeline, 2000, 63000, {
+    getDeleted: () => deleted
+  })
 
   let files = $derived.by(() => {
     const current = pipeline.current
@@ -245,6 +251,13 @@ example = "1.0"`
   const contextDrawer = useContextDrawer()
 
   let pipelineBannerMessage = $derived.by(() => {
+    if (deleted) {
+      return {
+        header: 'This pipeline has been deleted',
+        message: 'The pipeline was deleted. All editing and monitoring has been disabled.',
+        style: 'error' as const
+      }
+    }
     if (pipeline.current.deploymentError) {
       return {
         header: `The last execution of the pipeline failed with the error code: ${pipeline.current.deploymentError.error_code}`,
@@ -342,6 +355,7 @@ example = "1.0"`
     {pipeline}
     onDeletePipeline={handleDeletePipeline}
     {editConfigDisabled}
+    {deleted}
     unsavedChanges={downstreamChanged}
     onActionSuccess={handleActionSuccess}
     {saveFile}
@@ -391,7 +405,12 @@ example = "1.0"`
             {/if}
           {/snippet}
         </PipelineBreadcrumbs>
-        <PipelineStatus class="h-6" status={pipeline.current.status}></PipelineStatus>
+        <PipelineStatus
+          data-testid="box-pipeline-status"
+          class="h-6"
+          status={pipeline.current.status}
+          {deleted}
+        ></PipelineStatus>
         <PipelineTransactionStatus
           globalMetrics={metrics.current.global}
           onClick={() => {
@@ -502,7 +521,11 @@ example = "1.0"`
                 {#if showInteractionPanel.value}
                   <PaneResizer class="pane-divider-vertical mx-2"></PaneResizer>
                   <Pane defaultSize={40} minSize={20} class="flex flex-col !overflow-visible">
-                    <InteractionPanel {pipeline} {metrics} bind:currentTab={currentInteractionTab}
+                    <InteractionPanel
+                      {pipeline}
+                      {metrics}
+                      {deleted}
+                      bind:currentTab={currentInteractionTab}
                     ></InteractionPanel>
                     <!-- <div class="flex h-full flex-col rounded-container p-4 bg-surface-50-950">
                       <div class="flex h-8 items-start justify-between">
@@ -531,16 +554,18 @@ example = "1.0"`
           {/snippet}
           {#snippet statusBarCenter()}
             {@const programStatus = programStatusOf(pipeline.current.status)}
-            <ProgramStatus {programStatus}></ProgramStatus>
-            <div class="flex items-center gap-2 pl-1">
-              <PipelineVersion
-                pipelineName={pipeline.current.name}
-                runtimeVersion={pipeline.current.platformVersion}
-                baseRuntimeVersion={page.data.feldera!.version}
-                configuredRuntimeVersion={pipeline.current.programConfig?.runtime_version}
-                {programStatus}
-              ></PipelineVersion>
-            </div>
+            {#if !deleted}
+              <ProgramStatus {programStatus}></ProgramStatus>
+              <div class="flex items-center gap-2 pl-1">
+                <PipelineVersion
+                  pipelineName={pipeline.current.name}
+                  runtimeVersion={pipeline.current.platformVersion}
+                  baseRuntimeVersion={page.data.feldera!.version}
+                  configuredRuntimeVersion={pipeline.current.programConfig?.runtime_version}
+                  {programStatus}
+                ></PipelineVersion>
+              </div>
+            {/if}
           {/snippet}
           {#snippet statusBarEnd()}
             <div class="ml-auto flex flex-nowrap items-center gap-1">
@@ -583,6 +608,7 @@ example = "1.0"`
             <MonitoringPanel
               {pipeline}
               {metrics}
+              {deleted}
               hiddenTabs={singleton(currentInteractionTab)}
               bind:currentTab={currentMonitoringTab}
             ></MonitoringPanel>

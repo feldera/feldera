@@ -357,6 +357,26 @@ const mapResponse = <R, T, E extends { message: string }>(
   })
 }
 
+export const getPipelineThumb = async (
+  pipeline_name: string,
+  callbacks?: { onNotFound: () => void },
+  options?: FetchOptions
+) => {
+  return mapResponse(
+    _getPipeline({
+      path: { pipeline_name },
+      ...options
+    }),
+    toPipelineThumb,
+    (e) => {
+      if (e.error_code === 'UnknownPipelineName') {
+        callbacks?.onNotFound?.()
+      }
+      throw new Error(e.message, { cause: e })
+    }
+  )
+}
+
 export const getExtendedPipeline = async (
   pipeline_name: string,
   callbacks?: { onNotFound: () => void },
@@ -427,23 +447,6 @@ export const getPipelines = async (options?: FetchOptions): Promise<PipelineThum
       ...options
     }),
     (pipelines) => pipelines.map(toPipelineThumb)
-  )
-}
-
-export const getPipelineStatus = async (pipeline_name: string, options?: FetchOptions) => {
-  return mapResponse(
-    _getPipeline({
-      path: { pipeline_name },
-      query: { selector: 'status' },
-      ...options
-    }),
-    (pipeline) =>
-      consolidatePipelineStatus(
-        pipeline.program_status,
-        pipeline.deployment_status,
-        pipeline.deployment_desired_status,
-        pipeline.deployment_error
-      )
   )
 }
 

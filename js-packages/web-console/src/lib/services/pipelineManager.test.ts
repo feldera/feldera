@@ -72,7 +72,6 @@ describe('pipelineManager connector status with special characters', () => {
 
   it('getInputConnectorStatus succeeds with dot and URL-unsafe characters in table and connector name', async () => {
     const body = await getInputConnectorStatus(PIPELINE_NAME, TABLE_NAME, INPUT_CONNECTOR_NAME)
-    console.log('body', JSON.stringify(body))
     expect(body).toHaveProperty(['metrics', 'num_parse_errors'])
     expect(body).toHaveProperty(['metrics', 'num_transport_errors'])
   })

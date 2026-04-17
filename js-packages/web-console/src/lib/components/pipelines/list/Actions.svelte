@@ -66,6 +66,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     pipeline,
     onDeletePipeline,
     editConfigDisabled,
+    deleted = false,
     unsavedChanges,
     onActionSuccess,
     saveFile,
@@ -74,6 +75,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     pipeline: WritablePipeline
     onDeletePipeline?: (pipelineName: string) => void
     editConfigDisabled: boolean
+    deleted?: boolean
     unsavedChanges: boolean
     onActionSuccess?: (pipelineName: string, action: PipelineAction) => void
     saveFile: () => void
@@ -522,23 +524,13 @@ groups related actions into multi-action dropdowns when multiple options are ava
   ></DeleteDialog>
 {/snippet}
 
-<div class={'flex flex-nowrap gap-2 sm:gap-4 ' + _class}>
-  <!-- <div class="btn p-0 preset-filled-surface-100-900">
-    <button class="btn flex justify-center gap-2">
-      <span class="fd fd-circle-stop {iconClass}"></span>
-      <span>Suspend</span>
-    </button>
-    <div class="-mx-2 h-full border-l-[2px] border-surface-50-950"></div>
-    <button class="fd fd-chevron-down btn-icon text-[20px]"> </button>
-  </div> -->
-
-  {#each active as name}
-    {@render actions[name]()}
-  {/each}
-  <!-- {@render _saveFile()}
-  {@render _configurations()}
-  {@render _delete()} -->
-</div>
+{#if !deleted}
+  <div data-testid="box-action-buttons" class={'flex flex-nowrap gap-2 sm:gap-4 ' + _class}>
+    {#each active as name}
+      {@render actions[name]()}
+    {/each}
+  </div>
+{/if}
 
 {#snippet _multiAction(configKey: keyof typeof multiActionConfigs)}
   {@const config = multiActionConfigs[configKey]}
@@ -638,7 +630,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   <div>
     <button
       class="{buttonClass} {shortClass} {shortColor} fd fd-trash-2 preset-tonal-surface {iconClass}"
-      class:disabled={editConfigDisabled}
+      disabled={editConfigDisabled}
       onclick={() => (globalDialog.dialog = deleteDialog)}
     >
     </button>

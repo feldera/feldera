@@ -15,7 +15,8 @@ let getMetrics = $state<() => typeof metrics>(() => metrics)
 export const useAggregatePipelineStats = (
   pipeline: { current: ExtendedPipeline },
   refetchMs: number,
-  keepMs?: number
+  keepMs?: number,
+  options?: { getDeleted?: () => boolean }
 ) => {
   const pipelineStatus = $derived(pipeline.current.status)
 
@@ -59,6 +60,7 @@ export const useAggregatePipelineStats = (
   $effect(() => {
     pipelineName
     metricsAvailable
+    if (options?.getDeleted?.()) return
     const cancel = untrack(() => closedIntervalAction(() => doFetch(pipelineName), refetchMs))
     return () => {
       cancel()

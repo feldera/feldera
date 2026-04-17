@@ -19,13 +19,15 @@
  * (node_modules/.bun/pkg@version/…). A similar path-resolution bug was fixed
  * in https://github.com/sveltejs/vite-plugin-svelte/pull/247.
  *
- * This plugin runs only during vitest (process.env.VITEST) because:
- * - During `vite dev`, the dep optimizer pre-bundles svelte libraries so
- *   their .svelte files are never loaded individually — the bug never fires.
+ * This plugin runs whenever the bug can fire:
  * - During vitest browser tests, the optimizer's dep scan fails on svelte
  *   component virtual-module exports, and in CI (cold cache) the include
- *   list alone isn't enough to produce pre-bundled output. Components are
- *   then loaded individually, triggering the bug.
+ *   list alone isn't enough to produce pre-bundled output.
+ * - During `vite dev` with `optimizeDeps.noDiscovery: true`, svelte libs that
+ *   aren't explicitly in `optimizeDeps.include` aren't pre-bundled either.
+ * In both cases components load individually, triggering the bug. The guard
+ * on `code.includes('<script')` makes the plugin a no-op for real CSS, so
+ * running it unconditionally is safe.
  *
  * Fix: an enforce:'pre' transform hook detects when a CSS virtual module
  * received the raw .svelte source (via `code.includes('<script')`), compiles
@@ -68,9 +70,6 @@ export function svelteCssVirtualModuleFallback(): Plugin {
   return {
     name: 'svelte-css-virtual-module-fallback',
     enforce: 'pre',
-    apply() {
-      return !!process.env.VITEST
-    },
     async transform(code, id) {
       if (
         id.includes('node_modules') &&

@@ -266,12 +266,16 @@
   import { getSelectedTenant } from '$lib/services/auth'
   import { isPipelineInteractive } from '$lib/functions/pipelines/status'
   import { Ref } from '$lib/compositions/ref.svelte'
+  import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
 
-  let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
+  let {
+    pipeline,
+    deleted = false
+  }: { pipeline: { current: ExtendedPipeline }; deleted?: boolean } = $props()
 
   let pipelineName = $derived(pipeline.current.name)
   let tenantName = $derived(getSelectedTenant() || '')
-  let isInteractive = $derived(isPipelineInteractive(pipeline.current.status))
+  let isInteractive = $derived(!deleted && isPipelineInteractive(pipeline.current.status))
 
   const protocol = useProtocol()
   const maxStreamsOnHttp = 4
@@ -504,6 +508,13 @@
   {/if}
 {/snippet}
 
+{#if deleted}
+  <div data-testid="box-changestream-banner">
+    <WarningBanner variant="info">
+      Change streaming is disabled. The pipeline has been deleted.
+    </WarningBanner>
+  </div>
+{/if}
 <div class="flex h-full flex-row">
   {#if isMobile.current}
     <div

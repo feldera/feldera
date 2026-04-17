@@ -1,9 +1,9 @@
 <script lang="ts" generics="T extends Record<string, unknown>  ">
   import type { Component } from 'svelte'
   import type { Snippet } from '$lib/types/svelte'
-  import { SvelteSet } from 'svelte/reactivity'
 
   import { Tabs } from '@skeletonlabs/skeleton-svelte'
+  import { SvelteSet } from 'svelte/reactivity'
 
   let {
     tabs,

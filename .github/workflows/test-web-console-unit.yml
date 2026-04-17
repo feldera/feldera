@@ -26,7 +26,7 @@ jobs:
 
       - name: Run vitest unit & component tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: bun run test
+        run: bun run test-unit
         working-directory: js-packages/web-console
 
       - name: Show Kubernetes node

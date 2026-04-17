@@ -1,0 +1,21 @@
+{
+    "compilerOptions": {
+        "rootDir": "./src",
+        "outDir": "./dist",
+        "module": "esnext",
+        "target": "esnext",
+        "moduleResolution": "bundler",
+        "types": [],
+        "allowSyntheticDefaultImports": true,
+        "esModuleInterop": true,
+        "inlineSources": true,
+        "sourceMap": true,
+        "declaration": true,
+        "declarationMap": true,
+        "strict": true,
+        "isolatedModules": true,
+        "moduleDetection": "force",
+        "skipLibCheck": true
+    },
+    "include": ["src/**/*.ts"]
+}

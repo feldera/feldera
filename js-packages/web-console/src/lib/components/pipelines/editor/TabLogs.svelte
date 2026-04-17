@@ -43,9 +43,11 @@
   import { Ref } from '$lib/compositions/ref.svelte'
 
   let {
-    pipeline
+    pipeline,
+    deleted = false
   }: {
     pipeline: { current: ExtendedPipeline }
+    deleted?: boolean
   } = $props()
   let pipelineName = $derived(pipeline.current.name)
 
@@ -66,8 +68,12 @@
 
   $effect(() => {
     pipelineName // Reactive dependency only needed when closing the previous stream when switching pipelines
-    startStream(pipelineName, 0)
-    // Close log stream when leaving log tab, or switching to another pipeline
+    untrack(() => {
+      if (!deleted) {
+        startStream(pipelineName, 0)
+      }
+    })
+    // Close log stream when leaving log tab, switching to another pipeline, or when readonly
     let oldPipelineName = pipelineName
     return () => {
       if (streams[oldPipelineName]) {
@@ -190,6 +196,7 @@
   const getDelayMs = (attempts: number) => backoffDelaysMs.at(attempts) ?? backoffDelaysMs.at(-1)!
   // Start stream unless it ended less than retryAllowedSinceDelayMs ago
   const tryRestartStream = (pipelineName: string, attempts: number) => {
+    if (deleted) return
     if ('cancelRetry' in streams[pipelineName].stream) {
       return
     }
@@ -222,7 +229,17 @@
 </script>
 
 <div class="relative flex h-full flex-1 flex-col rounded">
-  {#if 'closed' in stream}
+  {#if deleted}
+    {#if pipelineLogs.rows.length}
+      <WarningBanner variant="info">
+        Displaying cached log history. The pipeline has been deleted.
+      </WarningBanner>
+    {:else}
+      <WarningBanner variant="info">
+        There are no logs available. The pipeline has been deleted.
+      </WarningBanner>
+    {/if}
+  {:else if 'closed' in stream}
     {#if 'retryAtTimestamp' in stream && pipelineStatusName !== 'Preparing' && pipelineStatusName !== 'Provisioning' && pipelineStatusName !== 'Initializing'}
       <WarningBanner>
         {@const seconds = Math.floor(

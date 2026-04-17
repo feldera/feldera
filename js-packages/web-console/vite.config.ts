@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { monaco } from '@bithero/monaco-editor-vite-plugin'
+import { monaco } from '@feldera/monaco-editor-vite-plugin'
 import svg from '@poppanator/sveltekit-svg'
 import { sveltekit } from '@sveltejs/kit/vite'
 import tailwindcss from '@tailwindcss/vite'
@@ -39,10 +39,13 @@ const testOptimizeDepsInclude = [
   'tiny-invariant',
   'but-unzip',
   'colorizr',
-  'cookie-storage',
-  'cytoscape-dblclick',
-  'cytoscape-elk',
-  'cytoscape',
+  // Transitive deps. Bun's flat layout doesn't hoist these into
+  // web-console/node_modules, so we give vite the `parent > child` path
+  // so it can resolve them via the owning package.
+  '@square/svelte-store > cookie-storage',
+  'profiler-lib > cytoscape',
+  'profiler-lib > cytoscape-dblclick',
+  'profiler-lib > cytoscape-elk',
   'd3-format',
   'dayjs/plugin/duration',
   'echarts/charts',
@@ -112,7 +115,10 @@ export default defineConfig(async () => {
           : `export default []; export async function createBundle() { return {} }; export class TriageResults { constructor() { this.results = [] } }`
       }),
 
-      // '@bithero/monaco-editor-vite-plugin' is used to only bundle monaco-editor features that are actually used to reduce the total bundle size
+      // '@feldera/monaco-editor-vite-plugin' is used to only bundle monaco-editor
+      // features that are actually used to reduce the total bundle size. It is
+      // a local fork of @bithero/monaco-editor-vite-plugin@1.0.3 with an
+      // inverted-filter bug fixed in its optimizeDeps.include handling.
       monaco({
         // Only include languages that are actually used
         languages: ['json', 'sql', 'rust', 'graphql'],
@@ -149,12 +155,18 @@ export default defineConfig(async () => {
       // inlining can reorder get_first_child() ahead of init_operations(),
       // causing "Cannot read properties of undefined (reading 'call')".
       exclude: ['svelte'],
+
       // During vitest: the dep scan fails on svelte component virtual-module
       // exports, aborting ALL pre-bundling. entries:[] skips the failing scan;
       // noDiscovery prevents runtime discovery that triggers flaky mid-test
       // reloads ("Vite unexpectedly reloaded a test"). All deps used by tests
       // must be listed in testOptimizeDepsInclude explicitly.
-      // During vite dev: leave defaults so CJS packages get auto-discovered.
+      // During vite dev we rely on auto-discovery to pre-bundle
+      // svelte libs that ship raw .svelte files (e.g. @vincjo/datatables) —
+      // without it, vite-plugin-svelte's "failed to load virtual css module"
+      // bug starts firing for every unbundled .svelte file. The
+      // svelteCssVirtualModuleFallback plugin catches the downstream damage
+      // either way.
       ...(process.env.VITEST
         ? { entries: [], noDiscovery: true, include: testOptimizeDepsInclude }
         : {})
@@ -213,7 +225,7 @@ export default defineConfig(async () => {
         )
       },
       projects: [
-        // Unit tests: *.spec.ts (run with `bun run test`)
+        // Unit tests: *.spec.ts (run with `bun run test-unit`)
         browserTestProject({ name: 'client', include: ['src/**/*.svelte.spec.{js,ts}'] }),
 
         {

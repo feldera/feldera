@@ -36,11 +36,13 @@
   let {
     pipeline,
     metrics,
+    deleted = false,
     hiddenTabs,
     currentTab = $bindable(null)
   }: {
     pipeline: { current: ExtendedPipeline }
     metrics: { current: PipelineMetrics }
+    deleted?: boolean
     hiddenTabs: string[]
     currentTab: MonitoringTabs | null
   } = $props()
@@ -138,7 +140,7 @@
   <span>Logs</span>
 {/snippet}
 
-<TabsPanel {tabs} bind:currentTab={currentTab!} tabProps={{ metrics, pipeline, errors }}>
+<TabsPanel {tabs} bind:currentTab={currentTab!} tabProps={{ metrics, pipeline, errors, deleted }}>
   {#snippet tabBarEnd()}
     {#if currentTab !== 'Errors'}
       <div class="ml-auto flex">
