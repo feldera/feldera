@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test'
-import { getExtendedPipeline, postPipelineAction, putPipeline } from '$lib/services/pipelineManager'
+import { postPipelineAction, putPipeline } from '$lib/services/pipelineManager'
 import {
   cleanupPipeline,
   configureTestClient,
-  waitForExtendedPipeline
+  waitForPipeline
 } from '$lib/services/testPipelineHelpers'
 
 configureTestClient()
@@ -21,15 +21,15 @@ async function createPipelineWithStorage() {
     },
     program_config: { profile: 'unoptimized' }
   })
-  await waitForExtendedPipeline(PIPELINE_NAME, (p) => p.status === 'Stopped')
+  await waitForPipeline(PIPELINE_NAME, (p) => p.status === 'Stopped')
 }
 
 async function startAndStopToCreateStorage() {
   await postPipelineAction(PIPELINE_NAME, 'start')
-  await waitForExtendedPipeline(PIPELINE_NAME, (p) => p.deploymentStatus === 'Running')
+  await waitForPipeline(PIPELINE_NAME, (p) => p.status === 'Running')
   await postPipelineAction(PIPELINE_NAME, 'kill')
-  await waitForExtendedPipeline(PIPELINE_NAME, (p) => p.deploymentStatus === 'Stopped')
-  await waitForExtendedPipeline(PIPELINE_NAME, (p) => p.storageStatus !== 'Cleared', 10_000)
+  await waitForPipeline(PIPELINE_NAME, (p) => p.status === 'Stopped')
+  await waitForPipeline(PIPELINE_NAME, (p) => p.storageStatus !== 'Cleared', 10_000)
 }
 
 /** Intercept the next PATCH to return a storage-not-cleared error, then open

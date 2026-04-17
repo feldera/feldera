@@ -5,7 +5,7 @@
     "@auth/sveltekit": "1.11.1",
     "@axa-fr/oidc-client": "7.26.4",
     "@biomejs/biome": "2.4.3",
-    "@bithero/monaco-editor-vite-plugin": "^1.0.3",
+    "@feldera/monaco-editor-vite-plugin": "workspace:*",
     "@fontsource-variable/dm-sans": "5.2.8",
     "@fontsource/dm-mono": "5.2.7",
     "@fortawesome/fontawesome-free": "7.2.0",
@@ -113,13 +113,13 @@
   "scripts": {
     "clean-install": "bun ci",
     "dev": "vite dev --host",
-    "prebuild": "cd ../profiler-layout && bun run build",
+    "prebuild": "cd ../monaco-editor-vite-plugin && bun run build && cd ../profiler-layout && bun run build",
     "build": "svelte-kit sync && vite build",
     "preview": "vite preview --host",
     "check": "svelte-kit sync && svelte-check --threshold error",
     "check:watch": "svelte-kit sync && svelte-check --threshold error --watch",
     "lint": "prettier --check . && eslint .",
-    "format": "prettier --write . && biome check --write .",
+    "format": "prettier --write . && biome check --write . --max-diagnostics=0",
     "openapi": "openapi-ts -i path/to/openapi.json -o src/client",
     "generate-openapi": "openapi-ts && bun run format",
     "build-openapi": "cd ../.. && cargo run -p pipeline-manager -- --dump-openapi",
@@ -131,9 +131,8 @@
     "test-report": "bun playwright show-report",
     "test-prepare": "git clone --depth 1 https://github.com/feldera/playwright-snapshots.git || true && mkdir -p playwright-snapshots/e2e playwright-snapshots/component",
     "test-update-snapshots": "bun run test -- --update && bun playwright test --update-snapshots",
-    "test-unit": "vitest",
-    "test-integration": "vitest --run --project integration --project integration-client",
-    "test": "bun run test-unit -- --run --project client --project server"
+    "test-unit": "vitest --run --project client --project server",
+    "test-integration": "vitest --run --project integration --project integration-client"
   },
   "trustedDependencies": ["@axa-fr/oidc-client", "sk-oidc-oauth", "svelte-preprocess"],
   "type": "module"

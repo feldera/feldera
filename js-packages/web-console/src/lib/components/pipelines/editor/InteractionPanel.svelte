@@ -11,10 +11,12 @@
 
   let {
     pipeline,
+    deleted = false,
     currentTab: _currentTab = $bindable()
   }: {
     pipeline: { current: ExtendedPipeline }
     metrics: { current: PipelineMetrics }
+    deleted?: boolean
     currentTab: string | null
   } = $props()
   const pipelineName = $derived(pipeline.current.name)
@@ -47,7 +49,7 @@
   <span class="hidden sm:inline"> Ad-Hoc Queries </span>
 {/snippet}
 
-<TabsPanel {tabs} bind:currentTab={currentTab.value} tabProps={{ pipeline }}>
+<TabsPanel {tabs} bind:currentTab={currentTab.value} tabProps={{ pipeline, deleted }}>
   {#snippet tabBarEnd()}
     <button
       class="fd fd-x ml-auto btn-icon text-[24px]"

@@ -1,0 +1,31 @@
+{
+  "name": "@feldera/monaco-editor-vite-plugin",
+  "version": "1.0.3-feldera.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepare": "bun run clean && bun run build",
+    "check": "tsc --noEmit"
+  },
+  "license": "AGPL-3.0-or-later",
+  "description": "Fork of @bithero/monaco-editor-vite-plugin with a bug fix for the optimizeDeps.include filter (original kept only 'monaco-editor' and dropped everything else).",
+  "peerDependencies": {
+    "monaco-editor": ">=0.50.0",
+    "vite": ">=5.0.0"
+  },
+  "devDependencies": {
+    "monaco-editor": "0.55.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.0.0"
+  }
+}

@@ -32,12 +32,18 @@
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
   import TransactionStatus from './performance/TransactionStatus.svelte'
 
-  const formatQty = (v: number) => (typeof v === "number" && Number.isFinite(v) ? format(',.0f')(v) : 'unknown')
+  const formatQty = (v: number) =>
+    typeof v === 'number' && Number.isFinite(v) ? format(',.0f')(v) : 'unknown'
 
   const {
     pipeline,
-    metrics
-  }: { pipeline: { current: ExtendedPipeline }; metrics: { current: PipelineMetrics } } = $props()
+    metrics,
+    deleted = false
+  }: {
+    pipeline: { current: ExtendedPipeline }
+    metrics: { current: PipelineMetrics }
+    deleted?: boolean
+  } = $props()
 
   const global = $derived(metrics.current.global)
   const { formatElapsedTime } = useElapsedTime()
@@ -123,6 +129,11 @@
 
   $effect(() => {
     pipelineName
+    if (deleted) {
+      endMetricsStream()
+      openConnector = null
+      return
+    }
     if (!metricsAvailable) {
       endMetricsStream()
       openConnector = null

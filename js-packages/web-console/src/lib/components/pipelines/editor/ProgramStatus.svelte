@@ -65,6 +65,7 @@
     <IconLoader class={rustClass}></IconLoader>
   {/if}
   <span>
-    Rust <span class="hidden sm:inline">compiler</span>
+    <span class="hidden sm:inline">Rust compiler</span>
+    <span class="inline sm:hidden">Compiler</span>
   </span>
 </div>

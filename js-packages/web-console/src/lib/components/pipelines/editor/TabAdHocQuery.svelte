@@ -26,10 +26,13 @@
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { getSelectedTenant } from '$lib/services/auth'
 
-  let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
+  let {
+    pipeline,
+    deleted = false
+  }: { pipeline: { current: ExtendedPipeline }; deleted?: boolean } = $props()
   let pipelineName = $derived(pipeline.current.name)
   let tenantName = $derived(getSelectedTenant() || '')
-  let isInteractive = $derived(isPipelineInteractive(pipeline.current.status))
+  let isInteractive = $derived(!deleted && isPipelineInteractive(pipeline.current.status))
 
   const reverseScroll = useReverseScrollContainer({
     observeContentElement: (e) => e.firstElementChild!
@@ -158,10 +161,18 @@
 
 <div class="scrollbar h-full min-h-full overflow-y-auto" use:reverseScroll.action>
   <div class="flex flex-col gap-6">
-    {#if !isInteractive}
-      <WarningBanner class="sticky top-0 z-20 -mb-2">
-        Start the pipeline to be able to run queries
-      </WarningBanner>
+    {#if deleted}
+      <div data-testid="box-adhoc-banner">
+        <WarningBanner class="sticky top-0 z-20 -mb-2" variant="info">
+          Queries are disabled. The pipeline has been deleted.
+        </WarningBanner>
+      </div>
+    {:else if !isInteractive}
+      <div data-testid="box-adhoc-banner">
+        <WarningBanner class="sticky top-0 z-20 -mb-2">
+          Start the pipeline to be able to run queries
+        </WarningBanner>
+      </div>
     {/if}
     {#each adhocQueries[tenantName]?.[pipelineName]?.queries ?? [] as x, i}
       {#if x}

@@ -18,8 +18,8 @@ import {
   getExtendedPipeline,
   getPipelineDataflowGraph,
   getPipelineStats,
-  getPipelineStatus,
   getPipelines,
+  getPipelineThumb,
   getSamplyProfile,
   patchPipeline,
   pipelineLogsStream,
@@ -169,8 +169,8 @@ export const usePipelineManager = (options?: FetchOptions) => {
       (pipelineName) => `Failed to update ${pipelineName} pipeline`
     ),
     getPipelines: trackHealth(getPipelines),
-    getPipelineStatus: reportError(
-      getPipelineStatus,
+    getPipelineThumb: reportError(
+      getPipelineThumb,
       (pipelineName) => `Failed to get ${pipelineName} pipeline's status`
     ),
     getPipelineStats: getPipelineStats,

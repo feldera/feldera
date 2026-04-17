@@ -36,7 +36,10 @@
   import { goto } from '$app/navigation'
   import triagePlugins, { createBundle, TriageResults } from 'virtual:feldera-triage-plugins'
 
-  let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
+  let {
+    pipeline,
+    deleted = false
+  }: { pipeline: { current: ExtendedPipeline }; deleted?: boolean } = $props()
   const api = usePipelineManager()
   const toast = useToast()
 
@@ -281,6 +284,7 @@
                 <!-- Download Profile -->
                 <button
                   class="flex items-center gap-2 rounded-t-container px-4 py-2 text-left hover:preset-tonal-surface"
+                  disabled={deleted}
                   onclick={() => {
                     loadProfileData()
                     close()
@@ -294,7 +298,12 @@
                   class="flex cursor-pointer items-center justify-between gap-3 px-4 py-2 hover:preset-tonal-surface"
                 >
                   <span>Collect new data</span>
-                  <input type="checkbox" bind:checked={collectNewData} class="checkbox" />
+                  <input
+                    type="checkbox"
+                    bind:checked={collectNewData}
+                    class="checkbox"
+                    disabled={deleted}
+                  />
                 </label>
 
                 <!-- Divider -->
@@ -330,11 +339,16 @@
         </div>
       {/if}
       <div class="flex gap-4">
-        <button class="btn preset-filled-primary-500" onclick={loadProfileData}>
+        <button class="btn preset-filled-primary-500" onclick={loadProfileData} disabled={deleted}>
           Download pipeline profile
         </button>
         <label class="flex cursor-pointer items-center gap-2">
-          <input type="checkbox" bind:checked={collectNewData} class="checkbox" />
+          <input
+            type="checkbox"
+            bind:checked={collectNewData}
+            class="checkbox"
+            disabled={deleted}
+          />
           <span class="text-sm">Collect new data</span>
         </label>
       </div>

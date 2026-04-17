@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { goto } from '$app/navigation'
   import PipelineEditLayout from '$lib/components/layout/pipelines/PipelineEditLayout.svelte'
   import {
     usePipelineList,
@@ -10,7 +9,6 @@
     useRefreshPipeline,
     writablePipeline
   } from '$lib/compositions/useWritablePipeline.svelte.js'
-  import { resolve } from '$lib/functions/svelte'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager.js'
 
   const { data, params } = $props()
@@ -18,8 +16,10 @@
   const { updatePipeline } = useUpdatePipelineList()
 
   let pipelineName = $state(decodeURIComponent(params.pipelineName))
+  let deleted = $state(false)
   $effect(() => {
     pipelineName = decodeURIComponent(params.pipelineName)
+    deleted = false
   })
 
   let pipelineCache = $state({ current: data.preloadedPipeline })
@@ -42,8 +42,11 @@
     getPipeline: () => pipelineCache,
     set,
     update,
-    onNotFound: () => goto(resolve(`/`))
+    getDeleted: () => deleted,
+    onNotFound: () => {
+      deleted = true
+    }
   })
 </script>
 
-<PipelineEditLayout preloaded={data.preloaded} {pipeline}></PipelineEditLayout>
+<PipelineEditLayout preloaded={data.preloaded} {pipeline} {deleted}></PipelineEditLayout>

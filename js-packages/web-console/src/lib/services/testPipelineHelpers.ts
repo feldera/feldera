@@ -9,8 +9,8 @@ import { client } from '$lib/services/manager/client.gen'
 import {
   deletePipeline,
   type ExtendedPipeline,
-  getExtendedPipeline,
-  getPipelineStatus,
+  getPipelineThumb,
+  type PipelineThumb,
   postPipelineAction,
   programStatusOf,
   putPipeline
@@ -25,9 +25,16 @@ export { type ExtendedPipeline }
  * (Playwright-specific), falling back to `http://localhost:8080`.
  */
 export function configureTestClient() {
+  // In browser tests (vitest with browser mode), `process` is undefined — fall
+  // back to import.meta.env (Vite exposes env vars via `VITE_*`-prefixed vars
+  // and also via import.meta.env at build time).
+  const env: Record<string, string | undefined> =
+    typeof process !== 'undefined' && process.env
+      ? (process.env as Record<string, string | undefined>)
+      : ((import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {})
   const origin = (
-    process.env.FELDERA_TEST_API_ORIGIN ??
-    process.env.PLAYWRIGHT_API_ORIGIN ??
+    env.FELDERA_TEST_API_ORIGIN ??
+    env.PLAYWRIGHT_API_ORIGIN ??
     'http://localhost:8080'
   ).replace(/\/$/, '')
   client.setConfig({ baseUrl: origin })
@@ -35,41 +42,22 @@ export function configureTestClient() {
 }
 
 /**
- * Poll `getExtendedPipeline` until `predicate` returns true or `timeoutMs` elapses.
+ * Poll `getPipelineThumb` until `predicate` returns true or `timeoutMs` elapses.
  */
-export async function waitForExtendedPipeline(
+export async function waitForPipeline(
   pipelineName: string,
-  predicate: (p: ExtendedPipeline) => boolean,
-  timeoutMs = 120_000
-): Promise<ExtendedPipeline> {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    const pipeline = await getExtendedPipeline(pipelineName)
-    if (predicate(pipeline)) return pipeline
-    await new Promise((r) => setTimeout(r, 2000))
-  }
-  const pipeline = await getExtendedPipeline(pipelineName)
-  throw new Error(
-    `waitForExtendedPipeline timed out for "${pipelineName}". ` +
-      `deploy=${pipeline.deploymentStatus} status=${JSON.stringify(pipeline.status)} storage=${pipeline.storageStatus}`
-  )
-}
-
-/**
- * Poll `getPipelineStatus` until `predicate` returns true or `timeoutMs` elapses.
- */
-export async function waitForPipelineStatus(
-  pipelineName: string,
-  predicate: (status: string) => boolean,
-  timeoutMs = 120_000
+  predicate: (pipeline: PipelineThumb) => boolean | Promise<boolean>,
+  timeoutMs = 60_000
 ) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    const { status } = await getPipelineStatus(pipelineName)
-    if (predicate(status as string)) return status
+    const thumb = await getPipelineThumb(pipelineName)
+    if (await predicate(thumb)) {
+      return thumb
+    }
     await new Promise((r) => setTimeout(r, 1000))
   }
-  const { status } = await getPipelineStatus(pipelineName)
+  const { status } = await getPipelineThumb(pipelineName)
   throw new Error(
     `waitForPipelineStatus timed out for "${pipelineName}". status=${JSON.stringify(status)}`
   )
@@ -80,21 +68,21 @@ export async function waitForPipelineStatus(
  * Throws on compilation errors.
  */
 export async function waitForCompilation(pipelineName: string, timeoutMs = 600_000) {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    const { status } = await getPipelineStatus(pipelineName)
-    const programStatus = programStatusOf(status)
-    if (programStatus === 'Success') return
-    if (
-      programStatus === 'SqlError' ||
-      programStatus === 'RustError' ||
-      programStatus === 'SystemError'
-    ) {
-      throw new Error(`Compilation failed for "${pipelineName}": ${programStatus}`)
-    }
-    await new Promise((r) => setTimeout(r, 2000))
-  }
-  throw new Error(`Compilation timed out for "${pipelineName}"`)
+  await waitForPipeline(
+    pipelineName,
+    ({ status }) => {
+      const programStatus = programStatusOf(status)
+      if (
+        programStatus === 'SqlError' ||
+        programStatus === 'RustError' ||
+        programStatus === 'SystemError'
+      ) {
+        throw new Error(`Compilation failed for "${pipelineName}": ${programStatus}`)
+      }
+      return programStatus === 'Success'
+    },
+    timeoutMs
+  )
 }
 
 /**
@@ -103,46 +91,55 @@ export async function waitForCompilation(pipelineName: string, timeoutMs = 600_0
  */
 export async function startPipelineAndWaitForRunning(pipelineName: string, timeoutMs = 60_000) {
   await postPipelineAction(pipelineName, 'start')
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    const { status } = await getPipelineStatus(pipelineName)
-    if (status === 'Running') return
-    if (status === 'AwaitingApproval') {
-      await postPipelineAction(pipelineName, 'approve_changes')
-    }
-    await new Promise((r) => setTimeout(r, 1000))
-  }
-  throw new Error(`Pipeline "${pipelineName}" did not reach Running within ${timeoutMs}ms`)
+  await waitForPipeline(
+    pipelineName,
+    async ({ status }) => {
+      if (status === 'AwaitingApproval') {
+        await postPipelineAction(pipelineName, 'approve_changes').catch(() => {})
+      }
+      return status === 'Running'
+    },
+    timeoutMs
+  )
 }
 
 /**
- * Stop a pipeline and wait until it reaches the Stopped state.
+ * Kill a pipeline and wait until it reaches the Stopped state.
  */
-export async function stopPipelineAndWaitForStopped(pipelineName: string, timeoutMs = 30_000) {
+export async function killPipelineAndWaitForStopped(pipelineName: string) {
   try {
-    await postPipelineAction(pipelineName, 'stop')
+    await postPipelineAction(pipelineName, 'kill')
   } catch {
     // Ignore if already stopped
   }
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    const { status } = await getPipelineStatus(pipelineName)
-    if (status === 'Stopped') return
-    await new Promise((r) => setTimeout(r, 1000))
-  }
-  throw new Error(`Pipeline "${pipelineName}" did not reach Stopped within ${timeoutMs}ms`)
+  await waitForPipeline(pipelineName, ({ status }) => status === 'Stopped')
+}
+
+export const clearAndDeletePipeline = async (pipelineName: string) => {
+  await postPipelineAction(pipelineName, 'clear')
+  await waitForPipeline(pipelineName, (p) => p.storageStatus === 'Cleared', 30_000)
+  await deletePipeline(pipelineName)
 }
 
 /**
- * Fully clean up a pipeline: stop → wait → delete. Ignores errors at every step.
+ * Fully clean up a pipeline: kill → wait for stopped → clear → wait for cleared → delete.
+ * Ignores errors at every step.
  */
 export async function cleanupPipeline(pipelineName: string) {
   try {
-    await stopPipelineAndWaitForStopped(pipelineName)
-  } catch {}
+    await killPipelineAndWaitForStopped(pipelineName)
+  } catch (e) {
+    if ((e as any).error_code !== 'UnknownPipelineName') {
+      console.warn(`cleanupPipeline: kill failed for "${pipelineName}":`, e)
+    }
+  }
   try {
-    await deletePipeline(pipelineName)
-  } catch {}
+    await clearAndDeletePipeline(pipelineName)
+  } catch (e) {
+    if ((e as any).error_code !== 'UnknownPipelineName') {
+      console.warn(`cleanupPipeline: clear/delete failed for "${pipelineName}":`, e)
+    }
+  }
 }
 
 const WARMUP_PIPELINE = '__test_warmup__'
