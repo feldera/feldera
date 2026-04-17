@@ -67,14 +67,16 @@ public class ExpandUnsafeCasts extends ExpressionTranslator {
         return expanded.closure(var);
     }
 
-    @Nullable DBSPExpression convertToVariant(CalciteObject node, DBSPExpression source, boolean mayBeNull) {
+    @Nullable
+    DBSPExpression convertToVariant(CalciteObject node, DBSPExpression source, boolean mayBeNull) {
         DBSPExpression expression;
+        DBSPTypeVariant variantType = DBSPTypeVariant.create(false);
         if (source.type.is(DBSPTypeTuple.class)) {
             // Convert a tuple to a VARIANT MAP indexed by the field names
             DBSPTypeTuple tuple = source.getType().to(DBSPTypeTuple.class);
             DBSPTypeMap type = new DBSPTypeMap(
                     DBSPTypeString.varchar(false),
-                    DBSPTypeVariant.create(false),
+                    variantType,
                     source.getType().mayBeNull);
 
             if (tuple.originalStruct == null) {
@@ -91,7 +93,7 @@ public class ExpandUnsafeCasts extends ExpressionTranslator {
                 DBSPExpression field = source.field(i);
                 if (!field.getType().hasCopy())
                     field = field.applyCloneIfNeeded();
-                DBSPExpression rec = field.cast(node, DBSPTypeVariant.create(false), UNSAFE);
+                DBSPExpression rec = field.cast(node, variantType, UNSAFE);
                 values.add(rec);
             }
             expression = new DBSPMapExpression(type, keys, values);
@@ -109,7 +111,7 @@ public class ExpandUnsafeCasts extends ExpressionTranslator {
                     .applyCloneIfNeeded().cast(node, DBSPTypeVariant.create(false), UNSAFE)
                     .closure(var);
             expression = new DBSPBinaryExpression(node,
-                    new DBSPTypeArray(DBSPTypeVariant.create(false), vecType.mayBeNull),
+                    new DBSPTypeArray(variantType, vecType.mayBeNull),
                     DBSPOpcode.ARRAY_CONVERT, source, converter);
         } else {
             return null;
@@ -117,7 +119,7 @@ public class ExpandUnsafeCasts extends ExpressionTranslator {
         return new DBSPCastExpression(node, expression, DBSPTypeVariant.create(mayBeNull), UNSAFE);
     }
 
-    public DBSPExpression convertToStructOrTuple(
+    DBSPExpression convertToStructOrTuple(
             CalciteObject node, DBSPExpression source, DBSPTypeTuple type) {
         List<DBSPExpression> fields = new ArrayList<>();
         DBSPTypeStruct struct = type.originalStruct;

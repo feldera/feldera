@@ -2,7 +2,8 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpressionTranslator;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -11,11 +12,18 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFailExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
@@ -23,9 +31,12 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSqlResult;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Expand SAFE_CAST invocations that convert complex types to simpler invocations
@@ -167,6 +178,61 @@ public class ExpandSafeCasts extends ExpressionTranslator {
         return source.cast(node, type, UNWRAP);
     }
 
+    // Can occur e.g., when converting a VARIANT to a ROW or user-defined type
+    DBSPExpression convertToStructOrTuple(
+            CalciteObject node, DBSPExpression source, DBSPTypeTuple type) {
+        List<DBSPExpression> fields = new ArrayList<>();
+        DBSPTypeStruct struct = type.originalStruct;
+        List<ProgramIdentifier> names = null;
+        if (struct != null)
+            names = Linq.list(type.originalStruct.getFieldNames());
+
+        DBSPType sourceType = source.getType();
+        for (int i = 0; i < type.size(); i++) {
+            DBSPType fieldType = type.getFieldType(i);
+            DBSPExpression field;
+            if (sourceType.is(DBSPTypeNull.class)) {
+                field = fieldType.none();
+            } else if (sourceType.is(DBSPTypeTupleBase.class)) {
+                field = source.field(i);
+            } else if (sourceType.is(DBSPTypeVariant.class)) {
+                if (struct == null) {
+                    field = new DBSPBinaryExpression(
+                            // Result of index is always nullable
+                            node, DBSPTypeVariant.create(true),
+                            DBSPOpcode.RUST_INDEX, source.applyCloneIfNeeded(),
+                            new DBSPUSizeLiteral(i));
+                } else {
+                    ProgramIdentifier fieldName = names.get(i);
+                    field = new DBSPBinaryExpression(
+                            // Result of index is always nullable
+                            node, DBSPTypeVariant.create(true),
+                            DBSPOpcode.VARIANT_INDEX, source.applyCloneIfNeeded(),
+                            new DBSPStringLiteral(fieldName.toString()));
+                }
+            } else {
+                throw new InternalCompilerError("Unexpected source type " + sourceType);
+            }
+            DBSPExpression expression = field.applyCloneIfNeeded().cast(node, fieldType, SAFE);
+            // Convert recursively
+            expression = this.analyze(expression).to(DBSPExpression.class);
+            fields.add(expression);
+        }
+
+        DBSPExpression result = new DBSPTupleExpression(source.getNode(), type, fields);
+        if (source.getType().mayBeNull) {
+            if (type.mayBeNull) {
+                result = new DBSPIfExpression(node, source.is_null(), type.none(), result);
+            } else {
+                result = new DBSPIfExpression(node, source.is_null(),
+                        new DBSPFailExpression(source.getNode(), type, "Cast to non-nullable value applied to NULL"),
+                        result);
+            }
+        }
+
+        return result;
+    }
+
     @Override
     public void postorder(DBSPCastExpression expression) {
         if (this.getEN(expression) != null) {
@@ -205,9 +271,7 @@ public class ExpandSafeCasts extends ExpressionTranslator {
         } else if (type.is(DBSPTypeArray.class)) {
             result = this.convertToArray(node, source, type.to(DBSPTypeArray.class));
         } else if (type.is(DBSPTypeTuple.class)) {
-            // These should be rejected in the front-end; they are documented as not supported
-            // We may support them someday if there is demand.
-            throw new UnimplementedException("SAFE_CAST to tuple type");
+            result = this.convertToStructOrTuple(node, source, type.to(DBSPTypeTuple.class));
         } else if (type.is(DBSPTypeMap.class)) {
             result = this.convertToMap(node, source, type.to(DBSPTypeMap.class));
         }

@@ -729,11 +729,10 @@ public class CastTests extends SqlIoTest {
 
     @Test
     public void issue5895() {
-        this.qs("""
+        this.q("""
                 SELECT CAST(INTERVAL '1000' MONTH AS INT);
                  r
                 -----
-                 1000
-                (1 row)""");
+                 1000""");
     }
 }
