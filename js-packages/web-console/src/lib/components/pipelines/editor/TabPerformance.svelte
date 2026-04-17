@@ -11,11 +11,14 @@
   import PipelineMemoryGraph from '$lib/components/layout/pipelines/PipelineMemoryGraph.svelte'
   import PipelineStorageGraph from '$lib/components/layout/pipelines/PipelineStorageGraph.svelte'
   import PipelineThroughputGraph from '$lib/components/layout/pipelines/PipelineThroughputGraph.svelte'
+  import InlineDrawer from '$lib/components/layout/InlineDrawer.svelte'
   import MetricsTables from '$lib/components/pipelines/editor/performance/MetricsTables.svelte'
   import ConnectorErrors, {
     type ConnectorErrorFilter
   } from '$lib/components/pipelines/editor/performance/ConnectorErrors.svelte'
+  import CheckpointsStatus from '$lib/components/pipelines/editor/performance/CheckpointsStatus.svelte'
   import { useIsScreenXl } from '$lib/compositions/layout/useIsMobile.svelte'
+  import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
   import {
     type PipelineManagerApi,
     usePipelineManager
@@ -28,8 +31,10 @@
     pushAsCircularBuffer
   } from '$lib/functions/pipelines/changeStream'
   import { getDeploymentStatusLabel, isMetricsAvailable } from '$lib/functions/pipelines/status'
+  import type { CheckpointMetadata, CheckpointStatus } from '$lib/services/manager'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
+  import CheckpointsIndicator from './performance/CheckpointsIndicator.svelte'
   import TransactionStatus from './performance/TransactionStatus.svelte'
 
   const formatQty = (v: number) =>
@@ -53,13 +58,31 @@
   let statusTab: 'age' | 'updated' = $state('age')
   const isXl = useIsScreenXl()
   const api = usePipelineManager()
+  const isEnterprise = usePremiumFeatures()
 
-  let openConnector = $state<{
-    relationName: string
-    connectorName: string
-    direction: 'input' | 'output'
-    filter: ConnectorErrorFilter
-  } | null>(null)
+  type DrawerState =
+    | {
+        kind: 'connector'
+        relationName: string
+        connectorName: string
+        direction: 'input' | 'output'
+        filter: ConnectorErrorFilter
+      }
+    | { kind: 'checkpoints' }
+
+  let openDrawer = $state<DrawerState | null>(null)
+  let checkpoints = $state<CheckpointMetadata[]>([])
+  let checkpointStatus = $state<CheckpointStatus | null>(null)
+  let lastCheckpointAt = $state<Date | null>(null)
+  let prevActivityStatus = $state<string | null>(null)
+
+  $effect(() => {
+    const status = metrics.current.checkpoint_activity.status
+    if (prevActivityStatus === 'in_progress' && status === 'idle') {
+      lastCheckpointAt = new Date()
+    }
+    prevActivityStatus = status
+  })
 
   const handleConnectorSelect = (
     relationName: string,
@@ -67,7 +90,7 @@
     direction: 'input' | 'output',
     filter: ConnectorErrorFilter
   ) => {
-    openConnector = { relationName, connectorName, direction, filter }
+    openDrawer = { kind: 'connector', relationName, connectorName, direction, filter }
   }
 
   let cancelStream: (() => void) | undefined
@@ -136,7 +159,8 @@
     }
     if (!metricsAvailable) {
       endMetricsStream()
-      openConnector = null
+      openDrawer = null
+      checkpoints = []
       return
     }
     $effect.root(() => {
@@ -149,6 +173,28 @@
     return () => {
       endMetricsStream()
     }
+  })
+
+  $effect(() => {
+    pipelineName
+    if (!metricsAvailable) {
+      checkpoints = []
+      checkpointStatus = null
+      return
+    }
+    // Poll checkpoint-related endpoints so the UI stays current with
+    // ongoing checkpoint activity (also needed for the mock simulator).
+    const fetchCheckpoints = () => {
+      api.getPipelineCheckpoints(pipelineName).then((v) => {
+        checkpoints = v
+      })
+      api.getCheckpointStatus(pipelineName).then((v) => {
+        checkpointStatus = v
+      })
+    }
+    fetchCheckpoints()
+    const interval = setInterval(fetchCheckpoints, 2_000)
+    return () => clearInterval(interval)
   })
 </script>
 
@@ -190,7 +236,7 @@
     >
       <div class="flex w-full flex-col gap-4">
         <div class="flex flex-wrap gap-4">
-          <div class="flex h-20 flex-wrap items-center gap-4">
+          <div class="mt-1 flex flex-wrap items-center gap-4">
             <div class="flex flex-col">
               <div class="text-start text-sm text-nowrap">Records Ingested</div>
               <div class="pt-2">
@@ -219,7 +265,7 @@
               </div>
             {/snippet}
             {#snippet updated()}
-              <div class="w-54 pt-2 text-nowrap">
+              <div class="w-64 pt-2 text-nowrap">
                 {getDeploymentStatusLabel(pipeline.current.status)} since {Dayjs(
                   pipeline.current.deploymentStatusSince
                 ).format('MMM D, YYYY h:mm A')}
@@ -281,9 +327,8 @@
               </div>
             {/if}
           </div>
-          <TransactionStatus {metrics}></TransactionStatus>
         </div>
-        <div class="flex w-full flex-col gap-4 xl:flex-row">
+        <!-- <div class="flex w-full flex-col gap-4 xl:flex-row">
           <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
             <PipelineThroughputGraph
               {pipeline}
@@ -304,7 +349,16 @@
               keepMs={60 * 1000}
             ></PipelineStorageGraph>
           </div>
-        </div>
+        </div> -->
+        <CheckpointsIndicator
+          {pipelineName}
+          {checkpoints}
+          {metrics}
+          {checkpointStatus}
+          {lastCheckpointAt}
+          onShowCheckpoints={() => (openDrawer = { kind: 'checkpoints' })}
+        />
+        <TransactionStatus {metrics} class="w-full"></TransactionStatus>
       </div>
       {#if metrics.current.views.size || metrics.current.tables.size}
         <div class="flex flex-wrap gap-4">
@@ -312,20 +366,24 @@
         </div>
       {/if}
     </div>
-    {#if openConnector}
-      <ConnectorErrors
-        {pipelineName}
-        relationName={openConnector.relationName}
-        connectorName={openConnector.connectorName}
-        direction={openConnector.direction}
-        filter={openConnector.filter}
-        bind:open={
-          () => !!openConnector,
-          () => {
-            openConnector = null
-          }
-        }
-      />
-    {/if}
+    <!-- TODO: not mobile-friendly -->
+    <InlineDrawer open={!!openDrawer} side="right" width="w-[500px]">
+      {#if openDrawer?.kind === 'connector'}
+        <ConnectorErrors
+          {pipelineName}
+          relationName={openDrawer.relationName}
+          connectorName={openDrawer.connectorName}
+          direction={openDrawer.direction}
+          filter={openDrawer.filter}
+          onClose={() => (openDrawer = null)}
+        />
+      {:else if openDrawer?.kind === 'checkpoints'}
+        <CheckpointsStatus
+          {checkpoints}
+          onClose={() => (openDrawer = null)}
+          onCheckpoint={() => api.checkpointPipeline(pipelineName)}
+        />
+      {/if}
+    </InlineDrawer>
   </div>
 {/if}

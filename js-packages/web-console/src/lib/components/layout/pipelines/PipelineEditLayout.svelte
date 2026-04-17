@@ -346,7 +346,7 @@
           </div>
         {/if}
 
-        <Pane defaultSize={60} minSize={15} class="!overflow-visible">
+        <Pane defaultSize={10} minSize={15} class="!overflow-visible">
           <PaneGroup direction="horizontal" class="!overflow-visible">
             <Pane minSize={30} class="!overflow-visible">
               {#if pipeline.current}
