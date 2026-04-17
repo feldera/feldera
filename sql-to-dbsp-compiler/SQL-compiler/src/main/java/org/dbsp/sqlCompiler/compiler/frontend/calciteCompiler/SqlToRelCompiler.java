@@ -543,6 +543,13 @@ public class SqlToRelCompiler implements IWritesLogs {
                                 "Illegal type",
                                 "Maximum precision supported for DECIMAL is " + DBSPTypeDecimal.MAX_PRECISION);
                     }
+                    if (basic.getScale() == RelDataType.SCALE_NOT_SPECIFIED &&
+                            basic.getPrecision() == RelDataType.PRECISION_NOT_SPECIFIED) {
+                        SourcePositionRange position = new SourcePositionRange(typeNameSpec.getParserPos());
+                        this.errorReporter.reportWarning(position, "DECIMAL precision and scale unspecified",
+                                "DECIMAL/NUMERIC type used without specifying precision and scale.\n" +
+                                        "This is interpreted as DECIMAL(" + DBSPTypeDecimal.MAX_PRECISION + ", 0)");
+                    }
                 } else if (relDataType.getSqlTypeName() == SqlTypeName.FLOAT) {
                     SourcePositionRange position = new SourcePositionRange(typeNameSpec.getParserPos());
                     this.errorReporter.reportError(position,

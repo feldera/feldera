@@ -19,6 +19,7 @@ public class NegativeParserTests extends BaseSQLTests {
     public CompilerOptions testOptions() {
         CompilerOptions options = super.testOptions();
         options.languageOptions.throwOnError = false;
+        options.ioOptions.quiet = false;
         return options;
     }
 
@@ -181,6 +182,26 @@ public class NegativeParserTests extends BaseSQLTests {
         TestUtil.assertMessagesContain(messages,
                 "cannot convert GEOMETRY literal to class org.locationtech.jts.geom.Point\n" +
                 "'LINESTRING (0 0, 0 0)'");
+    }
+
+    @Test
+    public void issue6069() {
+        var cc = this.getCC("""
+                CREATE TABLE T(x DECIMAL);
+                CREATE VIEW V AS SELECT CAST(x AS DECIMAL) FROM T;""");
+        TestUtil.assertMessagesContain(cc.compiler.messages, """
+                (no input file): DECIMAL precision and scale unspecified
+                (no input file):1:18: warning: DECIMAL precision and scale unspecified: DECIMAL/NUMERIC type used without specifying precision and scale.
+                This is interpreted as DECIMAL(38, 0)
+                    1|CREATE TABLE T(x DECIMAL);
+                                       ^^^^^^^
+                    2|CREATE VIEW V AS SELECT CAST(x AS DECIMAL) FROM T;
+                (no input file): DECIMAL precision and scale unspecified
+                (no input file):2:35: warning: DECIMAL precision and scale unspecified: DECIMAL/NUMERIC type used without specifying precision and scale.
+                This is interpreted as DECIMAL(38, 0)
+                    1|CREATE TABLE T(x DECIMAL);
+                    2|CREATE VIEW V AS SELECT CAST(x AS DECIMAL) FROM T;
+                                                        ^^^^^^^""");
     }
 
     @Test
