@@ -61,6 +61,7 @@ class Pipeline:
         self.platform_version: Optional[str] = None
         self.program_error: Optional[dict] = None
         self.storage_status: Optional[str] = None
+        self.storage_status_details: Optional[str] = None
 
         self.deployment_resources_desired_status: Optional[str] = None
         self.deployment_resources_desired_status_since: Optional[str] = None

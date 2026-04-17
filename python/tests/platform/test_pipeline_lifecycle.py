@@ -1,6 +1,7 @@
 from feldera.enums import PipelineStatus, ProgramStatus, StorageStatus
 from feldera.rest.errors import FelderaAPIError
 import time
+import pytest
 from http import HTTPStatus
 from feldera import PipelineBuilder, Pipeline
 from feldera.enums import BootstrapPolicy
@@ -26,6 +27,7 @@ from .helper import (
     post_no_body,
 )
 from tests import enterprise_only
+from feldera.testutils import single_host_only
 
 
 def _wait_for_stopped_with_error(name: str, timeout_s: float = 90.0):
@@ -451,3 +453,200 @@ def test_pipeline_bootstrap_policy_is_removed(pipeline_name):
         assert pipeline.bootstrap_policy() is not None
         pipeline.stop(force=True)
         assert pipeline.bootstrap_policy() is None
+
+
+@gen_pipeline_name
+def test_pipeline_double_start(pipeline_name):
+    """
+    Tests what calling the pipeline start multiple times works, as long as the
+    bootstrap policy and initial are not changed.
+
+    TODO: testing `initial=standby` requires setting up remote storage, and as
+          such is commented out for now. It already tests the underlying mechanism
+          using `initial=running` and `initial=paused`, and `initial=standby`
+          is not a special case.
+    """
+    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
+
+    # OK: basic
+    pipeline.start()
+    pipeline.start()
+    pipeline.stop(force=True)
+
+    # OK: same bootstrap policy
+    for b in [
+        BootstrapPolicy.ALLOW,
+        BootstrapPolicy.REJECT,
+        BootstrapPolicy.AWAIT_APPROVAL,
+    ]:
+        pipeline.start(bootstrap_policy=b)
+        pipeline.start(bootstrap_policy=b)
+        pipeline.stop(force=True)
+
+    # OK: same initial
+    pipeline.start()
+    pipeline.start()
+    pipeline.stop(force=True)
+    pipeline.start_paused()
+    pipeline.start_paused()
+    pipeline.stop(force=True)
+    # pipeline.start_standby()
+    # pipeline.start_standby()
+    # pipeline.stop(force=True)
+
+    # FAIL: different bootstrap policy
+    for b1, b2 in [
+        (BootstrapPolicy.ALLOW, BootstrapPolicy.REJECT),
+        (BootstrapPolicy.ALLOW, BootstrapPolicy.AWAIT_APPROVAL),
+        (BootstrapPolicy.REJECT, BootstrapPolicy.ALLOW),
+        (BootstrapPolicy.REJECT, BootstrapPolicy.AWAIT_APPROVAL),
+        (BootstrapPolicy.AWAIT_APPROVAL, BootstrapPolicy.ALLOW),
+        (BootstrapPolicy.AWAIT_APPROVAL, BootstrapPolicy.REJECT),
+    ]:
+        pipeline.start(bootstrap_policy=b1)
+        with pytest.raises(FelderaAPIError) as e:
+            pipeline.start(bootstrap_policy=b2)
+        assert e.value.error_code == "BootstrapPolicyImmutableUnlessStopped"
+        pipeline.stop(force=True)
+
+    # FAIL: different initial
+    pipeline.start()
+    with pytest.raises(FelderaAPIError) as e:
+        pipeline.start_paused()
+    assert e.value.error_code == "InitialImmutableUnlessStopped"
+    pipeline.stop(force=True)
+    pipeline.start_paused()
+    with pytest.raises(FelderaAPIError) as e:
+        pipeline.start()
+    assert e.value.error_code == "InitialImmutableUnlessStopped"
+    pipeline.stop(force=True)
+    # pipeline.start_paused()
+    # pipeline.start_standby()
+    # pipeline.stop(force=True)
+
+
+@gen_pipeline_name
+@single_host_only
+def test_pipeline_storage_status_details_without_checkpoints(pipeline_name):
+    """
+    Validate storage_status_details transitions and clear behavior using the Python API
+    without checkpoints.
+    """
+    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
+
+    # Initially no details
+    assert pipeline.storage_status() == StorageStatus.CLEARED
+    assert pipeline.storage_status_details() is None
+
+    # Clearing again will still yield no details
+    pipeline.clear_storage()
+    assert pipeline.storage_status() == StorageStatus.CLEARED
+    assert pipeline.storage_status_details() is None
+
+    # Starting should make it in-use with no checkpoints
+    pipeline.start()
+    assert pipeline.storage_status() == StorageStatus.INUSE
+    assert pipeline.storage_status_details() == {"checkpoints": []}
+
+    # After stopping, the details should still be available
+    pipeline.stop(force=True)
+    assert pipeline.storage_status() == StorageStatus.INUSE
+    assert pipeline.storage_status_details() == {"checkpoints": []}
+
+    # Starting and stopping should not affect the details
+    pipeline.start()
+    assert pipeline.storage_status() == StorageStatus.INUSE
+    assert pipeline.storage_status_details() == {"checkpoints": []}
+    pipeline.stop(force=True)
+    assert pipeline.storage_status() == StorageStatus.INUSE
+    assert pipeline.storage_status_details() == {"checkpoints": []}
+
+    # Clearing it should clear away any details
+    pipeline.clear_storage()
+    assert pipeline.storage_status() == StorageStatus.CLEARED
+    assert pipeline.storage_status_details() is None
+
+
+@gen_pipeline_name
+@single_host_only
+@enterprise_only
+def test_pipeline_storage_status_details_with_checkpoints(pipeline_name):
+    """
+    Validate storage_status_details transitions and clear behavior using the Python API
+    with checkpoints.
+    """
+    pipeline = PipelineBuilder(
+        TEST_CLIENT,
+        pipeline_name,
+        """
+    CREATE TABLE t1 (
+        val INT
+    ) WITH (
+        'materialized' = 'true',
+        'connectors' = '[{
+            "transport": {
+                "name": "datagen",
+                "config": {
+                    "plan": [{
+                        "limit": 1000000,
+                        "rate": 1,
+                        "fields": {
+                            "val": { "strategy": "uniform", "range": [0, 1000000] }
+                        }
+                    }]
+                }
+            }
+        }]'
+    );
+    """,
+    ).create_or_replace()
+
+    # Initially no details
+    assert pipeline.storage_status() == StorageStatus.CLEARED
+    assert pipeline.storage_status_details() is None
+
+    # Clearing again will still yield no details
+    pipeline.clear_storage()
+    assert pipeline.storage_status() == StorageStatus.CLEARED
+    assert pipeline.storage_status_details() is None
+
+    # Starting should make it in-use with no checkpoints
+    pipeline.start()
+    assert pipeline.storage_status() == StorageStatus.INUSE
+    assert pipeline.storage_status_details() == {"checkpoints": []}
+
+    # Explicitly perform a checkpoint
+    pipeline.checkpoint(wait=True)
+
+    # Check one checkpoint was created
+    assert pipeline.storage_status() == StorageStatus.INUSE
+    time.sleep(5)
+    details = pipeline.storage_status_details()
+    assert len(details["checkpoints"]) == 1
+
+    # Explicitly perform another checkpoint
+    pipeline.checkpoint(wait=True)
+
+    # Check another checkpoint was made
+    assert pipeline.storage_status() == StorageStatus.INUSE
+    time.sleep(5)
+    details = pipeline.storage_status_details()
+    assert len(details["checkpoints"]) == 2
+
+    # After stopping, the details should still be available
+    pipeline.stop(force=True)
+    assert pipeline.storage_status() == StorageStatus.INUSE
+    assert pipeline.storage_status_details() == details
+
+    # Starting and stopping should not affect the details
+    pipeline.start()
+    assert pipeline.storage_status() == StorageStatus.INUSE
+    assert pipeline.storage_status_details() == details
+    pipeline.stop(force=True)
+    assert pipeline.storage_status() == StorageStatus.INUSE
+    assert pipeline.storage_status_details() == details
+
+    # Clearing it should clear away any details
+    pipeline.clear_storage()
+    assert pipeline.storage_status() == StorageStatus.CLEARED
+    assert pipeline.storage_status_details() is None

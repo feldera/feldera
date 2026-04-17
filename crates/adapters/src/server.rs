@@ -69,7 +69,7 @@ use feldera_types::query_params::{
 };
 use feldera_types::runtime_status::{
     BootstrapPolicy, ExtendedRuntimeStatus, ExtendedRuntimeStatusError, RuntimeDesiredStatus,
-    RuntimeStatus,
+    RuntimeStatus, StorageStatusDetails,
 };
 use feldera_types::suspend::{SuspendError, SuspendableResponse};
 use feldera_types::time_series::TimeSeries;
@@ -1354,13 +1354,33 @@ async fn status_handler(
 
 #[allow(clippy::result_large_err)]
 fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError> {
+    // Runtime desired status
     let runtime_desired_status = state.desired_status();
+
+    // Storage status details
+    let storage_status_details = match &state.storage {
+        Some(backend) => match Checkpointer::read_checkpoints(&**backend) {
+            Ok(list_checkpoints) => Some(StorageStatusDetails {
+                checkpoints: list_checkpoints,
+            }),
+            Err(e) => {
+                error!(
+                    "Unable to read checkpoints; storage status details are not provided. Error: {e}"
+                );
+                None
+            }
+        },
+        None => None,
+    };
+
+    // Current status
     match state.controller() {
         Ok(controller) => {
             fn inner_status(
                 runtime_desired_status: RuntimeDesiredStatus,
                 controller: &Controller,
                 default_status: RuntimeStatus,
+                storage_status_details: Option<StorageStatusDetails>,
             ) -> ExtendedRuntimeStatus {
                 ExtendedRuntimeStatus {
                     runtime_status: if controller.status().bootstrap_in_progress() {
@@ -1372,6 +1392,7 @@ fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRunt
                     },
                     runtime_status_details: json!(""),
                     runtime_desired_status,
+                    storage_status_details,
                 }
             }
 
@@ -1380,11 +1401,13 @@ fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRunt
                     runtime_desired_status,
                     &controller,
                     RuntimeStatus::Paused,
+                    storage_status_details,
                 )),
                 PipelineState::Running => Ok(inner_status(
                     runtime_desired_status,
                     &controller,
                     RuntimeStatus::Running,
+                    storage_status_details,
                 )),
                 PipelineState::Terminated => Err(ExtendedRuntimeStatusError {
                     status_code: StatusCode::INTERNAL_SERVER_ERROR,
@@ -1408,21 +1431,25 @@ fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRunt
                 runtime_status: RuntimeStatus::Initializing,
                 runtime_status_details: json!(""),
                 runtime_desired_status,
+                storage_status_details,
             }),
             InitializationState::DownloadingCheckpoint => Ok(ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Initializing,
                 runtime_status_details: json!("downloading checkpoint from object storage"),
                 runtime_desired_status,
+                storage_status_details,
             }),
             InitializationState::Standby => Ok(ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Standby,
                 runtime_status_details: json!(""),
                 runtime_desired_status,
+                storage_status_details,
             }),
             InitializationState::AwaitingApproval(diff) => Ok(ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::AwaitingApproval,
                 runtime_status_details: serde_json::to_value(&diff).unwrap_or_default(),
                 runtime_desired_status,
+                storage_status_details,
             }),
         },
         PipelinePhase::InitializationError(e) => {
@@ -1454,6 +1481,7 @@ fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRunt
                     runtime_status: RuntimeStatus::Replaying,
                     runtime_status_details: json!(""),
                     runtime_desired_status,
+                    storage_status_details,
                 })
             } else {
                 let mut status_code = e.status_code();
@@ -1480,6 +1508,7 @@ fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRunt
             runtime_status: RuntimeStatus::Suspended,
             runtime_status_details: json!(""),
             runtime_desired_status,
+            storage_status_details,
         }),
     }
 }

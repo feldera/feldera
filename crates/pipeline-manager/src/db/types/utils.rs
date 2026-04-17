@@ -2,6 +2,7 @@ use crate::db::error::DBError;
 use crate::db::types::program::{ProgramConfig, ProgramInfo};
 use crate::pipeline_env::validate_pipeline_env;
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
+use feldera_types::runtime_status::StorageStatusDetails;
 use regex::Regex;
 use serde::Serialize;
 use thiserror::Error as ThisError;
@@ -140,6 +141,18 @@ pub(crate) fn validate_deployment_config(
             Err(e)
         }
     }
+}
+
+/// Deserializes the generic JSON value into [`StorageStatusDetails`] and performs any additional validation.
+pub(crate) fn validate_storage_status_details(
+    value: &serde_json::Value,
+) -> Result<StorageStatusDetails, ValidationError> {
+    let deserialize_result = serde_json::from_value(value.clone())
+        .map_err(|e| ValidationError::DeserializationFailed(e.to_string()));
+    if let Err(e) = &deserialize_result {
+        error!("Backward incompatibility detected: the following JSON:\n{value:#}\n\n... is no longer a valid storage status details due to: {e}");
+    }
+    deserialize_result
 }
 
 #[cfg(test)]

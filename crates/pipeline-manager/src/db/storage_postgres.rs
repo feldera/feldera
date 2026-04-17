@@ -26,7 +26,7 @@ use async_trait::async_trait;
 use deadpool_postgres::{Manager, Pool, RecyclingMethod};
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
-use feldera_types::runtime_status::{BootstrapPolicy, ExtendedRuntimeStatus, RuntimeDesiredStatus};
+use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
 use tokio_postgres::Row;
 use tracing::{debug, info};
 use uuid::Uuid;
@@ -853,7 +853,9 @@ impl Storage for StoragePostgres {
         version_guard: Version,
         deployment_location: &str,
         deployment_resources_status_details: serde_json::Value,
-        extended_runtime_status: ExtendedRuntimeStatus,
+        deployment_runtime_status: RuntimeStatus,
+        deployment_runtime_status_details: serde_json::Value,
+        deployment_runtime_desired_status: RuntimeDesiredStatus,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -864,9 +866,9 @@ impl Storage for StoragePostgres {
             version_guard,
             deployment_location.to_string(),
             deployment_resources_status_details,
-            extended_runtime_status.runtime_status,
-            extended_runtime_status.runtime_status_details,
-            extended_runtime_status.runtime_desired_status,
+            deployment_runtime_status,
+            deployment_runtime_status_details,
+            deployment_runtime_desired_status,
         )
         .await?;
         txn.commit().await?;
@@ -879,7 +881,10 @@ impl Storage for StoragePostgres {
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_resources_status_details: serde_json::Value,
-        extended_runtime_status: ExtendedRuntimeStatus,
+        deployment_runtime_status: RuntimeStatus,
+        deployment_runtime_status_details: serde_json::Value,
+        deployment_runtime_desired_status: RuntimeDesiredStatus,
+        storage_status_details: Option<serde_json::Value>,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -889,9 +894,10 @@ impl Storage for StoragePostgres {
             pipeline_id,
             version_guard,
             deployment_resources_status_details,
-            extended_runtime_status.runtime_status,
-            extended_runtime_status.runtime_status_details,
-            extended_runtime_status.runtime_desired_status,
+            deployment_runtime_status,
+            deployment_runtime_status_details,
+            deployment_runtime_desired_status,
+            storage_status_details,
         )
         .await?;
         txn.commit().await?;
@@ -904,7 +910,7 @@ impl Storage for StoragePostgres {
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_error: Option<ErrorResponse>,
-        suspend_info: Option<serde_json::Value>,
+        storage_status_details: Option<serde_json::Value>,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -938,7 +944,7 @@ impl Storage for StoragePostgres {
             pipeline_id,
             version_guard,
             deployment_error,
-            suspend_info,
+            storage_status_details,
         )
         .await?;
 

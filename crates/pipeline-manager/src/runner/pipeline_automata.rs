@@ -22,7 +22,9 @@ use crate::runner::pipeline_logs::{start_thread_pipeline_logs, LogMessage, LogsS
 use chrono::Utc;
 use feldera_observability::ReqwestTracingExt;
 use feldera_types::error::ErrorResponse;
-use feldera_types::runtime_status::{ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus};
+use feldera_types::runtime_status::{
+    ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus, StorageStatusDetails,
+};
 use reqwest::{Method, StatusCode};
 use semver::Version;
 use serde_json::json;
@@ -57,10 +59,11 @@ enum Action {
     RemainProvisionedUpdateDetails {
         deployment_resources_status_details: serde_json::Value,
         extended_runtime_status: ExtendedRuntimeStatus,
+        storage_status_details: Option<serde_json::Value>,
     },
     TransitionToStopping {
         error: Option<ErrorResponse>,
-        suspend_info: Option<serde_json::Value>,
+        storage_status_details: Option<serde_json::Value>,
     },
     RemainStoppingUpdateDetails {
         deployment_resources_status_details: serde_json::Value,
@@ -156,6 +159,9 @@ where
 
     /// Previously observed runtime status details.
     prev_runtime_status_details: Option<serde_json::Value>,
+
+    /// Previously observed storage status details.
+    prev_storage_status_details: Option<StorageStatusDetails>,
 }
 
 impl<T: PipelineExecutor> PipelineAutomaton<T> {
@@ -188,10 +194,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// `Initializing`. If it comes back one time something different, the grace period ends.
     const PROVISIONED_GRACE_PERIOD: Duration = Duration::from_secs(20);
 
-    /// The resources and runtime status details can potentially change very frequently (especially
-    /// if some counters or a timestamp is part of it). This is the minimum bound for them getting
-    /// updated in the database, unless the status itself changed.
-    const DETAILS_UPDATE_MIN_INTERVAL: Duration = Duration::from_secs(10);
+    /// The resources details can potentially change very frequently (especially if some counters or
+    /// a timestamp is part of it). This is the minimum bound for them getting updated in the
+    /// database, unless the status itself changed.
+    const RESOURCES_DETAILS_UPDATE_MIN_INTERVAL: Duration = Duration::from_secs(10);
+
+    /// If nothing changes, this will create the same event.
+    const DETAILS_UPDATE_MAX_INTERVAL: Duration = Duration::from_secs(600);
 
     /// Creates a new automaton for a given pipeline.
     #[allow(clippy::too_many_arguments)]
@@ -239,6 +248,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             prev_details_update: None,
             prev_resources_status_details: None,
             prev_runtime_status_details: None,
+            prev_storage_status_details: None,
         }
     }
 
@@ -407,7 +417,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 ResourcesDesiredStatus::Stopped,
             ) => Action::TransitionToStopping {
                 error: None,
-                suspend_info: None,
+                storage_status_details: None,
             },
 
             // All other combinations are explicitly listed here, and should not occur.
@@ -430,7 +440,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             desired_status: pipeline.deployment_resources_desired_status,
                         },
                     )),
-                    suspend_info: None,
+                    storage_status_details: None,
                 }
             }
         };
@@ -550,7 +560,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             version_guard,
                             deployment_location,
                             deployment_resources_status_details.clone(),
-                            extended_runtime_status.clone(),
+                            extended_runtime_status.runtime_status,
+                            extended_runtime_status.runtime_status_details.clone(),
+                            extended_runtime_status.runtime_desired_status,
                         )
                         .await?;
                     // Start the grace period if it is the initial transition to `Provisioned`
@@ -564,6 +576,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 Action::RemainProvisionedUpdateDetails {
                     deployment_resources_status_details,
                     extended_runtime_status,
+                    storage_status_details,
                 } => {
                     self.db
                         .lock()
@@ -573,7 +586,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             pipeline.id,
                             version_guard,
                             deployment_resources_status_details.clone(),
-                            extended_runtime_status.clone(),
+                            extended_runtime_status.runtime_status,
+                            extended_runtime_status.runtime_status_details.clone(),
+                            extended_runtime_status.runtime_desired_status,
+                            storage_status_details.clone(),
                         )
                         .await?;
                     // Any update to the runtime status means we can end the grace period
@@ -590,7 +606,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 }
                 Action::TransitionToStopping {
                     error,
-                    suspend_info,
+                    storage_status_details,
                 } => {
                     if let Err(e) = self
                         .db
@@ -601,7 +617,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             pipeline.id,
                             version_guard,
                             error.clone(),
-                            suspend_info.clone(),
+                            storage_status_details.clone(),
                         )
                         .await
                     {
@@ -801,6 +817,27 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         }
     }
 
+    /// Serializes the storage status details as JSON.
+    ///
+    /// This conversion is not critical for pipeline functioning, as such it only logs an error if it
+    /// fails instead of stopping the pipeline outright.
+    fn serialize_storage_status_details(
+        &self,
+        details: &Option<StorageStatusDetails>,
+    ) -> Option<serde_json::Value> {
+        if let Some(details) = details {
+            match serde_json::to_value(details) {
+                Ok(storage_status_details) => Some(storage_status_details),
+                Err(e) => {
+                    error!("Automaton of pipeline {} is unable to serialize storage status details due to: {e}", self.pipeline_id);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    }
+
     /// Transits from `Stopped` towards `Provisioned`.
     async fn transit_stopped_towards_provisioned(
         &mut self,
@@ -821,7 +858,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             pipeline_platform_version: pipeline.platform_version.clone(),
                         },
                     )),
-                    suspend_info: None,
+                    storage_status_details: None,
                 })
             }
             ProgramStatus::Success => {
@@ -861,7 +898,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             ),
                         },
                     )),
-                    suspend_info: None,
+                    storage_status_details: None,
                 })
             }
             _ => Ok(Action::Remain),
@@ -893,7 +930,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         }
                         .into(),
                     ),
-                    suspend_info: None,
+                    storage_status_details: None,
                 };
             }
         };
@@ -903,7 +940,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             None => {
                 return Action::TransitionToStopping {
                     error: Some(RunnerError::AutomatonMissingProgramInfo.into()),
-                    suspend_info: None,
+                    storage_status_details: None,
                 };
             }
             Some(program_info) => match validate_program_info(program_info) {
@@ -917,7 +954,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             }
                             .into(),
                         ),
-                        suspend_info: None,
+                        storage_status_details: None,
                     };
                 }
             },
@@ -949,7 +986,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         }
                         .into(),
                     ),
-                    suspend_info: None,
+                    storage_status_details: None,
                 };
             }
         };
@@ -1148,7 +1185,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     }
                     .into(),
                 ),
-                suspend_info: None,
+                storage_status_details: None,
             };
         }
 
@@ -1157,7 +1194,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             None => {
                 return Action::TransitionToStopping {
                     error: Some(RunnerError::AutomatonMissingDeploymentInitial.into()),
-                    suspend_info: None,
+                    storage_status_details: None,
                 }
             }
             Some(deployment_initial) => *deployment_initial,
@@ -1168,7 +1205,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             None => {
                 return Action::TransitionToStopping {
                     error: Some(RunnerError::AutomatonMissingDeploymentId.into()),
-                    suspend_info: None,
+                    storage_status_details: None,
                 }
             }
             Some(deployment_id) => *deployment_id,
@@ -1179,7 +1216,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             None => {
                 return Action::TransitionToStopping {
                     error: Some(RunnerError::AutomatonMissingDeploymentConfig.into()),
-                    suspend_info: None,
+                    storage_status_details: None,
                 }
             }
             Some(deployment_config) => match validate_deployment_config(deployment_config) {
@@ -1193,7 +1230,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             }
                             .into(),
                         ),
-                        suspend_info: None,
+                        storage_status_details: None,
                     };
                 }
             },
@@ -1207,7 +1244,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     }
                     .into(),
                 ),
-                suspend_info: None,
+                storage_status_details: None,
             };
         };
 
@@ -1234,7 +1271,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         }
                         .into(),
                     ),
-                    suspend_info: None,
+                    storage_status_details: None,
                 };
             },
         );
@@ -1271,7 +1308,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             None => {
                 return Action::TransitionToStopping {
                     error: Some(RunnerError::AutomatonMissingProgramInfo.into()),
-                    suspend_info: None,
+                    storage_status_details: None,
                 };
             }
             Some(program_info) => program_info,
@@ -1288,7 +1325,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 &program_binary_url,
                 program_info_url.as_deref(),
                 pipeline.program_version,
-                pipeline.suspend_info.clone(),
             )
             .await
         {
@@ -1309,7 +1345,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             }
             Err(e) => Action::TransitionToStopping {
                 error: Some(e.into()),
-                suspend_info: None,
+                storage_status_details: None,
             },
         }
     }
@@ -1348,7 +1384,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             None => {
                 return Action::TransitionToStopping {
                     error: Some(RunnerError::AutomatonMissingDeploymentInitial.into()),
-                    suspend_info: None,
+                    storage_status_details: None,
                 }
             }
             Some(deployment_initial) => *deployment_initial,
@@ -1365,7 +1401,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 );
                 return Action::TransitionToStopping {
                     error: Some(e.into()),
-                    suspend_info: None,
+                    storage_status_details: None,
                 };
             }
         };
@@ -1398,7 +1434,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             }
                             .into(),
                         ),
-                        suspend_info: None,
+                        storage_status_details: None,
                     };
                 }
 
@@ -1406,7 +1442,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 if Some(&details) != self.prev_resources_status_details.as_ref()
                     && self
                         .prev_details_update
-                        .is_none_or(|t| t.elapsed() >= Self::DETAILS_UPDATE_MIN_INTERVAL)
+                        .is_none_or(|t| t.elapsed() >= Self::RESOURCES_DETAILS_UPDATE_MIN_INTERVAL)
                 {
                     self.prev_details_update = Some(Instant::now());
                     self.prev_resources_status_details = Some(details.clone());
@@ -1424,6 +1460,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     runtime_status: RuntimeStatus::Initializing,
                     runtime_status_details: json!(""),
                     runtime_desired_status: deployment_initial,
+                    storage_status_details: None,
                 },
             },
         }
@@ -1446,16 +1483,19 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                 runtime_status: RuntimeStatus::Paused,
                                 runtime_status_details: json!(""),
                                 runtime_desired_status: RuntimeDesiredStatus::Paused,
+                                storage_status_details: None,
                             }),
                             "Running" => Ok(ExtendedRuntimeStatus {
                                 runtime_status: RuntimeStatus::Running,
                                 runtime_status_details: json!(""),
                                 runtime_desired_status: RuntimeDesiredStatus::Running,
+                                storage_status_details: None,
                             }),
                             "Initializing" => Ok(ExtendedRuntimeStatus { // Backward compatibility: in anticipation of recent change of 503 to 200
                                 runtime_status: RuntimeStatus::Initializing,
                                 runtime_status_details: json!(""),
                                 runtime_desired_status: RuntimeDesiredStatus::Paused,
+                                storage_status_details: None,
                             }),
                             "Terminated" => Err(ErrorResponse::from(&RunnerError::PipelineInteractionInvalidResponse {
                                 pipeline_name: self.pipeline_id.to_string(),
@@ -1465,6 +1505,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                 runtime_status: RuntimeStatus::Unavailable,
                                 runtime_status_details: json!(format!("Pipeline status response (200 OK) is an unexpected JSON string: '{response_str}'")),
                                 runtime_desired_status: RuntimeDesiredStatus::Unavailable,
+                                storage_status_details: None,
                             }),
                         }
                     } else if body.is_object() {
@@ -1475,6 +1516,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                 runtime_status: RuntimeStatus::Unavailable,
                                 runtime_status_details: json!(format!("Pipeline status response (200 OK) cannot be deserialized due to: {e}")),
                                 runtime_desired_status: RuntimeDesiredStatus::Unavailable,
+                                storage_status_details: None,
                             }),
                         }
                     } else {
@@ -1483,6 +1525,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             runtime_status: RuntimeStatus::Unavailable,
                             runtime_status_details: json!(format!("Pipeline status response (200 OK) is not a string or an object:\n{body:#}")),
                             runtime_desired_status: RuntimeDesiredStatus::Unavailable,
+                            storage_status_details: None,
                         })
                     }
                 } else if status_code == StatusCode::SERVICE_UNAVAILABLE {
@@ -1492,12 +1535,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                 "Initializing" => Ok(ExtendedRuntimeStatus { // For backward compatibility
                                     runtime_status: RuntimeStatus::Initializing,
                                     runtime_status_details: json!(""),
-                                    runtime_desired_status: RuntimeDesiredStatus::Paused
+                                    runtime_desired_status: RuntimeDesiredStatus::Paused,
+                                    storage_status_details: None,
                                 }),
                                 "Suspended" => Ok(ExtendedRuntimeStatus { // For backward compatibility
                                     runtime_status: RuntimeStatus::Suspended,
                                     runtime_status_details: json!(""),
-                                    runtime_desired_status: RuntimeDesiredStatus::Suspended
+                                    runtime_desired_status: RuntimeDesiredStatus::Suspended,
+                                    storage_status_details: None,
                                 }),
                                 _ => {
                                     warn!(
@@ -1509,6 +1554,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                         runtime_status: RuntimeStatus::Unavailable,
                                         runtime_status_details: json!(format!("Pipeline status response (503 Service Unavailable) is an error:\n{error_response:?}")),
                                         runtime_desired_status: RuntimeDesiredStatus::Unavailable,
+                                    storage_status_details: None,
                                     })
                                 },
                             }
@@ -1517,6 +1563,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             runtime_status: RuntimeStatus::Unavailable,
                             runtime_status_details: json!(format!("Pipeline status response (503 Service Unavailable) cannot be deserialized due to: {e}. Response was:\n{body:#}")),
                             runtime_desired_status: RuntimeDesiredStatus::Unavailable,
+                            storage_status_details: None,
                         })
                     }
                 } else {
@@ -1545,6 +1592,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         runtime_status: RuntimeStatus::Initializing,
                         runtime_status_details: json!(format!("Still in the grace period for initializing. Pipeline status endpoint cannot yet be reached due to: {e}")),
                         runtime_desired_status: deployment_initial,
+                        storage_status_details: None,
                     })
                 } else {
                     warn!(
@@ -1558,6 +1606,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             "Pipeline status endpoint could not be reached: {e}"
                         )),
                         runtime_desired_status: RuntimeDesiredStatus::Unavailable,
+                        storage_status_details: None,
                     })
                 }
             }
@@ -1575,7 +1624,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Err(e) => {
                 return Action::TransitionToStopping {
                     error: Some(e.into()),
-                    suspend_info: None,
+                    storage_status_details: None,
                 }
             }
         };
@@ -1586,7 +1635,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             None => {
                 return Action::TransitionToStopping {
                     error: Some(RunnerError::AutomatonMissingDeploymentLocation.into()),
-                    suspend_info: None,
+                    storage_status_details: None,
                 }
             }
         };
@@ -1597,7 +1646,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             None => {
                 return Action::TransitionToStopping {
                     error: Some(RunnerError::AutomatonMissingDeploymentInitial.into()),
-                    suspend_info: None,
+                    storage_status_details: None,
                 }
             }
         };
@@ -1617,7 +1666,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Err(e) => {
                 return Action::TransitionToStopping {
                     error: Some(e),
-                    suspend_info: None,
+                    storage_status_details: None,
                 }
             }
         };
@@ -1631,7 +1680,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             );
             return Action::TransitionToStopping {
                 error: None,
-                suspend_info: Some(json!({})),
+                storage_status_details: self.serialize_storage_status_details(
+                    &latest_runtime_extended_status.storage_status_details,
+                ),
             };
         }
 
@@ -1647,11 +1698,27 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         let runtime_status_details_changed =
             Some(&latest_runtime_extended_status.runtime_status_details)
                 != self.prev_runtime_status_details.as_ref();
+        let storage_status_details_changed =
+            if let Some(current_details) = &latest_runtime_extended_status.storage_status_details {
+                self.prev_storage_status_details
+                    .as_ref()
+                    .is_none_or(|prev| prev != current_details)
+            } else {
+                // If the pipeline storage status is `None`, it indicates it was unable to retrieve the
+                // details in the current runtime status. As such, whichever was reported before
+                // is retained.
+                false
+            };
         if runtime_status_changed
-            || ((resources_status_details_changed || runtime_status_details_changed)
+            || runtime_status_details_changed
+            || storage_status_details_changed
+            || (resources_status_details_changed
                 && self
                     .prev_details_update
-                    .is_none_or(|t| t.elapsed() >= Self::DETAILS_UPDATE_MIN_INTERVAL))
+                    .is_none_or(|t| t.elapsed() >= Self::RESOURCES_DETAILS_UPDATE_MIN_INTERVAL))
+            || self
+                .prev_details_update
+                .is_none_or(|t| t.elapsed() >= Self::DETAILS_UPDATE_MAX_INTERVAL)
         {
             self.prev_details_update = Some(Instant::now());
             self.prev_resources_status_details = Some(latest_resources_status_details.clone());
@@ -1662,7 +1729,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             );
             Action::RemainProvisionedUpdateDetails {
                 deployment_resources_status_details: latest_resources_status_details,
-                extended_runtime_status: latest_runtime_extended_status,
+                extended_runtime_status: latest_runtime_extended_status.clone(),
+                storage_status_details: self.serialize_storage_status_details(
+                    &latest_runtime_extended_status.storage_status_details,
+                ),
             }
         } else {
             Action::Remain
@@ -1685,10 +1755,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 "Pipeline could not be stopped (will retry): {e}"
             );
             let latest_details = json!(format!("Unable to stop (will retry) due to: {e}"));
-            if Some(&latest_details) != self.prev_resources_status_details.as_ref()
+            if (Some(&latest_details) != self.prev_resources_status_details.as_ref()
                 && self
                     .prev_details_update
-                    .is_none_or(|t| t.elapsed() >= Self::DETAILS_UPDATE_MIN_INTERVAL)
+                    .is_none_or(|t| t.elapsed() >= Self::RESOURCES_DETAILS_UPDATE_MIN_INTERVAL))
+                || self
+                    .prev_details_update
+                    .is_none_or(|t| t.elapsed() >= Self::DETAILS_UPDATE_MAX_INTERVAL)
             {
                 self.prev_details_update = Some(Instant::now());
                 self.prev_resources_status_details = Some(latest_details.clone());
@@ -1798,7 +1871,6 @@ mod test {
             _: &str,
             _: Option<&str>,
             _: Version,
-            _: Option<serde_json::Value>,
         ) -> Result<(), ManagerError> {
             Ok(())
         }
@@ -2230,6 +2302,9 @@ mod test {
             "runtime_status": "Suspended",
             "runtime_status_details": "",
             "runtime_desired_status": "Suspended",
+            "storage_status_details": {
+                "checkpoints": []
+            },
         }))]).await;
         test.tick().await;
         assert_eq!(test.resources_status().await, ResourcesStatus::Stopping);

@@ -646,6 +646,7 @@
                     "deployment_error": null,
                     "refresh_version": 4,
                     "storage_status": "Cleared",
+                    "storage_status_details": null,
                     "deployment_id": null,
                     "deployment_initial": null,
                     "deployment_status": "Stopped",
@@ -735,6 +736,7 @@
                     "deployment_error": null,
                     "refresh_version": 1,
                     "storage_status": "Cleared",
+                    "storage_status_details": null,
                     "deployment_id": null,
                     "deployment_initial": null,
                     "deployment_status": "Stopped",
@@ -927,6 +929,7 @@
                   "deployment_error": null,
                   "refresh_version": 4,
                   "storage_status": "Cleared",
+                  "storage_status_details": null,
                   "deployment_id": null,
                   "deployment_initial": null,
                   "deployment_status": "Stopped",
@@ -1109,6 +1112,7 @@
                   "deployment_error": null,
                   "refresh_version": 4,
                   "storage_status": "Cleared",
+                  "storage_status_details": null,
                   "deployment_id": null,
                   "deployment_initial": null,
                   "deployment_status": "Stopped",
@@ -1328,6 +1332,7 @@
                   "deployment_error": null,
                   "refresh_version": 4,
                   "storage_status": "Cleared",
+                  "storage_status_details": null,
                   "deployment_id": null,
                   "deployment_initial": null,
                   "deployment_status": "Stopped",
@@ -1427,6 +1432,7 @@
                   "deployment_error": null,
                   "refresh_version": 4,
                   "storage_status": "Cleared",
+                  "storage_status_details": null,
                   "deployment_id": null,
                   "deployment_initial": null,
                   "deployment_status": "Stopped",
@@ -1695,6 +1701,7 @@
                   "deployment_error": null,
                   "refresh_version": 4,
                   "storage_status": "Cleared",
+                  "storage_status_details": null,
                   "deployment_id": null,
                   "deployment_initial": null,
                   "deployment_status": "Stopped",
@@ -6229,6 +6236,7 @@
                   "deployment_error": null,
                   "refresh_version": 4,
                   "storage_status": "Cleared",
+                  "storage_status_details": null,
                   "deployment_id": null,
                   "deployment_initial": null,
                   "deployment_status": "Stopped",
@@ -10763,6 +10771,9 @@
           "storage_status": {
             "$ref": "#/components/schemas/StorageStatus"
           },
+          "storage_status_details": {
+            "nullable": true
+          },
           "udf_rust": {
             "type": "string"
           },
@@ -10955,6 +10966,9 @@
           },
           "storage_status": {
             "$ref": "#/components/schemas/StorageStatus"
+          },
+          "storage_status_details": {
+            "nullable": true
           },
           "udf_rust": {
             "type": "string",

@@ -425,7 +425,6 @@ impl PipelineExecutor for LocalRunner {
         program_binary_url: &str,
         program_info_url: Option<&str>,
         program_version: Version,
-        _suspend_info: Option<serde_json::Value>,
     ) -> Result<(), ManagerError> {
         // Local runner does not support multihost.
         if deployment_config.multihost.is_some() {

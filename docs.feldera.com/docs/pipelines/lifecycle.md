@@ -121,6 +121,9 @@ becomes `Cleared`.
 
 **Relevant API fields:**
 - `storage_status`
+- `storage_status_details` (Only cleared (set to `null`) when the storage is cleared.
+  It is not cleared when the pipeline stops such that any reported details are also
+  available when the pipeline is not deployed.)
 
 ### Storage status table
 
