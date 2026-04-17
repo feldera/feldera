@@ -19,13 +19,16 @@ Core visualization engine using Cytoscape.js and ELK layout. Callback-based API 
 ### feldera-theme
 Pure CSS theme package (Skeleton UI customization with Feldera branding — purple gradients, DM Sans fonts).
 
+### monaco-editor-vite-plugin
+Local fork of `@bithero/monaco-editor-vite-plugin@1.0.3` (AGPL-3.0-or-later) with a single bug fix: upstream's `config` hook inverted the filter operator and silently wiped all other entries from `optimizeDeps.include`. Consumed by web-console only. See `monaco-editor-vite-plugin/CLAUDE.md`.
+
 ### triage-types
 Shared TypeScript types for the support bundle triage plugin system. Defines `TriagePlugin`, `TriageRuleResult`, `TriageResults`, `Severity`, and `DecodedBundle` interfaces used by triage plugins in the cloud repo.
 
 ## Dependency Graph
 
 ```
-web-console -> profiler-layout, feldera-theme, triage-types
+web-console -> profiler-layout, feldera-theme, triage-types, monaco-editor-vite-plugin
 profiler-app -> profiler-layout, feldera-theme
 profiler-layout -> profiler-lib
 ```
