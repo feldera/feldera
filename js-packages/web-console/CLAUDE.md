@@ -20,7 +20,7 @@ bun run lint       # Lint with ESLint
 bun run check      # Type check with svelte-check
 
 # Run unit tests
-bun run test
+bun run test-unit
 
 # OpenAPI generation (important for API updates)
 bun run build-openapi     # Generate new openapi.json from Rust backend
@@ -115,14 +115,19 @@ Web Console is a dasboard UI app deployed as a static website that is served by 
 
 ### Test Commands
 
-- `bun run test` — run vitest unit + component tests (single run)
-- `bun run test-unit` — run vitest in watch mode
-- `bun run test-e2e` — run Playwright e2e tests
+- `bun run test-unit` — run vitest unit + component tests (single run)
+- `bun run test-e2e` — run Playwright e2e tests (all specs under `tests/*.e2e.ts`)
+
+Run a single e2e test (args go after `--`, e2e expects pipeline-manager on `localhost:8080`):
+
+- `bun run test-e2e -- tests/pipelineDeleted.e2e.ts` — one spec file
+- `bun run test-e2e -- -g "shows Deleted chip"` — by regex against describe + title
+- `bun run test-e2e -- tests/pipelineDeleted.e2e.ts:42` — single test at a file:line
 
 ### Snapshot Workflow
 
 1. `bun run test-prepare` — clones the snapshot repo (or creates empty dirs)
-2. `bun run test` — vitest reads/writes component snapshots from `playwright-snapshots/component/`
+2. `bun run test-unit` — vitest reads/writes component snapshots from `playwright-snapshots/component/`
 3. `bun run test-e2e` — Playwright reads/writes e2e snapshots from `playwright-snapshots/e2e/`
 4. `bun run test-update-snapshots` — regenerates all snapshots
 
