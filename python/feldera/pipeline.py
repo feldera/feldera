@@ -1152,6 +1152,14 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         self.refresh(PipelineFieldSelector.STATUS)
         return StorageStatus.from_str(self._inner.storage_status)
 
+    def storage_status_details(self) -> dict:
+        """
+        Return the storage status details of the pipeline.
+        """
+
+        self.refresh(PipelineFieldSelector.STATUS)
+        return self._inner.storage_status_details
+
     def program_status(self) -> ProgramStatus:
         """
         Return the program status of the pipeline.

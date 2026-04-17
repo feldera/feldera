@@ -1246,7 +1246,7 @@ pub(crate) async fn get_checkpoint_status(
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
-    state
+    let result = state
         .runner
         .forward_http_request_to_pipeline_by_name(
             client.as_ref(),
@@ -1258,7 +1258,14 @@ pub(crate) async fn get_checkpoint_status(
             None,
             None,
         )
+        .await;
+    state
+        .db
+        .lock()
         .await
+        .increment_notify_counter(*tenant_id, &pipeline_name)
+        .await?;
+    result
 }
 
 /// Get Checkpoint Sync Status
@@ -1356,7 +1363,7 @@ pub(crate) async fn get_checkpoints(
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
-    state
+    let result = state
         .runner
         .forward_http_request_to_pipeline_by_name(
             client.as_ref(),
@@ -1368,7 +1375,14 @@ pub(crate) async fn get_checkpoints(
             None,
             None,
         )
+        .await;
+    state
+        .db
+        .lock()
         .await
+        .increment_notify_counter(*tenant_id, &pipeline_name)
+        .await?;
+    result
 }
 
 /// Start a Samply profile

@@ -14,6 +14,12 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        API changes:
+        - (New) Details about the storage status is a new pipeline field: `storage_status_details`.
+          It does not get get cleared when the pipeline stops, only when the storage is cleared.
+        - (Fix) Dedicated error `BootstrapPolicyImmutableUnlessStopped` for repeated `/start` of a
+          pipeline but with a different bootstrap policy.
+
         Functions `RLIKE` and `REPLACE_REGEXP` will crash for invalid
         regular expressions.  Previously they treated such as expressions
         as expressions which never match.  The new behavior more closely

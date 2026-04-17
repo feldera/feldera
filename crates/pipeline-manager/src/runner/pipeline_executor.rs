@@ -62,7 +62,6 @@ pub trait PipelineExecutor: Sync + Send {
         program_binary_url: &str,
         program_info_url: Option<&str>,
         program_version: Version,
-        suspend_info: Option<serde_json::Value>,
     ) -> Result<(), ManagerError>;
 
     /// Validates whether the compute and possibly storage resources provisioning

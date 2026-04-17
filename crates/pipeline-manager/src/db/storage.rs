@@ -12,7 +12,7 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
 use async_trait::async_trait;
 use feldera_types::error::ErrorResponse;
-use feldera_types::runtime_status::{BootstrapPolicy, ExtendedRuntimeStatus, RuntimeDesiredStatus};
+use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
 use uuid::Uuid;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -43,6 +43,7 @@ impl ExtendedPipelineDescrRunner {
                 deployment_location: pipeline.deployment_location.clone(),
                 refresh_version: pipeline.refresh_version,
                 storage_status: pipeline.storage_status,
+                storage_status_details: pipeline.storage_status_details.clone(),
                 deployment_id: pipeline.deployment_id,
                 deployment_initial: pipeline.deployment_initial,
                 deployment_resources_status: pipeline.deployment_resources_status,
@@ -354,6 +355,7 @@ pub(crate) trait Storage {
     ) -> Result<(), DBError>;
 
     /// Transitions resources status to `Provisioned`.
+    #[allow(clippy::too_many_arguments)]
     async fn transit_deployment_resources_status_to_provisioned(
         &self,
         tenant_id: TenantId,
@@ -361,17 +363,23 @@ pub(crate) trait Storage {
         version_guard: Version,
         deployment_location: &str,
         deployment_resources_status_details: serde_json::Value,
-        extended_runtime_status: ExtendedRuntimeStatus,
+        deployment_runtime_status: RuntimeStatus,
+        deployment_runtime_status_details: serde_json::Value,
+        deployment_runtime_desired_status: RuntimeDesiredStatus,
     ) -> Result<(), DBError>;
 
     /// Remains resources status `Provisioned`.
+    #[allow(clippy::too_many_arguments)]
     async fn remain_deployment_resources_status_provisioned(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_resources_status_details: serde_json::Value,
-        extended_runtime_status: ExtendedRuntimeStatus,
+        deployment_runtime_status: RuntimeStatus,
+        deployment_runtime_status_details: serde_json::Value,
+        deployment_runtime_desired_status: RuntimeDesiredStatus,
+        storage_status_details: Option<serde_json::Value>,
     ) -> Result<(), DBError>;
 
     /// Transitions resources status to `Stopping`.
@@ -381,7 +389,7 @@ pub(crate) trait Storage {
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_error: Option<ErrorResponse>,
-        suspend_info: Option<serde_json::Value>,
+        storage_status_details: Option<serde_json::Value>,
     ) -> Result<(), DBError>;
 
     /// Remains resources status `Stopping`.

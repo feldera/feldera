@@ -236,13 +236,11 @@ pub struct ExtendedPipelineDescr {
     /// all fields).
     pub refresh_version: Version,
 
-    /// Information about the current suspended state.
-    ///
-    /// Can only be set when `Stopping` or `Stopped`.
-    pub suspend_info: Option<serde_json::Value>,
-
     /// Storage status.
     pub storage_status: StorageStatus,
+
+    /// Storage status details.
+    pub storage_status_details: Option<serde_json::Value>,
 
     /// Identifier of the current deployment.
     pub deployment_id: Option<Uuid>,
@@ -250,6 +248,8 @@ pub struct ExtendedPipelineDescr {
     /// Initial runtime desired status of the current deployment.
     pub deployment_initial: Option<RuntimeDesiredStatus>,
 
+    /// Policy enforced when the pipeline has to bootstrap
+    /// due to detected changes caused by recompilation.
     pub bootstrap_policy: Option<BootstrapPolicy>,
 
     /// Resources status of the current deployment.
@@ -291,7 +291,7 @@ pub struct ExtendedPipelineDescr {
 /// in `program_info` can become several MiB in size). This is particularly relevant
 /// for monitoring in which the pipeline tuple is retrieved very frequently, which would
 /// result in high CPU usage to retrieve large fields that are not of interest.
-#[derive(Eq, PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone, Serialize)]
 pub struct ExtendedPipelineDescrMonitoring {
     pub id: PipelineId,
     pub name: String,
@@ -307,6 +307,7 @@ pub struct ExtendedPipelineDescrMonitoring {
     pub deployment_location: Option<String>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,
+    pub storage_status_details: Option<serde_json::Value>,
     pub deployment_id: Option<Uuid>,
     pub deployment_initial: Option<RuntimeDesiredStatus>,
     pub deployment_resources_status: ResourcesStatus,

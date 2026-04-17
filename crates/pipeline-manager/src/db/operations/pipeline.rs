@@ -1,13 +1,15 @@
 use crate::api::support_data_collector::SupportBundleData;
 use crate::db::error::DBError;
+use crate::db::operations::pipeline_parsing::{
+    parse_pipeline_row_all, parse_pipeline_row_monitoring, serialize_error_response,
+    serialize_program_error, PIPELINE_COLUMNS_ALL, PIPELINE_COLUMNS_MONITORING,
+};
 use crate::db::operations::utils::{
     maybe_tenant_id_foreign_key_constraint_err, maybe_unique_violation,
 };
 use crate::db::types::pipeline::{
-    bootstrap_policy_to_string, parse_string_as_bootstrap_policy,
-    parse_string_as_runtime_desired_status, parse_string_as_runtime_status,
-    runtime_desired_status_to_string, runtime_status_to_string, ExtendedPipelineDescr,
-    ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
+    bootstrap_policy_to_string, runtime_desired_status_to_string, runtime_status_to_string,
+    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
 };
 use crate::db::types::program::{
     validate_program_status_transition, ProgramError, ProgramStatus, RustCompilationInfo,
@@ -21,310 +23,17 @@ use crate::db::types::storage::{validate_storage_status_transition, StorageStatu
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{
     validate_deployment_config, validate_name, validate_program_config, validate_program_info,
-    validate_runtime_config,
+    validate_runtime_config, validate_storage_status_details,
 };
 use crate::db::types::version::Version;
-use chrono::{DateTime, Utc};
 use deadpool_postgres::Transaction;
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
 use rmp_serde::{from_slice, to_vec};
 use serde_json::json;
 use tokio_postgres::Row;
-use tracing::{error, warn};
+use tracing::warn;
 use uuid::Uuid;
-
-/// Parses string as a JSON value.
-fn deserialize_json_value(s: &str) -> Result<serde_json::Value, DBError> {
-    serde_json::from_str::<serde_json::Value>(s).map_err(|e| DBError::InvalidJsonData {
-        data: s.to_string(),
-        error: format!("unable to deserialize data string as JSON due to: {e}"),
-    })
-}
-
-/// Serializes the [`ProgramError`] as a string of JSON.
-fn serialize_program_error(program_error: &ProgramError) -> Result<String, DBError> {
-    serde_json::to_string(program_error).map_err(|e| DBError::FailedToSerializeProgramError {
-        error: e.to_string(),
-    })
-}
-
-/// Deserializes the string of JSON as an [`ProgramError`].
-fn deserialize_program_error(s: &str) -> Result<ProgramError, DBError> {
-    let json_value = deserialize_json_value(s)?;
-    let program_error: ProgramError =
-        serde_json::from_value(json_value.clone()).map_err(|e| DBError::InvalidProgramError {
-            value: json_value,
-            error: e.to_string(),
-        })?;
-    Ok(program_error)
-}
-
-/// Deserializes the string of JSON as an [`ProgramError`] with a default if deserialization fails.
-/// TODO: can be removed once no longer needed as fallback
-fn deserialize_program_error_with_default(s: &str) -> ProgramError {
-    deserialize_program_error(s).unwrap_or_else(|e| {
-        error!("Backward incompatibility detected: the following string:\n{s}\n\n... is not a valid program error due to: {e}");
-        ProgramError {
-            sql_compilation: None,
-            rust_compilation: None,
-            system_error: None,
-        }
-    })
-}
-
-/// Serializes the [`ErrorResponse`] as a string of JSON.
-fn serialize_error_response(error_response: &ErrorResponse) -> Result<String, DBError> {
-    serde_json::to_string(error_response).map_err(|e| DBError::FailedToSerializeErrorResponse {
-        error: e.to_string(),
-    })
-}
-
-/// Deserializes the string of JSON as an [`ErrorResponse`].
-fn deserialize_error_response(s: &str) -> Result<ErrorResponse, DBError> {
-    let json_value = deserialize_json_value(s)?;
-    let error_response: ErrorResponse =
-        serde_json::from_value(json_value.clone()).map_err(|e| DBError::InvalidErrorResponse {
-            value: json_value,
-            error: e.to_string(),
-        })?;
-    Ok(error_response)
-}
-
-/// All pipeline columns.
-const RETRIEVE_PIPELINE_COLUMNS: &str =
-    "p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.platform_version, p.runtime_config,
-     p.program_code, p.udf_rust, p.udf_toml, p.program_config, p.program_version, p.program_status,
-     p.program_status_since, p.program_error, p.program_info,
-     p.program_binary_source_checksum, p.program_binary_integrity_checksum, p.program_info_integrity_checksum,
-     p.deployment_error, p.deployment_config, p.deployment_location, p.refresh_version,
-     p.suspend_info, p.storage_status, p.deployment_id, p.deployment_initial,
-     p.deployment_resources_status, p.deployment_resources_status_details, p.deployment_resources_status_since,
-     p.deployment_resources_desired_status, p.deployment_resources_desired_status_since,
-     p.deployment_runtime_status, p.deployment_runtime_status_details, p.deployment_runtime_status_since,
-     p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since, p.bootstrap_policy
-     ";
-
-/// Converts a pipeline table row to its extended descriptor with all fields.
-///
-/// Backward compatibility:
-/// - Fields `runtime_config`, `program_config`, `program_info`, `deployment_config` and `suspend_info`
-///   are deserialized as JSON values -- they are not deserialized as their actual types.
-///   Backward incompatible changes in those actual types will not prevent retrieval of
-///   pipelines as long as they are serialized as valid JSON.
-/// - All other fields are deserialized as their actual types.
-///   Backwards incompatible changes therein will prevent retrieval of pipelines
-///   because an error will be returned instead.
-fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDescr, DBError> {
-    assert_eq!(row.len(), 39);
-
-    // Runtime configuration: RuntimeConfig
-    let runtime_config = deserialize_json_value(row.get(7))?;
-    let _ = validate_runtime_config(&runtime_config, true); // Prints to log if validation failed
-
-    // Program configuration: ProgramConfig
-    let program_config = deserialize_json_value(row.get(11))?;
-    let _ = validate_program_config(&program_config, true); // Prints to log if validation failed
-
-    // Program error: ProgramError
-    let program_error = deserialize_program_error_with_default(&row.get::<_, String>(15));
-
-    // Program information: ProgramInfo
-    let program_info = match row.get::<_, Option<String>>(16) {
-        None => None,
-        Some(s) => Some(deserialize_json_value(&s)?),
-    };
-    if let Some(value) = &program_info {
-        let _ = validate_program_info(value); // Prints to log if validation failed
-    }
-
-    // Deployment error: ErrorResponse
-    let deployment_error = match row.get::<_, Option<String>>(20) {
-        None => None,
-        Some(s) => Some(deserialize_error_response(&s)?),
-    };
-
-    // Deployment configuration: PipelineConfig
-    let deployment_config = match row.get::<_, Option<String>>(21) {
-        None => None,
-        Some(s) => Some(deserialize_json_value(&s)?),
-    };
-    if let Some(value) = &deployment_config {
-        let _ = validate_deployment_config(value); // Prints to log if validation failed
-    }
-
-    // Suspend information
-    let suspend_info = match row.get::<_, Option<String>>(24) {
-        None => None,
-        Some(s) => Some(deserialize_json_value(&s)?),
-    };
-
-    // Deployment initial runtime status
-    let deployment_initial = match row.get::<_, Option<String>>(27) {
-        None => None,
-        Some(s) => Some(parse_string_as_runtime_desired_status(s)?),
-    };
-
-    // Deployment resources status details
-    let deployment_resources_status_details = match row.get::<_, Option<String>>(29) {
-        None => None,
-        Some(s) => Some(deserialize_json_value(&s)?),
-    };
-
-    // Deployment runtime status
-    let deployment_runtime_status = match row.get::<_, Option<String>>(33) {
-        None => None,
-        Some(s) => Some(parse_string_as_runtime_status(s)?),
-    };
-
-    // Deployment runtime status details
-    let deployment_runtime_status_details = match row.get::<_, Option<String>>(34) {
-        None => None,
-        Some(s) => Some(deserialize_json_value(&s)?),
-    };
-
-    let deployment_runtime_status_since = row.get::<_, Option<DateTime<Utc>>>(35);
-
-    // Deployment runtime desired status
-    let deployment_runtime_desired_status = match row.get::<_, Option<String>>(36) {
-        None => None,
-        Some(s) => Some(parse_string_as_runtime_desired_status(s)?),
-    };
-
-    let bootstrap_policy = match row.get::<_, Option<String>>(38) {
-        None => None,
-        Some(s) => Some(parse_string_as_bootstrap_policy(s)?),
-    };
-
-    Ok(ExtendedPipelineDescr {
-        id: PipelineId(row.get(0)),
-        // tenant_id is not used
-        name: row.get(2),
-        description: row.get(3),
-        created_at: row.get(4),
-        version: Version(row.get(5)),
-        platform_version: row.get(6),
-        runtime_config,
-        program_code: row.get(8),
-        udf_rust: row.get(9),
-        udf_toml: row.get(10),
-        program_config,
-        program_version: Version(row.get(12)),
-        program_status: row.get::<_, String>(13).try_into()?,
-        program_status_since: row.get(14),
-        program_error,
-        program_info,
-        program_binary_source_checksum: row.get(17),
-        program_binary_integrity_checksum: row.get(18),
-        program_info_integrity_checksum: row.get(19),
-        deployment_error,
-        deployment_config,
-        deployment_location: row.get(22),
-        refresh_version: Version(row.get(23)),
-        suspend_info,
-        storage_status: row.get::<_, String>(25).try_into()?,
-        deployment_id: row.get(26),
-        deployment_initial,
-        deployment_resources_status: row.get::<_, String>(28).try_into()?,
-        deployment_resources_status_details,
-        deployment_resources_status_since: row.get(30),
-        deployment_resources_desired_status: row.get::<_, String>(31).try_into()?,
-        deployment_resources_desired_status_since: row.get(32),
-        deployment_runtime_status,
-        deployment_runtime_status_details,
-        deployment_runtime_status_since,
-        deployment_runtime_desired_status,
-        deployment_runtime_desired_status_since: row.get(37),
-        bootstrap_policy,
-    })
-}
-
-/// Pipeline columns relevant to monitoring.
-const RETRIEVE_PIPELINE_MONITORING_COLUMNS: &str =
-    "p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.platform_version,
-     p.program_config, p.program_version, p.program_status, p.program_status_since,
-     p.deployment_error, p.deployment_location, p.refresh_version, p.storage_status,
-     p.deployment_id, p.deployment_initial,
-     p.deployment_resources_status, p.deployment_resources_status_since,
-     p.deployment_resources_desired_status, p.deployment_resources_desired_status_since,
-     p.deployment_runtime_status, p.deployment_runtime_status_details, p.deployment_runtime_status_since,
-     p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since, p.bootstrap_policy
-     ";
-
-/// Converts a pipeline table row to its extended descriptor with only fields relevant to monitoring.
-fn row_to_extended_pipeline_descriptor_monitoring(
-    row: &Row,
-) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
-    assert_eq!(row.len(), 27);
-
-    let program_config = deserialize_json_value(row.get(7))?;
-
-    // Deployment error: ErrorResponse
-    let deployment_error = match row.get::<_, Option<String>>(11) {
-        None => None,
-        Some(s) => Some(deserialize_error_response(&s)?),
-    };
-
-    // Deployment initial runtime status
-    let deployment_initial = match row.get::<_, Option<String>>(16) {
-        None => None,
-        Some(s) => Some(parse_string_as_runtime_desired_status(s)?),
-    };
-
-    // Deployment runtime status
-    let deployment_runtime_status = match row.get::<_, Option<String>>(21) {
-        None => None,
-        Some(s) => Some(parse_string_as_runtime_status(s)?),
-    };
-
-    let deployment_runtime_status_details = match row.get::<_, Option<String>>(22) {
-        None => None,
-        Some(s) => Some(deserialize_json_value(&s)?),
-    };
-
-    let deployment_runtime_status_since = row.get::<_, Option<DateTime<Utc>>>(23);
-
-    // Deployment runtime desired status
-    let deployment_runtime_desired_status = match row.get::<_, Option<String>>(24) {
-        None => None,
-        Some(s) => Some(parse_string_as_runtime_desired_status(s)?),
-    };
-
-    let bootstrap_policy = match row.get::<_, Option<String>>(26) {
-        None => None,
-        Some(s) => Some(parse_string_as_bootstrap_policy(s)?),
-    };
-
-    Ok(ExtendedPipelineDescrMonitoring {
-        id: PipelineId(row.get(0)),
-        // tenant_id is not used
-        name: row.get(2),
-        description: row.get(3),
-        created_at: row.get(4),
-        version: Version(row.get(5)),
-        platform_version: row.get(6),
-        program_config,
-        program_version: Version(row.get(8)),
-        program_status: row.get::<_, String>(9).try_into()?,
-        program_status_since: row.get(10),
-        deployment_error,
-        deployment_location: row.get(12),
-        refresh_version: Version(row.get(13)),
-        storage_status: row.get::<_, String>(14).try_into()?,
-        deployment_id: row.get(15),
-        deployment_initial,
-        deployment_resources_status: row.get::<_, String>(17).try_into()?,
-        deployment_resources_status_since: row.get(18),
-        deployment_resources_desired_status: row.get::<_, String>(19).try_into()?,
-        deployment_resources_desired_status_since: row.get(20),
-        deployment_runtime_status,
-        deployment_runtime_status_details,
-        deployment_runtime_status_since,
-        deployment_runtime_desired_status,
-        deployment_runtime_desired_status_since: row.get(25),
-        bootstrap_policy,
-    })
-}
 
 pub(crate) async fn list_pipelines(
     txn: &Transaction<'_>,
@@ -332,7 +41,7 @@ pub(crate) async fn list_pipelines(
 ) -> Result<Vec<ExtendedPipelineDescr>, DBError> {
     let stmt = txn
         .prepare_cached(&format!(
-            "SELECT {RETRIEVE_PIPELINE_COLUMNS}
+            "SELECT {PIPELINE_COLUMNS_ALL}
              FROM pipeline AS p
              WHERE p.tenant_id = $1
              ORDER BY p.id ASC"
@@ -341,7 +50,7 @@ pub(crate) async fn list_pipelines(
     let rows: Vec<Row> = txn.query(&stmt, &[&tenant_id.0]).await?;
     let mut result = Vec::with_capacity(rows.len());
     for row in rows {
-        result.push(row_to_extended_pipeline_descriptor(&row)?);
+        result.push(parse_pipeline_row_all(&row)?);
     }
     Ok(result)
 }
@@ -352,7 +61,7 @@ pub(crate) async fn list_pipelines_for_monitoring(
 ) -> Result<Vec<ExtendedPipelineDescrMonitoring>, DBError> {
     let stmt = txn
         .prepare_cached(&format!(
-            "SELECT {RETRIEVE_PIPELINE_MONITORING_COLUMNS}
+            "SELECT {PIPELINE_COLUMNS_MONITORING}
              FROM pipeline AS p
              WHERE p.tenant_id = $1
              ORDER BY p.id ASC"
@@ -361,7 +70,7 @@ pub(crate) async fn list_pipelines_for_monitoring(
     let rows: Vec<Row> = txn.query(&stmt, &[&tenant_id.0]).await?;
     let mut result = Vec::with_capacity(rows.len());
     for row in rows {
-        result.push(row_to_extended_pipeline_descriptor_monitoring(&row)?);
+        result.push(parse_pipeline_row_monitoring(&row)?);
     }
     Ok(result)
 }
@@ -373,7 +82,7 @@ pub(crate) async fn get_pipeline(
 ) -> Result<ExtendedPipelineDescr, DBError> {
     let stmt = txn
         .prepare_cached(&format!(
-            "SELECT {RETRIEVE_PIPELINE_COLUMNS}
+            "SELECT {PIPELINE_COLUMNS_ALL}
              FROM pipeline AS p
              WHERE p.tenant_id = $1 AND p.name = $2
             "
@@ -384,7 +93,7 @@ pub(crate) async fn get_pipeline(
             pipeline_name: name.to_string(),
         },
     )?;
-    row_to_extended_pipeline_descriptor(&row)
+    parse_pipeline_row_all(&row)
 }
 
 pub(crate) async fn get_pipeline_for_monitoring(
@@ -394,7 +103,7 @@ pub(crate) async fn get_pipeline_for_monitoring(
 ) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
     let stmt = txn
         .prepare_cached(&format!(
-            "SELECT {RETRIEVE_PIPELINE_MONITORING_COLUMNS}
+            "SELECT {PIPELINE_COLUMNS_MONITORING}
              FROM pipeline AS p
              WHERE p.tenant_id = $1 AND p.name = $2
             "
@@ -405,7 +114,26 @@ pub(crate) async fn get_pipeline_for_monitoring(
             pipeline_name: name.to_string(),
         },
     )?;
-    row_to_extended_pipeline_descriptor_monitoring(&row)
+    parse_pipeline_row_monitoring(&row)
+}
+
+async fn internal_get_pipeline_by_id(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    fields: &'static str,
+) -> Result<Row, DBError> {
+    let stmt = txn
+        .prepare_cached(&format!(
+            "SELECT {fields}
+             FROM pipeline AS p
+             WHERE p.tenant_id = $1 AND p.id = $2
+            "
+        ))
+        .await?;
+    txn.query_opt(&stmt, &[&tenant_id.0, &pipeline_id.0])
+        .await?
+        .ok_or(DBError::UnknownPipeline { pipeline_id })
 }
 
 pub async fn get_pipeline_by_id(
@@ -413,19 +141,9 @@ pub async fn get_pipeline_by_id(
     tenant_id: TenantId,
     pipeline_id: PipelineId,
 ) -> Result<ExtendedPipelineDescr, DBError> {
-    let stmt = txn
-        .prepare_cached(&format!(
-            "SELECT {RETRIEVE_PIPELINE_COLUMNS}
-             FROM pipeline AS p
-             WHERE p.tenant_id = $1 AND p.id = $2
-            "
-        ))
-        .await?;
-    let row = txn
-        .query_opt(&stmt, &[&tenant_id.0, &pipeline_id.0])
-        .await?
-        .ok_or(DBError::UnknownPipeline { pipeline_id })?;
-    row_to_extended_pipeline_descriptor(&row)
+    let row =
+        internal_get_pipeline_by_id(txn, tenant_id, pipeline_id, PIPELINE_COLUMNS_ALL).await?;
+    parse_pipeline_row_all(&row)
 }
 
 pub async fn get_pipeline_by_id_for_monitoring(
@@ -433,19 +151,9 @@ pub async fn get_pipeline_by_id_for_monitoring(
     tenant_id: TenantId,
     pipeline_id: PipelineId,
 ) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
-    let stmt = txn
-        .prepare_cached(&format!(
-            "SELECT {RETRIEVE_PIPELINE_MONITORING_COLUMNS}
-             FROM pipeline AS p
-             WHERE p.tenant_id = $1 AND p.id = $2
-            "
-        ))
+    let row = internal_get_pipeline_by_id(txn, tenant_id, pipeline_id, PIPELINE_COLUMNS_MONITORING)
         .await?;
-    let row = txn
-        .query_opt(&stmt, &[&tenant_id.0, &pipeline_id.0])
-        .await?
-        .ok_or(DBError::UnknownPipeline { pipeline_id })?;
-    row_to_extended_pipeline_descriptor_monitoring(&row)
+    parse_pipeline_row_monitoring(&row)
 }
 
 pub(crate) async fn new_pipeline(
@@ -493,7 +201,7 @@ pub(crate) async fn new_pipeline(
                                    program_code, udf_rust, udf_toml, program_config, program_version, program_status,
                                    program_status_since, program_error, program_info,
                                    program_binary_source_checksum, program_binary_integrity_checksum,
-                                   deployment_error, deployment_config, deployment_location, uses_json, refresh_version, suspend_info, storage_status,
+                                   deployment_error, deployment_config, deployment_location, uses_json, refresh_version, storage_status, storage_status_details,
                                    deployment_id, deployment_initial,
                                    deployment_resources_status, deployment_resources_status_since,
                                    deployment_resources_desired_status, deployment_resources_desired_status_since,
@@ -504,7 +212,7 @@ pub(crate) async fn new_pipeline(
                     $8, $9, $10, $11, $12, $13,
                     now(), $14, NULL,
                     NULL, NULL,
-                    NULL, NULL, NULL, TRUE, $15, NULL, $16,
+                    NULL, NULL, NULL, TRUE, $15, $16, NULL,
                     NULL, NULL,
                     $17, now(),
                     $18, now(),
@@ -1192,11 +900,15 @@ pub(crate) async fn set_deployment_resources_desired_status(
     //            runner notices. Otherwise, another (not desired) status transition will set it
     //            to NULL.
     // - Provisioned: new value
-    let (final_deployment_initial, final_bootstrap) = match new_desired_status {
+    let (final_deployment_initial, final_bootstrap_policy) = match new_desired_status {
         ResourcesDesiredStatus::Stopped => {
             check_precondition(
                 initial_runtime_desired_status.is_none(),
                 "initial_runtime_desired_status should be None when becoming desired Stopped",
+            )?;
+            check_precondition(
+                bootstrap_policy.is_none(),
+                "bootstrap_policy should be None when becoming desired Stopped",
             )?;
             if current.deployment_resources_status == ResourcesStatus::Stopped {
                 (None, None)
@@ -1209,17 +921,28 @@ pub(crate) async fn set_deployment_resources_desired_status(
                 initial_runtime_desired_status.is_some(),
                 "initial_runtime_desired_status should be Some when becoming desired Provisioned",
             )?;
+            check_precondition(
+                bootstrap_policy.is_some(),
+                "bootstrap_policy should be Some when becoming desired Provisioned",
+            )?;
             (initial_runtime_desired_status, bootstrap_policy)
         }
     };
 
     // If the current initial desired runtime status is already set, it cannot be changed
-    if let Some(current_desired_status) = current.deployment_initial {
-        if let Some(new_desired_status) = final_deployment_initial {
-            if (current_desired_status, current.bootstrap_policy)
-                != (new_desired_status, final_bootstrap)
-            {
+    if let Some(current_initial) = current.deployment_initial {
+        if let Some(new_initial) = final_deployment_initial {
+            if current_initial != new_initial {
                 return Err(DBError::InitialImmutableUnlessStopped);
+            }
+        }
+    }
+
+    // If the current bootstrap policy is already set, it cannot be changed
+    if let Some(current_bootstrap_policy) = current.bootstrap_policy {
+        if let Some(new_bootstrap_policy) = final_bootstrap_policy {
+            if current_bootstrap_policy != new_bootstrap_policy {
+                return Err(DBError::BootstrapPolicyImmutableUnlessStopped);
             }
         }
     }
@@ -1263,7 +986,7 @@ pub(crate) async fn set_deployment_resources_desired_status(
             &[
                 &new_desired_status.to_string(),
                 &final_deployment_initial.map(runtime_desired_status_to_string),
-                &final_bootstrap.map(bootstrap_policy_to_string),
+                &final_bootstrap_policy.map(bootstrap_policy_to_string),
                 &match final_deployment_error {
                     None => None,
                     Some(v) => Some(serialize_error_response(&v)?),
@@ -1374,7 +1097,7 @@ pub(crate) async fn set_deployment_resources_status_stopped(
         None,
         None,
         None,
-        current.suspend_info,
+        None,
         None,
         None,
     )
@@ -1445,6 +1168,7 @@ pub(crate) async fn remain_deployment_resources_status_provisioning(
         None,
         None,
         None,
+        None,
     )
     .await
 }
@@ -1502,6 +1226,7 @@ pub(crate) async fn remain_deployment_resources_status_provisioned(
     new_deployment_runtime_status: RuntimeStatus,
     new_deployment_runtime_status_details: serde_json::Value,
     new_deployment_runtime_desired_status: RuntimeDesiredStatus,
+    new_storage_status_details: Option<serde_json::Value>,
 ) -> Result<(), DBError> {
     check_version_guard_and_transition_deployment_resources_status(
         txn,
@@ -1521,6 +1246,7 @@ pub(crate) async fn remain_deployment_resources_status_provisioned(
         Some(new_deployment_runtime_status),
         Some(new_deployment_runtime_status_details),
         Some(new_deployment_runtime_desired_status),
+        new_storage_status_details,
     )
     .await
 }
@@ -1531,7 +1257,7 @@ pub(crate) async fn set_deployment_resources_status_stopping(
     pipeline_id: PipelineId,
     version_guard: Version,
     new_deployment_error: Option<ErrorResponse>,
-    new_suspend_info: Option<serde_json::Value>,
+    new_storage_status_details: Option<serde_json::Value>,
 ) -> Result<(), DBError> {
     check_version_guard_and_transition_deployment_resources_status(
         txn,
@@ -1557,7 +1283,7 @@ pub(crate) async fn set_deployment_resources_status_stopping(
         current.deployment_id,
         current.deployment_config,
         None,
-        new_suspend_info,
+        new_storage_status_details,
         None,
         None,
     )
@@ -1589,6 +1315,7 @@ pub(crate) async fn remain_deployment_resources_status_stopping(
         None,
         None,
         None,
+        None,
     )
     .await
 }
@@ -1596,8 +1323,8 @@ pub(crate) async fn remain_deployment_resources_status_stopping(
 /// Does not change the deployment resources status, but does update a subset of the fields that can
 /// be updated while the status stays the same.
 ///
-/// **Important:** the arguments are NOT coalesced, meaning that if they are `None`, then the field
-/// will become NULL.
+/// **Important:** only `new_storage_status_details` is coalesced. All other arguments are NOT
+/// coalesced, meaning that if they are `None`, then the field will become NULL.
 #[allow(clippy::too_many_arguments)]
 async fn set_deployment_resources_status(
     txn: &Transaction<'_>,
@@ -1612,7 +1339,7 @@ async fn set_deployment_resources_status(
     final_deployment_id: Option<Uuid>,
     final_deployment_config: Option<serde_json::Value>,
     final_deployment_location: Option<String>,
-    final_suspend_info: Option<serde_json::Value>,
+    new_storage_status_details: Option<serde_json::Value>,
     final_deployment_initial: Option<RuntimeDesiredStatus>,
     final_bootstrap_policy: Option<BootstrapPolicy>,
 ) -> Result<(), DBError> {
@@ -1626,6 +1353,16 @@ async fn set_deployment_resources_status(
         })?;
     }
 
+    // Validate that the new storage status details is valid
+    if let Some(storage_status_details) = &new_storage_status_details {
+        let _ = validate_storage_status_details(storage_status_details).map_err(|error| {
+            DBError::InvalidStorageStatusDetails {
+                value: storage_status_details.clone(),
+                error,
+            }
+        })?;
+    }
+
     // Execute query
     let stmt = txn
         .prepare_cached(
@@ -1633,7 +1370,7 @@ async fn set_deployment_resources_status(
                  SET deployment_error = $1,
                      deployment_config = $2,
                      deployment_location = $3,
-                     suspend_info = $4,
+                     storage_status_details = COALESCE($4::VARCHAR, storage_status_details),
                      deployment_id = $5,
                      deployment_initial = $6,
                      bootstrap_policy = $7,
@@ -1659,7 +1396,7 @@ async fn set_deployment_resources_status(
                 }, // $1: deployment_error
                 &final_deployment_config.map(|v| v.to_string()), // $2: deployment_config
                 &final_deployment_location,                      // $3: deployment_location
-                &final_suspend_info.map(|v| v.to_string()),      // $4: suspend_info
+                &new_storage_status_details.map(|v| v.to_string()), // $4: storage_status_details
                 &final_deployment_id,                            // $5: deployment_id
                 &final_deployment_initial.map(runtime_desired_status_to_string), // $6: deployment_initial
                 &final_bootstrap_policy.map(bootstrap_policy_to_string), // $7: bootstrap_policy
@@ -1685,15 +1422,27 @@ async fn set_deployment_resources_status(
 ///
 /// **Important:** the arguments are coalesced, meaning that if they are `None`, then the existing
 /// value remains (rather than setting it to NULL).
+#[allow(clippy::too_many_arguments)]
 async fn remain_deployment_resources_status(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
-    final_deployment_resources_status_details: Option<serde_json::Value>,
-    final_deployment_runtime_status: Option<RuntimeStatus>,
-    final_deployment_runtime_status_details: Option<serde_json::Value>,
-    final_deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
+    new_deployment_resources_status_details: Option<serde_json::Value>,
+    new_deployment_runtime_status: Option<RuntimeStatus>,
+    new_deployment_runtime_status_details: Option<serde_json::Value>,
+    new_deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
+    new_storage_status_details: Option<serde_json::Value>,
 ) -> Result<(), DBError> {
+    // Validate that the new storage status details is valid
+    if let Some(storage_status_details) = &new_storage_status_details {
+        let _ = validate_storage_status_details(storage_status_details).map_err(|error| {
+            DBError::InvalidStorageStatusDetails {
+                value: storage_status_details.clone(),
+                error,
+            }
+        })?;
+    }
+
     let stmt = txn
         .prepare_cached(
             "UPDATE pipeline
@@ -1703,20 +1452,26 @@ async fn remain_deployment_resources_status(
                      deployment_runtime_status_since = CASE WHEN $2::VARCHAR IS NULL THEN deployment_runtime_status_since ELSE (CASE WHEN deployment_runtime_status = $2::VARCHAR THEN deployment_runtime_status_since ELSE NOW() END) END,
                      deployment_runtime_desired_status = COALESCE($4::VARCHAR, deployment_runtime_desired_status),
                      deployment_runtime_desired_status_since = CASE WHEN $4::VARCHAR IS NULL THEN deployment_runtime_desired_status_since ELSE (CASE WHEN deployment_runtime_desired_status = $4::VARCHAR THEN deployment_runtime_desired_status_since ELSE NOW() END) END,
+                     storage_status_details = COALESCE($5::VARCHAR, storage_status_details),
                      refresh_version = refresh_version + 1
-                 WHERE tenant_id = $5 AND id = $6",
+                 WHERE tenant_id = $6 AND id = $7",
         )
         .await?;
     let rows_affected = txn
         .execute(
             &stmt,
             &[
-                &final_deployment_resources_status_details.map(|v| v.to_string()), // $1: deployment_resources_status_details,
-                &final_deployment_runtime_status.map(runtime_status_to_string), // $2: deployment_runtime_status,
-                &final_deployment_runtime_status_details.map(|v| v.to_string()), // $3: deployment_runtime_status_details,
-                &final_deployment_runtime_desired_status.map(runtime_desired_status_to_string), // $4: deployment_runtime_desired_status,
-                &tenant_id.0,   // $5: tenant_id
-                &pipeline_id.0, // $6: id
+                &new_deployment_resources_status_details
+                    .as_ref()
+                    .map(|v| v.to_string()), // $1: deployment_resources_status_details,
+                &new_deployment_runtime_status.map(runtime_status_to_string), // $2: deployment_runtime_status,
+                &new_deployment_runtime_status_details
+                    .as_ref()
+                    .map(|v| v.to_string()), // $3: deployment_runtime_status_details,
+                &new_deployment_runtime_desired_status.map(runtime_desired_status_to_string), // $4: deployment_runtime_desired_status,
+                &new_storage_status_details.map(|v| v.to_string()), // $5: storage_status_details
+                &tenant_id.0,                                       // $6: tenant_id
+                &pipeline_id.0,                                     // $7: id
             ],
         )
         .await?;
@@ -1744,12 +1499,22 @@ pub(crate) async fn set_storage_status(
         new_storage_status,
     )?;
 
+    // If the storage is (getting) cleared, its details are no longer relevant
+    let storage_status_details = if new_storage_status == StorageStatus::Clearing
+        || new_storage_status == StorageStatus::Cleared
+    {
+        None
+    } else {
+        current.storage_status_details
+    };
+
     // Execute query
     let stmt = txn
         .prepare_cached(
             "UPDATE pipeline
-                 SET storage_status = $1
-                 WHERE tenant_id = $2 AND id = $3",
+                 SET storage_status = $1,
+                     storage_status_details = $2
+                 WHERE tenant_id = $3 AND id = $4",
         )
         .await?;
     let rows_affected = txn
@@ -1757,6 +1522,7 @@ pub(crate) async fn set_storage_status(
             &stmt,
             &[
                 &new_storage_status.to_string(),
+                &storage_status_details.map(|v| v.to_string()),
                 &tenant_id.0,
                 &pipeline_id.0,
             ],
@@ -1821,7 +1587,7 @@ pub(crate) async fn list_pipelines_across_all_tenants_for_monitoring(
 ) -> Result<Vec<(TenantId, ExtendedPipelineDescrMonitoring)>, DBError> {
     let stmt = txn
         .prepare_cached(&format!(
-            "SELECT {RETRIEVE_PIPELINE_MONITORING_COLUMNS}
+            "SELECT {PIPELINE_COLUMNS_MONITORING}
              FROM pipeline AS p
              ORDER BY p.id ASC
             "
@@ -1830,10 +1596,7 @@ pub(crate) async fn list_pipelines_across_all_tenants_for_monitoring(
     let rows: Vec<Row> = txn.query(&stmt, &[]).await?;
     let mut result = Vec::with_capacity(rows.len());
     for row in rows {
-        result.push((
-            TenantId(row.get(1)),
-            row_to_extended_pipeline_descriptor_monitoring(&row)?,
-        ));
+        result.push((TenantId(row.get(1)), parse_pipeline_row_monitoring(&row)?));
     }
     Ok(result)
 }
@@ -1851,7 +1614,7 @@ pub(crate) async fn get_next_sql_compilation(
     // and computes the modulo with the total number of workers.
     let stmt = txn
         .prepare_cached(&format!(
-            "SELECT {RETRIEVE_PIPELINE_COLUMNS}
+            "SELECT {PIPELINE_COLUMNS_ALL}
              FROM pipeline AS p
              WHERE p.deployment_resources_status = 'stopped'
                    AND p.program_status = 'pending'
@@ -1874,10 +1637,7 @@ pub(crate) async fn get_next_sql_compilation(
         .await?;
     match row {
         None => Ok(None),
-        Some(row) => Ok(Some((
-            TenantId(row.get(1)),
-            row_to_extended_pipeline_descriptor(&row)?,
-        ))),
+        Some(row) => Ok(Some((TenantId(row.get(1)), parse_pipeline_row_all(&row)?))),
     }
 }
 
@@ -1894,7 +1654,7 @@ pub(crate) async fn get_next_rust_compilation(
     // and computes the modulo with the total number of workers.
     let stmt = txn
         .prepare_cached(&format!(
-            "SELECT {RETRIEVE_PIPELINE_COLUMNS}
+            "SELECT {PIPELINE_COLUMNS_ALL}
              FROM pipeline AS p
              WHERE p.deployment_resources_status = 'stopped'
                    AND p.program_status = 'sql_compiled'
@@ -1917,10 +1677,7 @@ pub(crate) async fn get_next_rust_compilation(
         .await?;
     match row {
         None => Ok(None),
-        Some(row) => Ok(Some((
-            TenantId(row.get(1)),
-            row_to_extended_pipeline_descriptor(&row)?,
-        ))),
+        Some(row) => Ok(Some((TenantId(row.get(1)), parse_pipeline_row_all(&row)?))),
     }
 }
 
@@ -2061,275 +1818,4 @@ pub(crate) async fn get_support_bundle_data(
     }
 
     Ok(bundles)
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::db::error::DBError;
-    use crate::db::operations::pipeline::{
-        deserialize_error_response, deserialize_json_value, deserialize_program_error,
-        deserialize_program_error_with_default, serialize_error_response, serialize_program_error,
-    };
-    use crate::db::types::program::{
-        ConnectorGenerationError, ProgramError, RustCompilationInfo, SqlCompilationInfo,
-        SqlCompilerMessage,
-    };
-    use feldera_types::error::ErrorResponse;
-    use feldera_types::program_schema::SourcePosition;
-    use serde_json::json;
-    use std::borrow::Cow;
-
-    #[test]
-    fn json_value_deserialization() {
-        // Valid
-        for (s, expected) in [
-            ("\"\"", json!("")),
-            ("\"a\"", json!("a")),
-            ("123", json!(123)),
-            ("{}", json!({})),
-            ("[1, 2, 3]", json!([1, 2, 3])),
-            ("[1, { \"a\": 2 }, 3]", json!([1, { "a": 2 }, 3])),
-            ("{\"a\": 1, \"b\": \"c\"}", json!({ "a": 1, "b": "c"})),
-        ] {
-            match deserialize_json_value(s) {
-                Ok(value) => {
-                    assert_eq!(
-                        value, expected,
-                        "Deserializing '{s}': resulting JSON does not match"
-                    );
-                }
-                Err(e) => {
-                    panic!("Deserializing '{s}': unable to deserialize as JSON: {e}");
-                }
-            }
-        }
-
-        // Invalid
-        for s in [
-            "",
-            "\"a", // String not terminated
-            "a: 1",
-            "a: b",
-            "a: \n- b\n- c",
-        ] {
-            assert!(matches!(
-                deserialize_json_value(s).unwrap_err(),
-                DBError::InvalidJsonData { data: _, error: _ }
-            ));
-        }
-    }
-
-    #[test]
-    fn error_response_de_serialization() {
-        // ErrorResponse -> JSON string -> ErrorResponse is the same as original
-        let error_response = ErrorResponse {
-            message: "Example error response message".to_string(),
-            error_code: Cow::from("Abc".to_string()),
-            details: json!({}),
-        };
-        let data = serialize_error_response(&error_response).unwrap();
-        assert_eq!(error_response, deserialize_error_response(&data).unwrap());
-
-        // Valid JSON for ErrorResponse
-        assert_eq!(
-            deserialize_error_response(
-                "{\"message\": \"a\", \"error_code\": \"b\", \"details\": { \"c\": 1 } }"
-            )
-            .unwrap(),
-            ErrorResponse {
-                message: "a".to_string(),
-                error_code: Cow::from("b".to_string()),
-                details: json!({ "c": 1 }),
-            }
-        );
-
-        // Invalid JSON for ErrorResponse (misses mandatory fields)
-        assert!(matches!(
-            deserialize_error_response("{}"),
-            Err(DBError::InvalidErrorResponse { value: _, error: _ })
-        ));
-    }
-
-    #[test]
-    fn program_error_de_serialization() {
-        // ProgramError -> JSON string -> ProgramError is the same as original
-        let program_error = ProgramError {
-            sql_compilation: Some(SqlCompilationInfo {
-                exit_code: 123,
-                messages: vec![SqlCompilerMessage::new_from_connector_generation_error(
-                    ConnectorGenerationError::InvalidPropertyValue {
-                        position: SourcePosition {
-                            start_line_number: 4,
-                            start_column: 5,
-                            end_line_number: 6,
-                            end_column: 7,
-                        },
-                        relation: "relation-example".to_string(),
-                        key: "key-example".to_string(),
-                        value: "value-example".to_string(),
-                        reason: Box::new("reason-example".to_string()),
-                    },
-                )],
-            }),
-            rust_compilation: Some(RustCompilationInfo {
-                exit_code: 89,
-                stdout: "stdout-example".to_string(),
-                stderr: "stderr-example".to_string(),
-            }),
-            system_error: Some("system-error-example".to_string()),
-        };
-        let data = serialize_program_error(&program_error).unwrap();
-        assert_eq!(program_error, deserialize_program_error(&data).unwrap());
-
-        // Valid JSON for ProgramError
-        assert_eq!(
-            deserialize_program_error("{}").unwrap(),
-            ProgramError {
-                sql_compilation: None,
-                rust_compilation: None,
-                system_error: None,
-            }
-        );
-        assert_eq!(
-            deserialize_program_error(
-                "{ \"sql_compilation\": { \"exit_code\": 0, \"messages\": [] } }"
-            )
-            .unwrap(),
-            ProgramError {
-                sql_compilation: Some(SqlCompilationInfo {
-                    exit_code: 0,
-                    messages: vec![],
-                }),
-                rust_compilation: None,
-                system_error: None,
-            }
-        );
-        assert_eq!(
-            deserialize_program_error(
-                "{ \"sql_compilation\": { \"exit_code\": 12, \"messages\": [] } }"
-            )
-            .unwrap(),
-            ProgramError {
-                sql_compilation: Some(SqlCompilationInfo {
-                    exit_code: 12,
-                    messages: vec![],
-                }),
-                rust_compilation: None,
-                system_error: None,
-            }
-        );
-        assert_eq!(
-            deserialize_program_error(
-                "{ \"sql_compilation\": { \"exit_code\": 0, \"messages\": [] }, \"rust_compilation\": { \"exit_code\": 0, \"stdout\": \"\", \"stderr\": \"\" } }"
-            )
-            .unwrap(),
-            ProgramError {
-                sql_compilation: Some(SqlCompilationInfo {
-                    exit_code: 0,
-                    messages: vec![],
-                }),
-                rust_compilation: Some(RustCompilationInfo {
-                    exit_code: 0,
-                    stdout: "".to_string(),
-                    stderr: "".to_string(),
-                }),
-                system_error: None,
-            }
-        );
-        assert_eq!(
-            deserialize_program_error(
-                "{ \"sql_compilation\": { \"exit_code\": 2, \"messages\": [] }, \"rust_compilation\": { \"exit_code\": 3, \"stdout\": \"a\", \"stderr\": \"b\" } }"
-            )
-            .unwrap(),
-            ProgramError {
-                sql_compilation: Some(SqlCompilationInfo {
-                    exit_code: 2,
-                    messages: vec![],
-                }),
-                rust_compilation: Some(RustCompilationInfo {
-                    exit_code: 3,
-                    stdout: "a".to_string(),
-                    stderr: "b".to_string(),
-                }),
-                system_error: None,
-            }
-        );
-        assert_eq!(
-            deserialize_program_error("{ \"system_error\": \"example\" }").unwrap(),
-            ProgramError {
-                sql_compilation: None,
-                rust_compilation: None,
-                system_error: Some("example".to_string()),
-            }
-        );
-        assert_eq!(
-            deserialize_program_error("{ \"system_error\": \"c\" }").unwrap(),
-            ProgramError {
-                sql_compilation: None,
-                rust_compilation: None,
-                system_error: Some("c".to_string()),
-            }
-        );
-        assert_eq!(
-            deserialize_program_error(
-                "{ \"sql_compilation\": { \"exit_code\": 0, \"messages\": [] }, \"system_error\": \"example\" }"
-            )
-            .unwrap(),
-            ProgramError {
-                sql_compilation: Some(SqlCompilationInfo {
-                    exit_code: 0,
-                    messages: vec![],
-                }),
-                rust_compilation: None,
-                system_error: Some("example".to_string()),
-            }
-        );
-        assert_eq!(
-            deserialize_program_error(
-                "{ \"sql_compilation\": { \"exit_code\": 123, \"messages\": [] }, \"system_error\": \"abc\" }"
-            )
-            .unwrap(),
-            ProgramError {
-                sql_compilation: Some(SqlCompilationInfo {
-                    exit_code: 123,
-                    messages: vec![],
-                }),
-                rust_compilation: None,
-                system_error: Some("abc".to_string()),
-            }
-        );
-
-        // Invalid JSON for ProgramError
-        assert!(matches!(
-            deserialize_program_error(""),
-            Err(DBError::InvalidJsonData { data: _, error: _ })
-        ));
-        assert!(matches!(
-            deserialize_program_error("invalid"),
-            Err(DBError::InvalidJsonData { data: _, error: _ })
-        ));
-        assert!(matches!(
-            deserialize_program_error("{\"system_error\": 123}"),
-            Err(DBError::InvalidProgramError { value: _, error: _ })
-        ));
-
-        // Should pass for the deserialization with default
-        let default_program_error = ProgramError {
-            sql_compilation: None,
-            rust_compilation: None,
-            system_error: None,
-        };
-        assert_eq!(
-            deserialize_program_error_with_default(""),
-            default_program_error
-        );
-        assert_eq!(
-            deserialize_program_error_with_default("invalid"),
-            default_program_error
-        );
-        assert_eq!(
-            deserialize_program_error_with_default("{\"system_error\": 123}"),
-            default_program_error
-        );
-    }
 }

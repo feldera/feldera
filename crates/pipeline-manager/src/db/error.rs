@@ -73,6 +73,10 @@ pub enum DBError {
         value: serde_json::Value,
         error: ValidationError,
     },
+    InvalidStorageStatusDetails {
+        value: serde_json::Value,
+        error: ValidationError,
+    },
     InvalidProgramError {
         value: serde_json::Value,
         error: String,
@@ -203,6 +207,7 @@ pub enum DBError {
     CannotStartWhileClearingStorage,
     DismissErrorRestrictedToFullyStopped,
     InitialImmutableUnlessStopped,
+    BootstrapPolicyImmutableUnlessStopped,
     InitialStandbyNotAllowed,
     InvalidMonitorStatus(String),
     UnknownClusterMonitorEvent {
@@ -439,6 +444,12 @@ impl Display for DBError {
                     "JSON for 'deployment_config' field:\n{value:#}\n\n... is not valid due to: {error}"
                 )
             }
+            DBError::InvalidStorageStatusDetails { value, error } => {
+                write!(
+                    f,
+                    "JSON for 'storage_status_details' field:\n{value:#}\n\n... is not valid due to: {error}"
+                )
+            }
             DBError::InvalidProgramError { value, error } => {
                 write!(f, "JSON for 'program_error' field:\n{value:#}\n\n... is not valid due to: {error}")
             }
@@ -640,7 +651,7 @@ impl Display for DBError {
                 write!(f, "Invalid runtime desired status: '{s}'")
             }
             DBError::InvalidBootstrap(s) => {
-                write!(f, "Invalid bootstrap_policy option: '{s}'")
+                write!(f, "Invalid bootstrap policy: '{s}'")
             }
             DBError::NoRuntimeStatusWhileProvisioned => {
                 write!(
@@ -684,7 +695,13 @@ impl Display for DBError {
             DBError::InitialImmutableUnlessStopped => {
                 write!(
                     f,
-                    "Initial desired runtime status cannot be changed unless the pipeline is Stopped."
+                    "Initial desired runtime status cannot be changed unless the pipeline is desired to become Stopped."
+                )
+            }
+            DBError::BootstrapPolicyImmutableUnlessStopped => {
+                write!(
+                    f,
+                    "Bootstrap policy cannot be changed unless the pipeline is desired to become Stopped."
                 )
             }
             DBError::InitialStandbyNotAllowed => {
@@ -733,6 +750,7 @@ impl DetailedError for DBError {
             Self::InvalidProgramConfig { .. } => Cow::from("InvalidProgramConfig"),
             Self::InvalidProgramInfo { .. } => Cow::from("InvalidProgramInfo"),
             Self::InvalidDeploymentConfig { .. } => Cow::from("InvalidDeploymentConfig"),
+            Self::InvalidStorageStatusDetails { .. } => Cow::from("InvalidStorageStatusDetails"),
             Self::InvalidProgramError { .. } => Cow::from("InvalidProgramError"),
             Self::EditRestrictedToClearedStorage { .. } => {
                 Cow::from("EditRestrictedToClearedStorage")
@@ -811,6 +829,9 @@ impl DetailedError for DBError {
                 Cow::from("DismissErrorRestrictedToFullyStopped")
             }
             Self::InitialImmutableUnlessStopped => Cow::from("InitialImmutableUnlessStopped"),
+            Self::BootstrapPolicyImmutableUnlessStopped => {
+                Cow::from("BootstrapPolicyImmutableUnlessStopped")
+            }
             Self::InitialStandbyNotAllowed => Cow::from("InitialStandbyNotAllowed"),
             Self::InvalidMonitorStatus(..) => Cow::from("InvalidMonitorStatus"),
             Self::UnknownClusterMonitorEvent { .. } => Cow::from("UnknownClusterMonitorEvent"),
@@ -839,6 +860,7 @@ impl ResponseError for DBError {
             Self::InvalidProgramConfig { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidDeploymentConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidStorageStatusDetails { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidProgramError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::EditRestrictedToClearedStorage { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidErrorResponse { .. } => StatusCode::INTERNAL_SERVER_ERROR,
@@ -887,6 +909,7 @@ impl ResponseError for DBError {
             Self::CannotStartWhileClearingStorage => StatusCode::BAD_REQUEST,
             Self::DismissErrorRestrictedToFullyStopped => StatusCode::BAD_REQUEST,
             Self::InitialImmutableUnlessStopped => StatusCode::BAD_REQUEST,
+            Self::BootstrapPolicyImmutableUnlessStopped => StatusCode::BAD_REQUEST,
             Self::InitialStandbyNotAllowed => StatusCode::BAD_REQUEST,
             Self::InvalidMonitorStatus(..) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::UnknownClusterMonitorEvent { .. } => StatusCode::NOT_FOUND,

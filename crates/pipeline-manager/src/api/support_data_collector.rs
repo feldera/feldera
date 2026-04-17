@@ -1248,9 +1248,7 @@ mod tests {
     use crate::db::types::pipeline::PipelineDescr;
     use crate::db::types::program::{RustCompilationInfo, SqlCompilationInfo};
     use crate::db::types::version::Version;
-    use feldera_types::runtime_status::{
-        BootstrapPolicy, ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus,
-    };
+    use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
     use serde_json::json;
     use std::sync::Arc;
     use tokio::sync::Mutex;
@@ -1497,11 +1495,9 @@ mod tests {
                 Version(1),
                 "test-location",
                 json!({}),
-                ExtendedRuntimeStatus {
-                    runtime_status: RuntimeStatus::Initializing,
-                    runtime_status_details: json!(""),
-                    runtime_desired_status: RuntimeDesiredStatus::Running,
-                },
+                RuntimeStatus::Initializing,
+                json!(""),
+                RuntimeDesiredStatus::Running,
             )
             .await
             .unwrap();
@@ -1513,11 +1509,9 @@ mod tests {
                 Version(1),
                 "test-location",
                 json!({}),
-                ExtendedRuntimeStatus {
-                    runtime_status: RuntimeStatus::Running,
-                    runtime_status_details: json!(""),
-                    runtime_desired_status: RuntimeDesiredStatus::Running,
-                },
+                RuntimeStatus::Running,
+                json!(""),
+                RuntimeDesiredStatus::Running,
             )
             .await
             .unwrap();
@@ -1698,11 +1692,9 @@ mod tests {
                 Version(1),
                 "test-location",
                 json!({}),
-                ExtendedRuntimeStatus {
-                    runtime_status: RuntimeStatus::Initializing,
-                    runtime_status_details: json!(""),
-                    runtime_desired_status: RuntimeDesiredStatus::Running,
-                },
+                RuntimeStatus::Initializing,
+                json!(""),
+                RuntimeDesiredStatus::Running,
             )
             .await
             .unwrap();
@@ -1714,11 +1706,9 @@ mod tests {
                 Version(1),
                 "test-location",
                 json!({}),
-                ExtendedRuntimeStatus {
-                    runtime_status: RuntimeStatus::Running,
-                    runtime_status_details: json!(""),
-                    runtime_desired_status: RuntimeDesiredStatus::Running,
-                },
+                RuntimeStatus::Running,
+                json!(""),
+                RuntimeDesiredStatus::Running,
             )
             .await
             .unwrap();
@@ -1890,11 +1880,9 @@ mod tests {
                 Version(1),
                 "test-location",
                 json!({}),
-                ExtendedRuntimeStatus {
-                    runtime_status: RuntimeStatus::Initializing,
-                    runtime_status_details: json!(""),
-                    runtime_desired_status: RuntimeDesiredStatus::Running,
-                },
+                RuntimeStatus::Initializing,
+                json!(""),
+                RuntimeDesiredStatus::Running,
             )
             .await
             .unwrap();
@@ -1911,11 +1899,9 @@ mod tests {
                 Version(1),
                 "test-location",
                 json!({}),
-                ExtendedRuntimeStatus {
-                    runtime_status: RuntimeStatus::Running,
-                    runtime_status_details: json!(""),
-                    runtime_desired_status: RuntimeDesiredStatus::Running,
-                },
+                RuntimeStatus::Running,
+                json!(""),
+                RuntimeDesiredStatus::Running,
             )
             .await
             .unwrap();
@@ -1992,11 +1978,9 @@ mod tests {
                 Version(1),
                 "test-location",
                 json!({}),
-                ExtendedRuntimeStatus {
-                    runtime_status: RuntimeStatus::Initializing,
-                    runtime_status_details: json!(""),
-                    runtime_desired_status: RuntimeDesiredStatus::Running,
-                },
+                RuntimeStatus::Initializing,
+                json!(""),
+                RuntimeDesiredStatus::Running,
             )
             .await
             .unwrap();
@@ -2008,11 +1992,9 @@ mod tests {
                 Version(1),
                 "test-location",
                 json!({}),
-                ExtendedRuntimeStatus {
-                    runtime_status: RuntimeStatus::Running,
-                    runtime_status_details: json!(""),
-                    runtime_desired_status: RuntimeDesiredStatus::Running,
-                },
+                RuntimeStatus::Running,
+                json!(""),
+                RuntimeDesiredStatus::Running,
             )
             .await
             .unwrap();

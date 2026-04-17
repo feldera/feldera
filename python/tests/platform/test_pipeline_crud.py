@@ -37,6 +37,7 @@ PIPELINE_FIELD_SELECTOR_ALL_FIELDS = [
     "deployment_error",
     "refresh_version",
     "storage_status",
+    "storage_status_details",
     "deployment_resources_status",
     "deployment_resources_status_details",
     "deployment_resources_status_since",
@@ -81,6 +82,7 @@ PIPELINE_FIELD_SELECTOR_STATUS_FIELDS = [
     "deployment_error",
     "refresh_version",
     "storage_status",
+    "storage_status_details",
     "bootstrap_policy",
 ]
 

@@ -87,7 +87,7 @@ pub enum ResourcesStatus {
     ///    It transitions to `Stopping` with `deployment_error` set.
     ///
     /// 2. The runtime status is observed to be `Suspended` (caused by `/stop?force=false`).
-    ///    It transitions to `Stopping` with `suspend_info` set.
+    ///    It transitions to `Stopping`.
     ///
     /// 3. The user stops the pipeline by invoking the `/stop?force=true` endpoint.
     ///    It transitions to `Stopping`.

@@ -108,6 +108,7 @@ pub struct PipelineInfo {
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,
+    pub storage_status_details: Option<serde_json::Value>,
     pub deployment_id: Option<Uuid>,
     pub deployment_initial: Option<RuntimeDesiredStatus>,
     pub deployment_status: CombinedStatus,
@@ -156,6 +157,7 @@ pub struct PipelineInfoInternal {
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,
+    pub storage_status_details: Option<serde_json::Value>,
     pub deployment_id: Option<Uuid>,
     pub deployment_initial: Option<RuntimeDesiredStatus>,
     pub deployment_status: CombinedStatus,
@@ -196,6 +198,7 @@ impl PipelineInfoInternal {
             deployment_error: extended_pipeline.deployment_error,
             refresh_version: extended_pipeline.refresh_version,
             storage_status: extended_pipeline.storage_status,
+            storage_status_details: extended_pipeline.storage_status_details,
             deployment_id: extended_pipeline.deployment_id,
             deployment_initial: extended_pipeline.deployment_initial,
             deployment_status: CombinedStatus::new(
@@ -264,6 +267,7 @@ pub struct PipelineSelectedInfo {
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,
+    pub storage_status_details: Option<serde_json::Value>,
     pub deployment_id: Option<Uuid>,
     pub deployment_initial: Option<RuntimeDesiredStatus>,
     pub deployment_status: CombinedStatus,
@@ -320,6 +324,7 @@ pub struct PipelineSelectedInfoInternal {
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,
+    pub storage_status_details: Option<serde_json::Value>,
     pub deployment_id: Option<Uuid>,
     pub deployment_initial: Option<RuntimeDesiredStatus>,
     pub deployment_status: CombinedStatus,
@@ -366,6 +371,7 @@ impl PipelineSelectedInfoInternal {
             deployment_error: extended_pipeline.deployment_error,
             refresh_version: extended_pipeline.refresh_version,
             storage_status: extended_pipeline.storage_status,
+            storage_status_details: extended_pipeline.storage_status_details,
             deployment_id: extended_pipeline.deployment_id,
             deployment_initial: extended_pipeline.deployment_initial,
             deployment_status: CombinedStatus::new(
@@ -426,6 +432,7 @@ impl PipelineSelectedInfoInternal {
             deployment_error: extended_pipeline.deployment_error,
             refresh_version: extended_pipeline.refresh_version,
             storage_status: extended_pipeline.storage_status,
+            storage_status_details: extended_pipeline.storage_status_details,
             deployment_id: extended_pipeline.deployment_id,
             deployment_initial: extended_pipeline.deployment_initial,
             deployment_status: CombinedStatus::new(
@@ -498,6 +505,7 @@ pub enum PipelineFieldSelector {
     /// - `deployment_error`
     /// - `refresh_version`
     /// - `storage_status`
+    /// - `storage_status_details`
     /// - `deployment_id`
     /// - `deployment_initial`
     /// - `deployment_status`
@@ -531,6 +539,7 @@ pub enum PipelineFieldSelector {
     /// - `deployment_error`
     /// - `refresh_version`
     /// - `storage_status`
+    /// - `storage_status_details`
     /// - `deployment_id`
     /// - `deployment_initial`
     /// - `deployment_status`

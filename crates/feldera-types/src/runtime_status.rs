@@ -1,3 +1,4 @@
+use crate::checkpoint::CheckpointMetadata;
 use crate::error::ErrorResponse;
 use actix_web::body::BoxBody;
 use actix_web::http::StatusCode;
@@ -5,6 +6,7 @@ use actix_web::{HttpRequest, HttpResponse, HttpResponseBuilder, Responder, Respo
 use bytemuck::NoUninit;
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::fmt;
 use std::fmt::Display;
 use utoipa::ToSchema;
@@ -14,6 +16,7 @@ use utoipa::ToSchema;
 /// Of the statuses, only `Unavailable` is determined by the runner. All other statuses are
 /// determined by the pipeline and taken over by the runner.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, ToSchema, NoUninit)]
+#[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
 #[repr(u8)]
 pub enum RuntimeStatus {
     /// The runner was unable to determine the pipeline runtime status. This status is never
@@ -74,6 +77,7 @@ impl From<RuntimeDesiredStatus> for RuntimeStatus {
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema, ValueEnum)]
+#[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
 pub enum RuntimeDesiredStatus {
     Unavailable,
     Coordination,
@@ -219,6 +223,14 @@ impl Display for BootstrapPolicy {
     }
 }
 
+/// Details about pipeline storage, which are returned as part of the regular runtime status polling
+/// by the runner.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StorageStatusDetails {
+    /// Present checkpoints.
+    pub checkpoints: VecDeque<CheckpointMetadata>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExtendedRuntimeStatus {
     /// Runtime status of the pipeline.
@@ -231,6 +243,13 @@ pub struct ExtendedRuntimeStatus {
 
     /// Runtime desired status of the pipeline.
     pub runtime_desired_status: RuntimeDesiredStatus,
+
+    /// Details about the pipeline persistent storage.
+    ///
+    /// `None` indicates that the pipeline in its current runtime status is unable to check the
+    /// storage status details. Returning `None` _does not_ override the already existing storage
+    /// status details in the database of the runner.
+    pub storage_status_details: Option<StorageStatusDetails>,
 }
 
 impl Responder for ExtendedRuntimeStatus {
