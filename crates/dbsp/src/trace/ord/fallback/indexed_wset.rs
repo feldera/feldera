@@ -1,6 +1,6 @@
 use super::utils::{copy_to_builder, pick_merge_destination};
 use crate::storage::file::SerializerInner;
-use crate::storage::file::{FilterKind, FilterStats};
+use crate::storage::file::{FilterKind, FilterStats, TouchedWindowCount};
 use crate::{
     DBWeight, Error, NumEntries,
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
@@ -396,6 +396,13 @@ where
         match &self.inner {
             Inner::File(file) => file.negative_weight_count(),
             Inner::Vec(vec) => vec.negative_weight_count(),
+        }
+    }
+
+    fn touched_window_count(&self) -> TouchedWindowCount {
+        match &self.inner {
+            Inner::File(file) => file.touched_window_count(),
+            Inner::Vec(vec) => vec.touched_window_count(),
         }
     }
 }

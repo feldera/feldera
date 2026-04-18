@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use super::utils::{copy_to_builder, pick_merge_destination};
 use crate::storage::buffer_cache::CacheStats;
-use crate::storage::file::{FilterKind, FilterStats};
+use crate::storage::file::{FilterKind, FilterStats, TouchedWindowCount};
 use crate::trace::cursor::{DelegatingCursor, PushCursor};
 use crate::trace::ord::file::val_batch::FileValBuilder;
 use crate::trace::ord::vec::val_batch::VecValBuilder;
@@ -380,6 +380,13 @@ where
         match &self.inner {
             Inner::File(file) => file.negative_weight_count(),
             Inner::Vec(vec) => vec.negative_weight_count(),
+        }
+    }
+
+    fn touched_window_count(&self) -> TouchedWindowCount {
+        match &self.inner {
+            Inner::File(file) => file.touched_window_count(),
+            Inner::Vec(vec) => vec.touched_window_count(),
         }
     }
 }

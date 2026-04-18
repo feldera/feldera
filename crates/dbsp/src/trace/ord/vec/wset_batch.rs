@@ -1,4 +1,4 @@
-use crate::storage::file::FilterStats;
+use crate::storage::file::{FilterStats, TouchedWindowCount};
 use crate::{
     DBData, DBWeight, NumEntries,
     algebra::{NegByRef, ZRingValue},
@@ -122,6 +122,7 @@ where
     pub layer: Leaf<K, R>,
     factories: VecWSetFactories<K, R>,
     negative_weight_count: u64,
+    touched_window_count: TouchedWindowCount,
 }
 
 impl<K, R> SizeOf for VecWSet<K, R>
@@ -150,6 +151,7 @@ where
             layer: Leaf::from_parts(&factories.layer_factories, keys, diffs),
             factories,
             negative_weight_count: 0,
+            touched_window_count: TouchedWindowCount::default(),
         }
     }
 }
@@ -200,6 +202,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Clone for VecWSet<K, R> {
             layer: self.layer.clone(),
             factories: self.factories.clone(),
             negative_weight_count: self.negative_weight_count,
+            touched_window_count: self.touched_window_count,
         }
     }
 }
@@ -307,6 +310,7 @@ where
             layer: self.layer.neg_by_ref(),
             factories: self.factories.clone(),
             negative_weight_count: self.negative_weight_count,
+            touched_window_count: self.touched_window_count,
         }
     }
 }
@@ -396,6 +400,10 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Batch for VecWSet<K, R> {
 
     fn negative_weight_count(&self) -> Option<u64> {
         Some(self.negative_weight_count)
+    }
+
+    fn touched_window_count(&self) -> TouchedWindowCount {
+        self.touched_window_count
     }
 }
 
@@ -724,6 +732,7 @@ where
             layer: Leaf::from_parts(&self.factories.layer_factories, self.keys, self.diffs),
             factories: self.factories,
             negative_weight_count: self.negative_weight_count,
+            touched_window_count: TouchedWindowCount::default(),
         }
     }
 

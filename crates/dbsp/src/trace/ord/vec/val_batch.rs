@@ -1,5 +1,5 @@
 use crate::ZWeight;
-use crate::storage::file::FilterStats;
+use crate::storage::file::{FilterStats, TouchedWindowCount};
 use crate::trace::cursor::Position;
 use crate::trace::ord::merge_batcher::MergeBatcher;
 use crate::{
@@ -200,6 +200,7 @@ where
     // batch_item_factory: &'static BatchItemVTable<K, V, Pair<K, V>, R>,
     /// Where all the dataz is.
     pub layer: VecValBatchLayer<K, V, T, R, O>,
+    touched_window_count: TouchedWindowCount,
 }
 
 impl<K, V, T, R, O> SizeOf for VecValBatch<K, V, T, R, O>
@@ -301,6 +302,7 @@ where
         Self {
             factories: self.factories.clone(),
             layer: self.layer.clone(),
+            touched_window_count: self.touched_window_count,
         }
     }
 }
@@ -424,6 +426,10 @@ where
 
     fn negative_weight_count(&self) -> Option<u64> {
         None
+    }
+
+    fn touched_window_count(&self) -> TouchedWindowCount {
+        self.touched_window_count
     }
 }
 
@@ -743,6 +749,7 @@ where
                 ),
             ),
             factories: self.factories,
+            touched_window_count: TouchedWindowCount::default(),
         }
     }
 
