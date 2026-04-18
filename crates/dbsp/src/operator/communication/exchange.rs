@@ -41,14 +41,14 @@ use std::{
     ops::Range,
     sync::{
         Arc, Mutex, MutexGuard, RwLock,
-        atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicIsize, AtomicPtr, AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant, SystemTime},
 };
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::{Notify, OnceCell},
+    sync::{Notify, OnceCell, mpsc::error::SendError},
     time::sleep,
 };
 use tokio_util::sync::{CancellationToken, DropGuard};
@@ -127,6 +127,80 @@ impl ExchangeHeader {
     }
 }
 
+/// A multi-producer, single-consumer channel sender for [ExchangeMessage], with
+/// the capacity of the channel limited by the number of bytes of messages.
+struct ByteBoundedSender {
+    tx: tokio::sync::mpsc::UnboundedSender<ExchangeMessage>,
+    bound: Arc<ByteBound>,
+}
+
+impl ByteBoundedSender {
+    /// Sends a message and blocks until there is room in the channel.  Returns
+    /// an error if there is no receiver left.
+    ///
+    /// This simple implementation isn't going to work well if there are lots of
+    /// senders running in parallel, since it doesn't prevent starvation.
+    pub async fn send(&self, message: ExchangeMessage) -> Result<(), SendError<ExchangeMessage>> {
+        let len = message.data.len().try_into().unwrap();
+        self.tx.send(message)?;
+        let remaining = self.bound.remaining.fetch_sub(len, Ordering::AcqRel) - len;
+        if remaining < 0 {
+            loop {
+                let notified = self.bound.notify.notified();
+                if self.bound.remaining.load(Ordering::Acquire) >= 0 {
+                    break;
+                }
+                notified.await;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// A multi-producer, single-consumer channel receiver for [ExchangeMessage],
+/// with the capacity of the channel limited by the number of bytes of messages.
+struct ByteBoundedReceiver {
+    rx: tokio::sync::mpsc::UnboundedReceiver<ExchangeMessage>,
+    bound: Arc<ByteBound>,
+}
+
+impl ByteBoundedReceiver {
+    /// Receives a message, or returns `None` if no senders are left.
+    pub async fn recv(&mut self) -> Option<ExchangeMessage> {
+        let message = self.rx.recv().await?;
+        let len = message.data.len().try_into().unwrap();
+        let before = self.bound.remaining.fetch_add(len, Ordering::AcqRel);
+        let after = before + len;
+        if before < 0 && after >= 0 {
+            self.bound.notify.notify_waiters();
+        }
+        Some(message)
+    }
+}
+
+struct ByteBound {
+    remaining: AtomicIsize,
+    notify: Notify,
+}
+
+/// Returns a pair of multi-producer, single-consumer channel sender and
+/// receiver for [ExchangeMessage], with the capacity of the channel limited by
+/// the number of bytes of messages.
+fn byte_bounded_channel(limit: usize) -> (ByteBoundedSender, ByteBoundedReceiver) {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let bound = Arc::new(ByteBound {
+        remaining: AtomicIsize::new(isize::try_from(limit).unwrap_or(isize::MAX)),
+        notify: Notify::new(),
+    });
+    (
+        ByteBoundedSender {
+            tx,
+            bound: bound.clone(),
+        },
+        ByteBoundedReceiver { rx, bound },
+    )
+}
+
 struct ExchangeMessage {
     exchange_id: ExchangeId,
     sender: usize,
@@ -134,12 +208,12 @@ struct ExchangeMessage {
 }
 
 pub struct ExchangeClient {
-    tx: tokio::sync::mpsc::UnboundedSender<ExchangeMessage>,
+    tx: ByteBoundedSender,
 }
 
 impl ExchangeClient {
     async fn new(remote_address: SocketAddr, remote_workers: &Range<usize>) -> Self {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = byte_bounded_channel(10_000_000);
         TOKIO.spawn(Self::run(remote_address, remote_workers.clone(), rx));
         Self { tx }
     }
@@ -147,7 +221,7 @@ impl ExchangeClient {
     async fn run(
         remote_address: SocketAddr,
         remote_workers: Range<usize>,
-        mut rx: tokio::sync::mpsc::UnboundedReceiver<ExchangeMessage>,
+        mut rx: ByteBoundedReceiver,
     ) {
         let mut connection = loop {
             match TcpStream::connect(remote_address).await {
@@ -218,13 +292,14 @@ impl ExchangeClient {
         }
     }
 
-    pub fn send(&self, exchange_id: ExchangeId, sender: usize, data: Vec<FBuf>) {
+    pub async fn send(&self, exchange_id: ExchangeId, sender: usize, data: Vec<FBuf>) {
         self.tx
             .send(ExchangeMessage {
                 exchange_id,
                 sender,
                 data,
             })
+            .await
             .expect("remote exchange failed");
     }
 }
@@ -859,11 +934,11 @@ where
                         })
                         .collect_vec();
                     let this = self.clone();
-                    this.clients.connect(receivers.start).await.send(
-                        this.exchange_id,
-                        sender,
-                        items,
-                    );
+                    this.clients
+                        .connect(receivers.start)
+                        .await
+                        .send(this.exchange_id, sender, items)
+                        .await;
                 }
             }
         }
