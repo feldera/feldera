@@ -215,11 +215,11 @@ where
                         })
                         .collect_vec();
                     let this = self.clone();
-                    this.clients.connect(receivers.start).await.send(
-                        this.exchange_id,
-                        sender,
-                        items,
-                    );
+                    this.clients
+                        .connect(receivers.start)
+                        .await
+                        .send(this.exchange_id, sender, items)
+                        .await;
                 }
             }
         }
