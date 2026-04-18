@@ -113,6 +113,7 @@ jobs:
             fda-x86_64-unknown-linux-gnu.zip
             fda-aarch64-unknown-linux-gnu.zip
             fda-x86_64-pc-windows-msvc.zip
+            fda-aarch64-apple-darwin.zip
             sql2dbsp-jar-with-dependencies-v${{ env.CURRENT_VERSION }}.jar
             feldera-sbom-source.spdx.json
             feldera-sbom-image.spdx.json
