@@ -1060,8 +1060,8 @@ where
 /// Multihost exchange works mostly as shown in the diagram above, except that
 /// there is a network in the middle.  Suppose that we have two hosts with two
 /// workers each, even though they ordinarily would have more than that.  Each
-/// host listens on a network port with a single [ExchangeListener] and
-/// constructs one [ExchangeClient] for each remote host.  Data destined to a
+/// host listens on a network port with a single `ExchangeListener` and
+/// constructs one `ExchangeClient` for each remote host.  Data destined to a
 /// worker on the same host uses local mechanisms; data destined to a worker on
 /// a different host flows through an appropriate `ExchangeClient` to the remote
 /// `ExchangeListener` to the correct worker.
