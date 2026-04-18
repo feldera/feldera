@@ -4,6 +4,7 @@
 //! Examples:
 //! `cargo bench -p dbsp --bench filter_predictor -- --csv-output filter_predictor.csv`
 //! `cargo bench -p dbsp --bench filter_predictor -- --num-keys 99_999,999_999 --distributions gaussian,bimodal,exponential --gaussian-means 0.1,0.5,0.9 --gaussian-stddevs 1e-6,1e-4,1e-2`
+//! `cargo bench -p dbsp --bench filter_predictor -- --num-keys 499_999,1_999_999 --distributions holey_wide --batch-counts 8 --batch-layouts overlap`
 
 use clap::{Parser, ValueEnum};
 use csv::Writer;
@@ -35,6 +36,9 @@ const DEFAULT_BATCH_COUNTS: [usize; 3] = [1, 8, 64];
 const OVERLAP_FACTOR_DAMPING: f64 = 0.25;
 const BIMODAL_LEFT_PEAK_FRAC: f64 = 0.25;
 const BIMODAL_RIGHT_PEAK_FRAC: f64 = 0.75;
+const HOLEY_WIDE_DOMAIN_MAX_EXCLUSIVE: u64 = 2_000_000_000;
+const HOLEY_WIDE_TARGET_KEYS_PER_WINDOW: u64 = 5_000;
+const HOLEY_WIDE_MIN_TOUCHED_WINDOWS: u64 = 192;
 const MIN_BLOOM_EXPECTED_ITEMS: u64 = 64;
 const U32_KEY_SPACE_SIZE: u64 = u32::MAX as u64 + 1;
 const DEFAULT_NUM_KEYS: [u64; 5] = [14_999, 999_999, 9_999_999, 99_999_999, 999_999_999];
@@ -181,7 +185,7 @@ struct Args {
 
     /// Comma-separated distribution families to run.
     /// Supported values: `gaussian`, `consecutive`, `round_robin_container`,
-    /// `bimodal`, `exponential`.
+    /// `bimodal`, `exponential`, `holey_wide`.
     #[arg(long, value_name = "CSV")]
     distributions: Option<String>,
 
@@ -275,6 +279,7 @@ enum DistributionKind {
     RoundRobinContainer,
     Bimodal,
     Exponential,
+    HoleyWide,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -300,6 +305,7 @@ impl DistributionKind {
             Self::RoundRobinContainer => "round_robin_container",
             Self::Bimodal => "bimodal",
             Self::Exponential => "exponential",
+            Self::HoleyWide => "holey_wide",
         }
     }
 
@@ -504,6 +510,7 @@ enum DistributionSpec {
     RoundRobinContainer,
     Bimodal { stddev_frac: f64 },
     Exponential { scale_frac: f64 },
+    HoleyWide,
 }
 
 impl DistributionSpec {
@@ -514,6 +521,7 @@ impl DistributionSpec {
             Self::RoundRobinContainer => "round_robin_container",
             Self::Bimodal { .. } => "bimodal",
             Self::Exponential { .. } => "exponential",
+            Self::HoleyWide => "holey_wide",
         }
     }
 
@@ -522,7 +530,7 @@ impl DistributionSpec {
             Self::Gaussian(_) => "stddev_frac",
             Self::Bimodal { .. } => "stddev_frac",
             Self::Exponential { .. } => "scale_frac",
-            Self::Consecutive | Self::RoundRobinContainer => "none",
+            Self::Consecutive | Self::RoundRobinContainer | Self::HoleyWide => "none",
         }
     }
 
@@ -531,7 +539,7 @@ impl DistributionSpec {
             Self::Gaussian(distribution) => Some(distribution.stddev_frac),
             Self::Bimodal { stddev_frac } => Some(stddev_frac),
             Self::Exponential { scale_frac } => Some(scale_frac),
-            Self::Consecutive | Self::RoundRobinContainer => None,
+            Self::Consecutive | Self::RoundRobinContainer | Self::HoleyWide => None,
         }
     }
 
@@ -540,7 +548,7 @@ impl DistributionSpec {
             Self::Gaussian(distribution) => Some(distribution.stddev_value()),
             Self::Bimodal { stddev_frac } => Some(stddev_frac * u32::MAX as f64),
             Self::Exponential { scale_frac } => Some(scale_frac * u32::MAX as f64),
-            Self::Consecutive | Self::RoundRobinContainer => None,
+            Self::Consecutive | Self::RoundRobinContainer | Self::HoleyWide => None,
         }
     }
 
@@ -550,7 +558,8 @@ impl DistributionSpec {
             Self::Consecutive
             | Self::RoundRobinContainer
             | Self::Bimodal { .. }
-            | Self::Exponential { .. } => None,
+            | Self::Exponential { .. }
+            | Self::HoleyWide => None,
         }
     }
 
@@ -560,7 +569,8 @@ impl DistributionSpec {
             Self::Consecutive
             | Self::RoundRobinContainer
             | Self::Bimodal { .. }
-            | Self::Exponential { .. } => None,
+            | Self::Exponential { .. }
+            | Self::HoleyWide => None,
         }
     }
 
@@ -570,7 +580,8 @@ impl DistributionSpec {
             Self::Consecutive
             | Self::RoundRobinContainer
             | Self::Bimodal { .. }
-            | Self::Exponential { .. } => None,
+            | Self::Exponential { .. }
+            | Self::HoleyWide => None,
         }
     }
 
@@ -580,7 +591,8 @@ impl DistributionSpec {
             Self::Consecutive
             | Self::RoundRobinContainer
             | Self::Bimodal { .. }
-            | Self::Exponential { .. } => None,
+            | Self::Exponential { .. }
+            | Self::HoleyWide => None,
         }
     }
 }
@@ -654,6 +666,14 @@ fn build_run_configs(
                             DistributionSpec::Exponential { scale_frac },
                         );
                     }
+                }
+                DistributionKind::HoleyWide => {
+                    push_run_configs(
+                        &mut run_configs,
+                        args,
+                        num_keys,
+                        DistributionSpec::HoleyWide,
+                    );
                 }
             }
         }
@@ -735,6 +755,7 @@ fn run_single_config(args: &Args, run_config: RunConfig) -> Vec<CsvRow> {
         run_config.distribution_seed,
     );
     let batch = GeneratedBatch::new(generated_keys, run_config.split_seed);
+    let actual_window_stats = actual_window_stats(batch.keys());
     let batch_counts = args.batch_counts();
     let batch_layouts = args.batch_layouts();
     let lookup_count = args.lookup_count_for(run_config.num_keys);
@@ -795,6 +816,9 @@ fn run_single_config(args: &Args, run_config: RunConfig) -> Vec<CsvRow> {
                 bloom_false_positive_rate_target_percent: args.bloom_false_positive_rate * 100.0,
                 bloom_seed: args.bloom_seed,
                 bloom_expected_items,
+                actual_touched_windows: actual_window_stats.touched_windows,
+                actual_window_span: actual_window_stats.window_span,
+                actual_keys_per_touched_window: actual_window_stats.keys_per_touched_window,
                 predictor_total_keys: predictor_stats.batch_keys,
                 predictor_global_min: predictor_stats.global_min,
                 predictor_global_max: predictor_stats.global_max,
@@ -891,6 +915,13 @@ pub struct RoaringSampleStats {
 
     /// Lower bound on occupancy of a touched container, normalized by 2^16.
     pub estimated_container_fill_ratio: f64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ActualWindowStats {
+    touched_windows: usize,
+    window_span: usize,
+    keys_per_touched_window: f64,
 }
 
 /// Split a merged keyset into `batch_count` simulated input batches.
@@ -1278,6 +1309,9 @@ struct CsvRow {
     bloom_false_positive_rate_target_percent: f64,
     bloom_seed: u128,
     bloom_expected_items: u64,
+    actual_touched_windows: usize,
+    actual_window_span: usize,
+    actual_keys_per_touched_window: f64,
     predictor_total_keys: usize,
     predictor_global_min: u32,
     predictor_global_max: u32,
@@ -1445,6 +1479,12 @@ fn print_run_report(row: &CsvRow) {
     println!("batch_layout={}", row.batch_layout);
     println!("lookup_space={}", row.lookup_space);
     println!("lookup_count={}", row.lookup_count);
+    println!("actual.touched_windows={}", row.actual_touched_windows);
+    println!("actual.window_span={}", row.actual_window_span);
+    println!(
+        "actual.keys_per_touched_window={:.6}",
+        row.actual_keys_per_touched_window
+    );
     println!("predictor.total_keys={}", row.predictor_total_keys);
     println!("predictor.global_min={}", row.predictor_global_min);
     println!("predictor.global_max={}", row.predictor_global_max);
@@ -1593,6 +1633,7 @@ fn generate_keys(num_keys: u64, distribution: DistributionSpec, seed: u64) -> Ve
         DistributionSpec::Exponential { scale_frac } => {
             generate_exponential_keys(num_keys, scale_frac, seed)
         }
+        DistributionSpec::HoleyWide => generate_holey_wide_keys(num_keys, seed),
     }
 }
 
@@ -1690,6 +1731,82 @@ fn generate_exponential_keys(num_keys: u64, scale_frac: f64, seed: u64) -> Vec<u
     keys.sort_unstable();
     project_sorted_unique_u32_domain(&mut keys);
     keys
+}
+
+fn generate_holey_wide_keys(num_keys: u64, seed: u64) -> Vec<u32> {
+    let len = usize::try_from(num_keys).expect("num_keys must fit in usize");
+    let domain_window_count =
+        usize::try_from(HOLEY_WIDE_DOMAIN_MAX_EXCLUSIVE / 65_536).expect("window count fits");
+    assert!(
+        domain_window_count >= 2,
+        "holey-wide domain must span at least 2 windows"
+    );
+
+    let mut touched_window_count = HOLEY_WIDE_MIN_TOUCHED_WINDOWS
+        .max(ceil_div_u64(num_keys, HOLEY_WIDE_TARGET_KEYS_PER_WINDOW));
+    touched_window_count = touched_window_count.max(ceil_div_u64(num_keys, 65_536));
+    touched_window_count = touched_window_count.min(domain_window_count as u64);
+    let touched_window_count =
+        usize::try_from(touched_window_count).expect("touched window count fits");
+
+    // We saw this shape in the live Delta pipeline
+    // `delta_bigint_sequence_keys`: batches span almost the full 2B-key
+    // domain, but only a few hundred 16-bit Roaring windows are actually
+    // populated inside that wide range.
+    let mut touched_windows = Vec::with_capacity(touched_window_count);
+    touched_windows.push(0u32);
+    if touched_window_count > 1 {
+        touched_windows.push((domain_window_count - 1) as u32);
+    }
+    if touched_window_count > 2 {
+        let permutation = AffinePermutation::random((domain_window_count - 2) as u64, seed);
+        while touched_windows.len() < touched_window_count {
+            let window = 1 + permutation.index_at((touched_windows.len() - 2) as u64) as u32;
+            touched_windows.push(window);
+        }
+    }
+    touched_windows.sort_unstable();
+
+    let mut keys = Vec::with_capacity(len);
+    let base_keys_per_window = num_keys / touched_window_count as u64;
+    let extra_windows = (num_keys % touched_window_count as u64) as usize;
+    for (window_index, &window) in touched_windows.iter().enumerate() {
+        let keys_in_window = base_keys_per_window + u64::from(window_index < extra_windows);
+        let window_base = (window as u64) << 16;
+        for low in 0..keys_in_window {
+            keys.push(u32::try_from(window_base + low).expect("holey-wide key exceeded domain"));
+        }
+    }
+
+    debug_assert_eq!(keys.len(), len);
+    keys
+}
+
+fn actual_window_stats(keys: &[u32]) -> ActualWindowStats {
+    let touched_windows = count_distinct_windows(keys);
+    let window_span = ((keys[keys.len() - 1] >> 16) - (keys[0] >> 16) + 1) as usize;
+    ActualWindowStats {
+        touched_windows,
+        window_span,
+        keys_per_touched_window: keys.len() as f64 / touched_windows as f64,
+    }
+}
+
+fn count_distinct_windows(keys: &[u32]) -> usize {
+    let mut distinct_windows = 0usize;
+    let mut previous_window = None;
+    for &key in keys {
+        let window = key >> 16;
+        if previous_window != Some(window) {
+            distinct_windows += 1;
+            previous_window = Some(window);
+        }
+    }
+    distinct_windows
+}
+
+fn ceil_div_u64(lhs: u64, rhs: u64) -> u64 {
+    lhs.div_ceil(rhs)
 }
 
 fn parse_u64_csv(csv: &str) -> Vec<u64> {
