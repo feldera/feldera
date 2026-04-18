@@ -475,7 +475,13 @@ pub enum Mailbox<T> {
 }
 
 impl<T> Mailbox<T> {
-    fn into_tx(self) -> Option<FBuf> {
+    pub fn into_plain(self) -> Option<T> {
+        match self {
+            Self::Plain(item) => Some(item),
+            _ => None,
+        }
+    }
+    pub fn into_tx(self) -> Option<FBuf> {
         match self {
             Mailbox::Tx(bytes) => Some(bytes),
             Mailbox::Rx(_) | Mailbox::Plain(_) => None,
