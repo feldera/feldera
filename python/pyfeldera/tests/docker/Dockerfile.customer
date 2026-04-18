@@ -1,0 +1,29 @@
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      gcc \
+      g++ \
+      make \
+      git \
+      curl \
+      libssl-dev \
+      pkg-config \
+      ca-certificates \
+      libxml2 \
+      libsasl2-dev \
+      zlib1g-dev \
+      libclang-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m -s /bin/bash -u 1001 trusted-service-user
+RUN mkdir -p /home/ubuntu && chown 1001 /home/ubuntu
+USER trusted-service-user
+WORKDIR /home/trusted-service-user
+
+COPY dist/*.whl /tmp/
+RUN pip install --user --break-system-packages /tmp/*.whl
+ENV PATH="/home/trusted-service-user/.local/bin:$PATH"
+
+ENV LC_ALL=C.UTF-8
+EXPOSE 8080
+CMD ["python3", "-m", "pyfeldera", "--bind-address=0.0.0.0"]

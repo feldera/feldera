@@ -9,7 +9,10 @@ description = "Self-contained Feldera package — pip install and run a full Fel
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
-authors = [{ name = "Feldera Team", email = "dev@feldera.com" }]
+authors = [
+    { "name" = "Feldera Team", "email" = "dev@feldera.com" },
+    { "name" = "Raki Rahman", "email" = "mdrakiburrahman@gmail.com" },
+]
 keywords = ["feldera", "streaming", "sql", "incremental"]
 classifiers = [
     "Development Status :: 3 - Alpha",

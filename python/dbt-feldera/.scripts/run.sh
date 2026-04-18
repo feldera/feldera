@@ -77,7 +77,7 @@ run_seed_ci() {
 
 start_feldera() {
     # Build pyfeldera customer image if not already available
-    local pyfeldera_dir="${PROJECT_DIR}/pyfeldera"
+    local pyfeldera_dir="$(cd "${PROJECT_DIR}/.." && pwd)/pyfeldera"
     if [ -f "${pyfeldera_dir}/.scripts/run.sh" ]; then
         if ! docker image inspect pyfeldera-customer:latest &>/dev/null; then
             echo "Building pyfeldera customer image..."
