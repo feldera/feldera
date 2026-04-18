@@ -213,7 +213,7 @@ where
     }
 }
 
-enum ShardBuilder<OB>
+pub(crate) enum ShardBuilder<OB>
 where
     OB: Batch<Time = ()>,
 {
@@ -314,7 +314,7 @@ where
 
 // Partitions the batch into shards covering `workers` (out of
 // `all_workers()`), based on the hash of the key.
-fn shard_batch<IB, OB>(
+pub(crate) fn shard_batch<IB, OB>(
     mut batch: IB,
     workers: &Range<usize>,
     builders: &mut Vec<ShardBuilder<OB>>,

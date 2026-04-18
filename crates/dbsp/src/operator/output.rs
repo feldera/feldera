@@ -120,6 +120,22 @@ where
     }
 }
 
+impl<T> Stream<RootCircuit, Option<T>>
+where
+    T: Debug + Clone + Send + 'static,
+{
+    /// Output operator that produces the latest non-`None` output per clock
+    /// cycle.
+    #[track_caller]
+    pub fn latest_output(&self) -> OutputHandle<T> {
+        let (output, output_handle) = LatestOutput::<T>::new();
+
+        self.circuit().add_sink(output, self);
+
+        output_handle
+    }
+}
+
 /// `TypedMapKey` entry used to share `OutputHandle` objects across workers in a
 /// runtime. The first worker to create the handle will store it in the map,
 /// subsequent workers will get a clone of the same handle.
@@ -539,6 +555,59 @@ where
         if let Some(val) = val {
             self.output_batch_stats.add_batch(val.len());
             self.mailbox.set(Some(val.ro_snapshot()));
+        }
+    }
+
+    fn input_preference(&self) -> OwnershipPreference {
+        OwnershipPreference::PREFER_OWNED
+    }
+}
+
+pub struct LatestOutput<T>
+where
+    T: Debug + Clone + Send + 'static,
+{
+    mailbox: Mailbox<Option<T>>,
+}
+
+impl<T> LatestOutput<T>
+where
+    T: Debug + Clone + Send + 'static,
+{
+    pub fn new() -> (Self, OutputHandle<T>) {
+        let handle = OutputHandle::new();
+        let mailbox = handle.mailbox(Runtime::worker_index()).clone();
+
+        let output = Self { mailbox };
+
+        (output, handle)
+    }
+}
+
+impl<T> Operator for LatestOutput<T>
+where
+    T: Debug + Clone + Send + 'static,
+{
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("LatestOutput")
+    }
+
+    fn fixedpoint(&self, _scope: Scope) -> bool {
+        true
+    }
+}
+
+impl<T> SinkOperator<Option<T>> for LatestOutput<T>
+where
+    T: Debug + Clone + Send + 'static,
+{
+    async fn eval(&mut self, val: &Option<T>) {
+        self.eval_owned(val.clone()).await;
+    }
+
+    async fn eval_owned(&mut self, val: Option<T>) {
+        if val.is_some() {
+            self.mailbox.set(val);
         }
     }
 

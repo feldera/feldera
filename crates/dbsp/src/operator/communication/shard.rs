@@ -1,6 +1,10 @@
 use std::ops::Range;
 
-use crate::{Circuit, Stream, trace::BatchReaderFactories, typed_batch::Batch};
+use crate::{
+    Circuit, Stream,
+    trace::BatchReaderFactories,
+    typed_batch::{Batch, Spine},
+};
 
 impl<C, IB> Stream<C, IB>
 where
@@ -74,5 +78,20 @@ where
     pub fn shard_workers(&self, workers: Range<usize>) -> Stream<C, IB> {
         let factories = BatchReaderFactories::new::<IB::Key, IB::Val, IB::R>();
         self.inner().dyn_shard_workers(workers, &factories).typed()
+    }
+}
+
+impl<C, B> Stream<C, B>
+where
+    C: Circuit,
+    B: Batch<Time = ()>,
+{
+    #[track_caller]
+    pub fn shard_accumulate(&self) -> Stream<C, Option<Spine<B>>> {
+        let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
+
+        let result = self.inner().dyn_shard_accumulate(&factories);
+
+        unsafe { result.transmute_payload() }
     }
 }
