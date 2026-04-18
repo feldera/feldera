@@ -1,5 +1,5 @@
 use crate::storage::buffer_cache::CacheStats;
-use crate::storage::file::{FilterKind, FilterStats};
+use crate::storage::file::{FilterKind, FilterStats, TouchedWindowCount, TouchedWindowCounter};
 use crate::trace::BatchLocation;
 use crate::trace::cursor::Position;
 use crate::trace::ord::file::UnwrapStorage;
@@ -405,6 +405,10 @@ where
     fn negative_weight_count(&self) -> Option<u64> {
         None
     }
+
+    fn touched_window_count(&self) -> TouchedWindowCount {
+        self.file.metadata().touched_window_count
+    }
 }
 
 #[derive(SizeOf)]
@@ -701,6 +705,8 @@ where
     num_tuples: usize,
     #[size_of(skip)]
     stats: BatchMetadata,
+    #[size_of(skip)]
+    touched_window_counter: Option<TouchedWindowCounter>,
 }
 
 impl<K, V, T, R> Builder<FileValBatch<K, V, T, R>> for FileValBuilder<K, V, T, R>
@@ -730,6 +736,7 @@ where
             time_diffs: factories.timediff_factory.default_box(),
             num_tuples: 0,
             stats: BatchMetadata::default(),
+            touched_window_counter: Some(TouchedWindowCounter::default()),
         }
     }
 
@@ -762,16 +769,26 @@ where
             time_diffs: factories.timediff_factory.default_box(),
             num_tuples: 0,
             stats: BatchMetadata::default(),
+            touched_window_counter: Some(TouchedWindowCounter::default()),
         }
     }
 
-    fn done(self) -> FileValBatch<K, V, T, R> {
+    fn done(mut self) -> FileValBatch<K, V, T, R> {
+        self.stats.touched_window_count = self
+            .touched_window_counter
+            .map(TouchedWindowCounter::finish)
+            .unwrap_or_default();
         let (file, filters) = self.writer.into_reader(self.stats).unwrap_storage();
         let file = Arc::new(file);
         FileValBatch::from_parts(self.factories, file, filters)
     }
 
     fn push_key(&mut self, key: &K) {
+        if let Some(counter) = self.touched_window_counter.as_mut()
+            && !counter.push_key(key)
+        {
+            self.touched_window_counter = None;
+        }
         self.writer.write0((key, &())).unwrap_storage();
     }
 

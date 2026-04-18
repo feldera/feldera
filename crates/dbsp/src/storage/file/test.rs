@@ -8,6 +8,7 @@ use crate::{
         backend::{BlockLocation, StorageBackend},
         buffer_cache::BufferCache,
         file::{
+            TouchedWindowCount,
             format::{
                 BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, Compression, FileTrailer,
                 ROARING_BITMAP_FILTER_BLOCK_MAGIC,
@@ -1171,6 +1172,42 @@ fn one_column_key_range() {
             );
         }
     }
+}
+
+#[test]
+fn persists_touched_window_count_in_metadata() {
+    let factories = Factories::<DynData, DynData>::new::<u32, ()>();
+    let tempdir = tempdir().unwrap();
+    let storage_backend = <dyn StorageBackend>::new(
+        &StorageConfig {
+            path: tempdir.path().to_string_lossy().to_string(),
+            cache: Default::default(),
+        },
+        &StorageOptions::default(),
+    )
+    .unwrap();
+    let mut writer = Writer1::new(
+        &factories,
+        test_buffer_cache,
+        &*storage_backend,
+        Parameters::default(),
+        FilterPlan::<DynData>::decide_filter(None, 6),
+    )
+    .unwrap();
+
+    for key in [0u32, 1, 1 << 16, (1 << 16) + 1, 3 << 16, (3 << 16) + 1] {
+        writer.write0((&key, &())).unwrap();
+    }
+
+    let metadata = BatchMetadata {
+        touched_window_count: TouchedWindowCount::new(3),
+        ..BatchMetadata::default()
+    };
+    let (reader, _filters) = writer.into_reader(metadata).unwrap();
+    assert_eq!(
+        reader.metadata().touched_window_count,
+        TouchedWindowCount::new(3)
+    );
 }
 
 #[test]

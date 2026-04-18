@@ -1,5 +1,5 @@
 use crate::storage::file::format::BatchMetadata;
-use crate::storage::file::{FilterKind, FilterStats};
+use crate::storage::file::{FilterKind, FilterStats, TouchedWindowCount, TouchedWindowCounter};
 use crate::trace::cursor::Position;
 use crate::{
     DBData, DBWeight, NumEntries, Runtime, Timestamp,
@@ -385,6 +385,10 @@ where
     fn negative_weight_count(&self) -> Option<u64> {
         None
     }
+
+    fn touched_window_count(&self) -> TouchedWindowCount {
+        self.file.metadata().touched_window_count
+    }
 }
 
 type RawKeyCursor<'s, K, T, R> = FileCursor<
@@ -659,6 +663,8 @@ where
     num_tuples: usize,
     #[size_of(skip)]
     stats: BatchMetadata,
+    #[size_of(skip)]
+    touched_window_counter: Option<TouchedWindowCounter>,
 }
 
 impl<K, T, R> Builder<FileKeyBatch<K, T, R>> for FileKeyBuilder<K, T, R>
@@ -688,6 +694,7 @@ where
             key: factories.opt_key_factory.default_box(),
             num_tuples: 0,
             stats: BatchMetadata::default(),
+            touched_window_counter: Some(TouchedWindowCounter::default()),
         }
     }
 
@@ -720,10 +727,16 @@ where
             key: factories.opt_key_factory.default_box(),
             num_tuples: 0,
             stats: BatchMetadata::default(),
+            touched_window_counter: Some(TouchedWindowCounter::default()),
         }
     }
 
     fn push_key(&mut self, key: &K) {
+        if let Some(counter) = self.touched_window_counter.as_mut()
+            && !counter.push_key(key)
+        {
+            self.touched_window_counter = None;
+        }
         self.writer.write0((key, &())).unwrap_storage();
     }
 
@@ -735,7 +748,11 @@ where
         self.num_tuples += 1;
     }
 
-    fn done(self) -> FileKeyBatch<K, T, R> {
+    fn done(mut self) -> FileKeyBatch<K, T, R> {
+        self.stats.touched_window_count = self
+            .touched_window_counter
+            .map(TouchedWindowCounter::finish)
+            .unwrap_or_default();
         let (file, filters) = self.writer.into_reader(self.stats).unwrap_storage();
         let file = Arc::new(file);
         FileKeyBatch::from_parts(self.factories, file, filters)

@@ -1,4 +1,4 @@
-use crate::storage::file::FilterStats;
+use crate::storage::file::{FilterStats, TouchedWindowCount, TouchedWindowCounter};
 use crate::{
     DBData, DBWeight, NumEntries,
     algebra::{NegByRef, ZRingValue},
@@ -122,6 +122,7 @@ where
     pub layer: Leaf<K, R>,
     factories: VecWSetFactories<K, R>,
     negative_weight_count: u64,
+    touched_window_count: TouchedWindowCount,
 }
 
 impl<K, R> SizeOf for VecWSet<K, R>
@@ -146,10 +147,21 @@ where
         keys: Box<DynVec<K>>,
         diffs: Box<DynVec<R>>,
     ) -> Self {
+        let mut touched_window_counter = Some(TouchedWindowCounter::default());
+        for key in keys.dyn_iter() {
+            if let Some(counter) = touched_window_counter.as_mut()
+                && !counter.push_key(key)
+            {
+                touched_window_counter = None;
+            }
+        }
         Self {
             layer: Leaf::from_parts(&factories.layer_factories, keys, diffs),
             factories,
             negative_weight_count: 0,
+            touched_window_count: touched_window_counter
+                .map(TouchedWindowCounter::finish)
+                .unwrap_or_default(),
         }
     }
 }
@@ -200,6 +212,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Clone for VecWSet<K, R> {
             layer: self.layer.clone(),
             factories: self.factories.clone(),
             negative_weight_count: self.negative_weight_count,
+            touched_window_count: self.touched_window_count,
         }
     }
 }
@@ -307,6 +320,7 @@ where
             layer: self.layer.neg_by_ref(),
             factories: self.factories.clone(),
             negative_weight_count: self.negative_weight_count,
+            touched_window_count: self.touched_window_count,
         }
     }
 }
@@ -396,6 +410,10 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Batch for VecWSet<K, R> {
 
     fn negative_weight_count(&self) -> Option<u64> {
         Some(self.negative_weight_count)
+    }
+
+    fn touched_window_count(&self) -> TouchedWindowCount {
+        self.touched_window_count
     }
 }
 
@@ -573,6 +591,8 @@ where
     val: bool,
     diffs: Box<DynVec<R>>,
     negative_weight_count: u64,
+    #[size_of(skip)]
+    touched_window_counter: Option<TouchedWindowCounter>,
 }
 
 impl<K, R> VecWSetBuilder<K, R>
@@ -672,6 +692,7 @@ where
             val: false,
             diffs,
             negative_weight_count: 0,
+            touched_window_counter: Some(TouchedWindowCounter::default()),
         }
     }
 
@@ -682,10 +703,20 @@ where
 
     fn push_key(&mut self, key: &K) {
         self.keys.push_ref(key);
+        if let Some(counter) = self.touched_window_counter.as_mut()
+            && !counter.push_key(key)
+        {
+            self.touched_window_counter = None;
+        }
         self.pushed_key();
     }
 
     fn push_key_mut(&mut self, key: &mut K) {
+        if let Some(counter) = self.touched_window_counter.as_mut()
+            && !counter.push_key(key)
+        {
+            self.touched_window_counter = None;
+        }
         self.keys.push_val(key);
         self.pushed_key();
     }
@@ -724,6 +755,10 @@ where
             layer: Leaf::from_parts(&self.factories.layer_factories, self.keys, self.diffs),
             factories: self.factories,
             negative_weight_count: self.negative_weight_count,
+            touched_window_count: self
+                .touched_window_counter
+                .map(TouchedWindowCounter::finish)
+                .unwrap_or_default(),
         }
     }
 

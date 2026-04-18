@@ -1,5 +1,5 @@
 use crate::ZWeight;
-use crate::storage::file::FilterStats;
+use crate::storage::file::{FilterStats, TouchedWindowCount, TouchedWindowCounter};
 use crate::trace::cursor::Position;
 use crate::trace::ord::merge_batcher::MergeBatcher;
 use crate::{
@@ -200,6 +200,7 @@ where
     // batch_item_factory: &'static BatchItemVTable<K, V, Pair<K, V>, R>,
     /// Where all the dataz is.
     pub layer: VecValBatchLayer<K, V, T, R, O>,
+    touched_window_count: TouchedWindowCount,
 }
 
 impl<K, V, T, R, O> SizeOf for VecValBatch<K, V, T, R, O>
@@ -301,6 +302,7 @@ where
         Self {
             factories: self.factories.clone(),
             layer: self.layer.clone(),
+            touched_window_count: self.touched_window_count,
         }
     }
 }
@@ -424,6 +426,10 @@ where
 
     fn negative_weight_count(&self) -> Option<u64> {
         None
+    }
+
+    fn touched_window_count(&self) -> TouchedWindowCount {
+        self.touched_window_count
     }
 }
 
@@ -618,6 +624,8 @@ where
     diffs: Box<DynVec<R>>,
     total_positive_weight: ZWeight,
     total_negative_weight: ZWeight,
+    #[size_of(skip)]
+    touched_window_counter: Option<TouchedWindowCounter>,
 }
 
 impl<K, V, T, R, O> VecValBuilder<K, V, T, R, O>
@@ -682,6 +690,7 @@ where
             diffs,
             total_positive_weight: 0,
             total_negative_weight: 0,
+            touched_window_counter: Some(TouchedWindowCounter::default()),
         }
     }
 
@@ -695,10 +704,20 @@ where
 
     fn push_key(&mut self, key: &K) {
         self.keys.push_ref(key);
+        if let Some(counter) = self.touched_window_counter.as_mut()
+            && !counter.push_key(key)
+        {
+            self.touched_window_counter = None;
+        }
         self.pushed_key();
     }
 
     fn push_key_mut(&mut self, key: &mut K) {
+        if let Some(counter) = self.touched_window_counter.as_mut()
+            && !counter.push_key(key)
+        {
+            self.touched_window_counter = None;
+        }
         self.keys.push_val(key);
         self.pushed_key();
     }
@@ -743,6 +762,10 @@ where
                 ),
             ),
             factories: self.factories,
+            touched_window_count: self
+                .touched_window_counter
+                .map(TouchedWindowCounter::finish)
+                .unwrap_or_default(),
         }
     }
 

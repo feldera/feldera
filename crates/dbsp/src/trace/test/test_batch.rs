@@ -1296,6 +1296,10 @@ where
     fn negative_weight_count(&self) -> Option<u64> {
         None
     }
+
+    fn touched_window_count(&self) -> crate::storage::file::TouchedWindowCount {
+        crate::storage::file::TouchedWindowCount::default()
+    }
 }
 
 impl<K, V, T, R> Trace for TestBatch<K, V, T, R>

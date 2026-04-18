@@ -1,5 +1,5 @@
 use crate::storage::file::format::BatchMetadata;
-use crate::storage::file::{FilterKind, FilterStats};
+use crate::storage::file::{FilterKind, FilterStats, TouchedWindowCount, TouchedWindowCounter};
 use crate::{
     DBData, DBWeight, NumEntries, Runtime,
     algebra::{AddAssignByRef, AddByRef, NegByRef},
@@ -272,6 +272,7 @@ where
         let stats = BatchMetadata {
             negative_weight_count: (self.len() as u64)
                 .saturating_sub(self.stats().negative_weight_count),
+            touched_window_count: self.stats().touched_window_count,
         };
         let (file, filters) = writer.into_reader(stats).unwrap_storage();
         Self::from_parts(self.factories.clone(), Arc::new(file), filters)
@@ -501,6 +502,10 @@ where
 
     fn negative_weight_count(&self) -> Option<u64> {
         Some(self.stats().negative_weight_count)
+    }
+
+    fn touched_window_count(&self) -> TouchedWindowCount {
+        self.stats().touched_window_count
     }
 }
 
@@ -801,6 +806,8 @@ where
     num_tuples: usize,
     #[size_of(skip)]
     stats: BatchMetadata,
+    #[size_of(skip)]
+    touched_window_counter: Option<TouchedWindowCounter>,
 }
 
 impl<K, R> FileWSetBuilder<K, R>
@@ -841,6 +848,7 @@ where
             weight: factories.weight_factory().default_box(),
             num_tuples: 0,
             stats: BatchMetadata::default(),
+            touched_window_counter: Some(TouchedWindowCounter::default()),
         }
     }
 
@@ -872,16 +880,26 @@ where
             weight: factories.weight_factory().default_box(),
             num_tuples: 0,
             stats: BatchMetadata::default(),
+            touched_window_counter: Some(TouchedWindowCounter::default()),
         }
     }
 
-    fn done(self) -> FileWSet<K, R> {
+    fn done(mut self) -> FileWSet<K, R> {
+        self.stats.touched_window_count = self
+            .touched_window_counter
+            .map(TouchedWindowCounter::finish)
+            .unwrap_or_default();
         let (file, filters) = self.writer.into_reader(self.stats).unwrap_storage();
         let file = Arc::new(file);
         FileWSet::from_parts(self.factories, file, filters)
     }
 
     fn push_key(&mut self, key: &K) {
+        if let Some(counter) = self.touched_window_counter.as_mut()
+            && !counter.push_key(key)
+        {
+            self.touched_window_counter = None;
+        }
         self.writer.write0((key, &*self.weight)).unwrap_storage();
     }
 

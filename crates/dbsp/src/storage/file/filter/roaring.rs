@@ -1,6 +1,6 @@
 use crate::{
     dynamic::{DataTrait, DynData},
-    storage::file::{FilterStats, TrackingFilterStats},
+    storage::file::{FilterStats, TrackingFilterStats, format::TouchedWindowCount},
 };
 use dyn_clone::clone_box;
 use roaring::RoaringBitmap;
@@ -125,6 +125,60 @@ impl TrackingRoaringBitmap {
     }
 }
 
+/// Tracks the exact number of 16-bit roaring windows touched by a batch while
+/// keys are appended in sorted order.
+#[derive(Debug)]
+pub(crate) struct TouchedWindowCounter {
+    min: Option<Box<DynData>>,
+    windows: RoaringBitmap,
+}
+
+impl Default for TouchedWindowCounter {
+    fn default() -> Self {
+        Self {
+            min: None,
+            windows: RoaringBitmap::new(),
+        }
+    }
+}
+
+impl TouchedWindowCounter {
+    /// Records `key` and returns `true` while the exact touched-window count
+    /// remains representable in the roaring `u32` offset domain.
+    ///
+    /// Returns `false` once the key type is not roaring-compatible or the
+    /// batch span no longer fits in `u32`.
+    pub(crate) fn push_key<K>(&mut self, key: &K) -> bool
+    where
+        K: DataTrait + ?Sized,
+    {
+        match self.min.as_deref() {
+            Some(min) => match key.roaring_u32_offset_dyn(min) {
+                Some(offset) => {
+                    self.windows.insert(offset >> 16);
+                    true
+                }
+                None => false,
+            },
+            None => {
+                if !key.supports_roaring32() {
+                    return false;
+                }
+                self.min = Some(clone_box(key.as_data()));
+                self.windows.insert(0);
+                true
+            }
+        }
+    }
+
+    /// Finishes tracking and returns the exact touched-window count.
+    pub(crate) fn finish(self) -> TouchedWindowCount {
+        TouchedWindowCount::new(
+            usize::try_from(self.windows.len()).expect("touched-window count fits in usize"),
+        )
+    }
+}
+
 /// Summary of how a batch likely maps onto Roaring's 16-bit container layout
 /// for lookup prediction.
 ///
@@ -158,6 +212,57 @@ impl RoaringLookupStats {
     const LOOKUP_ROARING_ARRAY_CONTAINER_PROBABILITY_PENALTY_PER_LOG2_KEY: f64 = 0.10;
     const OVERLAP_FACTOR_DAMPING: f64 = 0.25;
     const U32_CONTAINER_COUNT: usize = 1 << 16;
+
+    /// Estimate roaring friendliness for lookups from batch metadata.
+    ///
+    /// When exact per-batch touched-window counts are available, combine them
+    /// with the span-overlap heuristic from the benchmark. Otherwise fall back
+    /// to the span-only estimate.
+    pub(crate) fn from_metadata(
+        batch_keys: usize,
+        container_spans: &[(u32, u32)],
+        touched_window_counts: &[TouchedWindowCount],
+    ) -> Option<Self> {
+        let span_stats = Self::from_bounds(batch_keys, container_spans)?;
+        if touched_window_counts.is_empty()
+            || touched_window_counts.len() != container_spans.len()
+            || touched_window_counts
+                .iter()
+                .any(|count| !count.is_available())
+        {
+            return Some(span_stats);
+        }
+
+        let span_windows_upper_bound = covered_container_union(container_spans);
+        let total_span_containers = container_spans
+            .iter()
+            .map(|(start, end)| (end - start + 1) as usize)
+            .sum::<usize>();
+        let overlap_factor = total_span_containers as f64 / span_windows_upper_bound as f64;
+        let damped_overlap_factor = 1.0 + Self::OVERLAP_FACTOR_DAMPING * (overlap_factor - 1.0);
+        let sum_batch_touched_windows = touched_window_counts
+            .iter()
+            .map(|count| count.get())
+            .sum::<usize>();
+        let max_batch_touched_windows = touched_window_counts
+            .iter()
+            .map(|count| count.get())
+            .max()
+            .expect("checked above");
+        let estimated_touched_containers = (sum_batch_touched_windows as f64
+            / damped_overlap_factor)
+            .clamp(
+                max_batch_touched_windows as f64,
+                span_windows_upper_bound as f64,
+            )
+            .min(Self::U32_CONTAINER_COUNT as f64);
+        let estimated_keys_per_container = batch_keys as f64 / estimated_touched_containers;
+
+        Some(Self {
+            estimated_keys_per_container,
+            estimated_touched_containers,
+        })
+    }
 
     /// Estimate roaring friendliness for lookups from batch-span metadata.
     ///

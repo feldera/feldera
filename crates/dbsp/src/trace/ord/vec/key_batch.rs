@@ -1,4 +1,4 @@
-use crate::storage::file::FilterStats;
+use crate::storage::file::{FilterStats, TouchedWindowCount, TouchedWindowCounter};
 use crate::trace::ord::merge_batcher::MergeBatcher;
 use crate::{
     DBData, DBWeight, NumEntries, Timestamp,
@@ -158,6 +158,7 @@ where
     /// Where all the dataz is.
     pub layer: VecKeyBatchLayer<K, T, R, O>,
     factories: VecKeyBatchFactories<K, T, R>,
+    touched_window_count: TouchedWindowCount,
 }
 
 impl<K, T, R, O> SizeOf for VecKeyBatch<K, T, R, O>
@@ -243,6 +244,7 @@ where
         Self {
             layer: self.layer.clone(),
             factories: self.factories.clone(),
+            touched_window_count: self.touched_window_count,
         }
     }
 }
@@ -360,6 +362,10 @@ where
 
     fn negative_weight_count(&self) -> Option<u64> {
         None
+    }
+
+    fn touched_window_count(&self) -> TouchedWindowCount {
+        self.touched_window_count
     }
 }
 
@@ -575,6 +581,8 @@ where
     offs: Vec<O>,
     times: Box<DynVec<DynDataTyped<T>>>,
     diffs: Box<DynVec<R>>,
+    #[size_of(skip)]
+    touched_window_counter: Option<TouchedWindowCounter>,
 }
 
 impl<K, T, R, O> VecKeyBuilder<K, T, R, O>
@@ -620,6 +628,7 @@ where
             offs,
             times,
             diffs,
+            touched_window_counter: Some(TouchedWindowCounter::default()),
         }
     }
 
@@ -632,10 +641,20 @@ where
 
     fn push_key(&mut self, key: &K) {
         self.keys.push_ref(key);
+        if let Some(counter) = self.touched_window_counter.as_mut()
+            && !counter.push_key(key)
+        {
+            self.touched_window_counter = None;
+        }
         self.pushed_key();
     }
 
     fn push_key_mut(&mut self, key: &mut K) {
+        if let Some(counter) = self.touched_window_counter.as_mut()
+            && !counter.push_key(key)
+        {
+            self.touched_window_counter = None;
+        }
         self.keys.push_val(key);
         self.pushed_key();
     }
@@ -667,6 +686,10 @@ where
                 ),
             ),
             factories: self.factories,
+            touched_window_count: self
+                .touched_window_counter
+                .map(TouchedWindowCounter::finish)
+                .unwrap_or_default(),
         }
     }
 

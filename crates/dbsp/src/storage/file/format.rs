@@ -143,10 +143,53 @@ impl BlockHeader {
 
 /// Additional metadata added to the file by the writer.
 #[binrw]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TouchedWindowCount {
+    count: u32,
+}
+
+impl TouchedWindowCount {
+    /// Encodes an exact touched-window count in the range `1..=65_536`.
+    ///
+    /// The value `0` is reserved to mean that the exact count is unavailable,
+    /// or that the batch is empty.
+    pub fn new(count: usize) -> Self {
+        assert!(
+            count <= 65_536,
+            "touched window count must fit in tracked range"
+        );
+        Self {
+            count: u32::try_from(count).expect("touched window count must fit in u32"),
+        }
+    }
+
+    /// Returns the stored touched-window count.
+    ///
+    /// The value `0` means the exact count is unavailable.
+    pub fn get(self) -> usize {
+        usize::try_from(self.count).expect("touched window count fits in usize")
+    }
+
+    /// True if the exact touched-window count is available.
+    pub fn is_available(self) -> bool {
+        self.count != 0
+    }
+}
+
+/// Additional metadata added to the file by the writer.
+#[binrw]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BatchMetadata {
     /// The number of records with negative weights in the batch.
     pub negative_weight_count: u64,
+
+    /// Exact count of 16-bit roaring windows touched by the batch, relative to
+    /// the batch minimum.
+    ///
+    /// A value of `0` means the exact count was not available for this batch,
+    /// e.g. because its key type is not roaring-compatible or its span exceeds
+    /// `u32`.
+    pub touched_window_count: TouchedWindowCount,
 }
 
 /// File trailer block.
@@ -272,9 +315,11 @@ impl FileTrailer {
 pub const COMPATIBLE_FEATURE_FILTER64: u64 = 1 << 0;
 
 /// Bit set to 1 in [FileTrailer::compatible_features] if the writer
-/// added the `metadata` field to the trailer, including the `negative_weight_count` field.
-/// This feature is backward and forward compatible, as trailers without this field will be
-/// deserialized as if its value is 0. Conversely, old readers will simply ignore the field.
+/// added the `metadata` field to the trailer, including fields such as
+/// `negative_weight_count` and `touched_window_count`.
+/// This feature is backward and forward compatible, as trailers without this
+/// field will deserialize with default metadata values. Conversely, old
+/// readers will simply ignore the field.
 pub const COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT: u64 = 1 << 1;
 
 /// Bit set to 1 in [FileTrailer::incompatible_features] if the file contains

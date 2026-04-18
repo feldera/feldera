@@ -113,8 +113,10 @@ use crate::{
 };
 pub use filter::BatchKeyFilter;
 pub use filter::FilterPlan;
+pub(crate) use filter::TouchedWindowCounter;
 pub use filter::TrackingRoaringBitmap;
 pub use filter::{FilterKind, FilterStats, TrackingFilterStats};
+pub use format::TouchedWindowCount;
 pub use item::{ArchivedItem, Item, ItemFactory, WithItemFactory};
 
 const BLOOM_FILTER_SEED: u128 = 42;
