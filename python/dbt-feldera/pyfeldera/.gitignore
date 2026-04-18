@@ -1,0 +1,11 @@
+# Build artifacts (populated by .scripts/run.sh, never committed)
+pyfeldera/data/
+dist/
+*.whl
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/

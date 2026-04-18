@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pyfeldera"
+version = "0.1.0"
+description = "Self-contained Feldera package — pip install and run a full Feldera instance"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "Feldera Team", email = "dev@feldera.com" }]
+keywords = ["feldera", "streaming", "sql", "incremental"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: POSIX :: Linux",
+]
+dependencies = ["feldera>=0.275.0", "requests"]
+
+[project.urls]
+Homepage = "https://www.feldera.com"
+Repository = "https://github.com/feldera/feldera"
+Issues = "https://github.com/feldera/feldera/issues/6048"
+
+[project.scripts]
+pyfeldera = "pyfeldera.__main__:main"
+
+[dependency-groups]
+dev = ["pytest>=8.3", "pytest-timeout>=2.3"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["pyfeldera"]
+artifacts = ["pyfeldera/data/**"]
+
+[tool.hatch.build.targets.sdist]
+include = ["pyfeldera/**"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

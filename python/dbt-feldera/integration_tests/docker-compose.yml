@@ -38,7 +38,7 @@ services:
       - delta-data:/data/delta
 
   pipeline-manager:
-    image: "${FELDERA_IMAGE:-images.feldera.com/feldera/pipeline-manager:latest}"
+    image: "${FELDERA_IMAGE:-pyfeldera-customer:latest}"
     ports:
       - "${FELDERA_PORT:-8080}:8080"
     tty: true

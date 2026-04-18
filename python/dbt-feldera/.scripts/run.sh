@@ -76,6 +76,15 @@ run_seed_ci() {
 }
 
 start_feldera() {
+    # Build pyfeldera customer image if not already available
+    local pyfeldera_dir="${PROJECT_DIR}/pyfeldera"
+    if [ -f "${pyfeldera_dir}/.scripts/run.sh" ]; then
+        if ! docker image inspect pyfeldera-customer:latest &>/dev/null; then
+            echo "Building pyfeldera customer image..."
+            bash "${pyfeldera_dir}/.scripts/run.sh" build-image
+        fi
+    fi
+
     docker compose -f "${DOCKER_COMPOSE_FILE}" \
         -p "${DOCKER_PROJECT}" up -d --wait --wait-timeout 300
 }
