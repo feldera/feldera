@@ -133,7 +133,7 @@ struct ExchangeMessage {
     data: Vec<FBuf>,
 }
 
-struct ExchangeClient {
+pub struct ExchangeClient {
     tx: tokio::sync::mpsc::UnboundedSender<ExchangeMessage>,
 }
 
@@ -218,7 +218,7 @@ impl ExchangeClient {
         }
     }
 
-    fn send(&self, exchange_id: ExchangeId, sender: usize, data: Vec<FBuf>) {
+    pub fn send(&self, exchange_id: ExchangeId, sender: usize, data: Vec<FBuf>) {
         self.tx
             .send(ExchangeMessage {
                 exchange_id,
@@ -229,15 +229,45 @@ impl ExchangeClient {
     }
 }
 
-type ExchangeId = u32;
+pub type ExchangeId = u32;
 
 #[async_trait]
-trait Receiver {
+pub trait ExchangeDelivery {
     async fn received(&self, sender: usize, data: Vec<AlignedVec>);
 }
 
 // Maps from an `exchange_id` to an object for delivering to the exchange.
-type ExchangeDirectory = Arc<RwLock<HashMap<ExchangeId, Arc<dyn Receiver + Send + Sync>>>>;
+#[derive(Clone, Default)]
+pub struct ExchangeDirectory(
+    Arc<RwLock<HashMap<ExchangeId, Arc<dyn ExchangeDelivery + Send + Sync>>>>,
+);
+
+impl ExchangeDirectory {
+    pub fn for_runtime(runtime: &Runtime) -> Self {
+        runtime
+            .local_store()
+            .entry(DirectoryId)
+            .or_insert_with(|| Self(Arc::new(RwLock::new(HashMap::new()))))
+            .clone()
+    }
+
+    pub fn get(&self, exchange_id: ExchangeId) -> Option<Arc<dyn ExchangeDelivery + Send + Sync>> {
+        self.0.read().unwrap().get(&exchange_id).cloned()
+    }
+
+    pub fn insert(
+        &self,
+        exchange_id: ExchangeId,
+        exchange: Arc<dyn ExchangeDelivery + Send + Sync>,
+    ) {
+        self.0
+            .write()
+            .unwrap()
+            .entry(exchange_id)
+            .and_modify(|_| panic!())
+            .or_insert_with(|| exchange);
+    }
+}
 
 struct ExchangeServer {
     receivers: Range<usize>,
@@ -310,18 +340,15 @@ impl ExchangeServer {
 
             let receiver = self
                 .directory
-                .read()
-                .unwrap()
-                .get(&exchange_id)
-                .unwrap_or_else(|| panic!("unknown exchange ID {}", exchange_id))
-                .clone();
+                .get(exchange_id)
+                .expect("should have exchange for received data");
             receiver.received(sender, data).await;
         }
         Ok(())
     }
 }
 
-struct Clients {
+pub struct ExchangeClients {
     runtime: WeakRuntime,
 
     /// Cached `runtime.layout().local_workers()`.
@@ -340,8 +367,19 @@ struct Clients {
     clients: Vec<(Host, OnceCell<ExchangeClient>)>,
 }
 
-impl Clients {
-    fn new(runtime: &Runtime) -> Clients {
+impl ExchangeClients {
+    pub fn for_runtime(runtime: &Runtime) -> Arc<ExchangeClients> {
+        runtime
+            .local_store()
+            .entry(ClientsId)
+            .or_insert_with(|| {
+                // Create clients for remote exchange.
+                Arc::new(ExchangeClients::new(runtime))
+            })
+            .clone()
+    }
+
+    fn new(runtime: &Runtime) -> ExchangeClients {
         Self {
             local_workers: runtime.layout().local_workers(),
             runtime: runtime.downgrade(),
@@ -356,13 +394,13 @@ impl Clients {
 
     /// Returns a client for `worker`, which must be a remote worker ID, first
     /// establishing a connection if there isn't one yet.
-    async fn connect(&self, worker: usize) -> &ExchangeClient {
+    pub async fn connect(&self, worker: usize) -> &ExchangeClient {
         self.listener
             .get_or_init(|| async {
                 if let Some(runtime) = self.runtime.upgrade()
                     && let Some(local_address) = runtime.layout().local_address()
                 {
-                    let directory = runtime.local_store().get(&DirectoryId).unwrap().clone();
+                    let directory = ExchangeDirectory::for_runtime(&runtime);
                     Some(ExchangeListener::new(
                         local_address,
                         runtime.take_exchange_listener(),
@@ -498,7 +536,7 @@ pub(crate) struct Exchange<T> {
     sender_notifies: Vec<Notify>,
 
     /// The RPC clients to contact remote hosts.
-    clients: Arc<Clients>,
+    clients: Arc<ExchangeClients>,
 
     /// `npeers^2` mailboxes, one for each sender/receiver pair.  Each mailbox
     /// is accessed by exactly two threads, so contention is low.
@@ -589,15 +627,15 @@ where
 {
     /// Create a new exchange operator for `npeers` communicating threads.
     fn new(
+        runtime: &Runtime,
+        clients: Arc<ExchangeClients>,
         exchange_id: ExchangeId,
-        clients: Arc<Clients>,
-        directory: ExchangeDirectory,
+        directory: &ExchangeDirectory,
     ) -> Arc<Self> {
         let npeers = Runtime::num_workers();
         let mailboxes: Vec<Mutex<Option<Mailbox<T>>>> =
             (0..npeers * npeers).map(|_| Default::default()).collect();
 
-        let runtime = Runtime::runtime().unwrap();
         let layout = runtime.layout();
         let npeers = layout.n_workers();
 
@@ -619,12 +657,7 @@ where
             deserialized_bytes: AtomicUsize::new(0),
         });
 
-        directory
-            .write()
-            .unwrap()
-            .entry(exchange_id)
-            .and_modify(|_| panic!())
-            .or_insert_with(|| exchange.clone());
+        directory.insert(exchange_id, exchange.clone());
 
         exchange
     }
@@ -685,25 +718,16 @@ where
     /// (created by another thread) does not yet exist within `runtime`.
     /// The number of peers will be set to `runtime.num_workers()`.
     pub(crate) fn with_runtime(runtime: &Runtime, exchange_id: ExchangeId) -> Arc<Self> {
-        let directory = runtime
-            .local_store()
-            .entry(DirectoryId)
-            .or_insert_with(|| Arc::new(RwLock::new(HashMap::new())))
-            .clone();
-
-        let clients = runtime
-            .local_store()
-            .entry(ClientsId)
-            .or_insert_with(|| {
-                // Create clients for remote exchange.
-                Arc::new(Clients::new(runtime))
-            })
-            .clone();
-
+        // It's tempting to move the following calls to create the
+        // `ExchangeDirectory` and `ExchangeClients` into `Exchange::new`, but
+        // don't do it: all three of these access `runtime.local_store` and
+        // nesting them creates deadlocks at runtime.
+        let directory = ExchangeDirectory::for_runtime(runtime);
+        let clients = ExchangeClients::for_runtime(runtime);
         runtime
             .local_store()
             .entry(ExchangeCacheId::new(exchange_id))
-            .or_insert_with(|| Exchange::new(exchange_id, clients.clone(), directory))
+            .or_insert_with(|| Exchange::new(runtime, clients, exchange_id, &directory))
             .value()
             .clone()
     }
@@ -877,7 +901,7 @@ where
 }
 
 #[async_trait]
-impl<T> Receiver for Exchange<T>
+impl<T> ExchangeDelivery for Exchange<T>
 where
     T: Clone + Debug + Send + 'static,
 {
@@ -1343,7 +1367,7 @@ where
     }
 }
 
-fn pop_flushed(vec: &mut AlignedVec) -> bool {
+pub fn pop_flushed(vec: &mut AlignedVec) -> bool {
     match vec.pop().unwrap() {
         0 => false,
         1 => true,
@@ -1396,7 +1420,7 @@ where
 struct ClientsId;
 
 impl TypedMapKey<LocalStoreMarker> for ClientsId {
-    type Value = Arc<Clients>;
+    type Value = Arc<ExchangeClients>;
 }
 
 #[derive(Hash, PartialEq, Eq)]
