@@ -1,5 +1,5 @@
 //! Predictor benchmark for deciding between `fastbloom` and `roaring` on u32 keys
-//! using only per-batch `key_count/min/max` metadata.
+//! using per-batch `key_count/min/max/touched_window_count` metadata.
 //!
 //! Examples:
 //! `cargo bench -p dbsp --bench filter_predictor -- --csv-output filter_predictor.csv`
@@ -63,6 +63,7 @@ const LOOKUP_ROARING_ARRAY_CONTAINER_PROBABILITY_PENALTY_BASE: f64 = 0.20;
 const LOOKUP_ROARING_ARRAY_CONTAINER_PROBABILITY_PENALTY_PER_LOG2_KEY: f64 = 0.10;
 
 const U32_CONTAINER_COUNT: usize = 1 << 16;
+const WINDOW_BITSET_WORDS: usize = U32_CONTAINER_COUNT / 64;
 
 fn main() {
     let args = Args::parse();
@@ -177,7 +178,7 @@ fn main() {
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "filter_predictor")]
-#[command(about = "Benchmark a merge-time roaring-vs-bloom predictor from batch bounds only")]
+#[command(about = "Benchmark a merge-time roaring-vs-bloom predictor from batch metadata")]
 struct Args {
     /// Comma-separated key counts. Underscores and `u32::MAX` are accepted.
     #[arg(long, value_name = "CSV")]
@@ -822,10 +823,12 @@ fn run_single_config(args: &Args, run_config: RunConfig) -> Vec<CsvRow> {
                 predictor_total_keys: predictor_stats.batch_keys,
                 predictor_global_min: predictor_stats.global_min,
                 predictor_global_max: predictor_stats.global_max,
-                predictor_span_windows_upper_bound: predictor_stats.distinct_containers,
-                predictor_keys_per_window_lower_bound: predictor_stats.estimated_keys_per_container,
+                predictor_span_windows_upper_bound: predictor_stats.span_windows_upper_bound,
+                predictor_sum_batch_touched_windows: predictor_stats.sum_batch_touched_windows,
+                predictor_touched_windows_estimate: predictor_stats.estimated_touched_containers,
+                predictor_keys_per_window_estimate: predictor_stats.estimated_keys_per_container,
                 predictor_overlap_factor: predictor_stats.overlap_factor,
-                predictor_window_fill_ratio_lower_bound: predictor_stats
+                predictor_window_fill_ratio_estimate: predictor_stats
                     .estimated_container_fill_ratio,
                 predictor_density_score: prediction.density_score,
                 predictor_build_score: prediction.build_score,
@@ -885,6 +888,7 @@ struct BatchSummary {
     key_count: usize,
     min_key: u32,
     max_key: u32,
+    touched_windows: u16,
 }
 
 #[derive(Debug, Clone)]
@@ -898,19 +902,23 @@ pub struct RoaringSampleStats {
     /// Maximum key across the merged batches.
     pub global_max: u32,
 
-    /// Upper bound on distinct 16-bit containers touched by the merged batch.
-    pub distinct_containers: usize,
+    /// Upper bound on distinct 16-bit containers touched by the merged batch,
+    /// derived from the merged span.
+    pub span_windows_upper_bound: usize,
 
-    /// Lower bound on real keys per touched 16-bit container, derived from the
-    /// worst-case span coverage implied by the batch ranges.
-    pub estimated_keys_per_container: f64,
+    /// Exact sum of per-batch touched 16-bit containers.
+    pub sum_batch_touched_windows: usize,
 
-    /// Upper bound on distinct 16-bit containers touched by the full batch.
+    /// Estimated distinct 16-bit containers touched by the merged batch.
     pub estimated_touched_containers: f64,
+
+    /// Estimated real keys per touched 16-bit container.
+    pub estimated_keys_per_container: f64,
 
     /// How much the batch span windows overlap. `1.0` means effectively
     /// disjoint span coverage; larger values mean many batches cover the same
-    /// windows and the range-only decision should trust Roaring less.
+    /// windows and the touched-window estimate should trust the summed batch
+    /// counts less.
     pub overlap_factor: f64,
 
     /// Lower bound on occupancy of a touched container, normalized by 2^16.
@@ -922,6 +930,46 @@ struct ActualWindowStats {
     touched_windows: usize,
     window_span: usize,
     keys_per_touched_window: f64,
+}
+
+#[derive(Debug, Clone)]
+struct WindowBitset {
+    words: [u64; WINDOW_BITSET_WORDS],
+}
+
+impl Default for WindowBitset {
+    fn default() -> Self {
+        Self {
+            words: [0; WINDOW_BITSET_WORDS],
+        }
+    }
+}
+
+impl WindowBitset {
+    fn insert_key(&mut self, key: u32) {
+        let window = (key >> 16) as usize;
+        let word_index = window / 64;
+        let bit_index = window % 64;
+        self.words[word_index] |= 1u64 << bit_index;
+    }
+
+    fn touched_window_count(&self) -> u16 {
+        let count: u32 = self.words.iter().map(|word| word.count_ones()).sum();
+        encode_touched_window_count(usize::try_from(count).expect("count fits in usize"))
+    }
+}
+
+fn encode_touched_window_count(count: usize) -> u16 {
+    assert!(count > 0, "batch summaries must be non-empty");
+    assert!(
+        count <= U32_CONTAINER_COUNT,
+        "touched window count exceeded u32 window domain"
+    );
+    u16::try_from(count - 1).expect("encoded touched window count exceeded u16")
+}
+
+fn decode_touched_window_count(encoded: u16) -> usize {
+    encoded as usize + 1
 }
 
 /// Split a merged keyset into `batch_count` simulated input batches.
@@ -944,11 +992,7 @@ fn split_batch_summaries(
             .map(|batch_index| {
                 let (start, end) = balanced_range(keys.len(), batch_count, batch_index);
                 let slice = &keys[start..end];
-                BatchSummary {
-                    key_count: slice.len(),
-                    min_key: *slice.first().expect("disjoint batch must be non-empty"),
-                    max_key: *slice.last().expect("disjoint batch must be non-empty"),
-                }
+                summarize_batch_keys(slice.iter().copied(), slice.len())
             })
             .collect(),
         BatchLayout::Overlap => {
@@ -959,18 +1003,11 @@ fn split_batch_summaries(
             (0..batch_count)
                 .map(|batch_index| {
                     let (start, end) = balanced_range(keys.len(), batch_count, batch_index);
-                    let mut min_key = u32::MAX;
-                    let mut max_key = u32::MIN;
-                    for position in start..end {
-                        let key = keys[permutation.index_at(position as u64) as usize];
-                        min_key = min_key.min(key);
-                        max_key = max_key.max(key);
-                    }
-                    BatchSummary {
-                        key_count: end - start,
-                        min_key,
-                        max_key,
-                    }
+                    summarize_batch_keys(
+                        (start..end)
+                            .map(|position| keys[permutation.index_at(position as u64) as usize]),
+                        end - start,
+                    )
                 })
                 .collect()
         }
@@ -983,27 +1020,44 @@ fn balanced_range(total: usize, buckets: usize, bucket_index: usize) -> (usize, 
     (start, end)
 }
 
-/// Estimate Roaring lookup structure from merge-time batch bounds only.
+fn summarize_batch_keys(keys: impl Iterator<Item = u32>, key_count: usize) -> BatchSummary {
+    let mut min_key = u32::MAX;
+    let mut max_key = u32::MIN;
+    let mut touched_windows = WindowBitset::default();
+
+    for key in keys {
+        min_key = min_key.min(key);
+        max_key = max_key.max(key);
+        touched_windows.insert_key(key);
+    }
+
+    BatchSummary {
+        key_count,
+        min_key,
+        max_key,
+        touched_windows: touched_windows.touched_window_count(),
+    }
+}
+
+/// Estimate Roaring lookup structure from merge-time batch metadata.
 ///
-/// The estimator is intentionally pessimistic:
+/// The estimator keeps two pieces of information separate:
 /// - it knows the merged key count exactly as the sum of per-batch key counts
 /// - it knows the global min/max exactly from batch mins/maxes
+/// - it knows each batch's exact touched-window count
 /// - it computes the exact union of 16-bit windows covered by the batch spans
-/// - that union is only an upper bound on touched Roaring containers, because a
-///   sparse batch can skip windows inside its min/max range
 ///
-/// From those bounds we derive:
-/// - an upper bound on touched windows
-/// - a lower bound on keys per touched window
-/// - a lower bound on container fill ratio
+/// From those we derive:
+/// - a hard upper bound on touched windows from the merged span
+/// - an estimated merged touched-window count from the summed per-batch counts
+///   plus a damped span-overlap correction
+/// - an estimated keys-per-window density
 /// - an overlap factor from `sum(batch span windows) / union(batch span windows)`
 ///
-/// The lookup decision reuses the same scoring formula as `filter_predictor`,
-/// but inflates the touched-window estimate by a damped overlap factor. That
-/// keeps overlapping batch ranges conservative without pretending that
-/// `count` identical overlapping spans imply `count` times more real output
-/// containers. We only damp the excess overlap, so disjoint coverage stays
-/// exactly at `1.0`.
+/// For disjoint spans the merged touched-window estimate is just the sum of the
+/// per-batch counts. For overlapping spans we still assume the batches are
+/// mostly distinct, but we blend in overlap by dividing by a damped span
+/// overlap factor. The merged span remains a hard cap.
 fn estimate_roaring_bounds_stats(batch_summaries: &[BatchSummary]) -> RoaringSampleStats {
     let batch_keys = batch_summaries
         .iter()
@@ -1019,26 +1073,39 @@ fn estimate_roaring_bounds_stats(batch_summaries: &[BatchSummary]) -> RoaringSam
         .map(|batch| batch.max_key)
         .max()
         .expect("batch summaries must be non-empty");
-    let distinct_containers = covered_window_union(batch_summaries);
+    let span_windows_upper_bound = covered_window_union(batch_summaries);
     let total_span_windows = batch_summaries
         .iter()
         .map(|batch| ((batch.max_key >> 16) - (batch.min_key >> 16) + 1) as usize)
         .sum::<usize>();
-    let overlap_factor = total_span_windows as f64 / distinct_containers as f64;
+    let sum_batch_touched_windows = batch_summaries
+        .iter()
+        .map(|batch| decode_touched_window_count(batch.touched_windows))
+        .sum::<usize>();
+    let max_batch_touched_windows = batch_summaries
+        .iter()
+        .map(|batch| decode_touched_window_count(batch.touched_windows))
+        .max()
+        .expect("batch summaries must be non-empty");
+    let overlap_factor = total_span_windows as f64 / span_windows_upper_bound as f64;
     let damped_overlap_factor = 1.0 + OVERLAP_FACTOR_DAMPING * (overlap_factor - 1.0);
-    let estimated_touched_containers =
-        (distinct_containers as f64 * damped_overlap_factor).min(U32_CONTAINER_COUNT as f64);
-    let estimated_keys_per_container =
-        (batch_keys as f64 / estimated_touched_containers).min(65_536.0);
+    let estimated_touched_containers = (sum_batch_touched_windows as f64 / damped_overlap_factor)
+        .clamp(
+            max_batch_touched_windows as f64,
+            span_windows_upper_bound as f64,
+        )
+        .min(U32_CONTAINER_COUNT as f64);
+    let estimated_keys_per_container = batch_keys as f64 / estimated_touched_containers;
     let estimated_container_fill_ratio = estimated_keys_per_container / 65_536.0;
 
     RoaringSampleStats {
         batch_keys,
         global_min,
         global_max,
-        distinct_containers,
-        estimated_keys_per_container,
+        span_windows_upper_bound,
+        sum_batch_touched_windows,
         estimated_touched_containers,
+        estimated_keys_per_container,
         overlap_factor: damped_overlap_factor,
         estimated_container_fill_ratio,
     }
@@ -1096,7 +1163,7 @@ struct PredictorOutput {
     memory_winner: Winner,
 }
 
-/// Convert conservative range-only estimates into coarse Bloom-vs-Roaring winners.
+/// Convert conservative merge-time estimates into coarse Bloom-vs-Roaring winners.
 ///
 /// The predictor intentionally uses different signals for different metrics:
 /// - build: mostly "how many keys end up in each touched container?"
@@ -1316,9 +1383,11 @@ struct CsvRow {
     predictor_global_min: u32,
     predictor_global_max: u32,
     predictor_span_windows_upper_bound: usize,
-    predictor_keys_per_window_lower_bound: f64,
+    predictor_sum_batch_touched_windows: usize,
+    predictor_touched_windows_estimate: f64,
+    predictor_keys_per_window_estimate: f64,
     predictor_overlap_factor: f64,
-    predictor_window_fill_ratio_lower_bound: f64,
+    predictor_window_fill_ratio_estimate: f64,
     predictor_density_score: f64,
     predictor_build_score: f64,
     predictor_lookup_score: f64,
@@ -1415,14 +1484,16 @@ fn print_summary(rows: &[CsvRow], accuracy: &AccuracySummary) {
             row.batch_layout
         );
         println!(
-            "wrong_prediction.predictor total_keys={} global_min={} global_max={} span_windows_upper_bound={} keys_per_window_lower_bound={:.6} overlap_factor={:.6} window_fill_ratio_lower_bound={:.6}",
+            "wrong_prediction.predictor total_keys={} global_min={} global_max={} span_windows_upper_bound={} sum_batch_touched_windows={} touched_windows_estimate={:.6} keys_per_window_estimate={:.6} overlap_factor={:.6} window_fill_ratio_estimate={:.6}",
             row.predictor_total_keys,
             row.predictor_global_min,
             row.predictor_global_max,
             row.predictor_span_windows_upper_bound,
-            row.predictor_keys_per_window_lower_bound,
+            row.predictor_sum_batch_touched_windows,
+            row.predictor_touched_windows_estimate,
+            row.predictor_keys_per_window_estimate,
             row.predictor_overlap_factor,
-            row.predictor_window_fill_ratio_lower_bound
+            row.predictor_window_fill_ratio_estimate
         );
 
         if !row.build_prediction_correct {
@@ -1493,16 +1564,24 @@ fn print_run_report(row: &CsvRow) {
         row.predictor_span_windows_upper_bound
     );
     println!(
-        "predictor.keys_per_window_lower_bound={:.6}",
-        row.predictor_keys_per_window_lower_bound
+        "predictor.sum_batch_touched_windows={}",
+        row.predictor_sum_batch_touched_windows
+    );
+    println!(
+        "predictor.touched_windows_estimate={:.6}",
+        row.predictor_touched_windows_estimate
+    );
+    println!(
+        "predictor.keys_per_window_estimate={:.6}",
+        row.predictor_keys_per_window_estimate
     );
     println!(
         "predictor.overlap_factor={:.6}",
         row.predictor_overlap_factor
     );
     println!(
-        "predictor.window_fill_ratio_lower_bound={:.6}",
-        row.predictor_window_fill_ratio_lower_bound
+        "predictor.window_fill_ratio_estimate={:.6}",
+        row.predictor_window_fill_ratio_estimate
     );
     println!("predictor.build_score={:.6}", row.predictor_build_score);
     println!("predictor.lookup_score={:.6}", row.predictor_lookup_score);
