@@ -8,7 +8,11 @@
 
 ```python
 %pip install --force-reinstall https://rakirahman.blob.core.windows.net/public/whls/pyfeldera-0.1.0-py3-none-any.whl
+%pip uninstall -y pathlib
 ```
+
+> **Note:** The `pathlib` uninstall removes a legacy PyPI package that
+> shadows Python's built-in `pathlib` module and breaks imports on Python 3.12+.
 
 ## Cell 2 — Start Feldera in the background
 
@@ -46,23 +50,33 @@ r = requests.get(f"{base}/v0/pipelines")
 print(f"Pipelines: {r.json()}")
 ```
 
-## Cell 4 — Verify the Web UI
-
-```python
-r = requests.get(f"{base}/")
-print(f"Web UI: {r.status_code}, Content-Type: {r.headers.get('content-type')}")
-print(f"HTML preview: {r.text[:200]}...")
-```
-
-## Cell 5 — Use the Feldera Python SDK
+## Cell 4 — Use the Feldera Python SDK
 
 ```python
 from feldera import FelderaClient
 
 client = FelderaClient("http://127.0.0.1:8080")
-print("Connected to Feldera!")
-print(f"Server version: {client.get_config()['version']}")
+cfg = client.get_config()
+print(f"Connected to Feldera {cfg.version} ({cfg.edition})")
 ```
+
+## Cell 5 — Confirm the Web UI is serving
+
+The Feldera Web UI is a client-side SPA (SvelteKit) — it cannot render
+inside a Fabric notebook.  This cell confirms the server is serving it.
+
+```python
+import requests
+
+resp = requests.get("http://127.0.0.1:8080", timeout=10)
+print(f"Web UI: {resp.status_code} {resp.headers.get('content-type','?')}")
+print(f"Serving {len(resp.text)} bytes of HTML + JS loader")
+print("✅ Feldera Web UI is live (SPA requires a direct browser connection to interact)")
+```
+
+> **Tip:** To interact with Feldera, use the REST API (Cell 3) or the
+> Python SDK (Cell 4).  The Web UI needs a browser that can reach the
+> server directly — it cannot be proxied into a notebook.
 
 ## Notes
 

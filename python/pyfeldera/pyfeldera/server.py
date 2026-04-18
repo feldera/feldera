@@ -121,6 +121,11 @@ def _toolchain_env(deploy_dir: Path) -> dict[str, str]:
             "-C link-arg=-Wl,--compress-debug-sections=zlib"
         )
 
+    # NOTE: Do NOT set LD_LIBRARY_PATH for the bundled glibc — it would
+    # leak into child processes (embedded PostgreSQL, Java, etc.) and cause
+    # symbol mismatch crashes.  Instead, the bundled ld.so is invoked with
+    # --library-path in _build_cmd() for the pipeline-manager binary only.
+
     # PATH: bundled tools first
     path_parts = []
     if java_home.exists():
@@ -166,6 +171,8 @@ class FelderaServer:
         self.deploy_dir = Path(deploy_dir) if deploy_dir else _DEFAULT_DEPLOY_DIR
         self.extra_args = extra_args or []
         self._process: subprocess.Popen | None = None
+        self._log_file = None
+        self._log_path: Path | None = None
 
     def _ensure_deployed(self) -> Path:
         return _deploy_if_needed(self.deploy_dir)
@@ -174,8 +181,20 @@ class FelderaServer:
         # Use the cache-compatible path for --dbsp-override-path so the
         # precompile cache's Cargo workspace fingerprints stay valid.
         override = _CACHE_COMPATIBLE_PATH if _CACHE_COMPATIBLE_PATH.exists() else home
-        cmd = [
-            str(home / "bin" / "pipeline-manager"),
+        binary = str(home / "bin" / "pipeline-manager")
+
+        # If a bundled glibc dynamic linker exists, use it with --library-path
+        # so we don't need the host to have glibc >= 2.39.
+        # Using --library-path instead of LD_LIBRARY_PATH ensures child
+        # processes (embedded PostgreSQL, Java, etc.) use the host's glibc.
+        ld_so = home / "toolchain" / "glibc" / "lib64" / "ld-linux-x86-64.so.2"
+        glibc_lib = home / "toolchain" / "glibc" / "lib" / "x86_64-linux-gnu"
+        if ld_so.exists() and glibc_lib.exists():
+            cmd = [str(ld_so), "--library-path", str(glibc_lib), binary]
+        else:
+            cmd = [binary]
+
+        cmd += [
             f"--bind-address={self.bind_address}",
             f"--sql-compiler-path={home / 'build' / 'sql2dbsp-jar-with-dependencies.jar'}",
             f"--compilation-cargo-lock-path={override / 'Cargo.lock'}",
@@ -211,8 +230,13 @@ class FelderaServer:
         cmd = self._build_cmd(home)
         env = _toolchain_env(home)
         logger.info("Starting Feldera: %s", " ".join(cmd))
+
+        # Log to file so output is available even from background threads
+        self._log_path = home / "pipeline-manager.log"
+        self._log_file = open(self._log_path, "w")
         self._process = subprocess.Popen(
-            cmd, env=env, stdout=sys.stdout, stderr=sys.stderr,
+            cmd, env=env,
+            stdout=self._log_file, stderr=subprocess.STDOUT,
         )
 
     def wait_for_healthy(self, timeout: float = 120, interval: float = 2) -> None:
@@ -221,6 +245,11 @@ class FelderaServer:
         deadline = time.monotonic() + timeout
         last_exc: Exception | None = None
         while time.monotonic() < deadline:
+            # Check if the process crashed
+            if self._process and self._process.poll() is not None:
+                raise RuntimeError(
+                    f"pipeline-manager exited with code {self._process.returncode}"
+                )
             try:
                 r = requests.get(url, timeout=5)
                 if r.status_code == 200:
@@ -246,16 +275,32 @@ class FelderaServer:
             self._process.kill()
             self._process.wait(timeout=5)
         self._process = None
+        if self._log_file:
+            self._log_file.close()
+            self._log_file = None
+
+    def get_log(self, tail: int = 100) -> str:
+        """Return the last *tail* lines of the pipeline-manager log."""
+        if not self._log_path or not self._log_path.exists():
+            return "(no log file)"
+        lines = self._log_path.read_text().splitlines()
+        return "\n".join(lines[-tail:])
 
     def start_blocking(self) -> None:
         """Start and block until exit or signal."""
         self.start()
         assert self._process is not None
 
-        def _on_signal(signum, _frame):
-            self.stop()
-            sys.exit(0)
+        # Signal handlers only work in the main thread; skip if called
+        # from a background thread (e.g. a Jupyter notebook cell).
+        try:
+            def _on_signal(signum, _frame):
+                self.stop()
+                sys.exit(0)
 
-        signal.signal(signal.SIGTERM, _on_signal)
-        signal.signal(signal.SIGINT, _on_signal)
+            signal.signal(signal.SIGTERM, _on_signal)
+            signal.signal(signal.SIGINT, _on_signal)
+        except ValueError:
+            pass  # not in main thread — signals handled by caller
+
         self._process.wait()

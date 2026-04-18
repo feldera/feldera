@@ -76,18 +76,32 @@ run_extract() {
     tar -xf /tmp/feldera-cache.tar -C "${DATA_DIR}/cache/"
     rm /tmp/feldera-cache.tar
 
-    echo "  [7/7] Cargo registry (~726 MB)..."
+    echo "  [7/8] Cargo registry (~726 MB)..."
     docker exec "${cid}" tar -czf /tmp/cargo-reg.tar.gz -C /home/ubuntu .cargo/registry/
     docker cp "${cid}:/tmp/cargo-reg.tar.gz" /tmp/cargo-reg.tar.gz
     tar -xzf /tmp/cargo-reg.tar.gz -C "${DATA_DIR}/cache/"
     rm /tmp/cargo-reg.tar.gz
+
+    echo "  [8/8] glibc 2.39 compat libs..."
+    rm -rf "${DATA_DIR}/toolchain/glibc"
+    mkdir -p "${DATA_DIR}/toolchain/glibc"
+    docker exec "${cid}" tar -chf /tmp/glibc.tar \
+        /lib/x86_64-linux-gnu/libc.so.6 \
+        /lib/x86_64-linux-gnu/libm.so.6 \
+        /lib/x86_64-linux-gnu/libgcc_s.so.1 \
+        /lib/x86_64-linux-gnu/libssl.so.3 \
+        /lib/x86_64-linux-gnu/libcrypto.so.3 \
+        /lib64/ld-linux-x86-64.so.2
+    docker cp "${cid}:/tmp/glibc.tar" /tmp/glibc.tar
+    tar -xf /tmp/glibc.tar -C "${DATA_DIR}/toolchain/glibc/"
+    rm /tmp/glibc.tar
 
     docker stop "${cid}" >/dev/null && docker rm "${cid}" >/dev/null
     echo "  Sizes:"
     for d in "${DATA_DIR}/bin" "${DATA_DIR}/build" \
              "${DATA_DIR}/toolchain/java" "${DATA_DIR}/toolchain/rustup" \
              "${DATA_DIR}/toolchain/cargo-bin" "${DATA_DIR}/toolchain/mold" \
-             "${DATA_DIR}/cache"; do
+             "${DATA_DIR}/toolchain/glibc" "${DATA_DIR}/cache"; do
         du -sh "$d" | sed 's/^/    /'
     done
 }
