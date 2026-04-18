@@ -60,23 +60,44 @@ cfg = client.get_config()
 print(f"Connected to Feldera {cfg.version} ({cfg.edition})")
 ```
 
-## Cell 5 — Confirm the Web UI is serving
+## Cell 5 — Browse the Feldera Web UI (via Privy proxy)
 
-The Feldera Web UI is a client-side SPA (SvelteKit) — it cannot render
-inside a Fabric notebook.  This cell confirms the server is serving it.
+The Feldera Web UI is a client-side SPA that needs a browser JS engine.
+Privy proxies browser traffic from your laptop through Azure Relay to
+Feldera running on Fabric.
 
-```python
-import requests
+### On Fabric
 
-resp = requests.get("http://127.0.0.1:8080", timeout=10)
-print(f"Web UI: {resp.status_code} {resp.headers.get('content-type','?')}")
-print(f"Serving {len(resp.text)} bytes of HTML + JS loader")
-print("✅ Feldera Web UI is live (SPA requires a direct browser connection to interact)")
+```bash
+%pip install --force-reinstall https://rakirahman.blob.core.windows.net/public/whls/privy-0.0.1-py3-none-any.whl
 ```
 
-> **Tip:** To interact with Feldera, use the REST API (Cell 3) or the
-> Python SDK (Cell 4).  The Web UI needs a browser that can reach the
-> server directly — it cannot be proxied into a notebook.
+In the Fabric notebook cell where you start Privy, use `proxy_target`:
+
+```python
+from privy import RelayServer
+RelayServer(
+    namespace="...", path="...", keyrule="...", key="...",
+    proxy_target="http://127.0.0.1:8080",
+).serve_forever()
+```
+
+### On your laptop — start the local proxy
+
+```python
+import os
+from privy import ProxyClientServer
+
+proxy = ProxyClientServer(
+    namespace="...",  # same relay credentials
+    path="...",
+    keyrule="...",
+    key="...",
+    local_port=3000,
+)
+proxy.serve_forever()
+# Open http://localhost:3000 in your browser → full Feldera UI!
+```
 
 ## Notes
 
