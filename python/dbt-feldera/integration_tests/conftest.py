@@ -111,6 +111,32 @@ def docker_feldera():
 
 
 @pytest.fixture(scope="session")
+def fabric_feldera():
+    """
+    Session-scoped fixture for Fabric tests.
+
+    Expects Feldera to be running remotely (on Fabric) with a Privy proxy
+    bridging locally. No Docker management.
+    """
+    url = os.environ.get("FELDERA_URL", "http://localhost:3000")
+    logger.info("Using Fabric Feldera at %s (no Docker)", url)
+
+    # Wait until reachable
+    for i in range(60):
+        try:
+            urllib.request.urlopen(f"{url}/healthz", timeout=5)
+            logger.info("Fabric Feldera healthy at %s", url)
+            yield url
+            return
+        except Exception:
+            logger.debug("Waiting for Fabric Feldera... (%d/60)", i + 1)
+            time.sleep(5)
+
+    logger.warning("Fabric Feldera may not be ready; proceeding with %s", url)
+    yield url
+
+
+@pytest.fixture(scope="session")
 def docker_duckdb(docker_feldera):
     """
     Session-scoped DuckDB client that queries Delta tables inside the

@@ -10,3 +10,12 @@ adventureworks:
       threads: "{{ env_var('DBT_THREADS', '4') | int }}"
       workers: 4
       timeout: 600
+    fabric:
+      type: feldera
+      host: "{{ env_var('FELDERA_URL', 'http://localhost:3000') }}"
+      database: "default"
+      schema: "adventureworks"
+      compilation_profile: dev
+      threads: "{{ env_var('DBT_THREADS', '4') | int }}"
+      workers: 4
+      timeout: 600

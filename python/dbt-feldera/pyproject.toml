@@ -58,6 +58,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
     "integration: marks tests that require a running Feldera instance",
+    "fabric: marks tests that run against Fabric-hosted Feldera via Privy proxy",
 ]
 
 [tool.ruff]

@@ -26,10 +26,11 @@ declare -A TARGETS=(
     ["unit-test"]="pytest unit tests"
     ["seed-ci"]="Download seed data from GitHub Gist"
     ["integration-test"]="pytest integration with Feldera in Docker"
+    ["fabric-test"]="pytest Fabric tests via Privy proxy"
     ["e2e"]="dbt CLI end-to-end with Feldera in Docker"
     ["all"]="Run all targets in sequence"
 )
-TARGET_ORDER=("venv" "build" "fix" "lint" "unit-test" "seed-ci" "integration-test" "e2e")
+TARGET_ORDER=("venv" "build" "fix" "lint" "unit-test" "seed-ci" "integration-test" "fabric-test" "e2e")
 
 print_usage() {
     echo
@@ -172,6 +173,39 @@ run_integration_test() {
         stop_feldera || true
     fi
 
+    return $rc
+}
+
+run_fabric_test() {
+    ensure_venv
+    cd "${PROJECT_DIR}"
+
+    run_seed_ci
+
+    # Fabric tests connect to Feldera via Privy proxy — no Docker needed.
+    export FELDERA_SKIP_DOCKER=1
+    export FELDERA_URL="${FELDERA_URL:-http://localhost:3000}"
+
+    echo "Running Fabric tests against ${FELDERA_URL}..."
+    echo "(Ensure Privy proxy is running locally and Feldera is up on Fabric)"
+
+    # Wait for Feldera to be reachable
+    for i in $(seq 1 30); do
+        if curl -sf --connect-timeout 3 "${FELDERA_URL}/healthz" >/dev/null 2>&1; then
+            echo "Feldera reachable at ${FELDERA_URL}"
+            break
+        fi
+        if [[ $i -eq 30 ]]; then
+            echo "ERROR: Feldera not reachable at ${FELDERA_URL} after 150s"
+            echo "Make sure Privy proxy is running and Feldera is healthy on Fabric."
+            return 1
+        fi
+        echo "Waiting for Feldera at ${FELDERA_URL}... ($i/30)"
+        sleep 5
+    done
+
+    local rc=0
+    uv run pytest integration_tests/test_dbt_feldera.py -vv --timeout=600 -m fabric || rc=$?
     return $rc
 }
 

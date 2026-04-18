@@ -39,6 +39,7 @@ def _deploy_if_needed(deploy_dir: Path) -> Path:
     marker = deploy_dir / ".deployed"
     if marker.exists():
         logger.debug("Deploy dir %s already present, skipping copy", deploy_dir)
+        _ensure_cargo_wrapper(deploy_dir)
         return deploy_dir
 
     src = _data_root()
@@ -88,6 +89,7 @@ def _deploy_if_needed(deploy_dir: Path) -> Path:
                            _CACHE_COMPATIBLE_PATH)
 
     marker.touch()
+    _ensure_cargo_wrapper(deploy_dir)
     logger.info("Deploy complete (%s)", deploy_dir)
     return deploy_dir
 
@@ -121,15 +123,28 @@ def _toolchain_env(deploy_dir: Path) -> dict[str, str]:
             "-C link-arg=-Wl,--compress-debug-sections=zlib"
         )
 
+    # libclang for bindgen (used during pipeline Rust compilation).
+    # Set LIBCLANG_PATH so bindgen can find libclang.so.
+    libclang_dir = tc / "libclang"
+    if libclang_dir.exists():
+        env["LIBCLANG_PATH"] = str(libclang_dir)
+
     # NOTE: Do NOT set LD_LIBRARY_PATH for the bundled glibc — it would
     # leak into child processes (embedded PostgreSQL, Java, etc.) and cause
     # symbol mismatch crashes.  Instead, the bundled ld.so is invoked with
     # --library-path in _build_cmd() for the pipeline-manager binary only.
+    #
+    # For libclang/LLVM deps, a cargo wrapper script sets LD_LIBRARY_PATH
+    # only for cargo/rustc processes (see _ensure_cargo_wrapper).
 
     # PATH: bundled tools first
     path_parts = []
     if java_home.exists():
         path_parts.append(str(java_home / "bin"))
+    # Cargo wrapper first so it intercepts `cargo` invocations
+    cargo_wrapper_dir = tc / "cargo-wrapper"
+    if cargo_wrapper_dir.exists():
+        path_parts.append(str(cargo_wrapper_dir))
     # Use actual Rust toolchain binaries directly (not the rustup multiplexer)
     if rust_bin.exists():
         path_parts.append(str(rust_bin))
@@ -141,6 +156,59 @@ def _toolchain_env(deploy_dir: Path) -> dict[str, str]:
     env.setdefault("RUST_LOG", "info")
     env.setdefault("RUST_BACKTRACE", "1")
     return env
+
+
+def _ensure_cargo_wrapper(deploy_dir: Path) -> None:
+    """Create a wrapper script that sets env vars for cargo builds.
+
+    Sets ``LIBCLANG_PATH`` + ``LD_LIBRARY_PATH`` for bundled libclang/LLVM,
+    ``PKG_CONFIG_PATH`` + ``C_INCLUDE_PATH`` + ``LIBRARY_PATH`` for bundled
+    dev headers (sasl2, ssl), and ``BINDGEN_EXTRA_CLANG_ARGS`` for clang
+    resource headers.
+
+    This keeps these env vars isolated to cargo processes — they do not
+    leak into embedded PostgreSQL or Java, avoiding symbol mismatch crashes.
+    """
+    tc = deploy_dir / "toolchain"
+    libclang_dir = tc / "libclang"
+    rust_bin = tc / "rustup" / "bin"
+    sysroot = tc / "sysroot"
+    wrapper_dir = tc / "cargo-wrapper"
+
+    if not rust_bin.exists():
+        return
+
+    wrapper_dir.mkdir(parents=True, exist_ok=True)
+    wrapper = wrapper_dir / "cargo"
+
+    # Fix sysroot pkg-config files to point to actual deploy paths
+    if sysroot.exists():
+        pc_dir = sysroot / "lib" / "pkgconfig"
+        if pc_dir.exists():
+            for pc_file in pc_dir.glob("*.pc"):
+                content = pc_file.read_text()
+                content = content.replace("SYSROOT_PREFIX", str(sysroot))
+                content = content.replace("SYSROOT_LIB", str(sysroot / "lib"))
+                content = content.replace("SYSROOT_INCLUDE", str(sysroot / "include"))
+                pc_file.write_text(content)
+
+    # Build wrapper script
+    real_cargo = rust_bin / "cargo"
+    lines = ["#!/bin/sh"]
+    if libclang_dir.exists():
+        clang_include = libclang_dir / "clang" / "18" / "include"
+        lines.append(f'export LIBCLANG_PATH="{libclang_dir}"')
+        lines.append(f'export LD_LIBRARY_PATH="{libclang_dir}:${{LD_LIBRARY_PATH:-}}"')
+        lines.append(f'export BINDGEN_EXTRA_CLANG_ARGS="-isystem {clang_include}"')
+    if sysroot.exists():
+        pc_dir = sysroot / "lib" / "pkgconfig"
+        lines.append(f'export PKG_CONFIG_PATH="{pc_dir}:${{PKG_CONFIG_PATH:-}}"')
+        lines.append(f'export C_INCLUDE_PATH="{sysroot / "include"}:${{C_INCLUDE_PATH:-}}"')
+        lines.append(f'export LIBRARY_PATH="{sysroot / "lib"}:${{LIBRARY_PATH:-}}"')
+    lines.append(f'exec "{real_cargo}" "$@"')
+
+    wrapper.write_text("\n".join(lines) + "\n")
+    wrapper.chmod(0o755)
 
 
 class FelderaServer:

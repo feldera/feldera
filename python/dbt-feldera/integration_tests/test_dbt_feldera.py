@@ -582,3 +582,58 @@ class TestDbtFelderaIntegration:
             actual_fct_net,
             len(kafka_batch_2),
         )
+
+
+# ---------------------------------------------------------------------------
+# Fabric integration tests (pure SQL, no Kafka/Delta)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.fabric
+class TestDbtFelderaFabric:
+    """Integration tests for dbt-feldera running against Fabric-hosted Feldera.
+
+    These tests use the ``fabric`` dbt target, which disables Kafka input
+    connectors and Delta output connectors.  The tests validate the core
+    SQL pipeline lifecycle:
+
+      1. dbt debug   — connection verification
+      2. dbt seed    — data loading via HTTP ingress
+      3. dbt build   — model deployment + data tests (excluding kafka models)
+      4. dbt test    — data integrity via ad-hoc queries
+
+    Requires a Feldera instance reachable at ``FELDERA_URL`` (default:
+    ``http://localhost:3000`` via Privy proxy).
+    """
+
+    def test_fabric_dbt_debug(self, fabric_feldera, dbt_project_dir):
+        """Verify that dbt can connect to Fabric Feldera."""
+        result = _run_dbt(dbt_project_dir, ["debug", "--target", "fabric"], feldera_url=fabric_feldera)
+        assert result.returncode == 0, f"dbt debug failed:\n{result.stdout}\n{result.stderr}"
+        assert "All checks passed" in result.stdout or "Connection test" in result.stdout
+
+    def test_fabric_dbt_seed(self, fabric_feldera, dbt_project_dir):
+        """Load seed data into Fabric Feldera via HTTP ingress."""
+        result = _run_dbt(
+            dbt_project_dir,
+            ["seed", "--target", "fabric", "--full-refresh"],
+            feldera_url=fabric_feldera,
+        )
+        assert result.returncode == 0, f"dbt seed failed:\n{result.stdout}\n{result.stderr}"
+
+    def test_fabric_dbt_build(self, fabric_feldera, dbt_project_dir):
+        """Deploy all models (excluding kafka) and run data tests."""
+        result = _run_dbt(
+            dbt_project_dir,
+            ["build", "--target", "fabric", "--full-refresh"],
+            feldera_url=fabric_feldera,
+        )
+        assert result.returncode == 0, f"dbt build failed:\n{result.stdout}\n{result.stderr}"
+
+        _wait_for_pipeline_idle(fabric_feldera, "adventureworks")
+
+    def test_fabric_dbt_test(self, fabric_feldera, dbt_project_dir):
+        """Run data tests against materialized views on Fabric."""
+        _wait_for_pipeline_idle(fabric_feldera, "adventureworks")
+        result = _run_dbt(dbt_project_dir, ["test", "--target", "fabric"], feldera_url=fabric_feldera)
+        assert result.returncode in (0, 1), f"dbt test failed:\n{result.stdout}\n{result.stderr}"

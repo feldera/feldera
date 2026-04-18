@@ -24,7 +24,7 @@ ensure_tools() {
 }
 
 print_usage() {
-    echo "Targets: extract | collect | build-wheel | build-image | test | dbt-test | all"
+    echo "Targets: extract | collect | build-wheel | build-image | test | dbt-test | upload | fabric-test | all"
 }
 
 run_extract() {
@@ -82,7 +82,7 @@ run_extract() {
     tar -xzf /tmp/cargo-reg.tar.gz -C "${DATA_DIR}/cache/"
     rm /tmp/cargo-reg.tar.gz
 
-    echo "  [8/8] glibc 2.39 compat libs..."
+    echo "  [8/9] glibc 2.39 compat libs..."
     rm -rf "${DATA_DIR}/toolchain/glibc"
     mkdir -p "${DATA_DIR}/toolchain/glibc"
     docker exec "${cid}" tar -chf /tmp/glibc.tar \
@@ -96,12 +96,83 @@ run_extract() {
     tar -xf /tmp/glibc.tar -C "${DATA_DIR}/toolchain/glibc/"
     rm /tmp/glibc.tar
 
+    echo "  [9/10] libclang + LLVM libs (for bindgen during pipeline compilation)..."
+    rm -rf "${DATA_DIR}/toolchain/libclang"
+    mkdir -p "${DATA_DIR}/toolchain/libclang"
+    docker exec "${cid}" tar -chf /tmp/libclang.tar \
+        /usr/lib/x86_64-linux-gnu/libclang-18.so.18 \
+        /usr/lib/llvm-18/lib/libLLVM.so.1 \
+        /lib/x86_64-linux-gnu/libffi.so.8 \
+        /lib/x86_64-linux-gnu/libedit.so.2 \
+        /lib/x86_64-linux-gnu/libzstd.so.1 \
+        /lib/x86_64-linux-gnu/libtinfo.so.6 \
+        /lib/x86_64-linux-gnu/libxml2.so.2 \
+        /lib/x86_64-linux-gnu/libbsd.so.0 \
+        /lib/x86_64-linux-gnu/libicuuc.so.74 \
+        /lib/x86_64-linux-gnu/libicudata.so.74 \
+        /lib/x86_64-linux-gnu/liblzma.so.5 \
+        /lib/x86_64-linux-gnu/libmd.so.0 \
+        /usr/lib/llvm-18/lib/clang/18/include
+    docker cp "${cid}:/tmp/libclang.tar" /tmp/libclang.tar
+    # Flatten .so files into libclang dir, copy include dir separately
+    local tmpex="/tmp/libclang-extract"
+    rm -rf "${tmpex}"
+    mkdir -p "${tmpex}"
+    tar -xf /tmp/libclang.tar -C "${tmpex}"
+    find "${tmpex}" -name '*.so*' -type f -exec cp {} "${DATA_DIR}/toolchain/libclang/" \;
+    # Copy clang resource include directory
+    mkdir -p "${DATA_DIR}/toolchain/libclang/clang/18"
+    cp -a "${tmpex}/usr/lib/llvm-18/lib/clang/18/include" "${DATA_DIR}/toolchain/libclang/clang/18/"
+    # Create symlinks that bindgen looks for
+    cd "${DATA_DIR}/toolchain/libclang"
+    ln -sf libclang-18.so.18 libclang.so
+    ln -sf libLLVM.so.1 libLLVM.so.18.1
+    cd "${PROJECT_DIR}"
+    rm -rf "${tmpex}" /tmp/libclang.tar
+
+    echo "  [10/10] Native dev headers + pkg-config (sasl2, ssl, etc.)..."
+    rm -rf "${DATA_DIR}/toolchain/sysroot"
+    mkdir -p "${DATA_DIR}/toolchain/sysroot/include" \
+             "${DATA_DIR}/toolchain/sysroot/lib" \
+             "${DATA_DIR}/toolchain/sysroot/lib/pkgconfig"
+    # sasl2 headers + pkg-config + linker stub
+    docker exec "${cid}" tar -chf /tmp/sysroot.tar \
+        /usr/include/sasl \
+        /usr/lib/x86_64-linux-gnu/pkgconfig/libsasl2.pc \
+        /usr/lib/x86_64-linux-gnu/libsasl2.so \
+        /usr/lib/x86_64-linux-gnu/libsasl2.a \
+        /usr/include/openssl \
+        /usr/lib/x86_64-linux-gnu/pkgconfig/libssl.pc \
+        /usr/lib/x86_64-linux-gnu/pkgconfig/libcrypto.pc \
+        /usr/lib/x86_64-linux-gnu/pkgconfig/openssl.pc
+    docker cp "${cid}:/tmp/sysroot.tar" /tmp/sysroot.tar
+    local sysex="/tmp/sysroot-extract"
+    rm -rf "${sysex}"
+    mkdir -p "${sysex}"
+    tar -xf /tmp/sysroot.tar -C "${sysex}"
+    cp -a "${sysex}/usr/include/"* "${DATA_DIR}/toolchain/sysroot/include/"
+    find "${sysex}" -name '*.pc' -exec cp {} "${DATA_DIR}/toolchain/sysroot/lib/pkgconfig/" \;
+    find "${sysex}" -name '*.so' -o -name '*.a' | while read f; do
+        cp -a "$f" "${DATA_DIR}/toolchain/sysroot/lib/"
+    done
+    # Fix paths in .pc files — use simple placeholders replaced at deploy time
+    for pc_file in "${DATA_DIR}/toolchain/sysroot/lib/pkgconfig/"*.pc; do
+        sed -i \
+            -e "s|prefix=.*|prefix=SYSROOT_PREFIX|" \
+            -e "s|exec_prefix=.*|exec_prefix=SYSROOT_PREFIX|" \
+            -e "s|libdir=.*|libdir=SYSROOT_LIB|" \
+            -e "s|includedir=.*|includedir=SYSROOT_INCLUDE|" \
+            "$pc_file"
+    done
+    rm -rf "${sysex}" /tmp/sysroot.tar
+
     docker stop "${cid}" >/dev/null && docker rm "${cid}" >/dev/null
     echo "  Sizes:"
     for d in "${DATA_DIR}/bin" "${DATA_DIR}/build" \
              "${DATA_DIR}/toolchain/java" "${DATA_DIR}/toolchain/rustup" \
              "${DATA_DIR}/toolchain/cargo-bin" "${DATA_DIR}/toolchain/mold" \
-             "${DATA_DIR}/toolchain/glibc" "${DATA_DIR}/cache"; do
+             "${DATA_DIR}/toolchain/glibc" "${DATA_DIR}/toolchain/libclang" \
+             "${DATA_DIR}/cache"; do
         du -sh "$d" | sed 's/^/    /'
     done
 }
@@ -182,6 +253,43 @@ run_dbt_test() {
     .scripts/run.sh integration-test
 }
 
+run_upload() {
+    echo "=== Uploading pyfeldera wheel to Azure blob ==="
+    ls "${DIST_DIR}"/*.whl &>/dev/null || run_build_wheel
+
+    local whl
+    whl=$(ls "${DIST_DIR}"/*.whl 2>/dev/null | head -1)
+    [ -z "$whl" ] && { echo "ERROR: No wheel found"; exit 1; }
+
+    local STORAGE_ACCOUNT="${STORAGE_ACCOUNT:-rakirahman}"
+    local STORAGE_CONTAINER="${STORAGE_CONTAINER:-public}"
+    local STORAGE_KEY="${STORAGE_KEY:-}"
+
+    # Try .env file for storage key
+    if [ -z "$STORAGE_KEY" ] && [ -f "${REPO_ROOT}/.vite/privy/.env" ]; then
+        STORAGE_KEY=$(grep '^STORAGE_KEY=' "${REPO_ROOT}/.vite/privy/.env" | cut -d= -f2)
+    fi
+    [ -z "$STORAGE_KEY" ] && { echo "ERROR: STORAGE_KEY not set"; exit 1; }
+
+    echo "  Uploading $(basename "$whl") ($(du -h "$whl" | cut -f1))..."
+    az storage blob upload \
+        --account-name "$STORAGE_ACCOUNT" \
+        --account-key "$STORAGE_KEY" \
+        --container-name "$STORAGE_CONTAINER" \
+        --name "whls/$(basename "$whl")" \
+        --file "$whl" \
+        --overwrite \
+        --no-progress
+
+    echo "  URL: https://${STORAGE_ACCOUNT}.blob.core.windows.net/${STORAGE_CONTAINER}/whls/$(basename "$whl")"
+}
+
+run_fabric_test() {
+    echo "=== Running dbt Fabric tests via Privy proxy ==="
+    cd "${REPO_ROOT}/python/dbt-feldera"
+    .scripts/run.sh fabric-test
+}
+
 run_all() {
     run_extract
     run_collect
@@ -202,6 +310,8 @@ case "$TARGET" in
     build-image) run_build_image ;;
     test)        run_test ;;
     dbt-test)    run_dbt_test ;;
+    upload)      run_upload ;;
+    fabric-test) run_fabric_test ;;
     all)         run_all ;;
     *)           echo "ERROR: Unknown target '${TARGET}'"; print_usage; exit 1 ;;
 esac
