@@ -1,11 +1,12 @@
 use crate::{
     dynamic::{DataTrait, DynData},
-    storage::file::{FilterStats, TrackingFilterStats},
+    storage::file::{FilterStats, TrackingFilterStats, format::TouchedWindowCount},
 };
 use dyn_clone::clone_box;
 use roaring::RoaringBitmap;
 use size_of::SizeOf;
 use std::{io, mem::size_of_val};
+use tracing::{debug, error};
 
 /// Roaring bitmap wrapper that tracks hit/miss counts during membership probes.
 #[derive(Debug)]
@@ -125,39 +126,156 @@ impl TrackingRoaringBitmap {
     }
 }
 
+/// Tracks the exact number of 16-bit roaring windows touched by a batch while
+/// keys are appended in sorted order.
+#[derive(Debug)]
+pub(crate) struct TouchedWindowCounter {
+    min: Option<Box<DynData>>,
+    windows: RoaringBitmap,
+    last_window: Option<u32>,
+}
+
+impl Default for TouchedWindowCounter {
+    fn default() -> Self {
+        Self {
+            min: None,
+            windows: RoaringBitmap::new(),
+            last_window: None,
+        }
+    }
+}
+
+impl TouchedWindowCounter {
+    /// Appends a touched 16-bit window.
+    ///
+    /// Consecutive keys commonly map to the same window; track the last window
+    /// locally so duplicates do not hit Roaring. New windows should be strictly
+    /// increasing because batch builders append sorted keys.
+    fn push_window(&mut self, window: u32) -> bool {
+        if self.last_window == Some(window) {
+            return true;
+        }
+
+        if let Err(error) = self.windows.try_push(window) {
+            error!(
+                ?error,
+                window,
+                last_window = ?self.last_window,
+                "touched-window counter observed out-of-order keys; \
+                 exact touched-window metadata disabled",
+            );
+            return false;
+        }
+
+        self.last_window = Some(window);
+        true
+    }
+
+    /// Records `key` and returns `true` while the exact touched-window count
+    /// remains representable in the roaring `u32` offset domain.
+    ///
+    /// Returns `false` once the key type is not roaring-compatible or the
+    /// batch span no longer fits in `u32`.
+    pub(crate) fn push_key<K>(&mut self, key: &K) -> bool
+    where
+        K: DataTrait + ?Sized,
+    {
+        match self.min.as_deref() {
+            Some(min) => match key.roaring_u32_offset_dyn(min) {
+                Some(offset) => self.push_window(offset >> 16),
+                None => false,
+            },
+            None => {
+                if !key.supports_roaring32() {
+                    return false;
+                }
+                self.min = Some(clone_box(key.as_data()));
+                self.push_window(0)
+            }
+        }
+    }
+
+    /// Finishes tracking and returns the exact touched-window count.
+    pub(crate) fn finish(self) -> TouchedWindowCount {
+        TouchedWindowCount::new(
+            usize::try_from(self.windows.len()).expect("touched-window count fits in usize"),
+        )
+    }
+}
+
 /// Summary of how a batch likely maps onto Roaring's 16-bit container layout
 /// for lookup prediction.
 ///
-/// This exists because Roaring is not uniformly "better than Bloom":
-/// - keys are partitioned by their high 16 offset bits, so a `u32` offset
-///   domain is split into up to `2^16` containers;
-/// - roaring-rs keeps container payloads in arrays until they reach about 4096
-///   entries, then upgrades them to bitmaps;
-/// - sparse batches therefore tend to pay binary-search costs in many small
-///   array containers, while dense batches benefit from cheap bitmap probes.
-///
-/// The predictor estimates two things from the merged key count and the
-/// per-input-batch container spans:
-/// - how many 16-bit containers the batch likely touches
-/// - how many keys each touched container likely holds
+/// Lookup cost depends on how widely the batch is spread across Roaring's
+/// `2^16` high-bit windows. The runtime uses the same coarse model as
+/// `benches/filter_predictor.rs`:
+/// - estimate how many 16-bit containers the merged batch likely touches
+/// - derive a conservative keys-per-container estimate from that touched set
+/// - feed the touched-container estimate into an affine lookup boundary
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RoaringLookupStats {
-    /// Conservative estimate of real keys per touched 16-bit container.
-    estimated_keys_per_container: f64,
+    /// Total keys in the merged batch.
+    batch_keys: f64,
     /// Conservative estimate of touched 16-bit containers after overlap
     /// damping.
     estimated_touched_containers: f64,
 }
 
 impl RoaringLookupStats {
-    const ROARING_CONTAINER_CAPACITY: f64 = 65_536.0;
-    const ROARING_BITMAP_UPGRADE_THRESHOLD: f64 = 4_096.0;
-    const LOOKUP_ROARING_CONTAINER_PROBABILITY_THRESHOLD: f64 = 0.1;
-    const LOOKUP_ROARING_BITMAP_CONTAINER_PROBABILITY_PENALTY: f64 = 0.1;
-    const LOOKUP_ROARING_ARRAY_CONTAINER_PROBABILITY_PENALTY_BASE: f64 = 0.20;
-    const LOOKUP_ROARING_ARRAY_CONTAINER_PROBABILITY_PENALTY_PER_LOG2_KEY: f64 = 0.10;
+    const LOOKUP_ROARING_AFFINE_WINDOW_SLOPE: f64 = 1_980.0;
+    const LOOKUP_ROARING_AFFINE_WINDOW_INTERCEPT: f64 = -10_000_000.0;
+    const LOOKUP_ROARING_SCORE_THRESHOLD: f64 = 1.00;
     const OVERLAP_FACTOR_DAMPING: f64 = 0.25;
     const U32_CONTAINER_COUNT: usize = 1 << 16;
+
+    /// Estimate roaring friendliness for lookups from batch metadata.
+    ///
+    /// When exact per-batch touched-window counts are available, combine them
+    /// with the span-overlap heuristic from the benchmark. Otherwise fall back
+    /// to the span-only estimate.
+    pub(crate) fn from_metadata(
+        batch_keys: usize,
+        container_spans: &[(u32, u32)],
+        touched_window_counts: &[TouchedWindowCount],
+    ) -> Option<Self> {
+        let span_stats = Self::from_bounds(batch_keys, container_spans)?;
+        if touched_window_counts.is_empty()
+            || touched_window_counts.len() != container_spans.len()
+            || touched_window_counts
+                .iter()
+                .any(|count| !count.is_available())
+        {
+            return Some(span_stats);
+        }
+
+        let span_windows_upper_bound = covered_container_union(container_spans);
+        let total_span_containers = container_spans
+            .iter()
+            .map(|(start, end)| (end - start + 1) as usize)
+            .sum::<usize>();
+        let overlap_factor = total_span_containers as f64 / span_windows_upper_bound as f64;
+        let damped_overlap_factor = 1.0 + Self::OVERLAP_FACTOR_DAMPING * (overlap_factor - 1.0);
+        let sum_batch_touched_windows = touched_window_counts
+            .iter()
+            .map(|count| count.get())
+            .sum::<usize>();
+        let max_batch_touched_windows = touched_window_counts
+            .iter()
+            .map(|count| count.get())
+            .max()
+            .expect("checked above");
+        let estimated_touched_containers = (sum_batch_touched_windows as f64
+            / damped_overlap_factor)
+            .clamp(
+                max_batch_touched_windows as f64,
+                span_windows_upper_bound as f64,
+            )
+            .min(Self::U32_CONTAINER_COUNT as f64);
+        Some(Self {
+            batch_keys: batch_keys as f64,
+            estimated_touched_containers,
+        })
+    }
 
     /// Estimate roaring friendliness for lookups from batch-span metadata.
     ///
@@ -187,42 +305,39 @@ impl RoaringLookupStats {
         let damped_overlap_factor = 1.0 + Self::OVERLAP_FACTOR_DAMPING * (overlap_factor - 1.0);
         let estimated_touched_containers = (distinct_containers as f64 * damped_overlap_factor)
             .min(Self::U32_CONTAINER_COUNT as f64);
-        let estimated_keys_per_container = (batch_keys as f64 / estimated_touched_containers)
-            .min(Self::ROARING_CONTAINER_CAPACITY);
-
         Some(Self {
-            estimated_keys_per_container,
+            batch_keys: batch_keys as f64,
             estimated_touched_containers,
         })
     }
 
     /// Predict whether lookup-heavy workloads should prefer Roaring.
     ///
-    /// Random probes only pay container cost when they land in a touched
-    /// 16-bit container, so the touched-container count is normalized into a
-    /// probability. Array containers get a size-dependent penalty because
-    /// `ArrayStore::contains()` gets slower as they grow, while bitmap
-    /// containers are treated as near-constant-time once the estimated
-    /// keys/container crosses Roaring's array-to-bitmap threshold.
+    /// The lookup benchmark shows a strong affine trend between total keys and
+    /// touched 16-bit containers: as the batch spreads across more windows,
+    /// Roaring needs proportionally more total keys before it beats Bloom.
+    ///
+    /// This mirrors `benches/filter_predictor.rs`. It is intentionally coarse
+    /// and does not try to model container-internal structure such as
+    /// contiguous prefixes or scattered sparse values inside a window.
     pub(crate) fn lookup_prefers_roaring(&self) -> bool {
-        let lookup_container_probability =
-            (self.estimated_touched_containers / Self::U32_CONTAINER_COUNT as f64).clamp(0.0, 1.0);
-        // roaring-rs switches between array and bitmap containers around 4096
-        // elements. Bitmap containers are close to a constant-time bit test,
-        // but array containers use binary search and get meaningfully slower
-        // as they grow.
-        let lookup_container_penalty =
-            if self.estimated_keys_per_container >= Self::ROARING_BITMAP_UPGRADE_THRESHOLD {
-                Self::LOOKUP_ROARING_BITMAP_CONTAINER_PROBABILITY_PENALTY
-            } else {
-                Self::LOOKUP_ROARING_ARRAY_CONTAINER_PROBABILITY_PENALTY_BASE
-                    + Self::LOOKUP_ROARING_ARRAY_CONTAINER_PROBABILITY_PENALTY_PER_LOG2_KEY
-                        * (self.estimated_keys_per_container + 1.0).log2()
-            };
-        let lookup_cost_proxy = lookup_container_probability * lookup_container_penalty;
-        let lookup_score = Self::LOOKUP_ROARING_CONTAINER_PROBABILITY_THRESHOLD
-            / lookup_cost_proxy.max(f64::MIN_POSITIVE);
-        lookup_score >= 1.0
+        let lookup_required_keys = (Self::LOOKUP_ROARING_AFFINE_WINDOW_SLOPE
+            * self.estimated_touched_containers
+            + Self::LOOKUP_ROARING_AFFINE_WINDOW_INTERCEPT)
+            .max(1.0);
+        let lookup_score = self.batch_keys / lookup_required_keys;
+        let lookup_score_threshold = Self::LOOKUP_ROARING_SCORE_THRESHOLD;
+        let prefers_roaring = lookup_score >= lookup_score_threshold;
+        debug!(
+            batch_keys = self.batch_keys,
+            estimated_touched_containers = self.estimated_touched_containers,
+            lookup_required_keys,
+            lookup_score,
+            lookup_score_threshold,
+            prefers_roaring,
+            "roaring lookup prediction",
+        );
+        prefers_roaring
     }
 }
 

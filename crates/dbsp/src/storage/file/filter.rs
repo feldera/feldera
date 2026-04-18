@@ -2,6 +2,7 @@ mod bloom;
 mod roaring;
 mod stats;
 
+use super::format::TouchedWindowCount;
 use crate::{
     Runtime, dynamic::DataTrait, storage::tracking_bloom_filter::TrackingBloomFilter, trace::Batch,
 };
@@ -9,11 +10,19 @@ use dyn_clone::clone_box;
 use std::io;
 use std::ops::Not;
 use std::sync::Once;
-use tracing::info;
+use tracing::{debug, info};
 
 use roaring::RoaringLookupStats;
+pub(crate) use roaring::TouchedWindowCounter;
 pub use roaring::TrackingRoaringBitmap;
 pub use stats::{FilterKind, FilterStats, TrackingFilterStats};
+
+/// Whether writers should collect extra metadata needed by the roaring
+/// predictor. This is deliberately separate from the final filter choice so
+/// `enable_roaring=false` can avoid the hot-path accounting entirely.
+pub(crate) fn collect_roaring_metadata() -> bool {
+    Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.enable_roaring())
+}
 
 /// In-memory representation of the per-batch key filter.
 #[derive(Debug)]
@@ -55,6 +64,7 @@ impl BatchKeyFilter {
     ///
     /// Keys must be pushed in sorted order. The roaring path uses an O(1)
     /// append; the Bloom path is order-independent.
+    #[inline(always)]
     pub(crate) fn push_key<K>(&mut self, key: &K)
     where
         K: DataTrait + ?Sized,
@@ -83,7 +93,9 @@ impl BatchKeyFilter {
 /// therefore bundles:
 /// - the merged batch bounds, which tell us whether min-offset roaring fits;
 /// - one 16-bit Roaring container span per input batch, relative to the merged
-///   minimum, which lets us conservatively predict lookup behavior.
+///   minimum;
+/// - one exact touched-window count per input batch, relative to that batch's
+///   own minimum.
 pub struct FilterPlan<K>
 where
     K: DataTrait + ?Sized,
@@ -93,6 +105,11 @@ where
     /// Inclusive 16-bit Roaring container spans, relative to `min`, for each
     /// input batch that contributes to the merged batch.
     container_spans: Option<Vec<(u32, u32)>>,
+    /// Exact touched-window counts for each input batch.
+    ///
+    /// A count of `0` means the exact value was unavailable for that input
+    /// batch, so lookup prediction must fall back to spans only.
+    touched_window_counts: Vec<TouchedWindowCount>,
 }
 
 impl<K> FilterPlan<K>
@@ -105,6 +122,7 @@ where
             min: clone_box(min),
             max: clone_box(max),
             container_spans: None,
+            touched_window_counts: Vec::new(),
         };
         if plan.roaring_range_fits() {
             plan.container_spans = plan
@@ -141,6 +159,7 @@ where
                 min,
                 max,
                 container_spans: None,
+                touched_window_counts: Vec::new(),
             };
             if plan.roaring_range_fits() {
                 let container_spans = batches
@@ -152,6 +171,10 @@ where
                     })
                     .collect::<Option<Vec<_>>>();
                 plan.container_spans = container_spans.filter(|spans| spans.is_empty().not());
+                plan.touched_window_counts = batches
+                    .iter()
+                    .map(|batch| batch.touched_window_count())
+                    .collect();
             }
             plan
         })
@@ -181,9 +204,13 @@ where
             None => return false,
         };
 
-        RoaringLookupStats::from_bounds(estimated_keys, container_spans)
-            .map(|stats| stats.lookup_prefers_roaring())
-            .unwrap_or(false)
+        RoaringLookupStats::from_metadata(
+            estimated_keys,
+            container_spans,
+            &self.touched_window_counts,
+        )
+        .map(|stats| stats.lookup_prefers_roaring())
+        .unwrap_or(false)
     }
 
     fn preferred_filter(
@@ -192,11 +219,25 @@ where
         enable_roaring: bool,
         bloom_false_positive_rate: f64,
     ) -> BatchKeyFilter {
-        if self.can_use_roaring(enable_roaring)
-            && self.predict_lookup_prefers_roaring(estimated_keys)
-        {
+        if !self.can_use_roaring(enable_roaring) {
+            debug!(
+                enable_roaring,
+                roaring_range_fits = self.roaring_range_fits(),
+                min = ?self.min.as_ref(),
+                max = ?self.max.as_ref(),
+                estimated_keys,
+                "filter predictor: roaring not available, using Bloom",
+            );
+            return BatchKeyFilter::new_bloom(estimated_keys, bloom_false_positive_rate);
+        }
+        if self.predict_lookup_prefers_roaring(estimated_keys) {
+            debug!(estimated_keys, "filter predictor: chose roaring bitmap");
             BatchKeyFilter::new_roaring_u32(self.min.as_ref())
         } else {
+            debug!(
+                estimated_keys,
+                "filter predictor: predictor prefers Bloom over roaring",
+            );
             BatchKeyFilter::new_bloom(estimated_keys, bloom_false_positive_rate)
         }
     }
@@ -255,6 +296,7 @@ where
             }
             (Some(rate), None) => Some(BatchKeyFilter::new_bloom(estimated_keys, rate)),
             (None, Some(filter_plan)) if filter_plan.can_use_roaring(enable_roaring) => {
+                debug!("filter predictor: Bloom disabled, roaring available, using roaring bitmap",);
                 Some(BatchKeyFilter::new_roaring_u32(filter_plan.min.as_ref()))
             }
             (None, _) => None,
@@ -267,16 +309,52 @@ mod tests {
     use super::{BatchKeyFilter, FilterPlan};
     use crate::{
         DynZWeight, Runtime, ZWeight,
-        circuit::CircuitConfig,
+        circuit::mkconfig,
         dynamic::{DynData, Erase},
-        trace::{Batch, BatchReader, BatchReaderFactories, Builder, VecWSet, VecWSetFactories},
+        trace::{
+            Batch, BatchReader, BatchReaderFactories, Builder, FileWSet, FileWSetFactories,
+            VecWSet, VecWSetFactories,
+        },
     };
+    use tempfile::tempdir;
+
+    fn build_vec_wset_u32_keys(
+        keys: impl IntoIterator<Item = u32>,
+    ) -> VecWSet<DynData, DynZWeight> {
+        let keys: Vec<u32> = keys.into_iter().collect();
+        let factories = VecWSetFactories::new::<u32, (), ZWeight>();
+        let mut builder = <VecWSet<DynData, DynZWeight> as Batch>::Builder::with_capacity(
+            &factories,
+            keys.len(),
+            0,
+        );
+
+        for key in keys {
+            let weight: ZWeight = 1;
+            builder.push_val_diff(&(), weight.erase());
+            builder.push_key(key.erase());
+        }
+
+        builder.done()
+    }
 
     fn build_vec_wset_u32(keys: std::ops::Range<u32>) -> VecWSet<DynData, DynZWeight> {
-        let factories = VecWSetFactories::new::<u32, (), ZWeight>();
-        let key_count = keys.len();
-        let mut builder = <VecWSet<DynData, DynZWeight> as Batch>::Builder::with_capacity(
-            &factories, key_count, 0,
+        build_vec_wset_u32_keys(keys)
+    }
+
+    /// Builds a `FileWSet` over a sequence of `u32` keys. File batches
+    /// populate `touched_window_count` during construction, so they exercise
+    /// the per-batch metadata path of the predictor (unlike `VecWSet`, whose
+    /// builder leaves the count unavailable).
+    fn build_file_wset_u32_keys(
+        keys: impl IntoIterator<Item = u32>,
+    ) -> FileWSet<DynData, DynZWeight> {
+        let keys: Vec<u32> = keys.into_iter().collect();
+        let factories = <FileWSetFactories<DynData, DynZWeight>>::new::<u32, (), ZWeight>();
+        let mut builder = <FileWSet<DynData, DynZWeight> as Batch>::Builder::with_capacity(
+            &factories,
+            keys.len(),
+            0,
         );
 
         for key in keys {
@@ -292,7 +370,10 @@ mod tests {
     where
         F: FnOnce() + Clone + Send + 'static,
     {
-        let mut config = CircuitConfig::default();
+        // File batches need a storage-backed circuit; build one so tests
+        // exercising `FileWSet` can run alongside the VecWSet ones.
+        let _temp_dir = tempdir().expect("Can't create temp dir for storage");
+        let mut config = mkconfig(_temp_dir.path());
         config.dev_tweaks.enable_roaring = Some(true);
         let (handle, ()) = Runtime::init_circuit(config, move |_| {
             f();
@@ -379,6 +460,42 @@ mod tests {
             let batch2 = build_vec_wset_u32(25_000..50_000);
             let filter_plan = FilterPlan::from_batches([&batch1, &batch2])
                 .expect("dense roaring-compatible batches should build a plan");
+
+            assert!(matches!(
+                FilterPlan::decide_filter(
+                    Some(&filter_plan),
+                    batch1.key_count() + batch2.key_count()
+                ),
+                Some(BatchKeyFilter::RoaringU32(_))
+            ));
+        });
+    }
+
+    #[test]
+    fn batches_prefer_roaring_for_dense_sparse_batches() {
+        with_roaring_enabled(|| {
+            let batch1 = build_file_wset_u32_keys(
+                [0u32, 30_000u32]
+                    .into_iter()
+                    .flat_map(|window| (0..5_000).map(move |low| (window << 16) + low)),
+            );
+            let batch2 = build_file_wset_u32_keys(
+                [10_000u32, 20_000u32]
+                    .into_iter()
+                    .flat_map(|window| (0..5_000).map(move |low| (window << 16) + low)),
+            );
+            let max = (30_000u32 << 16) + 4_999;
+            let span_only_plan = FilterPlan::from_bounds((&0u32) as &DynData, (&max) as &DynData);
+            assert!(matches!(
+                FilterPlan::decide_filter(
+                    Some(&span_only_plan),
+                    batch1.key_count() + batch2.key_count()
+                ),
+                Some(BatchKeyFilter::Bloom(_))
+            ));
+
+            let filter_plan = FilterPlan::from_batches([&batch1, &batch2])
+                .expect("wide-but-holey roaring-compatible batches should build a plan");
 
             assert!(matches!(
                 FilterPlan::decide_filter(

@@ -30,6 +30,7 @@ use crate::circuit::metadata::OperatorMeta;
 use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 use crate::storage::buffer_cache::CacheStats;
 use crate::storage::file::SerializerInner;
+use crate::storage::file::TouchedWindowCount;
 pub use crate::storage::file::{DbspSerializer, Deserializable, Deserializer, Rkyv};
 use crate::storage::file::{FilterKind, FilterStats};
 use crate::trace::cursor::{
@@ -901,6 +902,19 @@ where
     ///
     /// Returns `None` for empty batches.
     fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)>;
+
+    /// Exact number of 16-bit roaring windows touched by the batch, relative
+    /// to the batch minimum.
+    ///
+    /// File-backed batches materialize this count at write time. In-memory
+    /// batches track it while they are built. The merge-time filter predictor
+    /// uses it together with min/max span overlap to estimate how many roaring
+    /// containers the merged batch will likely touch.
+    ///
+    /// A value of `0` means the batch cannot provide an exact count, e.g. the
+    /// key type is not roaring-compatible, the batch span does not fit in
+    /// `u32`, or the batch is empty.
+    fn touched_window_count(&self) -> TouchedWindowCount;
 
     /// The number of tuples with negative weights in the batch.
     ///

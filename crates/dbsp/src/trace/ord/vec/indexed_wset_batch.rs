@@ -1,5 +1,4 @@
-use crate::storage::file::FilterStats;
-use crate::storage::file::SerializerInner;
+use crate::storage::file::{FilterStats, SerializerInner, TouchedWindowCount};
 use crate::trace::ord::merge_batcher::MergeBatcher;
 use crate::{
     DBData, DBWeight, Error, NumEntries,
@@ -170,6 +169,7 @@ where
     pub layer: Layers<K, V, R, O>,
     factories: VecIndexedWSetFactories<K, V, R>,
     negative_weight_count: u64,
+    touched_window_count: TouchedWindowCount,
 }
 
 impl<K, V, R, O> VecIndexedWSet<K, V, R, O>
@@ -196,6 +196,7 @@ where
             ),
             factories,
             negative_weight_count,
+            touched_window_count: TouchedWindowCount::default(),
         }
     }
 }
@@ -260,6 +261,7 @@ where
             layer: self.layer.clone(),
             factories: self.factories.clone(),
             negative_weight_count: self.negative_weight_count,
+            touched_window_count: self.touched_window_count,
         }
     }
 }
@@ -347,6 +349,7 @@ where
             layer: self.layer.neg_by_ref(),
             factories: self.factories.clone(),
             negative_weight_count: self.negative_weight_count,
+            touched_window_count: self.touched_window_count,
         }
     }
 }
@@ -501,6 +504,10 @@ where
 
     fn negative_weight_count(&self) -> Option<u64> {
         Some(self.negative_weight_count)
+    }
+
+    fn touched_window_count(&self) -> TouchedWindowCount {
+        self.touched_window_count
     }
 }
 
