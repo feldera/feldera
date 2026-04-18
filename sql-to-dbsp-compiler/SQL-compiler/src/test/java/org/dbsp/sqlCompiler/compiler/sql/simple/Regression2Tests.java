@@ -17,7 +17,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.util.HashString;
 import org.dbsp.util.NullPrintStream;
@@ -944,5 +943,75 @@ public class Regression2Tests extends SqlIoTest {
                  x
                 ---
                 NULL""");
+    }
+
+    CircuitVisitor findLinear(DBSPCompiler compiler) {
+        return new CircuitVisitor(compiler) {
+            int linear = 0;
+
+            @Override
+            public void postorder(DBSPAggregateLinearPostprocessOperator unused) {
+                this.linear++;
+            }
+
+            @Override
+            public void postorder(DBSPStreamAggregateOperator unused) {
+                Assert.fail("Should have been eliminated");
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.linear);
+            }
+        };
+    }
+
+    @Test
+    public void issue5927() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(g VARCHAR, x INT);
+                CREATE VIEW V AS SELECT g, MAX(CASE WHEN x > 2 THEN 1 ELSE 0 END) FROM T GROUP BY g;""");
+        // Validated on Postgres
+        ccs.stepWeightOne("", """
+                 g | max
+                ---------""");
+        ccs.stepWeightOne("INSERT INTO T VALUES ('a', 1), ('b', 3), ('c', 3), ('c', 5), ('d', 1), ('d', 5);", """
+                 g | max
+                ---------
+                 a| 0
+                 b| 1
+                 c| 1
+                 d| 1""");
+        ccs.visit(this.findLinear(ccs.compiler));
+    }
+
+    @Test
+    public void issue5927a() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(g VARCHAR, x INT);
+                CREATE VIEW V AS SELECT g, MAX(CASE WHEN x = 1 THEN 0 ELSE 1 END) FROM T GROUP BY g;""");
+        // Validated on Postgres
+        ccs.stepWeightOne("", """
+                 g | max
+                ---------""");
+        ccs.stepWeightOne("""
+                    INSERT INTO t VALUES
+                        ('a', 1),   -- condition true
+                        ('a', 2),   -- condition false
+                        ('a', NULL),-- condition unknown
+                        ('b', 1),   -- condition true only
+                        ('b', 1),   -- condition true only
+                        ('c', 2),   -- condition false only
+                        ('c', 2),   -- condition false only
+                        ('d', NULL),-- null only
+                        ('d', NULL); -- null only
+                """, """
+                 g | max
+                ---------
+                 a| 1
+                 b| 0
+                 c| 1
+                 d| 1""");
+        ccs.visit(this.findLinear(ccs.compiler));
     }
 }
