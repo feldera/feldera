@@ -26,24 +26,24 @@ models:
     intermediate:
       +materialized: view
       int_kafka_sales:
-        +connectors: "{{ [] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/int_kafka_sales', 'mode': 'append'}}}] }}"
+        +connectors: "{{ [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/lakehouse/default/Tables/int_kafka_sales', 'mode': 'append'}}}] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/int_kafka_sales', 'mode': 'append'}}}] }}"
     marts:
       +materialized: view
       dim_address:
-        +connectors: "{{ [] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/dim_address', 'mode': 'append'}}}] }}"
+        +connectors: "{{ [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/lakehouse/default/Tables/dim_address', 'mode': 'append'}}}] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/dim_address', 'mode': 'append'}}}] }}"
       dim_credit_card:
-        +connectors: "{{ [] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/dim_credit_card', 'mode': 'append'}}}] }}"
+        +connectors: "{{ [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/lakehouse/default/Tables/dim_credit_card', 'mode': 'append'}}}] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/dim_credit_card', 'mode': 'append'}}}] }}"
       dim_customer:
-        +connectors: "{{ [] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/dim_customer', 'mode': 'append'}}}] }}"
+        +connectors: "{{ [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/lakehouse/default/Tables/dim_customer', 'mode': 'append'}}}] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/dim_customer', 'mode': 'append'}}}] }}"
       dim_date:
-        +connectors: "{{ [] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/dim_date', 'mode': 'append'}}}] }}"
+        +connectors: "{{ [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/lakehouse/default/Tables/dim_date', 'mode': 'append'}}}] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/dim_date', 'mode': 'append'}}}] }}"
       dim_order_status:
-        +connectors: "{{ [] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/dim_order_status', 'mode': 'append'}}}] }}"
+        +connectors: "{{ [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/lakehouse/default/Tables/dim_order_status', 'mode': 'append'}}}] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/dim_order_status', 'mode': 'append'}}}] }}"
       dim_product:
-        +connectors: "{{ [] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/dim_product', 'mode': 'append'}}}] }}"
+        +connectors: "{{ [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/lakehouse/default/Tables/dim_product', 'mode': 'append'}}}] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/dim_product', 'mode': 'append'}}}] }}"
       fct_recent_sales:
-        +connectors: "{{ [] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/fct_recent_sales', 'mode': 'append'}}}] }}"
+        +connectors: "{{ [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/lakehouse/default/Tables/fct_recent_sales', 'mode': 'append'}}}] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/fct_recent_sales', 'mode': 'append'}}}] }}"
       fct_sales:
-        +connectors: "{{ [] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/fct_sales', 'mode': 'append'}}}] }}"
+        +connectors: "{{ [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/lakehouse/default/Tables/fct_sales', 'mode': 'append'}}}] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/fct_sales', 'mode': 'append'}}}] }}"
       obt_sales:
-        +connectors: "{{ [] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/obt_sales', 'mode': 'append'}}}] }}"
+        +connectors: "{{ [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/lakehouse/default/Tables/obt_sales', 'mode': 'append'}}}] if target.name == 'fabric' else [{'transport': {'name': 'delta_table_output', 'config': {'uri': '/data/delta/obt_sales', 'mode': 'append'}}}] }}"
