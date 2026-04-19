@@ -34,6 +34,33 @@ const DEFAULT_GAUSSIAN_STDDEV_FRACTIONS: [f64; 5] = [1e-6, 1e-4, 1e-2, 1e-1, 5e-
 const DEFAULT_LOOKUP_LIMIT: u64 = 5_000_000;
 const DEFAULT_BATCH_COUNTS: [usize; 3] = [1, 8, 64];
 const OVERLAP_FACTOR_DAMPING: f64 = 0.25;
+// round_robin_container stays Bloom-friendly at small N, then flips to
+// Roaring in a narrow lookup crossover band around 18.4M keys. Keep a few
+// extra sizes there in the default matrix so regressions around that boundary
+// show up without having to run a separate one-off sweep.
+const ROUND_ROBIN_CROSSOVER_NUM_KEYS: [u64; 6] = [
+    17_000_000, 18_000_000, 18_250_000, 18_500_000, 19_000_000, 25_000_000,
+];
+// Wide Gaussians have their own lookup crossovers:
+// - stddev=0.1 flips between 300M and 325M keys
+// - stddev=0.5 flips between 475M and 490M keys
+// Keep a few extra sizes around those bands in the default matrix so we can
+// see what a predictor does near the actual transition instead of only at
+// 100M and 1B.
+const GAUSSIAN_STDDEV_0_1_CROSSOVER_NUM_KEYS: [u64; 4] =
+    [300_000_000, 325_000_000, 350_000_000, 375_000_000];
+const GAUSSIAN_STDDEV_0_5_CROSSOVER_NUM_KEYS: [u64; 4] =
+    [450_000_000, 475_000_000, 490_000_000, 500_000_000];
+// Additional crossover bands observed in one-off lookup runs:
+// - bimodal stddev=0.5 flips between 475M and 500M
+// - exponential scale=0.1 flips between 300M and 400M
+// - exponential scale=0.5 flips between 600M and 650M
+const BIMODAL_STDDEV_0_5_CROSSOVER_NUM_KEYS: [u64; 4] =
+    [450_000_000, 475_000_000, 490_000_000, 500_000_000];
+const EXPONENTIAL_SCALE_0_1_CROSSOVER_NUM_KEYS: [u64; 4] =
+    [300_000_000, 350_000_000, 400_000_000, 500_000_000];
+const EXPONENTIAL_SCALE_0_5_CROSSOVER_NUM_KEYS: [u64; 4] =
+    [600_000_000, 625_000_000, 650_000_000, 700_000_000];
 const BIMODAL_LEFT_PEAK_FRAC: f64 = 0.25;
 const BIMODAL_RIGHT_PEAK_FRAC: f64 = 0.75;
 const HOLEY_WIDE_DOMAIN_MAX_EXCLUSIVE: u64 = 2_000_000_000;
@@ -49,18 +76,13 @@ const DEFAULT_NUM_KEYS: [u64; 5] = [14_999, 999_999, 9_999_999, 99_999_999, 999_
 const BUILD_ROARING_ESTIMATED_KEYS_PER_CONTAINER_THRESHOLD: f64 = 4.0;
 const MEMORY_ROARING_ESTIMATED_KEYS_PER_CONTAINER_THRESHOLD: f64 = 32.0;
 
-// roaring-rs switches array containers to bitmap containers around 4096 keys.
-// That transition materially changes lookup behavior, so the lookup predictor
-// treats it as a first-class boundary.
-const ROARING_BITMAP_CONTAINER_THRESHOLD: f64 = 4_096.0;
-
-// Lookup prediction is framed as a coarse cost proxy. If the estimated cost of
-// reaching and searching a Roaring container stays below this budget, predict
-// Roaring; otherwise predict Bloom.
-const LOOKUP_ROARING_CONTAINER_PROBABILITY_THRESHOLD: f64 = 0.1;
-const LOOKUP_ROARING_BITMAP_CONTAINER_PROBABILITY_PENALTY: f64 = 0.1;
-const LOOKUP_ROARING_ARRAY_CONTAINER_PROBABILITY_PENALTY_BASE: f64 = 0.20;
-const LOOKUP_ROARING_ARRAY_CONTAINER_PROBABILITY_PENALTY_PER_LOG2_KEY: f64 = 0.10;
+// Lookup prediction uses a coarse affine boundary fit from the benchmark data:
+// roaring wins once the merged batch has enough keys relative to its touched
+// 16-bit windows. The threshold rises with touched windows because the same
+// average keys/window gets less favorable as probes have to search more
+// containers across the domain.
+const LOOKUP_ROARING_AFFINE_WINDOW_SLOPE: f64 = 1_980.0;
+const LOOKUP_ROARING_AFFINE_WINDOW_INTERCEPT: f64 = -10_000_000.0;
 
 const U32_CONTAINER_COUNT: usize = 1 << 16;
 const WINDOW_BITSET_WORDS: usize = U32_CONTAINER_COUNT / 64;
@@ -618,12 +640,14 @@ fn build_run_configs(
 ) -> Vec<RunConfig> {
     let mut run_configs = Vec::new();
 
-    for &num_keys in num_keys_list {
-        for &distribution_kind in distributions {
-            match distribution_kind {
-                DistributionKind::Gaussian => {
-                    for &gaussian_mean_frac in gaussian_means {
-                        for &gaussian_stddev_frac in gaussian_stddevs {
+    for &distribution_kind in distributions {
+        match distribution_kind {
+            DistributionKind::Gaussian => {
+                for &gaussian_mean_frac in gaussian_means {
+                    for &gaussian_stddev_frac in gaussian_stddevs {
+                        let num_keys_for_gaussian =
+                            gaussian_num_keys(args, num_keys_list, gaussian_stddev_frac);
+                        for &num_keys in &num_keys_for_gaussian {
                             let distribution = DistributionSpec::Gaussian(GaussianDistribution {
                                 mean_frac: gaussian_mean_frac,
                                 stddev_frac: gaussian_stddev_frac,
@@ -632,7 +656,11 @@ fn build_run_configs(
                         }
                     }
                 }
-                DistributionKind::Consecutive => {
+            }
+            DistributionKind::Consecutive => {
+                let num_keys_for_distribution =
+                    distribution_num_keys(args, num_keys_list, distribution_kind);
+                for &num_keys in &num_keys_for_distribution {
                     push_run_configs(
                         &mut run_configs,
                         args,
@@ -640,7 +668,11 @@ fn build_run_configs(
                         DistributionSpec::Consecutive,
                     );
                 }
-                DistributionKind::RoundRobinContainer => {
+            }
+            DistributionKind::RoundRobinContainer => {
+                let num_keys_for_distribution =
+                    distribution_num_keys(args, num_keys_list, distribution_kind);
+                for &num_keys in &num_keys_for_distribution {
                     push_run_configs(
                         &mut run_configs,
                         args,
@@ -648,8 +680,11 @@ fn build_run_configs(
                         DistributionSpec::RoundRobinContainer,
                     );
                 }
-                DistributionKind::Bimodal => {
-                    for &stddev_frac in gaussian_stddevs {
+            }
+            DistributionKind::Bimodal => {
+                for &stddev_frac in gaussian_stddevs {
+                    let num_keys_for_bimodal = bimodal_num_keys(args, num_keys_list, stddev_frac);
+                    for &num_keys in &num_keys_for_bimodal {
                         push_run_configs(
                             &mut run_configs,
                             args,
@@ -658,8 +693,12 @@ fn build_run_configs(
                         );
                     }
                 }
-                DistributionKind::Exponential => {
-                    for &scale_frac in gaussian_stddevs {
+            }
+            DistributionKind::Exponential => {
+                for &scale_frac in gaussian_stddevs {
+                    let num_keys_for_exponential =
+                        exponential_num_keys(args, num_keys_list, scale_frac);
+                    for &num_keys in &num_keys_for_exponential {
                         push_run_configs(
                             &mut run_configs,
                             args,
@@ -668,7 +707,11 @@ fn build_run_configs(
                         );
                     }
                 }
-                DistributionKind::HoleyWide => {
+            }
+            DistributionKind::HoleyWide => {
+                let num_keys_for_distribution =
+                    distribution_num_keys(args, num_keys_list, distribution_kind);
+                for &num_keys in &num_keys_for_distribution {
                     push_run_configs(
                         &mut run_configs,
                         args,
@@ -681,6 +724,64 @@ fn build_run_configs(
     }
 
     run_configs
+}
+
+fn distribution_num_keys(
+    args: &Args,
+    num_keys_list: &[u64],
+    distribution_kind: DistributionKind,
+) -> Vec<u64> {
+    let mut num_keys = num_keys_list.to_vec();
+    if args.num_keys.is_none() && distribution_kind == DistributionKind::RoundRobinContainer {
+        num_keys.extend(ROUND_ROBIN_CROSSOVER_NUM_KEYS);
+        num_keys.sort_unstable();
+        num_keys.dedup();
+    }
+    num_keys
+}
+
+fn gaussian_num_keys(args: &Args, num_keys_list: &[u64], stddev_frac: f64) -> Vec<u64> {
+    let mut num_keys = num_keys_list.to_vec();
+    if args.num_keys.is_none() {
+        if approx_eq(stddev_frac, 0.1) {
+            num_keys.extend(GAUSSIAN_STDDEV_0_1_CROSSOVER_NUM_KEYS);
+        } else if approx_eq(stddev_frac, 0.5) {
+            num_keys.extend(GAUSSIAN_STDDEV_0_5_CROSSOVER_NUM_KEYS);
+        }
+        num_keys.sort_unstable();
+        num_keys.dedup();
+    }
+    num_keys
+}
+
+fn bimodal_num_keys(args: &Args, num_keys_list: &[u64], stddev_frac: f64) -> Vec<u64> {
+    let mut num_keys = num_keys_list.to_vec();
+    if args.num_keys.is_none() {
+        if approx_eq(stddev_frac, 0.5) {
+            num_keys.extend(BIMODAL_STDDEV_0_5_CROSSOVER_NUM_KEYS);
+        }
+        num_keys.sort_unstable();
+        num_keys.dedup();
+    }
+    num_keys
+}
+
+fn exponential_num_keys(args: &Args, num_keys_list: &[u64], scale_frac: f64) -> Vec<u64> {
+    let mut num_keys = num_keys_list.to_vec();
+    if args.num_keys.is_none() {
+        if approx_eq(scale_frac, 0.1) {
+            num_keys.extend(EXPONENTIAL_SCALE_0_1_CROSSOVER_NUM_KEYS);
+        } else if approx_eq(scale_frac, 0.5) {
+            num_keys.extend(EXPONENTIAL_SCALE_0_5_CROSSOVER_NUM_KEYS);
+        }
+        num_keys.sort_unstable();
+        num_keys.dedup();
+    }
+    num_keys
+}
+
+fn approx_eq(lhs: f64, rhs: f64) -> bool {
+    (lhs - rhs).abs() <= 1e-12
 }
 
 fn push_run_configs(
@@ -1168,26 +1269,18 @@ struct PredictorOutput {
 /// The predictor intentionally uses different signals for different metrics:
 /// - build: mostly "how many keys end up in each touched container?"
 /// - memory: same question, but with a higher density threshold
-/// - lookup: "how often does a random probe reach a touched container, and how
-///   expensive is that container likely to be once it does?"
+/// - lookup: an affine boundary over total keys and touched windows
 ///
-/// Example:
-/// - Suppose a batch looks dense after sampling, with many keys per touched
-///   container and only a small touched-container fraction. That usually pushes
-///   all three metrics toward Roaring.
-/// - Suppose instead the batch is spread across a large fraction of the 16-bit
-///   containers and each container only has a modest number of keys. That is
-///   the "many sparse array containers" regime where lookup can flip toward
-///   Bloom.
+/// The lookup path now uses the simplest shape that matched the benchmark data
+/// reasonably well:
+/// - if touched windows rise, Roaring needs more total keys before it wins
+/// - a single affine boundary captures that trend much better than a flat
+///   keys/window threshold
 ///
-/// The lookup path is where most of the iterations happened:
-/// - using only keys/container missed sparse-wide cases
-/// - using touched containers without normalizing them was the wrong shape
-/// - using a flat array penalty missed that `ArrayStore::contains()` gets
-///   slower as array containers grow
-///
-/// The current formula keeps the model simple while preserving those learned
-/// corrections from the benchmark runs.
+/// This is still only a coarse rule. It deliberately does not try to recover
+/// container-internal structure such as contiguous prefixes in
+/// `round_robin_container` or the sparse scattered values inside wide Gaussian,
+/// bimodal, and exponential windows.
 fn predict_filter_winner(stats: &RoaringSampleStats) -> PredictorOutput {
     let density_score = stats.estimated_container_fill_ratio;
     // Build and memory stay as simple density rules: if touched containers are
@@ -1195,32 +1288,14 @@ fn predict_filter_winner(stats: &RoaringSampleStats) -> PredictorOutput {
     // Bloom tends to be cheaper.
     let build_score =
         stats.estimated_keys_per_container / BUILD_ROARING_ESTIMATED_KEYS_PER_CONTAINER_THRESHOLD;
-    // For lookups we need more than density. Random u32 probes only pay inner
-    // container cost when they land in a touched 16-bit container, so the
-    // touched-container estimate is normalized into a hit probability. If we
-    // omit this term, the predictor cannot distinguish dense-in-a-few-containers
-    // from equally dense batches spread across a large fraction of the domain.
-    let lookup_container_probability =
-        (stats.estimated_touched_containers / U32_CONTAINER_COUNT as f64).clamp(0.0, 1.0);
-    // roaring-rs switches between array and bitmap containers around 4096
-    // elements. Bitmap containers are close to a constant-time bit test, but
-    // array containers use binary search and get meaningfully slower as they
-    // grow. Without this size-dependent array penalty, medium-N wide Gaussians
-    // with many sparse array containers were still over-predicted as Roaring.
-    let lookup_container_penalty =
-        if stats.estimated_keys_per_container >= ROARING_BITMAP_CONTAINER_THRESHOLD {
-            LOOKUP_ROARING_BITMAP_CONTAINER_PROBABILITY_PENALTY
-        } else {
-            LOOKUP_ROARING_ARRAY_CONTAINER_PROBABILITY_PENALTY_BASE
-                + LOOKUP_ROARING_ARRAY_CONTAINER_PROBABILITY_PENALTY_PER_LOG2_KEY
-                    * (stats.estimated_keys_per_container + 1.0).log2()
-        };
-    // lookup_score >= 1.0 means the estimated Roaring lookup cost stays under
-    // the current budget and we predict Roaring. The exact threshold is tuned
-    // empirically from benchmark output; the important part is the shape above.
-    let lookup_cost_proxy = lookup_container_probability * lookup_container_penalty;
-    let lookup_score =
-        LOOKUP_ROARING_CONTAINER_PROBABILITY_THRESHOLD / lookup_cost_proxy.max(f64::MIN_POSITIVE);
+    // A positive score means the batch has crossed the current affine lookup
+    // threshold and we predict Roaring. Clamp the threshold away from zero so
+    // narrow touched-window sets remain well-defined and strongly Roaring.
+    let lookup_required_keys = (LOOKUP_ROARING_AFFINE_WINDOW_SLOPE
+        * stats.estimated_touched_containers
+        + LOOKUP_ROARING_AFFINE_WINDOW_INTERCEPT)
+        .max(1.0);
+    let lookup_score = stats.batch_keys as f64 / lookup_required_keys;
     let memory_score =
         stats.estimated_keys_per_container / MEMORY_ROARING_ESTIMATED_KEYS_PER_CONTAINER_THRESHOLD;
 
