@@ -48,6 +48,11 @@ EXPECTED_ROW_COUNTS = {
 
 # Test timeouts
 _DBT_COMMAND_TIMEOUT_SECONDS = 600
+_DBT_FABRIC_COMMAND_TIMEOUT_SECONDS = 1200  # Fabric VMs lack the precompile
+# cache symlink — first compilation rebuilds workspace crates (~10 min).
+# pytest-timeout must exceed the subprocess timeout to avoid killing the test
+# before the dbt command finishes.  Add headroom for idle-wait + cleanup.
+_PYTEST_FABRIC_TIMEOUT_SECONDS = _DBT_FABRIC_COMMAND_TIMEOUT_SECONDS + 300
 _PIPELINE_IDLE_TIMEOUT_SECONDS = 120.0
 _PIPELINE_SHUTDOWN_TIMEOUT_SECONDS = 60
 _DUCKDB_TIMEOUT_SECONDS = 120
@@ -612,21 +617,25 @@ class TestDbtFelderaFabric:
         assert result.returncode == 0, f"dbt debug failed:\n{result.stdout}\n{result.stderr}"
         assert "All checks passed" in result.stdout or "Connection test" in result.stdout
 
+    @pytest.mark.timeout(_PYTEST_FABRIC_TIMEOUT_SECONDS)
     def test_fabric_dbt_seed(self, fabric_feldera, dbt_project_dir):
         """Load seed data into Fabric Feldera via HTTP ingress."""
         result = _run_dbt(
             dbt_project_dir,
             ["seed", "--target", "fabric", "--full-refresh"],
             feldera_url=fabric_feldera,
+            timeout=_DBT_FABRIC_COMMAND_TIMEOUT_SECONDS,
         )
         assert result.returncode == 0, f"dbt seed failed:\n{result.stdout}\n{result.stderr}"
 
+    @pytest.mark.timeout(_PYTEST_FABRIC_TIMEOUT_SECONDS)
     def test_fabric_dbt_build(self, fabric_feldera, dbt_project_dir):
         """Deploy all models (excluding kafka) and run data tests."""
         result = _run_dbt(
             dbt_project_dir,
             ["build", "--target", "fabric", "--full-refresh"],
             feldera_url=fabric_feldera,
+            timeout=_DBT_FABRIC_COMMAND_TIMEOUT_SECONDS,
         )
         assert result.returncode == 0, f"dbt build failed:\n{result.stdout}\n{result.stderr}"
 

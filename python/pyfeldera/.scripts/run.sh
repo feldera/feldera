@@ -71,6 +71,23 @@ run_extract() {
     echo "  [6/7] Precompile cache (~4 GB)..."
     rm -rf "${DATA_DIR}/cache"
     mkdir -p "${DATA_DIR}/cache"
+    # Re-precompile with --dbsp-override-path=/tmp/feldera so that the
+    # cache fingerprints use a universally writable path.  /tmp is always
+    # writable, unlike /home/ubuntu which requires root on Fabric VMs.
+    # We use a REAL copy (not symlink) because Cargo resolves symlinks
+    # and would fingerprint the target path instead of /tmp/feldera.
+    echo "    Rebasing precompile cache to /tmp/feldera ..."
+    docker exec "${cid}" bash -c "
+        cp -a /home/ubuntu/feldera /tmp/feldera
+        /tmp/feldera/build/pipeline-manager \
+            --precompile \
+            --dbsp-override-path=/tmp/feldera \
+            --compilation-cargo-lock-path=/tmp/feldera/Cargo.lock \
+            --sql-compiler-path=/tmp/feldera/build/sql2dbsp-jar-with-dependencies.jar \
+            --compiler-working-directory=/home/ubuntu/.feldera/compiler \
+            --runner-working-directory=/home/ubuntu/.feldera/local-runner
+    "
+    docker exec "${cid}" bash -c "rm -rf /home/ubuntu/.feldera/compiler/rust-compilation/target/debug/incremental"
     docker exec "${cid}" tar -cf /tmp/feldera-cache.tar -C /home/ubuntu .feldera/
     docker cp "${cid}:/tmp/feldera-cache.tar" /tmp/feldera-cache.tar
     tar -xf /tmp/feldera-cache.tar -C "${DATA_DIR}/cache/"
@@ -160,6 +177,18 @@ run_extract() {
     find "${sysex}" -name '*.pc' -exec cp {} "${DATA_DIR}/toolchain/sysroot/lib/pkgconfig/" \;
     find "${sysex}" -name '*.so' -o -name '*.a' | while read f; do
         cp -a "$f" "${DATA_DIR}/toolchain/sysroot/lib/"
+    done
+    # Create versioned copies matching SONAME (tar -h loses the symlink
+    # chain, and wheel packaging does not preserve symlinks).  The
+    # dynamic linker looks up the SONAME, not the unversioned name.
+    for sofile in "${DATA_DIR}/toolchain/sysroot/lib/"lib*.so; do
+        [ -f "$sofile" ] || continue
+        soname=$(readelf -d "$sofile" 2>/dev/null \
+                 | grep SONAME | sed 's/.*\[\(.*\)\]/\1/')
+        if [ -n "$soname" ] && [ "$soname" != "$(basename "$sofile")" ]; then
+            cp "$sofile" "${DATA_DIR}/toolchain/sysroot/lib/${soname}"
+            echo "    Created versioned copy: ${soname}"
+        fi
     done
     # Fix paths in .pc files — use simple placeholders replaced at deploy time
     for pc_file in "${DATA_DIR}/toolchain/sysroot/lib/pkgconfig/"*.pc; do

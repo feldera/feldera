@@ -219,6 +219,36 @@ This runs:
 
 Read the test output in `/tmp/fabric-test.log` carefully. The dbt output contains the Feldera error in the assertion message.
 
+### Disk space — using /mnt to avoid "No space left on device"
+
+Fabric VMs have two filesystems:
+
+| Mount        | Total    | Purpose                                     |
+| ------------ | -------- | ------------------------------------------- |
+| `/` (root)   | ~58.5 GB | OS + pip packages (~36 GB used at baseline) |
+| `/mnt`       | ~58.5 GB | Scratch storage (~20 GB free)               |
+| `/lakehouse` | ~69 GB   | Lakehouse FUSE mount (~69 GB free)          |
+
+The pyfeldera wheel installs to root (`~/jupyter-env/.../site-packages/`, ~6.7 GB), and deploys to root (`~/.pyfeldera/`, ~11 GB). That's ~18 GB on a filesystem with only ~20 GB free — leaving almost nothing for Rust compilation artifacts.
+
+**Fix:** Use `deploy_dir="/mnt/.pyfeldera"` when creating the `FelderaServer`. This puts the ~11 GB deploy (toolchain, cache, binaries) on `/mnt` instead of root:
+
+```python
+server = FelderaServer(bind_address="127.0.0.1", port=8080, deploy_dir="/mnt/.pyfeldera")
+```
+
+The deploy step also auto-cleans the site-packages source data after copying, freeing ~6.7 GB on root.
+
+If you need even more space, the pip cache can be cleaned:
+
+```python
+# Via Privy
+r = c.run_bash("rm -rf ~/.cache/pip/ && df -h / /mnt | tail -2")
+print(r.stdout)
+```
+
+**When updating the notebook Cell 2**, ensure `deploy_dir="/mnt/.pyfeldera"` is set. The cargo wrapper, pkg-config paths, and log file all adapt automatically to the deploy dir.
+
 **Remote diagnostics via Privy:** When the test output alone isn't enough, use the Privy RelayClient to interrogate the Fabric VM directly.
 
 > It's possible privy is down on the Fabric side, in that case use the fab CLI method to get the cell ouptut below.
@@ -237,23 +267,24 @@ c = RelayClient(
 )
 ```
 
-Then use these diagnostic commands:
+Then use these diagnostic commands (note: adjust paths if using `/mnt/.pyfeldera`):
 
 ```python
 # Pipeline-manager log (most useful — shows Rust compilation errors, startup failures)
-r = c.run_bash("cat ~/.pyfeldera/pipeline-manager.log 2>/dev/null | tail -100")
+DEPLOY="/mnt/.pyfeldera"  # or ~/.pyfeldera if using default
+r = c.run_bash(f"cat {DEPLOY}/pipeline-manager.log 2>/dev/null | tail -100")
 print(r.stdout)
 
-# Disk space (Fabric has 59 GB total — pyfeldera uses ~20 GB)
-r = c.run_bash("df -h / | tail -1")
+# Disk space on BOTH filesystems
+r = c.run_bash("df -h / /mnt /lakehouse 2>/dev/null | tail -3")
 print(r.stdout)
 
-# Disk breakdown (find what's eating space)
-r = c.run_bash("du -sh ~/.pyfeldera/*/ 2>/dev/null")
+# Disk breakdown
+r = c.run_bash(f"du -sh {DEPLOY}/*/ 2>/dev/null")
 print(r.stdout)
 
 # Check if the cargo wrapper is correct
-r = c.run_bash("cat ~/.pyfeldera/toolchain/cargo-wrapper/cargo")
+r = c.run_bash(f"cat {DEPLOY}/toolchain/cargo-wrapper/cargo")
 print(r.stdout)
 
 # Check if /home/ubuntu/feldera symlink exists (needed for precompile cache)
@@ -265,15 +296,15 @@ r = c.run_bash("find /usr/lib -name 'libsasl2*' -o -name 'libclang*' -o -name 'l
 print(r.stdout)
 
 # Check pkg-config paths in the deployed sysroot
-r = c.run_bash("cat ~/.pyfeldera/toolchain/sysroot/lib/pkgconfig/libsasl2.pc 2>/dev/null || echo 'NO SYSROOT'")
+r = c.run_bash(f"cat {DEPLOY}/toolchain/sysroot/lib/pkgconfig/libsasl2.pc 2>/dev/null || echo 'NO SYSROOT'")
 print(r.stdout)
 
 # Check deployed toolchain structure
-r = c.run_bash("ls ~/.pyfeldera/toolchain/")
+r = c.run_bash(f"ls {DEPLOY}/toolchain/")
 print(r.stdout)
 
 # Check if libclang and its deps resolve
-r = c.run_bash("LD_LIBRARY_PATH=~/.pyfeldera/toolchain/libclang ldd ~/.pyfeldera/toolchain/libclang/libclang.so 2>&1 | grep 'not found' || echo 'All deps OK'")
+r = c.run_bash(f"LD_LIBRARY_PATH={DEPLOY}/toolchain/libclang ldd {DEPLOY}/toolchain/libclang/libclang.so 2>&1 | grep 'not found' || echo 'All deps OK'")
 print(r.stdout)
 
 # Free disk by cleaning site-packages duplicates and pip cache
@@ -285,26 +316,25 @@ rm -rf ~/jupyter-env/python3.12/lib/python3.12/site-packages/pyfeldera/data/bin/
 rm -rf ~/jupyter-env/python3.12/lib/python3.12/site-packages/pyfeldera/data/build/
 rm -rf ~/jupyter-env/python3.12/lib/python3.12/site-packages/pyfeldera/data/crates/
 rm -rf ~/jupyter-env/python3.12/lib/python3.12/site-packages/pyfeldera/data/sql-to-dbsp-compiler/
-rm -rf ~/.pyfeldera/cache/.feldera/compiler/sql-compilation/pipeline-*
-df -h / | tail -1
+df -h / /mnt | tail -2
 """)
 print(r.stdout)
 ```
 
 Common failure patterns:
 
-| Error                        | Root Cause                            | Fix Location                                                                                                                    |
-| ---------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `Unable to find libclang`    | Missing bundled lib                   | `run.sh` extraction + `server.py` wrapper                                                                                       |
-| `stddef.h not found`         | Missing clang resource headers        | `run.sh` extraction (clang/18/include)                                                                                          |
-| `Unable to find libsasl2`    | Missing dev headers/pkg-config        | `run.sh` sysroot extraction + `server.py` wrapper                                                                               |
-| `No space left on device`    | Disk full (59 GB limit)               | Clean duplicates via Privy (see above), or change Feldera to store data in under this existing mount "/lakehouse/default/Files" |
-| `rustup could not choose`    | Cargo wrapper calling wrong binary    | `server.py` `_ensure_cargo_wrapper()`                                                                                           |
-| `Pipeline failed to compile` | Cache invalidation (wrong paths)      | Check symlink at `/home/ubuntu/feldera`                                                                                         |
-| `Connection refused`         | Feldera not running / Privy down      | Restart notebook (Step 1)                                                                                                       |
-| `signal.signal()` ValueError | Called from non-main thread           | `server.py` `start_blocking()` try/except                                                                                       |
-| `__tunable_is_initialized`   | LD_LIBRARY_PATH leaking to PostgreSQL | Use `ld.so --library-path` not `LD_LIBRARY_PATH`                                                                                |
-| `__tunable_is_initialized`   | LD_LIBRARY_PATH leaking to PostgreSQL | Use `ld.so --library-path` not `LD_LIBRARY_PATH`                                                                                |
+| Error                        | Root Cause                            | Fix Location                                                                        |
+| ---------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------- |
+| `Unable to find libclang`    | Missing bundled lib                   | `run.sh` extraction + `server.py` wrapper                                           |
+| `stddef.h not found`         | Missing clang resource headers        | `run.sh` extraction (clang/18/include)                                              |
+| `Unable to find libsasl2`    | Missing dev headers/pkg-config        | `run.sh` sysroot extraction + `server.py` wrapper                                   |
+| `No space left on device`    | Disk full on root                     | Use `deploy_dir="/mnt/.pyfeldera"`, clean pip cache, clean site-packages duplicates |
+| `rustup could not choose`    | Cargo wrapper calling wrong binary    | `server.py` `_ensure_cargo_wrapper()`                                               |
+| `Pipeline failed to compile` | Cache invalidation (wrong paths)      | Check symlink at `/home/ubuntu/feldera`                                             |
+| `Connection refused`         | Feldera not running / Privy down      | Restart notebook (Step 1)                                                           |
+| `signal.signal()` ValueError | Called from non-main thread           | `server.py` `start_blocking()` try/except                                           |
+| `__tunable_is_initialized`   | LD_LIBRARY_PATH leaking to PostgreSQL | Use `ld.so --library-path` not `LD_LIBRARY_PATH`                                    |
+| `__tunable_is_initialized`   | LD_LIBRARY_PATH leaking to PostgreSQL | Use `ld.so --library-path` not `LD_LIBRARY_PATH`                                    |
 
 ### 4b. Fix the source code
 

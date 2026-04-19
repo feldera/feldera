@@ -27,10 +27,29 @@ from pyfeldera._paths import _data_root, validate
 
 logger = logging.getLogger("pyfeldera")
 
-# The precompile cache was built with --dbsp-override-path=/home/ubuntu/feldera.
-# To reuse it without recompilation, crate sources must live at this exact path.
-_CACHE_COMPATIBLE_PATH = Path("/home/ubuntu/feldera")
-_DEFAULT_DEPLOY_DIR = Path.home() / ".pyfeldera"
+# The precompile cache is re-built during extraction with
+# --dbsp-override-path=/tmp/feldera so it works on any host.  /tmp is
+# world-writable, unlike /home/ubuntu which requires root on Fabric VMs.
+_CACHE_COMPATIBLE_PATH = Path("/tmp/feldera")
+
+def _pick_default_deploy_dir() -> Path:
+    """Choose the best default deploy directory.
+
+    Prefers ``/mnt/.pyfeldera`` when ``/mnt`` exists and is writable —
+    Fabric VMs expose a large scratch volume there (~58 GB) while the
+    root filesystem has limited free space after pip install.
+    Falls back to ``~/.pyfeldera`` on regular hosts.
+    """
+    env = os.environ.get("PYFELDERA_DEPLOY_DIR")
+    if env:
+        return Path(env)
+    mnt = Path("/mnt")
+    if mnt.is_dir() and os.access(mnt, os.W_OK):
+        return mnt / ".pyfeldera"
+    return Path.home() / ".pyfeldera"
+
+
+_DEFAULT_DEPLOY_DIR = _pick_default_deploy_dir()
 
 # Name of the file written during ``run.sh build-wheel`` to identify a
 # particular wheel build.  Compared against the deployed copy to detect
@@ -62,6 +81,46 @@ def _needs_redeploy(deploy_dir: Path, src: Path) -> bool:
             return True
 
     return False
+
+
+def _copy_workspace_sources(deploy_dir: Path, target: Path) -> None:
+    """Copy workspace source files to *target* for fingerprint compat.
+
+    The precompile cache was built with ``--dbsp-override-path=<target>``.
+    Cargo resolves symlinks, so the source files must exist as real files
+    at *target* (not via symlink).  Only the small workspace metadata and
+    crate sources (~23 MB) are copied — the heavy toolchain and cache
+    stay in *deploy_dir*.
+    """
+    if deploy_dir.resolve() == target.resolve():
+        return  # nothing to do
+
+    _WORKSPACE_ITEMS = [
+        "Cargo.toml", "Cargo.lock", "README.md",
+        "crates", "sql-to-dbsp-compiler",
+    ]
+
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        for name in _WORKSPACE_ITEMS:
+            src = deploy_dir / name
+            dst = target / name
+            if not src.exists():
+                continue
+            if dst.is_symlink() or (dst.exists() and not dst.is_dir()):
+                dst.unlink()
+            elif dst.is_dir():
+                shutil.rmtree(dst)
+            if src.is_dir():
+                shutil.copytree(src, dst, symlinks=True)
+            else:
+                shutil.copy2(src, dst)
+        logger.info("Copied workspace sources to %s for cache compat", target)
+    except OSError:
+        logger.warning(
+            "Could not copy workspace to %s -- "
+            "first pipeline compile may be slow", target,
+        )
 
 
 def _deploy_if_needed(deploy_dir: Path) -> Path:
@@ -101,15 +160,20 @@ def _deploy_if_needed(deploy_dir: Path) -> Path:
 
     for item in src.iterdir():
         dst = deploy_dir / item.name
-        if dst.exists():
+        # Remove existing destination — handle symlinks (from prior
+        # lakehouse redirects) before checking is_dir() to avoid
+        # following them into the lakehouse mount.
+        if dst.is_symlink():
+            dst.unlink()
+        elif dst.exists():
             if dst.is_dir():
                 shutil.rmtree(dst)
             else:
                 dst.unlink()
-        if item.is_dir():
-            shutil.copytree(item, dst, symlinks=True)
-        else:
-            shutil.copy2(item, dst)
+        # Use move instead of copy — on the same filesystem (root) this
+        # is an instant rename that avoids doubling the ~6 GB data footprint.
+        # This keeps peak disk usage manageable on constrained Fabric VMs.
+        shutil.move(str(item), str(dst))
 
     # Ensure executables have +x
     binary = deploy_dir / "bin" / "pipeline-manager"
@@ -121,27 +185,19 @@ def _deploy_if_needed(deploy_dir: Path) -> Path:
             if f.is_file():
                 f.chmod(f.stat().st_mode | 0o111)
 
-    # Create a symlink at the cache-compatible path so the precompile
-    # cache's hardcoded absolute paths resolve correctly.
-    if deploy_dir.resolve() != _CACHE_COMPATIBLE_PATH.resolve():
-        try:
-            _CACHE_COMPATIBLE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            if _CACHE_COMPATIBLE_PATH.is_symlink() or _CACHE_COMPATIBLE_PATH.exists():
-                _CACHE_COMPATIBLE_PATH.unlink()
-            _CACHE_COMPATIBLE_PATH.symlink_to(deploy_dir.resolve())
-            logger.info("Symlinked %s → %s for cache compat",
-                        _CACHE_COMPATIBLE_PATH, deploy_dir.resolve())
-        except OSError:
-            logger.warning("Could not create symlink at %s — "
-                           "first pipeline compile may be slow",
-                           _CACHE_COMPATIBLE_PATH)
+    # Copy workspace source files to the cache-compatible path so the
+    # precompile cache's Cargo fingerprints resolve correctly.  Cargo
+    # resolves symlinks, so a real copy (not symlink) is required.
+    # Only the small source files (~23 MB) are copied, not the full
+    # deploy directory.
+    _copy_workspace_sources(deploy_dir, _CACHE_COMPATIBLE_PATH)
 
     (deploy_dir / ".deployed").touch()
     _ensure_cargo_wrapper(deploy_dir)
 
-    # Free disk: remove the source data in site-packages (now copied to
-    # deploy_dir).  On constrained environments like Fabric (~59 GB), the
-    # duplicate ~6 GB matters.
+    # Free disk: remove any leftover source data in site-packages.
+    # After ``shutil.move`` above this is normally empty, but clean up
+    # defensively in case any items couldn't be moved.
     try:
         for item in src.iterdir():
             if item.is_dir():
@@ -151,6 +207,13 @@ def _deploy_if_needed(deploy_dir: Path) -> Path:
         logger.info("Cleaned source data at %s to free disk", src)
     except OSError:
         pass  # best-effort
+
+    # Free disk: remove pip's HTTP/wheel cache — on constrained
+    # environments the cached .whl can waste several GB.
+    pip_cache = Path.home() / ".cache" / "pip"
+    if pip_cache.exists():
+        shutil.rmtree(pip_cache, ignore_errors=True)
+        logger.info("Cleaned pip cache at %s to free disk", pip_cache)
 
     logger.info("Deploy complete (%s)", deploy_dir)
     return deploy_dir
@@ -220,13 +283,39 @@ def _toolchain_env(deploy_dir: Path) -> dict[str, str]:
     return env
 
 
+def _ensure_soname_symlinks(lib_dir: Path) -> None:
+    """Ensure versioned shared-library files exist for runtime loading.
+
+    During extraction ``tar -h`` dereferences symlinks, so the real
+    file lands as ``libfoo.so`` but its embedded SONAME is
+    ``libfoo.so.X``.  The dynamic linker looks up the SONAME file at
+    runtime.  Normally the extraction script (``run.sh``) creates
+    versioned copies, but this is a belt-and-suspenders fallback.
+    """
+    _KNOWN_SONAMES: dict[str, str] = {
+        "libsasl2.so": "libsasl2.so.2",
+    }
+    for basename, soname in _KNOWN_SONAMES.items():
+        so_file = lib_dir / basename
+        versioned = lib_dir / soname
+        if so_file.exists() and not versioned.exists():
+            try:
+                versioned.symlink_to(basename)
+                logger.info("Created symlink %s → %s", soname, basename)
+            except OSError:
+                # Symlinks may fail on some filesystems; copy instead.
+                shutil.copy2(so_file, versioned)
+                logger.info("Copied %s as %s", basename, soname)
+
+
 def _ensure_cargo_wrapper(deploy_dir: Path) -> None:
     """Create a wrapper script that sets env vars for cargo builds.
 
     Sets ``LIBCLANG_PATH`` + ``LD_LIBRARY_PATH`` for bundled libclang/LLVM,
     ``PKG_CONFIG_PATH`` + ``C_INCLUDE_PATH`` + ``LIBRARY_PATH`` for bundled
-    dev headers (sasl2, ssl), and ``BINDGEN_EXTRA_CLANG_ARGS`` for clang
-    resource headers.
+    dev headers (sasl2, ssl), ``BINDGEN_EXTRA_CLANG_ARGS`` for clang
+    resource headers, and ``RUSTFLAGS`` rpath so compiled pipeline
+    binaries find sysroot shared libraries at runtime.
 
     This keeps these env vars isolated to cargo processes — they do not
     leak into embedded PostgreSQL or Java, avoiding symbol mismatch crashes.
@@ -254,6 +343,11 @@ def _ensure_cargo_wrapper(deploy_dir: Path) -> None:
                 content = content.replace("SYSROOT_INCLUDE", str(sysroot / "include"))
                 pc_file.write_text(content)
 
+    # Ensure versioned .so symlinks exist for runtime loading
+    sysroot_lib = sysroot / "lib"
+    if sysroot_lib.exists():
+        _ensure_soname_symlinks(sysroot_lib)
+
     # Build wrapper script
     real_cargo = rust_bin / "cargo"
     lines = ["#!/bin/sh"]
@@ -262,11 +356,23 @@ def _ensure_cargo_wrapper(deploy_dir: Path) -> None:
         lines.append(f'export LIBCLANG_PATH="{libclang_dir}"')
         lines.append(f'export LD_LIBRARY_PATH="{libclang_dir}:${{LD_LIBRARY_PATH:-}}"')
         lines.append(f'export BINDGEN_EXTRA_CLANG_ARGS="-isystem {clang_include}"')
+    # Disable incremental compilation and debug info to reduce disk
+    # usage during pipeline compilation.  On constrained Fabric VMs
+    # (~59 GB root) every GB counts.
+    lines.append('export CARGO_INCREMENTAL=0')
     if sysroot.exists():
         pc_dir = sysroot / "lib" / "pkgconfig"
         lines.append(f'export PKG_CONFIG_PATH="{pc_dir}:${{PKG_CONFIG_PATH:-}}"')
         lines.append(f'export C_INCLUDE_PATH="{sysroot / "include"}:${{C_INCLUDE_PATH:-}}"')
-        lines.append(f'export LIBRARY_PATH="{sysroot / "lib"}:${{LIBRARY_PATH:-}}"')
+        lines.append(f'export LIBRARY_PATH="{sysroot_lib}:${{LIBRARY_PATH:-}}"')
+        # Embed rpath so compiled pipeline binaries find sysroot libs at
+        # runtime without requiring LD_LIBRARY_PATH (which would leak into
+        # child processes like embedded PostgreSQL).
+        lines.append(
+            f'export RUSTFLAGS="${{RUSTFLAGS:-}}'
+            f' -C debuginfo=0'
+            f' -C link-arg=-Wl,-rpath,{sysroot_lib}"'
+        )
     lines.append(f'exec "{real_cargo}" "$@"')
 
     wrapper.write_text("\n".join(lines) + "\n")
@@ -331,11 +437,16 @@ class FelderaServer:
             f"--compilation-cargo-lock-path={override / 'Cargo.lock'}",
             f"--dbsp-override-path={override}",
         ]
-        # Point at the deployed precompile cache
+        # Point at the compiler/runner working directories.
+        # Always create them — the precompile cache may have been deleted
+        # to free disk on constrained hosts.
         feldera_state = home / "cache" / ".feldera"
-        if feldera_state.exists():
-            cmd.append(f"--compiler-working-directory={feldera_state / 'compiler'}")
-            cmd.append(f"--runner-working-directory={feldera_state / 'local-runner'}")
+        compiler_dir = feldera_state / "compiler"
+        runner_dir = feldera_state / "local-runner"
+        compiler_dir.mkdir(parents=True, exist_ok=True)
+        runner_dir.mkdir(parents=True, exist_ok=True)
+        cmd.append(f"--compiler-working-directory={compiler_dir}")
+        cmd.append(f"--runner-working-directory={runner_dir}")
         if precompile:
             cmd.append("--precompile")
         cmd.extend(self.extra_args)
