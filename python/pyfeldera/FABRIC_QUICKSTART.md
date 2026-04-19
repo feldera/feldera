@@ -36,14 +36,7 @@ RELAY_PATH = "demo"
 RELAY_RULE = "demo-listen-send"
 RELAY_KEY  = "..."
 
-# ── Clean disk space ──
-for d in ["cache", "toolchain", "bin", "build", "crates", "sql-to-dbsp-compiler"]:
-    p = os.path.join(os.path.dirname(__import__("pyfeldera").__file__), "data", d)
-    if os.path.isdir(p):
-        shutil.rmtree(p, ignore_errors=True)
-shutil.rmtree(os.path.expanduser("~/.cache/pip"), ignore_errors=True)
-
-# ── Start Feldera ──
+# ── Start Feldera  ──
 server = FelderaServer(bind_address="127.0.0.1", port=8080)
 threading.Thread(target=server.start_blocking, daemon=True).start()
 server.wait_for_healthy(timeout=180)

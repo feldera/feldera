@@ -1,8 +1,13 @@
 """Manage a Feldera pipeline-manager server process.
 
-On first start the server auto-deploys bundled data (binary, JAR,
+On first import the module auto-deploys bundled data (binary, JAR,
 toolchain, precompile cache) from the wheel to ``~/.pyfeldera/``.
 No external compilers or runtimes are required on the host.
+
+The eager deploy on import is intentional: callers (e.g. Fabric notebooks)
+may delete the package's ``data/`` directory after import to reclaim disk
+space.  By deploying at import time the data is safely copied before any
+caller-side cleanup can remove it.
 """
 
 from __future__ import annotations
@@ -27,6 +32,37 @@ logger = logging.getLogger("pyfeldera")
 _CACHE_COMPATIBLE_PATH = Path("/home/ubuntu/feldera")
 _DEFAULT_DEPLOY_DIR = Path.home() / ".pyfeldera"
 
+# Name of the file written during ``run.sh build-wheel`` to identify a
+# particular wheel build.  Compared against the deployed copy to detect
+# when ``pip install --force-reinstall`` delivers a newer wheel.
+_BUILD_ID_FILE = ".build_id"
+
+
+def _needs_redeploy(deploy_dir: Path, src: Path) -> bool:
+    """Return *True* when the deploy directory is stale or incomplete.
+
+    Checks the ``.build_id`` stamp written by ``run.sh build-wheel``.
+    If the source build ID differs from the deployed one — or if the
+    pipeline-manager binary is missing — a (re)deploy is required.
+    """
+    marker = deploy_dir / ".deployed"
+    binary = deploy_dir / "bin" / "pipeline-manager"
+
+    if not marker.exists() or not binary.exists():
+        return True
+
+    src_id_file = src / _BUILD_ID_FILE
+    dst_id_file = deploy_dir / _BUILD_ID_FILE
+    if src_id_file.exists():
+        src_id = src_id_file.read_text().strip()
+        dst_id = dst_id_file.read_text().strip() if dst_id_file.exists() else ""
+        if src_id != dst_id:
+            logger.info("Build ID mismatch (src=%s, dst=%s) — redeploying",
+                        src_id[:12], dst_id[:12])
+            return True
+
+    return False
+
 
 def _deploy_if_needed(deploy_dir: Path) -> Path:
     """Copy bundled data to *deploy_dir* if not already present.
@@ -36,19 +72,31 @@ def _deploy_if_needed(deploy_dir: Path) -> Path:
     (``/home/ubuntu/feldera``).  If the deploy dir differs, a symlink
     is created at that path pointing back to the deploy dir.
     """
-    marker = deploy_dir / ".deployed"
-    if marker.exists():
-        logger.debug("Deploy dir %s already present, skipping copy", deploy_dir)
+    src = _data_root()
+
+    # Fast path — already deployed and up-to-date.
+    if not _needs_redeploy(deploy_dir, src):
+        logger.debug("Deploy dir %s up-to-date, skipping copy", deploy_dir)
         _ensure_cargo_wrapper(deploy_dir)
         return deploy_dir
 
-    src = _data_root()
-    if not src.exists():
+    if not src.exists() or not any(src.iterdir()):
+        # Source data was already cleaned (e.g. notebook disk cleanup).
+        # If a prior deploy left a working binary, trust it.
+        binary = deploy_dir / "bin" / "pipeline-manager"
+        if binary.exists():
+            logger.debug("Source data absent but deploy dir has binary — reusing")
+            marker = deploy_dir / ".deployed"
+            if not marker.exists():
+                marker.touch()
+            _ensure_cargo_wrapper(deploy_dir)
+            return deploy_dir
         raise FileNotFoundError(
-            f"Bundled data not found at {src}. Is the wheel built correctly?"
+            f"Bundled data not found at {src} and no prior deploy at "
+            f"{deploy_dir}. Is the wheel built correctly?"
         )
 
-    logger.info("First run — deploying pyfeldera to %s ...", deploy_dir)
+    logger.info("Deploying pyfeldera to %s ...", deploy_dir)
     deploy_dir.mkdir(parents=True, exist_ok=True)
 
     for item in src.iterdir():
@@ -88,8 +136,22 @@ def _deploy_if_needed(deploy_dir: Path) -> Path:
                            "first pipeline compile may be slow",
                            _CACHE_COMPATIBLE_PATH)
 
-    marker.touch()
+    (deploy_dir / ".deployed").touch()
     _ensure_cargo_wrapper(deploy_dir)
+
+    # Free disk: remove the source data in site-packages (now copied to
+    # deploy_dir).  On constrained environments like Fabric (~59 GB), the
+    # duplicate ~6 GB matters.
+    try:
+        for item in src.iterdir():
+            if item.is_dir():
+                shutil.rmtree(item, ignore_errors=True)
+            else:
+                item.unlink(missing_ok=True)
+        logger.info("Cleaned source data at %s to free disk", src)
+    except OSError:
+        pass  # best-effort
+
     logger.info("Deploy complete (%s)", deploy_dir)
     return deploy_dir
 
@@ -241,6 +303,7 @@ class FelderaServer:
         self._process: subprocess.Popen | None = None
         self._log_file = None
         self._log_path: Path | None = None
+        self._startup_error: Exception | None = None
 
     def _ensure_deployed(self) -> Path:
         return _deploy_if_needed(self.deploy_dir)
@@ -313,6 +376,11 @@ class FelderaServer:
         deadline = time.monotonic() + timeout
         last_exc: Exception | None = None
         while time.monotonic() < deadline:
+            # Surface startup failures from background threads immediately.
+            if self._startup_error is not None:
+                raise RuntimeError(
+                    f"Server failed to start: {self._startup_error}"
+                ) from self._startup_error
             # Check if the process crashed
             if self._process and self._process.poll() is not None:
                 raise RuntimeError(
@@ -355,8 +423,19 @@ class FelderaServer:
         return "\n".join(lines[-tail:])
 
     def start_blocking(self) -> None:
-        """Start and block until exit or signal."""
-        self.start()
+        """Start and block until exit or signal.
+
+        If an exception occurs during startup (deploy or process launch),
+        it is stored in ``_startup_error`` so that ``wait_for_healthy``
+        can surface a clear message instead of an opaque timeout.
+        """
+        try:
+            self.start()
+        except Exception as exc:
+            self._startup_error = exc
+            logger.error("start_blocking failed: %s", exc)
+            raise
+
         assert self._process is not None
 
         # Signal handlers only work in the main thread; skip if called
@@ -372,3 +451,23 @@ class FelderaServer:
             pass  # not in main thread — signals handled by caller
 
         self._process.wait()
+
+
+# ---------------------------------------------------------------------------
+# Eager deploy on module import
+# ---------------------------------------------------------------------------
+# Trigger the deploy as soon as this module is loaded (typically via
+# ``from pyfeldera.server import FelderaServer``).  This ensures the
+# bundled data is safely copied to ``~/.pyfeldera/`` *before* any
+# caller-side code can delete the package's ``data/`` directory to
+# reclaim disk space.
+#
+# On the fast path (already deployed and up-to-date) this is two stat()
+# calls — negligible overhead.
+try:
+    _deploy_if_needed(_DEFAULT_DEPLOY_DIR)
+except FileNotFoundError:
+    # Running from a source checkout or partial install — no bundled data.
+    logger.debug("Eager deploy skipped: no bundled data available")
+except Exception:
+    logger.debug("Eager deploy skipped", exc_info=True)

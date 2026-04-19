@@ -142,6 +142,7 @@ run_extract() {
         /usr/lib/x86_64-linux-gnu/libsasl2.so \
         /usr/lib/x86_64-linux-gnu/libsasl2.a \
         /usr/include/openssl \
+        /usr/include/x86_64-linux-gnu/openssl \
         /usr/lib/x86_64-linux-gnu/pkgconfig/libssl.pc \
         /usr/lib/x86_64-linux-gnu/pkgconfig/libcrypto.pc \
         /usr/lib/x86_64-linux-gnu/pkgconfig/openssl.pc
@@ -151,6 +152,11 @@ run_extract() {
     mkdir -p "${sysex}"
     tar -xf /tmp/sysroot.tar -C "${sysex}"
     cp -a "${sysex}/usr/include/"* "${DATA_DIR}/toolchain/sysroot/include/"
+    # Arch-specific headers (opensslconf.h, configuration.h live here on Debian)
+    if [ -d "${sysex}/usr/include/x86_64-linux-gnu/openssl" ]; then
+        cp -a "${sysex}/usr/include/x86_64-linux-gnu/openssl/"* \
+            "${DATA_DIR}/toolchain/sysroot/include/openssl/"
+    fi
     find "${sysex}" -name '*.pc' -exec cp {} "${DATA_DIR}/toolchain/sysroot/lib/pkgconfig/" \;
     find "${sysex}" -name '*.so' -o -name '*.a' | while read f; do
         cp -a "$f" "${DATA_DIR}/toolchain/sysroot/lib/"
@@ -206,6 +212,11 @@ run_build_wheel() {
     echo "=== Building pyfeldera wheel ==="
     [ -f "${DATA_DIR}/bin/pipeline-manager" ] || run_extract
     [ -f "${DATA_DIR}/Cargo.toml" ] || run_collect
+
+    # Stamp a unique build ID so the server module can detect stale deploys
+    # after ``pip install --force-reinstall``.
+    date -u +"%Y%m%dT%H%M%SZ-$(head -c8 /dev/urandom | od -An -tx1 | tr -d ' \n')" \
+        > "${DATA_DIR}/.build_id"
 
     cd "${PROJECT_DIR}"
     rm -rf "${DIST_DIR}"

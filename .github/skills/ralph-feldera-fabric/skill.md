@@ -27,6 +27,9 @@ Iterative development loop to get dbt tests passing against a real Feldera insta
 
 **NEVER emit `{ "status": "Succeeded" }` if any test is failing.**
 
+You are encouraged to parallelize operations like polling APIs via sub-agents and /fleet.
+Keep your main context window clean so you're able to orchestrate the root-cause-analysis.
+
 ---
 
 ## Environment
@@ -123,7 +126,38 @@ done
 
 **Do NOT proceed to Step 3 until Feldera is healthy.**
 
-If Feldera never becomes healthy after 10 minutes, use Privy RelayClient to check logs:
+If Feldera never becomes healthy after 10 minutes, diagnose using these methods:
+
+### Notebook-level diagnostics (via `fab` CLI)
+
+Check if the notebook job itself failed:
+
+```bash
+ITEM="SQL Telemetry & Intelligence - Insights - Dev - mdrrahman.Workspace/Feldera.Notebook"
+
+# Check job status + failure reason
+fab job run-list "${ITEM}" --output_format json 2>&1 | grep -v '^!'
+```
+
+Look at `failureReason` — if it says `JobInstanceStatusFailed`, the notebook crashed during execution.
+
+Get per-cell execution state to see which cell is stuck or failed:
+
+```bash
+fab get "${ITEM}" \
+    -q "definition.parts[0].payload.cells[].{cell_type:cell_type,cellStatus:metadata.cellStatus,source:source[0]}" \
+    --output_format json -f 2>&1 | grep -v '^!'
+```
+
+Each cell's `cellStatus` JSON contains `normalized_state` (`finished`, `running`, `error`), `execution_start_time`, and `execution_finish_time`. Parse it to find which cell is problematic:
+
+- Cell 0 (markdown) — no execution
+- Cell 1 (pip install) — should finish in ~3 min. If stuck, the wheel URL may be unreachable.
+- Cell 2 (start Feldera + Privy) — should transition to `running` and stay there. If it errors, the `FelderaServer.start()` or deploy failed.
+
+### Privy diagnostics (via RelayClient)
+
+If Privy relay IS reachable but Feldera isn't healthy, use the RelayClient to inspect:
 
 ```python
 import os
@@ -134,9 +168,25 @@ c = RelayClient(
     keyrule=os.environ["PRIVY_RELAY_KEYRULE"],
     key=os.environ["PRIVY_RELAY_KEY"],
 )
+
+# Pipeline-manager log
 r = c.run_bash("cat ~/.pyfeldera/pipeline-manager.log 2>/dev/null | tail -50")
 print(r.stdout)
+
+# Check if process is running
+r = c.run_bash("ps aux | grep pipeline-manager | grep -v grep || echo 'NOT RUNNING'")
+print(r.stdout)
+
+# Check deploy status
+r = c.run_bash("ls -la ~/.pyfeldera/.deployed 2>/dev/null && echo DEPLOYED || echo NOT_DEPLOYED")
+print(r.stdout)
+
+# Check disk
+r = c.run_bash("df -h / | tail -1")
+print(r.stdout)
 ```
+
+If Privy relay is NOT reachable, the notebook Cell 2 likely hasn't reached the `RelayServer.serve_forever()` line yet — wait longer or check the job status via `fab`.
 
 ---
 
@@ -165,17 +215,96 @@ This runs:
 
 ### 4a. Diagnose the failure
 
-Read the test output carefully. Common failure patterns:
+** YOU MUST NOT SKIP THIS, YOU MUST RESILIENTLY KEEP TRYING TO FIGUE OUT THE ROOT CAUSE **
 
-| Error                        | Root Cause                         | Fix Location                                      |
-| ---------------------------- | ---------------------------------- | ------------------------------------------------- |
-| `Unable to find libclang`    | Missing bundled lib                | `run.sh` extraction + `server.py` wrapper         |
-| `stddef.h not found`         | Missing clang resource headers     | `run.sh` extraction (clang/18/include)            |
-| `Unable to find libsasl2`    | Missing dev headers/pkg-config     | `run.sh` sysroot extraction + `server.py` wrapper |
-| `No space left on device`    | Disk full (59 GB limit)            | Clean site-packages duplicates in notebook Cell 2 |
-| `rustup could not choose`    | Cargo wrapper calling wrong binary | `server.py` `_ensure_cargo_wrapper()`             |
-| `Pipeline failed to compile` | Cache invalidation (wrong paths)   | Check symlink at `/home/ubuntu/feldera`           |
-| `Connection refused`         | Feldera not running / Privy down   | Restart notebook (Step 1)                         |
+Read the test output in `/tmp/fabric-test.log` carefully. The dbt output contains the Feldera error in the assertion message.
+
+**Remote diagnostics via Privy:** When the test output alone isn't enough, use the Privy RelayClient to interrogate the Fabric VM directly.
+
+> It's possible privy is down on the Fabric side, in that case use the fab CLI method to get the cell ouptut below.
+
+Set up the client:
+
+```python
+import os
+set_a = lambda: None  # source .env before running
+from privy import RelayClient
+c = RelayClient(
+    namespace=os.environ["PRIVY_RELAY_NAMESPACE"],
+    path=os.environ["PRIVY_RELAY_PATH"],
+    keyrule=os.environ["PRIVY_RELAY_KEYRULE"],
+    key=os.environ["PRIVY_RELAY_KEY"],
+)
+```
+
+Then use these diagnostic commands:
+
+```python
+# Pipeline-manager log (most useful — shows Rust compilation errors, startup failures)
+r = c.run_bash("cat ~/.pyfeldera/pipeline-manager.log 2>/dev/null | tail -100")
+print(r.stdout)
+
+# Disk space (Fabric has 59 GB total — pyfeldera uses ~20 GB)
+r = c.run_bash("df -h / | tail -1")
+print(r.stdout)
+
+# Disk breakdown (find what's eating space)
+r = c.run_bash("du -sh ~/.pyfeldera/*/ 2>/dev/null")
+print(r.stdout)
+
+# Check if the cargo wrapper is correct
+r = c.run_bash("cat ~/.pyfeldera/toolchain/cargo-wrapper/cargo")
+print(r.stdout)
+
+# Check if /home/ubuntu/feldera symlink exists (needed for precompile cache)
+r = c.run_bash("ls -la /home/ubuntu/feldera 2>/dev/null || echo 'NO SYMLINK'")
+print(r.stdout)
+
+# Check what libs are installed on the host
+r = c.run_bash("find /usr/lib -name 'libsasl2*' -o -name 'libclang*' -o -name 'libssl*' 2>/dev/null")
+print(r.stdout)
+
+# Check pkg-config paths in the deployed sysroot
+r = c.run_bash("cat ~/.pyfeldera/toolchain/sysroot/lib/pkgconfig/libsasl2.pc 2>/dev/null || echo 'NO SYSROOT'")
+print(r.stdout)
+
+# Check deployed toolchain structure
+r = c.run_bash("ls ~/.pyfeldera/toolchain/")
+print(r.stdout)
+
+# Check if libclang and its deps resolve
+r = c.run_bash("LD_LIBRARY_PATH=~/.pyfeldera/toolchain/libclang ldd ~/.pyfeldera/toolchain/libclang/libclang.so 2>&1 | grep 'not found' || echo 'All deps OK'")
+print(r.stdout)
+
+# Free disk by cleaning site-packages duplicates and pip cache
+r = c.run_bash("""
+rm -rf ~/.cache/pip/
+rm -rf ~/jupyter-env/python3.12/lib/python3.12/site-packages/pyfeldera/data/cache/
+rm -rf ~/jupyter-env/python3.12/lib/python3.12/site-packages/pyfeldera/data/toolchain/
+rm -rf ~/jupyter-env/python3.12/lib/python3.12/site-packages/pyfeldera/data/bin/
+rm -rf ~/jupyter-env/python3.12/lib/python3.12/site-packages/pyfeldera/data/build/
+rm -rf ~/jupyter-env/python3.12/lib/python3.12/site-packages/pyfeldera/data/crates/
+rm -rf ~/jupyter-env/python3.12/lib/python3.12/site-packages/pyfeldera/data/sql-to-dbsp-compiler/
+rm -rf ~/.pyfeldera/cache/.feldera/compiler/sql-compilation/pipeline-*
+df -h / | tail -1
+""")
+print(r.stdout)
+```
+
+Common failure patterns:
+
+| Error                        | Root Cause                            | Fix Location                                                                                                                    |
+| ---------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `Unable to find libclang`    | Missing bundled lib                   | `run.sh` extraction + `server.py` wrapper                                                                                       |
+| `stddef.h not found`         | Missing clang resource headers        | `run.sh` extraction (clang/18/include)                                                                                          |
+| `Unable to find libsasl2`    | Missing dev headers/pkg-config        | `run.sh` sysroot extraction + `server.py` wrapper                                                                               |
+| `No space left on device`    | Disk full (59 GB limit)               | Clean duplicates via Privy (see above), or change Feldera to store data in under this existing mount "/lakehouse/default/Files" |
+| `rustup could not choose`    | Cargo wrapper calling wrong binary    | `server.py` `_ensure_cargo_wrapper()`                                                                                           |
+| `Pipeline failed to compile` | Cache invalidation (wrong paths)      | Check symlink at `/home/ubuntu/feldera`                                                                                         |
+| `Connection refused`         | Feldera not running / Privy down      | Restart notebook (Step 1)                                                                                                       |
+| `signal.signal()` ValueError | Called from non-main thread           | `server.py` `start_blocking()` try/except                                                                                       |
+| `__tunable_is_initialized`   | LD_LIBRARY_PATH leaking to PostgreSQL | Use `ld.so --library-path` not `LD_LIBRARY_PATH`                                                                                |
+| `__tunable_is_initialized`   | LD_LIBRARY_PATH leaking to PostgreSQL | Use `ld.so --library-path` not `LD_LIBRARY_PATH`                                                                                |
 
 ### 4b. Fix the source code
 
@@ -214,13 +343,17 @@ az storage blob upload \
     --overwrite --no-progress
 ```
 
-### 4e. Verify local Docker tests still pass
+### 4e. (Optional) Verify local Docker tests still pass
+
+If you changed `server.py` or `run.sh`, run the local Docker regression to make sure you didn't break the existing flow:
 
 ```bash
 cd /workspaces/feldera/python/pyfeldera
 .scripts/run.sh build-image
 .scripts/run.sh dbt-test
 ```
+
+This runs all 8 dbt integration tests (including Kafka/Delta) against the Docker customer image. It takes ~12 min.
 
 ---
 
