@@ -48,8 +48,9 @@ EXPECTED_ROW_COUNTS = {
 
 # Test timeouts
 _DBT_COMMAND_TIMEOUT_SECONDS = 600
-_DBT_FABRIC_COMMAND_TIMEOUT_SECONDS = 1200  # Fabric VMs lack the precompile
-# cache symlink — first compilation rebuilds workspace crates (~10 min).
+_DBT_FABRIC_COMMAND_TIMEOUT_SECONDS = 2400  # Fabric VMs compile from scratch
+# on first run (~25 min on 2 vCores).  Subsequent compilations reuse the
+# locally-built target directory and finish in ~2 min.
 # pytest-timeout must exceed the subprocess timeout to avoid killing the test
 # before the dbt command finishes.  Add headroom for idle-wait + cleanup.
 _PYTEST_FABRIC_TIMEOUT_SECONDS = _DBT_FABRIC_COMMAND_TIMEOUT_SECONDS + 300

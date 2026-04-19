@@ -87,9 +87,11 @@ graph TB
 ```bash
 %%configure
 {
- "vCores": 2
+ "vCores": 8
 }
 ```
+
+> Rust compilation is cpu bound, 2 cores takes way too long
 
 ### Cell 1 — Install
 

@@ -32,6 +32,18 @@ logger = logging.getLogger("pyfeldera")
 # world-writable, unlike /home/ubuntu which requires root on Fabric VMs.
 _CACHE_COMPATIBLE_PATH = Path("/tmp/feldera")
 
+# Symlink target for the deployed sysroot (dev headers + shared libs).
+# The precompile cache embeds this path in RUSTFLAGS (-rpath) so that
+# Cargo fingerprints remain valid after deployment to any host.
+_CACHE_COMPATIBLE_SYSROOT = Path("/tmp/feldera-sysroot")
+
+# Cache-compatible CARGO_HOME.  The pipeline-manager clears the
+# environment when spawning cargo, so CARGO_HOME set via _toolchain_env
+# is NOT inherited.  The cargo wrapper sets CARGO_HOME to this fixed
+# path, and the precompile cache is built with the same path so Cargo
+# fingerprints (which embed registry source paths) stay valid.
+_CACHE_COMPATIBLE_CARGO_HOME = Path("/tmp/feldera-cargo")
+
 def _pick_default_deploy_dir() -> Path:
     """Choose the best default deploy directory.
 
@@ -123,6 +135,70 @@ def _copy_workspace_sources(deploy_dir: Path, target: Path) -> None:
         )
 
 
+def _ensure_sysroot_symlink(deploy_dir: Path) -> None:
+    """Create a symlink at the cache-compatible sysroot path.
+
+    The precompile cache embeds ``/tmp/feldera-sysroot/lib`` in
+    RUSTFLAGS (``-rpath``).  At deploy time we point that path to the
+    actual deployed sysroot so the compiled pipeline binaries find the
+    bundled shared libraries and the Cargo fingerprints stay valid.
+    """
+    sysroot = deploy_dir / "toolchain" / "sysroot"
+    if not sysroot.exists():
+        return
+    target = _CACHE_COMPATIBLE_SYSROOT
+    try:
+        if target.is_symlink():
+            if target.resolve() == sysroot.resolve():
+                return  # already correct
+            target.unlink()
+        elif target.exists():
+            shutil.rmtree(target)
+        target.symlink_to(sysroot)
+        logger.info("Created sysroot symlink %s → %s", target, sysroot)
+    except OSError:
+        logger.warning("Could not create sysroot symlink at %s", target)
+
+
+def _deploy_cargo_home(deploy_dir: Path) -> None:
+    """Move the deployed Cargo registry to the cache-compatible path.
+
+    The pipeline-manager clears the environment when spawning cargo,
+    so ``CARGO_HOME`` must be set in the cargo wrapper.  To keep the
+    precompile cache valid, the Cargo registry source files must be at
+    the same absolute path used during extraction (``/tmp/feldera-cargo``).
+
+    Uses ``shutil.move`` (instant rename on the same filesystem) to
+    avoid duplicating the ~700 MB registry.
+    """
+    src = deploy_dir / "cache" / ".cargo"
+    target = _CACHE_COMPATIBLE_CARGO_HOME
+    if not src.exists():
+        return
+    if target.exists() and not target.is_symlink():
+        # Already deployed — check if it has content
+        if any(target.iterdir()):
+            logger.debug("Cargo home at %s already populated", target)
+            return
+    try:
+        if target.is_symlink():
+            target.unlink()
+        elif target.exists():
+            shutil.rmtree(target)
+        target.mkdir(parents=True, exist_ok=True)
+        for item in src.iterdir():
+            dst = target / item.name
+            if dst.exists():
+                if dst.is_dir():
+                    shutil.rmtree(dst)
+                else:
+                    dst.unlink()
+            shutil.move(str(item), str(dst))
+        logger.info("Moved Cargo home to %s", target)
+    except OSError:
+        logger.warning("Could not deploy Cargo home to %s", target)
+
+
 def _deploy_if_needed(deploy_dir: Path) -> Path:
     """Copy bundled data to *deploy_dir* if not already present.
 
@@ -136,6 +212,8 @@ def _deploy_if_needed(deploy_dir: Path) -> Path:
     # Fast path — already deployed and up-to-date.
     if not _needs_redeploy(deploy_dir, src):
         logger.debug("Deploy dir %s up-to-date, skipping copy", deploy_dir)
+        _ensure_sysroot_symlink(deploy_dir)
+        _deploy_cargo_home(deploy_dir)
         _ensure_cargo_wrapper(deploy_dir)
         return deploy_dir
 
@@ -148,6 +226,8 @@ def _deploy_if_needed(deploy_dir: Path) -> Path:
             marker = deploy_dir / ".deployed"
             if not marker.exists():
                 marker.touch()
+            _ensure_sysroot_symlink(deploy_dir)
+            _deploy_cargo_home(deploy_dir)
             _ensure_cargo_wrapper(deploy_dir)
             return deploy_dir
         raise FileNotFoundError(
@@ -191,6 +271,14 @@ def _deploy_if_needed(deploy_dir: Path) -> Path:
     # Only the small source files (~23 MB) are copied, not the full
     # deploy directory.
     _copy_workspace_sources(deploy_dir, _CACHE_COMPATIBLE_PATH)
+
+    # Create a symlink for the sysroot so the -rpath embedded in
+    # RUSTFLAGS during precompilation resolves to the deployed sysroot.
+    _ensure_sysroot_symlink(deploy_dir)
+
+    # Move the Cargo registry to the cache-compatible path so that
+    # Cargo fingerprints (which embed source file paths) stay valid.
+    _deploy_cargo_home(deploy_dir)
 
     (deploy_dir / ".deployed").touch()
     _ensure_cargo_wrapper(deploy_dir)
@@ -240,12 +328,17 @@ def _toolchain_env(deploy_dir: Path) -> dict[str, str]:
     if cargo_cache.exists():
         env["CARGO_HOME"] = str(cargo_cache)
 
-    # Mold linker
+    # Mold linker + sysroot rpath.
+    # RUSTFLAGS MUST match exactly what was used during the precompile
+    # step (run.sh extract) — otherwise Cargo fingerprints differ and
+    # the entire precompile cache is invalidated.
     mold_bin = tc / "mold" / "bin"
+    sysroot_lib = _CACHE_COMPATIBLE_SYSROOT / "lib"
     if mold_bin.exists():
         env["RUSTFLAGS"] = (
             "-C link-arg=-fuse-ld=mold "
-            "-C link-arg=-Wl,--compress-debug-sections=zlib"
+            "-C link-arg=-Wl,--compress-debug-sections=zlib "
+            f"-C link-arg=-Wl,-rpath,{sysroot_lib}"
         )
 
     # libclang for bindgen (used during pipeline Rust compilation).
@@ -351,28 +444,30 @@ def _ensure_cargo_wrapper(deploy_dir: Path) -> None:
     # Build wrapper script
     real_cargo = rust_bin / "cargo"
     lines = ["#!/bin/sh"]
+    # CARGO_HOME: the pipeline-manager clears the environment for cargo
+    # subprocesses, so CARGO_HOME from _toolchain_env is lost.  Set it
+    # to the cache-compatible path so registry source paths match the
+    # precompile cache fingerprints.
+    lines.append(f'export CARGO_HOME="{_CACHE_COMPATIBLE_CARGO_HOME}"')
     if libclang_dir.exists():
         clang_include = libclang_dir / "clang" / "18" / "include"
         lines.append(f'export LIBCLANG_PATH="{libclang_dir}"')
         lines.append(f'export LD_LIBRARY_PATH="{libclang_dir}:${{LD_LIBRARY_PATH:-}}"')
         lines.append(f'export BINDGEN_EXTRA_CLANG_ARGS="-isystem {clang_include}"')
-    # Disable incremental compilation and debug info to reduce disk
-    # usage during pipeline compilation.  On constrained Fabric VMs
-    # (~59 GB root) every GB counts.
+    # Disable incremental compilation to reduce disk usage during
+    # pipeline compilation.  On constrained Fabric VMs every GB counts.
     lines.append('export CARGO_INCREMENTAL=0')
     if sysroot.exists():
         pc_dir = sysroot / "lib" / "pkgconfig"
         lines.append(f'export PKG_CONFIG_PATH="{pc_dir}:${{PKG_CONFIG_PATH:-}}"')
         lines.append(f'export C_INCLUDE_PATH="{sysroot / "include"}:${{C_INCLUDE_PATH:-}}"')
         lines.append(f'export LIBRARY_PATH="{sysroot_lib}:${{LIBRARY_PATH:-}}"')
-        # Embed rpath so compiled pipeline binaries find sysroot libs at
-        # runtime without requiring LD_LIBRARY_PATH (which would leak into
-        # child processes like embedded PostgreSQL).
-        lines.append(
-            f'export RUSTFLAGS="${{RUSTFLAGS:-}}'
-            f' -C debuginfo=0'
-            f' -C link-arg=-Wl,-rpath,{sysroot_lib}"'
-        )
+        # NOTE: Do NOT modify RUSTFLAGS here.  The precompile cache
+        # was built with RUSTFLAGS inherited from the Docker image env
+        # (mold + compress-debug-sections).  _toolchain_env() sets
+        # the same flags.  Adding anything extra (debuginfo, rpath)
+        # would change the Cargo fingerprint hash and invalidate the
+        # entire precompile cache, forcing a full 30+ min rebuild.
     lines.append(f'exec "{real_cargo}" "$@"')
 
     wrapper.write_text("\n".join(lines) + "\n")

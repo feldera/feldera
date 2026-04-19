@@ -32,7 +32,7 @@ run_extract() {
     mkdir -p "${DATA_DIR}/bin" "${DATA_DIR}/build" "${DATA_DIR}/toolchain"
 
     local cid
-    cid=$(docker run -d --entrypoint bash "${FELDERA_IMAGE}" -c "sleep 300")
+    cid=$(docker run -d --entrypoint bash "${FELDERA_IMAGE}" -c "sleep 3600")
 
     echo "  [1/7] pipeline-manager binary..."
     docker cp "${cid}:/home/ubuntu/feldera/build/pipeline-manager" "${DATA_DIR}/bin/pipeline-manager"
@@ -76,9 +76,23 @@ run_extract() {
     # writable, unlike /home/ubuntu which requires root on Fabric VMs.
     # We use a REAL copy (not symlink) because Cargo resolves symlinks
     # and would fingerprint the target path instead of /tmp/feldera.
+    #
+    # CARGO_HOME is set to /tmp/feldera-cargo (the cache-compatible
+    # path) so registry source paths match at runtime.  The pipeline-
+    # manager clears env for cargo subprocesses, so the cargo wrapper
+    # script sets CARGO_HOME explicitly to this same path.
+    #
+    # RUSTFLAGS MUST match server.py _toolchain_env() exactly.
+    # The rpath uses /tmp/feldera-sysroot/lib — at deploy time a
+    # symlink at that path points to the real sysroot.
     echo "    Rebasing precompile cache to /tmp/feldera ..."
     docker exec "${cid}" bash -c "
         cp -a /home/ubuntu/feldera /tmp/feldera
+        cp -a /home/ubuntu/.cargo /tmp/feldera-cargo
+        mkdir -p /tmp/feldera-sysroot/lib
+        export CARGO_HOME=/tmp/feldera-cargo
+        export RUSTFLAGS='-C link-arg=-fuse-ld=mold -C link-arg=-Wl,--compress-debug-sections=zlib -C link-arg=-Wl,-rpath,/tmp/feldera-sysroot/lib'
+        export PATH=/home/ubuntu/mold/bin:\$PATH
         /tmp/feldera/build/pipeline-manager \
             --precompile \
             --dbsp-override-path=/tmp/feldera \
@@ -87,17 +101,21 @@ run_extract() {
             --compiler-working-directory=/home/ubuntu/.feldera/compiler \
             --runner-working-directory=/home/ubuntu/.feldera/local-runner
     "
-    docker exec "${cid}" bash -c "rm -rf /home/ubuntu/.feldera/compiler/rust-compilation/target/debug/incremental"
+    docker exec "${cid}" bash -c "rm -rf /home/ubuntu/.feldera/compiler/rust-compilation/target/optimized/incremental"
     docker exec "${cid}" tar -cf /tmp/feldera-cache.tar -C /home/ubuntu .feldera/
     docker cp "${cid}:/tmp/feldera-cache.tar" /tmp/feldera-cache.tar
     tar -xf /tmp/feldera-cache.tar -C "${DATA_DIR}/cache/"
     rm /tmp/feldera-cache.tar
 
-    echo "  [7/8] Cargo registry (~726 MB)..."
-    docker exec "${cid}" tar -czf /tmp/cargo-reg.tar.gz -C /home/ubuntu .cargo/registry/
-    docker cp "${cid}:/tmp/cargo-reg.tar.gz" /tmp/cargo-reg.tar.gz
-    tar -xzf /tmp/cargo-reg.tar.gz -C "${DATA_DIR}/cache/"
-    rm /tmp/cargo-reg.tar.gz
+    echo "  [7/8] Cargo home (~800 MB, registry + git)..."
+    docker exec "${cid}" tar -czf /tmp/cargo-home.tar.gz \
+        -C /tmp/feldera-cargo registry/ git/ 2>/dev/null || \
+    docker exec "${cid}" tar -czf /tmp/cargo-home.tar.gz \
+        -C /tmp/feldera-cargo registry/
+    docker cp "${cid}:/tmp/cargo-home.tar.gz" /tmp/cargo-home.tar.gz
+    mkdir -p "${DATA_DIR}/cache/.cargo"
+    tar -xzf /tmp/cargo-home.tar.gz -C "${DATA_DIR}/cache/.cargo/"
+    rm /tmp/cargo-home.tar.gz
 
     echo "  [8/9] glibc 2.39 compat libs..."
     rm -rf "${DATA_DIR}/toolchain/glibc"

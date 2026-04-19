@@ -16,16 +16,31 @@ Iterative development loop to get dbt tests passing against a real Feldera insta
 
 **When tests fail, they represent REAL issues** — missing bundled libs, broken env vars, incompatible paths, etc. The failures are not noise — something needs a code fix in `python/pyfeldera/`.
 
+**Delta Lake on OneLake is MANDATORY.** The `fabric` target MUST write Delta output to `/lakehouse/default/Tables/<table_name>`. Do NOT disable Delta connectors for the `fabric` target — that is unacceptable. 
+
+The Fabric Lakehouse FUSE mount at `/lakehouse` does not support atomic renames (`rename()` syscall fails), which Delta Lake's default commit protocol requires. 
+
+You MUST find a way to make this work — options include:
+
+- Configuring `delta-rs` to use a non-rename commit strategy (e.g. `put-if-absent` / direct write)  
+- Setting environment variables or Feldera config that changes the Delta writer behavior
+- Patching the Feldera delta connector config (e.g. `allow_unsafe_rename`, `UNSAFE_RENAME_OK`, storage options)
+- Other engines have made Delta lake work with ADLSG2 on OneLake, explore those if required
+- Any other creative solution — this is a POC, hacks are welcome
+
+**Do NOT set fabric Delta connectors to `[]`. That defeats the purpose.**
+
 **You MUST follow this order:**
 
 1. **Cancel & Start** — cancel stale notebook runs, start fresh (Step 1)
 2. **Wait & Proxy** — wait for Feldera healthy via Privy proxy (Step 2)
 3. **Test** — run dbt Fabric tests (Step 3)
 4. **Fix & Rebuild** — if tests fail, fix source, rebuild wheel, upload (Step 4)
-5. **Iterate** — go back to Step 1 (Step 5)
-6. **Signal completion** — only after ALL tests are green (Step 6)
+5. **Breadcrumbs** — update this skill file inline with lessons learned (Step 5)
+6. **Iterate** — go back to Step 1 (Step 6)
+7. **Signal completion** — only after ALL tests are green AND Delta output lands in `/lakehouse/default/Tables/` (Step 7)
 
-**NEVER emit `{ "status": "Succeeded" }` if any test is failing.**
+**NEVER emit `{ "status": "Succeeded" }` if any test is failing or Delta output is disabled.**
 
 You are encouraged to parallelize operations like polling APIs via sub-agents and /fleet.
 Keep your main context window clean so you're able to orchestrate the root-cause-analysis.
@@ -330,11 +345,11 @@ Common failure patterns:
 | `Unable to find libsasl2`    | Missing dev headers/pkg-config        | `run.sh` sysroot extraction + `server.py` wrapper                                   |
 | `No space left on device`    | Disk full on root                     | Use `deploy_dir="/mnt/.pyfeldera"`, clean pip cache, clean site-packages duplicates |
 | `rustup could not choose`    | Cargo wrapper calling wrong binary    | `server.py` `_ensure_cargo_wrapper()`                                               |
-| `Pipeline failed to compile` | Cache invalidation (wrong paths)      | Check symlink at `/home/ubuntu/feldera`                                             |
+| `Pipeline failed to compile` | Cache invalidation (wrong paths)      | Check CARGO_HOME, RUSTFLAGS, dbsp-override-path consistency                         |
 | `Connection refused`         | Feldera not running / Privy down      | Restart notebook (Step 1)                                                           |
 | `signal.signal()` ValueError | Called from non-main thread           | `server.py` `start_blocking()` try/except                                           |
 | `__tunable_is_initialized`   | LD_LIBRARY_PATH leaking to PostgreSQL | Use `ld.so --library-path` not `LD_LIBRARY_PATH`                                    |
-| `__tunable_is_initialized`   | LD_LIBRARY_PATH leaking to PostgreSQL | Use `ld.so --library-path` not `LD_LIBRARY_PATH`                                    |
+| `rename` / atomic rename err | Lakehouse FUSE doesn't support rename | Fix Delta writer config — do NOT disable connectors (see CRITICAL rules above)      |
 
 ### 4b. Fix the source code
 
@@ -387,7 +402,22 @@ This runs all 8 dbt integration tests (including Kafka/Delta) against the Docker
 
 ---
 
-## Step 5: Iterate
+## Step 5: Summarize your lessons learned and leave Breadcrumbs for Next Ralph
+
+**Before emitting a completion signal, improve THIS skill file** (`/workspaces/feldera/.github/skills/ralph-feldera-fabric/skill.md`).
+
+Update the instructions **inline throughout the document** — not as an appendix. For example:
+- If you discovered a new failure pattern, add a row to the failure table in Step 4a
+- If a timeout was too short, update the value in the relevant Step
+- If a diagnostic command was missing or wrong, fix it in place
+- If you found a better sequence of operations, reorder the Steps
+- If a path or env var changed, update every reference to it
+
+The goal is that the next Ralph reads a **better, more accurate** version of this skill — not a changelog at the bottom.
+
+---
+
+## Step 6: Iterate
 
 Go back to **Step 1** — cancel the old notebook, start fresh (it will reinstall the updated wheel), wait for healthy, and re-run tests.
 
@@ -395,7 +425,7 @@ Go back to **Step 1** — cancel the old notebook, start fresh (it will reinstal
 
 ---
 
-## Step 6: Completion Signal
+## Step 7: Completion Signal
 
 **CRITICAL: You MUST emit exactly one of these JSON objects as the absolute last line of your output.**
 
