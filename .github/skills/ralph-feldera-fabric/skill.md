@@ -16,9 +16,13 @@ Iterative development loop to get dbt tests passing against a real Feldera insta
 
 **When tests fail, they represent REAL issues** — missing bundled libs, broken env vars, incompatible paths, etc. The failures are not noise — something needs a code fix in `python/pyfeldera/`.
 
-**Delta Lake on OneLake is MANDATORY.** The `fabric` target MUST write Delta output to `/lakehouse/default/Tables/<table_name>`. Do NOT disable Delta connectors for the `fabric` target — that is unacceptable. 
+**Delta Lake on OneLake is MANDATORY.** The `fabric` target MUST have Feldera **DIRECTLY** write Delta output to `/lakehouse/default/Tables/<table_name>`. Do NOT disable Delta connectors for the `fabric` target — that is unacceptable. 
 
 The Fabric Lakehouse FUSE mount at `/lakehouse` does not support atomic renames (`rename()` syscall fails), which Delta Lake's default commit protocol requires. 
+
+Do NOT have Feldera flush to a temporary directory first.
+
+> The `/lakehouse/default/Tables` mount should be directly writable by the Pipeline Manager.
 
 You MUST find a way to make this work — options include:
 
@@ -26,7 +30,7 @@ You MUST find a way to make this work — options include:
 - Setting environment variables or Feldera config that changes the Delta writer behavior
 - Patching the Feldera delta connector config (e.g. `allow_unsafe_rename`, `UNSAFE_RENAME_OK`, storage options)
 - Other engines have made Delta lake work with ADLSG2 on OneLake, explore those if required
-- Any other creative solution — this is a POC, hacks are welcome
+- Any other creative solution that can force Feldera to directly write to the OneLake location — this is a POC, hacks are welcome
 
 **Do NOT set fabric Delta connectors to `[]`. That defeats the purpose.**
 

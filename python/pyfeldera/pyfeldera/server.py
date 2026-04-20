@@ -23,9 +23,210 @@ from pathlib import Path
 
 import requests
 
+import textwrap
+
 from pyfeldera._paths import _data_root, validate
 
 logger = logging.getLogger("pyfeldera")
+
+# ---------------------------------------------------------------------------
+# LD_PRELOAD shim for FUSE mounts that lack link()/rename() support
+# ---------------------------------------------------------------------------
+# Fabric Lakehouse's FUSE mount at /lakehouse returns EPERM for both
+# hard_link() and rename().  object_store v0.11's PutMode::Create uses
+# hard_link() to atomically publish staged files — so we MUST intercept
+# link/linkat in addition to rename/renameat/renameat2.
+#
+# The shim is compiled at server start and loaded via ld.so --preload
+# (scoped to the pipeline-manager process only) plus LD_PRELOAD for
+# child processes (compiled pipeline binaries).
+_RENAME_SHIM_SRC = textwrap.dedent("""\
+    #define _GNU_SOURCE
+    #include <dlfcn.h>
+    #include <errno.h>
+    #include <fcntl.h>
+    #include <linux/fs.h>
+    #include <string.h>
+    #include <sys/sendfile.h>
+    #include <sys/stat.h>
+    #include <sys/syscall.h>
+    #include <unistd.h>
+
+    /* Apply the fallback under the Lakehouse FUSE mount.
+     * The visible path is /lakehouse/ but the resolved path (used by
+     * compiled pipeline binaries) is /synfs/lakehouse/.  Match both. */
+    static int path_needs_shim(const char *path) {
+        if (!path) return 0;
+        return strncmp(path, "/lakehouse/", 11) == 0
+            || strncmp(path, "/synfs/", 7) == 0;
+    }
+
+    /*
+     * copy_file — copy src to dst using sendfile with read/write fallback.
+     *
+     * Returns 0 on success, -1 on error (errno set).
+     * On failure the destination file is unlinked to avoid partial writes.
+     */
+    static int copy_file(int src_fd, int dst_fd, off_t size,
+                         const char *dst_path) {
+        off_t offset = 0;
+        off_t remaining = size;
+        while (remaining > 0) {
+            ssize_t n = sendfile(dst_fd, src_fd, &offset, (size_t)remaining);
+            if (n < 0) {
+                if (errno == EINTR)
+                    continue;
+                /* sendfile unsupported — fall back to read/write */
+                char buf[65536];
+                ssize_t r = read(src_fd, buf, sizeof(buf));
+                if (r <= 0) {
+                    unlink(dst_path);
+                    errno = EIO;
+                    return -1;
+                }
+                ssize_t w = write(dst_fd, buf, (size_t)r);
+                if (w != r) {
+                    unlink(dst_path);
+                    errno = EIO;
+                    return -1;
+                }
+                remaining -= r;
+            } else {
+                remaining -= n;
+            }
+        }
+        return 0;
+    }
+
+    /*
+     * copy_and_unlink — non-atomic rename fallback.
+     * Copies src to dst (O_EXCL), fsyncs, then unlinks src.
+     */
+    static int copy_and_unlink(const char *oldpath, const char *newpath) {
+        struct stat st;
+        if (stat(oldpath, &st) < 0)
+            return -1;
+
+        int src_fd = open(oldpath, O_RDONLY);
+        if (src_fd < 0)
+            return -1;
+
+        int dst_fd = open(newpath, O_WRONLY | O_CREAT | O_EXCL, st.st_mode);
+        if (dst_fd < 0) {
+            int saved = errno;
+            close(src_fd);
+            errno = saved;
+            return -1;
+        }
+
+        if (copy_file(src_fd, dst_fd, st.st_size, newpath) < 0) {
+            close(src_fd);
+            close(dst_fd);
+            return -1;
+        }
+
+        fsync(dst_fd);
+        close(src_fd);
+        close(dst_fd);
+        unlink(oldpath);
+        return 0;
+    }
+
+    /*
+     * copy_as_link — hard-link fallback.
+     * Copies src to dst (O_EXCL) but does NOT unlink src, preserving
+     * the hard-link contract where both paths remain valid.
+     */
+    static int copy_as_link(const char *oldpath, const char *newpath) {
+        struct stat st;
+        if (stat(oldpath, &st) < 0)
+            return -1;
+
+        int src_fd = open(oldpath, O_RDONLY);
+        if (src_fd < 0)
+            return -1;
+
+        int dst_fd = open(newpath, O_WRONLY | O_CREAT | O_EXCL, st.st_mode);
+        if (dst_fd < 0) {
+            int saved = errno;
+            close(src_fd);
+            errno = saved;
+            return -1;
+        }
+
+        if (copy_file(src_fd, dst_fd, st.st_size, newpath) < 0) {
+            close(src_fd);
+            close(dst_fd);
+            return -1;
+        }
+
+        fsync(dst_fd);
+        close(src_fd);
+        close(dst_fd);
+        return 0;
+    }
+
+    /* --- link() ---------------------------------------------------------- */
+    static int (*real_link)(const char *, const char *) = NULL;
+
+    int link(const char *oldpath, const char *newpath) {
+        if (!real_link)
+            real_link = dlsym(RTLD_NEXT, "link");
+        int ret = real_link(oldpath, newpath);
+        if (ret == -1 && errno == EPERM && path_needs_shim(newpath))
+            return copy_as_link(oldpath, newpath);
+        return ret;
+    }
+
+    /* --- linkat() -------------------------------------------------------- */
+    static int (*real_linkat)(int, const char *, int, const char *, int) = NULL;
+
+    int linkat(int olddirfd, const char *oldpath,
+               int newdirfd, const char *newpath, int flags) {
+        if (!real_linkat)
+            real_linkat = dlsym(RTLD_NEXT, "linkat");
+        int ret = real_linkat(olddirfd, oldpath, newdirfd, newpath, flags);
+        if (ret == -1 && errno == EPERM && path_needs_shim(newpath))
+            return copy_as_link(oldpath, newpath);
+        return ret;
+    }
+
+    /* --- rename() -------------------------------------------------------- */
+    static int (*real_rename)(const char *, const char *) = NULL;
+
+    int rename(const char *oldpath, const char *newpath) {
+        if (!real_rename)
+            real_rename = dlsym(RTLD_NEXT, "rename");
+        int ret = real_rename(oldpath, newpath);
+        if (ret == -1 && errno == EPERM && path_needs_shim(newpath))
+            return copy_and_unlink(oldpath, newpath);
+        return ret;
+    }
+
+    /* --- renameat() ------------------------------------------------------ */
+    static int (*real_renameat)(int, const char *, int, const char *) = NULL;
+
+    int renameat(int olddirfd, const char *oldpath,
+                 int newdirfd, const char *newpath) {
+        if (!real_renameat)
+            real_renameat = dlsym(RTLD_NEXT, "renameat");
+        int ret = real_renameat(olddirfd, oldpath, newdirfd, newpath);
+        if (ret == -1 && errno == EPERM && path_needs_shim(newpath))
+            return copy_and_unlink(oldpath, newpath);
+        return ret;
+    }
+
+    /* --- renameat2() ----------------------------------------------------- */
+    int renameat2(int olddirfd, const char *oldpath,
+                  int newdirfd, const char *newpath, unsigned int flags) {
+        int ret = (int)syscall(SYS_renameat2, olddirfd, oldpath,
+                               newdirfd, newpath, flags);
+        if (ret == -1 && errno == EPERM && path_needs_shim(newpath))
+            return copy_and_unlink(oldpath, newpath);
+        return ret;
+    }
+""")
+
 
 # The precompile cache is re-built during extraction with
 # --dbsp-override-path=/tmp/feldera so it works on any host.  /tmp is
@@ -373,7 +574,62 @@ def _toolchain_env(deploy_dir: Path) -> dict[str, str]:
 
     env.setdefault("RUST_LOG", "info")
     env.setdefault("RUST_BACKTRACE", "1")
+
+    # LD_PRELOAD the rename shim so compiled pipeline binaries (spawned
+    # by the pipeline-manager) can write Delta tables to the Lakehouse
+    # FUSE mount.  The shim is scoped to /lakehouse/ paths and only
+    # activates when rename() returns EPERM, so it is harmless to Java,
+    # PostgreSQL, and other child processes.
+    shim = _build_rename_shim(deploy_dir)
+    if shim:
+        existing = env.get("LD_PRELOAD", "")
+        env["LD_PRELOAD"] = f"{shim}:{existing}" if existing else str(shim)
+
     return env
+
+
+def _build_rename_shim(deploy_dir: Path) -> Path | None:
+    """Compile the LD_PRELOAD shim for Lakehouse FUSE mounts.
+
+    The shim intercepts ``link``/``linkat`` (used by object_store's
+    PutMode::Create) and ``rename``/``renameat``/``renameat2``, falling
+    back to copy+fsync when the FUSE mount returns EPERM.  It is loaded
+    via ``ld.so --preload`` and ``LD_PRELOAD`` so both the pipeline-manager
+    and compiled pipeline binaries benefit.
+
+    Returns the path to the compiled ``.so``, or ``None`` if compilation
+    failed (e.g. no C compiler on the host).
+    """
+    lakehouse = Path("/lakehouse")
+    if not lakehouse.is_dir():
+        return None  # not a Fabric environment
+
+    shim_dir = deploy_dir / "toolchain" / "shims"
+    shim_so = shim_dir / "rename_shim.so"
+    src_file = shim_dir / "rename_shim.c"
+
+    # Rebuild if source changed (e.g. wheel upgrade added link() support).
+    needs_build = not shim_so.exists()
+    if not needs_build and src_file.exists():
+        needs_build = src_file.read_text() != _RENAME_SHIM_SRC
+
+    if not needs_build:
+        return shim_so
+
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    src_file.write_text(_RENAME_SHIM_SRC)
+
+    try:
+        subprocess.run(
+            ["gcc", "-shared", "-fPIC", "-O2", "-Wall",
+             "-o", str(shim_so), str(src_file), "-ldl"],
+            check=True, capture_output=True, text=True,
+        )
+        logger.info("Built rename shim at %s", shim_so)
+        return shim_so
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        logger.warning("Could not build rename shim: %s", exc)
+        return None
 
 
 def _ensure_soname_symlinks(lib_dir: Path) -> None:
@@ -522,7 +778,15 @@ class FelderaServer:
         ld_so = home / "toolchain" / "glibc" / "lib64" / "ld-linux-x86-64.so.2"
         glibc_lib = home / "toolchain" / "glibc" / "lib" / "x86_64-linux-gnu"
         if ld_so.exists() and glibc_lib.exists():
-            cmd = [str(ld_so), "--library-path", str(glibc_lib), binary]
+            cmd = [str(ld_so), "--library-path", str(glibc_lib)]
+            # On Fabric, preload the rename shim so Delta log commits
+            # work on the Lakehouse FUSE mount (which lacks rename()).
+            # Using --preload scopes the shim to pipeline-manager only;
+            # child processes (PostgreSQL, Java) are not affected.
+            shim = _build_rename_shim(home)
+            if shim:
+                cmd += ["--preload", str(shim)]
+            cmd.append(binary)
         else:
             cmd = [binary]
 
