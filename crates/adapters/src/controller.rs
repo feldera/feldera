@@ -3373,20 +3373,15 @@ impl CircuitThread {
         //   complete before we can write the checkpoint
         //   ([TemporarySuspendError::Replaying]).  No special action is needed.
         //
-        // - If exactly once fault tolerance is not enabled, then the delay is
-        //   due to one or both of these issues:
+        // - If exactly once fault tolerance is not enabled, then the delay may
+        //   be due to [TemporarySuspendError::InputEndpointBarrier], in which
+        //   an input endpoint is between possible checkpoint steps.  We will
+        //   only flush input for the barrier endpoints (otherwise, it's
+        //   possible non-barrier endpoints will become barriers and we
+        //   definitely don't want that).
         //
-        //   * [TemporarySuspendError::InputEndpointBarrier]: An input endpoint
-        //     is between possible checkpoint steps.  We will only flush input
-        //     for the barrier endpoints (otherwise, it's possible non-barrier
-        //     endpoints will become barriers and we definitely don't want
-        //     that).
-        //
-        //   * [TemporarySuspendError::OutputEndpointTx]: Some output endpoint
-        //     has buffered or queued data.  We have to wait for the endpoint to
-        //     transmit this data, otherwise it will be lost if we resume from the
-        //     checkpoint.  In the meantime, we will not flush anything to the
-        //     circuit unless required to advance past an input barrier.
+        // - Other causes of [TemporarySuspendError] may occur independent of
+        //   fault tolerance configuration.
         //
         // Don't pause inputs during transactions: finishing a transaction may
         // involve ingesting some inputs from connectors. By pausing those inputs
