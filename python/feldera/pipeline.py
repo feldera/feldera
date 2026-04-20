@@ -167,6 +167,7 @@ class Pipeline:
         update_format: str = "raw",
         force: bool = False,
         wait: bool = True,
+        **kwargs,
     ) -> str:
         """
         Push this JSON data to the specified table of the pipeline.
@@ -181,6 +182,7 @@ class Pipeline:
             "raw", "insert_delete". https://docs.feldera.com/formats/json#the-insertdelete-format
         :param force: `True` to push data even if the pipeline is paused. `False` by default.
         :param wait: If True, blocks until this input has been processed by the pipeline
+        :param kwargs: Additional key word arguments forwarded to the Client push_to_pipeline method
 
         :returns: The completion token to this input.
 
@@ -206,6 +208,7 @@ class Pipeline:
             array=array,
             force=force,
             wait=wait,
+            **kwargs,
         )
 
     def pause_connector(self, table_name: str, connector_name: str):
