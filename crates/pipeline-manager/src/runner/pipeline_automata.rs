@@ -194,10 +194,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// `Initializing`. If it comes back one time something different, the grace period ends.
     const PROVISIONED_GRACE_PERIOD: Duration = Duration::from_secs(20);
 
-    /// The resources details can potentially change very frequently (especially if some counters or
+    /// The details can potentially change very frequently (especially if some counters or
     /// a timestamp is part of it). This is the minimum bound for them getting updated in the
     /// database, unless the status itself changed.
-    const RESOURCES_DETAILS_UPDATE_MIN_INTERVAL: Duration = Duration::from_secs(10);
+    const DETAILS_UPDATE_MIN_INTERVAL: Duration = Duration::from_secs(10);
 
     /// If nothing changes, this will create the same event.
     const DETAILS_UPDATE_MAX_INTERVAL: Duration = Duration::from_secs(600);
@@ -1442,7 +1442,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 if Some(&details) != self.prev_resources_status_details.as_ref()
                     && self
                         .prev_details_update
-                        .is_none_or(|t| t.elapsed() >= Self::RESOURCES_DETAILS_UPDATE_MIN_INTERVAL)
+                        .is_none_or(|t| t.elapsed() >= Self::DETAILS_UPDATE_MIN_INTERVAL)
                 {
                     self.prev_details_update = Some(Instant::now());
                     self.prev_resources_status_details = Some(details.clone());
@@ -1710,12 +1710,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 false
             };
         if runtime_status_changed
-            || runtime_status_details_changed
-            || storage_status_details_changed
-            || (resources_status_details_changed
+            || ((resources_status_details_changed
+                || runtime_status_details_changed
+                || storage_status_details_changed)
                 && self
                     .prev_details_update
-                    .is_none_or(|t| t.elapsed() >= Self::RESOURCES_DETAILS_UPDATE_MIN_INTERVAL))
+                    .is_none_or(|t| t.elapsed() >= Self::DETAILS_UPDATE_MIN_INTERVAL))
             || self
                 .prev_details_update
                 .is_none_or(|t| t.elapsed() >= Self::DETAILS_UPDATE_MAX_INTERVAL)
@@ -1727,6 +1727,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     .runtime_status_details
                     .clone(),
             );
+            self.prev_storage_status_details = latest_runtime_extended_status
+                .storage_status_details
+                .clone();
             Action::RemainProvisionedUpdateDetails {
                 deployment_resources_status_details: latest_resources_status_details,
                 extended_runtime_status: latest_runtime_extended_status.clone(),
@@ -1758,7 +1761,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             if (Some(&latest_details) != self.prev_resources_status_details.as_ref()
                 && self
                     .prev_details_update
-                    .is_none_or(|t| t.elapsed() >= Self::RESOURCES_DETAILS_UPDATE_MIN_INTERVAL))
+                    .is_none_or(|t| t.elapsed() >= Self::DETAILS_UPDATE_MIN_INTERVAL))
                 || self
                     .prev_details_update
                     .is_none_or(|t| t.elapsed() >= Self::DETAILS_UPDATE_MAX_INTERVAL)
