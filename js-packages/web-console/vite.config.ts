@@ -65,7 +65,13 @@ const testOptimizeDepsInclude = [
   'true-json-bigint',
   'ts-pattern',
   'valibot',
-  'virtua/svelte'
+  'virtua/svelte',
+  // worker-timers and its transitive fast-unique-numbers ship UMD bundles
+  // via their `browser` package.json field. Without pre-bundling, Vite
+  // serves the raw UMD file and ESM named imports (generateUniqueNumber, …)
+  // fail. Pre-bundling rewraps them into ESM with real named exports.
+  'worker-timers',
+  'worker-timers > fast-unique-numbers'
 ]
 
 const browserTestProject = ({
