@@ -4376,6 +4376,23 @@ impl ControllerInit {
 
         let pipeline_diff = compute_pipeline_diff(&checkpoint_config, &config)?;
 
+        // Drop output statistics for connectors whose definition or associated
+        // view has changed since the checkpoint.  A connector whose definition
+        // changed must be treated as a new connector: e.g. in `truncate` mode
+        // the table must be re-truncated rather than preserved from the
+        // previous incarnation, since an `is_restart` derived from stale stats
+        // would wrongly keep the old data.
+        let output_statistics: HashMap<_, _> = output_statistics
+            .into_iter()
+            .filter(|(name, _)| {
+                let Some(output_config) = config.outputs.get(name.as_str()) else {
+                    return false;
+                };
+                !pipeline_diff.is_affected_connector(name)
+                    && !pipeline_diff.is_affected_relation(&output_config.stream)
+            })
+            .collect();
+
         // For any input connectors that have not been modified, and whose associated table hasn't been modified,
         // pick up paused status from the checkpoint.
         for (connector_name, connector_config) in config.inputs.iter_mut() {
@@ -6342,6 +6359,7 @@ impl ControllerInner {
                     &handles.key_schema,
                     &handles.value_schema,
                     self_weak,
+                    initial_statistics.is_some(),
                 )?;
 
                 let command_handler = endpoint.command_handler();
