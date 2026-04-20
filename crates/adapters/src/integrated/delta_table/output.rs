@@ -93,6 +93,7 @@ impl DeltaTableWriter {
         key_schema: &Option<Relation>,
         value_schema: &Relation,
         controller: Weak<ControllerInner>,
+        is_restart: bool,
     ) -> Result<Self, ControllerError> {
         config.validate().map_err(|e| {
             ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string())
@@ -165,7 +166,7 @@ impl DeltaTableWriter {
         // Panic safety: block_on() panics if called from a tokio async context.
         // new() is called from sync controller code (connect_output), so this is fine.
         let task = TOKIO
-            .block_on(WriterTask::create(inner.clone()))
+            .block_on(WriterTask::create(inner.clone(), is_restart))
             .map_err(|e| {
                 ControllerError::output_transport_error(
                     endpoint_name,
@@ -262,7 +263,7 @@ impl WriterTask {
         }
     }
 
-    async fn create(inner: Arc<DeltaTableWriterInner>) -> AnyResult<Self> {
+    async fn create(inner: Arc<DeltaTableWriterInner>, is_restart: bool) -> AnyResult<Self> {
         let mut storage_options = inner.config.object_store_config.clone();
 
         // FIXME: S3 does not support the atomic rename operation required by delta. This is not a problem
@@ -273,17 +274,39 @@ impl WriterTask {
         // and hope for the best.  Without this config option, writes to S3-based delta tables will fail.
         storage_options.insert("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".to_string());
 
+        // On restart (resuming from a checkpoint), open the existing table
+        // without truncating or error-checking.  This prevents data loss when
+        // the pipeline auto-restarts with `truncate` mode, and avoids spurious
+        // errors with `error_if_exists` mode.
         let save_mode = match inner.config.mode {
             // I expected `SaveMode::Append` to be the correct setting, but
             // that always returns an error.
             DeltaTableWriteMode::Append => SaveMode::Ignore,
-            DeltaTableWriteMode::Truncate => SaveMode::Overwrite,
-            DeltaTableWriteMode::ErrorIfExists => SaveMode::ErrorIfExists,
+            DeltaTableWriteMode::Truncate => {
+                if is_restart {
+                    SaveMode::Ignore
+                } else {
+                    SaveMode::Overwrite
+                }
+            }
+            DeltaTableWriteMode::ErrorIfExists => {
+                if is_restart {
+                    SaveMode::Ignore
+                } else {
+                    SaveMode::ErrorIfExists
+                }
+            }
         };
 
         info!(
-            "delta_table {}: opening or creating delta table '{}' in '{save_mode:?}' mode",
-            &inner.endpoint_name, &inner.config.uri
+            "delta_table {}: {} delta table '{}' in '{save_mode:?}' mode",
+            &inner.endpoint_name,
+            if is_restart {
+                "reopening"
+            } else {
+                "opening or creating"
+            },
+            &inner.config.uri,
         );
 
         let delta_table = {
@@ -1053,13 +1076,29 @@ mod parallel {
     }
 
     fn make_endpoint(threads: usize, table_uri: &str, indexed: bool) -> DeltaTableWriter {
+        make_endpoint_ex(
+            threads,
+            table_uri,
+            indexed,
+            DeltaTableWriteMode::Truncate,
+            false,
+        )
+    }
+
+    fn make_endpoint_ex(
+        threads: usize,
+        table_uri: &str,
+        indexed: bool,
+        mode: DeltaTableWriteMode,
+        is_restart: bool,
+    ) -> DeltaTableWriter {
         let key_schema = if indexed { Some(key_relation()) } else { None };
         DeltaTableWriter::new(
             EndpointId::default(),
             "test_endpoint",
             &DeltaTableWriterConfig {
                 uri: table_uri.to_string(),
-                mode: DeltaTableWriteMode::Truncate,
+                mode,
                 max_retries: Some(0),
                 threads: Some(threads),
                 object_store_config: Default::default(),
@@ -1068,6 +1107,7 @@ mod parallel {
             &key_schema,
             &value_relation(),
             Weak::new(),
+            is_restart,
         )
         .expect("failed to create endpoint")
     }
@@ -1127,6 +1167,23 @@ mod parallel {
         let mut records = Vec::new();
         for path in parquet_files {
             let mut batch: Vec<OutputRecord> = load_parquet_file(&path);
+            records.append(&mut batch);
+        }
+        records
+    }
+
+    /// Read only the files referenced by the current delta table snapshot,
+    /// ignoring orphaned parquet files left behind by `SaveMode::Overwrite`.
+    fn read_delta_output(table_uri: &str) -> Vec<OutputRecord> {
+        use dbsp::circuit::tokio::TOKIO;
+        use deltalake::open_table;
+
+        let url = url::Url::from_file_path(table_uri).unwrap();
+        let table = TOKIO.block_on(async move { open_table(url).await.unwrap() });
+        let base = Path::new(table_uri);
+        let mut records = Vec::new();
+        for uri in table.get_file_uris().unwrap() {
+            let mut batch: Vec<OutputRecord> = load_parquet_file(&base.join(&*uri));
             records.append(&mut batch);
         }
         records
@@ -1349,6 +1406,7 @@ mod parallel {
             &key_schema,
             &value_relation(),
             Weak::new(),
+            false,
         );
         assert!(
             result.is_err(),
@@ -1487,6 +1545,7 @@ mod parallel {
             &key_schema,
             &value_relation(),
             Weak::new(),
+            false,
         )
         .expect("failed to create endpoint");
 
@@ -1674,6 +1733,7 @@ mod parallel {
             &key_schema,
             &value_relation(),
             Weak::new(),
+            false,
         )
         .expect("failed to create endpoint");
 
@@ -1713,5 +1773,102 @@ mod parallel {
         assert_eq!(records_written(&endpoint), 0);
         let output = read_output(&table_uri);
         assert_eq!(output.len(), num);
+    }
+
+    /// Simulate a pipeline restart: drop the first endpoint, create a new one
+    /// on the same table with `is_restart=true`. Data written before the
+    /// restart must survive.
+    #[test]
+    fn test_truncate_preserves_data_across_restart() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        // First start: write 50 records.
+        let records = make_records(50);
+        let batch = build_insert_batch(&records);
+        {
+            let mut endpoint =
+                make_endpoint_ex(1, &table_uri, true, DeltaTableWriteMode::Truncate, false);
+            encode_batch(&mut endpoint, &batch);
+        }
+
+        assert_eq!(read_delta_output(&table_uri).len(), 50);
+
+        // Restart: create a new endpoint with is_restart=true.
+        let more_records: Vec<DeltaTestStruct> = (50..80).map(make_record).collect();
+        let batch2 = build_insert_batch(&more_records);
+        {
+            let mut endpoint =
+                make_endpoint_ex(1, &table_uri, true, DeltaTableWriteMode::Truncate, true);
+            encode_batch(&mut endpoint, &batch2);
+        }
+
+        // All 80 records (50 original + 30 new) must be present in the
+        // delta log.  read_delta_output reads through the log, so orphaned
+        // parquet files left by SaveMode::Overwrite are not counted.
+        let output = read_delta_output(&table_uri);
+        assert_eq!(output.len(), 80);
+    }
+
+    /// First-start truncation still clears pre-existing data.
+    #[test]
+    fn test_truncate_clears_data_on_first_start() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        // Seed the table via a first endpoint (simulates pre-existing data).
+        let records = make_records(50);
+        let batch = build_insert_batch(&records);
+        {
+            let mut endpoint =
+                make_endpoint_ex(1, &table_uri, true, DeltaTableWriteMode::Truncate, false);
+            encode_batch(&mut endpoint, &batch);
+        }
+        assert_eq!(read_output(&table_uri).len(), 50);
+
+        // New pipeline start (is_restart=false) with truncate: old data is wiped.
+        let new_records: Vec<DeltaTestStruct> = (100..110).map(make_record).collect();
+        let batch2 = build_insert_batch(&new_records);
+        {
+            let mut endpoint =
+                make_endpoint_ex(1, &table_uri, true, DeltaTableWriteMode::Truncate, false);
+            encode_batch(&mut endpoint, &batch2);
+        }
+
+        // Only the 10 new records should be present in the delta table snapshot.
+        // (Orphaned parquet files from the truncated table may still exist on
+        // disk, so we read through the delta log rather than scanning all files.)
+        let output = read_delta_output(&table_uri);
+        assert_eq!(output.len(), 10);
+    }
+
+    /// `error_if_exists` mode must not fail on restart.
+    #[test]
+    fn test_error_if_exists_succeeds_on_restart() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        // First start: create table.
+        {
+            let mut endpoint = make_endpoint_ex(
+                1,
+                &table_uri,
+                true,
+                DeltaTableWriteMode::ErrorIfExists,
+                false,
+            );
+            let batch = build_insert_batch(&make_records(10));
+            encode_batch(&mut endpoint, &batch);
+        }
+
+        // Restart: should open the existing table without error.
+        let endpoint = make_endpoint_ex(
+            1,
+            &table_uri,
+            true,
+            DeltaTableWriteMode::ErrorIfExists,
+            true,
+        );
+        drop(endpoint);
     }
 }
