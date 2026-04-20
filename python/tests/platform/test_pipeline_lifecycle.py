@@ -620,7 +620,7 @@ def test_pipeline_storage_status_details_with_checkpoints(pipeline_name):
 
     # Check one checkpoint was created
     assert pipeline.storage_status() == StorageStatus.INUSE
-    time.sleep(5)
+    time.sleep(20)
     details = pipeline.storage_status_details()
     assert len(details["checkpoints"]) == 1
 
@@ -629,7 +629,7 @@ def test_pipeline_storage_status_details_with_checkpoints(pipeline_name):
 
     # Check another checkpoint was made
     assert pipeline.storage_status() == StorageStatus.INUSE
-    time.sleep(5)
+    time.sleep(20)
     details = pipeline.storage_status_details()
     assert len(details["checkpoints"]) == 2
 
@@ -650,3 +650,35 @@ def test_pipeline_storage_status_details_with_checkpoints(pipeline_name):
     pipeline.clear_storage()
     assert pipeline.storage_status() == StorageStatus.CLEARED
     assert pipeline.storage_status_details() is None
+
+
+@gen_pipeline_name
+def test_refresh_version(pipeline_name):
+    """
+    The `refresh_version` should only be sparingly incremented over the lifetime of a pipeline.
+    The refresh versions in this test are approximate as resources, runtime and storage status
+    details can be updated over time during deployment.
+    """
+    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
+    assert (
+        TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}?selector=status")[
+            "refresh_version"
+        ]
+        == 3
+    )
+    pipeline.start()
+    time.sleep(30.0)
+    assert (
+        TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}?selector=status")[
+            "refresh_version"
+        ]
+        <= 10
+    )
+    pipeline.stop(force=True)
+    pipeline.clear_storage()
+    assert (
+        TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}?selector=status")[
+            "refresh_version"
+        ]
+        <= 15
+    )
