@@ -653,7 +653,7 @@ def test_pipeline_storage_status_details_with_checkpoints(pipeline_name):
 
 
 @gen_pipeline_name
-def test_refresh_version(pipeline_name):
+def test_refresh_version_due_to_status_changes(pipeline_name):
     """
     The `refresh_version` should only be sparingly incremented over the lifetime of a pipeline.
     The refresh versions in this test are approximate as resources, runtime and storage status
