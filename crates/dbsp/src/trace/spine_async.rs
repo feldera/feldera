@@ -1674,12 +1674,11 @@ where
                             batch.len()
                         )
                     });
-                let factories = batch.factories();
                 let builder =
-                    B::Builder::for_merge(&factories, [&batch], Some(BatchLocation::Storage));
+                    B::Builder::for_merge(&self.factories, [&batch], Some(BatchLocation::Storage));
                 let (key_filter, value_filter) = self.merger.state.lock().unwrap().get_filters();
                 ListMerger::merge(
-                    &factories,
+                    &self.factories,
                     builder,
                     vec![batch.consuming_cursor(key_filter, value_filter)],
                 )
@@ -1697,12 +1696,11 @@ where
             let batch = if batch.location() == BatchLocation::Memory
                 && pick_insert_destination(&batch) == BatchLocation::Storage
             {
-                let factories = batch.factories();
                 let builder =
-                    B::Builder::for_merge(&factories, [&batch], Some(BatchLocation::Storage));
+                    B::Builder::for_merge(&self.factories, [&batch], Some(BatchLocation::Storage));
                 let (key_filter, value_filter) = self.merger.state.lock().unwrap().get_filters();
                 Arc::new(ListMerger::merge(
-                    &factories,
+                    &self.factories,
                     builder,
                     vec![batch.merge_cursor(key_filter, value_filter)],
                 ))
