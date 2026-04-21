@@ -10,7 +10,6 @@ use std::{
 use async_trait::async_trait;
 use itertools::{Itertools as _, zip_eq};
 use rkyv::AlignedVec;
-use tokio::sync::Notify;
 
 use crate::{
     Circuit, Runtime, Scope, Stream,
@@ -91,8 +90,6 @@ where
     clients: Arc<ExchangeClients>,
 
     rxq: Vec<Mutex<Rxq<B>>>,
-
-    rx_notify: Vec<Arc<Notify>>,
 }
 
 impl<B> ShardedAccumulator<B>
@@ -141,7 +138,6 @@ where
                 .local_workers()
                 .map(|_| Mutex::new(Rxq::new(factories, npeers)))
                 .collect(),
-            rx_notify: layout.local_workers().map(|_| Default::default()).collect(),
         });
 
         directory.insert(exchange_id, exchange.clone());
@@ -164,9 +160,7 @@ where
         batch: B,
         flush: bool,
     ) {
-        if self.rxq(receiver).deliver(factories, sender, batch, flush) {
-            self.rx_notify[receiver - self.local_workers.start].notify_waiters();
-        }
+        self.rxq(receiver).deliver(factories, sender, batch, flush);
     }
 
     async fn send(self: &Arc<Self>, batch: B, flush: bool) {
@@ -309,9 +303,6 @@ where
         }
     }
 
-    /// Returns true if the receiver has now received a complete spine but
-    /// before the call it had not.
-    fn deliver(&mut self, factories: &B::Factories, sender: usize, batch: B, flush: bool) -> bool {
         let index = self.n_flushes[sender] - self.n_received;
         let entry = &mut self.spines[index];
 
@@ -327,14 +318,12 @@ where
         // profiles this might be a good optimization target.
         entry.spine.insert(batch);
 
-        flush && {
+        if flush {
             entry.n_unflushed -= 1;
-            let notify = index == 0 && entry.n_unflushed == 0;
             self.n_flushes[sender] += 1;
             if index + 1 >= self.spines.len() {
                 self.spines.push_back(RxqEntry::new(self.npeers, factories));
             }
-            notify
         }
     }
 
