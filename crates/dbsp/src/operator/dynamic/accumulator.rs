@@ -231,7 +231,7 @@ where
 
             if self.enabled_during_current_transaction == Some(true) {
                 self.input_batch_stats.add_batch(len);
-                self.state.insert(batch);
+                self.state.insert(batch).await;
             }
         }
 

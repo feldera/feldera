@@ -592,10 +592,10 @@ pub trait ImportOperator<I, O>: Operator {
     ///
     /// Either `import` or [`Self::import_owned`] is invoked once per
     /// nested clock epoch, right after `clock_start(0)`.
-    fn import(&mut self, val: &I);
+    async fn import(&mut self, val: &I);
 
     /// Consumes a value from the parent stream by value.
-    fn import_owned(&mut self, val: I);
+    async fn import_owned(&mut self, val: I);
 
     /// Invoked once per nested clock cycle to write a value to
     /// the output stream.

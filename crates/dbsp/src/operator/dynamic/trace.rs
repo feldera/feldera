@@ -800,7 +800,7 @@ where
 
     async fn eval_owned_and_ref(&mut self, mut trace: T, batch: &T::Batch) -> T {
         self.num_inputs += batch.len();
-        trace.insert(batch.clone());
+        trace.insert(batch.clone()).await;
         trace
     }
 
@@ -813,7 +813,7 @@ where
     async fn eval_owned(&mut self, mut trace: T, batch: T::Batch) -> T {
         self.num_inputs += batch.len();
 
-        trace.insert(batch);
+        trace.insert(batch).await;
         trace
     }
 
@@ -882,11 +882,13 @@ where
         // TODO: extend `trace` type to feed untimed batches directly
         // (adding fixed timestamp on the fly).
         self.num_inputs += batch.len();
-        trace.insert(T::Batch::from_batch(
-            batch,
-            &self.clock.time(),
-            &self.output_factories,
-        ));
+        trace
+            .insert(T::Batch::from_batch(
+                batch,
+                &self.clock.time(),
+                &self.output_factories,
+            ))
+            .await;
         trace
     }
 
@@ -902,13 +904,15 @@ where
         if TypeId::of::<B>() == TypeId::of::<T::Batch>() {
             let mut batch = Some(batch);
             let batch = unsafe { transmute::<&mut Option<B>, &mut Option<T::Batch>>(&mut batch) };
-            trace.insert(batch.take().unwrap());
+            trace.insert(batch.take().unwrap()).await;
         } else {
-            trace.insert(T::Batch::from_batch(
-                &batch,
-                &self.clock.time(),
-                &self.output_factories,
-            ));
+            trace
+                .insert(T::Batch::from_batch(
+                    &batch,
+                    &self.clock.time(),
+                    &self.output_factories,
+                ))
+                .await;
         }
         trace
     }

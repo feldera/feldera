@@ -31,6 +31,7 @@ use dbsp::{
     typed_batch::{DynBatchReader, DynSpine, DynTrace, Spine, TypedBatch},
 };
 use erased_serde::{Serialize as ErasedSerialize, Serializer as ErasedSerializer};
+use feldera_storage::tokio::TOKIO;
 use feldera_types::serde_with_context::serialize::{
     SerializeFieldsWithContextWrapper, SerializeWithContextWrapper,
 };
@@ -521,7 +522,7 @@ where
 
     fn into_trace(self: Arc<Self>) -> Box<dyn SerTrace> {
         let mut spine = TypedBatch::new(DynSpine::<B::Inner>::new(&B::factories()));
-        spine.insert(Arc::unwrap_or_clone(self).batch.into_inner());
+        TOKIO.block_on(spine.insert(Arc::unwrap_or_clone(self).batch.into_inner()));
         Box::new(SerBatchImpl::<Spine<B>, KD, VD>::new(spine))
     }
 
@@ -553,7 +554,7 @@ where
                 >>()
                 .unwrap(),
         );
-        self.batch.inner_mut().insert(batch.batch.into_inner());
+        TOKIO.block_on(self.batch.inner_mut().insert(batch.batch.into_inner()));
     }
 
     fn as_batch_reader(&self) -> &dyn SerBatchReader {
