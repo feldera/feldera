@@ -21,6 +21,7 @@ use rand_chacha::ChaChaRng;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::SizeOf;
 use std::any::TypeId;
+use std::sync::Arc;
 use std::{
     collections::{BTreeMap, BTreeSet, btree_map::Entry},
     fmt::{self, Debug},
@@ -1324,12 +1325,14 @@ where
         }
     }
 
-    fn insert(&mut self, batch: Self::Batch) {
-        self.data = Self::merge(self, &batch, &self.key_filter, &self.value_filter).data;
-    }
-
-    fn insert_arc(&mut self, batch: std::sync::Arc<Self::Batch>) {
-        self.data = Self::merge(self, batch.as_ref(), &self.key_filter, &self.value_filter).data;
+    fn insert(&mut self, batch: impl Into<Arc<Self::Batch>>) {
+        self.data = Self::merge(
+            self,
+            batch.into().as_ref(),
+            &self.key_filter,
+            &self.value_filter,
+        )
+        .data;
     }
 
     fn clear_dirty_flag(&mut self) {}

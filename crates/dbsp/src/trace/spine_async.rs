@@ -1657,57 +1657,11 @@ where
         }
     }
 
-    fn insert(&mut self, mut batch: Self::Batch) {
+    fn insert(&mut self, batch: impl Into<Arc<Self::Batch>>) {
+        let batch = Self::maybe_flush_batch(batch, &self.factories, || {
+            self.merger.state.lock().unwrap().get_filters()
+        });
         if !batch.is_empty() {
-            // Push in-memory batches to storage if they exceed the user-configured `min_storage_bytes` or
-            // we're under high memory pressure.
-            let batch = if batch.location() == BatchLocation::Memory
-                && pick_insert_destination(&batch) == BatchLocation::Storage
-            {
-                let _span = Span::new("eager spill")
-                    .with_category("Spine")
-                    .with_tooltip(|| {
-                        format!(
-                            "Eagerly spilling {} batch with {} keys and {} values",
-                            HumanBytes::from(batch.approximate_byte_size()),
-                            batch.key_count(),
-                            batch.len()
-                        )
-                    });
-                let builder =
-                    B::Builder::for_merge(&self.factories, [&batch], Some(BatchLocation::Storage));
-                let (key_filter, value_filter) = self.merger.state.lock().unwrap().get_filters();
-                ListMerger::merge(
-                    &self.factories,
-                    builder,
-                    vec![batch.consuming_cursor(key_filter, value_filter)],
-                )
-            } else {
-                batch
-            };
-
-            self.dirty = true;
-            self.merger.add_batch(Arc::new(batch), false);
-        }
-    }
-
-    fn insert_arc(&mut self, batch: Arc<Self::Batch>) {
-        if !batch.is_empty() {
-            let batch = if batch.location() == BatchLocation::Memory
-                && pick_insert_destination(&batch) == BatchLocation::Storage
-            {
-                let builder =
-                    B::Builder::for_merge(&self.factories, [&batch], Some(BatchLocation::Storage));
-                let (key_filter, value_filter) = self.merger.state.lock().unwrap().get_filters();
-                Arc::new(ListMerger::merge(
-                    &self.factories,
-                    builder,
-                    vec![batch.merge_cursor(key_filter, value_filter)],
-                ))
-            } else {
-                batch
-            };
-
             self.dirty = true;
             self.merger.add_batch(batch, false);
         }
@@ -1898,6 +1852,58 @@ where
             &self.value_filter,
         );
         self.merger.resume(vec![Arc::new(batch)]);
+    }
+
+    /// Returns `batch`, first pushing it to storage if it exceeds the
+    /// user-configured `min_storage_bytes` or if we're under high memory
+    /// pressure.
+    pub fn maybe_flush_batch<F>(
+        batch: impl Into<Arc<B>>,
+        factories: &B::Factories,
+        filters: F,
+    ) -> Arc<B>
+    where
+        F: FnOnce() -> (Option<Filter<B::Key>>, Option<GroupFilter<B::Val>>),
+    {
+        let batch = batch.into();
+        if batch.location() == BatchLocation::Memory
+            && pick_insert_destination(&batch) == BatchLocation::Storage
+        {
+            let _span = Span::new("eager spill")
+                .with_category("Spine")
+                .with_tooltip(|| {
+                    format!(
+                        "Eagerly spilling {} batch with {} keys and {} values",
+                        HumanBytes::from(batch.approximate_byte_size()),
+                        batch.key_count(),
+                        batch.len()
+                    )
+                });
+            match Arc::try_unwrap(batch) {
+                Ok(mut batch) => {
+                    let builder =
+                        B::Builder::for_merge(factories, [&batch], Some(BatchLocation::Storage));
+                    let (key_filter, value_filter) = filters();
+                    Arc::new(ListMerger::merge(
+                        factories,
+                        builder,
+                        vec![batch.consuming_cursor(key_filter, value_filter)],
+                    ))
+                }
+                Err(batch) => {
+                    let builder =
+                        B::Builder::for_merge(factories, [&batch], Some(BatchLocation::Storage));
+                    let (key_filter, value_filter) = filters();
+                    Arc::new(ListMerger::merge(
+                        factories,
+                        builder,
+                        vec![batch.merge_cursor(key_filter, value_filter)],
+                    ))
+                }
+            }
+        } else {
+            batch
+        }
     }
 }
 

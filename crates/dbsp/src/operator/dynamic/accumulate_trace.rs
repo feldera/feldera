@@ -741,7 +741,7 @@ where
         if let Some(delta) = delta {
             self.num_inputs += delta.len();
             for batch in delta.ro_snapshot().batches() {
-                trace.insert_arc(batch.clone());
+                trace.insert(batch.clone());
             }
         }
         trace
@@ -826,7 +826,7 @@ where
             // (adding fixed timestamp on the fly).
             self.num_inputs += delta.len();
             for batch in delta.ro_snapshot().batches() {
-                trace.insert_arc(T::Batch::from_arc_batch(
+                trace.insert(T::Batch::from_arc_batch(
                     batch,
                     &self.clock.time(),
                     &self.output_factories,
