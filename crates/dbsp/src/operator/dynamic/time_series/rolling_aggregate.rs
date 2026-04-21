@@ -1211,7 +1211,7 @@ mod test {
                 let waterline: Stream<_, TypedBox<u64, DynDataTyped<u64>>> = input_by_time
                     .waterline_monotonic(|| 0, move |ts| ts.saturating_sub(lateness))
                     .transaction_delay_with_initial_value(TypedBox::new(0))
-                    .inspect(|w| println!("waterline: {w:?}"));
+                    /* .inspect(|w| println!("waterline: {w:?}"))*/;
 
                 let aggregator = <Fold<i64, i64, DefaultSemigroup<_>, _, _>>::new(
                     0i64,

@@ -264,8 +264,8 @@ fn test_accumulate_trace_with_balancer(
 
     let mut previous_policy = PartitioningPolicy::Shard;
 
-    for (step, (policy, batch)) in batches.iter().enumerate() {
-        println!("step: {}", step);
+    for (_step, (policy, batch)) in batches.iter().enumerate() {
+        //println!("step: {}", step);
 
         circuit
             .set_balancer_hint(&input_node_id, BalancerHint::Policy(Some(*policy)))
@@ -435,7 +435,7 @@ fn test_join_with_balancer(
     }
 
     for (
-        step,
+        _step,
         JoinTestStep {
             left,
             right,
@@ -446,10 +446,10 @@ fn test_join_with_balancer(
         },
     ) in inputs.iter().enumerate()
     {
-        println!(
-            "step: {} (left_policy_hint: {:?}, right_policy_hint: {:?})",
-            step, left_policy_hint, right_policy_hint
-        );
+        // println!(
+        //     "step: {} (left_policy_hint: {:?}, right_policy_hint: {:?})",
+        //     step, left_policy_hint, right_policy_hint
+        // );
 
         if auto_rebalance {
             circuit
@@ -614,8 +614,8 @@ fn test_circular_dependency(
         circuit.start_transaction().unwrap();
     }
 
-    for (step, (left, right)) in inputs.iter().enumerate() {
-        println!("step: {step}");
+    for (_step, (left, right)) in inputs.iter().enumerate() {
+        // println!("step: {step}");
 
         // println!("insertions: {:?}", insertions);
 
