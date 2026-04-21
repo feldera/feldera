@@ -124,7 +124,7 @@ def test_pipeline_track(pipeline_name):
     TEST_CLIENT.http.patch(
         f"/pipelines/{pipeline_name}", {"program_config": new_program_config}
     )
-    assert pipeline.program_config()["cache"] == False
+    assert not pipeline.program_config()["cache"]
     pipeline.wait_for_compilation()
     validate_tracking(pipeline_name, current, tracking)
 
