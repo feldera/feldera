@@ -347,6 +347,7 @@ mod test {
         utils::Tup2,
     };
     use anyhow::Result as AnyResult;
+    use feldera_storage::tokio::TOKIO;
     use proptest::{collection::vec, prelude::*};
     use std::{cmp::Ordering, collections::BTreeSet};
 
@@ -460,7 +461,7 @@ mod test {
                 let records = batch.iter().map(|(k, v, r)| ((*k, *v, ()), *r)).collect::<Vec<_>>();
 
                 let ref_batch = TestBatch::from_typed_data(&records);
-                ref_trace.insert(ref_batch);
+                TOKIO.block_on(ref_trace.insert(ref_batch));
 
                 for (k, v, r) in batch.into_iter() {
                     input_handle.push(k, (v, r));

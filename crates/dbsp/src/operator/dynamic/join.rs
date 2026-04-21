@@ -41,7 +41,7 @@ use std::rc::Rc;
 use std::{
     borrow::Cow,
     cmp::{Ordering, min},
-    collections::HashMap,
+    collections::{HashMap, hash_map::Entry},
     marker::PhantomData,
     ops::Deref,
     panic::Location,
@@ -1543,6 +1543,9 @@ where
     Z: IndexedZSet,
     Clk: WithClock<Time = T::Time> + 'static,
 {
+    // It is safe to hold `self.future_outputs.borrow_mut()` across the await
+    // point because the operator is not evaluated reentrantly.
+    #[allow(clippy::await_holding_refcell_ref)]
     fn eval(
         self: Rc<Self>,
         delta: &Option<I>,
@@ -1681,11 +1684,11 @@ where
 
                     start += run_length;
 
-                    self.future_outputs.borrow_mut().entry(batch_time).or_insert_with(|| {
+                    if let Entry::Vacant(vacant) = self.future_outputs.borrow_mut().entry(batch_time) {
                         let mut spine = <Spine<Z> as Trace>::new(&self.output_factories);
-                        spine.insert(Z::dyn_from_tuples(&self.output_factories, (), &mut batch));
-                        spine
-                    });
+                        spine.insert(Z::dyn_from_tuples(&self.output_factories, (), &mut batch)).await;
+                        vacant.insert(spine);
+                    };
                     batch.clear();
                 }
 

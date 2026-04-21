@@ -1018,7 +1018,9 @@ pub trait Node: Any {
         &'a mut self,
     ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>>;
 
-    fn import(&mut self) {}
+    fn import<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = ()> + 'a>> {
+        Box::pin(async {})
+    }
 
     /// Notify the operator that the circuit is starting a transaction.
     fn start_transaction(&mut self);
@@ -1955,7 +1957,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     ) -> impl Future<Output = Result<Option<Position>, SchedulerError>>;
 
     /// Evaluate import node to pull inputs from the parent circuit.
-    fn eval_import_node(&self, id: NodeId);
+    fn eval_import_node(&self, id: NodeId) -> impl Future<Output = ()>;
 
     fn flush_node(&self, id: NodeId);
 
@@ -3654,12 +3656,19 @@ where
     }
 
     // Justification: the scheduler must not call `eval()` on a node twice.
-    fn eval_import_node(&self, id: NodeId) {
+    #[allow(clippy::await_holding_refcell_ref)]
+    async fn eval_import_node(&self, id: NodeId) {
         let circuit = self.inner();
         debug_assert!(id.0 < circuit.nodes.borrow().len());
         debug_assert!(circuit.import_nodes().contains(&id));
 
-        circuit.nodes.borrow()[id.0].borrow_mut().import();
+        // `circuit.nodes.borrow()` is safe across the await point because the
+        // scheduler only borrows `circuit.nodes` during a step and never
+        // borrows it mutably.
+        //
+        // `circuit.nodes.borrow()[id.0].borrow_mut()` is safe across the await
+        // point because the scheduler never evaluates a node reentrantly.
+        circuit.nodes.borrow()[id.0].borrow_mut().import().await;
     }
 
     fn flush_node(&self, id: NodeId) {
@@ -4543,15 +4552,22 @@ where
         })
     }
 
-    fn import(&mut self) {
-        match StreamValue::take(self.parent_stream.val()) {
-            None => self
-                .operator
-                .import(StreamValue::peek(&self.parent_stream.get())),
-            Some(val) => self.operator.import_owned(val),
-        }
+    // It is safe to hold `self.parent_stream.get()` across the await point
+    // because the operator is not evaluated reentrantly.
+    #[allow(clippy::await_holding_refcell_ref)]
+    fn import<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = ()> + 'a>> {
+        Box::pin(async {
+            match StreamValue::take(self.parent_stream.val()) {
+                None => {
+                    self.operator
+                        .import(StreamValue::peek(&self.parent_stream.get()))
+                        .await
+                }
+                Some(val) => self.operator.import_owned(val).await,
+            }
 
-        StreamValue::consume_token(self.parent_stream.val());
+            StreamValue::consume_token(self.parent_stream.val());
+        })
     }
 
     fn start_transaction(&mut self) {
@@ -6770,12 +6786,12 @@ where
     fn eval<'a>(
         &'a mut self,
     ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
-        // We may want to make the executor responsible for evaluating import nodes
-        // if there is a need for customizing this behavior.
-        for node_id in self.circuit.import_nodes() {
-            self.circuit.eval_import_node(node_id)
-        }
         Box::pin(async {
+            // We may want to make the executor responsible for evaluating import nodes
+            // if there is a need for customizing this behavior.
+            for node_id in self.circuit.import_nodes() {
+                self.circuit.eval_import_node(node_id).await;
+            }
             self.executor.transaction(&self.circuit).await?;
             Ok(None)
         })

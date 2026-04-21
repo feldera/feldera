@@ -4,10 +4,10 @@ use std::{
     iter::repeat_n,
     ops::Range,
     panic::Location,
+    pin::Pin,
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use async_trait::async_trait;
 use itertools::{Itertools as _, zip_eq};
 use rkyv::AlignedVec;
 
@@ -160,6 +160,9 @@ where
         batch: B,
         flush: bool,
     ) {
+        // Spill the batch to disk, if we should, without taking the rxq lock.
+        let batch = Spine::maybe_flush_batch(batch, factories, || (None, None));
+
         self.rxq(receiver).deliver(factories, sender, batch, flush);
     }
 
@@ -225,17 +228,22 @@ where
     }
 }
 
-#[async_trait]
 impl<B> ExchangeDelivery for ShardedAccumulator<B>
 where
     B: Batch<Time = ()>,
 {
-    async fn received(&self, sender: usize, data: Vec<AlignedVec>) {
-        for (receiver, mut data) in zip_eq(self.local_workers.clone(), data) {
-            let flush = pop_flushed(&mut data);
-            let batch = deserialize_indexed_wset(&self.factories, &data);
-            self.deliver(&self.factories, sender, receiver, batch, flush);
-        }
+    fn received<'a>(
+        &'a self,
+        sender: usize,
+        data: Vec<AlignedVec>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            for (receiver, mut data) in zip_eq(self.local_workers.clone(), data) {
+                let flush = pop_flushed(&mut data);
+                let batch = deserialize_indexed_wset(&self.factories, &data);
+                self.deliver(&self.factories, sender, receiver, batch, flush);
+            }
+        })
     }
 }
 
@@ -303,20 +311,11 @@ where
         }
     }
 
+    fn deliver(&mut self, factories: &B::Factories, sender: usize, batch: Arc<B>, flush: bool) {
         let index = self.n_flushes[sender] - self.n_received;
         let entry = &mut self.spines[index];
 
-        // This function call will wait for backpressure to be relieved if there
-        // are too many batches in the spine.  It might make sense to instead
-        // only wait for that when evaluating the receiver operator.
-        //
-        // This function call will also spill the batch to disk under some
-        // circumstances.  It probably makes sense to keep that functionality.
-        //
-        // We are called in async context, so blocking inside here has higher
-        // cost than one might expect, so depending on how it shows up in
-        // profiles this might be a good optimization target.
-        entry.spine.insert(batch);
+        entry.spine.insert_without_blocking(batch);
 
         if flush {
             entry.n_unflushed -= 1;
@@ -484,7 +483,8 @@ where
 {
     async fn eval(&mut self) -> Option<Spine<B>> {
         let output = self.exchange.receive();
-        if output.is_some() {
+        if let Some(spine) = &output {
+            spine.backpressure_wait().await;
             self.flushed = true;
         }
         output

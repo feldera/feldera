@@ -502,7 +502,7 @@ where
 
     /// Allows us to wait for the background worker until we no longer want to
     /// block for backpressure.
-    no_backpressure: Arc<Condvar>,
+    no_backpressure: Arc<Notify>,
 
     /// Allows us to wait for the background worker to become idle.
     idle: Arc<Condvar>,
@@ -527,7 +527,7 @@ where
 {
     fn new(factories: &B::Factories) -> Self {
         let idle = Arc::new(Condvar::new());
-        let no_backpressure = Arc::new(Condvar::new());
+        let no_backpressure = Arc::new(Notify::new());
         let state = Arc::new(Mutex::new(SharedState::new(factories)));
         let worker_state = Arc::new(WorkerState::default());
 
@@ -608,21 +608,34 @@ where
     }
 
     /// Adds `batch` to the shared merging state and wakes up the merger.
-    fn add_batch(&self, batch: Arc<B>, merge: bool) {
+    /// Returns true if the spine contains "too many" batches.
+    fn add_batch(&self, batch: Arc<B>, merge: bool) -> bool {
         debug_assert!(!batch.is_empty());
         let mut state = self.state.lock().unwrap();
         state.add_batch(batch, merge);
-        if state.should_apply_backpressure() {
-            let start = Instant::now();
-            let mut state = self.no_backpressure.wait(state).unwrap();
-            state.spine_stats.backpressure_wait += start.elapsed();
-            COMPACTION_STALL_TIME_NANOSECONDS
-                .fetch_add(start.elapsed().as_nanos() as u64, Ordering::Relaxed);
-            Span::new("backpressure-wait")
-                .with_category("Spine")
-                .with_start(start)
-                .record();
+        state.should_apply_backpressure()
+    }
+
+    /// Blocks until the number of batches in the spine has declined below the
+    /// backpressure threshold.
+    async fn backpressure_wait(&self) {
+        let start = Instant::now();
+        loop {
+            let notify = self.no_backpressure.notified();
+            let mut state = self.state.lock().unwrap();
+            if state.should_relieve_backpressure() {
+                state.spine_stats.backpressure_wait += start.elapsed();
+                break;
+            }
+            drop(state);
+            notify.await;
         }
+        COMPACTION_STALL_TIME_NANOSECONDS
+            .fetch_add(start.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        Span::new("backpressure-wait")
+            .with_category("Spine")
+            .with_start(start)
+            .record();
     }
 
     /// Adds `batches` to the shared merging state and wakes up the merger.
@@ -888,17 +901,14 @@ where
         cache_stats.metadata(meta);
     }
 
-    fn maybe_relieve_backpressure(
-        no_backpressure: &Arc<Condvar>,
-        state: &MutexGuard<SharedState<B>>,
-    ) {
+    fn maybe_relieve_backpressure(no_backpressure: &Notify, state: &MutexGuard<SharedState<B>>) {
         if state.should_relieve_backpressure() {
             Self::relieve_backpressure(no_backpressure);
         }
     }
 
-    fn relieve_backpressure(no_backpressure: &Arc<Condvar>) {
-        no_backpressure.notify_all();
+    fn relieve_backpressure(no_backpressure: &Notify) {
+        no_backpressure.notify_waiters();
     }
 
     fn run(
@@ -908,7 +918,7 @@ where
         merger_type: MergerType,
         state: &Arc<Mutex<SharedState<B>>>,
         idle: &Arc<Condvar>,
-        no_backpressure: &Arc<Condvar>,
+        no_backpressure: &Notify,
     ) -> WorkerStatus {
         // Run in-progress merges.
         let ((key_filter, value_filter), frontier) = {
@@ -1657,13 +1667,12 @@ where
         }
     }
 
-    fn insert(&mut self, batch: impl Into<Arc<Self::Batch>>) {
+    async fn insert(&mut self, batch: impl Into<Arc<Self::Batch>>) {
         let batch = Self::maybe_flush_batch(batch, &self.factories, || {
             self.merger.state.lock().unwrap().get_filters()
         });
-        if !batch.is_empty() {
-            self.dirty = true;
-            self.merger.add_batch(batch, false);
+        if self.insert_without_blocking(batch) {
+            self.merger.backpressure_wait().await;
         }
     }
 
@@ -1771,7 +1780,7 @@ where
                 .unwrap_or_else(|error| {
                     panic!("Failed to read batch {batch} for checkpoint ({error}).")
                 });
-            self.insert(batch);
+            self.insert_without_blocking(batch);
         }
 
         Ok(())
@@ -1904,6 +1913,30 @@ where
         } else {
             batch
         }
+    }
+
+    /// Inserts a batch into the spine without blocking.  Thus, this omits:
+    ///
+    /// - Spilling the batch to storage when that is a good idea.  The caller
+    ///   may do this beforehand by calling [Spine::maybe_flush_batch].
+    ///
+    /// - Waiting until the number of batches in the spine falls below the level
+    ///   at which we impose backpressure.  The caller may do so afterward by
+    ///   calling [Spine::backpressure_wait].
+    pub fn insert_without_blocking(&mut self, batch: impl Into<Arc<B>>) -> bool {
+        let batch = batch.into();
+        if !batch.is_empty() {
+            self.dirty = true;
+            self.merger.add_batch(batch, false)
+        } else {
+            false
+        }
+    }
+
+    /// Waits for the number of batches in the spine to fall below the level at
+    /// which we impose backpressure.
+    pub async fn backpressure_wait(&self) {
+        self.merger.backpressure_wait().await;
     }
 }
 
