@@ -170,6 +170,9 @@ impl<B> UnaryOperator<B, Option<Spine<B>>> for RebalancingAccumulator<B>
 where
     B: Batch,
 {
+    // It is safe to hold `self.0.borrow_mut()` across the await point because
+    // the operator is never evaluated reentrantly.
+    #[allow(clippy::await_holding_refcell_ref)]
     async fn eval(&mut self, batch: &B) -> Option<Spine<B>> {
         let mut inner = self.0.borrow_mut();
 
@@ -177,7 +180,7 @@ where
 
         if len > 0 {
             inner.input_batch_stats.add_batch(len);
-            inner.state.insert(batch.clone());
+            inner.state.insert(batch.clone()).await;
         }
 
         let result = if inner.flush {
@@ -201,6 +204,9 @@ where
         result
     }
 
+    // It is safe to hold `self.0.borrow_mut()` across the await point because
+    // the operator is not evaluated reentrantly.
+    #[allow(clippy::await_holding_refcell_ref)]
     async fn eval_owned(&mut self, batch: B) -> Option<Spine<B>> {
         let mut inner = self.0.borrow_mut();
 
@@ -208,7 +214,7 @@ where
 
         if len > 0 {
             inner.input_batch_stats.add_batch(len);
-            inner.state.insert(batch);
+            inner.state.insert(batch).await;
         }
 
         let result = if inner.flush {

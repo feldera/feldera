@@ -1325,7 +1325,7 @@ where
         }
     }
 
-    fn insert(&mut self, batch: impl Into<Arc<Self::Batch>>) {
+    async fn insert(&mut self, batch: impl Into<Arc<Self::Batch>>) {
         self.data = Self::merge(
             self,
             batch.into().as_ref(),

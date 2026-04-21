@@ -18,6 +18,7 @@ use crate::{
     utils::{Tup2, Tup3, Tup4},
 };
 use anyhow::Result as AnyResult;
+use feldera_storage::tokio::TOKIO;
 use proptest::{collection::vec, prelude::*};
 
 fn input_trace(
@@ -390,7 +391,7 @@ fn lead_test(trace: Vec<Vec<(i32, i32, ZWeight)>>, transaction: bool) {
                 .collect::<Vec<_>>();
 
             let ref_batch = TestBatch::from_typed_data(&records);
-            ref_trace.insert(ref_batch);
+            TOKIO.block_on(ref_trace.insert(ref_batch));
 
             for (k, v, r) in batch.into_iter() {
                 input_handle.push(k, (v, r));
@@ -412,7 +413,7 @@ fn lead_test(trace: Vec<Vec<(i32, i32, ZWeight)>>, transaction: bool) {
                 .collect::<Vec<_>>();
 
             let ref_batch = TestBatch::from_typed_data(&records);
-            ref_trace.insert(ref_batch);
+            TOKIO.block_on(ref_trace.insert(ref_batch));
 
             for (k, v, r) in batch.into_iter() {
                 input_handle.push(k, (v, r));
@@ -446,7 +447,7 @@ fn lag_test(trace: Vec<Vec<(i32, i32, ZWeight)>>, transaction: bool) {
                 .collect::<Vec<_>>();
 
             let ref_batch = TestBatch::from_typed_data(&records);
-            ref_trace.insert(ref_batch);
+            TOKIO.block_on(ref_trace.insert(ref_batch));
 
             for (k, v, r) in batch.into_iter() {
                 input_handle.push(k, (v, r));
@@ -468,7 +469,7 @@ fn lag_test(trace: Vec<Vec<(i32, i32, ZWeight)>>, transaction: bool) {
                 .collect::<Vec<_>>();
 
             let ref_batch = TestBatch::from_typed_data(&records);
-            ref_trace.insert(ref_batch);
+            TOKIO.block_on(ref_trace.insert(ref_batch));
 
             for (k, v, r) in batch.into_iter() {
                 input_handle.push(k, (v, r));
@@ -832,7 +833,7 @@ fn test_topk(trace: Vec<Vec<(i32, i32, ZWeight)>>, transaction: bool) {
                 .collect::<Vec<_>>();
 
             let ref_batch = TestBatch::from_typed_data(&records);
-            ref_trace.insert(ref_batch);
+            TOKIO.block_on(ref_trace.insert(ref_batch));
 
             for (k, v, r) in batch.into_iter() {
                 input_handle.push(k, (v, r));
@@ -858,7 +859,7 @@ fn test_topk(trace: Vec<Vec<(i32, i32, ZWeight)>>, transaction: bool) {
                 .collect::<Vec<_>>();
 
             let ref_batch = TestBatch::from_typed_data(&records);
-            ref_trace.insert(ref_batch);
+            TOKIO.block_on(ref_trace.insert(ref_batch));
 
             for (k, v, r) in batch.into_iter() {
                 input_handle.push(k, (v, r));

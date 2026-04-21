@@ -21,7 +21,6 @@ use crate::{
     circuit_cache_key,
     storage::file::format::FixedLen,
 };
-use async_trait::async_trait;
 use binrw::{BinRead, BinWrite};
 use crossbeam_utils::CachePadded;
 use feldera_samply::Span;
@@ -39,6 +38,7 @@ use std::{
     mem::MaybeUninit,
     net::SocketAddr,
     ops::Range,
+    pin::Pin,
     sync::{
         Arc, Mutex, MutexGuard, RwLock,
         atomic::{AtomicIsize, AtomicPtr, AtomicU64, AtomicUsize, Ordering},
@@ -306,9 +306,12 @@ impl ExchangeClient {
 
 pub type ExchangeId = u32;
 
-#[async_trait]
 pub trait ExchangeDelivery {
-    async fn received(&self, sender: usize, data: Vec<AlignedVec>);
+    fn received<'a>(
+        &'a self,
+        sender: usize,
+        data: Vec<AlignedVec>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 }
 
 // Maps from an `exchange_id` to an object for delivering to the exchange.
@@ -981,17 +984,22 @@ where
     }
 }
 
-#[async_trait]
 impl<T> ExchangeDelivery for Exchange<T>
 where
     T: Clone + Debug + Send + 'static,
 {
-    async fn received(&self, sender: usize, data: Vec<AlignedVec>) {
-        self.wait_for_ready_to_send(sender).await;
+    fn received<'a>(
+        &'a self,
+        sender: usize,
+        data: Vec<AlignedVec>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            self.wait_for_ready_to_send(sender).await;
 
-        for (receiver, data) in zip(self.local_workers.clone(), data) {
-            self.deliver(sender, receiver, Mailbox::Rx(data));
-        }
+            for (receiver, data) in zip(self.local_workers.clone(), data) {
+                self.deliver(sender, receiver, Mailbox::Rx(data));
+            }
+        })
     }
 }
 
