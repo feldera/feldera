@@ -1,8 +1,15 @@
 use crate::api::support_data_collector::SupportBundleData;
 use crate::db::error::DBError;
 use crate::db::operations::pipeline_parsing::{
-    parse_pipeline_row_all, parse_pipeline_row_monitoring, serialize_error_response,
-    serialize_program_error, PIPELINE_COLUMNS_ALL, PIPELINE_COLUMNS_MONITORING,
+    parse_pipeline_row_all, parse_pipeline_row_monitoring,
+    parse_pipeline_row_tracking_update_compilation,
+    parse_pipeline_row_tracking_update_deployment_base,
+    parse_pipeline_row_tracking_update_deployment_operational,
+    parse_pipeline_row_tracking_update_user_controlled, parse_pipeline_row_tracking_version,
+    serialize_error_response, serialize_program_error, PIPELINE_COLUMNS_ALL,
+    PIPELINE_COLUMNS_MONITORING, PIPELINE_COLUMNS_TRACK_COMPILATION,
+    PIPELINE_COLUMNS_TRACK_DEPLOYMENT_BASE, PIPELINE_COLUMNS_TRACK_DEPLOYMENT_OPERATIONAL,
+    PIPELINE_COLUMNS_TRACK_USER_CONTROLLED, PIPELINE_COLUMNS_TRACK_VERSION,
 };
 use crate::db::operations::utils::{
     maybe_tenant_id_foreign_key_constraint_err, maybe_unique_violation,
@@ -10,6 +17,8 @@ use crate::db::operations::utils::{
 use crate::db::types::pipeline::{
     bootstrap_policy_to_string, runtime_desired_status_to_string, runtime_status_to_string,
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
+    PipelineTrackingVersion, TrackPipelineCompilation, TrackPipelineDeploymentBase,
+    TrackPipelineDeploymentOperational, TrackPipelineUserControlled,
 };
 use crate::db::types::program::{
     validate_program_status_transition, ProgramError, ProgramStatus, RustCompilationInfo,
@@ -154,6 +163,77 @@ pub async fn get_pipeline_by_id_for_monitoring(
     let row = internal_get_pipeline_by_id(txn, tenant_id, pipeline_id, PIPELINE_COLUMNS_MONITORING)
         .await?;
     parse_pipeline_row_monitoring(&row)
+}
+
+pub async fn get_pipeline_track_version(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+) -> Result<PipelineTrackingVersion, DBError> {
+    let row =
+        internal_get_pipeline_by_id(txn, tenant_id, pipeline_id, PIPELINE_COLUMNS_TRACK_VERSION)
+            .await?;
+    parse_pipeline_row_tracking_version(&row)
+}
+
+pub async fn get_pipeline_track_update_user_controlled(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+) -> Result<TrackPipelineUserControlled, DBError> {
+    let row = internal_get_pipeline_by_id(
+        txn,
+        tenant_id,
+        pipeline_id,
+        PIPELINE_COLUMNS_TRACK_USER_CONTROLLED,
+    )
+    .await?;
+    parse_pipeline_row_tracking_update_user_controlled(&row)
+}
+
+pub async fn get_pipeline_track_update_compilation(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+) -> Result<TrackPipelineCompilation, DBError> {
+    let row = internal_get_pipeline_by_id(
+        txn,
+        tenant_id,
+        pipeline_id,
+        PIPELINE_COLUMNS_TRACK_COMPILATION,
+    )
+    .await?;
+    parse_pipeline_row_tracking_update_compilation(&row)
+}
+
+pub async fn get_pipeline_track_update_deployment_base(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+) -> Result<TrackPipelineDeploymentBase, DBError> {
+    let row = internal_get_pipeline_by_id(
+        txn,
+        tenant_id,
+        pipeline_id,
+        PIPELINE_COLUMNS_TRACK_DEPLOYMENT_BASE,
+    )
+    .await?;
+    parse_pipeline_row_tracking_update_deployment_base(&row)
+}
+
+pub async fn get_pipeline_track_update_deployment_operational(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+) -> Result<TrackPipelineDeploymentOperational, DBError> {
+    let row = internal_get_pipeline_by_id(
+        txn,
+        tenant_id,
+        pipeline_id,
+        PIPELINE_COLUMNS_TRACK_DEPLOYMENT_OPERATIONAL,
+    )
+    .await?;
+    parse_pipeline_row_tracking_update_deployment_operational(&row)
 }
 
 pub(crate) async fn new_pipeline(
@@ -507,7 +587,8 @@ pub(crate) async fn update_pipeline(
                      program_status_since = now(),
                      program_error = $2,
                      program_binary_source_checksum = NULL,
-                     program_binary_integrity_checksum = NULL
+                     program_binary_integrity_checksum = NULL,
+                     track_compilation_version = track_compilation_version + 1
                  WHERE tenant_id = $3 AND name = $4",
             )
             .await?;
@@ -796,7 +877,8 @@ pub(crate) async fn set_program_status(
                  program_binary_source_checksum = $4,
                  program_binary_integrity_checksum = $5,
                  program_info_integrity_checksum = $6,
-                 refresh_version = $7
+                 refresh_version = $7,
+                 track_compilation_version = track_compilation_version + 1
              WHERE tenant_id = $8 AND id = $9",
         )
         .await?;
@@ -851,7 +933,8 @@ pub(crate) async fn dismiss_deployment_error(
     let stmt = txn
         .prepare_cached(
             "UPDATE pipeline
-             SET deployment_error = NULL
+             SET deployment_error = NULL,
+                 track_deployment_base_version = track_deployment_base_version + 1
              WHERE tenant_id = $1 AND id = $2",
         )
         .await?;
@@ -976,7 +1059,9 @@ pub(crate) async fn set_deployment_resources_desired_status(
                  deployment_resources_desired_status_since = CASE WHEN deployment_resources_desired_status = $1::VARCHAR THEN deployment_resources_desired_status_since ELSE NOW() END,
                  deployment_initial = $2,
                  bootstrap_policy = $3,
-                 deployment_error = $4
+                 deployment_error = $4,
+                 track_deployment_base_version = track_deployment_base_version + 1,
+                 track_deployment_operational_version = track_deployment_operational_version + 1
              WHERE tenant_id = $5 AND id = $6",
         )
         .await?;
@@ -1382,7 +1467,9 @@ async fn set_deployment_resources_status(
                      deployment_runtime_status_since = CASE WHEN $10::VARCHAR IS NULL THEN NULL ELSE (CASE WHEN deployment_runtime_status = $10::VARCHAR THEN deployment_runtime_status_since ELSE NOW() END) END,
                      deployment_runtime_desired_status = $12::VARCHAR,
                      deployment_runtime_desired_status_since = CASE WHEN $12::VARCHAR IS NULL THEN NULL ELSE (CASE WHEN deployment_runtime_desired_status = $12::VARCHAR THEN deployment_runtime_desired_status_since ELSE NOW() END) END,
-                     refresh_version = refresh_version + 1
+                     refresh_version = refresh_version + 1,
+                     track_deployment_base_version = track_deployment_base_version + 1,
+                     track_deployment_operational_version = track_deployment_operational_version + 1
                  WHERE tenant_id = $13 AND id = $14",
         )
         .await?;
@@ -1453,7 +1540,8 @@ async fn remain_deployment_resources_status(
                      deployment_runtime_desired_status = COALESCE($4::VARCHAR, deployment_runtime_desired_status),
                      deployment_runtime_desired_status_since = CASE WHEN $4::VARCHAR IS NULL THEN deployment_runtime_desired_status_since ELSE (CASE WHEN deployment_runtime_desired_status = $4::VARCHAR THEN deployment_runtime_desired_status_since ELSE NOW() END) END,
                      storage_status_details = COALESCE($5::VARCHAR, storage_status_details),
-                     refresh_version = refresh_version + 1
+                     refresh_version = refresh_version + 1,
+                     track_deployment_operational_version = track_deployment_operational_version + 1
                  WHERE tenant_id = $6 AND id = $7",
         )
         .await?;
@@ -1513,7 +1601,8 @@ pub(crate) async fn set_storage_status(
         .prepare_cached(
             "UPDATE pipeline
                  SET storage_status = $1,
-                     storage_status_details = $2
+                     storage_status_details = $2,
+                     track_deployment_operational_version = track_deployment_operational_version + 1
                  WHERE tenant_id = $3 AND id = $4",
         )
         .await?;

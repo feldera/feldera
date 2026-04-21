@@ -10,6 +10,8 @@ use crate::db::types::monitor::{
 };
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
+    PipelineTrackingVersion, TrackPipelineCompilation, TrackPipelineDeploymentBase,
+    TrackPipelineDeploymentOperational, TrackPipelineUserControlled,
 };
 use crate::db::types::program::{
     generate_pipeline_config, validate_program_status_transition, CompilationProfile,
@@ -613,6 +615,25 @@ fn limited_new_cluster_monitor_event() -> impl Strategy<Value = NewClusterMonito
             runner_resources_info: format!("{}", v9 % 4),
         },
     )
+}
+
+/// Generates new optional pipeline tracking version with limited values.
+fn limited_option_pipeline_tracking_version(
+) -> impl Strategy<Value = Option<PipelineTrackingVersion>> {
+    any::<(bool, u8, u32, u8, u8, u8, u8)>().prop_map(|(v0, v1, v2, v3, v4, v5, v6)| {
+        if v0 {
+            None
+        } else {
+            Some(PipelineTrackingVersion {
+                id: PipelineId(Uuid::from_u128(v1 as u128 % 6)),
+                refresh_version: Version(v2 as i64 % 16),
+                version: Version(v3 as i64 % 8),
+                track_compilation_version: Version(v4 as i64 % 8),
+                track_deployment_base_version: Version(v5 as i64 % 8),
+                track_deployment_operational_version: Version(v6 as i64 % 8),
+            })
+        }
+    })
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -2599,6 +2620,12 @@ enum StorageAction {
         #[proptest(strategy = "limited_platform_version()")] String,
         bool,
     ),
+    GetPipelineByIdTracked(
+        TenantId,
+        PipelineId,
+        #[proptest(strategy = "limited_option_pipeline_tracking_version()")]
+        Option<PipelineTrackingVersion>,
+    ),
     NewPipeline(
         TenantId,
         #[proptest(strategy = "limited_uuid()")] Uuid,
@@ -2828,6 +2855,40 @@ fn convert_pipeline_for_runner_with_constant_timestamps(
     }
 }
 
+/// Convert pipeline tracked descriptor for test comparison.
+/// See for explanation: [`convert_pipeline_with_constant_timestamps`].
+fn convert_pipeline_tracked_with_constant_timestamps(
+    mut tracked: (
+        PipelineTrackingVersion,
+        Option<TrackPipelineUserControlled>,
+        Option<TrackPipelineCompilation>,
+        Option<TrackPipelineDeploymentBase>,
+        Option<TrackPipelineDeploymentOperational>,
+    ),
+) -> (
+    PipelineTrackingVersion,
+    Option<TrackPipelineUserControlled>,
+    Option<TrackPipelineCompilation>,
+    Option<TrackPipelineDeploymentBase>,
+    Option<TrackPipelineDeploymentOperational>,
+) {
+    let timestamp = Utc.timestamp_nanos(0);
+    if let Some(v) = &mut tracked.1 {
+        v.created_at = timestamp;
+    }
+    if let Some(v) = &mut tracked.2 {
+        v.program_status_since = timestamp;
+    }
+    if let Some(v) = &mut tracked.4 {
+        v.deployment_resources_status_since = timestamp;
+        v.deployment_resources_desired_status_since = timestamp;
+        v.deployment_runtime_status_since = v.deployment_runtime_status_since.map(|_| timestamp);
+        v.deployment_runtime_desired_status_since =
+            v.deployment_runtime_desired_status_since.map(|_| timestamp);
+    }
+    tracked
+}
+
 /// Check database responses by direct comparison.
 fn check_responses<T: Debug + PartialEq>(
     step: usize,
@@ -2888,6 +2949,28 @@ fn check_response_pipeline_for_runner(
 ) {
     result_model = result_model.map(convert_pipeline_for_runner_with_constant_timestamps);
     result_impl = result_impl.map(convert_pipeline_for_runner_with_constant_timestamps);
+    check_responses(step, result_model, result_impl);
+}
+
+fn check_response_pipeline_tracked(
+    step: usize,
+    mut result_model: DBResult<(
+        PipelineTrackingVersion,
+        Option<TrackPipelineUserControlled>,
+        Option<TrackPipelineCompilation>,
+        Option<TrackPipelineDeploymentBase>,
+        Option<TrackPipelineDeploymentOperational>,
+    )>,
+    mut result_impl: DBResult<(
+        PipelineTrackingVersion,
+        Option<TrackPipelineUserControlled>,
+        Option<TrackPipelineCompilation>,
+        Option<TrackPipelineDeploymentBase>,
+        Option<TrackPipelineDeploymentOperational>,
+    )>,
+) {
+    result_model = result_model.map(convert_pipeline_tracked_with_constant_timestamps);
+    result_impl = result_impl.map(convert_pipeline_tracked_with_constant_timestamps);
     check_responses(step, result_model, result_impl);
 }
 
@@ -3227,6 +3310,12 @@ fn db_impl_behaves_like_model() {
                                 let model_response = model.get_pipeline_by_id_for_runner(tenant_id, pipeline_id, &platform_version, provision_called).await;
                                 let impl_response = handle.db.get_pipeline_by_id_for_runner(tenant_id, pipeline_id, &platform_version, provision_called).await;
                                 check_response_pipeline_for_runner(i, model_response, impl_response);
+                            }
+                           StorageAction::GetPipelineByIdTracked(tenant_id, pipeline_id, prev_tracking_version) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_pipeline_by_id_tracked(tenant_id, pipeline_id, prev_tracking_version.clone()).await;
+                                let impl_response = handle.db.get_pipeline_by_id_tracked(tenant_id, pipeline_id, prev_tracking_version).await;
+                                check_response_pipeline_tracked(i, model_response, impl_response);
                             }
                             StorageAction::NewPipeline(tenant_id, new_id, platform_version, pipeline_descr) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
@@ -3704,6 +3793,7 @@ impl ModelHelpers for Mutex<DbModel> {
             pipeline.program_binary_source_checksum = None;
             pipeline.program_binary_integrity_checksum = None;
             pipeline.platform_version = platform_version.to_string();
+            pipeline.track_compilation_version = Version(pipeline.track_compilation_version.0 + 1);
         }
 
         // Insert into state (will overwrite)
@@ -4047,6 +4137,128 @@ impl Storage for Mutex<DbModel> {
         }
     }
 
+    async fn get_pipeline_by_id_tracked(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        prev_tracking_version: Option<PipelineTrackingVersion>,
+    ) -> Result<
+        (
+            PipelineTrackingVersion,
+            Option<TrackPipelineUserControlled>,
+            Option<TrackPipelineCompilation>,
+            Option<TrackPipelineDeploymentBase>,
+            Option<TrackPipelineDeploymentOperational>,
+        ),
+        DBError,
+    > {
+        let pipeline = self
+            .lock()
+            .await
+            .pipelines
+            .get(&(tenant_id, pipeline_id))
+            .cloned()
+            .ok_or(DBError::UnknownPipeline { pipeline_id })?;
+
+        // User-controlled update
+        let track_user_controlled = if prev_tracking_version
+            .as_ref()
+            .is_none_or(|v| v.version != pipeline.version)
+        {
+            Some(TrackPipelineUserControlled {
+                id: pipeline.id,
+                name: pipeline.name,
+                description: pipeline.description,
+                created_at: pipeline.created_at,
+                platform_version: pipeline.platform_version,
+                runtime_config: pipeline.runtime_config,
+                program_code: pipeline.program_code,
+                udf_rust: pipeline.udf_rust,
+                udf_toml: pipeline.udf_toml,
+                program_config: pipeline.program_config,
+                program_version: pipeline.program_version,
+            })
+        } else {
+            None
+        };
+
+        // Compilation update
+        let track_compilation = if prev_tracking_version
+            .as_ref()
+            .is_none_or(|v| v.track_compilation_version != pipeline.track_compilation_version)
+        {
+            Some(TrackPipelineCompilation {
+                id: pipeline.id,
+                program_status: pipeline.program_status,
+                program_status_since: pipeline.program_status_since,
+                program_error: pipeline.program_error,
+                program_info: pipeline.program_info,
+                program_binary_source_checksum: pipeline.program_binary_source_checksum,
+                program_binary_integrity_checksum: pipeline.program_binary_integrity_checksum,
+                program_info_integrity_checksum: pipeline.program_info_integrity_checksum,
+            })
+        } else {
+            None
+        };
+
+        // Base deployment update
+        let track_deployment_base = if prev_tracking_version.as_ref().is_none_or(|v| {
+            v.track_deployment_base_version != pipeline.track_deployment_base_version
+        }) {
+            Some(TrackPipelineDeploymentBase {
+                id: pipeline.id,
+                deployment_error: pipeline.deployment_error,
+                deployment_config: pipeline.deployment_config,
+                deployment_location: pipeline.deployment_location,
+                deployment_id: pipeline.deployment_id,
+                deployment_initial: pipeline.deployment_initial,
+                bootstrap_policy: pipeline.bootstrap_policy,
+            })
+        } else {
+            None
+        };
+
+        // Operational deployment update
+        let track_deployment_operational = if prev_tracking_version.as_ref().is_none_or(|v| {
+            v.track_deployment_operational_version != pipeline.track_deployment_operational_version
+        }) {
+            Some(TrackPipelineDeploymentOperational {
+                id: pipeline.id,
+                storage_status: pipeline.storage_status,
+                storage_status_details: pipeline.storage_status_details,
+                deployment_resources_status: pipeline.deployment_resources_status,
+                deployment_resources_status_since: pipeline.deployment_resources_status_since,
+                deployment_resources_status_details: pipeline.deployment_resources_status_details,
+                deployment_resources_desired_status: pipeline.deployment_resources_desired_status,
+                deployment_resources_desired_status_since: pipeline
+                    .deployment_resources_desired_status_since,
+                deployment_runtime_status: pipeline.deployment_runtime_status,
+                deployment_runtime_status_details: pipeline.deployment_runtime_status_details,
+                deployment_runtime_status_since: pipeline.deployment_runtime_status_since,
+                deployment_runtime_desired_status: pipeline.deployment_runtime_desired_status,
+                deployment_runtime_desired_status_since: pipeline
+                    .deployment_runtime_desired_status_since,
+            })
+        } else {
+            None
+        };
+
+        Ok((
+            PipelineTrackingVersion {
+                id: pipeline.id,
+                refresh_version: pipeline.refresh_version,
+                version: pipeline.version,
+                track_compilation_version: pipeline.track_compilation_version,
+                track_deployment_base_version: pipeline.track_deployment_base_version,
+                track_deployment_operational_version: pipeline.track_deployment_operational_version,
+            },
+            track_user_controlled,
+            track_compilation,
+            track_deployment_base,
+            track_deployment_operational,
+        ))
+    }
+
     async fn new_pipeline(
         &self,
         tenant_id: TenantId,
@@ -4132,6 +4344,9 @@ impl Storage for Mutex<DbModel> {
             deployment_runtime_desired_status: None,
             deployment_runtime_desired_status_since: None,
             bootstrap_policy: None,
+            track_compilation_version: Version(1),
+            track_deployment_base_version: Version(1),
+            track_deployment_operational_version: Version(1),
         };
 
         // Insert into state
@@ -4279,6 +4494,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_binary_source_checksum = None;
         pipeline.program_binary_integrity_checksum = None;
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
+        pipeline.track_compilation_version = Version(pipeline.track_compilation_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -4300,6 +4516,7 @@ impl Storage for Mutex<DbModel> {
         // Apply changes: update
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
+        pipeline.track_compilation_version = Version(pipeline.track_compilation_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -4334,6 +4551,7 @@ impl Storage for Mutex<DbModel> {
         };
         pipeline.program_info = Some(program_info.clone());
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
+        pipeline.track_compilation_version = Version(pipeline.track_compilation_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -4355,6 +4573,7 @@ impl Storage for Mutex<DbModel> {
         // Apply changes: update
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
+        pipeline.track_compilation_version = Version(pipeline.track_compilation_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -4391,6 +4610,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_info_integrity_checksum =
             Some(program_info_integrity_checksum.to_string());
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
+        pipeline.track_compilation_version = Version(pipeline.track_compilation_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -4419,6 +4639,7 @@ impl Storage for Mutex<DbModel> {
             system_error: None,
         };
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
+        pipeline.track_compilation_version = Version(pipeline.track_compilation_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -4447,6 +4668,7 @@ impl Storage for Mutex<DbModel> {
             system_error: None,
         };
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
+        pipeline.track_compilation_version = Version(pipeline.track_compilation_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -4475,6 +4697,7 @@ impl Storage for Mutex<DbModel> {
             system_error: Some(system_error.to_string()),
         };
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
+        pipeline.track_compilation_version = Version(pipeline.track_compilation_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -4539,6 +4762,10 @@ impl Storage for Mutex<DbModel> {
         pipeline.deployment_resources_desired_status = new_resources_desired_status;
         pipeline.deployment_resources_desired_status_since = Utc::now();
         pipeline.deployment_error = new_deployment_error;
+        pipeline.track_deployment_base_version =
+            Version(pipeline.track_deployment_base_version.0 + 1);
+        pipeline.track_deployment_operational_version =
+            Version(pipeline.track_deployment_operational_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -4572,6 +4799,10 @@ impl Storage for Mutex<DbModel> {
             pipeline.deployment_resources_desired_status = new_resources_desired_status;
             pipeline.deployment_resources_desired_status_since = Utc::now();
             pipeline.bootstrap_policy = None;
+            pipeline.track_deployment_base_version =
+                Version(pipeline.track_deployment_base_version.0 + 1);
+            pipeline.track_deployment_operational_version =
+                Version(pipeline.track_deployment_operational_version.0 + 1);
             self.lock()
                 .await
                 .pipelines
@@ -4608,6 +4839,10 @@ impl Storage for Mutex<DbModel> {
         pipeline.deployment_resources_desired_status_since = Utc::now();
         pipeline.bootstrap_policy = None;
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
+        pipeline.track_deployment_base_version =
+            Version(pipeline.track_deployment_base_version.0 + 1);
+        pipeline.track_deployment_operational_version =
+            Version(pipeline.track_deployment_operational_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -4676,6 +4911,10 @@ impl Storage for Mutex<DbModel> {
         pipeline.deployment_runtime_desired_status = None;
         pipeline.deployment_runtime_desired_status_since = None;
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
+        pipeline.track_deployment_base_version =
+            Version(pipeline.track_deployment_base_version.0 + 1);
+        pipeline.track_deployment_operational_version =
+            Version(pipeline.track_deployment_operational_version.0 + 1);
 
         self.lock()
             .await
@@ -4704,6 +4943,8 @@ impl Storage for Mutex<DbModel> {
         // Apply changes
         pipeline.deployment_resources_status_details = Some(deployment_resources_status_details);
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
+        pipeline.track_deployment_operational_version =
+            Version(pipeline.track_deployment_operational_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -4753,6 +4994,10 @@ impl Storage for Mutex<DbModel> {
         pipeline.deployment_runtime_desired_status = Some(new_runtime_desired_status);
         pipeline.deployment_runtime_desired_status_since = Some(Utc::now());
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
+        pipeline.track_deployment_base_version =
+            Version(pipeline.track_deployment_base_version.0 + 1);
+        pipeline.track_deployment_operational_version =
+            Version(pipeline.track_deployment_operational_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -4803,6 +5048,8 @@ impl Storage for Mutex<DbModel> {
             pipeline.storage_status_details = storage_status_details;
         }
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
+        pipeline.track_deployment_operational_version =
+            Version(pipeline.track_deployment_operational_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -4852,6 +5099,10 @@ impl Storage for Mutex<DbModel> {
         pipeline.bootstrap_policy = None;
         pipeline.deployment_resources_desired_status = ResourcesDesiredStatus::Stopped;
         pipeline.deployment_resources_desired_status_since = Utc::now();
+        pipeline.track_deployment_base_version =
+            Version(pipeline.track_deployment_base_version.0 + 1);
+        pipeline.track_deployment_operational_version =
+            Version(pipeline.track_deployment_operational_version.0 + 1);
 
         // Set deployment resources status to Stopping
         if storage_status_details.is_some() {
@@ -4871,6 +5122,10 @@ impl Storage for Mutex<DbModel> {
         pipeline.deployment_runtime_desired_status = None;
         pipeline.deployment_runtime_desired_status_since = None;
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
+        pipeline.track_deployment_base_version =
+            Version(pipeline.track_deployment_base_version.0 + 1);
+        pipeline.track_deployment_operational_version =
+            Version(pipeline.track_deployment_operational_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -4898,6 +5153,8 @@ impl Storage for Mutex<DbModel> {
         // Apply changes
         pipeline.deployment_resources_status_details = Some(deployment_resources_status_details);
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
+        pipeline.track_deployment_operational_version =
+            Version(pipeline.track_deployment_operational_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -4938,6 +5195,10 @@ impl Storage for Mutex<DbModel> {
         pipeline.deployment_runtime_desired_status = None;
         pipeline.deployment_runtime_desired_status_since = None;
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
+        pipeline.track_deployment_base_version =
+            Version(pipeline.track_deployment_base_version.0 + 1);
+        pipeline.track_deployment_operational_version =
+            Version(pipeline.track_deployment_operational_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -4964,6 +5225,8 @@ impl Storage for Mutex<DbModel> {
             // Apply changes
             pipeline.storage_status = new_status;
             pipeline.storage_status_details = None;
+            pipeline.track_deployment_operational_version =
+                Version(pipeline.track_deployment_operational_version.0 + 1);
             self.lock()
                 .await
                 .pipelines
@@ -4990,6 +5253,8 @@ impl Storage for Mutex<DbModel> {
         // Apply changes
         pipeline.storage_status = new_status;
         pipeline.storage_status_details = None;
+        pipeline.track_deployment_operational_version =
+            Version(pipeline.track_deployment_operational_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -5416,6 +5681,8 @@ impl Storage for Mutex<DbModel> {
             return Err(DBError::DismissErrorRestrictedToFullyStopped);
         }
         pipeline.deployment_error = None;
+        pipeline.track_deployment_base_version =
+            Version(pipeline.track_deployment_base_version.0 + 1);
         self.lock()
             .await
             .pipelines

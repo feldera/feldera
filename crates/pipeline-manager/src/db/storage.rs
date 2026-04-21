@@ -6,6 +6,8 @@ use crate::db::types::monitor::{
 };
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
+    PipelineTrackingVersion, TrackPipelineCompilation, TrackPipelineDeploymentBase,
+    TrackPipelineDeploymentOperational, TrackPipelineUserControlled,
 };
 use crate::db::types::program::{RustCompilationInfo, SqlCompilationInfo};
 use crate::db::types::tenant::TenantId;
@@ -161,6 +163,22 @@ pub(crate) trait Storage {
         platform_version: &str,
         provision_called: bool,
     ) -> Result<ExtendedPipelineDescrRunner, DBError>;
+
+    async fn get_pipeline_by_id_tracked(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        prev_tracking_version: Option<PipelineTrackingVersion>,
+    ) -> Result<
+        (
+            PipelineTrackingVersion,
+            Option<TrackPipelineUserControlled>,
+            Option<TrackPipelineCompilation>,
+            Option<TrackPipelineDeploymentBase>,
+            Option<TrackPipelineDeploymentOperational>,
+        ),
+        DBError,
+    >;
 
     /// Creates a new pipeline.
     async fn new_pipeline(

@@ -197,6 +197,7 @@ It contains the following fields:
         endpoints::pipeline_management::post_pipeline_dismiss_error,
         endpoints::pipeline_management::post_pipeline_clear,
         endpoints::pipeline_management::get_pipeline_logs,
+        endpoints::pipeline_management::get_pipeline_track,
 
         // Pipeline interaction endpoints
         endpoints::pipeline_interaction::http_input,
@@ -559,6 +560,7 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_management::post_pipeline_dismiss_error)
         .service(endpoints::pipeline_management::post_pipeline_clear)
         .service(endpoints::pipeline_management::get_pipeline_logs)
+        .service(endpoints::pipeline_management::get_pipeline_track)
         // Pipeline interaction endpoints
         .service(endpoints::pipeline_interaction::http_input)
         .service(endpoints::pipeline_interaction::http_output)

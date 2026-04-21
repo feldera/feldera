@@ -1,4 +1,5 @@
 use crate::api::error::ApiError;
+use crate::api::error::ApiError::TrackPipelineFailed;
 use crate::api::examples;
 use crate::api::main::ServerState;
 #[cfg(not(feature = "feldera-enterprise"))]
@@ -8,6 +9,8 @@ use crate::db::storage::Storage;
 use crate::db::types::combined_status::{combine_since, CombinedDesiredStatus, CombinedStatus};
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
+    PipelineTrackingVersion, TrackPipelineCompilation, TrackPipelineDeploymentBase,
+    TrackPipelineDeploymentOperational, TrackPipelineUserControlled,
 };
 use crate::db::types::program::{ProgramConfig, ProgramError, ProgramStatus};
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
@@ -32,15 +35,19 @@ use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
 use futures_util::future::join_all;
+use futures_util::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-#[cfg(feature = "feldera-enterprise")]
 use std::time::Duration;
 use tracing::{debug, error, info};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
+
+/// When a pipeline is being tracked, how often it is checked whether a change in
+/// its fields has occurred.
+const TRACK_PIPELINE_INTERVAL: Duration = Duration::from_millis(1_000);
 
 /// Program information is the result of the SQL compilation.
 #[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
@@ -477,6 +484,81 @@ impl PipelineSelectedInfoInternal {
         let mut result = Self::new_status(extended_pipeline);
         result.connectors = connectors;
         result
+    }
+
+    pub(crate) fn new_all_tracking(
+        tracking_version: &PipelineTrackingVersion,
+        user_controlled: &TrackPipelineUserControlled,
+        compilation: &TrackPipelineCompilation,
+        deployment_base: &TrackPipelineDeploymentBase,
+        deployment_operational: &TrackPipelineDeploymentOperational,
+    ) -> Self {
+        PipelineSelectedInfoInternal {
+            id: tracking_version.id,
+            name: user_controlled.name.clone(),
+            description: user_controlled.description.clone(),
+            created_at: user_controlled.created_at,
+            version: tracking_version.version,
+            platform_version: user_controlled.platform_version.clone(),
+            runtime_config: Some(user_controlled.runtime_config.clone()),
+            program_code: Some(user_controlled.program_code.clone()),
+            udf_rust: Some(user_controlled.udf_rust.clone()),
+            udf_toml: Some(user_controlled.udf_toml.clone()),
+            program_config: Some(user_controlled.program_config.clone()),
+            program_version: user_controlled.program_version,
+            program_status: compilation.program_status,
+            program_status_since: compilation.program_status_since,
+            program_error: Some(compilation.program_error.clone()),
+            program_info: Some(remove_large_fields_from_program_info(
+                compilation.program_info.clone(),
+            )),
+            deployment_error: deployment_base.deployment_error.clone(),
+            refresh_version: tracking_version.refresh_version,
+            storage_status: deployment_operational.storage_status,
+            storage_status_details: deployment_operational.storage_status_details.clone(),
+            deployment_id: deployment_base.deployment_id,
+            deployment_initial: deployment_base.deployment_initial,
+            deployment_status: CombinedStatus::new(
+                deployment_operational.deployment_resources_status,
+                deployment_operational.deployment_runtime_status,
+            ),
+            deployment_status_since: combine_since(
+                deployment_operational.deployment_resources_status_since,
+                deployment_operational.deployment_runtime_status_since,
+            ),
+            deployment_desired_status: CombinedDesiredStatus::new(
+                deployment_operational.deployment_resources_desired_status,
+                deployment_base.deployment_initial,
+                deployment_operational.deployment_runtime_desired_status,
+            ),
+            deployment_desired_status_since: combine_since(
+                deployment_operational.deployment_resources_desired_status_since,
+                deployment_operational.deployment_runtime_desired_status_since,
+            ),
+            deployment_resources_status: deployment_operational.deployment_resources_status,
+            deployment_resources_status_details: Some(
+                deployment_operational
+                    .deployment_resources_status_details
+                    .clone(),
+            ),
+            deployment_resources_status_since: deployment_operational
+                .deployment_resources_status_since,
+            deployment_resources_desired_status: deployment_operational
+                .deployment_resources_desired_status,
+            deployment_resources_desired_status_since: deployment_operational
+                .deployment_resources_desired_status_since,
+            deployment_runtime_status: deployment_operational.deployment_runtime_status,
+            deployment_runtime_status_details: deployment_operational
+                .deployment_runtime_status_details
+                .clone(),
+            deployment_runtime_status_since: deployment_operational.deployment_runtime_status_since,
+            deployment_runtime_desired_status: deployment_operational
+                .deployment_runtime_desired_status,
+            deployment_runtime_desired_status_since: deployment_operational
+                .deployment_runtime_desired_status_since,
+            bootstrap_policy: deployment_base.bootstrap_policy,
+            connectors: None,
+        }
     }
 }
 
@@ -1778,4 +1860,269 @@ pub(crate) async fn post_pipeline_testing(
     }
 
     Ok(HttpResponse::Ok().finish())
+}
+
+/// Track Pipeline Changes
+///
+/// Retrieve first in full (all fields) and subsequently track any changes to any of the fields of a
+/// pipeline. The result is a stream of newline-delimited JSON (NDJSON). Note that changes should
+/// only be done at the top fields. For example:
+/// ```ndjson
+/// { "a": 1, "b": { "c": 2 }, "d": 3}
+/// { "b": { "e": 4}, "d": null}
+/// ```
+/// ... should result in:
+/// ```ndjson
+/// { "a": 1, "b": { "e": 4} }
+/// ```
+///
+/// If the client loses the connection to this endpoint, they must discard any existing state upon
+/// reconnect; the first line will again be the pipeline object in full.
+///
+/// The pipeline name is only resolved **once** at the start of tracking changes to the pipeline,
+/// at which moment the stream is coupled to the (immutable) pipeline unique identifier. As such,
+/// editing the pipeline name during the tracking does not result in it getting interrupted.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+            , description = "Stream of pipeline changes as NDJSON"),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline CRUD"
+)]
+#[get("/pipelines/{pipeline_name}/track")]
+pub(crate) async fn get_pipeline_track(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    let pipeline = state
+        .db
+        .lock()
+        .await
+        .get_pipeline_for_monitoring(*tenant_id, &pipeline_name)
+        .await?;
+    let pipeline_id = pipeline.id;
+    Ok(HttpResponse::Ok()
+        .content_type("text/plain; charset=utf-8")
+        .append_header(("X-Content-Type-Options", "nosniff"))
+        .insert_header(actix_http::ContentEncoding::Identity)
+        .streaming(pipeline_tracking_stream(state, *tenant_id, pipeline_id).await))
+}
+
+/// Produces a continuous stream of pipeline changes.
+async fn pipeline_tracking_stream(
+    state: WebData<ServerState>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+) -> impl Stream<Item = Result<web::Bytes, actix_web::Error>> {
+    async_stream::try_stream! {
+        let mut outer_prev: Option<(
+            PipelineTrackingVersion,
+            TrackPipelineUserControlled,
+            TrackPipelineCompilation,
+            TrackPipelineDeploymentBase,
+            TrackPipelineDeploymentOperational,
+            serde_json::Value,
+        )> = None;
+        loop {
+            let json_delta: serde_json::Value = if let Some(prev) = outer_prev.take() {
+                tokio::time::sleep(TRACK_PIPELINE_INTERVAL).await;
+
+                // Updates that need to be applied
+                let (
+                    new_version,
+                    new_user_controlled,
+                    new_compilation,
+                    new_deployment_base,
+                    new_deployment_operational
+                ) = state
+                    .db
+                    .lock()
+                    .await
+                    .get_pipeline_by_id_tracked(tenant_id, pipeline_id, Some(prev.0))
+                    .await?;
+
+                // Construct the new descriptor
+                let new_info = PipelineSelectedInfoInternal::new_all_tracking(
+                    &new_version,
+                    new_user_controlled.as_ref().unwrap_or(&prev.1),
+                    new_compilation.as_ref().unwrap_or(&prev.2),
+                    new_deployment_base.as_ref().unwrap_or(&prev.3),
+                    new_deployment_operational.as_ref().unwrap_or(&prev.4),
+                );
+                let new_json = serde_json::to_value(&new_info).map_err(|e|
+                    TrackPipelineFailed { error: format!("cannot serialize new info: {e}") }
+                )?;
+
+                // Return the difference between the old and new JSON
+                let difference = determine_json_delta(&prev.5, &new_json)?;
+
+                // Update current if they have been updated
+                outer_prev = Some((
+                    new_version,
+                    new_user_controlled.unwrap_or(prev.1),
+                    new_compilation.unwrap_or(prev.2),
+                    new_deployment_base.unwrap_or(prev.3),
+                    new_deployment_operational.unwrap_or(prev.4),
+                    new_json,
+                ));
+
+                difference
+            } else {
+                // First tracking of the pipeline
+                let (
+                    first_version,
+                    first_user_controlled,
+                    first_compilation,
+                    first_deployment_base,
+                    first_deployment_operational
+                ) = state
+                    .db
+                    .lock()
+                    .await
+                    .get_pipeline_by_id_tracked(tenant_id, pipeline_id, None)
+                    .await?;
+
+                // As the first retrieval, all fields must be present
+                let (
+                    first_user_controlled,
+                    first_compilation,
+                    first_deployment_base,
+                    first_deployment_operational
+                ) = (
+                    first_user_controlled.ok_or_else(|| TrackPipelineFailed { error: "first tracking of user-controlled is missing".to_string() })?,
+                    first_compilation.ok_or_else(|| TrackPipelineFailed { error: "first tracking of compilation is missing".to_string() })?,
+                    first_deployment_base.ok_or_else(|| TrackPipelineFailed { error: "first tracking of deployment base is missing".to_string() })?,
+                    first_deployment_operational.ok_or_else(|| TrackPipelineFailed { error: "first tracking of deployment operational is missing".to_string() })?,
+                );
+
+                // Construct first JSON
+                let first_info = PipelineSelectedInfoInternal::new_all_tracking(
+                    &first_version,
+                    &first_user_controlled,
+                    &first_compilation,
+                    &first_deployment_base,
+                    &first_deployment_operational
+                );
+                let first_json = serde_json::to_value(&first_info).map_err(|e|
+                    TrackPipelineFailed { error: format!("cannot serialize first info: {e}") }
+                )?;
+
+                // Update current with the first tracking
+                outer_prev = Some((
+                    first_version,
+                    first_user_controlled,
+                    first_compilation,
+                    first_deployment_base,
+                    first_deployment_operational,
+                    first_json.clone(),
+                ));
+
+                first_json
+            };
+
+            // Serialize the JSON delta to a one-line string ending with a newline,
+            // such that the output stream is NDJSON (newline-delimited JSON)
+            let mut content_str = serde_json::to_string(&json_delta).map_err(|e| {
+                TrackPipelineFailed {
+                    error: format!("Unable to serialize JSON delta due to: {e}"),
+                }
+            })?;
+            content_str.push('\n');
+            yield web::Bytes::from(content_str.into_bytes());
+        }
+    }
+}
+
+/// Compares the old and new JSON object using only top-level fields, and generates a delta
+/// JSON object with changes that need to be applied to `json_old` to become `json_new`.
+/// The same keys must be present in both.
+fn determine_json_delta(
+    json_old: &serde_json::Value,
+    json_new: &serde_json::Value,
+) -> Result<serde_json::Value, ApiError> {
+    let obj_old = json_old.as_object().ok_or_else(|| TrackPipelineFailed {
+        error: "Old JSON is not an object".to_string(),
+    })?;
+    let obj_new = json_new.as_object().ok_or_else(|| TrackPipelineFailed {
+        error: "New JSON is not an object".to_string(),
+    })?;
+    let keys_old: Vec<&String> = obj_old.keys().collect();
+    let keys_new: Vec<&String> = obj_new.keys().collect();
+    if keys_old != keys_new {
+        return Err(TrackPipelineFailed {
+            error: format!("Old keys ({keys_old:?}) and new keys ({keys_new:?}) do not match"),
+        });
+    }
+    let mut delta = serde_json::Map::new();
+    for (k, v) in obj_new {
+        if let Some(v_old) = obj_old.get(k) {
+            if v_old != v {
+                delta.insert(k.clone(), v.clone());
+            }
+        } else {
+            // This shouldn't occur as all keys in old should be in new, and vice versa
+            return Err(TrackPipelineFailed {
+                error: format!("Key '{k}' does not exist in the old object: {json_old}"),
+            });
+        }
+    }
+    Ok(serde_json::Value::Object(delta))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::determine_json_delta;
+    use crate::api::error::ApiError;
+    use serde_json::json;
+
+    #[test]
+    #[rustfmt::skip]
+    fn determination_json_delta() {
+        // Ok
+        for (old, new, expected) in vec![
+            (json!({}), json!({}), json!({})),
+            (json!({"a": 1}), json!({"a": 1}), json!({})),
+            (json!({"a": 1}), json!({"a": 2}), json!({"a": 2})),
+            (json!({"a": null}), json!({"a": 1}), json!({"a": 1})),
+            (json!({"a": 1}), json!({"a": null}), json!({"a": null})),
+            (json!({"a": null}), json!({"a": null}), json!({})),
+            (json!({"a": 1, "b": 1}), json!({"a": 1, "b": 1}), json!({})),
+            (json!({"a": 1, "b": 1}), json!({"a": 2, "b": 1}), json!({"a": 2})),
+            (json!({"a": 1, "b": 1}), json!({"a": 1, "b": 2}), json!({"b": 2})),
+            (json!({"a": 1, "b": 1}), json!({"a": 2, "b": 2}), json!({"a": 2, "b": 2})),
+            (json!({"a": {"b": 1, "c": 2}}), json!({"a": {"c": 3}}), json!({"a": {"c": 3}})),
+        ] {
+            assert_eq!(determine_json_delta(&old, &new).unwrap(), expected, "Delta from {old} to {new}");
+        }
+
+        // Err
+        assert!(matches!(
+            determine_json_delta(&json!(null), &json!({})).unwrap_err(),
+            ApiError::TrackPipelineFailed { error } if error == "Old JSON is not an object"
+        ));
+        assert!(matches!(
+            determine_json_delta(&json!({}), &json!(["a"])).unwrap_err(),
+            ApiError::TrackPipelineFailed { error } if error == "New JSON is not an object"
+        ));
+        assert!(matches!(
+            determine_json_delta(&json!({}), &json!({"a": 1})).unwrap_err(),
+            ApiError::TrackPipelineFailed { error } if error == "Old keys ([]) and new keys ([\"a\"]) do not match"
+        ));
+        assert!(matches!(
+            determine_json_delta(&json!({"a": 1}), &json!({"a": 2, "b": 1})).unwrap_err(),
+            ApiError::TrackPipelineFailed { error } if error == "Old keys ([\"a\"]) and new keys ([\"a\", \"b\"]) do not match"
+        ));
+    }
 }

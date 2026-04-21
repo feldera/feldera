@@ -28,6 +28,7 @@ pub enum ApiError {
     ProgramInfoMissesDataflow { pipeline_name: String },
     InvalidProgramInfo { error: String },
     ProgramNotCompiled { pipeline_name: String },
+    TrackPipelineFailed { error: String },
 }
 
 impl DetailedError for ApiError {
@@ -47,6 +48,7 @@ impl DetailedError for ApiError {
             Self::ProgramInfoMissesDataflow { .. } => Cow::from("ProgramInfoMissesDataflow"),
             Self::InvalidProgramInfo { .. } => Cow::from("InvalidProgramInfo"),
             Self::ProgramNotCompiled { .. } => Cow::from("ProgramNotCompiled"),
+            Self::TrackPipelineFailed { .. } => Cow::from("TrackPipelineFailed"),
         }
     }
 }
@@ -109,6 +111,9 @@ impl Display for ApiError {
                     "Pipeline '{pipeline_name}' has not been compiled yet. Please compile the pipeline first."
                 )
             }
+            Self::TrackPipelineFailed { error } => {
+                write!(f, "Tracking changes of pipeline failed due to: {error}")
+            }
         }
     }
 }
@@ -138,6 +143,7 @@ impl ResponseError for ApiError {
             Self::ProgramInfoMissesDataflow { .. } => StatusCode::NOT_FOUND,
             Self::InvalidProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::ProgramNotCompiled { .. } => StatusCode::NOT_FOUND,
+            Self::TrackPipelineFailed { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 

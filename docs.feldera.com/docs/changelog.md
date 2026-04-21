@@ -15,6 +15,10 @@ import TabItem from '@theme/TabItem';
         ## Unreleased
 
         API changes:
+        - (New) Endpoint to track pipeline changes `GET /v0/pipelines/<name>/track`.
+        - (New) Python SDK: `pipeline.track()` and `pipeline.wait_for_compilation()`.
+
+        API changes:
         - (New) Details about the storage status is a new pipeline field: `storage_status_details`.
           It does not get get cleared when the pipeline stops, only when the storage is cleared.
         - (Fix) Dedicated error `BootstrapPolicyImmutableUnlessStopped` for repeated `/start` of a
