@@ -8393,6 +8393,12 @@
             "nullable": true,
             "minimum": 0
           },
+          "eager_evict": {
+            "type": "boolean",
+            "description": "Evict eagerly from buffer caches as files get deleted.\n\nThis is an optimization that drops files from\nthe cache as soon as they are deleted.\n\nIt has unknown (no?) performance benefits from what I can tell.\n\nHistorically it made sense to do this for two reasons:\na) we know with 100% guarantee that the file won't ever be\nread again.\nb) we could do this in O(logn) time with the LRU cache.\nThis is no longer true for s3-fifo where it is O(n).\n\nIf the eviction is expensive, (many small objects in the cache)\nthis can cause a regression.\n\nNew default disables this behavior by making it false.\n\nIf this doesn't cause regression we will remove this option\nin the future.",
+            "default": null,
+            "nullable": true
+          },
           "fbuf_slab_bytes_per_class": {
             "type": "integer",
             "description": "Target number of cached bytes retained in each `FBuf` slab size class.\n\nThe default is 16 MiB.",
