@@ -1,4 +1,4 @@
-from build.lib.feldera.pipeline_builder import PipelineBuilder
+from feldera import PipelineBuilder
 from feldera.enums import ProgramStatus
 from tests import TEST_CLIENT
 from tests.platform.helper import gen_pipeline_name

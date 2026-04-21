@@ -1914,7 +1914,7 @@ pub(crate) async fn get_pipeline_track(
         .await?;
     let pipeline_id = pipeline.id;
     Ok(HttpResponse::Ok()
-        .content_type("text/plain; charset=utf-8")
+        .content_type("application/x-ndjson; charset=utf-8")
         .append_header(("X-Content-Type-Options", "nosniff"))
         .insert_header(actix_http::ContentEncoding::Identity)
         .streaming(pipeline_tracking_stream(state, *tenant_id, pipeline_id).await))
