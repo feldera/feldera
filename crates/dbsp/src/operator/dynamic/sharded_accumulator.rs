@@ -245,14 +245,55 @@ where
     }
 }
 
+/// Queues data to a [ShardedAccumulatorReceiver].
 struct Rxq<B>
 where
     B: Batch,
 {
+    /// Total number of worker threads in this circuit.
     npeers: usize,
-    global_offset: usize,
-    sender_offsets: Vec<usize>,
-    spines: VecDeque<(usize, Spine<B>)>,
+
+    /// A deque of spines under construction for delivery to the circuit.  The
+    /// first element will be delivered to the circuit next, the second element
+    /// after that, and so on.
+    ///
+    /// In the common case, the deque has one element; it will never be empty.
+    spines: VecDeque<RxqEntry<B>>,
+
+    /// For each sender, the number of flushes it has sent.
+    n_flushes: Vec<usize>,
+
+    /// The number of entries that have been popped off `spines` and received by
+    /// the circuit.
+    n_received: usize,
+}
+
+/// A spine that a [ShardedAccumulatorReceiver] is building from batches
+/// received from [ShardedAccumulatorSender]s.
+struct RxqEntry<B>
+where
+    B: Batch,
+{
+    /// Number of senders that have not yet sent a flush notification.  This
+    /// starts as the number of workers in the circuit and decrements with each
+    /// flush.  When it reaches zero, every sender has sent a flush
+    /// notification, so `spine` is ready to be delivered to the circuit.
+    n_unflushed: usize,
+
+    /// Spine under construction.
+    spine: Spine<B>,
+}
+
+impl<B> RxqEntry<B>
+where
+    B: Batch,
+{
+    fn new(npeers: usize, factories: &B::Factories) -> Self {
+        Self {
+            n_unflushed: npeers,
+            spine: Spine::new(factories),
+        }
+    }
 }
 
 impl<B> Rxq<B>
@@ -262,17 +303,17 @@ where
     fn new(factories: &B::Factories, npeers: usize) -> Self {
         Self {
             npeers,
-            global_offset: 0,
-            sender_offsets: repeat_n(0, npeers).collect(),
-            spines: VecDeque::from([(npeers, Spine::new(factories))]),
+            spines: VecDeque::from([RxqEntry::new(npeers, factories)]),
+            n_flushes: repeat_n(0, npeers).collect(),
+            n_received: 0,
         }
     }
 
     /// Returns true if the receiver has now received a complete spine but
     /// before the call it had not.
     fn deliver(&mut self, factories: &B::Factories, sender: usize, batch: B, flush: bool) -> bool {
-        let index = self.sender_offsets[sender] - self.global_offset;
-        let (unflushed, spine) = &mut self.spines[index];
+        let index = self.n_flushes[sender] - self.n_received;
+        let entry = &mut self.spines[index];
 
         // This function call will wait for backpressure to be relieved if there
         // are too many batches in the spine.  It might make sense to instead
@@ -284,14 +325,14 @@ where
         // We are called in async context, so blocking inside here has higher
         // cost than one might expect, so depending on how it shows up in
         // profiles this might be a good optimization target.
-        spine.insert(batch);
+        entry.spine.insert(batch);
 
         flush && {
-            *unflushed -= 1;
-            let notify = index == 0 && *unflushed == 0;
-            self.sender_offsets[sender] += 1;
+            entry.n_unflushed -= 1;
+            let notify = index == 0 && entry.n_unflushed == 0;
+            self.n_flushes[sender] += 1;
             if index + 1 >= self.spines.len() {
-                self.spines.push_back((self.npeers, Spine::new(factories)));
+                self.spines.push_back(RxqEntry::new(self.npeers, factories));
             }
             notify
         }
@@ -299,10 +340,10 @@ where
 
     fn receive(&mut self) -> Option<Spine<B>> {
         self.spines
-            .pop_front_if(|(unflushed, _spine)| *unflushed == 0)
-            .map(|(_unflushed, spine)| {
-                self.global_offset += 1;
-                spine
+            .pop_front_if(|entry| entry.n_unflushed == 0)
+            .map(|entry| {
+                self.n_received += 1;
+                entry.spine
             })
     }
 }
