@@ -91,6 +91,29 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adaptive_joins: Option<bool>,
 
+    /// Evict eagerly from buffer caches as files get deleted.
+    ///
+    /// This is an optimization that drops files from
+    /// the cache as soon as they are deleted.
+    ///
+    /// It has unknown (no?) performance benefits from what I can tell.
+    ///
+    /// Historically it made sense to do this for two reasons:
+    /// a) we know with 100% guarantee that the file won't ever be
+    ///    read again.
+    /// b) we could do this in O(logn) time with the LRU cache.
+    ///    This is no longer true for s3-fifo where it is O(n).
+    ///
+    /// If the eviction is expensive, (many small objects in the cache)
+    /// this can cause a regression.
+    ///
+    /// New default disables this behavior by making it false.
+    ///
+    /// If this doesn't cause regression we will remove this option
+    /// in the future.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eager_evict: Option<bool>,
+
     /// The minimum relative improvement threshold for the join balancer.
     ///
     /// The join balancer is a component that dynamically chooses an optimal
