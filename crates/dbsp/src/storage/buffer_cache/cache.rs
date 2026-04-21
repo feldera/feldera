@@ -13,6 +13,7 @@ use feldera_types::config::dev_tweaks::{BufferCacheAllocationStrategy, BufferCac
 use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
 
+use crate::Runtime;
 use crate::circuit::metadata::{
     CACHE_BACKGROUND_HIT_RATE_PERCENT, CACHE_BACKGROUND_HITS, CACHE_BACKGROUND_MISSES,
     CACHE_FOREGROUND_HIT_RATE_PERCENT, CACHE_FOREGROUND_HITS, CACHE_FOREGROUND_MISSES, MetaItem,
@@ -92,6 +93,11 @@ impl BufferCache {
     }
 
     pub fn evict(&self, file: &dyn FileReader) {
+        let skip_evict = Runtime::with_dev_tweaks(|d| d.skip_eager_evict.unwrap_or(false));
+        if skip_evict {
+            return;
+        }
+
         let file_id = file.file_id();
         if let Some(lru) = self
             .inner

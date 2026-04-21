@@ -91,6 +91,20 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adaptive_joins: Option<bool>,
 
+    /// Don't evict when file gets deleted.
+    ///
+    /// We have a (questionable) optimization that drops files from the cache
+    /// when a file is deleted.
+    ///
+    /// It makes sense because we know with 100% guarantee that the file
+    /// won't ever be read again. But if the eviction is expensive,
+    /// (the cache is very large) it's problematic.
+    ///
+    /// The default here is currently: `false`
+    /// We will make this: `true` & remove in the future.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skip_eager_evict: Option<bool>,
+
     /// The minimum relative improvement threshold for the join balancer.
     ///
     /// The join balancer is a component that dynamically chooses an optimal
