@@ -13,7 +13,8 @@ fn pipeline_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
     // using the `try_parse_from` method.
     let cli = Cli::try_parse_from(["fda", "pipelines"]);
     if let Ok(cli) = cli {
-        let client = make_client(cli.host, cli.insecure, cli.auth, cli.timeout).unwrap();
+        let client =
+            make_client(cli.host, cli.insecure, cli.tls_cert, cli.auth, cli.timeout).unwrap();
 
         let r = futures::executor::block_on(async {
             client
@@ -77,6 +78,22 @@ pub struct Cli {
         help_heading = "Global Options"
     )]
     pub insecure: bool,
+    /// Path to a PEM-encoded certificate to trust as an additional root
+    /// certificate authority for HTTPS connections.
+    ///
+    /// Useful when `fda` talks to a Feldera deployment that serves HTTPS with
+    /// a self-signed certificate or a certificate signed by a private CA that
+    /// is not in the system trust store. The file must be readable by the
+    /// current user and contain one or more PEM-encoded certificates.
+    #[arg(
+        long = "tls-cert",
+        env = "FELDERA_HTTPS_TLS_CERT",
+        value_hint = ValueHint::FilePath,
+        global = true,
+        help_heading = "Global Options",
+        conflicts_with = "insecure"
+    )]
+    pub tls_cert: Option<std::path::PathBuf>,
     /// Which API key to use for authentication.
     ///
     /// The provided string should start with "apikey:" followed by the random characters.

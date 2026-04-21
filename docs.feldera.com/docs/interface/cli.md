@@ -171,6 +171,26 @@ right. Go to **Manage API Keys** and click **Generate new key**.
 
 :::
 
+### Connecting to HTTPS with a custom CA
+
+When the Feldera manager is served over HTTPS with a certificate issued by a private CA, or with a self-signed
+certificate, `fda` needs to trust that CA before it can talk to the manager. The environment variable
+`FELDERA_HTTPS_TLS_CERT` and the command line argument `--tls-cert` both take a path to a PEM-encoded certificate
+file. The file may contain one or more certificates; every certificate in the bundle is added to the client's set
+of trusted roots:
+
+```bash
+fda --host https://feldera.internal --tls-cert /etc/ssl/ca-bundle.pem pipelines
+# or via environment:
+export FELDERA_HTTPS_TLS_CERT=/etc/ssl/ca-bundle.pem
+fda --host https://feldera.internal pipelines
+```
+
+`--tls-cert` extends the trust store while keeping certificate verification on, so it is the preferred option for
+reaching HTTPS endpoints with custom CAs. The separate `--insecure` / `-k` flag disables verification entirely and
+should only be used for local testing. `--tls-cert` and `--insecure` are mutually exclusive; passing both on the
+same invocation is rejected by `fda`.
+
 ## Examples
 
 Specify the host and API key as command line arguments or environment variables:

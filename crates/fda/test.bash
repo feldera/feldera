@@ -207,6 +207,10 @@ fail_on_success fda program set punknown file-path --stdin
 fail_on_success fda program set p1 --udf-toml udf.toml --stdin
 fail_on_success fda program set p1 --udf-rs udf.toml --stdin
 fail_on_success fda program set p1 --udf-rs udf.toml --udf-toml udf.toml --stdin
+# --tls-cert and --insecure are mutually exclusive: supplying both must fail
+# before any request is attempted.
+fail_on_success fda --insecure --tls-cert /tmp/does-not-matter.pem pipelines
+fail_on_success fda -k --tls-cert /tmp/does-not-matter.pem pipelines
 
 rm program.sql
 rm udf.toml
