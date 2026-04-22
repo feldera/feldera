@@ -17,17 +17,20 @@
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import type { Pipeline } from '$lib/services/pipelineManager'
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
+  import type { Snippet } from '$lib/types/svelte'
 
   const {
     pipeline,
     metrics,
     refetchMs,
-    keepMs
+    keepMs,
+    headerAction
   }: {
     pipeline: { current: Pipeline }
     metrics: TimeSeriesEntry[]
     refetchMs: number
     keepMs: number
+    headerAction?: Snippet
   } = $props()
   use([
     LineChart,
@@ -199,8 +202,13 @@
 </script>
 
 <div class="absolute h-full w-full py-4">
-  <div class="pl-16">
-    Used storage: {humanSize(metrics.at(-1)?.s.toNumber() ?? 0)}
+  <div class="flex flex-nowrap items-center justify-between px-4 pb-2">
+    <span>
+      <span class="hidden sm:inline">Used storage:</span>
+      <span class="inline sm:hidden">Storage:</span>
+      {humanSize(metrics.at(-1)?.s.toNumber() ?? 0)}
+    </span>
+    {@render headerAction?.()}
   </div>
   {#key pipelineName}
     <Chart init={(dom, theme, opts) => (ref = init(dom, theme, opts))} {options} />
