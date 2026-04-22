@@ -1,5 +1,4 @@
 import json
-import os
 import uuid
 from datetime import datetime
 from typing import Any
@@ -8,21 +7,8 @@ from confluent_kafka import Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 from feldera import Pipeline, PipelineBuilder
 from feldera.stats import InputEndpointStatus, OutputEndpointStatus
-from tests import TEST_CLIENT
+from tests import KAFKA_BOOTSTRAP, TEST_CLIENT
 from tests.platform.helper import gen_pipeline_name, wait_for_condition
-
-
-def env(name: str, default: str) -> str:
-    """Get environment variables for the Kafka broker and Schema registry.
-    The default values are only meant for internal development; external users must set them."""
-    return os.getenv(name, default)
-
-
-# Set these before running the test:
-# Example(terminal/shell):
-#   export KAFKA_BOOTSTRAP=localhost:19092
-
-KAFKA_BOOTSTRAP = env("KAFKA_BOOTSTRAP_SERVERS", "ci-kafka-bootstrap.kafka:9092")
 
 
 def _random_topic(prefix: str) -> str:
@@ -237,8 +223,10 @@ def test_connector_status(pipeline_name):
 
         wait_for_condition(
             "output connector encode error count reaches 500",
-            lambda: output_connector_status().metrics.num_encode_errors == 500
-            and len(output_connector_status().encode_errors) == 100,
+            lambda: (
+                output_connector_status().metrics.num_encode_errors == 500
+                and len(output_connector_status().encode_errors) == 100
+            ),
             timeout_s=100.0,
             poll_interval_s=1.0,
         )
@@ -264,8 +252,10 @@ def test_connector_status(pipeline_name):
 
         wait_for_condition(
             "input connector parse error count reaches 500",
-            lambda: input_connector_status().metrics.num_parse_errors == 500
-            and len(input_connector_status().parse_errors) == 100,
+            lambda: (
+                input_connector_status().metrics.num_parse_errors == 500
+                and len(input_connector_status().parse_errors) == 100
+            ),
             timeout_s=100.0,
             poll_interval_s=1.0,
         )

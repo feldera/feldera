@@ -1126,6 +1126,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         pipeline_name: str,
         table_name: str,
         format: str,
+        send_snapshot: Optional[bool] = None,
         backpressure: bool = True,
         array: bool = False,
         timeout: Optional[float] = None,
@@ -1137,6 +1138,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param pipeline_name: The name of the pipeline
         :param table_name: The name of the table to listen to
         :param format: The format of the data, either "json" or "csv"
+        :param send_snapshot: When True, the connector delivers a full snapshot
+            of the materialized view before streaming incremental updates. The
+            view must be materialized. Defaults to False.
         :param backpressure: When the flag is True (the default), this method waits for the consumer to receive each
             chunk and blocks the pipeline if the consumer cannot keep up. When this flag is False, the pipeline drops
             data chunks if the consumer is not keeping up with its output. This prevents a slow consumer from slowing
@@ -1152,6 +1156,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             "format": format,
             "backpressure": _prepare_boolean_input(backpressure),
         }
+
+        if send_snapshot is not None:
+            params["send_snapshot"] = _prepare_boolean_input(send_snapshot)
 
         if format == "json":
             params["array"] = _prepare_boolean_input(array)
