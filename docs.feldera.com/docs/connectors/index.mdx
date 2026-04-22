@@ -1,3 +1,6 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # Connectors: connect to data sources and sinks
 
 A Feldera pipeline can process data from multiple heterogeneous sources and
@@ -147,6 +150,82 @@ The following attributes are common to all connectors:
   the unique key for the view. This allows the connector to combine related
   insert and delete events into a single atomic update.
   See [Uniqueness Constraints](/connectors/unique_keys).
+
+* `send_snapshot` – *(Output connectors only)* When `true`, the connector
+  emits a full snapshot of the materialized view the first time it runs,
+  before streaming incremental updates. The view must be materialized
+  (declared with `CREATE MATERIALIZED VIEW`). The default is `false`.
+
+  The snapshot is sent exactly once: resuming from a checkpoint does not
+  re-send it. Modifying the connector configuration, or invoking the
+  [reset API](/api/reset-output-connector), causes a fresh snapshot to be
+  replayed. The exact effect of reset varies per sink — see each
+  connector's "Reset behavior" section.
+
+### Resetting an output connector
+
+The [reset API](/api/reset-output-connector) asks a running connector to
+replay the current materialized-view snapshot. Whether the destination is
+truncated first, appended to, or something else is up to each sink; see
+the "Reset behavior" section of the individual connector pages. The target
+view must be declared with `CREATE MATERIALIZED VIEW`: reset on a
+non-materialized view returns an error.
+
+The reset endpoint returns a token; pass it to
+[`/reset_status`](/api/check-reset-status) to check whether the replay has
+completed.
+
+<Tabs groupId="reset-client">
+<TabItem value="fda" label="fda (CLI)">
+
+```bash
+# Fire and forget; prints the token.
+fda connector <pipeline> <view> <connector> reset
+
+# Or block until the replay lands.
+fda connector <pipeline> <view> <connector> reset --wait
+
+# Poll an outstanding token later.
+fda reset-status <pipeline> <token>
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python
+from feldera import FelderaClient, PipelineBuilder
+
+client = FelderaClient("http://localhost:8080")
+pipeline = PipelineBuilder(client, name="my_pipeline", sql="...").build()
+
+# Fire and forget; returns the token.
+token = pipeline.reset_output_connector("my_view", "my_connector")
+
+# Or block until the replay lands.
+pipeline.reset_output_connector("my_view", "my_connector", wait=True)
+
+# Poll an outstanding token later.
+complete = pipeline.reset_completed(token)
+```
+
+</TabItem>
+<TabItem value="rest" label="REST">
+
+```text
+POST /v0/pipelines/{pipeline}/views/{view}/connectors/{connector}/reset
+→ { "token": "…" }
+
+GET  /v0/pipelines/{pipeline}/reset_status?token=…
+→ { "status": "complete" | "inprogress" }
+```
+
+</TabItem>
+</Tabs>
+
+Reset tokens are bound to the pipeline's current incarnation. If the
+pipeline is restarted (including after a crash) before the reset
+completes, the server responds `410 Gone` and the client should reissue
+the reset.
 
 ### Configuring the output buffer
 

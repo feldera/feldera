@@ -142,6 +142,14 @@ WITH (
 ) as select * from INPUT;
 ```
 
+## Reset behavior
+
+Kafka topics are append-only, so [resetting](/api/reset-output-connector) the
+connector does not remove any records already written to the topic. Instead,
+reset replays the current materialized-view snapshot: the new snapshot
+records are appended after the existing messages, and downstream consumers
+will see the full state again once they read the new records.
+
 ## Additional resources
 
 For more information, see:

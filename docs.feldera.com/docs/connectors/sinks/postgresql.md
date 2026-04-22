@@ -331,3 +331,12 @@ Multidimensional arrays must have sub-arrays with matching dimensions.
 If the sub-arrays are not of the same dimension, the transaction will fail and
 the data will be lost.
 :::
+
+## Reset behavior
+
+[Resetting](/api/reset-output-connector) the connector replays the current
+materialized-view snapshot against the destination PostgreSQL table **without
+truncating it first**. Existing rows whose primary key appears in the
+snapshot are upserted; rows whose key is no longer present in the snapshot
+are not deleted. If you need a clean slate, truncate the table manually
+before issuing the reset.
