@@ -1337,7 +1337,7 @@ fn rank_circuit1(
     let rank1 = input_stream1_indexed
         .rank_custom_order_persistent::<RankValOrd, u64, _, _, _, _>(
             Some("rank1"),
-            |v, rv| *rv = v.0,
+            |v| v.0,
             |a, b| a.0.cmp(b),
             |rank, t| Tup3(t.0, t.1, rank),
         )
@@ -1372,7 +1372,7 @@ fn rank_circuit2(
     let rank1 = input_stream1_indexed
         .rank_custom_order_persistent::<RankValOrd, u64, _, _, _, _>(
             Some("rank1"),
-            |v, rv| *rv = v.0,
+            |v| v.0,
             |a, b| a.0.cmp(b),
             |rank, t| Tup3(t.0, t.1, rank),
         )

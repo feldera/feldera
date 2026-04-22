@@ -52,7 +52,7 @@ where
         CF: CmpFunc<V>,
         OV: DBData,
         RV: DBData,
-        PF: Fn(&V, &mut RV) + 'static,
+        PF: Fn(&V) -> RV + 'static,
         EF: Fn(&V, &RV) -> Ordering + 'static,
         OF: Fn(i64, &V) -> OV + 'static,
     {
@@ -75,7 +75,7 @@ where
         CF: CmpFunc<V>,
         RV: DBData,
         OV: DBData,
-        PF: Fn(&V, &mut RV) + 'static,
+        PF: Fn(&V) -> RV + 'static,
         EF: Fn(&V, &RV) -> Ordering + 'static,
         OF: Fn(i64, &V) -> OV + 'static,
     {
@@ -97,10 +97,8 @@ where
                     },
                 ),
                 Box::new(move |v, rv| unsafe {
-                    (projection_func)(
-                        &v.downcast::<WithCustomOrd<V, CF>>().val,
-                        rv.downcast_mut::<RV>(),
-                    )
+                    *rv.downcast_mut::<RV>() =
+                        (projection_func)(&v.downcast::<WithCustomOrd<V, CF>>().val)
                 }),
                 Box::new(move |x, y| unsafe {
                     rank_cmp_func(

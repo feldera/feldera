@@ -28,14 +28,15 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 
 import java.util.List;
 
-import static org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator.TopKNumbering.*;
+import static org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator.Numbering.*;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
 
-public class RankAggregate extends WindowAggregates {
+/** A RANK aggregate followed by a filter, implemented as a TopK aggregate in DBSP */
+public class RankTopKAggregate extends WindowAggregates {
     public final AggregateCall call;
 
     /**
-     * Create a new Rank Window aggregate.
+     * Create a new {@link RankTopKAggregate} aggregate.
      *
      * @param compiler         Compiler.
      * @param window           Window being compiled.
@@ -43,8 +44,8 @@ public class RankAggregate extends WindowAggregates {
      * @param windowFieldIndex Index of first field of aggregate within window.
      *                         The list aggregateCalls contains aggregates starting at this index.
      */
-    RankAggregate(CalciteToDBSPCompiler compiler, Window window, Window.Group group,
-                  int windowFieldIndex, AggregateCall call) {
+    RankTopKAggregate(CalciteToDBSPCompiler compiler, Window window, Window.Group group,
+                      int windowFieldIndex, AggregateCall call) {
         super(compiler, window, group, windowFieldIndex);
         this.call = call;
     }
@@ -60,7 +61,7 @@ public class RankAggregate extends WindowAggregates {
             int limit, DBSPSimpleOperator unused, DBSPSimpleOperator lastOperator, boolean isLast) {
         SqlKind kind = this.call.getAggregation().kind;
         IntermediateRel node = CalciteObject.create(window, new SourcePositionRange(this.call.getParserPosition()));
-        DBSPIndexedTopKOperator.TopKNumbering numbering = switch (kind) {
+        DBSPIndexedTopKOperator.Numbering numbering = switch (kind) {
             case RANK -> RANK;
             case DENSE_RANK -> DENSE_RANK;
             case ROW_NUMBER -> ROW_NUMBER;
