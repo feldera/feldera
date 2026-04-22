@@ -1014,7 +1014,7 @@ mod test {
         let (ranked_handle, _) = input_stream
             .rank_custom_order_persistent::<OrderByFirstTupleField, u64, _, _, _, _>(
                 Some("ranked"),
-                |v, rv| *rv = v.0,
+                |v| v.0,
                 |a, b| a.0.cmp(b),
                 |rank, t| Tup3(t.0, t.1, rank),
             )
