@@ -163,6 +163,45 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
     O2: TestDataType,
     O3: TestDataType,
 {
+    // Run with replay step size < splitter chunk size.
+    test_replay_with_step_size::<I1, I2, I3, O1, O2, O3>(
+        circuit_constructor1.clone(),
+        circuit_constructor2.clone(),
+        inputs1.clone(),
+        inputs2_1.clone(),
+        inputs2_2.clone(),
+        inputs3.clone(),
+        Some(1),
+    );
+
+    // Run without replay step size > splitter chunk size.
+    test_replay_with_step_size::<I1, I2, I3, O1, O2, O3>(
+        circuit_constructor1,
+        circuit_constructor2,
+        inputs1,
+        inputs2_1,
+        inputs2_2,
+        inputs3,
+        None,
+    );
+}
+
+fn test_replay_with_step_size<I1, I2, I3, O1, O2, O3>(
+    circuit_constructor1: CircuitFn<I1, I2, O1, O2>,
+    circuit_constructor2: CircuitFn<I2, I3, O2, O3>,
+    inputs1: Vec<I1::Chunk>,
+    inputs2_1: Vec<I2::Chunk>,
+    inputs2_2: Vec<I2::Chunk>,
+    inputs3: Vec<I3::Chunk>,
+    replay_step_size: Option<usize>,
+) where
+    I1: TestDataType,
+    I2: TestDataType,
+    I3: TestDataType,
+    O1: TestDataType,
+    O2: TestDataType,
+    O3: TestDataType,
+{
     assert_eq!(inputs1.len(), inputs2_1.len());
     assert_eq!(inputs2_2.len(), inputs3.len());
 
@@ -298,6 +337,10 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
                 Ok(circuit_constructor2_clone(circuit))
             })
             .unwrap();
+
+        if let Some(replay_step_size) = replay_step_size {
+            circuit.set_replay_step_size(replay_step_size);
+        }
 
         while circuit.bootstrap_in_progress() {
             circuit.transaction().unwrap();

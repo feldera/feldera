@@ -378,6 +378,12 @@ impl<T> StrictUnaryOperator<T, T> for Z1<T>
 where
     T: Checkpoint + SizeOf + NumEntries + Clone + 'static,
 {
+    fn flush_input(&mut self) {}
+
+    fn is_flush_input_complete(&self) -> bool {
+        true
+    }
+
     async fn eval_strict(&mut self, i: &T) {
         self.values = i.clone();
     }
@@ -578,6 +584,12 @@ impl<T> StrictUnaryOperator<T, T> for Z1Nested<T>
 where
     T: Eq + SizeOf + NumEntries + Clone + 'static,
 {
+    fn flush_input(&mut self) {}
+
+    fn is_flush_input_complete(&self) -> bool {
+        true
+    }
+
     async fn eval_strict(&mut self, i: &T) {
         debug_assert!(self.timestamp < self.values.len());
 

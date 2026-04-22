@@ -573,6 +573,22 @@ pub trait StrictUnaryOperator<I, O>: StrictOperator<O> {
     fn input_preference(&self) -> OwnershipPreference {
         OwnershipPreference::INDIFFERENT
     }
+
+    /// Flush the input half of the strict operator.
+    ///
+    /// The strict operator appears in the circuit twice: as a source
+    /// operator that outputs the delayed value at the start of the step,
+    /// and as a sink operator that consumes the new value.
+    ///
+    /// These operators are flushed separately. The `Operator::flush` and
+    /// `Operator::is_flush_complete` methods are invoked on the output half.
+    ///
+    /// The `flush_input` and `is_flush_input_complete` methods are invoked
+    /// on the input half.
+    fn flush_input(&mut self);
+
+    /// See [`StrictUnaryOperator::flush_input`] for more details.
+    fn is_flush_input_complete(&self) -> bool;
 }
 
 /// An import operator makes a stream from the parent circuit
