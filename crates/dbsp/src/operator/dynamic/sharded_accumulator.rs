@@ -26,7 +26,7 @@ use crate::{
         },
         dynamic::shard_batch,
     },
-    trace::{Batch, Spine, Trace, deserialize_indexed_wset},
+    trace::{Batch, Spine, deserialize_indexed_wset},
 };
 
 circuit_cache_key!(local StreamingExchangeCacheId<B: Batch>(ExchangeId => Arc<ShardedAccumulator<B>>));
@@ -54,8 +54,12 @@ where
                 .cache_get_or_insert_with(ShardedAccumulatorId::new(self.stream_id()), || {
                     let runtime = Runtime::runtime().unwrap();
                     let exchange_id: ExchangeId = runtime.sequence_next().try_into().unwrap();
-                    let exchange =
-                        ShardedAccumulator::<B>::with_runtime(&runtime, exchange_id, factories);
+                    let exchange = ShardedAccumulator::<B>::with_runtime(
+                        &runtime,
+                        Runtime::worker_index(),
+                        exchange_id,
+                        factories,
+                    );
                     self.circuit()
                         .add_exchange(
                             ShardedAccumulatorSender::new(
@@ -98,6 +102,7 @@ where
 {
     fn with_runtime(
         runtime: &Runtime,
+        worker_index: usize,
         exchange_id: ExchangeId,
         factories: &B::Factories,
     ) -> Arc<Self> {
@@ -111,7 +116,14 @@ where
             .local_store()
             .entry(StreamingExchangeCacheId::new(exchange_id))
             .or_insert_with(|| {
-                ShardedAccumulator::new(runtime, clients, exchange_id, &directory, factories)
+                ShardedAccumulator::new(
+                    runtime,
+                    worker_index,
+                    clients,
+                    exchange_id,
+                    &directory,
+                    factories,
+                )
             })
             .value()
             .clone()
@@ -120,6 +132,7 @@ where
     /// Create a new streaming exchange operator for `npeers` communicating threads.
     fn new(
         runtime: &Runtime,
+        worker_index: usize,
         clients: Arc<ExchangeClients>,
         exchange_id: ExchangeId,
         directory: &ExchangeDirectory,
@@ -136,7 +149,7 @@ where
             clients,
             rxq: layout
                 .local_workers()
-                .map(|_| Mutex::new(Rxq::new(factories, npeers)))
+                .map(|_| Mutex::new(Rxq::new(runtime, worker_index, factories, npeers)))
                 .collect(),
         });
 
@@ -252,6 +265,12 @@ struct Rxq<B>
 where
     B: Batch,
 {
+    /// The runtime in which we're embedded.
+    runtime: Runtime,
+
+    /// Our worker index within the runtime.
+    worker_index: usize,
+
     /// Total number of worker threads in this circuit.
     npeers: usize,
 
@@ -290,10 +309,15 @@ impl<B> RxqEntry<B>
 where
     B: Batch,
 {
-    fn new(npeers: usize, factories: &B::Factories) -> Self {
+    fn new(
+        npeers: usize,
+        runtime: &Runtime,
+        worker_index: usize,
+        factories: &B::Factories,
+    ) -> Self {
         Self {
             n_unflushed: npeers,
-            spine: Spine::new(factories),
+            spine: Spine::with_runtime(runtime.clone(), worker_index, factories),
         }
     }
 }
@@ -302,10 +326,17 @@ impl<B> Rxq<B>
 where
     B: Batch,
 {
-    fn new(factories: &B::Factories, npeers: usize) -> Self {
+    fn new(
+        runtime: &Runtime,
+        worker_index: usize,
+        factories: &B::Factories,
+        npeers: usize,
+    ) -> Self {
         Self {
+            runtime: runtime.clone(),
+            worker_index,
             npeers,
-            spines: VecDeque::from([RxqEntry::new(npeers, factories)]),
+            spines: VecDeque::from([RxqEntry::new(npeers, runtime, worker_index, factories)]),
             n_flushes: repeat_n(0, npeers).collect(),
             n_received: 0,
         }
@@ -321,7 +352,12 @@ where
             entry.n_unflushed -= 1;
             self.n_flushes[sender] += 1;
             if index + 1 >= self.spines.len() {
-                self.spines.push_back(RxqEntry::new(self.npeers, factories));
+                self.spines.push_back(RxqEntry::new(
+                    self.npeers,
+                    &self.runtime,
+                    self.worker_index,
+                    factories,
+                ));
             }
         }
     }
