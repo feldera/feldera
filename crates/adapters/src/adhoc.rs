@@ -7,6 +7,8 @@ use datafusion::execution::memory_pool::FairSpillPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::execution::{SessionState, SessionStateBuilder};
 use datafusion::prelude::*;
+use datafusion::sql::parser::{DFParserBuilder, Statement as DFStatement};
+use datafusion::sql::sqlparser::dialect::dialect_from_str;
 use executor::{
     hash_query_result, infallible_from_bytestring, stream_arrow_query, stream_json_query,
     stream_parquet_query, stream_text_query,
@@ -286,11 +288,54 @@ pub(crate) async fn execute_sql(
             .await
             .ok_or_else(|| PipelineError::Initializing)?,
     );
-    let logical_plan = state.create_logical_plan(sql).await?;
+
+    let mut statements = parse_sql_statements(&state, sql)?;
+    if statements.is_empty() {
+        return Err(PipelineError::AdHocQueryError {
+            error: "no SQL statements were provided".to_string(),
+            df: None,
+        });
+    }
+
+    // Only the final statement may produce rows. Non-final statements are
+    // reserved for PREPARE (to be handled in a follow-up change); reject
+    // them here with a clear message until that support lands.
+    if statements.len() > 1 {
+        return Err(PipelineError::AdHocQueryError {
+            error: format!(
+                "multi-statement ad-hoc queries are not yet supported \
+                 (received {} statements); submit a single statement",
+                statements.len()
+            ),
+            df: None,
+        });
+    }
+
+    let statement = statements.pop_front().unwrap();
+    let logical_plan = state.statement_to_plan(statement).await?;
     SQLOptions::new()
         .with_allow_ddl(false)
         .verify_plan(&logical_plan)?;
     Ok(DataFrame::new(state, logical_plan))
+}
+
+fn parse_sql_statements(
+    state: &SessionState,
+    sql: &str,
+) -> Result<std::collections::VecDeque<DFStatement>, PipelineError> {
+    let options = state.config_options();
+    let dialect_name = &options.sql_parser.dialect;
+    let recursion_limit = options.sql_parser.recursion_limit;
+    let dialect = dialect_from_str(dialect_name).ok_or_else(|| PipelineError::AdHocQueryError {
+        error: format!("unsupported SQL dialect: {dialect_name}"),
+        df: None,
+    })?;
+    let statements = DFParserBuilder::new(sql)
+        .with_dialect(dialect.as_ref())
+        .with_recursion_limit(recursion_limit)
+        .build()?
+        .parse_statements()?;
+    Ok(statements)
 }
 
 /// Stream the result of an ad-hoc query using a HTTP streaming response.
@@ -335,5 +380,49 @@ pub(crate) async fn stream_adhoc_result(
         AdHocResultFormat::Hash => Ok(HttpResponse::Ok()
             .content_type(mime::TEXT_PLAIN)
             .body(hash_query_result(df).await?)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_state() -> SessionState {
+        SessionStateBuilder::new().with_default_features().build()
+    }
+
+    #[test]
+    fn parses_single_statement() {
+        let state = test_state();
+        let stmts = parse_sql_statements(&state, "SELECT 1").unwrap();
+        assert_eq!(stmts.len(), 1);
+    }
+
+    #[test]
+    fn trailing_semicolon_parses_as_one_statement() {
+        let state = test_state();
+        let stmts = parse_sql_statements(&state, "SELECT 1;").unwrap();
+        assert_eq!(stmts.len(), 1);
+    }
+
+    #[test]
+    fn parses_multiple_statements() {
+        let state = test_state();
+        let stmts =
+            parse_sql_statements(&state, "PREPARE p AS SELECT 1; EXECUTE p").unwrap();
+        assert_eq!(stmts.len(), 2);
+    }
+
+    #[test]
+    fn empty_input_yields_no_statements() {
+        let state = test_state();
+        let stmts = parse_sql_statements(&state, "   ").unwrap();
+        assert!(stmts.is_empty());
+    }
+
+    #[test]
+    fn invalid_sql_returns_error() {
+        let state = test_state();
+        assert!(parse_sql_statements(&state, "SELECT * FROM").is_err());
     }
 }
