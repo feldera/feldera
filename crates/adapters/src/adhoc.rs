@@ -25,6 +25,7 @@ use std::convert::Infallible;
 use std::fs::create_dir_all;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tracing::warn;
 
 mod executor;
 mod format;
@@ -357,6 +358,9 @@ async fn execute_sql_with_state(
             // PREPARE with no matching EXECUTE in the same request has no
             // persistent effect. Validate the inner plan for DDL and return
             // an empty result to the client.
+            warn!(
+                "PREPARE with no matching EXECUTE in the same request has no persistent effect, returning an empty set"
+            );
             sql_options.verify_plan(&input)?;
             LogicalPlan::EmptyRelation(EmptyRelation {
                 produce_one_row: false,

@@ -138,6 +138,23 @@ An ad-hoc query to insert data into the `complex_types` table would look like th
 insert into complex_types values ([1,2,3], struct(2, 'b'), '{"field": 3}', MAP(['answer'], [42]), struct(2, 3));
 ```
 
+### Parameterized Queries with PREPARE / EXECUTE
+
+Ad-hoc requests accept a `PREPARE` statement followed by a single
+`EXECUTE` that binds positional parameters (`$1`, `$2`, ...) to literal
+values. The two statements must be submitted together in the same
+request, separated by a semicolon:
+
+```sql
+PREPARE q AS SELECT * FROM materialized_view WHERE v = $1;
+EXECUTE q('2');
+```
+
+Only the final `EXECUTE` produces the result set; the preceding
+`PREPARE` is consumed during planning. Prepared statement names do not
+persist across requests, and `EXECUTE` parameters must be literal
+values.
+
 ## See also
 
 - Blog post [on inspecting Feldera Pipelines](https://www.feldera.com/blog/inspecting-feldera-pipelines).

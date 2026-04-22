@@ -225,6 +225,14 @@ class TestAdhocQueries(SharedTestPipeline):
             TEST_CLIENT.query_as_json(self.pipeline.name, ADHOC_SQL_INSERT)
         )
         assert insert_resp and insert_resp[0].get("count") == 2
+
+        prepared_rows = list(
+            self.pipeline.query(
+                "PREPARE p AS SELECT COUNT(*) AS c FROM t1 WHERE id = $1;"
+                " EXECUTE p(99);"
+            )
+        )
+        assert prepared_rows and prepared_rows[0].get("c") == 1
         assert self._count("SELECT COUNT(*) AS c FROM t1") == 7
 
         # Non-materialized table via its materialized view
