@@ -2,10 +2,12 @@ use crate::controller::ConsistentSnapshot;
 use crate::{Controller, PipelineError};
 use actix_web::{HttpRequest, HttpResponse, http::header, web::Payload};
 use actix_ws::{AggregatedMessage, CloseCode, CloseReason, Closed, Session as WsSession};
-use datafusion::common::ScalarValue;
+use datafusion::common::metadata::ScalarAndMetadata;
+use datafusion::common::{DFSchema, ParamValues, ScalarValue};
 use datafusion::execution::memory_pool::FairSpillPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::execution::{SessionState, SessionStateBuilder};
+use datafusion::logical_expr::{EmptyRelation, Execute, LogicalPlan, Prepare, Statement};
 use datafusion::prelude::*;
 use datafusion::sql::parser::{DFParserBuilder, Statement as DFStatement};
 use datafusion::sql::sqlparser::dialect::dialect_from_str;
@@ -18,6 +20,7 @@ use feldera_types::config::PipelineConfig;
 use feldera_types::query::{AdHocResultFormat, AdhocQueryArgs, MAX_WS_FRAME_SIZE};
 use futures_util::StreamExt;
 use serde_json::json;
+use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
 use std::fs::create_dir_all;
 use std::path::PathBuf;
@@ -288,7 +291,15 @@ pub(crate) async fn execute_sql(
             .await
             .ok_or_else(|| PipelineError::Initializing)?,
     );
+    execute_sql_with_state(state, sql).await
+}
 
+/// Plan and translate `sql` against `state`, applying `PREPARE`/`EXECUTE`
+/// substitution within the scope of a single ad-hoc request.
+async fn execute_sql_with_state(
+    state: SessionState,
+    sql: &str,
+) -> Result<DataFrame, PipelineError> {
     let mut statements = parse_sql_statements(&state, sql)?;
     if statements.is_empty() {
         return Err(PipelineError::AdHocQueryError {
@@ -297,32 +308,91 @@ pub(crate) async fn execute_sql(
         });
     }
 
-    // Only the final statement may produce rows. Non-final statements are
-    // reserved for PREPARE (to be handled in a follow-up change); reject
-    // them here with a clear message until that support lands.
-    if statements.len() > 1 {
-        return Err(PipelineError::AdHocQueryError {
-            error: format!(
-                "multi-statement ad-hoc queries are not yet supported \
-                 (received {} statements); submit a single statement",
-                statements.len()
-            ),
-            df: None,
-        });
+    // Per-request prepared-statement cache. PREPARE/EXECUTE pairs only live
+    // for the duration of a single ad-hoc query request, matching the way
+    // clients submit them over a single HTTP or WebSocket call.
+    let mut prepared: HashMap<String, LogicalPlan> = HashMap::new();
+    let sql_options = SQLOptions::new().with_allow_ddl(false);
+
+    // For now, only the final statement may produce a result set. All
+    // preceding statements must be PREPAREs whose inner plans are stashed
+    // for a later EXECUTE in the same request.
+    while statements.len() > 1 {
+        let stmt = statements.pop_front().unwrap();
+        let plan = state.statement_to_plan(stmt).await?;
+        match plan {
+            LogicalPlan::Statement(Statement::Prepare(Prepare { name, input, .. })) => {
+                sql_options.verify_plan(&input)?;
+                prepared.insert(name, (*input).clone());
+            }
+            _ => {
+                return Err(PipelineError::AdHocQueryError {
+                    error: "only PREPARE statements may precede the final statement \
+                            in a multi-statement ad-hoc query"
+                        .to_string(),
+                    df: None,
+                });
+            }
+        }
     }
 
-    let statement = statements.pop_front().unwrap();
-    let logical_plan = state.statement_to_plan(statement).await?;
-    SQLOptions::new()
-        .with_allow_ddl(false)
-        .verify_plan(&logical_plan)?;
-    Ok(DataFrame::new(state, logical_plan))
+    let stmt = statements.pop_front().unwrap();
+    let plan = state.statement_to_plan(stmt).await?;
+
+    let final_plan = match plan {
+        LogicalPlan::Statement(Statement::Execute(Execute { name, parameters })) => {
+            let prepared_plan =
+                prepared
+                    .remove(&name)
+                    .ok_or_else(|| PipelineError::AdHocQueryError {
+                        error: format!(
+                            "prepared statement '{name}' is not defined in this request, use `prepare stmt; select stmt;` to write the query"
+                        ),
+                        df: None,
+                    })?;
+            let values = execute_parameters_to_scalars(&parameters)?;
+            prepared_plan.replace_params_with_values(&ParamValues::List(values))?
+        }
+        LogicalPlan::Statement(Statement::Prepare(Prepare { input, .. })) => {
+            // PREPARE with no matching EXECUTE in the same request has no
+            // persistent effect. Validate the inner plan for DDL and return
+            // an empty result to the client.
+            sql_options.verify_plan(&input)?;
+            LogicalPlan::EmptyRelation(EmptyRelation {
+                produce_one_row: false,
+                schema: Arc::new(DFSchema::empty()),
+            })
+        }
+        other => other,
+    };
+
+    sql_options.verify_plan(&final_plan)?;
+    Ok(DataFrame::new(state, final_plan))
+}
+
+/// Convert `EXECUTE` positional parameters to DataFusion's `ScalarAndMetadata`
+/// list, rejecting anything that is not a literal value.
+fn execute_parameters_to_scalars(params: &[Expr]) -> Result<Vec<ScalarAndMetadata>, PipelineError> {
+    params
+        .iter()
+        .map(|expr| match expr {
+            Expr::Literal(value, metadata) => {
+                Ok(ScalarAndMetadata::new(value.clone(), metadata.clone()))
+            }
+            other => Err(PipelineError::AdHocQueryError {
+                error: format!(
+                    "EXECUTE parameters only support literal values: got {other} instead"
+                ),
+                df: None,
+            }),
+        })
+        .collect()
 }
 
 fn parse_sql_statements(
     state: &SessionState,
     sql: &str,
-) -> Result<std::collections::VecDeque<DFStatement>, PipelineError> {
+) -> Result<VecDeque<DFStatement>, PipelineError> {
     let options = state.config_options();
     let dialect_name = &options.sql_parser.dialect;
     let recursion_limit = options.sql_parser.recursion_limit;
@@ -386,6 +456,8 @@ pub(crate) async fn stream_adhoc_result(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use datafusion::arrow;
+    use datafusion::arrow::record_batch::RecordBatch;
 
     fn test_state() -> SessionState {
         SessionStateBuilder::new().with_default_features().build()
@@ -408,8 +480,7 @@ mod tests {
     #[test]
     fn parses_multiple_statements() {
         let state = test_state();
-        let stmts =
-            parse_sql_statements(&state, "PREPARE p AS SELECT 1; EXECUTE p").unwrap();
+        let stmts = parse_sql_statements(&state, "PREPARE p AS SELECT 1; EXECUTE p").unwrap();
         assert_eq!(stmts.len(), 2);
     }
 
@@ -424,5 +495,75 @@ mod tests {
     fn invalid_sql_returns_error() {
         let state = test_state();
         assert!(parse_sql_statements(&state, "SELECT * FROM").is_err());
+    }
+
+    #[test]
+    fn execute_parameters_to_scalars_rejects_non_literal() {
+        let expr = Expr::Column(datafusion::common::Column::new_unqualified("foo"));
+        assert!(execute_parameters_to_scalars(&[expr]).is_err());
+    }
+
+    #[test]
+    fn execute_parameters_to_scalars_accepts_literal() {
+        let expr = Expr::Literal(ScalarValue::Int64(Some(42)), None);
+        let result = execute_parameters_to_scalars(&[expr]).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].value, ScalarValue::Int64(Some(42)));
+    }
+
+    /// A helper that executes a query and returns results.
+    async fn collect_rows(state: SessionState, sql: &str) -> Vec<RecordBatch> {
+        execute_sql_with_state(state, sql)
+            .await
+            .unwrap()
+            .collect()
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn prepare_then_execute_binds_parameter() {
+        let state = test_state();
+        let batches = collect_rows(state, "PREPARE p AS SELECT $1 AS x; EXECUTE p(42)").await;
+        let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+        assert_eq!(total_rows, 1);
+        let col = batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow::array::Int64Array>()
+            .expect("int64 column");
+        assert_eq!(col.value(0), 42);
+    }
+
+    #[tokio::test]
+    async fn execute_without_prepare_errors() {
+        let state = test_state();
+        let err = execute_sql_with_state(state, "EXECUTE missing(1)")
+            .await
+            .unwrap_err();
+        assert!(
+            format!("{err:?}").contains("not defined"),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn bare_prepare_returns_empty_relation() {
+        let state = test_state();
+        let batches = collect_rows(state, "PREPARE p AS SELECT 1").await;
+        let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+        assert_eq!(total_rows, 0);
+    }
+
+    #[tokio::test]
+    async fn non_prepare_intermediate_statement_errors() {
+        let state = test_state();
+        let err = execute_sql_with_state(state, "SELECT 1; SELECT 2")
+            .await
+            .unwrap_err();
+        assert!(
+            format!("{err:?}").contains("PREPARE"),
+            "unexpected error: {err:?}"
+        );
     }
 }
