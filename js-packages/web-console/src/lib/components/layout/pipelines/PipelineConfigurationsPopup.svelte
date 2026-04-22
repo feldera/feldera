@@ -14,7 +14,7 @@
     pipeline,
     pipelineBusy
   }: {
-    pipeline: WritablePipeline
+    pipeline: WritablePipeline<true>
     pipelineBusy: boolean
   } = $props()
 

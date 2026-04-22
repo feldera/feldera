@@ -136,6 +136,9 @@ import type {
   PostPipelineInputConnectorActionData,
   PostPipelineInputConnectorActionErrors,
   PostPipelineInputConnectorActionResponses,
+  PostPipelineOutputConnectorResetData,
+  PostPipelineOutputConnectorResetErrors,
+  PostPipelineOutputConnectorResetResponses,
   PostPipelinePauseData,
   PostPipelinePauseErrors,
   PostPipelinePauseResponses,
@@ -1270,6 +1273,27 @@ export const postUpdateRuntime = <ThrowOnError extends boolean = false>(
   >({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/update_runtime',
+    ...options
+  })
+
+/**
+ * Reset Output Connector
+ *
+ * Reset an output connector configured in `snapshot_and_follow` mode.
+ *
+ * This clears buffered output, asks the sink to reset itself, and then replays
+ * a full snapshot before resuming incremental updates.
+ */
+export const postPipelineOutputConnectorReset = <ThrowOnError extends boolean = false>(
+  options: Options<PostPipelineOutputConnectorResetData, ThrowOnError>
+) =>
+  (options.client ?? client).post<
+    PostPipelineOutputConnectorResetResponses,
+    PostPipelineOutputConnectorResetErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/reset',
     ...options
   })
 

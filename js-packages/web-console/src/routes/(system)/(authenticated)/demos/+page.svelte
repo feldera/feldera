@@ -8,11 +8,10 @@
   import DemoTile from '$lib/components/other/DemoTile.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
+  import { useDemos } from '$lib/compositions/useDemos.svelte'
   import { nubLast } from '$lib/functions/common/array'
   import { resolve } from '$lib/functions/svelte'
-  import type { PageData } from './$types'
 
-  const { data }: { data: PageData } = $props()
   let demosType = $state('All')
   const drawer = useAdaptiveDrawer('right')
   const breadcrumbs = $derived([
@@ -29,7 +28,8 @@
       href: resolve(`/demos/`)
     }
   ])
-  const types = $derived(['All', ...nubLast(data.demos.map((d) => d.type))])
+  const demos = useDemos()
+  const types = $derived(['All', ...nubLast(demos.current.flatMap((d) => (d ? [d.type] : [])))])
   const plurals: Record<string, string> = {
     'Use Case': 'Use Cases',
     Tutorial: 'Tutorials',
@@ -59,7 +59,7 @@
     {/if}
   {/snippet}
 </AppHeader>
-<div class="px-2 pb-5 md:px-8">
+<div class="flex px-2 pb-5 md:px-8">
   <SegmentedControl value={demosType} onValueChange={(e) => e.value && (demosType = e.value)}>
     <SegmentedControl.Label />
     <SegmentedControl.Control class="rounded preset-filled-surface-50-950 p-1 sm:gap-2">
@@ -79,8 +79,8 @@
   <div
     class="grid grid-cols-1 gap-x-6 gap-y-5 px-2 sm:grid-cols-2 md:px-8 lg:grid-cols-3 2xl:grid-cols-5"
   >
-    {#each data.demos.filter((demo) => {
-      return demosType === 'All' || demo.type === demosType
+    {#each demos.current.filter((demo) => {
+      return !demo || demosType === 'All' || demo.type === demosType
     }) as demo}
       <DemoTile {demo}></DemoTile>
     {/each}

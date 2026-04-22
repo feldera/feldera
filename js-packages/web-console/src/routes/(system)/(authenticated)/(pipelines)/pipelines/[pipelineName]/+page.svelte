@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { goto } from '$app/navigation'
+  import { resolve } from '$app/paths'
   import PipelineEditLayout from '$lib/components/layout/pipelines/PipelineEditLayout.svelte'
   import {
     usePipelineList,
@@ -22,31 +24,51 @@
     deleted = false
   })
 
-  let pipelineCache = $state({ current: data.preloadedPipeline })
-  const set = (pipeline: ExtendedPipeline) => {
+  let pipelineCache: { current: ExtendedPipeline | undefined } = $state({ current: undefined })
+  const set = (pipeline: ExtendedPipeline | undefined) => {
     // Update both single pipeline cache and pipeline list cache to ensure consistency
     pipelineCache.current = pipeline
-    updatePipeline(pipeline.name, () => pipeline)
+    if (pipeline) {
+      updatePipeline(pipeline.name, () => pipeline)
+    }
   }
   const update = (pipeline: Partial<ExtendedPipeline>) => {
+    if (!pipelineCache.current) {
+      return
+    }
     // We don't update list cache here because this is only called when list itself is updated - so we only update single pipeline cache
     pipelineCache.current = { ...pipelineCache.current, ...pipeline }
   }
   const api = usePipelineManager()
   const pipeline = $derived(writablePipeline({ api, pipeline: pipelineCache, set, update }))
-  const pipelineList = usePipelineList(data.preloaded)
+  $effect.pre(() => {
+    set(undefined)
+    const { pending, abort } = data.pipelinePreload
+    pending.then(set, () => {})
+    // Abort the in-flight fetch if the effect re-runs (user navigated to a
+    // different pipeline) or the component unmounts. An aborted request
+    // rejects, which the empty error handler above swallows, so no stale
+    // `set` call can land on the wrong pipeline.
+    return abort
+  })
+
+  const pipelineList = usePipelineList()
+  const pipelineThumb = $derived(
+    pipelineList.pipelines
+      ? (pipelineList.pipelines.find((p) => p.name === pipelineName) ?? 'invalid_pipeline')
+      : undefined
+  )
 
   useRefreshPipeline({
-    getPreloaded: () => data.preloadedPipeline,
     getPipelines: () => pipelineList.pipelines,
     getPipeline: () => pipelineCache,
     set,
     update,
     getDeleted: () => deleted,
-    onNotFound: () => {
-      deleted = true
-    }
+    onNotFound: () => goto(resolve('/'))
   })
 </script>
 
-<PipelineEditLayout preloaded={data.preloaded} {pipeline} {deleted}></PipelineEditLayout>
+{#if pipelineThumb !== 'invalid_pipeline'}
+  <PipelineEditLayout {pipelineName} {pipelineList} {pipelineThumb} {pipeline}></PipelineEditLayout>
+{/if}

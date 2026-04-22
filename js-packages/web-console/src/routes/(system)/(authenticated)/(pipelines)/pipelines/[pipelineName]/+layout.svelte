@@ -11,7 +11,7 @@
 
   const isTablet = useIsTablet()
   const { showPipelinesPanel: leftDrawer } = useLayoutSettings()
-  const pipelineList = usePipelineList(data.preloaded)
+  const pipelineList = usePipelineList()
 </script>
 
 {@render children()}

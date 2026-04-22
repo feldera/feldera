@@ -8,6 +8,20 @@
     }
   > = {}
 
+  /**
+   * Dispose a file's resources by path. Safe to call when the file is not open —
+   * no-op in that case. Also safe to call from a component's cleanup after the
+   * editor instance is gone, since it only touches the module-level map.
+   */
+  export function disposeFile(filePath: string) {
+    if (!openFiles[filePath]) {
+      return
+    }
+    openFiles[filePath].sync[Symbol.dispose]()
+    openFiles[filePath].model.dispose()
+    delete openFiles[filePath]
+  }
+
   MonacoImports.editor.defineTheme('feldera-light', {
     base: 'vs',
     inherit: true,
@@ -27,27 +41,10 @@
       'editor.inactiveSelectionBackground': '#264f7890' // More visible selection when editor is not focused
     }
   })
-
-  const pipelineActionCallbacks = usePipelineActionCallbacks()
-  const dropOpenedFile = async (pipelineName: string) => {
-    const files = ['program.sql', 'stubs.rs', 'udf.rs', 'udf.toml'].map(
-      (file) => `${pipelineName}/${file}`
-    )
-    for (const file of files) {
-      if (!openFiles[file]) {
-        continue
-      }
-      openFiles[file].sync[Symbol.dispose]()
-      openFiles[file].model.dispose()
-      delete openFiles[file]
-    }
-  }
 </script>
 
 <script lang="ts">
   import { untrack } from 'svelte'
-  import type { Snippet } from '$lib/types/svelte'
-  import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { DecoupledStateProxy } from '$lib/compositions/decoupledState.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
@@ -55,15 +52,12 @@
   import * as MonacoImports from 'monaco-editor'
   import { editor, KeyCode, KeyMod } from 'monaco-editor'
   import type { EditorLanguage } from 'monaco-editor/esm/metadata.js'
-  import PipelineEditorStatusBar from '$lib/components/layout/pipelines/PipelineEditorStatusBar.svelte'
-  import { page } from '$app/state'
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
-  import { pipelineFileNameRegex } from '$lib/compositions/health/systemErrors'
   import { effectMonacoContentPlaceholder } from '$lib/components/monacoEditor/effectMonacoContentPlaceholder.svelte'
   import { GenericOverlayWidget } from '$lib/components/monacoEditor/GenericOverlayWidget'
-  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
   import { getThemeColor } from '$lib/functions/common/color'
+  import type { Snippet } from '$lib/types/svelte'
 
   void MonacoImports // Explicitly import all monaco-editor esm modules
 
@@ -80,7 +74,6 @@
     beforeTextArea,
     downstreamChanged: _downstreamChanged = $bindable(),
     saveFile: _saveFile = $bindable(() => {}),
-    editorRef: _editorRef = $bindable(),
     isFocused: _isFocused = $bindable(false)
   }: {
     path: string
@@ -102,16 +95,68 @@
     beforeTextArea?: Snippet
     downstreamChanged?: boolean
     saveFile?: () => void
-    editorRef?: editor.IStandaloneCodeEditor
     isFocused?: boolean
   } = $props()
 
+  /**
+   * Close a file by disposing its resources. Forwards to the module-level
+   * `disposeFile` for callers that only have a `bind:this` handle.
+   * @param filePath - The full path to the file (e.g., "pipelineName/program.sql")
+   */
+  export function closeFile(filePath: string) {
+    disposeFile(filePath)
+  }
+
+  type CodePosition = { line: number; column: number }
+
+  export function openFile(fileName: string) {
+    if (!editorRef) {
+      return
+    }
+    if (currentFileName !== fileName) {
+      currentFileName = fileName
+    }
+  }
+
+  /**
+   * Reveal a specific line and column in the editor for a given file.
+   * This function is exposed to parent components via bind:this.
+   * @param fileName - The name of the file (e.g., "program.sql")
+   * @param line - The line number to reveal
+   * @param column - Optional column number (defaults to 1)
+   */
+  export function revealLine(/*fileName: string,*/ pos: CodePosition) {
+    if (!editorRef) {
+      return
+    }
+    setTimeout(() => {
+      editorRef.revealPosition({ lineNumber: pos.line, column: pos.column ?? 1 })
+    }, 50)
+  }
+
+  export function setSelections(ranges: { start: CodePosition; end: CodePosition }[]) {
+    if (!editorRef || ranges.length === 0) {
+      return
+    }
+    editorRef.setSelections(
+      ranges.map((range) => ({
+        selectionStartLineNumber: range.start.line,
+        selectionStartColumn: range.start.column,
+        positionLineNumber: range.end.line,
+        positionColumn: range.end.column
+      }))
+    )
+    // Reveal the first selection in center
+    editorRef.revealRangeInCenter({
+      startLineNumber: ranges[0].start.line,
+      startColumn: ranges[0].start.column,
+      endLineNumber: ranges[0].end.line,
+      endColumn: ranges[0].end.column
+    })
+  }
+
   let editorRef: editor.IStandaloneCodeEditor = $state()!
   const { editorFontSize, autoSaveFiles, showMinimap, showStickyScroll } = useCodeEditorSettings()
-
-  $effect(() => {
-    _editorRef = editorRef
-  })
 
   let isFocused = $state(false)
 
@@ -149,7 +194,7 @@
   let filePath = $derived(getFilePath(file))
   let previousFilePath = $state<string | undefined>(undefined)
 
-  $effect.pre(() => {
+  const initFileState = (filePath: string) => {
     if (openFiles[filePath]) {
       return
     }
@@ -180,13 +225,19 @@
       model,
       view: null
     }
+  }
+
+  $effect.pre(() => {
+    initFileState(filePath)
   })
+
   $effect.pre(() => {
     file.access.current
     untrack(() => {
       openFiles[filePath].sync.fetch(file.access)
     })
   })
+
   $effect(() => {
     if (!openFiles[filePath].sync.upstreamChanged) {
       return
@@ -243,138 +294,25 @@
     setTimeout(() => Object.values(openFiles).forEach((file) => file.sync.push()))
   })
 
-  $effect(() => {
-    if (!editorRef) {
-      return
-    }
-
-    // This effect detects when the code editor should scroll to reveal a source position or multiple source ranges
-    // Supported formats:
-    // 1. Simple: #filename:line:column (scroll only)
-    // 2. Range(s): #filename:startLine:startColumn-endLine:endColumn,startLine2:startColumn2-endLine2:endColumn2 (multiple selections)
-
-    const selection = parseSourcePosition(page.url)
-    if (!selection) {
-      return
-    }
-
-    if (currentFileName !== selection.fileName) {
-      currentFileName = selection.fileName
-    }
-
-    setTimeout(() => {
-      if ('ranges' in selection) {
-        const { ranges } = selection
-        // Range format found - create selections for multiple source positions
-        editorRef.setSelections(
-          ranges.map((range) => ({
-            selectionStartLineNumber: range.startLine,
-            selectionStartColumn: range.startColumn,
-            positionLineNumber: range.endLine,
-            positionColumn: range.endColumn
-          }))
-        )
-        // Reveal the first selection in center
-        editorRef.revealRangeInCenter({
-          startLineNumber: ranges[0].startLine,
-          startColumn: ranges[0].startColumn,
-          endLineNumber: ranges[0].endLine,
-          endColumn: ranges[0].endColumn
-        })
-      } else {
-        // Simple format, single position: `line:column` (scroll only)
-        editorRef.revealPosition({ lineNumber: selection.line, column: selection.column })
-      }
-
-      window.location.hash = ''
-    }, 50)
-  })
-
-  /**
-   * Parse source position(s) from URL anchor.
-   *
-   * Supported formats:
-   * 1. Simple: "line:column"
-   * 2. Range(s): "startLine:startColumn-endLine:endColumn,startLine2:startColumn2-endLine2:endColumn2"
-   */
-  function parseSourcePosition(url: URL):
-    | {
-        fileName: string
-        ranges: {
-          startLine: number
-          startColumn: number
-          endLine: number
-          endColumn: number
-        }[]
-      }
-    | {
-        fileName: string
-        line: number
-        column: number
-      }
-    | null {
-    const hashMatch = url.hash.match(new RegExp(`#(${pipelineFileNameRegex}):(.+)`))
-    if (!hashMatch) {
-      return null
-    }
-
-    const [, fileName, positionString] = hashMatch
-
-    if (!positionString) {
-      return null
-    }
-
-    // Try to match all ranges pattern: startLine:startColumn-endLine:endColumn
-    const rangeMatches = [...positionString.matchAll(/(\d+):(\d+)-(\d+):(\d+)/g)]
-
-    if (rangeMatches.length > 0) {
-      return {
-        fileName,
-        ranges: rangeMatches.map((match) => {
-          const [, startLine, startColumn, endLine, endColumn] = match
-          return {
-            startLine: parseInt(startLine),
-            startColumn: parseInt(startColumn),
-            endLine: parseInt(endLine),
-            endColumn: parseInt(endColumn)
-          }
-        })
-      }
-    }
-
-    // Simple format, single position: `line:column` (scroll only)
-    const parts = positionString.split(':')
-    const position = {
-      fileName,
-      line: parseInt(parts[0]),
-      column: parseInt(parts[1]) || 1
-    }
-
-    if (isNaN(position.line)) {
-      return null
-    }
-
-    return position
-  }
-
   let placeholderContent = $derived(file.placeholder)
   $effect(() => {
     return effectMonacoContentPlaceholder(editorRef, placeholderContent, { opacity: '70%' })
   })
 
   $effect(() => {
-    untrack(() => pipelineActionCallbacks.add('', 'delete', dropOpenedFile))
-    return () => {
-      pipelineActionCallbacks.remove('', 'delete', dropOpenedFile)
+    _downstreamChanged = files.some(
+      (file) => openFiles[getFilePath(file)]?.sync.downstreamChanged ?? false
+    )
+  })
+
+  // Save all dirty files for the currently-bound file set (matches the
+  // "any file dirty ⇒ dirty" semantic of _downstreamChanged above).
+  $effect(() => {
+    _saveFile = () => {
+      for (const file of files) {
+        openFiles[getFilePath(file)]?.sync.push()
+      }
     }
-  })
-
-  $effect(() => {
-    _downstreamChanged = openFiles[filePath]?.sync.downstreamChanged ?? false
-  })
-
-  $effect(() => {
-    _saveFile = () => openFiles[filePath].sync.push()
   })
 
   let conflictWidgetRef: HTMLElement = $state(undefined!)
@@ -390,6 +328,12 @@
       Please resolve the conflict to save your changes.
     </div>
     <div class="flex flex-nowrap justify-end gap-4">
+      <button
+        class=" !rounded-0 bg-surface-100-900 px-2 py-1 hover:preset-outlined-primary-500"
+        onclick={() => openFiles[filePath].sync.ignoreUpstream()}
+      >
+        Keep Editing
+      </button>
       <button
         class=" !rounded-0 bg-surface-100-900 px-2 py-1 hover:preset-outlined-primary-500"
         onclick={() => openFiles[filePath].sync.pull()}
