@@ -73,7 +73,7 @@ echo "base64 = '0.22.1'" > udf.toml
 echo "use feldera_sqllib::F32;" > udf.rs
 cat > program.sql <<EOF
 CREATE TABLE example ( id INT NOT NULL PRIMARY KEY ) WITH ('materialized' = 'true', 'connectors' = '[{ "name": "c", "transport": { "name": "datagen", "config": { "plan": [{ "limit": 1 }] } } }]');
-CREATE VIEW example_count WITH ('connectors' = '[{ "name": "c", "transport": { "name": "file_output", "config": { "path": "bla" } }, "format": { "name": "csv" } }]') AS ( SELECT COUNT(*) AS num_rows FROM example );
+CREATE MATERIALIZED VIEW example_count WITH ('connectors' = '[{ "name": "c", "transport": { "name": "file_output", "config": { "path": "bla" } }, "format": { "name": "csv" } }]') AS ( SELECT COUNT(*) AS num_rows FROM example );
 EOF
 
 fda create p1 program.sql
@@ -110,6 +110,22 @@ fda connector p1 example c pause
 fda connector p1 example_count c pause || true
 fda connector p1 example c start
 fda connector p1 example unknown start || true
+
+# Reset the file output connector and poll its completion via the token.
+# `example_count` is a materialized view, so reset is supported.
+reset_token=$(fda --format json connector p1 example_count c reset | jq -r .token)
+if [ -z "$reset_token" ] || [ "$reset_token" = "null" ]; then
+    echo "Failed to extract reset token"
+    exit 1
+fi
+# A fresh reset status is either `complete` or `inprogress`; both are valid
+# while we wait for the snapshot to land.
+fda reset-status p1 "$reset_token"
+fda --format json reset-status p1 "$reset_token"
+# `--wait` blocks until the reset reports complete.
+fda connector p1 example_count c reset --wait --wait-timeout 30
+# Reset on an input connector must fail: only output connectors can be reset.
+fail_on_success fda connector p1 example c reset
 
 # Adhoc queries
 fda query p1 "SELECT * FROM example"
