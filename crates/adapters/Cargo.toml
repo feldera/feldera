@@ -237,6 +237,7 @@ pretty_assertions = { workspace = true }
 google-cloud-googleapis = { workspace = true }
 postgres-types = { version = "0.2.9", features = ["derive"] }
 criterion = { workspace = true }
+shuttle = "0.8"
 
 [[bench]]
 name = "avro_encoder"

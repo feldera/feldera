@@ -17,6 +17,7 @@ use dbsp::{
     Batch, BatchReader, OutputHandle, Trace,
     dynamic::Factory,
     trace::{BatchReaderFactories, Cursor},
+    typed_batch::{DynSpineSnapshot, SpineSnapshot},
 };
 use dbsp::{
     DBData,
@@ -41,7 +42,7 @@ use feldera_types::{
 use rand::thread_rng;
 use serde::Serialize;
 use serde_arrow::ArrayBuilder;
-use std::{any::Any, collections::HashSet, fmt::Debug};
+use std::{any::Any, collections::HashSet, fmt::Debug, iter::once};
 use std::{cell::RefCell, io, io::Write, marker::PhantomData, ops::DerefMut, sync::Arc};
 
 pub trait ErasedSerializeWithContext {
@@ -517,6 +518,25 @@ where
             &None,
             &None,
         ))))
+    }
+
+    fn concat(self: Arc<Self>, other: Vec<Arc<dyn SerBatch>>) -> Arc<dyn SerBatchReader> {
+        let snapshots = once(self.batch.dyn_snapshot())
+            .chain(other.into_iter().map(|batch| {
+                batch
+                    .as_any()
+                    .downcast::<Self>()
+                    .unwrap()
+                    .batch
+                    .dyn_snapshot()
+            }))
+            .collect::<Vec<_>>();
+
+        Arc::new(SerBatchImpl::<_, KD, VD>::new(SpineSnapshot::<
+            TypedBatch<B::Key, B::Val, B::R, B::IntoBatch>,
+        >::new(
+            DynSpineSnapshot::concat(B::into_batch_factories(), &snapshots),
+        )))
     }
 
     fn into_trace(self: Arc<Self>) -> Box<dyn SerTrace> {

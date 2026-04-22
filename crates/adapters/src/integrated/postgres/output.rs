@@ -17,7 +17,7 @@ use crate::{
 };
 use anyhow::{Context, Result as AnyResult, anyhow, bail};
 use feldera_adapterlib::catalog::SplitCursorBuilder;
-use feldera_adapterlib::transport::{AsyncErrorCallback, CommandHandler, Step};
+use feldera_adapterlib::transport::{AsyncErrorCallback, CommandHandler, OutputBatchType, Step};
 use feldera_types::{
     format::json::JsonFlavor,
     program_schema::{Relation, SqlIdentifier},
@@ -835,7 +835,7 @@ impl OutputConsumer for PostgresOutputEndpoint {
         self.config.max_buffer_size_bytes
     }
 
-    fn batch_start(&mut self, _step: Step) {
+    fn batch_start(&mut self, _step: Step, _batch_type: OutputBatchType) {
         self.txn_start = std::time::Instant::now();
 
         match self.broadcast_and_collect(BroadcastCommand::BatchStart) {
@@ -995,7 +995,7 @@ impl OutputEndpoint for PostgresOutputEndpoint {
         false
     }
 
-    fn batch_start(&mut self, _step: Step) -> AnyResult<()> {
+    fn batch_start(&mut self, _step: Step, _batch_type: OutputBatchType) -> AnyResult<()> {
         todo!()
     }
 
@@ -1240,6 +1240,7 @@ mod tests {
         use crate::controller::EndpointId;
         use crate::format::Encoder;
         use crate::static_compile::seroutput::SerBatchImpl;
+        use feldera_adapterlib::transport::OutputBatchType;
 
         use super::super::PostgresOutputEndpoint;
         use feldera_types::transport::postgres::{
@@ -1488,7 +1489,7 @@ mod tests {
         }
 
         fn encode_batch(endpoint: &mut PostgresOutputEndpoint, batch: &Arc<dyn SerBatch>) {
-            endpoint.consumer().batch_start(0);
+            endpoint.consumer().batch_start(0, OutputBatchType::Delta);
             endpoint
                 .encode(batch.clone().arc_as_batch_reader())
                 .unwrap();

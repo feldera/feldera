@@ -134,6 +134,7 @@ pub(crate) async fn http_input(
         ("table_name" = String, Path,
             description = "SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program."),
         ("format" = String, Query, description = "Output data format, e.g., 'csv' or 'json'."),
+        ("send_snapshot" = Option<bool>, Query, description = "Set to `true` to send a full snapshot of a materialized view before streaming incremental updates. The default is `false`."),
         ("array" = Option<bool>, Query, description = "Set to `true` to group updates in this stream into JSON arrays (used in conjunction with `format=json`). The default value is `false`"),
         ("backpressure" = Option<bool>, Query, description = r#"Apply backpressure on the pipeline when the HTTP client cannot receive data fast enough.
         When this flag is set to false (the default), the HTTP connector drops data chunks if the client is not keeping up with its output.  This prevents a slow HTTP client from slowing down the entire pipeline.
@@ -462,10 +463,18 @@ pub(crate) async fn get_pipeline_output_connector_status(
 
 /// Reset Output Connector
 ///
-/// Reset an output connector configured in `snapshot_and_follow` mode.
+/// Reset an output connector. The exact effect depends on the connector; see
+/// the connector's documentation for the per-sink semantics. In general,
+/// reset means "clear the destination where possible and replay the latest
+/// materialized-view snapshot".
 ///
-/// This clears buffered output, asks the sink to reset itself, and then replays
-/// a full snapshot before resuming incremental updates.
+/// Returns a reset token that identifies this reset. Pass the token to the
+/// `reset_status` endpoint to check whether the reset has completed. The
+/// token is bound to the pipeline's current incarnation; if the pipeline
+/// is restarted or crashes before the client polls, `reset_status` cannot
+/// validate the reset across incarnations. The reset may or may not have
+/// completed before the restart; the client should reissue to obtain a
+/// token valid for the new incarnation.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -476,7 +485,8 @@ pub(crate) async fn get_pipeline_output_connector_status(
     ),
     responses(
         (status = OK
-            , description = "Output connector reset request has been processed"),
+            , body = ResetTokenResponse
+            , description = "Output connector reset request has been processed. Returns a token the client can use to check completion."),
         (status = NOT_FOUND
             , body = ErrorResponse
             , description = "Pipeline, view and/or output connector with that name does not exist"
@@ -542,7 +552,7 @@ pub(crate) async fn post_pipeline_output_connector_reset(
 /// Check Reset Status
 ///
 /// Check the status of a reset token returned by the output connector
-/// reset endpoint.
+/// `reset` endpoint.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -552,7 +562,9 @@ pub(crate) async fn post_pipeline_output_connector_reset(
     ),
     responses(
         (status = OK
-            , description = "Reset token status has been retrieved"),
+            , content_type = "application/json"
+            , body = ResetStatusResponse
+            , description = "Reset status. Body contains `complete` if the reset has finished (either because its own snapshot was delivered or because a later reset's snapshot has been), or `inprogress` if it is still pending."),
         (status = NOT_FOUND
             , body = ErrorResponse
             , description = "Pipeline with that name does not exist"

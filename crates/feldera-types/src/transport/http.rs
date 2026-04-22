@@ -22,6 +22,9 @@ pub struct HttpInputConfig {
 #[derive(Deserialize, ToSchema)]
 pub struct Chunk {
     pub sequence_number: u64,
+    /// `true` when this chunk is part of the initial snapshot delivered in
+    /// `send_snapshot` mode; `false` for incremental delta updates.
+    pub snapshot: bool,
 
     // Exactly one of the following fields must be set.
     // This should be an enum inlined with `#[serde(flatten)]`, but `utoipa`

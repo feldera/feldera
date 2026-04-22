@@ -963,6 +963,14 @@ pub trait CommandHandler: Send + Sync {
     fn command(&self, command: serde_json::Value) -> AnyResult<serde_json::Value>;
 }
 
+/// Distinguishes a full-materialized-view snapshot from an incremental delta
+/// when pushed to an output connector.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum OutputBatchType {
+    Delta,
+    Snapshot,
+}
+
 /// A configured output transport endpoint.
 ///
 /// Output endpoints come in two flavors:
@@ -1012,7 +1020,7 @@ pub trait OutputEndpoint: Send {
     ///
     /// 2. The output batch must not be made visible to downstream readers
     ///    before the next call to `batch_end`.
-    fn batch_start(&mut self, _step: Step) -> AnyResult<()> {
+    fn batch_start(&mut self, _step: Step, _batch_type: OutputBatchType) -> AnyResult<()> {
         Ok(())
     }
 
@@ -1041,6 +1049,18 @@ pub trait OutputEndpoint: Send {
     /// A fault-tolerant output endpoint may now make the output batch visible
     /// to readers.
     fn batch_end(&mut self) -> AnyResult<()> {
+        Ok(())
+    }
+
+    /// Clear endpoint-local state before a fresh snapshot is pushed.
+    ///
+    /// Called by the output thread only when the endpoint's reset behavior
+    /// is `TruncateAndSnapshot`: the controller bumps the generation atomic,
+    /// the output thread notices the change and drops stale batches, then
+    /// invokes this. Implementations should truncate the destination so the
+    /// following snapshot starts from a blank slate. The default is a
+    /// no-op, which is correct for `Snapshot` and `NoOp` endpoints.
+    fn reset(&mut self) -> AnyResult<()> {
         Ok(())
     }
 

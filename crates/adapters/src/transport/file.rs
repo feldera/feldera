@@ -342,18 +342,20 @@ impl Drop for FileInputReader {
 }
 
 pub(crate) struct FileOutputEndpoint {
+    path: PathBuf,
     file: File,
 }
 
 impl FileOutputEndpoint {
     pub(crate) fn new(config: FileOutputConfig) -> AnyResult<Self> {
-        let file = File::create(&config.path).map_err(|e| {
+        let path = PathBuf::from(&config.path);
+        let file = File::create(&path).map_err(|e| {
             AnyError::msg(format!(
                 "Failed to create output file '{}': {e}",
                 config.path
             ))
         })?;
-        Ok(Self { file })
+        Ok(Self { path, file })
     }
 }
 
@@ -386,6 +388,18 @@ impl OutputEndpoint for FileOutputEndpoint {
 This output endpoint was configured with a data format that produces outputs as key-value pairs; \
 however the File transport does not support this representation."
         );
+    }
+
+    /// Truncates the output file so the snapshot that follows starts from an
+    /// empty file.
+    fn reset(&mut self) -> AnyResult<()> {
+        self.file = File::create(&self.path).map_err(|e| {
+            AnyError::msg(format!(
+                "Failed to truncate output file '{}': {e}",
+                self.path.display()
+            ))
+        })?;
+        Ok(())
     }
 
     fn is_fault_tolerant(&self) -> bool {
@@ -566,6 +580,45 @@ mod test {
         assert!(zset.state().flushed.is_empty());
 
         endpoint.disconnect();
+    }
+
+    /// `reset()` truncates the output file so subsequent writes start from an
+    /// empty file. This is the behavior that backs
+    /// `ResetBehavior::TruncateAndSnapshot` for file sinks.
+    #[test]
+    fn test_file_output_reset_truncates() {
+        use crate::transport::OutputEndpoint as _;
+        use feldera_types::transport::file::FileOutputConfig;
+        use std::fs;
+
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_path_buf();
+
+        let mut endpoint = super::FileOutputEndpoint::new(FileOutputConfig {
+            path: path.display().to_string(),
+        })
+        .unwrap();
+
+        endpoint.push_buffer(b"before-reset\n").unwrap();
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "before-reset\n",
+            "write should make it to the output file"
+        );
+
+        endpoint.reset().unwrap();
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "",
+            "reset should truncate the output file"
+        );
+
+        endpoint.push_buffer(b"after-reset\n").unwrap();
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "after-reset\n",
+            "post-reset writes should start from an empty file"
+        );
     }
 }
 

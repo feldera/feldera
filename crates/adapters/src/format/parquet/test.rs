@@ -9,6 +9,7 @@ use std::time::Duration;
 use arrow::array::RecordBatch;
 use dbsp::OrdZSet;
 use dbsp::utils::Tup2;
+use feldera_adapterlib::transport::OutputBatchType;
 use feldera_sqllib::Variant;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::format::parquet::ParquetEncoderConfig;
@@ -156,7 +157,7 @@ fn parquet_output() {
     );
 
     let zset = Arc::new(SerBatchImpl::<_, TestStruct2, ()>::new(zset)) as Arc<dyn SerBatchReader>;
-    encoder.consumer().batch_start(0);
+    encoder.consumer().batch_start(0, OutputBatchType::Delta);
     encoder.encode(zset).unwrap();
     encoder.consumer().batch_end();
 

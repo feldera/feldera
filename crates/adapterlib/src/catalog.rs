@@ -342,6 +342,10 @@ pub trait SerBatch: SerBatchReader {
     /// Merge `self` with all batches in `other`.
     fn merge(self: Arc<Self>, other: Vec<Arc<dyn SerBatch>>) -> Arc<dyn SerBatch>;
 
+    /// Concatenate `self.batches()` with `b.batches()` for all batches in `other`
+    /// into a spine snapshot.
+    fn concat(self: Arc<Self>, other: Vec<Arc<dyn SerBatch>>) -> Arc<dyn SerBatchReader>;
+
     fn as_batch_reader(&self) -> &dyn SerBatchReader;
 
     fn arc_as_batch_reader(self: Arc<Self>) -> Arc<dyn SerBatchReader>;

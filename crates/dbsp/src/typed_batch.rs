@@ -84,6 +84,10 @@ pub trait BatchReader: 'static {
         BatchReaderFactories::new::<Self::Key, Self::Val, Self::R>()
     }
 
+    fn into_batch_factories() -> <Self::IntoBatch as DynBatchReader>::Factories {
+        BatchReaderFactories::new::<Self::Key, Self::Val, Self::R>()
+    }
+
     /// Extract the dynamically typed batch.
     fn inner(&self) -> &Self::Inner;
 

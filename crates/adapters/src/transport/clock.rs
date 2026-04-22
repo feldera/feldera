@@ -51,6 +51,7 @@ pub fn now_endpoint_config(config: &PipelineConfig) -> InputEndpointConfig {
     InputEndpointConfig {
         stream: Cow::Borrowed("now"),
         connector_config: ConnectorConfig {
+            send_snapshot: false,
             transport: TransportConfig::ClockInput(ClockConfig {
                 clock_resolution_usecs: config
                     .global

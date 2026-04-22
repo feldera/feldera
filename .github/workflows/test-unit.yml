@@ -114,6 +114,10 @@ jobs:
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ./build/feldera_storage-*
 
+      - name: dbsp_adapters OutputEndpointControl (shuttle)
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: ./build/output_endpoint_control_shuttle-*
+
       - name: readers
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ../../../build/readers-*

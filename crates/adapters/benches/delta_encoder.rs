@@ -4,6 +4,7 @@ use bench_common::{BenchKeyStruct, BenchTestStruct, build_indexed_batch, generat
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use dbsp_adapters::Encoder;
 use dbsp_adapters::integrated::delta_table::DeltaTableWriter;
+use feldera_adapterlib::transport::OutputBatchType;
 use feldera_types::transport::delta_table::{DeltaTableWriteMode, DeltaTableWriterConfig};
 use std::sync::Weak;
 use tempfile::TempDir;
@@ -63,7 +64,7 @@ fn bench_indexed_encode(c: &mut Criterion) {
                         (writer, table_dir)
                     },
                     |(mut writer, _table_dir)| {
-                        writer.consumer().batch_start(0);
+                        writer.consumer().batch_start(0, OutputBatchType::Delta);
                         writer.encode(batch.clone().arc_as_batch_reader()).unwrap();
                         writer.consumer().batch_end();
                     },
