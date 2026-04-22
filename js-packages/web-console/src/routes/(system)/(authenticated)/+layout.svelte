@@ -10,7 +10,10 @@
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
-  import { useClusterHealth } from '$lib/compositions/health/useClusterHealth.svelte'
+  import {
+    useClusterHealth,
+    useRefreshClusterHealth
+  } from '$lib/compositions/health/useClusterHealth.svelte'
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
   import { useContextDrawer } from '$lib/compositions/layout/useContextDrawer.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
@@ -19,6 +22,7 @@
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
+  import { closedIntervalAction } from '$lib/functions/common/promise'
   import { getConfig } from '$lib/services/pipelineManager'
   import type { Snippet } from '$lib/types/svelte'
   import type { LayoutData } from './$types'
@@ -28,6 +32,7 @@
   const { children, data }: { children: Snippet; data: LayoutData } = $props()
 
   useRefreshPipelineList()
+  useRefreshClusterHealth()
   usePipelineAction()
 
   const rightDrawer = useAdaptiveDrawer('right')
@@ -37,9 +42,10 @@
   const clusterHealth = useClusterHealth()
   const now = useInterval(() => new Date(), 3600000, 3600000 - (Date.now() % 3600000))
 
-  // Check for backend version changes every 30 seconds
-  useInterval(
-    async () => {
+  // Check for backend version changes every 10 seconds, starting 10 seconds
+  // after layout load (first tick is delayed by `periodMs`).
+  $effect.pre(() =>
+    closedIntervalAction(async () => {
       try {
         const config = await getConfig()
         const currentVersion = data.feldera?.version
@@ -67,8 +73,7 @@
         // Silently ignore errors when checking for version changes
         console.error('Failed to check backend version:', e)
       }
-    },
-    10000 // Check every 10 seconds
+    }, 10000)
   )
 
   const displayedMessages = $derived(

@@ -17,13 +17,17 @@
   import { newDate } from '$lib/compositions/serverTime'
   import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
   import { getLicenseMessage } from '$lib/functions/license'
+  import { _markRouterReady } from './+layout'
 
   const { children } = $props()
   const darkMode = useDarkMode()
 
   if (browser) {
     beforeNavigate(() => posthog.capture('$pageleave'))
-    afterNavigate(() => posthog.capture('$pageview'))
+    afterNavigate(() => {
+      _markRouterReady()
+      posthog.capture('$pageview')
+    })
   }
 
   // Scarf.sh tracking for OSS deployments
