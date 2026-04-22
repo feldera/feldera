@@ -5,7 +5,6 @@
     "@auth/sveltekit": "1.11.1",
     "@axa-fr/oidc-client": "7.26.4",
     "@biomejs/biome": "2.4.3",
-    "@feldera/monaco-editor-vite-plugin": "workspace:*",
     "@fontsource-variable/dm-sans": "5.2.8",
     "@fontsource/dm-mono": "5.2.7",
     "@fortawesome/fontawesome-free": "7.2.0",
@@ -113,7 +112,7 @@
   "scripts": {
     "clean-install": "bun ci",
     "dev": "vite dev --host",
-    "prebuild": "cd ../monaco-editor-vite-plugin && bun run build && cd ../profiler-layout && bun run build",
+    "prebuild": "cd ../profiler-layout && bun run build",
     "build": "svelte-kit sync && vite build",
     "preview": "vite preview --host",
     "check": "svelte-kit sync && svelte-check --threshold error",

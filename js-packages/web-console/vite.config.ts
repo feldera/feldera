@@ -1,5 +1,4 @@
 import path from 'node:path'
-import { monaco } from '@feldera/monaco-editor-vite-plugin'
 import svg from '@poppanator/sveltekit-svg'
 import { sveltekit } from '@sveltejs/kit/vite'
 import tailwindcss from '@tailwindcss/vite'
@@ -119,39 +118,6 @@ export default defineConfig(async () => {
         'virtual:feldera-triage-plugins': process.env.FELDERA_PLUGINS_MODULE
           ? `export { default, createBundle, TriageResults } from '${process.env.FELDERA_PLUGINS_MODULE}'`
           : `export default []; export async function createBundle() { return {} }; export class TriageResults { constructor() { this.results = [] } }`
-      }),
-
-      // '@feldera/monaco-editor-vite-plugin' is used to only bundle monaco-editor
-      // features that are actually used to reduce the total bundle size. It is
-      // a local fork of @bithero/monaco-editor-vite-plugin@1.0.3 with an
-      // inverted-filter bug fixed in its optimizeDeps.include handling.
-      monaco({
-        // Only include languages that are actually used
-        languages: ['json', 'sql', 'rust', 'graphql'],
-        // Only include features that are used
-        features: [
-          'browser',
-          'clipboard',
-          'comment',
-          'find',
-          'folding',
-          'format',
-          'gotoLine',
-          'gotoSymbol',
-          'hover',
-          'inPlaceReplace',
-          'inspectTokens',
-          'iPadShowKeyboard',
-          'linesOperations',
-          'links',
-          'multicursor',
-          'parameterHints',
-          'quickOutline',
-          'smartSelect',
-          'suggest',
-          'wordHighlighter',
-          'wordOperations'
-        ]
       }),
       devtoolsJson()
     ] as PluginOption[],

@@ -6,7 +6,7 @@ use vergen_gitcl::*;
 
 // These are touched during the build, so it would re-build every time if we
 // don't exclude them from change detection:
-const EXCLUDE_LIST: [&str; 12] = [
+const EXCLUDE_LIST: [&str; 10] = [
     "../../js-packages/web-console/node_modules",
     "../../js-packages/web-console/build",
     "../../js-packages/web-console/.svelte-kit",
@@ -17,18 +17,15 @@ const EXCLUDE_LIST: [&str; 12] = [
     "../../js-packages/profiler-layout/.svelte-kit",
     "../../js-packages/profiler-lib/node_modules",
     "../../js-packages/profiler-lib/dist",
-    "../../js-packages/monaco-editor-vite-plugin/node_modules",
-    "../../js-packages/monaco-editor-vite-plugin/dist",
 ];
 
 // Directories to include in change detection and build tracking:
-const INCLUDE_LIST: [&str; 6] = [
+const INCLUDE_LIST: [&str; 5] = [
     "../../js-packages/web-console/",
     "../../js-packages/profiler-app/",
     "../../js-packages/profiler-layout/",
     "../../js-packages/feldera-theme/",
     "../../js-packages/profiler-lib/",
-    "../../js-packages/monaco-editor-vite-plugin/",
 ];
 
 /// The build script has two modes:
