@@ -59,7 +59,10 @@ use size_of::{Context, HumanBytes, SizeOf};
 use std::{
     borrow::Cow,
     future::Future,
-    sync::{Arc, MutexGuard, atomic::AtomicIsize},
+    sync::{
+        Arc,
+        atomic::{AtomicIsize, AtomicU32},
+    },
 };
 use std::{
     collections::BTreeMap,
@@ -276,7 +279,6 @@ where
     request_exit: bool,
     #[size_of(skip)]
     spine_stats: SpineStats,
-    max_level0_batch_size_records: usize,
 }
 
 impl<B> SharedState<B>
@@ -284,16 +286,6 @@ where
     B: Batch,
 {
     pub fn new(factories: &B::Factories) -> Self {
-        let max_level0_batch_size_records = max_level0_batch_size_records() as usize;
-        assert!(
-            max_level0_batch_size_records > 0,
-            "max_level0_batch_size_records must be greater than 0"
-        );
-        assert!(
-            max_level0_batch_size_records <= 99_999,
-            "max_level0_batch_size_records must be less than or equal to 99_999"
-        );
-
         Self {
             factories: factories.clone(),
             key_filter: None,
@@ -302,31 +294,24 @@ where
             slots: std::array::from_fn(|_| Slot::default()),
             request_exit: false,
             spine_stats: SpineStats::default(),
-            max_level0_batch_size_records,
         }
     }
 
     /// Adds all of `batches` as (initially) loose batches.  They will be merged
     /// when the merger thread has a chance (although it might not be awake).
-    ///
-    /// # Arguments
-    ///
-    /// * `batches` - The batches to add.
-    /// * `merge` - `true` if the batches were produced by a merge; `false` if
-    ///   these are freshly added batches.
-    fn add_batches(&mut self, batches: impl IntoIterator<Item = Arc<B>>, merge: bool) {
-        for batch in batches {
+    fn add_batches(&mut self, batches: impl IntoIterator<Item = (Arc<B>, usize)>) {
+        for (batch, level) in batches {
             if !batch.is_empty() {
-                self.add_batch(batch, merge);
+                self.add_batch(batch, level);
             }
         }
     }
 
-    /// Add `batch` as an (initially) loose batch, which will be merged when
-    /// the merger thread has a chance (although it might not be awake).
-    fn add_batch(&mut self, batch: Arc<B>, merge: bool) {
+    /// Add `batch` as an (initially) loose batch at the given `level`, which
+    /// will be merged when the merger thread has a chance (although it might
+    /// not be awake).
+    fn add_batch(&mut self, batch: Arc<B>, level: usize) {
         debug_assert!(!batch.is_empty());
-        let level = Spine::<B>::size_to_level(&batch, self.max_level0_batch_size_records, merge);
         self.slots[level].loose_batches.push_back(batch);
         self.slots[level].notify.notify_one();
     }
@@ -386,11 +371,13 @@ where
     }
 
     /// Finishes up the ongoing merge at the given `level`, which completed in
-    /// `elapsed` time over `n_steps` steps, with `new_batch` as the result.
+    /// `elapsed` time over `n_steps` steps, with `new_batch` at `new_level` as
+    /// the result.
     fn merge_complete(
         &mut self,
         level: usize,
         new_batch: Arc<B>,
+        new_level: usize,
         start: Instant,
         elapsed: Duration,
         n_steps: usize,
@@ -419,7 +406,9 @@ where
                 )
             })
             .record();
-        self.add_batches([new_batch], true);
+        if !new_batch.is_empty() {
+            self.add_batch(new_batch, new_level);
+        }
     }
 
     /// Returns a copy of the data that the caller can use to construct a
@@ -506,96 +495,49 @@ where
 
     /// Allows us to wait for the background worker to become idle.
     idle: Arc<Condvar>,
-}
 
-/// Return value for a worker function.
-enum WorkerStatus {
-    /// The worker has more work to do (it only returned to allow other workers
-    /// to run).
-    Yield,
+    /// Maximum batch size in records for level 0 merges.
+    max_level0_batch_size_records: usize,
 
-    /// The worker has no more work to do now, but it might have more later.
-    Idle,
-
-    /// The worker has exited.
-    Done,
+    /// The background mergers.
+    merge_workers: Arc<MergeWorkers<B>>,
 }
 
 impl<B> AsyncMerger<B>
 where
     B: Batch,
 {
-    fn new(factories: &B::Factories) -> Self {
+    pub fn new(runtime: Runtime, worker_index: usize, factories: &B::Factories) -> Self {
         let idle = Arc::new(Condvar::new());
         let no_backpressure = Arc::new(Notify::new());
         let state = Arc::new(Mutex::new(SharedState::new(factories)));
-        let worker_state = Arc::new(WorkerState::default());
 
-        for level in 0..MAX_LEVELS {
-            let worker_state = worker_state.clone();
-            let state = state.clone();
-            let idle = idle.clone();
-            let no_backpressure = no_backpressure.clone();
-
-            let worker_index = Runtime::worker_index();
-            let runtime = Runtime::runtime()
-                .expect("Attempting to create a spine merger outside of a DBSP runtime");
-
-            let buffer_cache =
-                runtime.get_buffer_cache(Runtime::local_worker_offset(), ThreadType::Background);
-            let slab_allocator = runtime
-                .get_fbuf_slab_allocator(Runtime::local_worker_offset(), ThreadType::Background);
-            let memory_pressure_notify = runtime.memory_pressure_notify();
-
-            runtime.tokio_merger_runtime().spawn(async move {
-                // Setup task-local variables for the tokio merger runtime.
-                scope_tokio_merger_locals(worker_index, buffer_cache, slab_allocator, async move {
-                    let state = Arc::clone(&state);
-                    let idle = Arc::clone(&idle);
-                    let no_backpressure = Arc::clone(&no_backpressure);
-                    let mut merger = None;
-                    let merger_type = Runtime::with_dev_tweaks(|tweaks| tweaks.merger());
-                    let notify = state.lock().unwrap().slots[level].notify.clone();
-
-                    loop {
-                        let status = Self::run(
-                            &worker_state,
-                            level,
-                            &mut merger,
-                            merger_type,
-                            &state,
-                            &idle,
-                            &no_backpressure,
-                        );
-                        match status {
-                            // Fuel has been spent, but there's still work to do for the ongoing merge.
-                            // Yield control to the tokio runtime, which will put the task in the end of the run queue.
-                            WorkerStatus::Yield => yield_now().await,
-                            // No more merge work currently available -- wait for the next merges to be started
-                            // of for a global memory pressure notification.
-                            WorkerStatus::Idle => {
-                                tokio::select! {
-                                    _ = notify.notified() => {}
-                                    _ = memory_pressure_notify.notified() => {}
-                                }
-                            }
-                            // The spine is being dropped -- exit the task.
-                            WorkerStatus::Done => {
-                                break;
-                            }
-                        }
-                    }
-                })
-                .await;
-            });
-        }
+        let max_level0_batch_size_records = max_level0_batch_size_records() as usize;
+        assert!(
+            max_level0_batch_size_records > 0,
+            "max_level0_batch_size_records must be greater than 0"
+        );
+        assert!(
+            max_level0_batch_size_records <= 99_999,
+            "max_level0_batch_size_records must be less than or equal to 99_999"
+        );
 
         Self {
+            merge_workers: Arc::new(MergeWorkers::new(
+                state.clone(),
+                idle.clone(),
+                no_backpressure.clone(),
+                runtime,
+                max_level0_batch_size_records,
+                worker_index,
+            )),
             state,
             idle,
             no_backpressure,
+            max_level0_batch_size_records,
         }
     }
+
     fn set_key_filter(&self, key_filter: &Filter<B::Key>) {
         self.state.lock().unwrap().key_filter = Some(key_filter.clone());
     }
@@ -609,10 +551,13 @@ where
 
     /// Adds `batch` to the shared merging state and wakes up the merger.
     /// Returns true if the spine contains "too many" batches.
-    fn add_batch(&self, batch: Arc<B>, merge: bool) -> bool {
+    fn add_batch(&mut self, batch: Arc<B>, merge: bool) -> bool {
         debug_assert!(!batch.is_empty());
+        let level = Spine::<B>::size_to_level(&batch, self.max_level0_batch_size_records, merge);
+        self.merge_workers.start(level);
+
         let mut state = self.state.lock().unwrap();
-        state.add_batch(batch, merge);
+        state.add_batch(batch, level);
         state.should_apply_backpressure()
     }
 
@@ -622,12 +567,13 @@ where
         let start = Instant::now();
         loop {
             let notify = self.no_backpressure.notified();
-            let mut state = self.state.lock().unwrap();
-            if state.should_relieve_backpressure() {
-                state.spine_stats.backpressure_wait += start.elapsed();
-                break;
+            {
+                let mut state = self.state.lock().unwrap();
+                if state.should_relieve_backpressure() {
+                    state.spine_stats.backpressure_wait += start.elapsed();
+                    break;
+                }
             }
-            drop(state);
             notify.await;
         }
         COMPACTION_STALL_TIME_NANOSECONDS
@@ -639,8 +585,8 @@ where
     }
 
     /// Adds `batches` to the shared merging state and wakes up the merger.
-    fn add_batches(&self, batches: impl IntoIterator<Item = Arc<B>>, merge: bool) {
-        self.state.lock().unwrap().add_batches(batches, merge);
+    fn add_batches(&self, batches: impl IntoIterator<Item = (Arc<B>, usize)>) {
+        self.state.lock().unwrap().add_batches(batches);
     }
 
     /// Gets the complete set of batches to include in the spine.
@@ -679,7 +625,11 @@ where
     /// Starts merging again with `batches`, which are presumably what
     /// [Self::pause] or [Self::pause_new_merges] returned.
     fn resume(&self, batches: impl IntoIterator<Item = Arc<B>>) {
-        self.add_batches(batches, false);
+        self.add_batches(batches.into_iter().map(|batch| {
+            let level =
+                Spine::<B>::size_to_level(&batch, self.max_level0_batch_size_records, false);
+            (batch, level)
+        }));
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
@@ -900,29 +850,141 @@ where
 
         cache_stats.metadata(meta);
     }
+}
 
-    fn maybe_relieve_backpressure(no_backpressure: &Notify, state: &MutexGuard<SharedState<B>>) {
-        if state.should_relieve_backpressure() {
-            Self::relieve_backpressure(no_backpressure);
+impl<B> Drop for AsyncMerger<B>
+where
+    B: Batch,
+{
+    fn drop(&mut self) {
+        self.state.lock().unwrap().request_exit = true;
+
+        for level in 0..MAX_LEVELS {
+            self.state.lock().unwrap().slots[level].notify.notify_one();
+        }
+    }
+}
+
+/// Background mergers for an asynchronous spine.
+///
+/// There can be up to one tokio merger task for each level in `0..MAX_LEVELS`,
+/// but they are started lazily, only as tasks at a particular level are
+/// inserted into the spine.
+///
+/// All the mergers for a spine share a single copy of this structure through an
+/// `Arc`.
+struct MergeWorkers<B>
+where
+    B: Batch,
+{
+    /// Bit-set of workers that have been started, one bit for each of
+    /// `0..MAX_LEVELS`.
+    workers_started: AtomicU32,
+
+    worker_state: WorkerState,
+    state: Arc<Mutex<SharedState<B>>>,
+    idle: Arc<Condvar>,
+    no_backpressure: Arc<Notify>,
+    runtime: Runtime,
+    max_level0_batch_size_records: usize,
+    worker_index: usize,
+}
+
+impl<B> MergeWorkers<B>
+where
+    B: Batch,
+{
+    fn new(
+        state: Arc<Mutex<SharedState<B>>>,
+        idle: Arc<Condvar>,
+        no_backpressure: Arc<Notify>,
+        runtime: Runtime,
+        max_level0_batch_size_records: usize,
+        worker_index: usize,
+    ) -> Self {
+        Self {
+            workers_started: AtomicU32::new(0),
+            worker_state: WorkerState::default(),
+            state,
+            idle,
+            no_backpressure,
+            runtime,
+            max_level0_batch_size_records,
+            worker_index,
         }
     }
 
-    fn relieve_backpressure(no_backpressure: &Notify) {
-        no_backpressure.notify_waiters();
+    fn start(self: &Arc<Self>, level: usize) {
+        let bit = 1 << level;
+        if (self.workers_started.fetch_or(bit, Ordering::Relaxed) & bit) == 0 {
+            self.clone().run(level);
+        }
     }
 
-    fn run(
-        worker_state: &Arc<WorkerState>,
-        level: usize,
+    fn run(self: Arc<Self>, level: usize) {
+        let local_worker_offset = self.worker_index - self.runtime.layout().local_workers().start;
+        self.runtime.tokio_merger_runtime().spawn(async move {
+            let buffer_cache = self
+                .runtime
+                .get_buffer_cache(local_worker_offset, ThreadType::Background);
+            let slab_allocator = self
+                .runtime
+                .get_fbuf_slab_allocator(local_worker_offset, ThreadType::Background);
+            let memory_pressure_notify = self.runtime.memory_pressure_notify();
+
+            // Setup task-local variables for the tokio merger runtime.
+            scope_tokio_merger_locals(
+                self.worker_index,
+                buffer_cache,
+                slab_allocator,
+                async move {
+                    let mut merger = None;
+                    let merger_type = Runtime::with_dev_tweaks(|tweaks| tweaks.merger());
+                    let notify = self.state.lock().unwrap().slots[level].notify.clone();
+
+                    loop {
+                        self.merge_step(&mut merger, merger_type, level);
+
+                        {
+                            let state = self.state.lock().unwrap();
+                            if state.request_exit {
+                                self.no_backpressure.notify_waiters();
+                                break;
+                            }
+                            if state.should_relieve_backpressure() {
+                                self.no_backpressure.notify_waiters();
+                            }
+                        }
+
+                        if merger.is_none() {
+                            // No more merge work currently available -- wait for the next merges to be started
+                            // or for a global memory pressure notification.
+                            self.idle.notify_all();
+                            tokio::select! {
+                                _ = notify.notified() => {}
+                                _ = memory_pressure_notify.notified() => {}
+                            }
+                        } else {
+                            // Fuel has been spent, but there's still work to do for the ongoing merge.
+                            // Yield control to the tokio runtime, which will put the task in the end of the run queue.
+                            yield_now().await;
+                        };
+                    }
+                },
+            )
+            .await;
+        });
+    }
+
+    fn merge_step(
+        self: &Arc<Self>,
         opt_merger: &mut Option<Merge<B>>,
         merger_type: MergerType,
-        state: &Arc<Mutex<SharedState<B>>>,
-        idle: &Arc<Condvar>,
-        no_backpressure: &Notify,
-    ) -> WorkerStatus {
+        level: usize,
+    ) {
         // Run in-progress merges.
         let ((key_filter, value_filter), frontier) = {
-            let shared = state.lock().unwrap();
+            let shared = self.state.lock().unwrap();
             (shared.get_filters(), shared.frontier.clone())
         };
 
@@ -936,22 +998,26 @@ where
             let fuel = if level == 0 {
                 isize::MAX
             } else {
-                worker_state.avg_slot0_merge_fuel()
+                self.worker_state.avg_slot0_merge_fuel()
             };
             merger.merge(&frontier, fuel);
             if merger.done {
                 if level == 0 {
-                    worker_state.report_slot0_merge(merger.fuel);
+                    self.worker_state.report_slot0_merge(merger.fuel);
                 }
                 let merger = opt_merger.take().unwrap();
                 let new_batch = Arc::new(merger.builder.done());
-                state.lock().unwrap().merge_complete(
+                let new_level =
+                    Spine::<B>::size_to_level(&new_batch, self.max_level0_batch_size_records, true);
+                self.state.lock().unwrap().merge_complete(
                     level,
                     new_batch,
+                    new_level,
                     merger.start,
                     merger.elapsed,
                     merger.n_steps,
                 );
+                self.start(new_level);
             }
         }
 
@@ -960,14 +1026,14 @@ where
         // Figuring out what merges to start requires the lock. Then we drop
         // the lock to actually start them, in case that's expensive (it
         // might require creating a file, for example).
-        let start_merge = state.lock().unwrap().slots[level].try_start_merge(level);
+        let start_merge = self.state.lock().unwrap().slots[level].try_start_merge(level);
 
         let snapshot = if value_filter
             .as_ref()
             .map(|f| f.requires_snapshot())
             .unwrap_or(false)
         {
-            Some(Arc::new(state.lock().unwrap().get_snapshot()))
+            Some(Arc::new(self.state.lock().unwrap().get_snapshot()))
         } else {
             None
         };
@@ -979,33 +1045,6 @@ where
                 &value_filter,
                 snapshot.clone(),
             ));
-        }
-
-        let state = state.lock().unwrap();
-        if state.request_exit {
-            Self::relieve_backpressure(no_backpressure);
-            WorkerStatus::Done
-        } else if opt_merger.is_none() {
-            Self::maybe_relieve_backpressure(no_backpressure, &state);
-
-            idle.notify_all(); // XXX is there a race here?
-            WorkerStatus::Idle
-        } else {
-            Self::maybe_relieve_backpressure(no_backpressure, &state);
-            WorkerStatus::Yield
-        }
-    }
-}
-
-impl<B> Drop for AsyncMerger<B>
-where
-    B: Batch,
-{
-    fn drop(&mut self) {
-        self.state.lock().unwrap().request_exit = true;
-
-        for level in 0..MAX_LEVELS {
-            self.state.lock().unwrap().slots[level].notify.notify_one();
         }
     }
 }
@@ -1639,7 +1678,12 @@ where
     type Batch = B;
 
     fn new(factories: &B::Factories) -> Self {
-        Self::with_effort(factories, 1)
+        Self::with_runtime(
+            Runtime::runtime()
+                .expect("Attempting to create a spine merger outside of a DBSP runtime"),
+            Runtime::worker_index(),
+            factories,
+        )
     }
 
     fn set_frontier(&mut self, frontier: &B::Time) {
@@ -1836,19 +1880,17 @@ where
         }
     }
 
-    /// Allocates a fueled `Spine` with a specified effort multiplier.
+    /// Allocates a new `Spine` for `worker_index` in `runtime`.
     ///
-    /// This trace will merge batches progressively, with each inserted batch
-    /// applying a multiple of the batch's length in effort to each merge.
-    /// The `effort` parameter is that multiplier. This value should be at
-    /// least one for the merging to happen; a value of zero is not helpful.
-    pub fn with_effort(factories: &B::Factories, _effort: usize) -> Self {
+    /// In the common case, [Spine::new] uses the current thread's runtime and
+    /// worker index.
+    pub fn with_runtime(runtime: Runtime, worker_index: usize, factories: &B::Factories) -> Self {
         Spine {
             factories: factories.clone(),
             dirty: false,
             key_filter: None,
             value_filter: None,
-            merger: AsyncMerger::new(factories),
+            merger: AsyncMerger::new(runtime, worker_index, factories),
         }
     }
 
