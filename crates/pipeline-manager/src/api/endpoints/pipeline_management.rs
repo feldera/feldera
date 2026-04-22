@@ -42,6 +42,9 @@ use tracing::{debug, error, info};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+// Modules
+pub mod pipeline_events;
+
 /// Program information is the result of the SQL compilation.
 #[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
 pub struct PartialProgramInfo {

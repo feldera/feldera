@@ -1,5 +1,6 @@
 use crate::api::support_data_collector::SupportBundleData;
 use crate::db::error::DBError;
+use crate::db::operations::pipeline_monitor::new_pipeline_monitor_event;
 use crate::db::operations::pipeline_parsing::{
     parse_pipeline_row_all, parse_pipeline_row_monitoring, serialize_error_response,
     serialize_program_error, PIPELINE_COLUMNS_ALL, PIPELINE_COLUMNS_MONITORING,
@@ -251,6 +252,7 @@ pub(crate) async fn new_pipeline(
     .await
     .map_err(maybe_unique_violation)
     .map_err(|e| maybe_tenant_id_foreign_key_constraint_err(e, tenant_id))?;
+    new_pipeline_monitor_event(txn, tenant_id, PipelineId(new_id), Uuid::now_v7()).await?;
     Ok((PipelineId(new_id), Version(1)))
 }
 
@@ -529,6 +531,7 @@ pub(crate) async fn update_pipeline(
         assert_eq!(rows_affected, 1); // The row must exist as it has been retrieved before
     }
 
+    new_pipeline_monitor_event(txn, tenant_id, current.id, Uuid::now_v7()).await?;
     Ok(Version(current.version.0 + 1))
 }
 
@@ -816,6 +819,7 @@ pub(crate) async fn set_program_status(
             ],
         )
         .await?;
+    new_pipeline_monitor_event(txn, tenant_id, pipeline_id, Uuid::now_v7()).await?;
     if rows_affected > 0 {
         Ok(())
     } else {
@@ -857,6 +861,7 @@ pub(crate) async fn dismiss_deployment_error(
         .await?;
     let modified_rows = txn.execute(&stmt, &[&tenant_id.0, &current.id.0]).await?;
     if modified_rows > 0 {
+        new_pipeline_monitor_event(txn, tenant_id, current.id, Uuid::now_v7()).await?;
         Ok(())
     } else {
         Err(DBError::UnknownPipeline {
@@ -996,6 +1001,7 @@ pub(crate) async fn set_deployment_resources_desired_status(
             ],
         )
         .await?;
+    new_pipeline_monitor_event(txn, tenant_id, current.id, Uuid::now_v7()).await?;
     if modified_rows > 0 {
         Ok(current.id)
     } else {
@@ -1410,6 +1416,7 @@ async fn set_deployment_resources_status(
             ],
         )
         .await?;
+    new_pipeline_monitor_event(txn, tenant_id, pipeline_id, Uuid::now_v7()).await?;
     if rows_affected > 0 {
         Ok(())
     } else {
@@ -1475,6 +1482,7 @@ async fn remain_deployment_resources_status(
             ],
         )
         .await?;
+    new_pipeline_monitor_event(txn, tenant_id, pipeline_id, Uuid::now_v7()).await?;
     if rows_affected > 0 {
         Ok(())
     } else {
@@ -1528,6 +1536,7 @@ pub(crate) async fn set_storage_status(
             ],
         )
         .await?;
+    new_pipeline_monitor_event(txn, tenant_id, pipeline_id, Uuid::now_v7()).await?;
     if rows_affected > 0 {
         Ok(())
     } else {

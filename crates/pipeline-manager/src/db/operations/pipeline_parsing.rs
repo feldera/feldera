@@ -346,7 +346,7 @@ fn parse_from_row_bootstrap_policy(row: &Row) -> Result<Option<BootstrapPolicy>,
 }
 
 /// Parses string as a JSON value.
-fn deserialize_json_value(s: &str) -> Result<serde_json::Value, DBError> {
+pub fn deserialize_json_value(s: &str) -> Result<serde_json::Value, DBError> {
     serde_json::from_str::<serde_json::Value>(s).map_err(|e| DBError::InvalidJsonData {
         data: s.to_string(),
         error: format!("unable to deserialize data string as JSON due to: {e}"),
