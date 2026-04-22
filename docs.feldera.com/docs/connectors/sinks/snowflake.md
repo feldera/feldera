@@ -357,3 +357,4 @@ SHOW TASKS in <db>.<landing_schema_name>;
 ```
 
 Make sure that the data ingestion task is in the `started` state.
+

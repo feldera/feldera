@@ -162,3 +162,4 @@ guaranteed to have unique values.  Failure to choose a unique key may lead to da
 
 * For more details on Avro support in Feldera, please refer to the [Avro Format Documentation](/formats/avro).
 * For more information on configuring Kafka transport, visit the [Kafka Sink Connector Documentation](/connectors/sinks/kafka).
+

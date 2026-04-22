@@ -148,6 +148,15 @@ The following attributes are common to all connectors:
   insert and delete events into a single atomic update.
   See [Uniqueness Constraints](/connectors/unique_keys).
 
+* `send_snapshot` – *(Output connectors only)* When `true`, the connector
+  emits a full snapshot of the materialized view the first time it runs,
+  before streaming incremental updates. The view must be materialized
+  (declared with `CREATE MATERIALIZED VIEW`). The default is `false`.
+
+  The snapshot is sent exactly once: resuming from a checkpoint does not
+  re-send it. Modifying the connector configuration causes a fresh
+  snapshot to be replayed on the next start.
+
 ### Configuring the output buffer
 
 By default a Feldera pipeline sends a batch of changes to the output transport

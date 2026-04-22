@@ -35,3 +35,4 @@ CREATE VIEW copy WITH (
 )
 AS SELECT * FROM Stocks;
 ```
+
