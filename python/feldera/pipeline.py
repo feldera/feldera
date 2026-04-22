@@ -269,6 +269,42 @@ class Pipeline:
             self.client.output_connector_stats(self.name, view_name, connector_name)
         )
 
+    def reset_output_connector(
+        self,
+        view_name: str,
+        connector_name: str,
+        wait: bool = False,
+        wait_timeout_s: Optional[float] = None,
+    ) -> str:
+        """
+        Reset the specified output connector.
+
+        The exact effect depends on the connector; see the connector's
+        documentation. Configure the connector with ``send_snapshot: true``
+        to make reset meaningful.
+
+        Returns a reset token that can be passed to :meth:`reset_completed`
+        or :meth:`wait_for_reset` to check completion. If ``wait`` is
+        ``True``, this call blocks until the reset completes (or until
+        ``wait_timeout_s`` elapses) before returning the token.
+        """
+        token = self.client.reset_output_connector(self.name, view_name, connector_name)
+        if wait:
+            self.client.wait_for_reset(self.name, token, timeout_s=wait_timeout_s)
+        return token
+
+    def reset_completed(self, token: str) -> bool:
+        """
+        Check whether the reset identified by ``token`` has completed.
+        """
+        return self.client.reset_completed(self.name, token)
+
+    def wait_for_reset(self, token: str, timeout_s: Optional[float] = None):
+        """
+        Block until the reset identified by ``token`` has completed.
+        """
+        self.client.wait_for_reset(self.name, token, timeout_s=timeout_s)
+
     def listen(self, view_name: str) -> OutputHandler:
         """
         Follow the change stream (i.e., the output) of the provided view.
