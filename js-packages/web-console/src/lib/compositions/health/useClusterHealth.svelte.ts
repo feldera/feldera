@@ -10,7 +10,13 @@ let status = $state({
   runner: 'healthy' as HealthEventType
 })
 
-export const useClusterHealth = () => {
+/**
+ * Poll cluster health every 10 seconds (with an immediate first call) and
+ * publish the result to the module-level `status` store. A single instance of
+ * this hook should be mounted at one time (the authenticated layout owns it);
+ * consumers read the state via {@link useClusterHealth}.
+ */
+export const useRefreshClusterHealth = () => {
   const api = usePipelineManager()
   useInterval(async () => {
     const event = await api.getClusterEvent('latest')
@@ -20,9 +26,10 @@ export const useClusterHealth = () => {
       runner: toEventType(event.runner_status)
     }
   }, 10000)
-  return {
-    get current() {
-      return status
-    }
-  }
 }
+
+export const useClusterHealth = () => ({
+  get current() {
+    return status
+  }
+})

@@ -92,7 +92,19 @@ export const usePipelineManager = (options?: FetchOptions) => {
   const { toastError } = useToast()
 
   const doNotReportIfCancelled = (error: Error) => {
-    return error.cause === 'cancelled'
+    // Explicit user-triggered cancellation (pipelineManager streaming fetches
+    // throw with this cause when their `.cancel()` is invoked).
+    if (error?.cause === 'cancelled') {
+      return true
+    }
+    // AbortController-driven cancellation — e.g. the pipeline page aborts an
+    // in-flight `getExtendedPipeline` when the user navigates away before the
+    // request finishes. The browser rejects fetch with `DOMException` named
+    // 'AbortError'; that isn't a genuine failure, so the toast is suppressed.
+    if (error?.name === 'AbortError') {
+      return true
+    }
+    return false
   }
 
   const reportError = _reportError(toastError('API request'), options, doNotReportIfCancelled)

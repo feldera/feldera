@@ -75,7 +75,7 @@ export type ExtendedPipelineDescrNoCode = Omit<ExtendedPipelineDescr, 'program_c
 
 export type CompilerOutput = ReturnType<typeof toCompilerOutput>
 
-export type FetchOptions = { fetch?: typeof globalThis.fetch }
+export type FetchOptions = { fetch?: typeof globalThis.fetch; signal?: AbortSignal }
 
 const toCompilerOutput = (programError: ProgramError | null | undefined) => {
   return {
@@ -959,6 +959,8 @@ export const getDemos = (options?: FetchOptions) =>
       }
     })
   )
+
+export type Demo = Awaited<ReturnType<typeof getDemos>>[number]
 
 export type SupportBundleOptions = NonNullable<Required<GetPipelineSupportBundleData['query']>>
 

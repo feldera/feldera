@@ -14,7 +14,7 @@
     onaction
   }: {
     pipelineName: string
-    pipelines: PipelineThumb[]
+    pipelines: PipelineThumb[] | undefined
     onclose?: () => void
     onaction?: () => void
   } = $props()
@@ -42,26 +42,34 @@
     <button onclick={onclose} class="fd fd-x btn-icon text-[24px]" aria-label="Close pipelines list"
     ></button>
   </div>
-  {#each pipelines as pipeline}
-    <a
-      class="flex h-9 flex-nowrap items-center justify-between gap-2 rounded py-2 pl-4 {pipelineName ===
-      pipeline.name
-        ? 'bg-surface-50-950'
-        : 'hover:bg-surface-50-950'}"
-      onclick={onaction}
-      href={resolve(`/pipelines/${encodeURI(pipeline.name)}/`)}
-    >
-      <div class="min-w-0 overflow-hidden py-1 overflow-ellipsis whitespace-nowrap">
-        {pipeline.name}
-      </div>
-      <!-- Wrap pipeline name -->
-      <!-- Insert a thin whitespace to help break names containing underscore -->
-      <!--
-      <div class="w-full overflow-ellipsis whitespace-break-spaces py-1">
-          {pipeline.name.replaceAll('_', `_ `)}
-      </div>
-      -->
-      <PipelineStatus {...pipeline}></PipelineStatus>
-    </a>
-  {/each}
+  {#if pipelines}
+    {#each pipelines as pipeline}
+      <a
+        class="flex h-9 flex-nowrap items-center justify-between gap-2 rounded py-2 pl-4 {pipelineName ===
+        pipeline.name
+          ? 'bg-surface-50-950'
+          : 'hover:bg-surface-50-950'}"
+        onclick={onaction}
+        href={resolve(`/pipelines/${encodeURI(pipeline.name)}/`)}
+      >
+        <div class="min-w-0 overflow-hidden py-1 overflow-ellipsis whitespace-nowrap">
+          {pipeline.name}
+        </div>
+        <PipelineStatus {...pipeline}></PipelineStatus>
+      </a>
+    {/each}
+  {:else}
+    {@render placeholderList()}
+  {/if}
 </div>
+
+{#snippet placeholderList()}
+  <div class="flex flex-col gap-2 pt-1 pr-2 pl-3">
+    {#each new Array(10).fill(undefined) as _}
+      <div class="flex flex-nowrap items-center justify-between gap-6 py-2.5">
+        <div class="placeholder max-w-64 grow animate-pulse"></div>
+        <div class="placeholder-circle size-3 min-h-0 animate-pulse"></div>
+      </div>
+    {/each}
+  </div>
+{/snippet}

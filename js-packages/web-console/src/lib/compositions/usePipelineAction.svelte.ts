@@ -1,3 +1,4 @@
+import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
 import { page } from '$app/state'
 import { hasSelectedRelations } from '$lib/components/pipelines/editor/TabChangeStream.svelte'
@@ -123,6 +124,7 @@ export const usePipelineAction = () => {
         // Wait for paused state and run callbacks
         const pausedWaiter = reactiveWaiter.createWaiter({
           predicate: (ps) => {
+            invariant(ps)
             const p = ps.find((p) => p.name === pipeline_name)
             if (!p) {
               console.log(
@@ -219,6 +221,7 @@ export const usePipelineAction = () => {
       waitFor: async () => {
         const waiter = reactiveWaiter.createWaiter({
           predicate: (ps) => {
+            invariant(ps)
             const p = ps.find((p) => p.name === pipeline_name)
             if (!p) {
               console.log(

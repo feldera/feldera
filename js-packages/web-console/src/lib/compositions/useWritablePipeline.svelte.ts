@@ -1,5 +1,4 @@
 import { untrack } from 'svelte'
-import invariant from 'tiny-invariant'
 import {
   type PipelineManagerApi,
   usePipelineManager
@@ -13,15 +12,12 @@ export const writablePipeline = ({
   update
 }: {
   api: PipelineManagerApi
-  pipeline: { current: ExtendedPipeline }
+  pipeline: { current: ExtendedPipeline | undefined }
   set: (pipeline: ExtendedPipeline) => void
   update: (p: Partial<ExtendedPipeline>) => void
 }) => {
-  invariant(pipeline, 'useWritablePipeline: pipeline was not preloaded')
-  const pipelineName = pipeline.current.name
-
-  if (!pipelineName) {
-    throw new Error('Cannot use pipeline without specifying its name')
+  if (pipeline.current && !pipeline.current.name) {
+    throw new Error('Cannot use pipeline with an empty name')
   }
 
   return {
@@ -29,10 +25,13 @@ export const writablePipeline = ({
       return pipeline.current
     },
     async patch(newPipeline: Partial<Pipeline>, optimistic?: boolean) {
+      if (!pipeline.current) {
+        return
+      }
       if (optimistic) {
         update(newPipeline)
       }
-      const res = await api.patchPipeline(pipelineName, newPipeline)
+      const res = await api.patchPipeline(pipeline.current.name, newPipeline)
       if (!optimistic) {
         set(res)
       }
@@ -41,58 +40,71 @@ export const writablePipeline = ({
   }
 }
 
-export type WritablePipeline = ReturnType<typeof writablePipeline>
+export type WritablePipeline<T extends boolean = false> = T extends true
+  ? {
+      current: NonNullable<ReturnType<typeof writablePipeline>['current']>
+      patch: ReturnType<typeof writablePipeline>['patch']
+    }
+  : ReturnType<typeof writablePipeline>
 
 /**
- * Refresh pipeline if the refreshVersion field changed
+ * Refresh pipeline if the refreshVersion field changed.
+ *
+ * Safe to call before the pipeline cache is populated — the effects no-op
+ * until `getPipeline().current` is defined, and re-run on the next
+ * pipeline-list tick once it is.
  */
 export const useRefreshPipeline = ({
   getPipeline,
+  getPipelines,
+  getPreloaded,
+  getDeleted,
   set,
   update,
-  getPreloaded,
-  getPipelines,
-  getDeleted,
   onNotFound
 }: {
-  getPipeline: () => { current: ExtendedPipeline }
+  getPipeline: () => { current: ExtendedPipeline | undefined }
   set: (p: ExtendedPipeline) => void
   update: (p: Partial<ExtendedPipeline>) => void
-  getPreloaded: () => ExtendedPipeline
-  getPipelines: () => PipelineThumb[]
-  getDeleted?: () => boolean
+  getPreloaded?: () => ExtendedPipeline
+  getPipelines: () => PipelineThumb[] | undefined
+  getDeleted: () => boolean
   onNotFound?: () => void
 }) => {
-  const pipelineName = $derived(getPipeline().current.name)
   const api = usePipelineManager()
-  const reload = async () => {
-    const requestedPipelineName = pipelineName
+  const reload = async (requestedPipelineName: string) => {
     const loaded = await api.getExtendedPipeline(requestedPipelineName, {
       onNotFound: () => {
-        if (requestedPipelineName !== pipelineName) {
+        if (requestedPipelineName !== getPipeline().current?.name) {
           return
         }
         onNotFound?.()
       }
     })
-    if (requestedPipelineName !== pipelineName) {
+    if (requestedPipelineName !== getPipeline().current?.name) {
       return
     }
     set(loaded)
   }
 
-  $effect(() => {
-    if (getPreloaded().name === pipelineName) {
-      return
-    }
-    set(getPreloaded())
-  })
+  if (getPreloaded) {
+    $effect(() => {
+      const current = getPipeline().current
+      if (!current || getPreloaded().name === current.name) {
+        return
+      }
+      set(getPreloaded())
+    })
+  }
 
   $effect(() => {
     const ps = getPipelines()
     untrack(() => {
       if (getDeleted?.()) return
       const pipeline = getPipeline().current
+      if (!pipeline || !ps) {
+        return
+      }
       const thumb = ps.find((p) => p.name === pipeline.name)
       if (!thumb) {
         onNotFound?.()
@@ -101,7 +113,7 @@ export const useRefreshPipeline = ({
       if (thumb.refreshVersion === pipeline.refreshVersion) {
         update(thumb)
       } else {
-        reload()
+        reload(pipeline.name)
       }
     })
   })

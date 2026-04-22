@@ -1,10 +1,6 @@
-import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte.js'
+import type { LoadEvent } from '@sveltejs/kit'
 
-export const load = async ({ parent }) => {
+export const load = async ({ parent }: LoadEvent) => {
   await parent()
-  const api = usePipelineManager()
-  const demos = await api.getDemos()
-  return {
-    demos
-  }
+  return {}
 }
