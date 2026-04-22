@@ -866,6 +866,14 @@ impl BalancerInner {
 
         // Check if all workers for all nodes in this layer are in state >= FlushRequested
         for stream in nodes_in_layer {
+            if let Some(active_nodes) = &self.active_nodes
+                && !active_nodes.contains(stream)
+            {
+                // During bootstrapping, operators that don't participate in bootstrapping don't report metadata.
+                // Such operators do not prevent a commit.
+                continue;
+            }
+
             let Some(exchange_sender_metadata) = self.metadata.get(stream) else {
                 return false;
             };

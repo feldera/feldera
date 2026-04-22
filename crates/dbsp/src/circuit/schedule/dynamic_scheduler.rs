@@ -57,7 +57,7 @@ use crate::{
     Position,
     circuit::{
         Circuit, GlobalNodeId, NodeId,
-        circuit_builder::CircuitMetadata,
+        circuit_builder::{CircuitMetadata, Node},
         runtime::{Broadcast, Runtime},
         schedule::{
             CommitProgress, Error, Scheduler,
@@ -457,7 +457,11 @@ impl Inner {
         }
         self.transaction_phase = TransactionPhase::Started;
 
-        circuit.notify_start_transaction();
+        for node_id in self.tasks.keys() {
+            circuit.map_local_node_mut(*node_id, &mut |node: &mut dyn Node| {
+                node.start_transaction()
+            });
+        }
 
         if circuit.root_scope() == 0 {
             circuit.balancer().start_transaction();
