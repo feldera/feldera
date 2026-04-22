@@ -1,12 +1,27 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.junit.Assert;
 import org.junit.Test;
+
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Random;
+import java.util.function.BiFunction;
 
 /** Regression tests that executed in incremental mode */
 public class IncrementalRegression2Tests extends SqlIoTest {
@@ -611,5 +626,62 @@ public class IncrementalRegression2Tests extends SqlIoTest {
                   ID_35.ID_27 + COALESCE(ID_41.ID_37, 0) - COALESCE(ID_41.ID_38, 0) AS ID_40
                 FROM ID_26 AS ID_35
                     LEFT JOIN ID_36 AS ID_41 ON ID_35.ID_2 = ID_41.ID_2 AND ID_35.ID_21 = ID_41.ID_21;""");
+    }
+
+    @Test
+    public void rankTests() throws SQLException {
+        // Run a series of random incremental tests using RANK and DENSE_RANK and compare
+        // the results with the embedded database.
+        Random random = new Random();
+        var seed = random.nextInt(10000);
+        // This is like a proptest: print seed in case we need to reproduce a bug
+        System.out.println(this.currentTestInformation + " random seed: " + seed);
+        random.setSeed(seed);
+        String program = """
+                CREATE TABLE T(g INT, x INT);
+                CREATE VIEW V AS SELECT g, x, RANK() OVER (PARTITION BY g ORDER BY x NULLS FIRST) FROM T;""";
+        var ccs = this.getCCS(program);
+
+        var i32 = DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true);
+        var i64 = DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT64, false);
+        var elementType = new DBSPTypeTuple(i32, i32);
+        // initially empty
+        DBSPZSetExpression current = new DBSPZSetExpression(elementType);
+        DBSPZSetExpression lastOutput = new DBSPZSetExpression(new DBSPTypeTuple(i32, i32, i64));
+        ccs.step(new Change("T", current.deepCopy()), new Change("V", lastOutput));
+
+        BiFunction<Random, Integer, Integer> gen = (r, b) -> r.nextInt(10) < 1 ? null : r.nextInt(b);
+
+        for (var j = 0; j < 20; j++) {
+            // Generate a delta
+            boolean insert = random.nextInt(5) < 4;
+            if (current.isEmpty())
+                insert = true;
+            final DBSPExpression deltaTuple;
+            final long weight;
+            if (!insert) {
+                var entries = new ArrayList<>(current.data.entrySet());
+                int indexToDelete = random.nextInt(entries.size());
+                weight = -entries.get(indexToDelete).getValue();
+                deltaTuple = entries.get(indexToDelete).getKey();
+            } else {
+                weight = random.nextInt(2) + 1;
+                deltaTuple = new DBSPTupleExpression(
+                        new DBSPI32Literal(gen.apply(random, 2), true),
+                        new DBSPI32Literal(gen.apply(random, 20), true));
+            }
+            var delta = new DBSPZSetExpression(elementType);
+            delta.append(deltaTuple, weight);
+            current.append(delta);
+
+            String statement = zsetToDBScript("T", current);
+            Change expectedResult = ccs.computeOutputResultWithDB(program, statement);
+            // The expected result is not incremental
+            DBSPZSetExpression output = expectedResult.getSet(0).data();
+            DBSPZSetExpression outputDelta = output.deepCopy();
+            outputDelta.append(lastOutput.negate());
+            lastOutput = output.deepCopy();
+            ccs.step(new Change("T", delta), new Change("V", outputDelta));
+        }
     }
 }

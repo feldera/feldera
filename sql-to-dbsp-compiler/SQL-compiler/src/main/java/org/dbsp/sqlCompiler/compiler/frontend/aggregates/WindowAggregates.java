@@ -119,17 +119,8 @@ public abstract class WindowAggregates implements ICastable {
     public static WindowAggregates newGroup(CalciteToDBSPCompiler compiler, Window window, Window.Group group,
                                             int windowFieldIndex, AggregateCall call) {
         WindowAggregates result = switch (call.getAggregation().getKind()) {
-            case RANK, DENSE_RANK, ROW_NUMBER -> {
-                var allCalls = group.getAggregateCalls(window);
-                var rankCalls = Linq.where(Linq.map(allCalls, c -> c.getAggregation().getKind()),
-                            k -> k == SqlKind.RANK || k == SqlKind.DENSE_RANK || k == SqlKind.ROW_NUMBER);
-                if (rankCalls.size() > 1) {
-                    throw new UnimplementedException("Multiple RANK aggregates per window",
-                            CalciteObject.create(window, new SourcePositionRange(call.getParserPosition())));
-                }
-                yield new RankAggregate(
-                    compiler, window, group, windowFieldIndex, call);
-            }
+            case RANK, DENSE_RANK, ROW_NUMBER -> new RankAggregate(
+                compiler, window, group, windowFieldIndex, call);
             case FIRST_VALUE, LAST_VALUE -> new FirstLastAggregate(
                     compiler, window, group, windowFieldIndex, call);
             case LAG, LEAD -> {

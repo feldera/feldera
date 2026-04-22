@@ -21,14 +21,7 @@ public class TpcDsTest extends BaseSQLTests {
         return options;
     }
 
-    // TODO: Disabled in the SQL code the following views
-    // q36: OVER and RANK
-    // q47: OVER and RANK
-    // q49: OVER and RANK
-    // q51: OVER with ROWS aggregate
-    // q57: OVER and RANK
-    // q70: OVER and RANK (this should probably work)
-    // q86: OVER and RANK
+    // View q51 is disabled in tpcds.sql due to OVER with ROWS aggregate
     @Test
     public void compileIndividually() throws IOException {
         String tpcds = TestUtil.readStringFromResourceFile("tpcds.sql");

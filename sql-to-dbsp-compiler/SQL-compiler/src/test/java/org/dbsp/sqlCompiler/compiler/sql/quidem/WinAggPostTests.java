@@ -518,42 +518,46 @@ public class WinAggPostTests extends PostBaseTests {
                 (9 rows)""");
     }
 
-    @Test @Ignore("RANK not supported")
+    @Test
+    public void testRank() {
+        this.qs("""
+                select *, rank() over (order by deptno NULLS LAST) as c from emp;
+                +-------+--------+--------+---+
+                | ENAME | DEPTNO | GENDER | C |
+                +-------+--------+--------+---+
+                | Adam|       50 | M|       6 |
+                | Alice|      30 | F|       4 |
+                | Bob|        10 | M|       1 |
+                | Eric|       20 | M|       3 |
+                | Eve|        50 | F|       6 |
+                | Grace|      60 | F|       8 |
+                | Jane|       10 | F|       1 |
+                | Susan|      30 | F|       4 |
+                | Wilma|         | F|       9 |
+                +-------+--------+--------+---+
+                (9 rows)
+                
+                -- Calcite does not yet generate tied ranks
+                select *, dense_rank() over (order by deptno NULLS LAST) as c from emp;
+                +-------+--------+--------+---+
+                | ENAME | DEPTNO | GENDER | C |
+                +-------+--------+--------+---+
+                | Adam|       50 | M|       4 |
+                | Alice|      30 | F|       3 |
+                | Bob|        10 | M|       1 |
+                | Eric|       20 | M|       2 |
+                | Eve|        50 | F|       4 |
+                | Grace|      60 | F|       5 |
+                | Jane|       10 | F|       1 |
+                | Susan|      30 | F|       3 |
+                | Wilma|         | F|       6 |
+                +-------+--------+--------+---+
+                (9 rows)""");
+    }
+
+    @Test @Ignore("Unsupported window aggregates")
     public void testWindows2() {
         this.qs("""
-                select *, rank() over (order by deptno) as c from emp;
-                +-------+--------+--------+---+
-                | ENAME | DEPTNO | GENDER | C |
-                +-------+--------+--------+---+
-                | Adam  |     50 | M      | 6 |
-                | Alice |     30 | F      | 4 |
-                | Bob   |     10 | M      | 1 |
-                | Eric  |     20 | M      | 3 |
-                | Eve   |     50 | F      | 6 |
-                | Grace |     60 | F      | 8 |
-                | Jane  |     10 | F      | 1 |
-                | Susan |     30 | F      | 4 |
-                | Wilma |        | F      | 9 |
-                +-------+--------+--------+---+
-                (9 rows)
-
-                -- Calcite does not yet generate tied ranks
-                select *, dense_rank() over (order by deptno) as c from emp;
-                +-------+--------+--------+---+
-                | ENAME | DEPTNO | GENDER | C |
-                +-------+--------+--------+---+
-                | Adam  |     50 | M      | 4 |
-                | Alice |     30 | F      | 3 |
-                | Bob   |     10 | M      | 1 |
-                | Eric  |     20 | M      | 2 |
-                | Eve   |     50 | F      | 4 |
-                | Grace |     60 | F      | 5 |
-                | Jane  |     10 | F      | 1 |
-                | Susan |     30 | F      | 3 |
-                | Wilma |        | F      | 6 |
-                +-------+--------+--------+---+
-                (9 rows)
-
                 -- [CALCITE-806] ROW_NUMBER should emit distinct values
                 --
                 -- We only run this test under JDK 1.8 because the results are

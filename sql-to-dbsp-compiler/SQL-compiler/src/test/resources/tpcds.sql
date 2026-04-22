@@ -2339,7 +2339,7 @@ select
  limit 100
  ;
 
-/* sql_36.sql
+/* sql_36.sql */
 CREATE VIEW sql_36 AS
 select
     sum(ss_net_profit)/sum(ss_ext_sales_price) as gross_margin
@@ -2369,7 +2369,6 @@ select
   ,rank_within_parent
  limit 100
   ;
-*/
 
 /* sql_37.sql */
 CREATE VIEW sql_37 AS
@@ -2658,7 +2657,7 @@ select c_last_name
   limit 100
   ;
 
-/* sql_47.sql
+/* sql_47.sql */
 CREATE VIEW sql_47 AS
 with v1 as(
  select i_category, i_brand,
@@ -2709,7 +2708,6 @@ with v1 as(
  order by sum_sales - avg_monthly_sales, 3
  limit 100
  ;
- */
 
 /* sql_48.sql */
 CREATE VIEW sql_48 AS
@@ -2778,7 +2776,7 @@ select sum (ss_quantity)
  )
 ;
 
-/* sql_49.sql
+/* sql_49.sql */
 CREATE VIEW sql_49 AS
 select channel, item, return_ratio, return_rank, currency_rank from
  (select
@@ -2793,7 +2791,7 @@ select channel, item, return_ratio, return_rank, currency_rank from
  	,return_ratio
  	,currency_ratio
  	,rank() over (partition by 1  order by return_ratio) as return_rank
- 	,rank() over ( partition by 1 order by currency_ratio) as currency_rank
+ 	,rank() over (partition by 1 order by currency_ratio) as currency_rank
  	from
  	(	select ws.ws_item_sk as item
  		,(cast(sum(coalesce(wr.wr_return_quantity,0)) as decimal(15,4))/
@@ -2907,7 +2905,6 @@ select channel, item, return_ratio, return_rank, currency_rank from
  order by 1,4,5,2
  limit 100
  ;
-*/
 
 /* sql_50.sql */
 CREATE VIEW sql_50 AS
@@ -3210,7 +3207,7 @@ where i_color in ('puff','slate','ivory'))
  limit 100
  ;
 
-/* sql_57.sql
+/* sql_57.sql */
 CREATE VIEW sql_57 AS
 with v1 as(
  select i_category, i_brand,
@@ -3258,7 +3255,6 @@ with v1 as(
  order by sum_sales - avg_monthly_sales, 3
  limit 100
  ;
- */
 
 /* sql_58.sql */
 CREATE VIEW sql_58 AS
@@ -4068,7 +4064,7 @@ select
  limit 100
  ;
 
-/* sql_70.sql
+/* sql_70.sql */
 CREATE VIEW sql_70 AS
 select
     sum(ss_net_profit) as total_sum
@@ -4106,7 +4102,6 @@ select
   ,rank_within_parent
  limit 100
  ;
-*/
 
 /* sql_71.sql */
 CREATE VIEW sql_71 AS
@@ -4876,7 +4871,7 @@ order by substr(r_reason_desc,1,20)
 limit 100
 ;
 
-/* sql_86.sql
+/* sql_86.sql */
 CREATE VIEW sql_86 AS
 select
     sum(ws_net_paid) as total_sum
@@ -4902,7 +4897,6 @@ select
    rank_within_parent
  limit 100
  ;
-*/
 
 /* sql_87.sql */
 CREATE VIEW sql_87 AS

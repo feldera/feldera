@@ -94,13 +94,12 @@ public class CompilerCircuitStream extends CompilerCircuit {
         this.stream.addPair(input, output);
     }
 
-    /** Execute some insert/delete statements using HSQLDB and compare the result
-     * with the one produced by the circuit.
+    /** Execute some insert/delete statements using sqlite and return the produced result.
+     * @param program program to execute
      * @param script program that inserts data in tables */
-    public void compareDB(String program, String script) throws ClassNotFoundException, SQLException {
-        Class.forName("org.hsqldb.jdbcDriver");
+    public Change computeOutputResultWithDB(String program, String script) throws SQLException {
         // a new instance of the database for each script
-        String jdbcUrl = "jdbc:hsqldb:mem:db";
+        String jdbcUrl = "jdbc:sqlite::memory:";
         Connection connection = DriverManager.getConnection(jdbcUrl, "", "");
         program += script;
         // not very robust
@@ -117,23 +116,22 @@ public class CompilerCircuitStream extends CompilerCircuit {
                 Linq.list(circuit.sinkOperators.values()), o -> !o.metadata.system);
         String view = sinks.get(0).viewName.toString();
         String query = "SELECT * FROM " + view;
+        Change change;
         try (Statement stmt = connection.createStatement()) {
             ResultSet rs = stmt.executeQuery(query);
-            Change change = TableParser.fromResultSet(rs, this.circuit.getSingleOutputType());
-            this.stream.addPair(this.toChange(script), change);
+            change = TableParser.fromResultSet(rs, this.circuit.getSingleOutputType());
         }
 
-        try (Statement s = connection.createStatement()) {
-            s.execute("DROP SCHEMA PUBLIC CASCADE;");
-        }
-        try (Statement s = connection.createStatement()) {
-            s.execute("SHUTDOWN;");
-        }
         connection.close();
+        return change;
     }
 
-    public void compareDB(String script) throws SQLException, ClassNotFoundException {
-        this.compareDB(this.compiler.sources.getWholeProgram(), script);
+    /** Execute some insert/delete statements using an embedded DB and compare the result
+     * with the one produced by the circuit.
+     * @param script program that inserts data in tables */
+    public void compareDB(String program, String script) throws SQLException {
+        Change change = this.computeOutputResultWithDB(program, script);
+        this.stream.addPair(this.toChange(script), change);
     }
 
     public void addChange(InputOutputChange ioChange) {
