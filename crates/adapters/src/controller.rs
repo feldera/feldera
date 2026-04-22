@@ -50,6 +50,7 @@ use chrono::{DateTime, Utc};
 use crossbeam::{
     queue::SegQueue,
     sync::{Parker, ShardedLock, Unparker},
+    utils::CachePadded,
 };
 use datafusion::prelude::*;
 use dbsp::circuit::circuit_builder::BootstrapInfo;
@@ -70,7 +71,9 @@ use dbsp::{Runtime, WeakRuntime};
 use enum_map::EnumMap;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
-use feldera_adapterlib::transport::{CommandHandler, InputReader, Resume, Watermark};
+use feldera_adapterlib::transport::{
+    CommandHandler, InputReader, OutputBatchType, Resume, Watermark,
+};
 use feldera_ir::LirCircuit;
 use feldera_samply::{AnnotationOptions, CaptureOptions, Span};
 use feldera_storage::fbuf::slab::FBufSlabsStats;
@@ -148,7 +151,7 @@ mod validate;
 
 use crate::adhoc::table::AdHocTable;
 use crate::adhoc::{create_session_context, execute_sql};
-use crate::catalog::{SerBatchReader, SerTrace};
+use crate::catalog::{SerBatch, SerBatchReader, SerTrace};
 use crate::format::parquet::relation_to_arrow_fields;
 use crate::format::{MessageOrientedPreprocessedParser, StreamingPreprocessedParser};
 use crate::format::{get_input_format, get_output_format};
@@ -484,6 +487,67 @@ enum Command {
     SyncCheckpoint((uuid::Uuid, SyncCheckpointCallbackFn)),
     Rebalance(RebalanceCallbackFn),
     StartCompaction(StartCompactionCallbackFn),
+}
+
+/// Tracks whether the initial snapshot has been delivered for an output
+/// endpoint configured with `send_snapshot: true`.
+///
+/// The first `push_output` after pipeline startup observes
+/// `is_snapshot_pending() == true` and routes the call through
+/// `enqueue_latest_snapshot`, which emits a full view snapshot instead of
+/// the incremental delta and then calls `mark_snapshot_delivered()` to flip
+/// the flag. Subsequent `push_output` calls see `false` and fall through to
+/// the regular delta path.
+///
+/// The flag is persisted across checkpoints via
+/// `CheckpointOutputEndpointMetrics::snapshot_sent`, so a pipeline that
+/// already delivered its snapshot does not re-send on resume. Modifying a
+/// connector across a restart drops its stats (see
+/// `Controller::with_checkpoint_inner`) so `send_snapshot=true` re-fires.
+#[derive(Default)]
+struct OutputEndpointControl {
+    /// `true` once this endpoint has delivered its initial snapshot, or
+    /// initialized to `true` when `send_snapshot` was `false` at startup.
+    initial_snapshot_sent: CachePadded<AtomicBool>,
+}
+
+impl OutputEndpointControl {
+    /// Construct control state for an output endpoint.
+    ///
+    /// * `send_snapshot` - value of the connector's `send_snapshot` flag.
+    /// * `snapshot_already_sent` - state recovered from the checkpoint; `true`
+    ///   when the endpoint delivered its initial snapshot before the
+    ///   checkpoint was taken. Ignored for newly added or modified connectors,
+    ///   which should receive a fresh snapshot when `send_snapshot` is set.
+    fn new(send_snapshot: bool, snapshot_already_sent: bool) -> Self {
+        // Treat the snapshot as already delivered when no initial snapshot
+        // is desired; also carry the checkpointed value through on restart.
+        let delivered = !send_snapshot || snapshot_already_sent;
+        Self {
+            initial_snapshot_sent: CachePadded::new(AtomicBool::new(delivered)),
+        }
+    }
+
+    /// Returns true if the next `push_output` should emit a snapshot for
+    /// this endpoint. Non-mutating: the transition to "delivered" happens
+    /// in `mark_snapshot_delivered` after the snapshot has actually been
+    /// enqueued.
+    fn is_snapshot_pending(&self) -> bool {
+        !self.initial_snapshot_sent.load(Ordering::Acquire)
+    }
+
+    /// Mark the snapshot as delivered. Only called from the circuit thread
+    /// after `enqueue_latest_snapshot` has pushed the snapshot batch.
+    fn mark_snapshot_delivered(&self) {
+        self.initial_snapshot_sent.store(true, Ordering::Release);
+    }
+
+    /// Returns true if the endpoint has delivered its initial snapshot (or
+    /// did not need one). Read at checkpoint time to persist the
+    /// "already sent" signal across restarts.
+    fn initial_snapshot_sent(&self) -> bool {
+        self.initial_snapshot_sent.load(Ordering::Acquire)
+    }
 }
 
 impl Command {
@@ -3722,12 +3786,31 @@ impl CircuitThread {
                     // We need to propagate processed_records to the connector for progress tracking.
                     endpoint.queue.push(BatchQueueEntry {
                         step: self.step,
+                        batch_type: OutputBatchType::Delta,
                         data: None,
                         processed_records,
                     });
                     endpoint.unparker.unpark();
                     continue;
                 }
+
+                // `is_snapshot_pending` is `true` when the connector was
+                // configured with `send_snapshot: true` and has not yet
+                // delivered its initial snapshot. Deliver the snapshot and
+                // skip the normal delta path.
+                if endpoint.control.is_snapshot_pending() {
+                    self.controller.enqueue_latest_snapshot(
+                        *endpoint_id,
+                        &endpoint.stream_name,
+                        &endpoint.queue,
+                        &endpoint.control,
+                        &endpoint.unparker,
+                        processed_records,
+                        Some(self.step),
+                    );
+                    continue;
+                }
+
                 self.controller
                     .status
                     .enqueue_batch(*endpoint_id, num_delta_records);
@@ -3740,6 +3823,7 @@ impl CircuitThread {
 
                 endpoint.queue.push(BatchQueueEntry {
                     step: self.step,
+                    batch_type: OutputBatchType::Delta,
                     data: Some(batch),
                     processed_records,
                 });
@@ -4909,6 +4993,9 @@ struct BatchQueueEntry {
     /// The step in which the output was produced.
     step: Step,
 
+    /// Whether this batch contains a delta or a full snapshot.
+    batch_type: OutputBatchType,
+
     /// The output batch.
     ///
     /// This is `None` if the step produced no output.  We still create an entry
@@ -4948,6 +5035,9 @@ struct OutputEndpointDescr {
     /// Command handler for the endpoint.
     command_handler: Option<Arc<dyn CommandHandler>>,
 
+    /// Cross-thread control flags for this endpoint.
+    control: Arc<OutputEndpointControl>,
+
     /// Used to notify the endpoint thread that the endpoint is being
     /// disconnected.
     disconnect_flag: Arc<AtomicBool>,
@@ -4957,9 +5047,12 @@ struct OutputEndpointDescr {
 }
 
 impl OutputEndpointDescr {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         endpoint_name: &str,
         stream_name: &str,
+        send_snapshot: bool,
+        snapshot_already_sent: bool,
         created_during_transaction_number: u64,
         command_handler: Option<Arc<dyn CommandHandler>>,
         unparker: Unparker,
@@ -4969,6 +5062,10 @@ impl OutputEndpointDescr {
             stream_name: canonical_identifier(stream_name),
             queue: Arc::new(SegQueue::new()),
             command_handler,
+            control: Arc::new(OutputEndpointControl::new(
+                send_snapshot,
+                snapshot_already_sent,
+            )),
             disconnect_flag: Arc::new(AtomicBool::new(false)),
             created_during_transaction_number,
             unparker,
@@ -6358,6 +6455,13 @@ impl ControllerInner {
             )
         };
 
+        if endpoint_config.connector_config.send_snapshot && handles.integrate_handle.is_none() {
+            return Err(ControllerError::invalid_transport_configuration(
+                endpoint_name,
+                "'send_snapshot: true' requires a materialized output view",
+            ));
+        }
+
         let endpoint_id = self.next_output_id.fetch_add(1, Ordering::AcqRel);
         let endpoint_name_str = endpoint_name.to_string();
 
@@ -6471,9 +6575,19 @@ impl ControllerInner {
         };
 
         let parker = Parker::new();
+        // Recover "snapshot already delivered" state from the checkpoint, so a
+        // `send_snapshot: true` connector does not re-send its snapshot on
+        // checkpoint restart. `initial_statistics` is intentionally cleared by
+        // the caller for modified connectors so they do receive a fresh
+        // snapshot.
+        let snapshot_already_sent = initial_statistics
+            .map(|stats| stats.snapshot_sent)
+            .unwrap_or(false);
         let endpoint_descr = OutputEndpointDescr::new(
             endpoint_name,
             &stream_name,
+            endpoint_config.connector_config.send_snapshot,
+            snapshot_already_sent,
             self.get_transaction_number(),
             command_handler,
             parker.unparker().clone(),
@@ -6497,6 +6611,7 @@ impl ControllerInner {
             .connector_config
             .output_buffer_config
             .clone();
+        let thread_queue = queue.clone();
 
         // Thread to run the output pipeline. We run it inside the DBSP runtime as an aux thread, so
         // that it can use the storage backend to maintain the output buffer.
@@ -6513,31 +6628,129 @@ impl ControllerInner {
                         output_buffer_config,
                         encoder,
                         parker,
-                        queue,
+                        thread_queue,
                         disconnect_flag,
                         controller,
                     )
                 },
             );
 
+        if endpoint_config.connector_config.send_snapshot && !snapshot_already_sent {
+            self.request_snapshot_delivery();
+        }
+
         Ok(endpoint_id)
+    }
+
+    /// Pushes the most recent cached snapshot for `stream_name` into the
+    /// endpoint's batch queue. Returns `true` if a snapshot was found and
+    /// enqueued, `false` if no cached snapshot exists yet (e.g., the pipeline
+    /// hasn't completed its first step).
+    #[allow(clippy::too_many_arguments)]
+    fn enqueue_latest_snapshot(
+        &self,
+        endpoint_id: EndpointId,
+        stream_name: &str,
+        queue: &Arc<BatchQueue>,
+        control: &Arc<OutputEndpointControl>,
+        unparker: &Unparker,
+        processed_records: Option<ProcessedRecords>,
+        step: Option<Step>,
+    ) -> bool {
+        // Look up the most recent cached snapshot for this stream. Return early
+        // if no snapshot has been produced yet (pipeline hasn't completed a step).
+        // This method is only called from the circuit thread (via `push_output`),
+        // so blocking_lock is safe.
+        let snapshot_batches = {
+            let snapshots = self.trace_snapshots.blocking_lock();
+            snapshots
+                .last_key_value()
+                .and_then(|(_, snapshot)| snapshot.get(&SqlIdentifier::from(stream_name)).cloned())
+        };
+
+        let Some(snapshot_batches) = snapshot_batches else {
+            // No cached snapshot yet (pipeline hasn't completed a step).
+            // Leave the state as `Pending` and let the next step retry.
+            return false;
+        };
+
+        let processed_records = processed_records.or(Some(ProcessedRecords {
+            total_processed_input_records: self.status.num_total_processed_records(),
+            total_processed_steps: self.status.global_metrics.total_completed_steps(),
+        }));
+        let step = step.unwrap_or_else(|| {
+            processed_records
+                .as_ref()
+                .map(|processed| processed.total_processed_steps)
+                .unwrap_or_default()
+        });
+        // Flip the "snapshot delivered" flag for this endpoint before
+        // pushing so subsequent `push_output` calls take the regular delta
+        // path.
+        control.mark_snapshot_delivered();
+
+        // Merge every cached batch into a single snapshot before pushing so
+        // downstream encoders see one self-consistent view of the stream.
+        // Streaming snapshot batches one-by-one would let the encoder emit
+        // mutually cancelling updates between consecutive batches.
+        let mut all_batches: Vec<Arc<dyn SerBatch>> = snapshot_batches
+            .iter()
+            .flat_map(|reader| reader.batches())
+            .collect();
+
+        if all_batches.is_empty() {
+            self.status.enqueue_batch(endpoint_id, 0);
+            queue.push(BatchQueueEntry {
+                step,
+                batch_type: OutputBatchType::Snapshot,
+                data: None,
+                processed_records,
+            });
+        } else {
+            let first = all_batches.remove(0);
+            let merged = first.concat(all_batches);
+            self.status.enqueue_batch(endpoint_id, merged.len());
+            queue.push(BatchQueueEntry {
+                step,
+                batch_type: OutputBatchType::Snapshot,
+                data: Some(merged),
+                processed_records,
+            });
+        }
+
+        // Wake the output thread so it drains the newly enqueued snapshot batches.
+        unparker.unpark();
+        true
+    }
+
+    /// Requests a circuit step so that `push_output` delivers the pending
+    /// snapshot on the next step. Called at endpoint registration when
+    /// `send_snapshot: true` and the endpoint has not yet delivered.
+    fn request_snapshot_delivery(&self) {
+        if self.state() == PipelineState::Running {
+            self.request_step();
+        }
     }
 
     fn push_batch_to_encoder(
         batch: Arc<dyn SerBatchReader>,
+        batch_type: OutputBatchType,
         endpoint_id: EndpointId,
         endpoint_name: &str,
         encoder: &mut dyn Encoder,
         step: Step,
         controller: &ControllerInner,
     ) {
-        encoder.consumer().batch_start(step);
+        encoder.consumer().batch_start(step, batch_type);
         encoder.encode(batch).unwrap_or_else(|e| {
             controller.encode_error(endpoint_id, endpoint_name, e, Some("encoder_error"))
         });
         encoder.consumer().batch_end();
     }
 
+    /// Main loop for the output thread. Drains batches from the endpoint's
+    /// queue, optionally buffers them, and encodes them via the endpoint's
+    /// encoder.
     #[allow(clippy::too_many_arguments)]
     fn output_thread_func(
         endpoint_id: EndpointId,
@@ -6572,6 +6785,7 @@ impl ControllerInner {
                 // background merging.
                 Self::push_batch_to_encoder(
                     output_buffer.take_buffer().unwrap().snapshot(),
+                    OutputBatchType::Delta,
                     endpoint_id,
                     &endpoint_name,
                     encoder.as_mut(),
@@ -6585,6 +6799,7 @@ impl ControllerInner {
                 controller.circuit_thread_unparker.unpark()
             } else if let Some(BatchQueueEntry {
                 step,
+                batch_type,
                 data,
                 processed_records,
             }) = queue.pop()
@@ -6598,7 +6813,8 @@ impl ControllerInner {
                 // trace!("Pushing {num_records} records to output endpoint {endpoint_name}");
 
                 // Buffer the new output if buffering is enabled.
-                if output_buffer_config.enable_output_buffer {
+                if output_buffer_config.enable_output_buffer && batch_type == OutputBatchType::Delta
+                {
                     output_buffer.insert(data, step, processed_records);
                     controller.status.buffer_batch(
                         endpoint_id,
@@ -6618,6 +6834,7 @@ impl ControllerInner {
                     if let Some(data) = data {
                         Self::push_batch_to_encoder(
                             data,
+                            batch_type,
                             endpoint_id,
                             &endpoint_name,
                             encoder.as_mut(),
@@ -7458,16 +7675,18 @@ impl OutputConsumer for OutputProbe {
         self.endpoint.max_buffer_size_bytes()
     }
 
-    fn batch_start(&mut self, step: Step) {
-        self.endpoint.batch_start(step).unwrap_or_else(|e| {
-            self.controller.output_transport_error(
-                self.endpoint_id,
-                &self.endpoint_name,
-                false,
-                e,
-                Some("outprobe_batch_start"),
-            );
-        })
+    fn batch_start(&mut self, step: Step, batch_type: OutputBatchType) {
+        self.endpoint
+            .batch_start(step, batch_type)
+            .unwrap_or_else(|e| {
+                self.controller.output_transport_error(
+                    self.endpoint_id,
+                    &self.endpoint_name,
+                    false,
+                    e,
+                    Some("outprobe_batch_start"),
+                );
+            })
     }
 
     fn push_buffer(&mut self, buffer: &[u8], num_records: usize) {
@@ -7627,18 +7846,41 @@ impl RunningCheckpoint {
                 )
             })
             .collect();
-        let output_statistics = circuit
-            .controller
-            .status
-            .output_status()
-            .values()
-            .map(|endpoint| {
-                (
-                    endpoint.endpoint_name.clone(),
-                    CheckpointOutputEndpointMetrics::from_endpoint_status(endpoint),
-                )
-            })
-            .collect();
+        let output_statistics = {
+            let outputs_by_name: HashMap<String, bool> = circuit
+                .controller
+                .outputs
+                .read()
+                .unwrap()
+                .by_id
+                .values()
+                .map(|descr| {
+                    (
+                        descr.endpoint_name.clone(),
+                        descr.control.initial_snapshot_sent(),
+                    )
+                })
+                .collect();
+            circuit
+                .controller
+                .status
+                .output_status()
+                .values()
+                .map(|endpoint| {
+                    let snapshot_sent = outputs_by_name
+                        .get(&endpoint.endpoint_name)
+                        .copied()
+                        .unwrap_or(false);
+                    (
+                        endpoint.endpoint_name.clone(),
+                        CheckpointOutputEndpointMetrics::from_endpoint_status(
+                            endpoint,
+                            snapshot_sent,
+                        ),
+                    )
+                })
+                .collect()
+        };
         let written_before = WRITE_BLOCKS_BYTES.sum();
         let start_checkpoint = Instant::now();
         let committer = circuit

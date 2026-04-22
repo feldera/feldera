@@ -1,3 +1,4 @@
+use super::OutputEndpointControl;
 use crate::{
     Controller, PipelineConfig,
     controller::{ControllerStatusContext, TransactionInfo},
@@ -1088,6 +1089,273 @@ fn ft_modified_connectors() {
         FtTestRound::with_checkpoint(2500),
         FtTestRound::without_checkpoint(2500),
     ]);
+}
+
+/// Verifies that a `send_snapshot: true` output connector delivers the
+/// snapshot exactly once across the pipeline's lifetime.
+///
+/// If the `snapshot_sent` flag were not persisted in the checkpoint, the
+/// connector would re-send the full snapshot every time the pipeline
+/// restarts, which would overwrite the file with the cumulative view state
+/// (all records so far) instead of just the new records produced since the
+/// last checkpoint. The assertion below catches that regression: in every
+/// round after the first, the file must contain only records in
+/// `checkpointed_records..total_records`.
+///
+/// Round 0 is handled separately because that is the one round where the
+/// (empty) snapshot is sent.
+#[test]
+fn ft_send_snapshot_delivered_once() {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let tempdir_path = tempdir.path();
+
+    let storage_dir = tempdir_path.join("storage");
+    create_dir(&storage_dir).unwrap();
+
+    let input_path = tempdir_path.join("input.csv");
+    let output_path = tempdir_path.join("output.csv");
+
+    // Pre-create the (empty) input file so `file_input` can open it on the
+    // first start; the connector keeps the file open in follow mode and we
+    // append new rows at the start of each round.
+    File::create_new(&input_path).unwrap();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": {
+            "path": storage_dir,
+        },
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": input_path.display().to_string(),
+                        "follow": true,
+                    },
+                },
+                "format": { "name": "csv" },
+            },
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "send_snapshot": true,
+                "transport": {
+                    "name": "file_output",
+                    "config": {
+                        "path": output_path.display().to_string(),
+                    },
+                },
+                "format": { "name": "csv", "config": {} },
+            },
+        },
+    }))
+    .unwrap();
+
+    // Three rounds, each appending 500 records and taking a checkpoint.
+    let rounds: &[usize] = &[500, 500, 500];
+    let mut total_records = 0usize;
+    let mut checkpointed_records = 0usize;
+
+    for (round, n_records) in rounds.iter().copied().enumerate() {
+        let input_file = File::options().append(true).open(&input_path).unwrap();
+        let mut writer = CsvWriterBuilder::new()
+            .has_headers(false)
+            .from_writer(&input_file);
+        for id in total_records..total_records + n_records {
+            writer.serialize(TestStruct::for_id(id as u32)).unwrap();
+        }
+        writer.flush().unwrap();
+        total_records += n_records;
+
+        let controller = Controller::with_test_config(
+            |circuit_config| {
+                Ok(test_circuit::<TestStruct>(
+                    circuit_config,
+                    &[],
+                    &[Some("output")],
+                ))
+            },
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+        controller.start();
+
+        wait(|| !controller.is_replaying(), 10_000).unwrap();
+        wait_for_records(&controller, &[total_records]);
+        controller.checkpoint().unwrap();
+        controller.stop().unwrap();
+
+        if round == 0 {
+            // Round 0: the initial snapshot carries every record seen so
+            // far, so the file must reflect the full cumulative state.
+            check_file_contents(&output_path, 0..total_records);
+        } else {
+            // Round 1+: snapshot was already delivered in round 0 and
+            // checkpointed as `snapshot_sent = true`. The restarted
+            // connector truncates the file (FileOutputEndpoint opens with
+            // File::create) and then writes only the delta records emitted
+            // during this round. If the checkpoint-aware guard regressed
+            // and the snapshot were re-sent, we would see all
+            // `0..total_records` records here instead.
+            check_file_contents(&output_path, checkpointed_records..total_records);
+        }
+        checkpointed_records = total_records;
+    }
+}
+
+/// Verifies that flipping `send_snapshot` from `false` to `true` across a
+/// checkpoint restart re-delivers the full snapshot as the first batch
+/// the connector sees after restart, before any new deltas. Models the
+/// realistic scenario where a user decides after the fact that a sink
+/// needs a snapshot, edits the config, and restarts the pipeline.
+///
+/// Three rounds:
+/// * Round 0 (`send_snapshot: false`, 500 records in) -- only deltas land
+///   in the file; no snapshot is emitted.
+/// * Round 1 (`send_snapshot: true`, no new input) -- the flag flip counts
+///   as a connector modification, so the snapshot is re-delivered; the
+///   file is repopulated with the full view state.
+/// * Round 2 (`send_snapshot: true` unchanged, 500 more records) -- the
+///   snapshot is not re-sent; only the new deltas reach the file.
+#[test]
+fn ft_send_snapshot_resent_on_flag_flip() {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let tempdir_path = tempdir.path();
+
+    let storage_dir = tempdir_path.join("storage");
+    create_dir(&storage_dir).unwrap();
+
+    let input_path = tempdir_path.join("input.csv");
+    let output_path = tempdir_path.join("output.csv");
+    File::create_new(&input_path).unwrap();
+
+    fn build_config(
+        input_path: &Path,
+        output_path: &Path,
+        storage_dir: &Path,
+        send_snapshot: bool,
+    ) -> PipelineConfig {
+        serde_json::from_value(json!({
+            "name": "test",
+            "workers": 4,
+            "storage_config": { "path": storage_dir },
+            "storage": true,
+            "fault_tolerance": {},
+            "clock_resolution_usecs": null,
+            "inputs": {
+                "test_input1": {
+                    "stream": "test_input1",
+                    "transport": {
+                        "name": "file_input",
+                        "config": {
+                            "path": input_path.display().to_string(),
+                            "follow": true,
+                        },
+                    },
+                    "format": { "name": "csv" },
+                },
+            },
+            "outputs": {
+                "test_output1": {
+                    "stream": "test_output1",
+                    "send_snapshot": send_snapshot,
+                    "transport": {
+                        "name": "file_output",
+                        "config": {
+                            "path": output_path.display().to_string(),
+                        },
+                    },
+                    "format": { "name": "csv", "config": {} },
+                },
+            },
+        }))
+        .unwrap()
+    }
+
+    let run_round = |config: &PipelineConfig, expected_total: usize| {
+        let controller = Controller::with_test_config(
+            |circuit_config| {
+                Ok(test_circuit::<TestStruct>(
+                    circuit_config,
+                    &[],
+                    &[Some("output")],
+                ))
+            },
+            config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+        controller.start();
+        wait(|| !controller.is_replaying(), 10_000).unwrap();
+        wait_for_records(&controller, &[expected_total]);
+        controller.checkpoint().unwrap();
+        controller.stop().unwrap();
+    };
+
+    // `run_round` passes an expected total `transmitted_records` count
+    // straight to `wait_for_records`. That counter is persisted across
+    // checkpoints (see `CheckpointOutputEndpointMetrics`), so every record
+    // the connector emits across all rounds contributes cumulatively.
+
+    // Round 0: send_snapshot=false, push 500 records. Only deltas hit the
+    // file; cumulative transmitted = 500.
+    {
+        let mut writer = CsvWriterBuilder::new()
+            .has_headers(false)
+            .from_writer(File::options().append(true).open(&input_path).unwrap());
+        for id in 0..500 {
+            writer.serialize(TestStruct::for_id(id as u32)).unwrap();
+        }
+        writer.flush().unwrap();
+    }
+    let config_off = build_config(&input_path, &output_path, &storage_dir, false);
+    run_round(&config_off, 500);
+    check_file_contents(&output_path, 0..500);
+
+    // Round 1: flip send_snapshot to true with no new input. Changing the
+    // field makes pipeline_diff classify the connector as modified, which
+    // overrides the checkpointed `snapshot_sent=true` back to `false`, so
+    // the initial snapshot fires again as the first (and only) batch on
+    // the queue. The output file starts empty here because
+    // `FileOutputEndpoint::new` opens the path with `File::create` (which
+    // truncates) on every controller startup, and the fresh snapshot
+    // writes 0..500 into it. Cumulative transmitted jumps to 1000. If the
+    // modified-connector path did not clear `snapshot_sent`, nothing
+    // would land in the file on this restart and transmitted would stay
+    // at 500.
+    let config_on = build_config(&input_path, &output_path, &storage_dir, true);
+    assert_ne!(
+        config_off, config_on,
+        "flipping send_snapshot must actually change the config so pipeline_diff classifies it as modified"
+    );
+    run_round(&config_on, 1000);
+    check_file_contents(&output_path, 0..500);
+
+    // Round 2: send_snapshot=true unchanged, append 500 more records. The
+    // snapshot_sent flag was set to true at the end of round 1, so the
+    // snapshot does not fire again; only the new delta records 500..1000
+    // hit the file on this restart (cumulative transmitted 1500).
+    {
+        let mut writer = CsvWriterBuilder::new()
+            .has_headers(false)
+            .from_writer(File::options().append(true).open(&input_path).unwrap());
+        for id in 500..1000 {
+            writer.serialize(TestStruct::for_id(id as u32)).unwrap();
+        }
+        writer.flush().unwrap();
+    }
+    run_round(&config_on, 1500);
+    check_file_contents(&output_path, 500..1000);
 }
 
 /// Runs a basic test of suspend and resume, without fault tolerance.
@@ -3433,4 +3701,36 @@ fn test_permanent_suspend_errors_without_storage() {
     );
 
     controller.stop().unwrap();
+}
+
+/// `send_snapshot: false` connectors never need an initial snapshot, so
+/// they start "delivered".
+#[test]
+fn send_snapshot_false_starts_delivered() {
+    let control = OutputEndpointControl::new(false, /*snapshot_already_sent=*/ false);
+    assert!(control.initial_snapshot_sent());
+    assert!(!control.is_snapshot_pending());
+}
+
+/// `send_snapshot: true` with `snapshot_already_sent: true` (resumed from a
+/// checkpoint that records the snapshot was delivered) also starts
+/// "delivered".
+#[test]
+fn send_snapshot_true_with_already_sent_starts_delivered() {
+    let control = OutputEndpointControl::new(true, /*snapshot_already_sent=*/ true);
+    assert!(control.initial_snapshot_sent());
+    assert!(!control.is_snapshot_pending());
+}
+
+/// `send_snapshot: true` with `snapshot_already_sent: false` (fresh start)
+/// is pending until `mark_snapshot_delivered` flips the flag.
+#[test]
+fn send_snapshot_true_starts_pending_then_delivered() {
+    let control = OutputEndpointControl::new(true, /*snapshot_already_sent=*/ false);
+    assert!(!control.initial_snapshot_sent());
+    assert!(control.is_snapshot_pending());
+
+    control.mark_snapshot_delivered();
+    assert!(control.initial_snapshot_sent());
+    assert!(!control.is_snapshot_pending());
 }

@@ -3483,6 +3483,16 @@
             }
           },
           {
+            "name": "send_snapshot",
+            "in": "query",
+            "description": "Set to `true` to send a full snapshot of a materialized view before streaming incremental updates. The default is `false`.",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "nullable": true
+            }
+          },
+          {
             "name": "array",
             "in": "query",
             "description": "Set to `true` to group updates in this stream into JSON arrays (used in conjunction with `format=json`). The default value is `false`",
@@ -4595,149 +4605,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      }
-    },
-    "/v0/pipelines/{pipeline_name}/reset_status": {
-      "get": {
-        "tags": [
-          "Output Connectors"
-        ],
-        "summary": "Check Reset Status",
-        "description": "Check the status of a reset token returned by the output connector\nreset endpoint.",
-        "operationId": "reset_status",
-        "parameters": [
-          {
-            "name": "pipeline_name",
-            "in": "path",
-            "description": "Unique pipeline name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "description": "Reset token returned by the output connector reset endpoint.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Reset token status has been retrieved"
-          },
-          "400": {
-            "description": "An invalid reset token was provided",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Pipeline with that name does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "message": "Unknown pipeline name 'non-existent-pipeline'",
-                  "error_code": "UnknownPipelineName",
-                  "details": {
-                    "pipeline_name": "non-existent-pipeline"
-                  }
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Reset token was created by a previous incarnation of the pipeline; the server cannot validate the reset across incarnations. Reissue the reset.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "Disconnected during response": {
-                    "value": {
-                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
-                      "error_code": "PipelineInteractionUnreachable",
-                      "details": {
-                        "pipeline_name": "my_pipeline",
-                        "request": "/pause",
-                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
-                      }
-                    }
-                  },
-                  "Pipeline is currently unavailable": {
-                    "value": {
-                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
-                      "error_code": "PipelineInteractionUnreachable",
-                      "details": {
-                        "pipeline_name": "my_pipeline",
-                        "request": "/pause",
-                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
-                      }
-                    }
-                  },
-                  "Pipeline is not deployed": {
-                    "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
-                      "error_code": "PipelineInteractionNotDeployed",
-                      "details": {
-                        "pipeline_name": "my_pipeline",
-                        "status": "Stopped",
-                        "desired_status": "Provisioned"
-                      }
-                    }
-                  },
-                  "Response timeout": {
-                    "value": {
-                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
-                      "error_code": "PipelineInteractionUnreachable",
-                      "details": {
-                        "pipeline_name": "my_pipeline",
-                        "request": "/pause",
-                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
-                      }
-                    }
-                  }
                 }
               }
             }
@@ -6802,152 +6669,6 @@
         ]
       }
     },
-    "/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/reset": {
-      "post": {
-        "tags": [
-          "Output Connectors"
-        ],
-        "summary": "Reset Output Connector",
-        "description": "Reset an output connector configured in `snapshot_and_follow` mode.\n\nThis clears buffered output, asks the sink to reset itself, and then replays\na full snapshot before resuming incremental updates.",
-        "operationId": "post_pipeline_output_connector_reset",
-        "parameters": [
-          {
-            "name": "pipeline_name",
-            "in": "path",
-            "description": "Unique pipeline name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "view_name",
-            "in": "path",
-            "description": "SQL view name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "connector_name",
-            "in": "path",
-            "description": "Output connector name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Output connector reset request has been processed"
-          },
-          "400": {
-            "description": "The output connector does not support reset",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Pipeline, view and/or output connector with that name does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "Pipeline with that name does not exist": {
-                    "value": {
-                      "message": "Unknown pipeline name 'non-existent-pipeline'",
-                      "error_code": "UnknownPipelineName",
-                      "details": {
-                        "pipeline_name": "non-existent-pipeline"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "Disconnected during response": {
-                    "value": {
-                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
-                      "error_code": "PipelineInteractionUnreachable",
-                      "details": {
-                        "pipeline_name": "my_pipeline",
-                        "request": "/pause",
-                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
-                      }
-                    }
-                  },
-                  "Pipeline is currently unavailable": {
-                    "value": {
-                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
-                      "error_code": "PipelineInteractionUnreachable",
-                      "details": {
-                        "pipeline_name": "my_pipeline",
-                        "request": "/pause",
-                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
-                      }
-                    }
-                  },
-                  "Pipeline is not deployed": {
-                    "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
-                      "error_code": "PipelineInteractionNotDeployed",
-                      "details": {
-                        "pipeline_name": "my_pipeline",
-                        "status": "Stopped",
-                        "desired_status": "Provisioned"
-                      }
-                    }
-                  },
-                  "Response timeout": {
-                    "value": {
-                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
-                      "error_code": "PipelineInteractionUnreachable",
-                      "details": {
-                        "pipeline_name": "my_pipeline",
-                        "request": "/pause",
-                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      }
-    },
     "/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats": {
       "get": {
         "tags": [
@@ -7609,7 +7330,8 @@
         "type": "object",
         "description": "A set of updates to a SQL table or view.\n\nThe `sequence_number` field stores the offset of the chunk relative to the\nstart of the stream and can be used to implement reliable delivery.\nThe payload is stored in the `bin_data`, `text_data`, or `json_data` field\ndepending on the data format used.",
         "required": [
-          "sequence_number"
+          "sequence_number",
+          "snapshot"
         ],
         "properties": {
           "bin_data": {
@@ -7627,6 +7349,10 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "`true` when this chunk is part of the initial snapshot delivered in\n`send_snapshot` mode; `false` for incremental delta updates."
           },
           "text_data": {
             "type": "string",
@@ -8193,6 +7919,10 @@
                 },
                 "nullable": true
               },
+              "send_snapshot": {
+                "type": "boolean",
+                "description": "Send a full snapshot of a materialized view when the connector first\nstarts. Valid for output connectors only.\n\nWhen `true`, the pipeline emits the current contents of the view as the\ninitial batch the first time the connector runs. The view must be\nmaterialized (declared with `CREATE MATERIALIZED VIEW`).\n\nThe snapshot is sent exactly once per connector lifetime: it does not\nfire again when the pipeline resumes from a checkpoint. Modifying the\nconnector configuration or invoking the reset API triggers a fresh\nsnapshot when the connector supports reset (e.g., Delta Lake in\n`truncate` mode and Postgres)."
+              },
               "start_after": {
                 "type": "array",
                 "items": {
@@ -8206,8 +7936,7 @@
               }
             }
           }
-        ],
-        "description": "A data connector's configuration"
+        ]
       },
       "ConnectorError": {
         "type": "object",
@@ -12488,6 +12217,13 @@
               },
               "materialized": {
                 "type": "boolean"
+              },
+              "primary_key": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "nullable": true
               },
               "properties": {
                 "type": "object",

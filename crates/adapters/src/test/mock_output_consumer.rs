@@ -1,6 +1,7 @@
 #![allow(clippy::type_complexity)]
 
 use crate::{OutputConsumer, transport::Step};
+use feldera_adapterlib::transport::OutputBatchType;
 use std::sync::{Arc, Mutex};
 
 pub struct MockOutputConsumer {
@@ -67,7 +68,7 @@ impl OutputConsumer for MockOutputConsumer {
         self.max_buffer_size_bytes
     }
 
-    fn batch_start(&mut self, _step: Step) {}
+    fn batch_start(&mut self, _step: Step, _batch_type: OutputBatchType) {}
     fn push_buffer(&mut self, buffer: &[u8], _num_records: usize) {
         self.data
             .lock()

@@ -235,9 +235,11 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     {
         match unwrap_union(self.input, self.schema).0 {
             Value::String(s) | Value::Enum(_, s) => visitor.visit_borrowed_str(s),
-            Value::Bytes(bytes) | Value::Fixed(_, bytes) => ::std::str::from_utf8(bytes)
-                .map_err(|e| de::Error::custom(e.to_string()))
-                .and_then(|s| visitor.visit_borrowed_str(s)),
+            Value::Bytes(bytes) | Value::Fixed(_, bytes) => {
+                let s =
+                    ::std::str::from_utf8(bytes).map_err(|e| de::Error::custom(e.to_string()))?;
+                visitor.visit_borrowed_str(s)
+            }
             Value::Uuid(u) => visitor.visit_str(&u.to_string()),
             v => Err(de::Error::custom(format!(
                 "expected a String|Bytes|Fixed|Uuid, but got {v:?}"
@@ -251,9 +253,11 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     {
         match unwrap_union(self.input, self.schema).0 {
             Value::String(s) | Value::Enum(_, s) => visitor.visit_borrowed_str(s),
-            Value::Bytes(bytes) | Value::Fixed(_, bytes) => String::from_utf8(bytes.to_owned())
-                .map_err(|e| de::Error::custom(e.to_string()))
-                .and_then(|s| visitor.visit_string(s)),
+            Value::Bytes(bytes) | Value::Fixed(_, bytes) => {
+                let s = String::from_utf8(bytes.to_owned())
+                    .map_err(|e| de::Error::custom(e.to_string()))?;
+                visitor.visit_string(s)
+            }
             Value::Uuid(u) => visitor.visit_str(&u.to_string()),
             v => Err(de::Error::custom(format!(
                 "expected a String|Bytes|Fixed|Uuid|Union|Enum, but got {v:?}"

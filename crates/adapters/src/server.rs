@@ -1235,8 +1235,6 @@ where
         .service(input_endpoint_status)
         .service(output_endpoint_status)
         .service(output_endpoint_command)
-        .service(reset_output_endpoint)
-        .service(reset_status)
         .service(rebalance)
         .service(start_compaction)
         .service(coordination_activate_handler)
@@ -2264,6 +2262,11 @@ struct EgressArgs {
 
     /// Data format used to encode the output of the query.
     format: Option<HttpOutputFormat>,
+
+    /// When `true`, deliver a full snapshot of the materialized view before
+    /// streaming incremental updates. The view must be materialized.
+    #[serde(default)]
+    send_snapshot: bool,
 }
 
 #[post("/egress/{table_name}")]
@@ -2308,13 +2311,15 @@ async fn output_endpoint(
     } else {
         let format =
             encoder_config_from_http_request(&table_name, args.format.unwrap_or_default(), &req)?;
-        ConnectorConfig::new(
+        let mut connector_config = ConnectorConfig::new(
             TransportConfig::HttpOutput(HttpOutputConfig {
                 backpressure: args.backpressure.unwrap_or_default(),
             }),
             Some(format),
         )
-        .with_max_queued_records(HttpOutputTransport::default_max_buffered_records())
+        .with_max_queued_records(HttpOutputTransport::default_max_buffered_records());
+        connector_config.send_snapshot = args.send_snapshot;
+        connector_config
     };
     let config = OutputEndpointConfig::new(table_name, connector_config);
 
@@ -2350,6 +2355,10 @@ async fn output_endpoint(
     // Create HTTP endpoint.
     let endpoint_name = format!("{}.api-{}", &config.stream, Uuid::new_v4());
     let endpoint = HttpOutputEndpoint::new(&endpoint_name, format, http_output_config.backpressure);
+    // Pre-connect the streaming receiver before `add_output_endpoint` so the
+    // initial snapshot (when `send_snapshot` is enabled) is captured rather
+    // than racing the streaming body that drains it.
+    let response_receiver = endpoint.connect_stream();
 
     // Connect endpoint.
     let controller = state.controller()?;
@@ -2369,18 +2378,21 @@ async fn output_endpoint(
 
     // Call endpoint to create a response with a streaming body, which will be
     // evaluated after we return the response object to actix.
-    Ok(endpoint.request(Box::new(move || {
-        // Delete endpoint on completion/error.
-        // We don't control the lifetime of the response object after
-        // returning it to actix, so the only way to run cleanup code
-        // when the HTTP request terminates is to piggyback on the
-        // destructor.
-        if let Some(state) = weak_state.upgrade()
-            && let Ok(controller) = state.controller()
-        {
-            controller.disconnect_output(&endpoint_id);
-        }
-    })))
+    Ok(endpoint.request(
+        Some(response_receiver),
+        Box::new(move || {
+            // Delete endpoint on completion/error.
+            // We don't control the lifetime of the response object after
+            // returning it to actix, so the only way to run cleanup code
+            // when the HTTP request terminates is to piggyback on the
+            // destructor.
+            if let Some(state) = weak_state.upgrade()
+                && let Ok(controller) = state.controller()
+            {
+                controller.disconnect_output(&endpoint_id);
+            }
+        }),
+    ))
 }
 
 /// This service journals the paused state, but it does not wait for the journal
@@ -2422,20 +2434,6 @@ async fn output_endpoint_command(
             .controller()?
             .output_endpoint_command(&path, command.into_inner())?,
     ))
-}
-
-#[post("/output_endpoints/{endpoint_name}/reset")]
-async fn reset_output_endpoint(path: web::Path<String>) -> Result<HttpResponse, PipelineError> {
-    Err(PipelineError::from(ControllerError::not_supported(
-        &format!("output endpoint '{}' does not support reset", path.as_str()),
-    )))
-}
-
-#[get("/reset_status")]
-async fn reset_status() -> Result<HttpResponse, PipelineError> {
-    Err(PipelineError::from(ControllerError::not_supported(
-        "reset status is not yet available on this pipeline",
-    )))
 }
 
 /// This service journals the paused state, but it does not wait for the journal
@@ -2855,13 +2853,16 @@ mod test_with_kafka {
         },
     };
     use actix_test::TestServer;
-    use actix_web::{App, http::StatusCode, middleware::Logger, web::Data as WebData};
+    use actix_web::{App, http::StatusCode, middleware::Logger, web::Bytes, web::Data as WebData};
+    use awc::error::PayloadError;
+    use csv::ReaderBuilder as CsvReaderBuilder;
     use feldera_types::runtime_status::RuntimeDesiredStatus;
     use feldera_types::{
         adapter_stats::{ExternalControllerStatus, TransactionStatus},
         completion_token::{CompletionStatus, CompletionStatusResponse, CompletionTokenResponse},
         runtime_status::BootstrapPolicy,
     };
+    use futures::{Stream, StreamExt};
     use proptest::{
         strategy::{Strategy, ValueTree},
         test_runner::TestRunner,
@@ -2874,6 +2875,7 @@ mod test_with_kafka {
         time::{Duration, Instant},
     };
     use tempfile::NamedTempFile;
+    use tokio::time::timeout;
     use uuid::Uuid;
 
     async fn print_stats(server: &TestServer) {
@@ -2950,6 +2952,92 @@ mod test_with_kafka {
         }
 
         server
+    }
+
+    fn flatten_and_sort_batches(data: &[Vec<TestStruct>]) -> Vec<TestStruct> {
+        let mut records = data
+            .iter()
+            .flat_map(|batch| batch.iter().cloned())
+            .collect::<Vec<_>>();
+        records.sort();
+        records
+    }
+
+    fn decode_chunk_records(chunk: &crate::transport::http::Chunk) -> Vec<TestStruct> {
+        let Some(csv) = &chunk.text_data else {
+            return Vec::new();
+        };
+
+        let mut reader = CsvReaderBuilder::new()
+            .has_headers(false)
+            .from_reader(csv.as_bytes());
+
+        reader
+            .deserialize::<(TestStruct, i32)>()
+            .map(Result::unwrap)
+            .map(|(record, weight)| {
+                assert_eq!(weight, 1);
+                record
+            })
+            .collect()
+    }
+
+    async fn collect_output_chunks<S>(
+        response: &mut S,
+        num_records: usize,
+    ) -> (Vec<crate::transport::http::Chunk>, Vec<TestStruct>)
+    where
+        S: Stream<Item = Result<Bytes, PayloadError>> + Unpin,
+    {
+        let mut chunks = Vec::new();
+        let mut records = Vec::with_capacity(num_records);
+        let mut data = Vec::new();
+
+        while records.len() < num_records {
+            let bytes = response.next().await.unwrap().unwrap();
+            data.extend_from_slice(&bytes);
+
+            if data.last() != Some(&b'\n') {
+                continue;
+            }
+
+            for chunk in serde_json::Deserializer::from_slice(&data)
+                .into_iter::<crate::transport::http::Chunk>()
+            {
+                let chunk = chunk.unwrap();
+                let chunk_records = decode_chunk_records(&chunk);
+                if chunk_records.is_empty() {
+                    continue;
+                }
+                records.extend(chunk_records);
+                chunks.push(chunk);
+            }
+
+            data.clear();
+        }
+
+        (chunks, records)
+    }
+
+    async fn wait_for_completion(server: &TestServer, token: &str) {
+        async_wait(
+            || async {
+                let resp = server
+                    .get(format!("/completion_status?token={token}"))
+                    .send()
+                    .await
+                    .unwrap()
+                    .body()
+                    .await
+                    .unwrap();
+                let CompletionStatusResponse { status, .. } =
+                    serde_json::from_slice(&resp).unwrap();
+                status == CompletionStatus::Complete
+            },
+            20_000,
+        )
+        .await
+        .unwrap();
     }
 
     #[actix_web::test]
@@ -3220,6 +3308,116 @@ outputs:
 
         drop(buffer_consumer);
         drop(kafka_resources);
+    }
+
+    /// Verifies the `send_snapshot` HTTP egress mode:
+    /// 1. Pushes initial data, connects with `send_snapshot=true`, and
+    ///    verifies the snapshot chunks carry `snapshot: true`.
+    /// 2. Pushes more data and verifies incremental delta chunks arrive
+    ///    with `snapshot: false`.
+    /// 3. Opens a second connection and verifies it receives a full
+    ///    snapshot of all data (initial + follow).
+    #[actix_web::test]
+    async fn test_http_egress_send_snapshot() {
+        ensure_default_crypto_provider();
+
+        let initial_data = vec![
+            vec![TestStruct::for_id(1), TestStruct::for_id(2)],
+            vec![TestStruct::for_id(3)],
+        ];
+        let follow_data = vec![vec![TestStruct::for_id(10), TestStruct::for_id(11)]];
+
+        let server = start_test_server(
+            r#"
+name: test
+inputs:
+outputs:
+"#,
+            Uuid::new_v4(),
+        )
+        .await;
+
+        let resp = server.get("/start").send().await.unwrap();
+        assert!(resp.status().is_success());
+
+        let CompletionTokenResponse { token } =
+            TestHttpSender::send_stream_deserialize_resp::<CompletionTokenResponse>(
+                server.post("/ingress/test_input1"),
+                &initial_data,
+            )
+            .await;
+        wait_for_completion(&server, &token).await;
+
+        let mut response = server
+            .post("/egress/test_output1?format=csv&backpressure=true&send_snapshot=true")
+            .send()
+            .await
+            .unwrap();
+        assert!(response.status().is_success());
+
+        let (snapshot_chunks, mut snapshot_records) = match timeout(
+            Duration::from_secs(10),
+            collect_output_chunks(&mut response, initial_data.iter().map(Vec::len).sum()),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(error) => {
+                print_stats(&server).await;
+                panic!("timed out waiting for snapshot output: {error:?}");
+            }
+        };
+        snapshot_records.sort();
+        assert_eq!(snapshot_records, flatten_and_sort_batches(&initial_data));
+        assert!(!snapshot_chunks.is_empty());
+        assert!(snapshot_chunks.iter().all(|chunk| chunk.snapshot));
+
+        let CompletionTokenResponse { token } = TestHttpSender::send_stream_deserialize_resp::<
+            CompletionTokenResponse,
+        >(
+            server.post("/ingress/test_input1"), &follow_data
+        )
+        .await;
+        wait_for_completion(&server, &token).await;
+
+        let (delta_chunks, mut delta_records) = timeout(
+            Duration::from_secs(10),
+            collect_output_chunks(&mut response, follow_data.iter().map(Vec::len).sum()),
+        )
+        .await
+        .expect("timed out waiting for follow output");
+        delta_records.sort();
+        assert_eq!(delta_records, flatten_and_sort_batches(&follow_data));
+        assert!(!delta_chunks.is_empty());
+        assert!(delta_chunks.iter().all(|chunk| !chunk.snapshot));
+
+        // Open a second connection: it should receive a snapshot of all data
+        // (initial + follow) since the view is materialized.
+        let all_data_len: usize = initial_data.iter().map(Vec::len).sum::<usize>()
+            + follow_data.iter().map(Vec::len).sum::<usize>();
+
+        let mut response2 = server
+            .post("/egress/test_output1?format=csv&backpressure=true&send_snapshot=true")
+            .send()
+            .await
+            .unwrap();
+        assert!(response2.status().is_success());
+
+        let (snapshot2_chunks, mut snapshot2_records) = timeout(
+            Duration::from_secs(10),
+            collect_output_chunks(&mut response2, all_data_len),
+        )
+        .await
+        .expect("timed out waiting for second connection snapshot");
+        snapshot2_records.sort();
+
+        let mut all_expected = flatten_and_sort_batches(&initial_data);
+        all_expected.extend(flatten_and_sort_batches(&follow_data));
+        all_expected.sort();
+
+        assert_eq!(snapshot2_records, all_expected);
+        assert!(!snapshot2_chunks.is_empty());
+        assert!(snapshot2_chunks.iter().all(|chunk| chunk.snapshot));
     }
 
     #[actix_web::test]
