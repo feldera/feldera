@@ -108,3 +108,4 @@ Connect.
   declaration.
 - Ensure that `iceberg.tables.cdc-field` is set to the same value as `cdc_field`
   in the output connector configuration in Feldera.
+
