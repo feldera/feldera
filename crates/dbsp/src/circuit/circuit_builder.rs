@@ -6556,11 +6556,11 @@ where
     }
 
     fn flush(&mut self) {
-        self.operator.borrow_mut().flush();
+        self.operator.borrow_mut().flush_input();
     }
 
     fn is_flush_complete(&self) -> bool {
-        self.operator.borrow().is_flush_complete()
+        self.operator.borrow().is_flush_input_complete()
     }
 
     // Don't call `clock_start`/`clock_end` on the operator.  `FeedbackOutputNode`
@@ -7180,7 +7180,7 @@ impl CircuitHandle {
             //             } else {
             //                 None
             //             };
-            //             Some(crate::utils::DotNodeAttributes::new().with_color(color))
+            //             Some(crate::utils::DotNodeAttributes::new().with_color(color).with_label(&format!("{}:{}", node.name(), node.local_id())))
             //         },
             //         |edge| {
             //             let style = if edge.is_dependency() {

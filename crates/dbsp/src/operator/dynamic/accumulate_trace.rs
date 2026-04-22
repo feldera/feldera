@@ -726,7 +726,8 @@ pub struct AccumulateZ1Trace<C: Circuit, B: Batch, T: Trace> {
     batch_factories: B::Factories,
     // Stream whose integral this Z1 operator stores, if any.
     delta_stream: Option<Stream<C, B>>,
-    flush: bool,
+    flush_output: bool,
+    flush_input: bool,
 }
 
 impl<C, B, T> AccumulateZ1Trace<C, B, T>
@@ -755,7 +756,8 @@ where
             reset_on_clock_start,
             bounds,
             delta_stream: None,
-            flush: false,
+            flush_output: false,
+            flush_input: false,
         }
     }
 
@@ -928,7 +930,11 @@ where
     }
 
     fn flush(&mut self) {
-        self.flush = true;
+        self.flush_output = true;
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        !self.flush_output
     }
 }
 
@@ -943,7 +949,10 @@ where
         let replay_step_size = Runtime::replay_step_size();
 
         if self.replay_mode {
-            if let Some(replay) = &mut self.replay_state {
+            // One output per transaction.
+            if self.flush_output
+                && let Some(replay) = &mut self.replay_state
+            {
                 //println!("Z1-{}::get_output: replaying", &self.global_id);
                 let mut builder = <B::Builder as Builder<B>>::with_capacity(
                     &self.batch_factories,
@@ -992,6 +1001,8 @@ where
             }
         }
 
+        self.flush_output = false;
+
         let mut result = self.trace.take().unwrap();
         result.clear_dirty_flag();
         result
@@ -1012,6 +1023,14 @@ where
     B: Batch<Key = T::Key, Val = T::Val, Time = (), R = T::R>,
     T: Trace,
 {
+    fn flush_input(&mut self) {
+        self.flush_input = true;
+    }
+
+    fn is_flush_input_complete(&self) -> bool {
+        !self.flush_input
+    }
+
     async fn eval_strict(&mut self, _i: &T) {
         unimplemented!()
     }
@@ -1019,8 +1038,8 @@ where
     async fn eval_strict_owned(&mut self, mut i: T) {
         // println!("Z1-{}::eval_strict_owned", &self.global_id);
 
-        if self.flush {
-            self.flush = false;
+        if self.flush_input {
+            self.flush_input = false;
             self.time = self.time.advance(0);
         }
 
