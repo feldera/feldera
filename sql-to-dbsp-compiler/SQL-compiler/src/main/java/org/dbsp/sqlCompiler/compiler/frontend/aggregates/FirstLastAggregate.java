@@ -35,7 +35,7 @@ import org.dbsp.util.Utilities;
 import java.util.List;
 import java.util.Objects;
 
-import static org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER;
+import static org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator.Numbering.ROW_NUMBER;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
 
 /**

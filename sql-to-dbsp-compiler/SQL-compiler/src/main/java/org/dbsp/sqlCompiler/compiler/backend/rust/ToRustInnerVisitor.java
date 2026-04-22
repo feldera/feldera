@@ -186,19 +186,20 @@ public class ToRustInnerVisitor extends InnerVisitor {
      * Helper function for {@link ToRustInnerVisitor#generateComparator} and
      * {@link ToRustInnerVisitor#generateCmpFunc}.
      * @param nullable True if the field is nullable (or the tuple itself).
-     * @param fieldNo  Field index that is compared.
+     * @param leftFieldNo  Field index that is compared.
+     * @param rightFieldNo  Field index that is compared.
      * @param ascending Comparison direction.
      * @param nullsFirst How nulls are compared
      */
-    void emitCompareField(boolean nullable, int fieldNo, boolean ascending, boolean nullsFirst) {
+    void emitCompareField(boolean nullable, int leftFieldNo, int rightFieldNo, boolean ascending, boolean nullsFirst) {
         String name = "compare" + (nullable ? "N" : "_");
         this.builder.append("let ord = ")
                 .append(name)
                 .append("(&left.")
-                .append(fieldNo)
+                .append(leftFieldNo)
                 .append(", ")
                 .append("&right.")
-                .append(fieldNo)
+                .append(rightFieldNo)
                 .append(", ")
                 .append(ascending)
                 .append(", ")
@@ -233,7 +234,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
      * @param fieldsCompared  Accumulate here a list of all fields compared.
      */
     void generateComparator(DBSPComparatorExpression comparator, Set<Integer> fieldsCompared) {
-        // This could be done with a visitor... but there are only two cases
+        // This could be done with a visitor... but there are only three cases
         if (comparator.is(DBSPNoComparatorExpression.class))
             return;
         if (comparator.is(DBSPFieldComparatorExpression.class)) {
@@ -246,12 +247,26 @@ public class ToRustInnerVisitor extends InnerVisitor {
             if (fieldsCompared.contains(fieldComparator.fieldNo))
                 throw new InternalCompilerError("Field " + fieldComparator.fieldNo + " used twice in sorting");
             fieldsCompared.add(fieldComparator.fieldNo);
-            this.emitCompareField(nullable, fieldComparator.fieldNo, fieldComparator.ascending, fieldComparator.nullsFirst);
-        } else {
+            this.emitCompareField(nullable, fieldComparator.fieldNo, fieldComparator.fieldNo,
+                    fieldComparator.ascending, fieldComparator.nullsFirst);
+        } else if (comparator.is(DBSPDirectComparatorExpression.class)) {
             DBSPDirectComparatorExpression direct = comparator.to(DBSPDirectComparatorExpression.class);
             this.generateComparator(direct.source, fieldsCompared);
             this.emitCompare(direct.ascending);
+        } else {
+            throw new UnimplementedException("Unexpected comparator " + comparator);
         }
+    }
+
+    void generateComparator(DBSPAsymmetricFieldComparatorExpression comparator) {
+        this.builder.append("|left, right| {").increase();
+        for (var collation: comparator.comparisons) {
+            boolean nullable = comparator.leftType.to(DBSPTypeTupleBase.class).getFieldType(collation.leftField()).mayBeNull;
+            this.emitCompareField(nullable, collation.leftField(),
+                    collation.rightField(), collation.ascending(), collation.nullsFirst());
+        }
+        this.builder.append("ord").newline();
+        this.builder.decrease().append("}");
     }
 
     /** Generate a comparator */
@@ -296,7 +311,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (type.is(DBSPTypeTuple.class)) {
             for (int i = 0; i < type.to(DBSPTypeTuple.class).size(); i++) {
                 if (fieldsCompared.contains(i)) continue;
-                this.emitCompareField(false, i, true, true);
+                this.emitCompareField(false, i, i, true, true);
             }
         }
         this.builder.append("return Ordering::Equal;")

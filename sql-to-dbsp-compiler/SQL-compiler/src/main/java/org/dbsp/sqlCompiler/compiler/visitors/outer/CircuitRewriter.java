@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyNOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
@@ -76,6 +77,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregator;
+import org.dbsp.sqlCompiler.ir.expression.DBSPAsymmetricFieldComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -300,6 +302,30 @@ public class CircuitRewriter extends CircuitCloneVisitor {
             result = new DBSPIndexedTopKOperator(operator.getRelNode(),
                     operator.numbering, function, limit, equalityComparator,
                     outputProducer, input)
+                    .copyAnnotations(operator);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPRankOperator operator) {
+        DBSPExpression function = this.transform(operator.getFunction());
+        DBSPClosureExpression outputProducer = this.transform(operator.outputProducer)
+                .to(DBSPClosureExpression.class);
+        DBSPClosureExpression orderFields = this.transform(operator.projectionFunc)
+                .to(DBSPClosureExpression.class);
+        DBSPAsymmetricFieldComparatorExpression rankCmpFunc =
+                this.transform(operator.rankCmpFunc).to(DBSPAsymmetricFieldComparatorExpression.class);
+        OutputPort input = this.mapped(operator.input());
+        DBSPSimpleOperator result = operator;
+        if (function != operator.function
+                || orderFields != operator.projectionFunc
+                || rankCmpFunc != operator.rankCmpFunc
+                || outputProducer != operator.outputProducer
+                || !input.equals(operator.input())) {
+            result = new DBSPRankOperator(operator.getRelNode(),
+                    operator.numbering, function, rankCmpFunc,
+                    orderFields, outputProducer, input)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);

@@ -248,4 +248,372 @@ public class WindowTests extends ScottBaseTests {
                  200                     | 01""");
         }
     }
+
+    @Test
+    public void testRank() {
+        var ccs = this.getCCS("""
+                CREATE TABLE t1 (x INT);
+                CREATE VIEW V AS SELECT x, RANK() OVER (ORDER BY x) AS r
+                FROM t1;""");
+        ccs.stepWeightOne("INSERT INTO t1 VALUES (1), (2), (3)", """
+                 x | rank
+                ----------
+                 1 | 1
+                 2 | 2
+                 3 | 3""");
+        ccs.step("INSERT INTO t1 VALUES (10), (10), (20)", """
+                 x | rank | weight
+                -------------------
+                 10 | 1 | 2
+                 20 | 3 | 1""");
+        // Multiple ties
+        ccs.step("INSERT INTO t1 VALUES (5), (5), (5), (7), (7), (9)", """
+                 x | rank | weight
+                -------------------
+                 5 | 1 | 3
+                 7 | 4 | 2
+                 9 | 6 | 1""");
+
+        ccs = this.getCCS("""
+                CREATE TABLE t1 (x INT);
+                CREATE VIEW V AS SELECT x, DENSE_RANK() OVER (ORDER BY x) AS r
+                FROM t1;""");
+        ccs.stepWeightOne("INSERT INTO t1 VALUES (1), (2), (3)", """
+                 x | rank
+                ----------
+                 1 | 1
+                 2 | 2
+                 3 | 3""");
+        ccs.step("INSERT INTO t1 VALUES (10), (10), (20)", """
+                 x | rank | weight
+                -------------------
+                 10 | 1 | 2
+                 20 | 2 | 1""");
+        // Multiple ties
+        ccs.step("INSERT INTO t1 VALUES (5), (5), (5), (7), (7), (9)", """
+                 x | rank | weight
+                -------------------
+                 5 | 1 | 3
+                 7 | 2 | 2
+                 9 | 3 | 1""");
+    }
+
+    @Test
+    public void testRankDescending() {
+        var ccs = this.getCCS("""
+                CREATE TABLE t1 (x INT);
+                CREATE VIEW V AS SELECT x, RANK() OVER (ORDER BY x DESC) AS r
+                FROM t1;""");
+        ccs.stepWeightOne("INSERT INTO t1 VALUES (100), (50), (50), (10)", """
+                 x | rank
+                ----------
+                 100 | 1
+                 50  | 2
+                 50  | 2
+                 10  | 4""");
+
+        ccs = this.getCCS("""
+                CREATE TABLE t1 (x INT);
+                CREATE VIEW V AS SELECT x, DENSE_RANK() OVER (ORDER BY x DESC) AS r
+                FROM t1;""");
+        ccs.stepWeightOne("INSERT INTO t1 VALUES (100), (50), (50), (10)", """
+                 x | rank
+                ----------
+                 100 | 1
+                 50  | 2
+                 50  | 2
+                 10  | 3""");
+    }
+
+    @Test
+    public void testRankGroup() {
+        var ccs = this.getCCS("""
+                CREATE TABLE t1 (grp VARCHAR, x INT);
+                CREATE VIEW V AS SELECT grp, x, RANK() OVER (PARTITION BY grp ORDER BY x) AS r
+                FROM t1;""");
+        ccs.stepWeightOne("INSERT INTO t1 VALUES ('A', 1), ('A', 1), ('A', 2), ('B', 5), ('B', 5), ('B', 5)", """
+                 grp | x | rank
+                ----------------
+                 A| 1 | 1
+                 A| 1 | 1
+                 A| 2 | 3
+                 B| 5 | 1
+                 B| 5 | 1
+                 B| 5 | 1""");
+
+        ccs = this.getCCS("""
+                CREATE TABLE t1 (grp VARCHAR, x INT);
+                CREATE VIEW V AS SELECT grp, x, DENSE_RANK() OVER (PARTITION BY grp ORDER BY x) AS r
+                FROM t1;""");
+        ccs.stepWeightOne("INSERT INTO t1 VALUES ('A', 1), ('A', 1), ('A', 2), ('B', 5), ('B', 5), ('B', 5)", """
+                 grp | x | rank
+                ----------------
+                 A| 1 | 1
+                 A| 1 | 1
+                 A| 2 | 2
+                 B| 5 | 1
+                 B| 5 | 1
+                 B| 5 | 1""");
+    }
+
+    @Test
+    public void testRankNull() {
+        var ccs = this.getCCS("""
+                CREATE TABLE t1 (x INT);
+                CREATE VIEW V AS SELECT x, RANK() OVER (ORDER BY x) AS r
+                FROM t1;""");
+        ccs.stepWeightOne("INSERT INTO t1 VALUES (NULL), (1), (1), (2)", """
+                 x | rank
+                ----------
+                   | 1
+                 1 | 2
+                 1 | 2
+                 2 | 4""");
+        ccs = this.getCCS("""
+                CREATE TABLE t1 (x INT);
+                CREATE VIEW V AS SELECT x, RANK() OVER (ORDER BY x NULLS LAST) AS r
+                FROM t1;""");
+        ccs.stepWeightOne("INSERT INTO t1 VALUES (NULL), (1), (1), (2)", """
+                 x | rank
+                ----------
+                 1 | 1
+                 1 | 1
+                 2 | 3
+                   | 4""");
+
+        ccs = this.getCCS("""
+                CREATE TABLE t1 (x INT);
+                CREATE VIEW V AS SELECT x, DENSE_RANK() OVER (ORDER BY x) AS r
+                FROM t1;""");
+        ccs.stepWeightOne("INSERT INTO t1 VALUES (NULL), (1), (1), (2)", """
+                 x | rank
+                ----------
+                   | 1
+                 1 | 2
+                 1 | 2
+                 2 | 3""");
+        ccs = this.getCCS("""
+                CREATE TABLE t1 (x INT);
+                CREATE VIEW V AS SELECT x, DENSE_RANK() OVER (ORDER BY x NULLS LAST) AS r
+                FROM t1;""");
+        ccs.stepWeightOne("INSERT INTO t1 VALUES (NULL), (1), (1), (2)", """
+                 x | rank
+                ----------
+                 1 | 1
+                 1 | 1
+                 2 | 2
+                   | 3""");
+    }
+
+    @Test
+    public void testNoTies() {
+        var ccs = this.getCCS("""
+                CREATE TABLE t1 (id INT, x INT);
+                CREATE VIEW V AS SELECT id, x, RANK() OVER (ORDER BY x, id) AS r
+                FROM t1;""");
+        ccs.stepWeightOne("INSERT INTO t1 VALUES (1, 10), (2, 10), (3, 10)", """
+                 id | x | rank
+                ---------------
+                  1 | 10 | 1
+                  2 | 10 | 2
+                  3 | 10 | 3""");
+
+        ccs = this.getCCS("""
+                CREATE TABLE t1 (id INT, x INT);
+                CREATE VIEW V AS SELECT id, x, DENSE_RANK() OVER (ORDER BY x, id) AS r
+                FROM t1;""");
+        ccs.stepWeightOne("INSERT INTO t1 VALUES (1, 10), (2, 10), (3, 10)", """
+                 id | x | rank
+                ---------------
+                  1 | 10 | 1
+                  2 | 10 | 2
+                  3 | 10 | 3""");
+    }
+
+    @Test
+    public void testMixSort() {
+        var ccs = this.getCCS("""
+                CREATE TABLE t1 (a INT, b INT);
+                CREATE VIEW V AS SELECT a, b, RANK() OVER (ORDER BY a ASC, b DESC) AS r
+                FROM t1;""");
+        ccs.stepWeightOne("INSERT INTO t1 VALUES (1, 9), (1, 5), (1, 5), (2, 1)", """
+                 a | b | rank
+                ---------------
+                 1 | 9 | 1
+                 1 | 5 | 2
+                 1 | 5 | 2
+                 2 | 1 | 4""");
+
+        ccs = this.getCCS("""
+                CREATE TABLE t1 (a INT, b INT);
+                CREATE VIEW V AS SELECT a, b, DENSE_RANK() OVER (ORDER BY a ASC, b DESC) AS r
+                FROM t1;""");
+        ccs.stepWeightOne("INSERT INTO t1 VALUES (1, 9), (1, 5), (1, 5), (2, 1)", """
+                 a | b | rank
+                ---------------
+                 1 | 9 | 1
+                 1 | 5 | 2
+                 1 | 5 | 2
+                 2 | 1 | 3""");
+    }
+
+    @Test
+    public void testMultiple() {
+        // Validated on Postgres
+        var ccs = this.getCCS("""
+                CREATE TABLE t_multi (
+                    grp VARCHAR,
+                    score INT,
+                    ts   INT
+                );
+                CREATE VIEW V AS SELECT
+                    grp,
+                    score,
+                    ts,
+                    RANK()        OVER (PARTITION BY grp ORDER BY score DESC) AS r_rank,
+                    DENSE_RANK()  OVER (PARTITION BY grp ORDER BY score DESC) AS r_dense
+                FROM t_multi
+                ORDER BY grp, score DESC, ts;""");
+        ccs.stepWeightOne("""
+                INSERT INTO t_multi VALUES
+                    ('A', 10, 1),
+                    ('A', 10, 2),
+                    ('A', 20, 3),
+                    ('A', 20, 4),
+                    ('A', 30, 5),
+                
+                    ('B', 5,  1),
+                    ('B', 5,  2),
+                    ('B', 7,  3),
+                    ('B', 9,  4),
+                    ('B', 9,  5);""", """
+                 grp | score | ts | rank | dense
+                ---------------------------------
+                 A| 30 | 5 | 1 | 1
+                 A| 20 | 3 | 2 | 2
+                 A| 20 | 4 | 2 | 2
+                 A| 10 | 1 | 4 | 3
+                 A| 10 | 2 | 4 | 3
+                 B|  9 | 4 | 1 | 1
+                 B|  9 | 5 | 1 | 1
+                 B|  7 | 3 | 3 | 2
+                 B|  5 | 1 | 4 | 3
+                 B|  5 | 2 | 4 | 3""");
+    }
+
+    @Test
+    public void testMultipleTopK() {
+        // Validated on Postgres
+        var ccs = this.getCCS("""
+                CREATE TABLE t_multi (
+                    grp VARCHAR,
+                    score INT,
+                    ts   INT
+                );
+                CREATE VIEW V AS
+                WITH ranked AS (
+                    SELECT
+                        grp,
+                        score,
+                        ts,
+                        RANK() OVER (ORDER BY score DESC) AS rnk
+                    FROM t_multi
+                )
+                SELECT *
+                FROM ranked
+                WHERE rnk <= 3
+                ORDER BY rnk, score DESC, ts;""");
+        ccs.stepWeightOne("""
+                INSERT INTO t_multi VALUES
+                    ('A', 10, 1),
+                    ('A', 10, 2),
+                    ('A', 20, 3),
+                    ('A', 20, 4),
+                    ('A', 30, 5),
+                
+                    ('B', 5,  1),
+                    ('B', 5,  2),
+                    ('B', 7,  3),
+                    ('B', 9,  4),
+                    ('B', 9,  5);""", """
+                 grp | score | ts | rank
+                --------------------------
+                 A| 30 | 5 | 1
+                 A| 20 | 3 | 2
+                 A| 20 | 4 | 2""");
+    }
+
+    @Test
+    public void testTwoTopKRank() {
+        // Validated on postgres.
+        var ccs = this.getCCS("""
+                CREATE TABLE T (
+                    id    STRING,
+                    score INT,
+                    ts    INT
+                );
+                CREATE VIEW V AS WITH ranked AS (
+                    SELECT
+                        id,
+                        score,
+                        ts,
+                
+                        RANK() OVER (ORDER BY score DESC) AS rnk_score,
+                        RANK() OVER (ORDER BY ts    DESC) AS rnk_recent
+                    FROM t
+                )
+                SELECT * FROM ranked;""");
+        // no filtering first
+        ccs.stepWeightOne("""
+                INSERT INTO t VALUES
+                    ('a', 100, 10),
+                    ('b', 95,  20),
+                    ('c', 95,  30),
+                    ('d', 80,  40),
+                    ('e', 70,  50),
+                    ('f', 60,  60),
+                    ('g',100,  60);
+                """, """
+                 id | score | ts | rnk_score | rnk_recent
+                -------------------------------------------
+                 g| 100 | 60  | 1  | 1
+                 a| 100 | 10  | 1  | 7
+                 c| 95  | 30  | 3  | 5
+                 b| 95  | 20  | 3  | 6
+                 d| 80  | 40  | 5  | 4
+                 e| 70  | 50  | 6  | 3
+                 f| 60  | 60  | 7  | 1""");
+
+        ccs = this.getCCS("""
+                CREATE TABLE T (
+                    id    STRING,
+                    score INT,
+                    ts    INT
+                );
+                CREATE VIEW V AS WITH ranked AS (
+                    SELECT
+                        id,
+                        score,
+                        ts,
+                
+                        RANK() OVER (ORDER BY score DESC) AS rnk_score,
+                        RANK() OVER (ORDER BY ts    DESC) AS rnk_recent
+                    FROM t
+                )
+                SELECT * FROM ranked
+                WHERE (rnk_score <= 3) AND (rnk_recent <= 2);""");
+        ccs.stepWeightOne("""
+                INSERT INTO t VALUES
+                    ('a', 100, 10),
+                    ('b', 95,  20),
+                    ('c', 95,  30),
+                    ('d', 80,  40),
+                    ('e', 70,  50),
+                    ('f', 60,  60),
+                    ('g',100,  60);
+                """, """
+                 id | score | ts | rnk_score | rnk_recent
+                -------------------------------------------
+                 g| 100     | 60  | 1 | 1""");
+    }
 }

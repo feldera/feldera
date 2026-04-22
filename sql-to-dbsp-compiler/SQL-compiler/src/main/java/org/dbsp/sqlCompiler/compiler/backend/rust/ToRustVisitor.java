@@ -28,6 +28,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyNOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IContainsIntegrator;
@@ -88,7 +89,6 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
@@ -1242,11 +1242,11 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append("::<");
         this.builder.append(comparator.to(DBSPComparatorExpression.class).getComparatorStructName());
         this.builder.append(", _, _");
-        if (operator.numbering != DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER)
+        if (operator.numbering != DBSPIndexedTopKOperator.Numbering.ROW_NUMBER)
             this.builder.append(", _");
         this.builder.append(">(hash, ");
         operator.limit.accept(this.innerVisitor);
-        if (operator.numbering != DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER) {
+        if (operator.numbering != DBSPIndexedTopKOperator.Numbering.ROW_NUMBER) {
             this.builder.append(", ");
             DBSPExpression comp2 = operator.equalityComparator.comparator;
             DBSPExpression equalityComparison = this.generateEqualityComparison(comp2);
@@ -1255,6 +1255,50 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(", ");
         operator.outputProducer.accept(this.innerVisitor);
         this.builder.append(")")
+                .append(this.markDistinct(operator))
+                .append(";");
+        this.tagStream(operator);
+        this.innerVisitor.setOperatorContext(null);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPRankOperator operator) {
+        this.computeHash(operator);
+        this.innerVisitor.setOperatorContext(operator);
+        DBSPExpression comparator = operator.getFunction();
+        String streamOperation = switch (operator.numbering) {
+            case ROW_NUMBER -> throw new UnimplementedException("ROW_NUMBER window function not yet implemented");
+            case RANK -> "rank_custom_order";
+            case DENSE_RANK -> "dense_rank_custom_order";
+        };
+
+        DBSPType streamType = this.streamType(operator);
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getNodeName(this.preferHash))
+                .append(": ");
+        streamType.accept(this.innerVisitor);
+        this.builder.append(" = ")
+                .append(this.getInputName(operator, 0))
+                .append(".")
+                .append(streamOperation);
+        this.builder.append("_persistent");
+        this.builder.append("::<");
+        this.builder.append(comparator.to(DBSPComparatorExpression.class).getComparatorStructName());
+        this.builder.append(", _, _, _, _, _>(").increase();
+        this.builder.append("hash,").newline();
+
+        operator.projectionFunc.accept(this.innerVisitor);
+        this.builder.append(",").newline();
+
+        // Comparator
+        this.innerVisitor.generateComparator(operator.rankCmpFunc);
+        this.builder.append(",").newline();
+
+        operator.outputProducer.accept(this.innerVisitor);
+        this.builder.decrease()
+                .append(")")
                 .append(this.markDistinct(operator))
                 .append(";");
         this.tagStream(operator);

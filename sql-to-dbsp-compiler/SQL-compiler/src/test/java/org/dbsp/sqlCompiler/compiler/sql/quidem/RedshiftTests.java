@@ -22,6 +22,29 @@ public class RedshiftTests extends ScottBaseTests {
     }
 
     @Test
+    public void testRank() {
+        this.qs("""
+                select rank() over (partition by deptno order by sal) from emp;
+                 EXPR$0
+                --------
+                 1
+                 1
+                 1
+                 2
+                 2
+                 2
+                 2
+                 3
+                 3
+                 4
+                 4
+                 4
+                 5
+                 6
+                (14 rows)""");
+    }
+
+    @Test
     public void testLag() {
         this.qs("""
                 select empno, lag(sal) respect nulls over (order by empno)

@@ -726,6 +726,19 @@ public class ToJsonInnerVisitor extends InnerVisitor {
         super.postorder(node);
     }
 
+    @Override
+    public void postorder(DBSPAsymmetricFieldComparatorExpression node) {
+        this.startArrayProperty("comparisons");
+        int index = 0;
+        for (DBSPAsymmetricFieldComparatorExpression.Collation i: node.comparisons) {
+            this.propertyIndex(index);
+            index++;
+            i.asJson(this.stream);
+        }
+        this.endArrayProperty("comparisons");
+        super.postorder(node);
+    }
+
     public String getJsonString() {
         return this.stream.toString();
     }

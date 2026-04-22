@@ -14,6 +14,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
@@ -169,6 +170,16 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPIndexedTopKOperator operator) {
+        VisitDecision decision = this.preorder(operator.to(DBSPUnaryOperator.class));
+        if (decision.stop())
+            return VisitDecision.STOP;
+        this.label("numbering");
+        this.stream.append(operator.numbering.name());
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPRankOperator operator) {
         VisitDecision decision = this.preorder(operator.to(DBSPUnaryOperator.class));
         if (decision.stop())
             return VisitDecision.STOP;
