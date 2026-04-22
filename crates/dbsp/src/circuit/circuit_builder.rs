@@ -1794,13 +1794,6 @@ pub trait CircuitBase: 'static {
 
     fn check_fixedpoint(&self, scope: Scope) -> bool;
 
-    fn notify_start_transaction(&self) {
-        let _ = self.map_local_nodes_mut(&mut |node| {
-            node.start_transaction();
-            Ok(())
-        });
-    }
-
     /// Return the metadata exchange object associated with the circuit.
     fn metadata_exchange(&self) -> &MetadataExchange;
 
