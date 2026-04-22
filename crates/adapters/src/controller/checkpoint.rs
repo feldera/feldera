@@ -212,23 +212,34 @@ pub struct CheckpointOutputEndpointMetrics {
     /// Recent transport error messages captured at checkpoint time.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub transport_errors: Vec<ConnectorError>,
+
+    /// `true` once the endpoint has delivered its initial snapshot (or
+    /// initialized to `true` when `send_snapshot` was `false`). Preserved
+    /// across restart so resuming from a checkpoint does not re-send the
+    /// snapshot. Cleared when the connector is modified across a restart, to
+    /// force a fresh snapshot.
+    #[serde(default)]
+    pub snapshot_sent: bool,
 }
 
 impl CheckpointOutputEndpointMetrics {
-    /// Build the checkpoint form from the live endpoint status.
-    pub fn from_endpoint_status(status: &OutputEndpointStatus) -> Self {
+    /// Build the checkpoint form from the live endpoint status. `snapshot_sent`
+    /// is read from the controller's [`OutputEndpointControl`] (which lives
+    /// alongside the endpoint rather than in [`OutputEndpointStatus`]) and
+    /// passed in explicitly.
+    pub fn from_endpoint_status(status: &OutputEndpointStatus, snapshot_sent: bool) -> Self {
         let snapshot = status.metrics.snapshot();
         Self {
-            // This includes all the records that have been transmitted plus all
-            // of the records that will be transmitted by the time we commit the
-            // checkpoint.
+            // Includes all the records that have been transmitted plus all
+            // of the records that will be transmitted by the time we commit
+            // the checkpoint.
             transmitted_records: snapshot.transmitted_records
                 + snapshot.buffered_records
                 + snapshot.queued_records,
 
-            // Only the bytes and errors that have already been transmitted, not
-            // including those that will be transmitted by the time we commit
-            // the checkpoint (we don't have proper statistics for those).
+            // Only the bytes and errors already transmitted, not including
+            // those that will be transmitted by the time we commit the
+            // checkpoint (we don't have proper statistics for those).
             transmitted_bytes: snapshot.transmitted_bytes,
 
             // We can't predict how many errors there will be by the time we
@@ -238,6 +249,8 @@ impl CheckpointOutputEndpointMetrics {
 
             encode_errors: status.encode_errors.lock().unwrap().to_api_type(),
             transport_errors: status.transport_errors.lock().unwrap().to_api_type(),
+
+            snapshot_sent,
         }
     }
 }
@@ -344,6 +357,7 @@ mod tests {
                 mk_error(2, None, "unknown"),
             ],
             transport_errors: vec![],
+            snapshot_sent: false,
         };
 
         let json = serde_json::to_string(&original).unwrap();

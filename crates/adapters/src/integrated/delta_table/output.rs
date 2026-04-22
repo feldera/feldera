@@ -22,6 +22,7 @@ use deltalake::logstore::ObjectStoreRef;
 use deltalake::operations::create::CreateBuilder;
 use deltalake::operations::write::writer::{DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
+use feldera_adapterlib::transport::OutputBatchType;
 use feldera_types::serde_with_context::serde_config::{
     BinaryFormat, DecimalFormat, UuidFormat, VariantFormat,
 };
@@ -725,7 +726,7 @@ impl OutputConsumer for DeltaTableWriter {
         usize::MAX
     }
 
-    fn batch_start(&mut self, _step: Step) {
+    fn batch_start(&mut self, _step: Step, _batch_type: OutputBatchType) {
         self.pending_actions.clear();
         self.num_rows = 0;
         self.inner.records_written.store(0, Ordering::Relaxed);
@@ -917,7 +918,7 @@ impl OutputEndpoint for DeltaTableWriter {
         todo!()
     }
 
-    fn batch_start(&mut self, _step: Step) -> AnyResult<()> {
+    fn batch_start(&mut self, _step: Step, _batch_type: OutputBatchType) -> AnyResult<()> {
         unreachable!()
     }
 
@@ -972,6 +973,7 @@ mod parallel {
     use crate::static_compile::seroutput::SerBatchImpl;
     use crate::test::data::{DeltaTestKey, DeltaTestStruct, TestStruct};
     use crate::test::list_files_recursive;
+    use feldera_adapterlib::transport::OutputBatchType;
 
     use super::DeltaTableWriter;
 
@@ -1154,7 +1156,7 @@ mod parallel {
     }
 
     fn encode_batch(endpoint: &mut DeltaTableWriter, batch: &Arc<dyn SerBatch>) {
-        endpoint.consumer().batch_start(0);
+        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
         endpoint
             .encode(batch.clone().arc_as_batch_reader())
             .unwrap();
@@ -1193,7 +1195,7 @@ mod parallel {
         DeltaTestStruct {
             bigint: i as i64,
             binary: ByteArray::from_vec(vec![i as u8, (i >> 8) as u8]),
-            boolean: i % 2 == 0,
+            boolean: i.is_multiple_of(2),
             date: Date::from_days(i as i32 % 100_000),
             decimal_10_3: SqlDecimal::<10, 3>::new((i as i128 % 1_000_000) * 1000, 3).unwrap(),
             double: F64::new((i as f64).trunc()),
@@ -1201,7 +1203,7 @@ mod parallel {
             int: i as i32,
             smallint: (i % 32000) as i16,
             string: format!("record_{i}"),
-            unused: if i % 3 == 0 {
+            unused: if i.is_multiple_of(3) {
                 None
             } else {
                 Some(format!("unused_{i}"))
@@ -1211,7 +1213,7 @@ mod parallel {
             string_array: vec![format!("arr_{i}")],
             struct1: TestStruct {
                 id: i as u32,
-                b: i % 2 == 0,
+                b: i.is_multiple_of(2),
                 i: Some(i as i64),
                 s: format!("s_{i}"),
             },
@@ -1511,7 +1513,7 @@ mod parallel {
         // Make directory read-only to trigger write failure.
         std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
 
-        endpoint.consumer().batch_start(0);
+        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
         let result = endpoint.encode(batch.arc_as_batch_reader());
 
         // Restore permissions before asserting (so TempDir cleanup succeeds).
@@ -1552,7 +1554,7 @@ mod parallel {
         // Make directory read-only to trigger write failure.
         std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
 
-        endpoint.consumer().batch_start(0);
+        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
         let result = endpoint.encode(batch.arc_as_batch_reader());
 
         // Restore permissions.
@@ -1593,7 +1595,7 @@ mod parallel {
         let mut endpoint = make_endpoint(1, &table_uri, true);
 
         assert_eq!(records_written(&endpoint), 0);
-        endpoint.consumer().batch_start(0);
+        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
         endpoint
             .encode(batch.clone().arc_as_batch_reader())
             .unwrap();
@@ -1611,7 +1613,7 @@ mod parallel {
         let batch = build_insert_batch(&records);
         let mut endpoint = make_endpoint(4, &table_uri, true);
 
-        endpoint.consumer().batch_start(0);
+        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
         endpoint
             .encode(batch.clone().arc_as_batch_reader())
             .unwrap();
@@ -1628,7 +1630,7 @@ mod parallel {
         let batch = build_insert_batch(&[]);
         let mut endpoint = make_endpoint(1, &table_uri, true);
 
-        endpoint.consumer().batch_start(0);
+        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
         endpoint
             .encode(batch.clone().arc_as_batch_reader())
             .unwrap();
@@ -1647,7 +1649,7 @@ mod parallel {
         // Batch 1: 50 records.
         let records1 = make_records(50);
         let batch1 = build_insert_batch(&records1);
-        endpoint.consumer().batch_start(0);
+        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
         endpoint
             .encode(batch1.clone().arc_as_batch_reader())
             .unwrap();
@@ -1658,7 +1660,7 @@ mod parallel {
         // Batch 2: 30 records (ids 50..80).
         let records2: Vec<_> = (50..80).map(make_record).collect();
         let batch2 = build_insert_batch(&records2);
-        endpoint.consumer().batch_start(1);
+        endpoint.consumer().batch_start(1, OutputBatchType::Delta);
         endpoint
             .encode(batch2.clone().arc_as_batch_reader())
             .unwrap();
@@ -1676,14 +1678,14 @@ mod parallel {
         let batch = build_insert_batch(&records);
         let mut endpoint = make_endpoint(1, &table_uri, true);
 
-        endpoint.consumer().batch_start(0);
+        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
         endpoint
             .encode(batch.clone().arc_as_batch_reader())
             .unwrap();
         assert_eq!(records_written(&endpoint), 50);
 
         // batch_start without batch_end resets the counter.
-        endpoint.consumer().batch_start(1);
+        endpoint.consumer().batch_start(1, OutputBatchType::Delta);
         assert_eq!(records_written(&endpoint), 0);
     }
 
@@ -1699,7 +1701,7 @@ mod parallel {
         // Make directory read-only to trigger write failure.
         std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
 
-        endpoint.consumer().batch_start(0);
+        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
         let result = endpoint.encode(batch.arc_as_batch_reader());
 
         // Restore permissions before asserting.
@@ -1740,7 +1742,7 @@ mod parallel {
         // Make directory read-only to trigger write failure with retries.
         std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
 
-        endpoint.consumer().batch_start(0);
+        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
         let result = endpoint.encode(batch.arc_as_batch_reader());
 
         // Restore permissions.
@@ -1762,7 +1764,7 @@ mod parallel {
         let batch = build_insert_batch(&records);
         let mut endpoint = make_endpoint(1, &table_uri, true);
 
-        endpoint.consumer().batch_start(0);
+        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
         endpoint
             .encode(batch.clone().arc_as_batch_reader())
             .unwrap();
