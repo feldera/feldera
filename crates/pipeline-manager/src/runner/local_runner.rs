@@ -31,6 +31,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio::{fs, fs::create_dir_all, select, spawn};
+use tokio_stream::StreamExt;
 use tracing::{error, warn, Level};
 use uuid::Uuid;
 
@@ -236,14 +237,10 @@ impl LocalRunner {
                         }.into());
                     }
 
-                    // Parse response as bytes
-                    let body = response.bytes().await.map_err(|_e| {
-                        ManagerError::from(RunnerError::RunnerProvisionError {
-                            error: format!("pipeline {description} retrieval failed: GET '{file_url}': could not convert response body into bytes")
-                        })
-                    })?;
+                    // Response body as a stream of bytes
+                    let mut body = response.bytes_stream();
 
-                    // Create, open, write and flush file
+                    // Create and open the file
                     let mut file = fs::File::options()
                         .create(true)
                         .truncate(true)
@@ -260,14 +257,23 @@ impl LocalRunner {
                                 ),
                             })
                         })?;
-                    file.write_all(&body).await.map_err(|e| {
-                        ManagerError::from(RunnerError::RunnerProvisionError {
-                            error: format!(
-                                "pipeline {description} retrieval failed: unable to write file '{}': {e}",
-                                target_file_path.display()
-                            ),
-                        })
-                    })?;
+
+                    // Write the file in streaming fashion
+                    while let Some(result_bytes) = body.next().await {
+                        let bytes = result_bytes.map_err(|e| ManagerError::from(RunnerError::RunnerProvisionError {
+                            error: format!("pipeline {description} retrieval failed: GET '{file_url}': could not convert response body chunk into bytes due to: {e}")
+                        }))?;
+                        file.write_all(&bytes).await.map_err(|e| {
+                            ManagerError::from(RunnerError::RunnerProvisionError {
+                                error: format!(
+                                    "pipeline {description} retrieval failed: unable to write file '{}': {e}",
+                                    target_file_path.display()
+                                ),
+                            })
+                        })?;
+                    }
+
+                    // Flush the file to be sure everything is written to disk
                     file.flush().await.map_err(|e| {
                         ManagerError::from(RunnerError::RunnerProvisionError {
                             error: format!(
