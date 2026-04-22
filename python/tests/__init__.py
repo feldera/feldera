@@ -10,6 +10,15 @@ from feldera.testutils import (
     skip_on_arm64,
     unique_pipeline_name,
 )
+from tests.utils import (
+    KAFKA_BOOTSTRAP,
+    MINIO_BUCKET,
+    MINIO_ENDPOINT,
+    MINIO_REGION,
+    env_truthy,
+    required_env,
+    runs_in_ci,
+)
 
 LOGLEVEL = os.environ.get("LOGLEVEL", "INFO").upper()
 logging.basicConfig(level=LOGLEVEL)
@@ -22,4 +31,11 @@ __all__ = [
     "API_KEY",
     "BASE_URL",
     "FELDERA_REQUESTS_VERIFY",
+    "KAFKA_BOOTSTRAP",
+    "MINIO_BUCKET",
+    "MINIO_ENDPOINT",
+    "MINIO_REGION",
+    "env_truthy",
+    "required_env",
+    "runs_in_ci",
 ]
