@@ -274,6 +274,7 @@ outputs:
                         transaction_info: TransactionInfo::default(),
                         memory_pressure: MemoryPressure::default(),
                         memory_pressure_epoch: 0,
+                        include_connector_errors: false,
                     },
                 ))
                 .unwrap()
