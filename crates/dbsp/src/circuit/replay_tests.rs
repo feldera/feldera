@@ -627,17 +627,25 @@ fn test_linear_circuit_materialized_inputs_with_backfill() {
 //
 // Pipeline 1:
 //
+//        |----------------------|
+//        |                      v
+//        |              |----->join--->
+//        |              |
 // ---> input1 ---> join --> output1
 //                   ^
 // ---> input2 ------|
 //
 // Pipeline 2 (adds another join):
 //
+//        |----------------------|
+//        |                      v
+//        |              |----->join--->
+//        |              |
 // ---> input1 ---> join --> output1
-//                   ^
-// ---> input2 ------|
-//                   v
-// ---> input3 ---> join --> output2
+//                   ^    |
+// ---> input2 ------|    |------------>join-->output2
+//                   v    |
+// ---> input3 ---> join --
 //
 fn join_circuit1(
     balancing: bool,
@@ -665,14 +673,28 @@ fn join_circuit1(
         .map_index(|x| (*x, *x))
         .set_persistent_id(Some("input_stream2_indexed"));
 
-    let output_handle1 = if balancing {
-        input_stream1_indexed
+    let (_j1_indexed, output_handle1) = if balancing {
+        let j1 = input_stream1_indexed
             .join_balanced_inner(&input_stream2_indexed, |key, _v1, _v2| *key)
-            .accumulate_output_persistent(Some("output1"))
+            .set_persistent_id(Some("j1"));
+
+        let j1_indexed = j1
+            .map_index(|x| (*x, *x))
+            .set_persistent_id(Some("j1-indexed"));
+        j1_indexed.join_balanced_inner(&input_stream1_indexed, |key, _v1, _v2| *key);
+
+        (j1_indexed, j1.accumulate_output_persistent(Some("output1")))
     } else {
-        input_stream1_indexed
+        let j1 = input_stream1_indexed
             .join(&input_stream2_indexed, |key, _v1, _v2| *key)
-            .accumulate_output_persistent(Some("output1"))
+            .set_persistent_id(Some("j1"));
+
+        let j1_indexed = j1
+            .map_index(|x| (*x, *x))
+            .set_persistent_id(Some("j1-indexed"));
+        j1_indexed.join(&input_stream1_indexed, |key, _v1, _v2| *key);
+
+        (j1_indexed, j1.accumulate_output_persistent(Some("output1")))
     };
 
     ((), (input_handle1, input_handle2), (), output_handle1)
@@ -711,24 +733,60 @@ fn join_circuit2(
         .map_index(|x| (*x, *x))
         .set_persistent_id(Some("input_stream3_indexed"));
 
-    let output_handle1 = if balancing {
-        input_stream1_indexed
+    let (j1_indexed, output_handle1) = if balancing {
+        let j1 = input_stream1_indexed
             .join_balanced_inner(&input_stream2_indexed, |key, _v1, _v2| *key)
-            .accumulate_output_persistent(Some("output1"))
+            .set_persistent_id(Some("j1"));
+
+        let j1_indexed = j1
+            .map_index(|x| (*x, *x))
+            .set_persistent_id(Some("j1-indexed"));
+
+        j1_indexed.join_balanced_inner(&input_stream1_indexed, |key, _v1, _v2| *key);
+
+        (j1_indexed, j1.accumulate_output_persistent(Some("output1")))
     } else {
-        input_stream1_indexed
+        let j1 = input_stream1_indexed
             .join(&input_stream2_indexed, |key, _v1, _v2| *key)
-            .accumulate_output_persistent(Some("output1"))
+            .set_persistent_id(Some("j1"));
+
+        let j1_indexed = j1
+            .map_index(|x| (*x, *x))
+            .set_persistent_id(Some("j1-indexed"));
+
+        j1_indexed.join(&input_stream1_indexed, |key, _v1, _v2| *key);
+
+        (j1_indexed, j1.accumulate_output_persistent(Some("output1")))
     };
 
     let output_handle2 = if balancing {
-        input_stream2_indexed
+        let j2 = input_stream2_indexed
             .join_balanced_inner(&input_stream3_indexed, |key, _v1, _v2| *key)
-            .accumulate_output_persistent(Some("output2"))
+            .set_persistent_id(Some("j2"));
+
+        let j2_indexed = j2
+            .map_index(|x| (*x, *x))
+            .set_persistent_id(Some("j2-indexed"));
+
+        let j3 = j2_indexed
+            .join_balanced_inner(&j1_indexed, |key, _v1, _v2| *key)
+            .set_persistent_id(Some("j3"));
+
+        j3.accumulate_output_persistent(Some("output2"))
     } else {
-        input_stream2_indexed
+        let j2 = input_stream2_indexed
             .join(&input_stream3_indexed, |key, _v1, _v2| *key)
-            .accumulate_output_persistent(Some("output2"))
+            .set_persistent_id(Some("j2"));
+
+        let j2_indexed = j2
+            .map_index(|x| (*x, *x))
+            .set_persistent_id(Some("j2-indexed"));
+
+        let j3 = j2_indexed
+            .join(&j1_indexed, |key, _v1, _v2| *key)
+            .set_persistent_id(Some("j3"));
+
+        j3.accumulate_output_persistent(Some("output2"))
     };
 
     (
