@@ -323,39 +323,15 @@ export type PipelineThumb = ReturnType<typeof toPipelineThumb>
 export type Pipeline = ReturnType<typeof toPipeline>
 export type ExtendedPipeline = ReturnType<typeof toExtendedPipeline>
 
-type RequestResult<R, E> = Promise<
-  (
-    | {
-        data: R
-        error: undefined
-      }
-    | {
-        data: undefined
-        error: E
-      }
-  ) & {
-    request: Request
-    response: Response
-  }
->
-
-const mapResponse = <R, T, E extends { message: string }>(
-  request: RequestResult<R, E>,
+// The SDK is generated with `responseStyle: 'data'` + `throwOnError: true`
+// (see openapi-ts.config.ts), so every call resolves to bare response data on
+// success and rejects with the parsed error body on failure. The client's error
+// interceptor (see auth.ts) attaches the original Response to the rejected error.
+const mapResponse = <R, T>(
+  request: Promise<R>,
   f: (v: R) => T,
-  g?: (e: E) => T
-) => {
-  return request.then((response) => {
-    if ('error' in response && response.error) {
-      if (g) {
-        return g(response.error)
-      }
-      throw new Error(response.error.message, {
-        cause: { ...response.error, response: response.response }
-      })
-    }
-    return f(response.data!)
-  })
-}
+  g?: (e: ErrorResponse & { response?: Response }) => T
+) => (g ? request.then(f).catch(g as (e: unknown) => T) : request.then(f))
 
 export const getPipelineThumb = async (
   pipeline_name: string,
@@ -653,14 +629,13 @@ export const getSamplyProfile = async (
 }
 
 export const collectSamplyProfile = async (pipelineName: string, durationSeconds: number) => {
-  const result = await startSamplyProfile({
+  const data = await startSamplyProfile({
     path: { pipeline_name: pipelineName },
     query: { duration_secs: durationSeconds }
+  }).catch((error: ErrorResponse) => {
+    throw new Error(apiErrorText(error), { cause: error })
   })
-  if (!result.error) {
-    return { data: result.data }
-  }
-  throw new Error(apiErrorText(result.error), { cause: result.error })
+  return { data }
 }
 
 /**

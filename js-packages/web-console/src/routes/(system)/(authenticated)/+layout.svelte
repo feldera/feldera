@@ -7,6 +7,7 @@
   import LineBanner, { BannerButton } from '$lib/components/layout/LineBanner.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import OverlayDrawer from '$lib/components/layout/OverlayDrawer.svelte'
+  import AuthErrorToast from '$lib/components/other/AuthErrorToast.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
@@ -107,14 +108,18 @@
   const api = usePipelineManager()
   const { toastMain, dismissMain } = useToast()
   $effect(() => {
-    if (api.isNetworkHealthy) {
-      dismissMain()
-    } else {
+    if (!api.isNetworkHealthy) {
       toastMain(
         'Unable to reach this Feldera instance.\nEither the cluster is unresponsive, or there is an issue with the network connection.'
       )
+    } else if (!api.isAuthHealthy) {
+      toastMain(AuthErrorToast)
+    } else {
+      dismissMain()
     }
   })
+
+  let isFelderaReachable = $derived(api.isNetworkHealthy && api.isAuthHealthy)
 </script>
 
 <SvelteKitTopLoader
@@ -125,10 +130,9 @@
   ignoreAfterNavigate={() => false}
 ></SvelteKitTopLoader>
 <div
-  class="flex h-full flex-col {api.isNetworkHealthy
+  class="flex h-full flex-col {isFelderaReachable
     ? ''
     : 'disabled pointer-events-auto select-text [&_.monaco-editor-background]:pointer-events-none [&_[role="button"]]:pointer-events-none [&_[role="separator"]]:pointer-events-none [&_a]:pointer-events-none [&_button]:pointer-events-none'}"
-  style={api.isNetworkHealthy ? '' : ''}
 >
   {#if healthMessage && !page.url.pathname.startsWith('/health')}
     <LineBanner variant="error">

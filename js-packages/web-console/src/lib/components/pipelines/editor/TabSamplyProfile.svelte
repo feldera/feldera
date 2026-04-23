@@ -288,7 +288,7 @@
     <WarningBanner>Start the pipeline to collect the profile</WarningBanner>
   {/if}
   <div class="flex flex-nowrap gap-4 p-2">
-    <Progress value={progressValue} class="relative w-fit items-center" max={progressMax}>
+    <Progress value={progressValue} class="relative h-fit w-fit items-center" max={progressMax}>
       <div class="absolute inset-0 flex items-center justify-center">
         <span>{displayTime}</span>
       </div>

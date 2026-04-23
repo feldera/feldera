@@ -197,24 +197,30 @@ export type Options<
  *
  * Retrieve the authentication provider configuration.
  */
-export const getConfigAuthentication = <ThrowOnError extends boolean = false>(
+export const getConfigAuthentication = <ThrowOnError extends boolean = true>(
   options?: Options<GetConfigAuthenticationData, ThrowOnError>
 ) =>
   (options?.client ?? client).get<
     GetConfigAuthenticationResponses,
     GetConfigAuthenticationErrors,
-    ThrowOnError
-  >({ url: '/config/authentication', ...options })
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
+    url: '/config/authentication',
+    ...options
+  })
 
 /**
  * List API Keys
  *
  * Retrieve a list of your API keys.
  */
-export const listApiKeys = <ThrowOnError extends boolean = false>(
+export const listApiKeys = <ThrowOnError extends boolean = true>(
   options?: Options<ListApiKeysData, ThrowOnError>
 ) =>
-  (options?.client ?? client).get<ListApiKeysResponses, ListApiKeysErrors, ThrowOnError>({
+  (options?.client ?? client).get<ListApiKeysResponses, ListApiKeysErrors, ThrowOnError, 'data'>({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/api_keys',
     ...options
@@ -226,10 +232,11 @@ export const listApiKeys = <ThrowOnError extends boolean = false>(
  * Create a new API key with the specified name. The generated API key
  * will be returned in the response and cannot be retrieved again later.
  */
-export const postApiKey = <ThrowOnError extends boolean = false>(
+export const postApiKey = <ThrowOnError extends boolean = true>(
   options: Options<PostApiKeyData, ThrowOnError>
 ) =>
-  (options.client ?? client).post<PostApiKeyResponses, PostApiKeyErrors, ThrowOnError>({
+  (options.client ?? client).post<PostApiKeyResponses, PostApiKeyErrors, ThrowOnError, 'data'>({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/api_keys',
     ...options,
@@ -244,10 +251,16 @@ export const postApiKey = <ThrowOnError extends boolean = false>(
  *
  * Remove an API key by its name.
  */
-export const deleteApiKey = <ThrowOnError extends boolean = false>(
+export const deleteApiKey = <ThrowOnError extends boolean = true>(
   options: Options<DeleteApiKeyData, ThrowOnError>
 ) =>
-  (options.client ?? client).delete<DeleteApiKeyResponses, DeleteApiKeyErrors, ThrowOnError>({
+  (options.client ?? client).delete<
+    DeleteApiKeyResponses,
+    DeleteApiKeyErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/api_keys/{api_key_name}',
     ...options
@@ -258,10 +271,11 @@ export const deleteApiKey = <ThrowOnError extends boolean = false>(
  *
  * Retrieve the metadata of a specific API key by its name.
  */
-export const getApiKey = <ThrowOnError extends boolean = false>(
+export const getApiKey = <ThrowOnError extends boolean = true>(
   options: Options<GetApiKeyData, ThrowOnError>
 ) =>
-  (options.client ?? client).get<GetApiKeyResponses, GetApiKeyErrors, ThrowOnError>({
+  (options.client ?? client).get<GetApiKeyResponses, GetApiKeyErrors, ThrowOnError, 'data'>({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/api_keys/{api_key_name}',
     ...options
@@ -281,14 +295,16 @@ export const getApiKey = <ThrowOnError extends boolean = false>(
  * and events older than 72h are deleted. The latest event, if it already exists, is never
  * cleaned up.
  */
-export const listClusterEvents = <ThrowOnError extends boolean = false>(
+export const listClusterEvents = <ThrowOnError extends boolean = true>(
   options?: Options<ListClusterEventsData, ThrowOnError>
 ) =>
   (options?.client ?? client).get<
     ListClusterEventsResponses,
     ListClusterEventsErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/cluster/events',
     ...options
@@ -304,10 +320,16 @@ export const listClusterEvents = <ThrowOnError extends boolean = false>(
  * The latest event, if it already exists, is never cleaned up.
  * This endpoint can return a 404 for an event that no longer exists due to clean-up.
  */
-export const getClusterEvent = <ThrowOnError extends boolean = false>(
+export const getClusterEvent = <ThrowOnError extends boolean = true>(
   options: Options<GetClusterEventData, ThrowOnError>
 ) =>
-  (options.client ?? client).get<GetClusterEventResponses, GetClusterEventErrors, ThrowOnError>({
+  (options.client ?? client).get<
+    GetClusterEventResponses,
+    GetClusterEventErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/cluster/events/{event_id}',
     ...options
@@ -318,10 +340,16 @@ export const getClusterEvent = <ThrowOnError extends boolean = false>(
  *
  * Determine the latest cluster health via the latest cluster monitor event.
  */
-export const getClusterHealth = <ThrowOnError extends boolean = false>(
+export const getClusterHealth = <ThrowOnError extends boolean = true>(
   options?: Options<GetClusterHealthData, ThrowOnError>
 ) =>
-  (options?.client ?? client).get<GetClusterHealthResponses, GetClusterHealthErrors, ThrowOnError>({
+  (options?.client ?? client).get<
+    GetClusterHealthResponses,
+    GetClusterHealthErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/cluster_healthz',
     ...options
@@ -332,10 +360,11 @@ export const getClusterHealth = <ThrowOnError extends boolean = false>(
  *
  * Retrieve configuration of the Feldera Platform.
  */
-export const getConfig = <ThrowOnError extends boolean = false>(
+export const getConfig = <ThrowOnError extends boolean = true>(
   options?: Options<GetConfigData, ThrowOnError>
 ) =>
-  (options?.client ?? client).get<GetConfigResponses, GetConfigErrors, ThrowOnError>({
+  (options?.client ?? client).get<GetConfigResponses, GetConfigErrors, ThrowOnError, 'data'>({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/config',
     ...options
@@ -346,10 +375,16 @@ export const getConfig = <ThrowOnError extends boolean = false>(
  *
  * Retrieve the list of demos available in the WebConsole.
  */
-export const getConfigDemos = <ThrowOnError extends boolean = false>(
+export const getConfigDemos = <ThrowOnError extends boolean = true>(
   options?: Options<GetConfigDemosData, ThrowOnError>
 ) =>
-  (options?.client ?? client).get<GetConfigDemosResponses, GetConfigDemosErrors, ThrowOnError>({
+  (options?.client ?? client).get<
+    GetConfigDemosResponses,
+    GetConfigDemosErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/config/demos',
     ...options
@@ -360,10 +395,16 @@ export const getConfigDemos = <ThrowOnError extends boolean = false>(
  *
  * Retrieve login session information for your current user session.
  */
-export const getConfigSession = <ThrowOnError extends boolean = false>(
+export const getConfigSession = <ThrowOnError extends boolean = true>(
   options?: Options<GetConfigSessionData, ThrowOnError>
 ) =>
-  (options?.client ?? client).get<GetConfigSessionResponses, GetConfigSessionErrors, ThrowOnError>({
+  (options?.client ?? client).get<
+    GetConfigSessionResponses,
+    GetConfigSessionErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/config/session',
     ...options
@@ -378,10 +419,11 @@ export const getConfigSession = <ThrowOnError extends boolean = false>(
  * endpoint of each pipeline, of which only successful responses are included
  * in the returned list.
  */
-export const getMetrics = <ThrowOnError extends boolean = false>(
+export const getMetrics = <ThrowOnError extends boolean = true>(
   options?: Options<GetMetricsData, ThrowOnError>
 ) =>
-  (options?.client ?? client).get<GetMetricsResponses, unknown, ThrowOnError>({
+  (options?.client ?? client).get<GetMetricsResponses, unknown, ThrowOnError, 'data'>({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/metrics',
     ...options
@@ -393,10 +435,16 @@ export const getMetrics = <ThrowOnError extends boolean = false>(
  * Retrieve the list of pipelines.
  * Configure which fields are included using the `selector` query parameter.
  */
-export const listPipelines = <ThrowOnError extends boolean = false>(
+export const listPipelines = <ThrowOnError extends boolean = true>(
   options?: Options<ListPipelinesData, ThrowOnError>
 ) =>
-  (options?.client ?? client).get<ListPipelinesResponses, ListPipelinesErrors, ThrowOnError>({
+  (options?.client ?? client).get<
+    ListPipelinesResponses,
+    ListPipelinesErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines',
     ...options
@@ -407,10 +455,11 @@ export const listPipelines = <ThrowOnError extends boolean = false>(
  *
  * Create a new pipeline with the provided configuration.
  */
-export const postPipeline = <ThrowOnError extends boolean = false>(
+export const postPipeline = <ThrowOnError extends boolean = true>(
   options: Options<PostPipelineData, ThrowOnError>
 ) =>
-  (options.client ?? client).post<PostPipelineResponses, PostPipelineErrors, ThrowOnError>({
+  (options.client ?? client).post<PostPipelineResponses, PostPipelineErrors, ThrowOnError, 'data'>({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines',
     ...options,
@@ -425,10 +474,16 @@ export const postPipeline = <ThrowOnError extends boolean = false>(
  *
  * Delete an existing pipeline by name.
  */
-export const deletePipeline = <ThrowOnError extends boolean = false>(
+export const deletePipeline = <ThrowOnError extends boolean = true>(
   options: Options<DeletePipelineData, ThrowOnError>
 ) =>
-  (options.client ?? client).delete<DeletePipelineResponses, DeletePipelineErrors, ThrowOnError>({
+  (options.client ?? client).delete<
+    DeletePipelineResponses,
+    DeletePipelineErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}',
     ...options
@@ -440,10 +495,11 @@ export const deletePipeline = <ThrowOnError extends boolean = false>(
  * Retrieve a pipeline.
  * Configure which fields are included using the `selector` query parameter.
  */
-export const getPipeline = <ThrowOnError extends boolean = false>(
+export const getPipeline = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineData, ThrowOnError>
 ) =>
-  (options.client ?? client).get<GetPipelineResponses, GetPipelineErrors, ThrowOnError>({
+  (options.client ?? client).get<GetPipelineResponses, GetPipelineErrors, ThrowOnError, 'data'>({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}',
     ...options
@@ -454,10 +510,16 @@ export const getPipeline = <ThrowOnError extends boolean = false>(
  *
  * Partially update a pipeline.
  */
-export const patchPipeline = <ThrowOnError extends boolean = false>(
+export const patchPipeline = <ThrowOnError extends boolean = true>(
   options: Options<PatchPipelineData, ThrowOnError>
 ) =>
-  (options.client ?? client).patch<PatchPipelineResponses, PatchPipelineErrors, ThrowOnError>({
+  (options.client ?? client).patch<
+    PatchPipelineResponses,
+    PatchPipelineErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}',
     ...options,
@@ -472,10 +534,11 @@ export const patchPipeline = <ThrowOnError extends boolean = false>(
  *
  * Fully update a pipeline if it already exists, otherwise create a new pipeline.
  */
-export const putPipeline = <ThrowOnError extends boolean = false>(
+export const putPipeline = <ThrowOnError extends boolean = true>(
   options: Options<PutPipelineData, ThrowOnError>
 ) =>
-  (options.client ?? client).put<PutPipelineResponses, PutPipelineErrors, ThrowOnError>({
+  (options.client ?? client).put<PutPipelineResponses, PutPipelineErrors, ThrowOnError, 'data'>({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}',
     ...options,
@@ -496,14 +559,16 @@ export const putPipeline = <ThrowOnError extends boolean = false>(
  * This endpoint is only applicable when the pipeline is configured to start
  * from object store and started as standby.
  */
-export const postPipelineActivate = <ThrowOnError extends boolean = false>(
+export const postPipelineActivate = <ThrowOnError extends boolean = true>(
   options: Options<PostPipelineActivateData, ThrowOnError>
 ) =>
   (options.client ?? client).post<
     PostPipelineActivateResponses,
     PostPipelineActivateErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/activate',
     ...options
@@ -520,14 +585,16 @@ export const postPipelineActivate = <ThrowOnError extends boolean = false>(
  * currently in the `AwaitingApproval` state awaiting user approval to proceed
  * with bootstrapping.
  */
-export const postPipelineApprove = <ThrowOnError extends boolean = false>(
+export const postPipelineApprove = <ThrowOnError extends boolean = true>(
   options: Options<PostPipelineApproveData, ThrowOnError>
 ) =>
   (options.client ?? client).post<
     PostPipelineApproveResponses,
     PostPipelineApproveErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/approve',
     ...options
@@ -541,14 +608,16 @@ export const postPipelineApprove = <ThrowOnError extends boolean = false>(
  * Returns a checkpoint sequence number that can be used with `/checkpoint_status` to
  * determine when the checkpoint has completed.
  */
-export const checkpointPipeline = <ThrowOnError extends boolean = false>(
+export const checkpointPipeline = <ThrowOnError extends boolean = true>(
   options: Options<CheckpointPipelineData, ThrowOnError>
 ) =>
   (options.client ?? client).post<
     CheckpointPipelineResponses,
     CheckpointPipelineErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/checkpoint',
     ...options
@@ -559,10 +628,16 @@ export const checkpointPipeline = <ThrowOnError extends boolean = false>(
  *
  * Syncs latest checkpoints to the object store configured in pipeline config.
  */
-export const syncCheckpoint = <ThrowOnError extends boolean = false>(
+export const syncCheckpoint = <ThrowOnError extends boolean = true>(
   options: Options<SyncCheckpointData, ThrowOnError>
 ) =>
-  (options.client ?? client).post<SyncCheckpointResponses, SyncCheckpointErrors, ThrowOnError>({
+  (options.client ?? client).post<
+    SyncCheckpointResponses,
+    SyncCheckpointErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/checkpoint/sync',
     ...options
@@ -573,14 +648,16 @@ export const syncCheckpoint = <ThrowOnError extends boolean = false>(
  *
  * Retrieve status of checkpoint sync activity in a pipeline.
  */
-export const getCheckpointSyncStatus = <ThrowOnError extends boolean = false>(
+export const getCheckpointSyncStatus = <ThrowOnError extends boolean = true>(
   options: Options<GetCheckpointSyncStatusData, ThrowOnError>
 ) =>
   (options.client ?? client).get<
     GetCheckpointSyncStatusResponses,
     GetCheckpointSyncStatusErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/checkpoint/sync_status',
     ...options
@@ -591,14 +668,16 @@ export const getCheckpointSyncStatus = <ThrowOnError extends boolean = false>(
  *
  * Retrieve status of checkpoint activity in a pipeline.
  */
-export const getCheckpointStatus = <ThrowOnError extends boolean = false>(
+export const getCheckpointStatus = <ThrowOnError extends boolean = true>(
   options: Options<GetCheckpointStatusData, ThrowOnError>
 ) =>
   (options.client ?? client).get<
     GetCheckpointStatusResponses,
     GetCheckpointStatusErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/checkpoint_status',
     ...options
@@ -609,10 +688,16 @@ export const getCheckpointStatus = <ThrowOnError extends boolean = false>(
  *
  * Retrieve the current checkpoints made by a pipeline.
  */
-export const getCheckpoints = <ThrowOnError extends boolean = false>(
+export const getCheckpoints = <ThrowOnError extends boolean = true>(
   options: Options<GetCheckpointsData, ThrowOnError>
 ) =>
-  (options.client ?? client).get<GetCheckpointsResponses, GetCheckpointsErrors, ThrowOnError>({
+  (options.client ?? client).get<
+    GetCheckpointsResponses,
+    GetCheckpointsErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/checkpoints',
     ...options
@@ -623,14 +708,16 @@ export const getCheckpoints = <ThrowOnError extends boolean = false>(
  *
  * Retrieve the circuit performance profile in JSON format of a running or paused pipeline.
  */
-export const getPipelineCircuitJsonProfile = <ThrowOnError extends boolean = false>(
+export const getPipelineCircuitJsonProfile = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineCircuitJsonProfileData, ThrowOnError>
 ) =>
   (options.client ?? client).get<
     GetPipelineCircuitJsonProfileResponses,
     GetPipelineCircuitJsonProfileErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/circuit_json_profile',
     ...options
@@ -641,14 +728,16 @@ export const getPipelineCircuitJsonProfile = <ThrowOnError extends boolean = fal
  *
  * Retrieve the circuit performance profile of a running or paused pipeline.
  */
-export const getPipelineCircuitProfile = <ThrowOnError extends boolean = false>(
+export const getPipelineCircuitProfile = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineCircuitProfileData, ThrowOnError>
 ) =>
   (options.client ?? client).get<
     GetPipelineCircuitProfileResponses,
     GetPipelineCircuitProfileErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/circuit_profile',
     ...options
@@ -666,14 +755,16 @@ export const getPipelineCircuitProfile = <ThrowOnError extends boolean = false>(
  * performed asynchronously. Progress should be monitored by polling the pipeline
  * using the `GET` endpoints. An `/clear` cannot be cancelled.
  */
-export const postPipelineClear = <ThrowOnError extends boolean = false>(
+export const postPipelineClear = <ThrowOnError extends boolean = true>(
   options: Options<PostPipelineClearData, ThrowOnError>
 ) =>
   (options.client ?? client).post<
     PostPipelineClearResponses,
     PostPipelineClearErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/clear',
     ...options
@@ -684,14 +775,16 @@ export const postPipelineClear = <ThrowOnError extends boolean = false>(
  *
  * Commit the current transaction.
  */
-export const commitTransaction = <ThrowOnError extends boolean = false>(
+export const commitTransaction = <ThrowOnError extends boolean = true>(
   options: Options<CommitTransactionData, ThrowOnError>
 ) =>
   (options.client ?? client).post<
     CommitTransactionResponses,
     CommitTransactionErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/commit_transaction',
     ...options
@@ -703,10 +796,16 @@ export const commitTransaction = <ThrowOnError extends boolean = false>(
  * Check the status of a completion token returned by the `/ingress` or `/completion_token`
  * endpoint.
  */
-export const completionStatus = <ThrowOnError extends boolean = false>(
+export const completionStatus = <ThrowOnError extends boolean = true>(
   options: Options<CompletionStatusData, ThrowOnError>
 ) =>
-  (options.client ?? client).get<CompletionStatusResponses, CompletionStatusErrors, ThrowOnError>({
+  (options.client ?? client).get<
+    CompletionStatusResponses,
+    CompletionStatusErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/completion_status',
     ...options
@@ -719,14 +818,16 @@ export const completionStatus = <ThrowOnError extends boolean = false>(
  * The dataflow graph is generated during SQL compilation and shows the structure
  * of the compiled SQL program including the Calcite plan and MIR nodes.
  */
-export const getPipelineDataflowGraph = <ThrowOnError extends boolean = false>(
+export const getPipelineDataflowGraph = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineDataflowGraphData, ThrowOnError>
 ) =>
   (options.client ?? client).get<
     GetPipelineDataflowGraphResponses,
     GetPipelineDataflowGraphErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/dataflow_graph',
     ...options
@@ -740,14 +841,16 @@ export const getPipelineDataflowGraph = <ThrowOnError extends boolean = false>(
  * stopped (i.e., both current and desired status must be `Stopped`) AND a deployment error
  * is present.
  */
-export const postPipelineDismissError = <ThrowOnError extends boolean = false>(
+export const postPipelineDismissError = <ThrowOnError extends boolean = true>(
   options: Options<PostPipelineDismissErrorData, ThrowOnError>
 ) =>
   (options.client ?? client).post<
     PostPipelineDismissErrorResponses,
     PostPipelineDismissErrorErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/dismiss_error',
     ...options
@@ -765,10 +868,11 @@ export const postPipelineDismissError = <ThrowOnError extends boolean = false>(
  * The pipeline continues sending updates until the client closes the
  * connection or the pipeline is stopped.
  */
-export const httpOutput = <ThrowOnError extends boolean = false>(
+export const httpOutput = <ThrowOnError extends boolean = true>(
   options: Options<HttpOutputData, ThrowOnError>
 ) =>
-  (options.client ?? client).post<HttpOutputResponses, HttpOutputErrors, ThrowOnError>({
+  (options.client ?? client).post<HttpOutputResponses, HttpOutputErrors, ThrowOnError, 'data'>({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/egress/{table_name}',
     ...options
@@ -779,14 +883,16 @@ export const httpOutput = <ThrowOnError extends boolean = false>(
  *
  * Retrieve the heap profile of a running or paused pipeline.
  */
-export const getPipelineHeapProfile = <ThrowOnError extends boolean = false>(
+export const getPipelineHeapProfile = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineHeapProfileData, ThrowOnError>
 ) =>
   (options.client ?? client).get<
     GetPipelineHeapProfileResponses,
     GetPipelineHeapProfileErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/heap_profile',
     ...options
@@ -809,11 +915,12 @@ export const getPipelineHeapProfile = <ThrowOnError extends boolean = false>(
  * '/completion_status' endpoint to check whether the pipeline has fully
  * processed the data.
  */
-export const httpInput = <ThrowOnError extends boolean = false>(
+export const httpInput = <ThrowOnError extends boolean = true>(
   options: Options<HttpInputData, ThrowOnError>
 ) =>
-  (options.client ?? client).post<HttpInputResponses, HttpInputErrors, ThrowOnError>({
+  (options.client ?? client).post<HttpInputResponses, HttpInputErrors, ThrowOnError, 'data'>({
     bodySerializer: null,
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/ingress/{table_name}',
     ...options,
@@ -840,10 +947,16 @@ export const httpInput = <ThrowOnError extends boolean = false>(
  * The logs stream will end when the pipeline is deleted, or if the runner restarts. Note that in
  * both cases the logs will be cleared.
  */
-export const getPipelineLogs = <ThrowOnError extends boolean = false>(
+export const getPipelineLogs = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineLogsData, ThrowOnError>
 ) =>
-  (options.client ?? client).get<GetPipelineLogsResponses, GetPipelineLogsErrors, ThrowOnError>({
+  (options.client ?? client).get<
+    GetPipelineLogsResponses,
+    GetPipelineLogsErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/logs',
     ...options
@@ -854,14 +967,16 @@ export const getPipelineLogs = <ThrowOnError extends boolean = false>(
  *
  * Retrieve the metrics of a running or paused pipeline.
  */
-export const getPipelineMetrics = <ThrowOnError extends boolean = false>(
+export const getPipelineMetrics = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineMetricsData, ThrowOnError>
 ) =>
   (options.client ?? client).get<
     GetPipelineMetricsResponses,
     GetPipelineMetricsErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/metrics',
     ...options
@@ -874,14 +989,16 @@ export const getPipelineMetrics = <ThrowOnError extends boolean = false>(
  *
  * Progress should be monitored by polling the pipeline `GET` endpoints.
  */
-export const postPipelinePause = <ThrowOnError extends boolean = false>(
+export const postPipelinePause = <ThrowOnError extends boolean = true>(
   options: Options<PostPipelinePauseData, ThrowOnError>
 ) =>
   (options.client ?? client).post<
     PostPipelinePauseResponses,
     PostPipelinePauseErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/pause',
     ...options
@@ -894,10 +1011,16 @@ export const postPipelinePause = <ThrowOnError extends boolean = false>(
  *
  * The evaluation is not incremental.
  */
-export const pipelineAdhocSql = <ThrowOnError extends boolean = false>(
+export const pipelineAdhocSql = <ThrowOnError extends boolean = true>(
   options: Options<PipelineAdhocSqlData, ThrowOnError>
 ) =>
-  (options.client ?? client).get<PipelineAdhocSqlResponses, PipelineAdhocSqlErrors, ThrowOnError>({
+  (options.client ?? client).get<
+    PipelineAdhocSqlResponses,
+    PipelineAdhocSqlErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/query',
     ...options
@@ -912,14 +1035,16 @@ export const pipelineAdhocSql = <ThrowOnError extends boolean = false>(
  *
  * This operation is a no-op unless the `adaptive_joins` feature is enabled in `dev_tweaks`.
  */
-export const postPipelineRebalance = <ThrowOnError extends boolean = false>(
+export const postPipelineRebalance = <ThrowOnError extends boolean = true>(
   options: Options<PostPipelineRebalanceData, ThrowOnError>
 ) =>
   (options.client ?? client).post<
     PostPipelineRebalanceResponses,
     PostPipelineRebalanceErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/rebalance',
     ...options
@@ -932,14 +1057,16 @@ export const postPipelineRebalance = <ThrowOnError extends boolean = false>(
  *
  * Progress should be monitored by polling the pipeline `GET` endpoints.
  */
-export const postPipelineResume = <ThrowOnError extends boolean = false>(
+export const postPipelineResume = <ThrowOnError extends boolean = true>(
   options: Options<PostPipelineResumeData, ThrowOnError>
 ) =>
   (options.client ?? client).post<
     PostPipelineResumeResponses,
     PostPipelineResumeErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/resume',
     ...options
@@ -951,14 +1078,16 @@ export const postPipelineResume = <ThrowOnError extends boolean = false>(
  * Retrieve the last samply profile of a pipeline, regardless of whether profiling is currently in progress.
  * If ?latest parameter is specified and Samply profile collection is in progress, returns HTTP 307 with Retry-After header.
  */
-export const getPipelineSamplyProfile = <ThrowOnError extends boolean = false>(
+export const getPipelineSamplyProfile = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineSamplyProfileData, ThrowOnError>
 ) =>
   (options.client ?? client).get<
     GetPipelineSamplyProfileResponses,
     GetPipelineSamplyProfileErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/samply_profile',
     ...options
@@ -969,14 +1098,16 @@ export const getPipelineSamplyProfile = <ThrowOnError extends boolean = false>(
  *
  * Profile the pipeline using the Samply profiler for the next `duration_secs` seconds.
  */
-export const startSamplyProfile = <ThrowOnError extends boolean = false>(
+export const startSamplyProfile = <ThrowOnError extends boolean = true>(
   options: Options<StartSamplyProfileData, ThrowOnError>
 ) =>
   (options.client ?? client).post<
     StartSamplyProfileResponses,
     StartSamplyProfileErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/samply_profile',
     ...options
@@ -998,14 +1129,16 @@ export const startSamplyProfile = <ThrowOnError extends boolean = false>(
  * - It is not possible to call `/start` when the pipeline has already had `/stop` called and is
  * in the process of suspending or stopping.
  */
-export const postPipelineStart = <ThrowOnError extends boolean = false>(
+export const postPipelineStart = <ThrowOnError extends boolean = true>(
   options: Options<PostPipelineStartData, ThrowOnError>
 ) =>
   (options.client ?? client).post<
     PostPipelineStartResponses,
     PostPipelineStartErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/start',
     ...options
@@ -1016,10 +1149,16 @@ export const postPipelineStart = <ThrowOnError extends boolean = false>(
  *
  * Start a new transaction.
  */
-export const startTransaction = <ThrowOnError extends boolean = false>(
+export const startTransaction = <ThrowOnError extends boolean = true>(
   options: Options<StartTransactionData, ThrowOnError>
 ) =>
-  (options.client ?? client).post<StartTransactionResponses, StartTransactionErrors, ThrowOnError>({
+  (options.client ?? client).post<
+    StartTransactionResponses,
+    StartTransactionErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/start_transaction',
     ...options
@@ -1030,10 +1169,16 @@ export const startTransaction = <ThrowOnError extends boolean = false>(
  *
  * Retrieve statistics (e.g., performance counters) of a running or paused pipeline.
  */
-export const getPipelineStats = <ThrowOnError extends boolean = false>(
+export const getPipelineStats = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineStatsData, ThrowOnError>
 ) =>
-  (options.client ?? client).get<GetPipelineStatsResponses, GetPipelineStatsErrors, ThrowOnError>({
+  (options.client ?? client).get<
+    GetPipelineStatsResponses,
+    GetPipelineStatsErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/stats',
     ...options
@@ -1067,10 +1212,16 @@ export const getPipelineStats = <ThrowOnError extends boolean = false>(
  * action can be done
  * - A pipeline which is in the process of suspending or stopping can only be forcefully stopped
  */
-export const postPipelineStop = <ThrowOnError extends boolean = false>(
+export const postPipelineStop = <ThrowOnError extends boolean = true>(
   options: Options<PostPipelineStopData, ThrowOnError>
 ) =>
-  (options.client ?? client).post<PostPipelineStopResponses, PostPipelineStopErrors, ThrowOnError>({
+  (options.client ?? client).post<
+    PostPipelineStopResponses,
+    PostPipelineStopErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/stop',
     ...options
@@ -1085,14 +1236,16 @@ export const postPipelineStop = <ThrowOnError extends boolean = false>(
  * circuit profile, heap profile, metrics, logs, stats, and connector statistics,
  * and packages them into a single ZIP file for support purposes.
  */
-export const getPipelineSupportBundle = <ThrowOnError extends boolean = false>(
+export const getPipelineSupportBundle = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineSupportBundleData, ThrowOnError>
 ) =>
   (options.client ?? client).get<
     GetPipelineSupportBundleResponses,
     GetPipelineSupportBundleErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/support_bundle',
     ...options
@@ -1107,10 +1260,16 @@ export const getPipelineSupportBundle = <ThrowOnError extends boolean = false>(
  * to check whether the pipeline has finished processing all inputs received from the
  * connector before the token was generated.
  */
-export const completionToken = <ThrowOnError extends boolean = false>(
+export const completionToken = <ThrowOnError extends boolean = true>(
   options: Options<CompletionTokenData, ThrowOnError>
 ) =>
-  (options.client ?? client).get<CompletionTokenResponses, CompletionTokenErrors, ThrowOnError>({
+  (options.client ?? client).get<
+    CompletionTokenResponses,
+    CompletionTokenErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/completion_token',
     ...options
@@ -1121,14 +1280,16 @@ export const completionToken = <ThrowOnError extends boolean = false>(
  *
  * Retrieve the status of an input connector.
  */
-export const getPipelineInputConnectorStatus = <ThrowOnError extends boolean = false>(
+export const getPipelineInputConnectorStatus = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineInputConnectorStatusData, ThrowOnError>
 ) =>
   (options.client ?? client).get<
     GetPipelineInputConnectorStatusResponses,
     GetPipelineInputConnectorStatusErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/stats',
     ...options
@@ -1165,14 +1326,16 @@ export const getPipelineInputConnectorStatus = <ThrowOnError extends boolean = f
  * Running           Running            Yes
  * ```
  */
-export const postPipelineInputConnectorAction = <ThrowOnError extends boolean = false>(
+export const postPipelineInputConnectorAction = <ThrowOnError extends boolean = true>(
   options: Options<PostPipelineInputConnectorActionData, ThrowOnError>
 ) =>
   (options.client ?? client).post<
     PostPipelineInputConnectorActionResponses,
     PostPipelineInputConnectorActionErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/{action}',
     ...options
@@ -1184,14 +1347,16 @@ export const postPipelineInputConnectorAction = <ThrowOnError extends boolean = 
  * This endpoint is used as part of the test harness. Only available if the `testing`
  * unstable feature is enabled. Do not use in production.
  */
-export const postPipelineTesting = <ThrowOnError extends boolean = false>(
+export const postPipelineTesting = <ThrowOnError extends boolean = true>(
   options: Options<PostPipelineTestingData, ThrowOnError>
 ) =>
   (options.client ?? client).post<
     PostPipelineTestingResponses,
     PostPipelineTestingErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/testing',
     ...options
@@ -1202,14 +1367,16 @@ export const postPipelineTesting = <ThrowOnError extends boolean = false>(
  *
  * Retrieve time series for statistics of a running or paused pipeline.
  */
-export const getPipelineTimeSeries = <ThrowOnError extends boolean = false>(
+export const getPipelineTimeSeries = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineTimeSeriesData, ThrowOnError>
 ) =>
   (options.client ?? client).get<
     GetPipelineTimeSeriesResponses,
     GetPipelineTimeSeriesErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/time_series',
     ...options
@@ -1225,14 +1392,16 @@ export const getPipelineTimeSeries = <ThrowOnError extends boolean = false>(
  * JSON format (NDJSON) where each line is a JSON object representing a single time series
  * data point.
  */
-export const getPipelineTimeSeriesStream = <ThrowOnError extends boolean = false>(
+export const getPipelineTimeSeriesStream = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineTimeSeriesStreamData, ThrowOnError>
 ) =>
   (options.client ?? client).get<
     GetPipelineTimeSeriesStreamResponses,
     GetPipelineTimeSeriesStreamErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/time_series_stream',
     ...options
@@ -1263,14 +1432,16 @@ export const getPipelineTimeSeriesStream = <ThrowOnError extends boolean = false
  * it may require bootstrapping parts of its state from scratch.  See Feldera
  * documentation for details on the bootstrapping process.
  */
-export const postUpdateRuntime = <ThrowOnError extends boolean = false>(
+export const postUpdateRuntime = <ThrowOnError extends boolean = true>(
   options: Options<PostUpdateRuntimeData, ThrowOnError>
 ) =>
   (options.client ?? client).post<
     PostUpdateRuntimeResponses,
     PostUpdateRuntimeErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/update_runtime',
     ...options
@@ -1284,14 +1455,16 @@ export const postUpdateRuntime = <ThrowOnError extends boolean = false>(
  * This clears buffered output, asks the sink to reset itself, and then replays
  * a full snapshot before resuming incremental updates.
  */
-export const postPipelineOutputConnectorReset = <ThrowOnError extends boolean = false>(
+export const postPipelineOutputConnectorReset = <ThrowOnError extends boolean = true>(
   options: Options<PostPipelineOutputConnectorResetData, ThrowOnError>
 ) =>
   (options.client ?? client).post<
     PostPipelineOutputConnectorResetResponses,
     PostPipelineOutputConnectorResetErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/reset',
     ...options
@@ -1302,14 +1475,16 @@ export const postPipelineOutputConnectorReset = <ThrowOnError extends boolean = 
  *
  * Retrieve the status of an output connector.
  */
-export const getPipelineOutputConnectorStatus = <ThrowOnError extends boolean = false>(
+export const getPipelineOutputConnectorStatus = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineOutputConnectorStatusData, ThrowOnError>
 ) =>
   (options.client ?? client).get<
     GetPipelineOutputConnectorStatusResponses,
     GetPipelineOutputConnectorStatusErrors,
-    ThrowOnError
+    ThrowOnError,
+    'data'
   >({
+    responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats',
     ...options
