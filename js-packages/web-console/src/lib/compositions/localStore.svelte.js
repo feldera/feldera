@@ -2,7 +2,8 @@
  * @template T
  */
 export class LocalStore {
-  value = $state(/** @type {T} */ (/** @type {unknown} */ undefined))
+  /** @type {T} */
+  #value
   key = ''
 
   /**
@@ -11,7 +12,7 @@ export class LocalStore {
    */
   constructor(key, value) {
     this.key = key
-    this.value = value
+    this.#value = $state(value)
 
     if ('window' in globalThis) {
       const item = localStorage.getItem(key)
@@ -19,10 +20,21 @@ export class LocalStore {
         this.value = JSON.parse(item)
       }
     }
+  }
 
-    $effect(() => {
-      localStorage.setItem(this.key, JSON.stringify(this.value))
-    })
+  /**
+   * @returns {T}
+   */
+  get value() {
+    return this.#value
+  }
+
+  /**
+   * @param {T} v
+   */
+  set value(v) {
+    this.#value = v
+    localStorage.setItem(this.key, JSON.stringify(this.value))
   }
 
   remove() {

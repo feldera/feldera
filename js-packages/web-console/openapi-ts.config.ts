@@ -6,7 +6,12 @@ export default defineConfig({
   plugins: [
     {
       name: '@hey-api/client-fetch',
-      runtimeConfigPath: '$lib/compositions/setupHttpClient'
+      runtimeConfigPath: '$lib/compositions/setupHttpClient',
+      throwOnError: true
+    },
+    {
+      name: '@hey-api/sdk',
+      responseStyle: 'data'
     }
   ]
 })

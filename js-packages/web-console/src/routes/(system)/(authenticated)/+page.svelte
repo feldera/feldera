@@ -123,6 +123,11 @@
         </div>
       {/if}
       <div class="flex flex-col">
+        {#snippet header()}
+          <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
+            <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
+          </div>
+        {/snippet}
         {#if !pipelines.pipelines}
           <div class="flex w-full flex-col items-center gap-4 pt-8 sm:pt-16">
             <Progress class="" value={null}>
@@ -134,12 +139,7 @@
           </div>
         {:else if pipelines.pipelines.length}
           {@const ps = pipelines.pipelines}
-          <PipelineTable pipelines={pipelines.pipelines} bind:selectedPipelines>
-            {#snippet header()}
-              <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
-                <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
-              </div>
-            {/snippet}
+          <PipelineTable pipelines={pipelines.pipelines} bind:selectedPipelines {header}>
             {#snippet preHeaderEnd()}
               <AvailableActions pipelines={ps} bind:selectedPipelines></AvailableActions>
               {#if !selectedPipelines.length}
@@ -151,16 +151,16 @@
             {/snippet}
           </PipelineTable>
         {:else}
-          <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
-            <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
+          <div class="px-2 md:px-8">
+            {@render header()}
           </div>
           <div class="flex w-full flex-col items-center gap-4 pt-8 sm:pt-16">
             <ImageBox class="h-9 fill-surface-200-800"></ImageBox>
             <div class="">Your pipelines will appear here</div>
             <div class="relative flex gap-5">
               <CreatePipelineButton btnClass="preset-filled-surface-50-950"></CreatePipelineButton>
-              <a class="btn preset-tonal-surface" href="https://docs.feldera.com">
-                <span class="fd fd-book-open text-2xl"></span>
+              <a class="btn h-9 preset-tonal-surface" href="https://docs.feldera.com">
+                <span class="fd fd-book-open text-xl"></span>
                 Documentation
               </a>
             </div>
