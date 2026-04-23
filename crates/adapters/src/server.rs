@@ -2245,7 +2245,7 @@ async fn output_endpoint(
     // debug!("Endpoint name: '{endpoint_name}'");
 
     // Create HTTP endpoint.
-    let endpoint = HttpOutputEndpoint::new(&endpoint_name, &args.format, args.backpressure);
+    let endpoint = HttpOutputEndpoint::new(&endpoint_name, &args.format, args.backpressure)?;
 
     // Create endpoint config.
     let config = OutputEndpointConfig {
