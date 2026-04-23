@@ -2069,7 +2069,8 @@ async fn get_or_create_http_input_endpoint(
         name: endpoint_name.clone(),
     };
 
-    let endpoint = HttpInputEndpoint::new(config.clone());
+    let guard = controller.register_api_connection()?;
+    let endpoint = HttpInputEndpoint::new(config.clone()).with_api_connection_guard(guard);
     // Create endpoint config.
     let config = InputEndpointConfig {
         stream: Cow::from(table_name),
@@ -2088,10 +2089,6 @@ async fn get_or_create_http_input_endpoint(
         },
     };
 
-    if controller.register_api_connection().is_err() {
-        return Err(PipelineError::ApiConnectionLimit);
-    }
-
     controller
         .add_input_endpoint(
             &endpoint_name,
@@ -2100,7 +2097,6 @@ async fn get_or_create_http_input_endpoint(
             None,
         )
         .inspect_err(|e| {
-            controller.unregister_api_connection();
             debug!("Failed to create API endpoint: '{e}'");
         })?;
 
@@ -2275,20 +2271,14 @@ async fn output_endpoint(
 
     // Connect endpoint.
     let controller = state.controller()?;
-    if controller.register_api_connection().is_err() {
-        return Err(PipelineError::ApiConnectionLimit);
-    }
+    let _guard = controller.register_api_connection()?;
 
-    let endpoint_id = controller
-        .add_output_endpoint(
-            &endpoint_name,
-            &config,
-            Box::new(endpoint.clone()) as Box<dyn OutputEndpoint>,
-            None,
-        )
-        .inspect_err(|_| {
-            controller.unregister_api_connection();
-        })?;
+    let endpoint_id = controller.add_output_endpoint(
+        &endpoint_name,
+        &config,
+        Box::new(endpoint.clone()) as Box<dyn OutputEndpoint>,
+        None,
+    )?;
 
     // We need to pass a callback to `request` to disconnect the endpoint when the
     // request completes.  Use a downgraded reference to `state`, so
@@ -2307,7 +2297,6 @@ async fn output_endpoint(
             && let Ok(controller) = state.controller()
         {
             controller.disconnect_output(&endpoint_id);
-            controller.unregister_api_connection();
         }
     })))
 }
