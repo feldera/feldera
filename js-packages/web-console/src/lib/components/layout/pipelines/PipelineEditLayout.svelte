@@ -86,9 +86,7 @@
     if (!pipelineListPane) {
       return
     }
-    if (showPipelinesPanel.value) {
-      // pipelineListPane.expand()
-    } else {
+    if (!showPipelinesPanel.value) {
       pipelineListPane.collapse()
     }
   })
@@ -112,7 +110,7 @@
   const contextDrawer = useContextDrawer()
 
   let pipelineBannerMessage = $derived.by(() => {
-    if (!pipeline.current) {
+    if (!pipelineThumb) {
       return null
     }
     if (deleted) {
@@ -122,14 +120,14 @@
         style: 'error' as const
       }
     }
-    if (pipeline.current.deploymentError) {
+    if (pipelineThumb.deploymentError) {
       return {
-        header: `The last execution of the pipeline failed with the error code: ${pipeline.current.deploymentError.error_code}`,
-        message: pipeline.current.deploymentError.message,
+        header: `The last execution of the pipeline failed with the error code: ${pipelineThumb.deploymentError.error_code}`,
+        message: pipelineThumb.deploymentError.message,
         style: 'error' as const,
-        onClose: () => pipeline.current && api.dismissDeploymentError(pipeline.current.name)
+        onClose: () => pipelineThumb && api.dismissDeploymentError(pipelineThumb.name)
       }
-    } else if (pipeline.current.status === 'AwaitingApproval') {
+    } else if (pipelineThumb.status === 'AwaitingApproval') {
       return {
         header:
           'The pipeline was modified while it was stopped. Approve the changes or stop the pipeline.',
@@ -443,18 +441,5 @@
       {/if}
     {/each}
   </div>
-  {#if pipeline.current}
-    <!--
-    In Svelte 5 (probably a bug), when rendering a Snippet (in this case, `{@render statusBarEnd()}`) in both branches of an {#if}
-    the constructor of a component (in this case, <EditorOptionsPopup>) is called twice, and then one of the instances is destroyed.
-    It seems like this breaks behavior of some reactive definitions, incl. useLocalStorage()
-    The workaround is to avoid rendering this component on condition that matches rendering of the parent Snippet, and render a dummy instead
-   -->
-    <EditorOptionsPopup></EditorOptionsPopup>
-  {:else}
-    <button
-      class="fd fd-more_horiz disabled btn-icon text-[20px] hover:preset-tonal-surface"
-      aria-label="Editor settings"
-    ></button>
-  {/if}
+  <EditorOptionsPopup></EditorOptionsPopup>
 {/snippet}

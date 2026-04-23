@@ -1,4 +1,4 @@
-import { toast } from 'svelte-french-toast'
+import { type Renderable, toast } from 'svelte-french-toast'
 
 export const useToast = () => {
   const showToastError = (scope: string, error: Error, durationMs?: number) => {
@@ -32,7 +32,7 @@ export const useToast = () => {
         }
       }
     },
-    toastMain(message: string) {
+    toastMain(message: Renderable) {
       toast.error(message, {
         id: 'main',
         duration: 100000000000,

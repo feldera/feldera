@@ -1,6 +1,7 @@
 import * as AxaOidc from '@axa-fr/oidc-client'
 import Dayjs from 'dayjs'
 import duration from 'dayjs/plugin/duration'
+import equal from 'fast-deep-equal'
 import { jwtDecode } from 'jwt-decode'
 import posthog from 'posthog-js'
 import { goto, invalidateAll } from '$app/navigation'
@@ -19,8 +20,10 @@ import { resolve } from '$lib/functions/svelte'
 import {
   authRequestMiddleware,
   authResponseMiddleware,
+  errorResponseMiddleware,
   getSelectedTenant,
-  setSelectedTenant
+  setSelectedTenant,
+  triggerOidcLogin
 } from '$lib/services/auth'
 import type { Configuration, SessionInfo } from '$lib/services/manager'
 import { client } from '$lib/services/manager/client.gen'
@@ -33,6 +36,50 @@ const { OidcClient, OidcLocation } = AxaOidc
 
 export const ssr = false
 export const trailingSlash = 'always'
+
+/**
+ * Boot-up flow overview
+ * ---------------------
+ *
+ * This file owns two responsibilities that together gate every page render:
+ * OIDC auth initialization and Feldera backend-config loading. The goal is
+ * for a returning user to see the UI on the *first* paint without a network
+ * round-trip, while still converging to fresh server state in the background.
+ *
+ * Happy path (warm cache, no change on the server):
+ *
+ *   1. Module loads  →  `authInitPromise` starts once (OIDC bootstrap +
+ *                       `/auth-config` fetch). Subsequent navigations await
+ *                       the same settled promise.
+ *   2. `load()` runs →  auth resolves  →  `getConfigFromCache()` returns
+ *                       data from localStorage  →  layout returns synchronously.
+ *                       The user sees the app immediately.
+ *   3. `lazyUpdateConfig()` is scheduled exactly once per session, in the
+ *      background. It fetches `/config` and `/config/session`, syncs server
+ *      time, and compares the fresh payload against what was rendered.
+ *   4. Configs match (the expected outcome on most visits)  →  the background
+ *      fetch silently finishes. No `invalidateAll()`, no re-running of
+ *      descendant `load` functions, no duplicate page-level fetches.
+ *
+ * Divergent paths:
+ *
+ *   - Cold cache (first ever visit, post-logout, post-clear): no cached
+ *     config exists, so `load()` blocks on `fetchConfigs()` and renders from
+ *     the fresh payload. No background update is scheduled because there is
+ *     nothing to reconcile.
+ *   - Config actually changed server-side: `configChanged()` / `equal()`
+ *     detect the diff and `lazyUpdateConfig()` calls `invalidateAll()`. Every
+ *     descendant `load` (including leaf `+page.ts` files) re-runs so views
+ *     pick up the new values. The `lazyUpdateScheduled` guard ensures this
+ *     does not re-enter `lazyUpdateConfig()`.
+ *   - Unauthenticated: auth resolves to `{ login }`  →  empty layout is
+ *     returned; `(authenticated)/+layout.ts` triggers `auth.login()` and the
+ *     app redirects to the IdP.
+ *
+ * The warm-cache short-circuit is what keeps repeat visits from
+ * double-fetching page-level resources, so be careful when adding new
+ * branches that call `invalidateAll()` unconditionally.
+ */
 
 const initPosthog = async (config: Configuration) => {
   if (!config.telemetry) {
@@ -139,12 +186,76 @@ export const _markRouterReady = () => _resolveRouterReady()
 let lazyUpdateScheduled = false
 
 /**
- * Fetch fresh config, update the cache, sync server time, then trigger a load
- * re-run so consumers of `page.data` see the refreshed config. Fired from the
- * cache-hit path so a stale cache doesn't persist forever. The module-level
- * guard ensures the `invalidateAll()` re-run doesn't re-enter this path.
+ * Delay before the warm-cache reconcile fires. Yields the origin's connection
+ * pool and backend capacity to the page's critical path on slow links (e.g.
+ * corporate VPN). The reconcile has no UI dependency on the warm-cache path,
+ * so landing ~3s later only delays a rarely-needed `invalidateAll()` and re-initialization.
+ */
+const LAZY_UPDATE_DELAY_MS = 2000
+
+/**
+ * Hardcoded toggle for the warm-cache optimistic render. When `false`, every
+ * `load()` blocks on `fetchConfigs()` (same shape as the cold-cache path) and
+ * the `lazyUpdateConfig()` reconcile is skipped. The cache itself is still
+ * written by `fetchConfigs()`, so flipping this back to `true` resumes
+ * optimistic rendering without a stale-state warm-up step.
+ */
+const OPTIMISTIC_CONFIG_CACHE = true
+
+/**
+ * Whether two `Configuration` payloads differ in a way that should motivate
+ * re-invalidating downstream loads in `lazyUpdateConfig`. Fields that do not
+ * affect rendered `page.data` are stripped before comparison so volatile
+ * server-side values do not mask the short-circuit.
+ *
+ * Currently stripped: `license_validity.Exists.current`, a per-response
+ * server timestamp consumed by `syncServerTimeFromConfig` rather than by
+ * any view. Extend this as new volatile-but-irrelevant fields appear.
+ */
+const configChanged = (a: Configuration | undefined, b: Configuration | undefined) => {
+  const stripVolatile = (config: Configuration | undefined) => {
+    if (!config) {
+      return config
+    }
+    const license =
+      config.license_validity && 'Exists' in config.license_validity
+        ? config.license_validity.Exists
+        : undefined
+    if (!license) {
+      return config
+    }
+    return {
+      ...config,
+      license_validity: { Exists: { ...license, current: undefined } }
+    }
+  }
+  return !equal(stripVolatile(a), stripVolatile(b))
+}
+
+/**
+ * Fetch fresh config, update the cache, and sync server time. If the server
+ * config actually changed compared to what we rendered from cache, trigger
+ * `invalidateAll()` so consumers of `page.data` pick up the new values.
+ *
+ * Server time is always synced — even when config is unchanged — because the
+ * cached timestamp is stale by definition and we need a live one.
+ *
+ * The identity check avoids a needless `invalidateAll()` on every navigation
+ * that hits a warm cache: `invalidateAll()` cascades into every descendant
+ * `load` function (root layout, group layouts, leaf `+page.ts`), so on a
+ * page like `/pipelines/[pipelineName]` a blind re-invalidation turns every
+ * initial load into a duplicate fetch of the page's resources.
+ *
+ * The module-level `lazyUpdateScheduled` guard, combined with `initAuth`'s
+ * own promise memoization, ensures the `invalidateAll()` re-run (when it
+ * does fire) does not re-enter this path.
  */
 const lazyUpdateConfig = async () => {
+  // Snapshot cache BEFORE `fetchConfigs` overwrites it, so we can detect no-op
+  // refreshes by comparing what we rendered against what the server returned.
+  const prevConfig = getConfigFromCache()
+  const prevSessionConfig = getSessionConfigFromCache()
+
   let result
   try {
     result = await fetchConfigs()
@@ -156,6 +267,11 @@ const lazyUpdateConfig = async () => {
     return
   }
   syncServerTimeFromConfig(result.config)
+
+  if (!configChanged(prevConfig, result.config) && equal(prevSessionConfig, result.sessionConfig)) {
+    return
+  }
+
   await routerReady
   await invalidateAll()
 }
@@ -180,7 +296,6 @@ const initAuth = async (): Promise<AuthInitResult> => {
   return axaOidcAuth({
     oidcConfig: { ...toAxaOidcConfig(authConfig.oidc) },
     logoutExtras: authConfig.logoutExtras,
-    onBeforeLogin: () => window.sessionStorage.setItem('redirect_to', window.location.href),
     onAfterLogin: async () => {
       const redirectTo = window.sessionStorage.getItem('redirect_to')
       if (!redirectTo) {
@@ -198,8 +313,50 @@ const initAuth = async (): Promise<AuthInitResult> => {
   })
 }
 
+// Register the error interceptor on the shared client up-front, independent of
+// the OIDC handshake. It has to be in place before the first SDK call so that
+// network failures and non-2xx responses both land in `errorResponseMiddleware`
+// regardless of whether auth init has completed (or reached the success branch).
+if ('window' in globalThis) {
+  client.interceptors.error.use(errorResponseMiddleware)
+}
+
 const authInitPromise: Promise<AuthInitResult> = initAuth()
 
+/**
+ * Root layout load. Runs on every navigation, but the expensive parts are
+ * memoized so descendant loads are not blocked past the first session.
+ *
+ * Flow:
+ *
+ *  1. **Auth init** — `authInitPromise` is built once at module load and
+ *     awaited on every `load()` call. Its resolution is cached, so repeat
+ *     navigations pay only the cost of `await` on an already-settled promise.
+ *     Three outcomes:
+ *       - `{ error }`              → render an error shell (`emptyLayoutData + error`).
+ *       - `{ auth: { login } }`    → user is unauthenticated; short-circuit with
+ *                                    the empty layout so `(authenticated)/+layout.ts`
+ *                                    can trigger `auth.login()` and redirect.
+ *       - `{ auth: { logout ...}}` → proceed to config loading.
+ *
+ *  2. **Config loading** — warm localStorage cache is the common path:
+ *       - **Warm cache (most navigations):** return cached `feldera` data
+ *         synchronously, run idempotent side effects (tenant selection,
+ *         posthog init, system messages), and kick off exactly one
+ *         background `lazyUpdateConfig()` per session (guarded by
+ *         `lazyUpdateScheduled`). The UI renders immediately with cached
+ *         values; the background fetch only triggers an `invalidateAll()`
+ *         if the server's config differs from what we rendered, so repeat
+ *         visits do not double-fetch page-level resources.
+ *       - **Cold cache (first visit / after logout / after manual clear):**
+ *         block on `fetchConfigs()`, sync server time, and render with the
+ *         fresh data. No background update is scheduled because the fetched
+ *         values are already canonical.
+ *
+ * Server time is intentionally NOT restored from cache: the cached
+ * `license.current` timestamp is stale and applying it would corrupt the
+ * offset. Until fresh data arrives we let `Date.now()` stand in.
+ */
 export const load: LayoutLoad = async (): Promise<LayoutData> => {
   if (!('window' in globalThis)) {
     return emptyLayoutData
@@ -223,26 +380,20 @@ export const load: LayoutLoad = async (): Promise<LayoutData> => {
     }
   }
 
-  // Get cached config if available
-  const cachedConfig = getConfigFromCache()
-  const cachedSessionConfig = getSessionConfigFromCache()
+  const cachedConfig = OPTIMISTIC_CONFIG_CACHE ? getConfigFromCache() : undefined
+  const cachedSessionConfig = OPTIMISTIC_CONFIG_CACHE ? getSessionConfigFromCache() : undefined
 
   if (cachedConfig) {
-    // Return cached layout data synchronously. Run the non-server-time side
-    // effects immediately so tenant selection / posthog / system messages are
-    // consistent with what the user last saw. Server time is intentionally not
-    // restored from cache — the cached timestamp is stale and would corrupt
-    // the offset; instead we let `Date.now()` stand in until `lazyUpdateConfig`
-    // brings a fresh value.
     initializeConfigDependencies(auth, cachedConfig)
     if (!lazyUpdateScheduled) {
       lazyUpdateScheduled = true
-      void lazyUpdateConfig()
+      setTimeout(() => {
+        lazyUpdateConfig()
+      }, LAZY_UPDATE_DELAY_MS)
     }
     return buildLayoutData(auth, cachedConfig, cachedSessionConfig)
   }
 
-  // If we have no cached config, wait for the first load
   let result
   try {
     result = await fetchConfigs()
@@ -354,7 +505,6 @@ function initializeConfigDependencies(auth: AuthDetails, config: Configuration) 
 const axaOidcAuth = async (params: {
   oidcConfig: AxaOidc.OidcConfiguration
   logoutExtras?: AxaOidc.StringMap
-  onBeforeLogin?: () => void
   onAfterLogin?: (idTokenPayload: any, userInfo: Promise<AxaOidc.OidcUserInfo>) => void
   onBeforeLogout?: () => void
 }) => {
@@ -378,10 +528,7 @@ const axaOidcAuth = async (params: {
       if (!tokens) {
         return {
           auth: {
-            login: async () => {
-              params.onBeforeLogin?.()
-              await oidcClient.loginAsync('/')
-            }
+            login: triggerOidcLogin
           }
         }
       }
@@ -395,7 +542,7 @@ const axaOidcAuth = async (params: {
           'Failed to retrieve user info - authentication has probably changed on the server. Automatically attempting to re-authenticate...'
         )
 
-        oidcClient.loginAsync('/')
+        triggerOidcLogin()
         return {
           error: new Error(
             'Failed to retrieve user info - authentication has probably changed on the server. Automatically attempting to re-authenticate...'

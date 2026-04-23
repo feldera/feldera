@@ -38,27 +38,34 @@ const networkErrors = ['Failed to fetch', 'Network request failed', 'Timeout']
 const isNetworkError = (e: any): e is TypeError =>
   e instanceof TypeError && networkErrors.includes(e.message)
 
+// 401s reach this wrapper after the auth middleware has already attempted a
+// token refresh and failed. The base client's error interceptor attaches the
+// original Response to the thrown error, and `mapResponse` in pipelineManager.ts
+// re-exposes it via `cause.response` when it rewraps the error as an Error.
+const isAuthError = (e: any) => e?.response?.status === 401 || e?.cause?.response?.status === 401
+
 let isNetworkHealthy = $state(true)
+let isAuthHealthy = $state(true)
+
+const updateHealthOnSuccess = () => {
+  isNetworkHealthy ||= true
+  isAuthHealthy ||= true
+}
+
+const updateHealthOnError = (e: unknown) => {
+  if (isNetworkError(e)) {
+    isNetworkHealthy = false
+  } else {
+    // Any non-network error means the server replied — network is healthy.
+    isNetworkHealthy ||= true
+    if (isAuthError(e)) {
+      isAuthHealthy = false
+    }
+  }
+}
 
 const _trackHealth =
-  (options?: FetchOptions) =>
-  <Args extends any[], Data>(x: (...a: [...Args, FetchOptions | undefined]) => Promise<Data>) =>
-  (...a: Args) =>
-    x(...a, options).then(
-      (res) => {
-        isNetworkHealthy ||= true
-        return res
-      },
-      (e) => {
-        if (isNetworkError(e)) {
-          isNetworkHealthy = false
-        }
-        throw e
-      }
-    )
-
-const _reportError =
-  (onError: (e: Error) => void, options?: FetchOptions, doNotReportIf?: (e: Error) => boolean) =>
+  (options?: FetchOptions, onError?: (e: Error) => void, doNotReportIf?: (e: Error) => boolean) =>
   <F extends (...args: any) => Promise<any>>(
     x: F,
     errorMsg?: (...args: F extends (...args: infer Args) => any ? Args : never) => string
@@ -66,17 +73,15 @@ const _reportError =
   (...a: F extends (...args: infer Args) => any ? Args : never) => {
     return x(...a, options).then(
       (v: any) => {
-        isNetworkHealthy ||= true
+        updateHealthOnSuccess()
         return v
       },
       (e: any) => {
         if (doNotReportIf?.(e)) {
           throw e
         }
-        if (isNetworkError(e)) {
-          isNetworkHealthy = false
-        }
-        onError(
+        updateHealthOnError(e)
+        onError?.(
           isNetworkError(e)
             ? new Error((errorMsg?.(...a) ?? `Request failed`) + ': ' + e.message)
             : e
@@ -86,7 +91,10 @@ const _reportError =
     ) as ReturnType<F>
   }
 
-export type PipelineManagerApi = Omit<ReturnType<typeof usePipelineManager>, 'isNetworkHealthy'>
+export type PipelineManagerApi = Omit<
+  ReturnType<typeof usePipelineManager>,
+  'isNetworkHealthy' | 'isAuthHealthy'
+>
 
 export const usePipelineManager = (options?: FetchOptions) => {
   const { toastError } = useToast()
@@ -107,7 +115,7 @@ export const usePipelineManager = (options?: FetchOptions) => {
     return false
   }
 
-  const reportError = _reportError(toastError('API request'), options, doNotReportIfCancelled)
+  const reportError = _trackHealth(options, toastError('API request'), doNotReportIfCancelled)
   const trackHealth = _trackHealth(options)
 
   const getPipelineSupportBundle = (
@@ -163,6 +171,9 @@ export const usePipelineManager = (options?: FetchOptions) => {
   return {
     get isNetworkHealthy() {
       return isNetworkHealthy
+    },
+    get isAuthHealthy() {
+      return isAuthHealthy
     },
     getExtendedPipeline: reportError(
       getExtendedPipeline,
