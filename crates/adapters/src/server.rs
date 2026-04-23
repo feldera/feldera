@@ -1557,9 +1557,23 @@ async fn query(
     }
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct StatsParams {
+    /// When `true`, include the most recent error messages for each endpoint
+    /// in the response (up to `MAX_CONNECTOR_ERRORS` per list). Default is
+    /// `false` so that callers polling `/stats` keep getting a lightweight
+    /// response. This selector is intended for the support-bundle collector.
+    #[serde(default)]
+    include_connector_errors: bool,
+}
+
 #[get("/stats")]
-async fn stats(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    Ok(HttpResponse::Ok().json(state.controller()?.api_status()))
+async fn stats(
+    state: WebData<ServerState>,
+    params: Query<StatsParams>,
+) -> Result<HttpResponse, PipelineError> {
+    let include_connector_errors = params.into_inner().include_connector_errors;
+    Ok(HttpResponse::Ok().json(state.controller()?.api_status(include_connector_errors)))
 }
 
 /// This endpoint returns a subset of stats that don't need updating and so is more performant than /stats

@@ -175,7 +175,7 @@ impl ConnectorHealth {
     }
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, ToSchema, Clone)]
+#[derive(Debug, Default, Deserialize, Serialize, ToSchema, Clone, PartialEq, Eq)]
 pub struct ConnectorError {
     /// Timestamp when the error occurred, serialized as RFC3339 with microseconds.
     #[serde(serialize_with = "serialize_timestamp_micros")]

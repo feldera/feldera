@@ -62,11 +62,18 @@ The support bundle has the following content:
 
 3. **Pipeline Metrics**: from the [pipeline metrics](/api/get-pipeline-metrics) endpoint.
 
-3. **Endpoint Stats**: from the [stats](/api/get-pipeline-stats) endpoint.
+4. **Endpoint Stats**: from the [stats](/api/get-pipeline-stats) endpoint.
+   The bundle collector calls this endpoint with
+   `?include_connector_errors=true` so the saved `stats.json` contains the
+   most recent per-endpoint error messages alongside the counters. These
+   error messages are persisted in the pipeline's checkpoint, so a bundle
+   taken after a restart still contains errors recorded before the restart.
+   The selector is intended for the bundle collector; regular callers
+   polling `/stats` keep getting a lightweight, count-only response.
 
-4. **Circuit Profile**: from the [circuit profile](/api/get-performance-profile) endpoint.
+5. **Circuit Profile**: from the [circuit profile](/api/get-performance-profile) endpoint.
 
-5. **Heap Profile**: from [heap usage](/api/get-heap-profile) endpoint.
+6. **Heap Profile**: from [heap usage](/api/get-heap-profile) endpoint.
 
 ## Common Error Messages
 

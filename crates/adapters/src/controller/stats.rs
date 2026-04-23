@@ -89,7 +89,7 @@ use utoipa::ToSchema;
 
 /// The number of the most recent errors stored for each endpoint as part of the endpoint status.
 /// There are separate counters for parse and transport errors and for every tag.
-const MAX_CONNECTOR_ERRORS: usize = 100;
+pub(crate) const MAX_CONNECTOR_ERRORS: usize = 100;
 
 /// Completion token.
 ///
@@ -469,6 +469,10 @@ pub struct ControllerStatusContext {
     pub transaction_info: TransactionInfo,
     pub memory_pressure: MemoryPressure,
     pub memory_pressure_epoch: u64,
+    /// When `true`, per-endpoint error messages are serialized alongside
+    /// the counters. Set by the support-bundle collector via the
+    /// `?include_connector_errors=true` query parameter on `/stats`.
+    pub include_connector_errors: bool,
 }
 
 impl ControllerStatus {
@@ -1327,7 +1331,7 @@ impl ControllerStatus {
         let mut inputs: Vec<_> = self
             .input_status()
             .values()
-            .map(|input| input.to_api_type(false))
+            .map(|input| input.to_api_type(ctx.include_connector_errors))
             .collect();
         inputs.sort_by(|ep1, ep2| ep1.endpoint_name.cmp(&ep2.endpoint_name));
 
@@ -1335,7 +1339,7 @@ impl ControllerStatus {
         let mut outputs: Vec<_> = self
             .output_status()
             .values()
-            .map(|output| output.to_api_type(false))
+            .map(|output| output.to_api_type(ctx.include_connector_errors))
             .collect();
         outputs.sort_by(|ep1, ep2| ep1.endpoint_name.cmp(&ep2.endpoint_name));
 
@@ -2007,6 +2011,15 @@ impl InputEndpointStatus {
         let paused_by_user =
             config.connector_config.paused || config.connector_config.start_after.is_some();
 
+        // When resuming from a checkpoint, restore the recent error messages
+        // alongside the counters.
+        let transport_errors = initial_statistics
+            .map(|s| ConnectorErrorList::from_api_type(s.transport_errors.clone()))
+            .unwrap_or_default();
+        let parse_errors = initial_statistics
+            .map(|s| ConnectorErrorList::from_api_type(s.parse_errors.clone()))
+            .unwrap_or_default();
+
         Self {
             endpoint_name: endpoint_name.to_string(),
             config,
@@ -2015,8 +2028,8 @@ impl InputEndpointStatus {
                     initial_statistics.into()
                 }),
             fatal_error: Mutex::new(None),
-            transport_errors: Mutex::new(ConnectorErrorList::new()),
-            parse_errors: Mutex::new(ConnectorErrorList::new()),
+            transport_errors: Mutex::new(transport_errors),
+            parse_errors: Mutex::new(parse_errors),
             health: Mutex::new(None),
             progress: Mutex::new(None),
             paused: AtomicBool::new(paused_by_user),
@@ -2421,6 +2434,45 @@ impl ConnectorErrorList {
         errors.sort_by_key(|error| error.index);
         errors
     }
+
+    /// Reconstruct a list from the flat representation produced by
+    /// [`Self::to_api_type`]. Used when restoring from a checkpoint.
+    ///
+    /// Restored errors keep their pre-restart `index`; the sequence
+    /// counter itself lives on [`InputEndpointMetrics`] /
+    /// [`OutputEndpointMetrics`] and is restored separately, so new
+    /// errors resume numbering from `counter + 1` (see
+    /// `InputEndpointStatus::parse_error` and
+    /// `OutputEndpointStatus::encode_error` / `transport_error`). Do not
+    /// renumber on restore.
+    ///
+    /// The per-tag [`MAX_CONNECTOR_ERRORS`] bound is re-enforced so that
+    /// a malformed checkpoint cannot make a list grow unbounded. If the
+    /// input exceeds the bound for any tag, the excess oldest entries
+    /// are dropped and a warning is logged.
+    pub fn from_api_type(errors: Vec<ConnectorError>) -> Self {
+        let mut list = Self::new();
+        let mut dropped: usize = 0;
+        for error in errors {
+            let entry: &mut VecDeque<ConnectorError> =
+                list.errors.entry(error.tag.clone()).or_default();
+            entry.push_back(error);
+            if entry.len() > MAX_CONNECTOR_ERRORS {
+                entry.pop_front();
+                dropped += 1;
+            }
+        }
+        if dropped > 0 {
+            warn!(
+                "restored connector error list exceeded per-tag cap of \
+                 {MAX_CONNECTOR_ERRORS}; dropped {dropped} oldest \
+                 entr{} — checkpoint may be malformed or written by a \
+                 build with a higher cap",
+                if dropped == 1 { "y" } else { "ies" }
+            );
+        }
+        list
+    }
 }
 
 /// Output endpoint status information.
@@ -2507,13 +2559,21 @@ impl OutputEndpointStatus {
         total_processed_records: u64,
         initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Self {
+        // error lists are restored from the checkpoint if present, empty otherwise
+        let encode_errors = initial_statistics
+            .map(|s| ConnectorErrorList::from_api_type(s.encode_errors.clone()))
+            .unwrap_or_default();
+        let transport_errors = initial_statistics
+            .map(|s| ConnectorErrorList::from_api_type(s.transport_errors.clone()))
+            .unwrap_or_default();
+
         Self {
             endpoint_name: endpoint_name.to_string(),
             config: config.clone(),
             metrics: OutputEndpointMetrics::new(total_processed_records, initial_statistics),
             fatal_error: Mutex::new(None),
-            encode_errors: Mutex::new(ConnectorErrorList::new()),
-            transport_errors: Mutex::new(ConnectorErrorList::new()),
+            encode_errors: Mutex::new(encode_errors),
+            transport_errors: Mutex::new(transport_errors),
             health: Mutex::new(None),
         }
     }

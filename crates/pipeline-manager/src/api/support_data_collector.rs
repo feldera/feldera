@@ -99,13 +99,18 @@ impl Default for SupportBundleParameters {
     }
 }
 
-/// Fetch data from a pipeline endpoint
+/// Fetch data from a pipeline endpoint.
+///
+/// `query_string` is appended verbatim after `?` and must already be URL-encoded
+/// (e.g., `"include_connector_errors=true"`). Pass `""` for endpoints that take no query.
+#[allow(clippy::too_many_arguments)]
 async fn fetch_pipeline_data(
     state: &ServerState,
     client: &awc::Client,
     tenant_id: TenantId,
     pipeline_name: &str,
     endpoint: &str,
+    query_string: &str,
     timeout_duration: Option<Duration>,
     body_size_limit: Option<usize>,
 ) -> Result<HttpResponse, ManagerError> {
@@ -117,7 +122,7 @@ async fn fetch_pipeline_data(
             pipeline_name,
             Method::GET,
             endpoint,
-            "",
+            query_string,
             timeout_duration,
             body_size_limit,
         )
@@ -481,6 +486,7 @@ impl SupportBundleData {
             tenant_id,
             pipeline_name,
             "dump_profile",
+            "",
             Some(COLLECTION_TIMEOUT),
             Some(EXTENDED_RESPONSE_SIZE_LIMIT),
         )
@@ -501,6 +507,7 @@ impl SupportBundleData {
             tenant_id,
             pipeline_name,
             "dump_json_profile",
+            "",
             Some(COLLECTION_TIMEOUT),
             Some(EXTENDED_RESPONSE_SIZE_LIMIT),
         )
@@ -534,6 +541,7 @@ impl SupportBundleData {
             tenant_id,
             pipeline_name,
             "heap_profile",
+            "",
             Some(COLLECTION_TIMEOUT),
             Some(EXTENDED_RESPONSE_SIZE_LIMIT),
         )
@@ -554,6 +562,7 @@ impl SupportBundleData {
             tenant_id,
             pipeline_name,
             "metrics",
+            "",
             Some(COLLECTION_TIMEOUT),
             None,
         )
@@ -573,6 +582,11 @@ impl SupportBundleData {
             .map_err(|e| e.to_string())
     }
 
+    /// Fetch `/stats` from the running pipeline, requesting
+    /// `?include_connector_errors=true` so the response carries the recent
+    /// per-endpoint error message arrays alongside the counters. Connector
+    /// error messages survive pipeline restarts via the checkpoint, so
+    /// post-resume bundles still capture them.
     async fn collect_stats(
         state: &ServerState,
         client: &awc::Client,
@@ -585,6 +599,7 @@ impl SupportBundleData {
             tenant_id,
             pipeline_name,
             "stats",
+            "include_connector_errors=true",
             Some(COLLECTION_TIMEOUT),
             None,
         )
