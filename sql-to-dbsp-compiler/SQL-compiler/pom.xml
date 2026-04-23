@@ -326,7 +326,7 @@
         <dependency>
             <groupId>org.xerial</groupId>
             <artifactId>sqlite-jdbc</artifactId>
-            <version>3.42.0.0</version>
+            <version>3.45.3.0</version>
             <scope>test</scope>
         </dependency>
         <!-- Command-line parsing -->
@@ -334,14 +334,6 @@
             <groupId>org.jcommander</groupId>
             <artifactId>jcommander</artifactId>
             <version>2.0</version>
-        </dependency>
-        <!-- HyperSQL Java database; used in a few tests -->
-        <dependency>
-            <groupId>org.hsqldb</groupId>
-            <artifactId>hsqldb</artifactId>
-            <version>2.7.2</version>
-            <classifier>jdk8</classifier>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>

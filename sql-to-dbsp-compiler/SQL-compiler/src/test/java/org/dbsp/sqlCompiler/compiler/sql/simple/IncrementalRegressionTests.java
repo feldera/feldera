@@ -74,7 +74,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 create table P(a varchar, ts TIMESTAMP);
                 create view win AS
                 SELECT ROW_NUMBER() OVER (PARTITION BY a, HOUR(ts) ORDER BY ts DESC)
-                FROM P;""", "ROW_NUMBER only supported in a TopK pattern");
+                FROM P;""", "Ranking function ROW_NUMBER not yet implemented in a WINDOW aggregate");
     }
 
     @Test

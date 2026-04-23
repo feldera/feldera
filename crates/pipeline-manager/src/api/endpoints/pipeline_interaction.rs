@@ -539,6 +539,70 @@ pub(crate) async fn post_pipeline_output_connector_reset(
     Ok(response)
 }
 
+/// Check Reset Status
+///
+/// Check the status of a reset token returned by the output connector
+/// reset endpoint.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        ("token" = String, Query, description = "Reset token returned by the output connector reset endpoint."),
+    ),
+    responses(
+        (status = OK
+            , description = "Reset token status has been retrieved"),
+        (status = NOT_FOUND
+            , body = ErrorResponse
+            , description = "Pipeline with that name does not exist"
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = BAD_REQUEST
+            , body = ErrorResponse
+            , description = "An invalid reset token was provided"),
+        (status = GONE
+            , body = ErrorResponse
+            , description = "Reset token was created by a previous incarnation of the pipeline; the server cannot validate the reset across incarnations. Reissue the reset."),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Output Connectors"
+)]
+#[get("/pipelines/{pipeline_name}/reset_status")]
+pub(crate) async fn reset_status(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+
+    let response = state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::GET,
+            "reset_status",
+            request.query_string(),
+            None,
+            None,
+        )
+        .await?;
+
+    Ok(response)
+}
+
 /// Send command to an output connector.
 #[utoipa::path(
     context_path = "/v0",

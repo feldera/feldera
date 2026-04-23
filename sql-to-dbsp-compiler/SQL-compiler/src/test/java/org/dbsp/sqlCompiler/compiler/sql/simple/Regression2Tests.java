@@ -263,7 +263,7 @@ public class Regression2Tests extends SqlIoTest {
                 ROW_NUMBER() OVER (ORDER BY intt DESC) <= 2 OR
                 RANK() OVER (ORDER BY intt DESC) <= 2 OR
                 DENSE_RANK() OVER (ORDER BY intt DESC) <= 2;""",
-                "Not yet implemented: Multiple RANK aggregates per window");
+                "Ranking function ROW_NUMBER not yet implemented in a WINDOW aggregate");
     }
 
     @Test
@@ -790,7 +790,7 @@ public class Regression2Tests extends SqlIoTest {
                     ORDER BY payment_time
                     RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                   ) AS running_amount
-                FROM payments""", "Not yet implemented: ROW_NUMBER only supported in a TopK pattern");
+                FROM payments""", "Ranking function ROW_NUMBER not yet implemented in a WINDOW aggregate");
     }
 
     @Test

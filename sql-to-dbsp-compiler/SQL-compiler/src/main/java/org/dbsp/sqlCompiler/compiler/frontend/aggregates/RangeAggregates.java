@@ -160,8 +160,8 @@ public class RangeAggregates extends WindowAggregates {
         final DBSPType sortType;
         final DBSPType unsignedSortType;
         final DBSPSimpleOperator mapIndex;
-        final boolean ascending = this.collation.getDirection() == RelFieldCollation.Direction.ASCENDING;
-        final boolean nullsLast = this.collation.nullDirection != RelFieldCollation.NullDirection.FIRST;
+        final boolean ascending = CalciteToDBSPCompiler.ascending(this.collation);
+        final boolean nullsLast = CalciteToDBSPCompiler.nullsLast(this.collation);
         final DBSPType partitionType;
         final DBSPType partitionAndRowType;
         final DBSPTypeTuple lastTupleType = lastOperator.getOutputZSetElementType().to(DBSPTypeTuple.class);

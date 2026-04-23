@@ -172,7 +172,8 @@ public class Regression1Tests extends SqlIoTest {
     }
 
     @Test
-    public void testHsqlDb() throws SQLException, ClassNotFoundException {
+    public void testEmbeddedDb() throws SQLException {
+        // Compare running a program using Rust and with an embedded DB
         var ccs = this.getCCS("""
                 CREATE TABLE t(x int);
                 CREATE VIEW V AS SELECT * FROM T;""");
@@ -182,7 +183,7 @@ public class Regression1Tests extends SqlIoTest {
     }
 
     @Test
-    public void decorrelateTest() throws SQLException, ClassNotFoundException {
+    public void decorrelateTest() throws SQLException {
         // Test for the CalciteOptimizer rule CorrelateUnionSwap
         String tables = """
                 CREATE TABLE f1 (
@@ -205,7 +206,7 @@ public class Regression1Tests extends SqlIoTest {
                     arg1 varchar(10) not null
                 );""";
         var ccs = this.getCCS(tables + """
-                CREATE VIEW e as (
+                CREATE VIEW e as
                   SELECT
                     f4.arg0 out0_val,
                     f1.arg0 out1_val
@@ -228,8 +229,7 @@ public class Regression1Tests extends SqlIoTest {
                             f3.arg1 = f2.arg1
                         )
                         and f4.arg0 = f3.arg0
-                    )
-                );
+                    );
                 """);
         Function<Integer, String> values =
                 v -> "('" + ((v >> 1) % 2) + "', '" + (v % 2) + "');";

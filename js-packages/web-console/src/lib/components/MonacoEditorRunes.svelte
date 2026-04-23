@@ -29,7 +29,7 @@
 
 <script lang="ts">
   import type Monaco from 'monaco-editor'
-  import * as monacoImport from 'monaco-editor/esm/vs/editor/editor.api.js'
+  import * as monacoImport from 'monaco-editor'
   import * as monacoJson from 'monaco-editor/esm/vs/language/json/monaco.contribution.js'
   import 'monaco-editor/esm/vs/language/json/jsonMode'
   import { onDestroy, onMount } from 'svelte'

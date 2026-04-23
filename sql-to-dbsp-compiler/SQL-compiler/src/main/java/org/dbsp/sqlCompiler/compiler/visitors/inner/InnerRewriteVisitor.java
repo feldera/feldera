@@ -1003,6 +1003,14 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
+    public VisitDecision preorder(DBSPAsymmetricFieldComparatorExpression expression) {
+        this.push(expression);
+        this.pop(expression);
+        this.map(expression, expression);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPEqualityComparatorExpression expression) {
         this.push(expression);
         DBSPExpression source = this.transform(expression.comparator);

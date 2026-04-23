@@ -36,6 +36,9 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -461,5 +464,35 @@ public class BaseSQLTests {
 
     protected CompilerCircuitStream getCCSFailing(DBSPCompiler compiler, String message) {
         return new CompilerCircuitStream(compiler, this, message);
+    }
+
+    /** Convert a positive Z-set to a script for inserting in a database */
+    public static String zsetToDBScript(String table, DBSPZSetExpression expression) {
+        if (expression.isEmpty())
+            return "";
+        StringBuilder builder = new StringBuilder();
+        builder.append("INSERT INTO ")
+                .append(table)
+                .append(" VALUES");
+        boolean first = true;
+        for (var entry: expression.data.entrySet()) {
+            Long weight = entry.getValue();
+            Utilities.enforce(weight != null && weight > 0);
+            for (long l = 0; l < weight; l++) {
+                if (!first)
+                    builder.append(", ");
+                first = false;
+                builder.append("(");
+                DBSPTupleExpression tuple = entry.getKey().to(DBSPTupleExpression.class);
+                for (int i = 0; i < tuple.size(); i++) {
+                    if (i > 0)
+                        builder.append(", ");
+                    builder.append(tuple.field(i).to(DBSPLiteral.class).toSqlString());
+                }
+                builder.append(")");
+            }
+        }
+        builder.append(";");
+        return builder.toString();
     }
 }

@@ -19,6 +19,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
@@ -402,6 +403,11 @@ public class Lineage extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPIndexedTopKOperator node) {
+        this.eraseValue(node);
+    }
+
+    @Override
+    public void postorder(DBSPRankOperator node) {
         this.eraseValue(node);
     }
 

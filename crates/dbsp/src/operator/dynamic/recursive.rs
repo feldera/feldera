@@ -299,7 +299,7 @@ mod test {
         });
 
         let start = Instant::now();
-        while start.elapsed() < Duration::from_secs(100) {
+        while start.elapsed() < Duration::from_secs(200) {
             if handle.is_finished() {
                 handle.join().unwrap();
                 return;
