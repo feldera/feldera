@@ -1,0 +1,32 @@
+{
+  "name": "@feldera/vite-plugin-monaco-editor",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepare": "bun run clean && bun run build",
+    "check": "tsc --noEmit"
+  },
+  "keywords": ["feldera", "vite", "monaco-editor", "vite-plugin"],
+  "license": "MIT",
+  "description": "Vite plugin that bundles a tree-shaken monaco-editor ESM build and wires up its web workers",
+  "peerDependencies": {
+    "monaco-editor": ">=0.44.0",
+    "vite": ">=5"
+  },
+  "devDependencies": {
+    "monaco-editor": "0.55.1",
+    "typescript": "^5.9.2",
+    "vite": "^5.0.0"
+  }
+}

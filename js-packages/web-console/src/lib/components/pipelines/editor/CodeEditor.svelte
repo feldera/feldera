@@ -53,7 +53,7 @@
   import { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
   import MonacoEditor from '$lib/components/MonacoEditorRunes.svelte'
   import * as MonacoImports from 'monaco-editor'
-  import { editor, KeyCode, KeyMod } from 'monaco-editor/esm/vs/editor/editor.api.js'
+  import { editor, KeyCode, KeyMod } from 'monaco-editor'
   import type { EditorLanguage } from 'monaco-editor/esm/metadata.js'
   import PipelineEditorStatusBar from '$lib/components/layout/pipelines/PipelineEditorStatusBar.svelte'
   import { page } from '$app/state'

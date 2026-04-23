@@ -1,4 +1,4 @@
-import { editor, MarkerSeverity, type Range } from 'monaco-editor/esm/vs/editor/editor.api.js'
+import { editor, MarkerSeverity, type Range } from 'monaco-editor'
 import invariant from 'tiny-invariant'
 import { type SystemError, showSqlCompilerMessage } from '$lib/compositions/health/systemErrors'
 import { nonNull } from '$lib/functions/common/function'

@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { monaco } from '@feldera/vite-plugin-monaco-editor'
 import svg from '@poppanator/sveltekit-svg'
 import { sveltekit } from '@sveltejs/kit/vite'
 import tailwindcss from '@tailwindcss/vite'
@@ -112,6 +113,32 @@ export default defineConfig(async () => {
       tailwindcss(),
       sveltekit(),
       svg(),
+      monaco({
+        languages: ['json', 'sql', 'rust', 'graphql'],
+        features: [
+          'browser',
+          'clipboard',
+          'comment',
+          'find',
+          'folding',
+          'format',
+          'gotoLine',
+          'gotoSymbol',
+          'hover',
+          'inPlaceReplace',
+          'inspectTokens',
+          'iPadShowKeyboard',
+          'linesOperations',
+          'links',
+          'multicursor',
+          'parameterHints',
+          'quickOutline',
+          'smartSelect',
+          'suggest',
+          'wordHighlighter',
+          'wordOperations'
+        ]
+      }),
       virtual({
         'virtual:felderaApiJsonSchemas.json': JSON.stringify(felderaApiJsonSchemas),
         // The plugins module is loaded from the cloud repo via package name

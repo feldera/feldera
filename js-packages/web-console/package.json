@@ -7,6 +7,7 @@
     "@biomejs/biome": "2.4.3",
     "@fontsource-variable/dm-sans": "5.2.8",
     "@fontsource/dm-mono": "5.2.7",
+    "@feldera/vite-plugin-monaco-editor": "workspace:*",
     "@fortawesome/fontawesome-free": "7.2.0",
     "@hey-api/client-fetch": "0.13.1",
     "@hey-api/openapi-ts": "0.92.4",
@@ -112,7 +113,7 @@
   "scripts": {
     "clean-install": "bun ci",
     "dev": "vite dev --host",
-    "prebuild": "cd ../profiler-layout && bun run build",
+    "prebuild": "cd ../vite-plugin-monaco-editor && bun run build && cd ../profiler-layout && bun run build",
     "build": "svelte-kit sync && vite build",
     "preview": "vite preview --host",
     "check": "svelte-kit sync && svelte-check --threshold error",
