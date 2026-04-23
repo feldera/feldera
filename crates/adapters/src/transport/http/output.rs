@@ -1,4 +1,4 @@
-use crate::{AsyncErrorCallback, OutputEndpoint, TransportConfig};
+use crate::{AsyncErrorCallback, OutputEndpoint, PipelineError, TransportConfig};
 use actix_web::{HttpResponse, http::header::ContentType, web::Bytes};
 use anyhow::{Result as AnyResult, anyhow, bail};
 use async_stream::stream;
@@ -22,7 +22,6 @@ use tracing::{debug, error, info_span};
 const MAX_BUFFERS: usize = 100;
 
 enum Format {
-    Binary,
     Text,
     #[allow(dead_code)]
     Json,
@@ -109,7 +108,6 @@ impl HttpOutputEndpointInner {
 
         if let Some(buffer) = buffer {
             match self.format {
-                Format::Binary => unimplemented!(),
                 Format::Text => {
                     let data_str = std::str::from_utf8(buffer).map_err(|e| {
                         anyhow!("received an invalid UTF8 string from encoder: {e}")
@@ -188,15 +186,19 @@ pub(crate) struct HttpOutputEndpoint {
 }
 
 impl HttpOutputEndpoint {
-    pub(crate) fn new(name: &str, format: &str, backpressure: bool) -> Self {
+    pub(crate) fn new(name: &str, format: &str, backpressure: bool) -> Result<Self, PipelineError> {
         let format = match format {
             "csv" => Format::Text,
             "json" => Format::Json,
-            _ => Format::Binary,
+            _ => {
+                return Err(PipelineError::InvalidParam {
+                    error: format!("{format:?}: unsupported HTTP output endpoint format"),
+                });
+            }
         };
-        Self {
+        Ok(Self {
             inner: Arc::new(HttpOutputEndpointInner::new(name, format, backpressure)),
-        }
+        })
     }
 
     fn name(&self) -> &str {
