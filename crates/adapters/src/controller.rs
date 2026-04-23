@@ -38,7 +38,7 @@ use crate::transport::{input_transport_config_to_endpoint, output_transport_conf
 use crate::util::{LongOperationWarning, run_on_thread_pool};
 use crate::{
     CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint, ParseError,
-    PipelineState, TransportInputEndpoint,
+    PipelineError, PipelineState, TransportInputEndpoint,
 };
 use crate::{PipelinePhase, create_integrated_output_endpoint};
 use anyhow::{Context, Error as AnyError, anyhow};
@@ -716,15 +716,11 @@ impl Controller {
     ///
     /// Fails if the number of connections exceeds the current limit,
     /// returning the number of existing API connections.
-    pub fn register_api_connection(&self) -> Result<(), u64> {
-        self.inner.register_api_connection()
+    pub fn register_api_connection(&self) -> Result<ApiConnectionGuard, PipelineError> {
+        self.inner.clone().register_api_connection()
     }
 
     /// Decrement the number of active API connections.
-    pub fn unregister_api_connection(&self) {
-        self.inner.unregister_api_connection();
-    }
-
     /// Return the number of active API connections.
     pub fn num_api_connections(&self) -> u64 {
         self.inner.num_api_connections()
@@ -2050,6 +2046,14 @@ impl Controller {
 
     pub fn layout(&self) -> &Layout {
         &self.inner.layout
+    }
+}
+
+pub struct ApiConnectionGuard(Arc<ControllerInner>);
+
+impl Drop for ApiConnectionGuard {
+    fn drop(&mut self) {
+        self.0.num_api_connections.fetch_sub(1, Ordering::AcqRel);
     }
 }
 
@@ -6158,20 +6162,18 @@ impl ControllerInner {
             .and_then(|ep| ep.reader.as_ref().cloned())
     }
 
-    fn register_api_connection(&self) -> Result<(), u64> {
-        let num_connections = self.num_api_connections.load(Ordering::Acquire);
-
-        if num_connections >= MAX_API_CONNECTIONS {
-            Err(num_connections)
-        } else {
-            self.num_api_connections.fetch_add(1, Ordering::AcqRel);
-            Ok(())
+    fn register_api_connection(self: Arc<Self>) -> Result<ApiConnectionGuard, PipelineError> {
+        fn update(count: u64) -> Option<u64> {
+            (count < MAX_API_CONNECTIONS).then_some(count + 1)
         }
-    }
 
-    fn unregister_api_connection(&self) {
-        let old = self.num_api_connections.fetch_sub(1, Ordering::AcqRel);
-        debug_assert!(old > 0);
+        match self
+            .num_api_connections
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, update)
+        {
+            Ok(_) => Ok(ApiConnectionGuard(self)),
+            Err(_) => Err(PipelineError::ApiConnectionLimit),
+        }
     }
 
     fn num_api_connections(&self) -> u64 {

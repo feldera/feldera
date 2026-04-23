@@ -1,3 +1,4 @@
+use crate::controller::ApiConnectionGuard;
 use crate::format::StreamSplitter;
 use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand};
 use crate::{
@@ -150,14 +151,16 @@ impl HttpInputEndpointInner {
 pub(crate) struct HttpInputEndpoint {
     inner: Arc<HttpInputEndpointInner>,
     sender: UnboundedSender<InputReaderCommand>,
+    _guard: Arc<ApiConnectionGuard>,
 }
 
 impl HttpInputEndpoint {
-    pub(crate) fn new(config: HttpInputConfig) -> Self {
+    pub(crate) fn new(config: HttpInputConfig, guard: ApiConnectionGuard) -> Self {
         let (sender, receiver) = unbounded_channel();
         Self {
             inner: HttpInputEndpointInner::new(config, receiver),
             sender,
+            _guard: Arc::new(guard),
         }
     }
 
