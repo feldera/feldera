@@ -53,6 +53,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUuid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
@@ -98,6 +99,7 @@ public class RangeAggregates extends WindowAggregates {
 
         // we ignore nullability because window bounds are constants and cannot be null
         // BEWARE: this function name structure is hardwired in the monotonicity analysis
+        // NOTE: This function requires the arguments to be positive
         return "to_bound_" +
                 deltaType.withMayBeNull(false).to(DBSPTypeBaseType.class).shortName() + "_" +
                 sortType.withMayBeNull(false).to(DBSPTypeBaseType.class).shortName() + "_" +
@@ -193,6 +195,14 @@ public class RangeAggregates extends WindowAggregates {
                 sortType = DBSPTypeInteger.getType(node, INT64, originalSortType.mayBeNull);
                 convertToSigned = new DBSPUnaryExpression(
                         this.node, sortType, DBSPOpcode.SHORT_INTERVAL_TO_INTEGER, var).closure(var);
+            } else if (originalSortType.is(DBSPTypeUuid.class)) {
+                if (originalSortType.mayBeNull) {
+                    // This is 128 bits, but we need one more to represent the NULL value.
+                    throw new UnimplementedException("OVER currently cannot sort on columns with type UUID NULL. Can you convert the type to UUID NOT NULL?", 457, node);
+                }
+                sortType = DBSPTypeInteger.getType(node, UINT128, originalSortType.mayBeNull);
+                convertToSigned = new DBSPUnaryExpression(
+                        this.node, sortType, DBSPOpcode.UUID_TO_INTEGER, var.applyClone()).closure(var);
             } else {
                 sortType = originalSortType;
             }
@@ -303,6 +313,9 @@ public class RangeAggregates extends WindowAggregates {
             } else if (originalSortType.is(DBSPTypeShortInterval.class)) {
                 unwrap = new DBSPUnaryExpression(this.node, originalSortType,
                         DBSPOpcode.INTEGER_TO_SHORT_INTERVAL, unwrap);
+            } else if (originalSortType.is(DBSPTypeUuid.class)) {
+                unwrap = new DBSPUnaryExpression(this.node, originalSortType,
+                        DBSPOpcode.INTEGER_TO_UUID, unwrap);
             }
 
             DBSPExpression ixKey = var.field(0).deref();

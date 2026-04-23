@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -15,8 +15,10 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
 /** An unsigned wrap expression just wraps a signed integer into an unsigned one
- * preserving order. */
+ * preserving order.  See also {@link DBSPUnsignedUnwrapExpression} */
 public final class DBSPUnsignedWrapExpression extends DBSPExpression {
+    public static final String RUST_IMPLEMENTATION = "UnsignedWrappers";
+
     public static class TypeSequence {
         public final DBSPType dataType;
         public final DBSPTypeInteger dataConvertedType;
@@ -27,13 +29,18 @@ public final class DBSPUnsignedWrapExpression extends DBSPExpression {
             this.dataType = dataType;
             this.dataConvertedType = getInitialIntegerType(this.dataType);
             if (!this.dataConvertedType.signed) {
-                throw new InternalCompilerError("The data type encoding " + dataType +
-                        " must be signed, but it is " + this.dataConvertedType);
+                int width = this.dataConvertedType.getWidth();
+                int useWidth = dataType.mayBeNull ? width * 2 : width;
+                this.intermediateType = new DBSPTypeInteger(dataType.getNode(), useWidth, false, false);
+                this.unsignedType = new DBSPTypeInteger(dataType.getNode(), useWidth, false, false);
             } else {
                 int width = this.dataConvertedType.getWidth();
-                if (width > 64)
+                if (width > 64) {
+                    throw new UnimplementedException("Not yet supported: OVER sorting over " + dataType,
+                            dataType.getNode());
                     // This may cause runtime overflows, but this is the best we can do
-                    width = 64;
+                    // width = 64;
+                }
                 this.intermediateType = new DBSPTypeInteger(dataType.getNode(), width * 2, true, false);
                 this.unsignedType = new DBSPTypeInteger(dataType.getNode(), width * 2, false, false);
             }
@@ -50,7 +57,8 @@ public final class DBSPUnsignedWrapExpression extends DBSPExpression {
                 case INT8, INT16, INT32, INT64, INT128 -> sourceType.withMayBeNull(false).to(DBSPTypeInteger.class);
                 case DATE -> DBSPTypeInteger.getType(sourceType.getNode(), DBSPTypeCode.INT32, false);
                 case TIMESTAMP, TIME -> DBSPTypeInteger.getType(sourceType.getNode(), DBSPTypeCode.INT64, false);
-                default -> throw new InternalCompilerError("Not yet supported wrappers for " + sourceType, sourceType.getNode());
+                case UINT8, UINT16, UINT32, UINT64, UINT128 -> sourceType.withMayBeNull(false).to(DBSPTypeInteger.class);
+                default -> throw new UnimplementedException("OVER sorting over " + sourceType, sourceType.getNode());
             };
         }
     }
@@ -96,12 +104,15 @@ public final class DBSPUnsignedWrapExpression extends DBSPExpression {
     }
 
     public String getMethod() {
-        return this.source.getType().mayBeNull ? "from_option" : "from_signed";
+        if (this.sequence.dataConvertedType.signed)
+            return this.source.getType().mayBeNull ? "from_option" : "from_signed";
+        else
+            return this.source.getType().mayBeNull ? "from_unsigned_option" : "from_unsigned";
     }
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append("UnsignedWrapper")
+        return builder.append(RUST_IMPLEMENTATION)
                 .append("::")
                 .append(this.getMethod())
                 .append("(")

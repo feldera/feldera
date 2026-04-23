@@ -25,6 +25,9 @@ public enum DBSPOpcode {
     // Lossless, order-preserving conversion between short interval and INTEGER, used for range aggregates
     SHORT_INTERVAL_TO_INTEGER("short_interval_to_integer", false),
     INTEGER_TO_SHORT_INTERVAL("integer_to_short_interval", false),
+    // Lossless, order-preserving conversion between UUID and INTEGER, used for range aggregates
+    UUID_TO_INTEGER("uuid_to_u128", false),
+    INTEGER_TO_UUID("u128_to_uuid", false),
 
     // Binary operations
     ADD("+", false),
@@ -132,7 +135,7 @@ public enum DBSPOpcode {
                  AGG_MAX, AGG_XOR, AGG_OR, AGG_AND, IS_DISTINCT, CONCAT, MIN, MAX, OR, AND, IS_NOT_FALSE, IS_NOT_TRUE,
                  AGG_MAX1, AGG_MIN1, INDICATOR -> false;
             case NEG, INTERVAL_DIV, INTERVAL_MUL, DECIMAL_TO_INTEGER, INTEGER_TO_DECIMAL,
-                 SHORT_INTERVAL_TO_INTEGER, INTEGER_TO_SHORT_INTERVAL,
+                 SHORT_INTERVAL_TO_INTEGER, INTEGER_TO_SHORT_INTERVAL, INTEGER_TO_UUID, UUID_TO_INTEGER,
                  RUST_INDEX, VARIANT_INDEX, MAP_INDEX,
                  SQL_INDEX, XOR, BW_OR, MUL_WEIGHT, BW_AND, GTE, LTE, GT, LT, NEQ, EQ, MOD, DIV_NULL, DIV, MUL, SUB,
                  ADD, TYPEDBOX, IS_TRUE, IS_FALSE, NOT, UNARY_PLUS -> true;

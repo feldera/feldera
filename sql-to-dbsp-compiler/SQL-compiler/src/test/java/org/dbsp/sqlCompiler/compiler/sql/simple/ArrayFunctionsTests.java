@@ -1253,14 +1253,14 @@ public class ArrayFunctionsTests extends SqlIoTest {
         var ccs = this.getCCS("""
                 CREATE TABLE T(x INT ARRAY);
                 CREATE VIEW V AS SELECT ARRAY_EXISTS(x, e -> e % 2 = 0) FROM T;""");
-        ccs.step("INSERT INTO T VALUES(ARRAY[1, 2, 3])", """
-                  r     | weight
-                 ----------------
-                  true  | 1""");
-        ccs.step("INSERT INTO T VALUES(ARRAY())", """
-                  r     | weight
-                 ----------------
-                  false | 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY[1, 2, 3])", """
+                  r
+                 ------
+                  true""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY())", """
+                  r
+                 -------
+                  false""");
     }
 
     @Test
@@ -1362,14 +1362,14 @@ public class ArrayFunctionsTests extends SqlIoTest {
         var ccs = this.getCCS("""
                 CREATE TABLE T(x INT ARRAY);
                 CREATE VIEW V AS SELECT TRANSFORM(x, e -> e % 2) FROM T;""");
-        ccs.step("INSERT INTO T VALUES(ARRAY[1, 2, 3])", """
-                  r           | weight
-                 ----------------
-                  { 1, 0, 1 } | 1""");
-        ccs.step("INSERT INTO T VALUES(ARRAY())", """
-                  r     | weight
-                 ----------------
-                  {}    | 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY[1, 2, 3])", """
+                  r
+                 -------------
+                  { 1, 0, 1 }""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY())", """
+                  r
+                 -------
+                  {}""");
     }
 
     @Test

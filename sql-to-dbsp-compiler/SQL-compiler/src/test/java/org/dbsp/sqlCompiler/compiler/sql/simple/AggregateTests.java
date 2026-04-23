@@ -191,7 +191,7 @@ public class AggregateTests extends SqlIoTest {
                     SIZE => INTERVAL '1' HOUR))
                 GROUP BY
                   window_start, window_end;""");
-        ccs.step("""
+        ccs.stepWeightOne("""
                 INSERT INTO data VALUES(1.0, '2024-01-01 00:00:00');
                 INSERT INTO DATA VALUES(2.0, '2024-01-01 00:00:10');
                 INSERT INTO DATA VALUES(3.0, '2024-01-01 00:00:20');
@@ -199,10 +199,10 @@ public class AggregateTests extends SqlIoTest {
                 INSERT INTO DATA VALUES(4.0, '2024-01-01 00:00:30');
                 INSERT INTO DATA VALUES(6.0, '2024-01-01 02:00:00');
                 INSERT INTO DATA VALUES(5.0, '2024-01-01 02:00:10');""", """
-                  ws                 | we                  | f   | max | min | last | weight
-                ----------------------------------------------------------------------------
-                 2024-01-01 00:00:00 | 2024-01-01 01:00:00 | 1.0 | 4.0 | 1.0 | 4.0  | 1
-                 2024-01-01 02:00:00 | 2024-01-01 03:00:00 | 6.0 | 6.0 | 5.0 | 5.0  | 1""");
+                  ws                 | we                  | f   | max | min | last
+                --------------------------------------------------------------------
+                 2024-01-01 00:00:00 | 2024-01-01 01:00:00 | 1.0 | 4.0 | 1.0 | 4.0
+                 2024-01-01 02:00:00 | 2024-01-01 03:00:00 | 6.0 | 6.0 | 5.0 | 5.0""");
     }
 
     @Test
