@@ -1231,6 +1231,7 @@ where
         .service(output_endpoint_status)
         .service(output_endpoint_command)
         .service(reset_output_endpoint)
+        .service(reset_status)
         .service(rebalance)
         .service(coordination_activate_handler)
         .service(coordination_status)
@@ -2342,6 +2343,13 @@ async fn output_endpoint_command(
 async fn reset_output_endpoint(path: web::Path<String>) -> Result<HttpResponse, PipelineError> {
     Err(PipelineError::from(ControllerError::not_supported(
         &format!("output endpoint '{}' does not support reset", path.as_str()),
+    )))
+}
+
+#[get("/reset_status")]
+async fn reset_status() -> Result<HttpResponse, PipelineError> {
+    Err(PipelineError::from(ControllerError::not_supported(
+        "reset status is not yet available on this pipeline",
     )))
 }
 
