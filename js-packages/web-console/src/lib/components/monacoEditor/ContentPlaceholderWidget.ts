@@ -1,4 +1,4 @@
-import { editor, type IDisposable } from 'monaco-editor/esm/vs/editor/editor.api.js'
+import { editor, type IDisposable } from 'monaco-editor'
 
 /**
  * Represents an placeholder renderer for monaco editor

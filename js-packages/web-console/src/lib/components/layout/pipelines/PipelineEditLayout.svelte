@@ -59,7 +59,7 @@
   import { parsePipelineDiff } from '$lib/functions/pipelines/pipelineDiff'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
-  import type { editor } from 'monaco-editor/esm/vs/editor/editor.api.js'
+  import type { editor } from 'monaco-editor'
   import FocusBanner from '$lib/components/pipelines/editor/FocusBanner.svelte'
   import StorageInUseBanner from '$lib/components/pipelines/editor/StorageInUseBanner.svelte'
   import { getRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'

@@ -1,4 +1,4 @@
-import type { editor } from 'monaco-editor/esm/vs/editor/editor.api.js'
+import type { editor } from 'monaco-editor'
 
 export class GenericOverlayWidget implements editor.IOverlayWidget {
   protected editorRef: editor.IStandaloneCodeEditor

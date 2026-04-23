@@ -1,6 +1,6 @@
 <script lang="ts">
-  import * as MonacoImports from 'monaco-editor/esm/vs/editor/editor.api.js'
-  import { editor } from 'monaco-editor/esm/vs/editor/editor.api.js'
+  import * as MonacoImports from 'monaco-editor'
+  import { editor } from 'monaco-editor'
   import MonacoEditor from '$lib/components/MonacoEditorRunes.svelte'
   import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
