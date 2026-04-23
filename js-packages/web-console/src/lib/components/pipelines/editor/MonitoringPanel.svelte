@@ -9,6 +9,7 @@
     | 'Logs'
 </script>
 
+<!-- svelte-ignore state_referenced_locally -->
 <script lang="ts">
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import PanelAdHocQuery from '$lib/components/pipelines/editor/TabAdHocQuery.svelte'
@@ -99,6 +100,21 @@
   )
 
   const connectorsWithErrorsCount = $derived(numConnectorsWithProblems(metrics.current))
+
+  // Updating individual properties in an $effect avoids unnecessary reactive updates within tab components
+  let tabProps = $state({ metrics, pipeline, errors, deleted })
+  $effect(() => {
+    tabProps.metrics = metrics
+  })
+  $effect(() => {
+    tabProps.pipeline = pipeline
+  })
+  $effect(() => {
+    tabProps.errors = errors
+  })
+  $effect(() => {
+    tabProps.deleted = deleted
+  })
 </script>
 
 {#snippet TabControlPerformance()}
@@ -140,7 +156,7 @@
   <span>Logs</span>
 {/snippet}
 
-<TabsPanel {tabs} bind:currentTab={currentTab!} tabProps={{ metrics, pipeline, errors, deleted }}>
+<TabsPanel {tabs} bind:currentTab={currentTab!} {tabProps}>
   {#snippet tabBarEnd()}
     {#if currentTab !== 'Errors'}
       <div class="ml-auto flex">
