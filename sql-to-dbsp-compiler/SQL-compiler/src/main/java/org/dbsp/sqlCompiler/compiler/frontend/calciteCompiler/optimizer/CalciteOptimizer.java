@@ -220,6 +220,9 @@ public class CalciteOptimizer implements IWritesLogs {
                 PruneEmptyRules.JOIN_RIGHT_INSTANCE,
                 PruneEmptyRules.SORT_FETCH_ZERO_INSTANCE
         ));
+        this.addStep(new SimpleOptimizerStep("Convert complex aggregates", 0,
+                new MaxCaseToCountRule()
+        ));
         this.addStep(new SimpleOptimizerStep("Simplify set operations", 0,
                 CoreRules.UNION_MERGE,
                 CoreRules.INTERSECT_MERGE,
