@@ -672,9 +672,8 @@ impl Catalog {
                 stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
                 let integrate_handle = if materialized {
-                    // `integrate_trace` below should return the existing integral created by the InputUpsert operator.
                     let (integrate_handle, integral_gid) = stream
-                        .integrate_trace()
+                        .accumulate_integrate_trace()
                         .apply(|s| TypedBatch::<K, V, ZWeight, _>::new(s.inner().ro_snapshot()))
                         .output_persistent_with_gid(
                             persistent_id
@@ -769,26 +768,45 @@ impl Catalog {
             return None;
         }
 
-        let stream = self.gather_output_to_host(index_name, &stream, false);
         let view_handles = self.output_handles(view_name)?;
+        let materialized = view_handles.integrate_handle.is_some();
+        let value_schema = view_handles.value_schema.clone();
+
+        let stream = self.gather_output_to_host(index_name, &stream, false);
 
         let (stream_handle, enable_count, stream_gid) =
             stream.accumulate_output_persistent_with_gid(persistent_id);
         stream.circuit().set_mir_node_id(&stream_gid, persistent_id);
 
+        let integrate_handle = if materialized {
+            let (integrate_handle, integral_gid) = stream
+                .accumulate_integrate_trace()
+                .apply(|s| TypedBatch::<K, V, ZWeight, _>::new(s.inner().ro_snapshot()))
+                .output_persistent_with_gid(
+                    persistent_id
+                        .map(|id| format!("{id}.output_integral"))
+                        .as_deref(),
+                );
+            stream
+                .circuit()
+                .set_mir_node_id(&integral_gid, persistent_id);
+            Some(
+                Arc::new(<SerCollectionHandleImpl<_, KD, VD>>::new(integrate_handle))
+                    as Arc<dyn SerBatchReaderHandle>,
+            )
+        } else {
+            None
+        };
+
         let handles = OutputCollectionHandles {
-            key_schema: Some(index_schema(
-                index_name,
-                &view_handles.value_schema,
-                key_fields,
-            )),
-            value_schema: view_handles.value_schema.clone(),
+            key_schema: Some(index_schema(index_name, &value_schema, key_fields)),
+            value_schema,
             index_of: Some(view_name.clone()),
             delta_handle: Box::new(<SerCollectionHandleImpl<_, KD, VD>>::new(stream_handle))
                 as Box<dyn SerBatchReaderHandle>,
             enable_count,
-            integrate_handle_is_indexed: false,
-            integrate_handle: None,
+            integrate_handle_is_indexed: true,
+            integrate_handle,
         };
 
         self.register_output_batch_handles(index_name, handles)
