@@ -53,7 +53,7 @@ struct PostgresWorker {
     table: String,
     client: postgres::Client,
     config: PostgresWriterConfig,
-    extra_columns: Arc<RwLock<BTreeMap<String, Option<String>>>>,
+    extra_columns: Arc<RwLock<BTreeMap<String, Option<serde_json::Value>>>>,
     transaction: Option<postgres::Transaction<'static>>,
     prepared_statements: PreparedStatements,
     insert_buf: Vec<u8>,
@@ -104,7 +104,7 @@ impl PostgresWorker {
         endpoint_id: EndpointId,
         endpoint_name: &str,
         config: &PostgresWriterConfig,
-        extra_columns: Arc<RwLock<BTreeMap<String, Option<String>>>>,
+        extra_columns: Arc<RwLock<BTreeMap<String, Option<serde_json::Value>>>>,
         key_schema: &Relation,
         value_schema: &Relation,
         controller: Weak<ControllerInner>,
@@ -402,7 +402,7 @@ These statements were successfully prepared before reconnecting. Does the table 
     fn encode_cursor(
         &mut self,
         cursor: &mut dyn SerCursor,
-        extra_columns: BTreeMap<String, Option<String>>,
+        extra_columns: BTreeMap<String, Option<serde_json::Value>>,
     ) -> anyhow::Result<()> {
         while cursor.key_valid() {
             if let Some(op) = indexed_operation_type(self.view_name(), self.index_name(), cursor)? {
@@ -487,7 +487,7 @@ These statements were successfully prepared before reconnecting. Does the table 
     fn serialize_extra_columns(
         &self,
         buf: &mut Vec<u8>,
-        extra_columns: &BTreeMap<String, Option<String>>,
+        extra_columns: &BTreeMap<String, Option<serde_json::Value>>,
     ) -> Result<(), anyhow::Error> {
         if extra_columns.is_empty() {
             return Ok(());
@@ -600,7 +600,7 @@ pub struct PostgresOutputEndpoint {
     endpoint_id: EndpointId,
     endpoint_name: String,
     config: PostgresWriterConfig,
-    extra_columns: Arc<RwLock<BTreeMap<String, Option<String>>>>,
+    extra_columns: Arc<RwLock<BTreeMap<String, Option<serde_json::Value>>>>,
     controller: Weak<ControllerInner>,
     handles: Vec<WorkerHandle>,
     txn_start: std::time::Instant,
@@ -613,17 +613,17 @@ pub struct PostgresOutputEndpoint {
 enum PostgresOutputEndpointCommand {
     /// Set the values of a subset of extra columns.
     #[serde(rename = "set_extra_columns")]
-    SetExtraColumns(BTreeMap<String, Option<String>>),
+    SetExtraColumns(BTreeMap<String, Option<serde_json::Value>>),
 }
 
 struct PostgresOutputEndpointCommandHandler {
-    extra_columns: Arc<RwLock<BTreeMap<String, Option<String>>>>,
+    extra_columns: Arc<RwLock<BTreeMap<String, Option<serde_json::Value>>>>,
     allowed_extra_column_names: HashSet<String>,
 }
 
 impl PostgresOutputEndpointCommandHandler {
     fn new(
-        extra_columns: Arc<RwLock<BTreeMap<String, Option<String>>>>,
+        extra_columns: Arc<RwLock<BTreeMap<String, Option<serde_json::Value>>>>,
         config: &PostgresWriterConfig,
     ) -> Self {
         Self {
@@ -1227,6 +1227,7 @@ mod tests {
         use std::collections::BTreeMap;
         use std::sync::{Arc, Weak};
 
+        use chrono::NaiveDateTime;
         use dbsp::OrdIndexedZSet;
         use dbsp::utils::Tup2;
         use feldera_adapterlib::transport::OutputEndpoint;
@@ -1311,23 +1312,8 @@ mod tests {
         });
 
         #[derive(
-            Debug,
-            Default,
-            PartialEq,
-            Eq,
-            PartialOrd,
-            Ord,
-            serde::Serialize,
-            serde::Deserialize,
-            Clone,
-            Hash,
-            SizeOf,
-            rkyv::Archive,
-            rkyv::Serialize,
-            rkyv::Deserialize,
-            IsNone,
+            Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, Clone, Hash, IsNone,
         )]
-        #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
         struct TestRecordWithExtraColumns {
             id: i32,
             b: bool,
@@ -1335,7 +1321,9 @@ mod tests {
             s: String,
             #[serde(rename = "EXTRA.COLUMN1")]
             extra_column1: Option<String>,
-            extra_column2: Option<String>,
+            extra_column2: Option<NaiveDateTime>,
+            extra_column3: Option<i64>,
+            extra_column4: Option<serde_json::Value>,
         }
 
         deserialize_without_context!(TestRecordWithExtraColumns);
@@ -1411,7 +1399,9 @@ mod tests {
                             i int8,
                             s varchar NOT NULL,
                             "EXTRA.COLUMN1" varchar,
-                            extra_column2 varchar
+                            extra_column2 timestamp,
+                            extra_column3 bigint,
+                            extra_column4 json
                         )"#
                     ),
                     &[],
@@ -1517,7 +1507,7 @@ mod tests {
         ) -> Vec<TestRecordWithExtraColumns> {
             let rows = client
                 .query(
-                    &format!(r#"SELECT id, b, i, s, "EXTRA.COLUMN1", extra_column2 FROM "{TEST_TABLE}" ORDER BY id"#),
+                    &format!(r#"SELECT id, b, i, s, "EXTRA.COLUMN1", extra_column2, extra_column3, extra_column4 FROM "{TEST_TABLE}" ORDER BY id"#),
                     &[],
                 )
                 .expect("failed to query");
@@ -1529,6 +1519,8 @@ mod tests {
                     s: row.get(3),
                     extra_column1: row.get(4),
                     extra_column2: row.get(5),
+                    extra_column3: row.get(6),
+                    extra_column4: row.get(7),
                 })
                 .collect()
         }
@@ -1629,7 +1621,12 @@ mod tests {
             let batch4 = build_insert_batch(&records[75..100]);
             let mut endpoint = make_endpoint_with_extra_columns(
                 2,
-                vec!["EXTRA.COLUMN1".to_string(), "extra_column2".to_string()],
+                vec![
+                    "EXTRA.COLUMN1".to_string(),
+                    "extra_column2".to_string(),
+                    "extra_column3".to_string(),
+                    "extra_column4".to_string(),
+                ],
             );
 
             encode_batch(&mut endpoint, &batch1);
@@ -1640,7 +1637,9 @@ mod tests {
                 .command(serde_json::json!({
                     "set_extra_columns": {
                         "EXTRA.COLUMN1": "foo1",
-                        "extra_column2": "bar1",
+                        "extra_column2": "2026-04-23 14:30:00.123456",
+                        "extra_column3": 100,
+                        "extra_column4": { "foo": "bar" },
                     }
                 }))
                 .unwrap();
@@ -1653,7 +1652,9 @@ mod tests {
                 .command(serde_json::json!({
                     "set_extra_columns": {
                         "EXTRA.COLUMN1": "foo2",
-                        "extra_column2": "bar2",
+                        "extra_column2": "2026-04-23T15:30:00",
+                        "extra_column3": 200,
+                        "extra_column4": ["foo", "bar"],
                     }
                 }))
                 .unwrap();
@@ -1667,6 +1668,8 @@ mod tests {
                     "set_extra_columns": {
                         "EXTRA.COLUMN1": null,
                         "extra_column2": null,
+                        "extra_column3": null,
+                        "extra_column4": null,
                     }
                 }))
                 .unwrap();
@@ -1683,6 +1686,8 @@ mod tests {
                     s: r.s.clone(),
                     extra_column1: None,
                     extra_column2: None,
+                    extra_column3: None,
+                    extra_column4: None,
                 })
                 .collect();
             let expected2: Vec<_> = records[25..50]
@@ -1693,7 +1698,15 @@ mod tests {
                     i: r.i,
                     s: r.s.clone(),
                     extra_column1: Some("foo1".to_string()),
-                    extra_column2: Some("bar1".to_string()),
+                    extra_column2: Some(
+                        NaiveDateTime::parse_from_str(
+                            "2026-04-23 14:30:00.123456",
+                            "%Y-%m-%d %H:%M:%S%.f",
+                        )
+                        .unwrap(),
+                    ),
+                    extra_column3: Some(100),
+                    extra_column4: Some(serde_json::json!({ "foo": "bar" })),
                 })
                 .collect();
             let expected3: Vec<_> = records[50..75]
@@ -1704,7 +1717,12 @@ mod tests {
                     i: r.i,
                     s: r.s.clone(),
                     extra_column1: Some("foo2".to_string()),
-                    extra_column2: Some("bar2".to_string()),
+                    extra_column2: Some(
+                        NaiveDateTime::parse_from_str("2026-04-23T15:30:00", "%Y-%m-%dT%H:%M:%S")
+                            .unwrap(),
+                    ),
+                    extra_column3: Some(200),
+                    extra_column4: Some(serde_json::json!(["foo", "bar"])),
                 })
                 .collect();
             let expected4: Vec<_> = records[75..100]
@@ -1716,6 +1734,8 @@ mod tests {
                     s: r.s.clone(),
                     extra_column1: None,
                     extra_column2: None,
+                    extra_column3: None,
+                    extra_column4: None,
                 })
                 .collect();
             let expected: Vec<_> = expected1
@@ -1743,7 +1763,9 @@ mod tests {
                 .command(serde_json::json!({
                     "set_extra_columns": {
                         "EXTRA.COLUMN1": "foo3",
-                        "extra_column2": "bar3",
+                        "extra_column2": "2026-04-23T16:30:00",
+                        "extra_column3": 300,
+                        "extra_column4": "foo",
                     }
                 }))
                 .unwrap();
@@ -1757,7 +1779,12 @@ mod tests {
                     let mut new = r.clone();
                     new.s = format!("updated_{}", r.id);
                     new.extra_column1 = Some("foo3".to_string());
-                    new.extra_column2 = Some("bar3".to_string());
+                    new.extra_column2 = Some(
+                        NaiveDateTime::parse_from_str("2026-04-23T16:30:00", "%Y-%m-%dT%H:%M:%S")
+                            .unwrap(),
+                    );
+                    new.extra_column3 = Some(300);
+                    new.extra_column4 = Some(serde_json::json!("foo"));
                     new
                 })
                 .collect();
