@@ -17,7 +17,7 @@ use crate::{
     variant::*,
 };
 
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 use dbsp::algebra::{F32, F64, HasOne, HasZero};
 use num::{One, Zero};
 use num_traits::cast::NumCast;
@@ -65,6 +65,7 @@ pub(crate) fn type_name(name: &'static str) -> &'static str {
         "f" => "REAL",
         "d" => "FLOAT",
         "Timestamp" => "TIMESTAMP",
+        "TimestampTz" => "TIMESTAMP WITH TIME ZONE",
         "Date" => "DATE",
         "Time" => "TIME",
         "SqlDecimal" => "DECIMAL",
@@ -97,7 +98,8 @@ pub(crate) fn rust_type_name(name: &'static str) -> &'static str {
         "u128" => "BIGINT UNSIGNED",
         "F32" => "REAL",
         "F64" => "FLOAT",
-        "Timestamp" => "Timestamp",
+        "Timestamp" => "TIMESTAMP",
+        "TimestampTz" => "TIMESTAMP WITH TIME ZONE",
         "Date" => "DATE",
         "Time" => "TIME",
         "SqlDecimal" => "DECIMAL",
@@ -371,6 +373,13 @@ pub fn cast_to_Date_Timestamp(value: Timestamp) -> SqlResult<Date> {
 cast_function!(Date, Date, Timestamp, Timestamp);
 
 #[doc(hidden)]
+pub fn cast_to_Date_TimestampTz(value: TimestampTz) -> SqlResult<Date> {
+    cast_to_Date_Timestamp(value.into())
+}
+
+cast_function!(Date, Date, TimestampTz, TimestampTz);
+
+#[doc(hidden)]
 #[inline]
 pub fn cast_to_DateN_nullN(_value: Option<()>) -> SqlResult<Option<Date>> {
     Ok(None)
@@ -419,6 +428,13 @@ pub fn cast_to_Time_Timestamp(value: Timestamp) -> SqlResult<Time> {
 }
 
 cast_function!(Time, Time, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn cast_to_Time_TimestampTz(value: TimestampTz) -> SqlResult<Time> {
+    Ok(Time::from_time(value.to_dateTime().time()))
+}
+
+cast_function!(Time, Time, TimestampTz, TimestampTz);
 
 /////////// cast to SqlDecimal
 
@@ -1153,6 +1169,12 @@ pub fn cast_to_s_Timestamp(value: Timestamp, size: i32, fixed: bool) -> SqlResul
 }
 
 #[doc(hidden)]
+pub fn cast_to_s_TimestampTz(value: TimestampTz, size: i32, fixed: bool) -> SqlResult<SqlString> {
+    let result = value.to_string();
+    limit_or_size_string(&result, size, fixed)
+}
+
+#[doc(hidden)]
 pub fn cast_to_s_Date(value: Date, size: i32, fixed: bool) -> SqlResult<SqlString> {
     let result = value.to_string();
     limit_or_size_string(&result, size, fixed)
@@ -1524,6 +1546,7 @@ cast_to_string!(u16, u16);
 cast_to_string!(u32, u32);
 cast_to_string!(u64, u64);
 cast_to_string!(Timestamp, Timestamp);
+cast_to_string!(TimestampTz, TimestampTz);
 cast_to_string!(Time, Time);
 cast_to_string!(Date, Date);
 cast_to_string!(bytes, ByteArray);
@@ -2857,7 +2880,7 @@ pub fn cast_to_Timestamp_s(value: SqlString) -> SqlResult<Timestamp> {
     }
 
     Err(SqlRuntimeError::from_string(format!(
-        "Failed to parse '{value}' as a Timestamp"
+        "Failed to parse '{value}' as a TIMESTAMP"
     )))
 }
 
@@ -2894,6 +2917,14 @@ pub fn cast_to_Timestamp_Timestamp(value: Timestamp) -> SqlResult<Timestamp> {
 }
 
 cast_function!(Timestamp, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_Timestamp_TimestampTz(value: TimestampTz) -> SqlResult<Timestamp> {
+    Ok(value.into())
+}
+
+cast_function!(Timestamp, Timestamp, TimestampTz, TimestampTz);
 
 #[doc(hidden)]
 pub fn cast_to_Timestamp_i64(value: i64) -> SqlResult<Timestamp> {
@@ -3032,6 +3063,200 @@ cast_ts!(u16, u16);
 cast_ts!(u8, u8);
 cast_ts!(f, F32);
 cast_ts!(d, F64);
+
+//////// casts to Timestamp
+
+#[doc(hidden)]
+pub fn cast_to_TimestampTz_s(value: SqlString) -> SqlResult<TimestampTz> {
+    if let Ok(v) = DateTime::parse_from_rfc3339(value.str()) {
+        let result = TimestampTz::from_dateTime(v.to_utc());
+        return Ok(result);
+    }
+
+    Err(SqlRuntimeError::from_string(format!(
+        "Failed to parse '{value}' as a TIMESTAMP WITH TIME ZONE"
+    )))
+}
+
+cast_function!(TimestampTz, TimestampTz, s, SqlString);
+
+#[doc(hidden)]
+pub fn cast_to_TimestampTz_Date(value: Date) -> SqlResult<TimestampTz> {
+    Ok(value.to_timestamp().into())
+}
+
+cast_function!(TimestampTz, TimestampTz, Date, Date);
+
+#[doc(hidden)]
+pub fn cast_to_TimestampTz_Time(value: Time) -> SqlResult<TimestampTz> {
+    let dt = NaiveDateTime::new(
+        NaiveDate::from_ymd_opt(1970, 1, 1).unwrap(),
+        value.to_time(),
+    );
+    Ok(Timestamp::from_naiveDateTime(dt).into())
+}
+
+cast_function!(TimestampTz, TimestampTz, Time, Time);
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_TimestampTzN_nullN(_value: Option<()>) -> SqlResult<Option<TimestampTz>> {
+    Ok(None)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_TimestampTz_TimestampTz(value: TimestampTz) -> SqlResult<TimestampTz> {
+    Ok(value)
+}
+
+cast_function!(TimestampTz, TimestampTz, TimestampTz, TimestampTz);
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_TimestampTz_Timestamp(value: Timestamp) -> SqlResult<TimestampTz> {
+    Ok(value.into())
+}
+
+cast_function!(TimestampTz, TimestampTz, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn cast_to_TimestampTz_i64(value: i64) -> SqlResult<TimestampTz> {
+    // Calcite ignores sub-second units
+    Ok(TimestampTz::from_milliseconds((value / 1000) * 1000))
+}
+
+cast_function!(TimestampTz, TimestampTz, i64, i64);
+
+#[doc(hidden)]
+pub fn cast_to_TimestampTz_SqlDecimal<const P: usize, const S: usize>(
+    value: SqlDecimal<P, S>,
+) -> SqlResult<TimestampTz> {
+    match TryInto::<i64>::try_into(value) {
+        // Calcite ignores sub-second units
+        Ok(value) => Ok(TimestampTz::from_milliseconds((value / 1000) * 1000)),
+        Err(e) => Err(SqlRuntimeError::from_string(format!(
+            "Error converting {value} to TIMESTAMP: {}",
+            e
+        ))),
+    }
+}
+
+cast_function!(TimestampTz <const P: usize, const S: usize>, TimestampTz, SqlDecimal, SqlDecimal<P, S>);
+
+#[doc(hidden)]
+pub fn cast_to_TimestampTz_u64(value: u64) -> SqlResult<TimestampTz> {
+    let result: Result<i64, _> = value.try_into();
+    match result {
+        Err(e) => Err(SqlRuntimeError::from_string(format!(
+            "Error converting {value} to TIMESTAMP: {}",
+            e
+        ))),
+        Ok(result) => Ok(TimestampTz::from_milliseconds(result)),
+    }
+}
+
+cast_function!(TimestampTz, TimestampTz, u64, u64);
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_i64_TimestampTz(value: TimestampTz) -> SqlResult<i64> {
+    Ok(value.milliseconds())
+}
+
+cast_function!(i64, i64, TimestampTz, TimestampTz);
+
+#[doc(hidden)]
+pub fn cast_to_u64_TimestampTz(value: TimestampTz) -> SqlResult<u64> {
+    let ms = value.milliseconds();
+    if ms < 0 {
+        Err(SqlRuntimeError::from_string(format!(
+            "Negative value converted to unsigned {}",
+            value
+        )))
+    } else {
+        Ok(ms as u64)
+    }
+}
+
+cast_function!(u64, u64, TimestampTz, TimestampTz);
+
+#[doc(hidden)]
+pub fn cast_to_SqlDecimal_TimestampTz<const P: usize, const S: usize>(
+    value: TimestampTz,
+) -> SqlResult<SqlDecimal<P, S>> {
+    cast_to_SqlDecimal_i64::<P, S>(value.microseconds())
+        .map(|x| x.div(SqlDecimal::<P, S>::for_i32(1000)))
+}
+
+#[doc(hidden)]
+pub fn cast_to_SqlDecimalN_TimestampTz<const P: usize, const S: usize>(
+    value: TimestampTz,
+) -> SqlResult<Option<SqlDecimal<P, S>>> {
+    r2o(cast_to_SqlDecimal_TimestampTz::<P, S>(value))
+}
+
+#[doc(hidden)]
+pub fn cast_to_SqlDecimal_TimestampTzN<const P: usize, const S: usize>(
+    value: Option<TimestampTz>,
+) -> SqlResult<SqlDecimal<P, S>> {
+    match value {
+        None => Err(cast_null("DECIMAL")),
+        Some(value) => cast_to_SqlDecimal_TimestampTz::<P, S>(value),
+    }
+}
+
+#[doc(hidden)]
+pub fn cast_to_SqlDecimalN_TimestampTzN<const P: usize, const S: usize>(
+    value: Option<TimestampTz>,
+) -> SqlResult<Option<SqlDecimal<P, S>>> {
+    match value {
+        None => Ok(None),
+        Some(value) => cast_to_SqlDecimalN_TimestampTz::<P, S>(value),
+    }
+}
+
+macro_rules! cast_ts_tz {
+    ($type_name: ident, $arg_type: ty) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+                        pub fn [<cast_to_TimestampTz_ $type_name>](value: $arg_type) -> SqlResult<TimestampTz> {
+                match [< cast_to_i64_ $type_name >](value) {
+                    Ok(value) => cast_to_TimestampTz_i64(value),
+                    Err(e) => Err(SqlRuntimeError::from_string(format!(
+                        "Error converting {value} to TIMESTAMP WITH TIME ZONE: {}",
+                        e
+                    ))),
+                }
+            }
+
+            cast_function!(TimestampTz, TimestampTz, $type_name, $arg_type);
+
+            #[doc(hidden)]
+                        pub fn [<cast_to_ $type_name _TimestampTz>](value: TimestampTz) -> SqlResult<$arg_type> {
+                match cast_to_i64_TimestampTz(value) {
+                    Ok(value) => [< cast_to_ $type_name _i64 >] (value),
+                    Err(e) => Err(SqlRuntimeError::from_string(format!(
+                        "Error converting {value} to TIMESTAMP WITH TIME ZONE: {}",
+                        e
+                    ))),
+                }
+            }
+
+            cast_function!($type_name, $arg_type, TimestampTz, TimestampTz);
+        }
+    };
+}
+
+// the 64-bit variants are defined separately
+cast_ts_tz!(i32, i32);
+cast_ts_tz!(i16, i16);
+cast_ts_tz!(i8, i8);
+cast_ts_tz!(u32, u32);
+cast_ts_tz!(u16, u16);
+cast_ts_tz!(u8, u8);
+cast_ts_tz!(f, F32);
+cast_ts_tz!(d, F64);
 
 //////////////////// Other casts
 
@@ -3453,6 +3678,7 @@ cast_variant!(Date, Date, Date);
 cast_variant!(Time, Time, Time);
 cast_variant!(Uuid, Uuid, Uuid);
 cast_variant!(Timestamp, Timestamp, Timestamp);
+cast_variant!(TimestampTz, TimestampTz, TimestampTz);
 cast_variant!(ShortInterval_DAYS, ShortInterval, ShortInterval);
 cast_variant!(ShortInterval_HOURS, ShortInterval, ShortInterval);
 cast_variant!(ShortInterval_DAYS_TO_HOURS, ShortInterval, ShortInterval);

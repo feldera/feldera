@@ -169,6 +169,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.dbsp.util.FreshName;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.IWritesLogs;
@@ -369,6 +370,8 @@ public class SqlToRelCompiler implements IWritesLogs {
                 return DBSPTypeTime.PRECISION;
             else if (typeName == SqlTypeName.TIMESTAMP)
                 return DBSPTypeTimestamp.PRECISION;
+            else if (typeName == SqlTypeName.TIMESTAMP_TZ)
+                return DBSPTypeTimestampTz.PRECISION;
             else return super.getMaxPrecision(typeName);
         }
 
@@ -376,6 +379,8 @@ public class SqlToRelCompiler implements IWritesLogs {
         public int getDefaultPrecision(SqlTypeName typeName) {
             if (typeName == SqlTypeName.TIMESTAMP)
                 return DBSPTypeTimestamp.PRECISION;
+            else if (typeName == SqlTypeName.TIMESTAMP_TZ)
+                return DBSPTypeTimestampTz.PRECISION;
             else if (typeName == SqlTypeName.TIME)
                 return DBSPTypeTime.PRECISION;
             return super.getDefaultPrecision(typeName);
