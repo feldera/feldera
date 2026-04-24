@@ -122,6 +122,16 @@ To run Feldera from sources, ensure at least 6 GB of free space in the sources d
 - [Bun](https://bun.sh/docs/installation)
 - [nodejs v20](https://github.com/nodesource/distributions/blob/master/DEV_README.md)
 
+On MacOS, after installing the Rust tool chain, the remaining dependencies can be installed with:
+```
+xcode-select --install
+```
+for Xcode tools that includes clang, and
+```
+brew install cmake openssl cyrus-sasl go pkg-config zstd openjdk@21 maven oven-sh/bun/bun node@20
+```
+for the rest.
+
 After that, the first step is to build the SQL compiler:
 
 ```
