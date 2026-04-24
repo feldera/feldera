@@ -743,6 +743,7 @@ pub(crate) fn run_in_posix_runtime<F>(
             .expect("failed to configure storage"),
         ),
         dev_tweaks: Default::default(),
+        exchange_listener: None,
     };
 
     let test_fn: Arc<Mutex<Option<F>>> = Arc::new(Mutex::new(Some(test_fn)));

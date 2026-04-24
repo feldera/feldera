@@ -464,8 +464,6 @@ where
         let circuit = self.circuit();
         circuit
             .region("aggregate", || {
-                let stream = self.dyn_shard(&factories.input_factories);
-
                 // We construct the following circuit.  See `AggregateIncremental` documentation
                 // for details.
                 //
@@ -487,8 +485,8 @@ where
                             aggregator,
                             circuit.clone(),
                         )),
-                        &stream.dyn_accumulate(&factories.input_factories),
-                        &stream.dyn_accumulate_trace(
+                        &self.dyn_shard_accumulate(&factories.input_factories),
+                        &self.dyn_shard_accumulate_trace(
                             &factories.trace_factories,
                             &factories.input_factories,
                         ),
@@ -2011,7 +2009,18 @@ pub mod test {
         const LATENESS: u32 = 10;
 
         fn max_retain_values_test(inputs: Vec<Vec<Tup2<u32, Tup2<Tup2<u32, u32>, ZWeight>>>>) {
-            let (mut dbsp, input_handle) = Runtime::init_circuit(
+            let (
+                mut dbsp,
+                (
+                    input_handle,
+                    max_handle,
+                    expected_max_handle,
+                    top3_handle,
+                    expected_top3_handle,
+                    bottom3_handle,
+                    expected_bottom3_handle,
+                ),
+            ) = Runtime::init_circuit(
                 CircuitConfig::from(2).with_splitter_chunk_size_records(2),
                 |circuit| {
                     let (input, input_handle) =
@@ -2031,7 +2040,7 @@ pub mod test {
 
                     // Max aggregate.
 
-                    let max = input.aggregate(Max);
+                    let max = input.aggregate(Max).accumulate_output();
                     input.accumulate_integrate_trace_retain_values_top_n(
                         &waterline,
                         |val, ts| val.1 >= ts.saturating_sub(LATENESS),
@@ -2039,17 +2048,12 @@ pub mod test {
                     );
 
                     let input2 = input.map_index(|(k, v)| (*k, *v));
-                    let expected_max = input2.aggregate(Max);
-
-                    max.apply2(&expected_max, |val, expected_val| {
-                        //println!("val: {:?}, expected_val: {:?}", val, expected_val);
-                        assert_eq!(val, expected_val);
-                    });
+                    let expected_max = input2.aggregate(Max).accumulate_output();
 
                     // Top-3 transformer.
 
                     let input3 = input.map_index(|(k, v)| (*k, *v));
-                    let top3 = input3.topk_desc(3);
+                    let top3 = input3.topk_desc(3).accumulate_output();
 
                     input3.accumulate_integrate_trace_retain_values_top_n(
                         &waterline,
@@ -2057,17 +2061,15 @@ pub mod test {
                         3,
                     );
 
-                    let expected_top3 = input.map_index(|(k, v)| (*k, *v)).topk_desc(3);
-
-                    top3.apply2(&expected_top3, |val, expected_val| {
-                        //println!("val: {:?}, expected_val: {:?}", val, expected_val);
-                        assert_eq!(val, expected_val);
-                    });
+                    let expected_top3 = input
+                        .map_index(|(k, v)| (*k, *v))
+                        .topk_desc(3)
+                        .accumulate_output();
 
                     // Bottom-3 transformer.
 
                     let input4 = input.map_index(|(k, v)| (*k, *v));
-                    let bottom3 = input4.topk_asc(3);
+                    let bottom3 = input4.topk_asc(3).accumulate_output();
 
                     input4.accumulate_integrate_trace_retain_values_bottom_n(
                         &waterline,
@@ -2075,14 +2077,20 @@ pub mod test {
                         3,
                     );
 
-                    let expected_bottom3 = input.map_index(|(k, v)| (*k, *v)).topk_asc(3);
+                    let expected_bottom3 = input
+                        .map_index(|(k, v)| (*k, *v))
+                        .topk_asc(3)
+                        .accumulate_output();
 
-                    bottom3.apply2(&expected_bottom3, |val, expected_val| {
-                        //println!("val: {:?}, expected_val: {:?}", val, expected_val);
-                        assert_eq!(val, expected_val);
-                    });
-
-                    Ok(input_handle)
+                    Ok((
+                        input_handle,
+                        max,
+                        expected_max,
+                        top3,
+                        expected_top3,
+                        bottom3,
+                        expected_bottom3,
+                    ))
                 },
             )
             .unwrap();
@@ -2091,7 +2099,18 @@ pub mod test {
                 // println!("input: {:?}", inputs[i]);
                 input_handle.append(&mut inputs[i].clone());
                 dbsp.transaction().unwrap();
-                //assert_eq!(max_handle.concat().consolidate(), todo!());
+                assert_eq!(
+                    max_handle.concat().consolidate(),
+                    expected_max_handle.concat().consolidate()
+                );
+                assert_eq!(
+                    top3_handle.concat().consolidate(),
+                    expected_top3_handle.concat().consolidate()
+                );
+                assert_eq!(
+                    bottom3_handle.concat().consolidate(),
+                    expected_bottom3_handle.concat().consolidate()
+                );
             }
 
             dbsp.kill().unwrap()

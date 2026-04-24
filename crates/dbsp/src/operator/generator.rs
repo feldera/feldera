@@ -14,10 +14,7 @@ pub struct Generator<T, F> {
     _t: PhantomData<T>,
 }
 
-impl<T, F> Generator<T, F>
-where
-    T: Clone,
-{
+impl<T, F> Generator<T, F> {
     /// Creates a generator
     pub fn new(g: F) -> Self {
         Self {
@@ -29,7 +26,7 @@ where
 
 impl<T, F> Operator for Generator<T, F>
 where
-    T: Data,
+    T: 'static,
     F: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -38,12 +35,15 @@ where
     fn fixedpoint(&self, _scope: Scope) -> bool {
         false
     }
+    fn is_input(&self) -> bool {
+        true
+    }
 }
 
 impl<T, F> SourceOperator<T> for Generator<T, F>
 where
     F: FnMut() -> T + 'static,
-    T: Data,
+    T: 'static,
 {
     async fn eval(&mut self) -> T {
         (self.generator)()
@@ -58,10 +58,7 @@ pub struct TransactionGenerator<T, F> {
     _t: PhantomData<T>,
 }
 
-impl<T, F> TransactionGenerator<T, F>
-where
-    T: Clone,
-{
+impl<T, F> TransactionGenerator<T, F> {
     /// Creates a generator
     pub fn new(g: F) -> Self {
         Self {
@@ -74,7 +71,7 @@ where
 
 impl<T, F> Operator for TransactionGenerator<T, F>
 where
-    T: Data,
+    T: 'static,
     F: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -86,12 +83,15 @@ where
     fn fixedpoint(&self, _scope: Scope) -> bool {
         false
     }
+    fn is_input(&self) -> bool {
+        true
+    }
 }
 
 impl<T, F> SourceOperator<T> for TransactionGenerator<T, F>
 where
     F: FnMut(bool) -> T + 'static,
-    T: Data,
+    T: 'static,
 {
     async fn eval(&mut self) -> T {
         let result = (self.generator)(self.flush);
@@ -194,6 +194,9 @@ where
     }
     fn fixedpoint(&self, _scope: Scope) -> bool {
         // Always a fixed-point
+        true
+    }
+    fn is_input(&self) -> bool {
         true
     }
 }

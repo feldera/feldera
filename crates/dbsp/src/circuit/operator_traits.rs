@@ -287,7 +287,8 @@ pub trait Operator: 'static {
     fn flush(&mut self) {}
 
     /// Invoked after `flush` after each `eval` call to check if all outputs
-    /// have been produced.
+    /// have been produced.  Because it is invoked only after calling `eval`,
+    /// every operator must produce at least one output.
     ///
     /// Once this method returns `true`, its downstream operators can be flushed.
     fn is_flush_complete(&self) -> bool {
@@ -591,10 +592,10 @@ pub trait ImportOperator<I, O>: Operator {
     ///
     /// Either `import` or [`Self::import_owned`] is invoked once per
     /// nested clock epoch, right after `clock_start(0)`.
-    fn import(&mut self, val: &I);
+    async fn import(&mut self, val: &I);
 
     /// Consumes a value from the parent stream by value.
-    fn import_owned(&mut self, val: I);
+    async fn import_owned(&mut self, val: I);
 
     /// Invoked once per nested clock cycle to write a value to
     /// the output stream.

@@ -29,9 +29,12 @@ pub mod recursive;
 pub mod sample;
 mod saturate;
 pub mod semijoin;
+pub mod sharded_accumulator;
 pub mod time_series;
 pub mod trace;
 pub(crate) mod upsert;
+
+pub(crate) use communication::shard::shard_batch;
 
 /// The "standard" indexed Z-set type used by monomorphic
 /// versions of operators.

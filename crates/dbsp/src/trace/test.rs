@@ -6,8 +6,10 @@ use std::{
     },
 };
 
+use feldera_storage::tokio::TOKIO;
 use proptest::{collection::vec, prelude::*, strategy::BoxedStrategy};
 use size_of::SizeOf;
+use tempfile::tempdir;
 
 use crate::{
     DynZWeight, Runtime, ZWeight,
@@ -205,14 +207,14 @@ fn test_zset_spine<B: ZSet<Key = DynI32>>(
 
         assert_batch_eq(&batch, &ref_batch);
 
-        ref_trace.insert(ref_batch);
+        TOKIO.block_on(ref_trace.insert(ref_batch));
         assert_batch_cursors_eq(
             CursorPair::new(&mut batch.cursor(), &mut trace.cursor()),
             &ref_trace,
             seed,
         );
 
-        trace.insert(batch);
+        TOKIO.block_on(trace.insert(batch));
         test_trace_sampling(&trace);
 
         assert_trace_eq(&trace, &ref_trace);
@@ -256,14 +258,14 @@ fn test_indexed_zset_spine<B: IndexedZSet<Key = DynI32, Val = DynI32>>(
 
         assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
 
-        ref_trace.insert(ref_batch);
+        TOKIO.block_on(ref_trace.insert(ref_batch));
         assert_batch_cursors_eq(
             CursorPair::new(&mut batch.cursor(), &mut trace.cursor()),
             &ref_trace,
             seed,
         );
 
-        trace.insert(batch);
+        TOKIO.block_on(trace.insert(batch));
         test_trace_sampling(&trace);
 
         assert_trace_eq(&trace, &ref_trace);
@@ -316,14 +318,14 @@ fn test_val_batch_trace_spine<B: ZBatch<Key = DynI32, Val = DynI32, Time = u32>>
         assert_batch_eq(&batch, &ref_batch);
         assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
 
-        ref_trace.insert(ref_batch);
+        TOKIO.block_on(ref_trace.insert(ref_batch));
         assert_batch_cursors_eq(
             CursorPair::new(&mut trace.cursor(), &mut batch.cursor()),
             &ref_trace,
             seed,
         );
 
-        trace.insert(batch);
+        TOKIO.block_on(trace.insert(batch));
 
         assert_trace_eq(&trace, &ref_trace);
         assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
@@ -446,14 +448,14 @@ fn test_key_batch_spine<B: ZBatch<Key = DynI32, Val = DynUnit, Time = u32>>(
 
         assert_batch_eq(&batch, &ref_batch);
 
-        ref_trace.insert(ref_batch);
+        TOKIO.block_on(ref_trace.insert(ref_batch));
         assert_batch_cursors_eq(
             CursorPair::new(&mut trace.cursor(), &mut batch.cursor()),
             &ref_trace,
             seed,
         );
 
-        trace.insert(batch);
+        TOKIO.block_on(trace.insert(batch));
 
         assert_trace_eq(&trace, &ref_trace);
 
@@ -565,7 +567,7 @@ proptest! {
 
                 test_batch_sampling(&batch);
 
-                trace.insert(batch);
+                TOKIO.block_on(trace.insert(batch));
                 trace.retain_keys(Filter::new(Box::new(move |x| *x.downcast_checked::<i32>() >= ((i * 20) as i32))));
 
                 trace.complete_merges();
@@ -592,7 +594,7 @@ proptest! {
                 trace.retain_values(GroupFilter::Simple(Filter::new(Box::new(
                     move |x: &DynI32| *x.downcast_checked::<i32>() >= ((i * 20) as i32),
                 ))));
-                trace.insert(batch);
+                TOKIO.block_on(trace.insert(batch));
                 trace.complete_merges();
                 // FIXME: Change to 20000 after changing vtable types to pointers.
                 let trace_total_bytes = trace.size_of().total_bytes();
@@ -664,10 +666,10 @@ proptest! {
                 assert_batch_eq(&batch, &ref_batch);
                 assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
 
-                ref_trace.insert(ref_batch);
+                TOKIO.block_on(ref_trace.insert(ref_batch));
                 assert_batch_cursors_eq(CursorPair::new(&mut batch.cursor(), &mut trace.cursor()), &ref_trace, seed);
 
-                trace.insert(batch);
+                TOKIO.block_on(trace.insert(batch));
                 test_trace_sampling(&trace);
 
                 assert_trace_eq(&trace, &ref_trace);
@@ -698,10 +700,10 @@ proptest! {
                 assert_batch_eq(&batch, &ref_batch);
                 assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
 
-                ref_trace.insert(ref_batch);
+                TOKIO.block_on(ref_trace.insert(ref_batch));
                 assert_batch_cursors_eq(CursorPair::new(&mut batch.cursor(), &mut trace.cursor()), &ref_trace, seed);
 
-                trace.insert(batch);
+                TOKIO.block_on(trace.insert(batch));
                 test_trace_sampling(&trace);
 
                 assert_trace_eq(&trace, &ref_trace);
@@ -771,10 +773,10 @@ proptest! {
                 assert_batch_eq(&batch, &ref_batch);
                 assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
 
-                ref_trace.insert(ref_batch);
+                TOKIO.block_on(ref_trace.insert(ref_batch));
                 assert_batch_cursors_eq(CursorPair::new(&mut trace.cursor(), &mut batch.cursor()), &ref_trace, seed);
 
-                trace.insert(batch);
+                TOKIO.block_on(trace.insert(batch));
 
                 assert_trace_eq(&trace, &ref_trace);
                 assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
@@ -804,10 +806,10 @@ proptest! {
                 assert_batch_eq(&batch, &ref_batch);
                 assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
 
-                ref_trace.insert(ref_batch);
+                TOKIO.block_on(ref_trace.insert(ref_batch));
                 assert_batch_cursors_eq(CursorPair::new(&mut trace.cursor(), &mut batch.cursor()), &ref_trace, seed);
 
-                trace.insert(batch);
+                TOKIO.block_on(trace.insert(batch));
 
                 assert_trace_eq(&trace, &ref_trace);
                 assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
@@ -827,7 +829,8 @@ fn run_in_circuit_with_storage<F>(f: F)
 where
     F: FnOnce() + Clone + Send + 'static,
 {
-    let (_temp_dir, config) = mkconfig();
+    let _temp_dir = tempdir().expect("Can't create temp dir for storage");
+    let config = mkconfig(_temp_dir.path());
     let count = Arc::new(AtomicUsize::new(0));
     Runtime::init_circuit(config, {
         let count = count.clone();

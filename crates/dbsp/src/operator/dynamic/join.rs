@@ -7,7 +7,7 @@ use crate::circuit::metadata::{
 use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::DynData;
 use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
-use crate::operator::dynamic::concat::dyn_accumulate_concat;
+use crate::operator::dynamic::concat::dyn_concat_accumulated;
 use crate::trace::cursor::SaturatingCursor;
 use crate::trace::spine_async::WithSnapshot;
 use crate::trace::{Spine, SpineSnapshot, Trace};
@@ -41,7 +41,7 @@ use std::rc::Rc;
 use std::{
     borrow::Cow,
     cmp::{Ordering, min},
-    collections::HashMap,
+    collections::{HashMap, hash_map::Entry},
     marker::PhantomData,
     ops::Deref,
     panic::Location,
@@ -695,13 +695,17 @@ where
         // as a join of one of the input streams with the trace of the other stream,
         // implemented by the `JoinTrace` operator.
         self.circuit().region("join", || {
-            let left = self.dyn_shard(&factories.left_factories);
-            let right = other.dyn_shard(&factories.right_factories);
+            let left = self;
+            let right = other;
 
-            let left_trace = left
-                .dyn_accumulate_trace(&factories.left_trace_factories, &factories.left_factories);
-            let right_trace = right
-                .dyn_accumulate_trace(&factories.right_trace_factories, &factories.right_factories);
+            let left_trace = left.dyn_shard_accumulate_trace(
+                &factories.left_trace_factories,
+                &factories.left_factories,
+            );
+            let right_trace = right.dyn_shard_accumulate_trace(
+                &factories.right_trace_factories,
+                &factories.right_factories,
+            );
 
             let left = self.circuit().add_binary_operator(
                 StreamingBinaryWrapper::new(JoinTrace::new(
@@ -714,7 +718,7 @@ where
                     Location::caller(),
                     self.circuit().clone(),
                 )),
-                &left.dyn_accumulate(&factories.left_factories),
+                &left.dyn_shard_accumulate(&factories.left_factories),
                 &right_trace,
             );
 
@@ -729,7 +733,7 @@ where
                     Location::caller(),
                     self.circuit().clone(),
                 )),
-                &right.dyn_accumulate(&factories.right_factories),
+                &right.dyn_shard_accumulate(&factories.right_factories),
                 &left_trace.accumulate_delay_trace(),
             );
 
@@ -762,8 +766,6 @@ where
                             None
                         };
 
-                        let stream1 = self.dyn_shard(&factories.join_factories.left_factories);
-
                         // Project away values, leave keys only.
                         let other_keys = other
                             .try_sharded_version()
@@ -792,8 +794,7 @@ where
                                     .as_deref()
                                     .map(|pid| format!("{pid}.distinct"))
                                     .as_deref(),
-                            )
-                            .dyn_shard(&factories.join_factories.right_factories);
+                            );
 
                         //map_func: Box<dyn Fn(B::DynItemRef<'_>, &mut DynPair<K, DynUnit>)>,
 
@@ -808,22 +809,35 @@ where
                             .val_factory()
                             .default_box();
 
-                        let join_stream = stream1.dyn_join_generic(
-                            &factories.join_factories,
-                            &stream2,
-                            TraceJoinFuncs::new(move |k: &I1::Key, v1: &I1::Val, _v2, cb| {
-                                k.clone_to(&mut key);
-                                v1.clone_to(&mut val);
-                                cb(key.as_mut(), val.as_mut())
-                            }),
-                        );
+                        let join_stream = self
+                            .dyn_join_generic(
+                                &factories.join_factories,
+                                &stream2,
+                                TraceJoinFuncs::new(move |k: &I1::Key, v1: &I1::Val, _v2, cb| {
+                                    k.clone_to(&mut key);
+                                    v1.clone_to(&mut val);
+                                    cb(key.as_mut(), val.as_mut())
+                                }),
+                            )
+                            .mark_sharded();
 
                         // stream1 - join_stream.
-                        dyn_accumulate_concat(
+                        dyn_concat_accumulated(
                             &factories.join_factories.left_factories,
-                            [(stream1, true), (join_stream, false)],
+                            [
+                                (
+                                    self.dyn_shard_accumulate(
+                                        &factories.join_factories.left_factories,
+                                    ),
+                                    true,
+                                ),
+                                (
+                                    join_stream
+                                        .dyn_accumulate(&factories.join_factories.left_factories),
+                                    false,
+                                ),
+                            ],
                         )
-                        .mark_sharded()
                     })
                 },
             )
@@ -1529,6 +1543,9 @@ where
     Z: IndexedZSet,
     Clk: WithClock<Time = T::Time> + 'static,
 {
+    // It is safe to hold `self.future_outputs.borrow_mut()` across the await
+    // point because the operator is not evaluated reentrantly.
+    #[allow(clippy::await_holding_refcell_ref)]
     fn eval(
         self: Rc<Self>,
         delta: &Option<I>,
@@ -1667,11 +1684,11 @@ where
 
                     start += run_length;
 
-                    self.future_outputs.borrow_mut().entry(batch_time).or_insert_with(|| {
+                    if let Entry::Vacant(vacant) = self.future_outputs.borrow_mut().entry(batch_time) {
                         let mut spine = <Spine<Z> as Trace>::new(&self.output_factories);
-                        spine.insert(Z::dyn_from_tuples(&self.output_factories, (), &mut batch));
-                        spine
-                    });
+                        spine.insert(Z::dyn_from_tuples(&self.output_factories, (), &mut batch)).await;
+                        vacant.insert(spine);
+                    };
                     batch.clear();
                 }
 

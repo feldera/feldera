@@ -58,6 +58,7 @@ use dyn_clone::{DynClone, clone_box};
 use feldera_ir::{LirCircuit, LirNodeId};
 use feldera_samply::Span;
 use feldera_storage::{FileCommitter, StoragePath};
+use pin_project_lite::pin_project;
 use serde::{Deserialize, Serialize, Serializer, de::DeserializeOwned};
 use std::{
     any::{Any, TypeId, type_name_of_val},
@@ -68,13 +69,15 @@ use std::{
     future::Future,
     io::ErrorKind,
     marker::PhantomData,
-    mem::transmute,
+    mem::{take, transmute},
     ops::Deref,
     panic::Location,
     pin::Pin,
     rc::Rc,
     sync::Arc,
+    task::{Context, Poll},
     thread::panicking,
+    time::{Duration, Instant},
 };
 use tokio::{runtime::Runtime as TokioRuntime, task::LocalSet};
 use tracing::debug;
@@ -1015,7 +1018,9 @@ pub trait Node: Any {
         &'a mut self,
     ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>>;
 
-    fn import(&mut self) {}
+    fn import<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = ()> + 'a>> {
+        Box::pin(async {})
+    }
 
     /// Notify the operator that the circuit is starting a transaction.
     fn start_transaction(&mut self);
@@ -1956,7 +1961,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     ) -> impl Future<Output = Result<Option<Position>, SchedulerError>>;
 
     /// Evaluate import node to pull inputs from the parent circuit.
-    fn eval_import_node(&self, id: NodeId);
+    fn eval_import_node(&self, id: NodeId) -> impl Future<Output = ()>;
 
     fn flush_node(&self, id: NodeId);
 
@@ -3638,23 +3643,32 @@ where
                 let node = nodes[id.0].borrow();
                 format!("{} {}", node.name(), node.global_id())
             });
-        let progress = circuit.nodes.borrow()[id.0].borrow_mut().eval().await?;
+        let (result, duration) = Timed::new(circuit.nodes.borrow()[id.0].borrow_mut().eval()).await;
+        let progress = result?;
         span.record();
 
         circuit.log_scheduler_event(&SchedulerEvent::eval_end(
             circuit.nodes.borrow()[id.0].borrow().as_ref(),
+            duration,
         ));
 
         Ok(progress)
     }
 
     // Justification: the scheduler must not call `eval()` on a node twice.
-    fn eval_import_node(&self, id: NodeId) {
+    #[allow(clippy::await_holding_refcell_ref)]
+    async fn eval_import_node(&self, id: NodeId) {
         let circuit = self.inner();
         debug_assert!(id.0 < circuit.nodes.borrow().len());
         debug_assert!(circuit.import_nodes().contains(&id));
 
-        circuit.nodes.borrow()[id.0].borrow_mut().import();
+        // `circuit.nodes.borrow()` is safe across the await point because the
+        // scheduler only borrows `circuit.nodes` during a step and never
+        // borrows it mutably.
+        //
+        // `circuit.nodes.borrow()[id.0].borrow_mut()` is safe across the await
+        // point because the scheduler never evaluates a node reentrantly.
+        circuit.nodes.borrow()[id.0].borrow_mut().import().await;
     }
 
     fn flush_node(&self, id: NodeId) {
@@ -4538,15 +4552,22 @@ where
         })
     }
 
-    fn import(&mut self) {
-        match StreamValue::take(self.parent_stream.val()) {
-            None => self
-                .operator
-                .import(StreamValue::peek(&self.parent_stream.get())),
-            Some(val) => self.operator.import_owned(val),
-        }
+    // It is safe to hold `self.parent_stream.get()` across the await point
+    // because the operator is not evaluated reentrantly.
+    #[allow(clippy::await_holding_refcell_ref)]
+    fn import<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = ()> + 'a>> {
+        Box::pin(async {
+            match StreamValue::take(self.parent_stream.val()) {
+                None => {
+                    self.operator
+                        .import(StreamValue::peek(&self.parent_stream.get()))
+                        .await
+                }
+                Some(val) => self.operator.import_owned(val).await,
+            }
 
-        StreamValue::consume_token(self.parent_stream.val());
+            StreamValue::consume_token(self.parent_stream.val());
+        })
     }
 
     fn start_transaction(&mut self) {
@@ -6765,12 +6786,12 @@ where
     fn eval<'a>(
         &'a mut self,
     ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
-        // We may want to make the executor responsible for evaluating import nodes
-        // if there is a need for customizing this behavior.
-        for node_id in self.circuit.import_nodes() {
-            self.circuit.eval_import_node(node_id)
-        }
         Box::pin(async {
+            // We may want to make the executor responsible for evaluating import nodes
+            // if there is a need for customizing this behavior.
+            for node_id in self.circuit.import_nodes() {
+                self.circuit.eval_import_node(node_id).await;
+            }
             self.executor.transaction(&self.circuit).await?;
             Ok(None)
         })
@@ -7174,7 +7195,11 @@ impl CircuitHandle {
             //             } else {
             //                 None
             //             };
-            //             Some(crate::utils::DotNodeAttributes::new().with_color(color))
+            //             Some(
+            //                 crate::utils::DotNodeAttributes::new()
+            //                     .with_color(color)
+            //                     .with_label(&format!("{}: {}", node.global_id(), node.name())),
+            //             )
             //         },
             //         |edge| {
             //             let style = if edge.is_dependency() {
@@ -7566,6 +7591,52 @@ impl CircuitHandle {
 
     pub fn rebalance(&self) {
         self.circuit.rebalance()
+    }
+}
+
+pin_project! {
+    /// An async task that measures its runtime.
+    ///
+    /// This uses the same wrapper technique as [tokio_metrics::Instrumented] or
+    /// [tracing::Instrument]: by implementing [Future] manually, it wraps each
+    /// poll with elapsed time measurement.  When the future eventually
+    /// completes, it outputs the wrapped future's output value plus the total
+    /// elapsed time.
+    ///
+    /// [tokio_metrics::Instrumented]: https://docs.rs/tokio-metrics/latest/tokio_metrics/struct.Instrumented.html
+    /// [tracing::Instrument]: https://docs.rs/tracing/latest/tracing/trait.Instrument.html
+    #[derive(Debug)]
+    pub struct Timed<T> {
+        // The task being instrumented
+        #[pin]
+        task: T,
+
+        // Time spent running this task.
+        elapsed: Duration,
+    }
+}
+
+impl<T> Timed<T> {
+    fn new(task: T) -> Self {
+        Self {
+            task,
+            elapsed: Duration::ZERO,
+        }
+    }
+}
+
+impl<T> Future for Timed<T>
+where
+    T: Future,
+{
+    type Output = (T::Output, Duration);
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let start = Instant::now();
+        let ret = this.task.poll(cx);
+        *this.elapsed += start.elapsed();
+        ret.map(|value| (value, take(&mut *this.elapsed)))
     }
 }
 

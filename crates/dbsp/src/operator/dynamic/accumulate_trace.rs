@@ -30,6 +30,9 @@ use std::{borrow::Cow, marker::PhantomData, ops::Deref};
 // Trace of a collection updated once per clock cycle.
 circuit_cache_key!(AccumulateTraceId<C, D: BatchReader>(StreamId => Stream<C, D>));
 
+// Trace of a sharded collection updated once per clock cycle.
+circuit_cache_key!(ShardedAccumulateTraceId<C, D: BatchReader>(StreamId => Stream<C, D>));
+
 circuit_cache_key!(AccumulateBoundsId<D: BatchReader>(StreamId => TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>));
 
 // Trace of a collection delayed by one clock cycle.
@@ -57,6 +60,85 @@ where
             TraceBound::new(),
             TraceBound::new(),
         )
+    }
+
+    pub fn dyn_shard_accumulate_trace(
+        &self,
+        output_factories: &<TimedSpine<B, C> as BatchReader>::Factories,
+        batch_factories: &B::Factories,
+    ) -> Stream<C, TimedSpine<B, C>>
+    where
+        B: Batch<Time = ()>,
+    {
+        let bounds = self.accumulate_trace_bounds_with_bound(TraceBound::new(), TraceBound::new());
+
+        // The stream is already sharded -- use regular accumulate_trace that doesn't shard.
+        if let Some(sharded) = self.get_sharded_version() {
+            return sharded.dyn_accumulate_trace_with_bound(
+                output_factories,
+                batch_factories,
+                TraceBound::new(),
+                TraceBound::new(),
+            );
+        }
+
+        self.circuit()
+            .cache_get_or_insert_with(ShardedAccumulateTraceId::new(self.stream_id()), || {
+                let circuit = self.circuit();
+
+                let accumulated: Stream<C, Option<Spine<B>>> =
+                    self.dyn_shard_accumulate(batch_factories);
+
+                circuit.region("shard_accumulate_trace", || {
+                    let persistent_id = self.get_persistent_id();
+                    let z1: AccumulateZ1Trace<
+                        C,
+                        B,
+                        Spine<<<C as WithClock>::Time as Timestamp>::TimedBatch<B>>,
+                    > = AccumulateZ1Trace::new(
+                        output_factories,
+                        batch_factories,
+                        false,
+                        circuit.root_scope(),
+                        bounds.clone(),
+                    );
+                    let (delayed_trace, z1feedback) = circuit.add_feedback_persistent(
+                        persistent_id
+                            .map(|name| format!("{name}.shard_accintegral"))
+                            .as_deref(),
+                        z1,
+                    );
+
+                    let replay_stream = z1feedback.operator_mut().prepare_replay_stream(self);
+
+                    let trace = circuit.add_binary_operator_with_preference(
+                        <AccumulateTraceAppend<TimedSpine<B, C>, B, C>>::new(
+                            output_factories,
+                            circuit.clone(),
+                        ),
+                        (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
+                        (&accumulated, OwnershipPreference::PREFER_OWNED),
+                    );
+                    delayed_trace.mark_sharded();
+                    trace.mark_sharded();
+
+                    z1feedback.connect_with_preference(
+                        &trace,
+                        OwnershipPreference::STRONGLY_PREFER_OWNED,
+                    );
+
+                    // Connect the replay stream to the original non-sharded stream, since the dyn_shard_accumulate operator
+                    // doesn't expose a sharded stream.
+                    // FIXME: this is suboptimal, since this will end up sharding the already sharded data again.
+                    // We should instead replay by moving the entire integral into the accumulator. This will require
+                    // integrating bootstrapping with transactions better.
+                    register_replay_stream(circuit, self, &replay_stream);
+
+                    circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
+                    trace
+                })
+            })
+            .clone()
     }
 
     /// See [`Stream::accumulate_trace_with_bound`].
@@ -279,6 +361,87 @@ where
             TraceBound::new(),
             TraceBound::new(),
         )
+    }
+
+    #[track_caller]
+    pub fn dyn_shard_accumulate_integrate_trace(
+        &self,
+        factories: &B::Factories,
+    ) -> Stream<C, Spine<B>>
+    where
+        B: Batch<Time = ()>,
+        Spine<B>: SizeOf,
+    {
+        // The stream is already sharded -- use regular accumulate_trace that doesn't shard.
+        if let Some(sharded) = self.get_sharded_version() {
+            return sharded.dyn_accumulate_integrate_trace(factories);
+        }
+
+        self.circuit()
+            .cache_get_or_insert_with(ShardedAccumulateTraceId::new(self.stream_id()), || {
+                let circuit = self.circuit();
+                let bounds =
+                    self.accumulate_trace_bounds_with_bound(TraceBound::new(), TraceBound::new());
+
+                let persistent_id = self.get_persistent_id();
+
+                circuit.region("shard_accumulate_integrate_trace", || {
+                    let z1: AccumulateZ1Trace<C, B, Spine<B>> = AccumulateZ1Trace::new(
+                        factories,
+                        factories,
+                        true,
+                        circuit.root_scope(),
+                        bounds,
+                    );
+
+                    let accumulated = self.dyn_shard_accumulate(factories);
+
+                    let (
+                        ExportStream {
+                            local: delayed_trace,
+                            export,
+                        },
+                        z1feedback,
+                    ) = circuit.add_feedback_with_export_persistent(
+                        persistent_id
+                            .map(|name| format!("{name}.shard_accintegral"))
+                            .as_deref(),
+                        z1,
+                    );
+
+                    let replay_stream = z1feedback.operator_mut().prepare_replay_stream(self);
+
+                    let trace = circuit.add_binary_operator_with_preference(
+                        AccumulateUntimedTraceAppend::<Spine<B>>::new(),
+                        (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
+                        (&accumulated, OwnershipPreference::PREFER_OWNED),
+                    );
+
+                    if self.is_sharded() {
+                        delayed_trace.mark_sharded();
+                        trace.mark_sharded();
+                    }
+
+                    z1feedback.connect_with_preference(
+                        &trace,
+                        OwnershipPreference::STRONGLY_PREFER_OWNED,
+                    );
+
+                    // Connect the replay stream to the original non-sharded stream, since the dyn_shard_accumulate operator
+                    // doesn't expose a sharded stream.
+                    // FIXME: this is suboptimal, since this will end up sharding the already sharded data again.
+                    // We should instead replay by moving the entire integral into the accumulator. This will require
+                    // integrating bootstrapping with transactions better. An additional complication is that the integral
+                    // can be timed, while the accumulator stores untimed updates
+                    register_replay_stream(circuit, self, &replay_stream);
+
+                    circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
+                    circuit.cache_insert(ExportId::new(trace.stream_id()), export);
+
+                    trace
+                })
+            })
+            .clone()
     }
 
     pub fn dyn_accumulate_integrate_trace_with_bound(
@@ -578,7 +741,7 @@ where
         if let Some(delta) = delta {
             self.num_inputs += delta.len();
             for batch in delta.ro_snapshot().batches() {
-                trace.insert_arc(batch.clone());
+                trace.insert(batch.clone()).await;
             }
         }
         trace
@@ -663,11 +826,13 @@ where
             // (adding fixed timestamp on the fly).
             self.num_inputs += delta.len();
             for batch in delta.ro_snapshot().batches() {
-                trace.insert_arc(T::Batch::from_arc_batch(
-                    batch,
-                    &self.clock.time(),
-                    &self.output_factories,
-                ));
+                trace
+                    .insert(T::Batch::from_arc_batch(
+                        batch,
+                        &self.clock.time(),
+                        &self.output_factories,
+                    ))
+                    .await;
             }
         }
         trace

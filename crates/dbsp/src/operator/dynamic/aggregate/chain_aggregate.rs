@@ -64,8 +64,6 @@ where
 
         circuit
             .region("chain_aggregate", || {
-                let stream = self.dyn_shard(input_factories);
-
                 let bounds = TraceBounds::unbounded();
 
                 let feedback = circuit.add_accumulate_integrate_trace_feedback::<Spine<OZ>>(
@@ -73,6 +71,7 @@ where
                     output_factories,
                     bounds,
                 );
+
                 let output = circuit
                     .add_binary_operator(
                         StreamingBinaryWrapper::new(ChainAggregate::new(
@@ -80,7 +79,7 @@ where
                             finit,
                             fupdate,
                         )),
-                        &stream.dyn_accumulate(input_factories),
+                        &self.dyn_shard_accumulate(input_factories),
                         &feedback.delayed_trace,
                     )
                     .mark_sharded();

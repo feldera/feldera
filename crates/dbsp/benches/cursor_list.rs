@@ -103,6 +103,7 @@ fn bench(storage: bool) {
             .expect("failed to configure POSIX storage"),
         ),
         dev_tweaks: Default::default(),
+        exchange_listener: None,
     };
 
     let results: Arc<Mutex<Vec<BenchResult>>> = Arc::new(Mutex::new(Vec::new()));

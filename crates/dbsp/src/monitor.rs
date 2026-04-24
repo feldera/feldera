@@ -564,7 +564,7 @@ impl TraceMonitorInternal {
                     }
                 }
             }
-            SchedulerEvent::EvalEnd { node } => match self.current_state() {
+            SchedulerEvent::EvalEnd { node, duration: _ } => match self.current_state() {
                 CircuitState::Eval(visited_nodes, eval_node_id) => {
                     if eval_node_id != &node.local_id() {
                         return Err(TraceError::InvalidEvent(Cow::from(format!(
