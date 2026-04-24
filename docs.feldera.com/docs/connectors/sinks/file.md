@@ -35,3 +35,8 @@ CREATE VIEW copy WITH (
 )
 AS SELECT * FROM Stocks;
 ```
+
+## Reset behavior
+
+Invoking the [reset API](/api/reset-output-connector) truncates the output
+file and then replays the current materialized-view snapshot.

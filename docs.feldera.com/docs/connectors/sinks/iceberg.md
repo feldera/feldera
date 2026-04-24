@@ -108,3 +108,10 @@ Connect.
   declaration.
 - Ensure that `iceberg.tables.cdc-field` is set to the same value as `cdc_field`
   in the output connector configuration in Feldera.
+
+## Reset behavior
+
+The Iceberg sink writes through a Kafka topic, so see the
+[Kafka sink reset behavior](/connectors/sinks/kafka#reset-behavior): reset
+replays the current materialized-view snapshot to the Kafka topic; it does
+not clear records already written there or truncate the Iceberg table.

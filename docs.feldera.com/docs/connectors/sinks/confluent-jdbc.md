@@ -162,3 +162,10 @@ guaranteed to have unique values.  Failure to choose a unique key may lead to da
 
 * For more details on Avro support in Feldera, please refer to the [Avro Format Documentation](/formats/avro).
 * For more information on configuring Kafka transport, visit the [Kafka Sink Connector Documentation](/connectors/sinks/kafka).
+
+## Reset behavior
+
+The Confluent JDBC sink uses the Kafka output transport underneath; see the
+[Kafka sink reset behavior](/connectors/sinks/kafka#reset-behavior). Reset
+replays the current materialized-view snapshot to the Kafka topic; it does
+not clear records already written there.

@@ -50,6 +50,7 @@ use chrono::{DateTime, Utc};
 use crossbeam::{
     queue::SegQueue,
     sync::{Parker, ShardedLock, Unparker},
+    utils::CachePadded,
 };
 use datafusion::prelude::*;
 use dbsp::circuit::circuit_builder::BootstrapInfo;
@@ -70,7 +71,9 @@ use dbsp::{Runtime, WeakRuntime};
 use enum_map::EnumMap;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
-use feldera_adapterlib::transport::{CommandHandler, InputReader, Resume, Watermark};
+use feldera_adapterlib::transport::{
+    CommandHandler, InputReader, OutputBatchType, Resume, Watermark,
+};
 use feldera_ir::LirCircuit;
 use feldera_samply::{AnnotationOptions, CaptureOptions, Span};
 use feldera_storage::fbuf::slab::FBufSlabsStats;
@@ -90,6 +93,7 @@ use feldera_types::coordination::{
 };
 use feldera_types::format::json::JsonLines;
 use feldera_types::pipeline_diff::PipelineDiff;
+use feldera_types::reset_token::ResetStatus;
 use feldera_types::runtime_status::BootstrapPolicy;
 use feldera_types::secret_resolver::resolve_secret_references_in_connector_config;
 use feldera_types::suspend::{PermanentSuspendError, SuspendError, TemporarySuspendError};
@@ -148,7 +152,7 @@ mod validate;
 
 use crate::adhoc::table::AdHocTable;
 use crate::adhoc::{create_session_context, execute_sql};
-use crate::catalog::{SerBatchReader, SerTrace};
+use crate::catalog::{SerBatch, SerBatchReader, SerTrace};
 use crate::format::parquet::relation_to_arrow_fields;
 use crate::format::{MessageOrientedPreprocessedParser, StreamingPreprocessedParser};
 use crate::format::{get_input_format, get_output_format};
@@ -166,7 +170,9 @@ use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::{SqlIdentifier, canonical_identifier};
 pub use pipeline_diff::compute_pipeline_diff;
-pub use stats::{CompletionToken, ControllerStatus, ControllerStatusContext, InputEndpointStatus};
+pub use stats::{
+    CompletionToken, ControllerStatus, ControllerStatusContext, InputEndpointStatus, ResetToken,
+};
 
 /// Maximal number of concurrent API connections per circuit
 /// (including both input and output connections).
@@ -481,6 +487,241 @@ enum Command {
     Suspend(SuspendCallbackFn),
     SyncCheckpoint((uuid::Uuid, SyncCheckpointCallbackFn)),
     Rebalance(RebalanceCallbackFn),
+}
+
+/// Cross-thread control state for one output endpoint, shared between the
+/// API thread (reset), the circuit thread (push/deliver), and the output
+/// thread (poll for generation changes).
+///
+/// # Snapshot state machine
+///
+/// ```text
+///                  request_reset
+///       ┌───────────────────────────────┐
+///       │                               │
+///       v                               │
+///  ┌─────────┐                     ┌─────────┐
+///  │ Pending │────────────────────>│  Sent   │
+///  └─────────┘   mark_delivered    └─────────┘
+///                (gen unchanged)
+/// ```
+///
+/// * `Pending` means the next `push_output` for this endpoint must enqueue a
+///   snapshot instead of a delta.
+/// * `Sent` means the snapshot has been delivered (or `send_snapshot` is
+///   false). This condition is persisted via the `initial_snapshot_sent`
+///   bool below, which mirrors "ever reached Sent" across restarts.
+///
+/// `mark_snapshot_delivered` only transitions to `Sent` if the generation
+/// still matches the one captured at the start of the enqueue, so a
+/// `request_reset` that lands mid-delivery leaves the state `Pending` and
+/// the next `push_output` retries at the new generation. Otherwise
+/// `mark_snapshot_delivered` could race with a concurrent `request_reset`:
+/// a snapshot that was enqueued is tagged with the old generation and
+/// will be discarded by the output thread, yet the state ends up `Sent`.
+///
+/// # Generation
+///
+/// `generation` is a monotonic epoch counter bumped by every `request_reset`
+/// and polled by the output thread via `generation_change`. Every bump is a
+/// reset -- no other code path increments it -- so detecting a change is the
+/// same as detecting a reset. The output thread discards any queued batches
+/// tagged with an older generation and, on `TruncateAndSnapshot` endpoints,
+/// calls the consumer's `reset()` hook to truncate the destination before
+/// the next snapshot arrives. Because generation 0 never changes during
+/// initial delivery, `consumer.reset()` is only invoked for user-issued
+/// resets; the initial snapshot relies on whatever truncation (if any) the
+/// connector does at construction time.
+///
+/// # Reset and crash recovery
+///
+/// `request_reset` only touches the in-memory packed state. A reset
+/// followed by a checkpoint and crash is discarded on restart: the
+/// restart does not re-fire the reset's snapshot. Clients observe this
+/// via `/reset_status`: tokens minted in the previous incarnation are
+/// rejected with `410 Gone`, and the client should reissue.
+///
+/// | Scenario                                                        | Outcome on resume   |
+/// |-----------------------------------------------------------------|---------------------|
+/// | `send_snapshot: false` -> reset -> checkpoint -> crash -> resume | snapshot not re-sent |
+/// | `send_snapshot: true` (initial delivered) -> reset -> checkpoint -> crash -> resume | snapshot not re-sent |
+/// | `send_snapshot: true` (initial not yet delivered) -> checkpoint -> crash -> resume | snapshot re-sent    |
+/// | connector modified across restart                                | snapshot re-sent    |
+///
+/// # Reset completion tracking
+///
+/// `last_delivered_generation` records the highest generation whose snapshot
+/// was actually enqueued (i.e., for which `mark_snapshot_delivered`'s CAS
+/// succeeded). It is used to answer "has my reset token completed?":
+///
+/// | state after events                               | `last_delivered` | `state`        | token(A=1) | token(B=2) |
+/// |--------------------------------------------------|------------------|----------------|------------|------------|
+/// | reset A delivered                                | 1                | (1, Sent)      | Complete   | —          |
+/// | reset A delivered, reset B issued                | 1                | (2, Pending)   | Complete   | InProgress |
+/// | reset A overwritten by reset B (A never landed)  | 0                | (2, Pending)   | InProgress | InProgress |
+/// | reset A overwritten, reset B delivered           | 2                | (2, Sent)      | Complete   | Complete   |
+///
+/// The rule is simply: a token for generation `N` is complete iff
+/// `last_delivered_generation >= N`. Packed `state` alone cannot answer
+/// this; rows 2 and 3 above have the same `state` but different answers.
+/// The field is in-memory only; a crash discards all outstanding reset
+/// tokens (clients re-detect this via the incarnation uuid).
+#[derive(Default)]
+struct OutputEndpointControl {
+    /// All three atomics are bundled into a single `CachePadded` so they
+    /// share one cache line (preventing false sharing with neighboring
+    /// fields on `OutputEndpointDescr`) and so the reset/delivery hot
+    /// path touches just one padded allocation.
+    inner: CachePadded<OutputEndpointControlInner>,
+}
+
+#[derive(Default)]
+struct OutputEndpointControlInner {
+    /// Packed state: bits [1..64] are the generation, bit 0 is `1` for
+    /// `Pending` and `0` for `Sent`.
+    state: AtomicU64,
+
+    /// Highest generation whose snapshot was actually delivered. Written
+    /// only by the CAS winner in `mark_snapshot_delivered`, so it is
+    /// monotonically non-decreasing. Read by `reset_status` to distinguish
+    /// "reset completed" from "reset superseded but never delivered".
+    last_delivered_generation: AtomicU64,
+
+    /// `true` once this endpoint has delivered a snapshot at least once,
+    /// or initialized to `true` if `send_snapshot` was `false` at startup.
+    /// `request_reset` does NOT flip this back to `false`.
+    initial_snapshot_sent: AtomicBool,
+}
+
+impl OutputEndpointControl {
+    const PENDING_BIT: u64 = 1;
+
+    fn pack(generation: u64, pending: bool) -> u64 {
+        debug_assert!(
+            generation < (1u64 << 63),
+            "generation counter would overflow the packed state"
+        );
+        (generation << 1) | (pending as u64)
+    }
+
+    fn unpack(value: u64) -> (u64, bool) {
+        (value >> 1, (value & Self::PENDING_BIT) != 0)
+    }
+
+    /// Construct control state for an output endpoint.
+    ///
+    /// * `send_snapshot` - value of the connector's `send_snapshot` flag.
+    /// * `snapshot_already_sent` - state recovered from the checkpoint; `true`
+    ///   when the endpoint delivered its initial snapshot before the
+    ///   checkpoint was taken. Ignored for newly added or modified connectors,
+    ///   which should receive a fresh snapshot when `send_snapshot` is set.
+    fn new(send_snapshot: bool, snapshot_already_sent: bool) -> Self {
+        let pending = send_snapshot && !snapshot_already_sent;
+        // Vacuously delivered if no initial snapshot is desired; also
+        // carries through the checkpointed value on restart.
+        let delivered = !send_snapshot || snapshot_already_sent;
+        Self {
+            inner: CachePadded::new(OutputEndpointControlInner {
+                state: AtomicU64::new(Self::pack(0, pending)),
+                last_delivered_generation: AtomicU64::new(0),
+                initial_snapshot_sent: AtomicBool::new(delivered),
+            }),
+        }
+    }
+
+    /// Returns the current generation epoch.
+    fn generation(&self) -> u64 {
+        Self::unpack(self.inner.state.load(Ordering::Acquire)).0
+    }
+
+    /// Returns `Some(new_generation)` if the generation has changed since
+    /// `known_generation` -- in which case a reset happened -- and `None`
+    /// otherwise.
+    fn generation_change(&self, known_generation: u64) -> Option<u64> {
+        let current = self.generation();
+        if current == known_generation {
+            None
+        } else {
+            Some(current)
+        }
+    }
+
+    /// Returns true if the next `push_output` should emit a snapshot for
+    /// this endpoint. Non-mutating: the transition to `Sent` happens in
+    /// `mark_snapshot_delivered` after the snapshot has actually been
+    /// enqueued.
+    fn is_snapshot_pending(&self) -> bool {
+        Self::unpack(self.inner.state.load(Ordering::Acquire)).1
+    }
+
+    /// Transition `(captured_generation, Pending)` → `(captured_generation,
+    /// Sent)`. If either the generation or the pending bit has changed
+    /// (e.g., `request_reset` ran concurrently), the CAS fails, the state
+    /// stays `Pending`, and the next `push_output` retries at the new
+    /// generation. On a successful CAS sets the persisted
+    /// `initial_snapshot_sent` flag and advances `last_delivered_generation`.
+    fn mark_snapshot_delivered(&self, captured_generation: u64) {
+        let expected = Self::pack(captured_generation, true);
+        let new = Self::pack(captured_generation, false);
+        if self
+            .inner
+            .state
+            .compare_exchange(expected, new, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            // `fetch_max` guards against a stale lagging store overwriting
+            // a newer generation's progress: if a CAS winner at gen N gets
+            // preempted between the CAS above and these stores, a second
+            // winner at gen N+1 can land first; our subsequent write must
+            // not regress the counter. In the current architecture this
+            // cannot actually happen because `mark_snapshot_delivered` is
+            // only called from the circuit thread (via
+            // `enqueue_latest_snapshot`), so successive calls are
+            // serialized. `fetch_max` locks the invariant into the atomic
+            // so the code stays correct if another caller is ever added.
+            self.inner
+                .last_delivered_generation
+                .fetch_max(captured_generation, Ordering::AcqRel);
+            self.inner
+                .initial_snapshot_sent
+                .store(true, Ordering::Release);
+        }
+    }
+
+    /// Bumps the generation and marks the snapshot as `Pending`. Both fields
+    /// commit together via a single CAS, so no observer can see a half-
+    /// applied reset. Returns the new generation value. Intentionally does
+    /// *not* clear `initial_snapshot_sent` -- see the "Reset and
+    /// crash recovery" note on the struct.
+    fn request_reset(&self) -> u64 {
+        loop {
+            let current = self.inner.state.load(Ordering::Acquire);
+            let (current_gen, _) = Self::unpack(current);
+            let new_gen = current_gen + 1;
+            let new = Self::pack(new_gen, true);
+            if self
+                .inner
+                .state
+                .compare_exchange_weak(current, new, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                return new_gen;
+            }
+        }
+    }
+
+    /// Returns true if the endpoint has delivered its initial snapshot (or
+    /// did not need one). Read at checkpoint time to persist the
+    /// "already sent" signal across restarts.
+    fn initial_snapshot_sent(&self) -> bool {
+        self.inner.initial_snapshot_sent.load(Ordering::Acquire)
+    }
+
+    /// Highest generation whose snapshot has actually landed. Used by
+    /// `reset_status` per the truth table on the struct.
+    fn last_delivered_generation(&self) -> u64 {
+        self.inner.last_delivered_generation.load(Ordering::Acquire)
+    }
 }
 
 impl Command {
@@ -811,6 +1052,30 @@ impl Controller {
         command: serde_json::Value,
     ) -> Result<serde_json::Value, ControllerError> {
         self.inner.output_endpoint_command(endpoint_name, command)
+    }
+
+    /// Resets an output endpoint and returns a token the client can use to
+    /// check completion. The exact behavior depends on the connector;
+    /// consult the connector's documentation. In general, reset means
+    /// "clear the destination where possible and replay the latest
+    /// materialized-view snapshot".
+    ///
+    /// The token is bound to the pipeline's current incarnation. If the
+    /// pipeline crashes or is restarted before the client polls,
+    /// `reset_status` cannot validate the reset across incarnations and
+    /// returns an error; the reset may or may not have gone through, so
+    /// the client should reissue to get a token valid for the new
+    /// incarnation.
+    pub fn reset_output_endpoint(
+        &self,
+        endpoint_name: &str,
+    ) -> Result<ResetToken, ControllerError> {
+        self.inner.reset_output_endpoint(endpoint_name)
+    }
+
+    /// Check whether the reset identified by `token` has completed.
+    pub fn reset_status(&self, token: &ResetToken) -> Result<ResetStatus, ControllerError> {
+        self.inner.reset_status(token)
     }
 
     /// Returns the current controller status.
@@ -3629,12 +3894,33 @@ impl CircuitThread {
                     // We need to propagate processed_records to the connector for progress tracking.
                     endpoint.queue.push(BatchQueueEntry {
                         step: self.step,
+                        batch_type: OutputBatchType::Delta,
+                        generation: endpoint.control.generation(),
                         data: None,
                         processed_records,
                     });
                     endpoint.unparker.unpark();
                     continue;
                 }
+
+                // `is_snapshot_pending` is `true` either when the connector
+                // was configured with `send_snapshot: true` and has not yet
+                // delivered its initial snapshot, or when a reset just
+                // requested a fresh snapshot. Either way, deliver and skip
+                // the normal delta path.
+                if endpoint.control.is_snapshot_pending() {
+                    self.controller.enqueue_latest_snapshot(
+                        *endpoint_id,
+                        &endpoint.stream_name,
+                        &endpoint.queue,
+                        &endpoint.control,
+                        &endpoint.unparker,
+                        processed_records,
+                        Some(self.step),
+                    );
+                    continue;
+                }
+
                 self.controller
                     .status
                     .enqueue_batch(*endpoint_id, num_delta_records);
@@ -3647,6 +3933,8 @@ impl CircuitThread {
 
                 endpoint.queue.push(BatchQueueEntry {
                     step: self.step,
+                    batch_type: OutputBatchType::Delta,
+                    generation: endpoint.control.generation(),
                     data: Some(batch),
                     processed_records,
                 });
@@ -4368,13 +4656,22 @@ impl ControllerInit {
             initial_start_time,
             input_metadata,
             input_statistics,
-            output_statistics,
+            mut output_statistics,
         } = checkpoint;
         info!("Resuming from checkpoint:\n{checkpoint_summary}");
 
         let storage = storage.with_init_checkpoint(circuit.map(|circuit| circuit.uuid));
 
         let pipeline_diff = compute_pipeline_diff(&checkpoint_config, &config)?;
+
+        // For modified output connectors, treat the snapshot as un-sent so
+        // that `send_snapshot: true` fires again on restart. Modifying a
+        // connector is the user-visible equivalent of a reset.
+        for connector_name in pipeline_diff.modified_output_connectors() {
+            if let Some(stats) = output_statistics.get_mut(connector_name.as_str()) {
+                stats.snapshot_sent = false;
+            }
+        }
 
         // For any input connectors that have not been modified, and whose associated table hasn't been modified,
         // pick up paused status from the checkpoint.
@@ -4800,6 +5097,12 @@ struct BatchQueueEntry {
     /// The step in which the output was produced.
     step: Step,
 
+    /// Whether this batch contains a delta or a full snapshot.
+    batch_type: OutputBatchType,
+
+    /// Output connector generation. Batches from older generations are discarded.
+    generation: u64,
+
     /// The output batch.
     ///
     /// This is `None` if the step produced no output.  We still create an entry
@@ -4821,6 +5124,27 @@ struct BatchQueueEntry {
 /// a transaction.  The label increases monotonically over time.
 type BatchQueue = SegQueue<BatchQueueEntry>;
 
+/// How an output endpoint responds to a reset request.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum ResetBehavior {
+    /// Reset is a no-op: the generation is not bumped and no snapshot is
+    /// sent. Used for connectors with no meaningful reset semantics (e.g.,
+    /// Delta Lake in non-truncate modes).
+    NoOp,
+
+    /// Reset bumps the generation to discard stale deltas and sends a fresh
+    /// snapshot. The underlying sink is not cleared first. Used for Postgres
+    /// (where the snapshot is applied as upserts over the existing table)
+    /// and for append-only transports such as Kafka and Redis.
+    Snapshot,
+
+    /// Reset bumps the generation, clears the underlying sink (by invoking
+    /// the consumer's `reset()` hook), and sends a fresh snapshot. Used for
+    /// Delta Lake in `truncate` mode and for file sinks (where the file is
+    /// truncated before the snapshot is written).
+    TruncateAndSnapshot,
+}
+
 /// State tracked by the controller for each output endpoint.
 struct OutputEndpointDescr {
     /// Endpoint name.
@@ -4839,6 +5163,18 @@ struct OutputEndpointDescr {
     /// Command handler for the endpoint.
     command_handler: Option<Arc<dyn CommandHandler>>,
 
+    /// `true` if the stream this endpoint reads from is materialized (has an
+    /// integrate handle). Only materialized streams have a cached snapshot
+    /// available to replay, so only such endpoints can respond to a reset.
+    is_materialized: bool,
+
+    /// How this endpoint's connector responds to reset requests, computed from
+    /// the transport configuration at endpoint creation time.
+    reset_behavior: ResetBehavior,
+
+    /// Cross-thread control flags for this endpoint.
+    control: Arc<OutputEndpointControl>,
+
     /// Used to notify the endpoint thread that the endpoint is being
     /// disconnected.
     disconnect_flag: Arc<AtomicBool>,
@@ -4848,9 +5184,14 @@ struct OutputEndpointDescr {
 }
 
 impl OutputEndpointDescr {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         endpoint_name: &str,
         stream_name: &str,
+        send_snapshot: bool,
+        snapshot_already_sent: bool,
+        is_materialized: bool,
+        reset_behavior: ResetBehavior,
         created_during_transaction_number: u64,
         command_handler: Option<Arc<dyn CommandHandler>>,
         unparker: Unparker,
@@ -4860,9 +5201,35 @@ impl OutputEndpointDescr {
             stream_name: canonical_identifier(stream_name),
             queue: Arc::new(SegQueue::new()),
             command_handler,
+            is_materialized,
+            reset_behavior,
+            control: Arc::new(OutputEndpointControl::new(
+                send_snapshot,
+                snapshot_already_sent,
+            )),
             disconnect_flag: Arc::new(AtomicBool::new(false)),
             created_during_transaction_number,
             unparker,
+        }
+    }
+}
+
+impl From<&TransportConfig> for ResetBehavior {
+    /// Pick reset semantics based on the transport type. Connectors whose
+    /// destination can be cleared in place use `TruncateAndSnapshot`;
+    /// append-only destinations (or those that have to route the snapshot
+    /// through a log) use `Snapshot`; everything else is a no-op.
+    fn from(transport: &TransportConfig) -> Self {
+        use feldera_types::transport::delta_table::DeltaTableWriteMode;
+        match transport {
+            TransportConfig::DeltaTableOutput(cfg) if cfg.mode == DeltaTableWriteMode::Truncate => {
+                Self::TruncateAndSnapshot
+            }
+            TransportConfig::FileOutput(_) => Self::TruncateAndSnapshot,
+            TransportConfig::PostgresOutput(_)
+            | TransportConfig::KafkaOutput(_)
+            | TransportConfig::RedisOutput(_) => Self::Snapshot,
+            _ => Self::NoOp,
         }
     }
 }
@@ -5048,6 +5415,16 @@ impl OutputBuffer {
     /// Return the contents of the buffer leaving it empty.
     fn take_buffer(&mut self) -> Option<Box<dyn SerTrace>> {
         self.buffer.take()
+    }
+
+    /// Discards any buffered output data. Called by the output thread when it
+    /// detects a generation change, so that stale deltas accumulated before
+    /// the reset are never flushed to the connector.
+    fn reset(&mut self) {
+        self.buffer = None;
+        self.buffered_step = 0;
+        self.buffer_since = Instant::now();
+        self.buffered_processed_records = ProcessedRecords::default();
     }
 }
 
@@ -6266,6 +6643,13 @@ impl ControllerInner {
             )
         };
 
+        if endpoint_config.connector_config.send_snapshot && handles.integrate_handle.is_none() {
+            return Err(ControllerError::invalid_transport_configuration(
+                endpoint_name,
+                "'send_snapshot: true' requires a materialized output view",
+            ));
+        }
+
         let endpoint_id = self.next_output_id.fetch_add(1, Ordering::AcqRel);
         let endpoint_name_str = endpoint_name.to_string();
 
@@ -6354,14 +6738,29 @@ impl ControllerInner {
         })?;
 
         let parker = Parker::new();
+        // Recover "snapshot already delivered" state from the checkpoint, so a
+        // `send_snapshot: true` connector does not re-send its snapshot on
+        // checkpoint restart. `initial_statistics` is intentionally cleared by
+        // the caller for modified connectors so they do receive a fresh
+        // snapshot.
+        let snapshot_already_sent = initial_statistics
+            .map(|stats| stats.snapshot_sent)
+            .unwrap_or(false);
+        let reset_behavior = ResetBehavior::from(&endpoint_config.connector_config.transport);
+        let is_materialized = handles.integrate_handle.is_some();
         let endpoint_descr = OutputEndpointDescr::new(
             endpoint_name,
             &stream_name,
+            endpoint_config.connector_config.send_snapshot,
+            snapshot_already_sent,
+            is_materialized,
+            reset_behavior,
             self.get_transaction_number(),
             command_handler,
             parker.unparker().clone(),
         );
         let queue = endpoint_descr.queue.clone();
+        let control = endpoint_descr.control.clone();
         let disconnect_flag = endpoint_descr.disconnect_flag.clone();
         let controller = self.clone();
 
@@ -6375,6 +6774,8 @@ impl ControllerInner {
             .connector_config
             .output_buffer_config
             .clone();
+        let thread_queue = queue.clone();
+        let thread_control = control.clone();
 
         // Thread to run the output pipeline. We run it inside the DBSP runtime as an aux thread, so
         // that it can use the storage backend to maintain the output buffer.
@@ -6389,45 +6790,152 @@ impl ControllerInner {
                         endpoint_id,
                         endpoint_name_string,
                         output_buffer_config,
+                        reset_behavior,
                         encoder,
                         parker,
-                        queue,
+                        thread_queue,
+                        thread_control,
                         disconnect_flag,
                         controller,
                     )
                 },
             );
 
+        if endpoint_config.connector_config.send_snapshot && !snapshot_already_sent {
+            self.request_snapshot_delivery();
+        }
+
         Ok(endpoint_id)
+    }
+
+    /// Pushes the most recent cached snapshot for `stream_name` into the
+    /// endpoint's batch queue. Returns `true` if a snapshot was found and
+    /// enqueued, `false` if no cached snapshot exists yet (e.g., the pipeline
+    /// hasn't completed its first step).
+    #[allow(clippy::too_many_arguments)]
+    fn enqueue_latest_snapshot(
+        &self,
+        endpoint_id: EndpointId,
+        stream_name: &str,
+        queue: &Arc<BatchQueue>,
+        control: &Arc<OutputEndpointControl>,
+        unparker: &Unparker,
+        processed_records: Option<ProcessedRecords>,
+        step: Option<Step>,
+    ) -> bool {
+        // Look up the most recent cached snapshot for this stream. Return early
+        // if no snapshot has been produced yet (pipeline hasn't completed a step).
+        // This method is only called from the circuit thread (via `push_output`),
+        // so blocking_lock is safe.
+        let snapshot_batches = {
+            let snapshots = self.trace_snapshots.blocking_lock();
+            snapshots
+                .last_key_value()
+                .and_then(|(_, snapshot)| snapshot.get(&SqlIdentifier::from(stream_name)).cloned())
+        };
+
+        let Some(snapshot_batches) = snapshot_batches else {
+            // No cached snapshot yet (pipeline hasn't completed a step).
+            // Leave the state as `Pending` and let the next step retry.
+            return false;
+        };
+
+        let processed_records = processed_records.or(Some(ProcessedRecords {
+            total_processed_input_records: self.status.num_total_processed_records(),
+            total_processed_steps: self.status.global_metrics.total_completed_steps(),
+        }));
+        let step = step.unwrap_or_else(|| {
+            processed_records
+                .as_ref()
+                .map(|processed| processed.total_processed_steps)
+                .unwrap_or_default()
+        });
+        let generation = control.generation();
+        // Mark the snapshot as delivered for this generation. If a concurrent
+        // `request_reset` bumped the generation during the lookup above, the
+        // call below is a no-op and the state stays `Pending` so the next
+        // `push_output` enqueues a fresh snapshot for the new generation.
+        control.mark_snapshot_delivered(generation);
+
+        // Merge every cached batch into a single snapshot before pushing so
+        // downstream encoders see one self-consistent view of the stream.
+        // Streaming snapshot batches one-by-one would let the encoder emit
+        // mutually cancelling updates between consecutive batches.
+        let mut all_batches: Vec<Arc<dyn SerBatch>> = snapshot_batches
+            .iter()
+            .flat_map(|reader| reader.batches())
+            .collect();
+
+        if all_batches.is_empty() {
+            self.status.enqueue_batch(endpoint_id, 0);
+            queue.push(BatchQueueEntry {
+                step,
+                batch_type: OutputBatchType::Snapshot,
+                generation,
+                data: None,
+                processed_records,
+            });
+        } else {
+            let first = all_batches.remove(0);
+            let merged = first.concat(all_batches);
+            self.status.enqueue_batch(endpoint_id, merged.len());
+            queue.push(BatchQueueEntry {
+                step,
+                batch_type: OutputBatchType::Snapshot,
+                generation,
+                data: Some(merged),
+                processed_records,
+            });
+        }
+
+        // Wake the output thread so it drains the newly enqueued snapshot batches.
+        unparker.unpark();
+        true
+    }
+
+    /// Requests a circuit step so that `push_output` delivers the pending
+    /// snapshot on the next step. Called at endpoint registration (initial
+    /// snapshot for `send_snapshot: true`) and after a reset.
+    fn request_snapshot_delivery(&self) {
+        if self.state() == PipelineState::Running {
+            self.request_step();
+        }
     }
 
     fn push_batch_to_encoder(
         batch: Arc<dyn SerBatchReader>,
+        batch_type: OutputBatchType,
         endpoint_id: EndpointId,
         endpoint_name: &str,
         encoder: &mut dyn Encoder,
         step: Step,
         controller: &ControllerInner,
     ) {
-        encoder.consumer().batch_start(step);
+        encoder.consumer().batch_start(step, batch_type);
         encoder.encode(batch).unwrap_or_else(|e| {
             controller.encode_error(endpoint_id, endpoint_name, e, Some("encoder_error"))
         });
         encoder.consumer().batch_end();
     }
 
+    /// Main loop for the output thread. Drains batches from the endpoint's
+    /// queue, optionally buffers them, encodes them via the endpoint's encoder,
+    /// and handles generation changes triggered by resets.
     #[allow(clippy::too_many_arguments)]
     fn output_thread_func(
         endpoint_id: EndpointId,
         endpoint_name: String,
         output_buffer_config: OutputBufferConfig,
+        reset_behavior: ResetBehavior,
         mut encoder: Box<dyn Encoder>,
         parker: Parker,
         queue: Arc<BatchQueue>,
+        control: Arc<OutputEndpointControl>,
         disconnect_flag: Arc<AtomicBool>,
         controller: Arc<ControllerInner>,
     ) {
         let mut output_buffer = OutputBuffer::new(&endpoint_name);
+        let mut generation = control.generation();
 
         loop {
             if controller.state() == PipelineState::Terminated {
@@ -6436,6 +6944,22 @@ impl ControllerInner {
 
             if disconnect_flag.load(Ordering::Acquire) {
                 return;
+            }
+
+            if let Some(new_generation) = control.generation_change(generation) {
+                // Discard any buffered output batches from the old generation.
+                output_buffer.reset();
+                // Clear buffered-record/batch counters in the endpoint stats.
+                controller.status.clear_output_buffer(endpoint_id);
+                generation = new_generation;
+
+                // Every generation change is caused by a reset; on
+                // `TruncateAndSnapshot` endpoints, wipe the destination
+                // before the replacement snapshot arrives.
+                if reset_behavior == ResetBehavior::TruncateAndSnapshot {
+                    encoder.consumer().reset();
+                }
+                continue;
             }
 
             controller
@@ -6450,6 +6974,7 @@ impl ControllerInner {
                 // background merging.
                 Self::push_batch_to_encoder(
                     output_buffer.take_buffer().unwrap().snapshot(),
+                    OutputBatchType::Delta,
                     endpoint_id,
                     &endpoint_name,
                     encoder.as_mut(),
@@ -6463,6 +6988,8 @@ impl ControllerInner {
                 controller.circuit_thread_unparker.unpark()
             } else if let Some(BatchQueueEntry {
                 step,
+                batch_type,
+                generation: batch_generation,
                 data,
                 processed_records,
             }) = queue.pop()
@@ -6473,10 +7000,25 @@ impl ControllerInner {
 
                 let num_records = data.as_ref().map_or(0, |b| b.len());
 
+                // Discard batches from a previous generation (enqueued before a
+                // reset). Progress is intentionally not advanced here (`None`);
+                // the snapshot that follows will carry the up-to-date progress
+                // counters from `enqueue_latest_snapshot`.
+                if batch_generation != generation {
+                    controller.status.output_batch(
+                        endpoint_id,
+                        None,
+                        num_records,
+                        &controller.circuit_thread_unparker,
+                    );
+                    continue;
+                }
+
                 // trace!("Pushing {num_records} records to output endpoint {endpoint_name}");
 
                 // Buffer the new output if buffering is enabled.
-                if output_buffer_config.enable_output_buffer {
+                if output_buffer_config.enable_output_buffer && batch_type == OutputBatchType::Delta
+                {
                     output_buffer.insert(data, step, processed_records);
                     controller.status.buffer_batch(
                         endpoint_id,
@@ -6496,6 +7038,7 @@ impl ControllerInner {
                     if let Some(data) = data {
                         Self::push_batch_to_encoder(
                             data,
+                            batch_type,
                             endpoint_id,
                             &endpoint_name,
                             encoder.as_mut(),
@@ -6655,6 +7198,75 @@ impl ControllerInner {
         command_handler
             .command(command)
             .map_err(|e| ControllerError::command_error(endpoint_name, e.to_string().as_str()))
+    }
+
+    /// Resets an output endpoint. See [`ResetBehavior`] for the per-connector
+    /// semantics; on connectors tagged `NoOp` this returns success without
+    /// touching the sink. Requires the underlying view to be materialized:
+    /// reset works by replaying the cached snapshot, and only materialized
+    /// views have one. Whether the connector was configured with
+    /// `send_snapshot: true` at startup is irrelevant here, so users who
+    /// opted out of the initial snapshot can still trigger a replay later.
+    fn reset_output_endpoint(&self, endpoint_name: &str) -> Result<ResetToken, ControllerError> {
+        self.fail_if_restoring()?;
+
+        let endpoint_id = self.output_endpoint_id_by_name(endpoint_name)?;
+        let outputs = self.outputs.read().unwrap();
+        let endpoint = outputs
+            .lookup_by_id(&endpoint_id)
+            .ok_or_else(|| ControllerError::unknown_output_endpoint(endpoint_name))?;
+
+        if !endpoint.is_materialized {
+            return Err(ControllerError::not_supported(&format!(
+                "cannot reset output endpoint '{endpoint_name}': the view is not materialized, so there is no snapshot to replay"
+            )));
+        }
+
+        let incarnation = self.status.global_metrics.incarnation_uuid;
+        let generation = match endpoint.reset_behavior {
+            ResetBehavior::NoOp => {
+                info!(
+                    "Ignoring reset request for output endpoint '{endpoint_name}': connector does not support reset"
+                );
+                // Return a token that reports Complete immediately: generation
+                // 0 is satisfied by the initial `last_delivered_generation`
+                // of 0.
+                0
+            }
+            ResetBehavior::Snapshot | ResetBehavior::TruncateAndSnapshot => {
+                let new_gen = endpoint.control.request_reset();
+                endpoint.unparker.unpark();
+                drop(outputs);
+                self.request_snapshot_delivery();
+                new_gen
+            }
+        };
+
+        Ok(ResetToken::new(incarnation, endpoint_id, generation))
+    }
+
+    /// Check the status of a reset token. See the truth table on
+    /// `OutputEndpointControl` for the completion rule.
+    fn reset_status(&self, token: &ResetToken) -> Result<ResetStatus, ControllerError> {
+        let current_incarnation = self.status.global_metrics.incarnation_uuid;
+        if token.incarnation != current_incarnation {
+            return Err(ControllerError::pipeline_restarted(&format!(
+                "Reset token was created by a previous incarnation of the pipeline (incarnation uuid: {}); unable to validate reset status under the current incarnation ({}). The reset may or may not have gone through before the restart. Reissue the reset to obtain a token valid for the current incarnation.",
+                token.incarnation, current_incarnation
+            )));
+        }
+
+        let outputs = self.outputs.read().unwrap();
+        let endpoint = outputs.lookup_by_id(&token.endpoint_id).ok_or_else(|| {
+            ControllerError::unknown_endpoint_in_completion_token(token.endpoint_id)
+        })?;
+
+        let status = if endpoint.control.last_delivered_generation() >= token.generation {
+            ResetStatus::Complete
+        } else {
+            ResetStatus::InProgress
+        };
+        Ok(status)
     }
 
     fn send_command(&self, command: Command) {
@@ -7316,16 +7928,18 @@ impl OutputConsumer for OutputProbe {
         self.endpoint.max_buffer_size_bytes()
     }
 
-    fn batch_start(&mut self, step: Step) {
-        self.endpoint.batch_start(step).unwrap_or_else(|e| {
-            self.controller.output_transport_error(
-                self.endpoint_id,
-                &self.endpoint_name,
-                false,
-                e,
-                Some("outprobe_batch_start"),
-            );
-        })
+    fn batch_start(&mut self, step: Step, batch_type: OutputBatchType) {
+        self.endpoint
+            .batch_start(step, batch_type)
+            .unwrap_or_else(|e| {
+                self.controller.output_transport_error(
+                    self.endpoint_id,
+                    &self.endpoint_name,
+                    false,
+                    e,
+                    Some("outprobe_batch_start"),
+                );
+            })
     }
 
     fn push_buffer(&mut self, buffer: &[u8], num_records: usize) {
@@ -7385,6 +7999,18 @@ impl OutputConsumer for OutputProbe {
                 false,
                 e,
                 Some("outprobe_batch_end"),
+            );
+        })
+    }
+
+    fn reset(&mut self) {
+        self.endpoint.reset().unwrap_or_else(|e| {
+            self.controller.output_transport_error(
+                self.endpoint_id,
+                &self.endpoint_name,
+                false,
+                e,
+                Some("outprobe_reset"),
             );
         })
     }
@@ -7485,18 +8111,38 @@ impl RunningCheckpoint {
                 )
             })
             .collect();
-        let output_statistics = circuit
-            .controller
-            .status
-            .output_status()
-            .values()
-            .map(|endpoint| {
-                (
-                    endpoint.endpoint_name.clone(),
-                    CheckpointOutputEndpointMetrics::from(&endpoint.metrics),
-                )
-            })
-            .collect();
+        let output_statistics = {
+            let outputs_by_name: HashMap<String, bool> = circuit
+                .controller
+                .outputs
+                .read()
+                .unwrap()
+                .by_id
+                .values()
+                .map(|descr| {
+                    (
+                        descr.endpoint_name.clone(),
+                        descr.control.initial_snapshot_sent(),
+                    )
+                })
+                .collect();
+            circuit
+                .controller
+                .status
+                .output_status()
+                .values()
+                .map(|endpoint| {
+                    let snapshot_sent = outputs_by_name
+                        .get(&endpoint.endpoint_name)
+                        .copied()
+                        .unwrap_or(false);
+                    (
+                        endpoint.endpoint_name.clone(),
+                        CheckpointOutputEndpointMetrics::new(&endpoint.metrics, snapshot_sent),
+                    )
+                })
+                .collect()
+        };
         let written_before = WRITE_BLOCKS_BYTES.sum();
         let start_checkpoint = Instant::now();
         let committer = circuit

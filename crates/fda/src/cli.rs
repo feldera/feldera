@@ -523,7 +523,7 @@ pub enum PipelineAction {
         #[arg(long, short = 'f')]
         force: bool,
     },
-    /// Control an input connector belonging to a table of a pipeline.
+    /// Control a connector belonging to a table or view of a pipeline.
     Connector {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
@@ -669,6 +669,19 @@ pub enum PipelineAction {
         ///
         /// A token can be optained by running `fda completion-token`.
         /// Or when ingesting data over HTTP.
+        token: String,
+    },
+    /// Check the status of a reset token for a pipeline.
+    ///
+    /// Reset tokens are issued by `fda connector <...> reset` and are scoped
+    /// to the pipeline's current incarnation; after a restart, the server
+    /// cannot validate a prior token and responds 410 Gone.
+    #[clap(aliases = &["check-reset-token"])]
+    ResetStatus {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+        /// The reset token to check.
         token: String,
     },
     /// Start a new transaction.
@@ -922,6 +935,22 @@ pub enum ConnectorAction {
     Pause,
     #[clap(aliases = &["status"])]
     Stats,
+    /// Reset an output connector. The exact effect depends on the connector;
+    /// see the connector's documentation. Only `send_snapshot: true` output
+    /// connectors benefit from a reset.
+    ///
+    /// Prints the reset token on success. With `--wait`, blocks until the
+    /// reset completes before returning. Otherwise poll completion via
+    /// `fda pipeline reset-status <pipeline> <token>`.
+    Reset {
+        /// Block until the reset has completed.
+        #[arg(long)]
+        wait: bool,
+        /// Timeout in seconds when waiting for the reset to complete.
+        /// Defaults to no timeout.
+        #[arg(long, value_name = "SECS", requires = "wait")]
+        wait_timeout: Option<u64>,
+    },
 }
 
 #[cfg(test)]

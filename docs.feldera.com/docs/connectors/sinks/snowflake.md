@@ -357,3 +357,10 @@ SHOW TASKS in <db>.<landing_schema_name>;
 ```
 
 Make sure that the data ingestion task is in the `started` state.
+
+## Reset behavior
+
+The Snowflake sink writes through a Kafka topic, so see the
+[Kafka sink reset behavior](/connectors/sinks/kafka#reset-behavior): reset
+replays the current materialized-view snapshot to the Kafka topic; it does
+not truncate the Snowflake landing table or downstream destination tables.

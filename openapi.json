@@ -3414,6 +3414,16 @@
             }
           },
           {
+            "name": "send_snapshot",
+            "in": "query",
+            "description": "Set to `true` to send a full snapshot of a materialized view before streaming incremental updates. The default is `false`.",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "nullable": true
+            }
+          },
+          {
             "name": "array",
             "in": "query",
             "description": "Set to `true` to group updates in this stream into JSON arrays (used in conjunction with `format=json`). The default value is `false`",
@@ -4388,7 +4398,7 @@
           "Output Connectors"
         ],
         "summary": "Check Reset Status",
-        "description": "Check the status of a reset token returned by the output connector\nreset endpoint.",
+        "description": "Check the status of a reset token returned by the output connector\n`reset` endpoint.",
         "operationId": "reset_status",
         "parameters": [
           {
@@ -4412,7 +4422,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Reset token status has been retrieved"
+            "description": "Reset status. Body contains `complete` if the reset has finished (either because its own snapshot was delivered or because a later reset's snapshot has been), or `inprogress` if it is still pending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetStatusResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "An invalid reset token was provided",
@@ -6469,7 +6486,7 @@
           "Output Connectors"
         ],
         "summary": "Reset Output Connector",
-        "description": "Reset an output connector configured in `snapshot_and_follow` mode.\n\nThis clears buffered output, asks the sink to reset itself, and then replays\na full snapshot before resuming incremental updates.",
+        "description": "Reset an output connector. The exact effect depends on the connector; see\nthe connector's documentation for the per-sink semantics. In general,\nreset means \"clear the destination where possible and replay the latest\nmaterialized-view snapshot\".\n\nReturns a reset token that identifies this reset. Pass the token to the\n`reset_status` endpoint to check whether the reset has completed. The\ntoken is bound to the pipeline's current incarnation; if the pipeline\nis restarted or crashes before the client polls, `reset_status` cannot\nvalidate the reset across incarnations. The reset may or may not have\ncompleted before the restart; the client should reissue to obtain a\ntoken valid for the new incarnation.",
         "operationId": "post_pipeline_output_connector_reset",
         "parameters": [
           {
@@ -6502,7 +6519,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Output connector reset request has been processed"
+            "description": "Output connector reset request has been processed. Returns a token the client can use to check completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetTokenResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "The output connector does not support reset",
@@ -7270,7 +7294,8 @@
         "type": "object",
         "description": "A set of updates to a SQL table or view.\n\nThe `sequence_number` field stores the offset of the chunk relative to the\nstart of the stream and can be used to implement reliable delivery.\nThe payload is stored in the `bin_data`, `text_data`, or `json_data` field\ndepending on the data format used.",
         "required": [
-          "sequence_number"
+          "sequence_number",
+          "snapshot"
         ],
         "properties": {
           "bin_data": {
@@ -7288,6 +7313,10 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "`true` when this chunk is part of the initial snapshot delivered in\n`send_snapshot` mode; `false` for incremental delta updates."
           },
           "text_data": {
             "type": "string",
@@ -7815,6 +7844,10 @@
                 },
                 "nullable": true
               },
+              "send_snapshot": {
+                "type": "boolean",
+                "description": "Send a full snapshot of a materialized view when the connector first\nstarts. Valid for output connectors only.\n\nWhen `true`, the pipeline emits the current contents of the view as the\ninitial batch the first time the connector runs. The view must be\nmaterialized (declared with `CREATE MATERIALIZED VIEW`).\n\nThe snapshot is sent exactly once per connector lifetime: it does not\nfire again when the pipeline resumes from a checkpoint. Modifying the\nconnector configuration or invoking the reset API triggers a fresh\nsnapshot when the connector supports reset (e.g., Delta Lake in\n`truncate` mode and Postgres)."
+              },
               "start_after": {
                 "type": "array",
                 "items": {
@@ -7828,8 +7861,7 @@
               }
             }
           }
-        ],
-        "description": "A data connector's configuration"
+        ]
       },
       "ConnectorError": {
         "type": "object",
@@ -12001,6 +12033,52 @@
           "Instant",
           "Original"
         ]
+      },
+      "ResetStatus": {
+        "type": "string",
+        "description": "Reset token status returned by `/reset_status`.",
+        "enum": [
+          "complete",
+          "inprogress"
+        ]
+      },
+      "ResetStatusArgs": {
+        "type": "object",
+        "description": "URL-encoded arguments to the `/reset_status` endpoint.",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Reset token returned by the `/reset` endpoint."
+          }
+        }
+      },
+      "ResetStatusResponse": {
+        "type": "object",
+        "description": "Response to a reset status request.",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ResetStatus"
+          }
+        }
+      },
+      "ResetTokenResponse": {
+        "type": "object",
+        "description": "Response returned by `POST /output_endpoints/{name}/reset`.",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Opaque reset token.\n\nPass this string to the `/reset_status` endpoint to check whether the\nreset has completed. The token is bound to the pipeline's current\nincarnation; if the pipeline is suspended, crashes, or is restarted\nbefore the reset completes, `/reset_status` returns an error and the\nclient should reissue the reset."
+          }
+        }
       },
       "ResourceConfig": {
         "type": "object",

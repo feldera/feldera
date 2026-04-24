@@ -338,12 +338,14 @@ mod tests {
     /// workaround on each `Option<f64>` field fixes this.
     #[test]
     fn dev_tweaks_f64_roundtrip_through_pipeline_config() {
-        let mut rc = RuntimeConfig::default();
-        rc.dev_tweaks = DevTweaks {
-            bloom_false_positive_rate: Some(0.0),
-            balancer_balance_tax: Some(1.1),
-            balancer_min_relative_improvement_threshold: Some(1.2),
-            balancer_key_distribution_refresh_threshold: Some(0.1),
+        let rc = RuntimeConfig {
+            dev_tweaks: DevTweaks {
+                bloom_false_positive_rate: Some(0.0),
+                balancer_balance_tax: Some(1.1),
+                balancer_min_relative_improvement_threshold: Some(1.2),
+                balancer_key_distribution_refresh_threshold: Some(0.1),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let pc = PipelineConfig {

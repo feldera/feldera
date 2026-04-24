@@ -7,6 +7,7 @@ use crate::{
     transport::{Step, kafka::DeferredLogging},
 };
 use anyhow::{Context, Error as AnyError, Result as AnyResult, anyhow, bail};
+use feldera_adapterlib::transport::OutputBatchType;
 use feldera_types::transport::kafka::KafkaOutputConfig;
 use rdkafka::client::OAuthToken;
 use rdkafka::config::RDKafkaLogLevel;
@@ -289,7 +290,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         Ok(())
     }
 
-    fn batch_start(&mut self, step: Step) -> AnyResult<()> {
+    fn batch_start(&mut self, step: Step, _batch_type: OutputBatchType) -> AnyResult<()> {
         let _guard = span(&self.topic);
         let first_step = match self.state {
             State::New => unreachable!("connect() should be called first"),

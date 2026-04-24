@@ -3,12 +3,13 @@ use actix_web::{HttpResponse, http::header::ContentType, web::Bytes};
 use anyhow::{Result as AnyResult, anyhow, bail};
 use async_stream::stream;
 use crossbeam::sync::ShardedLock;
+use feldera_adapterlib::transport::{OutputBatchType, Step};
 use serde::{Serializer, ser::SerializeStruct};
 use serde_json::value::RawValue;
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -66,6 +67,10 @@ impl Buffer {
 
 type SendRequest = (Buffer, Option<oneshot::Sender<()>>);
 
+pub(crate) struct HttpOutputReceiver {
+    receiver: mpsc::Receiver<SendRequest>,
+}
+
 struct HttpOutputEndpointInner {
     name: String,
     format: Format,
@@ -79,6 +84,7 @@ struct HttpOutputEndpointInner {
     // to wait for the slow client to receive the data.
     backpressure: bool,
     total_buffers: AtomicU64,
+    snapshot: AtomicBool,
     sender: ShardedLock<Option<mpsc::Sender<SendRequest>>>,
     // async_error_callback: RwLock<Option<AsyncErrorCallback>>,
 }
@@ -90,6 +96,7 @@ impl HttpOutputEndpointInner {
             format,
             backpressure,
             total_buffers: AtomicU64::new(0),
+            snapshot: AtomicBool::new(false),
             sender: ShardedLock::new(None),
             // async_error_callback: RwLock::new(None),
         }
@@ -101,11 +108,14 @@ impl HttpOutputEndpointInner {
         let json_buf = Vec::with_capacity(buffer.map(|b| b.len()).unwrap_or(0) + 1024);
         let mut serializer = serde_json::Serializer::new(json_buf);
         let mut struct_serializer = serializer
-            .serialize_struct("Chunk", if buffer.is_some() { 2 } else { 1 })
+            .serialize_struct("Chunk", if buffer.is_some() { 3 } else { 2 })
             .map_err(|e| anyhow!("error serializing 'Chunk' struct: '{e}'"))?;
         struct_serializer
             .serialize_field("sequence_number", &seq_number)
             .map_err(|e| anyhow!("error serializing 'sequence_number' field: '{e}'"))?;
+        struct_serializer
+            .serialize_field("snapshot", &self.snapshot.load(Ordering::Acquire))
+            .map_err(|e| anyhow!("error serializing 'snapshot' field: '{e}'"))?;
 
         if let Some(buffer) = buffer {
             match self.format {
@@ -210,6 +220,12 @@ impl HttpOutputEndpoint {
         receiver
     }
 
+    pub(crate) fn connect_stream(&self) -> HttpOutputReceiver {
+        HttpOutputReceiver {
+            receiver: self.connect(),
+        }
+    }
+
     /// Create an HTTP response object with a streaming body that
     /// will continue sending output updates until the circuit
     /// terminates or the client disconnects.
@@ -217,8 +233,14 @@ impl HttpOutputEndpoint {
     /// This method returns instantly.  The resulting `HttpResponse`
     /// object can be returned to the actix framework, which will
     /// run its streaming body and invoke `finalizer` upon completion.
-    pub(crate) fn request(&self, finalizer: Box<dyn FnMut()>) -> HttpResponse {
-        let mut receiver = self.connect();
+    pub(crate) fn request(
+        &self,
+        receiver: Option<HttpOutputReceiver>,
+        finalizer: Box<dyn FnMut()>,
+    ) -> HttpResponse {
+        let mut receiver = receiver
+            .map(|receiver| receiver.receiver)
+            .unwrap_or_else(|| self.connect());
         let name = self.name().to_string();
         let guard = RequestGuard::new(finalizer);
 
@@ -271,6 +293,16 @@ impl OutputEndpoint for HttpOutputEndpoint {
         usize::MAX
     }
 
+    /// Records whether the current batch is a snapshot or a delta so that
+    /// each serialized chunk carries the correct `"snapshot"` flag in the
+    /// JSON sent to the HTTP client.
+    fn batch_start(&mut self, _step: Step, batch_type: OutputBatchType) -> AnyResult<()> {
+        self.inner
+            .snapshot
+            .store(batch_type == OutputBatchType::Snapshot, Ordering::Release);
+        Ok(())
+    }
+
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
         let _guard = info_span!("http_output").entered();
         self.inner
@@ -290,7 +322,10 @@ however the HTTP transport does not support this representation."
         );
     }
 
+    /// Clears the snapshot flag so that subsequent chunks default to delta
+    /// until the next `batch_start` says otherwise.
     fn batch_end(&mut self) -> AnyResult<()> {
+        self.inner.snapshot.store(false, Ordering::Release);
         Ok(())
     }
 

@@ -12,6 +12,7 @@ pub mod preprocess;
 pub mod program_schema;
 pub mod query;
 pub mod query_params;
+pub mod reset_token;
 pub mod runtime_status;
 pub mod secret_ref;
 pub mod secret_resolver;

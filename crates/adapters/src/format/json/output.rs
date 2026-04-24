@@ -519,6 +519,7 @@ mod test {
     };
     use dbsp::typed_batch::IndexedZSetReader;
     use dbsp::{OrdZSet, utils::Tup2};
+    use feldera_adapterlib::transport::OutputBatchType;
     use feldera_types::format::json::JsonUpdateFormat;
     use feldera_types::program_schema::Relation;
     use proptest::prelude::*;
@@ -674,7 +675,9 @@ mod test {
             })
             .collect::<Vec<_>>();
         for (step, zset) in zsets.into_iter().enumerate() {
-            encoder.consumer().batch_start(step as u64);
+            encoder
+                .consumer()
+                .batch_start(step as u64, OutputBatchType::Delta);
             encoder.encode(zset.arc_as_batch_reader()).unwrap();
             encoder.consumer().batch_end();
         }

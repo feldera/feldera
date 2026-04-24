@@ -1390,9 +1390,23 @@ where
     }
 }
 
-/// A data connector's configuration
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ConnectorConfig {
+    /// Send a full snapshot of a materialized view when the connector first
+    /// starts. Valid for output connectors only.
+    ///
+    /// When `true`, the pipeline emits the current contents of the view as the
+    /// initial batch the first time the connector runs. The view must be
+    /// materialized (declared with `CREATE MATERIALIZED VIEW`).
+    ///
+    /// The snapshot is sent exactly once per connector lifetime: it does not
+    /// fire again when the pipeline resumes from a checkpoint. Modifying the
+    /// connector configuration or invoking the reset API triggers a fresh
+    /// snapshot when the connector supports reset (e.g., Delta Lake in
+    /// `truncate` mode and Postgres).
+    #[serde(default)]
+    pub send_snapshot: bool,
+
     /// Transport endpoint configuration.
     pub transport: TransportConfig,
 

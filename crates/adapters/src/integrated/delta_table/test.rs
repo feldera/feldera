@@ -1444,38 +1444,38 @@ async fn delta_table_follow_file_test_common(
     // With `end_version`, the connector stops tailing the log before new versions appear, so
     // stripping read permission would not drive the connector unhealthy (wait would time out).
     #[cfg(unix)]
-    let (inject_failure, clear_failure): (Option<Box<dyn Fn()>>, Option<Box<dyn Fn()>>) =
-        if end_version {
-            (None, None)
-        } else {
-            let saved_modes: Arc<Mutex<Vec<(PathBuf, u32)>>> = Arc::new(Mutex::new(Vec::new()));
-            let input_root = input_table_dir.path().to_path_buf();
+    type FailureHook = Option<Box<dyn Fn()>>;
+    #[cfg(unix)]
+    let (inject_failure, clear_failure): (FailureHook, FailureHook) = if end_version {
+        (None, None)
+    } else {
+        let saved_modes: Arc<Mutex<Vec<(PathBuf, u32)>>> = Arc::new(Mutex::new(Vec::new()));
+        let input_root = input_table_dir.path().to_path_buf();
 
-            let inject_failure: Box<dyn Fn()> = {
-                let saved_modes = Arc::clone(&saved_modes);
-                let input_root = input_root.clone();
-                Box::new(move || {
-                    let mut guard = saved_modes.lock().unwrap();
-                    guard.clear();
-                    strip_delta_input_table_read_permission(&input_root, &mut *guard)
-                        .unwrap_or_else(|e| {
-                            panic!("inject_failure (strip read permission on input table): {e}")
-                        });
-                })
-            };
-
-            let clear_failure: Box<dyn Fn()> = {
-                let saved_modes = Arc::clone(&saved_modes);
-                Box::new(move || {
-                    let entries = std::mem::take(&mut *saved_modes.lock().unwrap());
-                    restore_delta_input_table_read_permission(entries).unwrap_or_else(|e| {
-                        panic!("clear_failure (restore read permission on input table): {e}")
-                    });
-                })
-            };
-
-            (Some(inject_failure), Some(clear_failure))
+        let inject_failure: Box<dyn Fn()> = {
+            let saved_modes = Arc::clone(&saved_modes);
+            let input_root = input_root.clone();
+            Box::new(move || {
+                let mut guard = saved_modes.lock().unwrap();
+                guard.clear();
+                strip_delta_input_table_read_permission(&input_root, &mut guard).unwrap_or_else(
+                    |e| panic!("inject_failure (strip read permission on input table): {e}"),
+                );
+            })
         };
+
+        let clear_failure: Box<dyn Fn()> = {
+            let saved_modes = Arc::clone(&saved_modes);
+            Box::new(move || {
+                let entries = std::mem::take(&mut *saved_modes.lock().unwrap());
+                restore_delta_input_table_read_permission(entries).unwrap_or_else(|e| {
+                    panic!("clear_failure (restore read permission on input table): {e}")
+                });
+            })
+        };
+
+        (Some(inject_failure), Some(clear_failure))
+    };
 
     #[cfg(not(unix))]
     let (inject_failure, clear_failure) = (None, None);

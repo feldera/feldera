@@ -675,6 +675,53 @@ async fn wait_for_checkpoint(client: &Client, name: String, seq_number: u64, wai
     }
 }
 
+/// Poll `/reset_status` until the token reports `complete`, or `timeout_s`
+/// elapses. A `None` timeout waits indefinitely.
+async fn wait_for_reset(client: &Client, pipeline_name: &str, token: &str, timeout_s: Option<u64>) {
+    let deadline = timeout_s.map(|secs| Instant::now() + Duration::from_secs(secs));
+    let mut print_every_30_seconds = Instant::now();
+    loop {
+        if let Some(d) = deadline
+            && Instant::now() >= d
+        {
+            eprintln!(
+                "Timed out after {} seconds waiting for reset {token} on pipeline '{pipeline_name}' to complete.",
+                timeout_s.unwrap()
+            );
+            std::process::exit(1);
+        }
+
+        let response = client
+            .reset_status()
+            .pipeline_name(pipeline_name)
+            .token(token)
+            .send()
+            .await
+            .map_err(handle_errors_fatal(
+                client.baseurl().clone(),
+                "Failed to get reset status",
+                1,
+            ))
+            .unwrap();
+
+        if response
+            .into_inner()
+            .status
+            .to_string()
+            .eq_ignore_ascii_case("complete")
+        {
+            return;
+        }
+
+        if print_every_30_seconds.elapsed().as_secs() > 30 {
+            info!("Still waiting for reset {token} to complete...");
+            print_every_30_seconds = Instant::now();
+        }
+
+        sleep(Duration::from_millis(500)).await;
+    }
+}
+
 async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) {
     match action {
         PipelineAction::Create {
@@ -1761,6 +1808,41 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 }
             }
         }
+        PipelineAction::ResetStatus { name, token } => {
+            let response = client
+                .reset_status()
+                .pipeline_name(name)
+                .token(token)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to get reset status",
+                    1,
+                ))
+                .unwrap();
+
+            match format {
+                OutputFormat::Text => {
+                    println!("{}", &response.into_inner().status.to_string());
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize reset status")
+                    );
+                }
+                _ => {
+                    eprintln!(
+                        "Unsupported output format, falling back to text: {}",
+                        format
+                    );
+                    println!("{}", &response.into_inner().status.to_string());
+                    std::process::exit(1);
+                }
+            }
+        }
         PipelineAction::StartTransaction { name } => {
             let response = client
                 .start_transaction()
@@ -2087,6 +2169,54 @@ async fn connector(
                 _ => {
                     eprintln!("Unsupported output format: {}", format);
                     std::process::exit(1);
+                }
+            }
+        }
+        ConnectorAction::Reset { wait, wait_timeout } => {
+            if !relation_is_view {
+                eprintln!(
+                    "Cannot reset the input connector '{connector}'. Only output connectors can be reset."
+                );
+                std::process::exit(1);
+            }
+            let reset_response = client
+                .post_pipeline_output_connector_reset()
+                .pipeline_name(&pipeline_name)
+                .view_name(relation)
+                .connector_name(connector)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to reset output connector",
+                    1,
+                ))
+                .unwrap()
+                .into_inner();
+            let token = reset_response.token.clone();
+
+            if wait {
+                wait_for_reset(&client, &pipeline_name, &token, wait_timeout).await;
+            }
+
+            match format {
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&reset_response)
+                            .expect("Failed to serialize reset token response")
+                    );
+                }
+                _ => {
+                    if wait {
+                        println!(
+                            "View {relation} connector {connector} reset complete (token: {token})."
+                        );
+                    } else {
+                        println!(
+                            "View {relation} connector {connector} reset requested. Poll `fda reset-status {pipeline_name} {token}` to check completion."
+                        );
+                    }
                 }
             }
         }

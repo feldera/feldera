@@ -190,28 +190,44 @@ pub struct CheckpointOutputEndpointMetrics {
 
     /// Number of transport errors.
     pub num_transport_errors: u64,
+
+    /// `true` once the endpoint has delivered its initial snapshot (or
+    /// initialized to `true` when `send_snapshot` was `false`). Preserved across
+    /// restart so resuming from a checkpoint does not re-send the snapshot.
+    /// Not touched by `request_reset`: reset is in-memory-only, so a reset
+    /// followed by a checkpoint and a crash is discarded on resume. Cleared
+    /// when the connector is modified across a restart, to force a fresh
+    /// snapshot.
+    #[serde(default)]
+    pub snapshot_sent: bool,
 }
 
-impl From<&OutputEndpointMetrics> for CheckpointOutputEndpointMetrics {
-    fn from(value: &OutputEndpointMetrics) -> Self {
-        let snapshot = value.snapshot();
+impl CheckpointOutputEndpointMetrics {
+    /// Build a checkpoint record from the live metrics. `snapshot_sent` is
+    /// read from the controller's [`OutputEndpointControl`] (which lives
+    /// alongside the endpoint rather than in [`OutputEndpointMetrics`]) and
+    /// passed in explicitly.
+    pub fn new(metrics: &OutputEndpointMetrics, snapshot_sent: bool) -> Self {
+        let snapshot = metrics.snapshot();
         Self {
-            // This includes all the records that have been transmitted plus all
-            // of the records that will be transmitted by the time we commit the
-            // checkpoint.
+            // Includes all the records that have been transmitted plus all
+            // of the records that will be transmitted by the time we commit
+            // the checkpoint.
             transmitted_records: snapshot.transmitted_records
                 + snapshot.buffered_records
                 + snapshot.queued_records,
 
-            // Only the bytes and errors that have already been transmitted, not
-            // including those that will be transmitted by the time we commit
-            // the checkpoint (we don't have proper statistics for those).
+            // Only the bytes and errors already transmitted, not including
+            // those that will be transmitted by the time we commit the
+            // checkpoint (we don't have proper statistics for those).
             transmitted_bytes: snapshot.transmitted_bytes,
 
             // We can't predict how many errors there will be by the time we
             // commit.
             num_encode_errors: snapshot.num_encode_errors,
             num_transport_errors: snapshot.num_transport_errors,
+
+            snapshot_sent,
         }
     }
 }

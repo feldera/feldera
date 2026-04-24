@@ -19,6 +19,7 @@ use apache_avro::{
 use dbsp::trace::BatchReaderFactories;
 use dbsp::typed_batch::{DynSpineSnapshot, SpineSnapshot as TypedSpineSnapshot, TypedBatch};
 use dbsp::{DBData, IndexedZSetReader, OrdIndexedZSet, OrdZSet, ZWeight, utils::Tup2};
+use feldera_adapterlib::transport::OutputBatchType;
 use feldera_sqllib::{ByteArray, Uuid, Variant};
 use feldera_types::{
     deserialize_table_record,
@@ -1259,7 +1260,9 @@ where
         })
         .collect::<Vec<_>>();
     for (step, zset) in zsets.into_iter().enumerate() {
-        encoder.consumer().batch_start(step as u64);
+        encoder
+            .consumer()
+            .batch_start(step as u64, OutputBatchType::Delta);
         encoder.encode(zset.arc_as_batch_reader()).unwrap();
         encoder.consumer().batch_end();
     }
@@ -1356,7 +1359,9 @@ fn test_raw_avro_output_indexed<K, T>(
         })
         .collect::<Vec<_>>();
     for (step, zset) in zsets.into_iter().enumerate() {
-        encoder.consumer().batch_start(step as u64);
+        encoder
+            .consumer()
+            .batch_start(step as u64, OutputBatchType::Delta);
         encoder.encode(zset.arc_as_batch_reader()).unwrap();
         encoder.consumer().batch_end();
     }
@@ -1448,7 +1453,9 @@ fn test_confluent_avro_output<K, V, KF>(
         })
         .collect::<Vec<_>>();
     for (step, zset) in zsets.into_iter().enumerate() {
-        encoder.consumer().batch_start(step as u64);
+        encoder
+            .consumer()
+            .batch_start(step as u64, OutputBatchType::Delta);
         encoder.encode(zset.arc_as_batch_reader()).unwrap();
         encoder.consumer().batch_end();
     }
@@ -1557,7 +1564,9 @@ fn test_confluent_avro_output_indexed<K, V>(
         .collect::<Vec<_>>();
 
     for (step, zset) in zsets.into_iter().enumerate() {
-        encoder.consumer().batch_start(step as u64);
+        encoder
+            .consumer()
+            .batch_start(step as u64, OutputBatchType::Delta);
         encoder.encode(zset.arc_as_batch_reader()).unwrap();
         encoder.consumer().batch_end();
     }
@@ -1644,7 +1653,7 @@ fn test_non_unique_keys() {
     let zset = OrdIndexedZSet::from_tuples((), vec![Tup2(Tup2(k1.clone(), v1.clone()), 2)]);
     let zset = Arc::new(<SerBatchImpl<_, KeyStruct, TestStruct>>::new(zset)) as Arc<dyn SerBatch>;
 
-    encoder.consumer().batch_start(0);
+    encoder.consumer().batch_start(0, OutputBatchType::Delta);
     let err = encoder.encode(zset.arc_as_batch_reader()).unwrap_err();
     assert!(err.to_string().contains(r#"is inserted 2 times"#));
     encoder.consumer().batch_end();
@@ -1652,7 +1661,7 @@ fn test_non_unique_keys() {
     let zset = OrdIndexedZSet::from_tuples((), vec![Tup2(Tup2(k1.clone(), v1.clone()), -2)]);
     let zset = Arc::new(<SerBatchImpl<_, KeyStruct, TestStruct>>::new(zset)) as Arc<dyn SerBatch>;
 
-    encoder.consumer().batch_start(0);
+    encoder.consumer().batch_start(0, OutputBatchType::Delta);
     let err = encoder.encode(zset.arc_as_batch_reader()).unwrap_err();
     assert!(err.to_string().contains(r#"is deleted 2 times"#));
     encoder.consumer().batch_end();
@@ -1666,7 +1675,7 @@ fn test_non_unique_keys() {
     );
     let zset = Arc::new(<SerBatchImpl<_, KeyStruct, TestStruct>>::new(zset)) as Arc<dyn SerBatch>;
 
-    encoder.consumer().batch_start(0);
+    encoder.consumer().batch_start(0, OutputBatchType::Delta);
     let err = encoder.encode(zset.arc_as_batch_reader()).unwrap_err();
     println!("{err}");
     assert!(
@@ -1684,7 +1693,7 @@ fn test_non_unique_keys() {
     );
     let zset = Arc::new(<SerBatchImpl<_, KeyStruct, TestStruct>>::new(zset)) as Arc<dyn SerBatch>;
 
-    encoder.consumer().batch_start(0);
+    encoder.consumer().batch_start(0, OutputBatchType::Delta);
     let err = encoder.encode(zset.arc_as_batch_reader()).unwrap_err();
     println!("{err}");
     assert!(
@@ -1755,16 +1764,13 @@ fn datagen_indexed_spine_snapshot_test_struct(
     (snapshot, expected_output)
 }
 
-fn run_avro_encoder_spine_snapshot_indexed<K, V>(
+fn run_avro_encoder_spine_snapshot_indexed<V>(
     avro_schema: &str,
     key_schema: &Relation,
     value_schema: &Relation,
     snapshot: Arc<dyn SerBatchReader>,
     expected_output: Vec<(V, String)>,
 ) where
-    K: DBData
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
-        + SerializeWithContext<SqlSerdeConfig>,
     V: DBData
         + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
         + SerializeWithContext<SqlSerdeConfig>,
@@ -1781,14 +1787,14 @@ fn run_avro_encoder_spine_snapshot_indexed<K, V>(
     let mut encoder = AvroEncoder::create(
         "avro_test_endpoint",
         &Some(key_schema.clone()),
-        &value_schema,
+        value_schema,
         Box::new(consumer),
         config,
         None,
     )
     .unwrap();
 
-    encoder.consumer().batch_start(0);
+    encoder.consumer().batch_start(0, OutputBatchType::Delta);
     encoder.encode(snapshot).unwrap();
     encoder.consumer().batch_end();
 
@@ -1822,7 +1828,7 @@ fn proptest_avro_encoder_spine_snapshot_indexed_posix() {
         let (snapshot, expected_output) =
             datagen_indexed_spine_snapshot_test_struct(0xD00D_F00D, 20, 100);
 
-        run_avro_encoder_spine_snapshot_indexed::<KeyStruct, TestStruct>(
+        run_avro_encoder_spine_snapshot_indexed::<TestStruct>(
             TestStruct::avro_schema(),
             &KeyStruct::relation_schema(),
             &TestStruct::relation_schema(),
@@ -1839,7 +1845,7 @@ fn proptest_avro_encoder_spine_snapshot_indexed_mem() {
         let (snapshot, expected_output) =
             datagen_indexed_spine_snapshot_test_struct(0xD00D_F00D, 20, 100);
 
-        run_avro_encoder_spine_snapshot_indexed::<KeyStruct, TestStruct>(
+        run_avro_encoder_spine_snapshot_indexed::<TestStruct>(
             TestStruct::avro_schema(),
             &KeyStruct::relation_schema(),
             &TestStruct::relation_schema(),

@@ -89,3 +89,11 @@ form this key by defining the `key_separator` field in the connector definition.
 
 The key will be as follows: `c0:c1`
 
+## Reset behavior
+
+[Resetting](/api/reset-output-connector) the connector does **not** delete
+existing Redis keys; instead, it replays the current materialized-view
+snapshot as writes to Redis. Rows whose keys are unchanged are overwritten
+in place. Keys that existed in Redis but are no longer present in the
+snapshot are **not** removed automatically.
+

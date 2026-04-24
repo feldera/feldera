@@ -125,6 +125,8 @@ See [output buffer](/connectors#configuring-the-output-buffer) for details on co
 
 ## Example usage
 
+### Streaming incremental updates
+
 Create a Delta Lake output connector that writes a stream of updates to a table
 stored in an S3 bucket, truncating any existing contents of the table.
 
@@ -148,3 +150,49 @@ WITH (
 )
 AS SELECT * FROM my_table;
 ```
+
+### Sending a snapshot at startup
+
+Set `send_snapshot: true` to have the connector emit a full snapshot of a
+materialized view to the Delta table before streaming incremental updates. This
+is useful when downstream consumers need the complete current state of the
+view, not just changes since the connector was created.
+
+The snapshot is sent exactly once per connector lifetime. Resuming the
+pipeline from a checkpoint does not re-send it. To replay the snapshot later,
+either modify the connector (which also triggers a fresh snapshot) or invoke
+the [reset API](/api/reset-output-connector).
+
+```sql
+CREATE MATERIALIZED VIEW V
+WITH (
+ 'connectors' = '[{
+    "name": "delta_sink",
+    "send_snapshot": true,
+    "transport": {
+      "name": "delta_table_output",
+      "config": {
+        "uri": "s3://my-bucket/my-table",
+        "mode": "truncate",
+        "aws_access_key_id": <AWS_ACCESS_KEY_ID>,
+        "aws_secret_access_key": <AWS_SECRET_ACCESS_KEY>,
+        "aws_region": "us-east-1"
+      }
+    },
+    "enable_output_buffer": true,
+    "max_output_buffer_time_millis": 10000
+ }]'
+)
+AS SELECT * FROM my_table;
+```
+
+## Reset behavior
+
+[Resetting](/api/reset-output-connector) the connector depends on the
+table's write `mode`:
+
+* `truncate`: reset truncates the Delta table and replays the current
+  materialized-view snapshot. Old data is logically removed via the Delta
+  transaction log; the old Parquet files remain on storage until a Delta
+  `VACUUM` operation is run.
+* `append` or `error_if_exists`: reset is a no-op.

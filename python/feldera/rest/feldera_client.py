@@ -1082,6 +1082,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         pipeline_name: str,
         table_name: str,
         format: str,
+        send_snapshot: Optional[bool] = None,
         backpressure: bool = True,
         array: bool = False,
         timeout: Optional[float] = None,
@@ -1093,6 +1094,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param pipeline_name: The name of the pipeline
         :param table_name: The name of the table to listen to
         :param format: The format of the data, either "json" or "csv"
+        :param send_snapshot: When True, the connector delivers a full snapshot
+            of the materialized view before streaming incremental updates. The
+            view must be materialized. Defaults to False.
         :param backpressure: When the flag is True (the default), this method waits for the consumer to receive each
             chunk and blocks the pipeline if the consumer cannot keep up. When this flag is False, the pipeline drops
             data chunks if the consumer is not keeping up with its output. This prevents a slow consumer from slowing
@@ -1108,6 +1112,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             "format": format,
             "backpressure": _prepare_boolean_input(backpressure),
         }
+
+        if send_snapshot is not None:
+            params["send_snapshot"] = _prepare_boolean_input(send_snapshot)
 
         if format == "json":
             params["array"] = _prepare_boolean_input(array)
@@ -1264,6 +1271,93 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         return self.http.get(
             path=f"/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats"
         )
+
+    def reset_output_connector(
+        self, pipeline_name: str, view_name: str, connector_name: str
+    ) -> str:
+        """
+        Reset the specified output connector.
+
+        The exact effect depends on the connector; see the connector's
+        documentation. Configure the connector with ``send_snapshot: true``
+        to make reset meaningful.
+
+        Returns a reset token that can be passed to :meth:`reset_completed`
+        or :meth:`wait_for_reset` to check completion. The token is bound
+        to the pipeline's current incarnation; if the pipeline is restarted
+        before the reset finishes, the server cannot validate the reset
+        across incarnations and the client should reissue it.
+        """
+        resp = self.http.post(
+            path=f"/pipelines/{quote(pipeline_name, safe='')}/views/{quote(view_name, safe='')}/connectors/{quote(connector_name, safe='')}/reset",
+        )
+
+        token: Optional[str] = resp.get("token")
+        if not token:
+            raise FelderaAPIError("reset response did not contain a token", resp)
+        return token
+
+    def reset_completed(self, pipeline_name: str, token: str) -> bool:
+        """
+        Check whether the reset identified by ``token`` has completed.
+
+        :param pipeline_name: The name of the pipeline
+        :param token: The token returned by :meth:`reset_output_connector`
+        :return: ``True`` if the reset is complete, ``False`` if still pending
+        :raises FelderaAPIError: if the token is invalid or was created by a
+            previous incarnation of the pipeline (HTTP 410 Gone).
+        """
+        resp = self.http.get(
+            path=f"/pipelines/{quote(pipeline_name, safe='')}/reset_status",
+            params={"token": token},
+        )
+
+        status: Optional[str] = resp.get("status")
+        if status is None:
+            raise FelderaAPIError(
+                f"got empty status when checking reset status for token: {token}",
+                resp,
+            )
+        return status.lower() == "complete"
+
+    def wait_for_reset(
+        self, pipeline_name: str, token: str, timeout_s: Optional[float] = None
+    ):
+        """
+        Block until the reset identified by ``token`` has completed.
+
+        :param pipeline_name: The name of the pipeline
+        :param token: The token returned by :meth:`reset_output_connector`
+        :param timeout_s: How long to wait before raising
+            :class:`FelderaTimeoutError`. ``None`` waits indefinitely.
+        :raises FelderaAPIError: if the pipeline restarts during the wait,
+            which invalidates the token (HTTP 410 Gone).
+        """
+        start = time.monotonic()
+        end = start + timeout_s if timeout_s else None
+        initial_backoff = 0.1
+        max_backoff = 5
+        exponent = 1.2
+        retries = 0
+
+        while True:
+            if end and time.monotonic() > end:
+                raise FelderaTimeoutError(
+                    f"timeout error: reset {token} on pipeline '{pipeline_name}'"
+                    f" did not complete within {timeout_s}s"
+                )
+
+            if self.reset_completed(pipeline_name, token):
+                break
+
+            elapsed = time.monotonic() - start
+            logger.debug(
+                f"still waiting for reset {token} to complete; elapsed: {elapsed}s"
+            )
+
+            retries += 1
+            backoff = min(max_backoff, initial_backoff * (exponent**retries))
+            time.sleep(backoff)
 
     def pause_connector(self, pipeline_name, table_name, connector_name):
         """
