@@ -1058,6 +1058,7 @@ impl<'a> RecordGenerator<'a> {
             SqlType::Char
             | SqlType::Varchar
             | SqlType::Timestamp
+            | SqlType::TimestampTz
             | SqlType::Date
             | SqlType::Variant
             | SqlType::Time => Value::String(String::new()),
@@ -1135,7 +1136,9 @@ impl<'a> RecordGenerator<'a> {
             SqlType::Char | SqlType::Varchar => {
                 self.generate_string(field, settings, incr, rng, obj)
             }
-            SqlType::Timestamp => self.generate_timestamp(field, settings, incr, rng, obj),
+            SqlType::Timestamp | SqlType::TimestampTz => {
+                self.generate_timestamp(field, settings, incr, rng, obj)
+            }
             SqlType::Date => self.generate_date(field, settings, incr, rng, obj),
             SqlType::Time => self.generate_time(field, settings, incr, rng, obj),
             SqlType::Interval(_unit) => {

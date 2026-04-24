@@ -31,12 +31,11 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
 
 import java.util.Objects;
-
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TIMESTAMP;
 
 public class DBSPTypeTimestamp extends DBSPTypeBaseType
         implements IsDateType, IsTimeRelatedType {
@@ -45,7 +44,7 @@ public class DBSPTypeTimestamp extends DBSPTypeBaseType
     public static final int PRECISION = 6;
 
     DBSPTypeTimestamp(CalciteObject node, boolean mayBeNull) {
-        super(node, TIMESTAMP, mayBeNull);
+        super(node, DBSPTypeCode.TIMESTAMP, mayBeNull);
     }
 
     public static final DBSPTypeTimestamp INSTANCE = new DBSPTypeTimestamp(CalciteObject.EMPTY, false);
@@ -70,7 +69,7 @@ public class DBSPTypeTimestamp extends DBSPTypeBaseType
 
     @Override
     public DBSPExpression getMaxValue() {
-        return new DBSPTimestampLiteral("9999-12-31 23:59:59.99999999", this.mayBeNull);
+        return new DBSPTimestampLiteral("9999-12-31 23:59:59.999999", this.mayBeNull);
     }
 
     @Override

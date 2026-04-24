@@ -41,6 +41,7 @@ import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimeString;
 import org.apache.calcite.util.TimestampString;
+import org.apache.calcite.util.TimestampWithTimeZoneString;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
@@ -91,6 +92,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
@@ -320,6 +322,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 case TIMESTAMP:
                     return new DBSPTimestampLiteral(node, type,
                             Objects.requireNonNull(literal.getValueAs(TimestampString.class)));
+                case TIMESTAMP_TZ:
+                    return new DBSPTimestampTzLiteral(node, type,
+                            Objects.requireNonNull(literal.getValueAs(TimestampWithTimeZoneString.class)));
                 case DATE:
                     return new DBSPDateLiteral(node, type, Objects.requireNonNull(literal.getValueAs(DateString.class)));
                 case GEOPOINT:

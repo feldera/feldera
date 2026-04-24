@@ -23,6 +23,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.dbsp.util.Linq;
 
 import java.io.File;
@@ -104,6 +105,12 @@ public record TableData(ProgramIdentifier name, DBSPZSetExpression data, List<In
 
         @Override
         public VisitDecision preorder(DBSPTypeTimestamp node) {
+            this.found = true;
+            return VisitDecision.STOP;
+        }
+
+        @Override
+        public VisitDecision preorder(DBSPTypeTimestampTz node) {
             this.found = true;
             return VisitDecision.STOP;
         }

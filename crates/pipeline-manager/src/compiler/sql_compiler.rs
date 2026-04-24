@@ -980,6 +980,7 @@ mod test {
                 val_varbinary VARBINARY,
                 val_time TIME,
                 val_timestamp TIMESTAMP,
+                val_timestampTz TIMESTAMP WITH TIME ZONE,
                 val_date DATE,
                 val_row ROW(l INT NULL, r VARCHAR),
                 val_array INT ARRAY,
@@ -1008,7 +1009,7 @@ mod test {
         for relation in [table, view] {
             assert!(!relation.materialized);
             assert!(relation.properties.is_empty());
-            assert_eq!(relation.fields.len(), 22);
+            assert_eq!(relation.fields.len(), 23);
 
             // BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, UUID
             assert_eq!(
@@ -1095,6 +1096,10 @@ mod test {
             assert_eq!(
                 relation.field("val_timestamp").unwrap().columntype.typ,
                 SqlType::Timestamp
+            );
+            assert_eq!(
+                relation.field("val_timestampTz").unwrap().columntype.typ,
+                SqlType::TimestampTz
             );
             assert_eq!(
                 relation.field("val_date").unwrap().columntype.typ,

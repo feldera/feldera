@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
@@ -57,6 +58,7 @@ public final class DBSPBinaryExpression extends DBSPExpression {
             Utilities.enforce(!type.is(DBSPTypeTime.class));
             Utilities.enforce(!type.is(DBSPTypeDate.class));
             Utilities.enforce(!type.is(DBSPTypeTimestamp.class));
+            Utilities.enforce(!type.is(DBSPTypeTimestampTz.class));
         }
 
     }

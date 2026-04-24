@@ -165,6 +165,29 @@ The result is a 32-bit integer.
 <a id="time_ceil"></a> `CEIL(time TO <unit>)`, where `<unit>` is a
 time unit between `HOUR` and `MICROSECOND`.
 
+## Timestamps with time zone
+
+The `TIMESTAMP WITH TIME ZONE` data type represents values composed of
+a `DATE` (as described above) and a `TIME` at a specific time zone.
+The runtime representation normalizes the timestamp to be in the UTC
+timezone and discards the timezone.  Thus, there are no operations
+that can retrieve the timezone at runtime.
+
+`TIMESTAMP`s are represented with a precision of microseconds (6
+digits for fractions of second).  The specified scale for the
+`TIMESTAMP WITH TIME ZONE` data type is ignored, and it is always
+assumed to be `TIMESTAMP WITH TIME ZONE(6)`.
+
+### Timestamp literals with time zone
+
+`TIMESTAMP WITH TIME ZONE` literals have the form `TIMESTAMP WITH TIME
+ZONE 'YYYY-MM-DD HH:MM:SS.FFFFFF zone'`, where the fractional part is
+optional.  The "zone" must be a legal IANA time zone or a legal fixed
+offset like +05:00.  Trailing spaces are not allowed.
+
+Timestamp literals can only represent 4-digit year positive values.
+Values BC or values greater than 10,000 years are not supported.
+
 ## Timestamps
 
 The `TIMESTAMP` data type represents values composed of a `DATE` (as
@@ -182,9 +205,7 @@ spaces are not allowed.
 Timestamp literals can only represent 4-digit year positive values.
 Values BC or values greater than 10,000 years are not supported.
 
-The following operations are available on timestamps:
-
-### Operations on timestamps
+### Operations on timestamps and timestamps with time zones
 
 A cast from a numeric value to a `TIMESTAMP` interprets the numeric
 value as an (big integer) number of milliseconds since the Unix epoch.
