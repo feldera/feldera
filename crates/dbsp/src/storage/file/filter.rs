@@ -10,7 +10,7 @@ use dyn_clone::clone_box;
 use std::io;
 use std::ops::Not;
 use std::sync::Once;
-use tracing::info;
+use tracing::{debug, info};
 
 use roaring::RoaringLookupStats;
 pub(crate) use roaring::TouchedWindowCounter;
@@ -211,11 +211,25 @@ where
         enable_roaring: bool,
         bloom_false_positive_rate: f64,
     ) -> BatchKeyFilter {
-        if self.can_use_roaring(enable_roaring)
-            && self.predict_lookup_prefers_roaring(estimated_keys)
-        {
+        if !self.can_use_roaring(enable_roaring) {
+            debug!(
+                enable_roaring,
+                roaring_range_fits = self.roaring_range_fits(),
+                min = ?self.min.as_ref(),
+                max = ?self.max.as_ref(),
+                estimated_keys,
+                "filter predictor: roaring not available, using Bloom",
+            );
+            return BatchKeyFilter::new_bloom(estimated_keys, bloom_false_positive_rate);
+        }
+        if self.predict_lookup_prefers_roaring(estimated_keys) {
+            debug!(estimated_keys, "filter predictor: chose roaring bitmap");
             BatchKeyFilter::new_roaring_u32(self.min.as_ref())
         } else {
+            debug!(
+                estimated_keys,
+                "filter predictor: predictor prefers Bloom over roaring",
+            );
             BatchKeyFilter::new_bloom(estimated_keys, bloom_false_positive_rate)
         }
     }
@@ -274,6 +288,9 @@ where
             }
             (Some(rate), None) => Some(BatchKeyFilter::new_bloom(estimated_keys, rate)),
             (None, Some(filter_plan)) if filter_plan.can_use_roaring(enable_roaring) => {
+                debug!(
+                    "filter predictor: Bloom disabled, roaring available — using roaring bitmap",
+                );
                 Some(BatchKeyFilter::new_roaring_u32(filter_plan.min.as_ref()))
             }
             (None, _) => None,

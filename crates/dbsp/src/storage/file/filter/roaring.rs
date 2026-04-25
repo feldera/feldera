@@ -6,6 +6,7 @@ use dyn_clone::clone_box;
 use roaring::RoaringBitmap;
 use size_of::SizeOf;
 use std::{io, mem::size_of_val};
+use tracing::debug;
 
 /// Roaring bitmap wrapper that tracks hit/miss counts during membership probes.
 #[derive(Debug)]
@@ -302,7 +303,16 @@ impl RoaringLookupStats {
             + Self::LOOKUP_ROARING_AFFINE_WINDOW_INTERCEPT)
             .max(1.0);
         let lookup_score = self.batch_keys / lookup_required_keys;
-        lookup_score >= 1.0
+        let prefers_roaring = lookup_score >= 1.0;
+        debug!(
+            batch_keys = self.batch_keys,
+            estimated_touched_containers = self.estimated_touched_containers,
+            lookup_required_keys,
+            lookup_score,
+            prefers_roaring,
+            "roaring lookup prediction",
+        );
+        prefers_roaring
     }
 }
 
