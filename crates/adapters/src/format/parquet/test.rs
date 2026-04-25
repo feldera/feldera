@@ -149,6 +149,7 @@ fn parquet_output() {
             false,
             BTreeMap::new(),
         ),
+        false,
     )
     .expect("Can't create encoder");
     let zset = OrdZSet::from_keys(

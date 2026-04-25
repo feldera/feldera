@@ -13,7 +13,7 @@ use apache_avro::{
 };
 use arrow::record_batch::RecordBatch;
 use dbsp::circuit::NodeId;
-use dbsp::dynamic::{ClonableTrait, DynData, DynVec, Factory};
+use dbsp::dynamic::{ClonableTrait, DynData, DynVec, Erase, Factory};
 use dbsp::operator::StagedBuffers;
 use dyn_clone::DynClone;
 use feldera_sqllib::Variant;
@@ -478,12 +478,20 @@ impl SerCursor for SplitCursor<'_> {
         self.cursor.key()
     }
 
+    fn val(&self) -> &DynData {
+        self.cursor.val()
+    }
+
     fn get_key(&self) -> Option<&DynData> {
         if !self.key_valid() {
             return None;
         }
 
         self.cursor.get_key()
+    }
+
+    fn get_val(&self) -> Option<&DynData> {
+        self.cursor.get_val()
     }
 
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
@@ -500,6 +508,14 @@ impl SerCursor for SplitCursor<'_> {
         dst: &mut Vec<u8>,
     ) -> AnyResult<()> {
         self.cursor.serialize_key_fields(fields, dst)
+    }
+
+    fn serialize_val_fields(
+        &mut self,
+        fields: &HashSet<String>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        self.cursor.serialize_val_fields(fields, dst)
     }
 
     fn serialize_key_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {
@@ -535,6 +551,10 @@ impl SerCursor for SplitCursor<'_> {
 
     fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
         self.cursor.serialize_key_weight(dst)
+    }
+
+    fn serialize_val_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
+        self.cursor.serialize_val_weight(dst)
     }
 
     fn serialize_val(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
@@ -586,6 +606,165 @@ impl SerCursor for SplitCursor<'_> {
     }
 }
 
+/// A wrapper around a `SerCursor` that makes an `IndexedZSet<K, V>` look like a `ZSet<V>`
+/// by iterating over values only.
+///
+/// * Doesn't return values in order.
+/// * Panics when any operations over values are attempted.
+/// * Panics on seek_key_exact and seek_key.
+pub struct SerCursorFlattened<'a> {
+    val_valid: bool,
+    cursor: Box<dyn SerCursor + 'a>,
+}
+
+impl<'a> SerCursorFlattened<'a> {
+    pub fn new(cursor: Box<dyn SerCursor + 'a>) -> Self {
+        Self {
+            cursor,
+            val_valid: true,
+        }
+    }
+}
+
+impl<'a> SerCursor for SerCursorFlattened<'a> {
+    fn key_valid(&self) -> bool {
+        self.cursor.key_valid() && self.cursor.val_valid()
+    }
+
+    fn val_valid(&self) -> bool {
+        self.val_valid
+    }
+
+    fn key(&self) -> &DynData {
+        self.cursor.val()
+    }
+
+    fn get_key(&self) -> Option<&DynData> {
+        self.cursor.get_val()
+    }
+
+    fn val(&self) -> &DynData {
+        ().erase()
+    }
+
+    fn get_val(&self) -> Option<&DynData> {
+        if self.val_valid {
+            Some(().erase())
+        } else {
+            None
+        }
+    }
+
+    fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
+        self.cursor.serialize_val(dst)
+    }
+
+    fn key_to_json(&mut self) -> AnyResult<serde_json::Value> {
+        self.cursor.val_to_json()
+    }
+
+    fn serialize_key_fields(
+        &mut self,
+        fields: &HashSet<String>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        self.cursor.serialize_val_fields(fields, dst)
+    }
+
+    fn serialize_val_fields(
+        &mut self,
+        _fields: &HashSet<String>,
+        _dst: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        panic!("serialize_val_fields is not supported for flattened cursors");
+    }
+
+    fn serialize_key_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {
+        self.cursor.serialize_val_to_arrow(dst)
+    }
+
+    fn serialize_key_to_arrow_with_metadata(
+        &mut self,
+        metadata: &dyn erased_serde::Serialize,
+        dst: &mut ArrayBuilder,
+    ) -> AnyResult<()> {
+        self.cursor
+            .serialize_val_to_arrow_with_metadata(metadata, dst)
+    }
+
+    fn serialize_val_to_arrow(&mut self, _dst: &mut ArrayBuilder) -> AnyResult<()> {
+        panic!("serialize_val_to_arrow is not supported for flattened cursors");
+    }
+
+    fn serialize_val_to_arrow_with_metadata(
+        &mut self,
+        _metadata: &dyn erased_serde::Serialize,
+        _dst: &mut ArrayBuilder,
+    ) -> AnyResult<()> {
+        panic!("serialize_val_to_arrow_with_metadata is not supported for flattened cursors");
+    }
+
+    #[cfg(feature = "with-avro")]
+    fn key_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
+        self.cursor.val_to_avro(schema, refs)
+    }
+
+    fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
+        self.cursor.serialize_val_weight(dst)
+    }
+
+    fn serialize_val_weight(&mut self, _dst: &mut Vec<u8>) -> AnyResult<()> {
+        panic!("serialize_val_weight is not supported for flattened cursors");
+    }
+
+    fn serialize_val(&mut self, _dst: &mut Vec<u8>) -> AnyResult<()> {
+        panic!("serialize_val is not supported for flattened cursors");
+    }
+
+    fn val_to_json(&mut self) -> AnyResult<serde_json::Value> {
+        panic!("val_to_json is not supported for flattened cursors");
+    }
+
+    #[cfg(feature = "with-avro")]
+    fn val_to_avro(&mut self, _schema: &AvroSchema, _refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
+        panic!("val_to_avro is not supported for flattened cursors");
+    }
+
+    fn weight(&mut self) -> i64 {
+        self.cursor.weight()
+    }
+
+    fn step_key(&mut self) {
+        debug_assert!(self.cursor.key_valid() && self.cursor.val_valid());
+        self.cursor.step_val();
+        while !self.cursor.val_valid() && self.cursor.key_valid() {
+            self.cursor.step_key();
+        }
+        self.val_valid = true;
+    }
+
+    fn step_val(&mut self) {
+        self.val_valid = false;
+    }
+
+    fn rewind_keys(&mut self) {
+        self.cursor.rewind_keys();
+        self.val_valid = true;
+    }
+
+    fn rewind_vals(&mut self) {
+        self.val_valid = true;
+    }
+
+    fn seek_key_exact(&mut self, _key: &DynData) -> bool {
+        panic!("seek_key_exact is not supported for flattened cursors");
+    }
+
+    fn seek_key(&mut self, _key: &DynData) {
+        panic!("seek_key is not supported for flattened cursors");
+    }
+}
+
 /// Cursor that allows serializing the contents of a type-erased batch.
 ///
 /// This is a wrapper around the DBSP `Cursor` trait that yields keys and values
@@ -606,6 +785,10 @@ pub trait SerCursor: Send {
 
     fn get_key(&self) -> Option<&DynData>;
 
+    fn val(&self) -> &DynData;
+
+    fn get_val(&self) -> Option<&DynData>;
+
     /// Serialize current key. Panics if invalid.
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()>;
 
@@ -615,6 +798,12 @@ pub trait SerCursor: Send {
 
     /// Like `serialize_key`, but only serializes the specified fields of the key.
     fn serialize_key_fields(
+        &mut self,
+        fields: &HashSet<String>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()>;
+
+    fn serialize_val_fields(
         &mut self,
         fields: &HashSet<String>,
         dst: &mut Vec<u8>,
@@ -651,6 +840,8 @@ pub trait SerCursor: Send {
     /// FIXME: This only exists to support the CSV serializer, which outputs
     /// key and weight in the same CSV record.
     fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()>;
+
+    fn serialize_val_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()>;
 
     /// Serialize current value. Panics if invalid.
     fn serialize_val(&mut self, dst: &mut Vec<u8>) -> AnyResult<()>;
@@ -773,6 +964,14 @@ impl SerCursor for CursorWithPolarity<'_> {
         self.cursor.get_key()
     }
 
+    fn val(&self) -> &DynData {
+        self.cursor.val()
+    }
+
+    fn get_val(&self) -> Option<&DynData> {
+        self.cursor.get_val()
+    }
+
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
         self.cursor.serialize_key(dst)
     }
@@ -789,6 +988,14 @@ impl SerCursor for CursorWithPolarity<'_> {
         self.cursor.serialize_key_fields(fields, dst)
     }
 
+    fn serialize_val_fields(
+        &mut self,
+        fields: &HashSet<String>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        self.cursor.serialize_val_fields(fields, dst)
+    }
+
     #[cfg(feature = "with-avro")]
     fn key_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
         self.cursor.key_to_avro(schema, refs)
@@ -796,6 +1003,10 @@ impl SerCursor for CursorWithPolarity<'_> {
 
     fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
         self.cursor.serialize_key_weight(dst)
+    }
+
+    fn serialize_val_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
+        self.cursor.serialize_val_weight(dst)
     }
 
     fn serialize_key_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {
@@ -892,6 +1103,14 @@ pub trait CircuitCatalog: Send + Sync {
     /// Look up output stream handles by name.
     fn output_handles(&self, name: &SqlIdentifier) -> Option<&OutputCollectionHandles>;
 
+    /// Look up handles for an index of a stream.
+    fn index_handles(
+        &self,
+        endpoint_name: &str,
+        stream: &SqlIdentifier,
+        index: &SqlIdentifier,
+    ) -> Result<&OutputCollectionHandles, ControllerError>;
+
     fn output_handles_mut(&mut self, name: &SqlIdentifier) -> Option<&mut OutputCollectionHandles>;
 
     /// The registry used to insert new user-defined preprocessors
@@ -928,13 +1147,22 @@ impl InputCollectionHandle {
 /// A set of stream handles associated with each output collection.
 #[derive(Clone)]
 pub struct OutputCollectionHandles {
+    /// Schema of the keys in the stream.
+    ///
+    /// Only set for indexed Z-sets.
     pub key_schema: Option<Relation>,
+
+    /// Schema of the values in the stream.
+    ///
+    /// If the stream is an indexed Z-set, this is the schema of the values in the stream;
+    /// if it is a Z-set, this is the schema of the keys in the stream.
     pub value_schema: Relation,
 
+    /// Set when this stream is an index of another stream.
     pub index_of: Option<SqlIdentifier>,
 
-    /// Whether the integrate handle is an indexed Z-set.
-    pub integrate_handle_is_indexed: bool,
+    /// Set when the same stream is used to represent a view and its index.
+    pub alias_as_index: Option<SqlIdentifier>,
 
     /// A handle to a snapshot of a materialized table/view.
     pub integrate_handle: Option<Arc<dyn SerBatchReaderHandle>>,
@@ -946,4 +1174,11 @@ pub struct OutputCollectionHandles {
     /// Incremented every time an output connector is attached to this stream; decremented when
     /// the output connector is detached.
     pub enable_count: Arc<AtomicUsize>,
+}
+
+impl OutputCollectionHandles {
+    /// Stream is an indexed Z-set.
+    pub fn is_indexed(&self) -> bool {
+        self.key_schema.is_some()
+    }
 }

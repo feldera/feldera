@@ -67,6 +67,45 @@ impl CircuitCatalog for Catalog {
         self.output_batch_handles.get(name)
     }
 
+    fn index_handles(
+        &self,
+        endpoint_name: &str,
+        stream: &SqlIdentifier,
+        index: &SqlIdentifier,
+    ) -> Result<&OutputCollectionHandles, ControllerError> {
+        let Some(stream_handles) = self.output_handles(stream) else {
+            return Err(ControllerError::unknown_output_stream(
+                endpoint_name,
+                &stream.sql_name(),
+            ));
+        };
+
+        // The index is the same as the stream.
+        if stream_handles.alias_as_index == Some(index.clone()) {
+            return Ok(stream_handles);
+        }
+
+        let handle = self
+            .output_handles(index)
+            .ok_or_else(|| ControllerError::unknown_index(endpoint_name, &index.sql_name()))?;
+
+        if handle.index_of.is_none() {
+            return Err(ControllerError::not_an_index(
+                endpoint_name,
+                &index.sql_name(),
+            ));
+        }
+
+        if handle.index_of.as_ref() != Some(stream) {
+            return Err(ControllerError::unknown_output_stream(
+                endpoint_name,
+                &stream.sql_name(),
+            ));
+        }
+
+        Ok(handle)
+    }
+
     fn output_handles_mut(&mut self, name: &SqlIdentifier) -> Option<&mut OutputCollectionHandles> {
         self.output_batch_handles.get_mut(name)
     }

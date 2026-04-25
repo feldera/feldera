@@ -655,8 +655,15 @@ pub trait OutputFormat: Send + Sync {
     /// # Arguments
     ///
     /// * `config` - Format-specific configuration.
-    ///
+    /// * `key_schema` - Schema of the keys in the stream; only set for indexed Z-sets.
+    /// * `value_schema` - Schema of the values in the stream. If the stream is an indexed Z-set,
+    ///   this is the schema of the values in the stream; if it is a Z-set, this is the schema of the keys in the stream.
     /// * `consumer` - Consumer to send encoded data batches to.
+    /// * `is_index` - Whether the connector is configured with the `index` property.
+    ///
+    /// `is_index` implies that `key_schema` is set. The inverse is not true: the stream may be an indexed Z-set; but
+    /// the connector is not configured with the `index` property. The connector must iterate over the values in the
+    /// stream either directly or using `SerCursorFlattened`.
     fn new_encoder(
         &self,
         endpoint_name: &str,
@@ -664,6 +671,7 @@ pub trait OutputFormat: Send + Sync {
         key_schema: &Option<Relation>,
         value_schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
+        is_index: bool,
     ) -> Result<Box<dyn Encoder>, ControllerError>;
 }
 

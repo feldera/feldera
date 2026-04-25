@@ -533,7 +533,7 @@ CREATE TABLE {name} (
                                     indexed_input.clone(),
                                     &SqlIdentifier::from("idx"),
                                     &SqlIdentifier::from("test_output1"),
-                                    &[&SqlIdentifier::from("bigint_")],
+                                    &["bigint_".to_string()],
                                 )
                                 .expect("failed to register index");
 
@@ -1835,7 +1835,7 @@ fn pg_simple(url: String, tls: Option<PostgresTlsConfig>) {
                             indexed_input.clone(),
                             &SqlIdentifier::from(idx),
                             &SqlIdentifier::from("test_output1"),
-                            &[&SqlIdentifier::from("id")],
+                            &["id".to_string()],
                         )
                         .expect("failed to register index");
 
