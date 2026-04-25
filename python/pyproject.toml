@@ -43,7 +43,8 @@ dev = [
     "sphinx-rtd-theme==2.0.0",
     "sphinx==7.3.7",
     "simplejson==3.20.1",
-    "confluent-kafka>=2.2.0"
+    "confluent-kafka>=2.2.0",
+    "deltalake>=0.18"
 ]
 
 [tool.pytest.ini_options]
