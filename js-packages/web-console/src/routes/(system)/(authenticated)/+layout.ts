@@ -1,12 +1,11 @@
-import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte.js'
+import { loadDemos } from '$lib/compositions/useDemos.svelte'
 
-export const load = async ({ parent, fetch }) => {
+export const load = async ({ parent }) => {
   const data = await parent()
-  const api = usePipelineManager({ fetch })
   if (typeof data.auth === 'object' && 'login' in data.auth) {
     data.auth.login()
     await new Promise(() => {}) // Await indefinitely to avoid loading the page - until redirected to auth page
   }
-  const pipelines = await api.getPipelines()
-  return { ...data, preloaded: { pipelines } }
+  loadDemos()
+  return { ...data }
 }

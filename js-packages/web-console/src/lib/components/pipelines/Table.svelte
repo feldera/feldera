@@ -1,8 +1,6 @@
 <script lang="ts">
   import { Datatable, TableHandler } from '@vincjo/datatables'
-  import type { Snippet } from 'svelte'
   import { match } from 'ts-pattern'
-  import { pipe } from 'valibot'
   import { page } from '$app/state'
   import { Popover } from '$lib/components/common/Popover.svelte'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
@@ -16,6 +14,7 @@
     PipelineStatus as PipelineStatusType,
     PipelineThumb
   } from '$lib/services/pipelineManager'
+  import type { Snippet } from '$lib/types/svelte'
   import PipelineVersion from './table/PipelineVersion.svelte'
 
   let {

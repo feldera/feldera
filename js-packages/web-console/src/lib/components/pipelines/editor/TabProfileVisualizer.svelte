@@ -43,6 +43,10 @@
   const api = usePipelineManager()
   const toast = useToast()
 
+  let downloadProgress = useDownloadProgress()
+  let isLoading = $derived(downloadProgress.percent !== null)
+  let readonly = $derived(deleted || isLoading)
+
   let triageResults: TriageResults = $state(new TriageResults())
 
   let pipelineName = $derived(pipeline.current.name)
@@ -125,13 +129,13 @@
         })
       } catch (error) {
         errorMessage = error instanceof Error ? error.message : 'Failed to process profile'
+      } finally {
+        downloadProgress.reset()
       }
     })()
   })
 
   let collectNewData = $state(true)
-
-  let downloadProgress = useDownloadProgress()
 
   const loadProfileData = async () => {
     errorMessage = ''
@@ -202,12 +206,6 @@
     }
     // If successful, loading will complete when $effect sets the data
   }
-
-  $effect(() => {
-    if (downloadProgress.percent === 100) {
-      downloadProgress.reset()
-    }
-  })
 
   const triggerFileUpload = () => {
     fileInput?.click()
@@ -284,7 +282,7 @@
                 <!-- Download Profile -->
                 <button
                   class="flex items-center gap-2 rounded-t-container px-4 py-2 text-left hover:preset-tonal-surface"
-                  disabled={deleted}
+                  disabled={readonly}
                   onclick={() => {
                     loadProfileData()
                     close()
@@ -302,7 +300,7 @@
                     type="checkbox"
                     bind:checked={collectNewData}
                     class="checkbox"
-                    disabled={deleted}
+                    disabled={readonly}
                   />
                 </label>
 
@@ -312,6 +310,7 @@
                 <!-- Upload Support Bundle -->
                 <button
                   class="flex items-center gap-2 rounded-b-container px-4 py-2 text-left hover:preset-tonal-surface"
+                  disabled={isLoading}
                   onclick={() => {
                     triggerFileUpload()
                     close()
@@ -339,7 +338,7 @@
         </div>
       {/if}
       <div class="flex gap-4">
-        <button class="btn preset-filled-primary-500" onclick={loadProfileData} disabled={deleted}>
+        <button class="btn preset-filled-primary-500" onclick={loadProfileData} disabled={readonly}>
           Download pipeline profile
         </button>
         <label class="flex cursor-pointer items-center gap-2">
@@ -347,13 +346,17 @@
             type="checkbox"
             bind:checked={collectNewData}
             class="checkbox"
-            disabled={deleted}
+            disabled={readonly}
           />
           <span class="text-sm">Collect new data</span>
         </label>
       </div>
       or
-      <button class="link -mt-2 p-2 hover:underline" onclick={triggerFileUpload}>
+      <button
+        class="link -mt-2 p-2 hover:underline"
+        disabled={isLoading}
+        onclick={triggerFileUpload}
+      >
         upload a support bundle zip
       </button>
     </div>

@@ -1,5 +1,4 @@
-import { onMount } from 'svelte'
-import { closedIntervalAction } from '$lib/functions/common/promise'
+import { useInterval } from '$lib/compositions/common/useInterval.svelte'
 import type { PipelineThumb } from '$lib/services/pipelineManager'
 import { type PipelineManagerApi, usePipelineManager } from '../usePipelineManager.svelte'
 
@@ -37,14 +36,13 @@ export const useUpdatePipelineList = () => {
 }
 
 /**
- * Refresh the pipeline list every 2 seconds.
- * A single instance of this hook should be mounted at one time.
+ * Refresh the pipeline list every 2 seconds (with an immediate first call).
+ * A single instance of this hook should be mounted at one time; the interval
+ * is tied to the caller's effect lifecycle, so it cleans up on unmount.
  */
 export const useRefreshPipelineList = () => {
   const api = usePipelineManager()
-  onMount(() => {
-    return closedIntervalAction(() => reload(api), 2000)
-  })
+  useInterval(() => reload(api), 2000)
 }
 
 export const usePipelineList = (preloaded?: { pipelines: PipelineThumb[] }) => {
@@ -53,10 +51,7 @@ export const usePipelineList = (preloaded?: { pipelines: PipelineThumb[] }) => {
   }
   return {
     get pipelines() {
-      return [...(pipelines ?? [])]
-    },
-    set pipelines(ps: PipelineThumb[]) {
-      pipelines = ps
+      return pipelines === undefined ? undefined : [...pipelines]
     }
   }
 }

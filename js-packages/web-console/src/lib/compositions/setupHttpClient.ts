@@ -4,6 +4,8 @@ import type { CreateClientConfig } from '$lib/services/manager/client.gen'
 
 export const createClientConfig: CreateClientConfig = (config) => ({
   ...config,
-  bodySerializer: JSONbig.stringify,
-  baseUrl: felderaEndpoint
+  baseUrl: felderaEndpoint,
+  responseStyle: 'data',
+  throwOnError: true,
+  bodySerializer: JSONbig.stringify
 })

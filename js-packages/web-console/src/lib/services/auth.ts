@@ -86,6 +86,63 @@ export const authResponseMiddleware = async (response: Response, request: Reques
 }
 
 /**
+ * Error interceptor that tags the thrown error with HTTP status info so
+ * downstream consumers can branch on e.g. 401. Mutates in place instead of
+ * spreading — spreading an Error drops its non-enumerable `message`/`stack`
+ * and reshapes a TypeError into a plain object, which would break downstream
+ * `instanceof TypeError` network-error detection. `response` is `undefined`
+ * when the interceptor fires from the fetch-failure path (network error).
+ */
+export const errorResponseMiddleware = (error: unknown, response: Response | undefined) => {
+  if (error && typeof error === 'object') {
+    try {
+      ;(error as any).response = response
+      if (response) (error as any).status = response.status
+      return error
+    } catch {
+      // Frozen / non-extensible — fall through to a fresh object.
+    }
+  }
+  return {
+    message: typeof error === 'string' ? error : String(error),
+    response,
+    status: response?.status
+  }
+}
+
+/**
+ * Start an OIDC re-authentication flow.
+ *
+ * Stashes the current URL under `redirect_to` in session storage so the
+ * `onAfterLogin` hook in `routes/+layout.ts` can restore it via `goto` once
+ * the provider callback completes. Only writes the key if it isn't already
+ * set, so the *first* call (which captures the user's actual page) wins —
+ * the fallback navigation below re-invokes this function from `/`, and we
+ * must not overwrite the original target `redirect_to` with `/`.
+ *
+ * If the OIDC singleton has not been initialized yet — e.g. the backend was
+ * unauthenticated when the root layout first loaded and has since flipped to
+ * requiring auth — falls back to a full navigation to `/`, which re-enters
+ * the root layout. The fresh `initAuth` will pick up the new auth config,
+ * register the OIDC client, and the (authenticated) layout's `auth.login`
+ * will route back through this function — this time with the singleton
+ * available — and complete the redirect to the provider.
+ */
+export const triggerOidcLogin = async (): Promise<void> => {
+  if (!window.sessionStorage.getItem('redirect_to')) {
+    window.sessionStorage.setItem('redirect_to', window.location.href)
+  }
+  let oidcClient
+  try {
+    oidcClient = OidcClient.get()
+  } catch {
+    window.location.href = '/'
+    return
+  }
+  await oidcClient.loginAsync('/')
+}
+
+/**
  * Gets the authorization and tenant headers for authenticated requests.
  * Returns an empty object if not authenticated.
  */

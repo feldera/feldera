@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { slide } from 'svelte/transition'
   import { preloadCode } from '$app/navigation'
   import IconBookOpen from '$assets/icons/feldera-material-icons/book-open.svg?component'
@@ -21,12 +22,11 @@
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
+  import { useDemos } from '$lib/compositions/useDemos.svelte'
   import { resolve } from '$lib/functions/svelte'
-  import type { PageData } from './$types'
 
   preloadCode(resolve(`/pipelines/*`)).then(() => preloadCode(resolve(`/demos/`)))
 
-  const { data }: { data: PageData } = $props()
   const isTablet = useIsTablet()
 
   const featured = [
@@ -49,12 +49,14 @@
 
   const maxShownDemos = $derived(isTablet.current ? 5 : 9)
 
-  const pipelines = usePipelineList(data.preloaded)
+  const pipelines = usePipelineList()
   const welcomed = useLocalStorage('home/welcomed', false)
   const showSuggestedDemos = useLocalStorage('home/hideSuggestedDemos', true)
   const darkMode = useDarkMode()
   let selectedPipelines = $state([]) as string[]
   const drawer = useAdaptiveDrawer('right')
+
+  const demos = useDemos()
 </script>
 
 <AppHeader>
@@ -121,16 +123,25 @@
         </div>
       {/if}
       <div class="flex flex-col">
-        {#if pipelines.pipelines.length}
-          <PipelineTable pipelines={pipelines.pipelines} bind:selectedPipelines>
-            {#snippet header()}
-              <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
-                <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
-              </div>
-            {/snippet}
+        {#snippet header()}
+          <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
+            <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
+          </div>
+        {/snippet}
+        {#if !pipelines.pipelines}
+          <div class="flex w-full flex-col items-center gap-4 pt-8 sm:pt-16">
+            <Progress class="" value={null}>
+              <Progress.Track>
+                <Progress.Range class="bg-primary-500" />
+              </Progress.Track>
+            </Progress>
+            <div class="">Loading pipelines...</div>
+          </div>
+        {:else if pipelines.pipelines.length}
+          {@const ps = pipelines.pipelines}
+          <PipelineTable pipelines={pipelines.pipelines} bind:selectedPipelines {header}>
             {#snippet preHeaderEnd()}
-              <AvailableActions pipelines={pipelines.pipelines} bind:selectedPipelines
-              ></AvailableActions>
+              <AvailableActions pipelines={ps} bind:selectedPipelines></AvailableActions>
               {#if !selectedPipelines.length}
                 <CreatePipelineButton
                   inputClass="max-w-64"
@@ -140,29 +151,38 @@
             {/snippet}
           </PipelineTable>
         {:else}
-          <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
-            <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
+          <div class="px-2 md:px-8">
+            {@render header()}
           </div>
           <div class="flex w-full flex-col items-center gap-4 pt-8 sm:pt-16">
             <ImageBox class="h-9 fill-surface-200-800"></ImageBox>
             <div class="">Your pipelines will appear here</div>
             <div class="relative flex gap-5">
               <CreatePipelineButton btnClass="preset-filled-surface-50-950"></CreatePipelineButton>
-              <a class="btn preset-tonal-surface" href="https://docs.feldera.com">
-                <span class="fd fd-book-open text-2xl"></span>
+              <a class="btn h-9 preset-tonal-surface" href="https://docs.feldera.com">
+                <span class="fd fd-book-open text-xl"></span>
                 Documentation
               </a>
             </div>
           </div>
         {/if}
       </div>
-      {#if data.demos.length}
+      {#if demos.current.length}
         <div class="sticky left-0 max-w-[100cqi] px-2 md:px-8">
           <InlineDropdown bind:open={showSuggestedDemos.value}>
             {#snippet header(open, toggle)}
               <div
                 class="flex w-fit cursor-pointer items-center gap-2 py-2"
-                onclick={toggle}
+                onclick={(e) => {
+                  // Prevent clicks on "View all" trigger the dropdown.
+                  // Swallowing them with stopPropagation here
+                  // lets them reach `document`, where they get
+                  // intercepted and handled by the SvelteKit's router.
+                  if ((e.target as HTMLElement).closest('a')) {
+                    return
+                  }
+                  toggle()
+                }}
                 role="presentation"
               >
                 <div
@@ -172,10 +192,8 @@
 
                 <div class="flex flex-nowrap items-center gap-4">
                   <div class="text-xl font-semibold">Explore use cases and tutorials</div>
-                  <a
-                    class="whitespace-nowrap text-primary-500"
-                    href={resolve('/demos/')}
-                    onclick={(e) => e.stopPropagation()}>View all</a
+                  <a class="whitespace-nowrap text-primary-500" href={resolve('/demos/')}
+                    >View all</a
                   >
                 </div>
               </div>
@@ -185,7 +203,7 @@
                 transition:slide={{ duration: 150 }}
                 class="grid grid-cols-1 gap-x-6 gap-y-5 py-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5"
               >
-                {#each data.demos.slice(0, maxShownDemos) as demo}
+                {#each demos.current.slice(0, maxShownDemos) as demo}
                   <DemoTile {demo}></DemoTile>
                 {/each}
                 <div class="flex flex-col card p-4">

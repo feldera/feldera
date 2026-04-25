@@ -15,7 +15,7 @@ const config = {
       $assets: 'src/assets'
     },
     output: {
-      bundleStrategy: 'split'
+      bundleStrategy: 'single'
     }
   }
 }

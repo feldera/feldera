@@ -16,7 +16,7 @@
     deleted?: boolean
   } = $props()
 
-  const pipeline: WritablePipeline = {
+  const pipeline: WritablePipeline<true> = {
     get current() {
       return pipelineProp.current
     },

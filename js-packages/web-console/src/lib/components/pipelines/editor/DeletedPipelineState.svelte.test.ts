@@ -95,8 +95,10 @@ describe('Deleted pipeline state', () => {
   describe('PipelineEditLayout', () => {
     it('shows deleted chip and banner when deleted', async () => {
       const { unmount } = render(PipelineEditLayout, {
+        pipelineName: pipeline.name,
+        pipelineList: { pipelines },
+        pipelineThumb: pipelines.find((p) => p.name === pipeline.name),
         pipeline: writablePipelineProp(),
-        preloaded: { pipelines },
         deleted: true
       })
       const banner = page.getByText('This pipeline has been deleted')
@@ -106,8 +108,10 @@ describe('Deleted pipeline state', () => {
 
     it('does not show deleted banner when not deleted', async () => {
       const { unmount } = render(PipelineEditLayout, {
+        pipelineName: pipeline.name,
+        pipelineList: { pipelines },
+        pipelineThumb: pipelines.find((p) => p.name === pipeline.name),
         pipeline: writablePipelineProp(),
-        preloaded: { pipelines },
         deleted: false
       })
       const banner = page.getByText('This pipeline has been deleted')
