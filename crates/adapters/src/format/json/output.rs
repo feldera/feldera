@@ -9,6 +9,7 @@ use crate::{
 use actix_web::HttpRequest;
 use anyhow::{Result as AnyResult, bail};
 use erased_serde::Serialize as ErasedSerialize;
+use feldera_adapterlib::catalog::SerCursorFlattened;
 use feldera_types::config::{ConnectorConfig, TransportConfig};
 use feldera_types::format::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateFormat};
 use feldera_types::program_schema::{Relation, canonical_identifier};
@@ -57,6 +58,7 @@ impl OutputFormat for JsonOutputFormat {
         key_schema: &Option<Relation>,
         value_schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
+        is_index: bool,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
         let format_config = &config.format.as_ref().unwrap().config;
         let format_config = if format_config.is_null() {
@@ -76,7 +78,7 @@ impl OutputFormat for JsonOutputFormat {
             json_config.update_format = JsonUpdateFormat::Redis;
         };
 
-        validate(&json_config, endpoint_name, key_schema, value_schema)?;
+        validate(&json_config, endpoint_name, is_index, value_schema)?;
 
         // Snowflake and Debezium require one record per message.
         if matches!(
@@ -96,6 +98,7 @@ impl OutputFormat for JsonOutputFormat {
             json_config,
             value_schema,
             key_separator,
+            key_schema.is_some(),
         )))
     }
 }
@@ -103,10 +106,10 @@ impl OutputFormat for JsonOutputFormat {
 fn validate(
     config: &JsonEncoderConfig,
     endpoint_name: &str,
-    key_schema: &Option<Relation>,
+    is_index: bool,
     value_schema: &Relation,
 ) -> Result<(), ControllerError> {
-    if key_schema.is_some() {
+    if is_index {
         return Err(ControllerError::invalid_encoder_configuration(
             endpoint_name,
             "JSON encoder cannot be attached to an index",
@@ -163,6 +166,7 @@ struct JsonEncoder {
     /// Input handle to push serialized data to.
     output_consumer: Box<dyn OutputConsumer>,
     config: JsonEncoderConfig,
+    input_is_indexed: bool,
     value_schema_str: Option<String>,
     key_schema_str: Option<String>,
     buffer: Vec<u8>,
@@ -185,6 +189,7 @@ impl JsonEncoder {
         mut config: JsonEncoderConfig,
         schema: &Relation,
         key_separator: Option<String>,
+        input_is_indexed: bool,
     ) -> Self {
         let max_buffer_size = output_consumer.max_buffer_size_bytes();
 
@@ -210,6 +215,7 @@ impl JsonEncoder {
         Self {
             output_consumer,
             config,
+            input_is_indexed,
             value_schema_str,
             key_schema_str,
             buffer: Vec::new(),
@@ -243,9 +249,15 @@ impl Encoder for JsonEncoder {
         };
 
         let mut num_records = 0;
-        let mut cursor = CursorWithPolarity::new(
-            batch.cursor(RecordFormat::Json(self.config.json_flavor.clone().unwrap()))?,
-        );
+        let mut cursor = if self.input_is_indexed {
+            CursorWithPolarity::new(Box::new(SerCursorFlattened::new(
+                batch.cursor(RecordFormat::Json(self.config.json_flavor.clone().unwrap()))?,
+            )))
+        } else {
+            CursorWithPolarity::new(
+                batch.cursor(RecordFormat::Json(self.config.json_flavor.clone().unwrap()))?,
+            )
+        };
 
         let mut redis_deletion = false;
 
@@ -660,6 +672,7 @@ mod test {
                 BTreeMap::new(),
             ),
             None,
+            false,
         );
         let zsets = batches
             .iter()
@@ -861,6 +874,7 @@ mod test {
                 BTreeMap::new(),
             ),
             None,
+            false,
         );
         let zset = OrdZSet::from_keys((), test_data()[0].clone());
 
@@ -899,6 +913,7 @@ mod test {
                 BTreeMap::new(),
             ),
             None,
+            false,
         );
         let zset = OrdZSet::from_keys((), test_data()[0].clone());
 
@@ -971,6 +986,7 @@ mod test {
                 BTreeMap::new(),
             ),
             None,
+            false,
         );
 
         let zset = OrdZSet::from_keys((), test_data()[0].clone());

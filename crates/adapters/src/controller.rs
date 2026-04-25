@@ -2297,7 +2297,7 @@ impl Controller {
             tables.push(coordination::AdHocTable {
                 name: name.clone(),
                 materialized: clh.integrate_handle.is_some(),
-                indexed: clh.integrate_handle_is_indexed,
+                indexed: clh.is_indexed(),
                 schema: Schema::new(relation_to_arrow_fields(&clh.value_schema.fields, false)),
                 table_type: if self.inner.catalog.input_collection_handle(name).is_some() {
                     AdHocTableType::Table
@@ -6193,7 +6193,7 @@ impl ControllerInner {
 
             let adhoc_tbl = Arc::new(AdHocTable::new(
                 clh.integrate_handle.is_some(),
-                clh.integrate_handle_is_indexed,
+                clh.is_indexed(),
                 weak.clone(),
                 input_handle,
                 name.clone(),
@@ -6601,34 +6601,13 @@ impl ControllerInner {
 
         // Lookup output handle in catalog.
         let (handles, stream_name) = if let Some(index) = &endpoint_config.connector_config.index {
-            if self
-                .catalog
-                .output_handles(&SqlIdentifier::from(&endpoint_config.stream))
-                .is_none()
-            {
-                return Err(ControllerError::unknown_output_stream(
-                    endpoint_name,
-                    &endpoint_config.stream,
-                ));
-            };
+            let handles = self.catalog.index_handles(
+                endpoint_name,
+                &SqlIdentifier::from(&endpoint_config.stream),
+                &SqlIdentifier::from(index),
+            )?;
 
-            let handle = self
-                .catalog
-                .output_handles(&SqlIdentifier::from(index))
-                .ok_or_else(|| ControllerError::unknown_index(endpoint_name, index))?;
-
-            if handle.index_of.is_none() {
-                return Err(ControllerError::not_an_index(endpoint_name, index));
-            }
-
-            if handle.index_of != Some(SqlIdentifier::from(&endpoint_config.stream)) {
-                return Err(ControllerError::unknown_output_stream(
-                    endpoint_name,
-                    &endpoint_config.stream,
-                ));
-            }
-
-            (handle, index.clone())
+            (handles, index.clone())
         } else {
             (
                 self.catalog
@@ -6714,6 +6693,7 @@ impl ControllerInner {
                     &handles.key_schema,
                     &handles.value_schema,
                     probe,
+                    endpoint_config.connector_config.index.is_some(),
                 )?;
 
                 Ok((encoder, command_handler))
@@ -6726,6 +6706,7 @@ impl ControllerInner {
                     &handles.key_schema,
                     &handles.value_schema,
                     self_weak,
+                    endpoint_config.connector_config.index.is_some(),
                 )?;
 
                 let command_handler = endpoint.command_handler();

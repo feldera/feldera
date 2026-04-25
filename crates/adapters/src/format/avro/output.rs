@@ -11,7 +11,7 @@ use apache_avro::schema::RecordField;
 use apache_avro::{Schema as AvroSchema, to_avro_datum, types::Value as AvroValue};
 use crossbeam::channel::Sender;
 use erased_serde::Serialize as ErasedSerialize;
-use feldera_adapterlib::catalog::SplitCursorBuilder;
+use feldera_adapterlib::catalog::{SerCursorFlattened, SplitCursorBuilder};
 use feldera_types::config::{ConnectorConfig, TransportConfig};
 use feldera_types::format::avro::{
     AvroEncoderConfig, AvroEncoderKeyMode, AvroUpdateFormat, SubjectNameStrategy,
@@ -76,6 +76,7 @@ impl OutputFormat for AvroOutputFormat {
         key_schema: &Option<Relation>,
         value_schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
+        is_index: bool,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
         let format_config = &config.format.as_ref().unwrap().config;
         let format_config = if format_config.is_null() {
@@ -120,6 +121,7 @@ impl OutputFormat for AvroOutputFormat {
             consumer,
             avro_config,
             topic,
+            is_index,
         )?))
     }
 }
@@ -374,6 +376,9 @@ pub struct AvroEncoder {
     /// Only set when connected to an indexed stream.
     key_sql_schema: Option<Relation>,
 
+    /// Set when the connector is configured with the `index` property.
+    is_index: bool,
+
     /// Only set when using a separate schema for the key.
     pub(crate) key_avro_schema: Option<AvroSchema>,
 
@@ -403,7 +408,7 @@ pub struct AvroEncoder {
 
 /// `true` - this config will create messages with key and value components.
 /// `false` - this config will create messages with the value component only.
-pub fn use_key(config: &AvroEncoderConfig, key_schema: &Option<Relation>) -> bool {
+pub fn use_key(config: &AvroEncoderConfig, is_index: bool) -> bool {
     match config.update_format {
         AvroUpdateFormat::Raw => match config.key_mode {
             Some(AvroEncoderKeyMode::KeyFields) => true,
@@ -411,7 +416,7 @@ pub fn use_key(config: &AvroEncoderConfig, key_schema: &Option<Relation>) -> boo
             // The default is to generate a key when there is a primary key specified.  This is the least surprising for
             // users who expect messages to be consistently hashed to partitions based on the primary key; otherwise
             // updates for the same key are delivered out-of-order.
-            None => key_schema.is_some(),
+            None => is_index,
         },
         AvroUpdateFormat::Debezium => true,
         AvroUpdateFormat::ConfluentJdbc => true,
@@ -426,6 +431,7 @@ impl AvroEncoder {
         output_consumer: Box<dyn OutputConsumer>,
         config: AvroEncoderConfig,
         topic: Option<String>,
+        is_index: bool,
     ) -> Result<Self, ControllerError> {
         debug!("Creating Avro encoder; config: {config:#?}");
         match config.update_format {
@@ -445,7 +451,7 @@ impl AvroEncoder {
             ));
         }
 
-        if config.cdc_field.is_some() && key_schema.is_none() {
+        if config.cdc_field.is_some() && !is_index {
             return Err(ControllerError::invalid_encoder_configuration(
                 endpoint_name,
                 "`cdc_field` requires an index to be defined for this view.
@@ -463,7 +469,7 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
 
             match key_mode {
                 AvroEncoderKeyMode::KeyFields => {
-                    if key_schema.is_none() {
+                    if !is_index {
                         return Err(ControllerError::invalid_encoder_configuration(
                             endpoint_name,
                             "the 'key_fields' key mode is only supported when the connector is configured with the 'index' property",
@@ -475,13 +481,17 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
         }
 
         // We make all value fields optional for better format compatibility, except key fields.
-        let key_fields = key_schema.as_ref().map(|key_schema| {
-            key_schema
-                .fields
-                .iter()
-                .map(|field| field.name.clone())
-                .collect::<Vec<_>>()
-        });
+        let key_fields = if is_index {
+            key_schema.as_ref().map(|key_schema| {
+                key_schema
+                    .fields
+                    .iter()
+                    .map(|field| field.name.clone())
+                    .collect::<Vec<_>>()
+            })
+        } else {
+            None
+        };
 
         let value_avro_schema = match &config.schema {
             None => AvroSchemaBuilder::new()
@@ -553,7 +563,7 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
             schema_json(&value_avro_schema)
         );
 
-        let key_avro_schema = if use_key(&config, key_schema) {
+        let key_avro_schema = if use_key(&config, is_index) {
             if let Some(key_schema) = &key_schema {
                 let key_avro_schema = AvroSchemaBuilder::new()
                     .with_namespace(config.namespace.as_deref())
@@ -712,6 +722,7 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
             value_avro_schema,
             key_sql_schema: key_schema.clone(),
             key_avro_schema,
+            is_index,
             value_buffer,
             key_schema_id,
             value_schema_id,
@@ -749,7 +760,14 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
     ///
     /// Generates inserts and deletes, but not updates.
     fn encode_plain(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
-        let mut cursor = CursorWithPolarity::new(batch.cursor(RecordFormat::Avro)?);
+        let mut cursor = if self.key_sql_schema.is_some() {
+            // The stream is an indexed Z-set, but we only need to iterate over the values.
+            CursorWithPolarity::new(Box::new(SerCursorFlattened::new(
+                batch.cursor(RecordFormat::Avro)?,
+            )))
+        } else {
+            CursorWithPolarity::new(batch.cursor(RecordFormat::Avro)?)
+        };
 
         while cursor.key_valid() {
             while cursor.val_valid() {
@@ -906,7 +924,7 @@ impl Encoder for AvroEncoder {
     }
 
     fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
-        if self.key_sql_schema.is_some() {
+        if self.is_index {
             self.encode_indexed(batch)
         } else {
             self.encode_plain(batch)

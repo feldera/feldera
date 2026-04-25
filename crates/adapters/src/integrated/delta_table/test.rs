@@ -449,6 +449,7 @@ where
                 &key_fields,
                 key_func,
                 &[Some("output")],
+                false,
             ))
         },
         &config,
@@ -530,6 +531,7 @@ where
                 &key_fields,
                 key_func,
                 &[Some("output")],
+                false,
             ))
         },
         &config,
@@ -542,6 +544,8 @@ where
 ///
 /// * `verify` - verify the final contents of the delta table is equivalent to
 ///   `data`.  Currently only works for tables in the local FS.
+/// * `index_is_alias` - if true, uses catalog.register_materialized_output_map_persistent with
+///    index_is_alias=true to register index; otherwise, uses catalog.register_index_persistent.
 ///
 /// TODO: implement verification using the delta table API rather than
 /// by reading parquet files directly.  I guess the best way to do this is
@@ -552,6 +556,7 @@ fn delta_table_output_test(
     object_store_config: &HashMap<String, String>,
     verify: bool,
     threads: Option<usize>,
+    index_is_alias: bool,
 ) {
     init_logging();
 
@@ -624,13 +629,14 @@ fn delta_table_output_test(
     .unwrap();
 
     let controller = Controller::with_test_config(
-        |workers| {
+        move |workers| {
             Ok(test_circuit_with_index::<DeltaTestStruct, DeltaTestKey, _>(
                 workers,
                 &DeltaTestStruct::schema(),
                 &[SqlIdentifier::from("bigint")],
                 |x: &DeltaTestStruct| DeltaTestKey { bigint: x.bigint },
                 &[None],
+                index_is_alias,
             ))
         },
         &config,
@@ -1751,8 +1757,7 @@ proptest! {
         // Uncomment to inspect output parquet files produced by the test.
         forget(table_dir);
 
-        delta_table_output_test(data.clone(), &table_uri, &HashMap::new(), true, None);
-
+        delta_table_output_test(data.clone(), &table_uri, &HashMap::new(), true, None, false);
 
         // Read delta table unordered.
         let mut json_file = delta_table_snapshot_to_json::<DeltaTestStruct>(
@@ -1889,6 +1894,24 @@ proptest! {
         // // Uncomment to inspect one of the output json files produced by the test.
         // forget(json_file_filtered_by_id);
     }
+
+    /// ```text
+    /// input.json --> [pipeline1]--->delta_table
+    /// ```
+    #[test]
+    fn delta_table_file_output_proptest_index_alias(data in delta_data(20_000))
+    {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        // Uncomment to inspect output parquet files produced by the test.
+        forget(table_dir);
+
+        delta_table_output_test(data.clone(), &table_uri, &HashMap::new(), true, None, true);
+
+        // forget(json_file_filtered_by_id);
+    }
+
 }
 
 proptest! {

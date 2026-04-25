@@ -202,6 +202,7 @@ pub struct Relation {
     pub materialized: bool,
     #[serde(default)]
     pub properties: BTreeMap<String, PropertyValue>,
+    pub primary_key: Option<Vec<String>>,
 }
 
 impl Relation {
@@ -211,6 +212,7 @@ impl Relation {
             fields: Vec::new(),
             materialized: false,
             properties: BTreeMap::new(),
+            primary_key: None,
         }
     }
 
@@ -225,6 +227,7 @@ impl Relation {
             fields,
             materialized,
             properties,
+            primary_key: None,
         }
     }
 
@@ -240,6 +243,14 @@ impl Relation {
 
     pub fn get_property(&self, name: &str) -> Option<&str> {
         self.properties.get(name).map(|p| p.value.as_str())
+    }
+
+    pub fn with_primary_key<'a>(
+        mut self,
+        primary_key: impl IntoIterator<Item = &'a SqlIdentifier>,
+    ) -> Self {
+        self.primary_key = Some(primary_key.into_iter().map(|id| id.name()).collect());
+        self
     }
 }
 

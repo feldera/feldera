@@ -660,6 +660,7 @@ impl TestBinary {
             fields: Self::schema(),
             materialized: false,
             properties: BTreeMap::new(),
+            primary_key: None,
         }
     }
 }
@@ -754,6 +755,7 @@ impl TestUuid {
             fields: Self::schema(),
             materialized: false,
             properties: BTreeMap::new(),
+            primary_key: None,
         }
     }
 }
@@ -845,6 +847,7 @@ impl TestEnum {
             fields: Self::schema(),
             materialized: false,
             properties: BTreeMap::new(),
+            primary_key: None,
         }
     }
 }
@@ -939,6 +942,7 @@ impl TestMetadata {
             fields: Self::schema(),
             materialized: false,
             properties: BTreeMap::new(),
+            primary_key: None,
         }
     }
 }
@@ -1113,6 +1117,7 @@ impl TestIntConversionsSrc {
             fields: Self::schema(),
             materialized: false,
             properties: BTreeMap::new(),
+            primary_key: None,
         }
     }
 }
@@ -1250,6 +1255,7 @@ where
         Box::new(consumer),
         config,
         None,
+        false,
     )
     .unwrap();
     let zsets = batches
@@ -1318,6 +1324,7 @@ fn test_raw_avro_output_indexed<K, T>(
         Box::new(consumer),
         config.clone(),
         None,
+        true,
     )
     .unwrap();
 
@@ -1443,6 +1450,7 @@ fn test_confluent_avro_output<K, V, KF>(
         Box::new(consumer),
         config,
         None,
+        false,
     )
     .unwrap();
     let zsets = batches
@@ -1526,6 +1534,7 @@ fn test_confluent_avro_output_indexed<K, V>(
         Box::new(consumer),
         config,
         None,
+        true,
     )
     .unwrap();
 
@@ -1647,6 +1656,7 @@ fn test_non_unique_keys() {
         Box::new(consumer),
         config,
         None,
+        true,
     )
     .unwrap();
 
@@ -1791,6 +1801,7 @@ fn run_avro_encoder_spine_snapshot_indexed<V>(
         Box::new(consumer),
         config,
         None,
+        true,
     )
     .unwrap();
 

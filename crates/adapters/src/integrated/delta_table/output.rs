@@ -22,6 +22,7 @@ use deltalake::logstore::ObjectStoreRef;
 use deltalake::operations::create::CreateBuilder;
 use deltalake::operations::write::writer::{DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
+use feldera_adapterlib::catalog::SerCursorFlattened;
 use feldera_adapterlib::transport::OutputBatchType;
 use feldera_types::serde_with_context::serde_config::{
     BinaryFormat, DecimalFormat, UuidFormat, VariantFormat,
@@ -72,6 +73,7 @@ struct DeltaTableWriterInner {
     /// progress is visible to the metrics snapshot without any extra
     /// synchronisation.
     records_written: Arc<AtomicU64>,
+    is_index: bool,
 }
 
 pub struct DeltaTableWriter {
@@ -94,6 +96,7 @@ impl DeltaTableWriter {
         key_schema: &Option<Relation>,
         value_schema: &Relation,
         controller: Weak<ControllerInner>,
+        is_index: bool,
     ) -> Result<Self, ControllerError> {
         config.validate().map_err(|e| {
             ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string())
@@ -101,7 +104,7 @@ impl DeltaTableWriter {
 
         let threads = config.threads.unwrap_or(1);
 
-        if threads > 1 && key_schema.is_none() {
+        if threads > 1 && !is_index {
             return Err(ControllerError::invalid_transport_configuration(
                 endpoint_name,
                 "Parallel writes (threads > 1) require the view to have a unique key to \
@@ -152,6 +155,7 @@ impl DeltaTableWriter {
             value_schema: value_schema.clone(),
             controller,
             records_written: Arc::new(AtomicU64::new(0)),
+            is_index,
         });
 
         // Register the progress counter with the controller's metrics.
@@ -589,7 +593,9 @@ async fn stream_encode_and_write(
     let mut num_records = 0;
     let index_name = inner.key_schema.as_ref().map(|s| &s.name);
 
-    if let Some(index_name) = index_name {
+    if let Some(index_name) = index_name
+        && inner.is_index
+    {
         let mut cursor = cursor_builder.build();
 
         while cursor.key_valid() {
@@ -641,7 +647,12 @@ async fn stream_encode_and_write(
         }
     } else {
         let cursor = cursor_builder.build();
-        let mut cursor = CursorWithPolarity::new(Box::new(cursor));
+
+        let mut cursor = if inner.key_schema.is_some() {
+            CursorWithPolarity::new(Box::new(SerCursorFlattened::new(Box::new(cursor))))
+        } else {
+            CursorWithPolarity::new(Box::new(cursor))
+        };
 
         while cursor.key_valid() {
             if !cursor.val_valid() {
@@ -1081,6 +1092,7 @@ mod parallel {
             )],
             materialized: false,
             properties: BTreeMap::new(),
+            primary_key: None,
         }
     }
 
@@ -1106,6 +1118,7 @@ mod parallel {
             &key_schema,
             &value_relation(),
             Weak::new(),
+            indexed,
         )
         .expect("failed to create endpoint")
     }
@@ -1387,6 +1400,7 @@ mod parallel {
             &key_schema,
             &value_relation(),
             Weak::new(),
+            false,
         );
         assert!(
             result.is_err(),
@@ -1525,6 +1539,7 @@ mod parallel {
             &key_schema,
             &value_relation(),
             Weak::new(),
+            true,
         )
         .expect("failed to create endpoint");
 
@@ -1712,6 +1727,7 @@ mod parallel {
             &key_schema,
             &value_relation(),
             Weak::new(),
+            true,
         )
         .expect("failed to create endpoint");
 

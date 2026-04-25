@@ -42,6 +42,7 @@ pub fn create_integrated_output_endpoint(
     key_schema: &Option<Relation>,
     schema: &Relation,
     controller: Weak<ControllerInner>,
+    is_index: bool,
 ) -> Result<Box<dyn IntegratedOutputEndpoint>, ControllerError> {
     let ep: Box<dyn IntegratedOutputEndpoint> = match &connector_config.transport {
         #[cfg(feature = "with-deltalake")]
@@ -52,6 +53,7 @@ pub fn create_integrated_output_endpoint(
             key_schema,
             schema,
             controller,
+            is_index,
         )?),
         TransportConfig::PostgresOutput(config) => Box::new(PostgresOutputEndpoint::new(
             endpoint_id,
@@ -60,6 +62,7 @@ pub fn create_integrated_output_endpoint(
             key_schema,
             schema,
             controller,
+            is_index,
         )?),
         transport => {
             return Err(ControllerError::unknown_output_transport(

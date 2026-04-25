@@ -724,6 +724,7 @@ impl PostgresOutputEndpoint {
         key_schema: &Option<Relation>,
         value_schema: &Relation,
         controller: Weak<ControllerInner>,
+        is_index: bool,
     ) -> Result<Self, ControllerError> {
         config.validate().map_err(|e| {
             ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string())
@@ -731,11 +732,13 @@ impl PostgresOutputEndpoint {
 
         validate_extra_columns_against_value_schema(endpoint_name, config, value_schema)?;
 
-        let key_schema = key_schema
-            .to_owned()
-            .ok_or(ControllerError::not_supported(
-                "Postgres output connector requires the view to have a unique key. Please specify the `index` property in the connector configuration. For more details, see: https://docs.feldera.com/connectors/unique_keys"
-            ))?;
+        if !is_index || key_schema.is_none() {
+            return Err(ControllerError::not_supported(
+                "Postgres output connector requires the view to have a unique key. Please specify the `index` property in the connector configuration. For more details, see: https://docs.feldera.com/connectors/unique_keys",
+            ));
+        }
+
+        let key_schema = key_schema.as_ref().unwrap().clone();
 
         let num_threads = config.threads;
         let mut handles = Vec::with_capacity(num_threads);
@@ -1051,12 +1054,7 @@ mod tests {
     }
 
     fn relation(name: &str, fields: Vec<Field>, materialized: bool) -> Relation {
-        Relation {
-            name: name.into(),
-            fields,
-            materialized,
-            properties: Default::default(),
-        }
+        Relation::new(name.into(), fields, materialized, Default::default())
     }
 
     fn postgres_url() -> String {
@@ -1092,6 +1090,7 @@ mod tests {
             &idx_rel,
             &main_rel,
             Weak::new(),
+            true,
         )
     }
 
@@ -1349,6 +1348,7 @@ mod tests {
                 fields: vec![Field::new("id".into(), ColumnType::int(false))],
                 materialized: false,
                 properties: BTreeMap::new(),
+                primary_key: None,
             }
         }
 
@@ -1363,6 +1363,7 @@ mod tests {
                 ],
                 materialized: true,
                 properties: BTreeMap::new(),
+                primary_key: Some(vec!["id".into()]),
             }
         }
 
@@ -1450,6 +1451,7 @@ mod tests {
                 &Some(key_relation()),
                 &value_relation(),
                 Weak::new(),
+                true,
             )
             .expect("failed to create endpoint")
         }
@@ -1775,6 +1777,7 @@ mod tests {
                 &Some(key_relation()),
                 &value_relation(),
                 Weak::new(),
+                true,
             ) {
                 Ok(_) => panic!("expected duplicate extra_columns to be rejected"),
                 Err(e) => e,
@@ -1795,6 +1798,7 @@ mod tests {
                 &Some(key_relation()),
                 &value_relation(),
                 Weak::new(),
+                true,
             ) {
                 Ok(_) => panic!("expected extra column name clash with view to be rejected"),
                 Err(e) => e,

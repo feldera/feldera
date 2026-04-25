@@ -296,6 +296,7 @@ pub fn test_circuit_with_index<T, K, KF>(
     key_fields: &[SqlIdentifier],
     key_func: KF,
     persistent_output_ids: &[Option<&str>],
+    index_is_alias: bool,
 ) -> (DBSPHandle, Box<dyn CircuitCatalog>)
 where
     KF: Fn(&T) -> K + Clone + Send + Sync + 'static,
@@ -332,12 +333,15 @@ where
                 input.set_persistent_mir_id("input");
             }
 
-            let input_schema = serde_json::to_string(&Relation::new(
-                format!("test_input{i}").into(),
-                schema.clone(),
-                false,
-                BTreeMap::new(),
-            ))
+            let input_schema = serde_json::to_string(
+                &Relation::new(
+                    format!("test_input{i}").into(),
+                    schema.clone(),
+                    false,
+                    BTreeMap::new(),
+                )
+                .with_primary_key(&key_fields),
+            )
             .unwrap();
 
             let output_schema = serde_json::to_string(&Relation::new(
@@ -359,20 +363,28 @@ where
             catalog.register_materialized_output_map_persistent(
                 persistent_output_id.as_ref().map(|s| s.as_str()),
                 input.clone(),
+                if index_is_alias {
+                    Some(SqlIdentifier::from(&format!("test_output{i}")))
+                } else {
+                    None
+                },
                 &output_schema,
+                &key_fields.iter().map(|id| id.name()).collect::<Vec<_>>(),
             );
 
             let persistent_index_id = persistent_output_id.as_ref().map(|id| format!("{id}.idx"));
 
-            catalog
-                .register_index_persistent::<K, K, T, T>(
-                    persistent_index_id.as_deref(),
-                    input.clone(),
-                    &SqlIdentifier::from(&format!("idx{i}")),
-                    &SqlIdentifier::from(&format!("test_output{i}")),
-                    &key_fields.iter().collect::<Vec<_>>(),
-                )
-                .expect("failed to register index");
+            if !index_is_alias {
+                catalog
+                    .register_index_persistent::<K, K, T, T>(
+                        persistent_index_id.as_deref(),
+                        input.clone(),
+                        &SqlIdentifier::from(&format!("idx{i}")),
+                        &SqlIdentifier::from(&format!("test_output{i}")),
+                        &key_fields.iter().map(|id| id.name()).collect::<Vec<_>>(),
+                    )
+                    .expect("failed to register index");
+            }
         }
         Ok(catalog)
     })

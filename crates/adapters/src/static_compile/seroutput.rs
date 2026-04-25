@@ -15,7 +15,7 @@ use apache_avro::types::Value as AvroValue;
 use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
 use dbsp::{
     Batch, BatchReader, OutputHandle, Trace,
-    dynamic::Factory,
+    dynamic::{Data, Factory},
     trace::{BatchReaderFactories, Cursor},
     typed_batch::{DynSpineSnapshot, SpineSnapshot},
 };
@@ -668,6 +668,14 @@ where
         self.cursor.get_key()
     }
 
+    fn val(&self) -> &DynData {
+        self.cursor.val().as_data()
+    }
+
+    fn get_val(&self) -> Option<&DynData> {
+        self.cursor.get_val().map(|v| v.as_data())
+    }
+
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
         self.serializer.serialize(
             &SerializeWithContextWrapper::new(self.key.as_ref().unwrap(), &self.serde_config),
@@ -691,6 +699,21 @@ where
         self.serializer.serialize(
             &SerializeFieldsWithContextWrapper::new(
                 self.key.as_ref().unwrap(),
+                &self.serde_config,
+                fields,
+            ),
+            dst,
+        )
+    }
+
+    fn serialize_val_fields(
+        &mut self,
+        fields: &HashSet<String>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        self.serializer.serialize(
+            &SerializeFieldsWithContextWrapper::new(
+                self.val.as_ref().unwrap(),
                 &self.serde_config,
                 fields,
             ),
@@ -750,6 +773,14 @@ where
         let w = self.weight();
         self.serializer.serialize(
             &SerializeWithContextWrapper::new(&(self.key.as_ref().unwrap(), w), &self.serde_config),
+            dst,
+        )
+    }
+
+    fn serialize_val_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
+        let w = self.weight();
+        self.serializer.serialize(
+            &SerializeWithContextWrapper::new(&(self.val.as_ref().unwrap(), w), &self.serde_config),
             dst,
         )
     }

@@ -80,6 +80,7 @@ impl TestStruct {
             fields: Self::schema(),
             materialized: false,
             properties: BTreeMap::new(),
+            primary_key: None,
         }
     }
 
@@ -163,6 +164,7 @@ impl KeyStruct {
             fields: Self::schema(),
             materialized: false,
             properties: BTreeMap::new(),
+            primary_key: None,
         }
     }
 
@@ -584,6 +586,7 @@ impl TestStruct2 {
             fields: Self::schema(),
             materialized: false,
             properties: BTreeMap::new(),
+            primary_key: None,
         }
     }
 
@@ -914,6 +917,7 @@ impl IcebergTestStruct {
             fields: Self::schema(),
             materialized: false,
             properties: BTreeMap::new(),
+            primary_key: None,
         }
     }
 }
@@ -1252,6 +1256,7 @@ impl DeltaTestStruct {
             fields: Self::schema(),
             materialized: false,
             properties: BTreeMap::new(),
+            primary_key: None,
         }
     }
 }
