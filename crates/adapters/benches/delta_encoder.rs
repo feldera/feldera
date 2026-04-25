@@ -33,6 +33,7 @@ fn create_indexed_writer(threads: usize, table_uri: &str) -> DeltaTableWriter {
         &value_schema,
         Weak::new(),
         false,
+        true,
     )
     .unwrap()
 }

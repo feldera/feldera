@@ -290,18 +290,45 @@ impl Catalog {
     {
         let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
 
+        let Some(primary_key) = relation_schema.primary_key.clone() else {
+            panic!(
+                "Primary key not found for relation {}",
+                relation_schema.name
+            );
+        };
+
         self.register_input_collection_handle(InputCollectionHandle::new(
-            relation_schema,
+            relation_schema.clone(),
             DeMapHandle::new(handle, value_key_func.clone(), update_key_func.clone()),
             stream.local_node_id(),
         ))
         .unwrap();
 
-        // Inputs are also outputs.
-        self.register_output_map_persistent(
-            Self::output_persistent_id(&stream).as_deref(),
-            stream,
-            schema,
+        let key_schema_name =
+            SqlIdentifier::new(format!("{}.key", relation_schema.name.name()), false);
+
+        let circuit = stream.circuit().clone();
+        circuit.region(
+            &format!("create table {}", relation_schema.name.name()),
+            move || {
+                // Inputs are also outputs.
+                let handles = self
+                    .register_output_map_persistent_inner(
+                        Self::output_persistent_id(&stream).as_deref(),
+                        stream,
+                        None,
+                        None,
+                        &relation_schema,
+                        &key_schema_name,
+                        false,
+                        false,
+                        primary_key.as_slice(),
+                    )
+                    .unwrap();
+
+                self.register_output_batch_handles(&relation_schema.name, handles)
+                    .unwrap();
+            },
         );
     }
 
@@ -345,18 +372,45 @@ impl Catalog {
     {
         let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
 
+        let Some(primary_key) = relation_schema.primary_key.clone() else {
+            panic!(
+                "Primary key not found for relation {}",
+                relation_schema.name
+            );
+        };
+
         self.register_input_collection_handle(InputCollectionHandle::new(
-            relation_schema,
+            relation_schema.clone(),
             DeMapHandle::new(handle, value_key_func.clone(), update_key_func.clone()),
             stream.local_node_id(),
         ))
         .unwrap();
 
-        // Inputs are also outputs.
-        self.register_materialized_output_map_persistent(
-            Self::output_persistent_id(&stream).as_deref(),
-            stream,
-            schema,
+        let key_schema_name =
+            SqlIdentifier::new(format!("{}.key", relation_schema.name.name()), false);
+
+        let circuit = stream.circuit().clone();
+        circuit.region(
+            &format!("create materialized table {}", relation_schema.name.name()),
+            move || {
+                // Inputs are also outputs.
+                let handles = self
+                    .register_output_map_persistent_inner(
+                        Self::output_persistent_id(&stream).as_deref(),
+                        stream,
+                        None,
+                        None,
+                        &relation_schema,
+                        &key_schema_name,
+                        true,
+                        false,
+                        primary_key.as_slice(),
+                    )
+                    .unwrap();
+
+                self.register_output_batch_handles(&relation_schema.name, handles)
+                    .unwrap();
+            },
         );
     }
 
@@ -432,10 +486,10 @@ impl Catalog {
             key_schema: None,
             value_schema: schema,
             index_of: None,
+            alias_as_index: None,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerBatchReaderHandle>,
             enable_count,
-            integrate_handle_is_indexed: false,
             integrate_handle: None,
         };
 
@@ -522,7 +576,7 @@ impl Catalog {
             key_schema: None,
             value_schema: schema,
             index_of: None,
-            integrate_handle_is_indexed: false,
+            alias_as_index: None,
             integrate_handle: Some(Arc::new(<SerCollectionHandleImpl<_, D, ()>>::new(
                 integrate_handle,
             )) as Arc<dyn SerBatchReaderHandle>),
@@ -534,17 +588,16 @@ impl Catalog {
         self.register_output_batch_handles(&name, handles).unwrap();
     }
 
-    /// Add an output stream that carries updates to an indexed Z-set that
-    /// behaves like a map (i.e., has exactly one key with weight 1 per value)
-    /// to the catalog.
+    /// Register a materialized view backed by an indexed Z-set.
     ///
-    /// Assumes that the stream was created by the InputUpsert operator, which
-    /// creates an integral of the stream. Reuses the same integral for the output
-    /// handle.
+    /// The same stream can double as an index over this view. If so,
+    /// `alias_as_index` should be set to the index name.
     pub fn register_materialized_output_map<K, KD, V, VD>(
         &mut self,
         stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        alias_as_index: Option<SqlIdentifier>,
         schema: &str,
+        key_fields: &[String],
     ) where
         KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
@@ -564,41 +617,22 @@ impl Catalog {
         K: DBData + Send + Sync + From<KD> + Default,
         V: DBData + Send + Sync + From<VD> + Default,
     {
-        self.register_materialized_output_map_persistent(None, stream, schema)
-    }
-
-    pub fn register_output_map_persistent<K, KD, V, VD>(
-        &mut self,
-        persistent_id: Option<&str>,
-        stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
-        schema: &str,
-    ) where
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
-            + SerializeWithContext<SqlSerdeConfig>
-            + From<K>
-            + Send
-            + Sync
-            + Debug
-            + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
-            + SerializeWithContext<SqlSerdeConfig>
-            + From<V>
-            + Default
-            + Debug
-            + Clone
-            + Send
-            + 'static,
-        K: DBData + Send + Sync + From<KD> + Default,
-        V: DBData + Send + Sync + From<VD> + Default,
-    {
-        self.register_output_map_persistent_inner(persistent_id, stream, schema, false)
+        self.register_materialized_output_map_persistent(
+            None,
+            stream,
+            alias_as_index,
+            schema,
+            key_fields,
+        )
     }
 
     pub fn register_materialized_output_map_persistent<K, KD, V, VD>(
         &mut self,
         persistent_id: Option<&str>,
         stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        alias_as_index: Option<SqlIdentifier>,
         schema: &str,
+        key_fields: &[String],
     ) where
         KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
@@ -618,16 +652,58 @@ impl Catalog {
         K: DBData + Send + Sync + From<KD> + Default,
         V: DBData + Send + Sync + From<VD> + Default,
     {
-        self.register_output_map_persistent_inner(persistent_id, stream, schema, true)
+        let circuit = stream.circuit().clone();
+        let schema: Relation = Self::parse_relation_schema(schema).unwrap();
+
+        circuit.region(
+            &format!("create materialized view {}", schema.name.name()),
+            move || {
+                let handles = self
+                    .register_output_map_persistent_inner(
+                        persistent_id,
+                        stream,
+                        None,
+                        alias_as_index,
+                        &schema,
+                        &SqlIdentifier::new(format!("{}.key", schema.name.name()), false),
+                        true,
+                        true,
+                        key_fields,
+                    )
+                    .unwrap();
+
+                self.register_output_batch_handles(&schema.name, handles)
+                    .unwrap();
+            },
+        );
     }
 
+    /// Register an output indexed Z-set stream with unique value per key.
+    ///
+    /// # Arguments
+    ///
+    /// * `index_of` - This stream is an index of the stream `index_of`.
+    /// * `alias_as_index` - The same stream doubles as an index.
+    /// * `schema` - Value schema.
+    /// * `key_schema_name` - The name of the key schema.
+    /// * `materialized` - Whether to materialize the output.
+    /// * `accumulate` - if `materialized` is true, determines whether `accumulate_integrate_trace`
+    ///   or `integrate_trace` is used to compute the integral.
+    /// * `key_fields` - The subset of value fields to include in the key schema.
+    #[allow(clippy::too_many_arguments)]
     pub fn register_output_map_persistent_inner<K, KD, V, VD>(
         &mut self,
         persistent_id: Option<&str>,
         stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
-        schema: &str,
+        index_of: Option<SqlIdentifier>,
+        alias_as_index: Option<SqlIdentifier>,
+        schema: &Relation,
+        key_schema_name: &SqlIdentifier,
         materialized: bool,
-    ) where
+        accumulate: bool,
+        key_fields: &[String],
+    ) -> Option<OutputCollectionHandles>
+    where
         KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
@@ -646,68 +722,50 @@ impl Catalog {
         K: DBData + Send + Sync + From<KD> + Default,
         V: DBData + Send + Sync + From<VD> + Default,
     {
-        let schema: Relation = Self::parse_relation_schema(schema).unwrap();
         let name = schema.name.clone();
 
-        let (delta_handle, enable_count, integrate_handle) = stream.circuit().region(
-            &format!(
-                "{}indexed output ({})",
-                if materialized { "materialized " } else { "" },
-                name.name()
-            ),
-            || {
-                let stream = stream.try_sharded_version();
-                let stream = self.gather_output_to_host(&name, &stream, false);
+        let stream = stream.try_sharded_version();
+        let stream = self.gather_output_to_host(&name, &stream, false);
 
-                // Create handle for the stream itself.
-                let delta = stream.map(|(_k, v)| v.clone()).set_persistent_id(
-                    stream
-                        .get_persistent_id()
-                        .map(|name| format!("{name}.values"))
-                        .as_deref(),
-                );
+        let (delta_handle, enable_count, delta_gid) =
+            stream.accumulate_output_persistent_with_gid(persistent_id);
+        stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
-                let (delta_handle, enable_count, delta_gid) =
-                    delta.accumulate_output_persistent_with_gid(persistent_id);
-                stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
+        let integrate_handle = if materialized {
+            let (integrate_handle, integral_gid) = if accumulate {
+                // `integrate_trace` below should return the existing integral created by the InputUpsert operator.
+                stream.accumulate_integrate_trace()
+            } else {
+                stream.integrate_trace()
+            }
+            .apply(|s| TypedBatch::<K, V, ZWeight, _>::new(s.inner().ro_snapshot()))
+            .output_persistent_with_gid(
+                persistent_id
+                    .map(|id| format!("{id}.output_integral"))
+                    .as_deref(),
+            );
 
-                let integrate_handle = if materialized {
-                    // `integrate_trace` below should return the existing integral created by the InputUpsert operator.
-                    let (integrate_handle, integral_gid) = stream
-                        .integrate_trace()
-                        .apply(|s| TypedBatch::<K, V, ZWeight, _>::new(s.inner().ro_snapshot()))
-                        .output_persistent_with_gid(
-                            persistent_id
-                                .map(|id| format!("{id}.output_integral"))
-                                .as_deref(),
-                        );
-                    stream
-                        .circuit()
-                        .set_mir_node_id(&integral_gid, persistent_id);
-                    Some(
-                        Arc::new(<SerCollectionHandleImpl<_, KD, VD>>::new(integrate_handle))
-                            as Arc<dyn SerBatchReaderHandle>,
-                    )
-                } else {
-                    None
-                };
-
-                (delta_handle, enable_count, integrate_handle)
-            },
-        );
-
-        let handles = OutputCollectionHandles {
-            key_schema: None,
-            value_schema: schema,
-            index_of: None,
-            delta_handle: Box::new(<SerCollectionHandleImpl<_, VD, ()>>::new(delta_handle))
-                as Box<dyn SerBatchReaderHandle>,
-            enable_count,
-            integrate_handle_is_indexed: true,
-            integrate_handle,
+            stream
+                .circuit()
+                .set_mir_node_id(&integral_gid, persistent_id);
+            Some(
+                Arc::new(<SerCollectionHandleImpl<_, KD, VD>>::new(integrate_handle))
+                    as Arc<dyn SerBatchReaderHandle>,
+            )
+        } else {
+            None
         };
 
-        self.register_output_batch_handles(&name, handles).unwrap();
+        Some(OutputCollectionHandles {
+            key_schema: Some(index_schema(key_schema_name, schema, key_fields)),
+            value_schema: schema.clone(),
+            index_of,
+            alias_as_index,
+            delta_handle: Box::new(<SerCollectionHandleImpl<_, KD, VD>>::new(delta_handle))
+                as Box<dyn SerBatchReaderHandle>,
+            enable_count,
+            integrate_handle,
+        })
     }
 
     /// Register an index associated with output stream `view_name`.
@@ -719,18 +777,22 @@ impl Catalog {
         stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
         index_name: &SqlIdentifier,
         view_name: &SqlIdentifier,
-        key_fields: &[&SqlIdentifier],
+        key_fields: &[String],
     ) -> Option<()>
     where
         KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
+            + Sync
             + Debug
             + 'static,
         VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
+            + Default
+            + Clone
+            + Sync
             + Send
             + Debug
             + 'static,
@@ -747,19 +809,23 @@ impl Catalog {
         stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
         index_name: &SqlIdentifier,
         view_name: &SqlIdentifier,
-        key_fields: &[&SqlIdentifier],
+        key_fields: &[String],
     ) -> Option<()>
     where
         KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
+            + Sync
             + Debug
             + 'static,
         VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
+            + Default
+            + Clone
             + Send
+            + Sync
             + Debug
             + 'static,
         K: DBData + Send + Sync + From<KD> + Default,
@@ -768,31 +834,119 @@ impl Catalog {
         if self.output_handles(index_name).is_some() {
             return None;
         }
+        let value_schema = self.output_handles(view_name)?.value_schema.clone();
 
-        let stream = self.gather_output_to_host(index_name, &stream, false);
-        let view_handles = self.output_handles(view_name)?;
-
-        let (stream_handle, enable_count, stream_gid) =
-            stream.accumulate_output_persistent_with_gid(persistent_id);
-        stream.circuit().set_mir_node_id(&stream_gid, persistent_id);
-
-        let handles = OutputCollectionHandles {
-            key_schema: Some(index_schema(
+        let circuit = stream.circuit().clone();
+        circuit.region(&format!("create index {}", index_name.name()), move || {
+            let handles = self.register_output_map_persistent_inner(
+                persistent_id,
+                stream,
+                Some(view_name.clone()),
+                None,
+                &value_schema,
                 index_name,
-                &view_handles.value_schema,
+                false,
+                false,
                 key_fields,
-            )),
-            value_schema: view_handles.value_schema.clone(),
-            index_of: Some(view_name.clone()),
-            delta_handle: Box::new(<SerCollectionHandleImpl<_, KD, VD>>::new(stream_handle))
-                as Box<dyn SerBatchReaderHandle>,
-            enable_count,
-            integrate_handle_is_indexed: false,
-            integrate_handle: None,
-        };
+            )?;
 
-        self.register_output_batch_handles(index_name, handles)
-            .unwrap();
+            self.register_output_batch_handles(index_name, handles)
+                .unwrap();
+            Some(())
+        })?;
+
+        Some(())
+    }
+
+    /// Register a materialized index associated with output stream `view_name`.
+    ///
+    /// The index stream should contain the same updates as the primary
+    /// stream, but as an indexed Z-set.
+    pub fn register_materialized_index<K, KD, V, VD>(
+        &mut self,
+        stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        index_name: &SqlIdentifier,
+        view_name: &SqlIdentifier,
+        key_fields: &[String],
+    ) -> Option<()>
+    where
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<K>
+            + Send
+            + Sync
+            + Debug
+            + 'static,
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<V>
+            + Default
+            + Clone
+            + Sync
+            + Send
+            + Debug
+            + 'static,
+        K: DBData + Send + Sync + From<KD> + Default,
+        V: DBData + Send + Sync + From<VD> + Default,
+    {
+        self.register_materialized_index_persistent(None, stream, index_name, view_name, key_fields)
+    }
+
+    /// Like `register_index`, but also assigns persistent id to the index.
+    pub fn register_materialized_index_persistent<K, KD, V, VD>(
+        &mut self,
+        persistent_id: Option<&str>,
+        stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        index_name: &SqlIdentifier,
+        view_name: &SqlIdentifier,
+        key_fields: &[String],
+    ) -> Option<()>
+    where
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<K>
+            + Send
+            + Sync
+            + Debug
+            + 'static,
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<V>
+            + Default
+            + Clone
+            + Send
+            + Sync
+            + Debug
+            + 'static,
+        K: DBData + Send + Sync + From<KD> + Default,
+        V: DBData + Send + Sync + From<VD> + Default,
+    {
+        if self.output_handles(index_name).is_some() {
+            return None;
+        }
+        let value_schema = self.output_handles(view_name)?.value_schema.clone();
+
+        let circuit = stream.circuit().clone();
+        circuit.region(
+            &format!("create materialized index {}", index_name.name()),
+            move || {
+                let handles = self.register_output_map_persistent_inner(
+                    persistent_id,
+                    stream,
+                    Some(view_name.clone()),
+                    None,
+                    &value_schema,
+                    index_name,
+                    true,
+                    true,
+                    key_fields,
+                )?;
+
+                self.register_output_batch_handles(index_name, handles)
+                    .unwrap();
+                Some(())
+            },
+        )?;
 
         Some(())
     }
@@ -801,14 +955,14 @@ impl Catalog {
 fn index_schema(
     index_name: &SqlIdentifier,
     base_schema: &Relation,
-    key_fields: &[&SqlIdentifier],
+    key_fields: &[String],
 ) -> Relation {
     let mut fields = Vec::new();
     for field in key_fields.iter() {
         let base_field = base_schema
             .fields
             .iter()
-            .find(|f| f.name == **field)
+            .find(|f| f.name.name() == *field)
             .unwrap_or_else(|| panic!("column {field} not found in {}", base_schema.name))
             .clone();
         fields.push(base_field);
@@ -833,9 +987,12 @@ mod test {
         let mut result = Vec::new();
 
         while cursor.key_valid() {
-            write!(&mut result, "{}: ", cursor.weight()).unwrap();
-            cursor.serialize_key(&mut result).unwrap();
-            result.push(b'\n');
+            while cursor.val_valid() {
+                write!(&mut result, "{}: ", cursor.weight()).unwrap();
+                cursor.serialize_val(&mut result).unwrap();
+                result.push(b'\n');
+                cursor.step_val();
+            }
             cursor.step_key();
         }
 
@@ -854,7 +1011,15 @@ mod test {
                 hinput,
                 |test_struct| test_struct.id,
                 |test_struct| test_struct.id,
-                r#"{"name": "input_MAP", "case_sensitive": false, "fields":[]}"#
+                r#"{
+                "name": "input_MAP",
+                "case_sensitive": false,
+                "fields": [
+                    {"name":"id","case_sensitive":false,"columntype":{"nullable":false,"type":"BIGINT"},"unused":false},
+                    {"name":"b","case_sensitive":false,"columntype":{"nullable":true,"type":"BOOLEAN"},"unused":false},
+                    {"name":"i","case_sensitive":false,"columntype":{"nullable":true,"type":"BIGINT"},"unused":false},
+                    {"name":"s","case_sensitive":false,"columntype":{"nullable":true,"precision":-1,"type":"VARCHAR"},"unused":false}],
+                "primary_key": ["id"]}"#
             );
 
             Ok(catalog)

@@ -8,7 +8,7 @@ use actix_web::HttpRequest;
 use anyhow::{Result as AnyResult, bail};
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
-use feldera_adapterlib::ConnectorMetadata;
+use feldera_adapterlib::{ConnectorMetadata, catalog::SerCursorFlattened};
 use feldera_sqllib::Variant;
 use feldera_types::{
     config::ConnectorConfig,
@@ -257,13 +257,8 @@ impl OutputFormat for CsvOutputFormat {
         key_schema: &Option<Relation>,
         _value_schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
+        _is_index: bool,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
-        if key_schema.is_some() {
-            return Err(ControllerError::invalid_encoder_configuration(
-                endpoint_name,
-                "CSV encoder cannot be attached to an index",
-            ));
-        }
         let format_config = &config.format.as_ref().unwrap().config;
         let format_config = if format_config.is_null() {
             &json!({})
@@ -288,7 +283,11 @@ impl OutputFormat for CsvOutputFormat {
             ));
         }
 
-        Ok(Box::new(CsvEncoder::new(consumer, csv_config)))
+        Ok(Box::new(CsvEncoder::new(
+            consumer,
+            csv_config,
+            key_schema.is_some(),
+        )))
     }
 }
 
@@ -299,16 +298,23 @@ struct CsvEncoder {
     config: CsvEncoderConfig,
     buffer: Vec<u8>,
     max_buffer_size: usize,
+    /// Input stream is an indexed Z-set.
+    input_is_indexed: bool,
 }
 
 impl CsvEncoder {
-    fn new(output_consumer: Box<dyn OutputConsumer>, config: CsvEncoderConfig) -> Self {
+    fn new(
+        output_consumer: Box<dyn OutputConsumer>,
+        config: CsvEncoderConfig,
+        input_is_index: bool,
+    ) -> Self {
         let max_buffer_size = output_consumer.max_buffer_size_bytes();
         Self {
             output_consumer,
             config,
             buffer: Vec::new(),
             max_buffer_size,
+            input_is_indexed: input_is_index,
         }
     }
 }
@@ -323,11 +329,19 @@ impl Encoder for CsvEncoder {
         //let mut writer = self.builder.from_writer(buffer);
         let mut num_records = 0;
 
-        let mut cursor =
+        let mut cursor = if self.input_is_indexed {
+            CursorWithPolarity::new(Box::new(SerCursorFlattened::new(batch.cursor(
+                RecordFormat::Csv(CsvParserConfig {
+                    delimiter: self.config.delimiter,
+                    ..Default::default()
+                }),
+            )?)))
+        } else {
             CursorWithPolarity::new(batch.cursor(RecordFormat::Csv(CsvParserConfig {
                 delimiter: self.config.delimiter,
                 ..Default::default()
-            }))?);
+            }))?)
+        };
 
         while cursor.key_valid() {
             if !cursor.val_valid() {

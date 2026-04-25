@@ -28,6 +28,7 @@ fn create_indexed_encoder(threads: usize) -> AvroEncoder {
         Box::new(consumer),
         config,
         None,
+        true,
     )
     .unwrap()
 }

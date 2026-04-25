@@ -62,6 +62,7 @@ impl BenchTestStruct {
             ],
             materialized: false,
             properties: BTreeMap::new(),
+            primary_key: None,
         }
     }
 }
@@ -101,6 +102,7 @@ impl BenchKeyStruct {
             fields: vec![Field::new("id".into(), ColumnType::bigint(false))],
             materialized: false,
             properties: BTreeMap::new(),
+            primary_key: None,
         }
     }
 }
