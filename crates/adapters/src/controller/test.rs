@@ -2310,6 +2310,7 @@ fn test_external_controller_status_serialization() {
         transaction_info: TransactionInfo::default(),
         memory_pressure: MemoryPressure::default(),
         memory_pressure_epoch: 0,
+        include_connector_errors: false,
     });
     external_status.global_metrics.rss_bytes = 1024 * 1024 * 512; // 512 MB
     external_status.global_metrics.cpu_msecs = 45_000;

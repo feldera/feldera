@@ -19,6 +19,15 @@ import TabItem from '@theme/TabItem';
           It does not get get cleared when the pipeline stops, only when the storage is cleared.
         - (Fix) Dedicated error `BootstrapPolicyImmutableUnlessStopped` for repeated `/start` of a
           pipeline but with a different bootstrap policy.
+        - (New) Recent per-endpoint connector error messages are now persisted in the pipeline
+          checkpoint and restored on resume, so debugging information survives a restart. The
+          `/stats` endpoint gains an opt-in `?include_connector_errors=true` selector that inlines
+          these messages alongside the counters; the default response is unchanged so hot pollers
+          stay lightweight. The support bundle collector uses the selector automatically.
+        - (Checkpoint format) Backwards-compatible extension: `CheckpointInputEndpointMetrics` and
+          `CheckpointOutputEndpointMetrics` gain optional `parse_errors` / `transport_errors` /
+          `encode_errors` fields. Old checkpoints load as empty lists; checkpoints with no errors
+          still serialize without the new keys, so unaffected files stay byte-identical.
 
         Functions `RLIKE` and `REPLACE_REGEXP` will crash for invalid
         regular expressions.  Previously they treated such as expressions

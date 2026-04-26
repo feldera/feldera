@@ -820,7 +820,11 @@ impl Controller {
 
     /// Returns the current controller status in the form used by the external
     /// API.
-    pub fn api_status(&self) -> ExternalControllerStatus {
+    ///
+    /// When `include_connector_errors` is `true`, the response carries the
+    /// recent error messages stored on each endpoint. Pollers should pass
+    /// `false`; the selector is intended for the support-bundle collector.
+    pub fn api_status(&self, include_connector_errors: bool) -> ExternalControllerStatus {
         let runtime = self.inner.runtime.upgrade();
         let memory_pressure = runtime
             .as_ref()
@@ -842,6 +846,7 @@ impl Controller {
             transaction_info: self.inner.transaction_info.lock().unwrap().clone(),
             memory_pressure,
             memory_pressure_epoch,
+            include_connector_errors,
         })
     }
 
@@ -7521,7 +7526,7 @@ impl RunningCheckpoint {
             .map(|endpoint| {
                 (
                     endpoint.endpoint_name.clone(),
-                    CheckpointInputEndpointMetrics::from(&endpoint.metrics),
+                    CheckpointInputEndpointMetrics::from_endpoint_status(endpoint),
                 )
             })
             .collect();
@@ -7533,7 +7538,7 @@ impl RunningCheckpoint {
             .map(|endpoint| {
                 (
                     endpoint.endpoint_name.clone(),
-                    CheckpointOutputEndpointMetrics::from(&endpoint.metrics),
+                    CheckpointOutputEndpointMetrics::from_endpoint_status(endpoint),
                 )
             })
             .collect();
