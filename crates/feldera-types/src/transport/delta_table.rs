@@ -146,6 +146,10 @@ fn default_num_parsers() -> u32 {
     4
 }
 
+fn default_snapshot_round_robin() -> bool {
+    true
+}
+
 /// Delta table transaction mode.
 ///
 /// Determines how the connector breaks up its input into transactions.
@@ -251,6 +255,18 @@ pub struct DeltaTableReaderConfig {
     /// a guide to optimize your schema.
     #[serde(default)]
     pub skip_unused_columns: bool,
+
+    /// Experimental snapshot reader that reads active Parquet files directly in round-robin order.
+    ///
+    /// When enabled, the initial snapshot bypasses the DataFusion Delta scan and opens all active
+    /// Parquet files directly, reading one record batch from each file before advancing to the next
+    /// record batch in each file. This is intended for benchmarking physically sorted files where
+    /// consecutive batches from each file contain narrow key ranges.
+    ///
+    /// Limitations: this mode currently supports only unpartitioned snapshots without `filter` or
+    /// `snapshot_filter`.
+    #[serde(default = "default_snapshot_round_robin")]
+    pub snapshot_round_robin: bool,
 
     /// Optional snapshot filter.
     ///
@@ -402,7 +418,7 @@ fn test_delta_reader_config_serde() {
     let config = serde_json::from_str::<DeltaTableReaderConfig>(config_str).unwrap();
 
     let serialized_config = serde_json::to_string(&config).unwrap();
-    let expected = r#"{"uri":"protocol:/path/to/somewhere","mode":"follow","transaction_mode":"none","timestamp_column":"ts","filter":null,"skip_unused_columns":false,"snapshot_filter":"ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'","version":null,"datetime":"2010-12-31 00:00:00Z","end_version":null,"cdc_delete_filter":null,"cdc_order_by":null,"num_parsers":4,"max_concurrent_readers":null,"customoption1":"val1","customoption2":"val2","verbose":0}"#;
+    let expected = r#"{"uri":"protocol:/path/to/somewhere","mode":"follow","transaction_mode":"none","timestamp_column":"ts","filter":null,"skip_unused_columns":false,"snapshot_round_robin":true,"snapshot_filter":"ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'","version":null,"datetime":"2010-12-31 00:00:00Z","end_version":null,"cdc_delete_filter":null,"cdc_order_by":null,"num_parsers":4,"max_concurrent_readers":null,"customoption1":"val1","customoption2":"val2","verbose":0}"#;
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&serialized_config).unwrap(),
         serde_json::from_str::<serde_json::Value>(expected).unwrap()

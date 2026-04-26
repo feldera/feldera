@@ -24,7 +24,7 @@ use deltalake::datafusion::prelude::SessionContext;
 use deltalake::kernel::Action;
 use deltalake::logstore::{self, IORuntime};
 use deltalake::table::builder::ensure_table_uri;
-use deltalake::{DeltaTable, DeltaTableBuilder, datafusion};
+use deltalake::{DeltaTable, DeltaTableBuilder, PartitionFilter, datafusion};
 use feldera_adapterlib::format::{ParseError, StagedInputBuffer};
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::transport::{InputQueueEntry, Resume, Watermark, parse_resume_info};
@@ -37,7 +37,9 @@ use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::delta_table::{DeltaTableReaderConfig, DeltaTableTransactionMode};
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt};
+use parquet::arrow::async_reader::ParquetObjectReader;
+use parquet::arrow::{ParquetRecordBatchStreamBuilder, ProjectionMask};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -45,6 +47,7 @@ use std::cmp::min;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::Display;
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -82,6 +85,8 @@ const DEFAULT_OBJECT_STORE_TIMEOUT: &str = "120s";
 
 const REPORT_ERROR: &str =
     "please report this error to developers (https://github.com/feldera/feldera/issues)";
+
+const ROUND_ROBIN_PARQUET_PREFETCH_BATCHES: usize = 1;
 
 /// Semaphore used to control the number of concurrent reads to the object store
 /// as a workaround for https://github.com/apache/arrow-rs-object-store/issues/14.
@@ -519,6 +524,19 @@ struct DeltaTableMetrics {
     snapshot_records_total: AtomicU64,
 }
 
+type RoundRobinParquetStream =
+    Pin<Box<dyn Stream<Item = parquet::errors::Result<RecordBatch>> + Send>>;
+
+struct RoundRobinSnapshotFile {
+    path: String,
+    projection: Vec<usize>,
+    stream: RoundRobinParquetStream,
+}
+
+struct RoundRobinSnapshotReader {
+    receiver: mpsc::Receiver<Result<RecordBatch, AnyError>>,
+}
+
 impl DeltaTableMetrics {
     fn new() -> Self {
         Self {
@@ -849,6 +867,339 @@ impl DeltaTableInputEndpointInner {
         Ok(record_count)
     }
 
+    /// Load the initial snapshot by polling active Parquet files in round-robin order.
+    ///
+    /// This is an experimental path for benchmarking physically sorted files. It intentionally
+    /// bypasses DataFusion's Delta scan, so it only supports simple unfiltered, unpartitioned
+    /// snapshots.
+    async fn read_round_robin_snapshot(
+        &self,
+        table: &DeltaTable,
+        input_stream: &mut dyn ArrowStream,
+        receiver: &mut Receiver<PipelineState>,
+    ) -> AnyResult<usize> {
+        self.validate_round_robin_snapshot(table)?;
+
+        // Use the time when we started reading the snapshot as the ingestion timestamp for the snapshot.
+        let timestamp = Utc::now();
+
+        let total_records = self
+            .read_round_robin_snapshot_inner(table, input_stream, receiver)
+            .await?;
+        self.metrics
+            .snapshot_records_total
+            .fetch_add(total_records as u64, Ordering::Relaxed);
+
+        // Empty buffer to indicate checkpointable state.
+        self.queue.push_entry(
+            InputQueueEntry::new_with_aux(
+                timestamp,
+                QueueEntry::ResumeInfo(Some(DeltaResumeInfo::follow_mode(
+                    // We verified that the table version is not None in the open_table method.
+                    table.version().unwrap(),
+                    !self.config.follow(),
+                ))),
+            )
+            // If we started a transaction while processing the snapshot, commit it now.
+            .with_commit_transaction(true),
+            Vec::new(),
+        );
+
+        info!(
+            "delta_table {}: round-robin snapshot load completed (records: {}, version: {})",
+            &self.endpoint_name,
+            total_records,
+            table.version().unwrap()
+        );
+        Ok(total_records)
+    }
+
+    fn validate_round_robin_snapshot(&self, table: &DeltaTable) -> AnyResult<()> {
+        if let Some(filter) = self.effective_snapshot_filter() {
+            bail!(
+                "'snapshot_round_robin' does not support 'filter' or 'snapshot_filter' yet; configured effective snapshot filter: {filter}"
+            );
+        }
+
+        if let Some(DeltaResumeInfo {
+            snapshot_timestamp: Some(snapshot_timestamp),
+            ..
+        }) = &*self.last_resume_status.lock().unwrap()
+        {
+            bail!(
+                "'snapshot_round_robin' cannot resume from timestamp checkpoint '{snapshot_timestamp}'; restart from a clean checkpoint or use the default timestamp-range snapshot reader"
+            );
+        }
+
+        let partition_columns = table.snapshot()?.metadata().partition_columns();
+        if !partition_columns.is_empty() {
+            bail!(
+                "'snapshot_round_robin' does not support partitioned Delta tables yet; partition columns: {}",
+                partition_columns.join(", ")
+            );
+        }
+
+        Ok(())
+    }
+
+    async fn read_round_robin_snapshot_inner(
+        &self,
+        table: &DeltaTable,
+        input_stream: &mut dyn ArrowStream,
+        receiver: &mut Receiver<PipelineState>,
+    ) -> Result<usize, AnyError> {
+        let transaction = self.allocate_snapshot_transaction_label();
+        let max_retries = self.config.max_retries();
+        let mut retry_count = 0u32;
+
+        loop {
+            match self
+                .read_round_robin_snapshot_once(table, input_stream, receiver, &transaction)
+                .await
+            {
+                Ok(total_records) => {
+                    self.consumer
+                        .update_connector_health(ConnectorHealth::healthy());
+                    return Ok(total_records);
+                }
+                Err(e) => {
+                    retry_count += 1;
+                    if retry_count - 1 == max_retries {
+                        let message = format!(
+                            "error retrieving round-robin initial snapshot after {retry_count} attempts: {e}"
+                        );
+                        self.consumer
+                            .update_connector_health(ConnectorHealth::unhealthy(&message));
+                        return Err(anyhow!(message));
+                    }
+
+                    let backoff_delay = calculate_backoff_delay(retry_count - 1);
+                    let message = format!(
+                        "error retrieving round-robin initial snapshot after {retry_count} attempts: {e}; retrying in {backoff_delay:?}"
+                    );
+                    self.consumer
+                        .update_connector_health(ConnectorHealth::unhealthy(&message));
+                    warn!("delta_table {}: {message}", &self.endpoint_name);
+                    sleep(backoff_delay).await;
+                }
+            }
+        }
+    }
+
+    async fn read_round_robin_snapshot_once(
+        &self,
+        table: &DeltaTable,
+        input_stream: &mut dyn ArrowStream,
+        receiver: &mut Receiver<PipelineState>,
+        transaction: &Option<Option<String>>,
+    ) -> Result<usize, AnyError> {
+        wait_running(receiver).await;
+
+        // Limit the number of connectors simultaneously reading from Delta Lake.
+        let _token = DELTA_READER_SEMAPHORE.acquire().await.unwrap();
+
+        let columns = self.used_columns(table);
+        let files = self
+            .build_round_robin_snapshot_files(table, &columns)
+            .await?;
+        let num_files = files.len();
+        let mut readers = Self::spawn_round_robin_snapshot_readers(files);
+
+        info!(
+            "delta_table {}: reading initial snapshot directly from {} Parquet files in round-robin order",
+            &self.endpoint_name, num_files
+        );
+
+        self.consumer
+            .update_connector_health(ConnectorHealth::healthy());
+
+        let mut num_batches = 0usize;
+        let mut total_records = 0usize;
+
+        let queue = self.queue.clone();
+        let transaction = transaction.clone();
+        let num_parsers = self.config.num_parsers as usize;
+
+        let job_queue = JobQueue::<
+            (RecordBatch, DateTime<Utc>),
+            (Option<StagedInputBuffer>, Vec<ParseError>, DateTime<Utc>),
+        >::new(
+            num_parsers,
+            move || {
+                let input_stream = input_stream.fork();
+
+                Box::new(move |(batch, timestamp)| {
+                    Box::pin({
+                        let mut input_stream = input_stream.fork();
+
+                        async move {
+                            let cdc_delete_filter: Option<Arc<dyn PhysicalExpr>> = None;
+                            let (parsed_buffer, errors) = Self::parse_record_batch(
+                                batch,
+                                true,
+                                &cdc_delete_filter,
+                                input_stream.as_mut(),
+                            )
+                            .await;
+                            let staged_buffer = parsed_buffer.map(|buffer| {
+                                let len = buffer.len();
+                                StagedInputBuffer::new(input_stream.stage(vec![buffer]), len)
+                            });
+                            (staged_buffer, errors, timestamp)
+                        }
+                    })
+                })
+            },
+            move |(buffer, errors, timestamp)| {
+                queue.push_entry(
+                    InputQueueEntry::new_with_aux(timestamp, QueueEntry::ResumeInfo(None))
+                        .with_buffer(buffer)
+                        .with_start_transaction(transaction.clone()),
+                    errors,
+                )
+            },
+        );
+
+        let mut timestamp = Utc::now();
+        let mut file_index = 0usize;
+
+        while !readers.is_empty() {
+            wait_running(receiver).await;
+
+            if file_index >= readers.len() {
+                file_index = 0;
+            }
+
+            let reader = &mut readers[file_index];
+            let batch = match reader.receiver.recv().await {
+                Some(Ok(batch)) => batch,
+                Some(Err(e)) => {
+                    drop(job_queue);
+                    self.queue.push_entry(
+                        InputQueueEntry::new_with_aux(timestamp, QueueEntry::Rollback)
+                            .with_commit_transaction(true),
+                        Vec::new(),
+                    );
+                    return Err(anyhow!("error retrieving batch {num_batches}: {e}"));
+                }
+                None => {
+                    readers.remove(file_index);
+                    continue;
+                }
+            };
+
+            num_batches += 1;
+            total_records += batch.num_rows();
+
+            job_queue.push_job((batch, timestamp)).await;
+            timestamp = Utc::now();
+            file_index += 1;
+        }
+
+        job_queue.flush().await;
+        Ok(total_records)
+    }
+
+    fn spawn_round_robin_snapshot_readers(
+        files: Vec<RoundRobinSnapshotFile>,
+    ) -> Vec<RoundRobinSnapshotReader> {
+        files
+            .into_iter()
+            .map(|file| {
+                let (sender, receiver) = mpsc::channel::<Result<RecordBatch, AnyError>>(
+                    ROUND_ROBIN_PARQUET_PREFETCH_BATCHES,
+                );
+                let path = file.path;
+                let projection = file.projection;
+                let mut stream = file.stream;
+
+                TOKIO.spawn(async move {
+                    while let Some(batch_result) = stream.next().await {
+                        let batch_result = match batch_result {
+                            Ok(batch) => batch.project(&projection).map_err(|e| {
+                                anyhow!("error projecting batch from Parquet file '{path}': {e}")
+                            }),
+                            Err(e) => Err(anyhow!(
+                                "error reading batch from Parquet file '{path}': {e}"
+                            )),
+                        };
+
+                        let is_error = batch_result.is_err();
+                        if sender.send(batch_result).await.is_err() || is_error {
+                            break;
+                        }
+                    }
+                });
+
+                RoundRobinSnapshotReader { receiver }
+            })
+            .collect()
+    }
+
+    async fn build_round_robin_snapshot_files(
+        &self,
+        table: &DeltaTable,
+        columns: &[String],
+    ) -> Result<Vec<RoundRobinSnapshotFile>, AnyError> {
+        let object_store = table.log_store().object_store(None);
+        let partition_filters: &[PartitionFilter] = &[];
+        let mut paths = table.get_files_by_partitions(partition_filters).await?;
+        paths.sort_by_cached_key(|path| path.to_string());
+        let batch_size = self.datafusion.state().config().batch_size();
+        let mut files = Vec::with_capacity(paths.len());
+
+        for path in paths {
+            let path_string = path.to_string();
+            let reader = ParquetObjectReader::new(object_store.clone(), path);
+            let builder = ParquetRecordBatchStreamBuilder::new(reader)
+                .await
+                .map_err(|e| anyhow!("error opening Parquet file '{path_string}': {e}"))?;
+
+            let schema = builder.schema();
+            let parquet_projection = columns
+                .iter()
+                .map(|column| {
+                    schema.index_of(column).map_err(|e| {
+                        anyhow!(
+                            "column '{column}' was not found in Parquet file '{path_string}': {e}"
+                        )
+                    })
+                })
+                .collect::<AnyResult<Vec<_>>>()?;
+            let mask = ProjectionMask::roots(
+                builder.metadata().file_metadata().schema_descr(),
+                parquet_projection,
+            );
+
+            let stream = builder
+                .with_batch_size(batch_size)
+                .with_projection(mask)
+                .build()
+                .map_err(|e| {
+                    anyhow!("error building Parquet reader for file '{path_string}': {e}")
+                })?;
+
+            let projection = columns
+                .iter()
+                .map(|column| {
+                    stream.schema().index_of(column).map_err(|e| {
+                        anyhow!(
+                            "projected column '{column}' was not found in Parquet file '{path_string}': {e}"
+                        )
+                    })
+                })
+                .collect::<AnyResult<Vec<_>>>()?;
+
+            files.push(RoundRobinSnapshotFile {
+                path: path_string,
+                projection,
+                stream: Box::pin(stream),
+            });
+        }
+
+        Ok(files)
+    }
+
     /// Load the initial snapshot by issuing a sequence of queries for monotonically
     /// increasing timestamp ranges.
     /// Returns the total number of records processed.
@@ -996,7 +1347,6 @@ impl DeltaTableInputEndpointInner {
             if let Some(filter) = &self.effective_snapshot_filter() {
                 range_query = format!("{range_query} and {filter}");
             }
-
             let range_record_count = self
                 .execute_snapshot_query(
                     &range_query,
@@ -1145,20 +1495,26 @@ impl DeltaTableInputEndpointInner {
                 })
         );
 
-        let snapshot_record_count = if snapshot_incomplete
-            && self.config.snapshot()
-            && self.config.timestamp_column.is_none()
-        {
-            // Read snapshot chunk-by-chunk.
-            self.read_unordered_snapshot(&table, input_stream.as_mut(), &mut receiver)
-                .await
-        } else if snapshot_incomplete && self.config.snapshot() {
-            // Read the entire snapshot in one query.
-            self.read_ordered_snapshot(&table, input_stream.as_mut(), &mut receiver)
-                .await
-        } else {
-            Ok(0)
-        };
+        let snapshot_record_count =
+            if snapshot_incomplete && self.config.snapshot() && self.config.snapshot_round_robin {
+                // Read the snapshot by opening active Parquet files directly and polling them
+                // in round-robin order. This is an experimental path for physically sorted files.
+                self.read_round_robin_snapshot(&table, input_stream.as_mut(), &mut receiver)
+                    .await
+            } else if snapshot_incomplete
+                && self.config.snapshot()
+                && self.config.timestamp_column.is_none()
+            {
+                // Read snapshot chunk-by-chunk.
+                self.read_unordered_snapshot(&table, input_stream.as_mut(), &mut receiver)
+                    .await
+            } else if snapshot_incomplete && self.config.snapshot() {
+                // Read the entire snapshot in one query.
+                self.read_ordered_snapshot(&table, input_stream.as_mut(), &mut receiver)
+                    .await
+            } else {
+                Ok(0)
+            };
 
         let snapshot_record_count = match snapshot_record_count {
             Ok(snapshot_record_count) => snapshot_record_count,
