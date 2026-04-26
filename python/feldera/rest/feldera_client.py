@@ -1466,3 +1466,12 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
     def get_checkpoints(self, pipeline_name: str):
         return self.http.get(path=f"/pipelines/{pipeline_name}/checkpoints")
+
+    def track(self, pipeline_name: str) -> Generator[dict, None, None]:
+        """
+        Tracks pipeline changes and returns a ``Generator`` of dictionaries containing top-level field updates.
+        """
+        for line in self.http.get(
+            path=f"/pipelines/{pipeline_name}/track", stream=True
+        ).iter_lines(chunk_size=1024):
+            yield json.loads(line.decode("utf-8"))

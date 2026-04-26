@@ -12,6 +12,8 @@ use crate::db::types::monitor::{
 };
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
+    PipelineTrackingVersion, TrackPipelineCompilation, TrackPipelineDeploymentBase,
+    TrackPipelineDeploymentOperational, TrackPipelineUserControlled,
 };
 use crate::db::types::program::{
     ProgramConfig, ProgramInfo, ProgramStatus, RustCompilationInfo, SqlCompilationInfo,
@@ -272,6 +274,103 @@ impl Storage for StoragePostgres {
         };
         txn.commit().await?;
         Ok(pipeline_result)
+    }
+
+    async fn get_pipeline_by_id_tracked(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        prev_tracking_version: Option<PipelineTrackingVersion>,
+    ) -> Result<
+        (
+            PipelineTrackingVersion,
+            Option<TrackPipelineUserControlled>,
+            Option<TrackPipelineCompilation>,
+            Option<TrackPipelineDeploymentBase>,
+            Option<TrackPipelineDeploymentOperational>,
+        ),
+        DBError,
+    > {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let tracking_version =
+            operations::pipeline::get_pipeline_track_version(&txn, tenant_id, pipeline_id).await?;
+
+        // User-controlled update
+        let track_user_controlled = if prev_tracking_version
+            .as_ref()
+            .is_none_or(|v| v.version != tracking_version.version)
+        {
+            Some(
+                operations::pipeline::get_pipeline_track_update_user_controlled(
+                    &txn,
+                    tenant_id,
+                    pipeline_id,
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
+
+        // Compilation update
+        let track_compilation = if prev_tracking_version.as_ref().is_none_or(|v| {
+            v.track_compilation_version != tracking_version.track_compilation_version
+        }) {
+            Some(
+                operations::pipeline::get_pipeline_track_update_compilation(
+                    &txn,
+                    tenant_id,
+                    pipeline_id,
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
+
+        // Base deployment update
+        let track_deployment_base = if prev_tracking_version.as_ref().is_none_or(|v| {
+            v.track_deployment_base_version != tracking_version.track_deployment_base_version
+        }) {
+            Some(
+                operations::pipeline::get_pipeline_track_update_deployment_base(
+                    &txn,
+                    tenant_id,
+                    pipeline_id,
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
+
+        // Operational deployment update
+        let track_deployment_operational = if prev_tracking_version.as_ref().is_none_or(|v| {
+            v.track_deployment_operational_version
+                != tracking_version.track_deployment_operational_version
+        }) {
+            Some(
+                operations::pipeline::get_pipeline_track_update_deployment_operational(
+                    &txn,
+                    tenant_id,
+                    pipeline_id,
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
+
+        // Finished
+        txn.commit().await?;
+        Ok((
+            tracking_version,
+            track_user_controlled,
+            track_compilation,
+            track_deployment_base,
+            track_deployment_operational,
+        ))
     }
 
     async fn new_pipeline(

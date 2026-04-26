@@ -2,7 +2,8 @@ use crate::db::error::DBError;
 use crate::db::types::pipeline::{
     parse_string_as_bootstrap_policy, parse_string_as_runtime_desired_status,
     parse_string_as_runtime_status, ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring,
-    PipelineId,
+    PipelineId, PipelineTrackingVersion, TrackPipelineCompilation, TrackPipelineDeploymentBase,
+    TrackPipelineDeploymentOperational, TrackPipelineUserControlled,
 };
 use crate::db::types::program::{ProgramError, ProgramStatus};
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
@@ -29,7 +30,8 @@ pub const PIPELINE_COLUMNS_ALL: &str =
      p.deployment_resources_status, p.deployment_resources_status_details, p.deployment_resources_status_since,
      p.deployment_resources_desired_status, p.deployment_resources_desired_status_since,
      p.deployment_runtime_status, p.deployment_runtime_status_details, p.deployment_runtime_status_since,
-     p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since, p.bootstrap_policy
+     p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since, p.bootstrap_policy,
+     p.track_compilation_version, p.track_deployment_base_version, p.track_deployment_operational_version
      ";
 
 pub const PIPELINE_COLUMNS_MONITORING: &str =
@@ -42,6 +44,71 @@ pub const PIPELINE_COLUMNS_MONITORING: &str =
      p.deployment_runtime_status, p.deployment_runtime_status_details, p.deployment_runtime_status_since,
      p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since, p.bootstrap_policy
      ";
+
+pub const PIPELINE_COLUMNS_TRACK_VERSION: &str = "
+    p.id,
+    p.tenant_id,
+    p.refresh_version,
+    p.version,
+    p.track_compilation_version,
+    p.track_deployment_base_version,
+    p.track_deployment_operational_version
+    ";
+
+pub const PIPELINE_COLUMNS_TRACK_USER_CONTROLLED: &str = "
+    p.id,
+    p.tenant_id,
+    p.name,
+    p.description,
+    p.created_at,
+    p.platform_version,
+    p.runtime_config,
+    p.program_code,
+    p.udf_rust,
+    p.udf_toml,
+    p.program_config,
+    p.program_version
+    ";
+
+pub const PIPELINE_COLUMNS_TRACK_COMPILATION: &str = "
+    p.id,
+    p.tenant_id,
+    p.program_status,
+    p.program_status_since,
+    p.program_error,
+    p.program_info,
+    p.program_binary_source_checksum,
+    p.program_binary_integrity_checksum,
+    p.program_info_integrity_checksum
+    ";
+
+pub const PIPELINE_COLUMNS_TRACK_DEPLOYMENT_BASE: &str = "
+    p.id,
+    p.tenant_id,
+    p.deployment_error,
+    p.deployment_config,
+    p.deployment_location,
+    p.deployment_id,
+    p.deployment_initial,
+    p.bootstrap_policy
+    ";
+
+pub const PIPELINE_COLUMNS_TRACK_DEPLOYMENT_OPERATIONAL: &str = "
+    p.id,
+    p.tenant_id,
+    p.storage_status,
+    p.storage_status_details,
+    p.deployment_resources_status,
+    p.deployment_resources_status_since,
+    p.deployment_resources_status_details,
+    p.deployment_resources_desired_status,
+    p.deployment_resources_desired_status_since,
+    p.deployment_runtime_status,
+    p.deployment_runtime_status_details,
+    p.deployment_runtime_status_since,
+    p.deployment_runtime_desired_status,
+    p.deployment_runtime_desired_status_since
+    ";
 
 #[rustfmt::skip]
 pub fn parse_pipeline_row_all(row: &Row) -> Result<ExtendedPipelineDescr, DBError> {
@@ -84,6 +151,9 @@ pub fn parse_pipeline_row_all(row: &Row) -> Result<ExtendedPipelineDescr, DBErro
         deployment_runtime_status_since: parse_from_row_deployment_runtime_status_since(row),
         deployment_runtime_desired_status: parse_from_row_deployment_runtime_desired_status(row)?,
         deployment_runtime_desired_status_since: parse_from_row_deployment_runtime_desired_status_since(row),
+        track_compilation_version: parse_from_row_track_compilation_version(row),
+        track_deployment_base_version: parse_from_row_track_deployment_base_version(row),
+        track_deployment_operational_version: parse_from_row_track_deployment_operational_version(row),
     })
 }
 
@@ -110,6 +180,81 @@ pub fn parse_pipeline_row_monitoring(row: &Row) -> Result<ExtendedPipelineDescrM
         bootstrap_policy: parse_from_row_bootstrap_policy(row)?,
         deployment_resources_status: parse_from_row_deployment_resources_status(row)?,
         deployment_resources_status_since: parse_from_row_deployment_resources_status_since(row),
+        deployment_resources_desired_status: parse_from_row_deployment_resources_desired_status(row)?,
+        deployment_resources_desired_status_since: parse_from_row_deployment_resources_desired_status_since(row),
+        deployment_runtime_status: parse_from_row_deployment_runtime_status(row)?,
+        deployment_runtime_status_details: parse_from_row_deployment_runtime_status_details(row)?,
+        deployment_runtime_status_since: parse_from_row_deployment_runtime_status_since(row),
+        deployment_runtime_desired_status: parse_from_row_deployment_runtime_desired_status(row)?,
+        deployment_runtime_desired_status_since: parse_from_row_deployment_runtime_desired_status_since(row),
+    })
+}
+
+#[rustfmt::skip]
+pub fn parse_pipeline_row_tracking_version(row: &Row) -> Result<PipelineTrackingVersion, DBError> {
+    Ok(PipelineTrackingVersion {
+        id: parse_from_row_id(row),
+        refresh_version: parse_from_row_refresh_version(row),
+        version: parse_from_row_version(row),
+        track_compilation_version: parse_from_row_track_compilation_version(row),
+        track_deployment_base_version: parse_from_row_track_deployment_base_version(row),
+        track_deployment_operational_version: parse_from_row_track_deployment_operational_version(row),
+    })
+}
+
+#[rustfmt::skip]
+pub fn parse_pipeline_row_tracking_update_user_controlled(row: &Row) -> Result<TrackPipelineUserControlled, DBError> {
+    Ok(TrackPipelineUserControlled {
+        id: parse_from_row_id(row),
+        name: parse_from_row_name(row),
+        description: parse_from_row_description(row),
+        created_at: parse_from_row_created_at(row),
+        platform_version: parse_from_row_platform_version(row),
+        runtime_config: parse_from_row_runtime_config(row)?,
+        program_code: parse_from_row_program_code(row),
+        udf_rust: parse_from_row_udf_rust(row),
+        udf_toml: parse_from_row_udf_toml(row),
+        program_config: parse_from_row_program_config(row)?,
+        program_version: parse_from_row_program_version(row),
+    })
+}
+
+#[rustfmt::skip]
+pub fn parse_pipeline_row_tracking_update_compilation(row: &Row) -> Result<TrackPipelineCompilation, DBError> {
+    Ok(TrackPipelineCompilation {
+        id: parse_from_row_id(row),
+        program_status: parse_from_row_program_status(row)?,
+        program_status_since: parse_from_row_program_status_since(row),
+        program_error: parse_from_row_program_error(row),
+        program_info: parse_from_row_program_info(row)?,
+        program_binary_source_checksum: parse_from_row_program_binary_source_checksum(row),
+        program_binary_integrity_checksum: parse_from_row_program_binary_integrity_checksum(row),
+        program_info_integrity_checksum: parse_from_row_program_info_integrity_checksum(row),
+    })
+}
+
+#[rustfmt::skip]
+pub fn parse_pipeline_row_tracking_update_deployment_base(row: &Row) -> Result<TrackPipelineDeploymentBase, DBError> {
+    Ok(TrackPipelineDeploymentBase {
+        id: parse_from_row_id(row),
+        deployment_error: parse_from_row_deployment_error(row)?,
+        deployment_config: parse_from_row_deployment_config(row)?,
+        deployment_location: parse_from_row_deployment_location(row),
+        deployment_id: parse_from_row_deployment_id(row),
+        deployment_initial: parse_from_row_deployment_initial(row)?,
+        bootstrap_policy: parse_from_row_bootstrap_policy(row)?,
+    })
+}
+
+#[rustfmt::skip]
+pub fn parse_pipeline_row_tracking_update_deployment_operational(row: &Row) -> Result<TrackPipelineDeploymentOperational, DBError> {
+    Ok(TrackPipelineDeploymentOperational {
+        id: parse_from_row_id(row),
+        storage_status: parse_from_row_storage_status(row)?,
+        storage_status_details: parse_from_row_storage_status_details(row)?,
+        deployment_resources_status: parse_from_row_deployment_resources_status(row)?,
+        deployment_resources_status_since: parse_from_row_deployment_resources_status_since(row),
+        deployment_resources_status_details: parse_from_row_deployment_resources_status_details(row)?,
         deployment_resources_desired_status: parse_from_row_deployment_resources_desired_status(row)?,
         deployment_resources_desired_status_since: parse_from_row_deployment_resources_desired_status_since(row),
         deployment_runtime_status: parse_from_row_deployment_runtime_status(row)?,
@@ -345,6 +490,18 @@ fn parse_from_row_bootstrap_policy(row: &Row) -> Result<Option<BootstrapPolicy>,
     })
 }
 
+fn parse_from_row_track_compilation_version(row: &Row) -> Version {
+    Version(row.get("track_compilation_version"))
+}
+
+fn parse_from_row_track_deployment_base_version(row: &Row) -> Version {
+    Version(row.get("track_deployment_base_version"))
+}
+
+fn parse_from_row_track_deployment_operational_version(row: &Row) -> Version {
+    Version(row.get("track_deployment_operational_version"))
+}
+
 /// Parses string as a JSON value.
 fn deserialize_json_value(s: &str) -> Result<serde_json::Value, DBError> {
     serde_json::from_str::<serde_json::Value>(s).map_err(|e| DBError::InvalidJsonData {
@@ -501,6 +658,9 @@ mod tests {
             deployment_runtime_status_since: None,
             deployment_runtime_desired_status: None,
             deployment_runtime_desired_status_since: None,
+            track_compilation_version: Version(1),
+            track_deployment_base_version: Version(2),
+            track_deployment_operational_version: Version(3),
         })
         .unwrap();
         let mut all_obj_keys = all_descr

@@ -168,8 +168,18 @@ pub struct ExtendedPipelineDescr {
     /// Timestamp when the pipeline was originally created.
     pub created_at: DateTime<Utc>,
 
-    /// Pipeline version, incremented every time name, description, runtime_config, program_code,
-    /// udf_rust, udf_toml, program_config or platform_version is/are modified.
+    /// Version which covers all fields supplied directly by the user about the pipeline but not
+    /// about its deployment:
+    /// - `name`
+    /// - `description`
+    /// - `created_at`
+    /// - `platform_version`
+    /// - `runtime_config`,
+    /// - `program_code`
+    /// - `udf_rust`
+    /// - `udf_toml`
+    /// - `program_config`
+    /// - `program_version`
     pub version: Version,
 
     /// Pipeline platform version.
@@ -190,8 +200,12 @@ pub struct ExtendedPipelineDescr {
     /// Program compilation configuration.
     pub program_config: serde_json::Value,
 
-    /// Program version, incremented every time program_code, udf_rust,
-    /// udf_toml, program_config or platform_version is/are modified.
+    /// Version which covers all fields supplied directly by the user
+    /// that are relevant to compilation:
+    /// - `platform_version`
+    /// - `udf_rust`
+    /// - `udf_toml`
+    /// - `program_config`.
     pub program_version: Version,
 
     /// Program compilation status.
@@ -283,6 +297,40 @@ pub struct ExtendedPipelineDescr {
 
     /// Timestamp when the `deployment_runtime_desired_status` last changed.
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
+
+    /// Version which covers all fields that change due to compilation:
+    /// - `program_status`
+    /// - `program_status_since`
+    /// - `program_error`
+    /// - `program_info`,
+    /// - `program_binary_source_checksum`
+    /// - `program_binary_integrity_checksum`
+    /// - `program_info_integrity_checksum`
+    pub track_compilation_version: Version,
+
+    /// Version which covers base fields that change seldomly during deployment:
+    /// - `deployment_error`
+    /// - `deployment_config`
+    /// - `deployment_location`
+    /// - `deployment_id`
+    /// - `deployment_initial`
+    /// - `bootstrap_policy`
+    pub track_deployment_base_version: Version,
+
+    /// Version which covers operational fields that change frequently during deployment:
+    /// - `storage_status`
+    /// - `storage_status_details`
+    /// - `deployment_resources_status`
+    /// - `deployment_resources_status_since`
+    /// - `deployment_resources_status_details`
+    /// - `deployment_resources_desired_status`
+    /// - `deployment_resources_desired_status_since`
+    /// - `deployment_runtime_status`
+    /// - `deployment_runtime_status_details`
+    /// - `deployment_runtime_status_since`
+    /// - `deployment_runtime_desired_status`
+    /// - `deployment_runtime_desired_status_since`
+    pub track_deployment_operational_version: Version,
 }
 
 /// Pipeline descriptor which includes the fields relevant to system monitoring.
@@ -319,5 +367,75 @@ pub struct ExtendedPipelineDescrMonitoring {
     pub deployment_runtime_status_since: Option<DateTime<Utc>>,
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     pub bootstrap_policy: Option<BootstrapPolicy>,
+    pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
+}
+
+/// Versions necessary to track changes to the pipeline.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct PipelineTrackingVersion {
+    pub id: PipelineId,
+    pub refresh_version: Version,
+    pub version: Version,
+    pub track_compilation_version: Version,
+    pub track_deployment_base_version: Version,
+    pub track_deployment_operational_version: Version,
+}
+
+/// Pipeline fields that the user directly controls.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct TrackPipelineUserControlled {
+    pub id: PipelineId,
+    pub name: String,
+    pub description: String,
+    pub created_at: DateTime<Utc>,
+    pub platform_version: String,
+    pub runtime_config: serde_json::Value,
+    pub program_code: String,
+    pub udf_rust: String,
+    pub udf_toml: String,
+    pub program_config: serde_json::Value,
+    pub program_version: Version,
+}
+
+/// Pipeline compilation-related fields.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct TrackPipelineCompilation {
+    pub id: PipelineId,
+    pub program_status: ProgramStatus,
+    pub program_status_since: DateTime<Utc>,
+    pub program_error: ProgramError,
+    pub program_info: Option<serde_json::Value>,
+    pub program_binary_source_checksum: Option<String>,
+    pub program_binary_integrity_checksum: Option<String>,
+    pub program_info_integrity_checksum: Option<String>,
+}
+
+/// Pipeline deployment-related fields that do not frequently change.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct TrackPipelineDeploymentBase {
+    pub id: PipelineId,
+    pub deployment_error: Option<ErrorResponse>,
+    pub deployment_config: Option<serde_json::Value>,
+    pub deployment_location: Option<String>,
+    pub deployment_id: Option<Uuid>,
+    pub deployment_initial: Option<RuntimeDesiredStatus>,
+    pub bootstrap_policy: Option<BootstrapPolicy>,
+}
+
+/// Pipeline deployment-related fields that do change frequently.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct TrackPipelineDeploymentOperational {
+    pub id: PipelineId,
+    pub storage_status: StorageStatus,
+    pub storage_status_details: Option<serde_json::Value>,
+    pub deployment_resources_status: ResourcesStatus,
+    pub deployment_resources_status_since: DateTime<Utc>,
+    pub deployment_resources_status_details: Option<serde_json::Value>,
+    pub deployment_resources_desired_status: ResourcesDesiredStatus,
+    pub deployment_resources_desired_status_since: DateTime<Utc>,
+    pub deployment_runtime_status: Option<RuntimeStatus>,
+    pub deployment_runtime_status_details: Option<serde_json::Value>,
+    pub deployment_runtime_status_since: Option<DateTime<Utc>>,
+    pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
 }

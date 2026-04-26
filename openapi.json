@@ -6280,6 +6280,64 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/track": {
+      "get": {
+        "tags": [
+          "Pipeline CRUD"
+        ],
+        "summary": "Track Pipeline Changes",
+        "description": "Retrieve first in full (all fields) and subsequently track any changes to any of the fields of a\npipeline. The result is a stream of newline-delimited JSON (NDJSON). Note that changes should\nonly be done at the top fields. For example:\n```ndjson\n{ \"a\": 1, \"b\": { \"c\": 2 }, \"d\": 3}\n{ \"b\": { \"e\": 4}, \"d\": null}\n```\n... should result in:\n```ndjson\n{ \"a\": 1, \"b\": { \"e\": 4} }\n```\n\nIf the client loses the connection to this endpoint, they must discard any existing state upon\nreconnect; the first line will again be the pipeline object in full.\n\nThe pipeline name is only resolved **once** at the start of tracking changes to the pipeline,\nat which moment the stream is coupled to the (immutable) pipeline unique identifier. As such,\nediting the pipeline name during the tracking does not result in it getting interrupted.",
+        "operationId": "get_pipeline_track",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stream of pipeline changes as NDJSON"
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/update_runtime": {
       "post": {
         "tags": [

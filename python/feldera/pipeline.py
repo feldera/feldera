@@ -1603,3 +1603,41 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
             CheckpointMetadata.from_dict(chk)
             for chk in self.client.get_checkpoints(self.name)
         ]
+
+    def track(self) -> Generator[dict, None, None]:
+        """
+        Tracks changes to the pipeline. It returns an (indefinite) stream of JSON-decoded dictionaries,
+        of which the first is a "full sync" and subsequent ones are whenever a top-level field changes.
+        If there are no changes, the stream at a regular interval returns empty delta's (``{}``).
+        Note that the entire top-level field must be replaced when it is returned in a delta.
+
+        Example usage:
+
+        .. code-block:: python
+           current = {}
+           for delta in pipeline.track():
+               current.update(delta)
+               print(current)
+
+        :return: Generator of pipeline dictionaries.
+        """
+
+        return self.client.track(self.name)
+
+    def wait_for_compilation(
+        self,
+        *,
+        timeout_s: float | None = None,
+        poll_interval_s: float = 1.0,
+    ) -> None:
+        """
+        Waits for the pipeline to be successfully compiled.
+        Raises an exception if the compilation failed.
+
+        :param timeout_s: Timeout (default is `None` = no timeout is enforced).
+        :param poll_interval_s: Polling interval (default is 1 second).
+            It should be set substantially smaller than the timeout.
+        """
+        self.client._wait_for_compilation(
+            self.name, timeout_s=timeout_s, poll_interval_s=poll_interval_s
+        )
