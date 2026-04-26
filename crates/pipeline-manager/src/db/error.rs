@@ -1,5 +1,6 @@
 use crate::cluster_monitor::{MONITOR_RETENTION_HOURS, MONITOR_RETENTION_NUM};
-use crate::db::types::monitor::ClusterMonitorEventId;
+use crate::db::operations::pipeline_monitor::MONITOR_PIPELINE_RETENTION_NUM;
+use crate::db::types::monitor::{ClusterMonitorEventId, PipelineMonitorEventId};
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::program::ProgramStatus;
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
@@ -219,6 +220,10 @@ pub enum DBError {
         new_status: ResourcesStatus,
         current_desired_status: ResourcesDesiredStatus,
     },
+    UnknownPipelineMonitorEvent {
+        event_id: PipelineMonitorEventId,
+    },
+    NoPipelineMonitorEventsAvailable,
 }
 
 impl DBError {
@@ -731,6 +736,12 @@ impl Display for DBError {
                     "Unnecessary to transition from deployment resources status '{current_status}' to '{new_status}' given desired status is '{current_desired_status}'"
                 )
             }
+            DBError::UnknownPipelineMonitorEvent { event_id } => {
+                write!(f, "Pipeline monitor event with identifier '{event_id}' does not exist -- it might have been deleted as only {} monitor events are retained", MONITOR_PIPELINE_RETENTION_NUM)
+            }
+            DBError::NoPipelineMonitorEventsAvailable => {
+                write!(f, "There are not yet any pipeline monitor events recorded")
+            }
         }
     }
 }
@@ -839,6 +850,8 @@ impl DetailedError for DBError {
             Self::UnnecessaryResourcesStatusTransition { .. } => {
                 Cow::from("UnnecessaryResourcesStatusTransition")
             }
+            Self::UnknownPipelineMonitorEvent { .. } => Cow::from("UnknownPipelineMonitorEvent"),
+            Self::NoPipelineMonitorEventsAvailable => Cow::from("NoPipelineMonitorEventsAvailable"),
         }
     }
 }
@@ -915,6 +928,8 @@ impl ResponseError for DBError {
             Self::UnknownClusterMonitorEvent { .. } => StatusCode::NOT_FOUND,
             Self::NoClusterMonitorEventsAvailable => StatusCode::NOT_FOUND,
             Self::UnnecessaryResourcesStatusTransition { .. } => StatusCode::BAD_REQUEST,
+            Self::UnknownPipelineMonitorEvent { .. } => StatusCode::NOT_FOUND,
+            Self::NoPipelineMonitorEventsAvailable => StatusCode::NOT_FOUND,
         }
     }
 
