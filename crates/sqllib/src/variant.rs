@@ -2,8 +2,9 @@
 //! the values in a SQL program.
 
 use crate::{
-    Date, GeoPoint, LongInterval, ShortInterval, SqlDecimal, SqlString, Time, Timestamp, Uuid,
-    array::Array, binary::ByteArray, casts::*, error::*, map::Map, tn, to_hex_, ttn,
+    Date, GeoPoint, LongInterval, ShortInterval, SqlDecimal, SqlString, Time, Timestamp,
+    TimestampTz, Uuid, array::Array, binary::ByteArray, casts::*, error::*, map::Map, tn, to_hex_,
+    ttn,
 };
 use dbsp::algebra::{F32, F64};
 use feldera_fxp::DynamicDecimal;
@@ -68,6 +69,7 @@ pub enum Variant {
     Date(Date),
     Time(Time),
     Timestamp(Timestamp),
+    TimestampTz(TimestampTz),
     ShortInterval(ShortInterval),
     LongInterval(LongInterval),
     Binary(ByteArray),
@@ -369,6 +371,7 @@ impl SerializeWithContext<SqlSerdeConfig> for Variant {
                 Variant::Date(v) => v.serialize_with_context(serializer, context),
                 Variant::Time(v) => v.serialize_with_context(serializer, context),
                 Variant::Timestamp(v) => v.serialize_with_context(serializer, context),
+                Variant::TimestampTz(v) => v.serialize_with_context(serializer, context),
                 Variant::ShortInterval(v) => v.serialize_with_context(serializer, context),
                 Variant::LongInterval(v) => v.serialize_with_context(serializer, context),
                 Variant::Geometry(v) => v.serialize_with_context(serializer, context),
@@ -403,6 +406,7 @@ impl Variant {
             Variant::Date(_) => "DATE",
             Variant::Time(_) => "TIME",
             Variant::Timestamp(_) => "TIMESTAMP",
+            Variant::TimestampTz(_) => "TIMESTAMP WITH TIME ZONE",
             Variant::ShortInterval(_) => "SHORTINTERVAL",
             Variant::LongInterval(_) => "LONGINTERVAL",
             Variant::Geometry(_) => "GEOPOINT",
@@ -498,6 +502,7 @@ from!(String, SqlString);
 from!(Date, Date);
 from!(Time, Time);
 from!(Timestamp, Timestamp);
+from!(TimestampTz, TimestampTz);
 from!(ShortInterval, ShortInterval);
 from!(LongInterval, LongInterval);
 from!(Geometry, GeoPoint);
@@ -695,6 +700,7 @@ into!(Boolean, bool, b);
 into!(Date, Date, Date);
 into!(Time, Time, Time);
 into!(Timestamp, Timestamp, Timestamp);
+into!(TimestampTz, TimestampTz, TimestampTz);
 into!(ShortInterval, ShortInterval, ShortInterval_DAYS_TO_MINUTES);
 into!(LongInterval, LongInterval, LongInterval_YEARS_TO_MONTHS);
 into!(Uuid, Uuid, Uuid);
@@ -805,6 +811,7 @@ impl TryFrom<Variant> for SqlString {
             Variant::Date(x) => Ok(SqlString::from(x.to_string())),
             Variant::Time(x) => Ok(SqlString::from(x.to_string())),
             Variant::Timestamp(x) => Ok(SqlString::from(x.to_string())),
+            Variant::TimestampTz(x) => Ok(SqlString::from(x.to_string())),
             Variant::ShortInterval(x) => Ok(SqlString::from(x.to_string())),
             Variant::LongInterval(x) => Ok(SqlString::from(x.to_string())),
             Variant::Binary(x) => Ok(to_hex_(x)),

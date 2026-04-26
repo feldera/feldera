@@ -7,14 +7,17 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.util.Utilities;
 
 import java.util.Map;
@@ -50,7 +53,42 @@ public class ToSqlVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPTimestampLiteral literal) {
         if (literal.value != null)
-            this.appendable.append(Objects.requireNonNull(literal.value));
+            this.appendable.append("TIMESTAMP '")
+                    .append(literal.getTimestampString())
+                    .append("'");
+        else
+            this.appendable.append(DBSPNullLiteral.NULL);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPTimestampTzLiteral literal) {
+        if (literal.value != null)
+            this.appendable.append("TIMESTAMP WITH TIME ZONE '")
+                    .append(literal.getTimestampString())
+                    .append("'");
+        else
+            this.appendable.append(DBSPNullLiteral.NULL);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPDateLiteral literal) {
+        if (literal.value != null)
+            this.appendable.append("DATE '")
+                    .append(literal.getDateString())
+                    .append("'");
+        else
+            this.appendable.append(DBSPNullLiteral.NULL);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPTimeLiteral literal) {
+        if (literal.value != null)
+            this.appendable.append("TIME '")
+                    .append(literal.value)
+                    .append("'");
         else
             this.appendable.append(DBSPNullLiteral.NULL);
         return VisitDecision.STOP;
