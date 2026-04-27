@@ -97,6 +97,26 @@ jobs:
       environment: ci
     secrets: inherit
 
+  invoke-check-semver:
+    name: SemVer Compliance
+    uses: ./.github/workflows/check-semver.yml
+    secrets: inherit
+
+  cancel-if-check-semver-failed:
+    name: Cancel if SemVer Check Failed
+    needs: [invoke-check-semver]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
   cancel-if-tests-web-console-unit-failed:
     name: Cancel if Web Console Unit Tests Failed
     needs: [invoke-tests-web-console-unit]

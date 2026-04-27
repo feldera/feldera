@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
-use dbsp::operator::input::StagedBuffers;
+use crate::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::config::ConnectorConfig;
 use feldera_types::program_schema::Relation;

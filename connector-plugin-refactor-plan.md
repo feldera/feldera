@@ -51,7 +51,8 @@ What blocks 3rd-party connectors today is **dispatch and tooling around those tr
 | 7 | Direction validation (input vs output) | `crates/pipeline-manager/src/db/types/program.rs:682,735` | Exhaustive variant lists |
 | 8 | Per-variant special cases in controller | `controller.rs:4448` (`is_http_input`), `controller.rs:4521` (`ClockInput` filter), `controller.rs:6013` (`Datagen` default-format), `controller/pipeline_diff.rs:97,106` (`is_transient`) | Reach into the enum |
 | 9 | OpenAPI client codegen list | `crates/rest-api/build.rs:38-208` | `progenitor` type-replacement list, hardcoded |
-| 10 | DBSP type leakage in plugin ABI | `crates/adapterlib/src/format.rs:13` (`use dbsp::operator::input::StagedBuffers`), `format.rs:63` and `transport.rs:82` (`InputCollectionHandle` parameter) | Plugin ABI surface reaches transitively into `dbsp::*` |
+| 10 | DBSP type leakage in plugin ABI | `crates/adapterlib/src/format.rs:13` and `catalog.rs:17` (two distinct `StagedBuffers` import paths — internal vs. re-exported), `format.rs:63` and `transport.rs:82` (`InputCollectionHandle` parameter), `catalog.rs` (`SerBatchReader`/`SerCursor` expose `dbsp::dynamic::{DynData, DynVec, Factory}` in 8 method signatures used by partitioned-output encoders) | Plugin ABI surface reaches transitively into `dbsp::*` |
+| 11 | `IntegratedOutputEndpoint` lives in `dbsp_adapters`, not `feldera-adapterlib` | `crates/adapters/src/integrated.rs:20` | A third-party integrated output connector cannot implement it without depending on `dbsp_adapters` — the trait must move to `feldera-adapterlib` to be plugin-reachable |
 
 **Existing precedent**: `inventory` is already used in this repo for `StorageBackendFactory` (`crates/storage/src/lib.rs:49`) and `CheckpointSynchronizer` (`crates/storage/src/checkpoint_synchronizer.rs:25`). pipeline-manager already runs Cargo per-pipeline (`crates/pipeline-manager/src/compiler/rust_compiler.rs:1242`, `prepare_workspace`) and already wires sccache (`rust_compiler.rs:1532-1534, 1548-1550`), `CARGO_INCREMENTAL` (`:1553`), and `cargo build --workspace --profile <profile>` (`:1574-1577`).
 
@@ -65,16 +66,21 @@ Phases are numbered in **execution order**. Each phase is independently mergeabl
 
 The "API contract" 3rd parties target. Most of it already exists; this phase tightens it.
 
-1. **Audit re-exports** in `crates/adapterlib/src/lib.rs`. The plugin-facing surface is: `InputEndpoint`, `TransportInputEndpoint`, `IntegratedInputEndpoint`, `OutputEndpoint`, `InputReader`, `InputConsumer`, `Resume`, `InputReaderCommand`, `Parser`, `InputFormat`, `Encoder`, `OutputFormat`, `InputBuffer`, `InputCollectionHandle`, `Relation` (re-exported from `feldera-types`), `FtModel`, `ConnectorMetrics`, `CommandHandler`. Mark these as the supported plugin ABI in module docs.
-2. **Wrap the `dbsp::operator::input::StagedBuffers` reference** in `crates/adapterlib/src/format.rs:13`. Either re-export it as `feldera_adapterlib::StagedBuffers` (zero-cost type alias) or hide it behind a new opaque `BufferStaging` newtype. Plugins must never need to name `dbsp::*` types directly.
-3. **Audit `InputCollectionHandle`** (the leak point reached transitively by `IntegratedInputEndpoint::open` at `transport.rs:82` and `InputFormat::new_parser` at `format.rs:63`). Walk every method on `InputCollectionHandle` reachable from a plugin; for any that returns DBSP-internal types, either re-export through `feldera-adapterlib::reexports::*` (zero cost) or wrap in opaque newtypes. Per-method judgment based on whether the type is genuinely public DBSP API or internal.
-4. **Document the fault-tolerance contract** in adapterlib module docs: a plugin advertises FT level via `InputEndpoint::fault_tolerance()`; on each step it returns `Resume::{Barrier,Seek,Replay}` from `InputConsumer::extended()`; the controller drives replay via `InputReaderCommand::Replay`. Already implemented; just under-documented.
+1. **Audit re-exports** in `crates/adapterlib/src/lib.rs`. The plugin-facing surface is: `InputEndpoint`, `TransportInputEndpoint`, `IntegratedInputEndpoint`, `OutputEndpoint`, `InputReader`, `InputConsumer`, `OutputConsumer`, `Resume`, `InputReaderCommand`, `Parser`, `InputFormat`, `Encoder`, `OutputFormat`, `InputBuffer`, `StagedInputBuffer`, `InputCollectionHandle`, `Relation` (re-exported from `feldera-types`), `FtModel`, `ConnectorMetrics`, `CommandHandler`. Mark these as the supported plugin ABI in module docs. **Note**: `IntegratedInputEndpoint`, `InputCollectionHandle`, and `OutputConsumer` are currently `#[doc(hidden)]`; document them as supported in module docs but defer removing the `#[doc(hidden)]` attributes to Phase 4b (when integrated connectors migrate to the descriptor registry — surfacing them earlier without their callers being plugin-reachable would be confusing).
+2. **Wrap both `StagedBuffers` import paths**: `dbsp::operator::input::StagedBuffers` in `crates/adapterlib/src/format.rs:13` AND `dbsp::operator::StagedBuffers` (the re-exported path) in `catalog.rs:17`. Both resolve to the same type, but the inconsistency is itself a smell. Re-export as `feldera_adapterlib::StagedBuffers` (zero-cost type alias); use this single canonical path everywhere in adapterlib. Plugins must never need to name `dbsp::*` types directly.
+3. **Audit `InputCollectionHandle`** (the leak point reached transitively by `IntegratedInputEndpoint::open` at `transport.rs:82` and `InputFormat::new_parser` at `format.rs:63`). Walk every method on `InputCollectionHandle` reachable from a plugin; for any that returns DBSP-internal types, either re-export through `feldera-adapterlib::reexports::*` (zero cost) or wrap in opaque newtypes. Per-method judgment based on whether the type is genuinely public DBSP API or internal. **Explicit non-exports** (documented in the audit checklist as not part of the contract): `NodeId` (`pub` field on `InputCollectionHandle` but only consulted by the controller for backfill — third-party integrated connectors do not need it); `ClonableTrait` (only appears inside `#[doc(hidden)]` `SplitCursorBuilder` internals).
+4. **Audit `SerBatchReader` and `SerCursor`** for output-path leakage. Eight methods used by partitioned-output encoders (`keys_factory`, `key_factory`, `sample_keys`, `partition_keys`, `key`, `get_key`, `seek_key_exact`, `seek_key`) expose `dbsp::dynamic::{DynData, DynVec, Factory}`. **Resolution**: add `feldera_adapterlib::reexports::{DynData, DynVec, Factory}`. Most plugin encoders never name these types and only use `cursor(format)` → `serialize_key()` / `serialize_val()`; advanced connectors doing key-based partitioning import from `reexports`.
+5. **Document the fault-tolerance contract** in adapterlib module docs: a plugin advertises FT level via `InputEndpoint::fault_tolerance()`; on each step it returns `Resume::{Barrier,Seek,Replay}` from `InputConsumer::extended()`; the controller drives replay via `InputReaderCommand::Replay`. Already implemented; just under-documented.
 
 **Why first**: every later phase produces or consumes types from this surface. Pin the surface before opening the registry.
+
+**CI / SemVer note**: `cargo-semver-checks check-release` (added in this phase via `obi1kenobi/cargo-semver-checks-action`) downloads the previously published crate from crates.io and compares against local source. This requires `feldera-adapterlib` to remain published continuously; a temporary unpublish or rename will fail CI with a missing-baseline error rather than a semver violation. Document this in the deployment / release guide. The action installs the tool itself, so no addition to `feldera-dev` container or workspace dev-dependencies is needed; the CI job runs on `ubuntu-latest-amd64`. Following the existing `ci.yml` pattern, every new substantive job needs a matching `cancel-if-<name>-failed` sentinel — pair `invoke-check-semver` with `cancel-if-check-semver-failed`. Consider mirroring the check in `ci-pre-mergequeue.yml` for earlier feedback (verify runner availability first).
 
 ---
 
 ### Phase 2 — Connector descriptor & registration macro
+
+0. **Move `IntegratedOutputEndpoint` from `dbsp_adapters` to `feldera-adapterlib`**. Currently defined at `crates/adapters/src/integrated.rs:20` along with its blanket impl `impl<EP: OutputEndpoint + Encoder + 'static> IntegratedOutputEndpoint for EP`. A third-party integrated output connector cannot implement it without depending on `dbsp_adapters` (the heavy crate). Move the trait + blanket impl into `feldera-adapterlib` so it joins `IntegratedInputEndpoint` on the plugin-reachable surface. Update `dbsp_adapters` to import from there. No semantic change.
 
 1. **New type `ConnectorDescriptor`** in `feldera-adapterlib`:
    ```rust
@@ -85,7 +91,7 @@ The "API contract" 3rd parties target. Most of it already exists; this phase tig
        pub fault_tolerance: Option<FtModel>,      // best-case; runtime can downgrade
        pub config_schema: fn() -> serde_json::Value, // JSON Schema for config
        pub default_format: Option<fn() -> FormatConfig>, // for Datagen-style
-       pub flags: ConnectorFlags,                 // capability bits (added in Phase 5)
+       pub flags: ConnectorFlags,                 // empty bitfield in Phase 2; populated in Phase 5
        pub build_input:  Option<BuildInputFn>,
        pub build_output: Option<BuildOutputFn>,
        pub build_integrated_input:  Option<BuildIntegratedInputFn>,
@@ -94,6 +100,8 @@ The "API contract" 3rd parties target. Most of it already exists; this phase tig
    inventory::collect!(&'static ConnectorDescriptor);
    ```
    The four `build_*` fields take `&serde_json::Value` (the config blob) plus the contextual params each factory currently passes (consumer, parser, schema, secrets dir, controller weak ref). Exactly one build fn is set per descriptor; the descriptor's `kind`+`direction` says which.
+
+   **`ConnectorFlags` is defined as an empty bitfield in this phase** with a TODO comment naming the flags Phase 5 will add (`HTTP_DIRECT`, `AUTO_RECREATED_ON_RESTART`). Defining the field here lets Phase 5 extend it as a non-breaking change without touching descriptor consumers.
 
 2. **`register_connector!` macro** wrapping `inventory::submit!`. Plugin authors write:
    ```rust
@@ -135,6 +143,8 @@ Per connector (mechanical):
 - **Phase 4b (after Phase 6)**: sweep the rest in this order — `http` → `s3` → `url` → `nats` → `pubsub` → `redis` → `kafka` → `nexmark` → `datagen` → `adhoc` → integrated (`postgres`, `delta_table`, `iceberg`). File/clock first because trivial; Kafka late because of its `ft`/`nonft` split (the descriptor must accept the `fault_tolerant: bool` argument the output factory currently uses — pass it through to `build_output`).
 
 After Phase 4b, the four factory `match` statements in `transport.rs` and `integrated.rs` consist purely of registry calls, with no per-variant arms remaining.
+
+**`#[doc(hidden)]` cleanup (end of Phase 4b)**: with integrated connectors now reachable through the descriptor registry from out-of-tree code, remove `#[doc(hidden)]` from `IntegratedInputEndpoint`, `IntegratedOutputEndpoint`, `InputCollectionHandle`, and `OutputConsumer`. These were kept hidden in Phase 1 because surfacing them without their callers being plugin-reachable would have been confusing. They're now first-class plugin ABI.
 
 ---
 
@@ -438,17 +448,23 @@ Each phase is independently mergeable; nothing forces a flag day. The describer 
 Each PR below is sized to be independently reviewable and mergeable. Dependencies are explicit. Phases that are too large for one PR are split (Phase 4b across many; Phase 8 across four). Phases that are small enough to combine are combined.
 
 ### PR 1 — Tighten the plugin ABI surface (Phase 1)
-- [ ] Audit `crates/adapterlib/src/lib.rs` re-exports; document the supported plugin-facing types in module docs.
-- [ ] Replace `use dbsp::operator::input::StagedBuffers` in `format.rs:13` with a re-export via `feldera_adapterlib::StagedBuffers` (or opaque newtype).
-- [ ] Walk every method on `InputCollectionHandle` reachable from a plugin; for any returning DBSP-internal types, re-export through `feldera-adapterlib::reexports::*` or wrap in opaque newtypes. Document the audit results in a checklist file.
+- [ ] Audit `crates/adapterlib/src/lib.rs` re-exports; document the supported plugin-facing types in module docs (including `OutputConsumer` and `StagedInputBuffer`).
+- [ ] Replace **both** `StagedBuffers` import paths (`format.rs:13` uses `dbsp::operator::input::StagedBuffers`; `catalog.rs:17` uses `dbsp::operator::StagedBuffers`) with a single canonical `feldera_adapterlib::StagedBuffers` re-export. Both paths resolve to the same type; pick one source of truth.
+- [ ] Walk every method on `InputCollectionHandle` reachable from a plugin; for any returning DBSP-internal types, re-export through `feldera-adapterlib::reexports::*` or wrap in opaque newtypes. Document the audit results in a checklist file. Explicitly mark `NodeId` and `ClonableTrait` as **not** part of the contract (controller-internal / `#[doc(hidden)]`-internal respectively).
+- [ ] Audit `SerBatchReader` / `SerCursor` for the eight methods that expose `dbsp::dynamic::{DynData, DynVec, Factory}` (used by partitioned-output encoders). Add `feldera_adapterlib::reexports::{DynData, DynVec, Factory}`. Most plugin encoders never need to name these.
+- [ ] Document `IntegratedInputEndpoint`, `InputCollectionHandle`, and `OutputConsumer` in module docs as supported plugin ABI **even though they remain `#[doc(hidden)]`** — removing the attribute is deferred to Phase 4b.
 - [ ] Add module docs explaining the FT contract (`fault_tolerance()` → `Resume::*` → `InputReaderCommand::Replay`).
-- [ ] Add `cargo semver-checks` CI job on `feldera-adapterlib` and document the SemVer policy in the crate README.
+- [ ] Add `cargo-semver-checks` CI job (`obi1kenobi/cargo-semver-checks-action`) on `feldera-adapterlib`; pair `invoke-check-semver` with `cancel-if-check-semver-failed` per the existing `ci.yml` pattern.
+- [ ] Document the SemVer policy in the crate README, including the operational note that **`feldera-adapterlib` must remain published on crates.io** for the CI baseline check to function (a temporary unpublish or rename surfaces as a missing-baseline error, not a semver violation).
+- [ ] Optional: mirror the semver check in `ci-pre-mergequeue.yml` for earlier feedback (verify the `ubuntu-latest-amd64` runner is available in that workflow context first).
 - [ ] Verify all existing connectors still build against the tightened surface.
 - **Depends on**: nothing.
 - **Unblocks**: PR 2.
 
 ### PR 2 — `ConnectorDescriptor` + `register_connector!` macro (Phase 2)
-- [ ] Define `ConnectorDescriptor` struct, `Direction` enum, `ConnectorKind` enum, `ConnectorFlags` bitfield (placeholder — populated in PR 5).
+- [ ] **Move `IntegratedOutputEndpoint`** and its blanket impl from `crates/adapters/src/integrated.rs:20` to `feldera-adapterlib`, alongside `IntegratedInputEndpoint`. Update `dbsp_adapters` to import from the new location. No semantic change. Without this move, third-party integrated output connectors would have to depend on `dbsp_adapters`.
+- [ ] Define `ConnectorDescriptor` struct, `Direction` enum, `ConnectorKind` enum.
+- [ ] Define `ConnectorFlags` as an **empty bitfield with a TODO comment** naming the flags Phase 5 will add (`HTTP_DIRECT`, `AUTO_RECREATED_ON_RESTART`). Defining the field now lets Phase 5 extend it as a non-breaking change.
 - [ ] Define the four `Build*Fn` function-pointer types matching the existing factory signatures.
 - [ ] Add `inventory::collect!(&'static ConnectorDescriptor)` slot.
 - [ ] Implement `register_connector!` macro wrapping `inventory::submit!`.
@@ -507,6 +523,7 @@ Each of these PRs follows the same recipe: add `register_connector!`, remove the
 - [ ] **PR 7f**: `nexmark` + `datagen` + `adhoc` (transient/generator group).
 - [ ] **PR 7g**: integrated — `postgres` (reader, writer), `postgres-cdc`, `delta_table`, `iceberg`. Wires `IntegratedOutputEndpoint`/`IntegratedInputEndpoint` builds.
 - [ ] After 7g lands: the four factory functions contain only registry calls; no fallback match remains. Strip the dead match arms in a final cleanup commit.
+- [ ] **`#[doc(hidden)]` cleanup commit (end of 7g)**: with integrated connectors now reachable from out-of-tree code via the descriptor registry, remove `#[doc(hidden)]` from `IntegratedInputEndpoint`, `IntegratedOutputEndpoint`, `InputCollectionHandle`, and `OutputConsumer`. These were kept hidden in PR 1 because surfacing them without their callers being plugin-reachable would have been confusing. They become first-class plugin ABI here.
 - **Depends on**: PR 6 (each PR independent of the others within 7a–7g).
 - **Unblocks**: PR 8.
 

@@ -1,0 +1,18 @@
+name: SemVer Compliance
+
+on:
+  workflow_call:
+
+jobs:
+  check-semver:
+    name: Check feldera-adapterlib SemVer
+    runs-on: ubuntu-latest-amd64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Check semver compliance for feldera-adapterlib
+        uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          package: feldera-adapterlib

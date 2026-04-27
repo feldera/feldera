@@ -14,7 +14,7 @@ use apache_avro::{
 use arrow::record_batch::RecordBatch;
 use dbsp::circuit::NodeId;
 use dbsp::dynamic::{ClonableTrait, DynData, DynVec, Factory};
-use dbsp::operator::StagedBuffers;
+use crate::StagedBuffers;
 use dyn_clone::DynClone;
 use feldera_sqllib::Variant;
 use feldera_types::format::csv::CsvParserConfig;
