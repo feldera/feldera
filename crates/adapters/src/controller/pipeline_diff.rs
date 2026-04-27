@@ -1,3 +1,4 @@
+use feldera_adapterlib::connector::{ConnectorKind, connector_by_name};
 use feldera_adapterlib::errors::journal::ControllerError;
 use feldera_types::{
     config::PipelineConfig,
@@ -94,7 +95,11 @@ pub fn compute_pipeline_diff(
     let mut old_configured_inputs = old_config
         .inputs
         .iter()
-        .filter(|(_, cfg)| !cfg.connector_config.transport.is_transient())
+        .filter(|(_, cfg)| {
+            !connector_by_name(&cfg.connector_config.transport.name())
+                .map(|d| matches!(d.kind, ConnectorKind::Transient))
+                .unwrap_or(false)
+        })
         .map(|(name, cfg)| (name.clone(), cfg.clone()))
         .collect::<BTreeMap<_, _>>();
 
@@ -103,7 +108,11 @@ pub fn compute_pipeline_diff(
     let old_configured_outputs = old_config
         .outputs
         .iter()
-        .filter(|(_, cfg)| !cfg.connector_config.transport.is_transient())
+        .filter(|(_, cfg)| {
+            !connector_by_name(&cfg.connector_config.transport.name())
+                .map(|d| matches!(d.kind, ConnectorKind::Transient))
+                .unwrap_or(false)
+        })
         .map(|(name, cfg)| (name.clone(), cfg.clone()))
         .collect::<BTreeMap<_, _>>();
 

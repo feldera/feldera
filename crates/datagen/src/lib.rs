@@ -2283,6 +2283,58 @@ impl<'a> RecordGenerator<'a> {
     }
 }
 
+// ── Connector registry ────────────────────────────────────────────────────────
+
+use feldera_adapterlib::connector::{ConnectorDescriptor, ConnectorFlags, ConnectorKind, Direction};
+use feldera_types::config::FormatConfig;
+use feldera_types::format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat};
+use std::borrow::Cow;
+
+fn datagen_config_schema() -> serde_json::Value {
+    serde_json::Value::Object(Default::default())
+}
+
+fn datagen_default_format() -> FormatConfig {
+    FormatConfig {
+        name: Cow::from("json"),
+        config: serde_json::to_value(JsonParserConfig {
+            update_format: JsonUpdateFormat::Raw,
+            json_flavor: JsonFlavor::Datagen,
+            array: true,
+            lines: JsonLines::Multiple,
+        })
+        .unwrap(),
+    }
+}
+
+fn build_datagen_input(
+    config: &serde_json::Value,
+    _endpoint_name: &str,
+    _secrets_dir: &std::path::Path,
+) -> anyhow::Result<Box<dyn feldera_adapterlib::transport::TransportInputEndpoint>> {
+    let config: feldera_types::transport::datagen::DatagenInputConfig =
+        serde_json::from_value(config.clone())?;
+    Ok(Box::new(GeneratorEndpoint::new(config)))
+}
+
+static DATAGEN_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
+    name: "datagen",
+    direction: Direction::Input,
+    kind: ConnectorKind::Regular,
+    fault_tolerance: Some(FtModel::ExactlyOnce),
+    config_schema: datagen_config_schema,
+    default_format: Some(datagen_default_format),
+    flags: ConnectorFlags::EMPTY,
+    build_input: Some(build_datagen_input),
+    build_output: None,
+    build_integrated_input: None,
+    build_integrated_output: None,
+};
+
+inventory::submit! { &DATAGEN_DESCRIPTOR }
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::{

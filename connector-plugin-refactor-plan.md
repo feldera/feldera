@@ -52,7 +52,7 @@ What blocks 3rd-party connectors today is **dispatch and tooling around those tr
 | 8 | Per-variant special cases in controller | `controller.rs:4448` (`is_http_input`), `controller.rs:4521` (`ClockInput` filter), `controller.rs:6013` (`Datagen` default-format), `controller/pipeline_diff.rs:97,106` (`is_transient`) | Reach into the enum |
 | 9 | OpenAPI client codegen list | `crates/rest-api/build.rs:38-208` | `progenitor` type-replacement list, hardcoded |
 | 10 | DBSP type leakage in plugin ABI | `crates/adapterlib/src/format.rs:13` and `catalog.rs:17` (two distinct `StagedBuffers` import paths — internal vs. re-exported), `format.rs:63` and `transport.rs:82` (`InputCollectionHandle` parameter), `catalog.rs` (`SerBatchReader`/`SerCursor` expose `dbsp::dynamic::{DynData, DynVec, Factory}` in 8 method signatures used by partitioned-output encoders) | Plugin ABI surface reaches transitively into `dbsp::*` |
-| 11 | `IntegratedOutputEndpoint` lives in `dbsp_adapters`, not `feldera-adapterlib` | `crates/adapters/src/integrated.rs:20` | A third-party integrated output connector cannot implement it without depending on `dbsp_adapters` — the trait must move to `feldera-adapterlib` to be plugin-reachable |
+| 11 | `IntegratedOutputEndpoint` lives in `dbsp_adapters`, not `feldera-adapterlib` | `crates/adapters/src/integrated.rs:20` | A third-party integrated output connector cannot implement it without depending on `dbsp_adapters` — **resolved by PR 2** (step 0): trait + blanket impl moved to `feldera-adapterlib`; transitional two-hop re-export chain collapsed in PR 7g |
 
 **Existing precedent**: `inventory` is already used in this repo for `StorageBackendFactory` (`crates/storage/src/lib.rs:49`) and `CheckpointSynchronizer` (`crates/storage/src/checkpoint_synchronizer.rs:25`). pipeline-manager already runs Cargo per-pipeline (`crates/pipeline-manager/src/compiler/rust_compiler.rs:1242`, `prepare_workspace`) and already wires sccache (`rust_compiler.rs:1532-1534, 1548-1550`), `CARGO_INCREMENTAL` (`:1553`), and `cargo build --workspace --profile <profile>` (`:1574-1577`).
 
@@ -159,13 +159,14 @@ Per connector (mechanical):
 
 **Staging** (this phase is split around Phase 5+6):
 - **Phase 4a (before Phase 5)**: migrate `file` and `clock` end-to-end — descriptor + `build_*` fns + registry-dispatch path inserted before the existing match in both factory functions. The migrated arms move into the `Ok(None)` catch arm (input) or are deleted entirely (output, where `_ => Ok(None)` already absorbs them); other connectors' match arms stay intact. This is the smallest end-to-end exercise of the registry: descriptor → `connector_by_name` → `build_*` → endpoint construction. PR 4 also introduces `transport_config_inner_as_json` (in `adapters/src/transport.rs`, NOT adapterlib), which Phase 6 reuses unchanged.
-- **Phase 4b (after Phase 6)**: sweep the rest in this order — `http` → `s3` → `url` → `nats` → `pubsub` → `redis` → `kafka` → `nexmark` → `datagen` → `adhoc` → integrated (`postgres`, `delta_table`, `iceberg`). File/clock first because trivial; Kafka late because of its `ft`/`nonft` split (the descriptor must accept the `fault_tolerant: bool` argument the output factory currently uses — pass it through to `build_output`).
+- **Phase 5 implicit migrations**: replacing `is_http_input()`, the `ClockInput` filter, the `Datagen` default-format injection, and `is_transient()` with descriptor lookups (Phase 5's actual goal) **requires those connectors to already be in the registry**. So Phase 5 unavoidably migrates `http_input`, `http_output`, `adhoc_input`, and `datagen` ahead of Phase 4b. The two-phase factory pattern from Phase 4a absorbs them automatically — adding a descriptor short-circuits the registry path before the fallback match, and the dead arms move to `Ok(None)`. After Phase 5, the registered set is `{file_input, file_output, clock, http_input, http_output, adhoc_input, datagen}`.
+- **Phase 4b (after Phase 6)**: sweep the **remaining** connectors — `s3`, `url`, `nats`, `pubsub`, `redis`, `kafka`, `nexmark`, plus integrated (`postgres`, `delta_table`, `iceberg`). Kafka late because of its `ft`/`nonft` split (the descriptor must accept the `fault_tolerant: bool` argument the output factory currently uses — pass it through to `build_output`).
 
 After Phase 4b, the four factory `match` statements in `transport.rs` and `integrated.rs` consist purely of registry calls, with no per-variant arms remaining.
 
-**`#[doc(hidden)]` cleanup (end of Phase 4b)**: with integrated connectors now reachable through the descriptor registry from out-of-tree code, remove `#[doc(hidden)]` from `IntegratedInputEndpoint`, `IntegratedOutputEndpoint`, `InputCollectionHandle`, and `OutputConsumer`. These were kept hidden in Phase 1 because surfacing them without their callers being plugin-reachable would have been confusing. They're now first-class plugin ABI.
+**`#[doc(hidden)]` cleanup (PR 7g, commit 3)**: with integrated connectors now reachable through the descriptor registry from out-of-tree code, remove `#[doc(hidden)]` from `IntegratedInputEndpoint`, `IntegratedOutputEndpoint`, `InputCollectionHandle`, and `OutputConsumer`. These were kept hidden in Phase 1 because surfacing them without their callers being plugin-reachable would have been confusing. They're now first-class plugin ABI.
 
-**Re-export-chain cleanup (during Phase 4b integrated migration)**: PR 2 moves `IntegratedOutputEndpoint` to `feldera-adapterlib` but leaves a two-hop re-export chain (`feldera_adapterlib::transport → adapters::integrated → adapters::lib`). When Phase 4b removes `adapters::integrated` as the dispatch home, switch `adapters::lib.rs` to import directly from `feldera_adapterlib::transport`. Same applies to `Encoder`/`OutputEndpoint` imports in `integrated.rs` (no longer needed there once the factory functions are gone).
+**Re-export-chain cleanup (PR 7g, commit 2)**: PR 2 moves `IntegratedOutputEndpoint` to `feldera-adapterlib` but leaves a two-hop re-export chain (`feldera_adapterlib::transport → adapters::integrated → adapters::lib`). When PR 7g strips the integrated-factory match arms, the `adapters::integrated` module no longer needs to re-export the trait — switch `adapters::lib.rs` to import directly from `feldera_adapterlib::transport`. Same applies to `Encoder`/`OutputEndpoint` imports in `integrated.rs` (no longer needed there once the factory bodies are trivial registry calls).
 
 **Integrated output controller plumbing**: `ControllerInner` must implement `OutputControllerRef` so the build function's `Arc<dyn OutputControllerRef>` parameter has a concrete impl. The trait's four methods (audited against actual call sites in Postgres writer + Delta during PR 2; `impl OutputControllerRef for ControllerInner` compiles with zero body changes to `ControllerInner`):
 
@@ -176,13 +177,17 @@ After Phase 4b, the four factory `match` statements in `transport.rs` and `integ
 | `register_batch_progress_counter(&self, endpoint_id: &u64, counter: Arc<AtomicU64>)` | delegates to `self.status.*` |
 | `output_buffer(&self, endpoint_id: u64, num_bytes: usize, num_records: usize)` | delegates to `self.status.*` |
 
-The trait flattens the `controller.status.*` indirection — connectors call `controller.register_batch_progress_counter(...)` directly on `Arc<dyn OutputControllerRef>` instead of reaching through `controller.status`. Land the impl block with the first integrated-output connector migrated (PR 7g, Postgres writer / Delta); the skeleton is recorded in `connector-plugin-refactor-notes-pr2.md`.
+The trait flattens the `controller.status.*` indirection — connectors call `controller.register_batch_progress_counter(...)` directly on `Arc<dyn OutputControllerRef>` instead of reaching through `controller.status`. Land the impl block with the first integrated-output connector migrated (PR 7f, Postgres writer / Delta); the skeleton is recorded in `connector-plugin-refactor-notes-pr2.md`.
 
 ---
 
 ### Phase 5 — Capability methods replace per-variant special cases
 
-Convert `ConnectorFlags` from the Phase 2 placeholder (plain `u32` newtype with `EMPTY` and `contains()`) to a `bitflags!`-generated type. The `bitflags` crate is already a transitive dep of the workspace, so promoting it to a direct dep is zero incremental build cost; the `|`-combining, `Display`/`Debug`, and self-documenting macro syntax are worth it. `EMPTY` and `contains()` are drop-in compatible with what `bitflags` generates, so no call-site changes outside the struct definition.
+Convert `ConnectorFlags` from the Phase 2 placeholder (plain `u32` newtype with `EMPTY` and `contains()`) to a `bitflags!`-generated type. **`bitflags` is NOT currently a workspace dep** (the earlier draft of this plan assumed it was a transitive dep — it isn't); add `bitflags = "2"` directly to `crates/adapterlib/Cargo.toml` rather than to the workspace `[dependencies]` table. Single-crate direct dep is simpler than workspace promotion until a second crate needs it. `EMPTY` is preserved as `Self::empty()` for source compatibility; `contains()` is drop-in compatible. No call-site changes outside the struct definition.
+
+Concrete flag values (stable from this point forward — future flags use the next available bits):
+- `HTTP_DIRECT = 0x01`
+- `AUTO_RECREATED_ON_RESTART = 0x02`
 
 Add capability fields to `ConnectorDescriptor` (extending the type from Phase 2) and rewrite the four scattered uses of "what kind of connector is this" as descriptor lookups:
 
@@ -194,6 +199,14 @@ Add capability fields to `ConnectorDescriptor` (extending the type from Phase 2)
 | `match (TransportConfig::Datagen(_), None)` default format (`controller.rs:6013`) | `descriptor.default_format` returns `Some(JSON-Datagen)` |
 
 These special cases stop being grep-targets; they become metadata that any plugin can also declare.
+
+**Registry-completeness invariant** (introduced by this phase, must be maintained going forward): every transient connector — and every connector with a flag the controller queries — MUST register a descriptor. The new lookups `connector_by_name(...).map(|d| d.kind == Transient).unwrap_or(false)` silently degrade to `false` for unregistered connectors. Phase 5 ensures all four existing transient connectors (`clock`, `http_input`, `http_output`, `adhoc_input`) are registered; the `is_transient()` method on `TransportConfig` can be removed only after this is verified. Add this invariant to the connector-authoring guide (Phase 11): a new transient connector must register a `ConnectorKind::Transient` descriptor, not just implement the trait.
+
+**Default-format ownership moves to the connector**: the JSON-Datagen format spec (`format_name="json"`, `JsonFlavor::Datagen`, `JsonUpdateFormat::Raw`, `array=true`, `lines=Multiple`) was hardcoded in `controller.rs`. After Phase 5 it lives in `datagen/src/lib.rs::datagen_default_format()`. The controller no longer imports `JsonParserConfig` / `JsonFlavor` / `JsonUpdateFormat` / `JsonLines` for this purpose. **Side effect**: the "custom format not supported" error message becomes generic (`"{name} endpoints do not support custom formats"` instead of `"datagen endpoints do not support custom formats"`); any test asserting on the literal `datagen` substring needs updating.
+
+**`build_*: None` is a valid descriptor pattern.** `http_output` registers a descriptor with `build_output: None` because `HttpOutputEndpoint` is constructed by the HTTP server (`server.rs:2238`) at request time — its `name`/`format`/`backpressure` parameters come from the request, not from a stored config. The descriptor exists purely to expose `kind: ConnectorKind::Transient` for `pipeline_diff.rs` lookups. The output factory's registry path handles this correctly: descriptor found → `build_output` is `None` → `Ok(None)`, identical to the previous fallback. Document this as a valid pattern: descriptors-for-metadata-only, no factory dispatch required.
+
+**`inventory` must be a direct dep**: `register_connector!` expands to `::inventory::submit!`, which requires `inventory` as a direct dep of the calling crate (transitive through `feldera-adapterlib` is not enough). The `datagen` crate had to add `inventory = { workspace = true }` to its `Cargo.toml` for its `submit!` to compile. Document this in the connector-authoring guide; any future per-connector crate must do the same.
 
 **Add a CI lint** that fails if `controller.rs` matches on a `TransportConfig` variant outside the dispatch entry points. Stops anyone from re-introducing per-variant special-casing.
 
@@ -213,7 +226,7 @@ Rewrite the four factory functions (`input_transport_config_to_endpoint` at `tra
 
 **Transitional state**: when this phase lands, Phase 4a has migrated only `file`/`clock`. The factory's body is split into "registry path for migrated connectors" + "fallback `match` for unmigrated ones". As Phase 4b proceeds, the fallback shrinks until empty. **Pattern from PR 4**: as each connector migrates, its match arm is moved into the `Ok(None)` catch arm rather than left as dead code (Rust's exhaustiveness check + future "unreachable pattern" lints would otherwise flag it). For the output factory, `_ => Ok(None)` already absorbs them — explicit arms can be deleted. After Phase 4b lands, the `Ok(None)` arms shrink to empty and the explicit fallback `match` is removed entirely. This keeps every commit in this sequence functional and testable.
 
-**`Direction::InputOutput` descriptors**: PR 4 only exercised input-only (`ClockInput`, `FileInput`) and output-only (`FileOutput`) descriptors. The first connector with `Direction::InputOutput` (e.g. `kafka` in PR 7e — same descriptor used from both factories) needs the registry dispatch to correctly check `descriptor.build_input.is_some()` from the input factory and `descriptor.build_output.is_some()` from the output factory, not just rely on `direction`. Document this in the Phase 6 implementation notes.
+**`Direction::InputOutput` descriptors**: PR 4 only exercised input-only (`ClockInput`, `FileInput`) and output-only (`FileOutput`) descriptors. The first connector with `Direction::InputOutput` (e.g. `kafka` in PR 7d — same descriptor used from both factories) needs the registry dispatch to correctly check `descriptor.build_input.is_some()` from the input factory and `descriptor.build_output.is_some()` from the output factory, not just rely on `direction`. Document this in the Phase 6 implementation notes.
 
 This is the largest mechanical change but does **not** touch any connector implementation. Every `TransportInputEndpoint` / `OutputEndpoint` impl is unchanged.
 
@@ -472,8 +485,8 @@ Status legend: ✅ resolved by plan / ⚠️ accepted with mitigation / 🔧 aud
 1. **Phase 1 + Phase 2** — descriptor type + macro + ABI tightening. Foundational, no behavior change.
 2. **Phase 3** — format registry. Small, isolated, proves the inventory-based pattern.
 3. **Phase 4a** — migrate `file` and `clock` (no special cases). Factory functions still have match arms for everything else.
-4. **Phase 5 + Phase 6** — capability methods on the descriptor, then rewrite the four factory functions to use the registry. After Phase 6, the factory body is "registry path + fallback match for unmigrated connectors".
-5. **Phase 4b** — sweep remaining bundled connectors. The fallback match shrinks until empty. At this point, all bundled connectors are registry-driven, but pipeline-manager still uses the old exhaustive match for direction validation.
+4. **Phase 5 + Phase 6** — capability methods on the descriptor, then rewrite the four factory functions to use the registry. Phase 5 implicitly migrates `http_input`, `http_output`, `adhoc_input`, and `datagen` because the controller-rewrites query their descriptors. After Phase 6, the factory body is "registry path + fallback match for unmigrated connectors".
+5. **Phase 4b** — sweep the remaining bundled connectors (`s3`, `url`, `nats`, `pubsub`, `redis`, `kafka`, `nexmark`, integrated). The fallback match shrinks until empty. At this point, all bundled connectors are registry-driven, but pipeline-manager still uses the old exhaustive match for direction validation.
 6. **Phase 7** — open `TransportConfig` enum. The `Plugin` variant accepts unknown names as `{name, config}`; bundled connectors keep their typed variants. No deserialization breakage for existing pipelines.
 7. **Phase 8** — `connectors.toml` + describer + lockfile policy. After this, pipeline-manager validates against the described set; with an empty `connectors.toml`, behavior matches today's bundled-only deployments.
 8. **Phase 9** — `GET /v0/connectors` discovery endpoint reads the cached manifest.
@@ -486,7 +499,7 @@ Each phase is independently mergeable; nothing forces a flag day. The describer 
 
 ## Suggested PR breakdown
 
-Each PR below is sized to be independently reviewable and mergeable. Dependencies are explicit. Phases that are too large for one PR are split (Phase 4b across many; Phase 8 across four). Phases that are small enough to combine are combined.
+Each PR below is sized to be independently reviewable and mergeable. Dependencies are explicit. Phases that are too large for one PR are split (Phase 4b across PR 7a–7g; Phase 8 across PR 9–13). Phases that are small enough to combine are combined.
 
 ### PR 1 — Tighten the plugin ABI surface (Phase 1)
 - [ ] Audit `crates/adapterlib/src/lib.rs` re-exports; document the supported plugin-facing types in module docs (including `OutputConsumer` and `StagedInputBuffer`).
@@ -506,10 +519,10 @@ Each PR below is sized to be independently reviewable and mergeable. Dependencie
 - [ ] **Move `IntegratedOutputEndpoint`** and its blanket impl from `crates/adapters/src/integrated.rs:20` to `feldera-adapterlib`, alongside `IntegratedInputEndpoint`. Update `dbsp_adapters` to import from the new location. No semantic change. Without this move, third-party integrated output connectors would have to depend on `dbsp_adapters`. The intermediate two-hop re-export (`feldera_adapterlib::transport → adapters::integrated → adapters::lib`) is acceptable here; Phase 4b cleans it up.
 - [ ] Define `ConnectorDescriptor` struct, `Direction` enum, `ConnectorKind` enum.
 - [ ] Define `ConnectorFlags` as an **empty bitfield with a TODO comment** naming the flags Phase 5 will add (`HTTP_DIRECT`, `AUTO_RECREATED_ON_RESTART`). Plain `u32` newtype with `EMPTY` and `contains()` is fine here; Phase 5/PR 5 promotes it to `bitflags!`. Drop-in compatible.
-- [ ] Define the four `Build*Fn` function-pointer types matching the existing factory signatures. `BuildIntegratedOutputFn` takes `Arc<dyn OutputControllerRef>` (**not** `Weak`) — the connector's `new()` immediately downgrades for storage. Define `OutputControllerRef` trait with the **four** methods audited from the actual call sites: `output_transport_error`, `update_output_connector_health`, `register_batch_progress_counter`, `output_buffer` (the last two flatten the `controller.status.*` indirection). Exact signatures are recorded in `connector-plugin-refactor-notes-pr2.md`. `ControllerInner` will impl this in PR 7g.
+- [ ] Define the four `Build*Fn` function-pointer types matching the existing factory signatures. `BuildIntegratedOutputFn` takes `Arc<dyn OutputControllerRef>` (**not** `Weak`) — the connector's `new()` immediately downgrades for storage. Define `OutputControllerRef` trait with the **four** methods audited from the actual call sites: `output_transport_error`, `update_output_connector_health`, `register_batch_progress_counter`, `output_buffer` (the last two flatten the `controller.status.*` indirection). Exact signatures are recorded in `connector-plugin-refactor-notes-pr2.md`. `ControllerInner` will impl this in PR 7f.
 - [ ] Add `inventory::collect!(&'static ConnectorDescriptor)` slot.
 - [ ] Implement `register_connector!` macro as a **bare wrapper around `inventory::submit!`** taking a `&'static ConnectorDescriptor` expression. **Do not** ship the named-fields/closure form: `inventory::submit!` requires const-evaluable expressions, and non-capturing closures are not const in `static` initializers in current Rust. Document the constraint and the named-function-only path; an ergonomic macro restricted to function items can be added later.
-- [ ] **Do not** add `unsafe impl Sync for ConnectorDescriptor` / `Send` — `fn(...)` pointers and the descriptor's other fields are auto-`Send + Sync`; explicit `unsafe impl`s here are misleading. (If they were already added in development, remove in this PR.)
+- [ ] **Do not** add `unsafe impl Sync for ConnectorDescriptor` / `Send`. Every field auto-derives `Send + Sync` by construction: bare `fn(...)` pointers are unconditionally `Send + Sync` regardless of argument/return types, `Direction` / `ConnectorKind` are unit-variant enums, `FtModel` is a `Copy + Clone` enum, `ConnectorFlags` is a `bitflags!` newtype over `u32`, and `&'static str` is auto-`Send + Sync`. The auto-derived `Send + Sync` is **architecturally required** (descriptors live in `static`s and are iterated by `inventory::iter` from any thread), not coincidental. Add a doc-comment invariant on the struct: *"All fields must auto-derive `Send + Sync`. Descriptors are stored in `static`s and shared across threads via `inventory::iter`; `Send + Sync` is a required invariant, not a coincidence. Use bare `fn(...)` pointers instead of `Box<dyn …>` for extension points; if a future field cannot auto-derive these traits, redesign the field rather than adding `unsafe impl`."* This converts the safety property from "happens to hold today" into "structural rule the compiler enforces" — stronger than an `unsafe impl` ever could be.
 - [ ] Add discovery API: `registered_connectors()`, `connector_by_name()`. The latter is intentionally a simple O(n) walk; collision detection is the describer's job (Phase 8/PR 10), not adapterlib's.
 - [ ] Unit tests: register a stub descriptor, look it up, verify both Iterator and by-name access.
 - [ ] Document a name distinct from existing per-record `ConnectorMetadata`.
@@ -550,15 +563,22 @@ Each PR below is sized to be independently reviewable and mergeable. Dependencie
 - **Unblocks**: PR 5, PR 6.
 
 ### PR 5 — Capability fields on descriptor + controller refactor (Phase 5)
-- [ ] Convert `ConnectorFlags` from the PR 2 plain-`u32` placeholder to `bitflags!`. Promote `bitflags` from transitive dep to direct dep in `feldera-adapterlib/Cargo.toml` (zero incremental build cost — already compiled). `EMPTY` and `contains()` are drop-in compatible; no call-site changes outside the struct definition.
-- [ ] Add concrete fields to `ConnectorFlags`: `HTTP_DIRECT`, `AUTO_RECREATED_ON_RESTART`, plus any others discovered.
+- [ ] Convert `ConnectorFlags` from the PR 2 plain-`u32` placeholder to `bitflags!`. Add `bitflags = "2"` **directly to `crates/adapterlib/Cargo.toml`** (NOT to the workspace `[dependencies]` table — `bitflags` is not currently a workspace dep; single-crate dep is simpler until a second crate needs it). Keep `EMPTY` as `Self::empty()` const for source compatibility; `contains()` is drop-in compatible. No call-site changes outside the struct definition.
+- [ ] Add concrete flag constants with stable bit values: `HTTP_DIRECT = 0x01`, `AUTO_RECREATED_ON_RESTART = 0x02`. Future flags use the next available bits; document the bit layout in source.
 - [ ] Wire `default_format` field on descriptor (already declared in PR 2).
-- [ ] **Register minimal flag-only descriptors for every bundled connector** (not just `file`/`clock` from PR 4) so descriptor lookups resolve for all connectors as soon as this PR lands. Each descriptor sets `name`, `direction`, `kind`, `fault_tolerance`, `flags`, and `default_format`; `build_*` fields stay `None` until 7a–7g. Without this, the controller-special-case rewrites below silently break unmigrated connectors (no descriptor → `is_http_input` returns false for `http`, transient detection fails for `adhoc`/`nexmark`/`datagen`, etc.).
-- [ ] Replace `transport.is_transient()` callers in `controller/pipeline_diff.rs:97,106` with descriptor lookups.
+- [ ] **Register descriptors for the four connectors the controller-rewrites depend on**: `http_input` (with `HTTP_DIRECT` flag, `Transient` kind, `build_input: Some(build_http_input)`), `http_output` (`Transient` kind, `build_output: None` — server creates `HttpOutputEndpoint` directly at request time, descriptor is metadata-only), `adhoc_input` (`Transient` kind, `build_input: Some(build_adhoc_input)`), `datagen` (`Regular` kind, `default_format: Some(datagen_default_format)`, `build_input: Some(build_datagen_input)`). The other unmigrated connectors (`s3`, `url`, `nats`, `pubsub`, `redis`, `kafka`, `nexmark`, integrated) do NOT need descriptors yet — none of the four controller rewrites query them. Phase 4b sweeps them later.
+- [ ] **`build_*: None` pattern is valid**: `http_output`'s descriptor has `build_output: None` because the HTTP server constructs the endpoint directly with runtime parameters. The output factory's registry path returns `Ok(None)` in this case, matching today's `_ => Ok(None)` fallback. Document this pattern.
+- [ ] **Add `inventory = { workspace = true }` to `crates/datagen/Cargo.toml`**. The `register_connector!` macro expands to `::inventory::submit!`, which requires `inventory` as a direct dep of the calling crate — transitive through `feldera-adapterlib` is not enough. Any future per-connector crate must do the same.
+- [ ] Move the JSON-Datagen format spec from `controller.rs` into `datagen/src/lib.rs::datagen_default_format()`. Remove the now-unused `use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat, JsonLines}` imports from `controller.rs`.
+- [ ] Replace `transport.is_transient()` callers in `controller/pipeline_diff.rs:97,106` with descriptor lookups (`connector_by_name(&transport.name()).map(|d| d.kind == ConnectorKind::Transient).unwrap_or(false)`).
 - [ ] Replace `transport.is_http_input()` at `controller.rs:4448` with `descriptor.flags.contains(HTTP_DIRECT)`.
 - [ ] Replace `match TransportConfig::ClockInput(_)` filter at `controller.rs:4521` with `AUTO_RECREATED_ON_RESTART` check.
-- [ ] Replace `match (TransportConfig::Datagen(_), None)` default-format injection at `controller.rs:6013` with `descriptor.default_format()`.
+- [ ] Replace `match (TransportConfig::Datagen(_), None)` default-format injection at `controller.rs:6013` with `descriptor.default_format()`. The error message changes from `"datagen endpoints do not support custom formats"` to `"{name} endpoints do not support custom formats"`; update any test that asserts on the literal `"datagen"` substring.
+- [ ] **Move `HttpInput`/`HttpOutput`/`AdHocInput`/`Datagen` arms to the input factory's `Ok(None)` catch arm** (mirrors PR 4's pattern). After this PR the catch arm contains: `FileInput`, `ClockInput`, `HttpInput`, `AdHocInput`, `Datagen`, plus all output-only variants. PR 7a–7g shrinks it.
+- [ ] Remove now-unused `use adhoc::AdHocInputEndpoint`, `use http::HttpInputEndpoint`, `use feldera_datagen::GeneratorEndpoint` imports from `transport.rs`.
+- [ ] Document the **registry-completeness invariant**: every transient connector and every connector whose flags the controller queries MUST register a descriptor. Lookups silently degrade to `false`/`None` for unregistered connectors. Removing `TransportConfig::is_transient()` is gated on verifying all four transient connectors are registered (done in this PR).
 - [ ] Add CI lint that fails if any `match TransportConfig::*` arm appears in `controller.rs` outside the four dispatch sites.
+- [ ] Verify `connector_flags_contains` test, file/clock transport tests (3), and format tests (87) still pass.
 - **Depends on**: PR 4.
 - **Unblocks**: PR 6.
 
@@ -567,26 +587,26 @@ Each PR below is sized to be independently reviewable and mergeable. Dependencie
 - [ ] Same for `output_transport_config_to_endpoint` (`transport.rs:139`).
 - [ ] Same for `create_integrated_input_endpoint` (`integrated.rs:89`).
 - [ ] Same for `create_integrated_output_endpoint` (`integrated.rs:40`).
-- [ ] Dispatch logic checks `descriptor.build_input.is_some()` / `descriptor.build_output.is_some()` per call site, not just `direction`. A `Direction::InputOutput` descriptor (first appears in PR 7e for kafka) must be reachable from both factories — direction alone is insufficient because the factory only knows whether it is the input or output entry point.
-- [ ] Verify integrated factories pass `Arc<dyn OutputControllerRef>` (not `Weak`) to `BuildIntegratedOutputFn` — connector's `new()` immediately downgrades for storage. (Defined in PR 2; PR 7g lands the `impl OutputControllerRef for ControllerInner`.)
+- [ ] Dispatch logic checks `descriptor.build_input.is_some()` / `descriptor.build_output.is_some()` per call site, not just `direction`. A `Direction::InputOutput` descriptor (first appears in PR 7d for kafka) must be reachable from both factories — direction alone is insufficient because the factory only knows whether it is the input or output entry point.
+- [ ] Verify integrated factories pass `Arc<dyn OutputControllerRef>` (not `Weak`) to `BuildIntegratedOutputFn` — connector's `new()` immediately downgrades for storage. (Defined in PR 2; PR 7f lands the `impl OutputControllerRef for ControllerInner`.)
 - [ ] Tests cover both code paths (registry hit and fallback hit) for at least one connector each.
-- [ ] After this PR: `file` and `clock` are reached only via the registry; everything else still hits the fallback match.
+- [ ] After this PR: `file`, `clock`, `http_input`, `http_output`, `adhoc_input`, `datagen` are reached only via the registry; everything else still hits the fallback match. (PR 4 migrated `file`/`clock`; PR 5 added the other four as a side effect of the controller-rewrites.)
 - **Depends on**: PR 5.
 - **Unblocks**: PR 7a–7g.
 
-### PR 7a–7g — Sweep remaining bundled connectors onto the registry (Phase 4b)
-Each of these PRs follows the same recipe: add `register_connector!`, remove the corresponding fallback match arm, verify tests pass. Group as small PRs to keep blast radius low.
-- [ ] **PR 7a**: `http` (input + output, `HTTP_DIRECT` flag).
-- [ ] **PR 7b**: `s3` + `url`.
-- [ ] **PR 7c**: `nats` + `pubsub` (each behind its `with-*` feature gate).
-- [ ] **PR 7d**: `redis` (output only).
-- [ ] **PR 7e**: `kafka` — handles ft/nonft split; `build_output` accepts the existing `fault_tolerant: bool` parameter.
-- [ ] **PR 7f**: `nexmark` + `datagen` + `adhoc` (transient/generator group).
-- [ ] **PR 7g**: integrated — `postgres` (reader, writer), `postgres-cdc`, `delta_table`, `iceberg`. Wires `IntegratedOutputEndpoint`/`IntegratedInputEndpoint` builds. Land the `OutputControllerRef` impl on `ControllerInner` here (declared in PR 2). Each connector's `new()` receives `Arc<dyn OutputControllerRef>` and immediately downgrades to `Weak` for storage, mirroring today's `Weak<ControllerInner>` pattern.
-- [ ] After 7g lands: the four factory functions contain only registry calls; no fallback match remains. Strip the dead match arms in a final cleanup commit.
-- [ ] **Re-export-chain cleanup commit (end of 7g)**: with `adapters::integrated` no longer the dispatch home, switch `adapters::lib.rs` to import `IntegratedOutputEndpoint` directly from `feldera_adapterlib::transport` (collapsing the two-hop chain established by PR 2). Drop `Encoder`/`OutputEndpoint` imports from `integrated.rs` if no longer referenced.
-- [ ] **`#[doc(hidden)]` cleanup commit (end of 7g)**: with integrated connectors now reachable from out-of-tree code via the descriptor registry, remove `#[doc(hidden)]` from `IntegratedInputEndpoint`, `IntegratedOutputEndpoint`, `InputCollectionHandle`, and `OutputConsumer`. These were kept hidden in PR 1 because surfacing them without their callers being plugin-reachable would have been confusing. They become first-class plugin ABI here.
-- **Depends on**: PR 6 (each PR independent of the others within 7a–7g).
+### PR 7a–7g — Sweep remaining bundled connectors onto the registry, then clean up (Phase 4b)
+PRs 7a–7f follow the same recipe: add `register_connector!`, remove the corresponding fallback match arm, verify tests pass. PR 7g is the post-migration cleanup. Group as small PRs to keep blast radius low. **Note**: `http`, `adhoc`, and `datagen` were already migrated in PR 5 as prerequisites for the controller-rewrites; this sweep covers only the connectors that PR 5 didn't need to touch.
+- [ ] **PR 7a**: `s3` + `url`.
+- [ ] **PR 7b**: `nats` + `pubsub` (each behind its `with-*` feature gate).
+- [ ] **PR 7c**: `redis` (output only).
+- [ ] **PR 7d**: `kafka` — handles ft/nonft split; `build_output` accepts the existing `fault_tolerant: bool` parameter. First connector with `Direction::InputOutput`; verify the PR 6 dispatch logic correctly routes to `build_input` from the input factory and `build_output` from the output factory.
+- [ ] **PR 7e**: `nexmark` (transient/generator).
+- [ ] **PR 7f**: integrated — `postgres` (reader, writer), `postgres-cdc`, `delta_table`, `iceberg`. Wires `IntegratedOutputEndpoint`/`IntegratedInputEndpoint` builds. Land the `OutputControllerRef` impl on `ControllerInner` here (declared in PR 2). Each connector's `new()` receives `Arc<dyn OutputControllerRef>` and immediately downgrades to `Weak` for storage, mirroring today's `Weak<ControllerInner>` pattern.
+- [ ] **PR 7g — final cleanup** (one PR, three commits): with all bundled connectors registry-driven after 7f, strip the post-migration leftovers. Each commit is independently small and reviewable, but they share the "PR 7 swept the connectors, now sweep the scaffolding" theme. Splitting into three separate top-level PRs would be needless review overhead.
+  - **Commit 1 — strip dead match arms**: the four factory functions in `transport.rs` and `integrated.rs` should now contain only registry calls. The input factory's `Ok(None)` catch arm shrinks from `{FileInput, ClockInput, HttpInput, AdHocInput, Datagen, S3Input, UrlInput, NatsInput, PubSubInput, KafkaInput, NexmarkInput, postgres-reader, postgres-cdc, delta_table-input, iceberg}` (post-PR 5) → empty. Output factory and integrated factories likewise.
+  - **Commit 2 — re-export-chain cleanup**: with `adapters::integrated` no longer the dispatch home, switch `adapters::lib.rs` to import `IntegratedOutputEndpoint` directly from `feldera_adapterlib::transport` (collapsing the two-hop chain established by PR 2). Drop `Encoder` / `OutputEndpoint` imports from `integrated.rs` if no longer referenced.
+  - **Commit 3 — `#[doc(hidden)]` removal**: with integrated connectors now reachable from out-of-tree code via the descriptor registry, remove `#[doc(hidden)]` from `IntegratedInputEndpoint`, `IntegratedOutputEndpoint`, `InputCollectionHandle`, and `OutputConsumer`. These were kept hidden in PR 1 because surfacing them without their callers being plugin-reachable would have been confusing. They become first-class plugin ABI here.
+- **Depends on**: PR 6 (PRs 7a–7f are independent of each other; PR 7g depends on 7f having landed).
 - **Unblocks**: PR 8.
 
 ### PR 8 — Open the `TransportConfig` enum (Phase 7)
@@ -597,7 +617,7 @@ Each of these PRs follows the same recipe: add `register_connector!`, remove the
 - [ ] **Audit every exhaustive `match TransportConfig` in the workspace** (`rg 'match.*TransportConfig'`); add a `Plugin` arm to each. Rust's exhaustiveness check makes this a compile-time forcing function — the work is mechanical, but the reviewer should expect this PR to touch ~5 files outside `config.rs`. Until PR 11 wires manifest-based validation, the `Plugin` arm in `program.rs:682,735` should reject the config with `UnknownConnector { name }` rather than panic with `unreachable!()`. Other sites (display/debug/serde-related) typically just forward `name` and `config` opaquely.
 - [ ] Tests: serde round-trip for every known variant (byte-for-byte unchanged) plus a synthetic unknown name routing to `Plugin`. Add a test that a `Plugin` config submitted before PR 11 surfaces a clean `UnknownConnector` error rather than crashing.
 - [ ] Verify a stored pipeline configuration from before this PR deserializes identically.
-- **Depends on**: PR 7g (all bundled connectors must already be registry-driven, so the `Plugin` variant is purely an extension point).
+- **Depends on**: PR 7g (all bundled connectors registry-driven AND cleanup landed; the `Plugin` variant is purely an extension point at this point — no risk of dead match arms colliding with the new `Plugin` arm being added).
 - **Unblocks**: PR 9.
 
 ### PR 9 — `connectors.toml` schema, parser, config plumbing (Phase 8.1)
@@ -674,4 +694,4 @@ Each of these PRs follows the same recipe: add `register_connector!`, remove the
 
 ---
 
-**Total: 16 PRs** (PR 7 spans 7a-7g as 7 sub-PRs, but is reviewable in parallel and can be reordered). PR 1-3 are pre-work; PR 4-6 are the core registry plumbing; PR 7a-7g are mechanical sweeps; PR 8-11 enable plugins; PR 12-13 harden the build; PR 14-16 expose plugins externally.
+**Total: 22 PRs** — 16 top-level numbered PRs, with PR 7 split into 7 sub-PRs (7a–7f sweep the remaining bundled connectors; 7g is the post-migration cleanup). PR 1–3 are pre-work; PR 4–6 are the core registry plumbing (PR 5 absorbed `http`/`adhoc`/`datagen` as prerequisites for the controller-rewrites, leaving Phase 4b shorter); PR 7a–7f are the remaining mechanical sweeps and PR 7g strips the scaffolding; PR 8–11 enable plugins; PR 12–13 harden the build; PR 14–16 expose plugins externally.

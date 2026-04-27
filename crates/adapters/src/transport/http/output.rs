@@ -298,3 +298,30 @@ however the HTTP transport does not support this representation."
         false
     }
 }
+
+// ── Connector registry ────────────────────────────────────────────────────────
+
+use feldera_adapterlib::connector::{ConnectorDescriptor, ConnectorFlags, ConnectorKind, Direction};
+
+fn http_output_config_schema() -> serde_json::Value {
+    serde_json::Value::Object(Default::default())
+}
+
+// `HttpOutputEndpoint` is created directly by the HTTP server (`server.rs`),
+// not through the standard factory, so `build_output` is `None`.  The
+// descriptor exists so controller code can look up its `kind` (Transient).
+static HTTP_OUTPUT_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
+    name: "http_output",
+    direction: Direction::Output,
+    kind: ConnectorKind::Transient,
+    fault_tolerance: None,
+    config_schema: http_output_config_schema,
+    default_format: None,
+    flags: ConnectorFlags::EMPTY,
+    build_input: None,
+    build_output: None,
+    build_integrated_input: None,
+    build_integrated_output: None,
+};
+
+inventory::submit! { &HTTP_OUTPUT_DESCRIPTOR }

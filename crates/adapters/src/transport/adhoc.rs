@@ -326,6 +326,41 @@ impl InputReader for AdHocInputEndpoint {
     }
 }
 
+// ── Connector registry ────────────────────────────────────────────────────────
+
+use feldera_adapterlib::connector::{ConnectorDescriptor, ConnectorFlags, ConnectorKind, Direction};
+
+fn adhoc_input_config_schema() -> serde_json::Value {
+    serde_json::Value::Object(Default::default())
+}
+
+fn build_adhoc_input(
+    config: &serde_json::Value,
+    _endpoint_name: &str,
+    _secrets_dir: &std::path::Path,
+) -> AnyResult<Box<dyn TransportInputEndpoint>> {
+    let config: AdHocInputConfig = serde_json::from_value(config.clone())?;
+    Ok(Box::new(AdHocInputEndpoint::new(config)))
+}
+
+static ADHOC_INPUT_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
+    name: "adhoc_input",
+    direction: Direction::Input,
+    kind: ConnectorKind::Transient,
+    fault_tolerance: Some(FtModel::ExactlyOnce),
+    config_schema: adhoc_input_config_schema,
+    default_format: None,
+    flags: ConnectorFlags::EMPTY,
+    build_input: Some(build_adhoc_input),
+    build_output: None,
+    build_integrated_input: None,
+    build_integrated_output: None,
+};
+
+inventory::submit! { &ADHOC_INPUT_DESCRIPTOR }
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 #[derive(Serialize, Deserialize)]
 struct Metadata {
     /// Serialized batches in Parquet format.

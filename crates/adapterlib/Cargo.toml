@@ -42,6 +42,7 @@ thiserror = { workspace = true }
 serde_json_path_to_error = { workspace = true }
 chrono = { workspace = true }
 tracing = { workspace = true }
+bitflags = "2"
 inventory = { workspace = true }
 
 [package.metadata.cargo-machete]

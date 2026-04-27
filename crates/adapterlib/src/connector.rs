@@ -96,24 +96,23 @@ pub enum ConnectorKind {
 
 // ── ConnectorFlags ────────────────────────────────────────────────────────────
 
-/// Capability flags for a connector.
-///
-/// Currently empty.  Phase 5 will add:
-/// - `HTTP_DIRECT` (`0x01`) — connector receives data over a direct HTTP
-///   connection managed by the controller's built-in HTTP server.
-/// - `AUTO_RECREATED_ON_RESTART` (`0x02`) — controller automatically
-///   re-creates this connector when resuming from a checkpoint (e.g. `clock`).
-#[derive(Default, Copy, Clone, Debug, PartialEq, Eq)]
-pub struct ConnectorFlags(u32);
+bitflags::bitflags! {
+    /// Capability flags for a connector.
+    #[derive(Default, Copy, Clone, Debug, PartialEq, Eq)]
+    pub struct ConnectorFlags: u32 {
+        /// Connector receives data over a direct HTTP connection managed by the
+        /// controller's built-in HTTP server (e.g. `http_input`).
+        const HTTP_DIRECT = 0x01;
+
+        /// Controller automatically re-creates this connector when resuming
+        /// from a checkpoint (e.g. `clock`).
+        const AUTO_RECREATED_ON_RESTART = 0x02;
+    }
+}
 
 impl ConnectorFlags {
     /// No flags set.
-    pub const EMPTY: Self = Self(0);
-
-    /// Returns `true` if all bits in `other` are set in `self`.
-    pub fn contains(self, other: ConnectorFlags) -> bool {
-        (self.0 & other.0) == other.0
-    }
+    pub const EMPTY: Self = Self::empty();
 }
 
 // ── OutputControllerRef ───────────────────────────────────────────────────────
@@ -380,12 +379,12 @@ mod tests {
 
     #[test]
     fn connector_flags_contains() {
-        let flags = ConnectorFlags(0b0011);
-        assert!(flags.contains(ConnectorFlags(0b0001)));
-        assert!(flags.contains(ConnectorFlags(0b0010)));
-        assert!(flags.contains(ConnectorFlags(0b0011)));
-        assert!(!flags.contains(ConnectorFlags(0b0100)));
+        let flags = ConnectorFlags::HTTP_DIRECT | ConnectorFlags::AUTO_RECREATED_ON_RESTART;
+        assert!(flags.contains(ConnectorFlags::HTTP_DIRECT));
+        assert!(flags.contains(ConnectorFlags::AUTO_RECREATED_ON_RESTART));
+        assert!(flags.contains(ConnectorFlags::HTTP_DIRECT | ConnectorFlags::AUTO_RECREATED_ON_RESTART));
+        assert!(!flags.contains(ConnectorFlags::from_bits_retain(0b0100)));
         assert!(ConnectorFlags::EMPTY.contains(ConnectorFlags::EMPTY));
-        assert!(!ConnectorFlags::EMPTY.contains(ConnectorFlags(1)));
+        assert!(!ConnectorFlags::EMPTY.contains(ConnectorFlags::HTTP_DIRECT));
     }
 }

@@ -341,6 +341,41 @@ impl InputReader for HttpInputEndpoint {
     }
 }
 
+// ── Connector registry ────────────────────────────────────────────────────────
+
+use feldera_adapterlib::connector::{ConnectorDescriptor, ConnectorFlags, ConnectorKind, Direction};
+
+fn http_input_config_schema() -> serde_json::Value {
+    serde_json::Value::Object(Default::default())
+}
+
+fn build_http_input(
+    config: &serde_json::Value,
+    _endpoint_name: &str,
+    _secrets_dir: &std::path::Path,
+) -> AnyResult<Box<dyn TransportInputEndpoint>> {
+    let config: HttpInputConfig = serde_json::from_value(config.clone())?;
+    Ok(Box::new(HttpInputEndpoint::new(config)))
+}
+
+static HTTP_INPUT_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
+    name: "http_input",
+    direction: Direction::Input,
+    kind: ConnectorKind::Transient,
+    fault_tolerance: Some(feldera_types::config::FtModel::ExactlyOnce),
+    config_schema: http_input_config_schema,
+    default_format: None,
+    flags: ConnectorFlags::HTTP_DIRECT,
+    build_input: Some(build_http_input),
+    build_output: None,
+    build_integrated_input: None,
+    build_integrated_output: None,
+};
+
+inventory::submit! { &HTTP_INPUT_DESCRIPTOR }
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 #[derive(Serialize, Deserialize)]
 struct Data {
     chunks: Vec<ByteBuf>,

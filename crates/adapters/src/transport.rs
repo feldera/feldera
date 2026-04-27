@@ -22,11 +22,9 @@
 //! ```
 use std::path::Path;
 
-use adhoc::AdHocInputEndpoint;
 use anyhow::Result as AnyResult;
 use feldera_adapterlib::connector_by_name;
 use feldera_types::secret_resolver::resolve_secret_references_via_json;
-use http::HttpInputEndpoint;
 use serde_json::Value as JsonValue;
 #[cfg(feature = "with-pubsub")]
 use pubsub::PubSubInputEndpoint;
@@ -72,7 +70,6 @@ use crate::transport::nats::NatsInputEndpoint;
 use crate::transport::nexmark::NexmarkEndpoint;
 use crate::transport::s3::S3InputEndpoint;
 use crate::transport::url::UrlInputEndpoint;
-use feldera_datagen::GeneratorEndpoint;
 
 pub use feldera_adapterlib::transport::*;
 
@@ -127,16 +124,17 @@ pub fn input_transport_config_to_endpoint(
         TransportConfig::PubSubInput(_) => return Ok(None),
         TransportConfig::UrlInput(config) => Box::new(UrlInputEndpoint::new(config)),
         TransportConfig::S3Input(config) => Box::new(S3InputEndpoint::new(config)?),
-        TransportConfig::Datagen(config) => Box::new(GeneratorEndpoint::new(config.clone())),
         #[cfg(feature = "with-nexmark")]
         TransportConfig::Nexmark(config) => Box::new(NexmarkEndpoint::new(config.clone())),
         #[cfg(not(feature = "with-nexmark"))]
         TransportConfig::Nexmark(_) => return Ok(None),
-        TransportConfig::HttpInput(config) => Box::new(HttpInputEndpoint::new(config)),
-        TransportConfig::AdHocInput(config) => Box::new(AdHocInputEndpoint::new(config)),
-        // file_input and clock are now handled above via the descriptor registry.
+        // file_input, clock, http_input, adhoc_input, datagen are now handled
+        // above via the descriptor registry.
         TransportConfig::FileInput(_)
         | TransportConfig::ClockInput(_)
+        | TransportConfig::HttpInput(_)
+        | TransportConfig::AdHocInput(_)
+        | TransportConfig::Datagen(_)
         | TransportConfig::FileOutput(_)
         | TransportConfig::KafkaOutput(_)
         | TransportConfig::DeltaTableInput(_)

@@ -278,7 +278,7 @@ static CLOCK_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
     fault_tolerance: Some(FtModel::ExactlyOnce),
     config_schema: clock_config_schema,
     default_format: None,
-    flags: ConnectorFlags::EMPTY,
+    flags: ConnectorFlags::AUTO_RECREATED_ON_RESTART,
     build_input: Some(build_clock_input),
     build_output: None,
     build_integrated_input: None,

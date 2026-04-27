@@ -68,6 +68,7 @@ use dbsp::{
 };
 use dbsp::{Runtime, WeakRuntime};
 use enum_map::EnumMap;
+use feldera_adapterlib::connector::{ConnectorFlags, connector_by_name};
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::transport::{CommandHandler, InputReader, Resume, Watermark};
@@ -88,7 +89,6 @@ use feldera_types::coordination::{
     self, AdHocCatalog, AdHocTableType, CheckpointCoordination, Completion, StepAction, StepInputs,
     StepRequest, StepStatus, TransactionCoordination,
 };
-use feldera_types::format::json::JsonLines;
 use feldera_types::pipeline_diff::PipelineDiff;
 use feldera_types::runtime_status::BootstrapPolicy;
 use feldera_types::secret_resolver::resolve_secret_references_in_connector_config;
@@ -163,7 +163,6 @@ use feldera_types::config::{
     OutputBufferConfig, StorageBackendConfig, SyncConfig,
 };
 use feldera_types::constants::{STATE_FILE, STEPS_FILE};
-use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::{SqlIdentifier, canonical_identifier};
 pub use pipeline_diff::compute_pipeline_diff;
 pub use stats::{CompletionToken, ControllerStatus, ControllerStatusContext, InputEndpointStatus};
@@ -4440,12 +4439,14 @@ impl ControllerInit {
             )
         }
 
-        // Transfer HTTP input endpoints that are not affected by the program diff from the checkpoint to the new configuration.
+        // Transfer HTTP-direct input endpoints that are not affected by the program diff from the checkpoint to the new configuration.
         checkpoint_config
             .inputs
             .iter()
             .filter(|(_connector_name, connector_config)| {
-                connector_config.connector_config.transport.is_http_input()
+                connector_by_name(&connector_config.connector_config.transport.name())
+                    .map(|d| d.flags.contains(ConnectorFlags::HTTP_DIRECT))
+                    .unwrap_or(false)
                     && !pipeline_diff.is_affected_relation(&connector_config.stream)
             })
             .for_each(|(connector_name, connector_config)| {
@@ -4514,12 +4515,11 @@ impl ControllerInit {
                     .inputs
                     .into_iter()
                     .filter(|(_, config)| {
-                        // The clock input connector will be automatically recreated and initialized
-                        // with the clock resolution from the pipeline config.
-                        !matches!(
-                            config.connector_config.transport,
-                            TransportConfig::ClockInput(_)
-                        )
+                        // Connectors with AUTO_RECREATED_ON_RESTART (e.g. clock) are
+                        // automatically re-created by the pipeline; skip them here.
+                        !connector_by_name(&config.connector_config.transport.name())
+                            .map(|d| d.flags.contains(ConnectorFlags::AUTO_RECREATED_ON_RESTART))
+                            .unwrap_or(false)
                     })
                     .collect()
             } else {
@@ -6006,28 +6006,24 @@ impl ControllerInner {
         let fault_tolerance = match endpoint {
             Some(endpoint) => {
                 // Create parser.
+                let descriptor =
+                    connector_by_name(&resolved_connector_config.transport.name());
                 let format_config = match (
-                    &resolved_connector_config.transport,
                     &resolved_connector_config.format,
+                    descriptor.and_then(|d| d.default_format),
                 ) {
-                    (TransportConfig::Datagen(_), None) => FormatConfig {
-                        name: Cow::from("json"),
-                        config: serde_json::to_value(JsonParserConfig {
-                            update_format: JsonUpdateFormat::Raw,
-                            json_flavor: JsonFlavor::Datagen,
-                            array: true,
-                            lines: JsonLines::Multiple,
-                        })
-                        .unwrap(),
-                    },
-                    (TransportConfig::Datagen(_), Some(_)) => {
+                    (None, Some(default_format_fn)) => default_format_fn(),
+                    (Some(_), Some(_)) => {
                         return Err(ControllerError::input_format_not_supported(
                             endpoint_name,
-                            "datagen endpoints do not support custom formats: remove the 'format' section from connector specification",
+                            &format!(
+                                "{} endpoints do not support custom formats: remove the 'format' section from connector specification",
+                                resolved_connector_config.transport.name()
+                            ),
                         ));
                     }
-                    (_, Some(format)) => format.clone(),
-                    (_, None) => {
+                    (Some(format), None) => format.clone(),
+                    (None, None) => {
                         return Err(ControllerError::input_format_not_specified(endpoint_name));
                     }
                 };
