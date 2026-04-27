@@ -2057,22 +2057,11 @@ async fn get_or_create_http_input_endpoint(
 
     let endpoint = HttpInputEndpoint::new(config.clone(), controller.register_api_connection()?);
     // Create endpoint config.
-    let config = InputEndpointConfig {
-        stream: Cow::from(table_name),
-        connector_config: ConnectorConfig {
-            transport: TransportConfig::HttpInput(config),
-            format: Some(format),
-            preprocessor: None,
-            index: None,
-            output_buffer_config: Default::default(),
-            max_batch_size: None,
-            max_worker_batch_size: None,
-            max_queued_records: HttpInputTransport::default_max_buffered_records(),
-            paused: false,
-            labels: vec![],
-            start_after: None,
-        },
-    };
+    let config = InputEndpointConfig::new(
+        table_name,
+        ConnectorConfig::new(TransportConfig::HttpInput(config), Some(format))
+            .with_max_queued_records(HttpInputTransport::default_max_buffered_records()),
+    );
 
     controller
         .add_input_endpoint(
@@ -2233,26 +2222,18 @@ async fn output_endpoint(
     let endpoint = HttpOutputEndpoint::new(&endpoint_name, &args.format, args.backpressure)?;
 
     // Create endpoint config.
-    let config = OutputEndpointConfig {
-        stream: Cow::from(table_name),
-        connector_config: ConnectorConfig {
-            transport: HttpOutputTransport::config(),
-            format: Some(encoder_config_from_http_request(
+    let config = OutputEndpointConfig::new(
+        table_name,
+        ConnectorConfig::new(
+            HttpOutputTransport::config(),
+            Some(encoder_config_from_http_request(
                 &endpoint_name,
                 &args.format,
                 &req,
             )?),
-            preprocessor: None,
-            index: None,
-            output_buffer_config: Default::default(),
-            max_batch_size: None,
-            max_worker_batch_size: None,
-            max_queued_records: HttpOutputTransport::default_max_buffered_records(),
-            paused: false,
-            labels: vec![],
-            start_after: None,
-        },
-    };
+        )
+        .with_max_queued_records(HttpOutputTransport::default_max_buffered_records()),
+    );
 
     // Connect endpoint.
     let controller = state.controller()?;

@@ -1362,6 +1362,15 @@ pub struct InputEndpointConfig {
     pub connector_config: ConnectorConfig,
 }
 
+impl InputEndpointConfig {
+    pub fn new(stream: impl Into<Cow<'static, str>>, connector_config: ConnectorConfig) -> Self {
+        Self {
+            stream: stream.into(),
+            connector_config,
+        }
+    }
+}
+
 /// Deserialize the `start_after` property of a connector configuration.
 /// It requires a non-standard deserialization because we want to accept
 /// either a string or an array of strings.
@@ -1498,6 +1507,32 @@ pub struct ConnectorConfig {
 }
 
 impl ConnectorConfig {
+    pub fn new(transport: TransportConfig, format: Option<FormatConfig>) -> Self {
+        Self {
+            transport,
+            preprocessor: None,
+            format,
+            index: None,
+            output_buffer_config: Default::default(),
+            max_batch_size: None,
+            max_worker_batch_size: None,
+            max_queued_records: default_max_queued_records(),
+            paused: false,
+            labels: Vec::new(),
+            start_after: None,
+        }
+    }
+
+    pub fn with_max_batch_size(mut self, max_batch_size: Option<u64>) -> Self {
+        self.max_batch_size = max_batch_size;
+        self
+    }
+
+    pub fn with_max_queued_records(mut self, max_queued_records: u64) -> Self {
+        self.max_queued_records = max_queued_records;
+        self
+    }
+
     /// Compare two configs modulo the `paused` field.
     ///
     /// Used to compare checkpointed and current connector configs.
@@ -1599,6 +1634,15 @@ pub struct OutputEndpointConfig {
     /// Connector configuration.
     #[serde(flatten)]
     pub connector_config: ConnectorConfig,
+}
+
+impl OutputEndpointConfig {
+    pub fn new(stream: impl Into<Cow<'static, str>>, connector_config: ConnectorConfig) -> Self {
+        Self {
+            stream: stream.into(),
+            connector_config,
+        }
+    }
 }
 
 /// Transport-specific endpoint configuration passed to
