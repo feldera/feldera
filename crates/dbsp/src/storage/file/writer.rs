@@ -1409,7 +1409,7 @@ where
             if let Some(prev0) = &self.prev0 {
                 debug_assert!(
                     &**prev0 < key0,
-                    "can't write {prev0:?} then {key0:?} to column 0",
+                    "can't write {prev0:?} >= {key0:?} to column 0",
                 );
             }
             self.prev0 = Some(clone_box(key0));
