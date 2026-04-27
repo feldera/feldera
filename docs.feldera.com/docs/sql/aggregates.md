@@ -160,7 +160,7 @@ The following window aggregate functions are supported:
     <th>Description</th>
   </tr>
   <tr>
-    <td><a id="window-avg"></a>AVG(numeric)</td>
+    <td><a id="window-avg"></a><code>AVG(</code>numeric<code>)</code></td>
     <td>Returns the average (arithmetic mean) of numeric across all values in window</td>
   </tr>
   <tr>
@@ -217,7 +217,7 @@ The following window aggregate functions are supported:
     `ROW_NUMBER` is currently only supported if the window is used to compute a TopK aggregate.</td>
   </tr>
   <tr>
-    <td><a id="window-sum"></a><code>SUM</code>(<em>numeric</em>)</td>
+    <td><a id="window-sum"></a><code>SUM(</code><em>numeric</em><code>)</code></td>
     <td>Returns the sum of <em>numeric</em> across all values in window</td>
   </tr>
 </table>
