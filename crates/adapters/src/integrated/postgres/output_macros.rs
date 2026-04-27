@@ -44,8 +44,9 @@ macro_rules! flush_op {
     ) => {{
         let stmt = &$this.prepared_statements.$stmt_field;
 
+        let num_records = $this.$counter_field;
         let val = $this.$buf_field.drain(..).collect();
-        $this.exec_statement(stmt.clone(), val, $name);
+        $this.exec_statement(stmt.clone(), val, $name, num_records);
         $this.$counter_field = 0;
         $this.$buf_field.push(b'[');
     }};
