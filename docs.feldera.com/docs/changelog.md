@@ -12,6 +12,15 @@ import TabItem from '@theme/TabItem';
     <TabItem className="changelogItem" value="enterprise"
         label="Enterprise">
 
+        ## Unreleased
+
+        The HTTP egress API endpoint now accepts a connector configuration as the JSON body.
+        This allows more control over connector configuration.  For example:
+
+        ```
+        curl -s -N -X POST 'http://127.0.0.1:8080/v0/pipelines/PIPELINE_NAME/egress/VIEW_NAME' --json '{"format": {"name": "json", "config": {"array": true}}}'
+        ```
+
         ## v0.292.0
 
         Pipeline monitoring: Feldera now monitors and persists a pipeline's health.

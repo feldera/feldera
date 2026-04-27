@@ -2253,7 +2253,8 @@ fn test_external_controller_status_serialization() {
         let output_config: OutputEndpointConfig = serde_json::from_value(json!({
             "stream": "test_output",
             "transport": {
-                "name": "http_output"
+                "name": "http_output",
+                "config": {}
             },
             "format": {
                 "name": "json",

@@ -9,11 +9,10 @@ use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use actix_http::StatusCode;
 use actix_web::{
-    get,
-    http::{header, Method},
+    HttpRequest, HttpResponse, get,
+    http::{Method, header},
     post,
     web::{self, Data as WebData, ReqData},
-    HttpRequest, HttpResponse,
 };
 use feldera_types::query_params::{MetricsParameters, SamplyProfileGetParams, SamplyProfileParams};
 use feldera_types::{program_schema::SqlIdentifier, query_params::ActivateParams};
@@ -46,7 +45,7 @@ pub mod support_bundle;
         ("table_name" = String, Path,
             description = "SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program."),
         ("force" = bool, Query, description = "When `true`, push data to the pipeline even if the pipeline is paused. The default value is `false`"),
-        ("format" = String, Query, description = "Input data format, e.g., 'csv' or 'json'."),
+        ("format" = String, Query, description = "Input data format, either `csv' or 'json'."),
         ("array" = Option<bool>, Query, description = "Set to `true` if updates in this stream are packaged into JSON arrays (used in conjunction with `format=json`). The default values is `false`."),
         ("update_format" = Option<JsonUpdateFormat>, Query, description = "JSON data change event format (used in conjunction with `format=json`).  The default value is 'insert_delete'."),
     ),
@@ -121,8 +120,18 @@ pub(crate) async fn http_input(
 /// Subscribe to a stream of updates from a SQL view or table.
 ///
 /// The pipeline responds with a continuous stream of changes to the specified
-/// table or view, encoded using the format specified in the `?format=`
-/// parameter. Updates are split into `Chunk`s.
+/// table or view.  The stream is configurable two ways:
+///
+/// - Simple configuration of the format may be provided using query parameters.
+///   Use `format` to specify `csv` or `json` output and, for `json` only, `array`
+///   to specify whether to group updates into JSON arrays.  Specify
+///   `backpressure` to specify behavior when the HTTP client cannot keep up.
+///
+/// - Comprehensive configuration may be provided by providing a connector
+///   configuration as a JSON body.  In this case, no query parameters are
+///   allowed.
+///
+/// Updates are split into `Chunk`s.
 ///
 /// The pipeline continues sending updates until the client closes the
 /// connection or the pipeline is stopped.
@@ -133,7 +142,7 @@ pub(crate) async fn http_input(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
         ("table_name" = String, Path,
             description = "SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program."),
-        ("format" = String, Query, description = "Output data format, e.g., 'csv' or 'json'."),
+        ("format" = String, Query, description = "Output data format, either 'csv' or 'json'."),
         ("array" = Option<bool>, Query, description = "Set to `true` to group updates in this stream into JSON arrays (used in conjunction with `format=json`). The default value is `false`"),
         ("backpressure" = Option<bool>, Query, description = r#"Apply backpressure on the pipeline when the HTTP client cannot receive data fast enough.
         When this flag is set to false (the default), the HTTP connector drops data chunks if the client is not keeping up with its output.  This prevents a slow HTTP client from slowing down the entire pipeline.
