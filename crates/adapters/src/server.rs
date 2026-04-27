@@ -2377,13 +2377,6 @@ async fn reset_status(
     Ok(HttpResponse::Ok().json(ResetStatusResponse::new(status)))
 }
 
-#[get("/reset_status")]
-async fn reset_status() -> Result<HttpResponse, PipelineError> {
-    Err(PipelineError::from(ControllerError::not_supported(
-        "reset status is not yet available on this pipeline",
-    )))
-}
-
 /// This service journals the paused state, but it does not wait for the journal
 /// record to commit before it returns success, so there is a small race.
 #[get("/input_endpoints/{endpoint_name}/start")]
