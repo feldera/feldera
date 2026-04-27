@@ -117,3 +117,53 @@ impl OutputEndpoint for RedisOutputEndpoint {
         false
     }
 }
+
+// ── Connector registry ────────────────────────────────────────────────────────
+
+use feldera_adapterlib::connector::{ConnectorDescriptor, ConnectorFlags, ConnectorKind, Direction};
+use serde_json::Value as JsonValue;
+
+fn redis_output_config_schema() -> JsonValue {
+    JsonValue::Object(Default::default())
+}
+
+fn build_redis_output(
+    config: &JsonValue,
+    _endpoint_name: &str,
+    _fault_tolerant: bool,
+    _secrets_dir: &std::path::Path,
+) -> AnyResult<Box<dyn OutputEndpoint>> {
+    let config: RedisOutputConfig = serde_json::from_value(config.clone())?;
+    Ok(Box::new(RedisOutputEndpoint::new(config)?))
+}
+
+static REDIS_OUTPUT_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
+    name: "redis_output",
+    direction: Direction::Output,
+    kind: ConnectorKind::Regular,
+    fault_tolerance: None,
+    config_schema: redis_output_config_schema,
+    default_format: None,
+    flags: ConnectorFlags::EMPTY,
+    build_input: None,
+    build_output: Some(build_redis_output),
+    build_integrated_input: None,
+    build_integrated_output: None,
+};
+
+inventory::submit! { &REDIS_OUTPUT_DESCRIPTOR }
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod registry_test {
+    #[test]
+    fn redis_output_descriptor() {
+        let d = feldera_adapterlib::connector::connector_by_name("redis_output")
+            .expect("redis_output descriptor not registered");
+        assert!(d.build_input.is_none());
+        assert!(d.build_output.is_some());
+        assert!(d.build_integrated_input.is_none());
+        assert!(d.build_integrated_output.is_none());
+    }
+}

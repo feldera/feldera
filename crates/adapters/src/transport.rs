@@ -52,8 +52,6 @@ mod redis;
 
 use feldera_types::config::TransportConfig;
 
-#[cfg(feature = "with-redis")]
-use redis::output::RedisOutputEndpoint;
 
 #[cfg(test)]
 pub use crate::transport::file::set_barrier;
@@ -180,11 +178,7 @@ pub fn output_transport_config_to_endpoint(
             )?))),
             true => Ok(Some(Box::new(KafkaFtOutputEndpoint::new(config)?))),
         },
-        #[cfg(feature = "with-redis")]
-        TransportConfig::RedisOutput(config) => {
-            Ok(Some(Box::new(RedisOutputEndpoint::new(config)?)))
-        }
-        // file_output is now handled above via the descriptor registry.
+        // file_output, redis_output are now handled above via the descriptor registry.
         _ => Ok(None),
     }
 }
