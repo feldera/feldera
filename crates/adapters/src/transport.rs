@@ -26,9 +26,6 @@ use anyhow::Result as AnyResult;
 use feldera_adapterlib::connector_by_name;
 use feldera_types::secret_resolver::resolve_secret_references_via_json;
 use serde_json::Value as JsonValue;
-#[cfg(feature = "with-pubsub")]
-use pubsub::PubSubInputEndpoint;
-
 pub mod adhoc;
 mod file;
 pub mod http;
@@ -62,9 +59,6 @@ use redis::output::RedisOutputEndpoint;
 pub use crate::transport::file::set_barrier;
 #[cfg(feature = "with-kafka")]
 use crate::transport::kafka::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint, KafkaOutputEndpoint};
-
-#[cfg(feature = "with-nats")]
-use crate::transport::nats::NatsInputEndpoint;
 
 #[cfg(feature = "with-nexmark")]
 use crate::transport::nexmark::NexmarkEndpoint;
@@ -112,20 +106,12 @@ pub fn input_transport_config_to_endpoint(
         TransportConfig::KafkaInput(config) => Box::new(KafkaFtInputEndpoint::new(config)?),
         #[cfg(not(feature = "with-kafka"))]
         TransportConfig::KafkaInput(_) => return Ok(None),
-        #[cfg(feature = "with-nats")]
-        TransportConfig::NatsInput(config) => Box::new(NatsInputEndpoint::new(config)?),
-        #[cfg(not(feature = "with-nats"))]
-        TransportConfig::NatsInput(_) => return Ok(None),
-        #[cfg(feature = "with-pubsub")]
-        TransportConfig::PubSubInput(config) => Box::new(PubSubInputEndpoint::new(config.clone())?),
-        #[cfg(not(feature = "with-pubsub"))]
-        TransportConfig::PubSubInput(_) => return Ok(None),
         #[cfg(feature = "with-nexmark")]
         TransportConfig::Nexmark(config) => Box::new(NexmarkEndpoint::new(config.clone())),
         #[cfg(not(feature = "with-nexmark"))]
         TransportConfig::Nexmark(_) => return Ok(None),
-        // file_input, clock, http_input, adhoc_input, datagen, s3_input, url_input are
-        // now handled above via the descriptor registry.
+        // file_input, clock, http_input, adhoc_input, datagen, s3_input, url_input,
+        // nats_input, pub_sub_input are now handled above via the descriptor registry.
         TransportConfig::FileInput(_)
         | TransportConfig::ClockInput(_)
         | TransportConfig::HttpInput(_)
@@ -133,6 +119,8 @@ pub fn input_transport_config_to_endpoint(
         | TransportConfig::Datagen(_)
         | TransportConfig::UrlInput(_)
         | TransportConfig::S3Input(_)
+        | TransportConfig::NatsInput(_)
+        | TransportConfig::PubSubInput(_)
         | TransportConfig::FileOutput(_)
         | TransportConfig::KafkaOutput(_)
         | TransportConfig::DeltaTableInput(_)

@@ -6,4 +6,3 @@ mod input;
 #[cfg(test)]
 mod test;
 
-pub use input::PubSubInputEndpoint;

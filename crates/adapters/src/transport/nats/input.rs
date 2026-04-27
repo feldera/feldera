@@ -1097,3 +1097,51 @@ impl InputReader for NatsReader {
         self.command_sender.is_closed()
     }
 }
+
+// ── Connector registry ────────────────────────────────────────────────────────
+
+use feldera_adapterlib::connector::{ConnectorDescriptor, ConnectorFlags, ConnectorKind, Direction};
+
+fn nats_input_config_schema() -> JsonValue {
+    JsonValue::Object(Default::default())
+}
+
+fn build_nats_input(
+    config: &JsonValue,
+    _endpoint_name: &str,
+    _secrets_dir: &std::path::Path,
+) -> AnyResult<Box<dyn TransportInputEndpoint>> {
+    let config: NatsInputConfig = serde_json::from_value(config.clone())?;
+    Ok(Box::new(NatsInputEndpoint::new(config)?))
+}
+
+static NATS_INPUT_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
+    name: "nats_input",
+    direction: Direction::Input,
+    kind: ConnectorKind::Regular,
+    fault_tolerance: Some(FtModel::ExactlyOnce),
+    config_schema: nats_input_config_schema,
+    default_format: None,
+    flags: ConnectorFlags::EMPTY,
+    build_input: Some(build_nats_input),
+    build_output: None,
+    build_integrated_input: None,
+    build_integrated_output: None,
+};
+
+inventory::submit! { &NATS_INPUT_DESCRIPTOR }
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod registry_test {
+    #[test]
+    fn nats_input_descriptor() {
+        let d = feldera_adapterlib::connector::connector_by_name("nats_input")
+            .expect("nats_input descriptor not registered");
+        assert!(d.build_input.is_some());
+        assert!(d.build_output.is_none());
+        assert!(d.build_integrated_input.is_none());
+        assert!(d.build_integrated_output.is_none());
+    }
+}
