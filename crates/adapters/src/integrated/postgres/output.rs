@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::{io::Write, str::FromStr, sync::Weak, time::Duration};
 
 use super::{
@@ -67,6 +68,10 @@ struct PostgresWorker {
     controller: Weak<ControllerInner>,
     num_bytes: usize,
     num_rows: usize,
+    /// Shared counter of records sent to postgres in the current batch.
+    /// Updated atomically after each successful `execute()` call across all
+    /// workers; reset to 0 by the endpoint at batch boundaries.
+    records_written: Arc<AtomicU64>,
 }
 
 impl Drop for PostgresWorker {
@@ -108,6 +113,7 @@ impl PostgresWorker {
         key_schema: &Relation,
         value_schema: &Relation,
         controller: Weak<ControllerInner>,
+        records_written: Arc<AtomicU64>,
     ) -> Result<Self, BackoffError> {
         let table = config.table.to_owned();
         let mut client = connect(config, endpoint_name)?;
@@ -136,6 +142,7 @@ impl PostgresWorker {
             upsert_buf: Vec::with_capacity(config.max_buffer_size_bytes),
             delete_buf: Vec::with_capacity(config.max_buffer_size_bytes),
             value_schema: value_schema.to_owned(),
+            records_written,
         })
     }
 
@@ -157,9 +164,15 @@ impl PostgresWorker {
         ))
     }
 
-    fn exec_statement(&mut self, stmt: Statement, mut value: Vec<u8>, name: &str) {
+    fn exec_statement(
+        &mut self,
+        stmt: Statement,
+        mut value: Vec<u8>,
+        name: &str,
+        num_records: usize,
+    ) {
         loop {
-            match self.exec_statement_inner(stmt.clone(), &mut value, name) {
+            match self.exec_statement_inner(stmt.clone(), &mut value, name, num_records) {
                 Ok(_) => return,
                 Err(e) => {
                     let retry = e.should_retry();
@@ -188,6 +201,7 @@ impl PostgresWorker {
         stmt: Statement,
         value: &mut Vec<u8>,
         name: &str,
+        num_records: usize,
     ) -> Result<(), BackoffError> {
         if value.last() != Some(&b']') {
             value.push(b']');
@@ -209,6 +223,12 @@ impl PostgresWorker {
             .map_err(|e| {
                 BackoffError::from(e).context(format!("while executing {name} statement: {v}"))
             })?;
+
+        // Report progress: these records have now been sent to postgres within
+        // the open transaction.  The endpoint resets the counter to 0 at batch
+        // boundaries (start, successful commit, failed commit).
+        self.records_written
+            .fetch_add(num_records as u64, Ordering::Relaxed);
 
         value.clear();
         value.push(b'[');
@@ -606,6 +626,10 @@ pub struct PostgresOutputEndpoint {
     txn_start: std::time::Instant,
     num_bytes: usize,
     num_rows: usize,
+    /// Running count of records sent to postgres in the current batch, shared
+    /// across all worker threads.  Registered with the controller's metrics
+    /// during construction; reset to 0 at batch boundaries.
+    records_written: Arc<AtomicU64>,
 }
 
 /// Commands supported by the Postgres output connector.
@@ -743,6 +767,15 @@ impl PostgresOutputEndpoint {
         // Extra columns are not set initially.
         let extra_columns = Arc::new(RwLock::new(BTreeMap::new()));
 
+        // Shared progress counter.  Register with the controller so the metric
+        // is exposed; `add_output()` has already been called by this point so
+        // the metrics slot exists.
+        let records_written = Arc::new(AtomicU64::new(0));
+        if let Some(c) = controller.upgrade() {
+            c.status
+                .register_batch_progress_counter(&endpoint_id, records_written.clone());
+        }
+
         for i in 0..num_threads {
             let worker = PostgresWorker::new(
                 i,
@@ -753,6 +786,7 @@ impl PostgresOutputEndpoint {
                 &key_schema,
                 value_schema,
                 controller.clone(),
+                records_written.clone(),
             )
             .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e.inner()))?;
 
@@ -788,6 +822,7 @@ impl PostgresOutputEndpoint {
             txn_start: std::time::Instant::now(),
             num_bytes: 0,
             num_rows: 0,
+            records_written,
         })
     }
 
@@ -837,6 +872,7 @@ impl OutputConsumer for PostgresOutputEndpoint {
 
     fn batch_start(&mut self, _step: Step) {
         self.txn_start = std::time::Instant::now();
+        self.records_written.store(0, Ordering::Relaxed);
 
         match self.broadcast_and_collect(BroadcastCommand::BatchStart) {
             Ok(()) => (),
@@ -871,7 +907,12 @@ impl OutputConsumer for PostgresOutputEndpoint {
     }
 
     fn batch_end(&mut self) {
-        match self.broadcast_and_collect(BroadcastCommand::BatchEnd) {
+        let result = self.broadcast_and_collect(BroadcastCommand::BatchEnd);
+        // Reset progress on every batch_end, regardless of outcome: on success
+        // the records have been committed; on failure the counter would
+        // otherwise leak across batches.
+        self.records_written.store(0, Ordering::Relaxed);
+        match result {
             Ok(()) => {
                 let elapsed = self.txn_start.elapsed();
                 let num_bytes = std::mem::take(&mut self.num_bytes);
@@ -2000,6 +2041,195 @@ mod tests {
         #[serial_test::serial]
         fn test_multiple_batches_multi_thread() {
             multiple_batches_test(4);
+        }
+
+        // ── Progress counter tests ────────────────────────────────────
+
+        use std::sync::atomic::Ordering;
+
+        fn records_written(endpoint: &PostgresOutputEndpoint) -> u64 {
+            endpoint.records_written.load(Ordering::Relaxed)
+        }
+
+        /// Build a config that forces frequent in-batch flushes by capping the
+        /// number of records buffered between `execute()` calls.  This lets
+        /// tests observe the progress counter advance mid-batch instead of
+        /// only at commit time.
+        fn make_endpoint_flush_every(threads: usize, max_records: usize) -> PostgresOutputEndpoint {
+            let mut cfg = make_config_with_extra_columns(threads, Vec::new());
+            cfg.max_records_in_buffer = Some(max_records);
+            PostgresOutputEndpoint::new(
+                EndpointId::default(),
+                "test_endpoint",
+                &cfg,
+                &Some(key_relation()),
+                &value_relation(),
+                Weak::new(),
+            )
+            .expect("failed to create endpoint")
+        }
+
+        fn progress_basic(threads: usize) {
+            let mut client = pg_client();
+            setup_table(&mut client);
+
+            let records = make_records(100);
+            let batch = build_insert_batch(&records);
+            let mut endpoint = make_endpoint(threads);
+
+            assert_eq!(records_written(&endpoint), 0);
+            endpoint.consumer().batch_start(0);
+            assert_eq!(records_written(&endpoint), 0);
+            endpoint
+                .encode(batch.clone().arc_as_batch_reader())
+                .unwrap();
+            endpoint.consumer().batch_end();
+            // Counter resets to 0 at the end of every batch.
+            assert_eq!(records_written(&endpoint), 0);
+
+            // Sanity check: data actually landed in postgres.
+            let got = query_all(&mut client);
+            assert_eq!(got, records);
+        }
+
+        #[test]
+        #[serial_test::serial]
+        fn test_progress_counter_single_thread() {
+            progress_basic(1);
+        }
+
+        #[test]
+        #[serial_test::serial]
+        fn test_progress_counter_multi_thread() {
+            progress_basic(4);
+        }
+
+        #[test]
+        #[serial_test::serial]
+        fn test_progress_counter_empty_batch() {
+            let mut client = pg_client();
+            setup_table(&mut client);
+
+            let batch = build_insert_batch(&[]);
+            let mut endpoint = make_endpoint(1);
+
+            endpoint.consumer().batch_start(0);
+            endpoint
+                .encode(batch.clone().arc_as_batch_reader())
+                .unwrap();
+            assert_eq!(records_written(&endpoint), 0);
+            endpoint.consumer().batch_end();
+            assert_eq!(records_written(&endpoint), 0);
+        }
+
+        #[test]
+        #[serial_test::serial]
+        fn test_progress_counter_advances_mid_batch_single_thread() {
+            let mut client = pg_client();
+            setup_table(&mut client);
+
+            let records = make_records(50);
+            let batch = build_insert_batch(&records);
+            // Force flushes during encode so the counter advances mid-batch.
+            let mut endpoint = make_endpoint_flush_every(1, 10);
+
+            endpoint.consumer().batch_start(0);
+            endpoint
+                .encode(batch.clone().arc_as_batch_reader())
+                .unwrap();
+            // After encode, completed flushes are visible in the counter.
+            // With max_records_in_buffer=10 and 50 records, at least 4 flushes
+            // (40 records) have run; the trailing partial buffer is flushed
+            // during batch_end.
+            assert!(
+                records_written(&endpoint) >= 40,
+                "expected mid-batch progress, got {}",
+                records_written(&endpoint)
+            );
+
+            endpoint.consumer().batch_end();
+            assert_eq!(records_written(&endpoint), 0);
+        }
+
+        #[test]
+        #[serial_test::serial]
+        fn test_progress_counter_batch_start_resets() {
+            let mut client = pg_client();
+            setup_table(&mut client);
+
+            let mut endpoint = make_endpoint(1);
+
+            // Simulate a stale counter value from an earlier (presumably
+            // crashed) batch and verify that batch_start clears it.
+            endpoint.records_written.store(99, Ordering::Relaxed);
+            endpoint.consumer().batch_start(0);
+            assert_eq!(records_written(&endpoint), 0);
+
+            // Close out cleanly so the worker transaction doesn't leak.
+            endpoint.consumer().batch_end();
+        }
+
+        #[test]
+        #[serial_test::serial]
+        fn test_progress_counter_multiple_batches() {
+            let mut client = pg_client();
+            setup_table(&mut client);
+
+            let mut endpoint = make_endpoint(1);
+
+            // Batch 1: 50 records.
+            let records1 = make_records(50);
+            let batch1 = build_insert_batch(&records1);
+            encode_batch(&mut endpoint, &batch1);
+            assert_eq!(records_written(&endpoint), 0);
+
+            // Batch 2: 30 more records (ids 50..80).
+            let records2: Vec<_> = (50..80)
+                .map(|i| TestRecord {
+                    id: i,
+                    b: i % 2 == 0,
+                    i: Some(i as i64),
+                    s: format!("record_{i}"),
+                })
+                .collect();
+            let batch2 = build_insert_batch(&records2);
+            encode_batch(&mut endpoint, &batch2);
+            assert_eq!(records_written(&endpoint), 0);
+        }
+
+        #[test]
+        #[serial_test::serial]
+        fn test_progress_counter_advances_mid_batch_multi_thread() {
+            let mut client = pg_client();
+            setup_table(&mut client);
+
+            // 4 workers, force flush every 5 records so each worker flushes
+            // multiple times.  With 100 records spread across 4 workers, every
+            // worker has ~25 records; 5 flushes of 5 records each.
+            let mut endpoint = make_endpoint_flush_every(4, 5);
+
+            let records = make_records(100);
+            let batch = build_insert_batch(&records);
+
+            endpoint.consumer().batch_start(0);
+            endpoint
+                .encode(batch.clone().arc_as_batch_reader())
+                .unwrap();
+
+            // After encode, completed flushes from all 4 workers are visible.
+            // We can't predict the exact number (depends on how the trailing
+            // partial buffer per worker shakes out), but it must be > 0 and
+            // <= 100.
+            let mid = records_written(&endpoint);
+            assert!(mid > 0, "expected mid-batch progress, got 0");
+            assert!(mid <= 100, "counter exceeds total records: {mid}");
+
+            endpoint.consumer().batch_end();
+            assert_eq!(records_written(&endpoint), 0);
+
+            // Final state in postgres matches all input records.
+            let got = query_all(&mut client);
+            assert_eq!(got, records);
         }
     }
 }
