@@ -5075,6 +5075,7 @@ dependencies = [
  "erased-serde",
  "feldera-sqllib",
  "feldera-types",
+ "inventory",
  "num-derive",
  "num-traits",
  "rmp-serde",

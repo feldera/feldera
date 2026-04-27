@@ -84,6 +84,35 @@ pub trait IntegratedInputEndpoint: InputEndpoint {
     ) -> AnyResult<Box<dyn InputReader>>;
 }
 
+/// An integrated output connector implements both transport endpoint
+/// (`OutputEndpoint`) and `Encoder` traits.  It is used for connectors whose
+/// transport protocol and data format are tightly coupled (e.g. Postgres,
+/// Delta Lake).
+///
+/// A blanket impl covers every type that implements both `OutputEndpoint` and
+/// `Encoder`, so connector authors do not need to implement this trait directly.
+///
+/// `#[doc(hidden)]` is a temporary marker — it will be removed in Phase 4b when
+/// integrated connectors become fully reachable from out-of-tree code.
+#[doc(hidden)]
+pub trait IntegratedOutputEndpoint: OutputEndpoint + crate::format::Encoder {
+    fn into_encoder(self: Box<Self>) -> Box<dyn crate::format::Encoder>;
+    fn as_endpoint(&mut self) -> &mut dyn OutputEndpoint;
+}
+
+impl<EP> IntegratedOutputEndpoint for EP
+where
+    EP: OutputEndpoint + crate::format::Encoder + 'static,
+{
+    fn into_encoder(self: Box<Self>) -> Box<dyn crate::format::Encoder> {
+        self
+    }
+
+    fn as_endpoint(&mut self) -> &mut dyn OutputEndpoint {
+        self
+    }
+}
+
 /// Commands for an [InputReader] to execute.
 ///
 /// # Transitions

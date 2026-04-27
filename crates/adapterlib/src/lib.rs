@@ -68,6 +68,7 @@ use num_derive::FromPrimitive;
 use serde::Serialize;
 
 pub mod catalog;
+pub mod connector;
 mod connector_metadata;
 pub mod errors;
 pub mod format;
@@ -85,6 +86,44 @@ pub mod transport;
 pub mod utils;
 
 pub use connector_metadata::ConnectorMetadata;
+pub use connector::{connector_by_name, registered_connectors};
+
+/// Register a [`connector::ConnectorDescriptor`] with the global connector
+/// registry.
+///
+/// Connector crates call this macro at module level to make their connector
+/// discoverable at runtime by the controller and pipeline-manager.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use feldera_adapterlib::connector::{
+///     ConnectorDescriptor, ConnectorFlags, ConnectorKind, Direction,
+/// };
+/// use feldera_types::config::FtModel;
+///
+/// static MY_CONNECTOR: ConnectorDescriptor = ConnectorDescriptor {
+///     name: "my_connector",
+///     direction: Direction::Input,
+///     kind: ConnectorKind::Regular,
+///     fault_tolerance: Some(FtModel::AtLeastOnce),
+///     config_schema: || serde_json::json!({}),
+///     default_format: None,
+///     flags: ConnectorFlags::EMPTY,
+///     build_input: Some(my_build_input_fn),
+///     build_output: None,
+///     build_integrated_input: None,
+///     build_integrated_output: None,
+/// };
+///
+/// feldera_adapterlib::register_connector!(&MY_CONNECTOR);
+/// ```
+#[macro_export]
+macro_rules! register_connector {
+    ($descriptor:expr $(,)?) => {
+        ::inventory::submit! { $descriptor }
+    };
+}
 
 #[doc(hidden)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, FromPrimitive, Serialize, NoUninit)]

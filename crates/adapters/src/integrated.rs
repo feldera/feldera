@@ -1,6 +1,6 @@
 use crate::controller::{ControllerInner, EndpointId};
 use crate::transport::IntegratedInputEndpoint;
-use crate::{ControllerError, Encoder, InputConsumer, OutputEndpoint};
+use crate::{ControllerError, InputConsumer};
 use feldera_types::config::{ConnectorConfig, TransportConfig};
 use feldera_types::program_schema::Relation;
 use std::sync::Weak;
@@ -14,26 +14,7 @@ use crate::integrated::postgres::PostgresCdcInputEndpoint;
 use crate::integrated::postgres::PostgresInputEndpoint;
 pub use crate::integrated::postgres::PostgresOutputEndpoint;
 
-/// An integrated output connector implements both transport endpoint
-/// (`OutputEndpoint`) and `Encoder` traits.  It is used to implement
-/// connectors whose transport protocol and data format are tightly coupled.
-pub trait IntegratedOutputEndpoint: OutputEndpoint + Encoder {
-    fn into_encoder(self: Box<Self>) -> Box<dyn Encoder>;
-    fn as_endpoint(&mut self) -> &mut dyn OutputEndpoint;
-}
-
-impl<EP> IntegratedOutputEndpoint for EP
-where
-    EP: OutputEndpoint + Encoder + 'static,
-{
-    fn into_encoder(self: Box<Self>) -> Box<dyn Encoder> {
-        self
-    }
-
-    fn as_endpoint(&mut self) -> &mut dyn OutputEndpoint {
-        self
-    }
-}
+pub use feldera_adapterlib::transport::IntegratedOutputEndpoint;
 
 /// Create an instance of an integrated output endpoint given its config
 /// and output relation schema.
