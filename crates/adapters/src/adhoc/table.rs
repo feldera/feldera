@@ -28,9 +28,7 @@ use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
 };
 use feldera_adapterlib::catalog::SerBatchReader;
-use feldera_types::config::{
-    ConnectorConfig, FormatConfig, InputEndpointConfig, TransportConfig, default_max_queued_records,
-};
+use feldera_types::config::{ConnectorConfig, FormatConfig, InputEndpointConfig, TransportConfig};
 use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::serde_with_context::serde_config::{
     BinaryFormat, DecimalFormat, UuidFormat, VariantFormat,
@@ -276,25 +274,16 @@ impl DataSink for AdHocTableSink {
         let endpoint = AdHocInputEndpoint::new(config.clone());
 
         // Create endpoint config.
-        let config = InputEndpointConfig {
-            stream: Cow::from(self.name.to_string()),
-            connector_config: ConnectorConfig {
-                transport: TransportConfig::AdHocInput(config),
-                format: Some(FormatConfig {
+        let config = InputEndpointConfig::new(
+            self.name.to_string(),
+            ConnectorConfig::new(
+                TransportConfig::AdHocInput(config),
+                Some(FormatConfig {
                     name: Cow::from("parquet"),
                     config: serde_json::Value::Null,
                 }),
-                preprocessor: None,
-                index: None,
-                output_buffer_config: Default::default(),
-                max_batch_size: None,
-                max_worker_batch_size: None,
-                max_queued_records: default_max_queued_records(),
-                paused: false,
-                labels: vec![],
-                start_after: None,
-            },
-        };
+            ),
+        );
 
         // Connect endpoint.
         let endpoint_id = controller
