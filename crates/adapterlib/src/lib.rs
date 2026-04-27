@@ -125,6 +125,50 @@ macro_rules! register_connector {
     };
 }
 
+/// Register a [`format::InputFormat`] implementation with the global input
+/// format registry.
+///
+/// Format modules call this macro at module level.  Pass a reference to a
+/// unit-struct factory that implements [`format::InputFormat`].  The reference
+/// must be const-evaluable (unit structs and `static` variables are both fine).
+///
+/// # Example
+///
+/// ```rust,ignore
+/// struct MyInputFormat;
+/// impl InputFormat for MyInputFormat { /* … */ }
+///
+/// feldera_adapterlib::register_input_format!(
+///     &MyInputFormat as &dyn feldera_adapterlib::format::InputFormat
+/// );
+/// ```
+#[macro_export]
+macro_rules! register_input_format {
+    ($factory:expr $(,)?) => {
+        ::inventory::submit! { $factory }
+    };
+}
+
+/// Register a [`format::OutputFormat`] implementation with the global output
+/// format registry.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// struct MyOutputFormat;
+/// impl OutputFormat for MyOutputFormat { /* … */ }
+///
+/// feldera_adapterlib::register_output_format!(
+///     &MyOutputFormat as &dyn feldera_adapterlib::format::OutputFormat
+/// );
+/// ```
+#[macro_export]
+macro_rules! register_output_format {
+    ($factory:expr $(,)?) => {
+        ::inventory::submit! { $factory }
+    };
+}
+
 #[doc(hidden)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, FromPrimitive, Serialize, NoUninit)]
 #[repr(u8)]

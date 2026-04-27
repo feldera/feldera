@@ -49,6 +49,8 @@ enum ConsumerMessage {
 /// Avro format encoder.
 pub struct AvroOutputFormat;
 
+inventory::submit! { &AvroOutputFormat as &dyn OutputFormat }
+
 impl OutputFormat for AvroOutputFormat {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("avro")

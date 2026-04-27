@@ -23,6 +23,8 @@ use std::{borrow::Cow, io::Write, mem::take};
 /// JSON format encoder.
 pub struct JsonOutputFormat;
 
+inventory::submit! { &JsonOutputFormat as &dyn OutputFormat }
+
 impl OutputFormat for JsonOutputFormat {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("json")

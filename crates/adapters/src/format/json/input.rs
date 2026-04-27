@@ -24,6 +24,8 @@ use std::borrow::Cow;
 /// JSON format parser.
 pub struct JsonInputFormat;
 
+inventory::submit! { &JsonInputFormat as &dyn InputFormat }
+
 trait UpdateFormat {
     fn error() -> &'static str;
     fn array_error() -> &'static str;

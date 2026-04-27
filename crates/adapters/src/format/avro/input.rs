@@ -61,6 +61,8 @@ pub const fn avro_de_config() -> &'static SqlSerdeConfig {
 
 pub struct AvroInputFormat;
 
+inventory::submit! { &AvroInputFormat as &dyn InputFormat }
+
 impl InputFormat for AvroInputFormat {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("avro")

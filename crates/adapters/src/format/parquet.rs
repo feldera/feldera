@@ -56,8 +56,10 @@ pub const fn default_arrow_serde_config() -> &'static SqlSerdeConfig {
     }
 }
 
-/// CSV format parser.
+/// Parquet format parser.
 pub struct ParquetInputFormat;
+
+inventory::submit! { &ParquetInputFormat as &dyn InputFormat }
 
 impl InputFormat for ParquetInputFormat {
     fn name(&self) -> Cow<'static, str> {
@@ -176,6 +178,8 @@ impl Parser for ParquetParser {
 
 /// Parquet format encoder.
 pub struct ParquetOutputFormat;
+
+inventory::submit! { &ParquetOutputFormat as &dyn OutputFormat }
 
 impl OutputFormat for ParquetOutputFormat {
     fn name(&self) -> Cow<'static, str> {

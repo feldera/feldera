@@ -47,7 +47,7 @@ What blocks 3rd-party connectors today is **dispatch and tooling around those tr
 | 3 | Output regular factory match | `crates/adapters/src/transport.rs:139` | Hardcoded `match` |
 | 4 | Integrated output factory | `crates/adapters/src/integrated.rs:40` | Hardcoded `match` |
 | 5 | Integrated input factory | `crates/adapters/src/integrated.rs:89` | Hardcoded `match` |
-| 6 | Format registries | `crates/adapters/src/format.rs:30,49` | `Lazy<BTreeMap>` with TODO for runtime registration |
+| 6 | Format registries | `crates/adapters/src/format.rs:30,49` | `Lazy<BTreeMap>` with TODO for runtime registration — **resolved by PR 3**: `inventory::collect!` slots and discovery functions moved to `adapterlib/src/format.rs`; `adapters/src/format.rs` no longer holds the registries |
 | 7 | Direction validation (input vs output) | `crates/pipeline-manager/src/db/types/program.rs:682,735` | Exhaustive variant lists |
 | 8 | Per-variant special cases in controller | `controller.rs:4448` (`is_http_input`), `controller.rs:4521` (`ClockInput` filter), `controller.rs:6013` (`Datagen` default-format), `controller/pipeline_diff.rs:97,106` (`is_transient`) | Reach into the enum |
 | 9 | OpenAPI client codegen list | `crates/rest-api/build.rs:38-208` | `progenitor` type-replacement list, hardcoded |
@@ -131,11 +131,21 @@ The "API contract" 3rd parties target. Most of it already exists; this phase tig
 
 ### Phase 3 — Format registry
 
-`crates/adapters/src/format.rs:28` already has the TODO. Replace the `Lazy<BTreeMap>` pattern at lines 30 and 49 with `inventory::collect!(&'static dyn InputFormat)` plus `&'static dyn OutputFormat`. Built-in formats (`csv`, `json`, `parquet`, `avro`, `raw`) submit themselves from their own modules. Same pattern as Phase 2; no new design needed.
+Add `inventory::collect!(&'static dyn InputFormat)` and `inventory::collect!(&'static dyn OutputFormat)` slots to **`adapterlib/src/format.rs`** (alongside the trait definitions, not in `adapters/src/format.rs` where the old `Lazy<BTreeMap>` lives). The discovery functions `get_input_format()` / `get_output_format()` move to adapterlib with them. The `Lazy<BTreeMap>` statics and old discovery functions in `adapters/src/format.rs` are removed entirely; existing call sites in `adapters` pick up the new functions via the existing `pub use feldera_adapterlib::format::*` re-export — **zero call-site churn**. Built-in formats (`csv`, `json`, `parquet`, `avro`, `raw`) submit themselves from their own modules.
+
+**Why placement matters**: external format crates can only depend on `feldera-adapterlib`. Putting `inventory::collect!` in `adapters` would silently exclude them — they would compile but their `submit!` calls would land in a slot nothing iterates. This is the same constraint that drives `ConnectorDescriptor`'s placement in adapterlib (Phase 2).
 
 **Why now**: small, isolated, proves the inventory-based pattern in this codebase before applying it to connectors.
 
-**Same const-eval constraint as Phase 2**: format submissions must be const-evaluable. Submit `&'static FORMAT_FACTORY` where `FORMAT_FACTORY` is a unit struct or `static`. Closures in `inventory::submit!` will fail to compile.
+**Const-eval constraint** (same as Phase 2): `inventory::submit!` requires const-evaluable expressions. The five built-in format types are zero-sized unit structs, so `&CsvInputFormat as &dyn InputFormat` is const-evaluable directly (fat-pointer ZST coercions are const-stable). A future format with fields must declare a `static MY_FORMAT: MyFormat = MyFormat { ... };` and submit `&MY_FORMAT as &dyn InputFormat`. Closures will not compile.
+
+**No `unsafe impl Sync`**: the trait bound `InputFormat: Send + Sync` makes `&'static dyn InputFormat: Sync` automatically. This differs from `ConnectorDescriptor` (PR 2), which carries `fn` pointers in a struct and cannot derive `Sync` without auto-trait propagation working through. Both end up `Sync`, but the format case needs no annotation.
+
+**In-tree vs external submission**: in-tree format modules call `inventory::submit!` directly (matching the storage-backend pattern in `storage/backend/posixio_impl.rs`). The `register_input_format!` / `register_output_format!` macros exported from adapterlib are pass-through wrappers for external crates that don't have `inventory` as a direct dep. (Earlier draft tried `$crate`-prefixed casts inside the macro for ergonomics; dropped due to nested-macro hygiene issues. The simple pass-through is consistent with the storage precedent.)
+
+**Feature-gated formats**: avro lives entirely behind `#[cfg(feature = "with-avro")]` at the module boundary, so its `inventory::submit!` calls are naturally feature-gated without per-call `#[cfg]` annotations — cleaner than the original BTreeMap which gated individual map entries.
+
+**Asymmetric formats**: `raw` is input-only; the inventory approach handles this naturally (one `submit!` instead of two). The original BTreeMap reflected the same asymmetry by simply omitting `raw` from `OUTPUT_FORMATS`.
 
 ---
 
@@ -504,13 +514,22 @@ Each PR below is sized to be independently reviewable and mergeable. Dependencie
 - **Unblocks**: PR 3, PR 4.
 
 ### PR 3 — Convert format registries to `inventory` (Phase 3)
-- [ ] Replace `Lazy<BTreeMap>` for `INPUT_FORMATS` and `OUTPUT_FORMATS` in `crates/adapters/src/format.rs:30,49` with `inventory::collect!` slots.
-- [ ] Each built-in format (`csv`, `json`, `parquet`, `avro`, `raw`) submits itself from its module via `inventory::submit!(&FORMAT_FACTORY)` where `FORMAT_FACTORY` is a `static` (typically a unit struct). **No closures** in `submit!` — the same const-eval constraint as PR 2 applies.
-- [ ] Update `get_input_format()` / `get_output_format()` to walk the inventory.
-- [ ] Remove the TODO comment about runtime registration.
+- [ ] **Add `inventory::collect!` slots and discovery functions in `adapterlib/src/format.rs`**, alongside the trait definitions — *not* in `adapters/src/format.rs`. External format crates can only depend on adapterlib; placing the slots in `adapters` would silently exclude them.
+- [ ] Remove the `Lazy<BTreeMap>` statics (`INPUT_FORMATS`, `OUTPUT_FORMATS`) and the old `get_input_format` / `get_output_format` from `adapters/src/format.rs` entirely. Drop the `once_cell::sync::Lazy` and `BTreeMap` imports there. (`once_cell` stays in `Cargo.toml` — used elsewhere in `adapters`.)
+- [ ] Verify call sites in `adapters` (`controller.rs`, `server.rs`, `test.rs`, etc.) pick up the new functions via the existing `pub use feldera_adapterlib::format::*` re-export — **expect zero call-site churn**.
+- [ ] Each built-in format (`csv`, `json`, `parquet`, `avro`, `raw`) submits itself from its module via `inventory::submit! { &FORMAT_FACTORY as &dyn InputFormat }` (or `OutputFormat`). Built-ins use `inventory::submit!` directly — no need to route through the macros.
+- [ ] Add `register_input_format!` and `register_output_format!` macros in `adapterlib/src/lib.rs` as **pass-through wrappers** around `inventory::submit!`. These are for external crates that don't have `inventory` as a direct dep. Do **not** attempt the `$crate`-prefixed-cast form — nested-macro hygiene is unreliable; the pass-through pattern matches the storage-backend precedent.
+- [ ] Const-eval note: built-in formats are unit structs, so `&CsvInputFormat as &dyn InputFormat` works directly. Document the `static MY_FORMAT: MyFormat = ...; submit!(&MY_FORMAT as &dyn InputFormat)` pattern for future formats with fields. Closures will not compile.
+- [ ] No `unsafe impl Sync` on format factories — `InputFormat: Send + Sync` makes `&'static dyn InputFormat` automatically `Sync`. (Differs from `ConnectorDescriptor` in PR 2, which needs explicit annotation.)
+- [ ] Asymmetry: `raw` is input-only — only one `submit!` call in `raw.rs`, no `RawOutputFormat`.
+- [ ] Feature gating: `avro/input.rs` and `avro/output.rs` `submit!` calls compile only when `with-avro` is active because the entire `avro` module sits under `#[cfg(feature = "with-avro")]` in `format.rs`. No per-call `#[cfg]` needed.
+- [ ] Cleanup: remove the now-unused `pub use input::JsonInputFormat` and `pub use output::JsonOutputFormat` re-exports in `format/json.rs` (they only existed to feed the old BTreeMap; the compiler will flag them as unused). Aligns `json.rs` with `csv.rs` / `parquet.rs` / `raw.rs`.
+- [ ] Add unit tests in `adapterlib/src/format.rs` covering registry mechanics with stub format types (iterate, look up by name, miss on unknown). The built-in format names are NOT visible to `cargo test -p feldera-adapterlib` (link-time discovery), which is correct.
+- [ ] Add a follow-up test in `adapters/src/format.rs` (or a dedicated test file) that asserts every expected built-in name (`csv`, `json`, `parquet`, `raw`, plus `avro` under feature) is present in the registry. Guards against accidental removal of a `submit!` call.
+- [ ] Remove the TODO comment about runtime registration in `adapters/src/format.rs`.
 - [ ] Verify all format-using tests still pass.
 - **Depends on**: PR 2.
-- **Unblocks**: nothing strictly (proves the pattern).
+- **Unblocks**: nothing strictly (proves the pattern; the pass-through macros also become the model for the format-side of the Phase 11 reference plugin doc).
 
 ### PR 4 — First connector migrations: `file` and `clock` (Phase 4a)
 - [ ] Add `register_connector!` block in `crates/adapters/src/transport/file.rs` for both input and output directions.

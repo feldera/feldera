@@ -65,6 +65,18 @@ pub trait InputFormat: Send + Sync {
     ) -> Result<Box<dyn Parser>, ControllerError>;
 }
 
+inventory::collect!(&'static dyn InputFormat);
+
+/// Look up a registered input format by name.
+///
+/// Returns `None` if no format with that name has been registered.
+pub fn get_input_format(name: &str) -> Option<&'static dyn InputFormat> {
+    inventory::iter::<&'static dyn InputFormat>
+        .into_iter()
+        .copied()
+        .find(|f| f.name().as_ref() == name)
+}
+
 /// A collection of records associated with an input handle.
 ///
 /// A [Parser] holds and adds records to an [InputBuffer].  The client, which is
@@ -667,6 +679,18 @@ pub trait OutputFormat: Send + Sync {
     ) -> Result<Box<dyn Encoder>, ControllerError>;
 }
 
+inventory::collect!(&'static dyn OutputFormat);
+
+/// Look up a registered output format by name.
+///
+/// Returns `None` if no format with that name has been registered.
+pub fn get_output_format(name: &str) -> Option<&'static dyn OutputFormat> {
+    inventory::iter::<&'static dyn OutputFormat>
+        .into_iter()
+        .copied()
+        .find(|f| f.name().as_ref() == name)
+}
+
 pub trait Encoder: Send {
     /// Returns a reference to the consumer that the encoder is connected to.
     fn consumer(&mut self) -> &mut dyn OutputConsumer;
@@ -1021,5 +1045,124 @@ impl ParseErrorInner {
 
     pub fn get_error_tag(&self) -> Option<String> {
         self.tag.clone()
+    }
+}
+
+// ── Format registry tests ─────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::{get_input_format, get_output_format};
+
+    /// Verify that a stub input format submitted here is discoverable via
+    /// `get_input_format`.
+    struct StubInputFormat;
+
+    impl super::InputFormat for StubInputFormat {
+        fn name(&self) -> std::borrow::Cow<'static, str> {
+            std::borrow::Cow::Borrowed("__test_stub_input_format__")
+        }
+
+        fn config_from_http_request(
+            &self,
+            _endpoint_name: &str,
+            _request: &actix_web::HttpRequest,
+        ) -> Result<Box<dyn erased_serde::Serialize>, crate::errors::controller::ControllerError>
+        {
+            unimplemented!("stub — not called in registry tests")
+        }
+
+        fn new_parser(
+            &self,
+            _endpoint_name: &str,
+            _input_stream: &crate::catalog::InputCollectionHandle,
+            _config: &serde_json::Value,
+        ) -> Result<Box<dyn super::Parser>, crate::errors::controller::ControllerError> {
+            unimplemented!("stub — not called in registry tests")
+        }
+    }
+
+    inventory::submit! { &StubInputFormat as &dyn super::InputFormat }
+
+    struct StubOutputFormat;
+
+    impl super::OutputFormat for StubOutputFormat {
+        fn name(&self) -> std::borrow::Cow<'static, str> {
+            std::borrow::Cow::Borrowed("__test_stub_output_format__")
+        }
+
+        fn config_from_http_request(
+            &self,
+            _endpoint_name: &str,
+            _request: &actix_web::HttpRequest,
+        ) -> Result<Box<dyn erased_serde::Serialize>, crate::errors::controller::ControllerError>
+        {
+            unimplemented!("stub — not called in registry tests")
+        }
+
+        fn new_encoder(
+            &self,
+            _endpoint_name: &str,
+            _config: &feldera_types::config::ConnectorConfig,
+            _key_schema: &Option<feldera_types::program_schema::Relation>,
+            _value_schema: &feldera_types::program_schema::Relation,
+            _consumer: Box<dyn super::OutputConsumer>,
+        ) -> Result<Box<dyn super::Encoder>, crate::errors::controller::ControllerError> {
+            unimplemented!("stub — not called in registry tests")
+        }
+    }
+
+    inventory::submit! { &StubOutputFormat as &dyn super::OutputFormat }
+
+    #[test]
+    fn input_format_registry_is_iterable() {
+        let names: Vec<std::borrow::Cow<'static, str>> =
+            inventory::iter::<&'static dyn super::InputFormat>
+                .into_iter()
+                .copied()
+                .map(|f| f.name())
+                .collect();
+        assert!(
+            names.iter().any(|n| n.as_ref() == "__test_stub_input_format__"),
+            "stub input format not found in registry; got {names:?}"
+        );
+    }
+
+    #[test]
+    fn output_format_registry_is_iterable() {
+        let names: Vec<std::borrow::Cow<'static, str>> =
+            inventory::iter::<&'static dyn super::OutputFormat>
+                .into_iter()
+                .copied()
+                .map(|f| f.name())
+                .collect();
+        assert!(
+            names.iter().any(|n| n.as_ref() == "__test_stub_output_format__"),
+            "stub output format not found in registry; got {names:?}"
+        );
+    }
+
+    #[test]
+    fn get_input_format_finds_registered_format() {
+        let fmt = get_input_format("__test_stub_input_format__")
+            .expect("stub input format not found by name");
+        assert_eq!(fmt.name().as_ref(), "__test_stub_input_format__");
+    }
+
+    #[test]
+    fn get_output_format_finds_registered_format() {
+        let fmt = get_output_format("__test_stub_output_format__")
+            .expect("stub output format not found by name");
+        assert_eq!(fmt.name().as_ref(), "__test_stub_output_format__");
+    }
+
+    #[test]
+    fn get_input_format_returns_none_for_unknown() {
+        assert!(get_input_format("__nonexistent_format__").is_none());
+    }
+
+    #[test]
+    fn get_output_format_returns_none_for_unknown() {
+        assert!(get_output_format("__nonexistent_format__").is_none());
     }
 }

@@ -31,6 +31,8 @@ use super::{InputBuffer, LineSplitter, SpongeSplitter};
 /// Ingest raw byte stream into a table with a single column of type VARCHAR or VARBINARY.
 pub struct RawInputFormat;
 
+inventory::submit! { &RawInputFormat as &dyn InputFormat }
+
 pub fn raw_serde_config() -> SqlSerdeConfig {
     SqlSerdeConfig::default().with_binary_format(BinaryFormat::Bytes)
 }

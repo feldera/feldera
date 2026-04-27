@@ -34,6 +34,8 @@ static MAX_RECORD_LEN_IN_ERRMSG: usize = 4096;
 /// CSV format parser.
 pub struct CsvInputFormat;
 
+inventory::submit! { &CsvInputFormat as &dyn InputFormat }
+
 impl InputFormat for CsvInputFormat {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("csv")
@@ -225,6 +227,8 @@ impl Splitter for CsvSplitter {
 
 /// CSV format encoder.
 pub struct CsvOutputFormat;
+
+inventory::submit! { &CsvOutputFormat as &dyn OutputFormat }
 
 impl OutputFormat for CsvOutputFormat {
     fn name(&self) -> Cow<'static, str> {

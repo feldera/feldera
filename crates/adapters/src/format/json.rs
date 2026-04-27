@@ -4,9 +4,6 @@ mod input;
 mod output;
 mod schema;
 
-pub use input::JsonInputFormat;
-pub use output::JsonOutputFormat;
-
 /// Debezium CDC operation.
 ///
 /// A record in a Debezium CDC stream contains an `op` field, which specifies
