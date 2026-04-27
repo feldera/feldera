@@ -15,6 +15,7 @@ from feldera.rest.config import Config
 from feldera.rest.errors import FelderaAPIError, FelderaTimeoutError
 from feldera.rest.feldera_config import FelderaConfig
 from feldera.rest.pipeline import Pipeline
+from feldera.rest.retry import RetryConfig
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ class FelderaClient:
         timeout: Optional[float] = None,
         connection_timeout: Optional[float] = None,
         requests_verify: Optional[bool | str] = None,
+        retry_config: Optional[RetryConfig] = None,
     ) -> None:
         """
         Constructs a Feldera client.
@@ -80,6 +82,9 @@ class FelderaClient:
             By setting `FELDERA_TLS_INSECURE` to `"1"`, `"true"` or `"yes"` (all case-insensitive), the default becomes
             `False` which means to disable TLS verification by default. If both variables are set, the former takes
             priority over the latter. If neither variable is set, the default is `True`.
+        :param retry_config: (Optional) Retry behavior for transient HTTP failures
+            (408, 502, 503, 504, timeouts). The default is `RetryConfig()` — 3 retries
+            with exponential backoff starting at 2 seconds.
         """
 
         self.config = Config(
@@ -88,6 +93,7 @@ class FelderaClient:
             timeout=timeout,
             connection_timeout=connection_timeout,
             requests_verify=requests_verify,
+            retry_config=retry_config,
         )
         self.http = HttpRequests(self.config)
 

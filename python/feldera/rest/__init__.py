@@ -9,3 +9,4 @@ instead of using the REST client directly.
 """
 
 from feldera.rest.feldera_client import FelderaClient as FelderaClient
+from feldera.rest.retry import RetryConfig as RetryConfig

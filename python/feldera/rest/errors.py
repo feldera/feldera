@@ -1,6 +1,32 @@
 from requests import Response
 import json
+from datetime import datetime, timezone
+from typing import Optional
 from urllib.parse import urlparse
+
+
+# RFC 9110 §5.6.7: HTTP-date "IMF-fixdate" format used by `Retry-After`.
+_HTTP_DATE_FMT = "%a, %d %b %Y %H:%M:%S GMT"
+
+
+def _parse_retry_after(value: Optional[str]) -> Optional[float]:
+    """
+    Parse an HTTP `Retry-After` header into a delay in seconds.
+
+    Returns `None` if missing or unparseable. Per RFC 9110, the value is
+    either a non-negative integer of seconds or an IMF-fixdate HTTP-date.
+    """
+    if not value:
+        return None
+    try:
+        return max(float(value), 0.0)
+    except ValueError:
+        pass
+    try:
+        retry_at = datetime.strptime(value, _HTTP_DATE_FMT).replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    return max((retry_at - datetime.now(timezone.utc)).total_seconds(), 0.0)
 
 
 class FelderaError(Exception):
@@ -25,6 +51,9 @@ class FelderaAPIError(FelderaError):
         self.error_code = None
         self.message = None
         self.details = None
+        self.retry_after: Optional[float] = _parse_retry_after(
+            request.headers.get("Retry-After")
+        )
 
         err_msg = ""
 
