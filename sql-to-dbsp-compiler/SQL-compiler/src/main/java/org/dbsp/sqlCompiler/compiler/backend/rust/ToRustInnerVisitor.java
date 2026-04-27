@@ -388,19 +388,23 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append("<");
         // In the type parameter we do not put the Option<>
         sequence.dataType.withMayBeNull(false).accept(this);
-        this.builder.append(", ");
-        sequence.dataConvertedType.accept(this);
-        this.builder.append(", ");
-        sequence.intermediateType.accept(this);
-        this.builder.append(", ");
-        sequence.unsignedType.accept(this);
+        if (sequence.dataConvertedType.signed) {
+            this.builder.append(", ");
+            sequence.dataConvertedType.accept(this);
+            this.builder.append(", ");
+            sequence.intermediateType.accept(this);
+        }
+        if (!sequence.unsignedType.sameType(sequence.dataType)) {
+            this.builder.append(", ");
+            sequence.unsignedType.accept(this);
+        }
         this.builder.append(">");
     }
 
     @Override
     public VisitDecision preorder(DBSPUnsignedWrapExpression expression) {
         this.push(expression);
-        this.builder.append("UnsignedWrapper")
+        this.builder.append(DBSPUnsignedWrapExpression.RUST_IMPLEMENTATION)
                 .append("::")
                 .append(expression.getMethod())
                 .append("::");
@@ -430,7 +434,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPUnsignedUnwrapExpression expression) {
         this.push(expression);
-        this.builder.append("UnsignedWrapper")
+        this.builder.append(DBSPUnsignedWrapExpression.RUST_IMPLEMENTATION)
                 .append("::")
                 .append(expression.getMethod())
                 .append("::");
@@ -1884,7 +1888,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.pop(expression);
             return VisitDecision.STOP;
         } else if (expression.opcode == DBSPOpcode.INTEGER_TO_SHORT_INTERVAL ||
-                expression.opcode == DBSPOpcode.SHORT_INTERVAL_TO_INTEGER) {
+                expression.opcode == DBSPOpcode.SHORT_INTERVAL_TO_INTEGER ||
+                expression.opcode == DBSPOpcode.INTEGER_TO_UUID ||
+                expression.opcode == DBSPOpcode.UUID_TO_INTEGER) {
             this.builder.append(expression.opcode.toString())
                     .append("(");
             expression.source.accept(this);

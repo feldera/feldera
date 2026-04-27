@@ -518,3 +518,50 @@ pub fn bin2utf8N(source: Option<ByteArray>) -> Option<SqlString> {
         Some(bytes) => bin2utf8_(bytes),
     }
 }
+
+#[doc(hidden)]
+pub fn binary_to_u8(b: ByteArray) -> u8 {
+    assert!(b.length() <= 1);
+    b.data[0]
+}
+
+#[doc(hidden)]
+pub fn binary_to_u16(b: ByteArray) -> u16 {
+    assert!(b.length() <= 2);
+    let mut buf = [0u8; 2];
+    buf[2 - b.length()..].copy_from_slice(&b.data);
+    u16::from_be_bytes(buf)
+}
+
+#[doc(hidden)]
+pub fn binary_to_u32(b: ByteArray) -> u32 {
+    assert!(b.length() <= 4);
+    let mut buf = [0u8; 4];
+    buf[4 - b.length()..].copy_from_slice(&b.data);
+    u32::from_be_bytes(buf)
+}
+
+#[doc(hidden)]
+pub fn binary_to_u64(b: ByteArray) -> u64 {
+    assert!(b.length() <= 8);
+    let mut buf = [0u8; 8];
+    buf[8 - b.length()..].copy_from_slice(&b.data);
+    u64::from_be_bytes(buf)
+}
+
+#[doc(hidden)]
+pub fn binary_to_u128(b: ByteArray) -> u128 {
+    assert!(b.length() <= 16);
+    let mut buf = [0u8; 16];
+    buf[16 - b.length()..].copy_from_slice(&b.data);
+    u128::from_be_bytes(buf)
+}
+
+#[test]
+pub fn testBinaryToInteger() {
+    let bin = ByteArray::new(&[0x12, 0x34]);
+    assert_eq!(0x1234, binary_to_u16(bin.clone()));
+    assert_eq!(0x1234, binary_to_u32(bin.clone()));
+    assert_eq!(0x1234, binary_to_u64(bin.clone()));
+    assert_eq!(0x1234, binary_to_u128(bin));
+}
