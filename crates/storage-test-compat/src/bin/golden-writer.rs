@@ -17,8 +17,8 @@ use dbsp::storage::file::Factories;
 use feldera_types::config::{StorageConfig, StorageOptions};
 
 use storage_test_compat::{
-    buffer_cache, golden_aux, golden_row, golden_row_small, golden_row_variant, storage_base_and_path,
-    GoldenRow, GoldenRowSmall, GoldenRowVariant, DEFAULT_ROWS,
+    buffer_cache, golden_aux, golden_row, golden_row_small, golden_row_variant,
+    storage_base_and_path, GoldenRow, GoldenRowSmall, GoldenRowVariant, DEFAULT_ROWS,
 };
 
 #[derive(Copy, Clone)]
