@@ -431,7 +431,7 @@
         )}
       </div>
     </th>
-    <th class="pb-0! text-center! font-normal" colspan="2">Transmitted</th>
+    <th class="pb-0! text-center! font-normal" colspan="3">Transmitted</th>
     <th class="pb-0! text-center! font-normal" colspan="2">Buffered</th>
     <th class="pb-0! text-center! font-normal" colspan="2">Queued</th>
     <th class="font-normal 2xl:text-nowrap" rowspan="2">Encode errors</th>
@@ -439,6 +439,7 @@
   </tr>
   <tr>
     <th class="pt-0! !text-end font-normal">records</th>
+    <th class="pt-0! !text-end font-normal">in batch</th>
     <th class="pt-0! !text-end font-normal">bytes</th>
     <th class="pt-0! !text-end font-normal">records</th>
     <th class="pt-0! !text-end font-normal">batches</th>
@@ -455,6 +456,11 @@
 )}
   <td class="text-end font-dm-mono text-nowrap"
     ><span class={ioActive ? 'text-success-600-400' : ''}>{formatQty(m.transmitted_records)}</span
+    ></td
+  >
+  <td class="text-end font-dm-mono text-nowrap"
+    ><span class={ioActive ? 'text-success-600-400' : ''}
+      >{m.batch_records_written != null ? formatQty(m.batch_records_written) : '—'}</span
     ></td
   >
   <td class="text-end font-dm-mono text-nowrap"

@@ -1,9 +1,9 @@
-import invariant from 'tiny-invariant'
 import { groupBy } from '$lib/functions/common/array'
+import { nonNull } from '$lib/functions/common/function'
+import { discreteDerivative } from '$lib/functions/common/math'
 import { tuple } from '$lib/functions/common/tuple'
 import { normalizeCaseIndependentName } from '$lib/functions/felderaRelation'
 import type {
-  ConnectorHealth,
   ControllerStatus,
   InputEndpointMetrics,
   InputEndpointStatus,
@@ -11,7 +11,6 @@ import type {
   OutputEndpointStatus
 } from '$lib/services/manager'
 import type { GlobalMetricsTimestamp, TimeSeriesEntry } from '$lib/types/pipelineManager'
-import { discreteDerivative } from './common/math'
 
 export type AggregatedMetrics<M, EndpointStatus = {}> = {
   aggregate: { metrics: M }
@@ -139,7 +138,10 @@ export const accumulatePipelineMetrics =
                 metrics: cur.metrics,
                 io_active:
                   prev !== undefined &&
-                  cur.metrics.transmitted_records > prev.metrics.transmitted_records,
+                  (cur.metrics.transmitted_records > prev.metrics.transmitted_records ||
+                    (nonNull(cur.metrics.batch_records_written) &&
+                      (!nonNull(prev.metrics.batch_records_written) ||
+                        cur.metrics.batch_records_written !== prev.metrics.batch_records_written))),
                 health: cur.health,
                 fatal_error: cur.fatal_error
               }
@@ -161,7 +163,10 @@ export const accumulatePipelineMetrics =
                       acc.total_processed_steps + metrics.total_processed_steps,
                     queued_batches: acc.queued_batches + metrics.queued_batches,
                     queued_records: acc.queued_records + metrics.queued_records,
-                    memory: acc.memory + metrics.memory
+                    memory: acc.memory + metrics.memory,
+                    batch_records_written: !nonNull(metrics.batch_records_written)
+                      ? acc.batch_records_written
+                      : (acc.batch_records_written ?? 0) + metrics.batch_records_written
                   }
                 },
                 {
@@ -175,7 +180,8 @@ export const accumulatePipelineMetrics =
                   total_processed_steps: 0,
                   queued_batches: 0,
                   queued_records: 0,
-                  memory: 0
+                  memory: 0,
+                  batch_records_written: null
                 }
               )
             }
