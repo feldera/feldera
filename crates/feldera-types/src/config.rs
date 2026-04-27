@@ -13,7 +13,7 @@ use crate::transport::clock::ClockConfig;
 use crate::transport::datagen::DatagenInputConfig;
 use crate::transport::delta_table::{DeltaTableReaderConfig, DeltaTableWriterConfig};
 use crate::transport::file::{FileInputConfig, FileOutputConfig};
-use crate::transport::http::HttpInputConfig;
+use crate::transport::http::{HttpInputConfig, HttpOutputConfig};
 use crate::transport::iceberg::IcebergReaderConfig;
 use crate::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
 use crate::transport::nats::NatsInputConfig;
@@ -1672,7 +1672,7 @@ pub enum TransportConfig {
     /// Direct HTTP input: cannot be instantiated through API
     HttpInput(HttpInputConfig),
     /// Direct HTTP output: cannot be instantiated through API
-    HttpOutput,
+    HttpOutput(HttpOutputConfig),
     /// Ad hoc input: cannot be instantiated through API
     AdHocInput(AdHocInputConfig),
     ClockInput(ClockConfig),
@@ -1698,7 +1698,7 @@ impl TransportConfig {
             TransportConfig::Datagen(_) => "datagen".to_string(),
             TransportConfig::Nexmark(_) => "nexmark".to_string(),
             TransportConfig::HttpInput(_) => "http_input".to_string(),
-            TransportConfig::HttpOutput => "http_output".to_string(),
+            TransportConfig::HttpOutput(_) => "http_output".to_string(),
             TransportConfig::AdHocInput(_) => "adhoc_input".to_string(),
             TransportConfig::RedisOutput(_) => "redis_output".to_string(),
             TransportConfig::ClockInput(_) => "clock".to_string(),
@@ -1712,7 +1712,7 @@ impl TransportConfig {
             self,
             TransportConfig::AdHocInput(_)
                 | TransportConfig::HttpInput(_)
-                | TransportConfig::HttpOutput
+                | TransportConfig::HttpOutput(_)
                 | TransportConfig::ClockInput(_)
         )
     }

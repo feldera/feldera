@@ -30,4 +30,4 @@ pub struct Chunk {
 }
 
 pub(crate) use input::{HttpInputEndpoint, HttpInputTransport};
-pub(crate) use output::{HttpOutputEndpoint, HttpOutputTransport};
+pub(crate) use output::{HttpOutputEndpoint, HttpOutputFormat, HttpOutputTransport};
