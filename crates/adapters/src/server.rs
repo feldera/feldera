@@ -2218,7 +2218,7 @@ async fn egress_inner(
         TransportConfig::HttpOutput(config) => config.clone(),
         _ => {
             return Err(PipelineError::InvalidParam {
-                error: format!("Transport configuration must be HttpOutput"),
+                error: "Transport configuration must be HttpOutput".to_string(),
             });
         }
     };
@@ -2238,7 +2238,7 @@ async fn egress_inner(
         }
         _ => {
             return Err(PipelineError::InvalidParam {
-                error: format!("Format configuration must be CSV or JSON"),
+                error: "Format configuration must be CSV or JSON".to_string(),
             });
         }
     };

@@ -113,18 +113,13 @@ def _change_stream_start(pipeline: str, object_name: str, use_new_api: bool):
     if use_new_api:
         json = {
             "stream": object_name,
-            "transport": {
-                "name": "http_output",
-                "config": {
-                    "backpressure": True
-                }
-            },
+            "transport": {"name": "http_output", "config": {"backpressure": True}},
             "format": {
                 "name": "json",
                 "config": {
                     "array": True,
-                }
-            }
+                },
+            },
         }
         path = api_url(f"/pipelines/{pipeline}/egress")
         return http_request("POST", path, stream=True, json=json)

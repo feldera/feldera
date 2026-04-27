@@ -1,4 +1,4 @@
-use crate::api::demo::{Demo, read_demos_from_directories};
+use crate::api::demo::{read_demos_from_directories, Demo};
 use crate::api::endpoints;
 use crate::api::support_data_collector::SupportDataCollector;
 use crate::auth::JwkCache;
@@ -9,16 +9,17 @@ use crate::error::ManagerError;
 use crate::license::LicenseCheck;
 use crate::runner::interaction::RunnerInteraction;
 use crate::unstable_features;
-use actix_http::StatusCode;
 use actix_http::body::BoxBody;
-use actix_web::Scope;
+use actix_http::StatusCode;
 use actix_web::body::MessageBody;
 use actix_web::dev::{Service, ServiceResponse};
-use actix_web::http::{Method, header};
+use actix_web::http::{header, Method};
+use actix_web::Scope;
 use actix_web::{
-    App, HttpResponse, HttpServer, get, middleware,
+    get, middleware,
     web::Data as WebData,
     web::{self},
+    App, HttpResponse, HttpServer,
 };
 use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
@@ -28,11 +29,11 @@ use futures_util::FutureExt;
 use std::io::Write;
 use std::time::Duration;
 use std::{env, io, net::TcpListener, sync::Arc};
-use termbg::{Theme, theme};
+use termbg::{theme, Theme};
 use tokio::signal;
 use tokio::sync::watch;
 use tokio::sync::{Mutex, RwLock};
-use tracing::{Level, error, info, trace};
+use tracing::{error, info, trace, Level};
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
@@ -954,7 +955,7 @@ Version: {} v{}{}
     });
     #[cfg(unix)]
     {
-        use tokio::signal::unix::{SignalKind, signal as unix_signal};
+        use tokio::signal::unix::{signal as unix_signal, SignalKind};
         let mut term_stream = unix_signal(SignalKind::terminate()).expect("SIGTERM handler");
         let server_handle_term = server.handle();
         tokio::spawn(async move {
