@@ -7,14 +7,13 @@ use crate::api::error::ApiError;
 use crate::api::examples;
 use crate::api::main::ServerState;
 use crate::api::support_data_collector::{SupportBundleData, SupportBundleParameters};
-use crate::db::types::combined_status::{combine_since, CombinedDesiredStatus, CombinedStatus};
+use crate::db::types::combined_status::{CombinedDesiredStatus, CombinedStatus, combine_since};
 use crate::db::types::pipeline::ExtendedPipelineDescrMonitoring;
 use crate::db::{storage::Storage, types::tenant::TenantId};
 use crate::error::ManagerError;
 use actix_web::{
-    get,
+    HttpResponse, get,
     web::{self, Data as WebData, ReqData},
-    HttpResponse,
 };
 
 /// A collection of support bundle data for a single pipeline gathered in a single ZIP file.

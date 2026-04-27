@@ -14,7 +14,9 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
-        None yet.
+        New API `/egress` that allows more control over output endpoint configuration compared to
+        the existing `/egress/{table_name}` endpoint.  Please refer to the API documentation for
+        details.
 
         ## v0.289.0
 

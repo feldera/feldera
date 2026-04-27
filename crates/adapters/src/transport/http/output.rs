@@ -1,9 +1,9 @@
-use crate::{AsyncErrorCallback, OutputEndpoint, PipelineError, TransportConfig};
+use crate::{AsyncErrorCallback, OutputEndpoint, PipelineError};
 use actix_web::{HttpResponse, http::header::ContentType, web::Bytes};
 use anyhow::{Result as AnyResult, anyhow, bail};
 use async_stream::stream;
 use crossbeam::sync::ShardedLock;
-use serde::{Serializer, ser::SerializeStruct};
+use serde::{Deserialize, Serializer, ser::SerializeStruct};
 use serde_json::value::RawValue;
 use std::{
     sync::{
@@ -21,9 +21,11 @@ use tracing::{debug, error, info_span};
 // TODO: make this configurable via endpoint config.
 const MAX_BUFFERS: usize = 100;
 
-enum Format {
-    Text,
-    #[allow(dead_code)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HttpOutputFormat {
+    #[default]
+    Csv,
     Json,
 }
 
@@ -35,14 +37,6 @@ enum Format {
 pub(crate) struct HttpOutputTransport;
 
 impl HttpOutputTransport {
-    pub(crate) fn config() -> TransportConfig {
-        TransportConfig::HttpOutput
-    }
-
-    pub(crate) fn default_format() -> String {
-        String::from("csv")
-    }
-
     pub(crate) fn default_max_buffered_records() -> u64 {
         100_000
     }
@@ -67,7 +61,7 @@ type SendRequest = (Buffer, Option<oneshot::Sender<()>>);
 
 struct HttpOutputEndpointInner {
     name: String,
-    format: Format,
+    format: HttpOutputFormat,
 
     // Apply backpressure on the pipeline when the client or the network
     // are not keeping up.
@@ -83,7 +77,7 @@ struct HttpOutputEndpointInner {
 }
 
 impl HttpOutputEndpointInner {
-    pub(crate) fn new(name: &str, format: Format, backpressure: bool) -> Self {
+    pub(crate) fn new(name: &str, format: HttpOutputFormat, backpressure: bool) -> Self {
         Self {
             name: name.to_string(),
             format,
@@ -108,7 +102,7 @@ impl HttpOutputEndpointInner {
 
         if let Some(buffer) = buffer {
             match self.format {
-                Format::Text => {
+                HttpOutputFormat::Csv => {
                     let data_str = std::str::from_utf8(buffer).map_err(|e| {
                         anyhow!("received an invalid UTF8 string from encoder: {e}")
                     })?;
@@ -116,7 +110,7 @@ impl HttpOutputEndpointInner {
                         .serialize_field("text_data", data_str)
                         .map_err(|e| anyhow!("error serializing 'text_data' field: {e}"))?;
                 }
-                Format::Json => {
+                HttpOutputFormat::Json => {
                     let data_str = std::str::from_utf8(buffer).map_err(|e| {
                         anyhow!("received an invalid UTF8 string from encoder: {e}")
                     })?;
@@ -186,16 +180,11 @@ pub(crate) struct HttpOutputEndpoint {
 }
 
 impl HttpOutputEndpoint {
-    pub(crate) fn new(name: &str, format: &str, backpressure: bool) -> Result<Self, PipelineError> {
-        let format = match format {
-            "csv" => Format::Text,
-            "json" => Format::Json,
-            _ => {
-                return Err(PipelineError::InvalidParam {
-                    error: format!("{format:?}: unsupported HTTP output endpoint format"),
-                });
-            }
-        };
+    pub(crate) fn new(
+        name: &str,
+        format: HttpOutputFormat,
+        backpressure: bool,
+    ) -> Result<Self, PipelineError> {
         Ok(Self {
             inner: Arc::new(HttpOutputEndpointInner::new(name, format, backpressure)),
         })

@@ -9,11 +9,10 @@ use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use actix_http::StatusCode;
 use actix_web::{
-    get,
-    http::{header, Method},
+    HttpRequest, HttpResponse, get,
+    http::{Method, header},
     post,
     web::{self, Data as WebData, ReqData},
-    HttpRequest, HttpResponse,
 };
 use feldera_types::query_params::{MetricsParameters, SamplyProfileGetParams, SamplyProfileParams};
 use feldera_types::{program_schema::SqlIdentifier, query_params::ActivateParams};
@@ -46,7 +45,7 @@ pub mod support_bundle;
         ("table_name" = String, Path,
             description = "SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program."),
         ("force" = bool, Query, description = "When `true`, push data to the pipeline even if the pipeline is paused. The default value is `false`"),
-        ("format" = String, Query, description = "Input data format, e.g., 'csv' or 'json'."),
+        ("format" = String, Query, description = "Input data format, either `csv' or 'json'."),
         ("array" = Option<bool>, Query, description = "Set to `true` if updates in this stream are packaged into JSON arrays (used in conjunction with `format=json`). The default values is `false`."),
         ("update_format" = Option<JsonUpdateFormat>, Query, description = "JSON data change event format (used in conjunction with `format=json`).  The default value is 'insert_delete'."),
     ),
@@ -189,6 +188,85 @@ pub(crate) async fn http_output(
             *tenant_id,
             &pipeline_name,
             &endpoint,
+            req,
+            body,
+            Some(Duration::MAX),
+        )
+        .await
+}
+
+/// Subscribe to View
+///
+/// Subscribe to a stream of updates from a SQL view or table.
+///
+/// The pipeline responds with a continuous stream of changes to the specified
+/// table or view, encoded using the format specified in the `?format=`
+/// parameter. Updates are split into `Chunk`s.
+///
+/// The pipeline continues sending updates until the client closes the
+/// connection or the pipeline is stopped.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    request_body(
+        content = OutputEndpointConfig,
+        content_type = "text/json",
+        description = "Configuration for the HTTP output endpoint.  The view or table must be specified as `stream`. The `transport` must be an HTTP transport, and `format` must be JSON or CSV.  For a JSON format, `\"array\": true` must be set.",
+        examples(
+            ("`customer_events` table or view in JSON format with backpressure enabled" = (value = json!({"stream": "customer_events", "transport": {"name": "http_output", "config": {"backpressure": true}}, "format": {"name": "json", "config": {"array": true}}})))
+        )
+    ),
+    responses(
+        (status = OK
+            , description = "Connection to the endpoint successfully established. The body of the response contains a stream of data chunks."
+            , content_type = "application/json"
+            , body = Chunk),
+        (status = NOT_FOUND
+            , body = ErrorResponse
+            , description = "Pipeline with that name does not exist"
+            , examples(
+                ("Pipeline with that name does not exist" = (value = json!(examples::error_unknown_pipeline_name()))),
+            )
+        ),
+        (status = BAD_REQUEST
+            , body = ErrorResponse
+            // , examples(
+            //    ("Unknown output data format" = ...),
+            // )
+        ),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Output Connectors"
+)]
+#[post("/pipelines/{pipeline_name}/egress")]
+pub(crate) async fn http_output2(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    req: HttpRequest,
+    body: web::Payload,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    state
+        .runner
+        .forward_streaming_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            "egress",
             req,
             body,
             Some(Duration::MAX),

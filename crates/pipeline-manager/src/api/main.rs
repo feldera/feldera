@@ -1,4 +1,4 @@
-use crate::api::demo::{read_demos_from_directories, Demo};
+use crate::api::demo::{Demo, read_demos_from_directories};
 use crate::api::endpoints;
 use crate::api::support_data_collector::SupportDataCollector;
 use crate::auth::JwkCache;
@@ -9,17 +9,16 @@ use crate::error::ManagerError;
 use crate::license::LicenseCheck;
 use crate::runner::interaction::RunnerInteraction;
 use crate::unstable_features;
-use actix_http::body::BoxBody;
 use actix_http::StatusCode;
+use actix_http::body::BoxBody;
+use actix_web::Scope;
 use actix_web::body::MessageBody;
 use actix_web::dev::{Service, ServiceResponse};
-use actix_web::http::{header, Method};
-use actix_web::Scope;
+use actix_web::http::{Method, header};
 use actix_web::{
-    get, middleware,
+    App, HttpResponse, HttpServer, get, middleware,
     web::Data as WebData,
     web::{self},
-    App, HttpResponse, HttpServer,
 };
 use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
@@ -29,11 +28,11 @@ use futures_util::FutureExt;
 use std::io::Write;
 use std::time::Duration;
 use std::{env, io, net::TcpListener, sync::Arc};
-use termbg::{theme, Theme};
+use termbg::{Theme, theme};
 use tokio::signal;
 use tokio::sync::watch;
 use tokio::sync::{Mutex, RwLock};
-use tracing::{error, info, trace, Level};
+use tracing::{Level, error, info, trace};
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
@@ -367,6 +366,7 @@ It contains the following fields:
         feldera_types::transport::file::FileInputConfig,
         feldera_types::transport::file::FileOutputConfig,
         feldera_types::transport::http::HttpInputConfig,
+        feldera_types::transport::http::HttpOutputConfig,
         feldera_types::transport::url::UrlInputConfig,
         feldera_types::transport::kafka::KafkaHeader,
         feldera_types::transport::kafka::KafkaHeaderValue,
@@ -564,6 +564,7 @@ fn api_scope() -> Scope {
         // Pipeline interaction endpoints
         .service(endpoints::pipeline_interaction::http_input)
         .service(endpoints::pipeline_interaction::http_output)
+        .service(endpoints::pipeline_interaction::http_output2)
         .service(endpoints::pipeline_interaction::checkpoint_pipeline)
         .service(endpoints::pipeline_interaction::sync_checkpoint)
         .service(endpoints::pipeline_interaction::get_checkpoint_status)
@@ -953,7 +954,7 @@ Version: {} v{}{}
     });
     #[cfg(unix)]
     {
-        use tokio::signal::unix::{signal as unix_signal, SignalKind};
+        use tokio::signal::unix::{SignalKind, signal as unix_signal};
         let mut term_stream = unix_signal(SignalKind::terminate()).expect("SIGTERM handler");
         let server_handle_term = server.handle();
         tokio::spawn(async move {

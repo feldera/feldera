@@ -109,17 +109,35 @@ def _ingress(
     return resp
 
 
-def _change_stream_start(pipeline: str, object_name: str):
-    # object_name may already has quotes around it; if so, percent-encode them.
-    if object_name.startswith('"') and object_name.endswith('"'):
-        encoded = quote(object_name, safe="")
+def _change_stream_start(pipeline: str, object_name: str, use_new_api: bool):
+    if use_new_api:
+        json = {
+            "stream": object_name,
+            "transport": {
+                "name": "http_output",
+                "config": {
+                    "backpressure": True
+                }
+            },
+            "format": {
+                "name": "json",
+                "config": {
+                    "array": True,
+                }
+            }
+        }
+        path = api_url(f"/pipelines/{pipeline}/egress")
+        return http_request("POST", path, stream=True, json=json)
     else:
-        encoded = object_name
-    path = api_url(
-        f"/pipelines/{pipeline}/egress/{encoded}?format=json&backpressure=true"
-    )
-    r = http_request("POST", path, stream=True)
-    return r
+        # object_name may already has quotes around it; if so, percent-encode them.
+        if object_name.startswith('"') and object_name.endswith('"'):
+            encoded = quote(object_name, safe="")
+        else:
+            encoded = object_name
+        path = api_url(
+            f"/pipelines/{pipeline}/egress/{encoded}?format=json&backpressure=true"
+        )
+        return http_request("POST", path, stream=True)
 
 
 def _read_json_events(resp, expected_count: int, timeout_s: float = 10.0):
@@ -434,8 +452,7 @@ def test_primary_keys(pipeline_name):
     assert got == [{"id": 1, "s": "1-modified"}]
 
 
-@gen_pipeline_name
-def test_case_sensitive_tables(pipeline_name):
+def _test_case_sensitive_tables(pipeline_name: str, use_new_api: bool):
     """
     - Distinguish between quoted and unquoted identifiers.
     - Validate streaming outputs for two views.
@@ -449,8 +466,8 @@ def test_case_sensitive_tables(pipeline_name):
     create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
 
-    stream_v1 = _change_stream_start(pipeline_name, '"V1"')
-    stream_v1_lower = _change_stream_start(pipeline_name, '"v1"')
+    stream_v1 = _change_stream_start(pipeline_name, '"V1"', use_new_api)
+    stream_v1_lower = _change_stream_start(pipeline_name, '"v1"', use_new_api)
 
     # Ingest into quoted "TaBle1"
     _ingress_and_wait_token(
@@ -482,6 +499,16 @@ def test_case_sensitive_tables(pipeline_name):
 
 
 @gen_pipeline_name
+def test_case_sensitive_tables(pipeline_name):
+    _test_case_sensitive_tables(pipeline_name, False)
+
+
+@gen_pipeline_name
+def test_case_sensitive_tables_newapi(pipeline_name):
+    _test_case_sensitive_tables(pipeline_name, True)
+
+
+@gen_pipeline_name
 def test_duplicate_outputs(pipeline_name):
     """
     multiple inserts producing duplicate output values.
@@ -493,7 +520,7 @@ def test_duplicate_outputs(pipeline_name):
     create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
 
-    stream = _change_stream_start(pipeline_name, "V1")
+    stream = _change_stream_start(pipeline_name, "V1", False)
     reader = JsonLineReader(stream)
 
     # First batch
@@ -551,7 +578,7 @@ def test_upsert(pipeline_name):
     create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
 
-    stream = _change_stream_start(pipeline_name, "T1")
+    stream = _change_stream_start(pipeline_name, "T1", True)
     reader = JsonLineReader(stream)
 
     # Initial inserts (array=true)

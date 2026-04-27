@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 #[cfg(feature = "with-avro")]
 pub mod avro;
 pub(crate) mod csv;
-mod json;
+pub(crate) mod json;
 pub mod parquet;
 pub(crate) mod raw;
 
