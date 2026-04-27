@@ -208,6 +208,8 @@ These special cases stop being grep-targets; they become metadata that any plugi
 
 **`inventory` must be a direct dep**: `register_connector!` expands to `::inventory::submit!`, which requires `inventory` as a direct dep of the calling crate (transitive through `feldera-adapterlib` is not enough). The `datagen` crate had to add `inventory = { workspace = true }` to its `Cargo.toml` for its `submit!` to compile. Document this in the connector-authoring guide; any future per-connector crate must do the same.
 
+**`secrets_dir` is opt-in, not opt-out**: the factory hands `secrets_dir: &Path` to every `build_*` function unconditionally, but most connectors do not need it. Bind `_secrets_dir` in `build_*` for `s3`, `url`, `nats`, `pubsub`, `redis`, and `nexmark` — none of them have credential file paths to resolve. Only `kafka` consumes `secrets_dir` (paths to TLS / SASL credential files in its config). Document in the connector-authoring guide: `_secrets_dir` is the correct declaration unless `config_schema` declares fields whose values are filesystem paths to secret material; in that case, resolve them via the same helper Kafka uses.
+
 **Add a CI lint** that fails if `controller.rs` matches on a `TransportConfig` variant outside the dispatch entry points. Stops anyone from re-introducing per-variant special-casing.
 
 ---
@@ -565,7 +567,7 @@ Each PR below is sized to be independently reviewable and mergeable. Dependencie
 - [ ] **Move `FileInput` / `ClockInput` arms into the `Ok(None)` catch arm of the input match**; **delete the `FileOutput` arm entirely** (the output match's existing `_ => Ok(None)` already covers it). Don't leave them as dead arms — Rust's "unreachable pattern" lint and future exhaustiveness changes will flag them.
 - [ ] Remove now-unused imports: `use clock::ClockEndpoint`, `use crate::transport::file::{FileInputEndpoint, FileOutputEndpoint}` from `transport.rs`. The `build_*` functions in the connector modules construct the endpoints directly, so the factory no longer names these types.
 - [ ] Verify the existing tests `transport::file::test::{test_csv_file_nofollow, test_csv_file_follow}` and `transport::clock::test::test_clock` pass — they call `mock_input_pipeline`, which exercises the full factory dispatch path (registry hit + endpoint construction).
-- [ ] Add a unit test that resolves `"file_input"`, `"file_output"`, `"clock"` via `connector_by_name()` and asserts the descriptor's `direction` / `kind` / `build_*` slots are populated as expected.
+- [ ] Add a unit test per migrated connector that resolves it via `connector_by_name()` and asserts `direction` / `kind` / `build_*` slots. Tests live alongside the connector module (e.g. `file.rs::test::file_input_descriptor`, `clock.rs::test::clock_descriptor`). Every subsequent connector migration in PR 7a–7f must include the analogous test.
 - [ ] Document the migration recipe in a short developer note for use in PR 7+. Include the descriptor-name-vs-serde-tag rule and the `Ok(None)` arm pattern.
 - **Depends on**: PR 2.
 - **Unblocks**: PR 5, PR 6.
@@ -606,8 +608,8 @@ Each PR below is sized to be independently reviewable and mergeable. Dependencie
 
 ### PR 7a–7g — Sweep remaining bundled connectors onto the registry, then clean up (Phase 4b)
 PRs 7a–7f follow the same recipe: add `register_connector!`, remove the corresponding fallback match arm, verify tests pass. PR 7g is the post-migration cleanup. Group as small PRs to keep blast radius low. **Note**: `http`, `adhoc`, and `datagen` were already migrated in PR 5 as prerequisites for the controller-rewrites; this sweep covers only the connectors that PR 5 didn't need to touch.
-- [ ] **PR 7a**: `s3` + `url`.
-- [ ] **PR 7b**: `nats` + `pubsub` (each behind its `with-*` feature gate).
+- [ ] **PR 7a**: `s3` + `url`. Add `connector_by_name` descriptor tests (`s3.rs::test::s3_input_descriptor`, `url.rs::test::url_input_descriptor`).
+- [ ] **PR 7b**: `nats` + `pubsub` (each behind its `with-*` feature gate). Add descriptor tests.
 - [ ] **PR 7c**: `redis` (output only).
 - [ ] **PR 7d**: `kafka` — handles ft/nonft split; `build_output` accepts the existing `fault_tolerant: bool` parameter. First connector with `Direction::InputOutput`; verify the PR 6 dispatch logic correctly routes to `build_input` from the input factory and `build_output` from the output factory.
 - [ ] **PR 7e**: `nexmark` (transient/generator).

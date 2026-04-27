@@ -68,8 +68,6 @@ use crate::transport::nats::NatsInputEndpoint;
 
 #[cfg(feature = "with-nexmark")]
 use crate::transport::nexmark::NexmarkEndpoint;
-use crate::transport::s3::S3InputEndpoint;
-use crate::transport::url::UrlInputEndpoint;
 
 pub use feldera_adapterlib::transport::*;
 
@@ -122,19 +120,19 @@ pub fn input_transport_config_to_endpoint(
         TransportConfig::PubSubInput(config) => Box::new(PubSubInputEndpoint::new(config.clone())?),
         #[cfg(not(feature = "with-pubsub"))]
         TransportConfig::PubSubInput(_) => return Ok(None),
-        TransportConfig::UrlInput(config) => Box::new(UrlInputEndpoint::new(config)),
-        TransportConfig::S3Input(config) => Box::new(S3InputEndpoint::new(config)?),
         #[cfg(feature = "with-nexmark")]
         TransportConfig::Nexmark(config) => Box::new(NexmarkEndpoint::new(config.clone())),
         #[cfg(not(feature = "with-nexmark"))]
         TransportConfig::Nexmark(_) => return Ok(None),
-        // file_input, clock, http_input, adhoc_input, datagen are now handled
-        // above via the descriptor registry.
+        // file_input, clock, http_input, adhoc_input, datagen, s3_input, url_input are
+        // now handled above via the descriptor registry.
         TransportConfig::FileInput(_)
         | TransportConfig::ClockInput(_)
         | TransportConfig::HttpInput(_)
         | TransportConfig::AdHocInput(_)
         | TransportConfig::Datagen(_)
+        | TransportConfig::UrlInput(_)
+        | TransportConfig::S3Input(_)
         | TransportConfig::FileOutput(_)
         | TransportConfig::KafkaOutput(_)
         | TransportConfig::DeltaTableInput(_)

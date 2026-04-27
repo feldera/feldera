@@ -962,6 +962,42 @@ fn to_s3_config(config: &Arc<S3InputConfig>) -> aws_sdk_s3::Config {
     }
 }
 
+// ── Connector registry ────────────────────────────────────────────────────────
+
+use feldera_adapterlib::connector::{ConnectorDescriptor, ConnectorFlags, ConnectorKind, Direction};
+use serde_json::Value as JsonValue;
+
+fn s3_input_config_schema() -> JsonValue {
+    JsonValue::Object(Default::default())
+}
+
+fn build_s3_input(
+    config: &JsonValue,
+    _endpoint_name: &str,
+    _secrets_dir: &std::path::Path,
+) -> AnyResult<Box<dyn TransportInputEndpoint>> {
+    let config: S3InputConfig = serde_json::from_value(config.clone())?;
+    Ok(Box::new(S3InputEndpoint::new(config)?))
+}
+
+static S3_INPUT_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
+    name: "s3_input",
+    direction: Direction::Input,
+    kind: ConnectorKind::Regular,
+    fault_tolerance: Some(FtModel::ExactlyOnce),
+    config_schema: s3_input_config_schema,
+    default_format: None,
+    flags: ConnectorFlags::EMPTY,
+    build_input: Some(build_s3_input),
+    build_output: None,
+    build_integrated_input: None,
+    build_integrated_output: None,
+};
+
+inventory::submit! { &S3_INPUT_DESCRIPTOR }
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod test {
     use crate::{
@@ -1261,5 +1297,15 @@ mod test {
             });
         let test_data: Vec<TestStruct> = (4..7).map(|i| TestStruct { i }).collect();
         run_test(MULTI_KEY_CONFIG_STR, mock, test_data);
+    }
+
+    #[test]
+    fn s3_input_descriptor() {
+        let d = feldera_adapterlib::connector::connector_by_name("s3_input")
+            .expect("s3_input descriptor not registered");
+        assert!(d.build_input.is_some());
+        assert!(d.build_output.is_none());
+        assert!(d.build_integrated_input.is_none());
+        assert!(d.build_integrated_output.is_none());
     }
 }
