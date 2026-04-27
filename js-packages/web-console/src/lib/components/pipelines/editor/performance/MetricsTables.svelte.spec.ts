@@ -2,16 +2,19 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
+import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
+import { accumulatePipelineMetrics } from '$lib/functions/pipelineMetrics'
 import type {
-  AggregatedInputEndpointMetrics,
-  AggregatedOutputEndpointMetrics,
-  PipelineMetrics
-} from '$lib/functions/pipelineMetrics'
-import { emptyPipelineMetrics } from '$lib/functions/pipelineMetrics'
-import type { InputEndpointMetrics, OutputEndpointMetrics } from '$lib/services/manager'
+  ControllerStatus,
+  GlobalControllerMetrics,
+  InputEndpointMetrics,
+  InputEndpointStatus,
+  OutputEndpointMetrics,
+  OutputEndpointStatus
+} from '$lib/services/manager'
 import MetricsTables from './MetricsTables.svelte'
 
-// --- Mock factories ---
+// --- Factories ---
 
 function makeInputMetrics(overrides?: Partial<InputEndpointMetrics>): InputEndpointMetrics {
   return {
@@ -43,104 +46,58 @@ function makeOutputMetrics(overrides?: Partial<OutputEndpointMetrics>): OutputEn
   }
 }
 
-function makeInputConnector(
-  overrides?: Partial<AggregatedInputEndpointMetrics['connectors'][0]>
-): AggregatedInputEndpointMetrics['connectors'][0] {
+function makeInputStatus(
+  stream: string,
+  overrides?: Partial<Omit<InputEndpointStatus, 'config'>>
+): InputEndpointStatus {
   return {
-    endpointName: 'input-connector-1',
+    config: { stream },
+    endpoint_name: 'input-connector-1',
     metrics: makeInputMetrics(),
-    io_active: false,
     paused: false,
     barrier: false,
     health: null,
+    fatal_error: null,
     ...overrides
   }
 }
 
-function makeOutputConnector(
-  overrides?: Partial<AggregatedOutputEndpointMetrics['connectors'][0]>
-): AggregatedOutputEndpointMetrics['connectors'][0] {
+function makeOutputStatus(
+  stream: string,
+  overrides?: Partial<Omit<OutputEndpointStatus, 'config'>>
+): OutputEndpointStatus {
   return {
-    endpointName: 'output-connector-1',
+    config: { stream },
+    endpoint_name: 'output-connector-1',
     metrics: makeOutputMetrics(),
-    io_active: false,
     health: null,
+    fatal_error: null,
     ...overrides
   }
 }
 
-function makeAggregatedInput(
-  connectors: AggregatedInputEndpointMetrics['connectors']
-): AggregatedInputEndpointMetrics {
-  const aggregate = connectors.reduce(
-    (acc, c) => ({
-      total_bytes: acc.total_bytes + c.metrics.total_bytes,
-      total_records: acc.total_records + c.metrics.total_records,
-      buffered_bytes: acc.buffered_bytes + c.metrics.buffered_bytes,
-      buffered_records: acc.buffered_records + c.metrics.buffered_records,
-      num_transport_errors: acc.num_transport_errors + c.metrics.num_transport_errors,
-      num_parse_errors: acc.num_parse_errors + c.metrics.num_parse_errors,
-      end_of_input: acc.end_of_input && c.metrics.end_of_input
-    }),
-    {
-      total_bytes: 0,
-      total_records: 0,
-      buffered_bytes: 0,
-      buffered_records: 0,
-      num_transport_errors: 0,
-      num_parse_errors: 0,
-      end_of_input: true
-    }
-  )
-  return { connectors, aggregate: { metrics: aggregate } }
-}
-
-function makeAggregatedOutput(
-  connectors: AggregatedOutputEndpointMetrics['connectors']
-): AggregatedOutputEndpointMetrics {
-  const aggregate = connectors.reduce(
-    (acc, c) => ({
-      buffered_batches: acc.buffered_batches + c.metrics.buffered_batches,
-      buffered_records: acc.buffered_records + c.metrics.buffered_records,
-      memory: acc.memory + c.metrics.memory,
-      num_encode_errors: acc.num_encode_errors + c.metrics.num_encode_errors,
-      num_transport_errors: acc.num_transport_errors + c.metrics.num_transport_errors,
-      queued_batches: acc.queued_batches + c.metrics.queued_batches,
-      queued_records: acc.queued_records + c.metrics.queued_records,
-      total_processed_input_records:
-        acc.total_processed_input_records + c.metrics.total_processed_input_records,
-      transmitted_bytes: acc.transmitted_bytes + c.metrics.transmitted_bytes,
-      transmitted_records: acc.transmitted_records + c.metrics.transmitted_records,
-      total_processed_steps: acc.total_processed_steps + c.metrics.total_processed_steps
-    }),
-    {
-      buffered_batches: 0,
-      buffered_records: 0,
-      memory: 0,
-      num_encode_errors: 0,
-      num_transport_errors: 0,
-      queued_batches: 0,
-      queued_records: 0,
-      total_processed_input_records: 0,
-      transmitted_bytes: 0,
-      transmitted_records: 0,
-      total_processed_steps: 0
-    }
-  )
-  return { connectors, aggregate: { metrics: aggregate } }
-}
-
-function makeMetricsProp(
-  tables?: Map<string, AggregatedInputEndpointMetrics>,
-  views?: Map<string, AggregatedOutputEndpointMetrics>
-): { current: PipelineMetrics } {
+function makeStatus(
+  outputs: OutputEndpointStatus[] = [],
+  inputs: InputEndpointStatus[] = [],
+  initiatedByConnectors: Record<string, { phase: 'Started' | 'Committed' }> = {}
+): ControllerStatus {
   return {
-    current: {
-      ...emptyPipelineMetrics,
-      tables: tables ?? new Map(),
-      views: views ?? new Map()
-    }
+    global_metrics: {
+      transaction_initiators: { initiated_by_connectors: initiatedByConnectors }
+    } as GlobalControllerMetrics,
+    inputs,
+    outputs
   }
+}
+
+// Builds PipelineMetrics by running the production accumulator. Pass `prev` to
+// trigger io_active detection (requires a previous snapshot with lower counters).
+function buildMetrics(
+  status: ControllerStatus,
+  prev?: ControllerStatus
+): { current: PipelineMetrics } {
+  const prevMetrics = prev ? accumulatePipelineMetrics(0)(undefined, { status: prev }) : undefined
+  return { current: accumulatePipelineMetrics(1)(prevMetrics, { status })! }
 }
 
 async function renderComponent(
@@ -162,15 +119,14 @@ async function clickHealthFilter(value: string) {
 describe('MetricsTables.svelte', () => {
   describe('A. Basic rendering', () => {
     it('renders nothing when tables and views are empty', async () => {
-      await renderComponent(makeMetricsProp())
+      await renderComponent(buildMetrics(makeStatus()))
       await expect.element(page.getByTestId('box-input-tables')).not.toBeInTheDocument()
       await expect.element(page.getByTestId('box-output-views')).not.toBeInTheDocument()
     })
 
     it('renders sections with correct headers based on data presence', async () => {
-      const tables = new Map([['my_table', makeAggregatedInput([makeInputConnector()])]])
-      const views = new Map([['my_view', makeAggregatedOutput([makeOutputConnector()])]])
-      await renderComponent(makeMetricsProp(tables, views))
+      const status = makeStatus([makeOutputStatus('my_view')], [makeInputStatus('my_table')])
+      await renderComponent(buildMetrics(status))
 
       // Input tables section with headers
       const inputSection = page.getByTestId('box-input-tables')
@@ -188,29 +144,28 @@ describe('MetricsTables.svelte', () => {
       const outputHtml = outputSection.element().innerHTML
       expect(outputHtml).toContain('View')
       expect(outputHtml).toContain('Transmitted')
+      expect(outputHtml).toContain('batch')
       expect(outputHtml).toContain('Encode errors')
     })
   })
 
   describe('B. Metric value display', () => {
     it('displays formatted input metrics, zero values, and relation name', async () => {
-      const tables = new Map([
+      const status = makeStatus(
+        [],
         [
-          'ORDERS',
-          makeAggregatedInput([
-            makeInputConnector({
-              metrics: makeInputMetrics({
-                total_records: 1234567,
-                total_bytes: 1048576,
-                buffered_records: 42,
-                buffered_bytes: 2048
-              })
+          makeInputStatus('orders', {
+            metrics: makeInputMetrics({
+              total_records: 1234567,
+              total_bytes: 1048576,
+              buffered_records: 42,
+              buffered_bytes: 2048
             })
-          ])
-        ],
-        ['EMPTY_TABLE', makeAggregatedInput([makeInputConnector()])]
-      ])
-      await renderComponent(makeMetricsProp(tables))
+          }),
+          makeInputStatus('empty_table')
+        ]
+      )
+      await renderComponent(buildMetrics(status))
 
       // Formatted metric values
       await expect.element(page.getByText('1,234,567')).toBeInTheDocument()
@@ -221,58 +176,74 @@ describe('MetricsTables.svelte', () => {
       // Zero metrics display correctly
       await expect.element(page.getByText('0 B').first()).toBeInTheDocument()
 
-      // Relation name rendered in row
-      await expect.element(page.getByTestId('box-relation-row-ORDERS')).toBeInTheDocument()
-      await expect.element(page.getByText('ORDERS')).toBeInTheDocument()
+      // Relation name rendered in row (stream names are normalized to lowercase)
+      await expect.element(page.getByTestId('box-relation-row-orders')).toBeInTheDocument()
+      await expect.element(page.getByText('orders')).toBeInTheDocument()
     })
 
     it('displays formatted output metrics', async () => {
-      const views = new Map([
-        [
-          'out_view',
-          makeAggregatedOutput([
-            makeOutputConnector({
-              metrics: makeOutputMetrics({
-                transmitted_records: 5000,
-                transmitted_bytes: 512000,
-                buffered_records: 10,
-                queued_records: 3
-              })
-            })
-          ])
-        ]
+      const status = makeStatus([
+        makeOutputStatus('out_view', {
+          metrics: makeOutputMetrics({
+            transmitted_records: 5000,
+            transmitted_bytes: 512000,
+            buffered_records: 10,
+            queued_records: 3
+          })
+        })
       ])
-      await renderComponent(makeMetricsProp(undefined, views))
+      await renderComponent(buildMetrics(status))
       await expect.element(page.getByText('5,000')).toBeInTheDocument()
       await expect.element(page.getByText('500.0 KiB')).toBeInTheDocument()
+    })
+
+    it('displays batch_records_written as a formatted number when set, and em-dash when null', async () => {
+      const status = makeStatus([
+        makeOutputStatus('v_with_batch', {
+          metrics: makeOutputMetrics({ batch_records_written: 7500 })
+        }),
+        makeOutputStatus('v_null_batch', {
+          metrics: makeOutputMetrics({ batch_records_written: null })
+        })
+      ])
+      await renderComponent(buildMetrics(status))
+      await expect.element(page.getByText('7,500')).toBeInTheDocument()
+      const emDashes = page.getByText('—').all()
+      expect(emDashes.length).toBeGreaterThanOrEqual(1)
     })
   })
 
   describe('C. io_active indicator', () => {
     it('applies green text class on active records for both input and output', async () => {
-      const tables = new Map([
+      const prev = makeStatus(
         [
-          't1',
-          makeAggregatedInput([
-            makeInputConnector({
-              io_active: true,
-              metrics: makeInputMetrics({ total_records: 100 })
-            })
-          ])
-        ]
-      ])
-      const views = new Map([
+          makeOutputStatus('v1', {
+            endpoint_name: 'o1',
+            metrics: makeOutputMetrics({ transmitted_records: 0 })
+          })
+        ],
         [
-          'v1',
-          makeAggregatedOutput([
-            makeOutputConnector({
-              io_active: true,
-              metrics: makeOutputMetrics({ transmitted_records: 200 })
-            })
-          ])
+          makeInputStatus('t1', {
+            endpoint_name: 'i1',
+            metrics: makeInputMetrics({ total_records: 0 })
+          })
         ]
-      ])
-      await renderComponent(makeMetricsProp(tables, views))
+      )
+      const cur = makeStatus(
+        [
+          makeOutputStatus('v1', {
+            endpoint_name: 'o1',
+            metrics: makeOutputMetrics({ transmitted_records: 200 })
+          })
+        ],
+        [
+          makeInputStatus('t1', {
+            endpoint_name: 'i1',
+            metrics: makeInputMetrics({ total_records: 100 })
+          })
+        ]
+      )
+      await renderComponent(buildMetrics(cur, prev))
 
       const inputEl = page.getByText('100')
       await expect.element(inputEl).toBeInTheDocument()
@@ -282,42 +253,98 @@ describe('MetricsTables.svelte', () => {
       await expect.element(outputEl).toBeInTheDocument()
       await expect.element(outputEl).toHaveClass('text-success-600-400')
     })
+
+    it('applies green text class to batch_records_written cell when io_active, and not when inactive', async () => {
+      const prevActive = makeStatus([
+        makeOutputStatus('v_active', {
+          endpoint_name: 'o1',
+          metrics: makeOutputMetrics({ batch_records_written: 1000 })
+        })
+      ])
+      const curActive = makeStatus([
+        makeOutputStatus('v_active', {
+          endpoint_name: 'o1',
+          metrics: makeOutputMetrics({ batch_records_written: 3333 })
+        })
+      ])
+      const { unmount } = await renderComponent(buildMetrics(curActive, prevActive))
+      const activeEl = page.getByText('3,333')
+      await expect.element(activeEl).toBeInTheDocument()
+      await expect.element(activeEl).toHaveClass('text-success-600-400')
+      unmount()
+
+      // No prev snapshot → io_active is always false on first call
+      const curInactive = makeStatus([
+        makeOutputStatus('v_inactive', {
+          metrics: makeOutputMetrics({ batch_records_written: 4444 })
+        })
+      ])
+      await renderComponent(buildMetrics(curInactive))
+      const inactiveEl = page.getByText('4,444')
+      await expect.element(inactiveEl).toBeInTheDocument()
+      await expect.element(inactiveEl).not.toHaveClass('text-success-600-400')
+    })
   })
 
   describe('D. Connector status icons', () => {
     it('shows correct status icon for each input connector state', async () => {
       const cases: {
-        state: Partial<AggregatedInputEndpointMetrics['connectors'][0]>
+        statusFn: () => ControllerStatus
         testId: string
         text?: string
       }[] = [
-        { state: { barrier: true }, testId: 'box-icon-barrier' },
         {
-          state: { metrics: makeInputMetrics({ num_parse_errors: 5 }) },
+          statusFn: () => makeStatus([], [makeInputStatus('t1', { barrier: true })]),
+          testId: 'box-icon-barrier'
+        },
+        {
+          statusFn: () =>
+            makeStatus(
+              [],
+              [makeInputStatus('t1', { metrics: makeInputMetrics({ num_parse_errors: 5 }) })]
+            ),
           testId: 'btn-icon-input-errors'
         },
         {
-          state: { transaction_phase: 'started' },
+          statusFn: () =>
+            makeStatus([], [makeInputStatus('t1', { endpoint_name: 'ep1' })], {
+              ep1: { phase: 'Started' }
+            }),
           testId: 'box-icon-transaction-started',
           text: 'Started'
         },
         {
-          state: { transaction_phase: 'committed' },
+          statusFn: () =>
+            makeStatus([], [makeInputStatus('t1', { endpoint_name: 'ep1' })], {
+              ep1: { phase: 'Committed' }
+            }),
           testId: 'box-icon-transaction-committed',
           text: 'Ready to commit'
         },
         {
-          state: { metrics: makeInputMetrics({ end_of_input: true }) },
+          statusFn: () =>
+            makeStatus(
+              [],
+              [makeInputStatus('t1', { metrics: makeInputMetrics({ end_of_input: true }) })]
+            ),
           testId: 'box-icon-end-of-input'
         },
-        { state: { paused: true }, testId: 'box-icon-paused' },
-        { state: { fatal_error: 'err' }, testId: 'btn-icon-input-fatal-error' },
-        { state: {}, testId: 'box-icon-running' }
+        {
+          statusFn: () => makeStatus([], [makeInputStatus('t1', { paused: true })]),
+          testId: 'box-icon-paused'
+        },
+        {
+          statusFn: () => makeStatus([], [makeInputStatus('t1', { fatal_error: 'err' })]),
+          testId: 'btn-icon-input-fatal-error'
+        },
+        {
+          statusFn: () => makeStatus([], [makeInputStatus('t1')]),
+          testId: 'box-icon-running'
+        }
       ]
 
-      for (const { state, testId, text } of cases) {
-        const tables = new Map([['t1', makeAggregatedInput([makeInputConnector(state)])]])
-        const { unmount } = await renderComponent(makeMetricsProp(tables))
+      for (const { statusFn, testId, text } of cases) {
+        const { unmount } = await renderComponent(buildMetrics(statusFn()))
         const el = page.getByTestId(testId)
         await expect.element(el).toBeInTheDocument()
         if (text) {
@@ -328,40 +355,30 @@ describe('MetricsTables.svelte', () => {
     })
 
     it('shows error icon for output connector with errors', async () => {
-      const views = new Map([
-        [
-          'v1',
-          makeAggregatedOutput([
-            makeOutputConnector({
-              metrics: makeOutputMetrics({ num_encode_errors: 3 })
-            })
-          ])
-        ]
+      const status = makeStatus([
+        makeOutputStatus('v1', { metrics: makeOutputMetrics({ num_encode_errors: 3 }) })
       ])
-      await renderComponent(makeMetricsProp(undefined, views))
+      await renderComponent(buildMetrics(status))
       await expect.element(page.getByTestId('btn-icon-output-errors')).toBeInTheDocument()
     })
 
     it('shows no error icon for output connector without errors', async () => {
-      const views = new Map([['v1', makeAggregatedOutput([makeOutputConnector()])]])
-      await renderComponent(makeMetricsProp(undefined, views))
+      await renderComponent(buildMetrics(makeStatus([makeOutputStatus('v1')])))
       await expect.element(page.getByTestId('btn-icon-output-errors')).not.toBeInTheDocument()
     })
   })
 
   describe('E. Multi-connector rows', () => {
     it('shows summary text and chevron for multi-connector input table', async () => {
-      const tables = new Map([
+      const status = makeStatus(
+        [],
         [
-          'multi',
-          makeAggregatedInput([
-            makeInputConnector({ endpointName: 'c1', paused: false }),
-            makeInputConnector({ endpointName: 'c2', paused: true })
-          ])
-        ],
-        ['single', makeAggregatedInput([makeInputConnector({ endpointName: 'c3' })])]
-      ])
-      await renderComponent(makeMetricsProp(tables))
+          makeInputStatus('multi', { endpoint_name: 'c1', paused: false }),
+          makeInputStatus('multi', { endpoint_name: 'c2', paused: true }),
+          makeInputStatus('single', { endpoint_name: 'c3' })
+        ]
+      )
+      await renderComponent(buildMetrics(status))
 
       // Multi-connector summary with running count
       await expect.element(page.getByTestId('box-multi-connector-summary')).toBeInTheDocument()
@@ -373,16 +390,14 @@ describe('MetricsTables.svelte', () => {
     })
 
     it('expands to show individual connectors and collapses on second click', async () => {
-      const tables = new Map([
+      const status = makeStatus(
+        [],
         [
-          't1',
-          makeAggregatedInput([
-            makeInputConnector({ endpointName: 'alpha' }),
-            makeInputConnector({ endpointName: 'beta' })
-          ])
+          makeInputStatus('t1', { endpoint_name: 'alpha' }),
+          makeInputStatus('t1', { endpoint_name: 'beta' })
         ]
-      ])
-      await renderComponent(makeMetricsProp(tables))
+      )
+      await renderComponent(buildMetrics(status))
 
       // Initially collapsed
       await expect.element(page.getByTestId('box-connector-row-alpha')).not.toBeInTheDocument()
@@ -398,17 +413,12 @@ describe('MetricsTables.svelte', () => {
     })
 
     it('shows "N connectors" text for multi-connector output views', async () => {
-      const views = new Map([
-        [
-          'v1',
-          makeAggregatedOutput([
-            makeOutputConnector({ endpointName: 'o1' }),
-            makeOutputConnector({ endpointName: 'o2' }),
-            makeOutputConnector({ endpointName: 'o3' })
-          ])
-        ]
+      const status = makeStatus([
+        makeOutputStatus('v1', { endpoint_name: 'o1' }),
+        makeOutputStatus('v1', { endpoint_name: 'o2' }),
+        makeOutputStatus('v1', { endpoint_name: 'o3' })
       ])
-      await renderComponent(makeMetricsProp(undefined, views))
+      await renderComponent(buildMetrics(status))
       await expect.element(page.getByText('3 connectors')).toBeInTheDocument()
     })
   })
@@ -416,64 +426,50 @@ describe('MetricsTables.svelte', () => {
   describe('F. Error count buttons & callbacks', () => {
     it('clicking error counts calls onConnectorSelect with correct arguments', async () => {
       const onConnectorSelect = vi.fn()
-      const tables = new Map([
+      const status = makeStatus(
         [
-          'tbl',
-          makeAggregatedInput([
-            makeInputConnector({
-              endpointName: 'ep1',
-              metrics: makeInputMetrics({ num_parse_errors: 7, num_transport_errors: 3 })
-            })
-          ])
-        ]
-      ])
-      const views = new Map([
+          makeOutputStatus('vw', {
+            endpoint_name: 'oep',
+            metrics: makeOutputMetrics({ num_encode_errors: 2, num_transport_errors: 4 })
+          })
+        ],
         [
-          'vw',
-          makeAggregatedOutput([
-            makeOutputConnector({
-              endpointName: 'oep',
-              metrics: makeOutputMetrics({ num_encode_errors: 2, num_transport_errors: 4 })
-            })
-          ])
+          makeInputStatus('tbl', {
+            endpoint_name: 'ep1',
+            metrics: makeInputMetrics({ num_parse_errors: 7, num_transport_errors: 3 })
+          })
         ]
-      ])
-      await renderComponent(makeMetricsProp(tables, views), onConnectorSelect)
+      )
+      await renderComponent(buildMetrics(status), onConnectorSelect)
 
-      // Input parse errors
       await page.getByTestId('btn-parse-errors').click()
       expect(onConnectorSelect).toHaveBeenCalledWith('tbl', 'ep1', 'input', 'parse')
 
-      // Input transport errors
       await page.getByTestId('btn-input-transport-errors').click()
       expect(onConnectorSelect).toHaveBeenCalledWith('tbl', 'ep1', 'input', 'transport')
 
-      // Output encode errors
       await page.getByTestId('btn-encode-errors').click()
       expect(onConnectorSelect).toHaveBeenCalledWith('vw', 'oep', 'output', 'encode')
 
-      // Output transport errors
       await page.getByTestId('btn-output-transport-errors').click()
       expect(onConnectorSelect).toHaveBeenCalledWith('vw', 'oep', 'output', 'transport')
     })
 
     it('error counts are plain text on aggregate rows (multi-connector)', async () => {
-      const tables = new Map([
+      const status = makeStatus(
+        [],
         [
-          'tbl',
-          makeAggregatedInput([
-            makeInputConnector({
-              endpointName: 'c1',
-              metrics: makeInputMetrics({ num_parse_errors: 5 })
-            }),
-            makeInputConnector({
-              endpointName: 'c2',
-              metrics: makeInputMetrics({ num_parse_errors: 3 })
-            })
-          ])
+          makeInputStatus('tbl', {
+            endpoint_name: 'c1',
+            metrics: makeInputMetrics({ num_parse_errors: 5 })
+          }),
+          makeInputStatus('tbl', {
+            endpoint_name: 'c2',
+            metrics: makeInputMetrics({ num_parse_errors: 3 })
+          })
         ]
-      ])
-      await renderComponent(makeMetricsProp(tables))
+      )
+      await renderComponent(buildMetrics(status))
       // Aggregate row should NOT have a clickable parse error button
       await expect.element(page.getByTestId('btn-parse-errors')).not.toBeInTheDocument()
       // But should still display the aggregated count as text
@@ -484,37 +480,27 @@ describe('MetricsTables.svelte', () => {
   describe('G. Error icon click', () => {
     it('clicking error icons calls onConnectorSelect with all filter', async () => {
       const onConnectorSelect = vi.fn()
-      const tables = new Map([
+      const status = makeStatus(
         [
-          'tbl',
-          makeAggregatedInput([
-            makeInputConnector({
-              endpointName: 'ep1',
-              metrics: makeInputMetrics({ num_parse_errors: 1 })
-            })
-          ])
-        ]
-      ])
-      const views = new Map([
+          makeOutputStatus('vw', {
+            endpoint_name: 'oep',
+            metrics: makeOutputMetrics({ num_encode_errors: 1 })
+          })
+        ],
         [
-          'vw',
-          makeAggregatedOutput([
-            makeOutputConnector({
-              endpointName: 'oep',
-              metrics: makeOutputMetrics({ num_encode_errors: 1 })
-            })
-          ])
+          makeInputStatus('tbl', {
+            endpoint_name: 'ep1',
+            metrics: makeInputMetrics({ num_parse_errors: 1 })
+          })
         ]
-      ])
-      await renderComponent(makeMetricsProp(tables, views), onConnectorSelect)
+      )
+      await renderComponent(buildMetrics(status), onConnectorSelect)
 
-      // Input error icon
       const inputIcon = page.getByTestId('btn-icon-input-errors')
       await expect.element(inputIcon).toBeInTheDocument()
       ;(inputIcon.element() as HTMLElement).click()
       expect(onConnectorSelect).toHaveBeenCalledWith('tbl', 'ep1', 'input', 'all')
 
-      // Output error icon
       const outputIcon = page.getByTestId('btn-icon-output-errors')
       await expect.element(outputIcon).toBeInTheDocument()
       ;(outputIcon.element() as HTMLElement).click()
@@ -524,34 +510,26 @@ describe('MetricsTables.svelte', () => {
 
   describe('H. Health status', () => {
     it('shows unhealthy chip for single unhealthy connector', async () => {
-      const tables = new Map([
-        [
-          't1',
-          makeAggregatedInput([
-            makeInputConnector({
-              health: { status: 'Unhealthy', description: 'Connection lost' }
-            })
-          ])
-        ]
-      ])
-      await renderComponent(makeMetricsProp(tables))
+      const status = makeStatus(
+        [],
+        [makeInputStatus('t1', { health: { status: 'Unhealthy', description: 'Connection lost' } })]
+      )
+      await renderComponent(buildMetrics(status))
       await expect.element(page.getByTestId('box-unhealthy-chip')).toBeInTheDocument()
     })
 
     it('shows unhealthy chip in summary when collapsed, moves to connector rows when expanded', async () => {
-      const tables = new Map([
+      const status = makeStatus(
+        [],
         [
-          't1',
-          makeAggregatedInput([
-            makeInputConnector({
-              endpointName: 'c1',
-              health: { status: 'Unhealthy', description: 'bad' }
-            }),
-            makeInputConnector({ endpointName: 'c2', health: { status: 'Healthy' } })
-          ])
+          makeInputStatus('t1', {
+            endpoint_name: 'c1',
+            health: { status: 'Unhealthy', description: 'bad' }
+          }),
+          makeInputStatus('t1', { endpoint_name: 'c2', health: { status: 'Healthy' } })
         ]
-      ])
-      await renderComponent(makeMetricsProp(tables))
+      )
+      await renderComponent(buildMetrics(status))
 
       // Collapsed: summary shows unhealthy chip
       await expect.element(page.getByTestId('box-unhealthy-chip')).toBeInTheDocument()
@@ -567,22 +545,20 @@ describe('MetricsTables.svelte', () => {
     })
 
     it('shows unhealthy chip per connector when expanded', async () => {
-      const tables = new Map([
+      const status = makeStatus(
+        [],
         [
-          't1',
-          makeAggregatedInput([
-            makeInputConnector({
-              endpointName: 'c1',
-              health: { status: 'Unhealthy', description: 'bad1' }
-            }),
-            makeInputConnector({
-              endpointName: 'c2',
-              health: { status: 'Unhealthy', description: 'bad2' }
-            })
-          ])
+          makeInputStatus('t1', {
+            endpoint_name: 'c1',
+            health: { status: 'Unhealthy', description: 'bad1' }
+          }),
+          makeInputStatus('t1', {
+            endpoint_name: 'c2',
+            health: { status: 'Unhealthy', description: 'bad2' }
+          })
         ]
-      ])
-      await renderComponent(makeMetricsProp(tables))
+      )
+      await renderComponent(buildMetrics(status))
       await page.getByTestId('box-relation-row-t1').click({ position: { x: 1, y: 0 } })
       await expect.element(page.getByTestId('box-connector-row-c1')).toBeInTheDocument()
       await expect.element(page.getByTestId('box-connector-row-c2')).toBeInTheDocument()
@@ -593,37 +569,29 @@ describe('MetricsTables.svelte', () => {
 
   describe('J. Fatal error icon', () => {
     it('input single connector: fatal_error shows fd-circle-x alongside fd-circle-alert when both errors exist', async () => {
-      const withFatal = new Map([
+      const withFatal = makeStatus(
+        [],
         [
-          't1',
-          makeAggregatedInput([
-            makeInputConnector({
-              fatal_error: 'Connection refused',
-              metrics: makeInputMetrics({ num_transport_errors: 1 })
-            })
-          ])
+          makeInputStatus('t1', {
+            fatal_error: 'Connection refused',
+            metrics: makeInputMetrics({ num_transport_errors: 1 })
+          })
         ]
-      ])
-      const { unmount } = await renderComponent(makeMetricsProp(withFatal))
-      // Alert icon for transport errors
+      )
+      const { unmount } = await renderComponent(buildMetrics(withFatal))
       const alertIcon = page.getByTestId('btn-icon-input-errors')
       await expect.element(alertIcon).toBeInTheDocument()
       expect(alertIcon.element().classList.contains('fd-circle-alert')).toBe(true)
-      // Fatal error icon replaces running
       const fatalIcon = page.getByTestId('btn-icon-input-fatal-error')
       await expect.element(fatalIcon).toBeInTheDocument()
       expect(fatalIcon.element().classList.contains('fd-circle-x')).toBe(true)
       unmount()
 
-      const withoutFatal = new Map([
-        [
-          't1',
-          makeAggregatedInput([
-            makeInputConnector({ metrics: makeInputMetrics({ num_transport_errors: 1 }) })
-          ])
-        ]
-      ])
-      await renderComponent(makeMetricsProp(withoutFatal))
+      const withoutFatal = makeStatus(
+        [],
+        [makeInputStatus('t1', { metrics: makeInputMetrics({ num_transport_errors: 1 }) })]
+      )
+      await renderComponent(buildMetrics(withoutFatal))
       const icon = page.getByTestId('btn-icon-input-errors')
       await expect.element(icon).toBeInTheDocument()
       expect(icon.element().classList.contains('fd-circle-alert')).toBe(true)
@@ -633,33 +601,23 @@ describe('MetricsTables.svelte', () => {
     })
 
     it('output single connector: fatal_error shows fd-circle-x, absent shows fd-circle-alert', async () => {
-      const withFatal = new Map([
-        [
-          'v1',
-          makeAggregatedOutput([
-            makeOutputConnector({
-              fatal_error: 'Write failed',
-              metrics: makeOutputMetrics({ num_encode_errors: 1 })
-            })
-          ])
-        ]
+      const withFatal = makeStatus([
+        makeOutputStatus('v1', {
+          fatal_error: 'Write failed',
+          metrics: makeOutputMetrics({ num_encode_errors: 1 })
+        })
       ])
-      const { unmount } = await renderComponent(makeMetricsProp(undefined, withFatal))
+      const { unmount } = await renderComponent(buildMetrics(withFatal))
       let icon = page.getByTestId('btn-icon-output-errors')
       await expect.element(icon).toBeInTheDocument()
       expect(icon.element().classList.contains('fd-circle-x')).toBe(true)
       expect(icon.element().classList.contains('fd-circle-alert')).toBe(false)
       unmount()
 
-      const withoutFatal = new Map([
-        [
-          'v1',
-          makeAggregatedOutput([
-            makeOutputConnector({ metrics: makeOutputMetrics({ num_encode_errors: 1 }) })
-          ])
-        ]
+      const withoutFatal = makeStatus([
+        makeOutputStatus('v1', { metrics: makeOutputMetrics({ num_encode_errors: 1 }) })
       ])
-      await renderComponent(makeMetricsProp(undefined, withoutFatal))
+      await renderComponent(buildMetrics(withoutFatal))
       icon = page.getByTestId('btn-icon-output-errors')
       await expect.element(icon).toBeInTheDocument()
       expect(icon.element().classList.contains('fd-circle-alert')).toBe(true)
@@ -667,108 +625,86 @@ describe('MetricsTables.svelte', () => {
     })
 
     it('single input connector error icon is interactive (role=button), composite is not', async () => {
-      const singleTables = new Map([
-        [
-          't1',
-          makeAggregatedInput([
-            makeInputConnector({ metrics: makeInputMetrics({ num_transport_errors: 1 }) })
-          ])
-        ]
-      ])
-      const { unmount } = await renderComponent(makeMetricsProp(singleTables))
+      const singleStatus = makeStatus(
+        [],
+        [makeInputStatus('t1', { metrics: makeInputMetrics({ num_transport_errors: 1 }) })]
+      )
+      const { unmount } = await renderComponent(buildMetrics(singleStatus))
       const singleIcon = page.getByTestId('btn-icon-input-errors').element()
       expect(singleIcon.getAttribute('role')).toBe('button')
       expect(singleIcon.getAttribute('tabindex')).toBe('0')
       unmount()
 
-      const multiTables = new Map([
+      const multiStatus = makeStatus(
+        [],
         [
-          't1',
-          makeAggregatedInput([
-            makeInputConnector({
-              endpointName: 'c1',
-              metrics: makeInputMetrics({ num_transport_errors: 1 })
-            }),
-            makeInputConnector({ endpointName: 'c2' })
-          ])
+          makeInputStatus('t1', {
+            endpoint_name: 'c1',
+            metrics: makeInputMetrics({ num_transport_errors: 1 })
+          }),
+          makeInputStatus('t1', { endpoint_name: 'c2' })
         ]
-      ])
-      await renderComponent(makeMetricsProp(multiTables))
+      )
+      await renderComponent(buildMetrics(multiStatus))
       const compositeIcon = page.getByTestId('btn-icon-input-errors').element()
       expect(compositeIcon.getAttribute('role')).toBeNull()
     })
 
     it('single output connector error icon is interactive (role=button)', async () => {
-      const singleViews = new Map([
-        [
-          'v1',
-          makeAggregatedOutput([
-            makeOutputConnector({ metrics: makeOutputMetrics({ num_encode_errors: 1 }) })
-          ])
-        ]
+      const status = makeStatus([
+        makeOutputStatus('v1', { metrics: makeOutputMetrics({ num_encode_errors: 1 }) })
       ])
-      await renderComponent(makeMetricsProp(undefined, singleViews))
+      await renderComponent(buildMetrics(status))
       const singleIcon = page.getByTestId('btn-icon-output-errors').element()
       expect(singleIcon.getAttribute('role')).toBe('button')
       expect(singleIcon.getAttribute('tabindex')).toBe('0')
     })
 
     it('multi-connector output summary error icon is not interactive', async () => {
-      const multiViews = new Map([
-        [
-          'v1',
-          makeAggregatedOutput([
-            makeOutputConnector({
-              endpointName: 'o1',
-              metrics: makeOutputMetrics({ num_encode_errors: 1 })
-            }),
-            makeOutputConnector({ endpointName: 'o2' })
-          ])
-        ]
+      const status = makeStatus([
+        makeOutputStatus('v1', {
+          endpoint_name: 'o1',
+          metrics: makeOutputMetrics({ num_encode_errors: 1 })
+        }),
+        makeOutputStatus('v1', { endpoint_name: 'o2' })
       ])
-      await renderComponent(makeMetricsProp(undefined, multiViews))
+      await renderComponent(buildMetrics(status))
       const compositeIcon = page.getByTestId('btn-icon-output-errors').element()
       expect(compositeIcon.getAttribute('role')).toBeNull()
     })
 
     it('multi-connector input row: fatal_error on any connector shows fd-circle-x alongside fd-circle-alert in collapsed summary', async () => {
-      const withFatal = new Map([
+      const withFatal = makeStatus(
+        [],
         [
-          't1',
-          makeAggregatedInput([
-            makeInputConnector({
-              endpointName: 'c1',
-              fatal_error: 'Disk full',
-              metrics: makeInputMetrics({ num_transport_errors: 1 })
-            }),
-            makeInputConnector({ endpointName: 'c2' })
-          ])
+          makeInputStatus('t1', {
+            endpoint_name: 'c1',
+            fatal_error: 'Disk full',
+            metrics: makeInputMetrics({ num_transport_errors: 1 })
+          }),
+          makeInputStatus('t1', { endpoint_name: 'c2' })
         ]
-      ])
-      const { unmount } = await renderComponent(makeMetricsProp(withFatal))
-      // Alert icon for transport errors
+      )
+      const { unmount } = await renderComponent(buildMetrics(withFatal))
       const alertIcon = page.getByTestId('btn-icon-input-errors')
       await expect.element(alertIcon).toBeInTheDocument()
       expect(alertIcon.element().classList.contains('fd-circle-alert')).toBe(true)
-      // Fatal error icon replaces running
       const fatalIcon = page.getByTestId('btn-icon-input-fatal-error')
       await expect.element(fatalIcon).toBeInTheDocument()
       expect(fatalIcon.element().classList.contains('fd-circle-x')).toBe(true)
       unmount()
 
-      const withoutFatal = new Map([
+      const withoutFatal = makeStatus(
+        [],
         [
-          't1',
-          makeAggregatedInput([
-            makeInputConnector({
-              endpointName: 'c1',
-              metrics: makeInputMetrics({ num_transport_errors: 1 })
-            }),
-            makeInputConnector({ endpointName: 'c2' })
-          ])
+          makeInputStatus('t1', {
+            endpoint_name: 'c1',
+            metrics: makeInputMetrics({ num_transport_errors: 1 })
+          }),
+          makeInputStatus('t1', { endpoint_name: 'c2' })
         ]
-      ])
-      await renderComponent(makeMetricsProp(withoutFatal))
+      )
+      await renderComponent(buildMetrics(withoutFatal))
       const icon = page.getByTestId('btn-icon-input-errors')
       await expect.element(icon).toBeInTheDocument()
       expect(icon.element().classList.contains('fd-circle-alert')).toBe(true)
@@ -777,39 +713,29 @@ describe('MetricsTables.svelte', () => {
     })
 
     it('multi-connector output row: fatal_error on any connector shows fd-circle-x in collapsed summary', async () => {
-      const withFatal = new Map([
-        [
-          'v1',
-          makeAggregatedOutput([
-            makeOutputConnector({
-              endpointName: 'o1',
-              fatal_error: 'Pipe broken',
-              metrics: makeOutputMetrics({ num_transport_errors: 1 })
-            }),
-            makeOutputConnector({ endpointName: 'o2' })
-          ])
-        ]
+      const withFatal = makeStatus([
+        makeOutputStatus('v1', {
+          endpoint_name: 'o1',
+          fatal_error: 'Pipe broken',
+          metrics: makeOutputMetrics({ num_transport_errors: 1 })
+        }),
+        makeOutputStatus('v1', { endpoint_name: 'o2' })
       ])
-      const { unmount } = await renderComponent(makeMetricsProp(undefined, withFatal))
+      const { unmount } = await renderComponent(buildMetrics(withFatal))
       let icon = page.getByTestId('btn-icon-output-errors')
       await expect.element(icon).toBeInTheDocument()
       expect(icon.element().classList.contains('fd-circle-x')).toBe(true)
       expect(icon.element().classList.contains('fd-circle-alert')).toBe(false)
       unmount()
 
-      const withoutFatal = new Map([
-        [
-          'v1',
-          makeAggregatedOutput([
-            makeOutputConnector({
-              endpointName: 'o1',
-              metrics: makeOutputMetrics({ num_transport_errors: 1 })
-            }),
-            makeOutputConnector({ endpointName: 'o2' })
-          ])
-        ]
+      const withoutFatal = makeStatus([
+        makeOutputStatus('v1', {
+          endpoint_name: 'o1',
+          metrics: makeOutputMetrics({ num_transport_errors: 1 })
+        }),
+        makeOutputStatus('v1', { endpoint_name: 'o2' })
       ])
-      await renderComponent(makeMetricsProp(undefined, withoutFatal))
+      await renderComponent(buildMetrics(withoutFatal))
       icon = page.getByTestId('btn-icon-output-errors')
       await expect.element(icon).toBeInTheDocument()
       expect(icon.element().classList.contains('fd-circle-alert')).toBe(true)
@@ -819,80 +745,60 @@ describe('MetricsTables.svelte', () => {
 
   describe('I. Health filter', () => {
     it('defaults to all, filters to unhealthy, then restores on switch back', async () => {
-      const tables = new Map([
-        ['healthy_t', makeAggregatedInput([makeInputConnector({ health: { status: 'Healthy' } })])],
+      const status = makeStatus(
+        [],
         [
-          'unhealthy_t',
-          makeAggregatedInput([
-            makeInputConnector({
-              health: { status: 'Unhealthy', description: 'err' }
-            })
-          ])
+          makeInputStatus('healthy_t', { health: { status: 'Healthy' } }),
+          makeInputStatus('unhealthy_t', { health: { status: 'Unhealthy', description: 'err' } })
         ]
-      ])
-      await renderComponent(makeMetricsProp(tables))
+      )
+      await renderComponent(buildMetrics(status))
 
-      // Default: both visible
       await expect.element(page.getByTestId('box-relation-row-healthy_t')).toBeInTheDocument()
       await expect.element(page.getByTestId('box-relation-row-unhealthy_t')).toBeInTheDocument()
 
-      // Filter to unhealthy: only unhealthy visible
       await clickHealthFilter('unhealthy')
       await expect.element(page.getByTestId('box-relation-row-healthy_t')).not.toBeInTheDocument()
       await expect.element(page.getByTestId('box-relation-row-unhealthy_t')).toBeInTheDocument()
 
-      // Switch back to all: both visible again
       await clickHealthFilter('all')
       await expect.element(page.getByTestId('box-relation-row-healthy_t')).toBeInTheDocument()
       await expect.element(page.getByTestId('box-relation-row-unhealthy_t')).toBeInTheDocument()
     })
 
     it('filtering to unhealthy filters connectors within a table', async () => {
-      const tables = new Map([
+      const status = makeStatus(
+        [],
         [
-          't1',
-          makeAggregatedInput([
-            makeInputConnector({
-              endpointName: 'healthy_c',
-              health: { status: 'Healthy' }
-            }),
-            makeInputConnector({
-              endpointName: 'unhealthy_c',
-              health: { status: 'Unhealthy', description: 'err' }
-            })
-          ])
+          makeInputStatus('t1', { endpoint_name: 'healthy_c', health: { status: 'Healthy' } }),
+          makeInputStatus('t1', {
+            endpoint_name: 'unhealthy_c',
+            health: { status: 'Unhealthy', description: 'err' }
+          })
         ]
-      ])
-      await renderComponent(makeMetricsProp(tables))
+      )
+      await renderComponent(buildMetrics(status))
       await clickHealthFilter('unhealthy')
-      // The table should still show, but with only the unhealthy connector
       await expect.element(page.getByTestId('box-relation-row-t1')).toBeInTheDocument()
       // Since filtered to 1 connector, it should be shown directly (no multi-connector summary)
       await expect.element(page.getByTestId('box-multi-connector-summary')).not.toBeInTheDocument()
     })
 
     it('unhealthy count badge shows correct number', async () => {
-      const tables = new Map([
+      const status = makeStatus(
+        [],
         [
-          't1',
-          makeAggregatedInput([
-            makeInputConnector({
-              endpointName: 'c1',
-              health: { status: 'Unhealthy', description: 'err' }
-            })
-          ])
-        ],
-        [
-          't2',
-          makeAggregatedInput([
-            makeInputConnector({
-              endpointName: 'c2',
-              health: { status: 'Unhealthy', description: 'err2' }
-            })
-          ])
+          makeInputStatus('t1', {
+            endpoint_name: 'c1',
+            health: { status: 'Unhealthy', description: 'err' }
+          }),
+          makeInputStatus('t2', {
+            endpoint_name: 'c2',
+            health: { status: 'Unhealthy', description: 'err2' }
+          })
         ]
-      ])
-      await renderComponent(makeMetricsProp(tables))
+      )
+      await renderComponent(buildMetrics(status))
       const badge = page.getByText('2').elements()
       expect(badge.length).toBeGreaterThanOrEqual(1)
     })
