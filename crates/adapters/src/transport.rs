@@ -24,9 +24,10 @@ use std::path::Path;
 
 use adhoc::AdHocInputEndpoint;
 use anyhow::Result as AnyResult;
-use clock::ClockEndpoint;
+use feldera_adapterlib::connector_by_name;
 use feldera_types::secret_resolver::resolve_secret_references_via_json;
 use http::HttpInputEndpoint;
+use serde_json::Value as JsonValue;
 #[cfg(feature = "with-pubsub")]
 use pubsub::PubSubInputEndpoint;
 
@@ -61,7 +62,6 @@ use redis::output::RedisOutputEndpoint;
 
 #[cfg(test)]
 pub use crate::transport::file::set_barrier;
-use crate::transport::file::{FileInputEndpoint, FileOutputEndpoint};
 #[cfg(feature = "with-kafka")]
 use crate::transport::kafka::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint, KafkaOutputEndpoint};
 
@@ -76,6 +76,16 @@ use feldera_datagen::GeneratorEndpoint;
 
 pub use feldera_adapterlib::transport::*;
 
+/// Extracts the inner config value from a `TransportConfig` as a `JsonValue`.
+///
+/// Serialises the whole `TransportConfig` (which has the form `{"name": "...", "config": {...}}`),
+/// then returns the `"config"` field.  Unit variants (e.g. `HttpOutput`) have no `"config"` key;
+/// those return `JsonValue::Null`.
+fn transport_config_inner_as_json(config: &TransportConfig) -> AnyResult<JsonValue> {
+    let json = serde_json::to_value(config)?;
+    Ok(json.get("config").cloned().unwrap_or(JsonValue::Null))
+}
+
 /// Creates an input transport endpoint instance using an input transport
 /// configuration, resolving secrets by reading `secrets_dir`.
 ///
@@ -88,8 +98,21 @@ pub fn input_transport_config_to_endpoint(
     secrets_dir: &Path,
 ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
     let config = resolve_secret_references_via_json(secrets_dir, config)?;
+
+    // Registry path: connectors registered via `ConnectorDescriptor` (file_input, clock, …).
+    let name = config.name();
+    if let Some(descriptor) = connector_by_name(&name) {
+        return match descriptor.build_input {
+            Some(build_fn) => {
+                let config_value = transport_config_inner_as_json(&config)?;
+                Ok(Some(build_fn(&config_value, endpoint_name, secrets_dir)?))
+            }
+            None => Ok(None),
+        };
+    }
+
+    // Fallback match for connectors not yet migrated to the descriptor registry.
     let endpoint: Box<dyn TransportInputEndpoint> = match config {
-        TransportConfig::FileInput(config) => Box::new(FileInputEndpoint::new(config)),
         #[cfg(feature = "with-kafka")]
         TransportConfig::KafkaInput(config) => Box::new(KafkaFtInputEndpoint::new(config)?),
         #[cfg(not(feature = "with-kafka"))]
@@ -111,8 +134,10 @@ pub fn input_transport_config_to_endpoint(
         TransportConfig::Nexmark(_) => return Ok(None),
         TransportConfig::HttpInput(config) => Box::new(HttpInputEndpoint::new(config)),
         TransportConfig::AdHocInput(config) => Box::new(AdHocInputEndpoint::new(config)),
-        TransportConfig::ClockInput(config) => Box::new(ClockEndpoint::new(config)?),
-        TransportConfig::FileOutput(_)
+        // file_input and clock are now handled above via the descriptor registry.
+        TransportConfig::FileInput(_)
+        | TransportConfig::ClockInput(_)
+        | TransportConfig::FileOutput(_)
         | TransportConfig::KafkaOutput(_)
         | TransportConfig::DeltaTableInput(_)
         | TransportConfig::DeltaTableOutput(_)
@@ -143,8 +168,26 @@ pub fn output_transport_config_to_endpoint(
     secrets_dir: &Path,
 ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
     let config = resolve_secret_references_via_json(secrets_dir, config)?;
+
+    // Registry path: connectors registered via `ConnectorDescriptor` (file_output, …).
+    let name = config.name();
+    if let Some(descriptor) = connector_by_name(&name) {
+        return match descriptor.build_output {
+            Some(build_fn) => {
+                let config_value = transport_config_inner_as_json(&config)?;
+                Ok(Some(build_fn(
+                    &config_value,
+                    endpoint_name,
+                    fault_tolerant,
+                    secrets_dir,
+                )?))
+            }
+            None => Ok(None),
+        };
+    }
+
+    // Fallback match for connectors not yet migrated to the descriptor registry.
     match config {
-        TransportConfig::FileOutput(config) => Ok(Some(Box::new(FileOutputEndpoint::new(config)?))),
         #[cfg(feature = "with-kafka")]
         TransportConfig::KafkaOutput(config) => match fault_tolerant {
             false => Ok(Some(Box::new(KafkaOutputEndpoint::new(
@@ -157,6 +200,7 @@ pub fn output_transport_config_to_endpoint(
         TransportConfig::RedisOutput(config) => {
             Ok(Some(Box::new(RedisOutputEndpoint::new(config)?)))
         }
+        // file_output is now handled above via the descriptor registry.
         _ => Ok(None),
     }
 }

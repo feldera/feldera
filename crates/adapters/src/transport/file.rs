@@ -393,6 +393,72 @@ however the File transport does not support this representation."
     }
 }
 
+// ── Connector registry ────────────────────────────────────────────────────────
+
+use feldera_adapterlib::connector::{ConnectorDescriptor, ConnectorFlags, ConnectorKind, Direction};
+use serde_json::Value as JsonValue;
+
+fn file_input_config_schema() -> JsonValue {
+    JsonValue::Object(Default::default())
+}
+
+fn build_file_input(
+    config: &JsonValue,
+    _endpoint_name: &str,
+    _secrets_dir: &std::path::Path,
+) -> AnyResult<Box<dyn TransportInputEndpoint>> {
+    let config: FileInputConfig = serde_json::from_value(config.clone())?;
+    Ok(Box::new(FileInputEndpoint::new(config)))
+}
+
+static FILE_INPUT_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
+    name: "file_input",
+    direction: Direction::Input,
+    kind: ConnectorKind::Regular,
+    fault_tolerance: Some(FtModel::ExactlyOnce),
+    config_schema: file_input_config_schema,
+    default_format: None,
+    flags: ConnectorFlags::EMPTY,
+    build_input: Some(build_file_input),
+    build_output: None,
+    build_integrated_input: None,
+    build_integrated_output: None,
+};
+
+inventory::submit! { &FILE_INPUT_DESCRIPTOR }
+
+fn file_output_config_schema() -> JsonValue {
+    JsonValue::Object(Default::default())
+}
+
+fn build_file_output(
+    config: &JsonValue,
+    _endpoint_name: &str,
+    _fault_tolerant: bool,
+    _secrets_dir: &std::path::Path,
+) -> AnyResult<Box<dyn OutputEndpoint>> {
+    let config: FileOutputConfig = serde_json::from_value(config.clone())?;
+    Ok(Box::new(FileOutputEndpoint::new(config)?))
+}
+
+static FILE_OUTPUT_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
+    name: "file_output",
+    direction: Direction::Output,
+    kind: ConnectorKind::Regular,
+    fault_tolerance: None,
+    config_schema: file_output_config_schema,
+    default_format: None,
+    flags: ConnectorFlags::EMPTY,
+    build_input: None,
+    build_output: Some(build_file_output),
+    build_integrated_input: None,
+    build_integrated_output: None,
+};
+
+inventory::submit! { &FILE_OUTPUT_DESCRIPTOR }
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod test {
     use crate::test::{DEFAULT_TIMEOUT_MS, mock_input_pipeline, wait};

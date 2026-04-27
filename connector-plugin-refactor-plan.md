@@ -85,7 +85,7 @@ The "API contract" 3rd parties target. Most of it already exists; this phase tig
 1. **New type `ConnectorDescriptor`** in `feldera-adapterlib`:
    ```rust
    pub struct ConnectorDescriptor {
-       pub name: &'static str,                    // matches TransportConfig "name" tag
+       pub name: &'static str,                    // MUST equal TransportConfig::name() return value (NOT the serde tag — they can differ; e.g. ClockInput: name()="clock", serde tag="clock_input")
        pub direction: Direction,                  // Input | Output | InputOutput
        pub kind: ConnectorKind,                   // Regular | Integrated | Transient
        pub fault_tolerance: Option<FtModel>,      // best-case; runtime can downgrade
@@ -153,12 +153,12 @@ Add `inventory::collect!(&'static dyn InputFormat)` and `inventory::collect!(&'s
 
 Per connector (mechanical):
 1. Add `register_connector! { … }` block in the connector's module (or in a small `lib.rs` for that connector's submodule).
-2. Move any per-variant capability bit (transient / auto-recreated / default format) into the descriptor — depends on Phase 5 having added the relevant fields, so the simplest connectors migrate first, the special-case ones after Phase 5.
+2. Set `kind: ConnectorKind::{Regular,Integrated,Transient}` directly — `ConnectorKind` is a Phase 2 enum, available immediately. Per-variant **flag** bits (`AUTO_RECREATED_ON_RESTART`) and the `default_format` field are populated only after Phase 5 adds them, so connectors with those special cases (clock's auto-recreate behaviour, datagen's default format) are revisited in Phase 4b. Connectors that only need `kind` (file, the message buses, …) need no Phase 5 dependency.
 3. Delete the corresponding match arm from `crates/adapters/src/transport.rs` / `crates/adapters/src/integrated.rs`.
 4. Keep the typed `TransportConfig` variant (recommended path); only `name()` learns to handle the upcoming `Plugin` variant in Phase 7.
 
 **Staging** (this phase is split around Phase 5+6):
-- **Phase 4a (before Phase 5)**: migrate `file` and `clock`. These have no special-case logic and exercise the descriptor shape end-to-end. The factory functions still contain match arms for everything else.
+- **Phase 4a (before Phase 5)**: migrate `file` and `clock` end-to-end — descriptor + `build_*` fns + registry-dispatch path inserted before the existing match in both factory functions. The migrated arms move into the `Ok(None)` catch arm (input) or are deleted entirely (output, where `_ => Ok(None)` already absorbs them); other connectors' match arms stay intact. This is the smallest end-to-end exercise of the registry: descriptor → `connector_by_name` → `build_*` → endpoint construction. PR 4 also introduces `transport_config_inner_as_json` (in `adapters/src/transport.rs`, NOT adapterlib), which Phase 6 reuses unchanged.
 - **Phase 4b (after Phase 6)**: sweep the rest in this order — `http` → `s3` → `url` → `nats` → `pubsub` → `redis` → `kafka` → `nexmark` → `datagen` → `adhoc` → integrated (`postgres`, `delta_table`, `iceberg`). File/clock first because trivial; Kafka late because of its `ft`/`nonft` split (the descriptor must accept the `fault_tolerant: bool` argument the output factory currently uses — pass it through to `build_output`).
 
 After Phase 4b, the four factory `match` statements in `transport.rs` and `integrated.rs` consist purely of registry calls, with no per-variant arms remaining.
@@ -203,14 +203,17 @@ These special cases stop being grep-targets; they become metadata that any plugi
 
 Rewrite the four factory functions (`input_transport_config_to_endpoint` at `transport.rs:85`, `output_transport_config_to_endpoint` at `transport.rs:139`, `create_integrated_output_endpoint` at `integrated.rs:40`, `create_integrated_input_endpoint` at `integrated.rs:89`) to:
 
-1. Resolve `TransportConfig` → `(name, config_value)` (uniform — works for both typed variants and the future `Plugin{}` variant).
-2. Look up descriptor by name via `connector_by_name(name)`.
-3. Match `descriptor.direction × kind` against the call site (input vs output, regular vs integrated). Mismatches return the same `Ok(None)` / `unknown_*_transport` errors as today.
-4. Invoke `descriptor.build_*` with the config value and contextual params.
+1. **Resolve secrets first** via `resolve_secret_references_via_json` (unchanged from today's behaviour). The factory is the right home for secrets resolution because it's generic across connectors; `build_*` functions receive an already-resolved `JsonValue` and never need to look at `secrets_dir` themselves. The `secrets_dir: &Path` argument on `BuildInputFn` / `BuildOutputFn` is kept on the signature for external connectors that bypass the factory and call `build_fn` directly with their own secret resolution.
+2. Resolve `TransportConfig` → `(name, config_value)` via a helper (PR 4 introduced `transport_config_inner_as_json` in `crates/adapters/src/transport.rs`). The helper serialises the whole `TransportConfig` to `{"name": "...", "config": {...}}` and extracts the `"config"` field; for unit variants (e.g. `HttpOutput`) with no content, it returns `JsonValue::Null`. The helper **lives in `adapters`, not `adapterlib`**, because it depends on `feldera-types::config::TransportConfig`; adapterlib's `BuildInputFn` takes `&JsonValue` precisely so adapterlib stays free of that dep.
+3. Look up descriptor by `config.name()` via `connector_by_name(&name)`. **Critical**: the lookup string is `TransportConfig::name()`, NOT the serde tag — these can differ (e.g. `ClockInput::name() == "clock"` while its serde tag is `"clock_input"`). Each descriptor's `name` field must equal the `name()` return value.
+4. Match `descriptor.direction × kind` against the call site (input vs output, regular vs integrated). Mismatches return the same `Ok(None)` / `unknown_*_transport` errors as today.
+5. Invoke `descriptor.build_*` with the resolved config value and contextual params.
 
 **Lookup performance**: `connector_by_name()` walks the `inventory::iter` (a `#[link_section]`-based linked list, O(n)). For 17 built-in connectors plus a typical handful from `connectors.toml`, this is fast enough at pipeline startup. The factory functions are called once per endpoint at pipeline start, never on hot paths, so no caching layer is needed in adapterlib. If a future caller ends up in a hot path, cache as `HashMap<&'static str, &'static ConnectorDescriptor>` at the call site rather than complicating the adapterlib API.
 
-**Transitional state**: when this phase lands, Phase 4a has migrated only `file`/`clock`. The factory's body is split into "registry path for migrated connectors" + "fallback `match` for unmigrated ones". As Phase 4b proceeds, the fallback shrinks until empty. This keeps every commit in this sequence functional and testable.
+**Transitional state**: when this phase lands, Phase 4a has migrated only `file`/`clock`. The factory's body is split into "registry path for migrated connectors" + "fallback `match` for unmigrated ones". As Phase 4b proceeds, the fallback shrinks until empty. **Pattern from PR 4**: as each connector migrates, its match arm is moved into the `Ok(None)` catch arm rather than left as dead code (Rust's exhaustiveness check + future "unreachable pattern" lints would otherwise flag it). For the output factory, `_ => Ok(None)` already absorbs them — explicit arms can be deleted. After Phase 4b lands, the `Ok(None)` arms shrink to empty and the explicit fallback `match` is removed entirely. This keeps every commit in this sequence functional and testable.
+
+**`Direction::InputOutput` descriptors**: PR 4 only exercised input-only (`ClockInput`, `FileInput`) and output-only (`FileOutput`) descriptors. The first connector with `Direction::InputOutput` (e.g. `kafka` in PR 7e — same descriptor used from both factories) needs the registry dispatch to correctly check `descriptor.build_input.is_some()` from the input factory and `descriptor.build_output.is_some()` from the output factory, not just rely on `direction`. Document this in the Phase 6 implementation notes.
 
 This is the largest mechanical change but does **not** touch any connector implementation. Every `TransportInputEndpoint` / `OutputEndpoint` impl is unchanged.
 
@@ -532,11 +535,17 @@ Each PR below is sized to be independently reviewable and mergeable. Dependencie
 - **Unblocks**: nothing strictly (proves the pattern; the pass-through macros also become the model for the format-side of the Phase 11 reference plugin doc).
 
 ### PR 4 — First connector migrations: `file` and `clock` (Phase 4a)
-- [ ] Add `register_connector!` block in `crates/adapters/src/transport/file.rs` for both input and output directions.
-- [ ] Add `register_connector!` block in `crates/adapters/src/transport/clock.rs`.
-- [ ] Factory match arms in `transport.rs:85,139` for these connectors **remain** (no functional change yet — we're proving registry-side works in parallel).
-- [ ] Add a test that resolves these two via `connector_by_name()` and constructs them through the descriptor's `build_*` closures.
-- [ ] Document the migration recipe in a short developer note for use in PR 7+.
+- [ ] Add `FILE_INPUT_DESCRIPTOR` + `FILE_OUTPUT_DESCRIPTOR` statics with `build_file_input` / `build_file_output` factory functions in `crates/adapters/src/transport/file.rs`; `inventory::submit!` both. Use `Direction::Input` and `Direction::Output` (the file connector exposes the two as separate descriptors, NOT a single `InputOutput`).
+- [ ] Add `CLOCK_DESCRIPTOR` static with `build_clock_input` factory function in `crates/adapters/src/transport/clock.rs`; `inventory::submit!`. Use `kind: ConnectorKind::Transient` (matches today's `TransportConfig::is_transient()` behaviour for `ClockInput` — Phase 5 will replace the call site, but the kind classification belongs in PR 4 already).
+- [ ] **Descriptor `name` must equal `TransportConfig::name()`, not the serde tag.** Concretely: `FILE_INPUT_DESCRIPTOR.name = "file_input"`, `FILE_OUTPUT_DESCRIPTOR.name = "file_output"`, `CLOCK_DESCRIPTOR.name = "clock"` (not `"clock_input"` — the serde tag and `name()` diverge for clock; the registry lookup uses `name()`).
+- [ ] `config_schema` placeholder: `fn() -> JsonValue::Object(Default::default())` for now. Real JSON Schema lands in PR 14 alongside the discovery endpoint; an empty object is correct until then because nothing reads `config_schema` before Phase 9.
+- [ ] **Add `transport_config_inner_as_json` helper in `crates/adapters/src/transport.rs`** (NOT in adapterlib — it depends on `TransportConfig`). Serialises the whole `TransportConfig` to `{"name", "config"}` and returns the `"config"` field; for unit variants (e.g. `HttpOutput`) with no content, return `JsonValue::Null`. This is the bridge between typed `TransportConfig` variants and `BuildInputFn`'s `&JsonValue` parameter, and is reused by Phase 6 / PR 6.
+- [ ] **Add registry-dispatch path in both factory functions** (`input_transport_config_to_endpoint` and `output_transport_config_to_endpoint`) BEFORE the existing match. Pattern: resolve secrets first (unchanged), then `connector_by_name(&config.name())` → if `Some(descriptor)` and the appropriate `build_*` is `Some`, call it with the extracted config JSON. Otherwise fall through to the legacy match.
+- [ ] **Move `FileInput` / `ClockInput` arms into the `Ok(None)` catch arm of the input match**; **delete the `FileOutput` arm entirely** (the output match's existing `_ => Ok(None)` already covers it). Don't leave them as dead arms — Rust's "unreachable pattern" lint and future exhaustiveness changes will flag them.
+- [ ] Remove now-unused imports: `use clock::ClockEndpoint`, `use crate::transport::file::{FileInputEndpoint, FileOutputEndpoint}` from `transport.rs`. The `build_*` functions in the connector modules construct the endpoints directly, so the factory no longer names these types.
+- [ ] Verify the existing tests `transport::file::test::{test_csv_file_nofollow, test_csv_file_follow}` and `transport::clock::test::test_clock` pass — they call `mock_input_pipeline`, which exercises the full factory dispatch path (registry hit + endpoint construction).
+- [ ] Add a unit test that resolves `"file_input"`, `"file_output"`, `"clock"` via `connector_by_name()` and asserts the descriptor's `direction` / `kind` / `build_*` slots are populated as expected.
+- [ ] Document the migration recipe in a short developer note for use in PR 7+. Include the descriptor-name-vs-serde-tag rule and the `Ok(None)` arm pattern.
 - **Depends on**: PR 2.
 - **Unblocks**: PR 5, PR 6.
 
@@ -554,10 +563,12 @@ Each PR below is sized to be independently reviewable and mergeable. Dependencie
 - **Unblocks**: PR 6.
 
 ### PR 6 — Rewrite factory functions to use the registry (Phase 6)
-- [ ] Rewrite `input_transport_config_to_endpoint` (`transport.rs:85`) to: extract `(name, config_value)`, look up descriptor, call `build_input` if direction allows; fall back to existing match for unmigrated connectors.
+- [ ] Rewrite `input_transport_config_to_endpoint` (`transport.rs:85`) to: resolve secrets first (unchanged), then extract `(name, config_value)` via `transport_config_inner_as_json` (introduced in PR 4), look up descriptor via `connector_by_name(&config.name())` (NOT serde tag), call `build_input` if `Some`; fall back to existing match for unmigrated connectors.
 - [ ] Same for `output_transport_config_to_endpoint` (`transport.rs:139`).
 - [ ] Same for `create_integrated_input_endpoint` (`integrated.rs:89`).
 - [ ] Same for `create_integrated_output_endpoint` (`integrated.rs:40`).
+- [ ] Dispatch logic checks `descriptor.build_input.is_some()` / `descriptor.build_output.is_some()` per call site, not just `direction`. A `Direction::InputOutput` descriptor (first appears in PR 7e for kafka) must be reachable from both factories — direction alone is insufficient because the factory only knows whether it is the input or output entry point.
+- [ ] Verify integrated factories pass `Arc<dyn OutputControllerRef>` (not `Weak`) to `BuildIntegratedOutputFn` — connector's `new()` immediately downgrades for storage. (Defined in PR 2; PR 7g lands the `impl OutputControllerRef for ControllerInner`.)
 - [ ] Tests cover both code paths (registry hit and fallback hit) for at least one connector each.
 - [ ] After this PR: `file` and `clock` are reached only via the registry; everything else still hits the fallback match.
 - **Depends on**: PR 5.
