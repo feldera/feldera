@@ -1,10 +1,27 @@
+from __future__ import annotations
+
 import json
 import logging
-import time
-from typing import Any, Callable, List, Mapping, Optional, Sequence, Union
+import random
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Union,
+)
 
 import requests
 from requests.packages import urllib3
+from tenacity import (
+    Retrying,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from feldera.rest.config import Config
 from feldera.rest.errors import (
@@ -13,10 +30,17 @@ from feldera.rest.errors import (
     FelderaTimeoutError,
 )
 
+if TYPE_CHECKING:
+    from tenacity import RetryCallState
+
 
 def json_serialize(body: Any) -> str:
     # serialize as string if this object cannot be serialized (e.g. UUID)
     return json.dumps(body, default=str) if body else "" if body == "" else "null"
+
+
+def _is_502(exc: BaseException) -> bool:
+    return isinstance(exc, FelderaAPIError) and exc.status_code == 502
 
 
 class HttpRequests:
@@ -32,11 +56,7 @@ class HttpRequests:
             self.headers["Authorization"] = f"Bearer {self.config.api_key}"
 
     def _check_cluster_health(self) -> bool:
-        """Check cluster health via /cluster_healthz endpoint.
-
-        Returns:
-            bool: True if both runner and compiler services are healthy, False otherwise
-        """
+        """Check `/cluster_healthz`; return True iff `all_healthy` is reported."""
         try:
             health_path = (
                 self.config.url + "/" + self.config.version + "/cluster_healthz"
@@ -49,98 +69,80 @@ class HttpRequests:
             )
 
             if response.status_code == 200:
-                health_data = response.json()
-                all_healthy = health_data.get("all_healthy", False)
-                return all_healthy
-            else:
-                logging.warning(
-                    f"Health check returned status {response.status_code}. The instance might be in the process of being upgraded. Waiting to see if it recovers."
-                )
-                return False
+                return bool(response.json().get("all_healthy", False))
+            logging.warning(
+                "Health check returned status %d; instance may be upgrading",
+                response.status_code,
+            )
+            return False
         except Exception as e:
-            logging.error(f"Health check failed: {e}")
+            logging.error("Health check failed: %s", e)
             return False
 
-    def _wait_for_health_recovery(self, max_wait_seconds: int = 300) -> bool:
-        """
-        Wait for cluster to become healthy after detecting upgrade/restart.
-
-        Args:
-            max_wait_seconds: Maximum time to wait for health recovery (default 5 minutes)
-
-        Returns:
-            bool: True if cluster became healthy within timeout, False otherwise
-        """
-        start_time = time.monotonic()
-        check_interval = 5
-
-        logging.info(
-            f"Waiting for cluster health recovery (max {max_wait_seconds}s)..."
-        )
-
-        while time.monotonic() - start_time < max_wait_seconds:
-            if self._check_cluster_health():
-                elapsed = time.monotonic() - start_time
-                logging.info(f"Instance health recovered after {elapsed:.1f}s")
-                return True
-
-            time.sleep(check_interval)
-            elapsed = time.monotonic() - start_time
-            logging.debug(
-                f"Still waiting for health recovery ({elapsed:.1f}s elapsed)..."
-            )
-
-        logging.warning(f"Instance did not recover within {max_wait_seconds}s timeout")
+    def _is_retryable(self, exc: BaseException) -> bool:
+        """Define which exceptions are worth retrying."""
+        if isinstance(exc, requests.exceptions.Timeout):
+            return True
+        if isinstance(exc, FelderaAPIError):
+            return exc.status_code in self.config.retry_config.retryable_status_codes
         return False
 
-    def _handle_502_with_health_check(
-        self, path: str, attempt: int, max_retries: int
-    ) -> bool:
+    def _custom_wait(self, retry_state: "RetryCallState") -> float:
         """
-        Handles 502 errors with health monitoring.
-
-        Args:
-            path: The request path that failed
-            attempt: Current attempt number (0-based)
-            max_retries: Maximum number of retries allowed
-
-        Returns:
-            bool: True if should retry, False if should give up
+        Compute the wait between retries. Branches by exception type:
+          - `Retry-After` header (if any) wins, capped at `max_backoff`.
+          - 502: probe `/cluster_healthz`. If the cluster is healthy the 502
+            is treated as spurious — return 0 so the retry runs immediately.
+            Otherwise return the configured `unhealthy_backoff` (a flat wait
+            while an upgrade or restart completes).
+          - Everything else: exponential backoff plus optional jitter.
         """
-        if attempt >= max_retries:
-            return False
+        cfg = self.config.retry_config
+        exc = retry_state.outcome.exception() if retry_state.outcome else None
 
-        logging.warning(
-            f"HTTP 502 received for {path} (attempt {attempt + 1}/{max_retries + 1}), checking cluster health..."
+        retry_after = getattr(exc, "retry_after", None)
+        if retry_after is not None:
+            return min(float(retry_after), cfg.max_backoff)
+
+        if _is_502(exc):
+            if self._check_cluster_health():
+                logging.info("Cluster healthy — treating 502 as spurious")
+                return 0.0
+            logging.info(
+                "Cluster unhealthy; backing off %.1fs before retrying 502",
+                cfg.unhealthy_backoff,
+            )
+            return cfg.unhealthy_backoff
+
+        backoff = wait_exponential(
+            multiplier=cfg.initial_backoff,
+            exp_base=cfg.multiplier,
+            max=cfg.max_backoff,
+        )(retry_state)
+        if cfg.jitter > 0:
+            backoff += random.uniform(0, cfg.jitter)
+        return backoff
+
+    def _do_single_request(
+        self,
+        http_method: Callable,
+        request_path: str,
+        data: Any,
+        params: Optional[Mapping[str, Any]],
+        stream: bool,
+    ) -> Any:
+        response = http_method(
+            request_path,
+            data=data,
+            timeout=(self.config.connection_timeout, self.config.timeout),
+            headers=self.headers,
+            params=params,
+            stream=stream,
+            verify=self.requests_verify,
         )
-
-        # Do a short backoff and retry
-        time.sleep(min(2 << attempt, 64))
-
-        # First, check if cluster is currently healthy
-        if self._check_cluster_health():
-            # Instance appears healthy, this might be a spurious 502
-            logging.info(
-                f"Instance appears healthy, treating 502 for {path} as spurious - retrying"
-            )
-            return True
-        else:
-            # Instance is unhealthy, likely an upgrade/restart scenario
-            logging.info(
-                f"Instance unhealthy for request to {path}, likely upgrade in progress - waiting for recovery..."
-            )
-
-            # Wait for cluster to recover (up to 5 minutes)
-            recovery_timeout = self.config.health_recovery_timeout
-            if self._wait_for_health_recovery(max_wait_seconds=recovery_timeout):
-                logging.info(f"Instance health recovered, can now retry {path}...")
-                return True
-            else:
-                # Health didn't recover within timeout
-                logging.error(
-                    f"Instance health did not recover within {recovery_timeout}s timeout for {path}, giving up"
-                )
-                return False
+        resp = self.__validate(response, stream=stream)
+        logging.debug("got response: %s", str(resp))
+        return resp
 
     def send_request(
         self,
@@ -153,21 +155,8 @@ class HttpRequests:
         params: Optional[Mapping[str, Any]] = None,
         stream: bool = False,
         serialize: bool = True,
-        max_retries: int = 3,
     ) -> Any:
         """
-        Send HTTP request with intelligent retry logic.
-
-        Handles different error conditions with appropriate retry strategies:
-        - 502 errors: Checks cluster health and waits for recovery during upgrades
-        - 503/408 errors: Standard retry with backoff
-        - Timeout errors: Standard retry with backoff
-
-        For 502 errors, the method distinguishes between:
-        1. Spurious 502s (cluster healthy): Quick retry with short backoff
-        2. Upgrade scenarios (cluster unhealthy): Waits up to health_recovery_timeout
-           for cluster to become healthy, then retries
-
         :param http_method: The HTTP method to use. Takes the equivalent `requests.*` module. (Example: `requests.get`)
         :param path: The path to send the request to.
         :param body: The HTTP request body.
@@ -175,104 +164,58 @@ class HttpRequests:
         :param params: The query parameters part of this request.
         :param stream: True if the response is expected to be a HTTP stream.
         :param serialize: True if the body needs to be serialized to JSON.
-        :param max_retries: Maximum number of retry attempts.
+
+        Send an HTTP request, retrying transient failures per the client's
+        `RetryConfig`.
+
+        Retry policy:
+        - Status codes in `retry_config.retryable_status_codes` (default
+          408, 429, 502, 503, 504) and connection/read timeouts retry.
+        - 502 probes `/cluster_healthz` to distinguish a spurious gateway
+          error (cluster healthy → retry immediately) from a real outage
+          (cluster unhealthy → wait `unhealthy_backoff` seconds before
+          retrying).
+        - Other retryable failures use exponential backoff with optional
+          jitter; a server-supplied `Retry-After` header overrides it
+          (capped at `max_backoff`).
+        - All other errors are raised immediately.
         """
         self.headers["Content-Type"] = content_type
+        request_path = self.config.url + "/" + self.config.version + path
 
-        prev_resp: requests.Response | None = None
+        # Serialize the body once, not per retry. None / bytes / `serialize=False`
+        # all pass through unchanged.
+        if body is None or isinstance(body, bytes) or not serialize:
+            data = body
+        else:
+            data = json_serialize(body)
+
+        logging.debug(
+            "sending %s request to: %s with headers: %s, and params: %s",
+            http_method.__name__,
+            request_path,
+            str(self.headers),
+            str(params),
+        )
+
+        cfg = self.config.retry_config
+        retryer = Retrying(
+            retry=retry_if_exception(self._is_retryable),
+            wait=self._custom_wait,
+            stop=stop_after_attempt(cfg.max_retries + 1),
+            reraise=True,
+        )
 
         try:
-            conn_timeout = self.config.connection_timeout
-            timeout = self.config.timeout
-            headers = self.headers
-
-            request_path = self.config.url + "/" + self.config.version + path
-
-            logging.debug(
-                "sending %s request to: %s with headers: %s, and params: %s",
-                http_method.__name__,
-                request_path,
-                str(headers),
-                str(params),
-            )
-
-            for attempt in range(max_retries):
-                if http_method.__name__ == "get":
-                    request = http_method(
-                        request_path,
-                        timeout=(conn_timeout, timeout),
-                        headers=headers,
-                        params=params,
-                        stream=stream,
-                        verify=self.requests_verify,
+            for attempt in retryer:
+                with attempt:
+                    return self._do_single_request(
+                        http_method, request_path, data, params, stream
                     )
-                elif isinstance(body, bytes):
-                    request = http_method(
-                        request_path,
-                        timeout=(conn_timeout, timeout),
-                        headers=headers,
-                        data=body,
-                        params=params,
-                        stream=stream,
-                        verify=self.requests_verify,
-                    )
-                else:
-                    request = http_method(
-                        request_path,
-                        timeout=(conn_timeout, timeout),
-                        headers=headers,
-                        data=json_serialize(body) if serialize else body,
-                        params=params,
-                        stream=stream,
-                        verify=self.requests_verify,
-                    )
-
-                prev_resp = request
-
-                try:
-                    resp = self.__validate(request, stream=stream)
-                    logging.debug("got response: %s", str(resp))
-                    return resp
-                except FelderaAPIError as err:
-                    # Handle 502 with intelligent health monitoring
-                    if err.status_code == 502:
-                        if self._handle_502_with_health_check(
-                            path, attempt, max_retries
-                        ):
-                            continue
-                        else:
-                            raise
-                    # Handle other retryable errors
-                    elif err.status_code in [408, 503, 504]:
-                        if attempt < max_retries:
-                            logging.warning(
-                                "HTTP %d received for %s, retrying (%d/%d)...",
-                                err.status_code,
-                                path,
-                                attempt + 1,
-                                max_retries,
-                            )
-                            time.sleep(min(2 << attempt, 64))
-                            continue
-                    raise  # re-raise for all other errors or if out of retries
-                except requests.exceptions.Timeout as err:
-                    if attempt < max_retries:
-                        logging.warning(
-                            "HTTP Connection Timeout for %s, retrying (%d/%d)...",
-                            path,
-                            attempt + 1,
-                            max_retries,
-                        )
-                        time.sleep(2)
-                        continue
-                    raise FelderaTimeoutError(str(err)) from err
-
+        except requests.exceptions.Timeout as err:
+            raise FelderaTimeoutError(str(err)) from err
         except requests.exceptions.ConnectionError as err:
             raise FelderaCommunicationError(str(err)) from err
-
-        raise FelderaAPIError(
-            "Max retries exceeded, couldn't successfully connect to Feldera", prev_resp
-        )
 
     def get(
         self,

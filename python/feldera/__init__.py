@@ -1,4 +1,5 @@
 from feldera.rest.feldera_client import FelderaClient as FelderaClient
+from feldera.rest.retry import RetryConfig as RetryConfig
 from feldera.pipeline import Pipeline as Pipeline
 from feldera.pipeline_builder import PipelineBuilder as PipelineBuilder
 from feldera.rest._helpers import determine_client_version
