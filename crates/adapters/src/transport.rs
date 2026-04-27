@@ -55,8 +55,6 @@ use feldera_types::config::TransportConfig;
 
 #[cfg(test)]
 pub use crate::transport::file::set_barrier;
-#[cfg(feature = "with-kafka")]
-use crate::transport::kafka::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint, KafkaOutputEndpoint};
 
 #[cfg(feature = "with-nexmark")]
 use crate::transport::nexmark::NexmarkEndpoint;
@@ -100,16 +98,12 @@ pub fn input_transport_config_to_endpoint(
 
     // Fallback match for connectors not yet migrated to the descriptor registry.
     let endpoint: Box<dyn TransportInputEndpoint> = match config {
-        #[cfg(feature = "with-kafka")]
-        TransportConfig::KafkaInput(config) => Box::new(KafkaFtInputEndpoint::new(config)?),
-        #[cfg(not(feature = "with-kafka"))]
-        TransportConfig::KafkaInput(_) => return Ok(None),
         #[cfg(feature = "with-nexmark")]
         TransportConfig::Nexmark(config) => Box::new(NexmarkEndpoint::new(config.clone())),
         #[cfg(not(feature = "with-nexmark"))]
         TransportConfig::Nexmark(_) => return Ok(None),
         // file_input, clock, http_input, adhoc_input, datagen, s3_input, url_input,
-        // nats_input, pub_sub_input are now handled above via the descriptor registry.
+        // nats_input, pub_sub_input, kafka_input are now handled above via the descriptor registry.
         TransportConfig::FileInput(_)
         | TransportConfig::ClockInput(_)
         | TransportConfig::HttpInput(_)
@@ -119,6 +113,7 @@ pub fn input_transport_config_to_endpoint(
         | TransportConfig::S3Input(_)
         | TransportConfig::NatsInput(_)
         | TransportConfig::PubSubInput(_)
+        | TransportConfig::KafkaInput(_)
         | TransportConfig::FileOutput(_)
         | TransportConfig::KafkaOutput(_)
         | TransportConfig::DeltaTableInput(_)
@@ -170,15 +165,7 @@ pub fn output_transport_config_to_endpoint(
 
     // Fallback match for connectors not yet migrated to the descriptor registry.
     match config {
-        #[cfg(feature = "with-kafka")]
-        TransportConfig::KafkaOutput(config) => match fault_tolerant {
-            false => Ok(Some(Box::new(KafkaOutputEndpoint::new(
-                config,
-                endpoint_name,
-            )?))),
-            true => Ok(Some(Box::new(KafkaFtOutputEndpoint::new(config)?))),
-        },
-        // file_output, redis_output are now handled above via the descriptor registry.
+        // file_output, redis_output, kafka_output are now handled above via the descriptor registry.
         _ => Ok(None),
     }
 }

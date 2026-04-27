@@ -32,6 +32,106 @@ pub use nonft::KafkaOutputEndpoint;
 mod ft;
 mod nonft;
 
+// ── Connector registry ────────────────────────────────────────────────────────
+
+use feldera_adapterlib::{
+    connector::{ConnectorDescriptor, ConnectorFlags, ConnectorKind, Direction},
+    transport::{OutputEndpoint, TransportInputEndpoint},
+};
+use feldera_types::{
+    config::FtModel,
+    transport::kafka::{KafkaInputConfig, KafkaOutputConfig},
+};
+use serde_json::Value as JsonValue;
+
+fn kafka_input_config_schema() -> JsonValue {
+    JsonValue::Object(Default::default())
+}
+
+fn kafka_output_config_schema() -> JsonValue {
+    JsonValue::Object(Default::default())
+}
+
+fn build_kafka_input(
+    config: &JsonValue,
+    _endpoint_name: &str,
+    _secrets_dir: &std::path::Path,
+) -> AnyResult<Box<dyn TransportInputEndpoint>> {
+    let config: KafkaInputConfig = serde_json::from_value(config.clone())?;
+    Ok(Box::new(KafkaFtInputEndpoint::new(config)?))
+}
+
+fn build_kafka_output(
+    config: &JsonValue,
+    endpoint_name: &str,
+    fault_tolerant: bool,
+    _secrets_dir: &std::path::Path,
+) -> AnyResult<Box<dyn OutputEndpoint>> {
+    let config: KafkaOutputConfig = serde_json::from_value(config.clone())?;
+    if fault_tolerant {
+        Ok(Box::new(KafkaFtOutputEndpoint::new(config)?))
+    } else {
+        Ok(Box::new(KafkaOutputEndpoint::new(config, endpoint_name)?))
+    }
+}
+
+static KAFKA_INPUT_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
+    name: "kafka_input",
+    direction: Direction::Input,
+    kind: ConnectorKind::Regular,
+    fault_tolerance: Some(FtModel::ExactlyOnce),
+    config_schema: kafka_input_config_schema,
+    default_format: None,
+    flags: ConnectorFlags::EMPTY,
+    build_input: Some(build_kafka_input),
+    build_output: None,
+    build_integrated_input: None,
+    build_integrated_output: None,
+};
+
+inventory::submit! { &KAFKA_INPUT_DESCRIPTOR }
+
+static KAFKA_OUTPUT_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
+    name: "kafka_output",
+    direction: Direction::Output,
+    kind: ConnectorKind::Regular,
+    fault_tolerance: Some(FtModel::ExactlyOnce),
+    config_schema: kafka_output_config_schema,
+    default_format: None,
+    flags: ConnectorFlags::EMPTY,
+    build_input: None,
+    build_output: Some(build_kafka_output),
+    build_integrated_input: None,
+    build_integrated_output: None,
+};
+
+inventory::submit! { &KAFKA_OUTPUT_DESCRIPTOR }
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod registry_test {
+    #[test]
+    fn kafka_input_descriptor() {
+        let d = feldera_adapterlib::connector::connector_by_name("kafka_input")
+            .expect("kafka_input descriptor not registered");
+        assert!(d.build_input.is_some());
+        assert!(d.build_output.is_none());
+        assert!(d.build_integrated_input.is_none());
+        assert!(d.build_integrated_output.is_none());
+    }
+
+    #[test]
+    fn kafka_output_descriptor() {
+        let d = feldera_adapterlib::connector::connector_by_name("kafka_output")
+            .expect("kafka_output descriptor not registered");
+        assert!(d.build_input.is_none());
+        assert!(d.build_output.is_some());
+        assert!(d.build_integrated_input.is_none());
+        assert!(d.build_integrated_output.is_none());
+    }
+}
+
 const MAX_POLLING_INTERVAL: Duration = Duration::from_millis(5000);
 
 pub(crate) fn rdkafka_loglevel_from(level: KafkaLogLevel) -> RDKafkaLogLevel {
