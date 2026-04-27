@@ -345,6 +345,17 @@ impl WriterTask {
                     .with_configuration_property(
                         deltalake::TableProperty::CheckpointInterval,
                         checkpoint_interval,
+                    )
+                    .with_configuration_property(
+                        deltalake::TableProperty::LogRetentionDuration,
+                        inner.config.log_retention_duration.clone(),
+                    )
+                    .with_configuration_property(
+                        deltalake::TableProperty::EnableExpiredLogCleanup,
+                        inner
+                            .config
+                            .enable_expired_log_cleanup
+                            .map(|b| b.to_string()),
                     );
 
                 match tokio::time::timeout(operation_timeout, create_future).await {
@@ -400,6 +411,14 @@ impl WriterTask {
                 "none".to_string()
             }
         );
+
+        // `checkpoint_interval`, `log_retention_duration`, and `enable_expired_log_cleanup` are
+        // only honoured by delta-rs when the table is freshly created / in truncate mode.  When we open an existing
+        // table (e.g. `mode = append` against an existing table, or any resume from a pipeline
+        // checkpoint) the values supplied in the connector config are ignored and the
+        // table keeps whatever properties it was created with.  Compare the user's intent against
+        // what actually landed in the table metadata and warn on any discrepancy.
+        warn_about_table_property_discrepancies(&inner, &delta_table);
 
         Ok(Self { inner, delta_table })
     }
@@ -559,6 +578,56 @@ fn rollback_progress(inner: &DeltaTableWriterInner, written: u64) {
         return;
     }
     inner.records_written.fetch_sub(written, Ordering::Relaxed);
+}
+
+/// Warn when user-supplied table-creation properties (`checkpoint_interval`,
+/// `log_retention_duration`, `enable_expired_log_cleanup`) do not match what is actually in the
+/// table's configuration.  The most common cause is that the table already existed when the
+/// pipeline started (so delta-rs kept the original properties and ignored ours), but it could
+/// be due to other external modifications to the table. We just want to surface any discrepancies.
+/// We pass the properties to delta-rs as strings, so we read them back as strings to avoid any
+/// conversion ambiguity.
+fn warn_about_table_property_discrepancies(
+    inner: &DeltaTableWriterInner,
+    delta_table: &DeltaTable,
+) {
+    let snapshot = match delta_table.snapshot() {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let actual = snapshot.metadata().configuration();
+
+    let mut discrepancies: Vec<String> = Vec::new();
+
+    let mut check = |key: &str, requested: &str| {
+        let effective = actual.get(key).map(|s| s.as_str()).unwrap_or("<unset>");
+        if effective != requested {
+            discrepancies.push(format!(
+                "{key}: configured {requested:?}, in table {effective:?}"
+            ));
+        }
+    };
+
+    if let Some(interval) = inner.config.checkpoint_interval {
+        check("delta.checkpointInterval", &interval.to_string());
+    }
+    if let Some(duration) = inner.config.log_retention_duration.as_deref() {
+        check("delta.logRetentionDuration", duration);
+    }
+    if let Some(enabled) = inner.config.enable_expired_log_cleanup {
+        check("delta.enableExpiredLogCleanup", &enabled.to_string());
+    }
+
+    if !discrepancies.is_empty() {
+        warn!(
+            "delta_table {}: table at '{}' has properties that conflict with the connector configuration. \
+            This usually indicates the table was created with different settings or modified externally. \
+            Conflicting connector properties not applied: {}",
+            &inner.endpoint_name,
+            &inner.config.uri,
+            discrepancies.join("; "),
+        );
+    }
 }
 
 /// Build a `RecordBatch` from `builder` (deterministic), write it via `writer`
@@ -1121,6 +1190,8 @@ mod parallel {
                 threads: Some(threads),
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
+                log_retention_duration: None,
+                enable_expired_log_cleanup: None,
             },
             &key_schema,
             &value_relation(),
@@ -1421,6 +1492,8 @@ mod parallel {
                 threads: Some(4),
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
+                log_retention_duration: None,
+                enable_expired_log_cleanup: None,
             },
             &key_schema,
             &value_relation(),
@@ -1561,6 +1634,8 @@ mod parallel {
                 threads: Some(1),
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
+                log_retention_duration: None,
+                enable_expired_log_cleanup: None,
             },
             &key_schema,
             &value_relation(),
@@ -1582,6 +1657,72 @@ mod parallel {
         assert!(result.is_err(), "should fail after exhausting retries");
     }
 
+    /// `log_retention_duration` and `enable_expired_log_cleanup` should land on the created
+    /// Delta table's metadata when set, and be absent when not set.
+    #[test]
+    fn test_log_retention_table_properties() {
+        use dbsp::circuit::tokio::TOKIO;
+        use deltalake::open_table;
+        use std::time::Duration;
+
+        // Case 1: neither option set — neither property should appear in the table metadata.
+        // `TempDir` is kept in scope until end of test; its `Drop` removes the directory once
+        // both `_endpoint` and the `open_table` future have finished using it.
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+        let _endpoint = make_endpoint(1, &table_uri, true);
+
+        let url = url::Url::from_file_path(&table_uri).unwrap();
+        let table = TOKIO.block_on(async move { open_table(url).await.unwrap() });
+        let config = table.snapshot().unwrap().table_config();
+        assert!(
+            config.log_retention_duration.is_none(),
+            "logRetentionDuration should not be set when option is unset"
+        );
+        assert!(
+            config.enable_expired_log_cleanup.is_none(),
+            "enableExpiredLogCleanup should not be set when option is unset"
+        );
+
+        // Case 2: both options set — both properties should be reflected in the table metadata.
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+        let _endpoint = DeltaTableWriter::new(
+            EndpointId::default(),
+            "test_endpoint",
+            &DeltaTableWriterConfig {
+                uri: table_uri.clone(),
+                mode: DeltaTableWriteMode::Truncate,
+                max_retries: Some(0),
+                threads: Some(1),
+                object_store_config: Default::default(),
+                checkpoint_interval: None,
+                log_retention_duration: Some("interval 7 days".to_string()),
+                enable_expired_log_cleanup: Some(false),
+            },
+            &Some(key_relation()),
+            &value_relation(),
+            Weak::new(),
+            false,
+            true,
+        )
+        .expect("failed to create endpoint");
+
+        let url = url::Url::from_file_path(&table_uri).unwrap();
+        let table = TOKIO.block_on(async move { open_table(url).await.unwrap() });
+        let config = table.snapshot().unwrap().table_config();
+        assert_eq!(
+            config.log_retention_duration,
+            Some(Duration::from_secs(7 * 24 * 60 * 60)),
+            "logRetentionDuration should match the configured interval",
+        );
+        assert_eq!(
+            config.enable_expired_log_cleanup,
+            Some(false),
+            "enableExpiredLogCleanup should be set to false",
+        );
+    }
+
     /// Verify that threads=0 is rejected in config validation.
     #[test]
     fn test_threads_zero_rejected() {
@@ -1592,6 +1733,8 @@ mod parallel {
             threads: Some(0),
             object_store_config: Default::default(),
             checkpoint_interval: None,
+            log_retention_duration: None,
+            enable_expired_log_cleanup: None,
         };
         assert!(config.validate().is_err());
     }
@@ -1750,6 +1893,8 @@ mod parallel {
                 threads: Some(1),
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
+                log_retention_duration: None,
+                enable_expired_log_cleanup: None,
             },
             &key_schema,
             &value_relation(),

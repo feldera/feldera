@@ -130,6 +130,50 @@ def test_modified_connector_re_truncates_on_resume(pipeline_name):
 
 @enterprise_only
 @skip_on_arm64  # https://github.com/delta-io/delta-rs/issues/4413
+def test_log_retention_properties_land_in_metadata(pipeline_name):
+    """Setting `log_retention_duration`, `enable_expired_log_cleanup`, and
+    `checkpoint_interval` on a fresh table persists the corresponding `delta.*`
+    properties in the Delta table metadata.
+
+    Mirrors `test_modified_connector_re_truncates_on_resume`: the table is created with
+    extra connector options, then we read the metadata back through `DeltaTable` and
+    assert all three properties are present.  `checkpoint_interval=1` also forces a
+    checkpoint on every commit, which is what triggers the log-cleanup hook in
+    production; we don't assert cleanup behavior here (that requires wall-clock sleep),
+    only that the properties are recorded so delta-rs sees them.
+    """
+    from deltalake import DeltaTable
+
+    loc = DeltaTestLocation.create(pipeline_name)
+    try:
+        pipeline = _build_pipeline(
+            pipeline_name,
+            _sql(
+                loc,
+                extra_connector_options={
+                    "log_retention_duration": "interval 7 days",
+                    "enable_expired_log_cleanup": False,
+                    "checkpoint_interval": 1,
+                },
+            ),
+        )
+        pipeline.start()
+        pipeline.input_json("t", [{"id": 1}], wait=True)
+        pipeline.checkpoint(wait=True)
+
+        dt = DeltaTable(loc.uri, storage_options=loc.delta_storage_options())
+        config = dt.metadata().configuration
+        assert config.get("delta.logRetentionDuration") == "interval 7 days", config
+        assert config.get("delta.enableExpiredLogCleanup") == "false", config
+        assert config.get("delta.checkpointInterval") == "1", config
+
+        pipeline.stop(force=False)
+    finally:
+        loc.cleanup()
+
+
+@enterprise_only
+@skip_on_arm64  # https://github.com/delta-io/delta-rs/issues/4413
 def test_modified_view_re_truncates_on_resume(pipeline_name):
     """Changing the view's schema on resume forces a rebuild from scratch."""
     loc = DeltaTestLocation.create(pipeline_name)

@@ -14,6 +14,21 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        Delta Lake output connector:
+
+        `log_retention_duration` and
+        `enable_expired_log_cleanup` config options to control transaction-log retention on newly created
+        tables.
+
+        Both are only applied at table creation ( i.e. new table or truncate mode ); against an existing table they
+        are ignored. Defaults are unchanged (Delta Lake's own: 30 days, cleanup enabled).
+
+        The connector now logs a warning at startup when `checkpoint_interval`,
+        `log_retention_duration`, or `enable_expired_log_cleanup` in the connector config
+        differs from the existing table's metadata.
+
+        ## v0.294.0
+
         The HTTP egress API endpoint now accepts a connector configuration as the JSON body.
         This allows more control over connector configuration.  For example:
 
