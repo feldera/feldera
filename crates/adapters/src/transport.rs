@@ -56,9 +56,6 @@ use feldera_types::config::TransportConfig;
 #[cfg(test)]
 pub use crate::transport::file::set_barrier;
 
-#[cfg(feature = "with-nexmark")]
-use crate::transport::nexmark::NexmarkEndpoint;
-
 pub use feldera_adapterlib::transport::*;
 
 /// Extracts the inner config value from a `TransportConfig` as a `JsonValue`.
@@ -97,35 +94,10 @@ pub fn input_transport_config_to_endpoint(
     }
 
     // Fallback match for connectors not yet migrated to the descriptor registry.
-    let endpoint: Box<dyn TransportInputEndpoint> = match config {
-        #[cfg(feature = "with-nexmark")]
-        TransportConfig::Nexmark(config) => Box::new(NexmarkEndpoint::new(config.clone())),
-        #[cfg(not(feature = "with-nexmark"))]
-        TransportConfig::Nexmark(_) => return Ok(None),
-        // file_input, clock, http_input, adhoc_input, datagen, s3_input, url_input,
-        // nats_input, pub_sub_input, kafka_input are now handled above via the descriptor registry.
-        TransportConfig::FileInput(_)
-        | TransportConfig::ClockInput(_)
-        | TransportConfig::HttpInput(_)
-        | TransportConfig::AdHocInput(_)
-        | TransportConfig::Datagen(_)
-        | TransportConfig::UrlInput(_)
-        | TransportConfig::S3Input(_)
-        | TransportConfig::NatsInput(_)
-        | TransportConfig::PubSubInput(_)
-        | TransportConfig::KafkaInput(_)
-        | TransportConfig::FileOutput(_)
-        | TransportConfig::KafkaOutput(_)
-        | TransportConfig::DeltaTableInput(_)
-        | TransportConfig::DeltaTableOutput(_)
-        | TransportConfig::PostgresInput(_)
-        | TransportConfig::PostgresCdcInput(_)
-        | TransportConfig::PostgresOutput(_)
-        | TransportConfig::HttpOutput
-        | TransportConfig::RedisOutput(_)
-        | TransportConfig::IcebergInput(_) => return Ok(None),
-    };
-    Ok(Some(endpoint))
+    match config {
+        // All input connectors are now handled above via the descriptor registry.
+        _ => Ok(None),
+    }
 }
 
 /// Creates an output transport endpoint instance using an output transport
