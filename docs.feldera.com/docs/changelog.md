@@ -12,13 +12,15 @@ import TabItem from '@theme/TabItem';
     <TabItem className="changelogItem" value="enterprise"
         label="Enterprise">
 
-        ## Unreleased
+        ## v0.292.0
 
         Pipeline monitoring: Feldera now monitors and persists a pipeline's health.
         Events are queryable via `/v0/pipelines/[pipeline]/events?selector=[all|status]`
         and a specific event via `/v0/pipelines/[pipeline]/events/[<event-id>|latest]?selector=[all|status]`.
         All API clients support these endpoints. The Web Console will soon expose these
         events via a tab too.
+
+        ## v0.289.0
 
         API changes:
         - (New) Details about the storage status is a new pipeline field: `storage_status_details`.
@@ -34,11 +36,6 @@ import TabItem from '@theme/TabItem';
           `CheckpointOutputEndpointMetrics` gain optional `parse_errors` / `transport_errors` /
           `encode_errors` fields. Old checkpoints load as empty lists; checkpoints with no errors
           still serialize without the new keys, so unaffected files stay byte-identical.
-
-        Functions `RLIKE` and `REPLACE_REGEXP` will crash for invalid
-        regular expressions.  Previously they treated such as expressions
-        as expressions which never match.  The new behavior more closely
-        aligns with other databases.
 
         `CAST(variant AS VARCHAR)` will return a meaningful value for all
         scalar variant values, and not just for `VARIANT` objects with a
@@ -63,6 +60,11 @@ import TabItem from '@theme/TabItem';
         The second behavioral change is that the connector can now produce
         duplicate inputs even without a pipeline restart as the connector retries
         processing delta log entries.
+
+        Functions `RLIKE` and `REPLACE_REGEXP` will crash for invalid
+        regular expressions.  Previously they treated such as expressions
+        as expressions which never match.  The new behavior more closely
+        aligns with other databases.
 
         ## v0.281.0
 
