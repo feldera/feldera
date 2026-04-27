@@ -51,6 +51,36 @@ pub struct DeltaTableWriterConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checkpoint_interval: Option<u32>,
 
+    /// Log retention duration for newly created Delta tables.
+    ///
+    /// Configures the `delta.logRetentionDuration` table property, which controls how long the
+    /// transaction log history of the table is kept.  Each time a checkpoint is written, Delta Lake
+    /// automatically cleans up log entries older than this interval (subject to
+    /// `enable_expired_log_cleanup`).
+    ///
+    /// The option is only available when creating the Delta table (`mode = append` and there is
+    /// no existing table at the target location, or `mode = truncate`).
+    ///
+    /// The value follows the Delta Lake interval syntax: `"interval <N> <unit>"`, where `<unit>`
+    /// is one of `nanosecond[s]`, `microsecond[s]`, `millisecond[s]`, `second[s]`, `minute[s]`,
+    /// `hour[s]`, `day[s]`, or `week[s]`.  Examples: `"interval 30 days"`, `"interval 6 hours"`.
+    ///
+    /// Default: `"interval 30 days"` (Delta Lake default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_retention_duration: Option<String>,
+
+    /// Whether to clean up expired log entries when a checkpoint is written.
+    ///
+    /// Configures the `delta.enableExpiredLogCleanup` table property.  When set to `false`,
+    /// transaction log entries are retained indefinitely regardless of `log_retention_duration`.
+    ///
+    /// The option is only available when creating the Delta table (`mode = append` and there is
+    /// no existing table at the target location, or `mode = truncate`).
+    ///
+    /// Default: `true` (Delta Lake default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_expired_log_cleanup: Option<bool>,
+
     /// Maximum number of retries for failed operations.
     ///
     /// The connector performs retries on several levels: individual S3 operations, Delta Lake transaction commits,
@@ -88,7 +118,53 @@ impl DeltaTableWriterConfig {
         if self.threads.is_some_and(|t| t == 0) {
             return Err("threads must be greater than 0".to_string());
         }
+        if let Some(duration) = &self.log_retention_duration {
+            validate_delta_interval(duration)
+                .map_err(|e| format!("invalid 'log_retention_duration' value '{duration}': {e}"))?;
+        }
         Ok(())
+    }
+}
+
+/// Validate a Delta Lake interval string (e.g. `"interval 30 days"`).
+///
+/// Mirrors the grammar accepted by delta-rs (`crates/core/src/table/config.rs::parse_interval`):
+/// the keyword `interval` must be lowercase, the number must be a non-negative integer, and the
+/// unit must come from delta-rs's closed list.  We replicate the grammar here so misconfigured
+/// values fail fast at config-load time with a clear error message rather than being silently
+/// dropped by delta-rs at runtime (delta-rs stores the string opaquely at table-create time and
+/// only parses it for the log-cleanup hook, where unparseable values fall back to the default).
+fn validate_delta_interval(value: &str) -> Result<(), String> {
+    let mut tokens = value.split_whitespace();
+    if tokens.next() != Some("interval") {
+        return Err(
+            "expected the value to start with lowercase \"interval\" (e.g. \"interval 30 days\")"
+                .to_string(),
+        );
+    }
+    let number_token = tokens
+        .next()
+        .ok_or_else(|| "expected a number after \"interval\"".to_string())?;
+    let unit = tokens
+        .next()
+        .ok_or_else(|| "expected a unit (e.g. \"days\") after the number".to_string())?;
+    if tokens.next().is_some() {
+        return Err("unexpected trailing tokens".to_string());
+    }
+    let number: i64 = number_token
+        .parse()
+        .map_err(|e| format!("cannot parse '{number_token}' as integer: {e}"))?;
+    if number < 0 {
+        return Err("interval cannot be negative".to_string());
+    }
+    match unit {
+        "nanosecond" | "nanoseconds" | "microsecond" | "microseconds" | "millisecond"
+        | "milliseconds" | "second" | "seconds" | "minute" | "minutes" | "hour" | "hours"
+        | "day" | "days" | "week" | "weeks" => Ok(()),
+        other => Err(format!(
+            "unknown unit '{other}'; expected one of nanosecond[s], microsecond[s], \
+             millisecond[s], second[s], minute[s], hour[s], day[s], week[s]"
+        )),
     }
 }
 
@@ -444,6 +520,102 @@ fn test_delta_table_ingest_mode_display() {
         "snapshot_and_follow"
     );
     assert_eq!(DeltaTableIngestMode::Cdc.to_string(), "cdc");
+}
+
+#[cfg(test)]
+mod log_retention_tests {
+    use super::*;
+
+    fn make_config(log_retention: Option<&str>) -> DeltaTableWriterConfig {
+        DeltaTableWriterConfig {
+            uri: "memory://".to_string(),
+            mode: DeltaTableWriteMode::default(),
+            checkpoint_interval: None,
+            log_retention_duration: log_retention.map(str::to_string),
+            enable_expired_log_cleanup: None,
+            max_retries: None,
+            threads: None,
+            object_store_config: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn validate_delta_interval_accepts_known_units() {
+        for unit in [
+            "nanosecond",
+            "nanoseconds",
+            "microsecond",
+            "microseconds",
+            "millisecond",
+            "milliseconds",
+            "second",
+            "seconds",
+            "minute",
+            "minutes",
+            "hour",
+            "hours",
+            "day",
+            "days",
+            "week",
+            "weeks",
+        ] {
+            let s = format!("interval 5 {unit}");
+            assert!(validate_delta_interval(&s).is_ok(), "failed for {s}");
+        }
+    }
+
+    #[test]
+    fn validate_delta_interval_accepts_zero() {
+        // Zero is a valid duration; users who want to disable cleanup do so via
+        // `enable_expired_log_cleanup = false`.
+        assert!(validate_delta_interval("interval 0 seconds").is_ok());
+        assert!(validate_delta_interval("interval 0 days").is_ok());
+    }
+
+    #[test]
+    fn validate_delta_interval_rejects_malformed() {
+        for bad in [
+            "",
+            "30 days",
+            "interval",
+            "interval 30",
+            "interval days",
+            "interval -5 days",
+            "interval foo days",
+            "interval 30 fortnights",
+            "interval 5 dayss",
+            "interval 1 hours extra",
+            // delta-rs's parser is lowercase-only, so we reject anything else
+            // to fail fast rather than letting it silently fall back at cleanup time.
+            "INTERVAL 30 days",
+            "Interval 30 days",
+            "interval 30 DAYS",
+        ] {
+            assert!(
+                validate_delta_interval(bad).is_err(),
+                "expected error for {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_propagates_interval_errors() {
+        let cfg = make_config(Some("not an interval"));
+        let err = cfg.validate().unwrap_err();
+        assert!(err.contains("log_retention_duration"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn validate_accepts_well_formed_interval() {
+        let cfg = make_config(Some("interval 30 days"));
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_accepts_unset_interval() {
+        let cfg = make_config(None);
+        assert!(cfg.validate().is_ok());
+    }
 }
 
 impl DeltaTableReaderConfig {
