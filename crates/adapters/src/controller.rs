@@ -7135,6 +7135,31 @@ impl ControllerInner {
     }
 }
 
+impl feldera_adapterlib::connector::OutputControllerRef for ControllerInner {
+    fn output_transport_error(
+        &self,
+        endpoint_id: u64,
+        endpoint_name: &str,
+        fatal: bool,
+        error: AnyError,
+        tag: Option<&str>,
+    ) {
+        ControllerInner::output_transport_error(self, endpoint_id, endpoint_name, fatal, error, tag);
+    }
+
+    fn update_output_connector_health(&self, endpoint_id: u64, health: ConnectorHealth) {
+        ControllerInner::update_output_connector_health(self, endpoint_id, health);
+    }
+
+    fn register_batch_progress_counter(&self, endpoint_id: &u64, counter: Arc<AtomicU64>) {
+        self.status.register_batch_progress_counter(endpoint_id, counter);
+    }
+
+    fn output_buffer(&self, endpoint_id: u64, num_bytes: usize, num_records: usize) {
+        self.status.output_buffer(endpoint_id, num_bytes, num_records);
+    }
+}
+
 /// An [InputConsumer] for an input adapter to use.
 struct InputProbe {
     endpoint_id: EndpointId,

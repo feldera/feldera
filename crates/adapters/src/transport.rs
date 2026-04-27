@@ -78,7 +78,7 @@ pub use feldera_adapterlib::transport::*;
 /// Serialises the whole `TransportConfig` (which has the form `{"name": "...", "config": {...}}`),
 /// then returns the `"config"` field.  Unit variants (e.g. `HttpOutput`) have no `"config"` key;
 /// those return `JsonValue::Null`.
-fn transport_config_inner_as_json(config: &TransportConfig) -> AnyResult<JsonValue> {
+pub(crate) fn transport_config_inner_as_json(config: &TransportConfig) -> AnyResult<JsonValue> {
     let json = serde_json::to_value(config)?;
     Ok(json.get("config").cloned().unwrap_or(JsonValue::Null))
 }
