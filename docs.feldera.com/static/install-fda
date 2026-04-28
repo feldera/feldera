@@ -1,9 +1,9 @@
 #!/bin/sh
 # Feldera fda CLI installer
 # Usage:
-#   curl -fsSL https://feldera.com/install-fda | bash
-#   curl -fsSL https://feldera.com/install-fda | FDA_VERSION=v0.270.0 bash
-#   curl -fsSL https://feldera.com/install-fda | FELDERA_INSTALL=/opt/feldera bash
+#   curl -fsSL https://docs.feldera.com/install-fda | bash
+#   curl -fsSL https://docs.feldera.com/install-fda | FDA_VERSION=v0.290.0 bash
+#   curl -fsSL https://docs.feldera.com/install-fda | FELDERA_INSTALL=/opt/feldera bash
 
 set -eu
 
@@ -62,7 +62,18 @@ detect_platform() {
             info "Detected platform: Linux $ARCH"
             ;;
         Darwin)
-            err "macOS is not currently supported. Install fda with: cargo install fda"
+            case "$ARCH" in
+                arm64 | aarch64)
+                    TARGET="aarch64-apple-darwin"
+                    ;;
+                x86_64)
+                    err "Intel macOS is not currently supported. Install fda with: cargo install fda"
+                    ;;
+                *)
+                    err "unsupported macOS architecture: $ARCH. Supported: arm64 (Apple Silicon)"
+                    ;;
+            esac
+            info "Detected platform: macOS $ARCH"
             ;;
         MINGW* | MSYS* | CYGWIN*)
             err "Windows is not currently supported by this installer. Download fda from https://github.com/feldera/feldera/releases or install with: cargo install fda"
