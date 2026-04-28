@@ -1,6 +1,8 @@
 mod bench_common;
 
-use bench_common::{BenchKeyStruct, BenchTestStruct, build_indexed_batch, generate_test_data};
+use bench_common::{
+    BenchKeyStruct, BenchTestStruct, NoOpControllerRef, build_indexed_batch, generate_test_data,
+};
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use dbsp_adapters::Encoder;
 use dbsp_adapters::SerBatch;
@@ -9,7 +11,7 @@ use feldera_types::transport::postgres::{
     PostgresTlsConfig, PostgresWriteMode, PostgresWriterConfig,
 };
 use postgres::NoTls;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
 // Postgres-specific helpers
@@ -77,7 +79,7 @@ fn create_endpoint(config: &PostgresWriterConfig) -> PostgresOutputEndpoint {
         config,
         &Some(BenchKeyStruct::relation_schema()),
         &BenchTestStruct::relation_schema(),
-        Weak::new(),
+        Arc::new(NoOpControllerRef),
     )
     .expect("failed to create PostgresOutputEndpoint")
 }

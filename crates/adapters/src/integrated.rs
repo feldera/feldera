@@ -15,7 +15,7 @@ mod postgres;
 
 pub use crate::integrated::postgres::PostgresOutputEndpoint;
 
-pub use feldera_adapterlib::transport::IntegratedOutputEndpoint;
+use feldera_adapterlib::transport::IntegratedOutputEndpoint;
 
 /// Create an instance of an integrated output endpoint given its config
 /// and output relation schema.

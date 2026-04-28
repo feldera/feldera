@@ -1,11 +1,13 @@
 mod bench_common;
 
-use bench_common::{BenchKeyStruct, BenchTestStruct, build_indexed_batch, generate_test_data};
+use bench_common::{
+    BenchKeyStruct, BenchTestStruct, NoOpControllerRef, build_indexed_batch, generate_test_data,
+};
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use dbsp_adapters::Encoder;
 use dbsp_adapters::integrated::delta_table::DeltaTableWriter;
 use feldera_types::transport::delta_table::{DeltaTableWriteMode, DeltaTableWriterConfig};
-use std::sync::Weak;
+use std::sync::Arc;
 use tempfile::TempDir;
 
 // ---------------------------------------------------------------------------
@@ -30,7 +32,7 @@ fn create_indexed_writer(threads: usize, table_uri: &str) -> DeltaTableWriter {
         &config,
         &key_schema,
         &value_schema,
-        Weak::new(),
+        Arc::new(NoOpControllerRef),
         false,
     )
     .unwrap()

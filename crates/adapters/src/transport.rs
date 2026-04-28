@@ -73,7 +73,6 @@ pub(crate) fn transport_config_inner_as_json(config: &TransportConfig) -> AnyRes
 ///
 /// Returns an error if there is a invalid configuration for the endpoint.
 /// Returns `None` if the transport configuration variant is incompatible with an input endpoint.
-#[allow(unused_variables)]
 pub fn input_transport_config_to_endpoint(
     config: &TransportConfig,
     endpoint_name: &str,
@@ -81,7 +80,7 @@ pub fn input_transport_config_to_endpoint(
 ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
     let config = resolve_secret_references_via_json(secrets_dir, config)?;
 
-    // Registry path: connectors registered via `ConnectorDescriptor` (file_input, clock, …).
+    // All input connectors are dispatched through the `ConnectorDescriptor` registry.
     let name = config.name();
     if let Some(descriptor) = connector_by_name(&name) {
         return match descriptor.build_input {
@@ -93,11 +92,7 @@ pub fn input_transport_config_to_endpoint(
         };
     }
 
-    // Fallback match for connectors not yet migrated to the descriptor registry.
-    match config {
-        // All input connectors are now handled above via the descriptor registry.
-        _ => Ok(None),
-    }
+    Ok(None)
 }
 
 /// Creates an output transport endpoint instance using an output transport
@@ -109,7 +104,6 @@ pub fn input_transport_config_to_endpoint(
 ///
 /// Returns an error if there is a invalid configuration for the endpoint.
 /// Returns `None` if the transport configuration variant is incompatible with an output endpoint.
-#[allow(unused_variables)]
 pub fn output_transport_config_to_endpoint(
     config: &TransportConfig,
     endpoint_name: &str,
@@ -118,7 +112,7 @@ pub fn output_transport_config_to_endpoint(
 ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
     let config = resolve_secret_references_via_json(secrets_dir, config)?;
 
-    // Registry path: connectors registered via `ConnectorDescriptor` (file_output, …).
+    // All output connectors are dispatched through the `ConnectorDescriptor` registry.
     let name = config.name();
     if let Some(descriptor) = connector_by_name(&name) {
         return match descriptor.build_output {
@@ -135,9 +129,5 @@ pub fn output_transport_config_to_endpoint(
         };
     }
 
-    // Fallback match for connectors not yet migrated to the descriptor registry.
-    match config {
-        // file_output, redis_output, kafka_output are now handled above via the descriptor registry.
-        _ => Ok(None),
-    }
+    Ok(None)
 }

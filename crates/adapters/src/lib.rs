@@ -164,7 +164,8 @@ pub(crate) mod util;
 #[cfg(test)]
 pub mod test;
 
-pub use integrated::{IntegratedOutputEndpoint, create_integrated_output_endpoint};
+pub use feldera_adapterlib::transport::IntegratedOutputEndpoint;
+pub use integrated::create_integrated_output_endpoint;
 
 pub use dbsp::DetailedError;
 pub use feldera_adapterlib::PipelineState;

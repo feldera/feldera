@@ -75,7 +75,9 @@ pub trait TransportInputEndpoint: InputEndpoint {
     ) -> AnyResult<Box<dyn InputReader>>;
 }
 
-#[doc(hidden)]
+/// An integrated input connector implements both transport endpoint and parser
+/// in a single type, used when transport and format are tightly coupled
+/// (e.g. Postgres CDC, Delta Lake).
 pub trait IntegratedInputEndpoint: InputEndpoint {
     fn open(
         self: Box<Self>,
@@ -91,10 +93,6 @@ pub trait IntegratedInputEndpoint: InputEndpoint {
 ///
 /// A blanket impl covers every type that implements both `OutputEndpoint` and
 /// `Encoder`, so connector authors do not need to implement this trait directly.
-///
-/// `#[doc(hidden)]` is a temporary marker — it will be removed in Phase 4b when
-/// integrated connectors become fully reachable from out-of-tree code.
-#[doc(hidden)]
 pub trait IntegratedOutputEndpoint: OutputEndpoint + crate::format::Encoder {
     fn into_encoder(self: Box<Self>) -> Box<dyn crate::format::Encoder>;
     fn as_endpoint(&mut self) -> &mut dyn OutputEndpoint;

@@ -2,14 +2,37 @@ use dbsp::OrdIndexedZSet;
 use dbsp::utils::Tup2;
 use dbsp_adapters::static_compile::seroutput::SerBatchImpl;
 use dbsp_adapters::{OutputConsumer, SerBatch};
+use feldera_adapterlib::connector::OutputControllerRef;
 use feldera_macros::IsNone;
+use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::{deserialize_without_context, serialize_struct};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use size_of::SizeOf;
 use std::collections::BTreeMap;
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
+
+/// Stand-in `OutputControllerRef` used by integrated-connector benches that
+/// don't have a real pipeline controller. All callbacks are dropped.
+#[allow(dead_code)]
+pub struct NoOpControllerRef;
+
+impl OutputControllerRef for NoOpControllerRef {
+    fn output_transport_error(
+        &self,
+        _endpoint_id: u64,
+        _endpoint_name: &str,
+        _fatal: bool,
+        _error: anyhow::Error,
+        _tag: Option<&str>,
+    ) {
+    }
+    fn update_output_connector_health(&self, _endpoint_id: u64, _health: ConnectorHealth) {}
+    fn register_batch_progress_counter(&self, _endpoint_id: &u64, _counter: Arc<AtomicU64>) {}
+    fn output_buffer(&self, _endpoint_id: u64, _num_bytes: usize, _num_records: usize) {}
+}
 
 // ---------------------------------------------------------------------------
 // Common type definitions for benchmarks

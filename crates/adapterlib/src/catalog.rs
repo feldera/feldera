@@ -894,7 +894,9 @@ pub trait CircuitCatalog: Send + Sync {
     fn preprocessor_registry(&self) -> Arc<Mutex<PreprocessorRegistry>>;
 }
 
-#[doc(hidden)]
+/// Handle passed to integrated input connectors so they can push records into
+/// the circuit.  The connector accesses [`Self::schema`] to drive deserialization
+/// and [`Self::handle`] to construct a [`DeCollectionHandle`]-backed deserializer.
 pub struct InputCollectionHandle {
     pub schema: Relation,
     pub handle: Box<dyn DeCollectionHandle>,
@@ -908,7 +910,6 @@ pub struct InputCollectionHandle {
 }
 
 impl InputCollectionHandle {
-    #[doc(hidden)]
     pub fn new<H>(schema: Relation, handle: H, node_id: NodeId) -> Self
     where
         H: DeCollectionHandle + 'static,

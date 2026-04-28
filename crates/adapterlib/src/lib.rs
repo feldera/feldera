@@ -6,9 +6,7 @@
 //!
 //! ## Supported plugin-facing types
 //!
-//! The following types and traits form the supported, versioned plugin ABI.  Types marked
-//! `#[doc(hidden)]` are still part of the contract — they just appear in call sites rather
-//! than as something a plugin declares.
+//! The following types and traits form the supported, versioned plugin ABI.
 //!
 //! ### Input connectors (regular — transport + separate format)
 //! - [`transport::InputEndpoint`] / [`transport::TransportInputEndpoint`] — implement these.
@@ -19,16 +17,16 @@
 //! - [`transport::InputReaderCommand`] / [`transport::Resume`] — FT state machine.
 //!
 //! ### Input connectors (integrated — transport + format combined)
-//! - [`transport::IntegratedInputEndpoint`] (`#[doc(hidden)]`) — implement for connectors
-//!   that cannot separate transport from format (e.g. Postgres, Delta Lake).
-//! - [`catalog::InputCollectionHandle`] (`#[doc(hidden)]`) — passed to `open`; access
-//!   `.schema` ([`feldera_types::program_schema::Relation`]) and `.handle`
+//! - [`transport::IntegratedInputEndpoint`] — implement for connectors that cannot
+//!   separate transport from format (e.g. Postgres, Delta Lake).
+//! - [`catalog::InputCollectionHandle`] — passed to `open`; access `.schema`
+//!   ([`feldera_types::program_schema::Relation`]) and `.handle`
 //!   ([`catalog::DeCollectionHandle`]) to configure a deserializer.
 //!
 //! ### Output connectors
 //! - [`transport::OutputEndpoint`] — implement this.
 //! - [`format::Encoder`] / [`format::OutputFormat`] — implement for custom data formats.
-//! - [`format::OutputConsumer`] (`#[doc(hidden)]`) — passed by the controller.
+//! - [`format::OutputConsumer`] — passed by the controller.
 //! - [`catalog::SerBatchReader`] / [`catalog::SerCursor`] — iterate output batches.
 //!
 //! ### Shared

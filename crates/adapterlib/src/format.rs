@@ -700,7 +700,8 @@ pub trait Encoder: Send {
     fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()>;
 }
 
-#[doc(hidden)]
+/// Sink for encoded output buffers, supplied by the controller to each
+/// [`Encoder`] so the encoder can deliver serialized batches downstream.
 pub trait OutputConsumer: Send {
     /// Maximum buffer size that this transport can transmit.
     /// The encoder should not generate buffers exceeding this size.
