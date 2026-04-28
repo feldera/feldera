@@ -343,7 +343,10 @@ impl WriterTask {
                     )
                     .with_configuration_property(
                         deltalake::TableProperty::EnableExpiredLogCleanup,
-                        inner.config.enable_expired_log_cleanup.map(|b| b.to_string()),
+                        inner
+                            .config
+                            .enable_expired_log_cleanup
+                            .map(|b| b.to_string()),
                     );
 
                 match tokio::time::timeout(operation_timeout, create_future).await {
@@ -1590,10 +1593,7 @@ mod parallel {
 
         let url = url::Url::from_file_path(&table_uri).unwrap();
         let table = TOKIO.block_on(async move { open_table(url).await.unwrap() });
-        let config = table
-            .snapshot()
-            .unwrap()
-            .table_config();
+        let config = table.snapshot().unwrap().table_config();
         assert!(
             config.log_retention_duration.is_none(),
             "logRetentionDuration should not be set when option is unset"
@@ -1628,10 +1628,7 @@ mod parallel {
 
         let url = url::Url::from_file_path(&table_uri).unwrap();
         let table = TOKIO.block_on(async move { open_table(url).await.unwrap() });
-        let config = table
-            .snapshot()
-            .unwrap()
-            .table_config();
+        let config = table.snapshot().unwrap().table_config();
         assert_eq!(
             config.log_retention_duration,
             Some(Duration::from_secs(7 * 24 * 60 * 60)),

@@ -119,9 +119,8 @@ impl DeltaTableWriterConfig {
             return Err("threads must be greater than 0".to_string());
         }
         if let Some(duration) = &self.log_retention_duration {
-            parse_delta_interval(duration).map_err(|e| {
-                format!("invalid 'log_retention_duration' value '{duration}': {e}")
-            })?;
+            parse_delta_interval(duration)
+                .map_err(|e| format!("invalid 'log_retention_duration' value '{duration}': {e}"))?;
         }
         Ok(())
     }
@@ -559,8 +558,14 @@ mod log_retention_tests {
 
     #[test]
     fn parse_delta_interval_known_durations() {
-        assert_eq!(parse_delta_interval("interval 30 days").unwrap(), 30 * 86_400);
-        assert_eq!(parse_delta_interval("interval 2 weeks").unwrap(), 2 * 7 * 86_400);
+        assert_eq!(
+            parse_delta_interval("interval 30 days").unwrap(),
+            30 * 86_400
+        );
+        assert_eq!(
+            parse_delta_interval("interval 2 weeks").unwrap(),
+            2 * 7 * 86_400
+        );
         assert_eq!(parse_delta_interval("interval 90 seconds").unwrap(), 90);
     }
 
@@ -575,7 +580,10 @@ mod log_retention_tests {
             "",
             "interval 1 hours extra",
         ] {
-            assert!(parse_delta_interval(bad).is_err(), "expected error for {bad:?}");
+            assert!(
+                parse_delta_interval(bad).is_err(),
+                "expected error for {bad:?}"
+            );
         }
     }
 
