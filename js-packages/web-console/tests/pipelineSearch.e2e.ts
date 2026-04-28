@@ -1,32 +1,16 @@
 import { expect, test } from '@playwright/test'
-import { client } from '$lib/services/manager/client.gen'
-import { deletePipeline, getExtendedPipeline, putPipeline } from '$lib/services/pipelineManager'
+import { configureTestClient, cleanupPipeline, waitForPipeline } from '$lib/services/testPipelineHelpers'
+import { putPipeline } from '$lib/services/pipelineManager'
 
-const API_ORIGIN = (process.env.PLAYWRIGHT_API_ORIGIN ?? 'http://localhost:8080').replace(/\/$/, '')
-client.setConfig({ baseUrl: API_ORIGIN })
+configureTestClient()
 
 const PREFIX = `test-search-${Date.now()}`
 const PIPELINES = [`${PREFIX}-alpha`, `${PREFIX}-beta`, `${PREFIX}-gamma`] as const
 
 async function cleanupPipelines() {
   for (const name of PIPELINES) {
-    try {
-      await deletePipeline(name)
-    } catch {
-      // Pipeline may not exist
-    }
+    await cleanupPipeline(name)
   }
-}
-
-/** Poll the API until a pipeline reaches "Stopped" status. */
-async function waitForStopped(name: string, timeoutMs = 120_000) {
-  const start = Date.now()
-  while (Date.now() - start < timeoutMs) {
-    const p = await getExtendedPipeline(name)
-    if (p.status === 'Stopped') return
-    await new Promise((r) => setTimeout(r, 1000))
-  }
-  throw new Error(`Timed out waiting for ${name} to reach Stopped status`)
 }
 
 /** Navigate to the home page and wait until all test pipelines are visible. */
@@ -38,10 +22,10 @@ async function gotoAndWaitForPipelines(page: import('@playwright/test').Page) {
 }
 
 test.describe('Pipeline search', () => {
-  test.setTimeout(180_000)
+  test.setTimeout(300_000)
 
   test.beforeAll(async ({}, testInfo) => {
-    testInfo.setTimeout(120_000)
+    testInfo.setTimeout(240_000)
     await cleanupPipelines()
     for (const name of PIPELINES) {
       await putPipeline(name, {
@@ -53,7 +37,7 @@ test.describe('Pipeline search', () => {
     // Wait for all pipelines to finish compiling via API polling,
     // so individual tests don't need to wait on DOM status changes.
     for (const name of PIPELINES) {
-      await waitForStopped(name)
+      await waitForPipeline(name, ({ status }) => status === 'Stopped', 240_000)
     }
   })
 

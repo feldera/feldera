@@ -57,7 +57,7 @@
     pipelineName: string
     pipelineList: { pipelines: PipelineThumb[] | undefined } // If it's undefined - it is loading
     pipelineThumb: PipelineThumb | undefined // If it's undefined - it is loading
-    pipeline: WritablePipeline // If it's undefined - it is loading
+    pipeline: WritablePipeline // If .current is undefined - it is loading
     deleted?: boolean
   } = $props()
 
@@ -178,6 +178,17 @@
       pipelineActionCallbacks.remove(pipelineName, 'start', monitoringTabSwitchTo)
     }
   })
+
+  let layoutControls = $derived([
+    { icon: 'fd fd-panel-left', text: 'Pipelines', value: showPipelinesPanel },
+    { icon: 'fd fd-panel-bottom', text: 'Monitoring', value: showMonitoringPanel },
+    {
+      icon: 'fd fd-panel-right',
+      text: 'Interaction',
+      value: showInteractionPanel,
+      show: isScreenLg.current
+    }
+  ])
 </script>
 
 {#snippet reviewPipelineChanges()}
@@ -426,7 +437,7 @@
 {/snippet}
 {#snippet statusBarEnd()}
   <div class="ml-auto flex flex-nowrap items-center gap-1">
-    {#each [{ icon: 'fd fd-panel-left', text: 'Pipelines', value: showPipelinesPanel }, { icon: 'fd fd-panel-bottom', text: 'Monitoring', value: showMonitoringPanel }, { icon: 'fd fd-panel-right', text: 'Interaction', value: showInteractionPanel, show: isScreenLg.current }] as { icon, text, value, show }}
+    {#each layoutControls as { icon, text, value, show }}
       {#if show !== false}
         <button
           class="btn gap-2 p-2 text-surface-700-300 !brightness-100 hover:preset-tonal-surface"

@@ -9,10 +9,14 @@ const config: PlaywrightTestConfig = {
     ? { use: { baseURL: appOrigin } }
     : {
         webServer: {
-          command: 'npm run build && npm run preview',
-          port: 4174
+          command: 'npm run build && npm run preview -- --port 4174',
+          port: 4174,
+          timeout: 60000
         }
       }),
+  // Run e2e test files sequentially — compilation is a shared global resource
+  // and concurrent files would contend on it and need inflated per-test timeouts.
+  workers: 1,
   testDir: 'tests',
   testMatch: /(.+\.)?e2e\.[jt]s/,
   snapshotDir: 'playwright-snapshots/e2e',
