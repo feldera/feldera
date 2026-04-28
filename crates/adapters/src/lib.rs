@@ -150,6 +150,14 @@
 
 use rustls::crypto::CryptoProvider;
 
+// Force linkage of `feldera-datagen` so its `inventory::submit!` runs. Nothing
+// in this crate names a `feldera_datagen` item, and rustc drops unused deps —
+// without this line the rlib is silently omitted and `connector_by_name`
+// returns `None` for "datagen". The describer and per-pipeline workspaces have
+// their own generated `force_link.rs` covering the same ground; this line is
+// the equivalent for `dbsp_adapters`'s own test build.
+extern crate feldera_datagen as _;
+
 pub(crate) mod adhoc;
 mod catalog;
 mod controller;

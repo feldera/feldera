@@ -280,24 +280,24 @@ The exhaustive match at `crates/pipeline-manager/src/db/types/program.rs:682,735
 
 #### 8.1 The `connectors.toml` file
 
-Lives at a deployment-configured path (e.g. `/etc/feldera/connectors.toml`, with per-tenant variants for multi-tenant setups). Format reuses Cargo's `[dependencies]` schema verbatim — no new syntax to learn:
+Lives at a deployment-configured path (e.g. `/etc/feldera/connectors.toml`, with per-tenant variants for multi-tenant setups). The file content is exactly what Cargo accepts as a `[dependencies]` body — one dep per line, **no section header** — mirroring the `udf_toml` mechanism at `rust_compiler.rs:1336-1346` (opaque text spliced into a `[dependencies]` block downstream):
 
 ```toml
 # /etc/feldera/connectors.toml
-[connectors]
-acme-snowflake  = { version = "0.3", registry = "crates.io" }
-my-sap-cdc      = { git = "https://github.com/acme/feldera-sap-cdc", tag = "v1.2.0" }
-local-thing     = { path = "/opt/feldera/connectors/local-thing" }
+acme_snowflake = { version = "0.3", registry = "crates.io" }
+my_sap_cdc     = { git = "https://github.com/acme/feldera-sap-cdc", tag = "v1.2.0" }
+local_thing    = { path = "/opt/feldera/connectors/local-thing" }
 ```
 
-Whatever Cargo accepts (versions, git refs, `path`, `[patch]`, alternative registries, auth) is accepted here without translation. Bundled connectors (`file`, `kafka`, `postgres`, `delta_table`, `iceberg`, …) stay in `dbsp_adapters` and are not listed here — empty `connectors.toml` = OSS defaults, behavior matches today's bundled-only deployments bit-for-bit.
+Whatever Cargo accepts (versions, git refs, `path`, `[patch]`, alternative registries, auth) is accepted here without translation. **Single-line entries only** — multi-line `[dependencies.<name>]` table form is not supported (force-link extraction is line-based; see 8.3). Bundled connectors (`file`, `kafka`, `postgres`, `delta_table`, `iceberg`, …) stay in `dbsp_adapters` and are not listed here — empty `connectors.toml` = OSS defaults, behavior matches today's bundled-only deployments bit-for-bit.
 
 #### 8.2 Reuse pipeline-manager's existing Cargo orchestration
 
 pipeline-manager already runs Cargo per-pipeline. `prepare_workspace` (`crates/pipeline-manager/src/compiler/rust_compiler.rs:1242`) creates a `rust-compilation` workspace, copies a templated `Cargo.toml` into it, integrates UDF dependencies, and invokes Cargo. Two extensions to that flow:
 
-- **Per-pipeline workspace**: append the `[connectors]` table from `connectors.toml` to the per-pipeline `Cargo.toml`'s `[dependencies]`, so the pipeline binary links the chosen connectors. **No per-pipeline feature gating** — see 8.5.
+- **Per-pipeline workspace**: splice `connectors.toml`'s contents verbatim into the per-pipeline `Cargo.toml`'s `[dependencies]` block (same string-substitution pattern as `udf_toml` at `rust_compiler.rs:1336-1346` — Cargo is the authoritative parser; pipeline-manager treats the text as opaque). **No per-pipeline feature gating** — see 8.5.
 - **Describer build (new)**: a separate, much smaller workspace whose only purpose is producing the descriptor manifest. See 8.3.
+- **Force-link generation (new)**: a Cargo dep alone is not enough — `inventory::submit!` only fires if the linker actually pulls the rlib in, and rustc drops unused deps. Both the per-pipeline workspace and the describer crate need a generated `force_link.rs` (or equivalent) containing one `extern crate <crate_name> as _;` line per connector dep. See 8.3 for the implicit built-in entry for `feldera-datagen` (always present, not user-visible).
 
 #### 8.3 The describer binary
 
@@ -322,6 +322,21 @@ if !descriptor.direction.allows_input() {
     return Err(ConnectorGenerationError::ExpectedInputConnector { ... });
 }
 ```
+
+**Generated force-link list.** Every out-of-tree connector — built-in or third-party — needs an `extern crate <name> as _;` in any build output that calls `connector_by_name`, or rustc drops the rlib. The describer codegen writes `force_link.rs` alongside `main.rs` (declared via `mod force_link;`) with one line per dep:
+
+```rust
+// crates/feldera-describer/src/force_link.rs (generated)
+// === Built-in (implicit; not user-configurable) ===
+extern crate feldera_datagen as _;
+// === User-listed (from connectors.toml) ===
+extern crate acme_snowflake as _;
+extern crate my_sap_cdc as _;
+```
+
+**Extraction rule.** Pipeline-manager scans `connectors.toml` line-by-line, skips blank lines and `#`-prefixed comments, takes the substring before the first `=` on each remaining line, trims it, and emits `extern crate <ident> as _;` (mapping any `-` in the dep key to `_` for Rust identifier rules — Cargo does the same internally). No `toml` parser dep is needed; the only structural assumption is that each dep occupies one line. The built-in section is hardcoded in pipeline-manager's codegen and not exposed in `connectors.toml`. The same `force_link.rs` is generated into every per-pipeline workspace.
+
+**One additional force-link source: `dbsp_adapters`'s own tests.** Test builds aren't covered by any codegen, so the line is hand-written in `lib.rs` (PR 5). It only needs datagen — no third-party connector is exercised by `dbsp_adapters` tests. The axis is *which build output runs `connector_by_name`*, not built-in vs. third-party.
 
 **Why a describer rather than describing-via-pipeline-binary**: the describer compiles in seconds (no DBSP, no SQL-generated code), is pinned independently from per-pipeline builds, and serves as the single source of truth for the lockfile shared across all builds in this deployment (see 8.4).
 
@@ -582,6 +597,7 @@ Each PR below is sized to be independently reviewable and mergeable. Dependencie
 - [ ] **Register descriptors for the four connectors the controller-rewrites depend on**: `http_input` (with `HTTP_DIRECT` flag, `Transient` kind, `build_input: Some(build_http_input)`), `http_output` (`Transient` kind, `build_output: None` — server creates `HttpOutputEndpoint` directly at request time, descriptor is metadata-only), `adhoc_input` (`Transient` kind, `build_input: Some(build_adhoc_input)`), `datagen` (`Regular` kind, `default_format: Some(datagen_default_format)`, `build_input: Some(build_datagen_input)`). The other unmigrated connectors (`s3`, `url`, `nats`, `pubsub`, `redis`, `kafka`, `nexmark`, integrated) do NOT need descriptors yet — none of the four controller rewrites query them. Phase 4b sweeps them later.
 - [ ] **`build_*: None` pattern is valid**: `http_output`'s descriptor has `build_output: None` because the HTTP server constructs the endpoint directly with runtime parameters. The output factory's registry path returns `Ok(None)` in this case, matching today's `_ => Ok(None)` fallback. Document this pattern.
 - [ ] **Add `inventory = { workspace = true }` to `crates/datagen/Cargo.toml`**. The `register_connector!` macro expands to `::inventory::submit!`, which requires `inventory` as a direct dep of the calling crate — transitive through `feldera-adapterlib` is not enough. Any future per-connector crate must do the same.
+- [ ] **Add `extern crate feldera_datagen as _;` to `crates/adapters/src/lib.rs`** (near the top, after the doc comment). This PR is the moment the linkage breaks: it moves the datagen descriptor from `dbsp_adapters` source into `feldera-datagen` (an external crate), AND removes the last `feldera_datagen::*` reference from `transport.rs` (the `use feldera_datagen::GeneratorEndpoint` line). Without an explicit `extern crate`, the linker sees `feldera-datagen` as an unused dep and drops the rlib — `inventory::submit!` never runs, `connector_by_name("datagen")` returns `None`, and every datagen test fails with `Option::unwrap()` on a `None` value at `test.rs:217`. The `extern crate ... as _;` form is the standard "force linkage" idiom in edition 2021+; the `as _` suppresses the unused-name warning. The accompanying comment should explain *why* — the linker would otherwise drop the rlib and the `inventory::submit!` would never run. This line is permanent: PR 10's generated `force_link.rs` covers the describer + per-pipeline workspaces, but `dbsp_adapters` tests build as a separate output and need their own force-link source. Other connectors don't need this treatment because their descriptors live inside `dbsp_adapters` itself; `feldera-datagen` is the only out-of-tree crate whose descriptor and impl ship together.
 - [ ] Move the JSON-Datagen format spec from `controller.rs` into `datagen/src/lib.rs::datagen_default_format()`. Remove the now-unused `use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat, JsonLines}` imports from `controller.rs`.
 - [ ] Replace `transport.is_transient()` callers in `controller/pipeline_diff.rs:97,106` with descriptor lookups (`connector_by_name(&transport.name()).map(|d| d.kind == ConnectorKind::Transient).unwrap_or(false)`).
 - [ ] Replace `transport.is_http_input()` at `controller.rs:4448` with `descriptor.flags.contains(HTTP_DIRECT)`.
@@ -630,26 +646,34 @@ PRs 7a–7f follow the per-connector migration recipe in Phase 4 (steps 1–8): 
 
 ### PR 8 — Open the `TransportConfig` enum (Phase 7)
 - [ ] Add `Plugin(PluginTransportConfig)` variant in `crates/feldera-types/src/config.rs:1609`.
-- [ ] Implement manual `Deserialize` that matches known names to typed variants and routes unknown names to `Plugin{name, config}`.
-- [ ] Update `name()` (`config.rs:1638-1662`) to handle the `Plugin` arm.
+- [ ] **Delete the `#[serde(tag = "name", content = "config", rename_all = "snake_case")]` attribute** from the enum. `#[serde(...)]` is a derive helper attribute injected by the serde proc-macro; it cannot be retained alongside manual `Serialize`/`Deserialize` impls (the compiler errors with `cannot find attribute 'serde' in this scope`). Implement **both `Serialize` and `Deserialize` manually** — the derive cannot be partially retained.
+- [ ] **`HttpOutput` is a unit variant**: its serialization must emit `{"name":"http_output"}` with **no `"config"` key** (use `serialize_map(Some(1))`). Every other variant uses `Some(2)` and emits `{"name":..., "config":...}`. The `Plugin` arm forwards the stored `name`/`config` directly without re-nesting. Add an explicit test asserting `HttpOutput`'s serialized form contains no `config` field — silently emitting `"config": null` would silently break stored pipeline configs from before this PR.
+- [ ] Manual `Deserialize`: parse a `{name, config}` envelope, then dispatch on `name` to `serde_json::from_value::<TypedConfig>(config)` for known names; route unknown names to `Plugin { name, config }`. The intermediate `serde_json::Value` allocation is acceptable (`TransportConfig` deserializes once at pipeline startup, not on hot paths).
+- [ ] **`ToSchema` schema regression (known limitation)**: removing `#[serde(tag, content)]` strips the adjacently-tagged hint that `utoipa::ToSchema` consumed for OpenAPI generation. The generated schema for `TransportConfig` will be less precise (likely `oneOf` of inline variant structs). Accept as placeholder; PR 14's `GET /v0/connectors` is the designated owner of the connector schema surface and will replace this.
+- [ ] Update `name()` (`config.rs:1638-1662`) to handle the `Plugin` arm (returns `p.name.clone()`).
 - [ ] Remove `is_transient()` and `is_http_input()` helpers (already replaced by descriptor lookups in PR 5).
-- [ ] **Audit every exhaustive `match TransportConfig` in the workspace** (`rg 'match.*TransportConfig'`); add a `Plugin` arm to each. Rust's exhaustiveness check makes this a compile-time forcing function — the work is mechanical, but the reviewer should expect this PR to touch ~5 files outside `config.rs`. Until PR 11 wires manifest-based validation, the `Plugin` arm in `program.rs:682,735` should reject the config with `UnknownConnector { name }` rather than panic with `unreachable!()`. Other sites (display/debug/serde-related) typically just forward `name` and `config` opaquely.
-- [ ] Tests: serde round-trip for every known variant (byte-for-byte unchanged) plus a synthetic unknown name routing to `Plugin`. Add a test that a `Plugin` config submitted before PR 11 surfaces a clean `UnknownConnector` error rather than crashing.
-- [ ] Verify a stored pipeline configuration from before this PR deserializes identically.
+- [ ] **Audit every exhaustive `match TransportConfig` in the workspace** (`rg 'match.*TransportConfig'`). Most matches use `_` wildcards, `if let`, or `matches!` and require **no code change** — Rust's exhaustiveness check only fires on `match` arms without a catch-all. The only file that needs explicit `Plugin` arms is `crates/pipeline-manager/src/db/types/program.rs` at the input/output validation matches (lines 682, 735): both already have `_ =>` arms, but those return the misleading `ExpectedInputConnector`/`ExpectedOutputConnector` errors. Add explicit `TransportConfig::Plugin(p) => Err(ConnectorGenerationError::UnknownConnector { ..., name: p.name.clone() })` arms ahead of the `_` arm at each site.
+- [ ] **Add `UnknownConnector` to `ConnectorGenerationError`** (in `program.rs`). Update `new_from_connector_generation_error` (`program.rs:127`) — that function exhaustively matches the error enum without a `_` arm, so the compiler forces the new branch.
+- [ ] Tests: serde round-trip for every known variant (byte-for-byte unchanged); `HttpOutput` serialized form contains no `config` field; unknown name routes to `Plugin`; a `Plugin` config submitted at the SQL boundary surfaces `UnknownConnector` (not a panic) until PR 11 lands.
+- [ ] Verify a stored pipeline configuration from before this PR deserializes identically (include `HttpOutput` explicitly in the fixture set — it's the unit-variant edge case).
+- [ ] **What this PR enables**: `TransportConfig::Plugin` configs round-trip through serde without a JSON parse error on unknown names. **What it does not**: pipeline SQL referencing a plugin connector still fails at SQL compilation with `UnknownConnector` until PR 11 wires manifest-based direction validation. Bundled in-tree connectors are unaffected — they hit their existing typed match arms and remain fully operational; only plugin connectors transition from rejected → accepted at PR 11.
 - **Depends on**: PR 7g (all bundled connectors registry-driven AND cleanup landed; the `Plugin` variant is purely an extension point at this point — no risk of dead match arms colliding with the new `Plugin` arm being added).
 - **Unblocks**: PR 9.
 
-### PR 9 — `connectors.toml` schema, parser, config plumbing (Phase 8.1)
-- [ ] Define `connectors.toml` format reusing Cargo's `[dependencies]` schema verbatim (under `[connectors]` table).
+### PR 9 — `connectors.toml` config plumbing (Phase 8.1)
+- [ ] Document the `connectors.toml` format (concrete example in 8.1): one Cargo dep per line, **no section header**, mirroring the `udf_toml` shape at `rust_compiler.rs:1336-1346`. Each line is `<key> = <cargo-dep-spec>` where the spec is whatever Cargo accepts (plain version string, inline table with `git`/`rev`/`path`/`features`/`registry`, etc.). Multi-line `[dependencies.<name>]` table form is **not** supported — line-based force-link extraction in PR 10 assumes one dep per line. Cargo is the authoritative parser, invoked downstream by PR 10's describer build.
 - [ ] Add a config option to pipeline-manager pointing at the file path.
-- [ ] Add per-tenant variants discovered via `/etc/feldera/connectors.d/<tenant>.toml`.
-- [ ] Parser + validation (no describer yet — this PR is plumbing only).
-- [ ] Tests: parsing valid files, rejecting malformed ones, multi-tenant lookup.
+- [ ] Add per-tenant variants discovered via `/etc/feldera/connectors.d/<tenant>.toml` (per-tenant lookup logic by tenant ID, falling back to the global file).
+- [ ] **Treat the file as opaque text** — read it as a `String`, store it. Do **not** add a `toml` dep, do **not** call `toml::from_str`, do **not** introspect entries. Pipeline-manager's only responsibility at this PR is "find the right file, slurp it." Malformed content surfaces downstream as a `cargo build` error (same contract as `udf_toml` today).
+- [ ] Tests: file at the configured path is read end-to-end; multi-tenant lookup picks the right file; an empty file produces an empty string (the bundled-only-deployment baseline); a file with arbitrary Cargo spec shapes — plain version string, git+rev inline table, path inline table, features array — survives the read step verbatim and is exposed to PR 10's input unchanged.
 - **Depends on**: PR 8.
 - **Unblocks**: PR 10.
 
 ### PR 10 — Describer binary + lockfile-based caching (Phase 8.2-8.4)
 - [ ] Generate the describer crate (`crates/feldera-describer/`) on first use; its `Cargo.toml` lists `feldera-adapterlib` + `dbsp_adapters` + every `connectors.toml` entry.
+- [ ] **Generate `force_link.rs` alongside `main.rs`** in the describer workspace, with two sections in fixed order: a hardcoded built-in section (currently `extern crate feldera_datagen as _;`) and a user-listed section iterating over `connectors.toml`. `main.rs` declares `mod force_link;` so the lines are part of the compilation unit. The built-in list is a `const &[&str]` in pipeline-manager's codegen — not driven by config, not user-editable, not visible in any error message that says "from `connectors.toml`". See Phase 8.3 for the rationale.
+- [ ] **Generate the same `force_link.rs` into every per-pipeline workspace** (extends `prepare_workspace` at `rust_compiler.rs:1242`). Identical two-section layout. The per-pipeline `pipeline` crate's `main.rs` (or root module) needs `mod force_link;` added by the existing SQL→Rust scaffolding.
+- [ ] **The hand-written `extern crate feldera_datagen as _;` in `crates/adapters/src/lib.rs`** (added in PR 5) stays — it covers `dbsp_adapters`'s own lib/integration tests, which build as a separate output and aren't reached by any codegen path. The describer and per-pipeline workspaces get their own generated `force_link.rs`; the three sources are parallel, not duplicate.
 - [ ] `prepare_describer_workspace` analogous to existing `prepare_workspace`.
 - [ ] Build with `cargo build --locked` against persisted `describer.lock` at `/var/lib/feldera/describer/<tenant>/<content-hash>/`.
 - [ ] Run the describer and capture JSON; persist as `describer.manifest.json` next to the lock.

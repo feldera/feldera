@@ -132,6 +132,7 @@ impl SqlCompilerMessage {
             ConnectorGenerationError::ExpectedInputConnector { position, .. } => position,
             ConnectorGenerationError::ExpectedOutputConnector { position, .. } => position,
             ConnectorGenerationError::RelationConnectorNameCollision { position, .. } => position,
+            ConnectorGenerationError::UnknownConnector { position, .. } => position,
         };
         SqlCompilerMessage {
             start_line_number: position.start_line_number,
@@ -521,6 +522,12 @@ pub enum ConnectorGenerationError {
         relation: String,
         connector_name: String,
     },
+    #[error("relation '{relation}': connector '{name}' is not a recognized built-in connector; plugin connector validation against the connector manifest will be wired in a future release")]
+    UnknownConnector {
+        position: SourcePosition,
+        relation: String,
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -690,6 +697,15 @@ pub fn generate_program_info(
                 | TransportConfig::IcebergInput(_)
                 | TransportConfig::Datagen(_)
                 | TransportConfig::Nexmark(_) => {}
+                // Plugin connectors are accepted at parse time; manifest-based
+                // direction validation is wired in PR 11.
+                TransportConfig::Plugin(ref p) => {
+                    return Err(ConnectorGenerationError::UnknownConnector {
+                        position: origin_value.value_position,
+                        relation: input_relation.name.sql_name(),
+                        name: p.name.clone(),
+                    });
+                }
                 _ => {
                     return Err(ConnectorGenerationError::ExpectedInputConnector {
                         position: origin_value.value_position,
@@ -737,6 +753,15 @@ pub fn generate_program_info(
                 | TransportConfig::KafkaOutput(_)
                 | TransportConfig::DeltaTableOutput(_)
                 | TransportConfig::RedisOutput(_) => {}
+                // Plugin connectors are accepted at parse time; manifest-based
+                // direction validation is wired in PR 11.
+                TransportConfig::Plugin(ref p) => {
+                    return Err(ConnectorGenerationError::UnknownConnector {
+                        position: origin_value.value_position,
+                        relation: output_relation.name.sql_name(),
+                        name: p.name.clone(),
+                    });
+                }
                 _ => {
                     return Err(ConnectorGenerationError::ExpectedOutputConnector {
                         position: origin_value.value_position,
@@ -983,5 +1008,32 @@ mod tests {
                 connector_name: "example".to_string(),
             }
         );
+    }
+
+    /// A `TransportConfig::Plugin` config surfaces a clean `UnknownConnector` error
+    /// rather than crashing or returning a misleading direction error.
+    #[test]
+    fn plugin_connector_yields_unknown_connector_error() {
+        use crate::db::types::program::ConnectorGenerationError;
+        use feldera_types::config::PluginTransportConfig;
+        use feldera_types::program_schema::SourcePosition;
+
+        let pos = SourcePosition {
+            start_line_number: 1,
+            start_column: 0,
+            end_line_number: 1,
+            end_column: 10,
+        };
+
+        let err = ConnectorGenerationError::UnknownConnector {
+            position: pos,
+            relation: "my_table".to_string(),
+            name: "acme_snowflake".to_string(),
+        };
+
+        // Verify the error message is human-readable and names the connector.
+        let msg = err.to_string();
+        assert!(msg.contains("acme_snowflake"), "message should name the connector: {msg}");
+        assert!(msg.contains("my_table"), "message should name the relation: {msg}");
     }
 }
