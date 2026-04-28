@@ -1,9 +1,9 @@
 use super::NexmarkStream;
 use crate::{model::Event, queries::OrdinalDate};
 use dbsp::{
-    operator::Max,
-    utils::{Tup10, Tup2, Tup3, Tup4, Tup5, Tup6, Tup7, Tup8, Tup9},
     OrdIndexedZSet, OrdZSet, RootCircuit, Stream, ZWeight,
+    operator::Max,
+    utils::{Tup2, Tup3, Tup4, Tup5, Tup6, Tup7, Tup8, Tup9, Tup10},
 };
 use feldera_macros::IsNone;
 use rkyv::{Archive, Deserialize, Serialize};
@@ -13,11 +13,11 @@ use std::{
     time::{Duration, SystemTime},
 };
 use time::{
+    Date, OffsetDateTime, Time,
     format_description::{
         self,
-        well_known::{iso8601, iso8601::FormattedComponents, Iso8601},
+        well_known::{Iso8601, iso8601, iso8601::FormattedComponents},
     },
-    Date, OffsetDateTime, Time,
 };
 
 ///
@@ -628,23 +628,15 @@ pub fn q16(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q16Stream {
 mod tests {
     use super::*;
     use crate::{generator::tests::make_bid, model::Bid};
-    use dbsp::{zset, Runtime};
+    use dbsp::{DynZWeight, Runtime, dynamic::DynData, typed_batch::TypedBatch, zset};
     use rstest::rstest;
+    use std::iter::zip;
 
     // 52 years with 13 leap years (extra days)
     const MILLIS_2022_01_01: u64 = (52 * 365 + 13) * 24 * 60 * 60 * 1000;
 
-    // Note: I really would have liked to test each piece of functionality in a
-    // separate unit test, but I can't iterate over a batch to compare just the
-    // fields that would have been of interest to that test, afaict, so comparing
-    // the complete expected output is what I've done as usual. Let me know if
-    // there's a way.
-    #[rstest]
-    #[case::single_threaded(1)]
-    #[case::multi_threaded_2_threads(2)]
-    #[case::multi_threaded_4_threads(4)]
-    fn test_q16(#[case] num_threads: usize) {
-        let input_vecs = vec![
+    fn input() -> Vec<Vec<Tup2<Event, ZWeight>>> {
+        vec![
             vec![Tup2(
                 Event::Bid(Bid {
                     channel: String::from("channel-1"),
@@ -742,138 +734,147 @@ mod tests {
                 1,
             )],
         ]
-        .into_iter();
+    }
 
-        let (mut dbsp, input_handle) = Runtime::init_circuit(num_threads, move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event>();
+    fn expected_output()
+    -> Vec<TypedBatch<Q16Output, (), i64, dbsp::trace::FallbackWSet<DynData, DynZWeight>>> {
+        vec![
+            zset![
+                Q16Output {
+                    channel: String::from("channel-1"),
+                    day: String::from("1970-01-01"),
+                    minute: String::from("00:00"),
+                    total_bids: 1,
+                    rank1_bids: 1,
+                    total_bidders: 1,
+                    rank1_bidders: 1,
+                    total_auctions: 1,
+                    rank1_auctions: 1,
+                    ..Q16Output::default()
+                } => 1,
+            ],
+            zset![
+                Q16Output {
+                    channel: String::from("channel-1"),
+                    day: String::from("1970-01-01"),
+                    minute: String::from("00:00"),
+                    total_bids: 1,
+                    rank1_bids: 1,
+                    total_bidders: 1,
+                    rank1_bidders: 1,
+                    total_auctions: 1,
+                    rank1_auctions: 1,
+                    ..Q16Output::default()
+                } => -1,
+                Q16Output {
+                    channel: String::from("channel-1"),
+                    day: String::from("1970-01-01"),
+                    minute: String::from("23:59"),
+                    total_bids: 3,
+                    rank1_bids: 1,
+                    rank2_bids: 1,
+                    rank3_bids: 1,
+                    total_bidders: 2,
+                    rank1_bidders: 1,
+                    rank2_bidders: 1,
+                    rank3_bidders: 1,
+                    total_auctions: 3,
+                    rank1_auctions: 1,
+                    rank2_auctions: 1,
+                    rank3_auctions: 1,
+                } => 1,
+                Q16Output {
+                    channel: String::from("channel-1"),
+                    day: String::from("1970-01-02"),
+                    minute: String::from("00:00"),
+                    total_bids: 1,
+                    rank1_bids: 1,
+                    total_bidders: 1,
+                    rank1_bidders: 1,
+                    total_auctions: 1,
+                    rank1_auctions: 1,
+                    ..Q16Output::default()
+                } => 1,
+                Q16Output {
+                    channel: String::from("channel-1"),
+                    day: String::from("1970-01-03"),
+                    minute: String::from("00:00"),
+                    total_bids: 1,
+                    rank1_bids: 1,
+                    total_bidders: 1,
+                    rank1_bidders: 1,
+                    total_auctions: 1,
+                    rank1_auctions: 1,
+                    ..Q16Output::default()
+                } => 1,
+                Q16Output {
+                    channel: String::from("channel-1"),
+                    day: String::from("1970-01-04"),
+                    minute: String::from("00:00"),
+                    total_bids: 1,
+                    rank1_bids: 1,
+                    total_bidders: 1,
+                    rank1_bidders: 1,
+                    total_auctions: 1,
+                    rank1_auctions: 1,
+                    ..Q16Output::default()
+                } => 1,
+                Q16Output {
+                    channel: String::from("channel-1"),
+                    day: String::from("1970-01-05"),
+                    minute: String::from("00:00"),
+                    total_bids: 1,
+                    rank1_bids: 1,
+                    total_bidders: 1,
+                    rank1_bidders: 1,
+                    total_auctions: 1,
+                    rank1_auctions: 1,
+                    ..Q16Output::default()
+                } => 1,
+            ],
+            zset![
+                Q16Output {
+                    channel: String::from("channel-1"),
+                    day: String::from("2022-01-01"),
+                    minute: String::from("00:00"),
+                    total_bids: 1,
+                    rank1_bids: 1,
+                    total_bidders: 1,
+                    rank1_bidders: 1,
+                    total_auctions: 1,
+                    rank1_auctions: 1,
+                    ..Q16Output::default()
+                } => 1,
+            ],
+        ]
+    }
 
-            let mut expected_output = vec![
-                zset![
-                    Q16Output {
-                        channel: String::from("channel-1"),
-                        day: String::from("1970-01-01"),
-                        minute: String::from("00:00"),
-                        total_bids: 1,
-                        rank1_bids: 1,
-                        total_bidders: 1,
-                        rank1_bidders: 1,
-                        total_auctions: 1,
-                        rank1_auctions: 1,
-                        ..Q16Output::default()
-                    } => 1,
-                ],
-                zset![
-                    Q16Output {
-                        channel: String::from("channel-1"),
-                        day: String::from("1970-01-01"),
-                        minute: String::from("00:00"),
-                        total_bids: 1,
-                        rank1_bids: 1,
-                        total_bidders: 1,
-                        rank1_bidders: 1,
-                        total_auctions: 1,
-                        rank1_auctions: 1,
-                        ..Q16Output::default()
-                    } => -1,
-                    Q16Output {
-                        channel: String::from("channel-1"),
-                        day: String::from("1970-01-01"),
-                        minute: String::from("23:59"),
-                        total_bids: 3,
-                        rank1_bids: 1,
-                        rank2_bids: 1,
-                        rank3_bids: 1,
-                        total_bidders: 2,
-                        rank1_bidders: 1,
-                        rank2_bidders: 1,
-                        rank3_bidders: 1,
-                        total_auctions: 3,
-                        rank1_auctions: 1,
-                        rank2_auctions: 1,
-                        rank3_auctions: 1,
-                    } => 1,
-                    Q16Output {
-                        channel: String::from("channel-1"),
-                        day: String::from("1970-01-02"),
-                        minute: String::from("00:00"),
-                        total_bids: 1,
-                        rank1_bids: 1,
-                        total_bidders: 1,
-                        rank1_bidders: 1,
-                        total_auctions: 1,
-                        rank1_auctions: 1,
-                        ..Q16Output::default()
-                    } => 1,
-                    Q16Output {
-                        channel: String::from("channel-1"),
-                        day: String::from("1970-01-03"),
-                        minute: String::from("00:00"),
-                        total_bids: 1,
-                        rank1_bids: 1,
-                        total_bidders: 1,
-                        rank1_bidders: 1,
-                        total_auctions: 1,
-                        rank1_auctions: 1,
-                        ..Q16Output::default()
-                    } => 1,
-                    Q16Output {
-                        channel: String::from("channel-1"),
-                        day: String::from("1970-01-04"),
-                        minute: String::from("00:00"),
-                        total_bids: 1,
-                        rank1_bids: 1,
-                        total_bidders: 1,
-                        rank1_bidders: 1,
-                        total_auctions: 1,
-                        rank1_auctions: 1,
-                        ..Q16Output::default()
-                    } => 1,
-                    Q16Output {
-                        channel: String::from("channel-1"),
-                        day: String::from("1970-01-05"),
-                        minute: String::from("00:00"),
-                        total_bids: 1,
-                        rank1_bids: 1,
-                        total_bidders: 1,
-                        rank1_bidders: 1,
-                        total_auctions: 1,
-                        rank1_auctions: 1,
-                        ..Q16Output::default()
-                    } => 1,
-                ],
-                zset![
-                    Q16Output {
-                        channel: String::from("channel-1"),
-                        day: String::from("2022-01-01"),
-                        minute: String::from("00:00"),
-                        total_bids: 1,
-                        rank1_bids: 1,
-                        total_bidders: 1,
-                        rank1_bidders: 1,
-                        total_auctions: 1,
-                        rank1_auctions: 1,
-                        ..Q16Output::default()
-                    } => 1,
-                ],
-            ]
-            .into_iter();
+    // Note: I really would have liked to test each piece of functionality in a
+    // separate unit test, but I can't iterate over a batch to compare just the
+    // fields that would have been of interest to that test, afaict, so comparing
+    // the complete expected output is what I've done as usual. Let me know if
+    // there's a way.
+    #[rstest]
+    #[case::single_threaded(1)]
+    #[case::multi_threaded_2_threads(2)]
+    #[case::multi_threaded_4_threads(4)]
+    fn test_q16(#[case] num_threads: usize) {
+        let (mut dbsp, (input_handle, output_handle)) =
+            Runtime::init_circuit(num_threads, move |circuit| {
+                let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
-            let output = q16(circuit, stream);
+                let output_handle = q16(circuit, stream).accumulate_output();
 
-            output.gather(0).inspect(move |batch| {
-                if Runtime::worker_index() == 0 {
-                    assert_eq!(batch, &expected_output.next().unwrap())
-                }
-            });
-
-            Ok(input_handle)
-        })
-        .unwrap();
+                Ok((input_handle, output_handle))
+            })
+            .unwrap();
 
         dbsp.enable_cpu_profiler().unwrap();
-        for mut vec in input_vecs {
-            input_handle.append(&mut vec);
+        for (mut input, expected_output) in zip(input(), expected_output()) {
+            input_handle.append(&mut input);
             dbsp.transaction().unwrap();
+            let output = output_handle.concat().consolidate();
+            assert_eq!(output, expected_output);
         }
         dbsp.dump_profile(std::env::temp_dir().join("q16")).unwrap();
     }
