@@ -81,6 +81,9 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
         deployment_runtime_status_since: None,
         deployment_runtime_desired_status: None,
         deployment_runtime_desired_status_since: None,
+        track_compilation_version: Version(1),
+        track_deployment_base_version: Version(2),
+        track_deployment_operational_version: Version(3),
     }
 }
 
@@ -168,6 +171,9 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         deployment_runtime_status_since: None,
         deployment_runtime_desired_status: None,
         deployment_runtime_desired_status_since: None,
+        track_compilation_version: Version(1),
+        track_deployment_base_version: Version(2),
+        track_deployment_operational_version: Version(3),
     }
 }
 
