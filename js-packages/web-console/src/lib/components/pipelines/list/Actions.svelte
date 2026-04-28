@@ -343,7 +343,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         ? {
             onPausedReady: async (pipelineName: string) => {
               const cbs = pipelineActionCallbacks.getAll(pipelineName, 'start_paused')
-              await Promise.allSettled(cbs.map((x) => x(pipelineName)))
+              await Promise.allSettled(cbs.map((cb) => cb(pipelineName)))
             }
           }
         : undefined

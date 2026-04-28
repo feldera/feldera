@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { goto } from '$app/navigation'
-  import { resolve } from '$app/paths'
   import PipelineEditLayout from '$lib/components/layout/pipelines/PipelineEditLayout.svelte'
   import {
     usePipelineList,
@@ -11,7 +9,7 @@
     useRefreshPipeline,
     writablePipeline
   } from '$lib/compositions/useWritablePipeline.svelte.js'
-  import type { ExtendedPipeline } from '$lib/services/pipelineManager.js'
+  import type { ExtendedPipeline, PipelineThumb } from '$lib/services/pipelineManager.js'
 
   const { data, params } = $props()
 
@@ -22,6 +20,7 @@
   $effect(() => {
     pipelineName = decodeURIComponent(params.pipelineName)
     deleted = false
+    lastSeenThumb = undefined
   })
 
   let pipelineCache: { current: ExtendedPipeline | undefined } = $state({ current: undefined })
@@ -53,11 +52,37 @@
   })
 
   const pipelineList = usePipelineList()
-  const pipelineThumb = $derived(
-    pipelineList.pipelines
-      ? (pipelineList.pipelines.find((p) => p.name === pipelineName) ?? 'invalid_pipeline')
-      : undefined
+  // Retain the last-seen thumb so the readonly deleted view keeps rendering
+  // after the pipeline drops out of the live list. Without this fallback the
+  // {#if pipelineThumb !== 'invalid_pipeline'} guard below would unmount the
+  // layout the moment polling notices the deletion.
+  let lastSeenThumb = $state<PipelineThumb | undefined>(undefined)
+  // Current thumb from the live pipeline list (undefined while the list is
+  // loading OR once the pipeline has been removed from it).
+  const liveThumb = $derived(
+    pipelineList.pipelines?.find((p) => p.name === pipelineName)
   )
+  // Snapshot the live thumb into `lastSeenThumb` so that, after the pipeline
+  // is deleted and disappears from the list, the readonly view below can
+  // still render the last-known metadata. Mutating state inside `$derived`
+  // is forbidden in Svelte 5, so the cache write lives in a separate effect.
+  $effect(() => {
+    if (liveThumb) {
+      lastSeenThumb = liveThumb
+    }
+  })
+  const pipelineThumb = $derived.by(() => {
+    if (!pipelineList.pipelines) {
+      return undefined
+    }
+    if (liveThumb) {
+      return liveThumb
+    }
+    if (deleted && lastSeenThumb && lastSeenThumb.name === pipelineName) {
+      return lastSeenThumb
+    }
+    return 'invalid_pipeline' as const
+  })
 
   useRefreshPipeline({
     getPipelines: () => pipelineList.pipelines,
@@ -65,10 +90,13 @@
     set,
     update,
     getDeleted: () => deleted,
-    onNotFound: () => goto(resolve('/'))
+    onNotFound: () => {
+      deleted = true
+    }
   })
 </script>
 
 {#if pipelineThumb !== 'invalid_pipeline'}
-  <PipelineEditLayout {pipelineName} {pipelineList} {pipelineThumb} {pipeline}></PipelineEditLayout>
+  <PipelineEditLayout {pipelineName} {pipelineList} {pipelineThumb} {pipeline} {deleted}
+  ></PipelineEditLayout>
 {/if}

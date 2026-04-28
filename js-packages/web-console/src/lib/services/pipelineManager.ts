@@ -327,11 +327,27 @@ export type ExtendedPipeline = ReturnType<typeof toExtendedPipeline>
 // (see openapi-ts.config.ts), so every call resolves to bare response data on
 // success and rejects with the parsed error body on failure. The client's error
 // interceptor (see auth.ts) attaches the original Response to the rejected error.
+//
+// Without a custom `g` handler the default wraps the rejected value in an Error
+// so callers always receive a proper Error instance. Real Error subclasses (e.g.
+// TypeError for network failures, AbortError for cancellations) are re-thrown
+// as-is because they are already Error instances.
 const mapResponse = <R, T>(
   request: Promise<R>,
   f: (v: R) => T,
   g?: (e: ErrorResponse & { response?: Response }) => T
-) => (g ? request.then(f).catch(g as (e: unknown) => T) : request.then(f))
+) => {
+  const p = request.then(f)
+  if (g) {
+    return p.catch(g)
+  }
+  return p.catch((e: unknown) => {
+    if (e instanceof Error) {
+      throw e
+    }
+    throw new Error((e as ErrorResponse)?.message ?? 'Request failed', { cause: e })
+  })
+}
 
 export const getPipelineThumb = async (
   pipeline_name: string,

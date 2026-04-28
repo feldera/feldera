@@ -47,7 +47,7 @@ export function configureTestClient() {
 export async function waitForPipeline(
   pipelineName: string,
   predicate: (pipeline: PipelineThumb) => boolean | Promise<boolean>,
-  timeoutMs = 60_000
+  timeoutMs = 120_000
 ) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {

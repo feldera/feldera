@@ -66,14 +66,14 @@
   const pipelineActionCallbacks = usePipelineActionCallbacks()
   const handleActionSuccess = async (pipelineName: string, action: PipelineAction) => {
     const cbs = pipelineActionCallbacks.getAll(pipelineName, action)
-    await Promise.allSettled(cbs.map((x) => x(pipelineName)))
+    await Promise.allSettled(cbs.map((cb) => cb(pipelineName)))
   }
   const handleDeletePipeline = async (pipelineName: string) => {
     updatePipelines((pipelines) => pipelines.filter((p) => p.name !== pipelineName))
     const cbs = pipelineActionCallbacks
       .getAll('', 'delete')
       .concat(pipelineActionCallbacks.getAll(pipelineName, 'delete'))
-    cbs.map((x) => x(pipelineName))
+    cbs.map((cb) => cb(pipelineName))
   }
 
   const programErrors = $derived(
@@ -383,6 +383,7 @@ example = "1.0"`
       <PipelineActions
         class=""
         {pipeline}
+        {deleted}
         onDeletePipeline={handleDeletePipeline}
         editConfigDisabled={editCodeDisabled}
         unsavedChanges={downstreamChanged}

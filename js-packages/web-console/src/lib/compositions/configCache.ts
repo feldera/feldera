@@ -1,3 +1,4 @@
+import equal from 'fast-deep-equal'
 import type { Configuration, SessionInfo } from '$lib/services/manager'
 import { getConfig, getConfigSession } from '$lib/services/pipelineManager'
 
@@ -54,6 +55,36 @@ export const fetchConfigs = async () => {
   }
 
   return { config, sessionConfig }
+}
+
+/**
+ * Whether two `Configuration` payloads differ in a way that should motivate
+ * re-invalidating downstream loads after a warm-cache reconcile. Fields that do
+ * not affect rendered `page.data` are stripped before comparison so volatile
+ * server-side values do not mask the short-circuit.
+ *
+ * Currently stripped: `license_validity.Exists.current`, a per-response
+ * server timestamp consumed by server-time sync rather than by any view.
+ * Extend this as new volatile-but-irrelevant fields appear.
+ */
+export const configChanged = (a: Configuration | undefined, b: Configuration | undefined) => {
+  const stripVolatile = (config: Configuration | undefined) => {
+    if (!config) {
+      return config
+    }
+    const license =
+      config.license_validity && 'Exists' in config.license_validity
+        ? config.license_validity.Exists
+        : undefined
+    if (!license) {
+      return config
+    }
+    return {
+      ...config,
+      license_validity: { Exists: { ...license, current: undefined } }
+    }
+  }
+  return !equal(stripVolatile(a), stripVolatile(b))
 }
 
 export const clearConfigCaches = () => {

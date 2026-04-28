@@ -119,8 +119,7 @@
   }
 
   /**
-   * Reveal a specific line and column in the editor for a given file.
-   * This function is exposed to parent components via bind:this.
+   * Reveal a specific line and column of the current file in the editor viewport.
    * @param fileName - The name of the file (e.g., "program.sql")
    * @param line - The line number to reveal
    * @param column - Optional column number (defaults to 1)
@@ -146,7 +145,7 @@
         positionColumn: range.end.column
       }))
     )
-    // Reveal the first selection in center
+    // Reveal the first selection in the center of the screen
     editorRef.revealRangeInCenter({
       startLineNumber: ranges[0].start.line,
       startColumn: ranges[0].start.column,

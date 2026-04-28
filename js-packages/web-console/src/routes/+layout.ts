@@ -9,6 +9,7 @@ import { fromAxaUserInfo, toAxaOidcConfig } from '$lib/compositions/@axa-fr/auth
 import { loadAuthConfig } from '$lib/compositions/auth'
 import {
   clearConfigCaches,
+  configChanged,
   fetchConfigs,
   getConfigFromCache,
   getSessionConfigFromCache
@@ -74,7 +75,7 @@ export const trailingSlash = 'always'
  *     does not re-enter `lazyUpdateConfig()`.
  *   - Unauthenticated: auth resolves to `{ login }`  →  empty layout is
  *     returned; `(authenticated)/+layout.ts` triggers `auth.login()` and the
- *     app redirects to the IdP.
+ *     app redirects to the Identity Provider (IdP).
  *
  * The warm-cache short-circuit is what keeps repeat visits from
  * double-fetching page-level resources, so be careful when adding new
@@ -197,40 +198,10 @@ const LAZY_UPDATE_DELAY_MS = 2000
  * Hardcoded toggle for the warm-cache optimistic render. When `false`, every
  * `load()` blocks on `fetchConfigs()` (same shape as the cold-cache path) and
  * the `lazyUpdateConfig()` reconcile is skipped. The cache itself is still
- * written by `fetchConfigs()`, so flipping this back to `true` resumes
- * optimistic rendering without a stale-state warm-up step.
+ * written by `fetchConfigs()`, so flipping this back to `true` after it was set to `false`
+ * enables optimistic rendering without a stale-state warm-up step.
  */
 const OPTIMISTIC_CONFIG_CACHE = true
-
-/**
- * Whether two `Configuration` payloads differ in a way that should motivate
- * re-invalidating downstream loads in `lazyUpdateConfig`. Fields that do not
- * affect rendered `page.data` are stripped before comparison so volatile
- * server-side values do not mask the short-circuit.
- *
- * Currently stripped: `license_validity.Exists.current`, a per-response
- * server timestamp consumed by `syncServerTimeFromConfig` rather than by
- * any view. Extend this as new volatile-but-irrelevant fields appear.
- */
-const configChanged = (a: Configuration | undefined, b: Configuration | undefined) => {
-  const stripVolatile = (config: Configuration | undefined) => {
-    if (!config) {
-      return config
-    }
-    const license =
-      config.license_validity && 'Exists' in config.license_validity
-        ? config.license_validity.Exists
-        : undefined
-    if (!license) {
-      return config
-    }
-    return {
-      ...config,
-      license_validity: { Exists: { ...license, current: undefined } }
-    }
-  }
-  return !equal(stripVolatile(a), stripVolatile(b))
-}
 
 /**
  * Fetch fresh config, update the cache, and sync server time. If the server
@@ -354,8 +325,8 @@ const authInitPromise: Promise<AuthInitResult> = initAuth()
  *         values are already canonical.
  *
  * Server time is intentionally NOT restored from cache: the cached
- * `license.current` timestamp is stale and applying it would corrupt the
- * offset. Until fresh data arrives we let `Date.now()` stand in.
+ * `license.current` timestamp is stale and applying it would result in a
+ * grossly incorrect time. Until the fresh data arrives we let `Date.now()` stand in.
  */
 export const load: LayoutLoad = async (): Promise<LayoutData> => {
   if (!('window' in globalThis)) {

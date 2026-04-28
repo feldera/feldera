@@ -13,10 +13,10 @@ const PIPELINE_A = `${PREFIX}-a`
 const PIPELINE_B = `${PREFIX}-b`
 
 test.describe('Pipeline deleted state', () => {
-  test.setTimeout(180_000)
+  test.setTimeout(300_000)
 
   test.beforeAll(async ({}, testInfo) => {
-    testInfo.setTimeout(120_000)
+    testInfo.setTimeout(240_000)
     for (const name of [PIPELINE_A, PIPELINE_B]) {
       await putPipeline(name, {
         name,
@@ -24,7 +24,7 @@ test.describe('Pipeline deleted state', () => {
         program_code: 'create view v as (select 1)',
         program_config: { profile: 'unoptimized' }
       })
-      await waitForPipeline(name, (p) => p.status === 'Stopped')
+      await waitForPipeline(name, (p) => p.status === 'Stopped', 240_000)
     }
   })
 

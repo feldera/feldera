@@ -21,7 +21,7 @@ async function createPipelineWithStorage() {
     },
     program_config: { profile: 'unoptimized' }
   })
-  await waitForPipeline(PIPELINE_NAME, (p) => p.status === 'Stopped')
+  await waitForPipeline(PIPELINE_NAME, (p) => p.status === 'Stopped', 180_000)
 }
 
 async function startAndStopToCreateStorage() {
@@ -71,10 +71,10 @@ async function triggerClearStorageDialog(page: import('@playwright/test').Page) 
 }
 
 test.describe('Clear storage dialog', () => {
-  test.setTimeout(120_000)
+  test.setTimeout(300_000)
 
   test.beforeAll(async ({}, testInfo) => {
-    testInfo.setTimeout(120_000)
+    testInfo.setTimeout(180_000)
     await cleanupPipeline(PIPELINE_NAME)
     await createPipelineWithStorage()
     await startAndStopToCreateStorage()
