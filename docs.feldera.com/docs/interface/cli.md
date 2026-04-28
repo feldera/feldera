@@ -15,7 +15,7 @@ It allows you to create, manage, and monitor pipelines. It also features an inte
   <TabItem value="linux" label="Linux">
 
 ```bash
-curl -fsSL https://feldera.com/install-fda | bash
+curl -fsSL https://docs.feldera.com/install-fda | bash
 ```
 
 | Supported platforms |
@@ -26,10 +26,21 @@ curl -fsSL https://feldera.com/install-fda | bash
 Requires glibc >= 2.39 (Ubuntu 24.04+, Debian 13+, Fedora 40+, RHEL 10+).
 
   </TabItem>
+  <TabItem value="macos" label="macOS">
+
+```bash
+curl -fsSL https://docs.feldera.com/install-fda | bash
+```
+
+| Supported platforms |
+|---|
+| macos-aarch64 (Apple Silicon) |
+
+  </TabItem>
   <TabItem value="windows" label="Windows">
 
 ```powershell
-powershell -ExecutionPolicy Bypass -NoProfile -c "irm https://feldera.com/install-fda.ps1 | iex"
+powershell -ExecutionPolicy Bypass -NoProfile -c "irm https://docs.feldera.com/install-fda.ps1 | iex"
 ```
 
 | Supported platforms |
@@ -59,14 +70,21 @@ To install a specific version, pass the release git tag to the install script:
   <TabItem value="linux" label="Linux">
 
 ```bash
-curl -fsSL https://feldera.com/install-fda | FDA_VERSION=v0.270.0 bash
+curl -fsSL https://docs.feldera.com/install-fda | FDA_VERSION=v0.290.0 bash
+```
+
+  </TabItem>
+  <TabItem value="macos" label="macOS">
+
+```bash
+curl -fsSL https://docs.feldera.com/install-fda | FDA_VERSION=v0.290.0 bash
 ```
 
   </TabItem>
   <TabItem value="windows" label="Windows">
 
 ```powershell
-powershell -c "$env:FDA_VERSION='v0.270.0'; irm https://feldera.com/install-fda.ps1 | iex"
+powershell -c "$env:FDA_VERSION='v0.290.0'; irm https://docs.feldera.com/install-fda.ps1 | iex"
 ```
 
   </TabItem>
@@ -78,20 +96,27 @@ To install to a custom directory:
   <TabItem value="linux" label="Linux">
 
 ```bash
-curl -fsSL https://feldera.com/install-fda | FDA_VERSION=v0.270.0 FELDERA_INSTALL=/opt/feldera bash
+curl -fsSL https://docs.feldera.com/install-fda | FDA_VERSION=v0.290.0 FELDERA_INSTALL=/opt/feldera bash
+```
+
+  </TabItem>
+  <TabItem value="macos" label="macOS">
+
+```bash
+curl -fsSL https://docs.feldera.com/install-fda | FDA_VERSION=v0.290.0 FELDERA_INSTALL=/opt/feldera bash
 ```
 
   </TabItem>
   <TabItem value="windows" label="Windows">
 
 ```powershell
-powershell -c "$env:FELDERA_INSTALL='C:\tools\feldera'; irm https://feldera.com/install-fda.ps1 | iex"
+powershell -c "$env:FELDERA_INSTALL='C:\tools\feldera'; irm https://docs.feldera.com/install-fda.ps1 | iex"
 ```
 
   </TabItem>
 </Tabs>
 
-### Using Cargo (macOS, other platforms)
+### Using Cargo (other platforms)
 
 To install `fda` with Cargo, you need a working Rust environment. You can install Rust by following
 the instructions on the [Rust website](https://www.rust-lang.org/tools/install).
@@ -136,6 +161,20 @@ echo "source (COMPLETE=fish fda | psub)" >> ~/.config/fish/config.fish
 
 # Zsh
 echo "source <(COMPLETE=zsh fda)" >> ~/.zshrc
+```
+
+  </TabItem>
+  <TabItem value="macos" label="macOS">
+
+```bash
+# Zsh (default on macOS)
+echo "source <(COMPLETE=zsh fda)" >> ~/.zshrc
+
+# Bash
+echo "source <(COMPLETE=bash fda)" >> ~/.bash_profile
+
+# Fish
+echo "source (COMPLETE=fish fda | psub)" >> ~/.config/fish/config.fish
 ```
 
   </TabItem>

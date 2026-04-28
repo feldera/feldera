@@ -1,8 +1,8 @@
 # Feldera fda CLI installer for Windows
 # Usage:
-#   irm https://feldera.com/install-fda.ps1 | iex
-#   $env:FDA_VERSION="v0.270.0"; irm https://feldera.com/install-fda.ps1 | iex
-#   $env:FELDERA_INSTALL="C:\tools\feldera"; irm https://feldera.com/install-fda.ps1 | iex
+#   irm https://docs.feldera.com/install-fda.ps1 | iex
+#   $env:FDA_VERSION="v0.290.0"; irm https://docs.feldera.com/install-fda.ps1 | iex
+#   $env:FELDERA_INSTALL="C:\tools\feldera"; irm https://docs.feldera.com/install-fda.ps1 | iex
 
 $ErrorActionPreference = 'Stop'
 
