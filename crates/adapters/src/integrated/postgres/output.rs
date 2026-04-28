@@ -9,12 +9,13 @@ use crate::{ControllerError, util::indexed_operation_type};
 use crate::{
     buffer_op,
     catalog::{RecordFormat, SerBatchReader, SerCursor},
-    controller::{ControllerInner, EndpointId},
+    controller::EndpointId,
     flush_op,
     format::{Encoder, OutputConsumer},
     transport::OutputEndpoint,
     util::IndexedOperationType,
 };
+use feldera_adapterlib::connector::OutputControllerRef;
 use anyhow::{Context, Result as AnyResult, anyhow, bail};
 use feldera_adapterlib::catalog::SplitCursorBuilder;
 use feldera_adapterlib::transport::{AsyncErrorCallback, CommandHandler, Step};
@@ -64,7 +65,7 @@ struct PostgresWorker {
     deletes: usize,
     key_schema: Relation,
     value_schema: Relation,
-    controller: Weak<ControllerInner>,
+    controller: Weak<dyn OutputControllerRef>,
     num_bytes: usize,
     num_rows: usize,
 }
@@ -107,7 +108,7 @@ impl PostgresWorker {
         extra_columns: Arc<RwLock<BTreeMap<String, Option<serde_json::Value>>>>,
         key_schema: &Relation,
         value_schema: &Relation,
-        controller: Weak<ControllerInner>,
+        controller: Weak<dyn OutputControllerRef>,
     ) -> Result<Self, BackoffError> {
         let table = config.table.to_owned();
         let mut client = connect(config, endpoint_name)?;
@@ -601,7 +602,7 @@ pub struct PostgresOutputEndpoint {
     endpoint_name: String,
     config: PostgresWriterConfig,
     extra_columns: Arc<RwLock<BTreeMap<String, Option<serde_json::Value>>>>,
-    controller: Weak<ControllerInner>,
+    controller: Weak<dyn OutputControllerRef>,
     handles: Vec<WorkerHandle>,
     txn_start: std::time::Instant,
     num_bytes: usize,
@@ -723,7 +724,7 @@ impl PostgresOutputEndpoint {
         config: &PostgresWriterConfig,
         key_schema: &Option<Relation>,
         value_schema: &Relation,
-        controller: Weak<ControllerInner>,
+        controller: Arc<dyn OutputControllerRef>,
     ) -> Result<Self, ControllerError> {
         config.validate().map_err(|e| {
             ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string())
@@ -743,6 +744,8 @@ impl PostgresOutputEndpoint {
         // Extra columns are not set initially.
         let extra_columns = Arc::new(RwLock::new(BTreeMap::new()));
 
+        let controller_weak = Arc::downgrade(&controller);
+
         for i in 0..num_threads {
             let worker = PostgresWorker::new(
                 i,
@@ -752,7 +755,7 @@ impl PostgresOutputEndpoint {
                 extra_columns.clone(),
                 &key_schema,
                 value_schema,
-                controller.clone(),
+                controller_weak.clone(),
             )
             .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e.inner()))?;
 
@@ -783,7 +786,7 @@ impl PostgresOutputEndpoint {
             endpoint_name: endpoint_name.to_owned(),
             config: config.clone(),
             extra_columns,
-            controller,
+            controller: controller_weak,
             handles,
             txn_start: std::time::Instant::now(),
             num_bytes: 0,
@@ -881,9 +884,7 @@ impl OutputConsumer for PostgresOutputEndpoint {
                 );
 
                 if let Some(controller) = self.controller.upgrade() {
-                    controller
-                        .status
-                        .output_buffer(self.endpoint_id, num_bytes, num_rows);
+                    controller.output_buffer(self.endpoint_id, num_bytes, num_rows);
                 };
             }
             Err(err) => {
@@ -1006,9 +1007,12 @@ impl OutputEndpoint for PostgresOutputEndpoint {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
 
+    use feldera_adapterlib::connector::OutputControllerRef;
     use feldera_adapterlib::errors::journal::ControllerError;
+    use feldera_types::adapter_stats::ConnectorHealth;
     use feldera_types::{
         program_schema::{ColumnType, Field, Relation, SqlType},
         transport::postgres::{PostgresTlsConfig, PostgresWriteMode, PostgresWriterConfig},
@@ -1017,6 +1021,14 @@ mod tests {
 
     use super::PostgresOutputEndpoint;
     use crate::controller::EndpointId;
+
+    struct NoOpControllerRef;
+    impl OutputControllerRef for NoOpControllerRef {
+        fn output_transport_error(&self, _: u64, _: &str, _: bool, _: anyhow::Error, _: Option<&str>) {}
+        fn update_output_connector_health(&self, _: u64, _: ConnectorHealth) {}
+        fn register_batch_progress_counter(&self, _: &u64, _: Arc<AtomicU64>) {}
+        fn output_buffer(&self, _: u64, _: usize, _: usize) {}
+    }
 
     fn int_field(name: &str) -> Field {
         Field::new(
@@ -1091,7 +1103,7 @@ mod tests {
             &make_config(table),
             &idx_rel,
             &main_rel,
-            Weak::new(),
+            Arc::new(NoOpControllerRef),
         )
     }
 
@@ -1225,7 +1237,9 @@ mod tests {
 
     mod parallel {
         use std::collections::BTreeMap;
-        use std::sync::{Arc, Weak};
+        use std::sync::Arc;
+
+        use super::NoOpControllerRef;
 
         use chrono::NaiveDateTime;
         use dbsp::OrdIndexedZSet;
@@ -1438,7 +1452,7 @@ mod tests {
                 &make_config_with_extra_columns(threads, extra_columns),
                 &Some(key_relation()),
                 &value_relation(),
-                Weak::new(),
+                Arc::new(NoOpControllerRef),
             )
             .expect("failed to create endpoint")
         }
@@ -1800,7 +1814,7 @@ mod tests {
                 &cfg,
                 &Some(key_relation()),
                 &value_relation(),
-                Weak::new(),
+                Arc::new(NoOpControllerRef),
             ) {
                 Ok(_) => panic!("expected duplicate extra_columns to be rejected"),
                 Err(e) => e,
@@ -1820,7 +1834,7 @@ mod tests {
                 &cfg,
                 &Some(key_relation()),
                 &value_relation(),
-                Weak::new(),
+                Arc::new(NoOpControllerRef),
             ) {
                 Ok(_) => panic!("expected extra column name clash with view to be rejected"),
                 Err(e) => e,

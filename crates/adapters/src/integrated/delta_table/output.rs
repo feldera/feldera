@@ -1,5 +1,6 @@
 use crate::catalog::{CursorWithPolarity, SerBatchReader, SplitCursorBuilder};
-use crate::controller::{ControllerInner, EndpointId};
+use crate::controller::EndpointId;
+use feldera_adapterlib::connector::OutputControllerRef;
 use crate::format::MAX_DUPLICATES;
 use crate::format::parquet::relation_to_arrow_fields;
 use crate::integrated::delta_table::register_storage_handlers;
@@ -62,7 +63,7 @@ struct DeltaTableWriterInner {
     struct_fields: Vec<StructField>,
     key_schema: Option<Relation>,
     value_schema: Relation,
-    controller: Weak<ControllerInner>,
+    controller: Weak<dyn OutputControllerRef>,
     /// Running count of records written by all worker threads in the current batch.
     /// Updated atomically by parallel tokio tasks during `flush_chunk`.
     /// Reset to 0 at the start of each batch.
@@ -92,7 +93,7 @@ impl DeltaTableWriter {
         config: &DeltaTableWriterConfig,
         key_schema: &Option<Relation>,
         value_schema: &Relation,
-        controller: Weak<ControllerInner>,
+        controller: Arc<dyn OutputControllerRef>,
         is_restart: bool,
     ) -> Result<Self, ControllerError> {
         config.validate().map_err(|e| {
@@ -150,16 +151,17 @@ impl DeltaTableWriter {
             struct_fields,
             key_schema: key_schema.clone(),
             value_schema: value_schema.clone(),
-            controller,
+            controller: Arc::downgrade(&controller),
             records_written: Arc::new(AtomicU64::new(0)),
         });
 
         // Register the progress counter with the controller's metrics.
         // add_output() has already been called, so the metrics slot exists.
         if let Some(controller) = inner.controller.upgrade() {
-            controller
-                .status
-                .register_batch_progress_counter(&inner.endpoint_id, inner.records_written.clone());
+            controller.register_batch_progress_counter(
+                &inner.endpoint_id,
+                inner.records_written.clone(),
+            );
         }
 
         // Create or open the delta table.
@@ -782,9 +784,7 @@ impl OutputConsumer for DeltaTableWriter {
         if let Some(controller) = self.inner.controller.upgrade() {
             controller
                 .update_output_connector_health(self.inner.endpoint_id, ConnectorHealth::healthy());
-            controller
-                .status
-                .output_buffer(self.inner.endpoint_id, num_bytes, num_rows);
+            controller.output_buffer(self.inner.endpoint_id, num_bytes, num_rows);
         }
     }
 }
@@ -953,7 +953,19 @@ mod parallel {
     use std::os::unix::ffi::OsStrExt;
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
-    use std::sync::{Arc, Weak};
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+
+    use feldera_adapterlib::connector::OutputControllerRef;
+    use feldera_types::adapter_stats::ConnectorHealth;
+
+    struct NoOpControllerRef;
+    impl OutputControllerRef for NoOpControllerRef {
+        fn output_transport_error(&self, _: u64, _: &str, _: bool, _: anyhow::Error, _: Option<&str>) {}
+        fn update_output_connector_health(&self, _: u64, _: ConnectorHealth) {}
+        fn register_batch_progress_counter(&self, _: &u64, _: Arc<AtomicU64>) {}
+        fn output_buffer(&self, _: u64, _: usize, _: usize) {}
+    }
 
     use dbsp::utils::Tup2;
     use dbsp::{OrdIndexedZSet, OrdZSet};
@@ -1106,7 +1118,7 @@ mod parallel {
             },
             &key_schema,
             &value_relation(),
-            Weak::new(),
+            Arc::new(NoOpControllerRef),
             is_restart,
         )
         .expect("failed to create endpoint")
@@ -1405,7 +1417,7 @@ mod parallel {
             },
             &key_schema,
             &value_relation(),
-            Weak::new(),
+            Arc::new(NoOpControllerRef),
             false,
         );
         assert!(
@@ -1544,7 +1556,7 @@ mod parallel {
             },
             &key_schema,
             &value_relation(),
-            Weak::new(),
+            Arc::new(NoOpControllerRef),
             false,
         )
         .expect("failed to create endpoint");
@@ -1732,7 +1744,7 @@ mod parallel {
             },
             &key_schema,
             &value_relation(),
-            Weak::new(),
+            Arc::new(NoOpControllerRef),
             false,
         )
         .expect("failed to create endpoint");

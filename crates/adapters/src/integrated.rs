@@ -3,17 +3,16 @@ use crate::transport::IntegratedInputEndpoint;
 use crate::transport::transport_config_inner_as_json;
 use crate::{ControllerError, InputConsumer};
 use feldera_adapterlib::connector::{OutputControllerRef, connector_by_name};
-use feldera_types::config::{ConnectorConfig, TransportConfig};
+use feldera_types::config::ConnectorConfig;
 use feldera_types::program_schema::Relation;
 use std::sync::{Arc, Weak};
 
 #[cfg(feature = "with-deltalake")]
 pub mod delta_table;
+#[cfg(feature = "with-iceberg")]
+mod iceberg;
 mod postgres;
 
-#[cfg(feature = "with-postgres-cdc")]
-use crate::integrated::postgres::PostgresCdcInputEndpoint;
-use crate::integrated::postgres::PostgresInputEndpoint;
 pub use crate::integrated::postgres::PostgresOutputEndpoint;
 
 pub use feldera_adapterlib::transport::IntegratedOutputEndpoint;
@@ -67,48 +66,14 @@ pub fn create_integrated_output_endpoint(
             })?;
             return Ok(ep);
         }
-        // Descriptor found but no build_integrated_output: fall through to fallback match.
+        // Descriptor found but no build_integrated_output — not an integrated output connector.
     }
 
-    // Fallback match for connectors not yet migrated to the descriptor registry.
-    let ep: Box<dyn IntegratedOutputEndpoint> = match &connector_config.transport {
-        #[cfg(feature = "with-deltalake")]
-        TransportConfig::DeltaTableOutput(config) => Box::new(delta_table::DeltaTableWriter::new(
-            endpoint_id,
-            endpoint_name,
-            config,
-            key_schema,
-            schema,
-            controller,
-            is_restart,
-        )?),
-        TransportConfig::PostgresOutput(config) => Box::new(PostgresOutputEndpoint::new(
-            endpoint_id,
-            endpoint_name,
-            config,
-            key_schema,
-            schema,
-            controller,
-        )?),
-        transport => {
-            return Err(ControllerError::unknown_output_transport(
-                endpoint_name,
-                &transport.name(),
-            ));
-        }
-    };
-
-    if connector_config.format.is_some() {
-        return Err(ControllerError::invalid_parser_configuration(
-            endpoint_name,
-            &format!(
-                "{} transport does not allow 'format' specification",
-                connector_config.transport.name()
-            ),
-        ));
-    }
-
-    Ok(ep)
+    // All integrated output connectors are now handled above via the descriptor registry.
+    Err(ControllerError::unknown_output_transport(
+        endpoint_name,
+        &connector_config.transport.name(),
+    ))
 }
 
 pub fn create_integrated_input_endpoint(
@@ -142,45 +107,12 @@ pub fn create_integrated_input_endpoint(
                 })?;
             return Ok(ep);
         }
-        // Descriptor found but no build_integrated_input: fall through to fallback match.
+        // Descriptor found but no build_integrated_input — not an integrated input connector.
     }
 
-    // Fallback match for connectors not yet migrated to the descriptor registry.
-    let ep: Box<dyn IntegratedInputEndpoint> = match &config.transport {
-        #[cfg(feature = "with-deltalake")]
-        TransportConfig::DeltaTableInput(config) => Box::new(
-            delta_table::DeltaTableInputEndpoint::new(endpoint_name, config, consumer),
-        ),
-        #[cfg(feature = "with-iceberg")]
-        TransportConfig::IcebergInput(config) => Box::new(
-            feldera_iceberg::IcebergInputEndpoint::new(endpoint_name, config, consumer),
-        ),
-        TransportConfig::PostgresInput(config) => {
-            Box::new(PostgresInputEndpoint::new(endpoint_name, config, consumer))
-        }
-        #[cfg(feature = "with-postgres-cdc")]
-        TransportConfig::PostgresCdcInput(config) => Box::new(PostgresCdcInputEndpoint::new(
-            endpoint_name,
-            config,
-            consumer,
-        )),
-        transport => {
-            return Err(ControllerError::unknown_input_transport(
-                endpoint_name,
-                &transport.name(),
-            ));
-        }
-    };
-
-    if config.format.is_some() {
-        return Err(ControllerError::invalid_parser_configuration(
-            endpoint_name,
-            &format!(
-                "{} transport does not allow 'format' specification",
-                config.transport.name()
-            ),
-        ));
-    }
-
-    Ok(ep)
+    // All integrated input connectors are now handled above via the descriptor registry.
+    Err(ControllerError::unknown_input_transport(
+        endpoint_name,
+        &config.transport.name(),
+    ))
 }
