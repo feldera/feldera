@@ -8,12 +8,10 @@ use feldera_types::program_schema::Relation;
 use std::sync::{Arc, Weak};
 
 #[cfg(feature = "with-deltalake")]
-pub mod delta_table;
+mod delta_table;
 #[cfg(feature = "with-iceberg")]
 mod iceberg;
 mod postgres;
-
-pub use crate::integrated::postgres::PostgresOutputEndpoint;
 
 use feldera_adapterlib::transport::IntegratedOutputEndpoint;
 

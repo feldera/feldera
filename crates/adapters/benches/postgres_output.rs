@@ -4,9 +4,9 @@ use bench_common::{
     BenchKeyStruct, BenchTestStruct, NoOpControllerRef, build_indexed_batch, generate_test_data,
 };
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use dbsp_adapters::Encoder;
 use dbsp_adapters::SerBatch;
-use dbsp_adapters::integrated::PostgresOutputEndpoint;
+use feldera_adapterlib::connector::connector_by_name;
+use feldera_adapterlib::transport::IntegratedOutputEndpoint;
 use feldera_types::transport::postgres::{
     PostgresTlsConfig, PostgresWriteMode, PostgresWriterConfig,
 };
@@ -72,16 +72,24 @@ fn make_config(threads: usize) -> PostgresWriterConfig {
     }
 }
 
-fn create_endpoint(config: &PostgresWriterConfig) -> PostgresOutputEndpoint {
-    PostgresOutputEndpoint::new(
-        Default::default(),
+fn create_endpoint(config: &PostgresWriterConfig) -> Box<dyn IntegratedOutputEndpoint> {
+    let descriptor = connector_by_name("postgres_output")
+        .expect("postgres_output descriptor not registered");
+    let build = descriptor
+        .build_integrated_output
+        .expect("postgres_output is not an integrated output connector");
+    let config_value =
+        serde_json::to_value(config).expect("failed to serialize PostgresWriterConfig");
+    build(
+        0,
         "bench_endpoint",
-        config,
+        &config_value,
         &Some(BenchKeyStruct::relation_schema()),
         &BenchTestStruct::relation_schema(),
         Arc::new(NoOpControllerRef),
+        false,
     )
-    .expect("failed to create PostgresOutputEndpoint")
+    .expect("failed to create postgres_output endpoint")
 }
 
 // ---------------------------------------------------------------------------
@@ -89,7 +97,7 @@ fn create_endpoint(config: &PostgresWriterConfig) -> PostgresOutputEndpoint {
 // ---------------------------------------------------------------------------
 
 fn bench_encode_iter(
-    endpoint: &mut PostgresOutputEndpoint,
+    endpoint: &mut dyn IntegratedOutputEndpoint,
     batch: &Arc<dyn SerBatch>,
     pg_client: &mut postgres::Client,
     num_records: usize,
@@ -129,7 +137,7 @@ fn bench_postgres_encode(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("workers", workers), &workers, |b, _| {
             let mut endpoint = create_endpoint(&config);
             b.iter_custom(|iters| {
-                bench_encode_iter(&mut endpoint, &batch, &mut pg_client, num_records, iters)
+                bench_encode_iter(&mut *endpoint, &batch, &mut pg_client, num_records, iters)
             });
         });
     }
@@ -159,7 +167,7 @@ fn bench_postgres_encode_scaling(c: &mut Criterion) {
                 |b, _| {
                     let mut endpoint = create_endpoint(&config);
                     b.iter_custom(|iters| {
-                        bench_encode_iter(&mut endpoint, &batch, &mut pg_client, num_records, iters)
+                        bench_encode_iter(&mut *endpoint, &batch, &mut pg_client, num_records, iters)
                     });
                 },
             );

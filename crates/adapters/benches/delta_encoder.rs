@@ -4,8 +4,8 @@ use bench_common::{
     BenchKeyStruct, BenchTestStruct, NoOpControllerRef, build_indexed_batch, generate_test_data,
 };
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use dbsp_adapters::Encoder;
-use dbsp_adapters::integrated::delta_table::DeltaTableWriter;
+use feldera_adapterlib::connector::connector_by_name;
+use feldera_adapterlib::transport::IntegratedOutputEndpoint;
 use feldera_types::transport::delta_table::{DeltaTableWriteMode, DeltaTableWriterConfig};
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -14,7 +14,7 @@ use tempfile::TempDir;
 // Delta-specific helpers
 // ---------------------------------------------------------------------------
 
-fn create_indexed_writer(threads: usize, table_uri: &str) -> DeltaTableWriter {
+fn create_indexed_writer(threads: usize, table_uri: &str) -> Box<dyn IntegratedOutputEndpoint> {
     let config = DeltaTableWriterConfig {
         uri: table_uri.to_string(),
         mode: DeltaTableWriteMode::Truncate,
@@ -26,10 +26,17 @@ fn create_indexed_writer(threads: usize, table_uri: &str) -> DeltaTableWriter {
     let key_schema = Some(BenchKeyStruct::relation_schema());
     let mut value_schema = BenchTestStruct::relation_schema();
     value_schema.materialized = true;
-    DeltaTableWriter::new(
-        Default::default(),
+    let descriptor = connector_by_name("delta_table_output")
+        .expect("delta_table_output descriptor not registered");
+    let build = descriptor
+        .build_integrated_output
+        .expect("delta_table_output is not an integrated output connector");
+    let config_value =
+        serde_json::to_value(&config).expect("failed to serialize DeltaTableWriterConfig");
+    build(
+        0,
         "bench_endpoint",
-        &config,
+        &config_value,
         &key_schema,
         &value_schema,
         Arc::new(NoOpControllerRef),
