@@ -1,6 +1,7 @@
 "Utility functions for writing tests against a Feldera instance."
 
 import os
+import platform
 import re
 import time
 import json
@@ -174,6 +175,21 @@ def single_host_only(fn):
     return unittest.skipUnless(
         FELDERA_TEST_NUM_HOSTS == 1,
         f"multihost not yet supported for {fn.__name__}, skipping",
+    )(fn)
+
+
+def skip_on_arm64(fn):
+    """Skip the test on Linux aarch64.
+
+    Some native Python wheels (e.g. `deltalake`) bundle a jemalloc built
+    for 4 KB pages and abort on import on Ubuntu's 64 KB-page aarch64
+    kernel used by some CI runners. Tests that depend on such wheels can
+    use this decorator to opt out of running there.
+    """
+    fn._skip_on_arm64 = True
+    return unittest.skipIf(
+        platform.machine() == "aarch64",
+        f"{fn.__name__} skipped on aarch64 (incompatible native wheel)",
     )(fn)
 
 

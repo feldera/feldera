@@ -7,6 +7,7 @@ from feldera.testutils import (
     FELDERA_REQUESTS_VERIFY,
     TEST_CLIENT,
     enterprise_only,
+    skip_on_arm64,
     unique_pipeline_name,
 )
 
@@ -17,6 +18,7 @@ __all__ = [
     "TEST_CLIENT",
     "unique_pipeline_name",
     "enterprise_only",
+    "skip_on_arm64",
     "API_KEY",
     "BASE_URL",
     "FELDERA_REQUESTS_VERIFY",
