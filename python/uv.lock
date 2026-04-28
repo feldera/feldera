@@ -12,7 +12,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-04-19T17:01:59.573641Z"
+exclude-newer = "2026-04-21T06:47:07.2353Z"
 exclude-newer-span = "P1W"
 
 [[package]]
@@ -366,7 +366,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "confluent-kafka", specifier = ">=2.2.0" },
-    { name = "deltalake", specifier = ">=0.18" },
+    { name = "deltalake", specifier = ">=1.5.0" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-timeout", specifier = ">=2.3.1" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },

@@ -6,8 +6,6 @@ import uuid
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-from deltalake import DeltaTable
-
 
 MINIO_BUCKET = os.environ.get("CI_MINIO_BUCKET", "ci-tests")
 MINIO_ENDPOINT = os.environ.get(
@@ -106,7 +104,14 @@ class DeltaTestLocation:
 
         Uses the per-file `numRecords` stats recorded in the delta log, so
         we never need to scan parquet (and never need pyarrow).
+
+        The `deltalake` import is deferred to here so that module-level
+        test collection does not crash on aarch64 hosts where the wheel
+        aborts on import; tests that need this method gate themselves
+        with `@skip_on_arm64`.
         """
+        from deltalake import DeltaTable
+
         dt = DeltaTable(self.uri, storage_options=self._delta_storage_options())
         return dt.count()
 

@@ -21,8 +21,6 @@ The delta table backend toggles automatically via `DeltaTestLocation`:
 
 import json
 
-import pytest
-
 from feldera import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import (
@@ -30,11 +28,8 @@ from feldera.testutils import (
     FELDERA_TEST_NUM_WORKERS,
     unique_pipeline_name,
 )
-from tests import TEST_CLIENT, enterprise_only
-
-pytest.importorskip("deltalake")
-
-from tests.utils import DeltaTestLocation  # noqa: E402
+from tests import TEST_CLIENT, enterprise_only, skip_on_arm64
+from tests.utils import DeltaTestLocation
 
 
 # ─── helpers ───────────────────────────────────────────────────────────
@@ -96,6 +91,7 @@ def _seed_50_rows_and_suspend(name: str, loc: DeltaTestLocation):
 
 
 @enterprise_only
+@skip_on_arm64
 def test_clean_resume_preserves_table():
     """Restarting an unchanged pipeline keeps the delta table contents."""
     name = unique_pipeline_name("delta_restart_clean")
@@ -117,6 +113,7 @@ def test_clean_resume_preserves_table():
 
 
 @enterprise_only
+@skip_on_arm64
 def test_modified_connector_re_truncates_on_resume():
     """Changing the connector config on resume makes it a new incarnation that re-truncates."""
     name = unique_pipeline_name("delta_restart_conn_modified")
@@ -142,6 +139,7 @@ def test_modified_connector_re_truncates_on_resume():
 
 
 @enterprise_only
+@skip_on_arm64
 def test_modified_view_re_truncates_on_resume():
     """Changing the view's schema on resume forces a rebuild from scratch."""
     name = unique_pipeline_name("delta_restart_view_modified")
