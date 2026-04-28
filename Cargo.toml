@@ -151,7 +151,7 @@ hashbrown = "0.14.2"
 hdrhist = "0.5"
 hex = "0.4.3"
 home = "=0.5.9"
-iceberg = "0.8.0"
+iceberg = { version = "0.8.0", features = ["storage-all"]}
 iceberg-catalog-glue = "0.8.0"
 iceberg-catalog-rest = "0.8.0"
 iceberg-datafusion = "0.8.0"
