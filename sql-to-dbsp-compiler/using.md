@@ -18,10 +18,10 @@ CREATE VIEW Adult AS SELECT Person.name FROM Person WHERE Person.age > 18;
 
 Given this program as input, the SQL compiler generates a Rust
 function which implements the query as a function: given the input
-data, it produces the output data.
-
-The compiler can also generate a function which will incrementally maintain the
-view `Adult` when presented with changes to table `Person`:
+data, it produces the output data.  When invoked with the `-i` flag,
+the compiler will instead generate a function which will incrementally
+maintain the view `Adult` when presented with changes to table
+`Person`:
 
 ```
                                            table changes
@@ -142,13 +142,17 @@ Here is a description of the non-obvious command-line options:
 
 --correlatedColumns: Runs a compiler analysis over the input program which
      detects table columns that are directly compared in equijoin comparisons.
+     This can be useful for implementing custom data generators.
      This produces an output of the form:
 
      [Correlated:] [table0.column1, table2.column0, table3.column4]
+     [Compared:] [table0.column2 >= 'constant']
 
      Note that a list of columns may contain more than two
      table.column pairs, when some columns are used in sequences of
      joins.
+
+     "Compared" describes columns that are compared against constant values.
 
 --handles: The Rust generated code can expose the input tables and
      output views in two ways: through explicit handles, and through a
@@ -157,12 +161,13 @@ Here is a description of the non-obvious command-line options:
      serializer (for output handles) or a deserializer (for input
      handles) to transmit data.  The handles API gives access to typed
      stream handles, which allow data insertion and retrieval without
-     using serialization/deserialization.
+     using serialization/deserialization.  All Java tests use the
+     typed API; production pipelines use the untyped API.
 
 --ignoreOrder: `ORDER BY` clauses are not naturally incrementalizable.
      Using this flag directs the compiler to ignore `ORDER BY` clauses
-     that occur *last* in a view definition (thus giving unsorte
-     outputs).  This will not affect `ORDER BY` clauses in an `OVER`
+     that occur *last* in a view definition (the result will thus not sort
+     the views).  This flag will not affect `ORDER BY` clauses in an `OVER`
      clause, or `ORDER BY` clauses followed by `LIMIT` clauses.  The
      use of this flag is recommended with the `-i` flag that
      incrementalizes the compiler output.
@@ -193,10 +198,8 @@ Here is a description of the non-obvious command-line options:
      `CREATE VIEW V AS SELECT T.COL1 FROM T`
 
 -O:  sets the optimization level.  A higher values implies more optimizations.
-
--d:  Sets the lexical rules used.  SQL dialects differ in rules for
-     allowed identifiers, quoting identifiers, conversions to
-     uppercase, case sensitivity of identifiers.
+     Currently setting this to 0 inhibits some Calcite-level optimizations.
+     The default value is "2".
 
 --streaming: Equivalent to adding the following property to all program tables:
      `'appendOnly' = 'true'`.

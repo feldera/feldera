@@ -30,10 +30,21 @@ To build the compiler run:
 ./build.sh
 ```
 
+The build process downloads and builds a recent (not yet-released)
+version of the Apache Calcite project, then builds the SQL compiler.
+
+If you want to skip the Calcite build you can instead execute:
+
+```
+cd sql-to-dbsp-compiler/SQL-compiler
+mvn package -DskipTests
+```
+
 ## Rust compilation errors
 
-If you get Rust compilation errors you should try to make sure you
-have the latest version of the Rust libraries and toolchain:
+If you get Rust compilation errors while running Java tests you
+should try to make sure you have the latest version of the Rust
+libraries and toolchain:
 
 ```
 $ rustup update
@@ -42,49 +53,6 @@ $ cargo update
 ```
 
 (`temp` is the directory where the tests write the generated Rust code.)
-
-## Incremental view maintenance
-
-The DBSP runtime is optimized for performing incremental view
-maintenance.  In consequence, DBSP programs in SQL are expressed as
-VIEWS, or *standing queries*.  A view is essentially a computation
-that describes a relation that is computed from other tables or views.
-
-For example, the following query defines a view:
-
-```sql
-CREATE VIEW V AS SELECT T.COL1 FROM T WHERE T.age > 18
-```
-
-In order to interpret this query the compiler needs to have been given
-a definition of table (or view) T.  The table T should be defined
-using a SQL Data Definition Language (DDL) statement, e.g.:
-
-```SQL
-CREATE TABLE T
-(
-    name    VARCHAR,
-    age     INT,
-    present BOOLEAN
-)
-```
-
-The compiler must be given the table definition first, and then the
-view definition.  The compiler generates a Rust library which
-implements the query as a function: given the input data, it produces
-the output data.
-
-The compiler can (optionally) generate a library which will
-incrementally maintain the view `V` when presented with changes to
-table `T`:
-
-```
-                                           table changes
-                                                V
-tables -----> SQL-to-DBSP compiler ------> DBSP circuit
-views                                           V
-                                           view changes
-```
 
 ## Using the compiler
 
@@ -98,15 +66,20 @@ about the internals of the compiler implementation.
 Compilation proceeds in several stages:
 
 - SQL statements are parsed using the calcite SQL parser
-  generating an IR representation using the Calcite `SqlNode` data types
-- the SQL IR tree is validated, optimized, and converted to the Calcite `RelNode` representation
-- The result of this stage is a `CalciteProgram` data structure, which packages together all the
-  views that are being compiled (multiple views can be maintained simultaneously)
-- `CalciteToDBSPCompiler` converts a `CalciteProgram` data structure into a `DBSPCircuit`
-  data structure.
-- The `CircuitOptimizer` class can optimize the generated circuit, optionally converting
-  it into an incremental circuit, which is expected to compute only on changes.
-- The `circuit` can be serialized as Rust using the `ToRustString` visitor.
+  generating an IR representation using the Calcite `SqlNode` data types.
+  Each is wrapped in a `ParsedStatement` object.
+- the `SqlNode` IR tree is validated, optimized, and converted to the
+  Calcite `RelNode` representation.  Each `RelNode` representation is
+  optimized independently by the class `CalciteOptimizer`.
+  Currently we use a Calcite Hep optimizer, running a fixed sequence of
+  optimization steps, some of them applied multiple times.
+  Each produced result is wrapped in a `RelStatement` object.
+- `CalciteToDBSPCompiler` is invoked on each `RelStatement` but
+  assembles all the results into a `DBSPCircuit` data structure, which
+  contains code for all the views compiled.
+- The `CircuitOptimizer` class optimizes the generated circuit, converting
+  it into an incremental circuit if the `-i` flag is supplied.
+- The `circuit` can be serialized as Rust using the `ToRustVisitor` visitor.
 
 ## Testing
 
@@ -114,12 +87,10 @@ Compilation proceeds in several stages:
 
 Unit tests are written using JUnit and test pointwise parts of the
 compiler.  They can be executed using `mvn test`.  They also run as a
-side effect of `mvn package` (omitting `-DskipTests`).
+side effect of `mvn package` (unless you supply the `-DskipTests` flag).
 
-The unit tests are implemented as individual Java files under
-`sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/`.
 Each unit test uses the SQL to DBSP compiler to generate Rust code under
-`sql-to-dbsp-compiler/temp` and compiles and runs that code.
+`sql-to-dbsp-compiler/temp/src` and compiles and runs that code.
 
 If one of the unit tests fails, you may re-populate the Rust code for
 it into `temp` by telling `mvn` to run only that particular test.  If
@@ -129,10 +100,21 @@ failed, for example, you may rerun just that test, first with `mvn
 test` and then again with `cargo test`, via:
 
 ```
-$ mvn test -Dtest=PostgresTimestampTests
+$ mvn test -Dtest=PostgresTimestampTests -Dsurefire.failIfNoSpecifiedTests=false
 $ cd ../temp
 $ cargo test
 ```
+
+(you can omit the "surefire.failIfNoSpecifiedTests=false" flag, but
+then you will get a spurious error because tests matching
+"PostgresTimestampTests" only exist in one of the 3 sub-projects).
+
+Note that the `sql-to-dbsp-compiler/temp/src` directory should NOT
+contain a `main.rs`.  This file is generated by some Java tests, and
+should be deleted at the end of the test; it may remain present if
+some test crashes or is interrupted.  Delete this file prior to
+running tests manually.  (The directory `temp` is gitignored, so the
+spurious `main.rs` file will not be flagged by `git status`.)
 
 ### SQL logic tests
 
@@ -140,14 +122,17 @@ One of the means of testing the compiler is using sqllogictests:
 <https://www.sqlite.org/sqllogictest/doc/trunk/about.wiki>.
 
 The sqllogictests includes more than 5 million tests.  It takes weeks
-to run all of them.  Most of the time is spent compiling Rust.
-We hope to speed that up at some point.
+to run all of them.  Most of the time is spent compiling Rust.  We
+hope to speed that up at some point.  Currently we run a few tens of
+thousands of tests every day, deterministically depending on the
+current day of the year, using the `RotateTests` class.
 
 We have implemented a [general-purpose testing
-framework](https://github.com/hydromatic/sql-logic-test) in Java for
-running SqlLogicTest programs.  The framework parses SqlLogicTest
-files and creates an internal representation of these files.  The
-files are executed by "test executors".
+framework](https://github.com/hydromatic/sql-logic-test) in Java
+(contributed as a separate project) for running SqlLogicTest programs.
+The framework parses SqlLogicTest files and creates an internal
+representation of these files.  The files are executed by "test
+executors".
 
 The tests are run by a standalone executable.  The executable supports
 the following command-line arguments:
@@ -179,7 +164,7 @@ from the hydromatic project.
 
 #### The `NoExecutor` test executor
 
-This executor is part of the base hydromatic package; it does not
+This executor is part of the base `hydromatic` package; it does not
 really run any tests.  But it can still be used by the test loading
 mechanism to check that we correctly parse all SQL logic test files.
 
@@ -192,24 +177,25 @@ cannot be supported (e.g., `CREATE UNIQUE INDEX`).
 
 * The DDL statements to create tables are compiled into definitions of
   circuit inputs.
-* The DML INSERT statements are converted into input-generating functions.
+* The DML `INSERT` statements are converted into input-generating functions.
   In the absence of a database we cannot really execute statements that
   are supposed to fail, so we ignore such statements.
-* Some DML statements like DELETE based on a WHERE clause cannot be compiled at all
-* The queries are converted into DDL VIEW create statements, which are
+* Some DML statements like `DELETE` based on a `WHERE` clause cannot be compiled at all
+* The queries are converted into DDL `CREATE VIEW` statements, which are
   compiled into circuits.
 * The validation rules in SQLLogicTest are compiled into Rust functions that compare
   the outputs of queries.
 
-So a SqlLogicTest script is turned into multiple DBSP tests, each of
+So a SqlLogicTest script is turned into multiple Java tests, each of
 which creates a circuit, feeds it one input, reads the output, and
 validates it, executing exactly one transaction.  When testing
-incremental circuits the test code feeds multiple inputs and
-only checks the final output.
+incremental circuits the test code feeds multiple inputs and only
+checks the final output.
 
 #### The `hybrid` executor
 
 This executor is a combination of the DBSP executor and the JDBC
 executor, using a real database to store data in tables, but using
 DBSP as a query engine.  It should be able to execute all SqlLogicTest
-queries that are supported by the underlying database.
+queries that are supported by the underlying database.  This is the
+executor used by `RotateTests`.
