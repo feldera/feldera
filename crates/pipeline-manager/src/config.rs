@@ -1016,6 +1016,35 @@ pub struct CompilerConfig {
     #[arg(long, default_value_t = 1000)]
     pub binary_upload_retry_delay_ms: u64,
 
+    /// Path to the global `connectors.toml` file listing third-party connector
+    /// Cargo dependencies.
+    ///
+    /// The file contains one Cargo dependency per line with no section header
+    /// (the contents are spliced verbatim into a `[dependencies]` block).
+    /// When absent or not set, only the bundled connectors compiled into
+    /// `dbsp_adapters` are available — behavior matches today's deployments.
+    ///
+    /// Example (`connectors.toml`):
+    /// ```toml
+    /// acme_snowflake = { version = "0.3", registry = "crates.io" }
+    /// local_thing    = { path = "/opt/feldera/connectors/local-thing" }
+    /// ```
+    #[arg(long)]
+    pub connectors_toml_path: Option<String>,
+
+    /// Directory containing per-tenant connector dependency files.
+    ///
+    /// When set, the compiler looks for `<dir>/<tenant-id>.toml` before
+    /// falling back to `connectors_toml_path`. Each per-tenant file follows
+    /// the same one-dep-per-line format as `connectors_toml_path`.
+    ///
+    /// Unsafe path characters in the tenant identifier (`/`, `\`, `:`, `*`,
+    /// `?`, `"`, `<`, `>`, `|`, NUL) are replaced with `_` before forming
+    /// the file name; `@` is preserved so email-style identifiers such as
+    /// `user@example.com` remain readable on disk.
+    #[arg(long)]
+    pub connectors_d_dir: Option<String>,
+
     /// Precompile Rust dependencies in the working directory.
     ///
     /// Instructs the manager to download and compile all crates needed by

@@ -2364,6 +2364,8 @@ mod test {
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
             precompile: false,
+            connectors_toml_path: None,
+            connectors_d_dir: None,
         };
 
         let delivery_mode = FileDeliveryMode::from_config(&config);
