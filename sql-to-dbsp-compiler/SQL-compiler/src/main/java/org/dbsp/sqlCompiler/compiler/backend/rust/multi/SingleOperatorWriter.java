@@ -116,6 +116,8 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
                 compiler, this.builder(), this.circuit.metadata, new ProjectDeclarations(), this.materializations)
                 .withPreferHash(true);
         visitor.innerVisitor.setOperatorContext(this.operator);
+        visitor.discoverIndexes(circuit);
+
         final String name = this.operator.getNodeName(true);
         this.builder().newline();
         for (String dep: this.dependencies)
