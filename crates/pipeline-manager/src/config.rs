@@ -163,6 +163,20 @@ fn help_canonicalize_path(path: &str) -> AnyResult<String> {
         .into_owned())
 }
 
+/// Converts the path to an absolute path if it exists; returns the original
+/// path unchanged if the file or directory does not exist.
+///
+/// Used for optional config fields such as `connectors_toml_path` whose
+/// absence is valid and should not be treated as an error.
+fn help_canonicalize_path_if_exists(path: &str) -> AnyResult<String> {
+    let p = std::path::Path::new(path);
+    if p.exists() {
+        help_canonicalize_path(path)
+    } else {
+        Ok(path.to_owned())
+    }
+}
+
 /// This parses a CPU quantity string, which can be either in millicores
 /// (e.g., "500m") or in cores (e.g., "0.5", "1", "2.25") and converts
 /// it to an integer that defines the number of threads to spawn for the
@@ -1019,10 +1033,19 @@ pub struct CompilerConfig {
     /// Path to the global `connectors.toml` file listing third-party connector
     /// Cargo dependencies.
     ///
-    /// The file contains one Cargo dependency per line with no section header
-    /// (the contents are spliced verbatim into a `[dependencies]` block).
-    /// When absent or not set, only the bundled connectors compiled into
-    /// `dbsp_adapters` are available — behavior matches today's deployments.
+    /// Bootstrap seed for newly-created tenants. The authoritative storage
+    /// for `connectors.toml` content is the `tenant_connector_config`
+    /// database table — one row per tenant. On the very first read for a
+    /// tenant (typically on tenant creation), if the field is set the
+    /// manager imports the file's contents as that tenant's initial blob.
+    /// After that, the file is never re-read for that tenant; edits go
+    /// through `PUT /v0/connectors/connectors.toml`.
+    ///
+    /// The file contains one Cargo dependency per line with no section
+    /// header (the contents are spliced verbatim into a `[dependencies]`
+    /// block). When the field is unset, newly-created tenants start with
+    /// empty content — the bundled connectors compiled into
+    /// `dbsp_adapters` are the only ones available.
     ///
     /// Example (`connectors.toml`):
     /// ```toml
@@ -1031,19 +1054,6 @@ pub struct CompilerConfig {
     /// ```
     #[arg(long)]
     pub connectors_toml_path: Option<String>,
-
-    /// Directory containing per-tenant connector dependency files.
-    ///
-    /// When set, the compiler looks for `<dir>/<tenant-id>.toml` before
-    /// falling back to `connectors_toml_path`. Each per-tenant file follows
-    /// the same one-dep-per-line format as `connectors_toml_path`.
-    ///
-    /// Unsafe path characters in the tenant identifier (`/`, `\`, `:`, `*`,
-    /// `?`, `"`, `<`, `>`, `|`, NUL) are replaced with `_` before forming
-    /// the file name; `@` is preserved so email-style identifiers such as
-    /// `user@example.com` remain readable on disk.
-    #[arg(long)]
-    pub connectors_d_dir: Option<String>,
 
     /// Precompile Rust dependencies in the working directory.
     ///
@@ -1071,6 +1081,11 @@ impl CompilerConfig {
         self.compilation_cargo_lock_path =
             help_canonicalize_path(&self.compilation_cargo_lock_path)?;
         self.dbsp_override_path = help_canonicalize_path(&self.dbsp_override_path)?;
+        // Optional bootstrap seed: canonicalize only when the file exists,
+        // so that an unconfigured or not-yet-deployed seed is not an error.
+        if let Some(p) = self.connectors_toml_path.as_ref() {
+            self.connectors_toml_path = Some(help_canonicalize_path_if_exists(p)?);
+        }
         Ok(self)
     }
 }

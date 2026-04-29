@@ -28,6 +28,16 @@ pub enum ApiError {
     ProgramInfoMissesDataflow { pipeline_name: String },
     InvalidProgramInfo { error: String },
     ProgramNotCompiled { pipeline_name: String },
+    CompilerConfigNotAvailable,
+    ConnectorManifestBuildFailed { error: String },
+    ConnectorsConfigInvalidShape { line: u32, reason: String },
+    /// `PUT /v0/connectors/connectors.toml` issued without an `If-Match`
+    /// header. Maps to `428 Precondition Required` (RFC 6585).
+    ConnectorsIfMatchRequired,
+    /// `If-Match: *` is not accepted; the client must send the
+    /// `content_hash` from the most recent GET. Maps to `412
+    /// Precondition Failed`.
+    ConnectorsIfMatchWildcardRejected,
 }
 
 impl DetailedError for ApiError {
@@ -47,6 +57,11 @@ impl DetailedError for ApiError {
             Self::ProgramInfoMissesDataflow { .. } => Cow::from("ProgramInfoMissesDataflow"),
             Self::InvalidProgramInfo { .. } => Cow::from("InvalidProgramInfo"),
             Self::ProgramNotCompiled { .. } => Cow::from("ProgramNotCompiled"),
+            Self::CompilerConfigNotAvailable => Cow::from("CompilerConfigNotAvailable"),
+            Self::ConnectorManifestBuildFailed { .. } => Cow::from("ConnectorManifestBuildFailed"),
+            Self::ConnectorsConfigInvalidShape { .. } => Cow::from("ConnectorsConfigInvalidShape"),
+            Self::ConnectorsIfMatchRequired => Cow::from("ConnectorsIfMatchRequired"),
+            Self::ConnectorsIfMatchWildcardRejected => Cow::from("ConnectorsIfMatchWildcardRejected"),
         }
     }
 }
@@ -109,6 +124,33 @@ impl Display for ApiError {
                     "Pipeline '{pipeline_name}' has not been compiled yet. Please compile the pipeline first."
                 )
             }
+            Self::CompilerConfigNotAvailable => {
+                write!(f, "Compiler configuration is not available on this server.")
+            }
+            Self::ConnectorManifestBuildFailed { error } => {
+                write!(f, "Failed to build the connector manifest: {error}")
+            }
+            Self::ConnectorsConfigInvalidShape { line, reason } => {
+                write!(
+                    f,
+                    "connectors.toml line {line}: {reason}. \
+                     Each non-blank, non-comment line must be `<key> = <cargo-dep-spec>`."
+                )
+            }
+            Self::ConnectorsIfMatchRequired => {
+                write!(
+                    f,
+                    "If-Match header is required for connectors.toml edits. \
+                     Use the ETag value from a recent GET."
+                )
+            }
+            Self::ConnectorsIfMatchWildcardRejected => {
+                write!(
+                    f,
+                    "If-Match: * is not accepted for connectors.toml edits. \
+                     Send the specific content_hash from a recent GET."
+                )
+            }
         }
     }
 }
@@ -138,6 +180,11 @@ impl ResponseError for ApiError {
             Self::ProgramInfoMissesDataflow { .. } => StatusCode::NOT_FOUND,
             Self::InvalidProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::ProgramNotCompiled { .. } => StatusCode::NOT_FOUND,
+            Self::CompilerConfigNotAvailable => StatusCode::NOT_FOUND,
+            Self::ConnectorManifestBuildFailed { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::ConnectorsConfigInvalidShape { .. } => StatusCode::BAD_REQUEST,
+            Self::ConnectorsIfMatchRequired => StatusCode::PRECONDITION_REQUIRED,
+            Self::ConnectorsIfMatchWildcardRejected => StatusCode::PRECONDITION_FAILED,
         }
     }
 

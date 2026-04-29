@@ -147,6 +147,7 @@ fn main() -> anyhow::Result<()> {
                 db,
                 common_config,
                 api_config,
+                Some(compiler_config),
                 Arc::new(RwLock::new(None)),
             )
             .await

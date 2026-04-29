@@ -55,7 +55,8 @@ use crate::transport::{
 // ── Direction ─────────────────────────────────────────────────────────────────
 
 /// Which side(s) of a pipeline a connector can serve.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Direction {
     /// Can only be used as an input (source) connector.
     Input,
@@ -80,7 +81,8 @@ impl Direction {
 // ── ConnectorKind ─────────────────────────────────────────────────────────────
 
 /// Implementation style of a connector.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ConnectorKind {
     /// Transport and format are separate layers (the standard case for file,
     /// Kafka, S3, …).  The controller selects a `Parser` / `Encoder` based on
@@ -284,6 +286,63 @@ pub fn registered_connectors() -> impl Iterator<Item = &'static ConnectorDescrip
 /// Returns `None` if no connector with that name has been registered.
 pub fn connector_by_name(name: &str) -> Option<&'static ConnectorDescriptor> {
     registered_connectors().find(|d| d.name == name)
+}
+
+// ── ConnectorManifestEntry ────────────────────────────────────────────────────
+
+/// Serializable snapshot of a [`ConnectorDescriptor`], produced by the
+/// describer binary and consumed by pipeline-manager for direction validation.
+///
+/// This type is intentionally separate from [`ConnectorDescriptor`] because
+/// `ConnectorDescriptor` contains function pointers that cannot be serialized.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ConnectorManifestEntry {
+    /// `feldera-adapterlib` plugin API version at which this connector was
+    /// compiled. Must equal
+    /// [`feldera_types::constants::ADAPTERLIB_API_VERSION`] for the
+    /// pipeline-manager to accept this entry; a mismatch triggers a clear
+    /// "connector X was compiled against API vY, deployment uses vZ" error.
+    pub adapterlib_api_version: u32,
+    /// Unique connector name matching `TransportConfig::name()`.
+    pub name: String,
+    /// Direction(s) supported.
+    pub direction: Direction,
+    /// Implementation style.
+    pub kind: ConnectorKind,
+    /// Best-case fault tolerance; `None` = no FT.
+    pub fault_tolerance: Option<FtModel>,
+    /// Raw capability-flag bits (see [`ConnectorFlags`]).
+    pub flags_bits: u32,
+    /// Whether a regular-input factory is present.
+    pub has_build_input: bool,
+    /// Whether a regular-output factory is present.
+    pub has_build_output: bool,
+    /// Whether an integrated-input factory is present.
+    pub has_build_integrated_input: bool,
+    /// Whether an integrated-output factory is present.
+    pub has_build_integrated_output: bool,
+}
+
+impl ConnectorManifestEntry {
+    /// Convert a [`ConnectorDescriptor`] to a manifest entry.
+    ///
+    /// `adapterlib_api_version` is set to the value of
+    /// [`feldera_types::constants::ADAPTERLIB_API_VERSION`] that was compiled
+    /// into *this* build of `feldera-adapterlib`.
+    pub fn from_descriptor(d: &ConnectorDescriptor) -> Self {
+        Self {
+            adapterlib_api_version: feldera_types::constants::ADAPTERLIB_API_VERSION,
+            name: d.name.to_owned(),
+            direction: d.direction,
+            kind: d.kind,
+            fault_tolerance: d.fault_tolerance,
+            flags_bits: d.flags.bits(),
+            has_build_input: d.build_input.is_some(),
+            has_build_output: d.build_output.is_some(),
+            has_build_integrated_input: d.build_integrated_input.is_some(),
+            has_build_integrated_output: d.build_integrated_output.is_some(),
+        }
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

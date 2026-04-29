@@ -153,6 +153,10 @@ pub enum DBError {
         outdated_version: Version,
         latest_version: Version,
     },
+    OutdatedConnectorsConfigHash {
+        provided_hash: String,
+        current_hash: String,
+    },
     StartFailedDueToFailedCompilation {
         compiler_error: String,
     },
@@ -551,6 +555,15 @@ impl Display for DBError {
                     "Pipeline version ({outdated_version}) is outdated by latest ({latest_version})"
                 )
             }
+            DBError::OutdatedConnectorsConfigHash {
+                provided_hash,
+                current_hash,
+            } => {
+                write!(
+                    f,
+                    "Connectors config hash ({provided_hash}) is outdated by latest ({current_hash})"
+                )
+            }
             DBError::StartFailedDueToFailedCompilation { .. } => {
                 write!(
                     f,
@@ -792,6 +805,7 @@ impl DetailedError for DBError {
             }
             Self::OutdatedProgramVersion { .. } => Cow::from("OutdatedProgramVersion"),
             Self::OutdatedPipelineVersion { .. } => Cow::from("OutdatedPipelineVersion"),
+            Self::OutdatedConnectorsConfigHash { .. } => Cow::from("OutdatedConnectorsConfigHash"),
             Self::StartFailedDueToFailedCompilation { .. } => {
                 Cow::from("StartFailedDueToFailedCompilation")
             }
@@ -886,6 +900,7 @@ impl ResponseError for DBError {
             Self::CannotRenameNonExistingPipeline { .. } => StatusCode::BAD_REQUEST,
             Self::OutdatedProgramVersion { .. } => StatusCode::CONFLICT,
             Self::OutdatedPipelineVersion { .. } => StatusCode::CONFLICT,
+            Self::OutdatedConnectorsConfigHash { .. } => StatusCode::PRECONDITION_FAILED,
             Self::StartFailedDueToFailedCompilation { .. } => StatusCode::BAD_REQUEST,
             Self::TransitionRequiresCompiledProgram { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
             Self::InvalidProgramStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Compiler error

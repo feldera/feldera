@@ -17,4 +17,5 @@ pub mod connectivity;
 pub mod pipeline;
 mod pipeline_parsing;
 pub mod tenant;
+pub mod tenant_connector_config;
 pub(crate) mod utils;

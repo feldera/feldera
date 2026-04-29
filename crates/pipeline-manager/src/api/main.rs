@@ -2,7 +2,8 @@ use crate::api::demo::{read_demos_from_directories, Demo};
 use crate::api::endpoints;
 use crate::api::support_data_collector::SupportDataCollector;
 use crate::auth::JwkCache;
-use crate::config::{ApiServerConfig, CommonConfig};
+use crate::compiler::manifest_cache::ManifestCache;
+use crate::config::{ApiServerConfig, CommonConfig, CompilerConfig};
 use crate::db::probe::DbProbe;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::error::ManagerError;
@@ -611,6 +612,11 @@ fn api_scope() -> Scope {
         .service(endpoints::cluster::list_cluster_events)
         .service(endpoints::cluster::get_cluster_event)
         .service(endpoints::cluster::get_cluster_health)
+        // Connector manifest management
+        .service(endpoints::connectors::get_connectors_status)
+        .service(endpoints::connectors::get_connectors_toml)
+        .service(endpoints::connectors::put_connectors_toml)
+        .service(endpoints::connectors::post_connectors_refresh)
 }
 
 struct SecurityAddon;
@@ -645,6 +651,14 @@ pub(crate) struct ServerState {
     pub runner: RunnerInteraction,
     pub common_config: CommonConfig,
     pub config: ApiServerConfig,
+    /// Compiler configuration, used by `POST /v0/connectors/refresh`.
+    /// `None` when the API server is started without a paired compiler (tests).
+    pub compiler_config: Option<CompilerConfig>,
+    /// Per-tenant describer manifest build state. Drives
+    /// `GET /v0/connectors/status` and gates background rebuilds
+    /// triggered by `PUT /v0/connectors/connectors.toml` and
+    /// `POST /v0/connectors/refresh`.
+    pub manifest_cache: Arc<ManifestCache>,
     pub jwk_cache: Arc<Mutex<JwkCache>>,
     probe: Arc<Mutex<DbProbe>>,
     pub demos: Vec<Demo>,
@@ -655,6 +669,7 @@ impl ServerState {
     pub async fn new(
         common_config: CommonConfig,
         config: ApiServerConfig,
+        compiler_config: Option<CompilerConfig>,
         db: Arc<Mutex<StoragePostgres>>,
         license_check: Arc<RwLock<Option<LicenseCheck>>>,
     ) -> AnyResult<Self> {
@@ -666,6 +681,8 @@ impl ServerState {
             runner,
             common_config,
             config,
+            compiler_config,
+            manifest_cache: Arc::new(ManifestCache::new()),
             jwk_cache: Arc::new(Mutex::new(JwkCache::new())),
             probe: DbProbe::new(db_copy).await,
             demos,
@@ -675,12 +692,26 @@ impl ServerState {
 
     #[cfg(test)]
     pub(crate) async fn test_state(db: Arc<Mutex<StoragePostgres>>) -> Self {
+        Self::test_state_with_compiler(db, None).await
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn test_state_with_compiler(
+        db: Arc<Mutex<StoragePostgres>>,
+        compiler_config: Option<CompilerConfig>,
+    ) -> Self {
         let common_config = CommonConfig::test_config();
         let api_config = ApiServerConfig::test_config();
         let license_check = Arc::new(RwLock::new(None::<LicenseCheck>));
-        Self::new(common_config, api_config, db.clone(), license_check)
-            .await
-            .unwrap()
+        Self::new(
+            common_config,
+            api_config,
+            compiler_config,
+            db.clone(),
+            license_check,
+        )
+        .await
+        .unwrap()
     }
 }
 
@@ -727,6 +758,7 @@ pub async fn run(
     db: Arc<Mutex<StoragePostgres>>,
     common_config: CommonConfig,
     api_config: ApiServerConfig,
+    compiler_config: Option<CompilerConfig>,
     license_check: Arc<RwLock<Option<LicenseCheck>>>,
 ) -> AnyResult<()> {
     let listener = TcpListener::bind((common_config.bind_address.clone(), common_config.api_port))
@@ -737,7 +769,14 @@ pub async fn run(
             )
         });
     let state = WebData::new(
-        ServerState::new(common_config.clone(), api_config.clone(), db, license_check).await?,
+        ServerState::new(
+            common_config.clone(),
+            api_config.clone(),
+            compiler_config,
+            db,
+            license_check,
+        )
+        .await?,
     );
     let auth_configuration = match api_config.auth_provider {
         crate::config::AuthProviderType::None => None,

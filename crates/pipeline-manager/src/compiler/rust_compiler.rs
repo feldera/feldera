@@ -1,3 +1,6 @@
+use crate::compiler::connectors::{
+    extract_force_link_names, generate_force_link_rs, load_connectors_toml, ConnectorsTomlContent,
+};
 use crate::compiler::util::{
     checksum_buffer, checksum_file, cleanup_specific_directories, cleanup_specific_files,
     copy_file, copy_file_if_checksum_differs, crate_name_pipeline_globals,
@@ -974,6 +977,24 @@ pub async fn perform_rust_compilation(
     );
     trace!("Rust compilation: calculated source checksum: {source_checksum}");
 
+    // Load connector dependencies for force-link injection. The blob
+    // lives in the `tenant_connector_config` DB table; on first access
+    // for a tenant the row is lazily seeded from
+    // `connectors_toml_path` (when configured).
+    let connectors_content = {
+        let db = db.as_ref().ok_or_else(|| {
+            RustCompilationError::SystemError(
+                "database handle required to load connectors.toml".to_string(),
+            )
+        })?;
+        let guard = db.lock().await;
+        load_connectors_toml(&guard, config, tenant_id)
+            .await
+            .map_err(|e| {
+                RustCompilationError::SystemError(format!("loading connectors.toml: {e}"))
+            })?
+    };
+
     // Prepare the workspace for the compilation of this specific pipeline
     prepare_workspace(
         config,
@@ -982,6 +1003,7 @@ pub async fn perform_rust_compilation(
         &main_rust,
         udf_rust,
         udf_toml,
+        &connectors_content,
     )
     .await?;
 
@@ -1246,6 +1268,7 @@ async fn prepare_workspace(
     main_rust: &str,
     udf_rust: &str,
     udf_toml: &str,
+    connectors_content: &ConnectorsTomlContent,
 ) -> Result<(), RustCompilationError> {
     // Workspace directory
     let workspace_dir = config.working_dir().join("rust-compilation");
@@ -1332,8 +1355,9 @@ async fn prepare_workspace(
 
     // Pipeline globals crate: Cargo.toml
     // ----------------------------------
-    // Copy over the user-defined UDF TOML dependencies.
+    // Inject UDF and connector force-link dependencies.
     let udf_cargo_toml_path = crates_dir.join(&pipeline_globals_crate).join("Cargo.toml");
+    let connectors_deps = connectors_content.as_str();
     let udf_cargo_toml_content = read_file_content(&udf_cargo_toml_path).await?.replace(
         "[dependencies]",
         &formatdoc! {"
@@ -1341,9 +1365,37 @@ async fn prepare_workspace(
             # START: UDF dependencies
             {udf_toml}
             # END: UDF dependencies
+            # START: Connector force-link dependencies
+            {connectors_deps}
+            # END: Connector force-link dependencies
         "},
     );
     recreate_file_with_content(&udf_cargo_toml_path, &udf_cargo_toml_content).await?;
+
+    // Pipeline globals crate: src/force_link.rs
+    // ------------------------------------------
+    // Forces the linker to include rlibs for any user-listed connectors so
+    // their inventory::submit! calls fire at pipeline startup.
+    let user_names = extract_force_link_names(connectors_content);
+    let force_link_content = generate_force_link_rs(&user_names);
+    let force_link_path = crates_dir
+        .join(&pipeline_globals_crate)
+        .join("src")
+        .join("force_link.rs");
+    recreate_file_with_content(&force_link_path, &force_link_content).await?;
+
+    // Pipeline globals crate: src/lib.rs
+    // ------------------------------------
+    // Prepend `mod force_link;` so the generated force_link module is compiled.
+    let lib_rs_path = crates_dir
+        .join(&pipeline_globals_crate)
+        .join("src")
+        .join("lib.rs");
+    let existing_lib_rs = read_file_content(&lib_rs_path).await?;
+    if !existing_lib_rs.starts_with("mod force_link;") {
+        let patched = format!("mod force_link;\n{existing_lib_rs}");
+        recreate_file_with_content(&lib_rs_path, &patched).await?;
+    }
 
     ///////////////////////
     // PHASE 2: WORKSPACE
@@ -1391,11 +1443,18 @@ async fn prepare_workspace(
             }
         }
 
-        // Crate src/: main.rs, lib.rs, udf.rs, stubs.rs
+        // Crate src/: main.rs, lib.rs, udf.rs, stubs.rs (+ force_link.rs for globals)
         let src_content = if crate_name.ends_with("_main") {
             vec![("main.rs", true)]
         } else if crate_name.ends_with("_globals") {
-            vec![("lib.rs", true), ("udf.rs", true), ("stubs.rs", true)]
+            // force_link.rs is injected by prepare_workspace (PR 10) before the
+            // copy loop runs; it must appear in the expected list.
+            vec![
+                ("lib.rs", true),
+                ("udf.rs", true),
+                ("stubs.rs", true),
+                ("force_link.rs", true),
+            ]
         } else {
             vec![("lib.rs", true)]
         };
@@ -2179,6 +2238,7 @@ async fn cleanup_rust_compilation(
 #[cfg(test)]
 mod test {
     use crate::auth::TenantRecord;
+    use crate::compiler::connectors::ConnectorsTomlContent;
     use crate::compiler::rust_compiler::prepare_workspace;
     use crate::compiler::rust_compiler::{calculate_source_checksum, decide_cleanup};
     use crate::compiler::test::{list_content_as_sorted_names, CompilerTest};
@@ -2279,6 +2339,7 @@ mod test {
             &program_info.main_rust,
             &pipeline_descr.udf_rust,
             &pipeline_descr.udf_toml,
+            &ConnectorsTomlContent(String::new()),
         )
         .await
         .unwrap();
@@ -2316,7 +2377,7 @@ mod test {
         );
         assert_eq!(
             list_content_as_sorted_names(&globals_crate_path.join("src")).await,
-            vec!["lib.rs", "stubs.rs", "udf.rs"]
+            vec!["force_link.rs", "lib.rs", "stubs.rs", "udf.rs"]
         );
         assert_eq!(
             read_file_content(&globals_crate_path.join("src").join("stubs.rs"))
@@ -2329,6 +2390,20 @@ mod test {
                 .await
                 .unwrap(),
             pipeline_descr.udf_rust
+        );
+        // lib.rs must start with the force_link module declaration.
+        assert!(
+            read_file_content(&globals_crate_path.join("src").join("lib.rs"))
+                .await
+                .unwrap()
+                .starts_with("mod force_link;")
+        );
+        // force_link.rs must contain the built-in datagen entry.
+        assert!(
+            read_file_content(&globals_crate_path.join("src").join("force_link.rs"))
+                .await
+                .unwrap()
+                .contains("extern crate feldera_datagen as _;")
         );
         assert!(read_file_content(&globals_crate_path.join("Cargo.toml"))
             .await
@@ -2365,7 +2440,6 @@ mod test {
             binary_upload_retry_delay_ms: 1000,
             precompile: false,
             connectors_toml_path: None,
-            connectors_d_dir: None,
         };
 
         let delivery_mode = FileDeliveryMode::from_config(&config);

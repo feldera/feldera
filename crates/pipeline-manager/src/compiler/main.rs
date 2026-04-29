@@ -825,7 +825,6 @@ mod test {
             binary_upload_retry_delay_ms: 1000,
             precompile: false,
             connectors_toml_path: None,
-            connectors_d_dir: None,
         })
         .await
         .unwrap();
@@ -847,7 +846,6 @@ mod test {
             binary_upload_retry_delay_ms: 1000,
             precompile: false,
             connectors_toml_path: None,
-            connectors_d_dir: None,
         })
         .await
         .unwrap();
@@ -1036,7 +1034,6 @@ mod test {
             binary_upload_retry_delay_ms: 1000,
             precompile: false,
             connectors_toml_path: None,
-            connectors_d_dir: None,
         };
 
         (tempdir, config)

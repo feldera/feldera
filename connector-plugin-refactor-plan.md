@@ -278,24 +278,44 @@ The exhaustive match at `crates/pipeline-manager/src/db/types/program.rs:682,735
 
 **Design principle**: pipeline-manager carries zero hardcoded connector knowledge. The set of connectors is whatever the deployer declared in `connectors.toml`, plus the bundled connectors compiled into `dbsp_adapters`. The descriptor *type* and `register_connector!` macro live in `feldera-adapterlib` (a contract, not a list); each connector crate registers itself; pipeline-manager learns the set via a build step it already runs.
 
-#### 8.1 The `connectors.toml` file
+#### 8.1 `connectors.toml` content and storage
 
-Lives at a deployment-configured path (e.g. `/etc/feldera/connectors.toml`, with per-tenant variants for multi-tenant setups). The file content is exactly what Cargo accepts as a `[dependencies]` body — one dep per line, **no section header** — mirroring the `udf_toml` mechanism at `rust_compiler.rs:1336-1346` (opaque text spliced into a `[dependencies]` block downstream):
+The unit of configuration is a **per-tenant `connectors.toml` blob** stored as a row in the pipeline-manager database. The blob's text is exactly what Cargo accepts as a `[dependencies]` body — one dep per line, **no section header** — mirroring the `udf_toml` mechanism at `rust_compiler.rs:1336-1346` (opaque text spliced into a `[dependencies]` block downstream):
 
 ```toml
-# /etc/feldera/connectors.toml
 acme_snowflake = { version = "0.3", registry = "crates.io" }
 my_sap_cdc     = { git = "https://github.com/acme/feldera-sap-cdc", tag = "v1.2.0" }
 local_thing    = { path = "/opt/feldera/connectors/local-thing" }
 ```
 
-Whatever Cargo accepts (versions, git refs, `path`, `[patch]`, alternative registries, auth) is accepted here without translation. **Single-line entries only** — multi-line `[dependencies.<name>]` table form is not supported (force-link extraction is line-based; see 8.3). Bundled connectors (`file`, `kafka`, `postgres`, `delta_table`, `iceberg`, …) stay in `dbsp_adapters` and are not listed here — empty `connectors.toml` = OSS defaults, behavior matches today's bundled-only deployments bit-for-bit.
+Whatever Cargo accepts (versions, git refs, `path`, `[patch]`, alternative registries, auth) is accepted here without translation. **Single-line entries only** — multi-line `[dependencies.<name>]` table form is not supported (force-link extraction is line-based; see 8.3). Bundled connectors (`file`, `kafka`, `postgres`, `delta_table`, `iceberg`, …) stay in `dbsp_adapters` and are not listed here — an empty blob = OSS defaults, behavior matches today's bundled-only deployments bit-for-bit.
+
+**Database is the source of truth.** Storing the blob in the DB (rather than on the deployer's filesystem) gives:
+- a clean multi-tenant model (one row per tenant, no filesystem path components or sanitization);
+- audit trail (who edited, when, with what value) for free;
+- optimistic concurrency via row version (ETag → `If-Match`);
+- HA-clean (no per-node filesystem state);
+- a usable in-product editor surface (Phase 8.12).
+
+**Optional bootstrap seed.** A single deployment-wide file at `connectors_toml_path` (a `CompilerConfig` field — see PR 9) is read **once per tenant**: on tenant creation, if the new tenant has no row yet, the manager imports the file as that tenant's initial blob. After that the DB is authoritative; the file is never re-read for that tenant. Operators who pre-bake a default plugin set into the deployment image use this; everyone else leaves the field unset and accepts an empty default blob. The seed mechanism is explicitly removable in a future PR if it adds friction.
+
+**Schema sketch** (DDL details in PR 9):
+```
+table tenant_connector_config (
+    tenant_id     UUID    primary key references tenant(id),
+    content       TEXT    not null,           -- the toml blob, possibly empty
+    content_hash  TEXT    not null,           -- sha256 of content; the cache key + ETag
+    version       BIGINT  not null,           -- monotonic, incremented on every PUT
+    edited_at     TIMESTAMPTZ not null,
+    edited_by     TEXT    not null            -- user identifier from auth context
+);
+```
 
 #### 8.2 Reuse pipeline-manager's existing Cargo orchestration
 
 pipeline-manager already runs Cargo per-pipeline. `prepare_workspace` (`crates/pipeline-manager/src/compiler/rust_compiler.rs:1242`) creates a `rust-compilation` workspace, copies a templated `Cargo.toml` into it, integrates UDF dependencies, and invokes Cargo. Two extensions to that flow:
 
-- **Per-pipeline workspace**: splice `connectors.toml`'s contents verbatim into the per-pipeline `Cargo.toml`'s `[dependencies]` block (same string-substitution pattern as `udf_toml` at `rust_compiler.rs:1336-1346` — Cargo is the authoritative parser; pipeline-manager treats the text as opaque). **No per-pipeline feature gating** — see 8.5.
+- **Per-pipeline workspace**: read the tenant's blob from `tenant_connector_config` and splice it verbatim into the per-pipeline `Cargo.toml`'s `[dependencies]` block (same string-substitution pattern as `udf_toml` at `rust_compiler.rs:1336-1346` — Cargo is the authoritative parser; pipeline-manager treats the text as opaque). **No per-pipeline feature gating** — see 8.5.
 - **Describer build (new)**: a separate, much smaller workspace whose only purpose is producing the descriptor manifest. See 8.3.
 - **Force-link generation (new)**: a Cargo dep alone is not enough — `inventory::submit!` only fires if the linker actually pulls the rlib in, and rustc drops unused deps. Both the per-pipeline workspace and the describer crate need a generated `force_link.rs` (or equivalent) containing one `extern crate <crate_name> as _;` line per connector dep. See 8.3 for the implicit built-in entry for `feldera-datagen` (always present, not user-visible).
 
@@ -334,7 +354,9 @@ extern crate acme_snowflake as _;
 extern crate my_sap_cdc as _;
 ```
 
-**Extraction rule.** Pipeline-manager scans `connectors.toml` line-by-line, skips blank lines and `#`-prefixed comments, takes the substring before the first `=` on each remaining line, trims it, and emits `extern crate <ident> as _;` (mapping any `-` in the dep key to `_` for Rust identifier rules — Cargo does the same internally). No `toml` parser dep is needed; the only structural assumption is that each dep occupies one line. The built-in section is hardcoded in pipeline-manager's codegen and not exposed in `connectors.toml`. The same `force_link.rs` is generated into every per-pipeline workspace.
+**Extraction rule.** Pipeline-manager scans the blob's text line-by-line, skips blank lines and `#`-prefixed comments, takes the substring before the first `=` on each remaining line, trims it, and emits `extern crate <ident> as _;` (mapping any `-` in the dep key to `_` for Rust identifier rules — Cargo does the same internally). No `toml` parser dep is needed; the only structural assumption is that each dep occupies one line. The built-in section is hardcoded in pipeline-manager's codegen and not exposed in `connectors.toml`. The same `force_link.rs` is generated into every per-pipeline workspace.
+
+**Per-pipeline placement.** Inside the per-pipeline workspace, `force_link.rs` lives in the existing **globals crate** (`<pipeline>_globals`), not in a new dedicated crate — the globals crate already exists, already runs `prepare_workspace`'s injection pass, and already declares `mod force_link;`. A new crate would add `[workspace.members]` plumbing for no benefit. The codegen must add `("force_link.rs", true)` to the globals crate's expected `src_content` list at `rust_compiler.rs:1435-1448` or `DirectoryContent::validate()` will reject the directory.
 
 **One additional force-link source: `dbsp_adapters`'s own tests.** Test builds aren't covered by any codegen, so the line is hand-written in `lib.rs` (PR 5). It only needs datagen — no third-party connector is exercised by `dbsp_adapters` tests. The axis is *which build output runs `connector_by_name`*, not built-in vs. third-party.
 
@@ -344,11 +366,16 @@ extern crate my_sap_cdc as _;
 
 Treat the describer as a long-lived deployment artifact, and **share its lockfile with per-pipeline builds**:
 
-- **Cache key**: hash of `connectors.toml` content + `feldera-adapterlib` major version. Same key → reuse the cached manifest and lockfile, skip rebuild.
-- **`describer.lock` is the single lockfile for the entire deployment.** Persisted at `/var/lib/feldera/describer/<tenant>/<content-hash>/describer.lock`. pipeline-manager copies it into both (a) the describer's workspace and (b) **every per-pipeline workspace** as `Cargo.lock`. Same lock everywhere = identical transitive resolution = identical sccache keys for all shared crates. **This is what makes the design build-cache-friendly** (see 8.5 for full analysis).
-- **`cargo build --locked`** for both describer and per-pipeline builds. Cargo refuses to run if the lockfile would be modified, so transient resolution drift cannot creep in mid-build.
-- **Updating the lock**: explicit `POST /v0/connectors/refresh` admin endpoint (or `feldera-cli connectors refresh`) runs `cargo update` against the describer workspace, rebuilds, and writes the new lock. CI can run this on a schedule. No automatic drift in production.
-- **Manifest cache**: the produced JSON manifest is persisted next to `describer.lock` (`describer.manifest.json`). pipeline-manager loads it at startup without invoking Cargo unless the cache key has invalidated.
+- **Cache key**: `sha256(connectors.toml content || ADAPTERLIB_API_VERSION)`. Same key → reuse the cached manifest and lockfile, skip rebuild. Using the plugin ABI version (not the full Feldera release version) means a Feldera patch or minor release that does not change the connector plugin ABI does **not** force a describer rebuild or a connector recompile.
+- **`describer.lock` is the per-tenant single lockfile** shared by every per-pipeline build for that tenant. Persisted at `<working_dir>/describer/<tenant_id>/<cache_key>/describer.lock` where `cache_key = sha256(content || ADAPTERLIB_API_VERSION)` — note this is **not** the same as `tenant_connector_config.content_hash` (which is `sha256(content)` alone). pipeline-manager copies it into both (a) the describer's workspace and (b) **every per-pipeline workspace for that tenant** as `Cargo.lock`. Same lock per tenant = identical transitive resolution within a tenant = identical sccache keys for all shared crates. **This is what makes the design build-cache-friendly** (see 8.5 for full analysis). Tenants do not share lockfiles — that's intentional, see 8.8.
+- **`cargo build --locked`** for both describer and per-pipeline builds — once a lock exists, with a three-tier warm-path discipline:
+  - **Cold path** (no `describer.lock` yet, or `POST /refresh`): build without `--locked`; Cargo resolves and writes `Cargo.lock`.
+  - **Full warm path** (`describer.lock` exists AND `describer.build_version` matches the current Feldera release version): copy the lock as `Cargo.lock` and pass `--locked`. Both Feldera path deps and external connector pins are exactly as recorded.
+  - **Partial warm path** (`describer.lock` exists but `describer.build_version` differs, i.e. Feldera was upgraded within the same `ADAPTERLIB_API_VERSION`): copy the lock as a resolver seed (preserving external connector pins) but omit `--locked` so Cargo can update the Feldera path-dep versions. sccache serves previously compiled external connector rlibs, so effective build time is minimal.
+  - After every successful build, persist the updated `Cargo.lock` as `describer.lock` and write the current Feldera release version to `describer.build_version`.
+  - Document this explicitly — silently dropping `--locked` on the cold path defeats the drift guarantee.
+- **Updating the lock**: two paths. (1) `PUT /v0/connectors/connectors.toml` (Phase 8.12) auto-triggers a rebuild after a config edit. (2) An explicit `POST /v0/connectors/refresh` admin endpoint runs `cargo update` against the describer workspace (lock churn even when the blob is unchanged) and rewrites the lock — useful for CI to pick up upstream patch releases on a schedule. No automatic drift in production.
+- **Manifest cache**: the produced JSON manifest is persisted as `manifest.json` next to `describer.lock` and `describer.build_version`. pipeline-manager loads it at startup without invoking Cargo unless the cache key has changed. In-process, an `Arc<ManifestCache>` held in `ServerState` tracks build state per tenant (`NotConfigured | Building | Ready | Failed`) with staleness guards so a slow build completing after a newer PUT does not overwrite a fresher state.
 
 #### 8.5 Build-cache-friendliness analysis
 
@@ -405,13 +432,23 @@ Two listed crates registering `name: "kafka"` is a real risk. Behavior: the desc
 
 #### 8.7 `feldera-adapterlib` version pinning
 
-The describer's `Cargo.lock` defines exactly one `feldera-adapterlib` version. Every listed connector must be compatible (same major). Cargo will reject incompatible majors at resolution time; surface that with a clear "connector X depends on feldera-adapterlib Y, but this deployment uses Z" message rather than a raw Cargo error. CI on `feldera-adapterlib` itself runs `cargo semver-checks` to break on accidental breaking changes without a major bump.
+Connector plugin ABI compatibility is enforced at **two levels**:
+
+**Level 1 — compile time (primary guard):** the describer's `Cargo.lock` pins exactly one `feldera-adapterlib` version. Every listed connector must compile against it. Cargo rejects incompatible majors at dependency-resolution time; type errors catch subtler breakage. Because this is static linking, an incompatible connector binary can never be produced — the describer build simply fails. CI on `feldera-adapterlib` runs `cargo semver-checks` to catch accidental breaking changes that don't come with a major bump.
+
+**Level 2 — runtime manifest guard (defence in depth):** `pipeline-manager` stamps `ADAPTERLIB_API_VERSION` into every `ConnectorManifestEntry` and verifies the field when it reads `manifest.json` back from disk. This check does *not* fire in normal operation — when the ABI version changes the cache key changes, a fresh build is triggered, and the newly produced manifest carries the current version. The check exists to catch **stale cached manifests**: if a `manifest.json` from a previous ABI generation ends up in the wrong cache directory (file copy, concurrent upgrade, operator error, cache-management bug), the version mismatch is detected before the stale manifest can be used for SQL direction validation. Without this check, a silently reused stale manifest would let through SQL programs that reference connector names or capabilities from a different ABI generation.
+
+**`ADAPTERLIB_API_VERSION` is also the cache key component** (see 8.4). This is what allows Feldera minor/patch releases — which don't touch the plugin ABI — to share the same cache directory and reuse the connector manifest without triggering a rebuild. Operators upgrading Feldera need not recompile connectors unless the ABI version increments.
+
+**Implementation**: `ADAPTERLIB_API_VERSION: u32 = 0` in `feldera-types/src/constants.rs`. `ConnectorManifestEntry` carries `adapterlib_api_version: u32` as its first field, set by `from_descriptor` from the constant. After running the describer, `pipeline-manager` calls `check_manifest_api_versions(json)`, which deserializes as `Vec<ConnectorManifestEntry>` and returns `DescriberError::IncompatibleApiVersion { connector_name, required_version, deployment_version }` on the first mismatch. `feldera-adapterlib` is added as a direct dependency of `pipeline-manager` for this import. Increment `ADAPTERLIB_API_VERSION` (with a `CHANGELOG.md` entry) only on breaking ABI changes; never on additive extensions.
 
 #### 8.8 Multi-tenant deployments
 
-Per-tenant `connectors.toml` at `/etc/feldera/connectors.d/<tenant>.toml`. Per-tenant cache directory at `/var/lib/feldera/describer/<tenant>/<content-hash>/{describer.lock, describer.manifest.json, target/}`. Tenants share **nothing**: each pays its own first-build cost. Intentionally less efficient than a global cache but eliminates cross-tenant correctness bugs.
+Per-tenant config blobs are rows in `tenant_connector_config` keyed by `tenant_id` — no per-tenant filesystem layout, no path-component sanitization, no `connectors.d/` directory.
 
-**Tenant-name sanitization.** Tenant identifiers can be UUIDs, plain strings, email addresses (`user@example.com`), or issuer-domain extracts (`acme-corp`) — any of which may end up as a path component. Before constructing `<dir>/<tenant>.toml` (or the cache directory), replace the POSIX+Windows union of unsafe characters — `/`, `\`, `:`, `*`, `?`, `"`, `<`, `>`, `|`, and NUL — with `_`. `@` passes through unchanged so email-tenants like `user@example.com` produce `user@example.com.toml` (valid on Linux, macOS, and in practice on Windows). UUID, simple-string, and domain-name tenants are byte-for-byte identical on disk.
+**Build artifacts are still per-tenant on the filesystem.** Cache directory at `<working_dir>/describer/<tenant_id>/<cache_key>/{describer.lock, describer.build_version, manifest.json, target/}` where `cache_key = sha256(content || ADAPTERLIB_API_VERSION)`. Tenants share **nothing** in the build cache: each pays its own first-build cost. Intentionally less efficient than a global cache but eliminates cross-tenant correctness bugs (tenant A's `[patch]` doesn't shadow tenant B's deps; tenant A's git-rev pins don't poison tenant B's resolution).
+
+**`tenant_id` as a path component is safe by construction.** Tenant IDs are UUIDs (existing schema), so the path component is always 36 hex+dash characters — no sanitization needed. (The previous plan worried about email-style tenant identifiers; with DB storage, the human-readable tenant *name* never reaches the filesystem.)
 
 #### 8.9 Hardening `connectors.toml` (deployment guidance)
 
@@ -425,18 +462,76 @@ Same supply-chain trust model as adding any Rust dep. Document in deployment gui
 
 If, for a first iteration, even the describer build is too much complexity, pipeline-manager can accept any `{name, config}` pair and let the controller surface direction errors at pipeline startup. Worse UX (errors at start instead of at SQL parse) but minimal pipeline-manager change. Documented escape hatch; not the recommended default.
 
+#### 8.11 Interaction with `ProgramStatus`
+
+The per-program compilation state machine at `crates/pipeline-manager/src/db/types/program.rs:153` (`Pending → CompilingSql → SqlCompiled → CompilingRust → Success | SqlError | RustError | SystemError`) is intentionally **orthogonal to the describer**. The describer is a deployment-level artifact, not a per-pipeline phase, and adding a new `ProgramStatus` variant for "describer building" would conflate two scopes (one manifest serves N programs).
+
+**Concrete rules:**
+
+- **No new `ProgramStatus` variant.** The describer either has a current manifest in cache or it doesn't. Per-program lifecycle does not change.
+- **Manifest is a precondition for `Pending → CompilingSql`.** When the SQL compiler picks up a `Pending` program, it consults the tenant's cached manifest. If the manifest is missing (cold tenant, first build still in progress, or describer build failed), the program stays `Pending` — it does **not** advance and immediately fail. The user-visible channel for "why is my program stuck" is `GET /v0/connectors/status` (Phase 8.12), which returns the tenant's describer state (`ready`/`building`/`failed`/`not_configured`) and any captured build error.
+- **Bundled-only tenants skip the describer entirely.** A tenant with an empty `tenant_connector_config.content` (the default for newly-created tenants when `connectors_toml_path` is unset, or after explicit clearing) means the manifest is constructed in-process from the `inventory` walk of the manager's own linked descriptors — no Cargo invocation, no pre-condition. `GET /v0/connectors/status` reports `state: "not_configured"`. Program lifecycle is bit-for-bit unchanged from today.
+- **Refresh-vs-in-flight policy: snapshot semantics.** Both `PUT /v0/connectors/connectors.toml` (auto-rebuild) and `POST /v0/connectors/refresh` (lock churn) rebuild the manifest in the background. **In-flight `CompilingSql` jobs keep using the manifest snapshot they loaded at job start.** New transitions out of `Pending` after the rebuild completes pick up the new manifest. This avoids cancelling work mid-compile and keeps the per-program state machine deterministic; the cost is that a config edit does not retroactively re-validate already-successful compilations (which is correct — the user is asking what to do *next*, not to invalidate prior outputs).
+- **Validation failures map to `SqlError`, not `SystemError`.** When `program.rs:682,735` rejects an unknown connector or a direction mismatch (PR 11), the program transitions to `SqlError` with a message naming the connector and pointing at the tenant's `connectors.toml`. `SystemError` remains reserved for OS/process-level faults (Cargo failed to spawn, disk full, etc.) — manifest-content disagreements are not those.
+- **Describer build failure for one tenant does not block other tenants.** Each tenant's describer build is independent. `GET /v0/connectors/status` and the refresh endpoint are tenant-scoped; an operator diagnoses and retries the failing tenant in place. Pipelines belonging to tenants that don't reference plugin connectors still build (their SQL compile only consults bundled descriptors, which need no manifest).
+
+**Tests to add in PR 11**: program stuck in `Pending` while describer is still building; program advances to `CompilingSql` once manifest is available; rebuild after `PUT /v0/connectors/connectors.toml` during in-flight compile uses old snapshot; unknown plugin connector → `SqlError` not `SystemError`.
+
+#### 8.12 Config storage and editing API
+
+The tenant blob is read/written through three endpoints. All are tenant-scoped via the existing auth context.
+
+**`GET /v0/connectors/status`** — returns the unified status + manifest envelope:
+
+```json
+{
+  "state": "ready" | "building" | "failed" | "not_configured",
+  "content_hash": "abc123…",        // present when state in {ready, building, failed}
+  "version": 7,                     // tenant_connector_config.version
+  "last_built_at": "2026-04-29T…",  // present when state in {ready, failed}
+  "error": "stderr from describer", // present iff state == failed
+  "descriptors": [ … ]              // present iff state == ready; null otherwise
+}
+```
+
+`ETag: "<content_hash>"`; clients use `If-None-Match` for cheap polling (304 with no body when nothing changed). One endpoint serves both consumers — the connectors-management status badge polls it ignoring `descriptors`; the SQL editor's connector picker reads `descriptors`.
+
+**`GET /v0/connectors/connectors.toml`** — returns the raw blob plus headers needed for safe edits:
+
+```
+200 OK
+ETag: "<content_hash>"
+Content-Type: text/plain; charset=utf-8
+X-Connectors-Version: 7
+X-Connectors-Edited-At: 2026-04-29T…
+X-Connectors-Edited-By: alice@acme.example
+
+acme_snowflake = { version = "0.3", registry = "crates.io" }
+…
+```
+
+**`PUT /v0/connectors/connectors.toml`** — updates the blob and **auto-triggers a rebuild**:
+
+- Body: the new toml text. Content-Type `text/plain`. Empty body = clear the blob (returns to bundled-only).
+- `If-Match: "<content_hash>"` is **required**. Mismatch → `412 Precondition Failed` (optimistic concurrency; another operator beat this PUT).
+- Manager validates the body cheaply (line shape — see force-link extraction rule in 8.3) and rejects on parse-shape error. Deeper validation (does it actually compile?) happens during the rebuild and surfaces via `GET /v0/connectors/status` returning `state: "failed"`.
+- On success: writes the row (incrementing `version`, recomputing `content_hash`), enqueues a describer rebuild, returns `202 Accepted` with `Location: /v0/connectors/status` and the new `content_hash`/`version` in the body. PUT does **not** block on the rebuild.
+**AuthZ.** All four endpoints use the existing tenant-scoped auth — any authenticated user with access to the tenant can read and edit the blob. No role distinction in the initial release. Rationale: the supply-chain trust model already says "review before adding a connector" and applies equally to any operator; introducing an admin role now would gate the in-product editor behind RBAC plumbing the deployment may not have. The audit trail (`edited_by` / `edited_at`) is the review surface. A future PR can add role gating without breaking the API shape.
+
+**Save semantics summary** — auto-rebuild on PUT (option (a) from earlier discussion). Rationale: the alternative (require explicit refresh after edit) splits a single user intent across two API calls; pre-validate (run `cargo metadata` before accepting) blocks the PUT for seconds and still doesn't catch every error. Auto-rebuild keeps the contract simple: PUT is the edit; status reports the outcome.
+
 ---
 
 ### Phase 9 — REST API / OpenAPI for plugin configs
 
 The hardcoded list at `crates/rest-api/build.rs:38-208` exists because the *generated client* (Rust SDK) needs strongly-typed structs for in-tree connector configs. For 3rd-party plugins, two acceptable answers:
 
-1. **Opaque-on-client (recommended)**: plugin configs serialize as `serde_json::Value` in client SDKs. The full schema is available at runtime via a new endpoint `GET /v0/connectors`, returning every registered descriptor's JSON Schema. The web console reads this list to populate the connector picker and config form (see Phase 10). Matches how Kafka Connect, Airbyte, and Trino plugins work.
+1. **Opaque-on-client (recommended)**: plugin configs serialize as `serde_json::Value` in client SDKs. The full schema is available at runtime via `GET /v0/connectors/status` (Phase 8.12), whose `descriptors` field returns every registered descriptor's JSON Schema. The web console reads this list to populate the connector picker and config form (see Phase 10). Matches how Kafka Connect, Airbyte, and Trino plugins work.
 2. **Re-generate per deployment**: each enterprise build of the manager regenerates `openapi.json` with its plugin types replacement-listed. Possible but high-friction.
 
 Take (1). Keep the existing list for in-tree connectors (no change for OSS users); plugins are opaque on the client and discovered at runtime.
 
-The `GET /v0/connectors` endpoint also unblocks documentation tooling.
+The status endpoint also unblocks documentation tooling. Phase 9's PR is now mostly OpenAPI plumbing — schema definitions for `GET /v0/connectors/status`, `GET /v0/connectors/connectors.toml`, `PUT /v0/connectors/connectors.toml` (the endpoints themselves ship in PR 10, Phase 8.12).
 
 ---
 
@@ -444,7 +539,7 @@ The `GET /v0/connectors` endpoint also unblocks documentation tooling.
 
 The web console currently knows about each connector via the typed OpenAPI client. Switch to:
 
-1. On first connector-picker render, call `GET /v0/connectors` and cache.
+1. On first connector-picker render, call `GET /v0/connectors/status` and cache its `descriptors` field.
 2. Render the connector dropdown from descriptor list.
 3. Render the config form from descriptor's JSON Schema (any of the existing schema-driven form libraries works; the project already uses Monaco for SQL).
 4. For in-tree connectors the rich existing forms remain and are preferred; the descriptor lookup gracefully falls back to a generic JSON-Schema form.
@@ -500,7 +595,7 @@ Status legend: ✅ resolved by plan / ⚠️ accepted with mitigation / 🔧 aud
 
 5. ✅ **Cargo-feature interaction with registry**. `register_connector!` calls go inside the same `#[cfg(feature = "with-…")]` blocks that already gate the connector module. Pattern confirmed at `transport.rs:42-55`.
 
-6. ✅ **Describer rebuild stability**. `describer.lock` is the pin; `cargo build --locked` is enforced; `POST /v0/connectors/refresh` is the only path that updates the lock. Documented in 8.4.
+6. ✅ **Describer rebuild stability**. `describer.lock` is the pin; `cargo build --locked` is enforced; `PUT /v0/connectors/connectors.toml` (auto-rebuild) and `POST /v0/connectors/refresh` (lock churn) are the only paths that update the lock. Documented in 8.4.
 
 7. ⚠️ **Supply-chain trust**. Same model as any Rust dep. Documented in 8.9 (prefer rev pins over tags, vendor for high-security deployments, audit `[patch]`, build scripts run with deployment privileges).
 
@@ -519,7 +614,7 @@ Status legend: ✅ resolved by plan / ⚠️ accepted with mitigation / 🔧 aud
 5. **Phase 4b** — sweep the remaining bundled connectors (`s3`, `url`, `nats`, `pubsub`, `redis`, `kafka`, `nexmark`, integrated). The fallback match shrinks until empty. At this point, all bundled connectors are registry-driven, but pipeline-manager still uses the old exhaustive match for direction validation.
 6. **Phase 7** — open `TransportConfig` enum. The `Plugin` variant accepts unknown names as `{name, config}`; bundled connectors keep their typed variants. No deserialization breakage for existing pipelines.
 7. **Phase 8** — `connectors.toml` + describer + lockfile policy. After this, pipeline-manager validates against the described set; with an empty `connectors.toml`, behavior matches today's bundled-only deployments.
-8. **Phase 9** — `GET /v0/connectors` discovery endpoint reads the cached manifest.
+8. **Phase 9** — OpenAPI surface for `GET /v0/connectors/status`, `GET/PUT /v0/connectors/connectors.toml`, `POST /v0/connectors/refresh`.
 9. **Phase 10** — web console consumes the discovery endpoint; in-tree connector forms remain.
 10. **Phase 11** — reference plugin + integration test seals the contract end-to-end (a real out-of-tree connector goes through `connectors.toml` → describer → manifest → SQL parse → pipeline build → runtime dispatch).
 
@@ -651,7 +746,7 @@ PRs 7a–7f follow the per-connector migration recipe in Phase 4 (steps 1–8): 
 - [ ] **Delete the `#[serde(tag = "name", content = "config", rename_all = "snake_case")]` attribute** from the enum. `#[serde(...)]` is a derive helper attribute injected by the serde proc-macro; it cannot be retained alongside manual `Serialize`/`Deserialize` impls (the compiler errors with `cannot find attribute 'serde' in this scope`). Implement **both `Serialize` and `Deserialize` manually** — the derive cannot be partially retained.
 - [ ] **`HttpOutput` is a unit variant**: its serialization must emit `{"name":"http_output"}` with **no `"config"` key** (use `serialize_map(Some(1))`). Every other variant uses `Some(2)` and emits `{"name":..., "config":...}`. The `Plugin` arm forwards the stored `name`/`config` directly without re-nesting. Add an explicit test asserting `HttpOutput`'s serialized form contains no `config` field — silently emitting `"config": null` would silently break stored pipeline configs from before this PR.
 - [ ] Manual `Deserialize`: parse a `{name, config}` envelope, then dispatch on `name` to `serde_json::from_value::<TypedConfig>(config)` for known names; route unknown names to `Plugin { name, config }`. The intermediate `serde_json::Value` allocation is acceptable (`TransportConfig` deserializes once at pipeline startup, not on hot paths).
-- [ ] **`ToSchema` schema regression (known limitation)**: removing `#[serde(tag, content)]` strips the adjacently-tagged hint that `utoipa::ToSchema` consumed for OpenAPI generation. The generated schema for `TransportConfig` will be less precise (likely `oneOf` of inline variant structs). Accept as placeholder; PR 14's `GET /v0/connectors` is the designated owner of the connector schema surface and will replace this.
+- [ ] **`ToSchema` schema regression (known limitation)**: removing `#[serde(tag, content)]` strips the adjacently-tagged hint that `utoipa::ToSchema` consumed for OpenAPI generation. The generated schema for `TransportConfig` will be less precise (likely `oneOf` of inline variant structs). Accept as placeholder; PR 14's `GET /v0/connectors/status` `descriptors` field is the designated owner of the connector schema surface and will replace this.
 - [ ] Update `name()` (`config.rs:1638-1662`) to handle the `Plugin` arm (returns `p.name.clone()`).
 - [ ] Remove `is_transient()` and `is_http_input()` helpers (already replaced by descriptor lookups in PR 5).
 - [ ] **Audit every exhaustive `match TransportConfig` in the workspace** (`rg 'match.*TransportConfig'`). Most matches use `_` wildcards, `if let`, or `matches!` and require **no code change** — Rust's exhaustiveness check only fires on `match` arms without a catch-all. The only file that needs explicit `Plugin` arms is `crates/pipeline-manager/src/db/types/program.rs` at the input/output validation matches (lines 682, 735): both already have `_ =>` arms, but those return the misleading `ExpectedInputConnector`/`ExpectedOutputConnector` errors. Add explicit `TransportConfig::Plugin(p) => Err(ConnectorGenerationError::UnknownConnector { ..., name: p.name.clone() })` arms ahead of the `_` arm at each site.
@@ -662,46 +757,58 @@ PRs 7a–7f follow the per-connector migration recipe in Phase 4 (steps 1–8): 
 - **Depends on**: PR 7g (all bundled connectors registry-driven AND cleanup landed; the `Plugin` variant is purely an extension point at this point — no risk of dead match arms colliding with the new `Plugin` arm being added).
 - **Unblocks**: PR 9.
 
-### PR 9 — `connectors.toml` config plumbing (Phase 8.1)
-- [ ] Document the `connectors.toml` format (concrete example in 8.1): one Cargo dep per line, **no section header**, mirroring the `udf_toml` shape at `rust_compiler.rs:1336-1346`. Each line is `<key> = <cargo-dep-spec>` where the spec is whatever Cargo accepts (plain version string, inline table with `git`/`rev`/`path`/`features`/`registry`, etc.). Multi-line `[dependencies.<name>]` table form is **not** supported — line-based force-link extraction in PR 10 assumes one dep per line. Cargo is the authoritative parser, invoked downstream by PR 10's describer build.
-- [ ] **Add the two fields (`connectors_toml_path: Option<String>`, `connectors_d_dir: Option<String>`) to `CompilerConfig`, not `CommonConfig`.** Only the compiler path consumes them; the API server and runner have no use for connector-dep knowledge. Future endpoints (e.g. PR 14's `GET /v0/connectors`) reach the manifest through shared application state, not through a separate config path.
-- [ ] **Update every `CompilerConfig { ... }` struct-literal site** when adding the fields. `CompilerConfig` has no `Default` impl; the compiler enforces this at four call sites: `compiler/test.rs` (×1), `compiler/main.rs` (×3 — two `create_working_directory_if_not_exists` tests and one `create_test_config` helper), `compiler/rust_compiler.rs` (×1, in `binary_delivery_mode_from_config`; the second config in that test uses `..config` struct-update and needs no edit). Set both fields to `None` in tests.
-- [ ] **Place the loader at `crates/pipeline-manager/src/compiler/connectors.rs`** with `pub mod connectors;` declared in `compiler.rs`. PR 10's `prepare_describer_workspace` lives in the same module (or a sibling), so the loader type is already in scope.
-- [ ] Add per-tenant variants discovered via `/etc/feldera/connectors.d/<tenant>.toml` (per-tenant lookup logic by tenant ID, falling back to the global file). See 8.8 for the tenant-name sanitization rule.
-- [ ] **Treat the file as opaque text** — read it as a `String`, store it. Do **not** add a `toml` dep, do **not** call `toml::from_str`, do **not** introspect entries. Pipeline-manager's only responsibility at this PR is "find the right file, slurp it." Malformed content surfaces downstream as a `cargo build` error (same contract as `udf_toml` today). An empty file is accepted and treated as the bundled-only baseline (no deps appended, no force-link entries beyond the built-in section).
-- [ ] **Wrap the content in a `ConnectorsTomlContent` newtype** with `as_str(&self) -> &str` and `is_empty(&self) -> bool` helpers — PR 10 uses `is_empty()` to decide whether to splice a deps section into `Cargo.toml` at all, and `as_str()` for the splice itself. A bare `String` would force `pub .0` field access at every call site.
-- [ ] **Use synchronous `std::fs::read_to_string`** (not `tokio::fs`). The file is a handful of lines so the blocking risk is negligible, and a sync function lets the 15+ unit tests run as plain `#[test]` instead of `#[tokio::test]`. PR 10 calls the loader from an async context via `tokio::task::spawn_blocking` if needed — no interface change.
-- [ ] Tests: file at the configured path is read end-to-end; multi-tenant lookup picks the right file (including a tenant name with `@`, e.g. `user@example.com`, surviving sanitization unchanged); empty file produces an empty string and an empty downstream dep list; arbitrary Cargo spec shapes — plain version string, git+rev inline table, path inline table, features array — survive the read step verbatim and reach PR 10's input unchanged.
+### PR 9 — `tenant_connector_config` schema + bootstrap seed (Phase 8.1)
+- [ ] **Document the `connectors.toml` blob format** (concrete example in 8.1): one Cargo dep per line, **no section header**, mirroring the `udf_toml` shape at `rust_compiler.rs:1336-1346`. Each line is `<key> = <cargo-dep-spec>`. Multi-line `[dependencies.<name>]` table form is **not** supported — line-based force-link extraction in PR 10 assumes one dep per line.
+- [ ] **DB migration**: add `tenant_connector_config(tenant_id, content, content_hash, version, edited_at, edited_by)` per the schema sketch in 8.1. `content_hash = sha256(content)` is recomputed on every write. `version` is monotonic. `tenant_id` is the primary key (one row per tenant). Migration creates the empty table — rows are inserted lazily on first read or on tenant creation (see bootstrap below). **Footgun**: declare timestamp columns as `TIMESTAMPTZ` (not `TIMESTAMP`) — `chrono::DateTime<Utc>` requires timezone-aware columns; a plain `TIMESTAMP` binds silently during migration but fails at runtime when sqlx tries to decode the value.
+- [ ] **Add a single `connectors_toml_path: Option<String>` field to `CompilerConfig`** — bootstrap seed only. Drop the previously-planned `connectors_d_dir` field; per-tenant variants live in the DB now, not on the filesystem.
+- [ ] **Update every `CompilerConfig { ... }` struct-literal site**. `CompilerConfig` has no `Default` impl; the compiler enforces this at the same five call sites as before — `compiler/test.rs` (×1), `compiler/main.rs` (×3), `compiler/rust_compiler.rs` (×1; the sibling site uses `..config`). Set the field to `None` in tests.
+- [ ] **Place the bootstrap loader at `crates/pipeline-manager/src/compiler/connectors.rs`** with `pub mod connectors;` declared in `compiler.rs`. The loader is `fn load_bootstrap_seed(config: &CompilerConfig) -> io::Result<Option<String>>` — returns `Ok(None)` when `connectors_toml_path` is unset; otherwise reads the file with synchronous `std::fs::read_to_string` (15+ unit tests stay as plain `#[test]`).
+- [ ] **Bootstrap rule**: on tenant creation (and as a one-shot migration for existing tenants when the field is first set), if no `tenant_connector_config` row exists for the tenant *and* `connectors_toml_path` is set, insert a row with `content` = file contents, `version = 1`. After that, the file is **never re-read** for that tenant — DB is authoritative. If the field is unset, insert a row with empty `content`. Bootstrap is idempotent (uses `INSERT … ON CONFLICT DO NOTHING`).
+- [ ] **Wrap reads in a `ConnectorsTomlContent` newtype** with `as_str(&self) -> &str` and `is_empty(&self) -> bool` helpers. PR 10 uses `is_empty()` to decide whether to splice a deps section into `Cargo.toml` and `as_str()` for the splice itself.
+- [ ] **DB-access functions**: `tenant_connector_config_get(tenant_id) -> Option<Row>`, `tenant_connector_config_put(tenant_id, content, edited_by, expected_hash) -> Result<Row, OptimisticConcurrencyError>` (`expected_hash` mismatch maps to a 412 in PR 10). Empty `content` is valid (bundled-only).
+- [ ] Tests: bootstrap inserts a row from the seed file on first tenant access; second access returns the DB row even after the file changes; tenants without bootstrap field get an empty-content row; PUT with stale `expected_hash` returns the concurrency error; arbitrary Cargo spec shapes (plain version, git+rev inline table, path inline table, features array) round-trip verbatim through DB storage.
 - **Depends on**: PR 8.
 - **Unblocks**: PR 10.
 
-### PR 10 — Describer binary + lockfile-based caching (Phase 8.2-8.4)
-- [ ] Generate the describer crate (`crates/feldera-describer/`) on first use; its `Cargo.toml` lists `feldera-adapterlib` + `dbsp_adapters` + every `connectors.toml` entry.
-- [ ] **Generate `force_link.rs` alongside `main.rs`** in the describer workspace, with two sections in fixed order: a hardcoded built-in section (currently `extern crate feldera_datagen as _;`) and a user-listed section iterating over `connectors.toml`. `main.rs` declares `mod force_link;` so the lines are part of the compilation unit. The built-in list is a `const &[&str]` in pipeline-manager's codegen — not driven by config, not user-editable, not visible in any error message that says "from `connectors.toml`". See Phase 8.3 for the rationale.
-- [ ] **Generate the same `force_link.rs` into every per-pipeline workspace** (extends `prepare_workspace` at `rust_compiler.rs:1242`). Identical two-section layout. The per-pipeline `pipeline` crate's `main.rs` (or root module) needs `mod force_link;` added by the existing SQL→Rust scaffolding.
+### PR 10 — Describer binary + DB-backed config endpoints (Phase 8.2-8.4, 8.12)
+- [ ] Generate the describer crate (`crates/feldera-describer/`) on first use per tenant; its `Cargo.toml` lists `feldera-adapterlib` + `dbsp_adapters` + every entry from the tenant's `tenant_connector_config.content`.
+- [ ] **Generate `force_link.rs` alongside `main.rs`** in the describer workspace, with two sections in fixed order: a hardcoded built-in section (currently `extern crate feldera_datagen as _;`) and a user-listed section iterating over the tenant's blob. `main.rs` declares `mod force_link;` so the lines are part of the compilation unit. The built-in list is a `const &[&str]` in pipeline-manager's codegen — not driven by config, not user-editable, not visible in any error message that says "from `connectors.toml`". See Phase 8.3.
+- [ ] **Generate the same `force_link.rs` into every per-pipeline workspace** (extends `prepare_workspace` at `rust_compiler.rs:1242`). Identical two-section layout. **Place it inside the existing globals crate** (`<pipeline>_globals`) — its `lib.rs` declares `mod force_link;`. Add `("force_link.rs", true)` to the `src_content` list at `rust_compiler.rs:1435-1448` (the `_globals` arm) so `DirectoryContent::validate()` does not reject the injected file.
 - [ ] **The hand-written `extern crate feldera_datagen as _;` in `crates/adapters/src/lib.rs`** (added in PR 5) stays — it covers `dbsp_adapters`'s own lib/integration tests, which build as a separate output and aren't reached by any codegen path. The describer and per-pipeline workspaces get their own generated `force_link.rs`; the three sources are parallel, not duplicate.
-- [ ] `prepare_describer_workspace` analogous to existing `prepare_workspace`.
-- [ ] **Extend `CompilerConfig::canonicalize()`** to absolute-resolve `connectors_toml_path` and `connectors_d_dir` (added as `Option<String>` fields in PR 9). PR 9 deliberately left these out of `canonicalize()` because `std::fs::canonicalize` requires the path to exist; only here, where `prepare_describer_workspace` first reads the files, is it safe to assume they're present.
-- [ ] Build with `cargo build --locked` against persisted `describer.lock` at `/var/lib/feldera/describer/<tenant>/<content-hash>/`.
-- [ ] Run the describer and capture JSON; persist as `describer.manifest.json` next to the lock.
-- [ ] Cache key = hash of `connectors.toml` + `feldera-adapterlib` major version.
-- [ ] Add `POST /v0/connectors/refresh` admin endpoint that runs `cargo update`, rebuilds, writes new lock.
-- [ ] Detect duplicate connector names **in the describer's startup** (walk `inventory`, error if any name appears twice). Failure message names both source crates from `connectors.toml`. Do not push this check into adapterlib — `connector_by_name()` is intentionally simple and the describer has the deployment context to render the diagnostic.
-- [ ] Surface incompatible-major errors with a clear "connector X needs feldera-adapterlib Y, deployment uses Z" message.
-- [ ] Tests: cache hit, cache miss, refresh, name collision, version mismatch.
+- [ ] `prepare_describer_workspace` analogous to existing `prepare_workspace`. Reads the tenant's blob from `tenant_connector_config` rather than the filesystem.
+- [ ] **Extend `CompilerConfig::canonicalize()`** to absolute-resolve `connectors_toml_path` (the bootstrap seed field added in PR 9). The field is optional — add a sibling helper `help_canonicalize_path_if_exists` that returns `Ok(None)` when the path is unset and skips canonicalization when the path is set but does not yet exist on disk. Reusing the existing `help_canonicalize_path` would error on absent optional fields and break deployments that ship no seed file.
+- [ ] Run the describer and capture JSON; persist as `manifest.json` next to `describer.lock` at `<working_dir>/describer/<tenant_id>/<cache_key>/` (where `cache_key` = `describer_cache_key` = `sha256(content || ADAPTERLIB_API_VERSION)`, distinct from `tenant_connector_config.content_hash`).
+
+- [ ] **`ManifestCache`** (`compiler/manifest_cache.rs`): in-process state machine, one entry per tenant, transitions `NotConfigured → Building → Ready | Failed`. `try_begin_build` is idempotent for in-flight builds; `force = true` bypasses the `Ready` check (used by refresh). Staleness guards on `mark_ready` / `mark_failed`: silently drop a completion if the tenant's current hash has already moved on to a newer build. Hold as `Arc<ManifestCache>` in `ServerState`; background `tokio::spawn` tasks call `mark_ready` / `mark_failed` on completion.
+
+**Endpoints (Phase 8.12):**
+- [ ] **`GET /v0/connectors/status`** returning the unified envelope (`state`, `content_hash`, `version`, `last_built_at`, `error`, `descriptors`). `ETag: "<content_hash>"`; honors `If-None-Match` with 304. Tenant-scoped via existing auth.
+- [ ] **`GET /v0/connectors/connectors.toml`** returning the raw blob with `ETag`, `X-Connectors-Version`, `X-Connectors-Edited-At`, `X-Connectors-Edited-By`. Content-Type `text/plain; charset=utf-8`.
+- [ ] **`PUT /v0/connectors/connectors.toml`** — body is the new toml text, `If-Match: "<content_hash>"` required. On match: write the row (recomputing `content_hash`, incrementing `version`, recording `edited_by` from auth context), enqueue a background describer rebuild, return `202 Accepted` with `Location: /v0/connectors/status` and the new hash/version. On mismatch: `412 Precondition Failed`. Body parse-shape validation rejects malformed-line bodies pre-write; deeper errors surface via `state: "failed"` on `/status`. **Footgun**: call `get_or_bootstrap` (the lazy-insert helper) at the start of the PUT handler, before the CAS UPDATE. Without it, a fresh tenant that PUTs without a prior GET has no row; the UPDATE matches zero rows, the error-disambiguation query finds no row either, and the handler returns `UnknownTenant` (401) instead of `OutdatedHash` (412).
+- [ ] **`POST /v0/connectors/refresh`** admin endpoint runs `cargo update` against the tenant's describer workspace and rebuilds — useful for picking up upstream patch releases without a config edit.
+- [ ] **AuthZ**: all four endpoints use the existing tenant-scoped auth — no role distinction in the initial release (Phase 8.12). The audit trail (`edited_by` / `edited_at` columns) is the review surface; role gating can be added later without breaking the API shape.
+- [ ] **Define `ApiError` variants** with semantic names: `ConnectorsConfigConflict` (→ 412, ETag mismatch on PUT), `ConnectorsConfigInvalidShape` (→ 400, body fails line-shape check), `ConnectorManifestBuildFailed { error: String }` (→ 500, wraps describer build failures surfaced through status). `ApiError` does not have generic `NotFound`/`InternalServerError` variants, so name them explicitly. Wire each into `error_code`, `Display`, and `ResponseError::status_code`.
+- [ ] **Plumb `compiler_config: Option<CompilerConfig>` through `ServerState::new`** — there are two call sites: `api/main.rs` and a `#[cfg(test)]` site in `auth.rs`.
+- [ ] Detect duplicate connector names **in the describer's startup** (walk `inventory`, error if any name appears twice). Failure message names both source crates from the tenant's blob. Do not push this check into adapterlib — `connector_by_name()` is intentionally simple and the describer has the deployment context to render the diagnostic.
+- [ ] **Cache key + lockfile discipline** (Phase 8.4 / 8.7): `describer_cache_key` hashes `connectors.toml` content + `ADAPTERLIB_API_VERSION` — **not** the full Feldera release version. A Feldera upgrade that does not change the plugin ABI lands in the same cache directory and skips the rebuild. Implement the three-tier warm-path discipline in `build_and_run_describer`: cold path (no lock yet) builds without `--locked`; full warm path (`describer.lock` + `describer.build_version` = current `CARGO_PKG_VERSION`) builds with `--locked`; partial warm path (lock exists but Feldera version changed within the same ABI) copies the lock as a Cargo resolver seed and builds without `--locked` so only Feldera path-dep versions update while external connector pins are preserved and sccache serves previously compiled rlibs. Refresh both sidecar files after every successful build.
+- [ ] **API version stamping and validation** (Phase 8.7): stamp `adapterlib_api_version: u32` into each `ConnectorManifestEntry` and call `check_manifest_api_versions` in `build_and_run_describer` after the binary exits. The check is *not* the primary guard against incompatible connectors (Cargo handles that at compile time) — it guards the *manifest file* against stale-cache scenarios: a `manifest.json` from a previous ABI generation that somehow ends up in the current cache directory is rejected before it can poison SQL direction validation. See Phase 8.7 for the full two-level framing. Tests: matching version accepted; future version rejected with connector name and both version numbers in the error message; empty manifest accepted; malformed JSON returns `Parse` error; cache key stable for identical content, distinct for different content.
+- [ ] Tests: cache hit, cache miss (cold-path bootstrap without `--locked`), refresh, name collision, version mismatch; `GET /status` response shape across all four states; `PUT` with stale ETag returns 412; `PUT` with malformed body returns 400; `PUT` increments `version` and triggers rebuild observable via `/status` going `ready → building → ready`; tenant isolation (tenant A's PUT does not affect tenant B's `/status`). **Footgun**: actix test helpers that spin up embedded Postgres must return a struct that owns the `TempDir`, not a bare tuple. If `TempDir` is a local in the helper function, it drops when the function returns and deletes the data directory before any test request fires. The `app` field must be `impl Service<…>` — use a named struct (e.g. `struct TestApp<S> { app: S, _state: Arc<…>, _tmp: TempDir }`) so the borrow checker keeps the directory alive for the test's lifetime.
 - **Depends on**: PR 9.
 - **Unblocks**: PR 11, PR 12.
 
 ### PR 11 — Wire descriptor manifest into direction validation (Phase 8 cont.)
 - [ ] Replace exhaustive matches at `pipeline-manager/src/db/types/program.rs:682,735` with manifest lookup + `direction.allows_input()` / `allows_output()` checks.
 - [ ] Error messages name the unknown connector and suggest checking `connectors.toml`.
-- [ ] Tests: known connector validates, unknown connector fails with a useful message, direction mismatch fails.
-- [ ] Verify with empty `connectors.toml` that behavior matches today's bundled-only deployments bit-for-bit.
+- [ ] **Manifest-missing path keeps the program in `Pending` rather than transitioning it to a failure state** (see Phase 8.11). The compiler loop polls the manifest cache and only advances once the manifest is available; describer build failures are surfaced via the existing `ConnectorManifestBuildFailed` / `CompilerConfigNotAvailable` `ApiError` variants from PR 10.
+- [ ] **Validation failures map to `SqlError`, not `SystemError`** — unknown connector and direction mismatch are SQL-level semantic errors per Phase 8.11.
+- [ ] **Refresh uses snapshot semantics**: in-flight `CompilingSql` jobs keep the manifest snapshot they loaded at job start; new `Pending → CompilingSql` transitions after `POST /v0/connectors/refresh` pick up the new manifest. No mid-compile cancellation.
+- [ ] Tests: known connector validates, unknown connector fails with a useful message, direction mismatch fails, program stuck in `Pending` while describer is still building, program advances once manifest is available, refresh during in-flight compile uses old snapshot, unknown plugin connector → `SqlError` (not `SystemError`).
+- [ ] Verify with empty `connectors.toml` that behavior matches today's bundled-only deployments bit-for-bit (no describer invocation, no `Pending` stall).
 - **Depends on**: PR 10.
 - **Unblocks**: PR 13.
 
 ### PR 12 — Build-cache discipline: shared lockfile + linker (Phase 8.5)
-- [ ] Copy `describer.lock` as `Cargo.lock` into every per-pipeline workspace (extends `prepare_workspace`).
+- [ ] Copy `describer.lock` as `Cargo.lock` into every per-pipeline workspace (extends `prepare_workspace`). PR 10 already produced `describer.lock` via the bootstrap-aware path, so per-pipeline builds always have a lock to consume.
 - [ ] Add `--locked` to per-pipeline `cargo build` invocation at `rust_compiler.rs:1574-1577`.
 - [ ] Document `RUSTFLAGS` constraint: must be set at manager level, not per pipeline.
 - [ ] Optionally set `RUSTFLAGS="-C link-arg=-fuse-ld=mold"` in default deployment configs (gated on host having `mold` available).
@@ -710,26 +817,28 @@ PRs 7a–7f follow the per-connector migration recipe in Phase 4 (steps 1–8): 
 - **Unblocks**: nothing; orthogonal to PR 11.
 
 ### PR 13 — Multi-tenant cache layout + supply-chain hardening docs (Phase 8.8-8.9)
-- [ ] Confirm cache directory layout `/var/lib/feldera/describer/<tenant>/<content-hash>/` is enforced.
-- [ ] Test that one tenant's `connectors.toml` edit does not invalidate another tenant's manifest.
-- [ ] Deployment guide section: pin `rev = "<sha>"` not `tag` for git deps; vendoring with `cargo vendor`; auditing `[patch]`; build scripts run with deployment privileges.
-- [ ] Add a "Hardening connectors.toml" page to `docs.feldera.com/`.
+- [ ] Confirm per-tenant cache directory layout `/var/lib/feldera/describer/<tenant_id>/<content_hash>/` is enforced. (Tenant ID is a UUID, no sanitization needed.)
+- [ ] Test that one tenant's `PUT /v0/connectors/connectors.toml` does not invalidate another tenant's manifest, lockfile, or build cache.
+- [ ] Deployment guide section: pin `rev = "<sha>"` not `tag` for git deps; vendoring with `cargo vendor`; auditing `[patch]`; build scripts run with deployment privileges; the in-product editor's audit log (`edited_at` / `edited_by`) as the review surface.
+- [ ] Add a "Hardening `connectors.toml`" page to `docs.feldera.com/`.
 - **Depends on**: PR 11.
 - **Unblocks**: PR 14.
 
-### PR 14 — `GET /v0/connectors` discovery endpoint (Phase 9)
-- [ ] New endpoint reads the cached manifest and returns each descriptor with name, direction, kind, FT level, and JSON Schema.
-- [ ] Update `openapi.json` (regenerate via existing build flow).
-- [ ] Keep the typed connector schemas in `rest-api/build.rs:38-208` unchanged; plugin connectors are opaque on the typed client.
-- [ ] Tests: endpoint response shape, with and without plugin connectors listed.
+### PR 14 — OpenAPI surface for connector endpoints (Phase 9)
+- [ ] Add OpenAPI schemas for `GET /v0/connectors/status`, `GET /v0/connectors/connectors.toml`, `PUT /v0/connectors/connectors.toml`, `POST /v0/connectors/refresh` (the endpoints themselves shipped in PR 10). Status envelope spec: enum for `state`, optional `descriptors` array, ETag header documented.
+- [ ] Regenerate `openapi.json` via existing build flow.
+- [ ] Keep the typed connector schemas in `rest-api/build.rs:38-208` unchanged; plugin connectors are opaque (`serde_json::Value`) on the typed client and discovered at runtime via `/status`.
+- [ ] Tests: typed-client codegen still compiles; OpenAPI schema validates against actual responses.
 - **Depends on**: PR 11.
 - **Unblocks**: PR 15.
 
-### PR 15 — Web console connector discovery + dynamic config form (Phase 10)
-- [ ] Connector picker in `js-packages/web-console/src/lib/` calls `GET /v0/connectors` on first render and caches.
-- [ ] Render dropdown from descriptor list; preserve in-tree typed forms as the preferred UI for known connectors.
-- [ ] Render JSON-Schema-driven form for plugin connectors.
-- [ ] Tests: e2e test with a stub plugin descriptor returned by a mocked endpoint.
+### PR 15 — Web console connector discovery + in-product editor (Phase 10)
+- [ ] **Connector picker**: in `js-packages/web-console/src/lib/`, call `GET /v0/connectors/status` on first render and cache; render dropdown from `descriptors` when `state == "ready"`. Show a graceful "connectors unavailable" state when `state` is `building`/`failed`/`not_configured`.
+- [ ] Preserve in-tree typed forms as the preferred UI for known connectors; render JSON-Schema-driven form for plugin connectors.
+- [ ] **Status badge** in the connectors-management dialog: poll `GET /v0/connectors/status` (with `If-None-Match` for cheap polling) and render `state` as a colored badge — green/ready, amber/building, red/failed, grey/not-configured. On `failed`, expand to show `error` text.
+- [ ] **In-product `connectors.toml` editor**: dialog with a Monaco-based plain-text editor (no schema, just text — Cargo is the parser). On open, fetch `GET /v0/connectors/connectors.toml` and remember the ETag. On save, `PUT /v0/connectors/connectors.toml` with `If-Match: <etag>`, `Content-Type: text/plain`. On 412, surface "another operator updated this — reload to merge"; on 400, show the line-shape error inline. After successful PUT, show "rebuilding…" backed by the status badge transitioning `building → ready` (or `failed`).
+- [ ] Show `edited_at` / `edited_by` from `GET /v0/connectors/connectors.toml` headers as an audit-trail line in the editor footer.
+- [ ] Tests: e2e test with a stub plugin descriptor; ETag mismatch path; PUT triggers status transitions; tenant isolation visible in the badge.
 - **Depends on**: PR 14.
 - **Unblocks**: PR 16.
 

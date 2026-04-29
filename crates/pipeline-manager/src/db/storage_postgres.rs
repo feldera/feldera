@@ -107,6 +107,50 @@ impl Storage for StoragePostgres {
         Ok(tenant_name)
     }
 
+    async fn get_or_bootstrap_connectors_config(
+        &self,
+        tenant_id: TenantId,
+        seed_content: &str,
+    ) -> Result<
+        crate::db::operations::tenant_connector_config::TenantConnectorConfig,
+        DBError,
+    > {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let row = operations::tenant_connector_config::get_or_bootstrap(
+            &txn,
+            tenant_id,
+            seed_content,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(row)
+    }
+
+    async fn put_connectors_config(
+        &self,
+        tenant_id: TenantId,
+        new_content: String,
+        edited_by: String,
+        expected_hash: &str,
+    ) -> Result<
+        crate::db::operations::tenant_connector_config::TenantConnectorConfig,
+        DBError,
+    > {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let row = operations::tenant_connector_config::put(
+            &txn,
+            tenant_id,
+            new_content,
+            edited_by,
+            expected_hash,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(row)
+    }
+
     async fn list_api_keys(&self, tenant_id: TenantId) -> Result<Vec<ApiKeyDescr>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;

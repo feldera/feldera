@@ -654,6 +654,203 @@ async fn tenant_creation() {
     assert_ne!(tenant_id_3, tenant_id_5);
 }
 
+/// Lazy bootstrap of `tenant_connector_config` rows.
+#[tokio::test]
+async fn tenant_connector_config_bootstrap_is_lazy_and_idempotent() {
+    use crate::db::operations::tenant_connector_config::compute_content_hash;
+
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+
+    // First call inserts a row using the seed content.
+    let seed = "acme_kafka = \"0.1\"\n";
+    let row = handle
+        .db
+        .get_or_bootstrap_connectors_config(tenant_id, seed)
+        .await
+        .unwrap();
+    assert_eq!(row.content, seed);
+    assert_eq!(row.content_hash, compute_content_hash(seed));
+    assert_eq!(row.version, 1);
+    assert_eq!(row.edited_by, "system");
+
+    // A second call with a different seed must not overwrite the row —
+    // the seed is consulted only on the very first call.
+    let row2 = handle
+        .db
+        .get_or_bootstrap_connectors_config(tenant_id, "totally_different = \"9.9\"\n")
+        .await
+        .unwrap();
+    assert_eq!(row2.content, seed);
+    assert_eq!(row2.version, 1);
+
+    // The empty-seed path also works (default for deployments without a
+    // configured `connectors_toml_path`).
+    let other_tenant = handle
+        .db
+        .get_or_create_tenant_id(Uuid::now_v7(), "other".to_string(), "test".to_string())
+        .await
+        .unwrap();
+    let row3 = handle
+        .db
+        .get_or_bootstrap_connectors_config(other_tenant, "")
+        .await
+        .unwrap();
+    assert_eq!(row3.content, "");
+    assert_eq!(row3.content_hash, compute_content_hash(""));
+}
+
+/// Optimistic-concurrency PUT against `tenant_connector_config`.
+#[tokio::test]
+async fn tenant_connector_config_put_optimistic_concurrency() {
+    use crate::db::operations::tenant_connector_config::compute_content_hash;
+
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+
+    // Bootstrap with empty content.
+    let initial = handle
+        .db
+        .get_or_bootstrap_connectors_config(tenant_id, "")
+        .await
+        .unwrap();
+    assert_eq!(initial.version, 1);
+    let initial_hash = initial.content_hash.clone();
+
+    // PUT with the correct hash succeeds and increments the version.
+    let new_content = "kafka = { version = \"0.3\" }\n".to_string();
+    let updated = handle
+        .db
+        .put_connectors_config(
+            tenant_id,
+            new_content.clone(),
+            "alice@example.com".to_string(),
+            &initial_hash,
+        )
+        .await
+        .unwrap();
+    assert_eq!(updated.content, new_content);
+    assert_eq!(updated.content_hash, compute_content_hash(&new_content));
+    assert_eq!(updated.version, 2);
+    assert_eq!(updated.edited_by, "alice@example.com");
+
+    // PUT with the original (now stale) hash fails with the
+    // OutdatedConnectorsConfigHash error variant.
+    let err = handle
+        .db
+        .put_connectors_config(
+            tenant_id,
+            "anything = \"1\"\n".to_string(),
+            "bob@example.com".to_string(),
+            &initial_hash,
+        )
+        .await
+        .unwrap_err();
+    let DBError::OutdatedConnectorsConfigHash {
+        provided_hash,
+        current_hash,
+    } = err
+    else {
+        panic!("expected OutdatedConnectorsConfigHash, got {err:?}");
+    };
+    assert_eq!(provided_hash, initial_hash);
+    assert_eq!(current_hash, updated.content_hash);
+
+    // The state on disk did not change.
+    let after = handle
+        .db
+        .get_or_bootstrap_connectors_config(tenant_id, "")
+        .await
+        .unwrap();
+    assert_eq!(after, updated);
+}
+
+/// `load_connectors_toml` reads the bootstrap seed on first access and
+/// returns the row's content thereafter.
+#[tokio::test]
+async fn load_connectors_toml_bootstraps_from_seed_then_reads_db() {
+    use crate::compiler::connectors::load_connectors_toml;
+    use crate::config::CompilerConfig;
+    use crate::db::types::program::CompilationProfile;
+    use std::fs;
+    use tempfile::TempDir;
+
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+
+    // Configure a bootstrap seed file.
+    let dir = TempDir::new().unwrap();
+    let seed_path = dir.path().join("connectors.toml");
+    let seed_content = "kafka_plugin = \"0.5\"\n";
+    fs::write(&seed_path, seed_content).unwrap();
+
+    let config = CompilerConfig {
+        compiler_working_directory: "/tmp".to_string(),
+        compilation_profile: CompilationProfile::Dev,
+        sql_compiler_path: String::new(),
+        sql_compiler_cache_url: String::new(),
+        compilation_cargo_lock_path: String::new(),
+        dbsp_override_path: String::new(),
+        binary_upload_endpoint: None,
+        binary_upload_timeout_secs: 600,
+        binary_upload_max_retries: 3,
+        binary_upload_retry_delay_ms: 1000,
+        precompile: false,
+        connectors_toml_path: Some(seed_path.to_str().unwrap().to_string()),
+    };
+
+    // First call imports the seed.
+    let first = load_connectors_toml(&handle.db, &config, tenant_id)
+        .await
+        .unwrap();
+    assert_eq!(first.as_str(), seed_content);
+
+    // Mutate the seed file. The next call must NOT re-read it — the DB
+    // is now authoritative.
+    fs::write(&seed_path, "should_not_appear = \"9.9\"\n").unwrap();
+    let second = load_connectors_toml(&handle.db, &config, tenant_id)
+        .await
+        .unwrap();
+    assert_eq!(second.as_str(), seed_content);
+}
+
+/// Per-tenant isolation of `tenant_connector_config` rows.
+#[tokio::test]
+async fn tenant_connector_config_isolated_between_tenants() {
+    let handle = test_setup().await;
+    let tenant_a = TenantRecord::default().id;
+    let tenant_b = handle
+        .db
+        .get_or_create_tenant_id(Uuid::now_v7(), "b".to_string(), "test".to_string())
+        .await
+        .unwrap();
+
+    handle
+        .db
+        .get_or_bootstrap_connectors_config(tenant_a, "a_dep = \"1\"\n")
+        .await
+        .unwrap();
+    handle
+        .db
+        .get_or_bootstrap_connectors_config(tenant_b, "b_dep = \"1\"\n")
+        .await
+        .unwrap();
+
+    let row_a = handle
+        .db
+        .get_or_bootstrap_connectors_config(tenant_a, "")
+        .await
+        .unwrap();
+    let row_b = handle
+        .db
+        .get_or_bootstrap_connectors_config(tenant_b, "")
+        .await
+        .unwrap();
+    assert_eq!(row_a.content, "a_dep = \"1\"\n");
+    assert_eq!(row_b.content, "b_dep = \"1\"\n");
+    assert_ne!(row_a.content_hash, row_b.content_hash);
+}
+
 /// Creation, deletion and validation of API keys.
 #[tokio::test]
 async fn api_key_store_and_validation() {
@@ -3845,6 +4042,24 @@ impl Storage for Mutex<DbModel> {
             .get(&tenant_id)
             .map(|tenant| tenant.tenant.clone())
             .ok_or(DBError::UnknownTenant { tenant_id })
+    }
+
+    async fn get_or_bootstrap_connectors_config(
+        &self,
+        _tenant_id: TenantId,
+        _seed_content: &str,
+    ) -> Result<crate::db::operations::tenant_connector_config::TenantConnectorConfig, DBError> {
+        panic!("get_or_bootstrap_connectors_config is not part of the proptest model");
+    }
+
+    async fn put_connectors_config(
+        &self,
+        _tenant_id: TenantId,
+        _new_content: String,
+        _edited_by: String,
+        _expected_hash: &str,
+    ) -> Result<crate::db::operations::tenant_connector_config::TenantConnectorConfig, DBError> {
+        panic!("put_connectors_config is not part of the proptest model");
     }
 
     async fn list_api_keys(&self, tenant_id: TenantId) -> DBResult<Vec<ApiKeyDescr>> {

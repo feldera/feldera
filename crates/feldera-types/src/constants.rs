@@ -1,3 +1,15 @@
+/// Connector plugin API version.
+///
+/// Embedded in every [`feldera_adapterlib::connector::ConnectorManifestEntry`]
+/// by the describer binary and validated by the pipeline-manager when it reads
+/// a manifest. A mismatch means a connector crate was compiled against an
+/// incompatible version of `feldera-adapterlib` and must be recompiled.
+///
+/// Increment this constant (with a `CHANGELOG.md` entry) on any breaking
+/// change to the connector plugin ABI: trait method signature changes, removed
+/// or renamed types that connector authors are expected to implement, etc.
+pub const ADAPTERLIB_API_VERSION: u32 = 0;
+
 /// Name of the checkpoint list file.
 ///
 /// File will be stored inside the runtime storage directory with this

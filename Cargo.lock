@@ -8405,6 +8405,7 @@ dependencies = [
  "deadpool-postgres",
  "dirs 5.0.1",
  "fdlimit",
+ "feldera-adapterlib",
  "feldera-cloud1-client",
  "feldera-ir",
  "feldera-observability",

@@ -1045,6 +1045,7 @@ mod test {
             ServerState::new(
                 common_config,
                 manager_config,
+                None,
                 db,
                 Arc::new(RwLock::new(None)),
             )

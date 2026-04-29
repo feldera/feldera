@@ -1,5 +1,6 @@
 use crate::api::support_data_collector::SupportBundleData;
 use crate::db::error::DBError;
+use crate::db::operations::tenant_connector_config::TenantConnectorConfig;
 use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
 use crate::db::types::monitor::{
     ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent, NewClusterMonitorEvent,
@@ -85,6 +86,34 @@ pub(crate) trait Storage {
 
     /// Retrieves the tenant name for a given tenant ID.
     async fn get_tenant_name(&self, tenant_id: TenantId) -> Result<String, DBError>;
+
+    /// Retrieves the tenant's `connectors.toml` row, lazily inserting one
+    /// from `seed_content` if no row yet exists for the tenant.
+    ///
+    /// `seed_content` is typically the contents of
+    /// `CompilerConfig::connectors_toml_path` (or `""` when unset). The
+    /// seed is consulted only on the very first call for the tenant;
+    /// subsequent calls return whatever the row currently contains.
+    async fn get_or_bootstrap_connectors_config(
+        &self,
+        tenant_id: TenantId,
+        seed_content: &str,
+    ) -> Result<TenantConnectorConfig, DBError>;
+
+    /// Updates the tenant's `connectors.toml` blob with optimistic
+    /// concurrency.
+    ///
+    /// `expected_hash` is the `content_hash` the caller observed on the
+    /// row when it began the edit (the value the client echoed back via
+    /// the `If-Match` header). On hash mismatch returns
+    /// [`DBError::OutdatedConnectorsConfigHash`].
+    async fn put_connectors_config(
+        &self,
+        tenant_id: TenantId,
+        new_content: String,
+        edited_by: String,
+        expected_hash: &str,
+    ) -> Result<TenantConnectorConfig, DBError>;
 
     /// Retrieves the list of all API keys.
     async fn list_api_keys(&self, tenant_id: TenantId) -> Result<Vec<ApiKeyDescr>, DBError>;

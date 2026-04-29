@@ -64,7 +64,6 @@ impl CompilerTest {
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
             connectors_toml_path: None,
-            connectors_d_dir: None,
         };
 
         // Test in-memory database
