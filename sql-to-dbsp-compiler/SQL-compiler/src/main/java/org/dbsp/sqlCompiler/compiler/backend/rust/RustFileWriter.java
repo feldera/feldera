@@ -68,11 +68,11 @@ public class RustFileWriter extends RustWriter {
 
     void generatePreamble() {
         this.builder().append(COMMON_PREAMBLE);
-        long max = this.used.getMaxTupleSize();
-        if (max > 120) {
+        long limit = this.used.getRecursionLimit();
+        if (limit > 240) {
             // this is just a guess
             this.builder().append("#![recursion_limit = \"")
-                    .append(max * 2)
+                    .append(limit)
                     .append("\"]")
                     .newline();
         }

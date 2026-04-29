@@ -88,6 +88,16 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
         this.operator.accept(findOuterResources);
 
         boolean useHandles = compiler.options.ioOptions.emitHandles;
+
+        long limit = used.getRecursionLimit();
+        if (limit > 240) {
+            // this is just a guess
+            this.builder().append("#![recursion_limit = \"")
+                    .append(limit)
+                    .append("\"]")
+                    .newline();
+        }
+
         this.builder()
                 .append(RustWriter.COMMON_PREAMBLE)
                 .append(RustWriter.STANDARD_PREAMBLE);

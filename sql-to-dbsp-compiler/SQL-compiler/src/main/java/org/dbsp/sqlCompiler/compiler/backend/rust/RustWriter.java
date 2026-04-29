@@ -50,6 +50,19 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
                     max = s;
             return max;
         }
+
+        int getMaxJoinSize() {
+            int max = 0;
+            for (StarJoin join: this.starJoinsUsed) {
+                if (join.inputs > max)
+                    max = join.inputs;
+            }
+            return max;
+        }
+
+        public int getRecursionLimit() {
+            return Math.max(this.getMaxJoinSize(), this.getMaxTupleSize()) * 2;
+        }
     }
 
     /** Visitor which discovers some data structures used.
