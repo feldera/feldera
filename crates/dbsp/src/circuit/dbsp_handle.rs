@@ -808,11 +808,11 @@ impl Runtime {
                             return;
                         }
                     }
-                    Ok(Command::SetBalancerHints(hints)) => {
+                    Ok(Command::SetBalancerHintsByGlobalId(hints)) => {
                         let results = hints
                             .into_iter()
                             .map(|(global_node_id, hint)| {
-                                circuit.set_balancer_hint(&global_node_id, hint)
+                                circuit.set_balancer_hint_by_global_id(&global_node_id, hint)
                             })
                             .collect::<Vec<Result<(), DbspError>>>();
                         if status_sender
@@ -822,8 +822,31 @@ impl Runtime {
                             return;
                         }
                     }
-                    Ok(Command::GetCurrentBalancerPolicy) => {
-                        let policy = circuit.get_current_balancer_policy();
+                    Ok(Command::SetBalancerHints(hints)) => {
+                        let results = hints
+                            .into_iter()
+                            .map(|(persistent_id, hint)| {
+                                circuit.set_balancer_hint(&persistent_id, hint)
+                            })
+                            .collect::<Vec<Result<(), DbspError>>>();
+                        if status_sender
+                            .send(Ok(Response::SetBalancerHints(results)))
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    Ok(Command::GetCurrentBalancerPolicies) => {
+                        let policy = circuit.get_current_balancer_policies();
+                        if status_sender
+                            .send(Ok(Response::CurrentBalancerPolicies(policy)))
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    Ok(Command::GetCurrentBalancerPolicy(persistent_id)) => {
+                        let policy = circuit.get_current_balancer_policy(&persistent_id);
                         if status_sender
                             .send(Ok(Response::CurrentBalancerPolicy(policy)))
                             .is_err()
@@ -924,8 +947,10 @@ enum Command {
     GetLir,
     Checkpoint(StoragePath),
     Restore(StoragePath),
-    SetBalancerHints(Vec<(GlobalNodeId, BalancerHint)>),
-    GetCurrentBalancerPolicy,
+    SetBalancerHintsByGlobalId(Vec<(GlobalNodeId, BalancerHint)>),
+    SetBalancerHints(Vec<(String, BalancerHint)>),
+    GetCurrentBalancerPolicies,
+    GetCurrentBalancerPolicy(String),
     Rebalance,
     SetAutoRebalance(bool),
 }
@@ -953,10 +978,18 @@ impl Debug for Command {
             Command::GetLir => write!(f, "GetLir"),
             Command::Checkpoint(path) => f.debug_tuple("Checkpoint").field(path).finish(),
             Command::Restore(path) => f.debug_tuple("Restore").field(path).finish(),
+            Command::SetBalancerHintsByGlobalId(hints) => f
+                .debug_tuple("SetBalancerHintsByGlobalId")
+                .field(hints)
+                .finish(),
             Command::SetBalancerHints(hints) => {
                 f.debug_tuple("SetBalancerHints").field(hints).finish()
             }
-            Command::GetCurrentBalancerPolicy => write!(f, "GetCurrentBalancerPolicy"),
+            Command::GetCurrentBalancerPolicies => write!(f, "GetCurrentBalancerPolicies"),
+            Command::GetCurrentBalancerPolicy(persistent_id) => f
+                .debug_tuple("GetCurrentBalancerPolicy")
+                .field(persistent_id)
+                .finish(),
             Command::Rebalance => write!(f, "Rebalance"),
             Command::SetAutoRebalance(enable) => {
                 f.debug_tuple("SetAutoRebalance").field(enable).finish()
@@ -977,7 +1010,8 @@ enum Response {
     CheckpointRestored(Option<BootstrapInfo>),
     Lir(LirCircuit),
     SetBalancerHints(Vec<Result<(), DbspError>>),
-    CurrentBalancerPolicy(BTreeMap<GlobalNodeId, PartitioningPolicy>),
+    CurrentBalancerPolicies(BTreeMap<GlobalNodeId, PartitioningPolicy>),
+    CurrentBalancerPolicy(Result<PartitioningPolicy, DbspError>),
 }
 
 /// A handle to control the execution of a circuit in a multithreaded runtime.
@@ -1606,18 +1640,58 @@ impl DBSPHandle {
         Ok(())
     }
 
-    pub fn set_balancer_hint(
+    pub fn set_balancer_hint_by_global_id(
         &mut self,
         global_node_id: &GlobalNodeId,
         hint: BalancerHint,
     ) -> Result<(), DbspError> {
-        let mut result = self.set_balancer_hints(vec![(global_node_id.clone(), hint)])?;
+        let mut result =
+            self.set_balancer_hints_by_global_id(vec![(global_node_id.clone(), hint)])?;
         result.pop().unwrap()
     }
 
-    pub fn set_balancer_hints(
+    /// Set the balancer hint for the stream with the given persistent id.
+    ///
+    /// - `persistent_id` must exist in the circuit and belong to an input stream of a
+    ///   balancing join operator. In practice, this means that the circuit should be running
+    ///   in `Persistent` mode and the stream should have a persistent id assigned using
+    ///   `set_persistent_id`.
+    ///
+    /// # Errors
+    ///
+    /// Fails if the above requirements are not met or the hint cannot be enforced in the current state,
+    /// e.g., if the user is setting Broadcast policy on both inputs to a join.
+    pub fn set_balancer_hint(
+        &mut self,
+        persistent_id: &str,
+        hint: BalancerHint,
+    ) -> Result<(), DbspError> {
+        let mut result = self.set_balancer_hints(vec![(persistent_id.to_string(), hint)])?;
+        result.pop().unwrap()
+    }
+
+    pub fn set_balancer_hints_by_global_id(
         &mut self,
         hints: Vec<(GlobalNodeId, BalancerHint)>,
+    ) -> Result<Vec<Result<(), DbspError>>, DbspError> {
+        let mut results = Vec::new();
+
+        self.broadcast_command(Command::SetBalancerHintsByGlobalId(hints), |_, resp| {
+            let Response::SetBalancerHints(worker_results) = resp else {
+                panic!("Expected SetBalancerHints response, got {resp:?}");
+            };
+            results = worker_results;
+        })?;
+
+        Ok(results)
+    }
+
+    /// Set multiple balancer hints.
+    ///
+    /// Applies hints one by one.
+    pub fn set_balancer_hints(
+        &mut self,
+        hints: Vec<(String, BalancerHint)>,
     ) -> Result<Vec<Result<(), DbspError>>, DbspError> {
         let mut results = Vec::new();
 
@@ -1631,15 +1705,32 @@ impl DBSPHandle {
         Ok(results)
     }
 
-    pub fn get_current_balancer_policy(
+    /// Get the current balancer policies for all operators in the circuit.
+    pub fn get_current_balancer_policies(
         &mut self,
     ) -> Result<BTreeMap<GlobalNodeId, PartitioningPolicy>, DbspError> {
-        let resp = self.unicast_command(0, Command::GetCurrentBalancerPolicy)?;
+        let resp = self.unicast_command(0, Command::GetCurrentBalancerPolicies)?;
 
-        let Response::CurrentBalancerPolicy(policy) = resp else {
-            panic!("Expected GetCurrentBalancerPolicy policy response, got {resp:?}");
+        let Response::CurrentBalancerPolicies(policy) = resp else {
+            panic!("Expected GetCurrentBalancerPolicies response, got {resp:?}");
         };
         Ok(policy)
+    }
+
+    /// Get the current balancer policy for the operator with the given persistent id.
+    pub fn get_current_balancer_policy(
+        &mut self,
+        persistent_id: &str,
+    ) -> Result<PartitioningPolicy, DbspError> {
+        let resp = self.unicast_command(
+            0,
+            Command::GetCurrentBalancerPolicy(persistent_id.to_string()),
+        )?;
+
+        let Response::CurrentBalancerPolicy(policy) = resp else {
+            panic!("Expected GetCurrentBalancerPolicy response, got {resp:?}");
+        };
+        policy
     }
 
     pub fn rebalance(&mut self) -> Result<(), DbspError> {

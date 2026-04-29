@@ -23,7 +23,7 @@
 //! current thread.  To instead run the circuit in a collection of worker
 //! threads, use [`Runtime::init_circuit`].
 use crate::{
-    Error as DbspError, Position, Runtime,
+    Error as DbspError, Position, Runtime, RuntimeError,
     circuit::{
         cache::{CircuitCache, CircuitStoreMarker},
         fingerprinter::Fingerprinter,
@@ -1680,6 +1680,11 @@ pub trait CircuitBase: 'static {
     /// Returns vector of local node ids in the circuit.
     fn node_ids(&self) -> Vec<NodeId>;
 
+    fn lookup_local_node_by_persistent_id(
+        &self,
+        persistent_id: &str,
+    ) -> Result<GlobalNodeId, DbspError>;
+
     fn import_nodes(&self) -> Vec<NodeId>;
 
     fn clear(&mut self);
@@ -1814,14 +1819,21 @@ pub trait CircuitBase: 'static {
     ///
     /// Returns an error if the operator with the given global node id is not found
     /// or if the hint contradicts the current balancer policy.
-    fn set_balancer_hint(
+    fn set_balancer_hint_by_global_id(
         &self,
         global_node_id: &GlobalNodeId,
         hint: BalancerHint,
     ) -> Result<(), DbspError>;
 
+    fn set_balancer_hint(&self, persistent_id: &str, hint: BalancerHint) -> Result<(), DbspError>;
+
     /// Get the current balancer policy for all streams managed by the balancer.
-    fn get_current_balancer_policy(&self) -> BTreeMap<NodeId, PartitioningPolicy>;
+    fn get_current_balancer_policies(&self) -> BTreeMap<NodeId, PartitioningPolicy>;
+
+    fn get_current_balancer_policy(
+        &self,
+        persistent_id: &str,
+    ) -> Result<PartitioningPolicy, DbspError>;
 
     fn rebalance(&self);
 }
@@ -2844,6 +2856,25 @@ where
             node.borrow().fixedpoint(scope)
         })
     }
+
+    fn lookup_local_node_by_persistent_id(
+        &self,
+        persistent_id: &str,
+    ) -> Result<GlobalNodeId, DbspError> {
+        self.nodes
+            .borrow()
+            .iter()
+            .find_map(|node| {
+                if node.borrow().get_label(LABEL_PERSISTENT_OPERATOR_ID) == Some(persistent_id) {
+                    Some(node.borrow().global_id().clone())
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| {
+                DbspError::Runtime(RuntimeError::UnknownPersistentId(persistent_id.to_string()))
+            })
+    }
 }
 
 /// A circuit.
@@ -3382,6 +3413,14 @@ where
             .collect()
     }
 
+    fn lookup_local_node_by_persistent_id(
+        &self,
+        persistent_id: &str,
+    ) -> Result<GlobalNodeId, DbspError> {
+        self.inner()
+            .lookup_local_node_by_persistent_id(persistent_id)
+    }
+
     fn import_nodes(&self) -> Vec<NodeId> {
         self.inner().import_nodes()
     }
@@ -3425,7 +3464,7 @@ where
         self.inner().balancer.set_auto_rebalance(enable)
     }
 
-    fn set_balancer_hint(
+    fn set_balancer_hint_by_global_id(
         &self,
         global_node_id: &GlobalNodeId,
         hint: BalancerHint,
@@ -3441,8 +3480,27 @@ where
             .set_hint(global_node_id.local_node_id().unwrap(), hint)
     }
 
-    fn get_current_balancer_policy(&self) -> BTreeMap<NodeId, PartitioningPolicy> {
+    fn set_balancer_hint(&self, persistent_id: &str, hint: BalancerHint) -> Result<(), DbspError> {
+        let global_node_id = self.lookup_local_node_by_persistent_id(persistent_id)?;
+        self.set_balancer_hint_by_global_id(&global_node_id, hint)
+    }
+
+    fn get_current_balancer_policies(&self) -> BTreeMap<NodeId, PartitioningPolicy> {
         self.inner().balancer.get_policy()
+    }
+
+    fn get_current_balancer_policy(
+        &self,
+        persistent_id: &str,
+    ) -> Result<PartitioningPolicy, DbspError> {
+        let global_node_id = self.lookup_local_node_by_persistent_id(persistent_id)?;
+        let local_node_id = global_node_id.local_node_id().unwrap();
+        self.inner()
+            .balancer
+            .get_policy_for_stream(local_node_id)
+            .ok_or_else(|| {
+                DbspError::Balancer(BalancerError::NotRegisteredWithBalancer(local_node_id))
+            })
     }
 
     fn rebalance(&self) {
@@ -7576,20 +7634,36 @@ impl CircuitHandle {
         self.circuit.set_auto_rebalance(enable)
     }
 
-    pub fn set_balancer_hint(
+    pub fn set_balancer_hint_by_global_id(
         &self,
         global_node_id: &GlobalNodeId,
         hint: BalancerHint,
     ) -> Result<(), DbspError> {
-        self.circuit.set_balancer_hint(global_node_id, hint)
+        self.circuit
+            .set_balancer_hint_by_global_id(global_node_id, hint)
     }
 
-    pub fn get_current_balancer_policy(&self) -> BTreeMap<GlobalNodeId, PartitioningPolicy> {
+    pub fn set_balancer_hint(
+        &self,
+        persistent_id: &str,
+        hint: BalancerHint,
+    ) -> Result<(), DbspError> {
+        self.circuit.set_balancer_hint(persistent_id, hint)
+    }
+
+    pub fn get_current_balancer_policies(&self) -> BTreeMap<GlobalNodeId, PartitioningPolicy> {
         self.circuit
-            .get_current_balancer_policy()
+            .get_current_balancer_policies()
             .into_iter()
             .map(|(node_id, policy)| (GlobalNodeId::root().child(node_id), policy))
             .collect()
+    }
+
+    pub fn get_current_balancer_policy(
+        &self,
+        persistent_id: &str,
+    ) -> Result<PartitioningPolicy, DbspError> {
+        self.circuit.get_current_balancer_policy(persistent_id)
     }
 
     pub fn rebalance(&self) {

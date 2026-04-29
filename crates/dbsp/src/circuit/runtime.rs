@@ -69,6 +69,8 @@ pub const DEFAULT_REPLAY_STEP_SIZE: usize = 10000;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum Error {
+    /// Specified persistent id is not found in the circuit.
+    UnknownPersistentId(String),
     /// One of the worker threads terminated unexpectedly.
     WorkerPanic {
         // Detailed panic information from all threads that
@@ -85,6 +87,7 @@ pub enum Error {
 impl DetailedError for Error {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
+            Self::UnknownPersistentId(_) => Cow::from("UnknownPersistentId"),
             Self::WorkerPanic { .. } => Cow::from("WorkerPanic"),
             Self::Terminated => Cow::from("Terminated"),
             Self::IncompatibleStorage => Cow::from("IncompatibleStorage"),
@@ -96,6 +99,9 @@ impl DetailedError for Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         match self {
+            Self::UnknownPersistentId(persistent_id) => {
+                write!(f, "Unknown persistent node id: {persistent_id}")
+            }
             Self::WorkerPanic { panic_info } => {
                 writeln!(f, "One or more worker threads terminated unexpectedly")?;
 

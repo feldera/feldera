@@ -7,7 +7,7 @@ use tempfile::tempdir;
 use crate::{
     Circuit, IndexedZSetHandle, OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit, Runtime,
     ZWeight,
-    circuit::{CircuitConfig, CircuitStorageConfig, GlobalNodeId},
+    circuit::{CircuitConfig, CircuitStorageConfig, Mode},
     default_hasher,
     dynamic::{Data, DowncastTrait as _},
     operator::{
@@ -58,12 +58,13 @@ fn accumulate_trace_with_balancer_test_circuit(
     circuit: &mut RootCircuit,
 ) -> AnyResult<(
     IndexedZSetHandle<u64, u64>,
-    GlobalNodeId,
+    String,
     OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, u64>>>,
     OutputHandle<OrdIndexedZSet<u64, u64>>,
 )> {
     let (input, input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
-    let input_node_id = input.origin_node_id().clone();
+    input.set_persistent_id(Some("input"));
+    let input_node_id = "input".to_string();
 
     let (balanced_accumulator, balanced_trace) = input.accumulate_trace_balanced();
 
@@ -91,23 +92,27 @@ fn accumulate_trace_with_balancer_test_circuit(
 type JoinTestCircuitResult = (
     IndexedZSetHandle<u64, u64>,
     IndexedZSetHandle<u64, u64>,
-    GlobalNodeId,
-    GlobalNodeId,
+    String,
+    String,
     OutputHandle<OrdZSet<Tup3<u64, u64, Option<u64>>>>,
 );
 
 fn join_with_balancer_test_circuit(circuit: &mut RootCircuit) -> AnyResult<JoinTestCircuitResult> {
     let (left_input, left_input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
     let (right_input, right_input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
-    let left_input_node_id = left_input.origin_node_id().clone();
-    let right_input_node_id = right_input.origin_node_id().clone();
+    left_input.set_persistent_id(Some("left_input"));
+    let left_input_node_id = "left_input".to_string();
+
+    right_input.set_persistent_id(Some("right_input"));
+    let right_input_node_id = "right_input".to_string();
 
     // let balanced_stream_output = balanced_stream.accumulate_output();
     let join_output_handle = left_input
         .join_balanced_inner(&right_input, |key, v1, v2| Tup3(*key, *v1, Some(*v2)))
+        .set_persistent_id(Some("join_output"))
         .accumulate_integrate_trace()
         .apply(|trace| trace.ro_snapshot().consolidate())
-        .output();
+        .output_persistent(Some("output"));
 
     Ok((
         left_input_handle,
@@ -125,8 +130,8 @@ fn left_join_with_balancer_test_circuit(
 ) -> AnyResult<(
     IndexedZSetHandle<u64, u64>,
     IndexedZSetHandle<u64, u64>,
-    GlobalNodeId,
-    GlobalNodeId,
+    String,
+    String,
     OutputHandle<OrdZSet<Tup3<u64, u64, Option<u64>>>>,
 )> {
     let (left_input, left_input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
@@ -134,15 +139,19 @@ fn left_join_with_balancer_test_circuit(
 
     let right_input = right_input.map_index(|(k, v)| (k.clone(), Some(v.clone())));
 
-    let left_input_node_id = left_input.origin_node_id().clone();
-    let right_input_node_id = right_input.origin_node_id().clone();
+    left_input.set_persistent_id(Some("left_input"));
+    let left_input_node_id = "left_input".to_string();
+
+    right_input.set_persistent_id(Some("right_input"));
+    let right_input_node_id = "right_input".to_string();
 
     // let balanced_stream_output = balanced_stream.accumulate_output();
     let join_output_handle = left_input
         .left_join_balanced_inner(&right_input, |key, v1, v2| Tup3(*key, *v1, *v2))
+        .set_persistent_id(Some("join_output"))
         .accumulate_integrate_trace()
         .apply(|trace| trace.ro_snapshot().consolidate())
-        .output();
+        .output_persistent(Some("output"));
 
     Ok((
         left_input_handle,
@@ -194,39 +203,63 @@ fn circular_dependency_test_circuit(
     let (left_input, left_input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
     let (right_input, right_input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
 
-    let s2 = left_input.map_index(|(k, v)| (k.clone(), v.clone()));
-    let s3 = right_input.map_index(|(k, v)| (k.clone(), v.clone()));
-    let s5 = left_input.map_index(|(k, v)| (k.clone(), v.clone()));
-    let s6 = right_input.map_index(|(k, v)| (k.clone(), v.clone()));
+    let s2 = left_input
+        .map_index(|(k, v)| (k.clone(), v.clone()))
+        .set_persistent_id(Some("s2"));
+    let s3 = right_input
+        .map_index(|(k, v)| (k.clone(), v.clone()))
+        .set_persistent_id(Some("s3"));
+    let s5 = left_input
+        .map_index(|(k, v)| (k.clone(), v.clone()))
+        .set_persistent_id(Some("s5"));
+    let s6 = right_input
+        .map_index(|(k, v)| (k.clone(), v.clone()))
+        .set_persistent_id(Some("s6"));
 
-    let s1 = s5.join_index_balanced_inner(&s6, |key, v1, v2| Some((*key, Tup2(*v1, *v2))));
-    let s4 = s2.join_index_balanced_inner(&s3, |key, v1, v2| Some((*key, Tup2(*v1, *v2))));
-    let s7 = s4.join_index_balanced_inner(&s5, |key, Tup2(v1, v2), v3| {
-        Some((*key, Tup3(*v1, *v2, *v3)))
-    });
-    let s8 = s2.join_index_balanced_inner(&s1, |key, v1, Tup2(v2, v3)| {
-        Some((*key, Tup3(*v1, *v2, *v3)))
-    });
+    let s1 = s5
+        .join_index_balanced_inner(&s6, |key, v1, v2| Some((*key, Tup2(*v1, *v2))))
+        .set_persistent_id(Some("s1"));
+    let s4 = s2
+        .join_index_balanced_inner(&s3, |key, v1, v2| Some((*key, Tup2(*v1, *v2))))
+        .set_persistent_id(Some("s4"));
+    let s7 = s4
+        .join_index_balanced_inner(&s5, |key, Tup2(v1, v2), v3| {
+            Some((*key, Tup3(*v1, *v2, *v3)))
+        })
+        .set_persistent_id(Some("s7"));
+    let s8 = s2
+        .join_index_balanced_inner(&s1, |key, v1, Tup2(v2, v3)| {
+            Some((*key, Tup3(*v1, *v2, *v3)))
+        })
+        .set_persistent_id(Some("s8"));
 
-    let output1 = s1.accumulate_output();
-    let output4 = s4.accumulate_output();
-    let output7 = s7.accumulate_output();
-    let output8 = s8.accumulate_output();
+    let output1 = s1.accumulate_output_persistent(Some("output1"));
+    let output4 = s4.accumulate_output_persistent(Some("output4"));
+    let output7 = s7.accumulate_output_persistent(Some("output7"));
+    let output8 = s8.accumulate_output_persistent(Some("output8"));
 
     // Reference outputs computed using regular joins.
-    let s1_ref = s5.join_index(&s6, |key, v1, v2| Some((*key, Tup2(*v1, *v2))));
-    let s4_ref = s2.join_index(&s3, |key, v1, v2| Some((*key, Tup2(*v1, *v2))));
-    let s7_ref = s4.join_index(&s5, |key, Tup2(v1, v2), v3| {
-        Some((*key, Tup3(*v1, *v2, *v3)))
-    });
-    let s8_ref = s2.join_index(&s1, |key, v1, Tup2(v2, v3)| {
-        Some((*key, Tup3(*v1, *v2, *v3)))
-    });
+    let s1_ref = s5
+        .join_index(&s6, |key, v1, v2| Some((*key, Tup2(*v1, *v2))))
+        .set_persistent_id(Some("s1_ref"));
+    let s4_ref = s2
+        .join_index(&s3, |key, v1, v2| Some((*key, Tup2(*v1, *v2))))
+        .set_persistent_id(Some("s4_ref"));
+    let s7_ref = s4
+        .join_index(&s5, |key, Tup2(v1, v2), v3| {
+            Some((*key, Tup3(*v1, *v2, *v3)))
+        })
+        .set_persistent_id(Some("s7_ref"));
+    let s8_ref = s2
+        .join_index(&s1, |key, v1, Tup2(v2, v3)| {
+            Some((*key, Tup3(*v1, *v2, *v3)))
+        })
+        .set_persistent_id(Some("s8_ref"));
 
-    let output1_ref = s1_ref.accumulate_output();
-    let output4_ref = s4_ref.accumulate_output();
-    let output7_ref = s7_ref.accumulate_output();
-    let output8_ref = s8_ref.accumulate_output();
+    let output1_ref = s1_ref.accumulate_output_persistent(Some("output1_ref"));
+    let output4_ref = s4_ref.accumulate_output_persistent(Some("output4_ref"));
+    let output7_ref = s7_ref.accumulate_output_persistent(Some("output7_ref"));
+    let output8_ref = s8_ref.accumulate_output_persistent(Some("output8_ref"));
 
     Ok((
         left_input_handle,
@@ -251,7 +284,8 @@ fn test_accumulate_trace_with_balancer(
         Runtime::init_circuit(
             CircuitConfig::from(workers)
                 .with_splitter_chunk_size_records(2)
-                .with_balancer_min_absolute_improvement_threshold(0),
+                .with_balancer_min_absolute_improvement_threshold(0)
+                .with_mode(Mode::Persistent),
             accumulate_trace_with_balancer_test_circuit,
         )
         .unwrap();
@@ -388,6 +422,7 @@ fn mkconfig(path: &Path, workers: usize) -> CircuitConfig {
             )
             .unwrap(),
         ))
+        .with_mode(Mode::Persistent)
 }
 
 fn test_join_with_balancer(
@@ -519,12 +554,15 @@ fn test_join_with_balancer(
                 .map(|worker| output_integral_handle.take_from_worker(worker).unwrap())
                 .collect();
 
-            let current_policies = circuit.get_current_balancer_policy().unwrap();
-            let current_left_policy = current_policies.get(&left_input_node_id).unwrap();
-            let current_right_policy = current_policies.get(&right_input_node_id).unwrap();
+            let current_left_policy = circuit
+                .get_current_balancer_policy(&left_input_node_id)
+                .unwrap();
+            let current_right_policy = circuit
+                .get_current_balancer_policy(&right_input_node_id)
+                .unwrap();
 
-            assert_eq!(current_left_policy, &expected_left_policy.unwrap());
-            assert_eq!(current_right_policy, &expected_right_policy.unwrap());
+            assert_eq!(current_left_policy, expected_left_policy.unwrap());
+            assert_eq!(current_right_policy, expected_right_policy.unwrap());
             assert_eq!(output_trace, expected_output);
 
             if checkpoints {

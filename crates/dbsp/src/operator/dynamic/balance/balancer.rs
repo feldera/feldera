@@ -41,7 +41,7 @@ pub enum BalancerError {
     NotRegisteredWithBalancer(NodeId),
     /// Hint cannot be enforced in the current state.
     InvalidPolicyHint(PartitioningPolicy, String),
-    /// No solution found for .
+    /// No solution found for balancing constraints.
     NoSolution,
 }
 
@@ -1438,6 +1438,10 @@ impl Balancer {
         self.inner
             .borrow_mut()
             .set_policy_for_stream(stream, policy);
+    }
+
+    pub fn get_policy_for_stream(&self, node_id: NodeId) -> Option<PartitioningPolicy> {
+        self.inner.borrow().get_policy_for_stream(node_id)
     }
 
     pub fn key_distribtion_for_stream_local_worker(&self, stream: NodeId) -> Option<i64> {
