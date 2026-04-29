@@ -46,6 +46,7 @@ use super::{schema::schema_unwrap_optional, schema_registry_settings};
 pub const fn avro_de_config() -> &'static SqlSerdeConfig {
     &SqlSerdeConfig {
         timestamp_format: TimestampFormat::MicrosSinceEpoch,
+        timestamp_tz_format: TimestampFormat::MicrosSinceEpoch,
         time_format: TimeFormat::Micros,
         date_format: DateFormat::DaysSinceEpoch,
         decimal_format: DecimalFormat::String,

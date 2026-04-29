@@ -447,6 +447,8 @@ pub enum SqlType {
     Date,
     /// SQL `TIMESTAMP` type.
     Timestamp,
+    /// SQL `TIMESTAMP WITH TIME ZONE` type.
+    TimestampTz,
     /// SQL `INTERVAL ... X` type where `X` is a unit.
     Interval(IntervalUnit),
     /// SQL `ARRAY` type.
@@ -509,6 +511,7 @@ impl<'de> Deserialize<'de> for SqlType {
             "time" => Ok(SqlType::Time),
             "date" => Ok(SqlType::Date),
             "timestamp" => Ok(SqlType::Timestamp),
+            "timestamp_tz" => Ok(SqlType::TimestampTz),
             "array" => Ok(SqlType::Array),
             "struct" => Ok(SqlType::Struct),
             "map" => Ok(SqlType::Map),
@@ -547,6 +550,7 @@ impl Serialize for SqlType {
             SqlType::Time => "TIME",
             SqlType::Date => "DATE",
             SqlType::Timestamp => "TIMESTAMP",
+            SqlType::TimestampTz => "TIMESTAMP_TZ",
             SqlType::Interval(interval_unit) => match interval_unit {
                 IntervalUnit::Day => "INTERVAL_DAY",
                 IntervalUnit::DayToHour => "INTERVAL_DAY_HOUR",
@@ -907,6 +911,19 @@ impl ColumnType {
         }
     }
 
+    pub fn timestamp_tz(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::TimestampTz,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
     pub fn variant(nullable: bool) -> Self {
         ColumnType {
             typ: SqlType::Variant,
@@ -1014,6 +1031,7 @@ mod tests {
             ("Time", SqlType::Time),
             ("Date", SqlType::Date),
             ("Timestamp", SqlType::Timestamp),
+            ("TimestampTz", SqlType::TimestampTz),
             ("Interval_Day", SqlType::Interval(IntervalUnit::Day)),
             (
                 "Interval_Day_Hour",

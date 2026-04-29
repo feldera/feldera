@@ -97,6 +97,7 @@ public abstract class DBSPLiteral extends DBSPExpression
             case TUPLE -> DBSPTupleExpression.none(type.to(DBSPTypeTuple.class));
             case RAW_TUPLE -> DBSPRawTupleExpression.none(type.to(DBSPTypeRawTuple.class));
             case TIMESTAMP -> new DBSPTimestampLiteral();
+            case TIMESTAMP_TZ -> new DBSPTimestampTzLiteral();
             case BYTES -> new DBSPBinaryLiteral(type.getNode(), type, null);
             case VARIANT -> new DBSPVariantExpression(null, type);
             case STRUCT -> type.to(DBSPTypeStruct.class).toTuple().none();

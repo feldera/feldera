@@ -120,7 +120,7 @@ pub type GoldenRow = Tup65<
 // None optimization added to larger tups with the v4 storage format.
 pub type GoldenRowSmall = Tup8<u64, bool, i32, i64, F32, SqlString, Opt<i32>, Opt<ByteArray>>;
 
-// There are 24 kinds of variant
+// There are 25 kinds of variant
 pub type GoldenRowVariant = Tup25<
     Variant,
     Variant,
@@ -410,7 +410,7 @@ pub fn golden_row(row: usize) -> GoldenRow {
 pub fn golden_row_variant(row: usize) -> GoldenRowVariant {
     let row_u64 = 0x0101_0000_0000_0000u64.wrapping_add(row as u64);
 
-    // This has the me monotone
+    // This has to be monotone in 'row'
     let i8_v = Variant::TinyInt(0x11i8.wrapping_add(row as i8));
     let i16_v = Variant::SmallInt(0x2222i16.wrapping_add(row as i16));
     let i32_v = Variant::Int(0x3333_3333i32.wrapping_add(row as i32));

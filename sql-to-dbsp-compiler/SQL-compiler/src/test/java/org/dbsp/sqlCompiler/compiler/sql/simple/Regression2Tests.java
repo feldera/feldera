@@ -1014,4 +1014,51 @@ public class Regression2Tests extends SqlIoTest {
                  d| 1""");
         ccs.visit(this.findLinear(ccs.compiler));
     }
+
+    @Test
+    public void issue4146() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(ts TIMESTAMP WITH TIME ZONE);
+                CREATE VIEW V AS SELECT * FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES TIMESTAMP WITH TIME ZONE '2020-01-01 10:10:10 America/New_York';", """
+                 r
+                ---
+                 2020-01-01 15:10:10 GMT
+                """);
+    }
+
+    @Test
+    public void issue4146a() {
+        // Validated on postgres
+        this.qs("""
+                SELECT TIMESTAMP WITH TIME ZONE '2020-01-01 10:10:10 America/New_York' > TIMESTAMP WITH TIME ZONE '2020-01-01 10:10:10 America/Los_Angeles';
+                 r
+                ---
+                 false
+                (1 row)
+                
+                SELECT TIMESTAMP WITH TIME ZONE '2020-01-01 08:10:10 America/New_York' = TIMESTAMP WITH TIME ZONE '2020-01-01 05:10:10 America/Los_Angeles';
+                 r
+                ---
+                 true
+                (1 row)
+                
+                SELECT (TIMESTAMP WITH TIME ZONE '2020-01-01 08:10:10 America/New_York' - TIMESTAMP WITH TIME ZONE '2020-01-01 05:10:10 America/Los_Angeles') SECONDS;
+                 r
+                ---
+                 0
+                (1 row)
+                
+                SELECT TIMESTAMP_TRUNC(TIMESTAMP WITH TIME ZONE '2020-01-01 08:10:10 America/New_York', HOUR);
+                 r
+                ---
+                 2020-01-01 13:00:00 GMT
+                (1 row)
+                
+                SELECT CAST(TIMESTAMP WITH TIME ZONE '2020-01-01 08:10:10 America/New_York' AS TIMESTAMP);
+                 r
+                ---
+                 2020-01-01 13:10:10
+                (1 row)""");
+    }
 }

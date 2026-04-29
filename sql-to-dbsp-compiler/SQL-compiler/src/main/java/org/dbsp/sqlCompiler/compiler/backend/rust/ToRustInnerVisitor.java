@@ -69,6 +69,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU128Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
@@ -108,6 +109,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -461,6 +463,25 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append("Some(");
         this.builder.append("Timestamp::from_microseconds(")
                 .append(Long.toString(Objects.requireNonNull(literal.value)))
+                .append("/*")
+                .append(Objects.requireNonNull(literal.getTimestampString()).toString())
+                .append("*/")
+                .append(")");
+        if (literal.mayBeNull())
+            this.builder.append(")");
+        this.pop(literal);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPTimestampTzLiteral literal) {
+        if (literal.isNull())
+            return this.doNull(literal);
+        this.push(literal);
+        if (literal.mayBeNull())
+            this.builder.append("Some(");
+        this.builder.append("TimestampTz::from_microseconds(")
+                .append(Long.toString(Objects.requireNonNull(literal).getMicros()))
                 .append("/*")
                 .append(Objects.requireNonNull(literal.getTimestampString()).toString())
                 .append("*/")
@@ -1535,6 +1556,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
     static private String typeCode(DBSPType type) {
         if (type.is(DBSPTypeTimestamp.class))
             return "Timestamp";
+        else if (type.is(DBSPTypeTimestampTz.class))
+            return "TimestampTz";
         else if (type.is(DBSPTypeTime.class))
             return "Time";
         else if (type.is(DBSPTypeDate.class))

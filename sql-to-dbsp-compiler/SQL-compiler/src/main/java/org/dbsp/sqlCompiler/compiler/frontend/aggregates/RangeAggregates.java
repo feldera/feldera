@@ -53,6 +53,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
@@ -200,6 +201,7 @@ public class RangeAggregates extends WindowAggregates {
             if (sortType == null ||
                     !sortType.is(DBSPTypeInteger.class) &&
                     !sortType.is(DBSPTypeTimestamp.class) &&
+                    !sortType.is(DBSPTypeTimestampTz.class) &&
                     !sortType.is(DBSPTypeDate.class) &&
                     !sortType.is(DBSPTypeTime.class) &&
                     !sortType.is(DBSPTypeShortInterval.class))

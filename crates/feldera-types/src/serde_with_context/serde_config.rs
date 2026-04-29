@@ -127,6 +127,8 @@ pub struct SqlSerdeConfig {
     pub date_format: DateFormat,
     /// `TIMESTAMP` format.
     pub timestamp_format: TimestampFormat,
+    /// `TIMESTAMP WITH TIME ZONE` format.
+    pub timestamp_tz_format: TimestampFormat,
     /// `DECIMAL` format.
     pub decimal_format: DecimalFormat,
     /// `VARIANT` format
@@ -190,6 +192,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 time_format: TimeFormat::Millis,
                 date_format: DateFormat::DaysSinceEpoch,
                 timestamp_format: TimestampFormat::MillisSinceEpoch,
+                timestamp_tz_format: TimestampFormat::MillisSinceEpoch,
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Array,
@@ -198,7 +201,9 @@ impl From<JsonFlavor> for SqlSerdeConfig {
             JsonFlavor::DebeziumMySql => Self {
                 time_format: TimeFormat::Micros,
                 date_format: DateFormat::DaysSinceEpoch,
+                // Why is this missing fractions of second?
                 timestamp_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%Z"),
+                timestamp_tz_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%Z"),
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Array,
@@ -208,6 +213,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 time_format: TimeFormat::Micros,
                 date_format: DateFormat::DaysSinceEpoch,
                 timestamp_format: TimestampFormat::MillisSinceEpoch,
+                timestamp_tz_format: TimestampFormat::MillisSinceEpoch,
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Array,
@@ -217,6 +223,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 time_format: TimeFormat::String("%H:%M:%S%.f"),
                 date_format: DateFormat::String("%Y-%m-%d"),
                 timestamp_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%.f%:z"),
+                timestamp_tz_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%.f%:z"),
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Array,
@@ -226,6 +233,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 time_format: TimeFormat::String("%H:%M:%S%.f"),
                 date_format: DateFormat::String("%Y-%m-%d"),
                 timestamp_format: TimestampFormat::MillisSinceEpoch,
+                timestamp_tz_format: TimestampFormat::MillisSinceEpoch,
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Array,
@@ -239,6 +247,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 time_format: TimeFormat::Nanos,
                 date_format: DateFormat::String("%Y-%m-%d"),
                 timestamp_format: TimestampFormat::String("%Y-%m-%d %H:%M:%S.%f %:z"), // 2023-11-04 15:33:47.123 +00:00
+                timestamp_tz_format: TimestampFormat::String("%Y-%m-%d %H:%M:%S.%f %:z"), // 2023-11-04 15:33:47.123 +00:00
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Base64,
@@ -251,6 +260,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 time_format: TimeFormat::default(), // H-M-S
                 date_format: DateFormat::default(), // Y-m-d
                 timestamp_format: TimestampFormat::default(),
+                timestamp_tz_format: TimestampFormat::default(),
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::Json,
                 // We need [`BinaryFormat::PgHex`] only because we serialize
