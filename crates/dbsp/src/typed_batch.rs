@@ -35,6 +35,7 @@ use dyn_clone::clone_box;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 use std::{
+    fmt::Debug,
     marker::PhantomData,
     ops::{Deref, DerefMut, Neg},
     sync::Arc,
@@ -218,12 +219,21 @@ where
 
 /// A statically typed wrapper around a dynamically typed batch `B` with concrete key, value, and
 /// weight types `K`, `V`, and `R` respectively.
-#[derive(Debug, Clone, Eq, SizeOf)]
+#[derive(Clone, Eq, SizeOf)]
 // repr(transparent) guarantees that we can safely transmute this to `inner`.
 #[repr(transparent)]
 pub struct TypedBatch<K, V, R, B> {
     inner: B,
     phantom: PhantomData<fn(&K, &V, &R)>,
+}
+
+impl<K, V, R, B> Debug for TypedBatch<K, V, R, B>
+where
+    B: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.inner.fmt(f)
+    }
 }
 
 impl<K, V, R, B, B2> PartialEq<TypedBatch<K, V, R, B2>> for TypedBatch<K, V, R, B>
