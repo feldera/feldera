@@ -8,15 +8,11 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.backend.MerkleOuter;
-import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
-import org.dbsp.sqlCompiler.compiler.backend.rust.multi.ProjectDeclarations;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -24,9 +20,8 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
-import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Logger;
+import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -45,13 +40,10 @@ public class CatalogTests extends BaseSQLTests {
 
     @Test
     public void issue5957() {
-        var ccs = this.getCCS("CREATE TABLE T(used INTEGER, unused INTEGER) with ('skip_unused_columns' = 'true', 'connectors' = '[]');");
-        IndentStreamBuilder builder = new IndentStreamBuilder();
-        ToRustVisitor visitor = new ToRustVisitor(
-                ccs.compiler, builder, ccs.getCircuit().getMetadata(),
-                new ProjectDeclarations(), new LateMaterializations(ccs.compiler));
-        visitor.apply(ccs.getCircuit());
-        Assert.assertTrue(builder.toString().contains("\"skip_unused_columns\":{\"value\":\"true\""));
+        var ccs = this.getCCS("CREATE TABLE T(used INTEGER, unused INTEGER)" +
+                " with ('skip_unused_columns' = 'true', 'connectors' = '[]');");
+        String rust = ccs.getRustSources();
+        Assert.assertTrue(rust.contains("\"skip_unused_columns\":{\"value\":\"true\""));
     }
 
     @Test
@@ -478,13 +470,38 @@ public class CatalogTests extends BaseSQLTests {
         this.shouldWarn(sql, "INDEX 'ix' refers to TABLE 't'; this has no effect.");
     }
 
+
     @Test
     public void indexTest() {
         String sql = """
                 CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
                 CREATE VIEW V AS SELECT * FROM T;
-                CREATE INDEX IX ON V(id, v);""";
-        this.getCCS(sql);
+                CREATE INDEX IX ON V(id, v);
+                CREATE INDEX IX2 ON V(id);""";
+        var ccs = this.getCCS(sql);
+        String sources = ccs.getRustSources();
+        Assert.assertEquals(1, Utilities.countMatches(sources, "register_input_zset"));
+        // One extra for the error_view
+        Assert.assertEquals(2, Utilities.countMatches(sources, "register_output_zset_persistent"));
+        Assert.assertEquals(2, Utilities.countMatches(sources, "register_materialized_index_persistent"));
+    }
+
+    @Test
+    public void indexTest2() {
+        // Same as above, but the view is materialized
+        String sql = """
+                CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
+                CREATE MATERIALIZED VIEW V AS SELECT * FROM T;
+                CREATE INDEX IX ON V(id, v);
+                CREATE INDEX IX2 ON V(id);""";
+        var ccs = this.getCCS(sql);
+        String sources = ccs.getRustSources();
+        Assert.assertEquals(1, Utilities.countMatches(sources, "register_input_zset"));
+        Assert.assertEquals(1, Utilities.countMatches(sources, "register_output_zset_persistent"));
+        Assert.assertEquals(1, Utilities.countMatches(sources, "register_materialized_output_map_persistent"));
+        Assert.assertEquals(1, Utilities.countMatches(sources, "register_materialized_index_persistent"));
+        // When the view is materialized and indexed, it is no longer registered as an output at all
+        // That's why there are only 4 outputs instead of 5
     }
 
     @Test

@@ -66,6 +66,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -649,5 +650,10 @@ public class Utilities {
     /** True if the CI environment variable is set */
     public static boolean inCI() {
         return System.getenv("CI") != null;
+    }
+
+    /** Return the number of times 'pattern' occurs in 'string' (non-overlapping matches) */
+    public static int countMatches(String string, String pattern) {
+        return string.split(Pattern.quote(pattern), -1).length - 1;
     }
 }

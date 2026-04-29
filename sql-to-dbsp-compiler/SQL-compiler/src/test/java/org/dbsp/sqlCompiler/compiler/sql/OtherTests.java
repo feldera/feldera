@@ -651,15 +651,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     }
 
     @Test
-    public void indexTest() {
-        String sql = """
-                CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
-                CREATE VIEW V AS SELECT * FROM T;
-                CREATE INDEX IX ON V(id, v);""";
-        this.compileRustTestCase(sql);
-    }
-
-    @Test
     public void merkleTest() {
         // Compile two programs that have some query in common and check that the circuits produced
         // have nodes in common.

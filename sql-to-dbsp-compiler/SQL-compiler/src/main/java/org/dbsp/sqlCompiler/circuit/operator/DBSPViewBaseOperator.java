@@ -18,6 +18,7 @@ import javax.annotation.Nullable;
 public abstract class DBSPViewBaseOperator extends DBSPUnaryOperator {
     // Called viewName, but it could also be an index name
     public final ProgramIdentifier viewName;
+    /** For a view holds the query, for an index holds the view name */
     public final String query;
     /** Usually a struct, but can be a tuple for indexes */
     public final DBSPType originalRowType;

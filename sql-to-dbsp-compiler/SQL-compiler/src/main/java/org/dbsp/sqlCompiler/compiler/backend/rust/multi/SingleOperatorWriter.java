@@ -94,6 +94,8 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
         ToRustVisitor visitor = new ToRustVisitor(
                 compiler, this.builder(), this.circuit.metadata, new ProjectDeclarations(), this.materializations)
                 .withPreferHash(true);
+        visitor.discoverIndexes(circuit);
+
         final String name = this.operator.getNodeName(true);
         this.builder().newline();
         for (String dep: this.dependencies)

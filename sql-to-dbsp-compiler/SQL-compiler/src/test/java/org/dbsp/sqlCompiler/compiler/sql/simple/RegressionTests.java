@@ -846,10 +846,7 @@ public class RegressionTests extends SqlIoTest {
         // This is not executed, since the udfs have no definitions
         var cc = this.getCC(sql);
         // Test that code generation does not crash without compiling the result
-        ToRustVisitor visitor = new ToRustVisitor(
-                cc.compiler, new IndentStreamBuilder(), cc.getCircuit().getMetadata(),
-                new ProjectDeclarations(), new LateMaterializations(cc.compiler));
-        visitor.apply(cc.getCircuit());
+        cc.getRustSources();
     }
 
     @Test
