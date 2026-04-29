@@ -1,3 +1,10 @@
+// Force-link feldera-datagen so that inventory::submit! fires for the datagen
+// connector, making build_in_process_manifest() discover it during tests.
+// This module is only compiled under #[cfg(test)] (see compiler.rs), so the
+// extern crate is naturally test-only.
+extern crate feldera_datagen as _;
+
+use crate::compiler::manifest_cache::ManifestCache;
 use crate::compiler::sql_compiler::{attempt_end_to_end_sql_compilation, cleanup_sql_compilation};
 use crate::compiler::util::{encode_dir_as_string, read_file_content, DirectoryContent};
 use crate::config::{CommonConfig, CompilerConfig};
@@ -183,12 +190,15 @@ impl CompilerTest {
         cleanup_sql_compilation(&self.compiler_config, self.db.clone())
             .await
             .unwrap();
+        // Tests use the in-process (bundled-only) manifest — no describer build needed.
+        let manifest_cache = Arc::new(ManifestCache::new());
         attempt_end_to_end_sql_compilation(
             0, // Use worker 0 for tests
             1,
             &self.common_config,
             &self.compiler_config,
             self.db.clone(),
+            manifest_cache,
         )
         .await
         .unwrap();

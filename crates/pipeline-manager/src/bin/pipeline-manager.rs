@@ -7,6 +7,7 @@ use feldera_observability as observability;
 use pipeline_manager::api::main::ApiDoc;
 use pipeline_manager::cluster_monitor::{cluster_monitor, LocalResourcesPoller};
 use pipeline_manager::compiler::main::{compiler_main, compiler_precompile};
+use pipeline_manager::compiler::manifest_cache::ManifestCache;
 #[cfg(feature = "postgresql_embedded")]
 use pipeline_manager::config::PgEmbedConfig;
 use pipeline_manager::config::{
@@ -106,11 +107,15 @@ fn main() -> anyhow::Result<()> {
             let common_config_clone = common_config.clone();
             let compiler_config_clone = compiler_config.clone();
 
+            // Shared manifest cache between the compiler and the API server.
+            let manifest_cache = Arc::new(ManifestCache::new());
+
             // Running multiple compiler workers on the same machine is not yet supported
             // due to the HTTP server ran by compiler_main & cleanup status files.
             // For now, we run a single compiler worker in the pipeline manager.
             let worker_id = 0;
             let total_workers = 1;
+            let manifest_cache_clone = manifest_cache.clone();
             let _compiler = tokio::spawn(async move {
                 compiler_main(
                     common_config_clone,
@@ -118,6 +123,7 @@ fn main() -> anyhow::Result<()> {
                     db_clone,
                     worker_id,
                     total_workers,
+                    manifest_cache_clone,
                 )
                 .await
                 .expect("Compiler server main failed");
@@ -149,6 +155,7 @@ fn main() -> anyhow::Result<()> {
                 api_config,
                 Some(compiler_config),
                 Arc::new(RwLock::new(None)),
+                manifest_cache,
             )
             .await
             .expect("API server main failed");

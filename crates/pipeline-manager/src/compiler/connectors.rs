@@ -552,6 +552,31 @@ pub async fn load_or_build_manifest(
     build_and_run_describer(config, &workspace_dir, false).await
 }
 
+/// Build a connector manifest from the in-process `inventory` (bundled connectors only).
+///
+/// Used for tenants with empty `connectors.toml` — no describer build is needed.
+pub fn build_in_process_manifest(
+) -> std::collections::HashMap<String, feldera_adapterlib::connector::ConnectorManifestEntry> {
+    use feldera_adapterlib::connector::{registered_connectors, ConnectorManifestEntry};
+    registered_connectors()
+        .map(|d| (d.name.to_string(), ConnectorManifestEntry::from_descriptor(d)))
+        .collect()
+}
+
+/// Parse a connector manifest from the JSON string produced by the describer binary.
+///
+/// Returns a map from connector name to entry, ready for direction validation.
+pub fn parse_manifest_json(
+    json: &str,
+) -> Result<
+    std::collections::HashMap<String, feldera_adapterlib::connector::ConnectorManifestEntry>,
+    serde_json::Error,
+> {
+    use feldera_adapterlib::connector::ConnectorManifestEntry;
+    let entries: Vec<ConnectorManifestEntry> = serde_json::from_str(json)?;
+    Ok(entries.into_iter().map(|e| (e.name.clone(), e)).collect())
+}
+
 /// Force a rebuild of the describer manifest after running `cargo update`.
 ///
 /// Called by `POST /v0/connectors/refresh`.

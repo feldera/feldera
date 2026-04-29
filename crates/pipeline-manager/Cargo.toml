@@ -149,6 +149,9 @@ wiremock = { workspace = true }
 feldera-types = { workspace = true, features = ["testing"] }
 itertools = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
+# Force-link feldera-datagen so that inventory::submit! fires in test binaries,
+# enabling build_in_process_manifest() to discover the datagen connector.
+feldera-datagen = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["static-files", "compare", "tikv-jemallocator"]

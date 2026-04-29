@@ -4,16 +4,17 @@ use crate::db::types::pipeline::PipelineId;
 use crate::db::types::utils::validate_name;
 use crate::has_unstable_feature;
 use clap::Parser;
+use feldera_adapterlib::connector::ConnectorManifestEntry;
 use feldera_ir::Dataflow;
 use feldera_types::config::{
     ConnectorConfig, InputEndpointConfig, MultihostConfig, OutputEndpointConfig, PipelineConfig,
-    PipelineConfigProgramInfo, ProgramIr, RuntimeConfig, TransportConfig,
+    PipelineConfigProgramInfo, ProgramIr, RuntimeConfig,
 };
 use feldera_types::program_schema::{ProgramSchema, PropertyValue, SourcePosition, SqlIdentifier};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
@@ -22,6 +23,9 @@ use std::string::ParseError;
 use thiserror::Error as ThisError;
 use tracing::warn;
 use utoipa::ToSchema;
+
+/// Map from connector name to manifest entry, used for direction validation.
+pub type ConnectorManifest = HashMap<String, ConnectorManifestEntry>;
 
 /// Enumeration of possible compilation profiles that can be passed to the Rust compiler
 /// as an argument via `cargo build --profile <>`. A compilation profile affects among
@@ -522,7 +526,7 @@ pub enum ConnectorGenerationError {
         relation: String,
         connector_name: String,
     },
-    #[error("relation '{relation}': connector '{name}' is not a recognized built-in connector; plugin connector validation against the connector manifest will be wired in a future release")]
+    #[error("relation '{relation}': connector '{name}' is not recognized; verify it is listed in connectors.toml and the describer build succeeded")]
     UnknownConnector {
         position: SourcePosition,
         relation: String,
@@ -669,12 +673,17 @@ impl ProgramInfo {
 }
 
 /// Generates the program info using the program schema.
-/// The info includes the schema and the input/output connectors derived from it.
+///
+/// The `manifest` maps connector names to their manifest entries and is used
+/// for direction validation (input vs. output). Pass
+/// `build_in_process_manifest()` for bundled-only tenants; pass a manifest
+/// parsed from the cached JSON for tenants with a non-empty `connectors.toml`.
 pub fn generate_program_info(
     program_schema: ProgramSchema,
     main_rust: String,
     udf_stubs: String,
     dataflow: Option<Dataflow>,
+    manifest: &ConnectorManifest,
 ) -> Result<ProgramInfo, ConnectorGenerationError> {
     // Input connectors
     let mut input_connectors = vec![];
@@ -685,34 +694,23 @@ pub fn generate_program_info(
             let origin_value = origin_value
                 .clone()
                 .expect("Origin value cannot be None if connectors is non-empty");
-            match connector.config.transport {
-                TransportConfig::FileInput(_)
-                | TransportConfig::NatsInput(_)
-                | TransportConfig::KafkaInput(_)
-                | TransportConfig::PubSubInput(_)
-                | TransportConfig::UrlInput(_)
-                | TransportConfig::S3Input(_)
-                | TransportConfig::DeltaTableInput(_)
-                | TransportConfig::PostgresInput(_)
-                | TransportConfig::IcebergInput(_)
-                | TransportConfig::Datagen(_)
-                | TransportConfig::Nexmark(_) => {}
-                // Plugin connectors are accepted at parse time; manifest-based
-                // direction validation is wired in PR 11.
-                TransportConfig::Plugin(ref p) => {
+            let transport_name = connector.config.transport.name();
+            match manifest.get(&transport_name) {
+                None => {
                     return Err(ConnectorGenerationError::UnknownConnector {
                         position: origin_value.value_position,
                         relation: input_relation.name.sql_name(),
-                        name: p.name.clone(),
+                        name: transport_name,
                     });
                 }
-                _ => {
+                Some(entry) if !entry.direction.allows_input() => {
                     return Err(ConnectorGenerationError::ExpectedInputConnector {
                         position: origin_value.value_position,
                         relation: input_relation.name.sql_name(),
                         connector_name: connector.name.unwrap_or("<unnamed>".to_string()),
                     });
                 }
+                Some(_) => {}
             }
             input_connectors.push((
                 input_relation.name.sql_name(),
@@ -747,28 +745,23 @@ pub fn generate_program_info(
             let origin_value = origin_value
                 .clone()
                 .expect("Origin value cannot be None if connectors is non-empty");
-            match connector.config.transport {
-                TransportConfig::FileOutput(_)
-                | TransportConfig::PostgresOutput(_)
-                | TransportConfig::KafkaOutput(_)
-                | TransportConfig::DeltaTableOutput(_)
-                | TransportConfig::RedisOutput(_) => {}
-                // Plugin connectors are accepted at parse time; manifest-based
-                // direction validation is wired in PR 11.
-                TransportConfig::Plugin(ref p) => {
+            let transport_name = connector.config.transport.name();
+            match manifest.get(&transport_name) {
+                None => {
                     return Err(ConnectorGenerationError::UnknownConnector {
                         position: origin_value.value_position,
                         relation: output_relation.name.sql_name(),
-                        name: p.name.clone(),
+                        name: transport_name,
                     });
                 }
-                _ => {
+                Some(entry) if !entry.direction.allows_output() => {
                     return Err(ConnectorGenerationError::ExpectedOutputConnector {
                         position: origin_value.value_position,
                         relation: output_relation.name.sql_name(),
                         connector_name: connector.name.unwrap_or("<unnamed>".to_string()),
                     });
                 }
+                Some(_) => {}
             }
             output_connectors.push((
                 output_relation.name.sql_name(),
@@ -1015,7 +1008,6 @@ mod tests {
     #[test]
     fn plugin_connector_yields_unknown_connector_error() {
         use crate::db::types::program::ConnectorGenerationError;
-        use feldera_types::config::PluginTransportConfig;
         use feldera_types::program_schema::SourcePosition;
 
         let pos = SourcePosition {
@@ -1035,5 +1027,143 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("acme_snowflake"), "message should name the connector: {msg}");
         assert!(msg.contains("my_table"), "message should name the relation: {msg}");
+        assert!(msg.contains("connectors.toml"), "message should mention connectors.toml: {msg}");
+    }
+
+    /// `generate_program_info` with a stub manifest accepts known input connectors,
+    /// rejects output connectors on input relations, and rejects unknown connectors.
+    ///
+    /// The manifest is built inline rather than from `build_in_process_manifest()`
+    /// because the pipeline-manager unit-test binary does not link the adapter
+    /// crates that register connectors via `inventory::submit!`.
+    #[test]
+    fn generate_program_info_manifest_lookup() {
+        use crate::db::types::program::{
+            generate_program_info, ConnectorGenerationError, ConnectorManifest,
+        };
+        use feldera_adapterlib::connector::{
+            ConnectorFlags, ConnectorKind, ConnectorManifestEntry, Direction,
+        };
+        use feldera_types::constants::ADAPTERLIB_API_VERSION;
+        use feldera_types::program_schema::{
+            ProgramSchema, PropertyValue, Relation, SourcePosition, SqlIdentifier,
+        };
+        use std::collections::BTreeMap;
+
+        /// Build a minimal manifest entry for testing.
+        fn entry(name: &str, direction: Direction) -> ConnectorManifestEntry {
+            ConnectorManifestEntry {
+                adapterlib_api_version: ADAPTERLIB_API_VERSION,
+                name: name.to_string(),
+                direction,
+                kind: ConnectorKind::Regular,
+                fault_tolerance: None,
+                flags_bits: ConnectorFlags::empty().bits(),
+                has_build_input: false,
+                has_build_output: false,
+                has_build_integrated_input: false,
+                has_build_integrated_output: false,
+            }
+        }
+
+        // Stub manifest: "my_input" is input-only, "my_output" is output-only.
+        let manifest: ConnectorManifest = [
+            ("my_input".to_string(), entry("my_input", Direction::Input)),
+            ("my_output".to_string(), entry("my_output", Direction::Output)),
+        ]
+        .into_iter()
+        .collect();
+
+        let pos = SourcePosition {
+            start_line_number: 1,
+            start_column: 0,
+            end_line_number: 1,
+            end_column: 10,
+        };
+
+        // Helper: build a relation with a single connector property.
+        let make_relation = |name: &str, connector_json: &str| {
+            let mut properties = BTreeMap::new();
+            properties.insert(
+                "connectors".to_string(),
+                PropertyValue {
+                    value: connector_json.to_string(),
+                    key_position: pos,
+                    value_position: pos,
+                },
+            );
+            Relation {
+                name: SqlIdentifier::new(name, false),
+                fields: vec![],
+                materialized: false,
+                properties,
+            }
+        };
+
+        // An input connector on an input relation must be accepted.
+        let input_json = r#"[{"transport":{"name":"my_input","config":{}}}]"#;
+        let schema = ProgramSchema {
+            inputs: vec![make_relation("t1", input_json)],
+            outputs: vec![],
+        };
+        let result = generate_program_info(schema, String::new(), String::new(), None, &manifest);
+        assert!(
+            result.is_ok(),
+            "known input connector should be accepted on an input relation, got: {result:?}"
+        );
+
+        // An output-only connector used on an input relation must be rejected.
+        let output_as_input_json = r#"[{"transport":{"name":"my_output","config":{}}}]"#;
+        let schema = ProgramSchema {
+            inputs: vec![make_relation("t1", output_as_input_json)],
+            outputs: vec![],
+        };
+        let err =
+            generate_program_info(schema, String::new(), String::new(), None, &manifest)
+                .unwrap_err();
+        assert!(
+            matches!(err, ConnectorGenerationError::ExpectedInputConnector { .. }),
+            "output connector used as input should return ExpectedInputConnector, got: {err:?}"
+        );
+
+        // An output connector on an output relation must be accepted.
+        let output_json = r#"[{"transport":{"name":"my_output","config":{}}}]"#;
+        let schema = ProgramSchema {
+            inputs: vec![],
+            outputs: vec![make_relation("v1", output_json)],
+        };
+        let result = generate_program_info(schema, String::new(), String::new(), None, &manifest);
+        assert!(
+            result.is_ok(),
+            "known output connector should be accepted on an output relation, got: {result:?}"
+        );
+
+        // An input-only connector used on an output relation must be rejected.
+        let input_as_output_json = r#"[{"transport":{"name":"my_input","config":{}}}]"#;
+        let schema = ProgramSchema {
+            inputs: vec![],
+            outputs: vec![make_relation("v1", input_as_output_json)],
+        };
+        let err =
+            generate_program_info(schema, String::new(), String::new(), None, &manifest)
+                .unwrap_err();
+        assert!(
+            matches!(err, ConnectorGenerationError::ExpectedOutputConnector { .. }),
+            "input connector used as output should return ExpectedOutputConnector, got: {err:?}"
+        );
+
+        // An unknown connector name must yield UnknownConnector.
+        let unknown_json = r#"[{"transport":{"name":"acme_snowflake","config":{}}}]"#;
+        let schema = ProgramSchema {
+            inputs: vec![make_relation("t1", unknown_json)],
+            outputs: vec![],
+        };
+        let err =
+            generate_program_info(schema, String::new(), String::new(), None, &manifest)
+                .unwrap_err();
+        assert!(
+            matches!(err, ConnectorGenerationError::UnknownConnector { .. }),
+            "unknown connector should return UnknownConnector, got: {err:?}"
+        );
     }
 }

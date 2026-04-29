@@ -1,6 +1,8 @@
 use crate::api::error::ApiError;
 use crate::common_error::CommonError;
+use crate::compiler::connectors::build_in_process_manifest;
 use crate::compiler::error::CompilerError;
+use crate::compiler::manifest_cache::ManifestCache;
 use crate::compiler::rust_compiler::{
     perform_rust_compilation, rust_compiler_task, RustCompilationError, RustCompilationResult,
 };
@@ -588,7 +590,8 @@ pub async fn compiler_precompile(
     let udf_rust = "";
     let udf_toml = "";
 
-    // SQL
+    // SQL — precompile uses bundled connectors only (no plugin connectors).
+    let manifest = build_in_process_manifest();
     let (program_info, sql_duration, _) = perform_sql_compilation(
         &common_config,
         &config,
@@ -600,6 +603,7 @@ pub async fn compiler_precompile(
         program_version,
         &program_config,
         program_code,
+        &manifest,
     )
     .await
     .map_err(|e| match e {
@@ -685,6 +689,7 @@ pub async fn compiler_main(
     db: Arc<Mutex<StoragePostgres>>,
     worker_id: usize,
     total_workers: usize,
+    manifest_cache: Arc<ManifestCache>,
 ) -> Result<(), ManagerError> {
     // All threads will operate in the same working directory.
     // This must be created in advance such that there is no
@@ -698,6 +703,7 @@ pub async fn compiler_main(
         common_config.clone(),
         config.clone(),
         db.clone(),
+        manifest_cache.clone(),
     ));
     let rust_task = spawn(rust_compiler_task(
         worker_id,

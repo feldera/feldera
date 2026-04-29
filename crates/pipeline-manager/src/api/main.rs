@@ -672,6 +672,7 @@ impl ServerState {
         compiler_config: Option<CompilerConfig>,
         db: Arc<Mutex<StoragePostgres>>,
         license_check: Arc<RwLock<Option<LicenseCheck>>>,
+        manifest_cache: Arc<ManifestCache>,
     ) -> AnyResult<Self> {
         let runner = RunnerInteraction::new(common_config.clone(), db.clone());
         let db_copy = db.clone();
@@ -682,7 +683,7 @@ impl ServerState {
             common_config,
             config,
             compiler_config,
-            manifest_cache: Arc::new(ManifestCache::new()),
+            manifest_cache,
             jwk_cache: Arc::new(Mutex::new(JwkCache::new())),
             probe: DbProbe::new(db_copy).await,
             demos,
@@ -709,6 +710,7 @@ impl ServerState {
             compiler_config,
             db.clone(),
             license_check,
+            Arc::new(ManifestCache::new()),
         )
         .await
         .unwrap()
@@ -760,6 +762,7 @@ pub async fn run(
     api_config: ApiServerConfig,
     compiler_config: Option<CompilerConfig>,
     license_check: Arc<RwLock<Option<LicenseCheck>>>,
+    manifest_cache: Arc<ManifestCache>,
 ) -> AnyResult<()> {
     let listener = TcpListener::bind((common_config.bind_address.clone(), common_config.api_port))
         .unwrap_or_else(|_| {
@@ -775,6 +778,7 @@ pub async fn run(
             compiler_config,
             db,
             license_check,
+            manifest_cache,
         )
         .await?,
     );

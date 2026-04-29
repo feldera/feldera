@@ -1,4 +1,6 @@
 use crate::common_error::CommonError;
+use crate::compiler::connectors::{build_in_process_manifest, parse_manifest_json};
+use crate::compiler::manifest_cache::{ManifestCache, TenantBuildState};
 use crate::compiler::util::{
     cleanup_specific_directories, cleanup_specific_files, crate_name_pipeline_base,
     crate_name_pipeline_globals, create_new_file, create_new_file_with_content,
@@ -11,7 +13,8 @@ use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::program::{
-    generate_program_info, RuntimeSelector, SqlCompilationInfo, SqlCompilerMessage,
+    generate_program_info, ConnectorManifest, RuntimeSelector, SqlCompilationInfo,
+    SqlCompilerMessage,
 };
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::validate_program_config;
@@ -25,8 +28,9 @@ use futures_util::StreamExt;
 use indoc::formatdoc;
 use std::fs::Metadata;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Instant;
-use std::{process::Stdio, sync::Arc};
+use std::process::Stdio;
 use tempfile::NamedTempFile;
 use tokio::io::AsyncWriteExt;
 use tokio::{
@@ -69,6 +73,7 @@ pub async fn sql_compiler_task(
     common_config: CommonConfig,
     config: CompilerConfig,
     db: Arc<Mutex<StoragePostgres>>,
+    manifest_cache: Arc<ManifestCache>,
 ) {
     let mut last_cleanup: Option<Instant> = None;
     loop {
@@ -98,6 +103,7 @@ pub async fn sql_compiler_task(
             &common_config,
             &config,
             db.clone(),
+            manifest_cache.clone(),
         )
         .await;
         if let Err(e) = &result {
@@ -167,6 +173,7 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
     common_config: &CommonConfig,
     config: &CompilerConfig,
     db: Arc<Mutex<StoragePostgres>>,
+    manifest_cache: Arc<ManifestCache>,
 ) -> Result<bool, DBError> {
     trace!("SQL worker {worker_id}: Performing SQL compilation...");
 
@@ -191,6 +198,40 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
         return Ok(false);
     };
 
+    // Check manifest availability before advancing from Pending.
+    // Snapshot semantics: in-flight CompilingSql jobs use the manifest they
+    // loaded at dispatch time.
+    let manifest: ConnectorManifest = match manifest_cache.get(tenant_id).await {
+        None | Some(TenantBuildState::NotConfigured { .. }) => {
+            // Bundled-only tenant (empty connectors.toml or not yet seen):
+            // build from the in-process inventory.
+            build_in_process_manifest()
+        }
+        Some(TenantBuildState::Ready { ref manifest_json, .. }) => {
+            match parse_manifest_json(manifest_json) {
+                Ok(m) => m,
+                Err(e) => {
+                    // This is a programming error — the describer already validated
+                    // the JSON before marking Ready. Log and keep the program in Pending.
+                    error!(
+                        pipeline_id = %pipeline.id,
+                        "Failed to parse cached manifest JSON: {e}; keeping pipeline in Pending"
+                    );
+                    return Ok(false);
+                }
+            }
+        }
+        Some(TenantBuildState::Building { .. }) => {
+            // Describer build in progress; keep program in Pending.
+            return Ok(false);
+        }
+        Some(TenantBuildState::Failed { .. }) => {
+            // Describer build failed; keep program in Pending until operator
+            // fixes connectors.toml.
+            return Ok(false);
+        }
+    };
+
     // (3) Update database that SQL compilation is ongoing
     db.lock()
         .await
@@ -209,6 +250,7 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
         pipeline.program_version,
         &pipeline.program_config,
         &pipeline.program_code,
+        &manifest,
     )
     .await;
 
@@ -477,6 +519,10 @@ async fn fetch_sql_compiler(
 /// - Prepares a working directory for input and output
 /// - Call the SQL-to-DBSP compiler executable via a process
 /// - Returns the outcome from the output (namely, the [`ProgramInfo`] serialized as a JSON value)
+///
+/// `manifest` is used for direction validation of connector declarations in
+/// the program's `WITH` clauses. Pass `&build_in_process_manifest()` when
+/// no tenant-specific describer manifest is available.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn perform_sql_compilation(
     common_config: &CommonConfig,
@@ -489,6 +535,7 @@ pub(crate) async fn perform_sql_compilation(
     program_version: Version,
     program_config: &serde_json::Value,
     program_code: &str,
+    manifest: &ConnectorManifest,
 ) -> Result<(serde_json::Value, Duration, SqlCompilationInfo), SqlCompilationError> {
     let start = Instant::now();
 
@@ -761,7 +808,7 @@ pub(crate) async fn perform_sql_compilation(
         let stubs = read_file_content(&output_rust_udf_stubs_file_path).await?;
 
         // Generate the program information
-        match generate_program_info(schema, main_rust, stubs, Some(dataflow)) {
+        match generate_program_info(schema, main_rust, stubs, Some(dataflow), manifest) {
             Ok(program_info) => {
                 let program_info = match serde_json::to_value(program_info) {
                     Ok(value) => value,

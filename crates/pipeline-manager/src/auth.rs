@@ -908,6 +908,7 @@ mod test {
     use uuid::Uuid;
 
     use super::AuthError;
+    use crate::compiler::manifest_cache::ManifestCache;
     use crate::db::types::api_key::ApiPermission;
     use crate::{
         api::main::ServerState,
@@ -1048,6 +1049,7 @@ mod test {
                 None,
                 db,
                 Arc::new(RwLock::new(None)),
+                Arc::new(ManifestCache::new()),
             )
             .await
             .unwrap(),

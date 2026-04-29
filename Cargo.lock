@@ -8407,6 +8407,7 @@ dependencies = [
  "fdlimit",
  "feldera-adapterlib",
  "feldera-cloud1-client",
+ "feldera-datagen",
  "feldera-ir",
  "feldera-observability",
  "feldera-types",
