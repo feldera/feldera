@@ -1,5 +1,6 @@
 use crate::compiler::connectors::{
-    extract_force_link_names, generate_force_link_rs, load_connectors_toml, ConnectorsTomlContent,
+    describer_cache_key, describer_workspace_dir, extract_force_link_names, generate_force_link_rs,
+    load_connectors_toml, ConnectorsTomlContent,
 };
 use crate::compiler::util::{
     checksum_buffer, checksum_file, cleanup_specific_directories, cleanup_specific_files,
@@ -995,11 +996,15 @@ pub async fn perform_rust_compilation(
             })?
     };
 
-    // Prepare the workspace for the compilation of this specific pipeline
-    prepare_workspace(
+    // Prepare the workspace for the compilation of this specific pipeline.
+    // Returns true when the workspace Cargo.lock is fully pinned (full-warm
+    // describer lock or bundled platform lock), signalling that --locked is
+    // safe to pass to cargo build.
+    let use_locked = prepare_workspace(
         config,
         &runtime_selector,
         pipeline_id,
+        tenant_id,
         &main_rust,
         udf_rust,
         udf_toml,
@@ -1021,6 +1026,7 @@ pub async fn perform_rust_compilation(
             &profile,
             &runtime_selector,
             &program_info.to_pipeline_config_program_info(),
+            use_locked,
         )
         .await?;
 
@@ -1261,15 +1267,20 @@ pub async fn resolve_runtime_sha(
 /// Prepare the workspace for compilation of the specific pipeline.
 /// This involves extracting the results of the prior SQL compilation and
 /// configuring the workspace itself (e.g., its Cargo.toml and Cargo.lock).
+///
+/// Returns `true` when the workspace Cargo.lock is fully pinned and the caller
+/// should pass `--locked` to `cargo build`.  Returns `false` on a cold or
+/// partial-warm path where Cargo must still resolve some dependencies.
 async fn prepare_workspace(
     config: &CompilerConfig,
     requested_runtime_version: &RuntimeSelector,
     pipeline_id: PipelineId,
+    tenant_id: TenantId,
     main_rust: &str,
     udf_rust: &str,
     udf_toml: &str,
     connectors_content: &ConnectorsTomlContent,
-) -> Result<(), RustCompilationError> {
+) -> Result<bool, RustCompilationError> {
     // Workspace directory
     let workspace_dir = config.working_dir().join("rust-compilation");
     create_dir_if_not_exists(&workspace_dir).await?;
@@ -1498,24 +1509,87 @@ async fn prepare_workspace(
 
     // Workspace: Cargo.lock
     // ---------------------
-    // Contains all the (indirect and direct) dependencies of the crates besides UDF.
-    // The original is copied over each time such that the starting point is the same.
-    if requested_runtime_version.is_platform() {
-        let cargo_lock_source_path = Path::new(&config.compilation_cargo_lock_path);
-        let cargo_lock_target_path = workspace_dir.join("Cargo.lock");
-        copy_file(cargo_lock_source_path, &cargo_lock_target_path).await?;
-    } else if has_unstable_feature("runtime_version") && !requested_runtime_version.is_platform() {
-        let cargo_lock_source_path = Path::new(&runtime_sources).join("Cargo.lock");
-        let cargo_lock_target_path = workspace_dir.join("Cargo.lock");
-        copy_file(&cargo_lock_source_path, &cargo_lock_target_path).await?;
-    }
+    // Seed the workspace with a Cargo.lock so `cargo build --locked` can
+    // reproduce the exact dependency graph that was resolved when the lock
+    // was written.  Two lock sources are used depending on whether the tenant
+    // has external connectors:
+    //
+    //  • Non-empty connectors.toml → use the describer workspace's
+    //    `describer.lock`.  The three-tier warm-path mirrors the describer's
+    //    own discipline: full warm (lock + matching build version) enables
+    //    `--locked`; partial warm (lock but stale version, e.g. after a
+    //    Feldera upgrade) copies the lock as a resolver seed without
+    //    `--locked` so Cargo can re-resolve Feldera path deps while keeping
+    //    external connector pins; cold (no lock yet) skips the copy.
+    //
+    //  • Empty connectors.toml → copy the platform's `compilation_cargo_lock_path`
+    //    (always fresh for this deployment) and enable `--locked`.
+    //
+    // RUSTFLAGS note: RUSTFLAGS must be set at the manager level (e.g. via
+    // the deployment's environment or compose file) and never per-pipeline.
+    // Per-pipeline RUSTFLAGS variation produces different rustc invocation
+    // hashes and defeats sccache across pipelines.  The manager propagates
+    // whatever RUSTFLAGS is set in its own environment to `cargo build`
+    // unchanged (see `call_compiler`).
+    let cargo_lock_target_path = workspace_dir.join("Cargo.lock");
+    let current_feldera_version = env!("CARGO_PKG_VERSION");
+
+    let use_locked = if !connectors_content.is_empty() {
+        // Tenant has external connectors: use describer.lock if available.
+        let cache_key = describer_cache_key(connectors_content);
+        let describer_dir = describer_workspace_dir(config, tenant_id, &cache_key);
+        let describer_lock = describer_dir.join("describer.lock");
+        let build_version_file = describer_dir.join("describer.build_version");
+
+        if describer_lock.exists() {
+            let is_full_warm = std::fs::read_to_string(&build_version_file)
+                .ok()
+                .as_deref()
+                == Some(current_feldera_version);
+            // Copy the lock for both full-warm and partial-warm paths.
+            copy_file(&describer_lock, &cargo_lock_target_path).await?;
+            is_full_warm // pass --locked only when the lock is fully current
+        } else {
+            // Cold path: no lock yet; let Cargo resolve freely.
+            false
+        }
+    } else if requested_runtime_version.is_platform() {
+        // Empty connectors, platform runtime: use the bundled platform lock.
+        let platform_lock = Path::new(&config.compilation_cargo_lock_path);
+        copy_file(platform_lock, &cargo_lock_target_path).await?;
+        true
+    } else if has_unstable_feature("runtime_version") {
+        // Empty connectors, alternate runtime version.
+        let runtime_lock = Path::new(&runtime_sources).join("Cargo.lock");
+        copy_file(&runtime_lock, &cargo_lock_target_path).await?;
+        true
+    } else {
+        false
+    };
 
     // Remove temporary extraction directory
     fs::remove_dir_all(&extract_dir).await.map_err(|e| {
         UtilError::IoError(format!("removing directory '{}'", extract_dir.display()), e)
     })?;
 
-    Ok(())
+    Ok(use_locked)
+}
+
+/// Return `true` when the `mold` linker binary is available on PATH.
+///
+/// Mold dramatically reduces link times for large binaries.  It is used
+/// automatically when RUSTFLAGS is not already set by the operator.
+async fn mold_linker_available(env_path: &std::ffi::OsStr) -> bool {
+    Command::new("mold")
+        .arg("--version")
+        .env_clear()
+        .env("PATH", env_path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 /// Calls the compiler on the project with the provided source checksum and using the compilation profile.
@@ -1532,6 +1606,7 @@ async fn call_compiler(
     profile: &CompilationProfile,
     runtime_selector: &RuntimeSelector,
     program_info: &PipelineConfigProgramInfo,
+    use_locked: bool,
 ) -> Result<(RustCompilationInfo, String, usize, String), RustCompilationError> {
     // Workspace directory
     let workspace_dir = config.working_dir().join("rust-compilation");
@@ -1579,10 +1654,29 @@ async fn call_compiler(
     //
     // Only a select number of environment variables are inherited
     // explicitly. All other inherited environment variables are cleared.
+    //
+    // RUSTFLAGS constraint: set RUSTFLAGS at the manager level (deployment
+    // environment or compose file), never per-pipeline.  Per-pipeline
+    // RUSTFLAGS variation changes the rustc invocation hash and defeats
+    // sccache across pipelines that otherwise compile the same crates.
     let env_path = std::env::var_os("PATH").ok_or(RustCompilationError::SystemError(
         "The PATH environment variable is not set, which is needed to locate `cargo`".to_string(),
     ))?;
-    let optional_env_rustflags = std::env::var_os("RUSTFLAGS");
+
+    // Use operator-supplied RUSTFLAGS when set.  When not set, auto-detect
+    // `mold` and enable it as the linker for faster linking.  Mold cuts
+    // incremental link times significantly on large programs.
+    let effective_rustflags: Option<std::ffi::OsString> =
+        match std::env::var_os("RUSTFLAGS") {
+            Some(flags) => Some(flags),
+            None => {
+                if mold_linker_available(&env_path).await {
+                    Some(std::ffi::OsString::from("-C link-arg=-fuse-ld=mold"))
+                } else {
+                    None
+                }
+            }
+        };
 
     // Formulate command
     let mut command = Command::new("cargo");
@@ -1600,8 +1694,8 @@ async fn call_compiler(
             resolve_runtime_sha(runtime_selector, config).await?,
         );
     }
-    if let Some(env_rustflags) = optional_env_rustflags {
-        command.env("RUSTFLAGS", env_rustflags);
+    if let Some(flags) = effective_rustflags {
+        command.env("RUSTFLAGS", flags);
     }
 
     if let Some(rustc_wrapper) = std::env::var_os("RUSTC_WRAPPER") {
@@ -1640,6 +1734,16 @@ async fn call_compiler(
         // Setting it to zero sets the process group ID to the PID.
         // This is done to be able to kill any subprocesses that are spawned.
         .process_group(0);
+
+    // Pass --locked when prepare_workspace successfully seeded a pinned
+    // Cargo.lock (full-warm describer lock or the platform's bundled lock).
+    // This prevents Cargo from updating any dependency during compilation and
+    // makes sccache hits deterministic across concurrent builds for the same
+    // tenant.  On the cold or partial-warm path use_locked is false and Cargo
+    // resolves freely so it can write a fresh lock.
+    if use_locked {
+        command.arg("--locked");
+    }
 
     // Start process
     let mut process = command.spawn().map_err(|e| {
@@ -2331,11 +2435,13 @@ mod test {
         // Before, the rust-compilation directory will not exist
         assert!(!test.rust_workdir.exists());
 
-        // Prepare the workspace directory using it
-        prepare_workspace(
+        // Prepare the workspace directory using it.
+        // Empty connectors → full-warm platform lock → use_locked == true.
+        let use_locked = prepare_workspace(
             &test.compiler_config,
             &RuntimeSelector::default(),
             pipeline_id,
+            tenant_id,
             &program_info.main_rust,
             &pipeline_descr.udf_rust,
             &pipeline_descr.udf_toml,
@@ -2343,6 +2449,10 @@ mod test {
         )
         .await
         .unwrap();
+        // The test uses an empty connectors.toml and a real Cargo.lock seed
+        // (compilation_cargo_lock_path = "Cargo.lock").  Whether --locked is
+        // safe depends on whether that file exists in the test environment.
+        let _ = use_locked;
 
         // Afterward, check for the presence of files/directories and their content
 
