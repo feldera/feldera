@@ -253,6 +253,7 @@ const connectors = {
         'connectors/orchestration',
         'connectors/completion-tokens',
         'connectors/secret-references',
+        'connectors/plugin-connectors-hardening',
         {
             type: 'category',
             label: 'Input',

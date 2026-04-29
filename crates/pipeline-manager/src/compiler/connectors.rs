@@ -726,6 +726,48 @@ mod tests {
     }
 
     #[test]
+    fn tenant_content_update_does_not_affect_other_tenants_path() {
+        // When tenant A changes connectors.toml the old workspace dir is left
+        // untouched; tenant B's dir never changes regardless.
+        //
+        // Isolation mechanism: the path is
+        //   <working_dir>/describer/<tenant_uuid>/<content_hash>/
+        // The tenant UUID component guarantees that even two tenants with byte-
+        // identical content live in separate directories and can never interfere
+        // with each other's manifest, lockfile, or sccache artifacts.
+        let config = make_config(None);
+        let tenant_a = TenantId(uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap());
+        let tenant_b = TenantId(uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap());
+
+        let content_a_v1 = ConnectorsTomlContent("acme = \"1.0\"\n".to_string());
+        let content_a_v2 = ConnectorsTomlContent("acme = \"2.0\"\n".to_string());
+        // Tenant B happens to use the same bytes as tenant A's original content.
+        let content_b = ConnectorsTomlContent("acme = \"1.0\"\n".to_string());
+
+        let key_a_v1 = describer_cache_key(&content_a_v1);
+        let key_a_v2 = describer_cache_key(&content_a_v2);
+        let key_b = describer_cache_key(&content_b);
+
+        // Content change for A produces a new cache key.
+        assert_ne!(key_a_v1, key_a_v2);
+        // B's content is byte-identical to A v1, so they share the cache key.
+        assert_eq!(key_a_v1, key_b);
+
+        let dir_a_v1 = describer_workspace_dir(&config, tenant_a, &key_a_v1);
+        let dir_a_v2 = describer_workspace_dir(&config, tenant_a, &key_a_v2);
+        let dir_b = describer_workspace_dir(&config, tenant_b, &key_b);
+
+        // A PUT by tenant A creates a new directory; the old one is not removed.
+        assert_ne!(dir_a_v1, dir_a_v2);
+
+        // Tenant B's directory is always distinct from both of tenant A's
+        // directories, even when the cache keys match, because the tenant UUID
+        // is embedded in the path.
+        assert_ne!(dir_b, dir_a_v1);
+        assert_ne!(dir_b, dir_a_v2);
+    }
+
+    #[test]
     fn seed_file_read_verbatim() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("connectors.toml");
