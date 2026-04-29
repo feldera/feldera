@@ -252,7 +252,13 @@ It contains the following fields:
         // Cluster
         endpoints::cluster::list_cluster_events,
         endpoints::cluster::get_cluster_event,
-        endpoints::cluster::get_cluster_health
+        endpoints::cluster::get_cluster_health,
+
+        // Connector plugin management
+        endpoints::connectors::get_connectors_status,
+        endpoints::connectors::get_connectors_toml,
+        endpoints::connectors::put_connectors_toml,
+        endpoints::connectors::post_connectors_refresh
     ),
     components(schemas(
         // Authentication
@@ -470,6 +476,11 @@ It contains the following fields:
         // Telemetry & License
         feldera_cloud1_client::license::DisplaySchedule,
         feldera_cloud1_client::license::LicenseInformation,
+
+        // Connector plugin management
+        crate::api::endpoints::connectors::StatusName,
+        crate::api::endpoints::connectors::ConnectorsStatusResponse,
+        crate::api::endpoints::connectors::ConnectorsConfigPutResponse,
     ),),
     tags(
         (name = "Pipeline management", description = "Create, retrieve, update, delete and deploy pipelines."),
@@ -477,6 +488,7 @@ It contains the following fields:
         (name = "Configuration", description = "Retrieve configuration."),
         (name = "API keys", description = "Create, retrieve and delete API keys."),
         (name = "Metrics", description = "Retrieve metrics across pipelines."),
+        (name = "Connector plugin management", description = "Manage third-party connector plugins via connectors.toml."),
     ),
 )]
 pub struct ApiDoc;

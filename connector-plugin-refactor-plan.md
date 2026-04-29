@@ -828,9 +828,10 @@ PRs 7a–7f follow the per-connector migration recipe in Phase 4 (steps 1–8): 
 - **Unblocks**: PR 14.
 
 ### PR 14 — OpenAPI surface for connector endpoints (Phase 9)
-- [ ] Add OpenAPI schemas for `GET /v0/connectors/status`, `GET /v0/connectors/connectors.toml`, `PUT /v0/connectors/connectors.toml`, `POST /v0/connectors/refresh` (the endpoints themselves shipped in PR 10). Status envelope spec: enum for `state`, optional `descriptors` array, ETag header documented.
-- [ ] Regenerate `openapi.json` via existing build flow.
-- [ ] Keep the typed connector schemas in `rest-api/build.rs:38-208` unchanged; plugin connectors are opaque (`serde_json::Value`) on the typed client and discovered at runtime via `/status`.
+- [ ] **Wire existing `#[utoipa::path]` annotations into the OpenAPI spec — do not rewrite them**: `connectors.rs` already has complete `#[utoipa::path]` annotations on all four handlers as of PR 10. The actual work is: (a) add the four handler paths to the `paths()` macro in `api/main.rs`, (b) add the three schema types (`ConnectorsStatusResponse`, `ConnectorsConfigPutResponse`, `StatusName`) to `components(schemas(…))`, and (c) add the `tag` field on each annotation. Status envelope spec: enum for `state`, optional `descriptors` array, ETag header documented.
+- [ ] **Types registered in `components(schemas(…))` must be `pub(crate)` or wider**: private types referenced by path in the macro produce a compile error (not a silent omission). `StatusName` was originally declared without `pub`; it must be at least `pub(crate)` before it can be named in `components(schemas(…))`.
+- [ ] **`openapi.json` regeneration requires a full binary build, not `cargo check`**: run `cargo build -p pipeline-manager --bin pipeline-manager` (pulls in the full dependency graph — adapters, dbsp, sqllib — and takes roughly 2× longer than `cargo check` alone), then `./target/debug/pipeline-manager --dump-openapi` to produce the updated JSON. Re-run this after every annotation change; `cargo check` alone does not update the file.
+- [ ] **`rest-api/build.rs:38-208` does not need new `type_replacement()` entries**: the existing entries map typed connector transport schemas (Kafka, Delta, etc.) to `feldera_types` equivalents and must remain untouched. The new connector-management response types (`ConnectorsStatusResponse`, `ConnectorsConfigPutResponse`, `StatusName`) are internal to `pipeline-manager` and have no `feldera_types` equivalents; progenitor correctly generates them as new Rust structs from the schema — adding them to `type_replacement()` would be wrong.
 - [ ] Tests: typed-client codegen still compiles; OpenAPI schema validates against actual responses.
 - **Depends on**: PR 11.
 - **Unblocks**: PR 15.

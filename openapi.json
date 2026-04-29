@@ -515,6 +515,120 @@
         ]
       }
     },
+    "/v0/connectors/connectors.toml": {
+      "get": {
+        "tags": [
+          "Connector plugin management"
+        ],
+        "summary": "Download the raw `connectors.toml` blob.",
+        "description": "Headers:\n* `ETag` — the row's `content_hash`. Echo this in `If-Match` on PUT.\n* `X-Connectors-Version` — monotonic per-tenant version.\n* `X-Connectors-Edited-At` / `X-Connectors-Edited-By` — audit trail.",
+        "operationId": "get_connectors_toml",
+        "responses": {
+          "200": {
+            "description": "Blob retrieved."
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Connector plugin management"
+        ],
+        "summary": "Replace the tenant's `connectors.toml` blob and trigger a rebuild.",
+        "description": "`If-Match` is required — its value is the `content_hash` from the\nmost recent GET. A mismatch means another operator updated the row\nsince this client read it; the response is `412 Precondition Failed`.\n\nThe body is plain text (the raw toml). Empty body clears the blob and\ntransitions the tenant back to the `not_configured` state.\n\nOn success the response is `202 Accepted` — the describer rebuild\nruns in the background. Poll `GET /v0/connectors/status` to observe\nthe transition `building → ready` (or `failed`).",
+        "operationId": "put_connectors_toml",
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Update accepted; rebuild in progress.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorsConfigPutResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Body fails the line-shape check."
+          },
+          "412": {
+            "description": "If-Match hash does not match the current row."
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/connectors/refresh": {
+      "post": {
+        "tags": [
+          "Connector plugin management"
+        ],
+        "summary": "Refresh the describer's `Cargo.lock` (run `cargo update`) and rebuild",
+        "description": "the manifest. Use this to pick up upstream patch releases without\nediting the blob.\n\nReturns `202 Accepted` immediately; poll\n`GET /v0/connectors/status` to observe the rebuild outcome.",
+        "operationId": "post_connectors_refresh",
+        "responses": {
+          "202": {
+            "description": "Refresh accepted; rebuild in progress."
+          },
+          "404": {
+            "description": "Compiler config is not available."
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/connectors/status": {
+      "get": {
+        "tags": [
+          "Connector plugin management"
+        ],
+        "summary": "Get the current describer state and (when ready) the connector manifest.",
+        "description": "Returns a unified envelope:\n* `state` is one of `ready` | `building` | `failed` | `not_configured`.\n* `content_hash` is the ETag value to echo on `If-Match` for a\nsubsequent `PUT /v0/connectors/connectors.toml`.\n* `descriptors` is the parsed JSON manifest, present only when `state`\nis `ready`.\n\nHonors `If-None-Match`: a request whose value matches the current\n`content_hash` receives `304 Not Modified` with no body — cheap to\npoll for the web console status badge.",
+        "operationId": "get_connectors_status",
+        "responses": {
+          "200": {
+            "description": "Status retrieved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorsStatusResponse"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified."
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/metrics": {
       "get": {
         "tags": [
@@ -7915,6 +8029,60 @@
           }
         }
       },
+      "ConnectorsConfigPutResponse": {
+        "type": "object",
+        "required": [
+          "content_hash",
+          "version"
+        ],
+        "properties": {
+          "content_hash": {
+            "type": "string",
+            "description": "New `content_hash` of the row after the update. Use this as the\nnext `If-Match` value when issuing a follow-up edit."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Monotonic per-tenant version, incremented on every successful PUT."
+          }
+        }
+      },
+      "ConnectorsStatusResponse": {
+        "type": "object",
+        "required": [
+          "state",
+          "version"
+        ],
+        "properties": {
+          "content_hash": {
+            "type": "string",
+            "description": "`content_hash` of the tenant's `connectors.toml`. Absent for the\n`not_configured` state — there is no content to hash.",
+            "nullable": true
+          },
+          "descriptors": {
+            "description": "Raw JSON manifest emitted by the describer (each entry is a\n`ConnectorManifestEntry`). Present only when `state == \"ready\"`.",
+            "nullable": true
+          },
+          "error": {
+            "type": "string",
+            "description": "Captured stderr from a failed describer build. Present only when\n`state == \"failed\"`.",
+            "nullable": true
+          },
+          "last_built_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Wall-clock time of the last completed build. Absent when no build\nhas run yet (e.g. `not_configured`, or first read of a tenant).",
+            "nullable": true
+          },
+          "state": {
+            "$ref": "#/components/schemas/StatusName"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "ConsumerConfig": {
         "type": "object",
         "required": [
@@ -12939,6 +13107,15 @@
           }
         }
       },
+      "StatusName": {
+        "type": "string",
+        "enum": [
+          "ready",
+          "building",
+          "failed",
+          "not_configured"
+        ]
+      },
       "StorageBackendConfig": {
         "oneOf": [
           {
@@ -13371,382 +13548,243 @@
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "FileInput"
             ],
             "properties": {
-              "config": {
+              "FileInput": {
                 "$ref": "#/components/schemas/FileInputConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "file_input"
-                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "FileOutput"
             ],
             "properties": {
-              "config": {
+              "FileOutput": {
                 "$ref": "#/components/schemas/FileOutputConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "file_output"
-                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "NatsInput"
             ],
             "properties": {
-              "config": {
+              "NatsInput": {
                 "$ref": "#/components/schemas/NatsInputConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "nats_input"
-                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "KafkaInput"
             ],
             "properties": {
-              "config": {
+              "KafkaInput": {
                 "$ref": "#/components/schemas/KafkaInputConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "kafka_input"
-                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "KafkaOutput"
             ],
             "properties": {
-              "config": {
+              "KafkaOutput": {
                 "$ref": "#/components/schemas/KafkaOutputConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "kafka_output"
-                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "PubSubInput"
             ],
             "properties": {
-              "config": {
+              "PubSubInput": {
                 "$ref": "#/components/schemas/PubSubInputConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "pub_sub_input"
-                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "UrlInput"
             ],
             "properties": {
-              "config": {
+              "UrlInput": {
                 "$ref": "#/components/schemas/UrlInputConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "url_input"
-                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "S3Input"
             ],
             "properties": {
-              "config": {
+              "S3Input": {
                 "$ref": "#/components/schemas/S3InputConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "s3_input"
-                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "DeltaTableInput"
             ],
             "properties": {
-              "config": {
+              "DeltaTableInput": {
                 "$ref": "#/components/schemas/DeltaTableReaderConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "delta_table_input"
-                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "DeltaTableOutput"
             ],
             "properties": {
-              "config": {
+              "DeltaTableOutput": {
                 "$ref": "#/components/schemas/DeltaTableWriterConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "delta_table_output"
-                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "RedisOutput"
             ],
             "properties": {
-              "config": {
+              "RedisOutput": {
                 "$ref": "#/components/schemas/RedisOutputConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "redis_output"
-                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "IcebergInput"
             ],
             "properties": {
-              "config": {
+              "IcebergInput": {
                 "$ref": "#/components/schemas/IcebergReaderConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "iceberg_input"
-                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "PostgresInput"
             ],
             "properties": {
-              "config": {
+              "PostgresInput": {
                 "$ref": "#/components/schemas/PostgresReaderConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "postgres_input"
-                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "PostgresCdcInput"
             ],
             "properties": {
-              "config": {
+              "PostgresCdcInput": {
                 "$ref": "#/components/schemas/PostgresCdcReaderConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "postgres_cdc_input"
-                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "PostgresOutput"
             ],
             "properties": {
-              "config": {
+              "PostgresOutput": {
                 "$ref": "#/components/schemas/PostgresWriterConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "postgres_output"
-                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "Datagen"
             ],
             "properties": {
-              "config": {
+              "Datagen": {
                 "$ref": "#/components/schemas/DatagenInputConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "datagen"
-                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "Nexmark"
             ],
             "properties": {
-              "config": {
+              "Nexmark": {
                 "$ref": "#/components/schemas/NexmarkInputConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "nexmark"
-                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "HttpInput"
             ],
             "properties": {
-              "config": {
+              "HttpInput": {
                 "$ref": "#/components/schemas/HttpInputConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "http_input"
-                ]
               }
             }
           },
           {
-            "type": "object",
-            "required": [
-              "name"
-            ],
-            "properties": {
-              "name": {
-                "type": "string",
-                "enum": [
-                  "http_output"
-                ]
-              }
-            }
+            "type": "string",
+            "description": "Direct HTTP output: cannot be instantiated through API",
+            "enum": [
+              "HttpOutput"
+            ]
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "AdHocInput"
             ],
             "properties": {
-              "config": {
+              "AdHocInput": {
                 "$ref": "#/components/schemas/AdHocInputConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "ad_hoc_input"
-                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "ClockInput"
             ],
             "properties": {
-              "config": {
+              "ClockInput": {
                 "$ref": "#/components/schemas/ClockConfig"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "clock_input"
-                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "Plugin"
+            ],
+            "properties": {
+              "Plugin": {
+                "$ref": "#/components/schemas/PluginTransportConfig"
               }
             }
           }
         ],
-        "description": "Transport-specific endpoint configuration passed to\n`crate::OutputTransport::new_endpoint`\nand `crate::InputTransport::new_endpoint`.",
-        "discriminator": {
-          "propertyName": "name"
-        }
+        "description": "Transport-specific endpoint configuration passed to\n`crate::OutputTransport::new_endpoint`\nand `crate::InputTransport::new_endpoint`.\n\nKnown built-in connectors deserialize to their typed variant.  An unknown\n`\"name\"` field deserializes to [`TransportConfig::Plugin`], preserving the\nname and raw config for runtime dispatch via the connector descriptor\nregistry.\n\n`Serialize` and `Deserialize` are implemented manually to support this\nopen-ended deserialization."
       },
       "UpdateInformation": {
         "type": "object",
@@ -13843,6 +13881,10 @@
     {
       "name": "Metrics",
       "description": "Retrieve metrics across pipelines."
+    },
+    {
+      "name": "Connector plugin management",
+      "description": "Manage third-party connector plugins via connectors.toml."
     }
   ]
 }

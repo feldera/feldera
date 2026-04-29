@@ -34,7 +34,7 @@ use crate::error::ManagerError;
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
-enum StatusName {
+pub(crate) enum StatusName {
     Ready,
     Building,
     Failed,
@@ -95,7 +95,8 @@ pub(crate) struct ConnectorsConfigPutResponse {
         (status = 200, description = "Status retrieved.", body = ConnectorsStatusResponse),
         (status = 304, description = "Not modified."),
     ),
-    security(("JSON web token (JWT) or API key" = []))
+    security(("JSON web token (JWT) or API key" = [])),
+    tag = "Connector plugin management"
 )]
 #[get("/connectors/status")]
 pub(crate) async fn get_connectors_status(
@@ -205,7 +206,8 @@ fn build_status_envelope(
     responses(
         (status = 200, description = "Blob retrieved.", content_type = "text/plain"),
     ),
-    security(("JSON web token (JWT) or API key" = []))
+    security(("JSON web token (JWT) or API key" = [])),
+    tag = "Connector plugin management"
 )]
 #[get("/connectors/connectors.toml")]
 pub(crate) async fn get_connectors_toml(
@@ -248,7 +250,8 @@ pub(crate) async fn get_connectors_toml(
         (status = 400, description = "Body fails the line-shape check."),
         (status = 412, description = "If-Match hash does not match the current row."),
     ),
-    security(("JSON web token (JWT) or API key" = []))
+    security(("JSON web token (JWT) or API key" = [])),
+    tag = "Connector plugin management"
 )]
 #[put("/connectors/connectors.toml")]
 pub(crate) async fn put_connectors_toml(
@@ -336,7 +339,8 @@ pub(crate) async fn put_connectors_toml(
         (status = 202, description = "Refresh accepted; rebuild in progress."),
         (status = 404, description = "Compiler config is not available."),
     ),
-    security(("JSON web token (JWT) or API key" = []))
+    security(("JSON web token (JWT) or API key" = [])),
+    tag = "Connector plugin management"
 )]
 #[post("/connectors/refresh")]
 pub(crate) async fn post_connectors_refresh(
