@@ -196,33 +196,34 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Parameter(names = "--handles",
                 description = "Use handles (true) or Catalog (false) in the emitted Rust code")
         public boolean emitHandles = false;
-        // This option is ignored; it is here just for backward compatibility, and it will be removed.
-        @Parameter(names = "--nowstream", hidden = true,
-                description = "Implement NOW as a stream (true) or as an internal operator (false)")
-        public boolean ignored = true;
-        @Parameter(names = "--sqlnames", hidden = true,
-                description = "Use the table names as identifiers in the generated code")
-        public boolean sqlNames = false;
         @Parameter(names = "--trimInputs", description = "Do not ingest unused fields of input tables")
         public boolean trimInputs = false;
-        @Parameter(names = "--raw", hidden = true,
-                description = "Do not generate any internal tables (ERROR, NOW, etc).")
-        public boolean raw = false;
         @Parameter(names = "--crates", description = "Followed by a program name. Generates code using multiple crates; " +
                 "`outputFile` is interpreted as a directory.")
         public String crates = "";
         @Parameter(names = "--runtime", description = "Followed by a path.  Path to the runtime to use.  " +
                 "Used in conjunction with '--crates'.")
         public String runtimePath = "";
+        @Parameter(names = "--correlatedColumns",
+                description = "Dump information about the columns that are used in join equality comparisons")
+        public boolean correlatedColumns = false;
+
+        // Hidden options used for testing
+        @Parameter(names = "--sqlnames", hidden = true,
+                description = "Use the table names as identifiers in the generated code")
+        public boolean sqlNames = false;
+        @Parameter(names = "--raw", hidden = true,
+                description = "Do not generate any internal tables (ERROR, NOW, etc).")
+        public boolean raw = false;
         @Parameter(hidden = true, names = "--input_circuit",
                 description = "Do not process the circuit, return immediately after creation.  Used for testing")
         public boolean inputCircuit = false;
         @Parameter(hidden = true, names = "--skip_calcite_optimization",
                 description = "Calcite optimizer steps whose names match this regex are not applied.  Used for testing")
         public String skipCalciteOptimizations = "";
-        @Parameter(names = "--correlatedColumns",
-                description = "Dump information about the columns that are used in join equality comparisons")
-        public boolean correlatedColumns = false;
+        @Parameter(hidden = true, names = "--testing",
+                description = "Signals that compiler is invoked from a testing path: disables some warnings")
+        public boolean testing = false;
 
         // Used only for internal testing
         public boolean nowStream = true;

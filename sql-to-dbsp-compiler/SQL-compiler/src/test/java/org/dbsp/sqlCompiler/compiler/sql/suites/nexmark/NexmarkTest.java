@@ -565,6 +565,7 @@ SELECT
     @Override
     public CompilerOptions testOptions() {
         CompilerOptions options = new CompilerOptions();
+        options.ioOptions.testing = true;
         options.languageOptions.streaming = true;
         options.languageOptions.throwOnError = true;
         options.languageOptions.incrementalize = true;

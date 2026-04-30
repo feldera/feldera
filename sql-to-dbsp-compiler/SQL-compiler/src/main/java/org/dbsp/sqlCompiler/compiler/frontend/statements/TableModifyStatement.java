@@ -40,8 +40,7 @@ public class TableModifyStatement extends RelStatement {
     /** True for insert, false for remove */
     public final boolean insert;
 
-    public TableModifyStatement(
-            ParsedStatement node, boolean insert, ProgramIdentifier tableName, SqlNode data) {
+    public TableModifyStatement(ParsedStatement node, boolean insert, ProgramIdentifier tableName, SqlNode data) {
         super(node);
         this.insert = insert;
         this.tableName = tableName;
@@ -51,5 +50,9 @@ public class TableModifyStatement extends RelStatement {
 
     public void setTranslation(RelNode rel) {
         this.rel = rel;
+    }
+
+    public String getSqlOperationName() {
+        return this.insert ? "INSERT" : "REMOVE";
     }
 }
