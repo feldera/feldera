@@ -426,8 +426,18 @@ impl CircuitConfig {
         self
     }
 
-    pub fn with_storage(mut self, storage: CircuitStorageConfig) -> Self {
-        self.storage = Some(storage);
+    pub fn with_pin_cpus(mut self, pin_cpus: Vec<usize>) -> Self {
+        self.pin_cpus = pin_cpus;
+        self
+    }
+
+    pub fn with_storage(mut self, storage: Option<CircuitStorageConfig>) -> Self {
+        self.storage = storage;
+        self
+    }
+
+    pub fn with_dev_tweaks(mut self, dev_tweaks: DevTweaks) -> Self {
+        self.dev_tweaks = dev_tweaks;
         self
     }
 
@@ -1697,11 +1707,10 @@ pub(crate) mod tests {
     use std::time::Duration;
     use std::{fs, vec};
 
-    use super::{CircuitStorageConfig, Mode};
+    use super::CircuitStorageConfig;
+    use crate::circuit::CircuitConfig;
     use crate::circuit::checkpointer::Checkpointer;
-    use crate::circuit::dbsp_handle::DevTweaks;
     use crate::circuit::runtime::TOKIO_WORKER_INDEX;
-    use crate::circuit::{CircuitConfig, Layout};
     use crate::dynamic::{ClonableTrait, DowncastTrait, DynData, Erase};
     use crate::operator::Generator;
     use crate::operator::TraceBound;
@@ -2006,27 +2015,19 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn mkconfig(path: &Path) -> CircuitConfig {
-        CircuitConfig {
-            layout: Layout::new_solo(1),
-            max_rss_bytes: None,
-            mode: Mode::Ephemeral,
-            pin_cpus: Vec::new(),
-            storage: Some(
-                CircuitStorageConfig::for_config(
-                    StorageConfig {
-                        path: path.to_string_lossy().into_owned(),
-                        cache: StorageCacheConfig::default(),
-                    },
-                    StorageOptions {
-                        min_storage_bytes: Some(0),
-                        ..StorageOptions::default()
-                    },
-                )
-                .unwrap(),
-            ),
-            dev_tweaks: DevTweaks::default(),
-            exchange_listener: None,
-        }
+        CircuitConfig::with_workers(1).with_storage(Some(
+            CircuitStorageConfig::for_config(
+                StorageConfig {
+                    path: path.to_string_lossy().into_owned(),
+                    cache: StorageCacheConfig::default(),
+                },
+                StorageOptions {
+                    min_storage_bytes: Some(0),
+                    ..StorageOptions::default()
+                },
+            )
+            .unwrap(),
+        ))
     }
 
     /// Utility function that runs a circuit and takes a checkpoint at every

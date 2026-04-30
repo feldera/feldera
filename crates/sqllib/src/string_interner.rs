@@ -402,7 +402,7 @@ mod interned_string_test {
         ),
     ) {
         let (circuit, handles) = Runtime::init_circuit(
-            CircuitConfig::with_workers(8).with_storage(
+            CircuitConfig::with_workers(8).with_storage(Some(
                 CircuitStorageConfig::for_config(
                     StorageConfig {
                         path: path.display().to_string(),
@@ -412,7 +412,7 @@ mod interned_string_test {
                 )
                 .unwrap()
                 .with_init_checkpoint(checkpoint),
-            ),
+            )),
             move |circuit| {
                 let (input_strings, hinput_strings) = circuit.add_input_zset::<SqlString>();
                 input_strings.set_persistent_mir_id("input_strings");

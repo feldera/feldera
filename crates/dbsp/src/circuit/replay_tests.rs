@@ -214,7 +214,7 @@ fn test_replay_with_step_size<I1, I2, I3, O1, O2, O3>(
         CircuitConfig::with_workers(NUM_WORKERS)
             .with_splitter_chunk_size_records(2)
             .with_mode(Mode::Persistent)
-            .with_storage(
+            .with_storage(Some(
                 CircuitStorageConfig::for_config(
                     StorageConfig {
                         path: path.to_string_lossy().into_owned(),
@@ -223,7 +223,7 @@ fn test_replay_with_step_size<I1, I2, I3, O1, O2, O3>(
                     Default::default(),
                 )
                 .unwrap(),
-            )
+            ))
     }
 
     // Create both reference circuits, feed I1 and I2 to circuit1; feed I2 and I3 to circuit2.

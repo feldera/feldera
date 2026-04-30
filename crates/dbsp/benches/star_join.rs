@@ -84,7 +84,7 @@ fn circuit_config_with_posix_storage(
     )
     .expect("POSIX storage config");
 
-    CircuitConfig::from(workers).with_storage(storage)
+    CircuitConfig::from(workers).with_storage(Some(storage))
 }
 
 fn run_binary_joins(

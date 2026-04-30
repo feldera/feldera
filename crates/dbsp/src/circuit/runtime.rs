@@ -1643,8 +1643,8 @@ mod tests {
     use crate::{
         Circuit, RootCircuit,
         circuit::{
-            CircuitConfig, Layout,
-            dbsp_handle::{CircuitStorageConfig, Mode},
+            CircuitConfig,
+            dbsp_handle::CircuitStorageConfig,
             metadata::{LOOSE_MEMORY_RECORDS_COUNT, MERGING_MEMORY_RECORDS_COUNT},
             schedule::{DynamicScheduler, Scheduler},
         },
@@ -1656,7 +1656,7 @@ mod tests {
     use feldera_buffer_cache::{CacheEntry, ThreadType};
     use feldera_storage::fbuf::{FBuf, slab::set_thread_slab_pool};
     use feldera_types::config::{
-        DevTweaks, StorageCacheConfig, StorageConfig, StorageOptions,
+        StorageCacheConfig, StorageConfig, StorageOptions,
         dev_tweaks::{BufferCacheAllocationStrategy, BufferCacheStrategy},
     };
     use feldera_types::memory_pressure::MemoryPressure;
@@ -1765,24 +1765,16 @@ mod tests {
         // Case 1: storage specified, runtime should not clean up storage when exiting
         let path = tempfile::tempdir().unwrap().keep();
         let path_clone = path.clone();
-        let cconf = CircuitConfig {
-            layout: Layout::new_solo(4),
-            max_rss_bytes: None,
-            mode: Mode::Ephemeral,
-            pin_cpus: Vec::new(),
-            storage: Some(
-                CircuitStorageConfig::for_config(
-                    StorageConfig {
-                        path: path.to_string_lossy().into_owned(),
-                        cache: StorageCacheConfig::default(),
-                    },
-                    StorageOptions::default(),
-                )
-                .unwrap(),
-            ),
-            dev_tweaks: DevTweaks::default(),
-            exchange_listener: None,
-        };
+        let cconf = CircuitConfig::with_workers(4).with_storage(Some(
+            CircuitStorageConfig::for_config(
+                StorageConfig {
+                    path: path.to_string_lossy().into_owned(),
+                    cache: StorageCacheConfig::default(),
+                },
+                StorageOptions::default(),
+            )
+            .unwrap(),
+        ));
 
         let hruntime = Runtime::run(cconf, move |_parker| {
             let runtime = Runtime::runtime().unwrap();
@@ -1850,7 +1842,7 @@ mod tests {
         let runtime = Runtime(Arc::new(
             RuntimeInner::new(
                 CircuitConfig::with_workers(workers)
-                    .with_storage(storage)
+                    .with_storage(Some(storage))
                     .with_buffer_cache_strategy(BufferCacheStrategy::Lru),
             )
             .unwrap(),
@@ -1959,7 +1951,7 @@ mod tests {
         let runtime = Runtime(Arc::new(
             RuntimeInner::new(
                 CircuitConfig::with_workers(1)
-                    .with_storage(storage)
+                    .with_storage(Some(storage))
                     .with_buffer_cache_allocation_strategy(
                         BufferCacheAllocationStrategy::SharedPerWorkerPair,
                     ),
@@ -1993,7 +1985,7 @@ mod tests {
         let runtime = Runtime(Arc::new(
             RuntimeInner::new(
                 CircuitConfig::with_workers(2)
-                    .with_storage(storage)
+                    .with_storage(Some(storage))
                     .with_buffer_cache_allocation_strategy(BufferCacheAllocationStrategy::Global),
             )
             .unwrap(),
@@ -2020,7 +2012,7 @@ mod tests {
         )
         .unwrap();
         let runtime = Runtime(Arc::new(
-            RuntimeInner::new(CircuitConfig::with_workers(1).with_storage(storage)).unwrap(),
+            RuntimeInner::new(CircuitConfig::with_workers(1).with_storage(Some(storage))).unwrap(),
         ));
 
         let previous = set_thread_slab_pool(Some(

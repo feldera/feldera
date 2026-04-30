@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use crossbeam::channel::{Sender, bounded};
-use dbsp::circuit::{CircuitConfig, CircuitStorageConfig, Layout, Mode};
+use dbsp::circuit::{CircuitConfig, CircuitStorageConfig};
 use dbsp::{
     Runtime,
     mimalloc::MiMalloc,
@@ -35,28 +35,20 @@ static ALLOC: MiMalloc = MiMalloc;
 fn main() -> Result<()> {
     validate_constants()?;
     let temp = tempdir().context("failed to create temp directory for storage backend")?;
-    let config = CircuitConfig {
-        layout: Layout::new_solo(WORKERS),
-        max_rss_bytes: None,
-        mode: Mode::Ephemeral,
-        pin_cpus: Vec::new(),
-        storage: Some(
-            CircuitStorageConfig::for_config(
-                StorageConfig {
-                    path: temp.path().to_string_lossy().into_owned(),
-                    cache: StorageCacheConfig::default(),
-                },
-                StorageOptions {
-                    min_storage_bytes: None,
-                    min_step_storage_bytes: None,
-                    ..StorageOptions::default()
-                },
-            )
-            .context("failed to configure POSIX storage backend")?,
-        ),
-        dev_tweaks: Default::default(),
-        exchange_listener: None,
-    };
+    let config = CircuitConfig::with_workers(WORKERS).with_storage(Some(
+        CircuitStorageConfig::for_config(
+            StorageConfig {
+                path: temp.path().to_string_lossy().into_owned(),
+                cache: StorageCacheConfig::default(),
+            },
+            StorageOptions {
+                min_storage_bytes: None,
+                min_step_storage_bytes: None,
+                ..StorageOptions::default()
+            },
+        )
+        .context("failed to configure POSIX storage backend")?,
+    ));
 
     let total_batches = (TOTAL_RECORDS / BATCH_SIZE as u64) as usize;
     println!(

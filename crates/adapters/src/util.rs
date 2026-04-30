@@ -718,33 +718,25 @@ pub(crate) fn run_in_posix_runtime<F>(
     F: FnOnce() + Send + 'static,
 {
     use dbsp::Runtime;
-    use dbsp::circuit::{CircuitConfig, CircuitStorageConfig, Layout, Mode};
+    use dbsp::circuit::{CircuitConfig, CircuitStorageConfig};
     use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
     use std::sync::{Arc, Mutex};
 
     let temp = tempfile::tempdir().expect("failed to create temp dir for storage");
-    let cconf = CircuitConfig {
-        layout: Layout::new_solo(1),
-        max_rss_bytes: None,
-        mode: Mode::Ephemeral,
-        pin_cpus: Vec::new(),
-        storage: Some(
-            CircuitStorageConfig::for_config(
-                StorageConfig {
-                    path: temp.path().to_string_lossy().into_owned(),
-                    cache: StorageCacheConfig::default(),
-                },
-                StorageOptions {
-                    min_storage_bytes,
-                    min_step_storage_bytes,
-                    ..StorageOptions::default()
-                },
-            )
-            .expect("failed to configure storage"),
-        ),
-        dev_tweaks: Default::default(),
-        exchange_listener: None,
-    };
+    let cconf = CircuitConfig::with_workers(1).with_storage(Some(
+        CircuitStorageConfig::for_config(
+            StorageConfig {
+                path: temp.path().to_string_lossy().into_owned(),
+                cache: StorageCacheConfig::default(),
+            },
+            StorageOptions {
+                min_storage_bytes,
+                min_step_storage_bytes,
+                ..StorageOptions::default()
+            },
+        )
+        .expect("failed to configure storage"),
+    ));
 
     let test_fn: Arc<Mutex<Option<F>>> = Arc::new(Mutex::new(Some(test_fn)));
     let test_fn_cloned = Arc::clone(&test_fn);
