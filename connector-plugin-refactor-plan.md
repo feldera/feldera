@@ -884,26 +884,41 @@ PRs 7a–7f follow the per-connector migration recipe in Phase 4 (steps 1–8): 
 
 #### The `hello-lines` connector
 
-- [ ] Add `crates/connector-example/` implementing a **`hello-lines` input connector**: reads a plain-text file and emits one line per second as a single-string record. The SQL table must have exactly one `TEXT` column; no format parsing is performed — each raw line becomes the column value. Config: `{ "path": "...", "interval_ms": 1000 }` (configurable interval so tests can set it to 0).
-- [ ] `Cargo.toml` depends only on `feldera-adapterlib` — proves the plugin surface is closed.
+- [ ] Add `crates/connector-example/` implementing a **`hello-lines` input connector**: reads a plain-text file and emits one line per second as a single-string record. The SQL table must have exactly one `TEXT` column; no format parsing is performed — each raw line becomes the column value. Config: `{ "path": "...", "interval_ms": 1000 }` (configurable interval so tests can set it to 0). Set `default_format` to `JsonLines::Single` so each `parser.parse()` call delivers exactly one newline-terminated JSON object — `Multiple` (the parser default) buffers across calls and is the wrong semantic here.
+- [ ] **`Cargo.toml` plugin-surface dependencies** are `feldera-adapterlib` (traits) and `feldera-types` (shared config / FT / schema types — both sides round-trip these through the controller, so they're part of the contract, not internals). **Excluded** are the engine internals: `dbsp`, the in-tree adapters crate, and `pipeline-manager`. Lightweight transitive helpers are also expected: `inventory = "0.3"` is required (since `register_connector!` expands to `::inventory::submit!`), as are `serde` and `anyhow`.
+- [ ] **Add an empty `[workspace]` table** to `connector-example/Cargo.toml`. The crate lives under `crates/` next to the main Feldera workspace, so Cargo otherwise auto-associates it with the parent workspace and `cargo check` fails with "current package believes it's in a workspace when it's not". An empty `[workspace]` makes it its own root. Document this for any connector developed inside an existing source tree.
 - [ ] Implements `TransportInputEndpoint` + `InputReader` and registers via `register_connector!`.
 
 #### Fault tolerance: `ExactlyOnce` via byte offset
 
-- [ ] The connector advertises `FtModel::ExactlyOnce`. The seek datum is a **`u64` byte offset** into the file, serialized as 8 bytes. Using a byte offset (rather than a line number) means resume is a single `File::seek(SeekFrom::Start(offset))` call — O(1), no re-scan from the top.
-- [ ] **Checkpoint**: on `Queue { checkpoint_requested: true }`, record `file.stream_position()` as the checkpoint payload.
-- [ ] **Resume** (`Resume::Seek { seek }`): deserialize the offset and seek before entering the read loop.
-- [ ] **Replay** (`Resume::Replay { seek, replay, hash }`): seek to `seek`, re-emit lines up through the `replay` offset into the replay buffer, then set position to `replay` and continue. For a sequential line reader this is a small bounded re-scan.
+- [ ] The connector advertises `FtModel::ExactlyOnce`. The seek datum is a **JSON byte-range object `{"start": u64, "end": u64}`**, not a raw 8-byte `u64` — the `Replay { seek, replay, hash }` shape requires two offsets (the replay window's start and end), and the JSON form keeps metadata human-readable and consistent with the `file` transport's `Metadata { offsets: Range<u64> }`. Resume is still O(1) via `File::seek(SeekFrom::Start(start))`.
+- [ ] **Checkpoint**: on `Queue { checkpoint_requested: true }`, record the current `{start, end}` byte range as the checkpoint payload.
+- [ ] **Resume** (`Resume::Seek { seek }`): deserialize the JSON range and seek to `start` before entering the read loop.
+- [ ] **Replay** (`Resume::Replay { seek, replay, hash }`): seek to `seek.start`, re-emit lines up through `replay.end` into the replay buffer, then set position to `replay.end` and continue. For a sequential line reader this is a small bounded re-scan.
 
 #### Integration test
 
-- [ ] Enable `crates/connector-example` in `pipeline-manager` via a build feature flag and populate a test `connectors.toml` pointing at it.
+- [ ] Populate a test `connectors.toml` with a **path dependency** pointing at `crates/connector-example` in the same checkout. No build feature flag — the example must resolve through the normal `connectors.toml` → describer path, identical to what an end user would write. CI already has the source tree, so the path dep needs no network or git fetch.
 - [ ] Write a known test file (e.g. five lines). Run the pipeline with `interval_ms = 0`. Assert the full plugin path: `connectors.toml` → describer → manifest → SQL parse → pipeline build → runtime dispatch → five rows in the output view.
-- [ ] Checkpoint/restore test: checkpoint after three rows, restart the pipeline, assert only the remaining two rows are emitted (not all five) — exercising the `ExactlyOnce` seek path.
+- [ ] Checkpoint/restore test (`@enterprise_only` — explicit checkpoint is an enterprise feature): consume all five rows, take a checkpoint, force-stop, restart. Assert the row count remains **5, not 10**. Feldera exposes no row-by-row stepping API for running pipelines, so the original "checkpoint after row 3, expect only 2 on restart" framing is not implementable; the no-duplicate property is the equivalent assertion — a connector that ignores the seek payload would re-read from offset 0 and double the row count.
 
 #### Documentation
 
 - [ ] Add a "Writing a connector" doc page citing `crates/connector-example` as the canonical reference. Cover: the two traits (`TransportInputEndpoint`, `InputReader`), `register_connector!`, choosing a seek datum, the three FT commands (`Queue`, `Seek`, `Replay`), and the single-column schema constraint of this specific demo.
+- [ ] **Document both import forms in `connectors.toml`** with concrete copy-pasteable snippets. The two forms must work identically — same describer build, same runtime dispatch — so the doc proves Feldera treats local and remote crates symmetrically.
+
+  **From the official Feldera git repo** (the typical operator path — pin to a release tag or sha):
+  ```toml
+  [dependencies]
+  connector-example = { git = "https://github.com/feldera/feldera", tag = "v<version>", package = "connector-example" }
+  ```
+
+  **From a local crate** (developers building `pipeline-manager` from source against an in-tree connector):
+  ```toml
+  [dependencies]
+  connector-example = { path = "/absolute/path/to/feldera/crates/connector-example" }
+  ```
+  Note: paths must be absolute — the describer workspace lives in `<working_dir>/describer/<tenant_id>/<hash>/` and resolves relative paths against that directory, not the operator's CWD.
 
 - **Depends on**: PR 15.
 - **Unblocks**: nothing; ships the contract.

@@ -1,0 +1,35 @@
+# Standalone workspace declaration: this crate is intentionally NOT a member of
+# the Feldera workspace.  It is an external connector example, built only through
+# the describer path (connectors.toml → cargo build).  The [workspace] table
+# prevents Cargo from erroneously grafting it onto the parent workspace when
+# invoked from within the feldera source tree.
+[workspace]
+
+[package]
+name = "connector-example"
+version = "0.1.0"
+edition = "2021"
+description = "Reference hello-lines input connector for Feldera."
+# Not published to crates.io; it lives in the feldera repo as a canonical example.
+publish = false
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+# Only feldera-adapterlib (and feldera-types for shared config types) are needed.
+# This demonstrates that a connector need not depend on `dbsp` or `adapters`.
+feldera-adapterlib = { path = "../adapterlib" }
+feldera-types = { path = "../feldera-types" }
+# inventory is required because register_connector! expands to ::inventory::submit!
+inventory = "0.3"
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+crossbeam = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["sync"] }
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+
+[dev-dependencies]
+tempfile = "3"
