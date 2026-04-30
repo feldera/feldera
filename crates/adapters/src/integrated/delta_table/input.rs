@@ -14,7 +14,7 @@ use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
 use datafusion::logical_expr::LogicalPlan;
-use datafusion::physical_plan::PhysicalExpr;
+use datafusion::physical_plan::{PhysicalExpr, displayable};
 use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
 use datafusion::prelude::SessionConfig;
 use dbsp::circuit::tokio::TOKIO;
@@ -87,7 +87,13 @@ const REPORT_ERROR: &str =
 /// as a workaround for https://github.com/apache/arrow-rs-object-store/issues/14.
 /// (see `max_concurrent_readers` in `DeltaTableReaderConfig`).
 static DELTA_READER_SEMAPHORE: std::sync::LazyLock<Semaphore> =
-    std::sync::LazyLock::new(|| Semaphore::new(6));
+    std::sync::LazyLock::new(|| Semaphore::new(DEFAULT_MAX_CONCURRENT_READERS));
+
+/// Default cap for concurrent Delta object-store reads, used both as the
+/// initial token count for `DELTA_READER_SEMAPHORE` and as the fallback
+/// for DataFusion's `target_partitions` when neither
+/// `DELTA_DF_TARGET_PARTITIONS` nor `max_concurrent_readers` is set.
+const DEFAULT_MAX_CONCURRENT_READERS: usize = 6;
 
 /// True if the `max_concurrent_readers` attribute was set by one of the connectors.
 /// Used to detect conflicting values of `max_concurrent_readers`.
@@ -612,10 +618,55 @@ impl DeltaTableInputEndpointInner {
         let queue = Arc::new(InputQueue::new(consumer.clone()));
         // Configure datafusion not to generate Utf8View arrow types, which are not yet
         // supported by the `serde_arrow` crate.
-        let session_config = SessionConfig::new().set_bool(
+        let mut session_config = SessionConfig::new().set_bool(
             "datafusion.execution.parquet.schema_force_view_types",
             false,
         );
+        // Number of parallel scan partitions DataFusion plans for the
+        // snapshot read. Resolution order:
+        //
+        //   1. `DELTA_DF_TARGET_PARTITIONS` env var (process-wide override).
+        //   2. `max_concurrent_readers` from the connector config (which
+        //      also drives the global `DELTA_READER_SEMAPHORE`); using the
+        //      same value here keeps the per-connector parallelism aligned
+        //      with the process-wide concurrent-reader cap.
+        //   3. `DEFAULT_MAX_CONCURRENT_READERS` (6), matching the semaphore
+        //      default.
+        let env_target_partitions = match std::env::var("DELTA_DF_TARGET_PARTITIONS").ok() {
+            None => None,
+            Some(s) => match s.parse::<usize>() {
+                Ok(n) if n > 0 => Some(n),
+                _ => {
+                    warn!(
+                        "delta_table {endpoint_name}: ignoring DELTA_DF_TARGET_PARTITIONS={s:?}; expected a positive integer"
+                    );
+                    None
+                }
+            },
+        };
+        let target_partitions = env_target_partitions
+            .or_else(|| {
+                config
+                    .max_concurrent_readers
+                    .map(|n| n as usize)
+                    .filter(|n| *n > 0)
+            })
+            .unwrap_or(DEFAULT_MAX_CONCURRENT_READERS);
+        session_config =
+            session_config.set_usize("datafusion.execution.target_partitions", target_partitions);
+        info!("delta_table {endpoint_name}: target_partitions={target_partitions}");
+
+        if let Ok(s) = std::env::var("DELTA_DF_BATCH_SIZE") {
+            match s.parse::<usize>() {
+                Ok(n) if n > 0 => {
+                    session_config = session_config.set_usize("datafusion.execution.batch_size", n);
+                    info!("delta_table {endpoint_name}: applying DELTA_DF_BATCH_SIZE={n}");
+                }
+                _ => warn!(
+                    "delta_table {endpoint_name}: ignoring DELTA_DF_BATCH_SIZE={s:?}; expected a positive integer"
+                ),
+            }
+        }
 
         let metrics = Arc::new(DeltaTableMetrics::new());
         consumer.set_custom_metrics(Arc::clone(&metrics) as Arc<dyn ConnectorMetrics>);
@@ -1735,6 +1786,30 @@ impl DeltaTableInputEndpointInner {
                 return Err(anyhow!("error compiling query '{query}': {e}"));
             }
         };
+
+        // One-shot physical-plan dump for debugging ordering / parallelism
+        // decisions. Enable with DELTA_SNAPSHOT_EXPLAIN=true. The plan is
+        // logged once per snapshot query at INFO level.
+        if matches!(
+            std::env::var("DELTA_SNAPSHOT_EXPLAIN")
+                .ok()
+                .as_deref()
+                .map(str::to_ascii_lowercase)
+                .as_deref(),
+            Some("true" | "1")
+        ) {
+            match df.clone().create_physical_plan().await {
+                Ok(plan) => info!(
+                    "delta_table {}: physical plan for {descr}:\n{}",
+                    &self.endpoint_name,
+                    displayable(plan.as_ref()).indent(true)
+                ),
+                Err(e) => warn!(
+                    "delta_table {}: failed to compute physical plan for {descr}: {e}",
+                    &self.endpoint_name,
+                ),
+            }
+        }
 
         self.execute_df(
             df,
