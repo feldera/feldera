@@ -13,7 +13,7 @@ use crate::{
             TOTAL_REBALANCING_TIME_SECONDS,
         },
         operator_traits::Operator,
-        splitter_output_chunk_size,
+        splitter_output_chunk_size, splitter_output_first_chunk_size,
     },
     circuit_cache_key, default_hasher,
     dynamic::{ClonableTrait, Data as _, Erase},
@@ -1033,6 +1033,26 @@ where
             )
             .await;
     }
+
+    async fn send_builders(
+        &self,
+        builders: Vec<B::Builder>,
+        capacity: &mut usize,
+        flush_complete: bool,
+        serializer_inner: &mut Option<SerializerInner>,
+    ) -> Vec<B::Builder> {
+        let batches = builders
+            .into_iter()
+            .map(|builder| builder.done())
+            .inspect(|batch| {
+                if batch.key_count() > *capacity {
+                    *capacity = batch.key_count();
+                }
+            });
+
+        self.send(batches, flush_complete, serializer_inner).await;
+        self.create_builders(*capacity)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -1240,6 +1260,11 @@ where
         let mut delayed_trace = delayed_trace.ro_snapshot();
         let chunk_size = splitter_output_chunk_size();
 
+        // Capacity for the builders that we create.  We don't want to initially
+        // allocate the full `chunk_size`, because it might be bigger than
+        // memory, e.g. if it's `usize::MAX`.
+        let mut builder_capacity = splitter_output_first_chunk_size();
+
         let delta = delta.into_owned();
 
         self.num_steps_in_transaction.update(|steps| steps + 1);
@@ -1336,7 +1361,7 @@ where
 
             let mut integral_cursor = delayed_trace.cursor();
 
-            let mut builders = self.create_builders(chunk_size);
+            let mut builders = self.create_builders(builder_capacity);
 
             // Retract the contents of the integral by sending it with negated weights to the accumulator
             // in the same worker.
@@ -1344,8 +1369,7 @@ where
                 self.process_retractions(&mut integral_cursor, &mut builders[self.worker_index], chunk_size);
 
                 // println!("{}: integral retractions: {:?}", Runtime::worker_index(), batches);
-                self.send(builders.into_iter().map(|builder| builder.done()), false, &mut serializer_inner).await;
-                builders = self.create_builders(chunk_size);
+                builders = self.send_builders(builders, &mut builder_capacity, false, &mut serializer_inner).await;
                 self.update_exchange_metadata();
                 self.update_total_rebalancing_time(&step_start_time);
                 yield (false, None);
@@ -1361,8 +1385,7 @@ where
                 self.repartition_after_unicast(&mut accumulator_cursor, &mut builders, chunk_size);
 
                 // println!("{}: acc insertions: {:?}", Runtime::worker_index(), batches);
-                self.send(builders.into_iter().map(|builder| builder.done()), false, &mut serializer_inner).await;
-                builders = self.create_builders(chunk_size);
+                builders = self.send_builders(builders, &mut builder_capacity, false, &mut serializer_inner).await;
                 self.update_exchange_metadata();
                 self.update_total_rebalancing_time(&step_start_time);
                 yield (false, None);
@@ -1374,8 +1397,7 @@ where
                 self.repartition(trace_policy, &mut integral_cursor, &mut builders, chunk_size);
 
                 // println!("{}: integral insertions: {:?}", Runtime::worker_index(), batches);
-                self.send(builders.into_iter().map(|builder| builder.done()), !integral_cursor.key_valid(), &mut serializer_inner).await;
-                builders = self.create_builders(chunk_size);
+                builders = self.send_builders(builders, &mut builder_capacity, !integral_cursor.key_valid(), &mut serializer_inner).await;
                 self.update_exchange_metadata();
 
                 if integral_cursor.key_valid(){
@@ -1400,7 +1422,7 @@ where
             }
 
             // println!("{}: final batches: {:?}", Runtime::worker_index(), batches);
-            self.send(builders.into_iter().map(|builder| builder.done()), true, &mut serializer_inner).await;
+            self.send_builders(builders, &mut builder_capacity, true, &mut serializer_inner).await;
 
             // if Runtime::worker_index() == 0 {
             //     println!("{}: flush complete 3 ({:?})", self.input_node_id, *self.current_policy.borrow());

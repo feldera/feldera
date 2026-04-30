@@ -126,6 +126,11 @@ pub trait Vector<T: DataTrait + ?Sized>: Data {
     /// Does nothing if capacity is already sufficient.
     fn reserve(&mut self, additional: usize);
 
+    /// Tries to reserve capacity for at least `additional` more elements.
+    ///
+    /// If `additional` is too big (e.g. it is `usize::MAX`), this does nothing.
+    fn try_reserve(&mut self, additional: usize);
+
     /// Reserve capacity for exactly `additional` more elements.
     ///
     /// Does nothing if capacity is already sufficient.
@@ -389,6 +394,10 @@ where
 
     fn reserve(&mut self, reservation: usize) {
         LeanVec::reserve(self, reservation)
+    }
+
+    fn try_reserve(&mut self, reservation: usize) {
+        LeanVec::try_reserve(self, reservation)
     }
 
     fn reserve_exact(&mut self, reservation: usize) {

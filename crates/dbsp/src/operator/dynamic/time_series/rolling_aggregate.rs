@@ -5,7 +5,7 @@ use crate::{
         Scope,
         metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::Operator,
-        splitter_output_chunk_size,
+        splitter_output_chunk_size, splitter_output_first_chunk_size,
     },
     dynamic::{
         ClonableTrait, Data, DataTrait, DowncastTrait, DynDataTyped, DynOpt, DynPair, DynUnit,
@@ -888,10 +888,13 @@ where
             let mut input_trace_cursor = input_trace.unwrap().cursor();
             let mut tree_cursor = radix_tree.unwrap().cursor();
 
+            // Limit the initial capacity of the builder in case the chunk size
+            // is bigger than memory (e.g. `usize::MAX`).
+            let capacity = splitter_output_first_chunk_size();
             let mut retraction_builder =
-                O::Builder::with_capacity(&self.output_factories, chunk_size, chunk_size);
+                O::Builder::with_capacity(&self.output_factories, capacity, capacity);
             let mut insertion_builder =
-                O::Builder::with_capacity(&self.output_factories, chunk_size, chunk_size);
+                O::Builder::with_capacity(&self.output_factories, capacity, capacity);
 
             // println!("delta: {input_delta:#x?}");
             // println!("radix tree: {radix_tree:#x?}");

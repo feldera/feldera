@@ -4,7 +4,7 @@ use crate::{
     circuit::{
         metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::Operator,
-        splitter_output_chunk_size,
+        splitter_output_chunk_size, splitter_output_first_chunk_size,
     },
     dynamic::Erase,
     operator::{
@@ -254,7 +254,10 @@ impl<Z: IndexedZSet> StreamingNaryOperator<Option<Spine<Z>>, Z> for AccumulateCo
             let chunk_size = splitter_output_chunk_size();
             let cursors = snapshots.into_iter().enumerate().map(|(i, snapshot)| CursorWithPolarity::new(snapshot.cursor(), self.polarity[i])).collect::<Vec<_>>();
 
-            let mut builder = Z::Builder::with_capacity(&factories, chunk_size, chunk_size);
+            // Limit the initial capacity of the builder in case the chunk size
+            // is bigger than memory (e.g. `usize::MAX`).
+            let capacity = splitter_output_first_chunk_size();
+            let mut builder = Z::Builder::with_capacity(&factories, capacity, capacity);
             let mut cursor = CursorList::new(factories.weight_factory(), cursors);
 
             let mut has_val = false;

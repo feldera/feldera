@@ -1620,7 +1620,7 @@ where
                 // TODO: Sub-scopes can cause a lot of inner clock cycles to be set off, so this
                 //       actually could be significant
                 let mut output_tuples = self.timed_items_factory.default_box();
-                output_tuples.reserve(chunk_size);
+                output_tuples.try_reserve(chunk_size);
 
                 let mut timed_item = self.timed_item_factory.default_box();
 
@@ -1701,7 +1701,7 @@ where
                     .unwrap_or_else(|| Z::dyn_empty(&self.output_factories))
             } else {
                 let mut output_tuples = self.output_factories.weighted_items_factory().default_box();
-                output_tuples.reserve(chunk_size);
+                output_tuples.try_reserve(chunk_size);
                 let mut batcher = Z::Batcher::new_batcher(&self.output_factories, ());
 
                 let mut output_tuple = self.output_factories.weighted_item_factory().default_box();
