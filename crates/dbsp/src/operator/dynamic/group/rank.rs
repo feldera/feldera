@@ -24,11 +24,11 @@ use futures::Stream as AsyncStream;
 use std::{borrow::Cow, cmp::Ordering, marker::PhantomData};
 
 /// A ranked batch pairs a value with its rank.
-type RankedBatch<K, V> = OrdIndexedZSet<K, DynPair<V, DynData>>;
-type RankedSpineFactories<K, V> = OrdIndexedZSetFactories<K, DynPair<V, DynData>>;
+pub(crate) type RankedBatch<K, V> = OrdIndexedZSet<K, DynPair<V, DynData>>;
+pub(crate) type RankedSpineFactories<K, V> = OrdIndexedZSetFactories<K, DynPair<V, DynData>>;
 
 /// SQL ranks are bigints.
-type RankType = i64;
+pub(crate) type RankType = i64;
 
 /// Function that updates the rank of a record based on the total weight of records with the previous rank.
 ///
@@ -128,16 +128,6 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
             output_func,
         )
     }
-
-    // pub fn dyn_row_number_custom_order_mono(
-    //     &self,
-    //     persistent_id: Option<&str>,
-    //     factories: &RankCustomOrdFactories<DynData, DynData, DynData>,
-    //     encode: Box<dyn Fn(&DynData, &mut DynData)>,
-    //     output_func: Box<dyn Fn(i64, &DynData, &mut DynData)>,
-    // ) -> Stream<RootCircuit, MonoIndexedZSet> {
-    //     self.dyn_row_number_custom_order(persistent_id, factories, encode, output_func)
-    // }
 }
 
 impl<K, V> Stream<RootCircuit, OrdIndexedZSet<K, V>>
@@ -256,125 +246,6 @@ where
                 }),
             )
         })
-    }
-
-    // /// See [`Stream::row_number_custom_order`].
-    // pub fn dyn_row_number_custom_order<V2, OV>(
-    //     &self,
-    //     persistent_id: Option<&str>,
-    //     factories: &RankCustomOrdFactories<K, V2, OV>,
-    //     encode: Box<dyn Fn(&V, &mut V2)>,
-    //     output_func: Box<dyn Fn(i64, &V2, &mut OV)>,
-    // ) -> Stream<RootCircuit, OrdIndexedZSet<K, OV>>
-    // where
-    //     V2: DataTrait + ?Sized,
-    //     OV: DataTrait + ?Sized,
-    // {
-    //     todo!()
-    //     // self.circuit().region(&format!("topk_row_number_{k}"), || {
-    //     //     self.dyn_map_index(
-    //     //         &factories.inner_factories,
-    //     //         Box::new(move |(k, v), kv| {
-    //     //             let (out_k, out_v) = kv.split_mut();
-    //     //             k.clone_to(out_k);
-    //     //             encode(v, out_v);
-    //     //         }),
-    //     //     )
-    //     //     .set_persistent_id(
-    //     //         persistent_id
-    //     //             .map(|name| format!("{name}-ordered"))
-    //     //             .as_deref(),
-    //     //     )
-    //     //     .dyn_group_transform(
-    //     //         persistent_id,
-    //     //         &factories.inner_factories,
-    //     //         &factories.output_factories,
-    //     //         Box::new(DiffGroupTransformer::new(
-    //     //             factories.output_factories.val_factory(),
-    //     //             TopKRowNumber::new(factories.output_factories.val_factory(), k, output_func),
-    //     //         )),
-    //     //     )
-    //     // })
-    // }
-}
-
-/// Implements both `rank` and `dense_rank` operators.
-struct Rank<
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    RV: DataTrait + ?Sized,
-    PF,
-    KCF,
-    RF: RankUpdateFunc,
-> {
-    /// Function that projects the value to a value that is used for the ranking
-    /// (typically the columns listed in the ORDER BY clause).
-    projection_func: PF,
-
-    /// Value comparison function.
-    key_cmp: KCF,
-
-    val_factory: &'static dyn Factory<RV>,
-    batch_factories: RankedSpineFactories<K, V>,
-    _phantom: PhantomData<fn(&K, &V, &RV, &PF, &RF)>,
-}
-
-impl<K, V, RV, PF, KCF, RF> Rank<K, V, RV, PF, KCF, RF>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    RV: DataTrait + ?Sized,
-    PF: Fn(&V, &mut RV) + 'static,
-    KCF: Fn(&V, &RV) -> Ordering + 'static,
-    RF: RankUpdateFunc,
-{
-    fn new(
-        val_factory: &'static dyn Factory<RV>,
-        batch_factories: &RankedSpineFactories<K, V>,
-        projection_func: PF,
-        key_cmp: KCF,
-    ) -> Self {
-        Self {
-            projection_func,
-            key_cmp,
-            val_factory,
-            batch_factories: batch_factories.clone(),
-            _phantom: PhantomData,
-        }
-    }
-
-    fn push_val_diff(
-        &self,
-        builder: &mut <RankedBatch<K, V> as Batch>::Builder,
-        val: &V,
-        rank: RankType,
-        weight: ZWeight,
-        out_val: &mut Box<DynPair<V, DynData>>,
-    ) {
-        let (out_v, out_rank) = out_val.split_mut();
-        val.clone_to(out_v);
-        Erase::<DynData>::erase(&rank).clone_to(out_rank);
-        builder.push_val_diff(out_val.as_ref(), weight.erase());
-    }
-}
-
-impl<K, V, RV, PF, KCF, RF> Operator for Rank<K, V, RV, PF, KCF, RF>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    RV: DataTrait + ?Sized,
-    PF: Fn(&V, &mut RV) + 'static,
-    KCF: Fn(&V, &RV) -> Ordering + 'static,
-    RF: RankUpdateFunc,
-{
-    fn name(&self) -> Cow<'static, str> {
-        Cow::from("rank")
-    }
-
-    fn metadata(&self, _meta: &mut OperatorMeta) {}
-
-    fn fixedpoint(&self, _scope: Scope) -> bool {
-        true
     }
 }
 
@@ -520,6 +391,86 @@ where
 
     fn position(&self) -> Option<Position> {
         self.delta_cursor.position()
+    }
+}
+
+/// Implements both `rank` and `dense_rank` operators.
+struct Rank<
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    RV: DataTrait + ?Sized,
+    PF,
+    KCF,
+    RF: RankUpdateFunc,
+> {
+    /// Function that projects the value to a value that is used for the ranking
+    /// (typically the columns listed in the ORDER BY clause).
+    projection_func: PF,
+
+    /// Value comparison function.
+    key_cmp: KCF,
+
+    val_factory: &'static dyn Factory<RV>,
+    batch_factories: RankedSpineFactories<K, V>,
+    _phantom: PhantomData<fn(&K, &V, &RV, &PF, &RF)>,
+}
+
+impl<K, V, RV, PF, KCF, RF> Rank<K, V, RV, PF, KCF, RF>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    RV: DataTrait + ?Sized,
+    PF: Fn(&V, &mut RV) + 'static,
+    KCF: Fn(&V, &RV) -> Ordering + 'static,
+    RF: RankUpdateFunc,
+{
+    fn new(
+        val_factory: &'static dyn Factory<RV>,
+        batch_factories: &RankedSpineFactories<K, V>,
+        projection_func: PF,
+        key_cmp: KCF,
+    ) -> Self {
+        Self {
+            projection_func,
+            key_cmp,
+            val_factory,
+            batch_factories: batch_factories.clone(),
+            _phantom: PhantomData,
+        }
+    }
+
+    fn push_val_diff(
+        &self,
+        builder: &mut <RankedBatch<K, V> as Batch>::Builder,
+        val: &V,
+        rank: RankType,
+        weight: ZWeight,
+        out_val: &mut Box<DynPair<V, DynData>>,
+    ) {
+        let (out_v, out_rank) = out_val.split_mut();
+        val.clone_to(out_v);
+        Erase::<DynData>::erase(&rank).clone_to(out_rank);
+        builder.push_val_diff(out_val.as_ref(), weight.erase());
+    }
+}
+
+impl<K, V, RV, PF, KCF, RF> Operator for Rank<K, V, RV, PF, KCF, RF>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    RV: DataTrait + ?Sized,
+    PF: Fn(&V, &mut RV) + 'static,
+    KCF: Fn(&V, &RV) -> Ordering + 'static,
+    RF: RankUpdateFunc,
+{
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("rank")
+    }
+
+    fn metadata(&self, _meta: &mut OperatorMeta) {}
+
+    fn fixedpoint(&self, _scope: Scope) -> bool {
+        true
     }
 }
 
@@ -954,6 +905,43 @@ mod test {
         OrdIndexedZSet::from_tuples((), tuples)
     }
 
+    /// Reference non-incremental implementation of SQL `ROW_NUMBER()`.
+    pub fn reference_row_number_custom_order<K, V, CF, OF, OV>(
+        input: &OrdIndexedZSet<K, V>,
+        output_func: OF,
+    ) -> OrdIndexedZSet<K, OV>
+    where
+        K: DBData + Clone,
+        V: DBData + Ord,
+        CF: CmpFunc<V>,
+        OV: DBData,
+        OF: Fn(i64, &V) -> OV,
+    {
+        let mut per_key: HashMap<K, BTreeMap<V, ZWeight>> = HashMap::new();
+        for (k, v, w) in input.iter() {
+            *per_key.entry(k).or_default().entry(v).or_insert(0) += w;
+        }
+
+        let mut tuples: Vec<Tup2<Tup2<K, OV>, ZWeight>> = Vec::new();
+
+        for (k, vals) in per_key {
+            let mut pairs: Vec<(V, ZWeight)> = vals.into_iter().collect();
+
+            pairs.sort_by(|(a, _), (b, _)| CF::cmp(a, b));
+
+            let mut row_number: RankType = 1;
+
+            for (v, w) in pairs.into_iter() {
+                for _ in 0..w {
+                    tuples.push(Tup2(Tup2(k.clone(), output_func(row_number, &v)), 1));
+                    row_number += 1;
+                }
+            }
+        }
+
+        OrdIndexedZSet::from_tuples((), tuples)
+    }
+
     #[test]
     fn reference_rank_custom_order_matches_sql_rank_on_weights() {
         let input = indexed_zset! {
@@ -1011,6 +999,7 @@ mod test {
         IndexedZSetHandle<u64, Tup2<u64, u64>>,
         OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup3<u64, u64, RankType>>>>,
         OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup3<u64, u64, RankType>>>>,
+        OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup3<u64, u64, RankType>>>>,
     )> {
         let (input_stream, input_handle) = circuit.add_input_indexed_zset::<u64, Tup2<u64, u64>>();
 
@@ -1038,12 +1027,27 @@ mod test {
             .apply(|t| t.ro_snapshot())
             .output_persistent_with_gid(Some("dense_ranked_output"));
 
-        Ok((input_handle, ranked_handle, dense_ranked_handle))
+        let (row_number_handle, _) = input_stream
+            .row_number_custom_order_persistent::<OrderByFirstTupleField, _, _>(
+                Some("row_number"),
+                |row_number, t| Tup3(t.0, t.1, row_number),
+            )
+            .set_persistent_id(Some("row_number_stream"))
+            .accumulate_integrate_trace()
+            .apply(|t| t.ro_snapshot())
+            .output_persistent_with_gid(Some("row_number_output"));
+
+        Ok((
+            input_handle,
+            ranked_handle,
+            dense_ranked_handle,
+            row_number_handle,
+        ))
     }
 
     #[test]
     fn rank_custom_order_tup2_circuit_smoke() {
-        let (mut dbsp, (input, ranked, dense_ranked)) = Runtime::init_circuit(
+        let (mut dbsp, (input, ranked, dense_ranked, row_number)) = Runtime::init_circuit(
             CircuitConfig::with_workers(2).with_splitter_chunk_size_records(2),
             rank_custom_order_tup2_test_circuit,
         )
@@ -1053,7 +1057,7 @@ mod test {
 
         // Expected integral after each transaction; steps below push a batch of `(key, val, w)`
         // tuples per transaction (first batch inserts five rows at once).
-        let forward_expected = vec![
+        let forward_expected_rank = vec![
             indexed_zset! {
                 P => {
                     Tup3(110u64, 1u64, 1) => 1,
@@ -1259,6 +1263,116 @@ mod test {
             },
         ];
 
+        let forward_expected_row_number = vec![
+            indexed_zset! {
+                P => {
+                    Tup3(110u64, 1u64, 1) => 1,
+                    Tup3(120u64, 2u64, 2) => 1,
+                    Tup3(130u64, 3u64, 3) => 1,
+                    Tup3(140u64, 4u64, 4) => 1,
+                    Tup3(150u64, 5u64, 5) => 1
+                }
+            },
+            indexed_zset! {
+                P => {
+                    Tup3(110u64, 1u64, 1) => 1,
+                    Tup3(120u64, 2u64, 2) => 1,
+                    Tup3(130u64, 3u64, 3) => 1,
+                    Tup3(140u64, 4u64, 4) => 1,
+                    Tup3(150u64, 5u64, 5) => 1,
+                    Tup3(160u64, 6u64, 6) => 1
+                }
+            },
+            indexed_zset! {
+                P => {
+                    Tup3(100u64, 7u64, 1) => 1,
+                    Tup3(110u64, 1u64, 2) => 1,
+                    Tup3(120u64, 2u64, 3) => 1,
+                    Tup3(130u64, 3u64, 4) => 1,
+                    Tup3(140u64, 4u64, 5) => 1,
+                    Tup3(150u64, 5u64, 6) => 1,
+                    Tup3(160u64, 6u64, 7) => 1
+                }
+            },
+            indexed_zset! {
+                P => {
+                    Tup3(100u64, 7u64, 1) => 1,
+                    Tup3(110u64, 1u64, 2) => 1,
+                    Tup3(120u64, 2u64, 3) => 1,
+                    Tup3(130u64, 3u64, 4) => 1,
+                    Tup3(135u64, 8u64, 5) => 1,
+                    Tup3(140u64, 4u64, 6) => 1,
+                    Tup3(150u64, 5u64, 7) => 1,
+                    Tup3(160u64, 6u64, 8) => 1
+                }
+            },
+            indexed_zset! {
+                P => {
+                    Tup3(100u64, 7u64, 1) => 1,
+                    Tup3(110u64, 1u64, 2) => 1,
+                    Tup3(120u64, 2u64, 3) => 1,
+                    Tup3(130u64, 3u64, 4) => 1,
+                    Tup3(135u64, 8u64, 5) => 1,
+                    Tup3(135u64, 8u64, 6) => 1,
+                    Tup3(140u64, 4u64, 7) => 1,
+                    Tup3(150u64, 5u64, 8) => 1,
+                    Tup3(160u64, 6u64, 9) => 1
+                }
+            },
+            indexed_zset! {
+                P => {
+                    Tup3(100u64, 7u64, 1) => 1,
+                    Tup3(110u64, 1u64, 2) => 1,
+                    Tup3(120u64, 2u64, 3) => 1,
+                    Tup3(130u64, 3u64, 4) => 1,
+                    Tup3(135u64, 8u64, 5) => 1,
+                    Tup3(135u64, 8u64, 6) => 1,
+                    Tup3(135u64, 8u64, 7) => 1,
+                    Tup3(140u64, 4u64, 8) => 1,
+                    Tup3(150u64, 5u64, 9) => 1,
+                    Tup3(160u64, 6u64, 10) => 1
+                }
+            },
+            indexed_zset! {
+                P => {
+                    Tup3(100u64, 7u64, 1) => 1,
+                    Tup3(110u64, 1u64, 2) => 1,
+                    Tup3(120u64, 2u64, 3) => 1,
+                    Tup3(130u64, 3u64, 4) => 1,
+                    Tup3(135u64, 8u64, 5) => 1,
+                    Tup3(135u64, 8u64, 6) => 1,
+                    Tup3(135u64, 8u64, 7) => 1,
+                    Tup3(135u64, 9u64, 8) => 1,
+                    Tup3(140u64, 4u64, 9) => 1,
+                    Tup3(150u64, 5u64, 10) => 1,
+                    Tup3(160u64, 6u64, 11) => 1
+                }
+            },
+            indexed_zset! {
+                P => {
+                    Tup3(50u64, 0u64, 1) => 1,
+                    Tup3(100u64, 7u64, 2) => 1,
+                    Tup3(105u64, 0u64, 3) => 1,
+                    Tup3(110u64, 1u64, 4) => 1,
+                    Tup3(115u64, 0u64, 5) => 1,
+                    Tup3(120u64, 2u64, 6) => 1,
+                    Tup3(125u64, 0u64, 7) => 1,
+                    Tup3(130u64, 3u64, 8) => 1,
+                    Tup3(135u64, 0u64, 9) => 1,
+                    Tup3(135u64, 8u64, 10) => 1,
+                    Tup3(135u64, 8u64, 11) => 1,
+                    Tup3(135u64, 8u64, 12) => 1,
+                    Tup3(135u64, 9u64, 13) => 1,
+                    Tup3(140u64, 4u64, 14) => 1,
+                    Tup3(145u64, 0u64, 15) => 1,
+                    Tup3(150u64, 5u64, 16) => 1,
+                    Tup3(155u64, 0u64, 17) => 1,
+                    Tup3(160u64, 6u64, 18) => 1,
+                    Tup3(165u64, 0u64, 19) => 1
+                }
+            },
+        ];
+
         let forward_steps: Vec<Vec<(u64, Tup2<u64, u64>, ZWeight)>> = vec![
             vec![
                 (P, Tup2(110, 1), 1),
@@ -1285,19 +1399,24 @@ mod test {
             ],
         ];
 
-        assert_eq!(forward_expected.len(), forward_steps.len());
+        assert_eq!(forward_expected_rank.len(), forward_steps.len());
         assert_eq!(forward_expected_dense.len(), forward_steps.len());
+        assert_eq!(forward_expected_row_number.len(), forward_steps.len());
 
-        for (batch, (expected, expected_dense)) in forward_steps
-            .iter()
-            .zip(forward_expected.iter().zip(forward_expected_dense.iter()))
-        {
+        for (batch, (expected, (expected_dense, expected_row_number))) in forward_steps.iter().zip(
+            forward_expected_rank.iter().zip(
+                forward_expected_dense
+                    .iter()
+                    .zip(forward_expected_row_number.iter()),
+            ),
+        ) {
             for (k, v, w) in batch {
                 input.push(*k, (*v, *w));
             }
             dbsp.transaction().unwrap();
             assert_typed_batch_eq(&ranked.concat().consolidate(), expected);
             assert_typed_batch_eq(&dense_ranked.concat().consolidate(), expected_dense);
+            assert_typed_batch_eq(&row_number.concat().consolidate(), expected_row_number);
         }
 
         let reverse_steps: Vec<Vec<(u64, Tup2<u64, u64>, ZWeight)>> = vec![
@@ -1333,10 +1452,11 @@ mod test {
                 input.push(*k, (*v, *w));
             }
             dbsp.transaction().unwrap();
+
             let exp = if i == reverse_steps.len() - 1 {
                 &empty
             } else {
-                &forward_expected[forward_expected.len() - 2 - i]
+                &forward_expected_rank[forward_expected_rank.len() - 2 - i]
             };
             assert_typed_batch_eq(&ranked.concat().consolidate(), exp);
 
@@ -1346,6 +1466,13 @@ mod test {
                 &forward_expected_dense[forward_expected_dense.len() - 2 - i]
             };
             assert_typed_batch_eq(&dense_ranked.concat().consolidate(), exp_dense);
+
+            let exp_row_number = if i == reverse_steps.len() - 1 {
+                &empty
+            } else {
+                &forward_expected_row_number[forward_expected_row_number.len() - 2 - i]
+            };
+            assert_typed_batch_eq(&row_number.concat().consolidate(), exp_row_number);
         }
     }
 
@@ -1435,7 +1562,7 @@ mod test {
             let mut rng = StdRng::seed_from_u64(seed);
             let mut multiset: HashMap<(u64, Tup2<u64, u64>), ZWeight> = HashMap::new();
 
-            let (mut dbsp, (mut input, mut ranked, mut dense_ranked)) =
+            let (mut dbsp, (mut input, mut ranked, mut dense_ranked, mut row_number)) =
                 Runtime::init_circuit(circuit_config(storage_dir.path()), rank_custom_order_tup2_test_circuit).unwrap();
 
             for i in 0..num_batches {
@@ -1520,18 +1647,26 @@ mod test {
 
                 assert_typed_batch_eq(&dense_ranked.concat().consolidate(), &expected_dense);
 
+                let expected_row_number =
+                    reference_row_number_custom_order::<_, _, OrderByFirstTupleField, _, _>(
+                        &current,
+                        |row_number, v| Tup3(v.0, v.1, row_number),
+                    );
+
+                assert_typed_batch_eq(&row_number.concat().consolidate(), &expected_row_number);
+
                 if i % 20 == 0 {
                     println!("Checkpoint at batch {}", i);
-                    (dbsp, (input, ranked, dense_ranked)) = {
+                    (dbsp, (input, ranked, dense_ranked, row_number)) = {
                         let checkpoint = dbsp.checkpoint().run().unwrap();
                         dbsp.kill().unwrap();
 
                         let mut config = circuit_config(storage_dir.path());
                         config.storage.as_mut().unwrap().init_checkpoint = Some(checkpoint.uuid);
 
-                        let (dbsp, (input, ranked, dense_ranked)) = Runtime::init_circuit(config, rank_custom_order_tup2_test_circuit).unwrap();
+                        let (dbsp, (input, ranked, dense_ranked, row_number)) = Runtime::init_circuit(config, rank_custom_order_tup2_test_circuit).unwrap();
                         assert!(!dbsp.bootstrap_in_progress());
-                        (dbsp, (input, ranked, dense_ranked))
+                        (dbsp, (input, ranked, dense_ranked, row_number))
                     }
                 }
             }

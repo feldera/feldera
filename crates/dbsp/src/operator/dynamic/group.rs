@@ -26,6 +26,7 @@ use std::{borrow::Cow, cell::RefCell, marker::PhantomData, ops::Neg, rc::Rc};
 
 mod lag;
 mod rank;
+mod row_number;
 mod topk;
 
 #[cfg(test)]
@@ -38,6 +39,7 @@ use futures::Stream as AsyncStream;
 use crate::dynamic::{ClonableTrait, Erase};
 pub use lag::{LagCustomOrdFactories, LagFactories};
 pub use rank::RankCustomOrdFactories;
+pub use row_number::RowNumberCustomOrdFactories;
 pub use topk::{TopKCustomOrdFactories, TopKFactories, TopKRankCustomOrdFactories};
 
 /// Specifies the order in which a group transformer produces output tuples.
