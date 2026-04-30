@@ -7,7 +7,7 @@
 //!
 //! Run with: `cargo bench -p dbsp --bench list_merger`
 
-use dbsp::circuit::{CircuitConfig, CircuitStorageConfig, Layout, Mode};
+use dbsp::circuit::{CircuitConfig, CircuitStorageConfig};
 use dbsp::{
     OrdIndexedZSet, Runtime, ZWeight,
     trace::{Batch as DynBatch, BatchLocation, BatchReader as DynBatchReader, Builder, ListMerger},
@@ -106,28 +106,20 @@ fn merge_with_list_merger(
 
 fn bench(generate_on_storage: bool) {
     let temp = tempdir().expect("failed to create temp directory");
-    let config = CircuitConfig {
-        layout: Layout::new_solo(1),
-        max_rss_bytes: None,
-        mode: Mode::Ephemeral,
-        pin_cpus: Vec::new(),
-        storage: Some(
-            CircuitStorageConfig::for_config(
-                StorageConfig {
-                    path: temp.path().to_string_lossy().into_owned(),
-                    cache: StorageCacheConfig::default(),
-                },
-                StorageOptions {
-                    min_storage_bytes: Some(0),
-                    min_step_storage_bytes: if generate_on_storage { Some(0) } else { None },
-                    ..StorageOptions::default()
-                },
-            )
-            .expect("failed to configure POSIX storage"),
-        ),
-        dev_tweaks: Default::default(),
-        exchange_listener: None,
-    };
+    let config = CircuitConfig::with_workers(1).with_storage(Some(
+        CircuitStorageConfig::for_config(
+            StorageConfig {
+                path: temp.path().to_string_lossy().into_owned(),
+                cache: StorageCacheConfig::default(),
+            },
+            StorageOptions {
+                min_storage_bytes: Some(0),
+                min_step_storage_bytes: if generate_on_storage { Some(0) } else { None },
+                ..StorageOptions::default()
+            },
+        )
+        .expect("failed to configure POSIX storage"),
+    ));
 
     let results: Arc<Mutex<Vec<BenchResult>>> = Arc::new(Mutex::new(Vec::new()));
     let results_clone = Arc::clone(&results);

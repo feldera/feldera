@@ -4599,16 +4599,14 @@ Using the Kubernetes limit as the RSS memory limit."
             );
         }
 
-        Ok(CircuitConfig {
-            layout: layout
-                .unwrap_or_else(|| Layout::new_solo(pipeline_config.global.workers as usize)),
-            max_rss_bytes: max_rss_mb.map(|mb| mb * 1_000_000),
-            pin_cpus: pipeline_config.global.pin_cpus.clone(),
-            storage,
-            mode: Mode::Persistent,
-            dev_tweaks,
-            exchange_listener: None,
-        })
+        let layout =
+            layout.unwrap_or_else(|| Layout::new_solo(pipeline_config.global.workers as usize));
+        Ok(CircuitConfig::from(layout)
+            .with_max_rss_bytes(max_rss_mb.map(|mb| mb * 1_000_000))
+            .with_pin_cpus(pipeline_config.global.pin_cpus.clone())
+            .with_storage(storage)
+            .with_mode(Mode::Persistent)
+            .with_dev_tweaks(dev_tweaks))
     }
 
     /// Create a new I/O controller using config in `self`.

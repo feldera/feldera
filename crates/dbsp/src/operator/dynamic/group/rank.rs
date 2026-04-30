@@ -1425,7 +1425,7 @@ mod test {
                     .expect("storage backend");
                 CircuitConfig::from(2)
                     .with_splitter_chunk_size_records(2)
-                    .with_storage(storage)
+                    .with_storage(Some(storage))
             }
 
             let mut rng = StdRng::seed_from_u64(seed);

@@ -378,7 +378,7 @@ fn mkconfig(path: &Path, workers: usize) -> CircuitConfig {
     CircuitConfig::from(workers)
         .with_splitter_chunk_size_records(2)
         .with_balancer_min_absolute_improvement_threshold(0)
-        .with_storage(
+        .with_storage(Some(
             CircuitStorageConfig::for_config(
                 StorageConfig {
                     path: path.to_string_lossy().into_owned(),
@@ -387,7 +387,7 @@ fn mkconfig(path: &Path, workers: usize) -> CircuitConfig {
                 StorageOptions::default(),
             )
             .unwrap(),
-        )
+        ))
 }
 
 fn test_join_with_balancer(
