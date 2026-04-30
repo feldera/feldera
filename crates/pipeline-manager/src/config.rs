@@ -144,6 +144,10 @@ fn default_compilation_profile() -> CompilationProfile {
     CompilationProfile::Optimized
 }
 
+fn default_describer_build_timeout_secs() -> u64 {
+    1800
+}
+
 /// Creates the directory.
 fn help_create_dir(dir: &str) -> AnyResult<()> {
     create_dir_all(dir).map_err(|e| {
@@ -1054,6 +1058,16 @@ pub struct CompilerConfig {
     /// ```
     #[arg(long)]
     pub connectors_toml_path: Option<String>,
+
+    /// Timeout in seconds for the describer Cargo build.
+    ///
+    /// When a `connectors.toml`-triggered `cargo build` runs longer than this,
+    /// the cargo process is killed and the manifest cache is marked failed so
+    /// callers receive a timely error rather than waiting forever.
+    /// Default is 1800 seconds (30 minutes).
+    #[serde(default = "default_describer_build_timeout_secs")]
+    #[arg(long, default_value_t = default_describer_build_timeout_secs())]
+    pub describer_build_timeout_secs: u64,
 
     /// Precompile Rust dependencies in the working directory.
     ///

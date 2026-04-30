@@ -31,7 +31,8 @@ members = [
   "crates/fxp",
   "crates/storage-test-compat",
   "crates/buffer-cache",
-  "crates/samply"
+  "crates/samply",
+  "crates/platform-manifest"
 ]
 exclude = [
   "sql-to-dbsp-compiler/temp",
@@ -136,6 +137,7 @@ feldera-types = { version = "0.291.0", path = "crates/feldera-types" }
 feldera-rest-api = { version = "0.291.0", path = "crates/rest-api" }
 feldera-ir = { version = "0.291.0", path = "crates/ir" }
 feldera-adapterlib = { version = "0.291.0", path = "crates/adapterlib" }
+feldera-platform-manifest = { version = "0.291.0", path = "crates/platform-manifest" }
 feldera-samply = { version = "0.291.0", path = "crates/samply" }
 flate2 = "1.1.0"
 form_urlencoded = "1.2.0"
@@ -162,6 +164,9 @@ indoc = "2.0.5"
 inventory = "0.3"
 itertools = "0.14.0"
 jemalloc_pprof = "0.7.0"
+# mappings v0.7.2 silently bumped pprof_util to "0.8", breaking jemalloc_pprof
+# v0.7.0 which still requires pprof_util "0.7". Pin to keep them consistent.
+mappings = "=0.7.0"
 json_to_table = "0.9.0"
 jsonwebtoken = { version = "10.3.0", features = ["aws_lc_rs"] }
 lexical-core = "1.0.5"
@@ -227,7 +232,9 @@ rustls = "0.23.12"
 rustversion = "1.0"
 rustyline = "15.0"
 ryu = "1.0.20"
-schema_registry_converter = "4.2.0"
+# Pin to 4.4.0: v4.8.0 added `properties`/`tags` fields to `SuppliedSchema`,
+# breaking the struct literal in avro/output.rs which targets the 4.4 API.
+schema_registry_converter = "=4.4.0"
 semver = "1.0.27"
 serde = "1.0.213"
 serde_arrow = { version = "0.13.7", features = ["arrow-57"] }

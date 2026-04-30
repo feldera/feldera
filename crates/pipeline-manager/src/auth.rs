@@ -1050,6 +1050,7 @@ mod test {
                 db,
                 Arc::new(RwLock::new(None)),
                 Arc::new(ManifestCache::new()),
+                crate::compiler::build_log_bus::BuildLogBus::new(),
             )
             .await
             .unwrap(),

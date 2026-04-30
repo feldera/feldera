@@ -1,5 +1,5 @@
 use crate::common_error::CommonError;
-use crate::compiler::connectors::{build_in_process_manifest, parse_manifest_json};
+use crate::compiler::connectors::{load_platform_manifest, merge_manifests, parse_manifest_json};
 use crate::compiler::manifest_cache::{ManifestCache, TenantBuildState};
 use crate::compiler::util::{
     cleanup_specific_directories, cleanup_specific_files, crate_name_pipeline_base,
@@ -201,14 +201,18 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
     // Check manifest availability before advancing from Pending.
     // Snapshot semantics: in-flight CompilingSql jobs use the manifest they
     // loaded at dispatch time.
+    //
+    // The platform manifest (built-in connectors from `dbsp_adapters` +
+    // `feldera-datagen`) is baked into the binary at platform build time
+    // by the `feldera-platform-manifest` crate's build.rs.  Per-tenant
+    // user manifests are merged on top.
     let manifest: ConnectorManifest = match manifest_cache.get(tenant_id).await {
         None | Some(TenantBuildState::NotConfigured { .. }) => {
-            // Bundled-only tenant (empty connectors.toml or not yet seen):
-            // build from the in-process inventory.
-            build_in_process_manifest()
+            // Bundled-only tenant (empty connectors.toml or not yet seen).
+            load_platform_manifest()
         }
         Some(TenantBuildState::Ready { ref manifest_json, .. }) => {
-            match parse_manifest_json(manifest_json) {
+            let user = match parse_manifest_json(manifest_json) {
                 Ok(m) => m,
                 Err(e) => {
                     // This is a programming error — the describer already validated
@@ -219,7 +223,8 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
                     );
                     return Ok(false);
                 }
-            }
+            };
+            merge_manifests(load_platform_manifest(), user)
         }
         Some(TenantBuildState::Building { .. }) => {
             // Describer build in progress; keep program in Pending.

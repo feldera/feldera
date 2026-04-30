@@ -6,6 +6,7 @@ use colored::Colorize;
 use feldera_observability as observability;
 use pipeline_manager::api::main::ApiDoc;
 use pipeline_manager::cluster_monitor::{cluster_monitor, LocalResourcesPoller};
+use pipeline_manager::compiler::build_log_bus::BuildLogBus;
 use pipeline_manager::compiler::main::{compiler_main, compiler_precompile};
 use pipeline_manager::compiler::manifest_cache::ManifestCache;
 #[cfg(feature = "postgresql_embedded")]
@@ -110,6 +111,16 @@ fn main() -> anyhow::Result<()> {
             // Shared manifest cache between the compiler and the API server.
             let manifest_cache = Arc::new(ManifestCache::new());
 
+            // Shared build-log bus.  The API server's status / log
+            // endpoints subscribe; the compiler thread feeds it as
+            // cargo emits stdout / stderr.
+            let build_log_bus = BuildLogBus::new();
+            // The built-in connector manifest is baked into this binary
+            // at platform build time via `feldera-platform-manifest`'s
+            // build.rs — no startup-time describer build is required.
+            // Per-tenant `connectors.toml` builds compile only the
+            // user-listed crates against `feldera-adapterlib`.
+
             // Running multiple compiler workers on the same machine is not yet supported
             // due to the HTTP server ran by compiler_main & cleanup status files.
             // For now, we run a single compiler worker in the pipeline manager.
@@ -156,6 +167,7 @@ fn main() -> anyhow::Result<()> {
                 Some(compiler_config),
                 Arc::new(RwLock::new(None)),
                 manifest_cache,
+                build_log_bus,
             )
             .await
             .expect("API server main failed");

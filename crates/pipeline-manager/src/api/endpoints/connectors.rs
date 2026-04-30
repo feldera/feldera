@@ -12,9 +12,10 @@ use actix_web::{
     get,
     http::header::{CacheControl, CacheDirective, ContentType, ETag, EntityTag},
     post, put,
-    web::{Bytes, Data as WebData, ReqData},
+    web::{self, Bytes, Data as WebData, ReqData},
     HttpRequest, HttpResponse,
 };
+use async_stream::try_stream;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -23,7 +24,8 @@ use crate::api::error::ApiError;
 use crate::api::main::ServerState;
 use feldera_types::error::ErrorResponse;
 use crate::compiler::connectors::{
-    spawn_describer_build, validate_connectors_toml_shape, ConnectorsTomlContent,
+    load_platform_manifest, merge_manifests, parse_manifest_json, spawn_describer_build,
+    validate_connectors_toml_shape, ConnectorsTomlContent,
 };
 use crate::compiler::manifest_cache::TenantBuildState;
 use crate::db::operations::tenant_connector_config::TenantConnectorConfig;
@@ -119,7 +121,7 @@ pub(crate) async fn get_connectors_status(
 
     // Re-read state after materialization.
     let cache_state = state.manifest_cache.get(tenant_id).await;
-    let envelope = build_status_envelope(&row, cache_state.as_ref());
+    let envelope = build_status_envelope(&state, &row, cache_state.as_ref());
 
     // ETag handling — use the row's hash. Empty content also has a hash
     // (sha256("") is a stable constant), so the ETag is always present.
@@ -136,7 +138,25 @@ pub(crate) async fn get_connectors_status(
         .json(envelope))
 }
 
+/// Merge the per-tenant user manifest JSON with the platform manifest
+/// and return a JSON array suitable for the `descriptors` field.
+/// Returns `None` only when the user JSON is unparseable (a programming
+/// error — the describer validated it before the cache transition);
+/// the API layer falls back to a `descriptors: null` payload in that
+/// case rather than a 500.
+fn merge_user_with_platform(
+    state: &ServerState,
+    user_manifest_json: &str,
+) -> Option<serde_json::Value> {
+    let _ = state;
+    let user = parse_manifest_json(user_manifest_json).ok()?;
+    let platform = load_platform_manifest();
+    let merged: Vec<_> = merge_manifests(platform, user).into_values().collect();
+    serde_json::to_value(merged).ok()
+}
+
 fn build_status_envelope(
+    state: &ServerState,
     row: &TenantConnectorConfig,
     cache_state: Option<&TenantBuildState>,
 ) -> ConnectorsStatusResponse {
@@ -166,7 +186,10 @@ fn build_status_envelope(
             version: *version,
             last_built_at: Some(*last_built_at),
             error: None,
-            descriptors: serde_json::from_str(manifest_json).ok(),
+            // The user describer's manifest contains only user-listed
+            // connectors; merge with the platform manifest so the
+            // surface returned here matches the SQL compiler's view.
+            descriptors: merge_user_with_platform(state, manifest_json),
         },
         Some(TenantBuildState::Failed {
             content_hash,
@@ -303,6 +326,7 @@ pub(crate) async fn put_connectors_toml(
     } else if let Some(config) = state.compiler_config.as_ref() {
         spawn_describer_build(
             state.manifest_cache.clone(),
+            state.build_log_bus.clone(),
             config.clone(),
             tenant_id,
             ConnectorsTomlContent(updated.content.clone()),
@@ -324,6 +348,55 @@ pub(crate) async fn put_connectors_toml(
             content_hash: updated.content_hash,
             version: updated.version,
         }))
+}
+
+// ── GET /v0/connectors/build-log ─────────────────────────────────────────
+
+/// Stream the live describer build log for the requesting tenant.
+///
+/// The response is a chunked `text/plain` body, one log line per
+/// newline (matching the runner's `/v0/pipelines/{name}/logs`
+/// endpoint). Subscribers are caught up with the buffered history of
+/// the current session before receiving live lines; the stream ends
+/// when the session terminates (build finished, or replaced by a
+/// newer build).
+///
+/// When the tenant has never had a build, the response is a 200 with
+/// an empty body — same shape as a finished session so the client
+/// does not need to special-case "no build yet".
+///
+/// `Content-Encoding: identity` is forced to avoid gzip frame
+/// buffering that would otherwise stall live tailing in browsers.
+#[utoipa::path(
+    get,
+    path = "/v0/connectors/build-log",
+    responses(
+        (status = 200, description = "Live tail of the describer build log.", content_type = "text/plain"),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    security(("JSON web token (JWT) or API key" = [])),
+    tag = "Connector plugin management"
+)]
+#[get("/connectors/build-log")]
+pub(crate) async fn get_connectors_build_log(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+) -> Result<HttpResponse, ManagerError> {
+    let receiver = state.build_log_bus.subscribe(*tenant_id).await;
+
+    let stream = try_stream! {
+        if let Some(mut rx) = receiver {
+            while let Some(line) = rx.recv().await {
+                yield web::Bytes::from(format!("{line}\n"));
+            }
+        }
+    };
+
+    Ok(HttpResponse::Ok()
+        .content_type("text/plain; charset=utf-8")
+        .insert_header(actix_http::ContentEncoding::Identity)
+        .insert_header(("X-Content-Type-Options", "nosniff"))
+        .streaming::<_, actix_web::Error>(stream))
 }
 
 // ── POST /v0/connectors/refresh ──────────────────────────────────────────
@@ -366,6 +439,7 @@ pub(crate) async fn post_connectors_refresh(
     } else {
         spawn_describer_build(
             state.manifest_cache.clone(),
+            state.build_log_bus.clone(),
             config.clone(),
             tenant_id,
             ConnectorsTomlContent(row.content.clone()),
@@ -453,6 +527,7 @@ async fn materialize_cache(
     };
     spawn_describer_build(
         state.manifest_cache.clone(),
+        state.build_log_bus.clone(),
         config.clone(),
         tenant_id,
         ConnectorsTomlContent(row.content.clone()),

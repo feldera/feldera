@@ -2,6 +2,7 @@ use crate::api::demo::{read_demos_from_directories, Demo};
 use crate::api::endpoints;
 use crate::api::support_data_collector::SupportDataCollector;
 use crate::auth::JwkCache;
+use crate::compiler::build_log_bus::BuildLogBus;
 use crate::compiler::manifest_cache::ManifestCache;
 use crate::config::{ApiServerConfig, CommonConfig, CompilerConfig};
 use crate::db::probe::DbProbe;
@@ -258,7 +259,8 @@ It contains the following fields:
         endpoints::connectors::get_connectors_status,
         endpoints::connectors::get_connectors_toml,
         endpoints::connectors::put_connectors_toml,
-        endpoints::connectors::post_connectors_refresh
+        endpoints::connectors::post_connectors_refresh,
+        endpoints::connectors::get_connectors_build_log
     ),
     components(schemas(
         // Authentication
@@ -630,6 +632,7 @@ fn api_scope() -> Scope {
         .service(endpoints::connectors::get_connectors_toml)
         .service(endpoints::connectors::put_connectors_toml)
         .service(endpoints::connectors::post_connectors_refresh)
+        .service(endpoints::connectors::get_connectors_build_log)
 }
 
 struct SecurityAddon;
@@ -672,6 +675,10 @@ pub(crate) struct ServerState {
     /// triggered by `PUT /v0/connectors/connectors.toml` and
     /// `POST /v0/connectors/refresh`.
     pub manifest_cache: Arc<ManifestCache>,
+    /// Per-tenant build-log channel registry. Cargo's stdout/stderr
+    /// during describer builds is tee'd through this bus, and
+    /// `GET /v0/connectors/build-log` subscribes to it for live tail.
+    pub build_log_bus: Arc<BuildLogBus>,
     pub jwk_cache: Arc<Mutex<JwkCache>>,
     probe: Arc<Mutex<DbProbe>>,
     pub demos: Vec<Demo>,
@@ -686,6 +693,7 @@ impl ServerState {
         db: Arc<Mutex<StoragePostgres>>,
         license_check: Arc<RwLock<Option<LicenseCheck>>>,
         manifest_cache: Arc<ManifestCache>,
+        build_log_bus: Arc<BuildLogBus>,
     ) -> AnyResult<Self> {
         let runner = RunnerInteraction::new(common_config.clone(), db.clone());
         let db_copy = db.clone();
@@ -697,6 +705,7 @@ impl ServerState {
             config,
             compiler_config,
             manifest_cache,
+            build_log_bus,
             jwk_cache: Arc::new(Mutex::new(JwkCache::new())),
             probe: DbProbe::new(db_copy).await,
             demos,
@@ -724,6 +733,7 @@ impl ServerState {
             db.clone(),
             license_check,
             Arc::new(ManifestCache::new()),
+            BuildLogBus::new(),
         )
         .await
         .unwrap()
@@ -776,6 +786,7 @@ pub async fn run(
     compiler_config: Option<CompilerConfig>,
     license_check: Arc<RwLock<Option<LicenseCheck>>>,
     manifest_cache: Arc<ManifestCache>,
+    build_log_bus: Arc<BuildLogBus>,
 ) -> AnyResult<()> {
     let listener = TcpListener::bind((common_config.bind_address.clone(), common_config.api_port))
         .unwrap_or_else(|_| {
@@ -792,6 +803,7 @@ pub async fn run(
             db,
             license_check,
             manifest_cache,
+            build_log_bus,
         )
         .await?,
     );

@@ -1,3 +1,4 @@
+pub mod build_log_bus;
 pub mod connectors;
 pub mod error;
 pub mod main;

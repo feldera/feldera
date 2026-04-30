@@ -1,0 +1,31 @@
+[package]
+name = "feldera-platform-manifest"
+description = "Built-in connector descriptor manifest, generated at platform build time"
+publish = false
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+rust-version = { workspace = true }
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# Runtime is intentionally empty: the crate exposes a single `&'static str`
+# baked in by `build.rs`.  Pipeline-manager pulls this in without inheriting
+# the `dbsp_adapters` dep tree at runtime.
+
+# Build-deps drive the build.rs binary that walks `inventory` once during
+# platform compilation and emits `OUT_DIR/platform_manifest.json`.
+# `dbsp_adapters` and `feldera-datagen` are present here so their
+# `inventory::submit!` registrations end up in the build.rs binary's
+# linker-collected sections; `feldera-adapterlib` provides the descriptor
+# and serialization types; `serde_json` serializes the result.
+[build-dependencies]
+feldera-adapterlib = { workspace = true }
+feldera-datagen = { workspace = true }
+dbsp_adapters = { path = "../adapters" }
+serde_json = { workspace = true }

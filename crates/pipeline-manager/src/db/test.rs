@@ -795,6 +795,7 @@ async fn load_connectors_toml_bootstraps_from_seed_then_reads_db() {
         binary_upload_timeout_secs: 600,
         binary_upload_max_retries: 3,
         binary_upload_retry_delay_ms: 1000,
+        describer_build_timeout_secs: 1800,
         precompile: false,
         connectors_toml_path: Some(seed_path.to_str().unwrap().to_string()),
     };

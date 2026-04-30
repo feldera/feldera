@@ -997,10 +997,10 @@ pub async fn perform_rust_compilation(
     };
 
     // Prepare the workspace for the compilation of this specific pipeline.
-    // Returns true when the workspace Cargo.lock is fully pinned (full-warm
-    // describer lock or bundled platform lock), signalling that --locked is
-    // safe to pass to cargo build.
-    let use_locked = prepare_workspace(
+    // Returns the appropriate LockMode: Locked for a fully-pinned platform
+    // lock, Offline when a partial describer lock seeds the cache, or Free
+    // when neither lock file is available.
+    let lock_mode = prepare_workspace(
         config,
         &runtime_selector,
         pipeline_id,
@@ -1026,7 +1026,7 @@ pub async fn perform_rust_compilation(
             &profile,
             &runtime_selector,
             &program_info.to_pipeline_config_program_info(),
-            use_locked,
+            lock_mode,
         )
         .await?;
 
@@ -1268,9 +1268,24 @@ pub async fn resolve_runtime_sha(
 /// This involves extracting the results of the prior SQL compilation and
 /// configuring the workspace itself (e.g., its Cargo.toml and Cargo.lock).
 ///
-/// Returns `true` when the workspace Cargo.lock is fully pinned and the caller
-/// should pass `--locked` to `cargo build`.  Returns `false` on a cold or
-/// partial-warm path where Cargo must still resolve some dependencies.
+/// Determines which Cargo lock strategy to use for a pipeline build.
+#[derive(Debug, Clone, Copy)]
+enum LockMode {
+    /// Pass `--locked`: the seeded Cargo.lock is complete and verified.
+    /// Used when the bundled platform lock covers all pipeline deps exactly.
+    Locked,
+    /// Pass `--offline`: the seeded Cargo.lock is a partial resolver seed
+    /// (e.g. from a describer build) that pins connector deps but does not
+    /// cover all pipeline-workspace deps.  Cargo may extend the lock from
+    /// the local cache without hitting the network.
+    Offline,
+    /// Pass neither flag: no seed lock; Cargo resolves freely (may access
+    /// the network on a cold first build).
+    Free,
+}
+
+/// Returns the [`LockMode`] appropriate for this build so the caller knows
+/// whether to pass `--locked`, `--offline`, or neither to `cargo build`.
 async fn prepare_workspace(
     config: &CompilerConfig,
     requested_runtime_version: &RuntimeSelector,
@@ -1280,7 +1295,7 @@ async fn prepare_workspace(
     udf_rust: &str,
     udf_toml: &str,
     connectors_content: &ConnectorsTomlContent,
-) -> Result<bool, RustCompilationError> {
+) -> Result<LockMode, RustCompilationError> {
     // Workspace directory
     let workspace_dir = config.working_dir().join("rust-compilation");
     create_dir_if_not_exists(&workspace_dir).await?;
@@ -1366,20 +1381,25 @@ async fn prepare_workspace(
 
     // Pipeline globals crate: Cargo.toml
     // ----------------------------------
-    // Inject UDF and connector force-link dependencies.
+    // Inject UDF and connector force-link dependencies. `feldera-datagen` is
+    // a built-in force-link target (see `generate_force_link_rs`); the SQL
+    // compiler does not list it in the generated workspace's
+    // `[workspace.dependencies]`, so we add it here as a direct path dep.
     let udf_cargo_toml_path = crates_dir.join(&pipeline_globals_crate).join("Cargo.toml");
     let connectors_deps = connectors_content.as_str();
+    let dbsp_path = &config.dbsp_override_path;
     let udf_cargo_toml_content = read_file_content(&udf_cargo_toml_path).await?.replace(
         "[dependencies]",
-        &formatdoc! {"
+        &formatdoc! {r#"
             [dependencies]
             # START: UDF dependencies
             {udf_toml}
             # END: UDF dependencies
             # START: Connector force-link dependencies
+            feldera-datagen = {{ path = "{dbsp_path}/crates/datagen" }}
             {connectors_deps}
             # END: Connector force-link dependencies
-        "},
+        "#},
     );
     recreate_file_with_content(&udf_cargo_toml_path, &udf_cargo_toml_content).await?;
 
@@ -1388,7 +1408,9 @@ async fn prepare_workspace(
     // Forces the linker to include rlibs for any user-listed connectors so
     // their inventory::submit! calls fire at pipeline startup.
     let user_names = extract_force_link_names(connectors_content);
-    let force_link_content = generate_force_link_rs(&user_names);
+    // Pipeline globals crate links `feldera-datagen` directly so the
+    // pipeline runtime can dispatch to datagen; force-link the built-in.
+    let force_link_content = generate_force_link_rs(&user_names, true);
     let force_link_path = crates_dir
         .join(&pipeline_globals_crate)
         .join("src")
@@ -1397,14 +1419,18 @@ async fn prepare_workspace(
 
     // Pipeline globals crate: src/lib.rs
     // ------------------------------------
-    // Prepend `mod force_link;` so the generated force_link module is compiled.
+    // Inject `mod force_link;` so the generated force_link module is
+    // compiled.  The SQL compiler emits inner attributes (`#![allow(...)]`)
+    // and inner doc comments at the top of the file; inner attributes must
+    // remain before any items, so we splice the `mod` declaration in
+    // *after* the leading prelude block rather than at the very top.
     let lib_rs_path = crates_dir
         .join(&pipeline_globals_crate)
         .join("src")
         .join("lib.rs");
     let existing_lib_rs = read_file_content(&lib_rs_path).await?;
-    if !existing_lib_rs.starts_with("mod force_link;") {
-        let patched = format!("mod force_link;\n{existing_lib_rs}");
+    if !existing_lib_rs.contains("mod force_link;") {
+        let patched = inject_force_link_mod(&existing_lib_rs);
         recreate_file_with_content(&lib_rs_path, &patched).await?;
     }
 
@@ -1532,39 +1558,37 @@ async fn prepare_workspace(
     // whatever RUSTFLAGS is set in its own environment to `cargo build`
     // unchanged (see `call_compiler`).
     let cargo_lock_target_path = workspace_dir.join("Cargo.lock");
-    let current_feldera_version = env!("CARGO_PKG_VERSION");
 
-    let use_locked = if !connectors_content.is_empty() {
-        // Tenant has external connectors: use describer.lock if available.
+    let lock_mode = if !connectors_content.is_empty() {
+        // Tenant has external connectors: use describer.lock as a resolver
+        // seed when available.  The describer lock covers adapters + connector
+        // deps but NOT the full pipeline workspace (dbsp, sqllib, …), so we
+        // can never pass --locked here.  --offline lets Cargo extend the lock
+        // from the local cache without hitting the network (all deps were
+        // already downloaded during the describer build).
         let cache_key = describer_cache_key(connectors_content);
         let describer_dir = describer_workspace_dir(config, tenant_id, &cache_key);
         let describer_lock = describer_dir.join("describer.lock");
-        let build_version_file = describer_dir.join("describer.build_version");
 
         if describer_lock.exists() {
-            let is_full_warm = std::fs::read_to_string(&build_version_file)
-                .ok()
-                .as_deref()
-                == Some(current_feldera_version);
-            // Copy the lock for both full-warm and partial-warm paths.
             copy_file(&describer_lock, &cargo_lock_target_path).await?;
-            is_full_warm // pass --locked only when the lock is fully current
+            LockMode::Offline
         } else {
-            // Cold path: no lock yet; let Cargo resolve freely.
-            false
+            // Cold path: no seed lock yet; let Cargo resolve freely.
+            LockMode::Free
         }
     } else if requested_runtime_version.is_platform() {
         // Empty connectors, platform runtime: use the bundled platform lock.
         let platform_lock = Path::new(&config.compilation_cargo_lock_path);
         copy_file(platform_lock, &cargo_lock_target_path).await?;
-        true
+        LockMode::Locked
     } else if has_unstable_feature("runtime_version") {
         // Empty connectors, alternate runtime version.
         let runtime_lock = Path::new(&runtime_sources).join("Cargo.lock");
         copy_file(&runtime_lock, &cargo_lock_target_path).await?;
-        true
+        LockMode::Locked
     } else {
-        false
+        LockMode::Free
     };
 
     // Remove temporary extraction directory
@@ -1572,7 +1596,33 @@ async fn prepare_workspace(
         UtilError::IoError(format!("removing directory '{}'", extract_dir.display()), e)
     })?;
 
-    Ok(use_locked)
+    Ok(lock_mode)
+}
+
+/// Splice `mod force_link;` into the globals crate's `lib.rs` after the
+/// leading prelude (line comments, inner doc comments, inner attributes,
+/// blank lines), so the inner attributes remain at the top of the file.
+///
+/// Falls back to a leading insertion only when the file is empty.
+fn inject_force_link_mod(existing: &str) -> String {
+    let mut insert_at = 0usize;
+    for (idx, line) in existing.split_inclusive('\n').enumerate() {
+        let _ = idx;
+        let trimmed = line.trim_start();
+        let is_prelude = trimmed.is_empty()
+            || trimmed.starts_with("//")
+            || trimmed.starts_with("#![");
+        if is_prelude {
+            insert_at += line.len();
+        } else {
+            break;
+        }
+    }
+    let mut out = String::with_capacity(existing.len() + 17);
+    out.push_str(&existing[..insert_at]);
+    out.push_str("mod force_link;\n");
+    out.push_str(&existing[insert_at..]);
+    out
 }
 
 /// Return `true` when the `mold` linker binary is available on PATH.
@@ -1606,7 +1656,7 @@ async fn call_compiler(
     profile: &CompilationProfile,
     runtime_selector: &RuntimeSelector,
     program_info: &PipelineConfigProgramInfo,
-    use_locked: bool,
+    lock_mode: LockMode,
 ) -> Result<(RustCompilationInfo, String, usize, String), RustCompilationError> {
     // Workspace directory
     let workspace_dir = config.working_dir().join("rust-compilation");
@@ -1735,14 +1785,20 @@ async fn call_compiler(
         // This is done to be able to kill any subprocesses that are spawned.
         .process_group(0);
 
-    // Pass --locked when prepare_workspace successfully seeded a pinned
-    // Cargo.lock (full-warm describer lock or the platform's bundled lock).
-    // This prevents Cargo from updating any dependency during compilation and
-    // makes sccache hits deterministic across concurrent builds for the same
-    // tenant.  On the cold or partial-warm path use_locked is false and Cargo
-    // resolves freely so it can write a fresh lock.
-    if use_locked {
-        command.arg("--locked");
+    match lock_mode {
+        // Platform/runtime lock exactly matches the pipeline workspace: no
+        // resolution needed, sccache hits are maximally deterministic.
+        LockMode::Locked => {
+            command.arg("--locked");
+        }
+        // Describer lock is a partial seed (covers connector deps only).
+        // --offline lets Cargo extend the lock from the local cache without
+        // touching the network.
+        LockMode::Offline => {
+            command.arg("--offline");
+        }
+        // Cold path: Cargo resolves freely (may access the network).
+        LockMode::Free => {}
     }
 
     // Start process
@@ -2436,8 +2492,8 @@ mod test {
         assert!(!test.rust_workdir.exists());
 
         // Prepare the workspace directory using it.
-        // Empty connectors → full-warm platform lock → use_locked == true.
-        let use_locked = prepare_workspace(
+        // Empty connectors → full-warm platform lock → LockMode::Locked.
+        let lock_mode = prepare_workspace(
             &test.compiler_config,
             &RuntimeSelector::default(),
             pipeline_id,
@@ -2452,7 +2508,7 @@ mod test {
         // The test uses an empty connectors.toml and a real Cargo.lock seed
         // (compilation_cargo_lock_path = "Cargo.lock").  Whether --locked is
         // safe depends on whether that file exists in the test environment.
-        let _ = use_locked;
+        let _ = lock_mode;
 
         // Afterward, check for the presence of files/directories and their content
 
@@ -2501,12 +2557,13 @@ mod test {
                 .unwrap(),
             pipeline_descr.udf_rust
         );
-        // lib.rs must start with the force_link module declaration.
+        // lib.rs must contain the force_link module declaration spliced
+        // in after the leading inner-attribute prelude.
         assert!(
             read_file_content(&globals_crate_path.join("src").join("lib.rs"))
                 .await
                 .unwrap()
-                .starts_with("mod force_link;")
+                .contains("mod force_link;")
         );
         // force_link.rs must contain the built-in datagen entry.
         assert!(
@@ -2548,6 +2605,7 @@ mod test {
             binary_upload_timeout_secs: 300,
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
+            describer_build_timeout_secs: 1800,
             precompile: false,
             connectors_toml_path: None,
         };

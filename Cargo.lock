@@ -3973,6 +3973,7 @@ dependencies = [
  "itertools 0.14.0",
  "jemalloc_pprof",
  "libc",
+ "mappings",
  "metrics-process",
  "mime",
  "mockall",
@@ -5222,6 +5223,16 @@ dependencies = [
  "serde_json",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "feldera-platform-manifest"
+version = "0.291.0"
+dependencies = [
+ "dbsp_adapters",
+ "feldera-adapterlib",
+ "feldera-datagen",
+ "serde_json",
 ]
 
 [[package]]
@@ -8410,6 +8421,7 @@ dependencies = [
  "feldera-datagen",
  "feldera-ir",
  "feldera-observability",
+ "feldera-platform-manifest",
  "feldera-types",
  "flate2",
  "futures-util",

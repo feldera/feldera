@@ -212,6 +212,7 @@ ignored = ["num-traits"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemalloc_pprof = { workspace = true, features = ["symbolize"] }
+mappings = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }

@@ -51,6 +51,9 @@ import type {
   GetConfigSessionData,
   GetConfigSessionErrors,
   GetConfigSessionResponses,
+  GetConnectorsBuildLogData,
+  GetConnectorsBuildLogErrors,
+  GetConnectorsBuildLogResponses,
   GetConnectorsStatusData,
   GetConnectorsStatusErrors,
   GetConnectorsStatusResponses,
@@ -380,6 +383,36 @@ export const getConfigSession = <ThrowOnError extends boolean = false>(
   (options?.client ?? client).get<GetConfigSessionResponses, GetConfigSessionErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/config/session',
+    ...options
+  })
+
+/**
+ * Stream the live describer build log for the requesting tenant.
+ *
+ * The response is a chunked `text/plain` body, one log line per
+ * newline (matching the runner's `/v0/pipelines/{name}/logs`
+ * endpoint). Subscribers are caught up with the buffered history of
+ * the current session before receiving live lines; the stream ends
+ * when the session terminates (build finished, or replaced by a
+ * newer build).
+ *
+ * When the tenant has never had a build, the response is a 200 with
+ * an empty body — same shape as a finished session so the client
+ * does not need to special-case "no build yet".
+ *
+ * `Content-Encoding: identity` is forced to avoid gzip frame
+ * buffering that would otherwise stall live tailing in browsers.
+ */
+export const getConnectorsBuildLog = <ThrowOnError extends boolean = false>(
+  options?: Options<GetConnectorsBuildLogData, ThrowOnError>
+) =>
+  (options?.client ?? client).get<
+    GetConnectorsBuildLogResponses,
+    GetConnectorsBuildLogErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/connectors/build-log',
     ...options
   })
 

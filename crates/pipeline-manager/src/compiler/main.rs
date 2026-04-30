@@ -1,6 +1,6 @@
 use crate::api::error::ApiError;
 use crate::common_error::CommonError;
-use crate::compiler::connectors::build_in_process_manifest;
+use crate::compiler::connectors::load_platform_manifest;
 use crate::compiler::error::CompilerError;
 use crate::compiler::manifest_cache::ManifestCache;
 use crate::compiler::rust_compiler::{
@@ -591,7 +591,10 @@ pub async fn compiler_precompile(
     let udf_toml = "";
 
     // SQL — precompile uses bundled connectors only (no plugin connectors).
-    let manifest = build_in_process_manifest();
+    // The platform manifest cache covers every built-in registered through
+    // `dbsp_adapters` + `feldera-datagen`; falling back to the in-process
+    // inventory is fine for tests where the cache hasn't been bootstrapped.
+    let manifest = load_platform_manifest();
     let (program_info, sql_duration, _) = perform_sql_compilation(
         &common_config,
         &config,
@@ -829,6 +832,7 @@ mod test {
             binary_upload_timeout_secs: 600,
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
+            describer_build_timeout_secs: 1800,
             precompile: false,
             connectors_toml_path: None,
         })
@@ -850,6 +854,7 @@ mod test {
             binary_upload_timeout_secs: 600,
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
+            describer_build_timeout_secs: 1800,
             precompile: false,
             connectors_toml_path: None,
         })
@@ -1038,6 +1043,7 @@ mod test {
             binary_upload_timeout_secs: 600,
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
+            describer_build_timeout_secs: 1800,
             precompile: false,
             connectors_toml_path: None,
         };

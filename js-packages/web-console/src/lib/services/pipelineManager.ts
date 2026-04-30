@@ -835,15 +835,22 @@ const streamingFetch = (
     },
     abortReason: () => abortReason,
     response: promise.then(
-      (response) => {
+      async (response): Promise<Response | Error> => {
         // Handle successful response with body
         if (response.ok) {
           return response
         }
-        // For other non-2XX status codes, try to parse JSON error
-        return response.json().then((body) => {
-          return new Error(apiErrorText(body), { cause: body })
-        })
+        // For non-2XX, try to parse JSON error bodies; fall back to
+        // status text when the body is empty or not JSON (e.g. a 404
+        // from a server that does not implement the endpoint).
+        try {
+          const body = await response.json()
+          return new Error(apiErrorText(body), { cause: { ...body, response } })
+        } catch {
+          return new Error(`HTTP ${response.status} ${response.statusText}`.trim(), {
+            cause: { response }
+          })
+        }
       },
       (e) => {
         const msg = e instanceof Error ? e.message : JSON.stringify(e, undefined, '\t')
@@ -895,6 +902,19 @@ export const pipelineLogsStream = async (
     streamingFetch(
       getAuthenticatedFetch(options),
       `${felderaEndpoint}/v0/pipelines/${pipelineName}/logs`,
+      requestInit ?? {}
+    )
+  )
+}
+
+export const connectorsBuildLogStream = async (
+  requestInit?: RequestInit,
+  options?: FetchOptions
+) => {
+  return streamResponse(
+    streamingFetch(
+      getAuthenticatedFetch(options),
+      `${felderaEndpoint}/v0/connectors/build-log`,
       requestInit ?? {}
     )
   )

@@ -515,6 +515,36 @@
         ]
       }
     },
+    "/v0/connectors/build-log": {
+      "get": {
+        "tags": [
+          "Connector plugin management"
+        ],
+        "summary": "Stream the live describer build log for the requesting tenant.",
+        "description": "The response is a chunked `text/plain` body, one log line per\nnewline (matching the runner's `/v0/pipelines/{name}/logs`\nendpoint). Subscribers are caught up with the buffered history of\nthe current session before receiving live lines; the stream ends\nwhen the session terminates (build finished, or replaced by a\nnewer build).\n\nWhen the tenant has never had a build, the response is a 200 with\nan empty body — same shape as a finished session so the client\ndoes not need to special-case \"no build yet\".\n\n`Content-Encoding: identity` is forced to avoid gzip frame\nbuffering that would otherwise stall live tailing in browsers.",
+        "operationId": "get_connectors_build_log",
+        "responses": {
+          "200": {
+            "description": "Live tail of the describer build log."
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/connectors/connectors.toml": {
       "get": {
         "tags": [

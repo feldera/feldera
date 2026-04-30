@@ -17,6 +17,7 @@
 //! or the empty string otherwise. The seed is consulted only on the very
 //! first read for a tenant; thereafter the database is authoritative.
 
+use crate::compiler::build_log_bus::BuildLogBus;
 use crate::config::CompilerConfig;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
@@ -24,10 +25,15 @@ use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::tenant::TenantId;
 use sha2::{Digest, Sha256};
 use std::io;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::process::Command;
+use tokio::sync::Notify;
+use tracing::{error, info, warn};
 
 /// The raw content of a `connectors.toml` file.
 ///
@@ -150,24 +156,89 @@ pub fn validate_connectors_toml_shape(content: &str) -> Result<(), (u32, String)
     Ok(())
 }
 
-/// Generate the content of `force_link.rs` for the given user connector names.
+/// Generate the content of `force_link.rs` for the given connector names.
 ///
-/// The file has two sections:
-/// 1. Built-in section: `extern crate feldera_datagen as _;` (always present).
+/// The file has up to two sections:
+/// 1. Built-in section: `extern crate feldera_datagen as _;` — emitted only
+///    when `include_builtin_datagen` is `true`. Used by the platform
+///    describer (which links `dbsp_adapters` + `feldera-datagen`); the
+///    per-tenant user describer omits it because it does not link
+///    `feldera-datagen` (the platform manifest already carries datagen).
 /// 2. User section: one line per name extracted from `connectors.toml`.
 ///
 /// Placing this file in any compilation unit of the workspace forces the
 /// linker to include the rlibs so `inventory::submit!` calls fire.
-pub fn generate_force_link_rs(user_names: &[String]) -> String {
-    let mut out = String::from(
-        "// === Built-in (implicit; not user-configurable) ===\n\
-         extern crate feldera_datagen as _;\n",
-    );
+pub fn generate_force_link_rs(user_names: &[String], include_builtin_datagen: bool) -> String {
+    let mut out = String::new();
+    if include_builtin_datagen {
+        out.push_str(
+            "// === Built-in (implicit; not user-configurable) ===\n\
+             extern crate feldera_datagen as _;\n",
+        );
+    }
     if !user_names.is_empty() {
         out.push_str("// === User-listed (from connectors.toml) ===\n");
         for name in user_names {
             out.push_str(&format!("extern crate {name} as _;\n"));
         }
+    }
+    out
+}
+
+// ── Platform manifest (built-in connector descriptors) ───────────────────────
+//
+// Built-in connectors (the ones shipped in `dbsp_adapters` plus
+// `feldera-datagen`) are enumerated **at platform build time** by the
+// `feldera-platform-manifest` crate's `build.rs`.  The resulting JSON is
+// baked into pipeline-manager's binary via `include_str!`, so startup is
+// a const-string read with no Cargo invocation — no first-startup compile
+// cost, no on-disk cache to invalidate.  Per-tenant describer builds only
+// compile user-listed crates against `feldera-adapterlib`.
+
+/// Load the platform manifest as a `name → entry` map.
+///
+/// Reads from the build-time-baked
+/// [`feldera_platform_manifest::PLATFORM_MANIFEST_JSON`] string.  Falls
+/// back to a fresh in-process inventory walk on parse failure (which
+/// would only happen if the build.rs emitted malformed JSON — a
+/// programming error, not a runtime configuration issue).
+pub fn load_platform_manifest(
+) -> std::collections::HashMap<String, feldera_adapterlib::connector::ConnectorManifestEntry> {
+    match parse_manifest_json(feldera_platform_manifest::PLATFORM_MANIFEST_JSON) {
+        Ok(m) => m,
+        Err(e) => {
+            warn!(
+                "failed to parse build-time platform manifest: {e}; \
+                 falling back to in-process inventory walk"
+            );
+            build_in_process_manifest()
+        }
+    }
+}
+
+/// Merge the platform manifest with a per-tenant user manifest.
+///
+/// On name collisions the platform entry wins — built-in names are
+/// reserved.  The user describer runs in an environment that does not
+/// link `dbsp_adapters`, so name collisions only happen when a user
+/// crate intentionally registers a built-in name; surfacing the
+/// collision as a "user entry shadowed" diagnostic is the right
+/// behaviour, but is left to a future PR (the merge currently logs at
+/// `warn` level and silently keeps the platform entry).
+pub fn merge_manifests(
+    platform: std::collections::HashMap<String, feldera_adapterlib::connector::ConnectorManifestEntry>,
+    user: std::collections::HashMap<String, feldera_adapterlib::connector::ConnectorManifestEntry>,
+) -> std::collections::HashMap<String, feldera_adapterlib::connector::ConnectorManifestEntry> {
+    let mut out = platform;
+    for (name, entry) in user {
+        if out.contains_key(&name) {
+            warn!(
+                "connector '{name}' is registered by both the platform and a \
+                 user-listed crate; keeping the platform entry"
+            );
+            continue;
+        }
+        out.insert(name, entry);
     }
     out
 }
@@ -220,8 +291,15 @@ pub fn describer_workspace_dir(
 
 // ── Describer workspace preparation ──────────────────────────────────────────
 
-/// Write the describer workspace files (`Cargo.toml`, `src/main.rs`,
+/// Write the user describer workspace files (`Cargo.toml`, `src/main.rs`,
 /// `src/force_link.rs`).
+///
+/// The user describer compiles ONLY `feldera-adapterlib` + the user-listed
+/// connector crates from `connectors.toml`.  Built-in connectors live in
+/// the platform manifest cache produced by [`bootstrap_platform_manifest`]
+/// — pulling `dbsp_adapters` or `feldera-datagen` in here would link the
+/// entire built-in connector tree on every `connectors.toml` edit, which
+/// is the cost this split eliminates.
 ///
 /// Idempotent: existing files are overwritten only when their content changes.
 pub fn prepare_describer_workspace(
@@ -250,8 +328,6 @@ path = "src/main.rs"
 
 [dependencies]
 feldera-adapterlib = {{ path = "{dbsp_path}/crates/adapterlib" }}
-dbsp_adapters = {{ path = "{dbsp_path}/crates/adapters" }}
-feldera-datagen = {{ path = "{dbsp_path}/crates/datagen" }}
 serde_json = "1"
 
 # User-listed connectors (from connectors.toml):
@@ -293,10 +369,13 @@ fn main() {
 "#;
     write_if_changed(src_dir.join("main.rs"), main_rs.as_bytes())?;
 
-    // src/force_link.rs — forces the linker to pull in connector rlibs so
-    // inventory::submit! calls fire.
+    // src/force_link.rs — forces the linker to pull in user connector
+    // rlibs so `inventory::submit!` calls fire.  No built-in section: the
+    // user describer does not depend on `feldera-datagen`, and adding an
+    // `extern crate` for a crate that is not declared as a dep would fail
+    // to compile.
     let user_names = extract_force_link_names(content);
-    let force_link_rs = generate_force_link_rs(&user_names);
+    let force_link_rs = generate_force_link_rs(&user_names, false);
     write_if_changed(src_dir.join("force_link.rs"), force_link_rs.as_bytes())?;
 
     Ok(())
@@ -353,96 +432,116 @@ pub enum DescriberError {
 /// `update_deps` — when `true`, runs `cargo update` before building to
 /// refresh the `Cargo.lock` (used by `POST /v0/connectors/refresh`).
 pub async fn build_and_run_describer(
-    _config: &CompilerConfig,
+    config: &CompilerConfig,
     workspace_dir: &Path,
     update_deps: bool,
+    bus: Arc<BuildLogBus>,
+    tenant_id: TenantId,
 ) -> Result<String, DescriberError> {
     let env_path = std::env::var_os("PATH").unwrap_or_default();
+    // Begin a fresh log session for this build.  Any prior session for
+    // this tenant is replaced — late HTTP subscribers connecting to
+    // `GET /v0/connectors/build-log` will see the live tail of *this*
+    // build, not a stale one.
+    bus.begin_session(tenant_id).await;
 
-    // Three-tier lockfile discipline:
+    // Lockfile discipline:
     //
-    //   • Cold path (no `describer.lock` yet, or `update_deps` is true):
-    //     build without `--locked`; Cargo resolves and writes `Cargo.lock`.
+    //   • Warm path (`describer.lock` exists, no `update_deps`): copy the
+    //     last-good lock as `Cargo.lock`.
+    //   • Cold path (no `describer.lock` yet): seed `Cargo.lock` from the
+    //     main Feldera repo's `Cargo.lock` at `{dbsp_path}/Cargo.lock`.
+    //     This pins every shared transitive (e.g. `schema_registry_converter`,
+    //     `mappings`) to the version the platform itself was built against,
+    //     which sccache has already cached — eliminating drift between the
+    //     describer build and the platform build.
     //
-    //   • Full warm path (`describer.lock` exists AND `describer.build_version`
-    //     matches the current `CARGO_PKG_VERSION`): copy the lock as
-    //     `Cargo.lock` and pass `--locked`.  Safe because both Feldera path
-    //     deps and external connector deps are identical to the build that
-    //     produced the lock.
+    // The build then runs with `--offline`, which preserves the
+    // no-network guarantee while letting Cargo extend the seeded lock
+    // from the local registry cache for the describer's own package and
+    // any user-listed connector crates that the seed does not cover.
     //
-    //   • Partial warm path (`describer.lock` exists but `describer.build_version`
-    //     differs): the deployment's Feldera version changed since the lock was
-    //     written, but `ADAPTERLIB_API_VERSION` is the same (otherwise we would
-    //     be in a different cache directory).  Copy the lock as a resolver seed
-    //     so Cargo retains external connector pins, but omit `--locked` so Cargo
-    //     can update the Feldera path-dep versions.  sccache serves previously
-    //     compiled external connector rlibs, so the effective build time is
-    //     minimal.
+    // When `update_deps` is true, network is required for `cargo update`,
+    // so the build step also runs without `--offline` to pick up any
+    // newly-resolved crates whose tarballs are not yet cached locally.
     //
-    // After every successful build, `describer.lock` and `describer.build_version`
-    // are refreshed so the next invocation can use the full warm path.
+    // After every successful build, `describer.lock` is refreshed so the
+    // next invocation can warm-start from it.
     let lock_src = workspace_dir.join("Cargo.lock");
     let lock_persistent = workspace_dir.join("describer.lock");
-    let build_version_file = workspace_dir.join("describer.build_version");
-    let current_feldera_version = env!("CARGO_PKG_VERSION");
+    let main_lock = PathBuf::from(&config.dbsp_override_path).join("Cargo.lock");
 
-    let lock_exists = !update_deps && lock_persistent.exists();
-    let full_warm = lock_exists
-        && std::fs::read_to_string(&build_version_file)
-            .ok()
-            .as_deref()
-            == Some(current_feldera_version);
-    let partial_warm = lock_exists && !full_warm;
+    if !update_deps {
+        if lock_persistent.exists() {
+            std::fs::copy(&lock_persistent, &lock_src)?;
+        } else if main_lock.exists() {
+            std::fs::copy(&main_lock, &lock_src)?;
+        }
+    }
 
-    if full_warm || partial_warm {
-        std::fs::copy(&lock_persistent, &lock_src)?;
+    // Build log: both `cargo update` and `cargo build` write to the same
+    // file (truncated at the start of the build) so it is available on
+    // disk even if the process is killed (e.g. by the timeout in
+    // `spawn_describer_build`).  Each line is also tee'd into the
+    // `BuildLogBus` so HTTP subscribers see the live tail.
+    let log_path = workspace_dir.join("build.log");
+    {
+        // Truncate at session start.  Subsequent writes from each tee
+        // task open the file in append mode.
+        std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&log_path)
+            .map_err(|e| io::Error::new(e.kind(), format!("creating build.log: {e}")))?;
     }
 
     // Optionally update dependencies first. `cargo update` rewrites
     // `Cargo.lock` even when the blob is unchanged — used by the refresh
     // endpoint to pick up upstream patch releases.
     if update_deps {
-        let status = Command::new("cargo")
-            .arg("update")
-            .current_dir(workspace_dir)
-            .env_clear()
-            .env("PATH", &env_path)
-            .propagate_sccache_env()
-            .status()
-            .await
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("cargo update: {e}")))?;
+        let status = run_cargo_with_tee(
+            &["update"],
+            workspace_dir,
+            &env_path,
+            &log_path,
+            Arc::clone(&bus),
+            tenant_id,
+        )
+        .await?;
         if !status.success() {
-            return Err(DescriberError::Build(
-                "cargo update failed".to_string(),
-            ));
+            let log_content = std::fs::read_to_string(&log_path)
+                .unwrap_or_else(|_| "(build log unavailable)".to_string());
+            return Err(DescriberError::Build(format!(
+                "cargo update failed:\n{log_content}"
+            )));
         }
     }
 
     // Build the describer binary.
     let mut build_args: Vec<&str> = vec!["build", "--profile", "dev"];
-    if full_warm {
-        build_args.push("--locked");
+    if !update_deps {
+        build_args.push("--offline");
     }
-    let build_output = Command::new("cargo")
-        .args(&build_args)
-        .current_dir(workspace_dir)
-        .env_clear()
-        .env("PATH", &env_path)
-        .propagate_sccache_env()
-        .output()
-        .await
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("cargo build: {e}")))?;
+    let status = run_cargo_with_tee(
+        &build_args,
+        workspace_dir,
+        &env_path,
+        &log_path,
+        Arc::clone(&bus),
+        tenant_id,
+    )
+    .await?;
 
-    if !build_output.status.success() {
-        let stderr = String::from_utf8_lossy(&build_output.stderr).into_owned();
-        return Err(DescriberError::Build(stderr));
+    if !status.success() {
+        let log_content = std::fs::read_to_string(&log_path)
+            .unwrap_or_else(|_| "(build log unavailable)".to_string());
+        return Err(DescriberError::Build(log_content));
     }
 
-    // Persist the lock and the Feldera version that produced it so the next
-    // build can take the full warm path (with `--locked`).
+    // Persist the lock so the next build can warm-start from it.
     if lock_src.exists() {
         std::fs::copy(&lock_src, &lock_persistent)?;
-        std::fs::write(&build_version_file, current_feldera_version)?;
     }
 
     // Run the describer binary.
@@ -513,17 +612,220 @@ trait CargoCommandExt {
 }
 
 impl CargoCommandExt for Command {
+    /// Propagate sccache / RUSTFLAGS env from the parent process into this
+    /// Cargo invocation.
+    ///
+    /// RUSTFLAGS handling: the parent's value is forwarded unchanged unless
+    /// it contains no `-fuse-ld` directive AND `mold` is present on PATH.  In
+    /// that case `-C link-arg=-fuse-ld=mold` is appended, halving link times
+    /// for the describer binary.  The mold probe runs on every call so that
+    /// CI, dev, and production environments can differ without configuration
+    /// changes.  Any existing `-fuse-ld` choice (gold, lld, …) is always
+    /// respected.
     fn propagate_sccache_env(&mut self) -> &mut Self {
         for (key, val) in std::env::vars() {
             if key.starts_with("SCCACHE") || key == "RUSTC_WRAPPER" || key == "CARGO_INCREMENTAL" {
                 self.env(key, val);
             }
         }
-        if let Some(flags) = std::env::var_os("RUSTFLAGS") {
+        let parent_flags = std::env::var("RUSTFLAGS").unwrap_or_default();
+        let flags = if !parent_flags.contains("-fuse-ld") && mold_is_available() {
+            let sep = if parent_flags.is_empty() { "" } else { " " };
+            format!("{parent_flags}{sep}-C link-arg=-fuse-ld=mold")
+        } else {
+            parent_flags
+        };
+        if !flags.is_empty() {
             self.env("RUSTFLAGS", flags);
         }
         self
     }
+}
+
+/// Return `true` when `mold` is installed and responds to `--version`.
+fn mold_is_available() -> bool {
+    std::process::Command::new("mold")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+// ── Tee'd cargo invocation ───────────────────────────────────────────────────
+
+/// Run `cargo <args>` inside `workspace_dir`, with stdout/stderr tee'd to
+/// both the on-disk `log_path` (append mode) and the per-tenant
+/// `BuildLogBus` for live streaming.
+///
+/// Returns the cargo process's exit status.  The caller is responsible
+/// for inspecting `status.success()` and converting failure into
+/// `DescriberError::Build`.
+async fn run_cargo_with_tee(
+    args: &[&str],
+    workspace_dir: &Path,
+    env_path: &std::ffi::OsString,
+    log_path: &Path,
+    bus: Arc<BuildLogBus>,
+    tenant_id: TenantId,
+) -> Result<std::process::ExitStatus, DescriberError> {
+    let mut child = Command::new("cargo")
+        .args(args)
+        .current_dir(workspace_dir)
+        .env_clear()
+        .env("PATH", env_path)
+        .propagate_sccache_env()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("cargo {args:?}: {e}")))?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .expect("stdout was piped above; take() must succeed");
+    let stderr = child
+        .stderr
+        .take()
+        .expect("stderr was piped above; take() must succeed");
+
+    // Cargo's default is to let parallel rustc workers finish after a
+    // fatal compile error, which can add minutes of dead time to a
+    // cold build.  When the tee tasks see cargo's "could not compile"
+    // marker (or the equivalent run-time exit signal), they fire
+    // `fatal_error` and the parent kills cargo immediately.
+    let fatal_error = Arc::new(Notify::new());
+
+    let log_path_buf = log_path.to_path_buf();
+    let bus_for_stdout = Arc::clone(&bus);
+    let log_path_for_stdout = log_path_buf.clone();
+    let fatal_error_stdout = Arc::clone(&fatal_error);
+    let stdout_task = tokio::spawn(async move {
+        tee_lines(
+            stdout,
+            &log_path_for_stdout,
+            bus_for_stdout,
+            tenant_id,
+            fatal_error_stdout,
+        )
+        .await
+    });
+    let fatal_error_stderr = Arc::clone(&fatal_error);
+    let stderr_task = tokio::spawn(async move {
+        tee_lines(stderr, &log_path_buf, bus, tenant_id, fatal_error_stderr).await
+    });
+
+    let status = tokio::select! {
+        biased;
+        status = child.wait() => status,
+        _ = fatal_error.notified() => {
+            warn!(
+                %tenant_id,
+                ?args,
+                "describer cargo: fatal compile error detected, killing cargo to skip drain of parallel rustc workers"
+            );
+            let _ = child.start_kill();
+            child.wait().await
+        }
+    }
+    .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("cargo {args:?} wait: {e}")))?;
+    info!(
+        %tenant_id,
+        ?args,
+        success = status.success(),
+        code = ?status.code(),
+        "describer cargo: process exited"
+    );
+    // Ensure both readers have drained any final bytes the child wrote
+    // before exiting.  Bound the wait so a stuck pipe (e.g. fd inherited
+    // by an orphan rustc subprocess) cannot pin the build task.
+    let drain = Duration::from_secs(5);
+    let _ = tokio::time::timeout(drain, stdout_task).await;
+    let _ = tokio::time::timeout(drain, stderr_task).await;
+    Ok(status)
+}
+
+/// Return a single-line summary suitable for tracing without flooding
+/// the log when the underlying error embeds a multi-MB build log.
+fn short_error(e: &DescriberError) -> String {
+    let s = e.to_string();
+    let first_line = s.lines().next().unwrap_or("").to_string();
+    if first_line.len() > 200 {
+        format!("{}…", &first_line[..200])
+    } else {
+        first_line
+    }
+}
+
+/// Read `reader` line by line.  For each line, append to `log_path` (in
+/// append mode) and forward to the build log bus for the active session.
+/// When a fatal compile-error marker is observed, signal `fatal_error`
+/// so the parent task can kill cargo without waiting for parallel
+/// rustc workers to drain.
+///
+/// Errors writing to the file are logged at `error!` level but do not
+/// abort the loop — losing a line in the on-disk log is preferable to
+/// silently dropping the live stream.
+async fn tee_lines<R: AsyncRead + Unpin>(
+    reader: R,
+    log_path: &Path,
+    bus: Arc<BuildLogBus>,
+    tenant_id: TenantId,
+    fatal_error: Arc<Notify>,
+) {
+    let mut file = match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+    {
+        Ok(f) => Some(f),
+        Err(e) => {
+            error!("opening describer build.log for append: {e}");
+            None
+        }
+    };
+
+    let mut buf = BufReader::new(reader);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match buf.read_line(&mut line).await {
+            Ok(0) => break, // EOF
+            Ok(_) => {}
+            Err(e) => {
+                error!("reading describer build output: {e}");
+                break;
+            }
+        }
+        if let Some(file) = file.as_mut() {
+            if let Err(e) = file.write_all(line.as_bytes()) {
+                error!("appending to describer build.log: {e}");
+            }
+        }
+        if is_fatal_compile_error(&line) {
+            fatal_error.notify_one();
+        }
+        // The bus strips the trailing newline; pass the line as-is.
+        bus.append_line(tenant_id, &line).await;
+    }
+}
+
+/// Return `true` when `line` is cargo's "give up" marker — once this
+/// has been printed, cargo will not start any new compilation units
+/// and any in-flight rustc workers are pure dead time.
+///
+/// Examples (all from cargo / rustc output):
+///   * `error: could not compile \`jemalloc_pprof\` (lib) due to 1 previous error`
+///   * `error: could not compile \`feldera-describer\` (bin "feldera-describer")`
+///
+/// We do **not** match individual `error[E0...]:` diagnostics — a
+/// single rustc diagnostic does not necessarily fail the unit, and
+/// killing cargo on the first diagnostic would suppress useful
+/// follow-on errors that operators may want to read in the build log.
+fn is_fatal_compile_error(line: &str) -> bool {
+    line.starts_with("error: could not compile ")
 }
 
 // ── High-level manifest management ───────────────────────────────────────────
@@ -534,6 +836,7 @@ pub async fn load_or_build_manifest(
     db: &StoragePostgres,
     config: &CompilerConfig,
     tenant_id: TenantId,
+    bus: Arc<BuildLogBus>,
 ) -> Result<String, DescriberError> {
     let content = load_connectors_toml(db, config, tenant_id).await?;
     let cache_key = describer_cache_key(&content);
@@ -549,7 +852,7 @@ pub async fn load_or_build_manifest(
 
     // Prepare workspace and build.
     prepare_describer_workspace(config, &workspace_dir, &content)?;
-    build_and_run_describer(config, &workspace_dir, false).await
+    build_and_run_describer(config, &workspace_dir, false, bus, tenant_id).await
 }
 
 /// Build a connector manifest from the in-process `inventory` (bundled connectors only).
@@ -584,13 +887,14 @@ pub async fn refresh_manifest(
     db: &StoragePostgres,
     config: &CompilerConfig,
     tenant_id: TenantId,
+    bus: Arc<BuildLogBus>,
 ) -> Result<String, DescriberError> {
     let content = load_connectors_toml(db, config, tenant_id).await?;
     let cache_key = describer_cache_key(&content);
     let workspace_dir = describer_workspace_dir(config, tenant_id, &cache_key);
 
     prepare_describer_workspace(config, &workspace_dir, &content)?;
-    build_and_run_describer(config, &workspace_dir, true).await
+    build_and_run_describer(config, &workspace_dir, true, bus, tenant_id).await
 }
 
 // ── Cache-coordinated background build ────────────────────────────────────
@@ -604,8 +908,20 @@ pub async fn refresh_manifest(
 ///
 /// Returns `true` when a build was launched, `false` when the cache
 /// short-circuited (an in-flight or already-fresh build matches).
+///
+/// # Failure handling
+///
+/// The build task is wrapped in [`tokio::time::timeout`] using
+/// [`CompilerConfig::describer_build_timeout_secs`].  On timeout the cargo
+/// subprocess is killed (it was spawned with `kill_on_drop(true)`) and the
+/// cache is marked failed.
+///
+/// A second watcher task awaits the build task's `JoinHandle`.  If the build
+/// task panics the watcher calls `mark_failed`, preventing the cache from
+/// being permanently stuck in the `Building` state.
 pub async fn spawn_describer_build(
     cache: Arc<crate::compiler::manifest_cache::ManifestCache>,
+    bus: Arc<BuildLogBus>,
     config: CompilerConfig,
     tenant_id: TenantId,
     content: ConnectorsTomlContent,
@@ -619,27 +935,82 @@ pub async fn spawn_describer_build(
     if !acquired {
         return false;
     }
-    tokio::spawn(async move {
+
+    // Clone fields needed by the panic-watcher task spawned below.
+    let cache_watcher = Arc::clone(&cache);
+    let content_hash_watcher = content_hash.clone();
+    let timeout_secs = config.describer_build_timeout_secs;
+
+    let content_hash_for_log = content_hash.clone();
+    let handle = tokio::spawn(async move {
+        info!(%tenant_id, content_hash = %content_hash_for_log, "describer build: starting");
         let cache_key = describer_cache_key(&content);
         let workspace_dir = describer_workspace_dir(&config, tenant_id, &cache_key);
-        let result: Result<String, DescriberError> =
-            match prepare_describer_workspace(&config, &workspace_dir, &content) {
-                Err(e) => Err(DescriberError::Io(e)),
-                Ok(()) => build_and_run_describer(&config, &workspace_dir, force).await,
-            };
+        let build_result = tokio::time::timeout(
+            Duration::from_secs(timeout_secs),
+            async {
+                match prepare_describer_workspace(&config, &workspace_dir, &content) {
+                    Err(e) => Err(DescriberError::Io(e)),
+                    Ok(()) => {
+                        build_and_run_describer(
+                            &config,
+                            &workspace_dir,
+                            force,
+                            Arc::clone(&bus),
+                            tenant_id,
+                        )
+                        .await
+                    }
+                }
+            },
+        )
+        .await;
+        let result = match build_result {
+            Ok(r) => r,
+            Err(_elapsed) => {
+                warn!(%tenant_id, "describer build: timed out after {timeout_secs}s");
+                Err(DescriberError::Build(format!(
+                    "build timed out after {timeout_secs}s"
+                )))
+            }
+        };
         match result {
             Ok(json) => {
-                cache
-                    .mark_ready(tenant_id, content_hash, version, json)
-                    .await
+                info!(%tenant_id, content_hash = %content_hash_for_log, "describer build: marking ready");
+                cache.mark_ready(tenant_id, content_hash, version, json).await
             }
             Err(e) => {
-                cache
-                    .mark_failed(tenant_id, content_hash, version, e.to_string())
-                    .await
+                warn!(
+                    %tenant_id,
+                    content_hash = %content_hash_for_log,
+                    "describer build: marking failed: {}",
+                    short_error(&e),
+                );
+                cache.mark_failed(tenant_id, content_hash, version, e.to_string()).await
             }
         }
     });
+
+    // Await the build handle in a watcher task.  If the build task panics
+    // (programming error), the manifest cache would be stuck in `Building`
+    // forever without this guard.
+    tokio::spawn(async move {
+        if let Err(join_err) = handle.await {
+            error!(
+                %tenant_id,
+                "describer build task panicked: {join_err}; marking manifest failed"
+            );
+            cache_watcher
+                .mark_failed(
+                    tenant_id,
+                    content_hash_watcher,
+                    version,
+                    "internal error: build task panicked".to_string(),
+                )
+                .await;
+        }
+    });
+
     true
 }
 
@@ -664,6 +1035,7 @@ mod tests {
             binary_upload_timeout_secs: 600,
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
+            describer_build_timeout_secs: 1800,
             precompile: false,
             connectors_toml_path: toml_path.map(str::to_owned),
         }
@@ -675,6 +1047,59 @@ mod tests {
     fn seed_unset_returns_empty() {
         let config = make_config(None);
         assert!(load_seed(&config).unwrap().is_empty());
+    }
+
+    #[test]
+    fn fatal_compile_error_marker_recognised() {
+        // Real cargo output samples — these end the build.
+        assert!(is_fatal_compile_error(
+            "error: could not compile `jemalloc_pprof` (lib) due to 1 previous error\n"
+        ));
+        assert!(is_fatal_compile_error(
+            "error: could not compile `feldera-describer` (bin \"feldera-describer\")\n"
+        ));
+        // Non-fatal lines must NOT match: a single rustc diagnostic, a
+        // warning, or an unrelated stderr line should let cargo keep
+        // running so the rest of the failure context can be captured.
+        assert!(!is_fatal_compile_error(
+            "error[E0308]: mismatched types\n"
+        ));
+        assert!(!is_fatal_compile_error("warning: unused variable: `x`\n"));
+        assert!(!is_fatal_compile_error("   Compiling foo v0.1.0\n"));
+        assert!(!is_fatal_compile_error(""));
+    }
+
+    /// `run_cargo_with_tee` must return a non-success status (not hang)
+    /// when cargo exits with an error — for example when given an
+    /// invalid argument. This guards the no-stuck-Building invariant
+    /// the live operator depends on.
+    #[tokio::test]
+    async fn run_cargo_with_tee_returns_on_cargo_failure() {
+        use uuid::Uuid;
+        let bus = BuildLogBus::new();
+        let tid = TenantId(Uuid::nil());
+        let dir = TempDir::new().unwrap();
+        let log_path = dir.path().join("build.log");
+        let env_path = std::env::var_os("PATH").unwrap_or_default();
+
+        // Cargo with an unknown subcommand exits non-zero in well under
+        // a second.  The 30-second timeout catches any reader-task hang.
+        let result = tokio::time::timeout(
+            Duration::from_secs(30),
+            run_cargo_with_tee(
+                &["this-subcommand-does-not-exist"],
+                dir.path(),
+                &env_path,
+                &log_path,
+                bus,
+                tid,
+            ),
+        )
+        .await
+        .expect("run_cargo_with_tee must not hang on cargo failure");
+
+        let status = result.expect("expected Ok with non-success exit");
+        assert!(!status.success(), "cargo with bad subcommand should exit non-zero");
     }
 
     #[test]

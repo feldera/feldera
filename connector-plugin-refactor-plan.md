@@ -520,6 +520,49 @@ acme_snowflake = { version = "0.3", registry = "crates.io" }
 
 **Save semantics summary** — auto-rebuild on PUT (option (a) from earlier discussion). Rationale: the alternative (require explicit refresh after edit) splits a single user intent across two API calls; pre-validate (run `cargo metadata` before accepting) blocks the PUT for seconds and still doesn't catch every error. Auto-rebuild keeps the contract simple: PUT is the edit; status reports the outcome.
 
+#### 8.13 Platform manifest baked at platform build time; user describer trimmed to user crates only
+
+The connector descriptor manifest is split across two production paths:
+
+- **Built-in connectors** (everything shipped in `dbsp_adapters` + `feldera-datagen`) are enumerated at platform build time by the workspace member `crates/platform-manifest/` (`feldera-platform-manifest`).
+- **User-listed connectors** (entries in a tenant's `connectors.toml`) are enumerated by a per-tenant user describer that compiles only those crates against `feldera-adapterlib`.
+
+Both manifests are merged at every consumer site (SQL compiler `attempt_end_to_end_sql_compilation`, `compiler_precompile`, `GET /v0/connectors/status` `descriptors` field). Platform entries win on name collisions; the merge logs a warning.
+
+**`feldera-platform-manifest` crate.** Library only; runtime `[dependencies]` is empty. `[build-dependencies]` lists `feldera-adapterlib`, `dbsp_adapters` (`path = "../adapters"`, since `dbsp_adapters` is not in `[workspace.dependencies]`), `feldera-datagen`, `serde_json`. The `build.rs`:
+
+1. Declares `extern crate dbsp_adapters as _;` and `extern crate feldera_datagen as _;` at the top so the linker keeps the rlibs reachable; `inventory::submit!` registrations only fire for crates that are actually linked in.
+2. Calls `feldera_adapterlib::connector::registered_connectors()` and serializes the resulting `ConnectorManifestEntry` array via `serde_json`.
+3. Writes the JSON to `$OUT_DIR/platform_manifest.json`.
+4. Panics on duplicate built-in names — the same defensive check the user describer runs at startup, applied here so a programming error in `dbsp_adapters` fails the platform build instead of shipping an ambiguous manifest.
+5. Declares `cargo:rerun-if-changed=build.rs`. Cargo's build-dep fingerprint tracking fires the build script automatically when any `dbsp_adapters` rlib hash changes, so the rerun-if-changed line only needs to cover the build script itself.
+
+`src/lib.rs` is one line: `pub const PLATFORM_MANIFEST_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/platform_manifest.json"));`.
+
+**pipeline-manager wiring.** `feldera-platform-manifest = { workspace = true }` in pipeline-manager's runtime `[dependencies]`. The crate exposes a `&'static str`; pipeline-manager does not inherit the data-plane dep tree at runtime. `load_platform_manifest() -> HashMap<...>` is a plain `serde_json::from_str(feldera_platform_manifest::PLATFORM_MANIFEST_JSON)` — no `config` argument, no on-disk read, no subprocess. On parse failure (a build.rs bug), it falls back to `build_in_process_manifest()` (an inventory walk over whatever pipeline-manager itself happens to link) and warns.
+
+**User describer.** Per-tenant workspace at `<working_dir>/describer/<tenant_id>/<cache_key>/`. Generated Cargo.toml lists `feldera-adapterlib` + user crates only — never `dbsp_adapters` or `feldera-datagen`. Generated `force_link.rs` contains user names only; no built-in datagen line, since declaring `extern crate` for a crate that is not in `[dependencies]` would not compile. Empty `connectors.toml` skips the user describer entirely.
+
+**Force-link parameterization.** `generate_force_link_rs(user_names: &[String], include_builtin_datagen: bool)`:
+- User describer passes `false`.
+- Per-pipeline globals crate (in `rust_compiler::prepare_workspace`) passes `true` — the pipeline runtime links every built-in into the final pipeline binary regardless of what `connectors.toml` says.
+- The platform manifest crate's build.rs writes its own `extern crate ... as _;` lines directly; the helper is not used there.
+
+**Lockfile.** The user describer keeps the seed-from-main-`Cargo.lock` + `--offline` discipline from 8.4. The platform manifest crate is a normal workspace member; it uses the workspace's own `Cargo.lock` and needs no separate coordination.
+
+**Build-cache properties.** A clean `cargo build -p pipeline-manager` compiles the build-dep tree once (~5–10 minutes without sccache). After that:
+- Editing pipeline-manager source only: `dbsp_adapters` rlib hashes are unchanged, build.rs fingerprint matches, build.rs does not re-run, `platform_manifest.json` is reused, only pipeline-manager rebuilds.
+- Editing a single built-in connector source (e.g. `kafka.rs`): `dbsp_adapters`'s single-crate rlib regenerates (other connector modules within the same crate are reused via rustc's intra-crate incremental cache); the build.rs binary relinks; build.rs re-runs; `feldera-platform-manifest` lib recompiles its `include_str!`; pipeline-manager recompiles. Total ~80–130 s.
+- Editing a deep transitive of `dbsp_adapters` cascades — the cost is a property of the dep graph, not platform-manifest.
+
+**Target sharing.** `feldera-platform-manifest`'s build.rs runs as part of `cargo build -p pipeline-manager`, so its build-dep artifacts land in the workspace's main `target/` automatically. With resolver=2, build-deps and regular deps occupy distinct artifact slots under that root. Per-tenant user describers keep isolated target directories at `<working_dir>/describer/<tenant_id>/<cache_key>/target/` so concurrent tenant edits do not serialize on a shared `.cargo-lock`.
+
+**Tests** (Phase 8.13):
+- `feldera-platform-manifest` builds cleanly and emits a non-empty JSON array containing every expected built-in (`datagen`, `kafka_input`/`kafka_output`, `delta_table_input`/`delta_table_output`, `nats_input`, `pub_sub_input`, `redis_output`, `s3_input`, `url_input`, `file_input`/`file_output`, `clock`, `http_input`/`http_output`, `adhoc_input`, `nexmark`, `iceberg_input`/`iceberg_output`, `postgres_input`/`postgres_output`, `postgres_cdc_input`).
+- `merge_manifests` keeps the platform entry on name collisions and emits a `warn!`.
+- A user describer's generated Cargo.toml does not contain `dbsp_adapters` or `feldera-datagen`; its `force_link.rs` does not contain the `feldera_datagen` line.
+- End-to-end: empty `connectors.toml` → status returns `not_configured`, SQL compilation against built-in connectors works (platform manifest only); add a user crate → status returns `ready` with platform-merged descriptors, SQL compilation against either side works.
+
 ---
 
 ### Phase 9 — REST API / OpenAPI for plugin configs
@@ -770,10 +813,19 @@ PRs 7a–7f follow the per-connector migration recipe in Phase 4 (steps 1–8): 
 - **Depends on**: PR 8.
 - **Unblocks**: PR 10.
 
-### PR 10 — Describer binary + DB-backed config endpoints (Phase 8.2-8.4, 8.12)
-- [ ] Generate the describer crate (`crates/feldera-describer/`) on first use per tenant; its `Cargo.toml` lists `feldera-adapterlib` + `dbsp_adapters` + every entry from the tenant's `tenant_connector_config.content`.
-- [ ] **Generate `force_link.rs` alongside `main.rs`** in the describer workspace, with two sections in fixed order: a hardcoded built-in section (currently `extern crate feldera_datagen as _;`) and a user-listed section iterating over the tenant's blob. `main.rs` declares `mod force_link;` so the lines are part of the compilation unit. The built-in list is a `const &[&str]` in pipeline-manager's codegen — not driven by config, not user-editable, not visible in any error message that says "from `connectors.toml`". See Phase 8.3.
-- [ ] **Generate the same `force_link.rs` into every per-pipeline workspace** (extends `prepare_workspace` at `rust_compiler.rs:1242`). Identical two-section layout. **Place it inside the existing globals crate** (`<pipeline>_globals`) — its `lib.rs` declares `mod force_link;`. Add `("force_link.rs", true)` to the `src_content` list at `rust_compiler.rs:1435-1448` (the `_globals` arm) so `DirectoryContent::validate()` does not reject the injected file.
+### PR 10 — Describer binary + DB-backed config endpoints (Phase 8.2-8.4, 8.12, 8.13)
+
+**Build the platform manifest at platform compile time; trim the user describer to user crates only (Phase 8.13).**
+
+- [ ] **New workspace crate `crates/platform-manifest/`** (`feldera-platform-manifest`). Library only; runtime `[dependencies]` is empty. `[build-dependencies]` lists `feldera-adapterlib`, `dbsp_adapters` (via `path = "../adapters"`, since `dbsp_adapters` isn't in `[workspace.dependencies]`), `feldera-datagen`, `serde_json`. `build.rs` declares `extern crate dbsp_adapters as _;` and `extern crate feldera_datagen as _;` (force-link inventory submissions into the build.rs binary), walks `registered_connectors()`, serializes to `$OUT_DIR/platform_manifest.json`, and panics on duplicate built-in names. `lib.rs` exposes a single `pub const PLATFORM_MANIFEST_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/platform_manifest.json"));`.
+- [ ] Add `feldera-platform-manifest = { workspace = true }` to `pipeline-manager`'s runtime `[dependencies]`. The crate exposes a `&'static str`; pipeline-manager does not inherit the data-plane dep tree at runtime.
+- [ ] **`load_platform_manifest() -> HashMap<...>`** parses `feldera_platform_manifest::PLATFORM_MANIFEST_JSON`. No `config` parameter — there is nothing on disk to consult. On parse failure (a programming error in build.rs), fall back to `build_in_process_manifest()` and `warn!`.
+- [ ] **`merge_manifests(platform, user) -> HashMap<...>`** — platform wins on name collisions, `warn!`s the user-side shadow.
+- [ ] **Wire the merge into every manifest consumer**: `attempt_end_to_end_sql_compilation` (in `sql_compiler.rs`), `compiler_precompile` (in `compiler/main.rs`), `GET /v0/connectors/status` `descriptors` field (in `api/endpoints/connectors.rs::build_status_envelope`). The `NotConfigured` / cache-miss path uses `load_platform_manifest()` alone; the `Ready` path merges the user JSON on top.
+- [ ] **`generate_force_link_rs(user_names, include_builtin_datagen: bool)`** — user describer passes `false`, per-pipeline globals crate passes `true` (runtime needs every built-in linked into the pipeline binary). Adding the `extern crate feldera_datagen as _;` line when the crate is not in `[dependencies]` is a compile error, so the boolean must mirror the Cargo.toml shape exactly.
+- [ ] Generate the **user** describer crate (path `<working_dir>/describer/<tenant_id>/<cache_key>/`) on first use per tenant; its `Cargo.toml` lists `feldera-adapterlib` + every entry from the tenant's `tenant_connector_config.content`. `dbsp_adapters` and `feldera-datagen` are not declared — those live in the platform manifest.
+- [ ] **Generate `force_link.rs` alongside `main.rs`** in the user describer workspace. Contains only user-listed names (one `extern crate <name> as _;` line per dep). `main.rs` declares `mod force_link;` so the lines are part of the compilation unit.
+- [ ] **Generate `force_link.rs` into every per-pipeline workspace** (extends `prepare_workspace` at `rust_compiler.rs:1242`) with `include_builtin_datagen = true`. **Place it inside the existing globals crate** (`<pipeline>_globals`) — its `lib.rs` already-or-soon declares `mod force_link;`. Add `("force_link.rs", true)` to the `src_content` list at `rust_compiler.rs:1435-1448` (the `_globals` arm) so `DirectoryContent::validate()` does not reject the injected file. **Footgun: `mod force_link;` cannot be naively prepended at line 0 of the SQL-compiler-generated `lib.rs`** — that file starts with a block of inner attributes (`#![allow(dead_code)]`, etc.) that rustc rejects when displaced from the top. Splice the `mod` declaration in *after* the leading prelude (line comments, inner doc comments, `#![...]`, blank lines), not at the very top. **Footgun: the SQL-compiler-generated globals workspace does not list `feldera-datagen` in `[workspace.dependencies]`**, so injecting `feldera-datagen = { workspace = true }` will fail to resolve. Use a direct path dep (`feldera-datagen = { path = "{dbsp_path}/crates/datagen" }`) in the `[dependencies]` block, mirroring how the platform describer does it.
 - [ ] **The hand-written `extern crate feldera_datagen as _;` in `crates/adapters/src/lib.rs`** (added in PR 5) stays — it covers `dbsp_adapters`'s own lib/integration tests, which build as a separate output and aren't reached by any codegen path. The describer and per-pipeline workspaces get their own generated `force_link.rs`; the three sources are parallel, not duplicate.
 - [ ] `prepare_describer_workspace` analogous to existing `prepare_workspace`. Reads the tenant's blob from `tenant_connector_config` rather than the filesystem.
 - [ ] **Extend `CompilerConfig::canonicalize()`** to absolute-resolve `connectors_toml_path` (the bootstrap seed field added in PR 9). The field is optional — add a sibling helper `help_canonicalize_path_if_exists` that returns `Ok(None)` when the path is unset and skips canonicalization when the path is set but does not yet exist on disk. Reusing the existing `help_canonicalize_path` would error on absent optional fields and break deployments that ship no seed file.
@@ -790,9 +842,9 @@ PRs 7a–7f follow the per-connector migration recipe in Phase 4 (steps 1–8): 
 - [ ] **Define `ApiError` variants** with semantic names: `ConnectorsConfigConflict` (→ 412, ETag mismatch on PUT), `ConnectorsConfigInvalidShape` (→ 400, body fails line-shape check), `ConnectorManifestBuildFailed { error: String }` (→ 500, wraps describer build failures surfaced through status). `ApiError` does not have generic `NotFound`/`InternalServerError` variants, so name them explicitly. Wire each into `error_code`, `Display`, and `ResponseError::status_code`.
 - [ ] **Plumb `compiler_config: Option<CompilerConfig>` through `ServerState::new`** — there are two call sites: `api/main.rs` and a `#[cfg(test)]` site in `auth.rs`.
 - [ ] Detect duplicate connector names **in the describer's startup** (walk `inventory`, error if any name appears twice). Failure message names both source crates from the tenant's blob. Do not push this check into adapterlib — `connector_by_name()` is intentionally simple and the describer has the deployment context to render the diagnostic.
-- [ ] **Cache key + lockfile discipline** (Phase 8.4 / 8.7): `describer_cache_key` hashes `connectors.toml` content + `ADAPTERLIB_API_VERSION` — **not** the full Feldera release version. A Feldera upgrade that does not change the plugin ABI lands in the same cache directory and skips the rebuild. Implement the three-tier warm-path discipline in `build_and_run_describer`: cold path (no lock yet) builds without `--locked`; full warm path (`describer.lock` + `describer.build_version` = current `CARGO_PKG_VERSION`) builds with `--locked`; partial warm path (lock exists but Feldera version changed within the same ABI) copies the lock as a Cargo resolver seed and builds without `--locked` so only Feldera path-dep versions update while external connector pins are preserved and sccache serves previously compiled rlibs. Refresh both sidecar files after every successful build.
+- [ ] **Cache key + lockfile discipline** (Phase 8.4 / 8.7): `describer_cache_key` hashes `connectors.toml` content + `ADAPTERLIB_API_VERSION` — **not** the full Feldera release version. A Feldera upgrade that does not change the plugin ABI lands in the same cache directory and skips the rebuild. Implement a **two-tier discipline** in `build_and_run_describer`: warm path (`describer.lock` exists) copies the lock as `Cargo.lock`; cold path seeds `Cargo.lock` from the main repo's lock at `{dbsp_path}/Cargo.lock` (mirroring the pipeline platform-lock pattern). Either way, build with `--offline` rather than `--locked` — `--offline` preserves the no-network guarantee but lets Cargo extend the lock from the local registry cache for the describer's own package and any user-listed connector crates that the seed does not cover. **Do not use `--locked`**: any change that rewrites the manifest (user editing `connectors.toml`, workspace pin updates, path-dep version drift) makes Cargo want to update the lock, and `--locked` rejects that with `cannot update the lock file ... because --locked was passed`. **Do not introduce a `describer.build_version` cache key**: it adds no value once the lock is seeded from main (the main lock already encodes the version) and silently breaks the warm path on every patch release. Refresh `describer.lock` after every successful build.
 - [ ] **API version stamping and validation** (Phase 8.7): stamp `adapterlib_api_version: u32` into each `ConnectorManifestEntry` and call `check_manifest_api_versions` in `build_and_run_describer` after the binary exits. The check is *not* the primary guard against incompatible connectors (Cargo handles that at compile time) — it guards the *manifest file* against stale-cache scenarios: a `manifest.json` from a previous ABI generation that somehow ends up in the current cache directory is rejected before it can poison SQL direction validation. See Phase 8.7 for the full two-level framing. Tests: matching version accepted; future version rejected with connector name and both version numbers in the error message; empty manifest accepted; malformed JSON returns `Parse` error; cache key stable for identical content, distinct for different content.
-- [ ] Tests: cache hit, cache miss (cold-path bootstrap without `--locked`), refresh, name collision, version mismatch; `GET /status` response shape across all four states; `PUT` with stale ETag returns 412; `PUT` with malformed body returns 400; `PUT` increments `version` and triggers rebuild observable via `/status` going `ready → building → ready`; tenant isolation (tenant A's PUT does not affect tenant B's `/status`). **Footgun**: actix test helpers that spin up embedded Postgres must return a struct that owns the `TempDir`, not a bare tuple. If `TempDir` is a local in the helper function, it drops when the function returns and deletes the data directory before any test request fires. The `app` field must be `impl Service<…>` — use a named struct (e.g. `struct TestApp<S> { app: S, _state: Arc<…>, _tmp: TempDir }`) so the borrow checker keeps the directory alive for the test's lifetime.
+- [ ] Tests: cache hit, cache miss (cold-path seeding from main `Cargo.lock`), refresh, name collision, version mismatch; `GET /status` response shape across all four states; `PUT` with stale ETag returns 412; `PUT` with malformed body returns 400; `PUT` increments `version` and triggers rebuild observable via `/status` going `ready → building → ready`; tenant isolation (tenant A's PUT does not affect tenant B's `/status`); platform manifest baked at build time (Phase 8.13): `feldera-platform-manifest` build.rs emits a non-empty JSON array containing every expected built-in name, `merge_manifests` keeps platform on collision, user describer Cargo.toml lacks `dbsp_adapters`/`feldera-datagen`, `GET /status` `descriptors` field returns the merged set. **Footgun**: actix test helpers that spin up embedded Postgres must return a struct that owns the `TempDir`, not a bare tuple. If `TempDir` is a local in the helper function, it drops when the function returns and deletes the data directory before any test request fires. The `app` field must be `impl Service<…>` — use a named struct (e.g. `struct TestApp<S> { app: S, _state: Arc<…>, _tmp: TempDir }`) so the borrow checker keeps the directory alive for the test's lifetime.
 - **Depends on**: PR 9.
 - **Unblocks**: PR 11, PR 12.
 
@@ -816,6 +868,10 @@ PRs 7a–7f follow the per-connector migration recipe in Phase 4 (steps 1–8): 
 - [ ] **Mold detection is per-build, not a deployment-config knob**: probe `mold --version` once per `cargo build` invocation; if it exits 0, append `-C link-arg=-fuse-ld=mold` to `RUSTFLAGS`; if it fails or is absent from PATH, omit silently. An explicit operator-supplied `RUSTFLAGS` (via the manager process env) always wins — the probe result is added only when no `-fuse-ld` flag is already present. Do **not** require operators to edit Docker Compose / Helm charts.
 - [ ] **`RUSTFLAGS` constraint is architectural (documentation-only)**: the constraint that `RUSTFLAGS` must be set at the manager level, not per pipeline, is already enforced by the existing code (manager propagates `std::env::var_os("RUSTFLAGS")` and clears all other env vars before spawning `cargo build`). The deliverable is a comment in `call_compiler` explaining the invariant — no new code guard is needed.
 - [ ] Measurement appendix: build times before/after on a sample pipeline.
+- [ ] **Wrap `build_and_run_describer()` in `tokio::time::timeout`** with an operator-configurable upper bound (default ~30 min). On timeout, kill the cargo subprocess and call `mark_failed("build timed out after Ns")`. Without this, the describer state stays `Building` forever if the build hangs.
+- [ ] **Hold the cargo `Child` handle and surface unexpected exits**: today `connectors.rs:622-642` uses fire-and-forget `tokio::spawn`, so a panicked task or OOM-killed subprocess never calls `mark_failed()` and the cache state is orphaned. Track the `Child`, await its `status()`, and on non-zero exit / signal call `mark_failed("describer process died: <signal/code>")`.
+- [ ] **Persist describer build log to `<workspace>/build.log`**: stdout/stderr is currently captured in-memory only and lost on stuck builds. Tee it to a log file in the per-tenant workspace dir so operators have something to `tail` when the cache is wedged.
+- [ ] **Expose the build log as an HTTP stream** so the web console can tail it live. Tee `cargo`'s stdout/stderr through a `tokio::sync::mpsc` channel (mirroring the per-pipeline runtime-log fan-out in `runner/main.rs`) into both the on-disk `build.log` and a per-tenant broadcast that backs a new endpoint (see PR 14). The channel must replay the current build's accumulated lines on subscribe — operators arriving mid-build need history, not just the live tail. On build completion, hold the buffer until the next build replaces it so the failure log remains readable.
 - **Depends on**: PR 10.
 - **Unblocks**: nothing; orthogonal to PR 11.
 
@@ -829,6 +885,7 @@ PRs 7a–7f follow the per-connector migration recipe in Phase 4 (steps 1–8): 
 
 ### PR 14 — OpenAPI surface for connector endpoints (Phase 9)
 - [ ] **Wire existing `#[utoipa::path]` annotations into the OpenAPI spec — do not rewrite them**: `connectors.rs` already has complete `#[utoipa::path]` annotations on all four handlers as of PR 10. The actual work is: (a) add the four handler paths to the `paths()` macro in `api/main.rs`, (b) add the three schema types (`ConnectorsStatusResponse`, `ConnectorsConfigPutResponse`, `StatusName`) to `components(schemas(…))`, and (c) add the `tag` field on each annotation. Status envelope spec: enum for `state`, optional `descriptors` array, ETag header documented.
+- [ ] **Add a fifth endpoint, `GET /v0/connectors/build-log`** (chunked `text/plain`, one line per newline, `Content-Encoding: identity`). Streams the active describer build's combined stdout/stderr for the requesting tenant. Replays the current build's accumulated lines on connect, then tails live; closes when the build completes (or stays open and tails the next build — pick one and document it). When no build is in progress, returns an empty 200 immediately. Same shape and proxying pattern as the runtime-logs endpoint in `runner/main.rs`. Fed by the broadcast channel added in PR 12.
 - [ ] **Types registered in `components(schemas(…))` must be `pub(crate)` or wider**: private types referenced by path in the macro produce a compile error (not a silent omission). `StatusName` was originally declared without `pub`; it must be at least `pub(crate)` before it can be named in `components(schemas(…))`.
 - [ ] **Register schemas referenced by other one-ofs**: utoipa silently emits `#/components/schemas/X` references even when `X` is not in `components(schemas(…))`; `--dump-openapi` succeeds but the web console SDK generator fails with "Reference not found". Add `feldera_types::config::PluginTransportConfig` (referenced from the `TransportConfig` one-of in Phase 7) plus any sibling plugin types. Sanity check before merge: `jq '.. | objects | .["$ref"]? // empty' openapi.json | sort -u` and cross-check.
 - [ ] **Every endpoint consumed via `mapResponse` needs a typed error response**: the web console's `mapResponse` requires `E extends { message: string }`; an annotation with no `responses(...)` errors generates `unknown` and breaks TypeScript. Add `(status = INTERNAL_SERVER_ERROR, body = ErrorResponse)` to all four connector-management handlers and `use feldera_types::error::ErrorResponse;`.
@@ -843,39 +900,41 @@ PRs 7a–7f follow the per-connector migration recipe in Phase 4 (steps 1–8): 
 #### Account menu entry
 
 - [ ] Add a **"Plugins" item** to the account menu opened by `ProfileButton`, positioned above the "Feldera Health" entry, separated by a separator. It should follow the same visual pattern — icon, label, right-chevron — but carry **no status dot**.
-- [ ] Clicking "Plugins" opens a **modal dialog** (not a page navigation). The account menu closes on click.
+- [ ] Clicking "Plugins" **navigates to a new `/plugins` page** and closes the account menu. The earlier modal-dialog framing is replaced by a full page so the build log has room to breathe and the URL is bookmarkable / linkable.
 
-#### Plugins dialog
+#### `/plugins` page layout
 
-- [ ] The dialog has an **"X" close button** in the top-right corner, and **"Close" / "Apply" buttons** in the bottom-right. "Close" discards any unsaved edits; "Apply" commits them (see save flow below).
-- [ ] The dialog body contains an **editor panel** styled like the Code Editor panel inside `PipelineEditLayout`: a tab bar along the top, with the editor surface filling the remaining space.
+- [ ] **Top section: editor panel** styled like the Code Editor inside `PipelineEditLayout` — tab bar along the top, editor surface below. Single tab labelled `connectors.toml` with a status dot in the tab label (mapping below). The **"Apply" button sits in the same row as the tab labels** (right-aligned), not in a separate footer; there is no "Close" button on a page (the user navigates away).
+- [ ] **Bottom section: build log panel** rendering `LogsStreamList.svelte` against the live describer build output (`GET /v0/connectors/build-log`, see PR 14). Reuse the existing `TabLogs.svelte` composition pattern: stream → `SplitNewlineTransformStream` → circular buffer (10k lines) → `<LogsStreamList logs={...} />`. Auto-reconnect on stream failure with the same backoff schedule used for runtime logs.
+- [ ] **Vertical split** between editor and log panel is resizable (mirror whatever splitter is used in `PipelineEditLayout`); editor gets the larger default share.
 
-#### Tab bar
+#### Tab status dot
 
-- [ ] There is a **single tab, labelled `connectors.toml`**. The tab label carries a **colored status dot** reflecting the current describer compilation state:
-  - Green — build succeeded (state `ready`).
-  - Yellow — build in progress (state `building`).
-  - Red — build failed (state `failed` or `not_configured`).
-- [ ] The dot is always visible (not an unsaved-changes indicator). Poll `GET /v0/connectors/status` (with `If-None-Match` for cheap polling) while the dialog is open to keep the dot current.
+- [ ] The dot reflects the describer compilation state, polled via `GET /v0/connectors/status`:
+  - Green — `ready` (build succeeded).
+  - Yellow — `building`.
+  - Red — `failed` or `not_configured`.
+- [ ] Always visible — not an unsaved-changes indicator.
 
 #### Editor surface
 
-- [ ] When `connectors.toml` content is available, display it in a **Monaco editor** configured as a plain-text surface (no schema, just syntax highlight using `graphql` monaco-editor language) — Cargo is the parser. Editor options (font, theme, minimap) should match the per-pipeline code editor's defaults.
-- [ ] When the tenant has no `connectors.toml` yet (state `not_configured`), display a **placeholder** in the same style as the `udf.toml` tab placeholder in the pipeline code editor: a greyed-out hint text suggesting a minimal starting point, rendered inside the otherwise-empty editor area.
-- [ ] On dialog open, fetch `GET /v0/connectors/connectors.toml` and store the returned **ETag**.
+- [ ] When `connectors.toml` content is available, display it in a **Monaco editor** configured as a plain-text surface with `graphql` monaco-editor language for cheap TOML-ish highlighting — Cargo is the authoritative parser. Editor options (font, theme, minimap) match the per-pipeline code editor's defaults.
+- [ ] When the tenant has no `connectors.toml` yet (state `not_configured`), display a **placeholder** in the same style as the `udf.toml` tab placeholder in the pipeline code editor.
+- [ ] On page mount, fetch `GET /v0/connectors/connectors.toml` and store the returned **ETag**.
 
 #### Save flow ("Apply")
 
 - [ ] "Apply" issues `PUT /v0/connectors/connectors.toml` with `If-Match: <etag>` and `Content-Type: text/plain`.
-- [ ] On **200**: store the new ETag; the status dot transitions to yellow (`building`) and eventually green or red as the describer runs.
-- [ ] On **412 Precondition Failed**: surface an inline message — "Another operator updated this file. Close and reopen to see the latest version." Do not close the dialog; preserve the user's edits.
-- [ ] On **400 Bad Request** (line-shape validation failure): display the error message inline below the editor — do not close the dialog.
+- [ ] On **200**: store the new ETag; the status dot transitions to yellow (`building`) and the build-log panel begins streaming the new build's output.
+- [ ] On **412 Precondition Failed**: surface an inline message — "Another operator updated this file. Reload to see the latest version." Do not navigate away; preserve the user's edits.
+- [ ] On **400 Bad Request** (line-shape validation failure): display the error inline below the editor; do not clear edits.
 
 #### Tests
 
-- [ ] Unit test: status-dot color maps correctly to each `state` value from the API.
-- [ ] Integration / e2e: open dialog → editor shows existing content → edit → Apply → status dot cycles through `building` → `ready`.
+- [ ] Unit test: status-dot color maps correctly to each `state` value.
+- [ ] Integration / e2e: navigate to `/plugins` → editor shows existing content → edit → Apply → status dot cycles `building → ready`, build log panel streams output during the build.
 - [ ] ETag mismatch path: concurrent PUT from another session triggers the 412 message without discarding local edits.
+- [ ] Build-log stream reconnection: kill the stream mid-build; assert the panel reconnects and resumes tailing.
 
 - **Depends on**: PR 14.
 - **Unblocks**: PR 16.
@@ -926,3 +985,65 @@ PRs 7a–7f follow the per-connector migration recipe in Phase 4 (steps 1–8): 
 ---
 
 **Total: 23 PRs** — 16 top-level numbered PRs, with PR 7 split into 8 sub-PRs (7a–7f sweep the remaining bundled connectors; 7g is the post-migration cleanup; 7h migrates the criterion benches off concrete-type construction). PR 1–3 are pre-work; PR 4–6 are the core registry plumbing (PR 5 absorbed `http`/`adhoc`/`datagen` as prerequisites for the controller-rewrites, leaving Phase 4b shorter); PR 7a–7f are the remaining mechanical sweeps, PR 7g strips the scaffolding, PR 7h shrinks the public surface; PR 8–11 enable plugins; PR 12–13 harden the build; PR 14–16 expose plugins externally.
+
+---
+
+## Appendix A — Future option: dev-mode lazy platform manifest
+
+The Phase 8.13 design always builds the platform manifest at platform compile time via `feldera-platform-manifest`'s `build.rs`. Without sccache, a clean `cargo build -p pipeline-manager` pays a 5–10 minute first-build cost; subsequent edits are incremental (~80–130 s on a built-in connector edit, near-zero on pipeline-manager-only edits). If that first-build cost ever becomes a meaningful pain point, the structure below splits the cost between dev and prod without touching `dbsp_adapters` itself.
+
+### Sketch
+
+Make the platform manifest's heavy work conditional on a Cargo feature.
+
+```toml
+# crates/platform-manifest/Cargo.toml
+[features]
+default = []
+embedded = ["dep:dbsp_adapters", "dep:feldera-datagen", "dep:feldera-adapterlib", "dep:serde_json"]
+
+[build-dependencies]
+dbsp_adapters     = { path = "../adapters",   optional = true }
+feldera-datagen   = { workspace = true,       optional = true }
+feldera-adapterlib = { workspace = true,      optional = true }
+serde_json        = { workspace = true,       optional = true }
+```
+
+`build.rs` checks `CARGO_FEATURE_EMBEDDED`; when set, walks inventory and writes the real JSON; when unset, writes `"[]"` and exits. `lib.rs` is unchanged (`include_str!` of `OUT_DIR/platform_manifest.json`).
+
+`pipeline-manager` runtime path checks for the empty sentinel and falls back to a runtime describer build:
+
+```rust
+pub fn load_platform_manifest() -> HashMap<...> {
+    if let Ok(parsed) = parse_manifest_json(PLATFORM_MANIFEST_JSON) {
+        if !parsed.is_empty() { return parsed; }
+    }
+    runtime_platform_manifest()  // describer subprocess + disk cache
+}
+```
+
+Production CI builds with `cargo build -p pipeline-manager --features feldera-platform-manifest/embedded`. Dev builds plain. No passthrough feature in pipeline-manager is needed since `feldera-platform-manifest` is a direct dep of pipeline-manager — the `feature/dep` syntax works directly on the command line.
+
+### Pointers for the runtime fallback
+
+- **Restore** `bootstrap_platform_manifest`, `prepare_platform_describer_workspace`, `platform_manifest_path`, and `platform_describer_workspace_dir`. The implementations existed earlier in this codebase's history and can be recovered from git. Sentinel `TenantId(Uuid::nil())` for the platform build's `BuildLogBus` session.
+- **Cache invalidation**: do not roll a hashed-source disk cache. Always invoke `cargo build` in the platform describer workspace; cargo's incremental machinery is the cache. On no source changes, cargo finishes in <1 s and the prior binary runs.
+- **Lockfile**: same seed-from-main-`Cargo.lock` + `--offline` discipline as the per-tenant user describer (Phase 8.4). The platform describer workspace lives at `<working_dir>/platform_describer/<ADAPTERLIB_API_VERSION>/`.
+- **Target sharing**: point the platform describer at the main workspace's `target/` via `CARGO_TARGET_DIR=<dbsp_path>/target` in the spawned cargo's env. Single-instance build (one platform describer per pipeline-manager process), no concurrency concern; full rlib reuse with the rest of the workspace. Per-tenant user describers stay isolated under `<working_dir>/describer/<tenant>/<hash>/target/` to avoid `.cargo-lock` serialization on concurrent tenant edits.
+- **Force-link**: the platform describer's `force_link.rs` includes the built-in datagen line (`generate_force_link_rs(&[], true)`) since its Cargo.toml declares `feldera-datagen`. The user describer remains `false`.
+
+### Trade-off
+
+Dev builds drop ~5–10 min off the clean `cargo build -p pipeline-manager` critical path; the same work moves to first-startup time, after which incremental cargo keeps it cheap. Prod is unchanged from the Phase 8.13 design. Cost: more code (the runtime fallback and the feature gating) and a less uniform mental model — the same binary behaves differently in dev and prod. Worth implementing only if the first-clean-build cost becomes a measured developer-experience problem.
+
+### Alternative: metadata-only feature on `dbsp_adapters`
+
+A more invasive option that shrinks build cost in *both* dev and prod by splitting metadata from impl in `dbsp_adapters`:
+
+- Two paired macros, `register_connector_metadata!` (always compiled) and `register_connector_impl!` (gated by `with-*` features).
+- Two inventory slots: one for metadata (read by the platform manifest's build.rs against `dbsp_adapters` with a new `metadata-only` feature), one for builders (used at pipeline runtime).
+- Each connector module keeps the impl in an inner `#[cfg(feature = "with-foo")] mod impl_section { … }`; the metadata registration sits at module scope and always compiles.
+- Manifest extraction reads only the metadata inventory; the platform-manifest crate's build-deps drop from "dbsp_adapters + datafusion + deltalake + …" to "adapterlib + a few small utility crates" — build-dep tree shrinks to seconds.
+- Runtime dispatch correlates `metadata.name → impl.name` via the two inventories.
+
+This is a structural change to every built-in connector module (~15 sites) and to the descriptor type and macro surface in `feldera-adapterlib`. The `register_connector!` ABI stays bare-wrapper-around-`inventory::submit!`; the new pair is additive. Worth pursuing if Phase 8.13's build-dep cost is unacceptable in CI/release pipelines, since this fixes prod build cost too — the lazy fallback above only fixes dev.

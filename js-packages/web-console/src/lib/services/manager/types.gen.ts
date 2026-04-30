@@ -5555,6 +5555,27 @@ export type GetConfigSessionResponses = {
 
 export type GetConfigSessionResponse = GetConfigSessionResponses[keyof GetConfigSessionResponses]
 
+export type GetConnectorsBuildLogData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/v0/connectors/build-log'
+}
+
+export type GetConnectorsBuildLogErrors = {
+  500: ErrorResponse
+}
+
+export type GetConnectorsBuildLogError =
+  GetConnectorsBuildLogErrors[keyof GetConnectorsBuildLogErrors]
+
+export type GetConnectorsBuildLogResponses = {
+  /**
+   * Live tail of the describer build log.
+   */
+  200: unknown
+}
+
 export type GetConnectorsTomlData = {
   body?: never
   path?: never
