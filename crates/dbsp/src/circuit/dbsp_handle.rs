@@ -282,6 +282,29 @@ pub enum Mode {
     Ephemeral,
 }
 
+/// Whether the circuit runs with microsteps or full steps.
+#[derive(Copy, Clone, Default, PartialEq, Eq, Debug)]
+pub enum StepSize {
+    /// The circuit supports microsteps.
+    ///
+    /// Microsteps break large batches that flow between operators into smaller
+    /// batches, which increases performance.  The common case for DBSP is
+    /// incremental circuits that support microsteps.
+    #[default]
+    Microsteps,
+
+    /// The circuit does not support microsteps.
+    ///
+    /// This setting disables breaking large batches into smaller ones for
+    /// performance.  It also disables optimizations in the ShardAccumulate
+    /// operator that can cause batches of any size to be processed in multiple
+    /// microsteps.
+    ///
+    /// Nonincremental circuits need this setting because their steps cannot be
+    /// divided into microsteps without changing the results.
+    FullSteps,
+}
+
 /// A config for instantiating a multithreaded/multihost runtime to execute
 /// circuits.
 ///
@@ -300,6 +323,9 @@ pub struct CircuitConfig {
     pub pin_cpus: Vec<usize>,
 
     pub mode: Mode,
+
+    /// Whether the circuit can use microsteps.
+    pub step_size: StepSize,
 
     /// Storage configuration. If present, then storage is enabled.
     pub storage: Option<CircuitStorageConfig>,
@@ -439,6 +465,7 @@ impl CircuitConfig {
             max_rss_bytes: None,
             pin_cpus: Vec::new(),
             mode: Mode::Ephemeral,
+            step_size: StepSize::default(),
             storage: None,
             dev_tweaks: DevTweaks::default(),
             exchange_listener: None,
@@ -452,6 +479,11 @@ impl CircuitConfig {
 
     pub fn with_mode(mut self, mode: Mode) -> Self {
         self.mode = mode;
+        self
+    }
+
+    pub fn with_step_size(mut self, step_size: StepSize) -> Self {
+        self.step_size = step_size;
         self
     }
 

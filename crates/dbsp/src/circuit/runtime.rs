@@ -5,6 +5,7 @@ use super::CircuitConfig;
 use super::dbsp_handle::{Layout, Mode};
 use crate::SchedulerError;
 use crate::circuit::checkpointer::Checkpointer;
+use crate::circuit::dbsp_handle::StepSize;
 use crate::error::Error as DbspError;
 use crate::operator::communication::Exchange;
 use crate::storage::backend::StorageBackend;
@@ -261,6 +262,7 @@ struct RuntimeStorage {
 struct RuntimeInner {
     layout: Layout,
     mode: Mode,
+    step_size: StepSize,
     dev_tweaks: DevTweaks,
 
     /// User-configured process memory limit.
@@ -484,6 +486,7 @@ impl RuntimeInner {
             pin_cpus_bg,
             layout: config.layout,
             mode: config.mode,
+            step_size: config.step_size,
             dev_tweaks: config.dev_tweaks,
             max_rss: config.max_rss_bytes,
             process_rss: AtomicU64::new(process_rss_bytes().unwrap_or_default()),
@@ -668,7 +671,10 @@ impl Runtime {
     where
         F: FnOnce(Parker) + Clone + Send + 'static,
     {
-        let config: CircuitConfig = config.into();
+        let mut config: CircuitConfig = config.into();
+        if config.step_size == StepSize::FullSteps {
+            config.dev_tweaks.splitter_chunk_size_records = Some(u64::MAX);
+        }
 
         let workers = config.layout.local_workers();
         let num_merger_threads = config.num_merger_threads();
@@ -1035,6 +1041,10 @@ impl Runtime {
 
     pub fn get_mode(&self) -> Mode {
         self.inner().mode
+    }
+
+    pub fn get_step_size(&self) -> StepSize {
+        self.inner().step_size
     }
 
     /// Configure the number of tuples a stateful operator outputs per step during replay.
