@@ -263,7 +263,8 @@ public class ExpandSafeCasts extends ExpressionTranslator {
             } else if (sourceType.mayBeNull && !type.is(DBSPTypeVariant.class)) {
                 // Cast from Option<T> to T
                 // Only VARIANT has a different implementation
-                result = expression.source.unwrap("NULL value should be impossible here").applyCloneIfNeeded();
+                result = expression.source.unwrap(node, "NULL value should be impossible here")
+                        .applyCloneIfNeeded();
             }
         } else if (type.is(DBSPTypeVariant.class)) {
             // convert to an unsafe cast, since it cannot fail

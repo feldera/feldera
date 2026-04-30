@@ -84,7 +84,7 @@ public final class DBSPFieldExpression extends DBSPExpression {
                     // The result of x.unwrap().1 may be
                     // x.1 or x.1.unwrap(), depending on whether the
                     // field 1 is nullable or not.
-                    result = result.neverFailsUnwrap();
+                    result = result.neverFailsUnwrap(this.expression.getNode());
                 return result;
             }
         }

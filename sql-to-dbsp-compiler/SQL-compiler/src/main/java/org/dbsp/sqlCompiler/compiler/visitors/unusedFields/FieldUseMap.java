@@ -319,7 +319,7 @@ public class FieldUseMap {
                     // For raw tuples never discard fields, rather return Tup0.
                     DBSPExpression field;
                     if (from.getType().mayBeNull) {
-                        field = from.neverFailsUnwrap().field(i);
+                        field = from.neverFailsUnwrap(from.getNode()).field(i);
                     } else {
                         field = from.field(i);
                     }

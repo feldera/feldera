@@ -684,4 +684,41 @@ public class IncrementalRegression2Tests extends SqlIoTest {
             ccs.step(new Change("T", delta), new Change("V", outputDelta));
         }
     }
+
+
+    @Test
+    public void testSumCase() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(id INT, bid INT, ts TIMESTAMP, ts0 TIMESTAMP, s INT);
+                CREATE VIEW V AS
+                SELECT id, bid,
+                    SUM(
+                        CASE
+                            WHEN ts >= (ts0 - INTERVAL '180' DAY)
+                            AND NOT s IS NULL THEN 1
+                            ELSE 0
+                        END
+                    )
+                FROM T GROUP BY id, bid;
+                """);
+        ccs.stepWeightOne("", """
+                 id | bid | sum
+                ----------------""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(1, 1, 0, 0, 0);", """
+                 id | bid | sum
+                ----------------
+                 1  | 1   | 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(NULL, NULL, NULL, NULL, NULL);", """
+                 id | bid | sum
+                ----------------
+                    |     | 0""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(0, 0, NULL, NULL, NULL);", """
+                 id | bid | sum
+                ----------------
+                 0  | 0   | 0""");
+        ccs.step("REMOVE FROM T VALUES(0, 0, NULL, NULL, NULL);", """
+                 id | bid | sum | weight
+                -------------------------
+                 0  | 0   | 0 | -1""");
+    }
 }

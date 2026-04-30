@@ -155,7 +155,7 @@ public class Simplify extends ExpressionTranslator {
     @Override
     public void postorder(DBSPUnwrapExpression expression) {
         DBSPExpression source = this.getE(expression.expression);
-        DBSPExpression result = source.unwrap(expression.message);
+        DBSPExpression result = source.unwrap(expression.getNode(), expression.message);
         this.map(expression, result);
     }
 

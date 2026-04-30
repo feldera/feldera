@@ -600,7 +600,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     "TIMESTAMP used for TUMBLE function is nullable; this can cause runtime crashes.\n" +
                             "We recommend filtering out null values before applying the TUMBLE function");
         }
-        args[0] = row.deref().field(timestampIndex).unwrapIfNullable("TUMBLE timestamp should never be NULL");
+        args[0] = row.deref().field(timestampIndex)
+                .unwrapIfNullable(node, "TUMBLE timestamp should never be NULL");
         args[1] = interval;
         if (start != null)
             args[2] = start;
@@ -922,7 +923,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPExpression flattenField = kv.field(1).deref().field(i).applyCloneIfNeeded();
             // Here we correct from the type produced by the Folder (typeFromAggregate) to the
             // actual expected type aggType (which is the tuple of aggTypes).
-            DBSPExpression cast = flattenField.cast(node, aggTypes[i], DBSPCastExpression.CastType.SqlUnsafe);
+            CalciteObject aggNode = CalciteObject.create(aggregate, aggregate.getAggCallList().get(i));
+            DBSPExpression cast = flattenField.cast(aggNode, aggTypes[i], DBSPCastExpression.CastType.SqlUnsafe);
             flattenFields[aggregate.getGroupCount() + i] = cast;
         }
 

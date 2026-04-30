@@ -566,7 +566,7 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> imple
         if (this.done(node))
             return;
         DBSPExpression expression = this.getE(node.expression);
-        this.map(node, new DBSPUnwrapExpression(node.message, expression));
+        this.map(node, new DBSPUnwrapExpression(node.getNode(), node.message, expression));
     }
 
     @Override

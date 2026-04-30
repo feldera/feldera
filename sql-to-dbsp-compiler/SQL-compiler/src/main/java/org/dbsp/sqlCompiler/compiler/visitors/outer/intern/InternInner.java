@@ -270,7 +270,7 @@ public class InternInner extends ExpressionTranslator {
                 Utilities.enforce(internedType.code == originalType.code);
                 DBSPTypeTupleBase tuple = originalType.to(DBSPTypeTupleBase.class);
                 DBSPExpression[] fields = new DBSPExpression[tuple.size()];
-                DBSPExpression safeSource = interned.unwrapIfNullable("Tuple should not be NULL");
+                DBSPExpression safeSource = interned.unwrapIfNullable(node, "Tuple should not be NULL");
                 for (int i = 0; i < tuple.size(); i++) {
                     DBSPExpression simplified = Simplify.simplify(this.compiler, safeSource.field(i));
                     fields[i] = callUninternRecursive(simplified, tuple.getFieldType(i));
@@ -368,8 +368,8 @@ public class InternInner extends ExpressionTranslator {
             DBSPExpression[] rExpr = new DBSPExpression[lTuple.size()];
             for (int i = 0; i < lTuple.size(); i++) {
                 var fields = this.uninternBothOrNone(
-                        left.unwrapIfNullable("Cannot be NULL").field(i),
-                        right.unwrapIfNullable("Cannot be NULL").field(i),
+                        left.unwrapIfNullable(left.getNode(), "Cannot be NULL").field(i),
+                        right.unwrapIfNullable(right.getNode(), "Cannot be NULL").field(i),
                         lTuple.getFieldType(i), rTuple.getFieldType(i));
                 lExpr[i] = this.applyClone(fields.left);
                 rExpr[i] = this.applyClone(fields.right);
@@ -488,7 +488,7 @@ public class InternInner extends ExpressionTranslator {
                 source = this.uninternIfNecessary(expression.expression);
             }
         }
-        DBSPExpression result = new DBSPUnwrapExpression(expression.message, source);
+        DBSPExpression result = new DBSPUnwrapExpression(expression.getNode(), expression.message, source);
         this.map(expression, result);
     }
 

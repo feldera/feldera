@@ -83,7 +83,8 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPExpression field1 = var.field(1).deref();
         boolean nullable = field1.getType().mayBeNull;
         List<DBSPExpression> resultFields = Linq.map(fieldMap.deref().getUsedFields(),
-                f -> field1.deepCopy().unwrapIfNullable("Field should not be NULL").field(f).applyCloneIfNeeded());
+                f -> field1.deepCopy().unwrapIfNullable(field1.getNode(), "Field should not be NULL")
+                        .field(f).applyCloneIfNeeded());
         DBSPExpression rightSide = new DBSPTupleExpression(resultFields, nullable);
         if (nullable)
             rightSide = new DBSPIfExpression(node, field1.is_null(), rightSide.getType().none(), rightSide);

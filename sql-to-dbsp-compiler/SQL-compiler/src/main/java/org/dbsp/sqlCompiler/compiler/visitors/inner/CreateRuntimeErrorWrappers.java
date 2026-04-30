@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts.ExpandSafeCasts;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts.ExpandUnsafeCasts;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -78,15 +79,16 @@ public class CreateRuntimeErrorWrappers extends ExpressionTranslator {
         // Wrap the cast into an error handler
         final boolean hasSourcePosition = this.operatorContext != null;
         final DBSPHandleErrorExpression.RuntimeBehavior behavior;
+        SourcePositionRange pos = expression.getSourcePosition();
         if (expression.safe.isSafe()) {
             behavior = DBSPHandleErrorExpression.RuntimeBehavior.ReturnNone;
-        } else if (source.getSourcePosition().isValid() && hasSourcePosition) {
+        } else if (pos.isValid() && hasSourcePosition) {
             behavior = DBSPHandleErrorExpression.RuntimeBehavior.PanicWithSource;
         } else {
             behavior = DBSPHandleErrorExpression.RuntimeBehavior.Panic;
         }
         DBSPHandleErrorExpression handler = new DBSPHandleErrorExpression(
-                    expression.getNode(), this.getIndex(expression.getSourcePosition().start), behavior, source,
+                    expression.getNode(), this.getIndex(pos.start), behavior, source,
                     hasSourcePosition);
         this.map(expression, handler);
     }
@@ -96,20 +98,22 @@ public class CreateRuntimeErrorWrappers extends ExpressionTranslator {
         if (this.translationMap.containsKey(expression))
             return;
         DBSPExpression source = this.getE(expression.expression);
-        DBSPExpression unwrap = new DBSPUnwrapExpression(expression.message, source.applyCloneIfNeeded());
+        DBSPExpression unwrap = new DBSPUnwrapExpression(
+                expression.getNode(), expression.message, source.applyCloneIfNeeded());
         if (expression.neverFails()) {
             this.map(expression, unwrap);
             return;
         }
         final DBSPHandleErrorExpression.RuntimeBehavior behavior;
         final boolean hasSourcePosition = this.operatorContext != null;
-        if (source.getSourcePosition().isValid() && hasSourcePosition) {
+        SourcePositionRange pos = expression.getSourcePosition();
+        if (pos.isValid() && hasSourcePosition) {
             behavior = DBSPHandleErrorExpression.RuntimeBehavior.PanicWithSource;
         } else {
             behavior = DBSPHandleErrorExpression.RuntimeBehavior.Panic;
         }
         DBSPHandleErrorExpression handler = new DBSPHandleErrorExpression(
-                expression.getNode(), this.getIndex(expression.getSourcePosition().start),
+                expression.getNode(), this.getIndex(pos.start),
                 behavior, unwrap, hasSourcePosition);
         this.map(expression, handler);
     }
