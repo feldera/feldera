@@ -27,6 +27,7 @@ import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
@@ -46,6 +47,7 @@ import java.util.Objects;
 
 /** Information used to translate INSERT or DELETE SQL statements */
 class ModifyTableTranslation {
+    private final TableModifyStatement statement;
     /** Result of the VALUES expression. */
     @Nullable
     private DBSPZSetExpression valuesTranslation;
@@ -63,6 +65,7 @@ class ModifyTableTranslation {
                                   CreateTableStatement tableDefinition,
                                   @Nullable SqlNodeList columnList,
                                   TypeCompiler compiler) {
+        this.statement = statement;
         this.valuesTranslation = null;
         this.columnPermutation = null;
         DBSPTypeTuple sourceType = tableDefinition.getRowTypeAsTuple(compiler);
@@ -97,12 +100,17 @@ class ModifyTableTranslation {
         }
     }
 
+    @Nullable
     public DBSPZSetExpression getTranslation() {
-        return Objects.requireNonNull(this.valuesTranslation);
+        return this.valuesTranslation;
     }
 
     public DBSPTypeTuple getResultType() {
         return Objects.requireNonNull(this.resultType);
+    }
+
+    public SourcePositionRange getPosition() {
+        return this.statement.getPosition();
     }
 
     DBSPExpression permuteColumns(DBSPExpression expression) {

@@ -2329,9 +2329,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTypeTuple resultType;
         if (this.modifyTableTranslation != null) {
             resultType = this.modifyTableTranslation.getResultType();
-            if (sourceType.size() != resultType.size())
-                throw new InternalCompilerError("Expected a tuple with " + resultType.size() +
-                        " values but got " + values, node);
+            if (sourceType.size() != resultType.size()) {
+                this.compiler.reportError(this.modifyTableTranslation.getPosition(),
+                        "Schema error",
+                        "VALUES has " + sourceType.size() + " columns but " + resultType.size() + " are expected");
+                // Ignore value
+                return;
+            }
         } else {
             resultType = sourceType;
         }
@@ -3076,6 +3080,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return o;
     }
 
+    @Nullable
     DBSPNode compileModifyTable(TableModifyStatement modify) {
         // The type of the data must be extracted from the modified table
         boolean isInsert = modify.insert;
@@ -3086,6 +3091,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
         } else {
             SqlRemove remove = (SqlRemove) modify.parsedStatement.statement();
             targetColumnList = remove.getTargetColumnList();
+        }
+        if (!this.options.ioOptions.testing) {
+            this.compiler.reportWarning(modify.getPosition(), "Statement ignored",
+                    modify.getSqlOperationName() + " has no effect in a pipeline definition");
         }
         CreateTableStatement def = this.tableContents.getTableDefinition(modify.tableName);
         this.modifyTableTranslation = new ModifyTableTranslation(
@@ -3123,9 +3132,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
             throw new UnimplementedException("statement of this form not supported",
                     modify.getCalciteObject());
         }
+        this.modifyTableTranslation = null;
+        if (result == null)
+            return result;
         if (!isInsert)
             result = result.negate();
-        this.modifyTableTranslation = null;
         this.tableContents.addToTable(modify.tableName, result, this.compiler);
         return result;
     }

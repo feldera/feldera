@@ -413,6 +413,7 @@ public class BaseSQLTests {
         if (Utilities.inCI())
             // Set to compile to multiple crates
             options.ioOptions.crates = "x";
+        options.ioOptions.testing = true;
         options.languageOptions.throwOnError = true;
         options.languageOptions.generateInputForEveryTable = true;
         options.ioOptions.quiet = true;
