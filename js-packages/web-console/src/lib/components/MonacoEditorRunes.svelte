@@ -104,6 +104,21 @@
     }
     monaco = await loader.init()
     editor = monaco.editor.create(container, {
+      // TODO: Workaround for Windows-only cursor mis-positioning on mouse click
+      // (cursor lands progressively further off the clicked glyph along the line;
+      // a line that contains an emoji renders correctly because Monaco's
+      // monospace fast path is disabled per-line for complex characters).
+      // Suspected cause: at editor-create time the configured webfont has not
+      // finished loading, so Monaco measures `typicalHalfwidthCharacterWidth`
+      // against a fallback font; on Windows this fallback's advance width
+      // differs from the real font, on Linux it happens to match — hence the
+      // OS asymmetry. Forcing the variable-width path globally avoids the bad
+      // cached measurement at the cost of a small per-render measurement.
+      // Proper fix to try once a Windows test machine is available: drop this
+      // option and instead `await document.fonts.ready` before
+      // `monaco.editor.create`, plus call `monaco.editor.remeasureFonts()`
+      // after any subsequent webfont swap.
+      disableMonospaceOptimizations: true,
       ...options,
       model: null
     })
