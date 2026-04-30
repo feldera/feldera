@@ -1075,7 +1075,7 @@ where
             self.empty_output.set(true);
 
             let mut result = self.output_pairs_factory.default_box();
-            result.reserve(chunk_size);
+            result.try_reserve(chunk_size);
 
             let mut delta_cursor = delta.cursor();
             let mut input_trace_cursor = input_trace.unwrap().cursor();

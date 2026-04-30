@@ -362,7 +362,7 @@ where
             // keys in each component below.  For this, we need to extend
             // `Cursor::seek` to return the number of keys skipped over by the search.
             let mut tuples = self.factories.weighted_items_factory().default_box();
-            tuples.reserve(chunk_size);
+            tuples.try_reserve(chunk_size);
 
             let mut tuple = self.factories.weighted_item_factory().default_box();
             let mut key = self.factories.key_factory().default_box();

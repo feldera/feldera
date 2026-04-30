@@ -5,7 +5,7 @@ use crate::{
         circuit_builder::StreamId,
         metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::Operator,
-        splitter_output_chunk_size,
+        splitter_output_chunk_size, splitter_output_first_chunk_size,
     },
     circuit_cache_key,
     dynamic::{DataTrait, Erase},
@@ -286,7 +286,10 @@ where
                 return;
             };
 
-            let mut builder = <OrdIndexedZSet<K, V> as Batch>::Builder::with_capacity(&self.factories, chunk_size, chunk_size);
+            // Limit the initial capacity of the builder in case the chunk size
+            // is bigger than memory (e.g. `usize::MAX`).
+            let capacity = splitter_output_first_chunk_size();
+            let mut builder = <OrdIndexedZSet<K, V> as Batch>::Builder::with_capacity(&self.factories, capacity, capacity);
 
             let mut delta_cursor = delta.cursor();
             let mut trace_cursor = trace.unwrap().cursor();

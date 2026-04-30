@@ -316,11 +316,40 @@ pub struct CircuitConfig {
 
 /// Returns the chunk size for splitter operators, in records.
 ///
-/// Operators that split their output into multiple chunks, such as joins, distinct, and aggregation,
-/// should attempt to limit their output to this chunk size.
+/// Operators that split their output into multiple chunks, such as joins,
+/// distinct, and aggregation, should attempt to limit their output to this
+/// chunk size.
 pub fn splitter_output_chunk_size() -> usize {
     Runtime::with_dev_tweaks(|d| d.splitter_chunk_size_records() as usize)
 }
+
+/// Returns the number of records to preallocate in the first iteration of loops
+/// that break records into groups by the chunk size.
+///
+/// Operators that split their output into multiple chunks, such as joins,
+/// distinct, and aggregation, should attempt to limit their output to the chunk
+/// size returned by [splitter_output_chunk_size].  However,
+/// [splitter_output_chunk_size] can return an arbitrarily large value, even
+/// [usize::MAX].  This means that blindly allocating enough memory for the
+/// specified number of records can panic.  Instead, code should allocate at
+/// most `splitter_output_first_chunk_size` records in the first iteration of a
+/// loop that splits records by the chunk size.  In later iterations, after the
+/// configured chunk size has been reached once (and thus one knows that the
+/// given number of records fits in memory), the code can use the configured
+/// chunk size directly.
+pub fn splitter_output_first_chunk_size() -> usize {
+    splitter_output_chunk_size().min(MAX_FIRST_CHUNK_SIZE)
+}
+
+/// The chunk size returned by [splitter_output_chunk_size] can be arbitrarily
+/// large, even [usize::MAX].  This means that blindly allocating enough memory
+/// for the specified number of records can panic.  Instead, code should
+/// allocate at most memory for `MAX_FIRST_CHUNK_SIZE` records in the first
+/// iteration of a loop that splits records by the chunk size.  In later
+/// iterations, after the configured chunk size has been reached once (and thus
+/// one knows that the given number of records fits in memory), the code can use
+/// the configured chunk size directly.
+pub const MAX_FIRST_CHUNK_SIZE: usize = 50_000;
 
 pub fn balancer_min_absolute_improvement_threshold() -> u64 {
     Runtime::with_dev_tweaks(|d| d.balancer_min_absolute_improvement_threshold())

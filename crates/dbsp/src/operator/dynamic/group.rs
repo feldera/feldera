@@ -473,7 +473,7 @@ where
             );
 
             let mut buffer = self.output_factories.weighted_items_factory().default_box();
-            buffer.reserve(2 * chunk_size);
+            buffer.try_reserve(chunk_size.saturating_mul(2));
             let monotonicity = self.transformer.borrow().monotonicity();
 
             while delta_cursor.key_valid() {

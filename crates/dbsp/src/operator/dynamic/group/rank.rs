@@ -3,7 +3,7 @@ use crate::{
     algebra::{OrdIndexedZSet, OrdIndexedZSetFactories},
     circuit::{
         OwnershipPreference, circuit_builder::register_replay_stream, metadata::OperatorMeta,
-        operator_traits::Operator, splitter_output_chunk_size,
+        operator_traits::Operator, splitter_output_chunk_size, splitter_output_first_chunk_size,
     },
     dynamic::{
         ClonableTrait, DataTrait, DowncastTrait, DynData, DynPair, Erase, Factory, WithFactory,
@@ -574,9 +574,13 @@ where
             //     println!(" ({:?}, {:?}, {:?})", k, v, w);
             // }
 
+            // Limit the initial capacity of the builder in case the chunk size
+            // is bigger than memory (e.g. `usize::MAX`).
+            let capacity = splitter_output_first_chunk_size() + 1;
+
             let mut delta_cursor = delta.cursor();
             let mut input_trace_cursor = input_trace.unwrap().cursor();
-            let mut builder = <RankedBatch::<K, V> as Batch>::Builder::with_capacity(&self.batch_factories, chunk_size + 1, chunk_size + 1);
+            let mut builder = <RankedBatch::<K, V> as Batch>::Builder::with_capacity(&self.batch_factories, capacity, capacity);
 
             let mut out_val = self.batch_factories.val_factory().default_box();
             let mut current_val = self.val_factory.default_box();

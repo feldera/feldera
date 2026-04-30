@@ -142,6 +142,28 @@ impl RawVec {
         self.realloc(new_capacity);
     }
 
+    pub fn try_reserve(&mut self, additional: usize) {
+        let Some(required) = self.len().checked_add(additional) else {
+            return;
+        };
+        if required <= self.capacity() {
+            return;
+        }
+
+        debug_assert_ne!(required, 0);
+        let Some(mut new_capacity) = self.try_next_capacity(required) else {
+            return;
+        };
+        while new_capacity < required {
+            let Some(next_capacity) = self.try_next_capacity(new_capacity) else {
+                return;
+            };
+            new_capacity = next_capacity;
+        }
+
+        self.realloc(new_capacity);
+    }
+
     pub fn reserve_exact(&mut self, additional: usize) {
         let required = self.len() + additional;
         if required <= self.capacity() {
@@ -721,6 +743,28 @@ impl RawVec {
         }
     }
 
+    /// Selects the given capacity's next growth target
+    ///
+    /// Expects that the current element's size is non-zero
+    // TODO: We could be allocator-aware here and specialize for something like
+    // mimalloc here
+    fn try_next_capacity(&self, capacity: usize) -> Option<usize> {
+        debug_assert_ne!(self.val_size, 0);
+        let size = self.val_size;
+
+        if capacity == 0 {
+            Some(max(128 / size, 1))
+
+            // For large vectors, grow by 2x
+        } else if capacity > (4096 * 32) / size {
+            capacity.checked_mul(2)
+
+            // For medium vectors, grow by 1.5x
+        } else {
+            Some(capacity.checked_mul(3)?.div_ceil(2))
+        }
+    }
+
     fn next_aligned_capacity(&self, capacity: usize) -> usize {
         let remaining = capacity % self.align;
         if remaining == 0 {
@@ -1233,6 +1277,10 @@ impl<T> LeanVec<T> {
 
     pub fn reserve(&mut self, additional: usize) {
         self.vec.reserve(additional)
+    }
+
+    pub fn try_reserve(&mut self, additional: usize) {
+        self.vec.try_reserve(additional)
     }
 
     pub fn reserve_exact(&mut self, additional: usize) {

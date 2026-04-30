@@ -6,7 +6,9 @@ use dyn_clone::clone_box;
 use crate::{
     Circuit, Position, RootCircuit, Scope, Stream, ZWeight,
     algebra::{IndexedZSet, ZBatchReader},
-    circuit::{operator_traits::Operator, splitter_output_chunk_size},
+    circuit::{
+        operator_traits::Operator, splitter_output_chunk_size, splitter_output_first_chunk_size,
+    },
     dynamic::{ClonableTrait, DynData, Erase},
     operator::{
         async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper},
@@ -167,10 +169,13 @@ where
             let mut delta_cursor = delta.cursor();
             let mut output_trace_cursor = output_trace.cursor();
 
+            // Limit the initial capacity of the builder in case the chunk size
+            // is bigger than memory (e.g. `usize::MAX`).
+            let key_capacity = splitter_output_first_chunk_size();
             let mut builder = OZ::Builder::with_capacity(
                 &self.output_factories,
-                chunk_size,
-                chunk_size + 1,
+                key_capacity,
+                key_capacity + 1,
             );
 
             let mut old = self.output_factories.val_factory().default_box();

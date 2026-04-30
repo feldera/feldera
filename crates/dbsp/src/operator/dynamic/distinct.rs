@@ -5,7 +5,7 @@ use crate::circuit::circuit_builder::StreamId;
 use crate::circuit::metadata::{
     BatchSizeStats, INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT, OUTPUT_BATCHES_STATS,
 };
-use crate::circuit::splitter_output_chunk_size;
+use crate::circuit::{splitter_output_chunk_size, splitter_output_first_chunk_size};
 use crate::dynamic::{ClonableTrait, Data, DynData};
 use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
 use crate::trace::spine_async::{SpineCursor, WithSnapshot};
@@ -417,6 +417,7 @@ struct DistinctIncrementalTotal<Z: IndexedZSet, I> {
     output_batch_stats: RefCell<BatchSizeStats>,
 
     chunk_size: usize,
+    first_chunk_size: usize,
 
     _type: PhantomData<(Z, I)>,
 }
@@ -429,6 +430,7 @@ impl<Z: IndexedZSet, I> DistinctIncrementalTotal<Z, I> {
             input_batch_stats: RefCell::new(BatchSizeStats::new()),
             output_batch_stats: RefCell::new(BatchSizeStats::new()),
             chunk_size: splitter_output_chunk_size(),
+            first_chunk_size: splitter_output_first_chunk_size(),
             _type: PhantomData,
         }
     }
@@ -517,7 +519,10 @@ where
 
             self.input_batch_stats.borrow_mut().add_batch(delta.len());
 
-            let mut builder = Z::Builder::with_capacity(&self.input_factories, self.chunk_size, self.chunk_size);
+            // Limit the initial capacity of the builder in case the chunk size
+            // is bigger than memory (e.g. `usize::MAX`).
+            let capacity = self.first_chunk_size;
+            let mut builder = Z::Builder::with_capacity(&self.input_factories, capacity, capacity);
             let mut delta_cursor = delta.cursor();
 
             let fetched = if Runtime::with_dev_tweaks(|d| d.fetch_distinct == Some(true)) {
@@ -638,6 +643,7 @@ where
     output_batch_stats: RefCell<BatchSizeStats>,
 
     chunk_size: usize,
+    first_chunk_size: usize,
 
     _type: PhantomData<(Z, T)>,
 }
@@ -669,6 +675,7 @@ where
             input_batch_stats: RefCell::new(BatchSizeStats::new()),
             output_batch_stats: RefCell::new(BatchSizeStats::new()),
             chunk_size: splitter_output_chunk_size(),
+            first_chunk_size: splitter_output_first_chunk_size(),
             _type: PhantomData,
         }
     }
@@ -1000,8 +1007,12 @@ where
             Self::init_distinct_vals(&mut self.distinct_vals.borrow_mut(), Some(time.clone()));
             self.empty_input.set(delta.is_empty());
 
+            // Limit the initial capacity of the builder in case the chunk size
+            // is bigger than memory (e.g. `usize::MAX`).
+            let capacity = self.first_chunk_size;
+
             // We iterate over keys and values in order, so it is safe to use `Builder`.
-            let result_builder = Z::Builder::with_capacity(&self.input_factories, self.chunk_size, self.chunk_size);
+            let result_builder = Z::Builder::with_capacity(&self.input_factories, capacity, capacity);
             let mut result_builder = TupleBuilder::new(&self.input_factories, result_builder);
 
             let mut delta_cursor = delta.cursor();

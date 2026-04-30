@@ -661,7 +661,7 @@ where
             let weighted_items_factory = self.factories.output_factories.weighted_items_factory();
 
             let mut output_tuples = weighted_items_factory.default_box();
-            output_tuples.reserve(chunk_size);
+            output_tuples.try_reserve(chunk_size);
 
             // Timestamps that need to be recomputed for each key, created here for allocation
             // reuse across keys.
