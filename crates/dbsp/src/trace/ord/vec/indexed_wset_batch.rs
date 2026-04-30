@@ -1,6 +1,4 @@
-use crate::storage::file::{
-    FilterStats, SerializerInner, TouchedWindowCount, TouchedWindowCounter,
-};
+use crate::storage::file::{FilterStats, SerializerInner, TouchedWindowCount};
 use crate::trace::ord::merge_batcher::MergeBatcher;
 use crate::{
     DBData, DBWeight, Error, NumEntries,
@@ -189,14 +187,6 @@ where
         diffs: Box<DynVec<R>>,
         negative_weight_count: u64,
     ) -> Self {
-        let mut touched_window_counter = Some(TouchedWindowCounter::default());
-        for key in keys.dyn_iter() {
-            if let Some(counter) = touched_window_counter.as_mut()
-                && !counter.push_key(key)
-            {
-                touched_window_counter = None;
-            }
-        }
         Self {
             layer: Layer::from_parts(
                 &factories.layer_factories,
@@ -206,9 +196,7 @@ where
             ),
             factories,
             negative_weight_count,
-            touched_window_count: touched_window_counter
-                .map(TouchedWindowCounter::finish)
-                .unwrap_or_default(),
+            touched_window_count: TouchedWindowCount::default(),
         }
     }
 }
@@ -722,8 +710,6 @@ where
     vals: Box<DynVec<V>>,
     diffs: Box<DynVec<R>>,
     negative_weight_count: u64,
-    #[size_of(skip)]
-    touched_window_counter: Option<TouchedWindowCounter>,
 }
 
 impl<K, V, R, O> VecIndexedWSetBuilder<K, V, R, O>
@@ -860,7 +846,6 @@ where
             vals,
             diffs,
             negative_weight_count: 0,
-            touched_window_counter: Some(TouchedWindowCounter::default()),
         }
     }
 
@@ -873,20 +858,10 @@ where
 
     fn push_key(&mut self, key: &K) {
         self.keys.push_ref(key);
-        if let Some(counter) = self.touched_window_counter.as_mut()
-            && !counter.push_key(key)
-        {
-            self.touched_window_counter = None;
-        }
         self.pushed_key();
     }
 
     fn push_key_mut(&mut self, key: &mut K) {
-        if let Some(counter) = self.touched_window_counter.as_mut()
-            && !counter.push_key(key)
-        {
-            self.touched_window_counter = None;
-        }
         self.keys.push_val(key);
         self.pushed_key();
     }

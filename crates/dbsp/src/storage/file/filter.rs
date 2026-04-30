@@ -17,6 +17,13 @@ pub(crate) use roaring::TouchedWindowCounter;
 pub use roaring::TrackingRoaringBitmap;
 pub use stats::{FilterKind, FilterStats, TrackingFilterStats};
 
+/// Whether writers should collect extra metadata needed by the roaring
+/// predictor. This is deliberately separate from the final filter choice so
+/// `enable_roaring=false` can avoid the hot-path accounting entirely.
+pub(crate) fn collect_roaring_metadata() -> bool {
+    Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.enable_roaring())
+}
+
 /// In-memory representation of the per-batch key filter.
 #[derive(Debug)]
 pub enum BatchKeyFilter {
@@ -57,6 +64,7 @@ impl BatchKeyFilter {
     ///
     /// Keys must be pushed in sorted order. The roaring path uses an O(1)
     /// append; the Bloom path is order-independent.
+    #[inline(always)]
     pub(crate) fn push_key<K>(&mut self, key: &K)
     where
         K: DataTrait + ?Sized,

@@ -6,7 +6,7 @@ use dyn_clone::clone_box;
 use roaring::RoaringBitmap;
 use size_of::SizeOf;
 use std::{io, mem::size_of_val};
-use tracing::debug;
+use tracing::{debug, error};
 
 /// Roaring bitmap wrapper that tracks hit/miss counts during membership probes.
 #[derive(Debug)]
@@ -132,6 +132,7 @@ impl TrackingRoaringBitmap {
 pub(crate) struct TouchedWindowCounter {
     min: Option<Box<DynData>>,
     windows: RoaringBitmap,
+    last_window: Option<u32>,
 }
 
 impl Default for TouchedWindowCounter {
@@ -139,11 +140,37 @@ impl Default for TouchedWindowCounter {
         Self {
             min: None,
             windows: RoaringBitmap::new(),
+            last_window: None,
         }
     }
 }
 
 impl TouchedWindowCounter {
+    /// Appends a touched 16-bit window.
+    ///
+    /// Consecutive keys commonly map to the same window; track the last window
+    /// locally so duplicates do not hit Roaring. New windows should be strictly
+    /// increasing because batch builders append sorted keys.
+    fn push_window(&mut self, window: u32) -> bool {
+        if self.last_window == Some(window) {
+            return true;
+        }
+
+        if let Err(error) = self.windows.try_push(window) {
+            error!(
+                ?error,
+                window,
+                last_window = ?self.last_window,
+                "touched-window counter observed out-of-order keys; \
+                 exact touched-window metadata disabled",
+            );
+            return false;
+        }
+
+        self.last_window = Some(window);
+        true
+    }
+
     /// Records `key` and returns `true` while the exact touched-window count
     /// remains representable in the roaring `u32` offset domain.
     ///
@@ -155,10 +182,7 @@ impl TouchedWindowCounter {
     {
         match self.min.as_deref() {
             Some(min) => match key.roaring_u32_offset_dyn(min) {
-                Some(offset) => {
-                    self.windows.insert(offset >> 16);
-                    true
-                }
+                Some(offset) => self.push_window(offset >> 16),
                 None => false,
             },
             None => {
@@ -166,8 +190,7 @@ impl TouchedWindowCounter {
                     return false;
                 }
                 self.min = Some(clone_box(key.as_data()));
-                self.windows.insert(0);
-                true
+                self.push_window(0)
             }
         }
     }
@@ -202,6 +225,7 @@ pub(crate) struct RoaringLookupStats {
 impl RoaringLookupStats {
     const LOOKUP_ROARING_AFFINE_WINDOW_SLOPE: f64 = 1_980.0;
     const LOOKUP_ROARING_AFFINE_WINDOW_INTERCEPT: f64 = -10_000_000.0;
+    const LOOKUP_ROARING_SCORE_THRESHOLD: f64 = 1.00;
     const OVERLAP_FACTOR_DAMPING: f64 = 0.25;
     const U32_CONTAINER_COUNT: usize = 1 << 16;
 
@@ -303,12 +327,14 @@ impl RoaringLookupStats {
             + Self::LOOKUP_ROARING_AFFINE_WINDOW_INTERCEPT)
             .max(1.0);
         let lookup_score = self.batch_keys / lookup_required_keys;
-        let prefers_roaring = lookup_score >= 1.0;
+        let lookup_score_threshold = Self::LOOKUP_ROARING_SCORE_THRESHOLD;
+        let prefers_roaring = lookup_score >= lookup_score_threshold;
         debug!(
             batch_keys = self.batch_keys,
             estimated_touched_containers = self.estimated_touched_containers,
             lookup_required_keys,
             lookup_score,
+            lookup_score_threshold,
             prefers_roaring,
             "roaring lookup prediction",
         );

@@ -1,5 +1,7 @@
 use crate::storage::buffer_cache::CacheStats;
-use crate::storage::file::{FilterKind, FilterStats, TouchedWindowCount, TouchedWindowCounter};
+use crate::storage::file::{
+    FilterKind, FilterStats, TouchedWindowCount, TouchedWindowCounter, collect_roaring_metadata,
+};
 use crate::trace::BatchLocation;
 use crate::trace::cursor::Position;
 use crate::trace::ord::file::UnwrapStorage;
@@ -736,7 +738,7 @@ where
             time_diffs: factories.timediff_factory.default_box(),
             num_tuples: 0,
             stats: BatchMetadata::default(),
-            touched_window_counter: Some(TouchedWindowCounter::default()),
+            touched_window_counter: collect_roaring_metadata().then(TouchedWindowCounter::default),
         }
     }
 
@@ -750,11 +752,15 @@ where
         I: IntoIterator<Item = &'a B> + Clone,
     {
         let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
-        let filter_plan = FilterPlan::from_batches(batches.clone());
-        let key_filter = filter_plan.map_or_else(
-            || FilterPlan::<K>::decide_filter(None, key_capacity),
-            |filter_plan| FilterPlan::decide_filter(Some(&filter_plan), key_capacity),
-        );
+        let key_filter = if collect_roaring_metadata() {
+            let filter_plan = FilterPlan::from_batches(batches.clone());
+            filter_plan.map_or_else(
+                || FilterPlan::<K>::decide_filter(None, key_capacity),
+                |filter_plan| FilterPlan::decide_filter(Some(&filter_plan), key_capacity),
+            )
+        } else {
+            FilterPlan::<K>::decide_filter(None, key_capacity)
+        };
         Self {
             factories: factories.clone(),
             writer: Writer2::new(
@@ -769,7 +775,7 @@ where
             time_diffs: factories.timediff_factory.default_box(),
             num_tuples: 0,
             stats: BatchMetadata::default(),
-            touched_window_counter: Some(TouchedWindowCounter::default()),
+            touched_window_counter: collect_roaring_metadata().then(TouchedWindowCounter::default),
         }
     }
 
