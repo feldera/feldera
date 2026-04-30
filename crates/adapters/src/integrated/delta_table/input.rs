@@ -14,7 +14,7 @@ use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
 use datafusion::logical_expr::LogicalPlan;
-use datafusion::physical_plan::PhysicalExpr;
+use datafusion::physical_plan::{displayable, PhysicalExpr};
 use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
 use datafusion::prelude::SessionConfig;
 use dbsp::circuit::tokio::TOKIO;
@@ -612,10 +612,87 @@ impl DeltaTableInputEndpointInner {
         let queue = Arc::new(InputQueue::new(consumer.clone()));
         // Configure datafusion not to generate Utf8View arrow types, which are not yet
         // supported by the `serde_arrow` crate.
-        let session_config = SessionConfig::new().set_bool(
+        let mut session_config = SessionConfig::new().set_bool(
             "datafusion.execution.parquet.schema_force_view_types",
             false,
         );
+        // Optional process-wide overrides for parquet-scan parallelism, read
+        // from environment variables. Setting `DATAFUSION_TARGET_PARTITIONS=1`
+        // together with `DATAFUSION_REPARTITION_FILE_SCANS=false` makes the
+        // snapshot scan read parquet files strictly one at a time and in the
+        // order produced by the file list (e.g. lexicographical, when combined
+        // with the matching sort in the patched delta-rs scan builder).
+        // Unset variables leave DataFusion's defaults unchanged.
+        if let Ok(s) = std::env::var("DATAFUSION_TARGET_PARTITIONS") {
+            match s.parse::<usize>() {
+                Ok(n) if n > 0 => {
+                    session_config =
+                        session_config.set_usize("datafusion.execution.target_partitions", n);
+                    info!("delta_table {endpoint_name}: applying DATAFUSION_TARGET_PARTITIONS={n}");
+                }
+                _ => warn!(
+                    "delta_table {endpoint_name}: ignoring DATAFUSION_TARGET_PARTITIONS={s:?}; expected a positive integer"
+                ),
+            }
+        }
+        if let Ok(s) = std::env::var("DATAFUSION_BATCH_SIZE") {
+            match s.parse::<usize>() {
+                Ok(n) if n > 0 => {
+                    session_config =
+                        session_config.set_usize("datafusion.execution.batch_size", n);
+                    info!("delta_table {endpoint_name}: applying DATAFUSION_BATCH_SIZE={n}");
+                }
+                _ => warn!(
+                    "delta_table {endpoint_name}: ignoring DATAFUSION_BATCH_SIZE={s:?}; expected a positive integer"
+                ),
+            }
+        }
+        if let Ok(s) = std::env::var("DATAFUSION_REPARTITION_FILE_SCANS") {
+            match s.parse::<bool>() {
+                Ok(b) => {
+                    session_config =
+                        session_config.set_bool("datafusion.optimizer.repartition_file_scans", b);
+                    info!(
+                        "delta_table {endpoint_name}: applying DATAFUSION_REPARTITION_FILE_SCANS={b}"
+                    );
+                }
+                Err(_) => warn!(
+                    "delta_table {endpoint_name}: ignoring DATAFUSION_REPARTITION_FILE_SCANS={s:?}; expected `true` or `false`"
+                ),
+            }
+        }
+        // When the user opts into ordered ingestion via
+        // DELTA_SCAN_ORDER_BY_MIN_COLUMN, we also flip
+        // `datafusion.optimizer.prefer_existing_sort` to `true`. The default
+        // (false) makes DataFusion *re-sort* the scan output even when the
+        // scan's declared `output_ordering` already matches the ORDER BY
+        // requirement, which buffers every batch in memory and OOMs on
+        // large snapshots. With this flag on, the optimizer trusts the scan's
+        // declared ordering and inserts `SortPreservingMergeExec` (a streaming
+        // K-way merge) over the parallel scan partitions instead. An explicit
+        // DATAFUSION_PREFER_EXISTING_SORT env var still wins if set.
+        let order_by_enabled = matches!(
+            std::env::var("DELTA_SCAN_ORDER_BY_MIN_COLUMN")
+                .ok()
+                .as_deref()
+                .map(str::to_ascii_lowercase)
+                .as_deref(),
+            Some("true" | "1")
+        );
+        let prefer_existing_sort_override = std::env::var("DATAFUSION_PREFER_EXISTING_SORT")
+            .ok()
+            .and_then(|s| s.parse::<bool>().ok());
+        if let Some(b) = prefer_existing_sort_override.or(if order_by_enabled {
+            Some(true)
+        } else {
+            None
+        }) {
+            session_config =
+                session_config.set_bool("datafusion.optimizer.prefer_existing_sort", b);
+            info!(
+                "delta_table {endpoint_name}: applying datafusion.optimizer.prefer_existing_sort={b}"
+            );
+        }
 
         let metrics = Arc::new(DeltaTableMetrics::new());
         consumer.set_custom_metrics(Arc::clone(&metrics) as Arc<dyn ConnectorMetrics>);
@@ -801,6 +878,44 @@ impl DeltaTableInputEndpointInner {
         let mut snapshot_query = format!("select {column_names} from snapshot");
         if let Some(filter) = self.effective_snapshot_filter() {
             snapshot_query = format!("{snapshot_query} where {filter}");
+        }
+        // When DELTA_SCAN_ORDER_BY_MIN_COLUMN=true, append ORDER BY <column>
+        // (same column as the per-file sort in the patched delta-rs scan
+        // builder, controlled by DELTA_SCAN_SORT_BY_MIN_COLUMN, default
+        // "id"). With the scan declaring its output ordering on this column,
+        // DataFusion satisfies the requirement via SortPreservingMergeExec --
+        // parallel S3 fetches are preserved while batches reach the circuit
+        // in global column order. The ORDER BY is only appended when the
+        // column actually exists in the Delta table schema, to avoid SQL
+        // planning errors on tables without it.
+        if matches!(
+            std::env::var("DELTA_SCAN_ORDER_BY_MIN_COLUMN")
+                .ok()
+                .as_deref()
+                .map(str::to_ascii_lowercase)
+                .as_deref(),
+            Some("true" | "1")
+        ) {
+            let order_column = std::env::var("DELTA_SCAN_SORT_BY_MIN_COLUMN")
+                .unwrap_or_else(|_| "id".to_string());
+            let column_present = table
+                .schema()
+                .fields()
+                .iter()
+                .any(|f| f.name() == order_column.as_str());
+            if column_present {
+                snapshot_query =
+                    format!("{snapshot_query} order by {}", quote_sql_identifier(&order_column));
+                info!(
+                    "delta_table {}: appending ORDER BY {order_column} to snapshot query for sort-preserving parallel ingest",
+                    &self.endpoint_name,
+                );
+            } else {
+                warn!(
+                    "delta_table {}: DELTA_SCAN_ORDER_BY_MIN_COLUMN is set but column {order_column:?} is not present in the table schema; not adding ORDER BY",
+                    &self.endpoint_name,
+                );
+            }
         }
         // Execute the snapshot query; push snapshot data to the circuit.
         info!(
@@ -1735,6 +1850,30 @@ impl DeltaTableInputEndpointInner {
                 return Err(anyhow!("error compiling query '{query}': {e}"));
             }
         };
+
+        // One-shot physical-plan dump for debugging ordering / parallelism
+        // decisions. Enable with DELTA_SNAPSHOT_EXPLAIN=true. The plan is
+        // logged once per snapshot query at INFO level.
+        if matches!(
+            std::env::var("DELTA_SNAPSHOT_EXPLAIN")
+                .ok()
+                .as_deref()
+                .map(str::to_ascii_lowercase)
+                .as_deref(),
+            Some("true" | "1")
+        ) {
+            match df.clone().create_physical_plan().await {
+                Ok(plan) => info!(
+                    "delta_table {}: physical plan for {descr}:\n{}",
+                    &self.endpoint_name,
+                    displayable(plan.as_ref()).indent(true)
+                ),
+                Err(e) => warn!(
+                    "delta_table {}: failed to compute physical plan for {descr}: {e}",
+                    &self.endpoint_name,
+                ),
+            }
+        }
 
         self.execute_df(
             df,

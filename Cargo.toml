@@ -107,8 +107,10 @@ dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.14.1"
 #deltalake = "0.30.2"
 #deltalake-catalog-unity = "0.14.1"
-deltalake-catalog-unity = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "b24e5aaec322db0f084449e5c57f97ff4526bbdc" }
-deltalake = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "b24e5aaec322db0f084449e5c57f97ff4526bbdc" }
+#deltalake-catalog-unity = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "b24e5aaec322db0f084449e5c57f97ff4526bbdc" }
+#deltalake = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "b24e5aaec322db0f084449e5c57f97ff4526bbdc" }
+deltalake-catalog-unity = { git = "https://github.com/gz/delta-rs.git", rev = "6a7bf02241a61a2a2fb58fde84fcd66c1e68b387" }
+deltalake = { git = "https://github.com/gz/delta-rs.git", rev = "6a7bf02241a61a2a2fb58fde84fcd66c1e68b387" }
 
 # deltalake = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "06f42db5344f4ad8560af341352572488a4e6e06" }
 # deltalake-catalog-unity = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "06f42db5344f4ad8560af341352572488a4e6e06" }
