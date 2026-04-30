@@ -238,7 +238,7 @@ class ReplaceSharedIndexes extends CircuitCloneVisitor {
                 // form (TupX::new(...), Some(TupZ::new(a, b, c, ...)).
                 DBSPExpression outputI = function.call(this.var).field(1).field(i);
                 if (!valueType.getFieldType(i).mayBeNull && outputI.getType().mayBeNull)
-                    outputI = outputI.neverFailsUnwrap();
+                    outputI = outputI.neverFailsUnwrap(outputI.getNode());
                 outputI = outputI.reduce(compiler);
                 boolean found = false;
                 List<DBSPExpression> fields = this.outputFields;

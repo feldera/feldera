@@ -122,21 +122,21 @@ public abstract class DBSPExpression
     }
 
     /** Unwrap an expression with a nullable type */
-    public DBSPExpression unwrap(String message) {
+    public DBSPExpression unwrap(CalciteObject node, String message) {
         Utilities.enforce(this.type.mayBeNull, () -> "Unwrapping non-nullable type");
-        return new DBSPUnwrapExpression(message, this).simplify();
+        return new DBSPUnwrapExpression(node, message, this).simplify();
     }
 
-    public DBSPExpression neverFailsUnwrap() {
-        return this.unwrap("");
+    public DBSPExpression neverFailsUnwrap(CalciteObject node) {
+        return this.unwrap(node, "");
     }
 
     /** Unwrap an expression if the type is nullable
      * @param message Message to report if the unwrap fails. */
-    public DBSPExpression unwrapIfNullable(String message) {
+    public DBSPExpression unwrapIfNullable(CalciteObject node, String message) {
         if (!this.type.mayBeNull)
             return this;
-        return this.unwrap(message);
+        return this.unwrap(node, message);
     }
 
     public DBSPExpressionStatement toStatement() {

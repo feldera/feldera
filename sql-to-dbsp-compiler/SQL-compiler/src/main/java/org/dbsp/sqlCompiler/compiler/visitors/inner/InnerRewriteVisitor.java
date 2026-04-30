@@ -1100,7 +1100,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
-        DBSPExpression result = new DBSPUnwrapExpression(expression.message, source);
+        DBSPExpression result = new DBSPUnwrapExpression(expression.getNode(), expression.message, source);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

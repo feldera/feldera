@@ -18,6 +18,7 @@ public class CalciteAggregateNode extends CalciteObject {
     final AggregateCall aggregateCall;
 
     CalciteAggregateNode(@Nullable RelNode relNode, AggregateCall aggregateCall) {
+        super(new SourcePositionRange(aggregateCall.getParserPosition()));
         this.context = relNode;
         this.aggregateCall = aggregateCall;
     }

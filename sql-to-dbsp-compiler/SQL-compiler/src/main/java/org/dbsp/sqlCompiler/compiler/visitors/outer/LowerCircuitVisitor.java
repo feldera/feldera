@@ -187,7 +187,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 throw new InternalCompilerError("Unexpected collection type in flatmap " + flatmap.collectionKind);
             }
 
-            DBSPExpression contents = statement.getVarReference().unwrap("Collection UNNESTed should not be NULL")
+            DBSPExpression contents = statement.getVarReference()
+                    .unwrap(extractCollection.getNode(), "Collection UNNESTed should not be NULL")
                     .deref().applyClone();
             collectionExpression = new DBSPIfExpression(flatmap.getNode(), condition, empty, contents);
         } else {

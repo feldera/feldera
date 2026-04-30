@@ -12,7 +12,7 @@ import java.sql.SQLException;
 
 /** Compile the SQL programs in the feldera-qa repository, and rust-compile the results. */
 public class QATests {
-    static void compileAndCheck(File file) throws SQLException, IOException, InterruptedException {
+    static void compileAndCheck(File file) throws SQLException {
         CompilerMessages messages = CompilerMain.execute(
                 "-i", "--alltables", "--ignoreOrder",
                 "-o", BaseSQLTests.TEST_FILE_PATH, file.getAbsolutePath());
@@ -24,7 +24,7 @@ public class QATests {
     }
 
     @Test
-    public void qaTests() throws IOException, SQLException, InterruptedException {
+    public void qaTests() throws SQLException {
         for (File c : BaseSQLTests.getQATests()) {
             // This program cannot be compiled because it contains a udf
             if (c.toString().matches(".*swiss.*-q1.*")) continue;

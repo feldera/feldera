@@ -41,7 +41,8 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.List;
 
-public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase implements INonIncremental {
+public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
+        implements INonIncremental, IStateful {
     public DBSPStreamAggregateOperator(CalciteRelNode node,
                                        DBSPTypeIndexedZSet outputType,
                                        @Nullable DBSPAggregator function,

@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -25,8 +26,8 @@ public final class DBSPUnwrapExpression extends DBSPExpression {
     public final String message;
     public final DBSPExpression expression;
 
-    public DBSPUnwrapExpression(String message, DBSPExpression expression) {
-        super(expression.getNode(), expression.getType().withMayBeNull(false));
+    public DBSPUnwrapExpression(CalciteObject node, String message, DBSPExpression expression) {
+        super(node, expression.getType().withMayBeNull(false));
         this.message = message;
         this.expression = expression;
         Utilities.enforce(expression.getType().mayBeNull);
@@ -60,7 +61,7 @@ public final class DBSPUnwrapExpression extends DBSPExpression {
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPUnwrapExpression(this.message, this.expression.deepCopy());
+        return new DBSPUnwrapExpression(this.getNode(), this.message, this.expression.deepCopy());
     }
 
     @Override
@@ -116,6 +117,6 @@ public final class DBSPUnwrapExpression extends DBSPExpression {
         getJsonType(node, decoder);
         DBSPExpression expression = fromJsonInner(node, "expression", decoder, DBSPExpression.class);
         String message = Utilities.getStringProperty(node, "message");
-        return new DBSPUnwrapExpression(message, expression);
+        return new DBSPUnwrapExpression(CalciteObject.EMPTY, message, expression);
     }
 }

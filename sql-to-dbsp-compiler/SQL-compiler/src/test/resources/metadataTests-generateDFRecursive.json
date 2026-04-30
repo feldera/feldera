@@ -404,7 +404,7 @@
           {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26},
           {"start_line_number":20,"start_column":27,"end_line_number":20,"end_column":37}
         ],
-        "persistent_id": "eea1fb749f276517f2ad1171fc00a889b629d190a675d1cff0ad8f04db1e6a22"
+        "persistent_id": "1d55e90bf29e3f19e1986f4d01fa7ac67549ea1345bd04d223f43ff4694927f6"
       },
       "s4": {
         "operation": "flat_map_index",
@@ -422,7 +422,7 @@
             }]
         },
         "positions": [
-          {"start_line_number":19,"start_column":17,"end_line_number":19,"end_column":26},
+          {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26},
           {"start_line_number":20,"start_column":11,"end_line_number":20,"end_column":21}
         ],
         "persistent_id": "532b61244e3f6ecac6e439489956f24fb4bdfedc3708b4dd7601e06c20c5ffc2"
@@ -452,7 +452,7 @@
           {"start_line_number":16,"start_column":9,"end_line_number":16,"end_column":33},
           {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26}
         ],
-        "persistent_id": "d2d417d4519df7cdda5f1b3418fbfdb6b8fd0a9bd9f9b890d0631e73a66cca5a"
+        "persistent_id": "81b49d948c1c4a6d4e863722062a57fc85c42a70bbb799f2d4a00dc990d03e18"
       },
       "s7": {
         "operation": "sum",
@@ -464,7 +464,7 @@
           "final": 10
         },
         "positions": [],
-        "persistent_id": "2f8076b543c6c81cf65784aee26bc1ce6ea646ada4c0be4625030c4f561b1413"
+        "persistent_id": "34a1b540135f85b90260d5a595eac0de35e34b0bef4ca4e4467cf721a09b62b9"
       }
     }, "s8": {
       "operation": "inspect",
@@ -479,7 +479,7 @@
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1},
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1}
       ],
-      "persistent_id": "b5b3b1df28ef92eb861bfe6cefdd8e57ff39d2d8bee21303fcc12e07d8c9a266"
+      "persistent_id": "0ad92ba0ff858d83b7356b3a91040ce921e4a81ec92647aad112549d5d6620d8"
     }, "s9": {
       "operation": "constant",
       "inputs": [],
