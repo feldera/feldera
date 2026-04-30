@@ -261,7 +261,7 @@ impl Display for LayoutError {
 impl StdError for LayoutError {}
 
 /// DBSP circuit execution mode.
-#[derive(Clone, Default, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, Default, PartialEq, Eq, Debug)]
 pub enum Mode {
     /// Operators in the circuit have persistent id's.
     ///

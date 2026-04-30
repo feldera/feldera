@@ -1034,7 +1034,7 @@ impl Runtime {
     }
 
     pub fn get_mode(&self) -> Mode {
-        self.inner().mode.clone()
+        self.inner().mode
     }
 
     /// Configure the number of tuples a stateful operator outputs per step during replay.
