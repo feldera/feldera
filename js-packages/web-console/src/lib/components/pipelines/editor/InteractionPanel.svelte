@@ -5,7 +5,6 @@
   import TabsPanel from '$lib/components/pipelines/editor/TabsPanel.svelte'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
-  import { tuple } from '$lib/functions/common/tuple'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
 
@@ -24,15 +23,33 @@
   const { showInteractionPanel } = useLayoutSettings()
 
   const tabs = $derived([
-    tuple('Ad-Hoc Queries' as const, TabControlAdhoc, PanelAdHocQuery, false),
-    tuple(TabProfileVisualizer.id, TabProfileVisualizer.Label, TabProfileVisualizer.default, true),
-    tuple('Samply' as const, TabSamplyProfile.Label, TabSamplyProfile.default, false)
+    {
+      id: 'Ad-Hoc Queries' as const,
+      label: TabControlAdhoc,
+      panel: PanelAdHocQuery,
+      keepAlive: false,
+      tabBarEnd: TabBarEndClose
+    },
+    {
+      id: TabProfileVisualizer.id,
+      label: TabProfileVisualizer.Label,
+      panel: TabProfileVisualizer.default,
+      keepAlive: true,
+      tabBarEnd: TabBarEndClose
+    },
+    {
+      id: 'Samply' as const,
+      label: TabSamplyProfile.Label,
+      panel: TabSamplyProfile.default,
+      keepAlive: false,
+      tabBarEnd: TabBarEndClose
+    }
   ])
 
   const currentTab = $derived(
-    useLocalStorage<(typeof tabs)[number][0]>(
+    useLocalStorage<(typeof tabs)[number]['id']>(
       'pipelines/' + pipelineName + '/currentInteractionTab',
-      tabs[0][0]
+      tabs[0].id
     )
   )
 
@@ -49,15 +66,15 @@
   <span class="hidden sm:inline"> Ad-Hoc Queries </span>
 {/snippet}
 
-<TabsPanel {tabs} bind:currentTab={currentTab.value} tabProps={{ pipeline, deleted }}>
-  {#snippet tabBarEnd()}
-    <button
-      class="fd fd-x ml-auto btn-icon text-[24px]"
-      onclick={() => {
-        _currentTab = null
-        showInteractionPanel.value = false
-      }}
-      aria-label="Close"
-    ></button>
-  {/snippet}
-</TabsPanel>
+{#snippet TabBarEndClose()}
+  <button
+    class="fd fd-x ml-auto btn-icon text-[24px]"
+    onclick={() => {
+      _currentTab = null
+      showInteractionPanel.value = false
+    }}
+    aria-label="Close"
+  ></button>
+{/snippet}
+
+<TabsPanel {tabs} bind:currentTab={currentTab.value} tabProps={{ pipeline, deleted }} />

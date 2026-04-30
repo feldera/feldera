@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { Switch } from '@skeletonlabs/skeleton-svelte'
   import { selectScope } from '$lib/compositions/common/userSelect'
   import { extractProgramStderr, type SystemError } from '$lib/compositions/health/systemErrors'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
@@ -19,28 +18,6 @@
   const theme = useSkeletonTheme()
 </script>
 
-<div
-  class="flex w-full flex-nowrap justify-between gap-6 py-2 sm:pt-0 lg:absolute lg:right-0 lg:-mt-12 lg:w-auto"
->
-  <label class="flex cursor-pointer items-center gap-2" class:disabled={verbatimErrors.value}>
-    Hide warnings
-    <input class="checkbox" type="checkbox" bind:checked={hideWarnings.value} />
-  </label>
-  <label class="flex cursor-pointer items-center justify-end gap-2 rounded lg:justify-normal">
-    Verbatim errors
-    <Switch
-      name="verbatimErrors"
-      checked={verbatimErrors.value}
-      onCheckedChange={(e) => (verbatimErrors.value = e.checked)}
-    >
-      <Switch.Control>
-        <Switch.Thumb />
-      </Switch.Control>
-      <Switch.Label />
-      <Switch.HiddenInput />
-    </Switch>
-  </label>
-</div>
 <div class="scrollbar h-full w-full overflow-y-auto">
   <div
     class="flex min-h-full w-fit min-w-full flex-col gap-4 rounded"
