@@ -44,6 +44,9 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.core.TableScan;
+import org.apache.calcite.rel.hint.HintPredicates;
+import org.apache.calcite.rel.hint.HintStrategy;
+import org.apache.calcite.rel.hint.HintStrategyTable;
 import org.apache.calcite.rel.logical.LogicalProject;
 import org.apache.calcite.rel.logical.LogicalTableScan;
 import org.apache.calcite.rel.logical.LogicalValues;
@@ -262,6 +265,11 @@ public class SqlToRelCompiler implements IWritesLogs {
         DEFAULT_TYPE_ALIASES.put("BOOL", SqlTypeName.BOOLEAN);
     }
 
+    public static final String HINT_BROADCAST_LEFT = "broadcast_left";
+    public static final String HINT_BROADCAST_RIGHT = "broadcast_right";
+    public static final String HINT_BALANCE = "balance";
+    public static final String HINT_SHARD = "shart";
+
     public SqlToRelCompiler(CompilerOptions options, IErrorReporter errorReporter) {
         this.options = options;
         this.errorReporter = errorReporter;
@@ -295,7 +303,14 @@ public class SqlToRelCompiler implements IWritesLogs {
         // We use a series of planner stages later to perform the real optimizations.
         RelOptPlanner planner = new HepPlanner(new HepProgramBuilder().build());
         planner.setExecutor(RexUtil.EXECUTOR);
+        HintStrategyTable hints = HintStrategyTable.builder()
+                .hintStrategy(HINT_BROADCAST_LEFT, HintStrategy.builder(HintPredicates.JOIN).build())
+                .hintStrategy(HINT_BROADCAST_RIGHT, HintStrategy.builder(HintPredicates.JOIN).build())
+                .hintStrategy(HINT_SHARD, HintStrategy.builder(HintPredicates.JOIN).build())
+                .hintStrategy(HINT_BALANCE, HintStrategy.builder(HintPredicates.JOIN).build())
+                .build();
         this.cluster = RelOptCluster.create(planner, new RexBuilder(typeFactory));
+        this.cluster.setHintStrategies(hints);
         var metadataProvider = ChainedRelMetadataProvider.of(List.of(RelMdRowCount.SOURCE,
                 DefaultRelMetadataProvider.INSTANCE));
         this.cluster.setMetadataProvider(metadataProvider);
@@ -306,13 +321,14 @@ public class SqlToRelCompiler implements IWritesLogs {
                 .withExpand(true)
                 .withTrimUnusedFields(true)
                 .withRelBuilderConfigTransform(t -> t.withSimplify(false))
+                .withHintStrategyTable(hints)
                 ;
         this.validator = null;
         this.converter = null;
         this.usedViewDeclarations = new HashSet<>();
         this.declaredViews = new HashMap<>();
         this.relBuilder = this.converterConfig.getRelBuilderFactory()
-                .create(cluster, null)
+                .create(this.cluster, null)
                 .transform(this.converterConfig.getRelBuilderConfigTransform());
 
         SqlOperatorTable operatorTable = this.createOperatorTable();

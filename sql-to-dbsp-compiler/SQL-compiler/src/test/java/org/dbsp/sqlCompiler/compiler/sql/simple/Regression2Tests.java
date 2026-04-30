@@ -1,6 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.apache.calcite.rel.core.Join;
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
+import org.dbsp.sqlCompiler.circuit.annotation.JoinStrategy;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
@@ -8,6 +11,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
@@ -1013,5 +1017,26 @@ public class Regression2Tests extends SqlIoTest {
                  c| 1
                  d| 1""");
         ccs.visit(this.findLinear(ccs.compiler));
+    }
+
+    @Test
+    public void testHints() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT);
+                CREATE VIEW V AS SELECT /*+ broadcast_left */ * FROM T JOIN T AS S USING (x);""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            boolean joinFound = false;
+
+            @Override
+            public void postorder(DBSPStreamJoinOperator join) {
+                this.joinFound = true;
+                Assert.assertEquals("[BroadcastLeft]", join.annotations.get(JoinStrategy.class).toString());
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertTrue(this.joinFound);
+            }
+        });
     }
 }
