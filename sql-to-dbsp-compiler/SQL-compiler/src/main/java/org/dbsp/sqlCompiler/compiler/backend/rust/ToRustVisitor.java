@@ -331,7 +331,13 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append("(cconf: CircuitConfig) -> Result<(DBSPHandle, ")
                 .append(signature.toString())
                 .append("), Error> {")
-                .increase()
+                .increase();
+        if (!this.compiler.options.languageOptions.incrementalize) {
+                this.builder
+                        .append("let cconf = cconf.with_step_size(StepSize::FullSteps);")
+                        .newline();
+        }
+        this.builder
                 .append("let (circuit, streams) = Runtime::init_circuit(cconf, |circuit| {")
                 .increase();
         if (!this.useHandles)

@@ -126,8 +126,13 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
                 .append(signature.toString())
                 .append("), Error> {")
                 .increase()
-                .newline()
-                .append("let (circuit, streams) = ");
+                .newline();
+        if (!compiler.options.languageOptions.incrementalize) {
+                this.builder()
+                        .append("let cconf = cconf.with_step_size(StepSize::FullSteps);")
+                        .newline();
+        }
+        this.builder().append("let (circuit, streams) = ");
         if (!useHandles)
             this.builder().append("dbsp_adapters::server::init_circuit(cconf, Box::new(");
         else

@@ -108,7 +108,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
                      UnimplementedSemigroup, DefaultSemigroup, HasOne, HasZero, AddByRef, NegByRef,
                      AddAssignByRef,
                 },
-                circuit::{checkpointer::Checkpoint, Circuit, CircuitConfig, NestedCircuit, RootCircuit, Stream},
+                circuit::{checkpointer::Checkpoint, Circuit, CircuitConfig, NestedCircuit, RootCircuit, Stream, StepSize},
                 operator::{
                     apply_n,
                     dynamic::aggregate::{ArgMinSome, Max, Min, MinSome1, Postprocess},

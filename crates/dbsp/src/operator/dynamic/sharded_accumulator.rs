@@ -14,7 +14,7 @@ use rkyv::AlignedVec;
 use crate::{
     Circuit, Runtime, Scope, Stream,
     circuit::{
-        OwnershipPreference, WorkerLocation, WorkerLocations,
+        OwnershipPreference, StepSize, WorkerLocation, WorkerLocations,
         circuit_builder::StreamId,
         metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OperatorLocation, OperatorMeta},
         operator_traits::{Operator, SinkOperator, SourceOperator},
@@ -53,23 +53,32 @@ where
             self.circuit()
                 .cache_get_or_insert_with(ShardedAccumulatorId::new(self.stream_id()), || {
                     let runtime = Runtime::runtime().unwrap();
-                    let exchange_id: ExchangeId = runtime.sequence_next().try_into().unwrap();
-                    let exchange = ShardedAccumulator::<B>::with_runtime(
-                        &runtime,
-                        Runtime::worker_index(),
-                        exchange_id,
-                        factories,
-                    );
-                    self.circuit()
-                        .add_exchange(
-                            ShardedAccumulatorSender::new(
-                                Some(Location::caller()),
-                                exchange.clone(),
-                            ),
-                            ShardedAccumulatorReceiver::new(Some(Location::caller()), exchange),
-                            self,
-                        )
-                        .mark_sharded()
+                    match runtime.get_step_size() {
+                        StepSize::Microsteps => {
+                            let exchange_id: ExchangeId =
+                                runtime.sequence_next().try_into().unwrap();
+                            let exchange = ShardedAccumulator::<B>::with_runtime(
+                                &runtime,
+                                Runtime::worker_index(),
+                                exchange_id,
+                                factories,
+                            );
+                            self.circuit()
+                                .add_exchange(
+                                    ShardedAccumulatorSender::new(
+                                        Some(Location::caller()),
+                                        exchange.clone(),
+                                    ),
+                                    ShardedAccumulatorReceiver::new(
+                                        Some(Location::caller()),
+                                        exchange,
+                                    ),
+                                    self,
+                                )
+                                .mark_sharded()
+                        }
+                        StepSize::FullSteps => self.dyn_shard(factories).dyn_accumulate(factories),
+                    }
                 })
                 .clone()
         }
