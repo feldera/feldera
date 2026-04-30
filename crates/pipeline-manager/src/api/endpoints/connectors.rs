@@ -21,6 +21,7 @@ use utoipa::ToSchema;
 
 use crate::api::error::ApiError;
 use crate::api::main::ServerState;
+use feldera_types::error::ErrorResponse;
 use crate::compiler::connectors::{
     spawn_describer_build, validate_connectors_toml_shape, ConnectorsTomlContent,
 };
@@ -94,6 +95,7 @@ pub(crate) struct ConnectorsConfigPutResponse {
     responses(
         (status = 200, description = "Status retrieved.", body = ConnectorsStatusResponse),
         (status = 304, description = "Not modified."),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Connector plugin management"

@@ -51,6 +51,11 @@ import type {
   GetConfigSessionData,
   GetConfigSessionErrors,
   GetConfigSessionResponses,
+  GetConnectorsStatusData,
+  GetConnectorsStatusErrors,
+  GetConnectorsStatusResponses,
+  GetConnectorsTomlData,
+  GetConnectorsTomlResponses,
   GetMetricsData,
   GetMetricsResponses,
   GetPipelineCircuitJsonProfileData,
@@ -119,6 +124,9 @@ import type {
   PostApiKeyData,
   PostApiKeyErrors,
   PostApiKeyResponses,
+  PostConnectorsRefreshData,
+  PostConnectorsRefreshErrors,
+  PostConnectorsRefreshResponses,
   PostPipelineActivateData,
   PostPipelineActivateErrors,
   PostPipelineActivateResponses,
@@ -136,6 +144,9 @@ import type {
   PostPipelineInputConnectorActionData,
   PostPipelineInputConnectorActionErrors,
   PostPipelineInputConnectorActionResponses,
+  PostPipelineOutputConnectorResetData,
+  PostPipelineOutputConnectorResetErrors,
+  PostPipelineOutputConnectorResetResponses,
   PostPipelinePauseData,
   PostPipelinePauseErrors,
   PostPipelinePauseResponses,
@@ -158,9 +169,15 @@ import type {
   PostUpdateRuntimeData,
   PostUpdateRuntimeErrors,
   PostUpdateRuntimeResponses,
+  PutConnectorsTomlData,
+  PutConnectorsTomlErrors,
+  PutConnectorsTomlResponses,
   PutPipelineData,
   PutPipelineErrors,
   PutPipelineResponses,
+  ResetStatusData,
+  ResetStatusErrors,
+  ResetStatusResponses,
   StartSamplyProfileData,
   StartSamplyProfileErrors,
   StartSamplyProfileResponses,
@@ -363,6 +380,102 @@ export const getConfigSession = <ThrowOnError extends boolean = false>(
   (options?.client ?? client).get<GetConfigSessionResponses, GetConfigSessionErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/config/session',
+    ...options
+  })
+
+/**
+ * Download the raw `connectors.toml` blob.
+ *
+ * Headers:
+ * * `ETag` — the row's `content_hash`. Echo this in `If-Match` on PUT.
+ * * `X-Connectors-Version` — monotonic per-tenant version.
+ * * `X-Connectors-Edited-At` / `X-Connectors-Edited-By` — audit trail.
+ */
+export const getConnectorsToml = <ThrowOnError extends boolean = false>(
+  options?: Options<GetConnectorsTomlData, ThrowOnError>
+) =>
+  (options?.client ?? client).get<GetConnectorsTomlResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/connectors/connectors.toml',
+    ...options
+  })
+
+/**
+ * Replace the tenant's `connectors.toml` blob and trigger a rebuild.
+ *
+ * `If-Match` is required — its value is the `content_hash` from the
+ * most recent GET. A mismatch means another operator updated the row
+ * since this client read it; the response is `412 Precondition Failed`.
+ *
+ * The body is plain text (the raw toml). Empty body clears the blob and
+ * transitions the tenant back to the `not_configured` state.
+ *
+ * On success the response is `202 Accepted` — the describer rebuild
+ * runs in the background. Poll `GET /v0/connectors/status` to observe
+ * the transition `building → ready` (or `failed`).
+ */
+export const putConnectorsToml = <ThrowOnError extends boolean = false>(
+  options: Options<PutConnectorsTomlData, ThrowOnError>
+) =>
+  (options.client ?? client).put<PutConnectorsTomlResponses, PutConnectorsTomlErrors, ThrowOnError>(
+    {
+      bodySerializer: null,
+      security: [{ scheme: 'bearer', type: 'http' }],
+      url: '/v0/connectors/connectors.toml',
+      ...options,
+      headers: {
+        'Content-Type': 'text/plain',
+        ...options.headers
+      }
+    }
+  )
+
+/**
+ * Refresh the describer's `Cargo.lock` (run `cargo update`) and rebuild
+ *
+ * the manifest. Use this to pick up upstream patch releases without
+ * editing the blob.
+ *
+ * Returns `202 Accepted` immediately; poll
+ * `GET /v0/connectors/status` to observe the rebuild outcome.
+ */
+export const postConnectorsRefresh = <ThrowOnError extends boolean = false>(
+  options?: Options<PostConnectorsRefreshData, ThrowOnError>
+) =>
+  (options?.client ?? client).post<
+    PostConnectorsRefreshResponses,
+    PostConnectorsRefreshErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/connectors/refresh',
+    ...options
+  })
+
+/**
+ * Get the current describer state and (when ready) the connector manifest.
+ *
+ * Returns a unified envelope:
+ * * `state` is one of `ready` | `building` | `failed` | `not_configured`.
+ * * `content_hash` is the ETag value to echo on `If-Match` for a
+ * subsequent `PUT /v0/connectors/connectors.toml`.
+ * * `descriptors` is the parsed JSON manifest, present only when `state`
+ * is `ready`.
+ *
+ * Honors `If-None-Match`: a request whose value matches the current
+ * `content_hash` receives `304 Not Modified` with no body — cheap to
+ * poll for the web console status badge.
+ */
+export const getConnectorsStatus = <ThrowOnError extends boolean = false>(
+  options?: Options<GetConnectorsStatusData, ThrowOnError>
+) =>
+  (options?.client ?? client).get<
+    GetConnectorsStatusResponses,
+    GetConnectorsStatusErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/connectors/status',
     ...options
   })
 
@@ -923,6 +1036,21 @@ export const postPipelineRebalance = <ThrowOnError extends boolean = false>(
   })
 
 /**
+ * Check Reset Status
+ *
+ * Check the status of a reset token returned by the output connector
+ * reset endpoint.
+ */
+export const resetStatus = <ThrowOnError extends boolean = false>(
+  options: Options<ResetStatusData, ThrowOnError>
+) =>
+  (options.client ?? client).get<ResetStatusResponses, ResetStatusErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/reset_status',
+    ...options
+  })
+
+/**
  * Resume Pipeline
  *
  * Requests the pipeline to resume, which it will do asynchronously.
@@ -1270,6 +1398,27 @@ export const postUpdateRuntime = <ThrowOnError extends boolean = false>(
   >({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/update_runtime',
+    ...options
+  })
+
+/**
+ * Reset Output Connector
+ *
+ * Reset an output connector configured in `snapshot_and_follow` mode.
+ *
+ * This clears buffered output, asks the sink to reset itself, and then replays
+ * a full snapshot before resuming incremental updates.
+ */
+export const postPipelineOutputConnectorReset = <ThrowOnError extends boolean = false>(
+  options: Options<PostPipelineOutputConnectorResetData, ThrowOnError>
+) =>
+  (options.client ?? client).post<
+    PostPipelineOutputConnectorResetResponses,
+    PostPipelineOutputConnectorResetErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/reset',
     ...options
   })
 

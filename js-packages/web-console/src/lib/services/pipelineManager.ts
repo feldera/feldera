@@ -6,6 +6,7 @@ import {
   getClusterEvent as _getClusterEvent,
   getConfig as _getConfig,
   getConfigSession as _getConfigSession,
+  getConnectorsStatus as _getConnectorsStatus,
   getPipeline as _getPipeline,
   getPipelineDataflowGraph as _getPipelineDataflowGraph,
   getPipelineInputConnectorStatus as _getPipelineInputConnectorStatus,
@@ -17,6 +18,7 @@ import {
   postPipeline as _postPipeline,
   postUpdateRuntime as _postUpdateRuntime,
   putPipeline as _putPipeline,
+  type ConnectorsStatusResponse,
   type ControllerStatus,
   type ErrorResponse,
   type GetPipelineSupportBundleData,
@@ -41,12 +43,14 @@ import {
 } from '$lib/services/manager'
 
 export type {
+  ConnectorsStatusResponse,
   InputEndpointConfig,
   InputEndpointStatus,
   OutputEndpointConfig,
   OutputEndpointStatus,
   RuntimeConfig,
-  SqlCompilerMessage
+  SqlCompilerMessage,
+  StatusName
 } from '$lib/services/manager'
 
 import { match, P } from 'ts-pattern'
@@ -972,3 +976,60 @@ export const getPipelineSupportBundleUrl = (
   }
   return `${felderaEndpoint}/v0/pipelines/${pipelineName}/support_bundle?${query.toString()}`
 }
+
+export const getConnectorsToml = async (
+  options?: FetchOptions
+): Promise<{ content: string; etag: string | null }> => {
+  const fetch = getAuthenticatedFetch(options)
+  const response = await fetch(`${felderaEndpoint}/v0/connectors/connectors.toml`)
+  if (!response.ok) {
+    let body: { message?: string } = { message: `HTTP ${response.status}` }
+    try {
+      body = await response.json()
+    } catch {}
+    throw new Error(apiErrorText(body as ErrorResponse), { cause: body })
+  }
+  const content = await response.text()
+  return { content, etag: response.headers.get('ETag') }
+}
+
+export type PutConnectorsTomlResult =
+  | { ok: true; content_hash: string; version: number }
+  | { ok: false; status: 412 }
+  | { ok: false; status: 400; message: string }
+
+export const putConnectorsToml = async (
+  content: string,
+  etag: string,
+  options?: FetchOptions
+): Promise<PutConnectorsTomlResult> => {
+  const fetch = getAuthenticatedFetch(options)
+  const response = await fetch(`${felderaEndpoint}/v0/connectors/connectors.toml`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'text/plain', 'If-Match': etag },
+    body: content
+  })
+  if (response.status === 412) {
+    return { ok: false, status: 412 }
+  }
+  if (response.status === 400) {
+    let message = 'Validation failed'
+    try {
+      const body = await response.json()
+      message = apiErrorText(body)
+    } catch {}
+    return { ok: false, status: 400, message }
+  }
+  if (response.status === 202) {
+    const body = await response.json()
+    return { ok: true, ...body }
+  }
+  let body: { message?: string } = { message: `HTTP ${response.status}` }
+  try {
+    body = await response.json()
+  } catch {}
+  throw new Error(apiErrorText(body as ErrorResponse), { cause: body })
+}
+
+export const getConnectorsStatus = (options?: FetchOptions) =>
+  mapResponse(_getConnectorsStatus(options), (v) => v)

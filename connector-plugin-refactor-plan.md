@@ -830,28 +830,81 @@ PRs 7a–7f follow the per-connector migration recipe in Phase 4 (steps 1–8): 
 ### PR 14 — OpenAPI surface for connector endpoints (Phase 9)
 - [ ] **Wire existing `#[utoipa::path]` annotations into the OpenAPI spec — do not rewrite them**: `connectors.rs` already has complete `#[utoipa::path]` annotations on all four handlers as of PR 10. The actual work is: (a) add the four handler paths to the `paths()` macro in `api/main.rs`, (b) add the three schema types (`ConnectorsStatusResponse`, `ConnectorsConfigPutResponse`, `StatusName`) to `components(schemas(…))`, and (c) add the `tag` field on each annotation. Status envelope spec: enum for `state`, optional `descriptors` array, ETag header documented.
 - [ ] **Types registered in `components(schemas(…))` must be `pub(crate)` or wider**: private types referenced by path in the macro produce a compile error (not a silent omission). `StatusName` was originally declared without `pub`; it must be at least `pub(crate)` before it can be named in `components(schemas(…))`.
+- [ ] **Register schemas referenced by other one-ofs**: utoipa silently emits `#/components/schemas/X` references even when `X` is not in `components(schemas(…))`; `--dump-openapi` succeeds but the web console SDK generator fails with "Reference not found". Add `feldera_types::config::PluginTransportConfig` (referenced from the `TransportConfig` one-of in Phase 7) plus any sibling plugin types. Sanity check before merge: `jq '.. | objects | .["$ref"]? // empty' openapi.json | sort -u` and cross-check.
+- [ ] **Every endpoint consumed via `mapResponse` needs a typed error response**: the web console's `mapResponse` requires `E extends { message: string }`; an annotation with no `responses(...)` errors generates `unknown` and breaks TypeScript. Add `(status = INTERNAL_SERVER_ERROR, body = ErrorResponse)` to all four connector-management handlers and `use feldera_types::error::ErrorResponse;`.
 - [ ] **`openapi.json` regeneration requires a full binary build, not `cargo check`**: run `cargo build -p pipeline-manager --bin pipeline-manager` (pulls in the full dependency graph — adapters, dbsp, sqllib — and takes roughly 2× longer than `cargo check` alone), then `./target/debug/pipeline-manager --dump-openapi` to produce the updated JSON. Re-run this after every annotation change; `cargo check` alone does not update the file.
 - [ ] **`rest-api/build.rs:38-208` does not need new `type_replacement()` entries**: the existing entries map typed connector transport schemas (Kafka, Delta, etc.) to `feldera_types` equivalents and must remain untouched. The new connector-management response types (`ConnectorsStatusResponse`, `ConnectorsConfigPutResponse`, `StatusName`) are internal to `pipeline-manager` and have no `feldera_types` equivalents; progenitor correctly generates them as new Rust structs from the schema — adding them to `type_replacement()` would be wrong.
 - [ ] Tests: typed-client codegen still compiles; OpenAPI schema validates against actual responses.
 - **Depends on**: PR 11.
 - **Unblocks**: PR 15.
 
-### PR 15 — Web console connector discovery + in-product editor (Phase 10)
-- [ ] **Connector picker**: in `js-packages/web-console/src/lib/`, call `GET /v0/connectors/status` on first render and cache; render dropdown from `descriptors` when `state == "ready"`. Show a graceful "connectors unavailable" state when `state` is `building`/`failed`/`not_configured`.
-- [ ] Preserve in-tree typed forms as the preferred UI for known connectors; render JSON-Schema-driven form for plugin connectors.
-- [ ] **Status badge** in the connectors-management dialog: poll `GET /v0/connectors/status` (with `If-None-Match` for cheap polling) and render `state` as a colored badge — green/ready, amber/building, red/failed, grey/not-configured. On `failed`, expand to show `error` text.
-- [ ] **In-product `connectors.toml` editor**: dialog with a Monaco-based plain-text editor (no schema, just text — Cargo is the parser). On open, fetch `GET /v0/connectors/connectors.toml` and remember the ETag. On save, `PUT /v0/connectors/connectors.toml` with `If-Match: <etag>`, `Content-Type: text/plain`. On 412, surface "another operator updated this — reload to merge"; on 400, show the line-shape error inline. After successful PUT, show "rebuilding…" backed by the status badge transitioning `building → ready` (or `failed`).
-- [ ] Show `edited_at` / `edited_by` from `GET /v0/connectors/connectors.toml` headers as an audit-trail line in the editor footer.
-- [ ] Tests: e2e test with a stub plugin descriptor; ETag mismatch path; PUT triggers status transitions; tenant isolation visible in the badge.
+### PR 15 — Web console in-product `connectors.toml` editor (Phase 10)
+
+#### Account menu entry
+
+- [ ] Add a **"Plugins" item** to the account menu opened by `ProfileButton`, positioned above the "Feldera Health" entry, separated by a separator. It should follow the same visual pattern — icon, label, right-chevron — but carry **no status dot**.
+- [ ] Clicking "Plugins" opens a **modal dialog** (not a page navigation). The account menu closes on click.
+
+#### Plugins dialog
+
+- [ ] The dialog has an **"X" close button** in the top-right corner, and **"Close" / "Apply" buttons** in the bottom-right. "Close" discards any unsaved edits; "Apply" commits them (see save flow below).
+- [ ] The dialog body contains an **editor panel** styled like the Code Editor panel inside `PipelineEditLayout`: a tab bar along the top, with the editor surface filling the remaining space.
+
+#### Tab bar
+
+- [ ] There is a **single tab, labelled `connectors.toml`**. The tab label carries a **colored status dot** reflecting the current describer compilation state:
+  - Green — build succeeded (state `ready`).
+  - Yellow — build in progress (state `building`).
+  - Red — build failed (state `failed` or `not_configured`).
+- [ ] The dot is always visible (not an unsaved-changes indicator). Poll `GET /v0/connectors/status` (with `If-None-Match` for cheap polling) while the dialog is open to keep the dot current.
+
+#### Editor surface
+
+- [ ] When `connectors.toml` content is available, display it in a **Monaco editor** configured as a plain-text surface (no schema, just syntax highlight using `graphql` monaco-editor language) — Cargo is the parser. Editor options (font, theme, minimap) should match the per-pipeline code editor's defaults.
+- [ ] When the tenant has no `connectors.toml` yet (state `not_configured`), display a **placeholder** in the same style as the `udf.toml` tab placeholder in the pipeline code editor: a greyed-out hint text suggesting a minimal starting point, rendered inside the otherwise-empty editor area.
+- [ ] On dialog open, fetch `GET /v0/connectors/connectors.toml` and store the returned **ETag**.
+
+#### Save flow ("Apply")
+
+- [ ] "Apply" issues `PUT /v0/connectors/connectors.toml` with `If-Match: <etag>` and `Content-Type: text/plain`.
+- [ ] On **200**: store the new ETag; the status dot transitions to yellow (`building`) and eventually green or red as the describer runs.
+- [ ] On **412 Precondition Failed**: surface an inline message — "Another operator updated this file. Close and reopen to see the latest version." Do not close the dialog; preserve the user's edits.
+- [ ] On **400 Bad Request** (line-shape validation failure): display the error message inline below the editor — do not close the dialog.
+
+#### Tests
+
+- [ ] Unit test: status-dot color maps correctly to each `state` value from the API.
+- [ ] Integration / e2e: open dialog → editor shows existing content → edit → Apply → status dot cycles through `building` → `ready`.
+- [ ] ETag mismatch path: concurrent PUT from another session triggers the 412 message without discarding local edits.
+
 - **Depends on**: PR 14.
 - **Unblocks**: PR 16.
 
 ### PR 16 — Reference plugin + end-to-end integration test (Phase 11)
-- [ ] Add `crates/connector-example/` containing a minimal "hello" input connector implementing `TransportInputEndpoint` + `InputReader`, calling `register_connector!`.
-- [ ] Its `Cargo.toml` depends only on `feldera-adapterlib` — proves the surface is closed.
-- [ ] pipeline-manager integration test enables this crate via a build feature flag, populates a test `connectors.toml` pointing at it, and runs a pipeline ingesting from `hello://`.
-- [ ] Test asserts the full plugin path: `connectors.toml` → describer → manifest → SQL parse → pipeline build → runtime dispatch.
-- [ ] Add a "Writing a connector" doc page citing this crate as the canonical reference.
+
+#### The `hello-lines` connector
+
+- [ ] Add `crates/connector-example/` implementing a **`hello-lines` input connector**: reads a plain-text file and emits one line per second as a single-string record. The SQL table must have exactly one `TEXT` column; no format parsing is performed — each raw line becomes the column value. Config: `{ "path": "...", "interval_ms": 1000 }` (configurable interval so tests can set it to 0).
+- [ ] `Cargo.toml` depends only on `feldera-adapterlib` — proves the plugin surface is closed.
+- [ ] Implements `TransportInputEndpoint` + `InputReader` and registers via `register_connector!`.
+
+#### Fault tolerance: `ExactlyOnce` via byte offset
+
+- [ ] The connector advertises `FtModel::ExactlyOnce`. The seek datum is a **`u64` byte offset** into the file, serialized as 8 bytes. Using a byte offset (rather than a line number) means resume is a single `File::seek(SeekFrom::Start(offset))` call — O(1), no re-scan from the top.
+- [ ] **Checkpoint**: on `Queue { checkpoint_requested: true }`, record `file.stream_position()` as the checkpoint payload.
+- [ ] **Resume** (`Resume::Seek { seek }`): deserialize the offset and seek before entering the read loop.
+- [ ] **Replay** (`Resume::Replay { seek, replay, hash }`): seek to `seek`, re-emit lines up through the `replay` offset into the replay buffer, then set position to `replay` and continue. For a sequential line reader this is a small bounded re-scan.
+
+#### Integration test
+
+- [ ] Enable `crates/connector-example` in `pipeline-manager` via a build feature flag and populate a test `connectors.toml` pointing at it.
+- [ ] Write a known test file (e.g. five lines). Run the pipeline with `interval_ms = 0`. Assert the full plugin path: `connectors.toml` → describer → manifest → SQL parse → pipeline build → runtime dispatch → five rows in the output view.
+- [ ] Checkpoint/restore test: checkpoint after three rows, restart the pipeline, assert only the remaining two rows are emitted (not all five) — exercising the `ExactlyOnce` seek path.
+
+#### Documentation
+
+- [ ] Add a "Writing a connector" doc page citing `crates/connector-example` as the canonical reference. Cover: the two traits (`TransportInputEndpoint`, `InputReader`), `register_connector!`, choosing a seek datum, the three FT commands (`Queue`, `Seek`, `Replay`), and the single-column schema constraint of this specific demo.
+
 - **Depends on**: PR 15.
 - **Unblocks**: nothing; ships the contract.
 

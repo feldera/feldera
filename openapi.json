@@ -620,6 +620,16 @@
           },
           "304": {
             "description": "Not modified."
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -11324,6 +11334,23 @@
           "name": {
             "type": "string",
             "description": "Name of the ConfigMap containing the pipeline template."
+          }
+        }
+      },
+      "PluginTransportConfig": {
+        "type": "object",
+        "description": "Configuration for an out-of-tree connector plugin.\n\nWhen the `\"name\"` field in a stored pipeline configuration does not match\nany built-in `TransportConfig` variant, it deserializes to this type.  The\nname and raw config blob are preserved so the pipeline controller can look\nup the connector in the descriptor registry by name at runtime.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "config": {
+            "type": "object",
+            "description": "Connector-specific configuration blob."
+          },
+          "name": {
+            "type": "string",
+            "description": "Connector name, as registered via `register_connector!`."
           }
         }
       },

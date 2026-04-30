@@ -158,6 +158,32 @@ export type CalcitePlan = {
 }
 
 /**
+ * Current checkpoint activity state.
+ */
+export type CheckpointActivity =
+  | {
+      status: 'idle'
+    }
+  | {
+      /**
+       * When the delay started (serialized as ISO 8601).
+       */
+      delayed_since: string
+      /**
+       * Why the checkpoint cannot proceed yet.
+       */
+      reasons: Array<TemporarySuspendError>
+      status: 'delayed'
+    }
+  | {
+      /**
+       * When the checkpoint write started (serialized as ISO 8601).
+       */
+      started_at: string
+      status: 'in_progress'
+    }
+
+/**
  * Information about a failed checkpoint.
  */
 export type CheckpointFailure = {
@@ -165,6 +191,10 @@ export type CheckpointFailure = {
    * Error message associated with the failure.
    */
   error: string
+  /**
+   * When the failure occurred (serialized as ISO 8601).
+   */
+  failed_at: string
   /**
    * Sequence number of the failed checkpoint.
    */
@@ -740,6 +770,43 @@ export type ConnectorTransactionPhase = {
   phase: TransactionPhase
 }
 
+export type ConnectorsConfigPutResponse = {
+  /**
+   * New `content_hash` of the row after the update. Use this as the
+   * next `If-Match` value when issuing a follow-up edit.
+   */
+  content_hash: string
+  /**
+   * Monotonic per-tenant version, incremented on every successful PUT.
+   */
+  version: number
+}
+
+export type ConnectorsStatusResponse = {
+  /**
+   * `content_hash` of the tenant's `connectors.toml`. Absent for the
+   * `not_configured` state — there is no content to hash.
+   */
+  content_hash?: string | null
+  /**
+   * Raw JSON manifest emitted by the describer (each entry is a
+   * `ConnectorManifestEntry`). Present only when `state == "ready"`.
+   */
+  descriptors?: unknown
+  /**
+   * Captured stderr from a failed describer build. Present only when
+   * `state == "failed"`.
+   */
+  error?: string | null
+  /**
+   * Wall-clock time of the last completed build. Absent when no build
+   * has run yet (e.g. `not_configured`, or first read of a tenant).
+   */
+  last_built_at?: string | null
+  state: StatusName
+  version: number
+}
+
 export type ConsumerConfig = {
   deliver_policy: DeliverPolicy
   description?: string | null
@@ -766,6 +833,7 @@ export type ConsumerConfig = {
  * without requiring a direct dependency on the adapters crate.
  */
 export type ControllerStatus = {
+  checkpoint_activity?: CheckpointActivity | null
   global_metrics: GlobalControllerMetrics
   /**
    * Input endpoint configs and metrics.
@@ -775,6 +843,13 @@ export type ControllerStatus = {
    * Output endpoint configs and metrics.
    */
   outputs: Array<OutputEndpointStatus>
+  /**
+   * If the pipeline fundamentally cannot checkpoint (e.g. storage is not
+   * configured, or an input endpoint does not support suspend), the reasons
+   * are listed here.  Unlike a checkpoint failure, this means *no*
+   * checkpoint can succeed until the pipeline configuration changes.
+   */
+  permanent_checkpoint_errors?: Array<PermanentSuspendError> | null
   suspend_error?: SuspendError | null
 }
 
@@ -1015,6 +1090,20 @@ export type DeltaTableReaderConfig = {
    * The default value is 6.
    */
   max_concurrent_readers?: number | null
+  /**
+   * Maximum number of retries for failed object store operations.
+   *
+   * Controls how many times the connector retries high-level storage operations,
+   * such as reading a Delta log entry or a Parquet file.
+   *
+   * This is in addition to lower-level retries (e.g., individual S3 operation retries governed
+   * by storage options like `retry_timeout`). If those retries are exhausted
+   * or the failure is otherwise unrecoverable at the storage layer, the
+   * connector retries the entire operation.
+   *
+   * Defaults to unlimited retries. Set to 0 to disable retries.
+   */
+  max_retries?: number | null
   mode: DeltaTableIngestMode
   /**
    * The number of parallel parsing tasks the connector uses to process data read from the
@@ -1129,6 +1218,8 @@ export type DeltaTableReaderConfig = {
     | null
     | number
     | null
+    | number
+    | null
     | DeltaTableIngestMode
     | number
     | boolean
@@ -1188,6 +1279,18 @@ export type DeltaTableWriteMode = 'append' | 'truncate' | 'error_if_exists'
  */
 export type DeltaTableWriterConfig = {
   /**
+   * Checkpoint interval (i.e., the number of commits after which a new checkpoint should be created) for newly created Delta tables.
+   *
+   * The option is only available when creating the Delta table (`mode = append` and there
+   * is no existing table at the target location or `mode = truncate`). It configures the `checkpointInterval`
+   * table property, which determines the number of commits after which a new checkpoint should be created.
+   *
+   * 0 means no checkpoints are created.
+   *
+   * Default: 10.
+   */
+  checkpoint_interval?: number | null
+  /**
    * Maximum number of retries for failed operations.
    *
    * The connector performs retries on several levels: individual S3 operations, Delta Lake transaction commits,
@@ -1201,10 +1304,28 @@ export type DeltaTableWriterConfig = {
   max_retries?: number | null
   mode?: DeltaTableWriteMode
   /**
+   * Number of parallel threads used by the connector.
+   *
+   * Increasing this value can improve Delta Lake write throughput
+   * by enabling concurrent writes.
+   *
+   * Default: 1.
+   */
+  threads?: number | null
+  /**
    * Table URI.
    */
   uri: string
-  [key: string]: string | number | null | DeltaTableWriteMode | undefined
+  [key: string]:
+    | string
+    | number
+    | null
+    | number
+    | null
+    | DeltaTableWriteMode
+    | number
+    | null
+    | undefined
 }
 
 export type Demo = {
@@ -1236,6 +1357,9 @@ export type Demo = {
 
 /**
  * Optional settings for tweaking Feldera internals.
+ *
+ * These settings reflect experiments that may come and go and change from
+ * version to version.  Users should not consider them to be stable.
  */
 export type DevTweaks = {
   /**
@@ -1272,15 +1396,20 @@ export type DevTweaks = {
   /**
    * The minimum absolute improvement threshold for the balancer.
    *
-   * This parameter prevents the join balancer from making changes to the
-   * partitioning policy if the improvement is not significant, since the overhead
-   * of such rebalancing, especially when performed frequently, can exceed the benefits.
+   * The join balancer is a component that dynamically chooses an optimal
+   * partitioning policy for adaptive join operators.  This parameter
+   * prevents the join balancer from making changes to the partitioning
+   * policy if the improvement is not significant, since the overhead of such
+   * rebalancing, especially when performed frequently, can exceed the
+   * benefits.
    *
-   * A rebalancing is considered significant if the absolute estimated improvement for the cluster
-   * of joins where the rebalancing is applied is at least this threshold. The cost model used by
-   * the balancer is based on the number of records in the largest partition of a collection.
+   * A rebalancing is considered significant if the absolute estimated
+   * improvement for the cluster of joins where the rebalancing is applied is
+   * at least this threshold. The cost model used by the balancer is based on
+   * the number of records in the largest partition of a collection.
    *
-   * A rebalancing is applied if both this threshold and `balancer_min_relative_improvement_threshold` are met.
+   * A rebalancing is applied if both this threshold and
+   * `balancer_min_relative_improvement_threshold` are met.
    *
    * The default value is 10,000.
    */
@@ -1288,14 +1417,19 @@ export type DevTweaks = {
   /**
    * The minimum relative improvement threshold for the join balancer.
    *
-   * This parameter prevents the join balancer from making changes to the
-   * partitioning policy if the improvement is not significant, since the overhead
-   * of such rebalancing, especially when performed frequently, can exceed the benefits.
+   * The join balancer is a component that dynamically chooses an optimal
+   * partitioning policy for adaptive join operators.  This parameter
+   * prevents the join balancer from making changes to the partitioning
+   * policy if the improvement is not significant, since the overhead of such
+   * rebalancing, especially when performed frequently, can exceed the
+   * benefits.
    *
-   * A rebalancing is considered significant if the relative estimated improvement for the cluster
-   * of joins where the rebalancing is applied is at least this threshold.
+   * A rebalancing is considered significant if the relative estimated
+   * improvement for the cluster of joins where the rebalancing is applied is
+   * at least this threshold.
    *
-   * A rebalancing is applied if both this threshold and `balancer_min_absolute_improvement_threshold` are met.
+   * A rebalancing is applied if both this threshold and
+   * `balancer_min_absolute_improvement_threshold` are met.
    *
    * The default value is 1.2.
    */
@@ -1328,9 +1462,32 @@ export type DevTweaks = {
    */
   buffer_max_buckets?: number | null
   /**
+   * Evict eagerly from buffer caches as files get deleted.
+   *
+   * This is an optimization that drops files from
+   * the cache as soon as they are deleted.
+   *
+   * It has unknown (no?) performance benefits from what I can tell.
+   *
+   * Historically it made sense to do this for two reasons:
+   * a) we know with 100% guarantee that the file won't ever be
+   * read again.
+   * b) we could do this in O(logn) time with the LRU cache.
+   * This is no longer true for s3-fifo where it is O(n).
+   *
+   * If the eviction is expensive, (many small objects in the cache)
+   * this can cause a regression.
+   *
+   * New default disables this behavior by making it false.
+   *
+   * If this doesn't cause regression we will remove this option
+   * in the future.
+   */
+  eager_evict?: boolean | null
+  /**
    * Target number of cached bytes retained in each `FBuf` slab size class.
    *
-   * The default value is [`FBufSlabs::DEFAULT_BYTES_PER_CLASS`].
+   * The default is 16 MiB.
    */
   fbuf_slab_bytes_per_class?: number | null
   /**
@@ -1359,6 +1516,16 @@ export type DevTweaks = {
    */
   merger_threads?: number | null
   /**
+   * Additional bias the merger assigns to records with negative weights
+   * (retractions) to promote them to higher levels of the LSM tree sooner.
+   *
+   * Reasonable values for this parameter are in the range [0, 10].
+   *
+   * The default value is 0, which means that retractions are not given
+   * any additional bias.
+   */
+  negative_weight_multiplier?: number | null
+  /**
    * Controls the maximal number of records output by splitter operators
    * (joins, distinct, aggregation, rolling window and group operators) at
    * each step.
@@ -1381,6 +1548,49 @@ export type DevTweaks = {
    * [StorageFull]: std::io::ErrorKind::StorageFull
    */
   storage_mb_max?: number | null
+  [key: string]:
+    | unknown
+    | boolean
+    | null
+    | number
+    | null
+    | number
+    | null
+    | number
+    | null
+    | number
+    | null
+    | number
+    | null
+    | BufferCacheAllocationStrategy
+    | null
+    | BufferCacheStrategy
+    | null
+    | number
+    | null
+    | boolean
+    | null
+    | number
+    | null
+    | boolean
+    | null
+    | boolean
+    | null
+    | number
+    | null
+    | MergerType
+    | null
+    | number
+    | null
+    | number
+    | null
+    | number
+    | null
+    | boolean
+    | null
+    | number
+    | null
+    | undefined
 }
 
 export type DisplaySchedule =
@@ -2783,6 +2993,13 @@ export type OutputEndpointConfig = ConnectorConfig & {
  */
 export type OutputEndpointMetrics = {
   /**
+   * Number of records written so far while the connector is processing a
+   * batch of updates.  Resets to 0 after the batch is committed.
+   *
+   * `None` when the connector does not support batch-progress reporting.
+   */
+  batch_records_written?: number | null
+  /**
    * Number of batches in the buffer.
    */
   buffered_batches: number
@@ -3201,6 +3418,7 @@ export type PipelineInfo = {
   refresh_version: Version
   runtime_config: RuntimeConfig
   storage_status: StorageStatus
+  storage_status_details?: unknown
   udf_rust: string
   udf_toml: string
   version: Version
@@ -3245,6 +3463,7 @@ export type PipelineSelectedInfo = {
   refresh_version: Version
   runtime_config?: RuntimeConfig | null
   storage_status: StorageStatus
+  storage_status_details?: unknown
   udf_rust?: string | null
   udf_toml?: string | null
   version: Version
@@ -3297,6 +3516,27 @@ export type PipelineTemplateConfig = {
 }
 
 /**
+ * Configuration for an out-of-tree connector plugin.
+ *
+ * When the `"name"` field in a stored pipeline configuration does not match
+ * any built-in `TransportConfig` variant, it deserializes to this type.  The
+ * name and raw config blob are preserved so the pipeline controller can look
+ * up the connector in the descriptor registry by name at runtime.
+ */
+export type PluginTransportConfig = {
+  /**
+   * Connector-specific configuration blob.
+   */
+  config?: {
+    [key: string]: unknown
+  }
+  /**
+   * Connector name, as registered via `register_connector!`.
+   */
+  name: string
+}
+
+/**
  * Create a new pipeline (POST), or fully update an existing pipeline (PUT).
  * Fields which are optional and not provided will be set to their empty type value
  * (for strings: an empty string `""`, for objects: an empty dictionary `{}`).
@@ -3321,6 +3561,67 @@ export type PostStopPipelineParameters = {
    * (`force=false`, which is the default).
    */
   force?: boolean
+}
+
+/**
+ * Postgres CDC input connector configuration.
+ *
+ * Uses logical replication to capture ongoing changes from a Postgres database.
+ * Requires a pre-created publication and a user with REPLICATION privilege.
+ * Tables must have primary keys and `REPLICA IDENTITY FULL` is recommended
+ * for UPDATE/DELETE support.
+ */
+export type PostgresCdcReaderConfig = {
+  /**
+   * Path to a file containing a sequence of CA certificates in PEM format.
+   */
+  ssl_ca_location?: string | null
+  /**
+   * A sequence of CA certificates in PEM format.
+   */
+  ssl_ca_pem?: string | null
+  /**
+   * The path to the certificate chain file.
+   * The file must contain a sequence of PEM-formatted certificates,
+   * the first being the leaf certificate, and the remainder forming
+   * the chain of certificates up to and including the trusted root certificate.
+   */
+  ssl_certificate_chain_location?: string | null
+  /**
+   * The client certificate key in PEM format.
+   */
+  ssl_client_key?: string | null
+  /**
+   * Path to the client certificate key.
+   */
+  ssl_client_key_location?: string | null
+  /**
+   * Path to the client certificate.
+   */
+  ssl_client_location?: string | null
+  /**
+   * The client certificate in PEM format.
+   */
+  ssl_client_pem?: string | null
+  /**
+   * True to enable hostname verification when using TLS. True by default.
+   */
+  verify_hostname?: boolean | null
+} & {
+  /**
+   * Name of the pre-created Postgres publication to replicate from.
+   */
+  publication: string
+  /**
+   * Postgres table to replicate (e.g. "public.orders").
+   * Must be included in the publication.
+   */
+  source_table: string
+  /**
+   * Postgres connection URI. The user must have REPLICATION privilege.
+   * See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>
+   */
+  uri: string
 }
 
 /**
@@ -3483,6 +3784,13 @@ export type PostgresWriterConfig = {
    * Default: `"__feldera_ts"`
    */
   cdc_ts_column?: string
+  /**
+   * The names of the extra columns in the Postgres table that are not part of the view schema.
+   *
+   * These connector can write user-defined values, configured using the `set_extra_columns` connector command,
+   * to these columns.
+   */
+  extra_columns?: Array<string>
   /**
    * The maximum buffer size in for a single operation.
    * Note that the buffers of `INSERT`, `UPDATE` and `DELETE` queries are
@@ -4491,6 +4799,8 @@ export type StartTransactionResponse = {
   transaction_id: number
 }
 
+export type StatusName = 'ready' | 'building' | 'failed' | 'not_configured'
+
 /**
  * Backend storage configuration.
  */
@@ -4837,86 +5147,79 @@ export type TransactionStatus = 'NoTransaction' | 'TransactionInProgress' | 'Com
  * Transport-specific endpoint configuration passed to
  * `crate::OutputTransport::new_endpoint`
  * and `crate::InputTransport::new_endpoint`.
+ *
+ * Known built-in connectors deserialize to their typed variant.  An unknown
+ * `"name"` field deserializes to [`TransportConfig::Plugin`], preserving the
+ * name and raw config for runtime dispatch via the connector descriptor
+ * registry.
+ *
+ * `Serialize` and `Deserialize` are implemented manually to support this
+ * open-ended deserialization.
  */
 export type TransportConfig =
   | {
-      config: FileInputConfig
-      name: 'file_input'
+      FileInput: FileInputConfig
     }
   | {
-      config: FileOutputConfig
-      name: 'file_output'
+      FileOutput: FileOutputConfig
     }
   | {
-      config: NatsInputConfig
-      name: 'nats_input'
+      NatsInput: NatsInputConfig
     }
   | {
-      config: KafkaInputConfig
-      name: 'kafka_input'
+      KafkaInput: KafkaInputConfig
     }
   | {
-      config: KafkaOutputConfig
-      name: 'kafka_output'
+      KafkaOutput: KafkaOutputConfig
     }
   | {
-      config: PubSubInputConfig
-      name: 'pub_sub_input'
+      PubSubInput: PubSubInputConfig
     }
   | {
-      config: UrlInputConfig
-      name: 'url_input'
+      UrlInput: UrlInputConfig
     }
   | {
-      config: S3InputConfig
-      name: 's3_input'
+      S3Input: S3InputConfig
     }
   | {
-      config: DeltaTableReaderConfig
-      name: 'delta_table_input'
+      DeltaTableInput: DeltaTableReaderConfig
     }
   | {
-      config: DeltaTableWriterConfig
-      name: 'delta_table_output'
+      DeltaTableOutput: DeltaTableWriterConfig
     }
   | {
-      config: RedisOutputConfig
-      name: 'redis_output'
+      RedisOutput: RedisOutputConfig
     }
   | {
-      config: IcebergReaderConfig
-      name: 'iceberg_input'
+      IcebergInput: IcebergReaderConfig
     }
   | {
-      config: PostgresReaderConfig
-      name: 'postgres_input'
+      PostgresInput: PostgresReaderConfig
     }
   | {
-      config: PostgresWriterConfig
-      name: 'postgres_output'
+      PostgresCdcInput: PostgresCdcReaderConfig
     }
   | {
-      config: DatagenInputConfig
-      name: 'datagen'
+      PostgresOutput: PostgresWriterConfig
     }
   | {
-      config: NexmarkInputConfig
-      name: 'nexmark'
+      Datagen: DatagenInputConfig
     }
   | {
-      config: HttpInputConfig
-      name: 'http_input'
+      Nexmark: NexmarkInputConfig
     }
   | {
-      name: 'http_output'
+      HttpInput: HttpInputConfig
+    }
+  | 'HttpOutput'
+  | {
+      AdHocInput: AdHocInputConfig
     }
   | {
-      config: AdHocInputConfig
-      name: 'ad_hoc_input'
+      ClockInput: ClockConfig
     }
   | {
-      config: ClockConfig
-      name: 'clock_input'
+      Plugin: PluginTransportConfig
     }
 
 export type UpdateInformation = {
@@ -5251,6 +5554,91 @@ export type GetConfigSessionResponses = {
 }
 
 export type GetConfigSessionResponse = GetConfigSessionResponses[keyof GetConfigSessionResponses]
+
+export type GetConnectorsTomlData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/v0/connectors/connectors.toml'
+}
+
+export type GetConnectorsTomlResponses = {
+  /**
+   * Blob retrieved.
+   */
+  200: unknown
+}
+
+export type PutConnectorsTomlData = {
+  body: string
+  path?: never
+  query?: never
+  url: '/v0/connectors/connectors.toml'
+}
+
+export type PutConnectorsTomlErrors = {
+  /**
+   * Body fails the line-shape check.
+   */
+  400: unknown
+  /**
+   * If-Match hash does not match the current row.
+   */
+  412: unknown
+}
+
+export type PutConnectorsTomlResponses = {
+  /**
+   * Update accepted; rebuild in progress.
+   */
+  202: ConnectorsConfigPutResponse
+}
+
+export type PutConnectorsTomlResponse = PutConnectorsTomlResponses[keyof PutConnectorsTomlResponses]
+
+export type PostConnectorsRefreshData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/v0/connectors/refresh'
+}
+
+export type PostConnectorsRefreshErrors = {
+  /**
+   * Compiler config is not available.
+   */
+  404: unknown
+}
+
+export type PostConnectorsRefreshResponses = {
+  /**
+   * Refresh accepted; rebuild in progress.
+   */
+  202: unknown
+}
+
+export type GetConnectorsStatusData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/v0/connectors/status'
+}
+
+export type GetConnectorsStatusErrors = {
+  500: ErrorResponse
+}
+
+export type GetConnectorsStatusError = GetConnectorsStatusErrors[keyof GetConnectorsStatusErrors]
+
+export type GetConnectorsStatusResponses = {
+  /**
+   * Status retrieved.
+   */
+  200: ConnectorsStatusResponse
+}
+
+export type GetConnectorsStatusResponse =
+  GetConnectorsStatusResponses[keyof GetConnectorsStatusResponses]
 
 export type GetMetricsData = {
   body?: never
@@ -6276,6 +6664,49 @@ export type PostPipelineRebalanceResponses = {
   200: unknown
 }
 
+export type ResetStatusData = {
+  body?: never
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query: {
+    /**
+     * Reset token returned by the output connector reset endpoint.
+     */
+    token: string
+  }
+  url: '/v0/pipelines/{pipeline_name}/reset_status'
+}
+
+export type ResetStatusErrors = {
+  /**
+   * An invalid reset token was provided
+   */
+  400: ErrorResponse
+  /**
+   * Pipeline with that name does not exist
+   */
+  404: ErrorResponse
+  /**
+   * Reset token was created by a previous incarnation of the pipeline; the server cannot validate the reset across incarnations. Reissue the reset.
+   */
+  410: ErrorResponse
+  500: ErrorResponse
+  503: ErrorResponse
+}
+
+export type ResetStatusError = ResetStatusErrors[keyof ResetStatusErrors]
+
+export type ResetStatusResponses = {
+  /**
+   * Reset token status has been retrieved
+   */
+  200: unknown
+}
+
 export type PostPipelineResumeData = {
   body?: never
   path: {
@@ -6884,6 +7315,49 @@ export type PostUpdateRuntimeResponses = {
 }
 
 export type PostUpdateRuntimeResponse = PostUpdateRuntimeResponses[keyof PostUpdateRuntimeResponses]
+
+export type PostPipelineOutputConnectorResetData = {
+  body?: never
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+    /**
+     * SQL view name
+     */
+    view_name: string
+    /**
+     * Output connector name
+     */
+    connector_name: string
+  }
+  query?: never
+  url: '/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/reset'
+}
+
+export type PostPipelineOutputConnectorResetErrors = {
+  /**
+   * The output connector does not support reset
+   */
+  400: ErrorResponse
+  /**
+   * Pipeline, view and/or output connector with that name does not exist
+   */
+  404: ErrorResponse
+  500: ErrorResponse
+  503: ErrorResponse
+}
+
+export type PostPipelineOutputConnectorResetError =
+  PostPipelineOutputConnectorResetErrors[keyof PostPipelineOutputConnectorResetErrors]
+
+export type PostPipelineOutputConnectorResetResponses = {
+  /**
+   * Output connector reset request has been processed
+   */
+  200: unknown
+}
 
 export type GetPipelineOutputConnectorStatusData = {
   body?: never

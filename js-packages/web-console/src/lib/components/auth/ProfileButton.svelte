@@ -6,6 +6,7 @@
   import Popup from '$lib/components/common/Popup.svelte'
   import DarkModeSwitch from '$lib/components/layout/userPopup/DarkModeSwitch.svelte'
   import ApiKeyMenu from '$lib/components/other/ApiKeyMenu.svelte'
+  import PluginsDialog from '$lib/components/other/PluginsDialog.svelte'
   import VersionDisplay from '$lib/components/version/VersionDisplay.svelte'
   import type { ClusterHealthStatus } from '$lib/compositions/health/useClusterHealth.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
@@ -114,6 +115,15 @@
           </button>
         {/if}
         <div class="hr"></div>
+        {#snippet pluginsIcon()}
+          <div class="fd fd-plug text-[20px]"></div>
+        {/snippet}
+        {@render profileItemButton(
+          'Plugins',
+          pluginsIcon,
+          () => (globalDialog.dialog = pluginsDialog)
+        )}
+        <div class="hr"></div>
         {#snippet healthIcon()}
           <div
             class="m-2 h-2.5 w-2.5 rounded-full text-[64px] {combinedStatus === 'healthy'
@@ -133,4 +143,8 @@
 
 {#snippet apiKeyDialog()}
   <ApiKeyMenu></ApiKeyMenu>
+{/snippet}
+
+{#snippet pluginsDialog()}
+  <PluginsDialog></PluginsDialog>
 {/snippet}

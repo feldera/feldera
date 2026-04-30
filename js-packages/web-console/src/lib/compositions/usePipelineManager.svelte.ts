@@ -14,6 +14,8 @@ import {
   getClusterEvents,
   getConfig,
   getConfigSession,
+  getConnectorsStatus,
+  getConnectorsToml,
   getDemos,
   getExtendedPipeline,
   getPipelineDataflowGraph,
@@ -28,6 +30,7 @@ import {
   postPipeline,
   postPipelineAction,
   postUpdateRuntime,
+  putConnectorsToml,
   putPipeline,
   relationEgressStream,
   relationIngress,
@@ -233,6 +236,12 @@ export const usePipelineManager = (options?: FetchOptions) => {
       getPipelineDataflowGraph,
       (pipelineName) => `Failed to load dataflow graph of pipeline ${pipelineName}`
     ),
-    getPipelineSupportBundle
+    getPipelineSupportBundle,
+    getConnectorsToml: reportError(getConnectorsToml, () => `Failed to fetch connectors.toml`),
+    putConnectorsToml: reportError(putConnectorsToml, () => `Failed to update connectors.toml`),
+    getConnectorsStatus: reportError(
+      getConnectorsStatus,
+      () => `Failed to fetch connector plugin status`
+    )
   }
 }

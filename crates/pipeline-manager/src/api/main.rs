@@ -360,6 +360,7 @@ It contains the following fields:
         feldera_types::config::OutputBufferConfig,
         feldera_types::config::OutputEndpointConfig,
         feldera_types::config::TransportConfig,
+        feldera_types::config::PluginTransportConfig,
         feldera_types::config::FormatConfig,
         feldera_types::config::ResourceConfig,
         feldera_types::config::ObjectStorageConfig,
