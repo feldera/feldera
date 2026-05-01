@@ -15,6 +15,9 @@ pub(crate) fn maybe_unique_violation(err: PgError) -> DBError {
                 Some("cluster_monitor_event_pkey") => {
                     DBError::unique_key_violation("cluster_monitor_event_pkey")
                 }
+                Some("pipeline_monitor_event_pkey") => {
+                    DBError::unique_key_violation("pipeline_monitor_event_pkey")
+                }
                 Some("unique_hash") => DBError::duplicate_key(),
                 Some(_constraint) => DBError::DuplicateName,
                 None => DBError::DuplicateName,
