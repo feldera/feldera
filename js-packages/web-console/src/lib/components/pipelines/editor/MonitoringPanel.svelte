@@ -6,6 +6,7 @@
     | 'Changes Stream'
     | 'Profile Visualizer'
     | 'Samply'
+    | 'Health'
     | 'Logs'
 </script>
 
@@ -20,6 +21,7 @@
   import PanelPipelineErrors from '$lib/components/pipelines/editor/TabPipelineErrors.svelte'
   import * as TabProfileVisualizer from '$lib/components/pipelines/editor/TabProfileVisualizer.svelte'
   import * as TabSamplyProfile from '$lib/components/pipelines/editor/TabSamplyProfile.svelte'
+  import PanelHealth from '$lib/components/pipelines/editor/TabHealth.svelte'
   import PanelLogs from '$lib/components/pipelines/editor/TabLogs.svelte'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
@@ -93,6 +95,13 @@
         id: 'Samply' as const,
         label: TabSamplyProfile.Label,
         panel: TabSamplyProfile.default,
+        keepAlive: false,
+        tabBarEnd: TabBarEndPipelineInfo
+      },
+      {
+        id: 'Health' as const,
+        label: TabHealth,
+        panel: PanelHealth,
         keepAlive: false,
         tabBarEnd: TabBarEndPipelineInfo
       },
@@ -189,6 +198,10 @@
 {#snippet TabControlChangeStream()}
   <span class="inline sm:hidden"> Changes </span>
   <span class="hidden sm:inline"> Changes Stream </span>
+{/snippet}
+
+{#snippet TabHealth()}
+  <span>Health</span>
 {/snippet}
 
 {#snippet TabLogs()}

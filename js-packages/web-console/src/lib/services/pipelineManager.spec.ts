@@ -16,28 +16,31 @@ vi.mock('$lib/services/manager', async (importOriginal) => {
     getPipeline: vi.fn(),
     listPipelines: vi.fn(),
     patchPipeline: vi.fn(),
-    putPipeline: vi.fn(),
+    putPipeline: vi.fn()
   }
 })
 
 import * as sdkManager from '$lib/services/manager'
 import {
   getExtendedPipeline,
-  getPipelineThumb,
   getPipelines,
+  getPipelineThumb,
   patchPipeline,
-  putPipeline,
+  putPipeline
 } from '$lib/services/pipelineManager'
 
 const API_ERROR: ErrorResponse = {
-  message: 'The following pipeline edits are not allowed while storage is not cleared: `runtime_config.workers`',
+  message:
+    'The following pipeline edits are not allowed while storage is not cleared: `runtime_config.workers`',
   error_code: 'EditRestrictedToClearedStorage',
   details: { not_allowed: ['`runtime_config.workers`'] }
 }
 
 async function catchRejection(promise: Promise<unknown>): Promise<unknown> {
   return promise.then(
-    () => { throw new Error('Expected promise to reject but it resolved') },
+    () => {
+      throw new Error('Expected promise to reject but it resolved')
+    },
     (e) => e
   )
 }
@@ -58,7 +61,7 @@ describe('pipelineManager API error propagation', () => {
       label: 'putPipeline',
       call: () => putPipeline('p', { name: 'p', program_code: '' })
     },
-    { label: 'getPipelines', call: () => getPipelines() },
+    { label: 'getPipelines', call: () => getPipelines() }
   ])('$label (default mapResponse wrapping)', ({ call }) => {
     it('throws instanceof Error, not a plain object', async () => {
       const err = await catchRejection(call())
@@ -81,7 +84,7 @@ describe('pipelineManager API error propagation', () => {
   // the fix; verify the contract holds.
   describe.each([
     { label: 'getExtendedPipeline', call: () => getExtendedPipeline('p') },
-    { label: 'getPipelineThumb', call: () => getPipelineThumb('p') },
+    { label: 'getPipelineThumb', call: () => getPipelineThumb('p') }
   ])('$label (explicit g handler)', ({ call }) => {
     it('throws instanceof Error, not a plain object', async () => {
       const err = await catchRejection(call())
@@ -104,7 +107,7 @@ describe('pipelineManager API error propagation', () => {
   describe('Error instances pass through the default handler unchanged', () => {
     it.each([
       { label: 'patchPipeline', call: () => patchPipeline('p', {}) },
-      { label: 'getPipelines', call: () => getPipelines() },
+      { label: 'getPipelines', call: () => getPipelines() }
     ])('$label re-throws TypeError as the same reference', async ({ call }) => {
       const networkError = new TypeError('Failed to fetch')
       vi.mocked(sdkManager.patchPipeline).mockRejectedValue(networkError)

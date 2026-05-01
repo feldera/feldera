@@ -1,27 +1,28 @@
 <script lang="ts">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
+  import { match } from 'ts-pattern'
   import EventLogList from '$lib/components/health/EventLogList.svelte'
   import HealthEventList from '$lib/components/health/HealthEventList.svelte'
   import StatusTimeline, { type TimelineGroup } from '$lib/components/health/StatusTimeline.svelte'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
-  import InlineDrawer from '$lib/components/layout/InlineDrawer.svelte'
+  import Drawer from '$lib/components/layout/Drawer.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import PipelineBreadcrumbs from '$lib/components/layout/PipelineBreadcrumbs.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
+  import { newDate } from '$lib/compositions/serverTime'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { partition } from '$lib/functions/common/array'
-  import { ceilToHour } from '$lib/functions/common/date'
+  import { ceilToHour, dateMax } from '$lib/functions/common/date'
   import {
+    type ClusterBucket,
+    type ClusterEventType,
     groupHealthEvents,
-    type HealthEventBucket,
     unpackCombinedEvent
   } from '$lib/functions/pipelines/health'
   import { resolve } from '$lib/functions/svelte'
   import type { ClusterMonitorEventSelectedInfo } from '$lib/services/manager'
-
-  let {}: {} = $props()
 
   type EventTag = 'api' | 'compiler' | 'runner'
 
@@ -37,14 +38,30 @@
     events = await api.getClusterEvents()
   }
 
+  const loadClusterEventDetail = async (eventId: string, bucket: ClusterBucket) => {
+    const e = await api.getClusterEvent(eventId)
+    if (!e) {
+      return null
+    }
+    const description = match(bucket.tag)
+      .with('api', () => (e.api_self_info || '') + '\n' + (e.api_resources_info || ''))
+      .with(
+        'compiler',
+        () => (e.compiler_self_info || '') + '\n' + (e.compiler_resources_info || '')
+      )
+      .with('runner', () => (e.runner_self_info || '') + '\n' + (e.runner_resources_info || ''))
+      .exhaustive()
+    return { timestamp: new Date(e.recorded_at), description }
+  }
+
   const rawClusterEvents = $derived.by(() => events?.flatMap(unpackCombinedEvent) ?? [])
 
   const healthWindowHours = 72
 
+  const lastTimestamp = (events: ClusterMonitorEventSelectedInfo[] | null) =>
+    ceilToHour(events?.length ? dateMax(new Date(events.at(0)!.recorded_at), newDate()) : newDate())
   const firstTimestamp = (events: ClusterMonitorEventSelectedInfo[] | null) =>
     new Date(lastTimestamp(events).getTime() - healthWindowHours * 60 * 60 * 1000)
-  const lastTimestamp = (events: ClusterMonitorEventSelectedInfo[] | null) =>
-    ceilToHour(events?.length ? new Date(events.at(0)!.recorded_at) : new Date())
 
   // Group events for EventLogList
   const groupedClusterEvents = $derived.by(() =>
@@ -72,21 +89,21 @@
     }
   ])
 
-  let selectedEvent: HealthEventBucket | null = $state(null)
+  let selectedEvent: ClusterBucket | null = $state(null)
 
   // Track selected time range (unified for both timeline bars and event list)
   let selectedEventTimestamp = $state<{ tag: EventTag; from: Date; to: Date } | null>(null)
 
   // Component refs for navigation
-  let eventLogListRef: EventLogList | undefined = $state()
-  let timelineRefs: { [key in EventTag]?: StatusTimeline } = $state({})
+  let eventLogListRef: EventLogList<ClusterEventType, EventTag> | undefined = $state()
+  let timelineRefs: { [key in EventTag]?: StatusTimeline<ClusterEventType> } = $state({})
 
   // Track which component has the active selection
   type ActiveComponent = { type: 'timeline'; tag: EventTag } | { type: 'incident' }
   let activeComponent: ActiveComponent | null = $state(null)
 
   // Open drawer with all events (including healthy) from the clicked timeline bar for a specific component
-  function handleBarClick(tag: EventTag, group: TimelineGroup) {
+  function handleBarClick(tag: EventTag, group: TimelineGroup<ClusterEventType>) {
     activeComponent = { type: 'timeline', tag }
     if (!rawClusterEvents.length) {
       return
@@ -102,8 +119,8 @@
       return
     }
 
-    // Create a HealthEventBucket from all events in the time range
-    const bucket: HealthEventBucket = {
+    // Create a ClusterBucket from all events in the time range
+    const bucket: ClusterBucket = {
       timestampFrom: new Date(group.startTime),
       timestampTo: new Date(group.endTime),
       type: group.status,
@@ -129,7 +146,7 @@
   }
 
   // Open drawer when an event is selected from EventLogList
-  function handleEventSelected(eventBucket: HealthEventBucket) {
+  function handleEventSelected(eventBucket: ClusterBucket) {
     activeComponent = { type: 'incident' }
     // Update selected event time range
     selectedEventTimestamp = {
@@ -143,7 +160,9 @@
 
   // Navigate to previous event by delegating to the active component
   function navigatePrevious() {
-    if (!activeComponent) return
+    if (!activeComponent) {
+      return
+    }
 
     if (activeComponent.type === 'timeline') {
       const timeline = timelineRefs[activeComponent.tag]
@@ -155,7 +174,9 @@
 
   // Navigate to next event by delegating to the active component
   function navigateNext() {
-    if (!activeComponent) return
+    if (!activeComponent) {
+      return
+    }
 
     if (activeComponent.type === 'timeline') {
       const timeline = timelineRefs[activeComponent.tag]
@@ -167,7 +188,9 @@
 
   // Get navigation state from the active component
   const activeNavigationState = $derived.by(() => {
-    if (!activeComponent) return null
+    if (!activeComponent) {
+      return null
+    }
 
     if (activeComponent.type === 'timeline') {
       const timeline = timelineRefs[activeComponent.tag]
@@ -181,6 +204,11 @@
   const canNavigatePrevious = $derived(activeNavigationState && activeNavigationState !== 'start')
 
   const canNavigateNext = $derived(activeNavigationState && activeNavigationState !== 'end')
+
+  const onCloseDrawer = () => {
+    selectedEvent = null
+    selectedEventTimestamp = null
+  }
 </script>
 
 <AppHeader>
@@ -220,7 +248,7 @@
           unitDurationMs={60 * 60 * 1000}
           class="flex flex-col gap-2"
           onBarClick={(group) => handleBarClick(tag as EventTag, group)}
-          legend={i === 2}
+          legend={i === 2 ? (['healthy', 'unhealthy', 'major_issue'] as ClusterEventType[]) : []}
           selectedBars={selectedEventTimestamp?.tag === tag
             ? { from: selectedEventTimestamp.from, to: selectedEventTimestamp.to }
             : null}
@@ -249,17 +277,15 @@
     </EventLogList>
   </div>
   <!-- TODO: Create a responsive inline drawer - that takes up full width on smaller screens -->
-  <InlineDrawer open={!!selectedEvent} side="right" width="w-[500px]">
+  <Drawer open={!!selectedEvent} side="right" width="w-[500px]" onClose={onCloseDrawer}>
     {#if selectedEvent}
       <HealthEventList
         eventParts={selectedEvent}
-        onClose={() => {
-          selectedEvent = null
-          selectedEventTimestamp = null
-        }}
+        loadEventDetail={loadClusterEventDetail}
+        onClose={onCloseDrawer}
         onNavigatePrevious={canNavigatePrevious ? navigatePrevious : undefined}
         onNavigateNext={canNavigateNext ? navigateNext : undefined}
       ></HealthEventList>
     {/if}
-  </InlineDrawer>
+  </Drawer>
 </div>

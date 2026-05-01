@@ -1,6 +1,5 @@
 <script lang="ts">
   import { fade } from 'svelte/transition'
-  import { goto } from '$app/navigation'
   import { page } from '$app/state'
   import CurrentTenant from '$lib/components/auth/CurrentTenant.svelte'
   import Popup from '$lib/components/common/Popup.svelte'
@@ -10,6 +9,7 @@
   import type { ClusterHealthStatus } from '$lib/compositions/health/useClusterHealth.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import type { HealthEventType } from '$lib/functions/pipelines/health'
+  import { resolve } from '$lib/functions/svelte'
   import type { AuthDetails } from '$lib/types/auth'
   import type { Snippet } from '$lib/types/svelte'
 
@@ -31,12 +31,22 @@
   })
 </script>
 
-{#snippet profileItemButton(label: string, icon: Snippet, onclick: () => void)}
-  <button class="group flex flex-nowrap items-center justify-start gap-2 font-medium" {onclick}>
+{#snippet profileItemButton(
+  label: string,
+  icon: Snippet,
+  action: { onclick: () => void } | { href?: string }
+)}
+  <svelte:element
+    this={'onclick' in action ? 'button' : 'a'}
+    role="button"
+    tabindex="0"
+    class="group flex flex-nowrap items-center justify-start gap-2 font-medium"
+    {...action}
+  >
     {@render icon()}
     <span class="mr-auto">{label}</span>
     <span class="fd fd-chevron-right rounded p-2 text-[20px] group-hover:bg-surface-50-950"></span>
-  </button>
+  </svelte:element>
 {/snippet}
 
 <Popup>
@@ -71,11 +81,9 @@
         {/snippet}
 
         {#if typeof auth === 'object' && 'logout' in auth}
-          {@render profileItemButton(
-            'Manage API keys',
-            apiKeysIcon,
-            () => (globalDialog.dialog = apiKeyDialog)
-          )}
+          {@render profileItemButton('Manage API keys', apiKeysIcon, {
+            onclick: () => (globalDialog.dialog = apiKeyDialog)
+          })}
 
           <div class="hr"></div>
         {/if}
@@ -123,7 +131,7 @@
                 : 'bg-error-500'}"
           ></div>
         {/snippet}
-        {@render profileItemButton('Feldera Health', healthIcon, () => goto('/health'))}
+        {@render profileItemButton('Feldera Health', healthIcon, { href: resolve('/health') })}
         <div class="hr"></div>
         <VersionDisplay></VersionDisplay>
       </div>

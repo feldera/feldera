@@ -59,9 +59,7 @@
   let lastSeenThumb = $state<PipelineThumb | undefined>(undefined)
   // Current thumb from the live pipeline list (undefined while the list is
   // loading OR once the pipeline has been removed from it).
-  const liveThumb = $derived(
-    pipelineList.pipelines?.find((p) => p.name === pipelineName)
-  )
+  const liveThumb = $derived(pipelineList.pipelines?.find((p) => p.name === pipelineName))
   // Snapshot the live thumb into `lastSeenThumb` so that, after the pipeline
   // is deleted and disappears from the list, the readonly view below can
   // still render the last-known metadata. Mutating state inside `$derived`

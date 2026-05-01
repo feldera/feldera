@@ -11,12 +11,20 @@
     open = $bindable(),
     side,
     children,
-    width
+    width,
+    onClose,
+    inlineClass = ''
   }: {
     open: boolean
     side: 'right' | 'left'
     children: Snippet
     width: string
+    inlineClass?: string
+    /**
+     * Called when the drawer requests dismissal (currently fired by the
+     * modal-backdrop click in the tablet/mobile overlay variant).
+     */
+    onClose?: () => void
   } = $props()
 </script>
 
@@ -27,9 +35,10 @@
     bind:open
     {side}
     {children}
+    {onClose}
     modal={true}
-    class="bg-surface-50 dark:bg-surface-950"
+    class="bg-white-dark p-4"
   ></OverlayDrawer>
 {:else}
-  <InlineDrawer {width} {open} {side} {children}></InlineDrawer>
+  <InlineDrawer {width} {open} {side} {children} class="bg-white-dark {inlineClass}"></InlineDrawer>
 {/if}
