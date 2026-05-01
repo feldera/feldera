@@ -168,6 +168,14 @@ pub enum ConfigError {
     FtRequiresStorage,
     FtRequiresFtInput,
 
+    /// `datafusion_memory_mb` was set to a value greater than or equal to
+    /// the pipeline's effective memory budget, which would leave no memory
+    /// for the DBSP circuit.
+    DatafusionMemoryExceedsBudget {
+        datafusion_memory_mb: u64,
+        max_rss_mb: u64,
+    },
+
     InvalidLayout(LayoutError),
 }
 
@@ -203,6 +211,9 @@ impl DbspDetailedError for ConfigError {
             Self::FtRequiresFtInput => Cow::from("FtWithNonFtInput"),
             Self::CyclicDependency { .. } => Cow::from("CyclicDependency"),
             Self::EmptyStartAfter { .. } => Cow::from("EmptyStartAfter"),
+            Self::DatafusionMemoryExceedsBudget { .. } => {
+                Cow::from("DatafusionMemoryExceedsBudget")
+            }
             Self::InvalidLayout(_) => Cow::from("LayoutError"),
         }
     }
@@ -416,6 +427,13 @@ impl Display for ConfigError {
             Self::FtRequiresFtInput => write!(
                 f,
                 "Fault tolerance is configured, but it cannot be enabled because the pipeline has at least one non-fault-tolerant input adapter"
+            ),
+            Self::DatafusionMemoryExceedsBudget {
+                datafusion_memory_mb,
+                max_rss_mb,
+            } => write!(
+                f,
+                "'datafusion_memory_mb' ({datafusion_memory_mb} MB) must be less than the pipeline's memory budget ({max_rss_mb} MB); the difference is the budget available to the DBSP circuit"
             ),
             Self::InvalidLayout(e) => write!(f, "Multihost layout error: {e}"),
         }

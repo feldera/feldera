@@ -300,6 +300,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
         serde_json::to_value(RuntimeConfig {
             workers: val.val0,
             max_rss_mb: val.val21,
+            datafusion_memory_mb: None,
             hosts: val.val20,
             cpu_profiler: val.val1,
             min_batch_size_records: val.val2,
@@ -1192,6 +1193,7 @@ async fn pipeline_versioning() {
     let new_runtime_config = serde_json::to_value(RuntimeConfig {
         workers: 100,
         max_rss_mb: None,
+        datafusion_memory_mb: None,
         hosts: 1,
         storage: None,
         fault_tolerance: FtConfig::default(),
@@ -2484,6 +2486,7 @@ async fn pipeline_provision_version_guard() {
                 serde_json::to_value(RuntimeConfig {
                     workers: 10,
                     max_rss_mb: None,
+                    datafusion_memory_mb: None,
                     hosts: 1,
                     storage: None,
                     fault_tolerance: FtConfig::default(),

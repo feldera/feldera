@@ -8,7 +8,7 @@ use feldera_types::checkpoint::{
     CheckpointDependencies, CheckpointDependenciesWrite, CheckpointMetadata,
 };
 use feldera_types::constants::{
-    ACTIVATION_MARKER_FILE, ADHOC_TEMP_DIR, CHECKPOINT_DEPENDENCIES, CHECKPOINT_FILE_NAME,
+    ACTIVATION_MARKER_FILE, CHECKPOINT_DEPENDENCIES, CHECKPOINT_FILE_NAME, DATAFUSION_TEMP_DIR,
     DBSP_FILE_EXTENSION, STATE_FILE, STATUS_FILE, STEPS_FILE,
 };
 use itertools::Itertools;
@@ -118,7 +118,7 @@ impl Checkpointer {
         // it.
         in_use_paths.insert(STATUS_FILE.into(), SmallVec::new());
         in_use_paths.insert(format!("{}.mut", STATUS_FILE).into(), SmallVec::new());
-        in_use_paths.insert(ADHOC_TEMP_DIR.into(), SmallVec::new());
+        in_use_paths.insert(DATAFUSION_TEMP_DIR.into(), SmallVec::new());
         in_use_paths.insert(ACTIVATION_MARKER_FILE.into(), SmallVec::new());
         for (checkpoint_index, cpm) in self.checkpoint_list.iter().enumerate() {
             in_use_paths

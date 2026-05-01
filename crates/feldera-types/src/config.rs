@@ -803,6 +803,28 @@ pub struct RuntimeConfig {
     /// for more details.
     pub max_rss_mb: Option<u64>,
 
+    /// DataFusion memory pool size, in MB, shared by the ad-hoc query
+    /// engine and the Delta Lake / Iceberg connectors.
+    ///
+    /// Carved out of `max_rss_mb` (falling back to
+    /// `resources.memory_mb_max`); the remainder goes to the DBSP circuit,
+    /// so the two do not double-book RAM.
+    ///
+    /// Unset: defaults to 5% of the effective budget, capped at 2 GB.
+    /// Pipelines that don't run heavy ad-hoc / Delta / Iceberg workloads
+    /// can leave this unset.
+    ///
+    /// Sort/aggregate-heavy ad-hoc queries (especially at high `workers`
+    /// counts) should set this explicitly. An under-sized pool surfaces as
+    /// `ResourcesExhausted` on the failing query — the pipeline keeps
+    /// running and only that query fails.
+    ///
+    /// No pool limit applied if no overall budget is configured.
+    ///
+    /// See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
+    /// for more details.
+    pub datafusion_memory_mb: Option<u64>,
+
     /// Number of DBSP hosts.
     ///
     /// The worker threads are evenly divided among the hosts.  For single-host
@@ -1065,6 +1087,7 @@ impl Default for RuntimeConfig {
         Self {
             workers: 8,
             max_rss_mb: None,
+            datafusion_memory_mb: None,
             hosts: 1,
             storage: Some(StorageOptions::default()),
             fault_tolerance: FtConfig::default(),
@@ -1091,6 +1114,36 @@ impl Default for RuntimeConfig {
             logging: None,
             pipeline_template_configmap: None,
         }
+    }
+}
+
+/// Upper bound on the default DataFusion pool size, in MB.
+///
+/// Spill-to-disk handles overflow; reserving more starves the circuit.
+pub const DEFAULT_DATAFUSION_MEMORY_MB_CEILING: u64 = 2048;
+
+/// Default DataFusion pool size as a percentage of the pipeline's
+/// effective memory budget. The remainder is left for the DBSP circuit.
+pub const DEFAULT_DATAFUSION_MEMORY_PERCENT: u64 = 5;
+
+impl RuntimeConfig {
+    /// Pipeline's effective memory budget in MB: `max_rss_mb`, falling back
+    /// to `resources.memory_mb_max` (the k8s pod limit).
+    pub fn effective_memory_mb(&self) -> Option<u64> {
+        self.max_rss_mb.or(self.resources.memory_mb_max)
+    }
+
+    /// Resolved DataFusion pool size in MB: explicit `datafusion_memory_mb`
+    /// if set, else 5% of the effective budget capped at
+    /// `DEFAULT_DATAFUSION_MEMORY_MB_CEILING`. `None` if no budget is
+    /// configured.
+    pub fn resolved_datafusion_memory_mb(&self) -> Option<u64> {
+        if let Some(explicit) = self.datafusion_memory_mb {
+            return Some(explicit);
+        }
+        let effective = self.effective_memory_mb()?;
+        let fraction = effective * DEFAULT_DATAFUSION_MEMORY_PERCENT / 100;
+        Some(fraction.min(DEFAULT_DATAFUSION_MEMORY_MB_CEILING))
     }
 }
 
@@ -1143,8 +1196,81 @@ impl Default for FtConfig {
 #[cfg(test)]
 mod test {
     use super::deserialize_fault_tolerance;
-    use crate::config::{FtConfig, FtModel};
+    use crate::config::{
+        DEFAULT_DATAFUSION_MEMORY_MB_CEILING, FtConfig, FtModel, ResourceConfig, RuntimeConfig,
+    };
     use serde::{Deserialize, Serialize};
+
+    #[test]
+    fn resolved_datafusion_memory_explicit_passes_through() {
+        let config = RuntimeConfig {
+            max_rss_mb: Some(8_000),
+            datafusion_memory_mb: Some(1_500),
+            ..Default::default()
+        };
+        assert_eq!(config.resolved_datafusion_memory_mb(), Some(1_500));
+    }
+
+    #[test]
+    fn resolved_datafusion_memory_unconfigured_returns_none() {
+        let config = RuntimeConfig::default();
+        assert!(config.max_rss_mb.is_none());
+        assert!(config.resources.memory_mb_max.is_none());
+        assert_eq!(config.resolved_datafusion_memory_mb(), None);
+    }
+
+    #[test]
+    fn resolved_datafusion_memory_small_budget_scales_down() {
+        // Small pipelines must provision cleanly; the default just shrinks.
+        let config = RuntimeConfig {
+            max_rss_mb: Some(256),
+            ..Default::default()
+        };
+        assert_eq!(config.resolved_datafusion_memory_mb(), Some(12));
+
+        let config = RuntimeConfig {
+            max_rss_mb: Some(512),
+            ..Default::default()
+        };
+        assert_eq!(config.resolved_datafusion_memory_mb(), Some(25));
+    }
+
+    #[test]
+    fn resolved_datafusion_memory_clamps_to_ceiling_for_large_budgets() {
+        // 5% of 64 GB = 3.2 GB, above the 2 GB ceiling.
+        let config = RuntimeConfig {
+            max_rss_mb: Some(64_000),
+            ..Default::default()
+        };
+        assert_eq!(
+            config.resolved_datafusion_memory_mb(),
+            Some(DEFAULT_DATAFUSION_MEMORY_MB_CEILING),
+        );
+    }
+
+    #[test]
+    fn resolved_datafusion_memory_midrange_uses_five_percent() {
+        // 5% of 16 GB = 800 MB, inside the clamp range.
+        let config = RuntimeConfig {
+            max_rss_mb: Some(16_000),
+            ..Default::default()
+        };
+        assert_eq!(config.resolved_datafusion_memory_mb(), Some(800));
+    }
+
+    #[test]
+    fn resolved_datafusion_memory_falls_back_to_resources() {
+        // No max_rss_mb, but resources.memory_mb_max is set.
+        let config = RuntimeConfig {
+            max_rss_mb: None,
+            resources: ResourceConfig {
+                memory_mb_max: Some(16_000),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert_eq!(config.resolved_datafusion_memory_mb(), Some(800));
+    }
 
     #[test]
     fn ft_config() {
