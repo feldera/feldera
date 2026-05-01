@@ -5,12 +5,14 @@
     side,
     open,
     children,
-    width
+    width,
+    class: _class = ''
   }: {
     open: boolean
     side: 'right' | 'left'
     children: Snippet
     width: string
+    class?: string
   } = $props()
 
   const positionClass = {
@@ -29,7 +31,7 @@
     class={' relative h-full transition-[width] duration-300 ease-in-out ' +
       (open ? width : 'w-0 ')}
   >
-    <div class=" absolute h-full {width} {positionClass[side]}">
+    <div class=" absolute h-full {width} {positionClass[side]} {_class}">
       {@render children()}
     </div>
   </div>

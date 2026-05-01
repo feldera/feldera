@@ -17,6 +17,8 @@ import {
   getDemos,
   getExtendedPipeline,
   getPipelineDataflowGraph,
+  getPipelineEvent,
+  getPipelineEvents,
   getPipelineStats,
   getPipelines,
   getPipelineThumb,
@@ -226,6 +228,14 @@ export const usePipelineManager = (options?: FetchOptions) => {
     ),
     getClusterEvents: reportError(getClusterEvents),
     getClusterEvent: reportError(getClusterEvent),
+    getPipelineEvents: reportError(
+      getPipelineEvents,
+      (pipelineName) => `Failed to fetch ${pipelineName} pipeline events`
+    ),
+    getPipelineEvent: reportError(
+      getPipelineEvent,
+      (pipelineName) => `Failed to fetch ${pipelineName} pipeline event`
+    ),
     getSamplyProfile: reportError(getSamplyProfile),
     downloadSamplyProfile: reportError(
       downloadSamplyProfile,

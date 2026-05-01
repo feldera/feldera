@@ -1,13 +1,13 @@
 import { useInterval } from '$lib/compositions/common/useInterval.svelte'
 import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-import { type HealthEventType, toEventType } from '$lib/functions/pipelines/health'
+import { type ClusterEventType, toEventType } from '$lib/functions/pipelines/health'
 
 export type ClusterHealthStatus = typeof status
 
 let status = $state({
-  api: 'healthy' as HealthEventType,
-  compiler: 'healthy' as HealthEventType,
-  runner: 'healthy' as HealthEventType
+  api: 'healthy' as ClusterEventType,
+  compiler: 'healthy' as ClusterEventType,
+  runner: 'healthy' as ClusterEventType
 })
 
 /**

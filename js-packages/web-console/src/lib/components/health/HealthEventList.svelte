@@ -1,31 +1,31 @@
-<script lang="ts">
+<script lang="ts" generics="S extends string, T extends string">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { slide } from 'svelte/transition'
-  import { match } from 'ts-pattern'
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { formatDateTime } from '$lib/functions/format'
+  import { formatDateTime, formatDateTimeRange } from '$lib/functions/format'
   import type { HealthEventBucket } from '$lib/functions/pipelines/health'
+
+  type Bucket = HealthEventBucket<S, T>
+  type EventDetail = { timestamp: Date; description: string }
 
   let {
     eventParts,
+    loadEventDetail,
     onClose,
     onNavigatePrevious,
-    onNavigateNext
+    onNavigateNext,
+    getStatusColor
   }: {
-    eventParts: HealthEventBucket
+    eventParts: Bucket
+    loadEventDetail: (eventId: string, bucket: Bucket) => Promise<EventDetail | null>
     onClose: () => void
     onNavigatePrevious?: () => void
     onNavigateNext?: () => void
+    getStatusColor: (type: S) => string
   } = $props()
 
-  const api = usePipelineManager()
-
   // Track loaded event details and loading states
-  let fullEvents: (null | {
-    timestamp: Date
-    description: string
-  })[] = $state([])
+  let fullEvents: (null | EventDetail)[] = $state([])
 
   let loadingStates = $state<boolean[]>([])
   let openStates = $state<boolean[]>([])
@@ -52,9 +52,9 @@
     }
 
     loadingStates[index] = true
-    api.getClusterEvent(event.id).then(
-      (e) => {
-        if (!e) {
+    loadEventDetail(event.id, eventParts).then(
+      (detail) => {
+        if (!detail) {
           loadingStates[index] = false
           return
         }
@@ -62,20 +62,7 @@
           // Handle the case when the component was unmounted before the request completed
           return
         }
-        fullEvents[index] = {
-          timestamp: new Date(e.recorded_at),
-          description: match(eventParts.tag)
-            .with('api', () => (e.api_self_info || '') + '\n' + (e.api_resources_info || ''))
-            .with(
-              'compiler',
-              () => (e.compiler_self_info || '') + '\n' + (e.compiler_resources_info || '')
-            )
-            .with(
-              'runner',
-              () => (e.runner_self_info || '') + '\n' + (e.runner_resources_info || '')
-            )
-            .exhaustive()
-        }
+        fullEvents[index] = detail
         loadingStates[index] = false
       },
       () => {
@@ -92,19 +79,6 @@
       }
     })
   })
-
-  // Get status color based on event type
-  function getStatusColor(type: string): string {
-    switch (type) {
-      case 'major_issue':
-        return 'bg-red-500'
-      case 'unhealthy':
-        return 'bg-yellow-500'
-      case 'healthy':
-      default:
-        return 'bg-green-500'
-    }
-  }
 
   $effect(() => {
     const handleKeydown = (e: KeyboardEvent) => {
@@ -126,10 +100,10 @@
 </script>
 
 <div class="h-full overflow-hidden">
-  <div class="scrollbar flex h-full flex-col gap-4 overflow-x-hidden overflow-y-auto">
+  <div class="scrollbar flex h-full flex-col gap-4 overflow-x-hidden overflow-y-auto pr-2">
     <div class="bg-white-dark sticky -top-4 z-10 -mt-4 pt-4">
       <div class="flex w-full flex-nowrap items-center">
-        <span class="text-2xl font-semibold">
+        <span class="text-xl font-semibold">
           {eventParts.title}
         </span>
         <button
@@ -141,7 +115,7 @@
 
       <div class="flex flex-nowrap items-center gap-2">
         <div class="text-surface-600-300 w-66 text-sm">
-          {formatDateTime(eventParts.timestampFrom)} - {formatDateTime(eventParts.timestampTo)}
+          {formatDateTimeRange(eventParts.timestampFrom, eventParts.timestampTo)}
         </div>
         <button
           class="fd fd-chevron-left btn-icon hover:not-disabled:preset-tonal-surface"
@@ -182,14 +156,14 @@
               ></div>
               <div class="h-3 w-3 rounded-full {getStatusColor(event.status)}"></div>
               <span class="text-sm">
-                {formatDateTime(event.timestamp)}
+                {formatDateTime(event.timestamp, 'MMM D, YYYY h:mm:ss A')}
               </span>
             </div>
           {/snippet}
           {#snippet content()}
             {#if fullEvents[i]}
               <div transition:slide={{ duration: 150 }} class="px-2 pb-2">
-                <div class="rounded font-dm-mono text-sm whitespace-pre-wrap">
+                <div class="rounded font-dm-mono whitespace-pre-wrap">
                   {fullEvents[i]?.description || ''}
                 </div>
               </div>
