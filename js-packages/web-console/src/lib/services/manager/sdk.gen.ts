@@ -64,6 +64,9 @@ import type {
   GetPipelineDataflowGraphErrors,
   GetPipelineDataflowGraphResponses,
   GetPipelineErrors,
+  GetPipelineEventData,
+  GetPipelineEventErrors,
+  GetPipelineEventResponses,
   GetPipelineHeapProfileData,
   GetPipelineHeapProfileErrors,
   GetPipelineHeapProfileResponses,
@@ -107,6 +110,9 @@ import type {
   ListClusterEventsData,
   ListClusterEventsErrors,
   ListClusterEventsResponses,
+  ListPipelineEventsData,
+  ListPipelineEventsErrors,
+  ListPipelineEventsResponses,
   ListPipelinesData,
   ListPipelinesErrors,
   ListPipelinesResponses,
@@ -164,6 +170,9 @@ import type {
   PutPipelineData,
   PutPipelineErrors,
   PutPipelineResponses,
+  ResetStatusData,
+  ResetStatusErrors,
+  ResetStatusResponses,
   StartSamplyProfileData,
   StartSamplyProfileErrors,
   StartSamplyProfileResponses,
@@ -879,6 +888,59 @@ export const httpOutput = <ThrowOnError extends boolean = true>(
   })
 
 /**
+ * List Pipeline Events
+ *
+ * Retrieve monitoring events in reverse chronological order.
+ *
+ * Pipeline health is monitored regularly every several seconds.
+ * Not every monitoring action results in a pipeline monitor event being
+ * constructed and inserted into the database. This happens if:
+ * - Any status changed
+ * - Only the status details changed, and it has been 10s since the last event
+ * - Nothing has changed for more than 10 minutes
+ *
+ * This endpoint returns the most recent persisted events, up to 720.
+ */
+export const listPipelineEvents = <ThrowOnError extends boolean = true>(
+  options: Options<ListPipelineEventsData, ThrowOnError>
+) =>
+  (options.client ?? client).get<
+    ListPipelineEventsResponses,
+    ListPipelineEventsErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/events',
+    ...options
+  })
+
+/**
+ * Get Pipeline Event
+ *
+ * Get specific pipeline monitor event.
+ *
+ * The identifiers of the events can be retrieved via `GET /v0/pipelines/<pipeline>/events`.
+ * The most recent 720 events are retained.
+ * This endpoint can return a 404 for an event that no longer exists due to a cleanup.
+ */
+export const getPipelineEvent = <ThrowOnError extends boolean = true>(
+  options: Options<GetPipelineEventData, ThrowOnError>
+) =>
+  (options.client ?? client).get<
+    GetPipelineEventResponses,
+    GetPipelineEventErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/events/{event_id}',
+    ...options
+  })
+
+/**
  * Get Heap Profile
  *
  * Retrieve the heap profile of a running or paused pipeline.
@@ -1047,6 +1109,22 @@ export const postPipelineRebalance = <ThrowOnError extends boolean = true>(
     responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/rebalance',
+    ...options
+  })
+
+/**
+ * Check Reset Status
+ *
+ * Check the status of a reset token returned by the output connector
+ * reset endpoint.
+ */
+export const resetStatus = <ThrowOnError extends boolean = true>(
+  options: Options<ResetStatusData, ThrowOnError>
+) =>
+  (options.client ?? client).get<ResetStatusResponses, ResetStatusErrors, ThrowOnError, 'data'>({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/reset_status',
     ...options
   })
 

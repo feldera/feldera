@@ -1811,6 +1811,13 @@ export type GetClusterEventParameters = {
 }
 
 /**
+ * Query parameters to GET a pipeline monitor event.
+ */
+export type GetPipelineEventParameters = {
+  selector?: PipelineMonitorEventFieldSelector
+}
+
+/**
  * Query parameters to GET a pipeline or a list of pipelines.
  */
 export type GetPipelineParameters = {
@@ -3387,6 +3394,33 @@ export type PipelineInfo = {
   version: Version
 }
 
+export type PipelineMonitorEventFieldSelector = 'all' | 'status'
+
+/**
+ * Pipeline monitor event identifier.
+ */
+export type PipelineMonitorEventId = string
+
+/**
+ * Pipeline monitor event information which has a selected subset of optional fields.
+ * If an optional field is not selected (i.e., is `None`), it will not be serialized.
+ */
+export type PipelineMonitorEventSelectedInfo = {
+  deployment_error?: ErrorResponse | null
+  deployment_has_error: boolean
+  deployment_resources_desired_status: ResourcesDesiredStatus
+  deployment_resources_status: ResourcesStatus
+  deployment_resources_status_details?: unknown
+  deployment_runtime_desired_status?: RuntimeDesiredStatus | null
+  deployment_runtime_status?: RuntimeStatus | null
+  deployment_runtime_status_details?: unknown
+  event_id: PipelineMonitorEventId
+  program_status: ProgramStatus
+  recorded_at: string
+  storage_status: StorageStatus
+  storage_status_details?: unknown
+}
+
 /**
  * Pipeline information which has a selected subset of optional fields.
  * It both includes fields which are user-provided and system-generated.
@@ -3503,6 +3537,67 @@ export type PostStopPipelineParameters = {
    * (`force=false`, which is the default).
    */
   force?: boolean
+}
+
+/**
+ * Postgres CDC input connector configuration.
+ *
+ * Uses logical replication to capture ongoing changes from a Postgres database.
+ * Requires a pre-created publication and a user with REPLICATION privilege.
+ * Tables must have primary keys and `REPLICA IDENTITY FULL` is recommended
+ * for UPDATE/DELETE support.
+ */
+export type PostgresCdcReaderConfig = {
+  /**
+   * Path to a file containing a sequence of CA certificates in PEM format.
+   */
+  ssl_ca_location?: string | null
+  /**
+   * A sequence of CA certificates in PEM format.
+   */
+  ssl_ca_pem?: string | null
+  /**
+   * The path to the certificate chain file.
+   * The file must contain a sequence of PEM-formatted certificates,
+   * the first being the leaf certificate, and the remainder forming
+   * the chain of certificates up to and including the trusted root certificate.
+   */
+  ssl_certificate_chain_location?: string | null
+  /**
+   * The client certificate key in PEM format.
+   */
+  ssl_client_key?: string | null
+  /**
+   * Path to the client certificate key.
+   */
+  ssl_client_key_location?: string | null
+  /**
+   * Path to the client certificate.
+   */
+  ssl_client_location?: string | null
+  /**
+   * The client certificate in PEM format.
+   */
+  ssl_client_pem?: string | null
+  /**
+   * True to enable hostname verification when using TLS. True by default.
+   */
+  verify_hostname?: boolean | null
+} & {
+  /**
+   * Name of the pre-created Postgres publication to replicate from.
+   */
+  publication: string
+  /**
+   * Postgres table to replicate (e.g. "public.orders").
+   * Must be included in the publication.
+   */
+  source_table: string
+  /**
+   * Postgres connection URI. The user must have REPLICATION privilege.
+   * See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>
+   */
+  uri: string
 }
 
 /**
@@ -5081,6 +5176,10 @@ export type TransportConfig =
       name: 'postgres_input'
     }
   | {
+      config: PostgresCdcReaderConfig
+      name: 'postgres_cdc_input'
+    }
+  | {
       config: PostgresWriterConfig
       name: 'postgres_output'
     }
@@ -6195,6 +6294,78 @@ export type HttpOutputResponses = {
 
 export type HttpOutputResponse = HttpOutputResponses[keyof HttpOutputResponses]
 
+export type ListPipelineEventsData = {
+  body?: never
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: {
+    /**
+     * The `selector` parameter limits which fields are returned.
+     * Limiting which fields is particularly handy for instance when frequently
+     * monitoring over low bandwidth connections while being only interested
+     * in status.
+     */
+    selector?: PipelineMonitorEventFieldSelector
+  }
+  url: '/v0/pipelines/{pipeline_name}/events'
+}
+
+export type ListPipelineEventsErrors = {
+  404: ErrorResponse
+  500: ErrorResponse
+}
+
+export type ListPipelineEventsError = ListPipelineEventsErrors[keyof ListPipelineEventsErrors]
+
+export type ListPipelineEventsResponses = {
+  200: Array<PipelineMonitorEventSelectedInfo>
+}
+
+export type ListPipelineEventsResponse =
+  ListPipelineEventsResponses[keyof ListPipelineEventsResponses]
+
+export type GetPipelineEventData = {
+  body?: never
+  path: {
+    /**
+     * Pipeline monitor event identifier or `latest`
+     */
+    event_id: string
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: {
+    /**
+     * The `selector` parameter limits which fields are returned.
+     * Limiting which fields is particularly handy for instance when frequently
+     * monitoring over low bandwidth connections while being only interested
+     * in status.
+     */
+    selector?: PipelineMonitorEventFieldSelector
+  }
+  url: '/v0/pipelines/{pipeline_name}/events/{event_id}'
+}
+
+export type GetPipelineEventErrors = {
+  400: ErrorResponse
+  404: ErrorResponse
+  500: ErrorResponse
+}
+
+export type GetPipelineEventError = GetPipelineEventErrors[keyof GetPipelineEventErrors]
+
+export type GetPipelineEventResponses = {
+  200: PipelineMonitorEventSelectedInfo
+}
+
+export type GetPipelineEventResponse = GetPipelineEventResponses[keyof GetPipelineEventResponses]
+
 export type GetPipelineHeapProfileData = {
   body?: never
   path: {
@@ -6461,6 +6632,49 @@ export type PostPipelineRebalanceError =
 export type PostPipelineRebalanceResponses = {
   /**
    * Rebalancing started successfully
+   */
+  200: unknown
+}
+
+export type ResetStatusData = {
+  body?: never
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query: {
+    /**
+     * Reset token returned by the output connector reset endpoint.
+     */
+    token: string
+  }
+  url: '/v0/pipelines/{pipeline_name}/reset_status'
+}
+
+export type ResetStatusErrors = {
+  /**
+   * An invalid reset token was provided
+   */
+  400: ErrorResponse
+  /**
+   * Pipeline with that name does not exist
+   */
+  404: ErrorResponse
+  /**
+   * Reset token was created by a previous incarnation of the pipeline; the server cannot validate the reset across incarnations. Reissue the reset.
+   */
+  410: ErrorResponse
+  500: ErrorResponse
+  503: ErrorResponse
+}
+
+export type ResetStatusError = ResetStatusErrors[keyof ResetStatusErrors]
+
+export type ResetStatusResponses = {
+  /**
+   * Reset token status has been retrieved
    */
   200: unknown
 }
