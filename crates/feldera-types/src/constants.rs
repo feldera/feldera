@@ -18,7 +18,16 @@ pub const STEPS_FILE: &str = "steps.bin";
 /// `CheckpointDependencies` for the on-disk shape.
 pub const CHECKPOINT_DEPENDENCIES: &str = "dependencies.json";
 
-pub const ADHOC_TEMP_DIR: &str = "adhoc-tmp";
+/// Subdirectory under the pipeline's storage path where DataFusion writes
+/// spill files for the ad-hoc query engine and every integrated connector
+/// that uses DataFusion (Delta Lake, Iceberg).
+///
+/// One pipeline-wide directory keeps the on-disk layout discoverable in a
+/// single place and lets `gc_startup` allowlist it as a single entry. If
+/// you change this value, audit `gc_startup` in `dbsp::circuit::checkpointer`
+/// — the GC's allowlist must keep matching the directory the runtime
+/// actually creates.
+pub const DATAFUSION_TEMP_DIR: &str = "datafusion-tmp";
 
 /// A slice of all file-extension the system can create.
 pub const DBSP_FILE_EXTENSION: &[&str] = &["mut", "feldera"];

@@ -96,6 +96,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         runtime_config: serde_json::to_value(RuntimeConfig {
             workers: 10,
             max_rss_mb: None,
+            datafusion_memory_mb: None,
             hosts: 1,
             storage: Some(StorageOptions::default()),
             fault_tolerance: FtConfig::default(),

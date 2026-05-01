@@ -73,6 +73,7 @@ use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::transport::{
     CommandHandler, InputReader, OutputBatchType, Resume, Watermark,
 };
+use feldera_adapterlib::utils::datafusion::{create_runtime_env, create_session_context};
 use feldera_ir::LirCircuit;
 use feldera_samply::{AnnotationOptions, CaptureOptions, Span};
 use feldera_storage::fbuf::slab::FBufSlabsStats;
@@ -148,8 +149,8 @@ mod stats;
 mod sync;
 mod validate;
 
+use crate::adhoc::execute_sql;
 use crate::adhoc::table::AdHocTable;
-use crate::adhoc::{create_session_context, execute_sql};
 use crate::catalog::{SerBatch, SerBatchReader, SerTrace};
 use crate::format::parquet::relation_to_arrow_fields;
 use crate::format::{MessageOrientedPreprocessedParser, StreamingPreprocessedParser};
@@ -4720,6 +4721,7 @@ impl ControllerInit {
                 hosts: checkpoint_config.global.hosts,
                 workers: checkpoint_config.global.workers,
                 max_rss_mb: config.global.max_rss_mb,
+                datafusion_memory_mb: checkpoint_config.global.datafusion_memory_mb,
 
                 // The checkpoint determines the fault tolerance model, but the
                 // pipeline manager can override the details of the
@@ -4844,10 +4846,37 @@ Using the Kubernetes limit as the RSS memory limit."
             );
         }
 
+        // Carve out a slice of the pipeline's memory budget for DataFusion's
+        // memory pool (see `RuntimeConfig::datafusion_memory_mb`) and pass
+        // only the remainder to the DBSP circuit. Without this, the circuit
+        // and DataFusion would each independently grow to the full budget,
+        // which would double-book RAM.
+        let datafusion_memory_mb = pipeline_config.global.resolved_datafusion_memory_mb();
+        let circuit_max_rss_mb = match (max_rss_mb, datafusion_memory_mb) {
+            (Some(rss), Some(df)) => {
+                if df >= rss {
+                    return Err(ControllerError::Config {
+                        config_error: Box::new(ConfigError::DatafusionMemoryExceedsBudget {
+                            datafusion_memory_mb: df,
+                            max_rss_mb: rss,
+                        }),
+                    });
+                }
+                let remainder = rss - df;
+                info!(
+                    "memory budget split: circuit RSS {remainder} MB, datafusion {df} MB \
+(total {rss} MB)"
+                );
+                Some(remainder)
+            }
+            (Some(rss), None) => Some(rss),
+            (None, _) => None,
+        };
+
         let layout =
             layout.unwrap_or_else(|| Layout::new_solo(pipeline_config.global.workers as usize));
         Ok(CircuitConfig::from(layout)
-            .with_max_rss_bytes(max_rss_mb.map(|mb| mb * 1_000_000))
+            .with_max_rss_bytes(circuit_max_rss_mb.map(|mb| mb * 1_000_000))
             .with_pin_cpus(pipeline_config.global.pin_cpus.clone())
             .with_storage(storage)
             .with_mode(Mode::Persistent)
@@ -5858,6 +5887,10 @@ pub struct ControllerInner {
     backpressure_thread_unparker: Unparker,
     error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
     session_ctxt: SessionContext,
+    /// Shared datafusion runtime environment. Owns the pipeline-wide
+    /// `FairSpillPool` and spill-to-disk path so that every `SessionContext`
+    /// (ad-hoc + integrated connectors) draws from a single bounded budget.
+    datafusion_runtime_env: Arc<datafusion::execution::runtime_env::RuntimeEnv>,
     adhoc_tables: HashMap<SqlIdentifier, Arc<AdHocTable>>,
     fault_tolerance: Option<FtModel>,
     step_receiver: tokio::sync::watch::Receiver<StepStatus>,
@@ -5939,7 +5972,8 @@ impl ControllerInner {
         let (command_sender, command_receiver) = channel();
         let (transaction_sender, transaction_receiver) =
             tokio::sync::watch::channel(TransactionCoordination::default());
-        let session_ctxt = create_session_context(&config)?;
+        let datafusion_runtime_env = create_runtime_env(&config)?;
+        let session_ctxt = create_session_context(&config, datafusion_runtime_env.clone());
         let controller = Arc::new_cyclic(|weak| {
             let adhoc_tables = Self::initialize_adhoc_queries(&session_ctxt, &*catalog, weak);
             Self {
@@ -5961,6 +5995,7 @@ impl ControllerInner {
                 backpressure_thread_unparker: backpressure_thread_parker.unparker().clone(),
                 error_cb,
                 session_ctxt,
+                datafusion_runtime_env,
                 adhoc_tables,
                 fault_tolerance: config.global.fault_tolerance.model,
                 transaction_info: Mutex::new(TransactionInfo::new(
@@ -6372,6 +6407,8 @@ impl ControllerInner {
                 let endpoint = create_integrated_input_endpoint(
                     endpoint_name,
                     &resolved_connector_config,
+                    &self.status.pipeline_config,
+                    self.datafusion_runtime_env.clone(),
                     probe,
                 )?;
 
@@ -8190,4 +8227,75 @@ impl CheckpointThread {
 }
 
 #[cfg(test)]
-mod test;
+mod controller_init_tests {
+    use super::ControllerInit;
+    use crate::ControllerError;
+    use feldera_adapterlib::errors::controller::ConfigError;
+    use feldera_types::config::{PipelineConfig, RuntimeConfig};
+
+    fn pipeline_config(global: RuntimeConfig) -> PipelineConfig {
+        PipelineConfig {
+            global,
+            multihost: None,
+            name: None,
+            given_name: None,
+            storage_config: None,
+            secrets_dir: None,
+            inputs: Default::default(),
+            outputs: Default::default(),
+            program_ir: None,
+        }
+    }
+
+    /// `circuit_config` must reject an explicit `datafusion_memory_mb`
+    /// that meets or exceeds the pipeline's RSS budget — otherwise the
+    /// DBSP circuit would be carved down to zero.
+    #[test]
+    fn circuit_config_rejects_datafusion_memory_equal_to_rss() {
+        let config = pipeline_config(RuntimeConfig {
+            workers: 1,
+            max_rss_mb: Some(2_000),
+            datafusion_memory_mb: Some(2_000),
+            ..Default::default()
+        });
+        let result = ControllerInit::circuit_config(None, &config, None);
+        let err = match result {
+            Err(e) => e,
+            Ok(_) => panic!("config with df==max_rss should fail"),
+        };
+        match err {
+            ControllerError::Config { config_error } => match *config_error {
+                ConfigError::DatafusionMemoryExceedsBudget {
+                    datafusion_memory_mb,
+                    max_rss_mb,
+                } => {
+                    assert_eq!(datafusion_memory_mb, 2_000);
+                    assert_eq!(max_rss_mb, 2_000);
+                }
+                other => panic!("expected DatafusionMemoryExceedsBudget, got {other:?}"),
+            },
+            other => panic!("expected ControllerError::Config, got {other:?}"),
+        }
+    }
+
+    /// `df > rss` must also error; the resolver doesn't silently shrink
+    /// the user's explicit value.
+    #[test]
+    fn circuit_config_rejects_datafusion_memory_above_rss() {
+        let config = pipeline_config(RuntimeConfig {
+            workers: 1,
+            max_rss_mb: Some(1_000),
+            datafusion_memory_mb: Some(4_000),
+            ..Default::default()
+        });
+        let result = ControllerInit::circuit_config(None, &config, None);
+        assert!(matches!(
+            result,
+            Err(ControllerError::Config { config_error })
+                if matches!(
+                    *config_error,
+                    ConfigError::DatafusionMemoryExceedsBudget { .. },
+                ),
+        ));
+    }
+}

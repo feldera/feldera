@@ -7,6 +7,7 @@ use crate::{ControllerError, InputConsumer, InputReader, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use arrow::array::BooleanArray;
 use chrono::{DateTime, Utc};
+use datafusion::common::DataFusionError;
 use datafusion::common::arrow::array::RecordBatch;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::listing::{
@@ -14,7 +15,6 @@ use datafusion::datasource::listing::{
 };
 use datafusion::physical_plan::{PhysicalExpr, displayable};
 use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
-use datafusion::prelude::SessionConfig;
 use dbsp::circuit::tokio::TOKIO;
 use deltalake::datafusion::dataframe::DataFrame;
 use deltalake::datafusion::execution::context::SQLOptions;
@@ -27,12 +27,12 @@ use feldera_adapterlib::format::{ParseError, StagedInputBuffer};
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::transport::{InputQueueEntry, Resume, Watermark, parse_resume_info};
 use feldera_adapterlib::utils::datafusion::{
-    array_to_string, execute_query_collect, execute_singleton_query, timestamp_to_sql_expression,
-    validate_sql_expression, validate_timestamp_column,
+    array_to_string, create_session_context_with, execute_query_collect, execute_singleton_query,
+    timestamp_to_sql_expression, validate_sql_expression, validate_timestamp_column,
 };
 use feldera_storage::tokio::TOKIO_DEDICATED_IO;
 use feldera_types::adapter_stats::ConnectorHealth;
-use feldera_types::config::FtModel;
+use feldera_types::config::{FtModel, PipelineConfig};
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::delta_table::{DeltaTableReaderConfig, DeltaTableTransactionMode};
 use futures_util::StreamExt;
@@ -101,6 +101,26 @@ static MAX_CONCURRENT_READERS: AtomicUsize = AtomicUsize::new(0);
 /// that can be used in datafusion queries like `select "foo""bar" from my_table`.
 fn quote_sql_identifier<S: AsRef<str>>(ident: S) -> String {
     format!("\"{}\"", ident.as_ref().replace("\"", "\"\""))
+}
+
+/// Format a DataFusion error, appending actionable guidance when the
+/// underlying variant is `ResourcesExhausted` (the shared memory pool ran
+/// out). `find_root` walks past `Context(...)` / `ArrowError(...)` wrappers
+/// so the check is robust to the deeply nested errors DataFusion typically
+/// produces during sort/merge.
+fn format_datafusion_error(prefix: &str, e: &DataFusionError) -> String {
+    let base = format!("{prefix}: {e:?}");
+    if matches!(e.find_root(), DataFusionError::ResourcesExhausted(_)) {
+        format!(
+            "{base}\n\
+             DataFusion memory pool is exhausted. \
+             Consider increasing 'datafusion_memory_mb' in the pipeline runtime config. \
+             If raising the budget is not an option, reduce 'io_workers' / 'workers' or \
+             set the env var 'DELTA_DF_TARGET_PARTITIONS=1' to lower per-scan parallelism.\n"
+        )
+    } else {
+        base
+    }
 }
 
 /// Build the `DataFrame` that streams a CDC transaction to the circuit.
@@ -191,6 +211,7 @@ pub(super) fn build_cdc_dataframe(
 pub struct DeltaTableInputEndpoint {
     endpoint_name: String,
     config: DeltaTableReaderConfig,
+    datafusion: SessionContext,
     consumer: Box<dyn InputConsumer>,
 }
 
@@ -198,13 +219,75 @@ impl DeltaTableInputEndpoint {
     pub fn new(
         endpoint_name: &str,
         config: &DeltaTableReaderConfig,
+        pipeline_config: &PipelineConfig,
+        runtime_env: Arc<datafusion::execution::runtime_env::RuntimeEnv>,
         consumer: Box<dyn InputConsumer>,
     ) -> Self {
         register_storage_handlers();
 
+        // if `DELTA_DF_TARGET_PARTITIONS` env var (process-wide override) is set,
+        // override default target partitions with that value. Target partitions
+        // controls the number of parallel tasks DataFusion uses for scanning during the
+        // snapshot phase.
+        let env_target_partitions = match std::env::var("DELTA_DF_TARGET_PARTITIONS").ok() {
+            None => None,
+            Some(s) => match s.parse::<usize>() {
+                Ok(n) if n > 0 => Some(n),
+                _ => {
+                    warn!(
+                        "delta_table {endpoint_name}: ignoring DELTA_DF_TARGET_PARTITIONS={s:?}; expected a positive integer"
+                    );
+                    None
+                }
+            },
+        };
+        if let Some(n) = env_target_partitions {
+            info!("delta_table {endpoint_name}: DELTA_DF_TARGET_PARTITIONS={n} overriding default");
+        }
+
+        let env_batch_size = match std::env::var("DELTA_DF_BATCH_SIZE").ok() {
+            None => None,
+            Some(s) => match s.parse::<usize>() {
+                Ok(n) if n > 0 => {
+                    info!("delta_table {endpoint_name}: applying DELTA_DF_BATCH_SIZE={n}");
+                    Some(n)
+                }
+                _ => {
+                    warn!(
+                        "delta_table {endpoint_name}: ignoring DELTA_DF_BATCH_SIZE={s:?}; expected a positive integer"
+                    );
+                    None
+                }
+            },
+        };
+
+        // Configure datafusion not to generate Utf8View arrow types, which are
+        // not yet supported by the `serde_arrow` crate. The `SessionContext`
+        // shares the pipeline-wide `RuntimeEnv` so that the CDC-mode ORDER BY
+        // query spills to the same bounded memory pool and on-disk scratch
+        // dir as every other datafusion user in the pipeline.
+        //
+        // `target_partitions` inherits `create_session_context_with`'s
+        // worker-derived default; only override if `DELTA_DF_TARGET_PARTITIONS`
+        // was set explicitly. Same for `batch_size`.
+        let datafusion = create_session_context_with(pipeline_config, runtime_env, |cfg| {
+            let mut cfg = cfg.set_bool(
+                "datafusion.execution.parquet.schema_force_view_types",
+                false,
+            );
+            if let Some(n) = env_target_partitions {
+                cfg = cfg.set_usize("datafusion.execution.target_partitions", n);
+            }
+            if let Some(n) = env_batch_size {
+                cfg = cfg.set_usize("datafusion.execution.batch_size", n);
+            }
+            cfg
+        });
+
         Self {
             endpoint_name: endpoint_name.to_string(),
             config: config.clone(),
+            datafusion,
             consumer,
         }
     }
@@ -224,6 +307,7 @@ impl IntegratedInputEndpoint for DeltaTableInputEndpoint {
         Ok(Box::new(DeltaTableInputReader::new(
             self.endpoint_name,
             self.config,
+            self.datafusion,
             self.consumer,
             input_handle,
             resume_info,
@@ -240,6 +324,7 @@ impl DeltaTableInputReader {
     fn new(
         endpoint_name: String,
         mut config: DeltaTableReaderConfig,
+        datafusion: SessionContext,
         consumer: Box<dyn InputConsumer>,
         input_handle: &InputCollectionHandle,
         resume_info: Option<JsonValue>,
@@ -372,6 +457,7 @@ impl DeltaTableInputReader {
         let endpoint = Arc::new(DeltaTableInputEndpointInner::new(
             &endpoint_name,
             config,
+            datafusion,
             consumer,
             schema,
             resume_info.clone(),
@@ -787,62 +873,12 @@ impl DeltaTableInputEndpointInner {
     fn new(
         endpoint_name: &str,
         config: DeltaTableReaderConfig,
+        datafusion: SessionContext,
         consumer: Box<dyn InputConsumer>,
         schema: Relation,
         resume_info: Option<DeltaResumeInfo>,
     ) -> Self {
         let queue = Arc::new(InputQueue::new(consumer.clone()));
-        // Configure datafusion not to generate Utf8View arrow types, which are not yet
-        // supported by the `serde_arrow` crate.
-        let mut session_config = SessionConfig::new().set_bool(
-            "datafusion.execution.parquet.schema_force_view_types",
-            false,
-        );
-        // Number of parallel scan partitions DataFusion plans for the
-        // snapshot read. Resolution order:
-        //
-        //   1. `DELTA_DF_TARGET_PARTITIONS` env var (process-wide override).
-        //   2. `max_concurrent_readers` from the connector config (which
-        //      also drives the global `DELTA_READER_SEMAPHORE`); using the
-        //      same value here keeps the per-connector parallelism aligned
-        //      with the process-wide concurrent-reader cap.
-        //   3. `DEFAULT_MAX_CONCURRENT_READERS` (6), matching the semaphore
-        //      default.
-        let env_target_partitions = match std::env::var("DELTA_DF_TARGET_PARTITIONS").ok() {
-            None => None,
-            Some(s) => match s.parse::<usize>() {
-                Ok(n) if n > 0 => Some(n),
-                _ => {
-                    warn!(
-                        "delta_table {endpoint_name}: ignoring DELTA_DF_TARGET_PARTITIONS={s:?}; expected a positive integer"
-                    );
-                    None
-                }
-            },
-        };
-        let target_partitions = env_target_partitions
-            .or_else(|| {
-                config
-                    .max_concurrent_readers
-                    .map(|n| n as usize)
-                    .filter(|n| *n > 0)
-            })
-            .unwrap_or(DEFAULT_MAX_CONCURRENT_READERS);
-        session_config =
-            session_config.set_usize("datafusion.execution.target_partitions", target_partitions);
-        info!("delta_table {endpoint_name}: target_partitions={target_partitions}");
-
-        if let Ok(s) = std::env::var("DELTA_DF_BATCH_SIZE") {
-            match s.parse::<usize>() {
-                Ok(n) if n > 0 => {
-                    session_config = session_config.set_usize("datafusion.execution.batch_size", n);
-                    info!("delta_table {endpoint_name}: applying DELTA_DF_BATCH_SIZE={n}");
-                }
-                _ => warn!(
-                    "delta_table {endpoint_name}: ignoring DELTA_DF_BATCH_SIZE={s:?}; expected a positive integer"
-                ),
-            }
-        }
 
         let metrics = Arc::new(DeltaTableMetrics::new());
         consumer.set_custom_metrics(Arc::clone(&metrics) as Arc<dyn ConnectorMetrics>);
@@ -854,7 +890,7 @@ impl DeltaTableInputEndpointInner {
             schema,
             config,
             consumer,
-            datafusion: SessionContext::new_with_config(session_config),
+            datafusion,
             transaction_index: AtomicUsize::new(0),
 
             // Set version to None by default so that the connector is checkpointable in the initial state.
@@ -2343,7 +2379,10 @@ impl DeltaTableInputEndpointInner {
                         Vec::new(),
                     );
 
-                    return Err(format!("error retrieving batch {num_batches}: {e:?}"));
+                    return Err(format_datafusion_error(
+                        &format!("error retrieving batch {num_batches}"),
+                        &e,
+                    ));
                 }
             };
             // info!("schema: {}", batch.schema());
@@ -2819,4 +2858,41 @@ async fn wait_running(receiver: &mut Receiver<PipelineState>) {
     let _ = receiver
         .wait_for(|state| state == &PipelineState::Running)
         .await;
+}
+
+#[cfg(test)]
+mod format_datafusion_error_tests {
+    use super::format_datafusion_error;
+    use datafusion::common::DataFusionError;
+
+    #[test]
+    fn appends_pool_hint_for_resources_exhausted() {
+        let inner = DataFusionError::ResourcesExhausted(
+            "Failed to allocate additional 64.0 MB ...".to_string(),
+        );
+        let wrapped = DataFusionError::Context("external sort".to_string(), Box::new(inner));
+        let msg = format_datafusion_error("error retrieving batch 0", &wrapped);
+        assert!(
+            msg.contains("DataFusion memory pool is exhausted"),
+            "missing actionable hint; got: {msg}"
+        );
+        assert!(
+            msg.contains("datafusion_memory_mb"),
+            "missing knob name; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn passes_through_unrelated_errors() {
+        let other = DataFusionError::Plan("bad column reference".to_string());
+        let msg = format_datafusion_error("error retrieving batch 0", &other);
+        assert!(
+            !msg.contains("memory pool"),
+            "spurious pool hint on non-exhaustion error; got: {msg}"
+        );
+        assert!(
+            msg.contains("bad column reference"),
+            "lost the original error text; got: {msg}"
+        );
+    }
 }

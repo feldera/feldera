@@ -12,13 +12,13 @@ use feldera_adapterlib::{
         IntegratedInputEndpoint, NonFtInputReaderCommand,
     },
     utils::datafusion::{
-        array_to_string, execute_query_collect, execute_singleton_query,
+        array_to_string, create_session_context, execute_query_collect, execute_singleton_query,
         timestamp_to_sql_expression, validate_sql_expression, validate_timestamp_column,
     },
     PipelineState,
 };
 use feldera_types::{
-    config::FtModel,
+    config::{FtModel, PipelineConfig},
     program_schema::Relation,
     transport::iceberg::{IcebergCatalogType, IcebergReaderConfig},
 };
@@ -125,12 +125,16 @@ impl IcebergInputEndpoint {
     pub fn new(
         endpoint_name: &str,
         config: &IcebergReaderConfig,
+        pipeline_config: &PipelineConfig,
+        runtime_env: Arc<datafusion::execution::runtime_env::RuntimeEnv>,
         consumer: Box<dyn InputConsumer>,
     ) -> Self {
         Self {
             inner: Arc::new(IcebergInputEndpointInner::new(
                 endpoint_name,
                 config.clone(),
+                pipeline_config,
+                runtime_env,
                 consumer,
             )),
         }
@@ -246,14 +250,20 @@ impl IcebergInputEndpointInner {
     fn new(
         endpoint_name: &str,
         config: IcebergReaderConfig,
+        pipeline_config: &PipelineConfig,
+        runtime_env: Arc<datafusion::execution::runtime_env::RuntimeEnv>,
         consumer: Box<dyn InputConsumer>,
     ) -> Self {
         let queue = InputQueue::new(consumer.clone());
+        // Share the pipeline-wide `RuntimeEnv` so that scans against the
+        // iceberg table spill to the bounded memory pool and on-disk scratch
+        // dir alongside every other datafusion user in the pipeline.
+        let datafusion = create_session_context(pipeline_config, runtime_env);
         Self {
             endpoint_name: endpoint_name.to_string(),
             config,
             consumer,
-            datafusion: SessionContext::new(),
+            datafusion,
             queue,
         }
     }

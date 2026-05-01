@@ -14,7 +14,7 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
-        Delta Lake output connector:
+        - Delta Lake output connector:
 
         `log_retention_duration` and
         `enable_expired_log_cleanup` config options to control transaction-log retention on newly created
@@ -26,6 +26,12 @@ import TabItem from '@theme/TabItem';
         The connector now logs a warning at startup when `checkpoint_interval`,
         `log_retention_duration`, or `enable_expired_log_cleanup` in the connector config
         differs from the existing table's metadata.
+
+        - Large Delta Lake, Iceberg scans (e.g. Delta CDC `ORDER BY`) and ad-hoc queries now share a bounded memory pool
+        and spill to disk under `<storage>/datafusion-tmp/`.
+
+        A new `runtime_config.datafusion_memory_mb` setting controls the pool size
+        (defaults to 5% of the pipeline's memory budget, capped at 2 GB).
 
         ## v0.294.0
 

@@ -584,6 +584,7 @@
                     "runtime_config": {
                       "workers": 16,
                       "max_rss_mb": null,
+                      "datafusion_memory_mb": null,
                       "hosts": 1,
                       "storage": {
                         "backend": {
@@ -674,6 +675,7 @@
                     "runtime_config": {
                       "workers": 10,
                       "max_rss_mb": null,
+                      "datafusion_memory_mb": null,
                       "hosts": 1,
                       "storage": {
                         "backend": {
@@ -794,6 +796,7 @@
                 "runtime_config": {
                   "workers": 16,
                   "max_rss_mb": null,
+                  "datafusion_memory_mb": null,
                   "hosts": 1,
                   "storage": {
                     "backend": {
@@ -867,6 +870,7 @@
                   "runtime_config": {
                     "workers": 16,
                     "max_rss_mb": null,
+                    "datafusion_memory_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
@@ -1050,6 +1054,7 @@
                   "runtime_config": {
                     "workers": 16,
                     "max_rss_mb": null,
+                    "datafusion_memory_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
@@ -1197,6 +1202,7 @@
                 "runtime_config": {
                   "workers": 16,
                   "max_rss_mb": null,
+                  "datafusion_memory_mb": null,
                   "hosts": 1,
                   "storage": {
                     "backend": {
@@ -1270,6 +1276,7 @@
                   "runtime_config": {
                     "workers": 16,
                     "max_rss_mb": null,
+                    "datafusion_memory_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
@@ -1370,6 +1377,7 @@
                   "runtime_config": {
                     "workers": 16,
                     "max_rss_mb": null,
+                    "datafusion_memory_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
@@ -1639,6 +1647,7 @@
                   "runtime_config": {
                     "workers": 16,
                     "max_rss_mb": null,
+                    "datafusion_memory_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
@@ -6542,6 +6551,7 @@
                   "runtime_config": {
                     "workers": 16,
                     "max_rss_mb": null,
+                    "datafusion_memory_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
@@ -10634,6 +10644,14 @@
                 "description": "Enable CPU profiler.\n\nThe default value is `true`.",
                 "default": true
               },
+              "datafusion_memory_mb": {
+                "type": "integer",
+                "format": "int64",
+                "description": "DataFusion memory pool size, in MB, shared by the ad-hoc query\nengine and the Delta Lake / Iceberg connectors.\n\nCarved out of `max_rss_mb` (falling back to\n`resources.memory_mb_max`); the remainder goes to the DBSP circuit,\nso the two do not double-book RAM.\n\nUnset: defaults to 5% of the effective budget, capped at 2 GB.\nPipelines that don't run heavy ad-hoc / Delta / Iceberg workloads\ncan leave this unset.\n\nSort/aggregate-heavy ad-hoc queries (especially at high `workers`\ncounts) should set this explicitly. An under-sized pool surfaces as\n`ResourcesExhausted` on the failing query — the pipeline keeps\nrunning and only that query fails.\n\nNo pool limit applied if no overall budget is configured.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
+                "default": null,
+                "nullable": true,
+                "minimum": 0
+              },
               "dev_tweaks": {
                 "allOf": [
                   {
@@ -12514,6 +12532,14 @@
             "type": "boolean",
             "description": "Enable CPU profiler.\n\nThe default value is `true`.",
             "default": true
+          },
+          "datafusion_memory_mb": {
+            "type": "integer",
+            "format": "int64",
+            "description": "DataFusion memory pool size, in MB, shared by the ad-hoc query\nengine and the Delta Lake / Iceberg connectors.\n\nCarved out of `max_rss_mb` (falling back to\n`resources.memory_mb_max`); the remainder goes to the DBSP circuit,\nso the two do not double-book RAM.\n\nUnset: defaults to 5% of the effective budget, capped at 2 GB.\nPipelines that don't run heavy ad-hoc / Delta / Iceberg workloads\ncan leave this unset.\n\nSort/aggregate-heavy ad-hoc queries (especially at high `workers`\ncounts) should set this explicitly. An under-sized pool surfaces as\n`ResourcesExhausted` on the failing query — the pipeline keeps\nrunning and only that query fails.\n\nNo pool limit applied if no overall budget is configured.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
           },
           "dev_tweaks": {
             "allOf": [
