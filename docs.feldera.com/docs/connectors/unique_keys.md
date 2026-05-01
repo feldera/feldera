@@ -12,6 +12,20 @@ sources and data delivery to external sinks in two key ways:
 2. **Atomic updates.** Unique keys allow updates to be applied as single atomic
  operations, rather than as separate delete and insert events.
 
+3. **Ignoring deleted rows that do not exist.** Many connectors can
+ provide table updates in the form of insertions or deletions. If a
+ table has a primary key, deleting a non-existent record will have no
+ effect. The engine does *not* reject deletions of non-existent records
+ from tables *without* primary keys. Deleting a non-existent record for
+ such tables will produce unexpected results or even pipeline crashes.
+
+::: danger
+
+Deleting records that do not exist from a table without a primary key is
+an undefined operation, and can produce incorrect results or crashes.
+
+:::
+
 Below, we describe how unique keys are defined and used for tables and views in Feldera.
 
 ## Ingesting Data into Tables with Primary Keys
