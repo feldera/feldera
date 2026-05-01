@@ -2,42 +2,60 @@ import { match } from 'ts-pattern'
 import { pushSortedOn } from '$lib/functions/common/array'
 import type { ClusterMonitorEventSelectedInfo, MonitorStatus } from '$lib/services/manager'
 
-export type HealthEventType = 'healthy' | 'unhealthy' | 'major_issue'
+/** Which cluster sub-service a health event belongs to. */
+type ClusterEventTag = 'api' | 'runner' | 'compiler'
 
-type EventTag = 'api' | 'runner' | 'compiler'
-
-export type RawHealthEvent = {
+/**
+ * A single timestamped health observation for one service component.
+ * @template S status union — e.g. `ClusterEventType` | `PipelineHealthStatus`
+ * @template T tag union — discriminates which sub-service the event belongs to
+ */
+export type RawHealthEvent<S extends string, T extends string> = {
   timestamp: Date
-  type: HealthEventType
+  type: S
   description: string
-  tag: EventTag
+  tag: T
   id: string
 }
 
-export type HealthEventBucket = {
+/**
+ * A time-bounded group of consecutive events sharing the same status and tag,
+ * rendered as one entry in the incident list.
+ * `active` is true when the incident is still ongoing (not yet resolved).
+ * @template S status union — e.g. `ClusterEventType` | `PipelineHealthStatus`
+ * @template T tag union — discriminates which sub-service the bucket belongs to
+ */
+export type HealthEventBucket<S extends string, T extends string> = {
   timestampFrom: Date
   timestampTo: Date
-  type: string
+  type: S
   description: string
-  tag: EventTag
+  tag: T
   active: boolean
   title: string
   events: {
     id: string
     timestamp: Date
-    status: HealthEventType
+    status: S
   }[]
 }
 
+/** Health status reported by the cluster monitor for a single service component. */
+export type ClusterEventType = 'healthy' | 'unhealthy' | 'major_issue'
+
 export const toEventType = (status: MonitorStatus) =>
   match(status)
-    .returnType<HealthEventType>()
+    .returnType<ClusterEventType>()
     .with('Healthy', () => 'healthy' as const)
-    .with('InitialUnhealthy', () => 'unhealthy')
-    .with('Unhealthy', () => 'major_issue')
+    .with('InitialUnhealthy', () => 'unhealthy' as const)
+    .with('Unhealthy', () => 'major_issue' as const)
     .exhaustive()
 
-export function unpackCombinedEvent(e: ClusterMonitorEventSelectedInfo): RawHealthEvent[] {
+/** Convenience aliases for the cluster-specific health event and bucket types. */
+export type ClusterRawEvent = RawHealthEvent<ClusterEventType, ClusterEventTag>
+export type ClusterBucket = HealthEventBucket<ClusterEventType, ClusterEventTag>
+
+export function unpackCombinedEvent(e: ClusterMonitorEventSelectedInfo): ClusterRawEvent[] {
   const timestamp = new Date(e.recorded_at)
   return [
     {
@@ -81,20 +99,23 @@ export function unpackCombinedEvent(e: ClusterMonitorEventSelectedInfo): RawHeal
  * @param bucketMs - Time boundary in milliseconds (default: 1 hour). Events are split into separate buckets if they cross this boundary
  */
 export function groupHealthEvents(
-  events: readonly RawHealthEvent[],
+  events: readonly ClusterRawEvent[],
   bucketMs: number = 3600000
-): HealthEventBucket[] {
+): ClusterBucket[] {
   const splitByTheHour = false
 
   // 1) Group by tag
-  const byTag = new Map<EventTag, RawHealthEvent[]>()
+  const byTag = new Map<ClusterEventTag, ClusterRawEvent[]>()
   for (const e of events) {
     const arr = byTag.get(e.tag)
-    if (arr) arr.push(e)
-    else byTag.set(e.tag, [e])
+    if (arr) {
+      arr.push(e)
+    } else {
+      byTag.set(e.tag, [e])
+    }
   }
 
-  const allGroups: HealthEventBucket[] = []
+  const allGroups: ClusterBucket[] = []
 
   for (const [tag, tagEvents] of byTag.entries()) {
     // 2) Sort by timestamp asc (deterministic tie-breakers optional)
@@ -102,8 +123,8 @@ export function groupHealthEvents(
 
     // 3) Split into buckets of incidents separated by "healthy" events
     // Each bucket contains only NON-healthy events.
-    const segments: RawHealthEvent[][] = []
-    let current: RawHealthEvent[] = []
+    const segments: ClusterRawEvent[][] = []
+    let current: ClusterRawEvent[] = []
 
     for (const e of sorted) {
       if (e.type === 'healthy') {
@@ -168,13 +189,15 @@ export function groupHealthEvents(
  * @param boundaryMs - Time boundary in milliseconds (e.g., 3600000 for 1 hour)
  */
 function splitByTimeBoundary(
-  events: readonly RawHealthEvent[],
+  events: readonly ClusterRawEvent[],
   boundaryMs: number
-): RawHealthEvent[][] {
-  if (events.length === 0) return []
+): ClusterRawEvent[][] {
+  if (events.length === 0) {
+    return []
+  }
 
-  const result: RawHealthEvent[][] = []
-  let current: RawHealthEvent[] = [events[0]]
+  const result: ClusterRawEvent[][] = []
+  let current: ClusterRawEvent[] = [events[0]]
   let currentBoundary = Math.floor(events[0].timestamp.getTime() / boundaryMs)
 
   for (let i = 1; i < events.length; i++) {
@@ -192,18 +215,18 @@ function splitByTimeBoundary(
 }
 
 function foldConsecutive(
-  eventsSortedByTime: readonly RawHealthEvent[],
-  tag: EventTag,
+  eventsSortedByTime: readonly ClusterRawEvent[],
+  tag: ClusterEventTag,
   active: boolean
-): HealthEventBucket[] {
-  const tagTitles: Record<EventTag, string> = {
+): ClusterBucket[] {
+  const tagTitles: Record<ClusterEventTag, string> = {
     api: 'API server incident',
     compiler: 'Compiler server incident',
     runner: 'Kubernetes runner incident'
   }
 
-  const result: HealthEventBucket[] = []
-  let current: HealthEventBucket | null = null
+  const result: ClusterBucket[] = []
+  let current: ClusterBucket | null = null
 
   for (const e of eventsSortedByTime) {
     if (current && current.type === e.type && current.description === e.description) {

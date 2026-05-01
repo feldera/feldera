@@ -1,35 +1,39 @@
-<script lang="ts">
+<script lang="ts" generics="S extends string, T extends string">
   import { slide } from 'svelte/transition'
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
-  import { formatDateTime } from '$lib/functions/format'
+  import { formatDateTimeRange } from '$lib/functions/format'
   import type { HealthEventBucket } from '$lib/functions/pipelines/health'
   import type { Snippet } from '$lib/types/svelte'
+
+  type Bucket = HealthEventBucket<S, T>
 
   let {
     previousEvents,
     unresolvedEvents,
     noIssues,
     onEventSelected,
-    selectedEvents = null
+    selectedEvents = null,
+    getIconClass
   }: {
-    previousEvents: HealthEventBucket[]
-    unresolvedEvents: HealthEventBucket[]
+    previousEvents: Bucket[]
+    unresolvedEvents: Bucket[]
     noIssues: Snippet
-    onEventSelected?: (eventParts: HealthEventBucket) => void
-    selectedEvents?: { tag: string; from: Date; to: Date } | null
+    onEventSelected?: (eventParts: Bucket) => void
+    selectedEvents?: { tag: T; from: Date; to: Date } | null
+    getIconClass: (type: S) => string
   } = $props()
 
   let showUnresolved = $state(true)
   let containerElement: HTMLDivElement | undefined = $state()
 
-  function getEventId(event: HealthEventBucket): string {
+  function getEventId(event: Bucket): string {
     return `event-${event.timestampFrom.getTime()}-${event.tag}`
   }
 
   // Check if an event overlaps with the selected range for the same tag
   function eventMatchesSelection(
-    event: HealthEventBucket,
-    selection: { tag: string; from: Date; to: Date }
+    event: Bucket,
+    selection: { tag: T; from: Date; to: Date }
   ): boolean {
     return (
       selection.tag === event.tag &&
@@ -43,9 +47,9 @@
   // Compute all selected events once
   const selectedEventBuckets = $derived.by(() => {
     if (!selectedEvents) {
-      return new Set<HealthEventBucket>()
+      return new Set<Bucket>()
     }
-    const selected = new Set<HealthEventBucket>()
+    const selected = new Set<Bucket>()
     for (const event of [...unresolvedEvents, ...previousEvents]) {
       if (eventMatchesSelection(event, selectedEvents)) {
         selected.add(event)
@@ -70,7 +74,7 @@
     }
   })
 
-  export function scrollToEvent(event: HealthEventBucket) {
+  export function scrollToEvent(event: Bucket) {
     const eventId = getEventId(event)
     const element = containerElement?.querySelector(`#${CSS.escape(eventId)}`)
     if (element) {
@@ -80,7 +84,9 @@
 
   // Navigation methods for incidents
   export function selectNextIncident(): boolean {
-    if (!selectedEvents) return false
+    if (!selectedEvents) {
+      return false
+    }
 
     const tag = selectedEvents.tag
     const allIncidents = [...unresolvedEvents, ...previousEvents].filter((e) => e.tag === tag)
@@ -100,7 +106,9 @@
   }
 
   export function selectPreviousIncident(): boolean {
-    if (!selectedEvents) return false
+    if (!selectedEvents) {
+      return false
+    }
 
     const tag = selectedEvents.tag
     const allIncidents = [...unresolvedEvents, ...previousEvents].filter((e) => e.tag === tag)
@@ -121,7 +129,9 @@
 
   // Compute navigation state once
   const navigationState = $derived.by((): 'start' | 'middle' | 'end' | null => {
-    if (!selectedEvents) return null
+    if (!selectedEvents) {
+      return null
+    }
 
     const tag = selectedEvents.tag
     const allIncidents = [...unresolvedEvents, ...previousEvents].filter((e) => e.tag === tag)
@@ -132,45 +142,47 @@
         e.timestampTo.getTime() === selectedEvents.to.getTime()
     )
 
-    if (currentIndex < 0) return null
+    if (currentIndex < 0) {
+      return null
+    }
 
     const isAtEnd = currentIndex === 0
     const isAtStart = currentIndex === allIncidents.length - 1
 
-    if (isAtStart && isAtEnd) return null // Only one item
-    if (isAtStart) return 'start'
-    if (isAtEnd) return 'end'
+    if (isAtStart && isAtEnd) {
+      return null // Only one item
+    }
+    if (isAtStart) {
+      return 'start'
+    }
+    if (isAtEnd) {
+      return 'end'
+    }
     return 'middle'
   })
 
   export const getNavigationState = () => navigationState
 </script>
 
-{#snippet eventItem(event: HealthEventBucket, iconClass: string = '')}
+{#snippet eventItem(event: Bucket, iconClass: string = '')}
   <button
     id={getEventId(event)}
     class="flex flex-nowrap items-center gap-1 outline-none"
     onclick={() => onEventSelected?.(event)}
   >
-    <span
-      class="text-[24px] {event.type === 'unhealthy'
-        ? 'fd fd-triangle-alert text-warning-500'
-        : 'fd fd-circle-x text-error-500'} {iconClass}"
-    ></span>
+    <span class="text-[24px] {getIconClass(event.type)} {iconClass}"></span>
     <span class="line-clamp-1">{event.description}</span>
   </button>
 {/snippet}
 
-{#snippet eventGroup(events: HealthEventBucket, iconClass: string = '')}
+{#snippet eventGroup(events: Bucket, iconClass: string = '')}
   <div
-    class="-m-1 flex flex-nowrap items-center gap-7 rounded p-1 py-2 {selectedEventBuckets.has(
-      events
-    )
+    class="flex flex-nowrap items-center gap-7 rounded px-2 py-2 {selectedEventBuckets.has(events)
       ? 'bg-primary-50-950/50'
       : ''}"
   >
     <span class="w-[180px] text-surface-600-400 sm:w-[320px]">
-      {formatDateTime(events.timestampFrom)} - {formatDateTime(events.timestampTo)}
+      {formatDateTimeRange(events.timestampFrom, events.timestampTo)}
     </span>
     <div class="flex flex-col gap-4">
       {@render eventItem(events, iconClass)}
@@ -192,9 +204,9 @@
 {/snippet}
 
 <div class="relative -mx-2 scrollbar h-full overflow-y-auto px-2">
-  <div bind:this={containerElement} class="absolute flex flex-col gap-3 pb-2">
+  <div bind:this={containerElement} class="absolute flex w-[calc(100%-12px)] flex-col gap-3 pb-2">
     {#if unresolvedEvents.length > 0}
-      <div class="flex flex-col gap-3">
+      <div class="flex flex-col gap-2">
         <InlineDropdown bind:open={showUnresolved}>
           {#snippet header(open, toggle)}
             {#snippet title()}
@@ -214,7 +226,7 @@
             )}
           {/snippet}
           {#snippet content()}
-            <div transition:slide={{ duration: 150 }} class="flex flex-col gap-3">
+            <div transition:slide={{ duration: 150 }} class="flex flex-col gap-2">
               {#each unresolvedEvents as events, i}
                 {@render eventGroup(events)}
               {/each}
@@ -224,13 +236,13 @@
       </div>
     {/if}
 
-    <div class="flex flex-col gap-3">
+    <div class="flex flex-col gap-2">
       {#if previousEvents.length}
         <span class="bg-white-dark sticky top-0 -mx-1 px-1 py-1 text-xl font-semibold">
           Previous incidents
         </span>
 
-        <div class="flex flex-col gap-3">
+        <div class="flex flex-col gap-2">
           {#each previousEvents as events}
             {@render eventGroup(events, 'text-surface-900-100')}
           {/each}

@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test'
-import { configureTestClient, cleanupPipeline, waitForPipeline } from '$lib/services/testPipelineHelpers'
 import { putPipeline } from '$lib/services/pipelineManager'
+import {
+  cleanupPipeline,
+  configureTestClient,
+  waitForPipeline
+} from '$lib/services/testPipelineHelpers'
 
 configureTestClient()
 
