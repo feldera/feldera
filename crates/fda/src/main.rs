@@ -1926,6 +1926,263 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             println!("Pipeline deployment error dismissed successfully.");
             trace!("{:#?}", response);
         }
+        PipelineAction::Events { name, selector } => {
+            let response = client
+                .list_pipeline_events()
+                .pipeline_name(name.clone())
+                .selector(selector)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Unable to retrieve pipeline events",
+                    1,
+                ))
+                .unwrap();
+            match format {
+                OutputFormat::Text => {
+                    if selector == PipelineMonitorEventFieldSelector::All {
+                        let mut rows = vec![];
+                        rows.push([
+                            "event_id".to_string(),
+                            "recorded_at".to_string(),
+                            "deployment_resources_status".to_string(),
+                            "deployment_resources_status_details".to_string(),
+                            "deployment_resources_desired_status".to_string(),
+                            "deployment_runtime_status".to_string(),
+                            "deployment_runtime_status_details".to_string(),
+                            "deployment_runtime_desired_status".to_string(),
+                            "deployment_has_error".to_string(),
+                            "deployment_error".to_string(),
+                            "program_status".to_string(),
+                            "storage_status".to_string(),
+                            "storage_status_details".to_string(),
+                        ]);
+                        for event in response.iter() {
+                            rows.push([
+                                event.event_id.to_string(),
+                                format!(
+                                    "{} ({:.0}s ago)",
+                                    event.recorded_at,
+                                    (Utc::now() - event.recorded_at).as_seconds_f64()
+                                ),
+                                event.deployment_resources_status.to_string(),
+                                event
+                                    .deployment_resources_status_details
+                                    .as_ref()
+                                    .map(|v| v.to_string())
+                                    .unwrap_or("(none)".to_string()),
+                                event.deployment_resources_desired_status.to_string(),
+                                event
+                                    .deployment_runtime_status
+                                    .map(|v| v.to_string())
+                                    .unwrap_or("(none)".to_string()),
+                                event
+                                    .deployment_runtime_status_details
+                                    .as_ref()
+                                    .map(|v| v.to_string())
+                                    .unwrap_or("(none)".to_string()),
+                                event
+                                    .deployment_runtime_desired_status
+                                    .map(|v| v.to_string())
+                                    .unwrap_or("(none)".to_string()),
+                                event.deployment_has_error.to_string(),
+                                event
+                                    .deployment_error
+                                    .as_ref()
+                                    .map(|v| format!("{v:?}"))
+                                    .unwrap_or("(none)".to_string()),
+                                event.program_status.to_string(),
+                                event.storage_status.to_string(),
+                                event
+                                    .storage_status_details
+                                    .as_ref()
+                                    .map(|v| v.to_string())
+                                    .unwrap_or("(none)".to_string()),
+                            ]);
+                        }
+                        println!(
+                            "{}",
+                            Builder::from_iter(rows).build().with(Style::rounded())
+                        );
+                    } else {
+                        let mut rows = vec![];
+                        rows.push([
+                            "event_id".to_string(),
+                            "recorded_at".to_string(),
+                            "deployment_resources_status".to_string(),
+                            "deployment_resources_desired_status".to_string(),
+                            "deployment_runtime_status".to_string(),
+                            "deployment_runtime_desired_status".to_string(),
+                            "deployment_has_error".to_string(),
+                            "program_status".to_string(),
+                            "storage_status".to_string(),
+                        ]);
+                        for event in response.iter() {
+                            rows.push([
+                                event.event_id.to_string(),
+                                format!(
+                                    "{} ({:.0}s ago)",
+                                    event.recorded_at,
+                                    (Utc::now() - event.recorded_at).as_seconds_f64()
+                                ),
+                                event.deployment_resources_status.to_string(),
+                                event.deployment_resources_desired_status.to_string(),
+                                event
+                                    .deployment_runtime_status
+                                    .map(|v| v.to_string())
+                                    .unwrap_or("(none)".to_string()),
+                                event
+                                    .deployment_runtime_desired_status
+                                    .map(|v| v.to_string())
+                                    .unwrap_or("(none)".to_string()),
+                                event.deployment_has_error.to_string(),
+                                event.program_status.to_string(),
+                                event.storage_status.to_string(),
+                            ]);
+                        }
+                        println!(
+                            "{}",
+                            Builder::from_iter(rows).build().with(Style::rounded())
+                        );
+                    }
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize pipeline events")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
+        PipelineAction::Event {
+            name,
+            event_id,
+            selector,
+        } => {
+            let response = client
+                .get_pipeline_event()
+                .pipeline_name(name.clone())
+                .event_id(event_id)
+                .selector(selector)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Unable to retrieve pipeline event",
+                    1,
+                ))
+                .unwrap();
+            match format {
+                OutputFormat::Text => {
+                    let mut rows = vec![];
+                    rows.push(["Field".to_string(), "Value".to_string()]);
+                    rows.push(["event_id".to_string(), response.event_id.to_string()]);
+                    rows.push([
+                        "recorded_at".to_string(),
+                        format!(
+                            "{} ({:.0}s ago)",
+                            response.recorded_at,
+                            (Utc::now() - response.recorded_at).as_seconds_f64()
+                        ),
+                    ]);
+                    rows.push([
+                        "deployment_resources_status".to_string(),
+                        response.deployment_resources_status.to_string(),
+                    ]);
+                    if selector == PipelineMonitorEventFieldSelector::All {
+                        rows.push([
+                            "deployment_resources_status_details".to_string(),
+                            response
+                                .deployment_resources_status_details
+                                .as_ref()
+                                .map(|v| v.to_string())
+                                .unwrap_or("(none)".to_string()),
+                        ]);
+                    }
+                    rows.push([
+                        "deployment_resources_desired_status".to_string(),
+                        response.deployment_resources_desired_status.to_string(),
+                    ]);
+                    rows.push([
+                        "deployment_runtime_status".to_string(),
+                        response
+                            .deployment_runtime_status
+                            .map(|v| v.to_string())
+                            .unwrap_or("(none)".to_string()),
+                    ]);
+                    if selector == PipelineMonitorEventFieldSelector::All {
+                        rows.push([
+                            "deployment_runtime_status_details".to_string(),
+                            response
+                                .deployment_runtime_status_details
+                                .as_ref()
+                                .map(|v| v.to_string())
+                                .unwrap_or("(none)".to_string()),
+                        ]);
+                    }
+                    rows.push([
+                        "deployment_runtime_desired_status".to_string(),
+                        response
+                            .deployment_runtime_desired_status
+                            .map(|v| v.to_string())
+                            .unwrap_or("(none)".to_string()),
+                    ]);
+                    rows.push([
+                        "deployment_has_error".to_string(),
+                        response.deployment_has_error.to_string(),
+                    ]);
+                    if selector == PipelineMonitorEventFieldSelector::All {
+                        rows.push([
+                            "deployment_error".to_string(),
+                            response
+                                .deployment_error
+                                .as_ref()
+                                .map(|v| format!("{v:?}"))
+                                .unwrap_or("(none)".to_string()),
+                        ]);
+                    }
+                    rows.push([
+                        "program_status".to_string(),
+                        response.program_status.to_string(),
+                    ]);
+                    rows.push([
+                        "storage_status".to_string(),
+                        response.storage_status.to_string(),
+                    ]);
+                    if selector == PipelineMonitorEventFieldSelector::All {
+                        rows.push([
+                            "storage_status_details".to_string(),
+                            response
+                                .storage_status_details
+                                .as_ref()
+                                .map(|v| v.to_string())
+                                .unwrap_or("(none)".to_string()),
+                        ]);
+                    }
+                    println!(
+                        "{}",
+                        Builder::from_iter(rows).build().with(Style::rounded())
+                    );
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize pipeline events")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
     }
 }
 

@@ -111,6 +111,11 @@ fn default_auth_audience() -> String {
     "feldera-api".to_string()
 }
 
+/// Default number of monitor events that are retained for each pipeline.
+fn default_pipeline_monitor_events_retention() -> u32 {
+    720
+}
+
 /// Determines the default amount of worker threads to spawn.
 fn default_http_workers() -> usize {
     thread::available_parallelism()
@@ -305,6 +310,10 @@ pub struct CommonConfig {
     /// leaf certificate and ending with the root certificate).
     #[arg(long, env = "FELDERA_CA_CERT_PATH")]
     pub private_ca_cert_path: Option<String>,
+
+    /// Number of monitor events that are retained for each pipeline.
+    #[arg(long, default_value_t = default_pipeline_monitor_events_retention(), env = "FELDERA_PIPELINE_MONITOR_EVENTS_RETENTION")]
+    pub pipeline_monitor_events_retention: u32,
 }
 
 impl CommonConfig {
@@ -576,6 +585,7 @@ impl CommonConfig {
             https_tls_cert_path: None,
             https_tls_key_path: None,
             private_ca_cert_path: None,
+            pipeline_monitor_events_retention: 720,
         }
     }
 }
