@@ -1,3 +1,17 @@
+import Dayjs from 'dayjs'
+
+/** Extracts the timestamp from a UUID v7 (first 48 bits = unix ms).
+ *  Returns null for non-v7 UUIDs. */
+export function uuidV7Timestamp(uuid: string): Dayjs.Dayjs | null {
+  if (uuid[14] !== '7') {
+    return null
+  }
+  const hex = uuid.replace(/-/g, '').slice(0, 12)
+  const ms = parseInt(hex, 16)
+  if (!Number.isFinite(ms) || ms <= 0) return null
+  return Dayjs(ms)
+}
+
 export function dateMax(first: Date, ...rest: Date[]): Date {
   if (rest.length === 0) return first
   const [next, ...nextRest] = rest

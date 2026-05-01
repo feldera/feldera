@@ -1,8 +1,12 @@
 import {
   type CombinedDesiredStatus as _CombinedDesiredStatus,
   type CombinedStatus as _CombinedStatus,
+  checkpointPipeline as _checkpointPipeline,
   deleteApiKey as _deleteApiKey,
   deletePipeline as _deletePipeline,
+  getCheckpointStatus as _getCheckpointStatus,
+  getCheckpointSyncStatus as _getCheckpointSyncStatus,
+  getCheckpoints as _getCheckpoints,
   getClusterEvent as _getClusterEvent,
   getConfig as _getConfig,
   getConfigSession as _getConfigSession,
@@ -17,6 +21,13 @@ import {
   postPipeline as _postPipeline,
   postUpdateRuntime as _postUpdateRuntime,
   putPipeline as _putPipeline,
+  syncCheckpoint as _syncCheckpoint,
+  type CheckpointActivity,
+  type CheckpointFailure,
+  type CheckpointMetadata,
+  type CheckpointResponse,
+  type CheckpointStatus,
+  type CommitProgressSummary,
   type ControllerStatus,
   type ErrorResponse,
   type GetPipelineSupportBundleData,
@@ -37,10 +48,16 @@ import {
   postPipelineResume,
   postPipelineStart,
   postPipelineStop,
-  startSamplyProfile
+  startSamplyProfile,
+  type TransactionStatus
 } from '$lib/services/manager'
 
 export type {
+  CheckpointActivity,
+  CheckpointFailure,
+  CheckpointMetadata,
+  CheckpointResponse,
+  CheckpointStatus,
   InputEndpointConfig,
   InputEndpointStatus,
   OutputEndpointConfig,
@@ -48,6 +65,22 @@ export type {
   RuntimeConfig,
   SqlCompilerMessage
 } from '$lib/services/manager'
+
+// Types missing from generated client (OpenAPI codegen maps them incorrectly)
+export type CheckpointSyncResponse = {
+  checkpoint_uuid: string
+}
+
+export type CheckpointSyncFailure = {
+  uuid: string
+  error: string
+}
+
+export type CheckpointSyncStatus = {
+  success?: string | null
+  failure?: CheckpointSyncFailure | null
+  periodic?: string | null
+}
 
 import { match, P } from 'ts-pattern'
 import type { XgressRecord } from '$lib/types/pipelineManager'
@@ -61,6 +94,15 @@ import { tuple } from '$lib/functions/common/tuple'
 import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
 import { applyAuthToRequest, handleAuthResponse } from '$lib/services/auth'
 import { createClient } from '$lib/services/manager/client'
+import {
+  overlayPipelineStats,
+  SIMULATE_CHECKPOINTS,
+  simulateCheckpointPipeline,
+  simulateGetCheckpointStatus,
+  simulateGetCheckpointSyncStatus,
+  simulateGetPipelineCheckpoints,
+  simulateSyncCheckpoint
+} from '$lib/services/pipelineManagerSimulator'
 
 const unauthenticatedClient = createClient({
   bodySerializer: JSONbig.stringify,
@@ -448,16 +490,17 @@ export const getPipelineStats = async (pipeline_name: string, options?: FetchOpt
       path: { pipeline_name },
       ...options
     }),
-    (status) => ({
-      pipelineName: pipeline_name,
-      status: status as ControllerStatus | null | 'not running'
-    }),
+    (status) =>
+      overlayPipelineStats({
+        pipelineName: pipeline_name,
+        status: status as ControllerStatus | null | 'not running'
+      }),
     (e) => {
       if (e.error_code === 'PipelineInteractionNotDeployed') {
-        return {
+        return overlayPipelineStats({
           pipelineName: pipeline_name,
           status: 'not running' as const
-        }
+        })
       }
       throw new Error(e.message, { cause: e })
     }
@@ -491,6 +534,46 @@ export const getOutputConnectorStatus = (
     }),
     (v) => v
   )
+
+export const getPipelineCheckpoints = (pipeline_name: string, options?: FetchOptions) => {
+  if (SIMULATE_CHECKPOINTS) return simulateGetPipelineCheckpoints(pipeline_name)
+  return mapResponse(
+    _getCheckpoints({ path: { pipeline_name }, ...options }),
+    (v) => v as unknown as CheckpointMetadata[]
+  )
+}
+
+export const checkpointPipeline = (pipeline_name: string, options?: FetchOptions) => {
+  if (SIMULATE_CHECKPOINTS) return simulateCheckpointPipeline(pipeline_name)
+  return mapResponse(
+    _checkpointPipeline({ path: { pipeline_name }, ...options }),
+    (v) => v as CheckpointResponse
+  )
+}
+
+export const getCheckpointStatus = (pipeline_name: string, options?: FetchOptions) => {
+  if (SIMULATE_CHECKPOINTS) return simulateGetCheckpointStatus(pipeline_name)
+  return mapResponse(
+    _getCheckpointStatus({ path: { pipeline_name }, ...options }),
+    (v) => v as CheckpointStatus
+  )
+}
+
+export const syncCheckpoint = (pipeline_name: string, options?: FetchOptions) => {
+  if (SIMULATE_CHECKPOINTS) return simulateSyncCheckpoint(pipeline_name)
+  return mapResponse(
+    _syncCheckpoint({ path: { pipeline_name }, ...options }),
+    (v) => v as unknown as CheckpointSyncResponse
+  )
+}
+
+export const getCheckpointSyncStatus = (pipeline_name: string, options?: FetchOptions) => {
+  if (SIMULATE_CHECKPOINTS) return simulateGetCheckpointSyncStatus(pipeline_name)
+  return mapResponse(
+    _getCheckpointSyncStatus({ path: { pipeline_name }, ...options }),
+    (v) => v as unknown as CheckpointSyncStatus
+  )
+}
 
 export const deletePipeline = async (pipeline_name: string, options?: FetchOptions) => {
   await mapResponse(_deletePipeline({ path: { pipeline_name }, ...options }), (v) => v)
