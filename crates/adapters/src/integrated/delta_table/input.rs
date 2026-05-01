@@ -2112,10 +2112,11 @@ impl DeltaTableInputEndpointInner {
 
     /// Process a DeltaLake transaction in CDC mode:
     ///
-    /// * Ignore delete actions (the assumption is that CDC tables are append-only,
-    ///   where only old records are deleted as part of the table maintenance)
-    /// * Order all rows from all insert actions by `cdc_order_by`, compute the
-    ///   polarity of each row using `cdc_delete_filter` and insert the row with
+    /// * Subtract rows in Remove actions from rows in Add actions, so that
+    ///   file rewrites that change no logical data (no-op UPDATE, MERGE,
+    ///   etc.) don't re-emit unchanged rows as duplicate inserts.
+    /// * Order the surviving rows by `cdc_order_by`, compute the polarity of
+    ///   each row using `cdc_delete_filter` and insert the row with
     ///   appropriate polarity.
     async fn process_cdc_transaction(
         &self,
@@ -2129,9 +2130,10 @@ impl DeltaTableInputEndpointInner {
             .do_process_cdc_transaction(actions, table, cdc_delete_filter, input_stream, receiver)
             .await;
 
-        // Deregister the table registered by `do_process_cdc_transaction`.
-        // If the table does not exist, there's no harm.
-        let _ = self.datafusion.deregister_table("tmp_table");
+        // Deregister the tables registered by `do_process_cdc_transaction`.
+        // If a table does not exist, there's no harm.
+        let _ = self.datafusion.deregister_table("cdc_adds");
+        let _ = self.datafusion.deregister_table("cdc_removes");
 
         result
     }
@@ -2144,49 +2146,98 @@ impl DeltaTableInputEndpointInner {
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) -> AnyResult<()> {
-        // List all files that occur in Add actions.
-        let files = actions
+        // Collect Add and Remove file paths separately. The query below
+        // subtracts Removes from Adds via `EXCEPT ALL` to cancel rewrites
+        // that don't change logical data.
+        let url = table.log_store().object_store_url();
+        let path_of = |p: &str| format!("{}{}", url.as_str(), p);
+        let adds: Vec<String> = actions
             .iter()
-            .flat_map(|action| match action {
-                Action::Add(add) if add.data_change => Some(format!(
-                    "{}{}",
-                    table.log_store().object_store_url().as_str(),
-                    add.path
-                )),
+            .filter_map(|a| match a {
+                Action::Add(x) if x.data_change => Some(path_of(&x.path)),
                 _ => None,
             })
-            .collect::<Vec<_>>();
+            .collect();
+        let removes: Vec<String> = actions
+            .iter()
+            .filter_map(|a| match a {
+                Action::Remove(x) if x.data_change => Some(path_of(&x.path)),
+                _ => None,
+            })
+            .collect();
+
+        // No Adds means no new rows to ingest (e.g. OPTIMIZE with
+        // `data_change=false` on every action), so there is nothing to do.
+        if adds.is_empty() {
+            return Ok(());
+        }
 
         let description = format!(
-            "CDC transaction consisting of {} files {:?}",
-            files.len(),
-            &files
+            "CDC transaction with {} adds {:?} and {} removes {:?}",
+            adds.len(),
+            &adds,
+            removes.len(),
+            &removes,
         );
 
-        // Create a datafusion table backed by these files.
-        let parquet_table = Arc::new(
-            self.create_parquet_table(table, files, &description)
-                .await?,
-        );
-
-        self.datafusion.register_table("tmp_table", parquet_table).map_err(|e| {
-            anyhow!("internal error processing {description}; {REPORT_ERROR}; error registering Parquet table: {e}")
+        // `self.datafusion` is a per-endpoint `SessionContext` and
+        // `process_cdc_transaction` is invoked serially from the single
+        // dedicated `worker_task` loop, so the fixed table names
+        // `cdc_adds`/`cdc_removes` cannot collide across calls.
+        let adds_table = Arc::new(self.create_parquet_table(table, adds, &description).await?);
+        self.datafusion.register_table("cdc_adds", adds_table).map_err(|e| {
+            anyhow!("internal error processing {description}; {REPORT_ERROR}; error registering 'cdc_adds' table: {e}")
         })?;
 
+        // `EXCEPT ALL` (multiset difference) cancels each Remove row against
+        // exactly one matching Add row; plain `EXCEPT` would collapse
+        // duplicates and under-count legitimately repeated inserts.
+        //
+        // The optional `filter` is pushed into both sides of the set
+        // difference so each Remove only has to cancel against rows that
+        // would have been ingested anyway. This also shrinks the inputs to
+        // `EXCEPT ALL`, which sorts both relations.
+        //
+        // Caveat: `EXCEPT ALL` relies on `arrow_row::RowConverter`,
+        // which in the currently pinned `arrow-row` does not support
+        // `Map` columns.
+        // Pure-append transactions on tables with `Map` columns are unaffected
+        // (the `EXCEPT ALL` branch isn't taken when `removes` is empty);
+        // transactions that do produce Removes fail here with `NotImplemented`.
+        // see issue:
+        //   - https://github.com/apache/datafusion/issues/15428
+        //   - https://github.com/apache/arrow-rs/issues/7879
         let where_clause = if let Some(filter) = &self.config.filter {
-            format!("where {filter}")
+            format!("WHERE {filter}")
         } else {
             "".to_string()
         };
 
-        // Order the table by the `cdc_order_by` expression.
+        let from_clause = if removes.is_empty() {
+            format!("cdc_adds {where_clause}")
+        } else {
+            let removes_table = Arc::new(
+                self.create_parquet_table(table, removes, &description)
+                    .await?,
+            );
+            self.datafusion.register_table("cdc_removes", removes_table).map_err(|e| {
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; error registering 'cdc_removes' table: {e}")
+            })?;
+            format!(
+                "(SELECT * FROM cdc_adds {where_clause} \
+                  EXCEPT ALL \
+                  SELECT * FROM cdc_removes {where_clause})"
+            )
+        };
+
+        // Order the resulting relation by the `cdc_order_by` expression.
         // TODO: We don't use `used_column_list` here, as the resulting dataframe will have a different
         // schema than the original table, and the `cdc_delete_filter` physical expression won't be valid for it.
         let order_by = self.config.cdc_order_by.as_ref().unwrap();
-        let query = format!("SELECT * FROM tmp_table {where_clause} ORDER BY {order_by}");
+        let query = format!("SELECT * FROM {from_clause} ORDER BY {order_by}");
 
         let df = self.datafusion.sql(&query).await.map_err(|e| {
-            anyhow!("invalid 'cdc_order_by' or 'filter' expression: 'cdc_order_by' and 'filter' (when specified) must be valid SQL expressions that can be used in a 'SELECT * FROM <table> WHERE <filter> ORDER BY <cdc_order_by>' query, but the following error was encountered when compiling '{query}': {e}")
+            anyhow!("failed to compile the CDC query '{query}': {e}. This typically indicates one of: (1) `cdc_order_by` or `filter` is not a valid SQL expression for a query of the form `SELECT * FROM <table> WHERE <filter> ORDER BY <cdc_order_by>`; or (2) the Delta table contains a `Map` column, which the CDC deduplication step (`EXCEPT ALL`) does not yet support.")
         })?;
 
         let _record_count = self

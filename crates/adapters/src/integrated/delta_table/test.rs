@@ -1568,6 +1568,340 @@ async fn delta_table_cdc_file_suspend_test() {
     .await;
 }
 
+/// CDC connector must not re-emit rows when a Delta operation rewrites a
+/// file without changing its logical contents. Covers:
+/// - `OPTIMIZE` (every action has `data_change=false` -> early return).
+/// - No-op `UPDATE` (paired Add+Remove with identical rows -> EXCEPT ALL
+///   cancels them).
+/// - Real `UPDATE` (genuine row change is propagated).
+///
+/// Each step is followed by a sentinel-row append. Because the connector
+/// processes Delta versions in order, the sentinel can appear in the
+/// materialized output only after the prior step has been processed; that
+/// turns each `wait_for_records_materialized` into a deterministic check.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_cdc_rewrite_test() {
+    use crate::test::TestStruct;
+    use arrow::array::{
+        Array, BooleanArray, Int64Array, RecordBatch, StringArray, TimestampMicrosecondArray,
+    };
+    use arrow::datatypes::{
+        DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema, TimeUnit,
+    };
+    use deltalake::datafusion::prelude::{col, lit};
+    use deltalake::kernel::{DataType as KernelDataType, PrimitiveType, StructField};
+
+    init_logging();
+
+    let row = |id: u32, label: &str| TestStruct {
+        id,
+        b: false,
+        i: None,
+        s: label.to_string(),
+    };
+
+    // Two batches => two parquet files, so OPTIMIZE has work to do.
+    // Filter `id % 2 = 0` keeps half of them.
+    let batch1: Vec<TestStruct> = (0..6).map(|id| row(id, &format!("row-{id}"))).collect();
+    let batch2: Vec<TestStruct> = (6..12).map(|id| row(id, &format!("row-{id}"))).collect();
+    let all: Vec<TestStruct> = batch1.iter().chain(batch2.iter()).cloned().collect();
+    let expected_initial: Vec<TestStruct> = all.iter().filter(|r| r.id % 2 == 0).cloned().collect();
+
+    // TestStruct columns + the CDC bookkeeping columns the connector expects.
+    let arrow_schema = Arc::new(ArrowSchema::new(vec![
+        ArrowField::new("id", ArrowDataType::Int64, false),
+        ArrowField::new("b", ArrowDataType::Boolean, false),
+        ArrowField::new("s", ArrowDataType::Utf8, false),
+        ArrowField::new("__feldera_op", ArrowDataType::Utf8, false),
+        ArrowField::new(
+            "__feldera_ts",
+            ArrowDataType::Timestamp(TimeUnit::Microsecond, None),
+            false,
+        ),
+    ]));
+    let struct_fields = vec![
+        StructField::new("id", KernelDataType::Primitive(PrimitiveType::Long), false),
+        StructField::new(
+            "b",
+            KernelDataType::Primitive(PrimitiveType::Boolean),
+            false,
+        ),
+        StructField::new("s", KernelDataType::Primitive(PrimitiveType::String), false),
+        StructField::new(
+            "__feldera_op",
+            KernelDataType::Primitive(PrimitiveType::String),
+            false,
+        ),
+        StructField::new(
+            "__feldera_ts",
+            KernelDataType::Primitive(PrimitiveType::TimestampNtz),
+            false,
+        ),
+    ];
+
+    let make_batch = |rows: &[TestStruct], op: &str, ts: i64| -> RecordBatch {
+        let n = rows.len();
+        RecordBatch::try_new(
+            arrow_schema.clone(),
+            vec![
+                Arc::new(Int64Array::from_iter_values(
+                    rows.iter().map(|r| r.id as i64),
+                )) as Arc<dyn Array>,
+                Arc::new(rows.iter().map(|r| Some(r.b)).collect::<BooleanArray>()),
+                Arc::new(StringArray::from_iter_values(
+                    rows.iter().map(|r| r.s.clone()),
+                )),
+                Arc::new(StringArray::from_iter_values((0..n).map(|_| op))),
+                Arc::new(TimestampMicrosecondArray::from_iter_values(
+                    (0..n as i64).map(|i| ts + i),
+                )),
+            ],
+        )
+        .unwrap()
+    };
+
+    async fn append(delta: DeltaTable, batches: Vec<RecordBatch>) -> DeltaTable {
+        delta
+            .write(batches)
+            .with_save_mode(SaveMode::Append)
+            .await
+            .unwrap()
+    }
+
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let mut delta = create_table(&table_uri, &HashMap::new(), &struct_fields).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let read_pipeline = {
+        let table_uri = table_uri.clone();
+        let storage_dir = storage_dir.path().to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            let pipeline_config: PipelineConfig = serde_json::from_value(json!({
+                "name": "test",
+                "workers": 4,
+                "storage_config": { "path": storage_dir },
+                "inputs": {
+                    "test_input1": {
+                        "stream": "test_input1",
+                        "transport": {
+                            "name": "delta_table_input",
+                            "config": {
+                                "uri": table_uri,
+                                "mode": "cdc",
+                                "filter": "id % 2 = 0",
+                                "cdc_delete_filter": "__feldera_op = 'd'",
+                                "cdc_order_by": "__feldera_ts",
+                            }
+                        }
+                    }
+                }
+            }))
+            .unwrap();
+            Controller::with_test_config(
+                move |workers| {
+                    Ok(test_circuit::<TestStruct>(
+                        workers,
+                        &TestStruct::schema(),
+                        &[Some("output")],
+                    ))
+                },
+                &pipeline_config,
+                Box::new(move |e, _| panic!("cdc rewrite test: {e}")),
+            )
+            .unwrap()
+        })
+        .await
+        .unwrap()
+    };
+    read_pipeline.start();
+    let output = SqlIdentifier::from("test_output1");
+
+    // Step 1: two appends => two parquet files, one Delta version each.
+    delta = append(delta, vec![make_batch(&batch1, "i", 1_000)]).await;
+    delta = append(delta, vec![make_batch(&batch2, "i", 2_000)]).await;
+    wait_for_records_materialized(&read_pipeline, &output, &expected_initial).await;
+
+    // Step 2: OPTIMIZE coalesces the two files into one. Every action has
+    // `data_change=false`, so the connector early-returns. Any spurious
+    // emission would be exposed by the size check below.
+    let v_before = delta.version().unwrap();
+    let (optimized, _) = delta
+        .optimize()
+        .with_target_size(128 * 1024 * 1024)
+        .await
+        .unwrap();
+    assert!(
+        optimized.version().unwrap() > v_before,
+        "OPTIMIZE should produce a new commit"
+    );
+    let sentinel1 = row(100, "sentinel-after-optimize");
+    delta = append(
+        optimized,
+        vec![make_batch(std::slice::from_ref(&sentinel1), "i", 2_500)],
+    )
+    .await;
+    let mut expected = expected_initial.clone();
+    expected.push(sentinel1);
+    wait_for_records_materialized(&read_pipeline, &output, &expected).await;
+
+    // Step 3: no-op UPDATE (`b = b`). delta-rs rewrites every matching file
+    // with paired Add+Remove actions over identical rows; EXCEPT ALL must
+    // cancel them so no rows are re-ingested.
+    let v_before = delta.version().unwrap();
+    let (updated, _) = delta
+        .update()
+        .with_predicate(col("id").gt_eq(lit(0i64)))
+        .with_update("b", col("b"))
+        .await
+        .unwrap();
+    assert!(
+        updated.version().unwrap() > v_before,
+        "no-op UPDATE should produce a new commit"
+    );
+    let sentinel2 = row(200, "sentinel-after-noop-update");
+    delta = append(
+        updated,
+        vec![make_batch(std::slice::from_ref(&sentinel2), "i", 2_700)],
+    )
+    .await;
+    expected.push(sentinel2);
+    wait_for_records_materialized(&read_pipeline, &output, &expected).await;
+
+    // Step 4: real change. CDC tables encode an in-place row update as a
+    // `'d'` row (old value) followed by an `'i'` row (new value), ordered
+    // by `cdc_order_by`. The connector should turn that into delete+insert.
+    let target_id: u32 = 0;
+    let original = all.iter().find(|r| r.id == target_id).unwrap().clone();
+    let mut modified = original.clone();
+    modified.b = true;
+    let _ = append(
+        delta,
+        vec![
+            make_batch(std::slice::from_ref(&original), "d", 3_000_000),
+            make_batch(std::slice::from_ref(&modified), "i", 3_000_001),
+        ],
+    )
+    .await;
+    let mut expected_after = expected.clone();
+    expected_after
+        .iter_mut()
+        .find(|r| r.id == target_id)
+        .unwrap()
+        .b = true;
+    wait_for_records_materialized(&read_pipeline, &output, &expected_after).await;
+
+    read_pipeline.stop().unwrap();
+}
+
+/// Pin the exact set of arrow types that the `EXCEPT ALL` cancellation
+/// step in `do_process_cdc_transaction` cannot handle.
+///
+/// `EXCEPT ALL` is planned via `RowConverter`, so any column type for
+/// which `RowConverter::supports_fields` returns `false` will make the
+/// CDC rewrite path fail at runtime once the transaction contains
+/// Removes. Locking that list down here means a future arrow upgrade
+/// that widens (or narrows) support is caught by this test instead of
+/// silently changing user-visible behavior, and gives us a concrete
+/// reference for the caveat documented at the call site.
+#[test]
+fn except_all_unsupported_types_are_only_map() {
+    use arrow::datatypes::{DataType, Field, TimeUnit};
+    use arrow::row::{RowConverter, SortField};
+    use std::sync::Arc;
+
+    let supports = |dt: DataType| -> bool { RowConverter::supports_fields(&[SortField::new(dt)]) };
+
+    // Every Delta-mappable scalar / nested type that previous review
+    // comments and code comments listed as "unsupported" is in fact
+    // supported by `arrow-row` 57.x.
+    assert!(supports(DataType::Binary), "Binary must be supported");
+    assert!(
+        supports(DataType::LargeBinary),
+        "LargeBinary must be supported",
+    );
+    assert!(
+        supports(DataType::FixedSizeBinary(16)),
+        "FixedSizeBinary must be supported",
+    );
+    assert!(
+        supports(DataType::List(Arc::new(Field::new(
+            "item",
+            DataType::Utf8,
+            true,
+        )))),
+        "List<Utf8> must be supported",
+    );
+    assert!(
+        supports(DataType::LargeList(Arc::new(Field::new(
+            "item",
+            DataType::Utf8,
+            true,
+        )))),
+        "LargeList<Utf8> must be supported",
+    );
+    assert!(
+        supports(DataType::FixedSizeList(
+            Arc::new(Field::new("item", DataType::Int32, true)),
+            4,
+        )),
+        "FixedSizeList<Int32> must be supported",
+    );
+    assert!(
+        supports(DataType::Struct(
+            vec![
+                Field::new("a", DataType::Int64, true),
+                Field::new("b", DataType::Utf8, true),
+            ]
+            .into(),
+        )),
+        "Struct must be supported",
+    );
+
+    // Spot-check that the broader scalar surface area used by
+    // `DeltaTestStruct` is supported too — these are the types a CDC
+    // rewrite is most likely to encounter in practice.
+    for dt in [
+        DataType::Int8,
+        DataType::Int16,
+        DataType::Int32,
+        DataType::Int64,
+        DataType::UInt8,
+        DataType::UInt16,
+        DataType::UInt32,
+        DataType::UInt64,
+        DataType::Float32,
+        DataType::Float64,
+        DataType::Boolean,
+        DataType::Utf8,
+        DataType::LargeUtf8,
+        DataType::Date32,
+        DataType::Date64,
+        DataType::Time64(TimeUnit::Microsecond),
+        DataType::Timestamp(TimeUnit::Microsecond, None),
+        DataType::Decimal128(10, 3),
+    ] {
+        assert!(supports(dt.clone()), "{dt:?} must be supported");
+    }
+
+    // `Map` is the one Delta-mappable type that is genuinely unsupported.
+    let map_type = Field::new_map(
+        "map",
+        "entries",
+        Field::new("key", DataType::Utf8, false),
+        Field::new("value", DataType::Utf8, true),
+        false,
+        true,
+    )
+    .data_type()
+    .clone();
+    assert!(
+        !supports(map_type),
+        "Map is expected to be unsupported by RowConverter; if this \
+         changes, update the caveat in `do_process_cdc_transaction`",
+    );
+}
+
 #[cfg(feature = "delta-s3-test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[parallel(delta_s3)]
