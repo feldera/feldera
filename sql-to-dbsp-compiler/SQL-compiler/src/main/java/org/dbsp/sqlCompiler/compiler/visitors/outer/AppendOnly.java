@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
@@ -170,6 +171,11 @@ public class AppendOnly extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPSumOperator node) {
+        this.copy(node);
+    }
+
+    @Override
+    public void postorder(DBSPAtomicSumOperator node) {
         this.copy(node);
     }
 

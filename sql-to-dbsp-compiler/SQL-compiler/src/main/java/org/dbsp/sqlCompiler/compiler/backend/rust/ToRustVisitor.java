@@ -26,59 +26,11 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyNOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.IContainsIntegrator;
-import org.dbsp.sqlCompiler.circuit.operator.IInputMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.annotation.Recursive;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
-import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
@@ -1653,6 +1605,36 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(")")
                 .append(this.markDistinct(operator))
                 .append(";");
+        this.tagStream(operator);
+        this.innerVisitor.setOperatorContext(null);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPAtomicSumOperator operator) {
+        // Implement as a pair of operators:
+        // - accumulate_concat_zsets
+        // - shard
+        this.computeHash(operator);
+        this.innerVisitor.setOperatorContext(operator);
+        DBSPType streamType = this.streamType(operator);
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getNodeName(this.preferHash))
+                .append(": ");
+        streamType.accept(this.innerVisitor);
+        this.builder.append(" = circuit.accumulate_concat_zsets")
+                .append("(&[");
+        for (int i = 0; i < operator.inputs.size(); i++) {
+            if (i > 0)
+                this.builder.append(", ");
+            this.builder.append("(").append(this.getInputName(operator, i))
+                    .append(".clone(), true)");
+        }
+        this.builder.append("])")
+                .newline()
+                .append(this.markDistinct(operator))
+                .append(".shard();");
         this.tagStream(operator);
         this.innerVisitor.setOperatorContext(null);
         return VisitDecision.STOP;

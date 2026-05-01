@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust.multi;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
@@ -209,6 +210,21 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
             this.builder().append("])").append(";").newline();
             this.builder().newline()
                     .append(operator.getNodeName(true))
+                    .append(".set_persistent_id(hash);");
+        } else if (this.operator.is(DBSPAtomicSumOperator.class)) {
+            this.builder().append("let ")
+                    .append(name)
+                    .append(" = circuit.accumulate_concat_zsets")
+                    .append("(&[");
+            for (int i = 0; i < operator.inputs.size(); i++) {
+                if (i > 0)
+                    this.builder().append(", ");
+                this.builder().append("(").append(this.inputName(i))
+                        .append(".clone(), true)");
+            }
+            this.builder().append("])")
+                    .newline()
+                    .append(".shard()").newline()
                     .append(".set_persistent_id(hash);");
         } else {
             visitor.generateOperator(this.operator);

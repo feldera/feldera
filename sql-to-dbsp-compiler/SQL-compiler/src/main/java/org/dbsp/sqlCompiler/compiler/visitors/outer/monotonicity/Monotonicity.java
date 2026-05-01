@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
@@ -522,6 +523,11 @@ public class Monotonicity extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPSumOperator node) {
+        this.sumOrDifference(node);
+    }
+
+    @Override
+    public void postorder(DBSPAtomicSumOperator node) {
         this.sumOrDifference(node);
     }
 

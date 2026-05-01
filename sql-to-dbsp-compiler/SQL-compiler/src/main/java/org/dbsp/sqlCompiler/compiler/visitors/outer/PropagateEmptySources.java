@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
@@ -16,6 +17,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
@@ -181,18 +183,45 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
                 continue;
             newSources.add(source);
         }
+
         if (newSources.isEmpty()) {
             DBSPExpression value = emptySet(operator.getType());
             DBSPConstantOperator result = new DBSPConstantOperator(
                     operator.getRelNode(), value, operator.isMultiset);
             this.emptySources.add(result);
             this.map(operator, result);
-            return;
         } else if (newSources.size() == 1) {
             this.map(operator.outputPort(), newSources.get(0), false);
-            return;
+        } else if (newSources.size() < operator.inputs.size()) {
+            DBSPSimpleOperator result = operator.withInputs(newSources, false).to(DBSPSimpleOperator.class);
+            this.map(operator, result);
+        } else {
+            super.postorder(operator);
         }
-        super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPAtomicSumOperator operator) {
+        List<OutputPort> newSources = new ArrayList<>();
+        for (OutputPort prev: operator.inputs) {
+            OutputPort source = this.mapped(prev);
+            if (this.emptySources.contains(source.node()))
+                continue;
+            newSources.add(source);
+        }
+        if (newSources.isEmpty()) {
+            DBSPExpression value = emptySet(operator.getType());
+            DBSPConstantOperator result = new DBSPConstantOperator(
+                    operator.getRelNode(), value, operator.isMultiset);
+            this.emptySources.add(result);
+            this.map(operator, result);
+        } else if (newSources.size() < operator.inputs.size()) {
+            // Keep the sum even for 1 input
+            DBSPSimpleOperator result = operator.withInputs(newSources, false).to(DBSPSimpleOperator.class);
+            this.map(operator, result);
+        } else {
+            super.postorder(operator);
+        }
     }
 
     @Override
