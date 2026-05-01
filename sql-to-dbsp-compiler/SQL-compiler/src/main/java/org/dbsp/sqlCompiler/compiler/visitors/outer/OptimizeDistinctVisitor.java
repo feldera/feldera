@@ -47,7 +47,8 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
         }
         if (input.node().is(DBSPStreamJoinOperator.class) ||
             input.node().is(DBSPMapOperator.class) ||
-            input.node().is(DBSPSumOperator.class)) {
+            input.node().is(DBSPSumOperator.class) ||
+            input.node().is(DBSPAtomicSumOperator.class)) {
             boolean allDistinct = Linq.all(input.node().inputs, i -> i.node().is(DBSPStreamDistinctOperator.class));
             if (allDistinct) {
                 // distinct(map(distinct)) = distinct(map)

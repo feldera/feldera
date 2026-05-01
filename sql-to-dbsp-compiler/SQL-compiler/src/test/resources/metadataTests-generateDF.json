@@ -153,7 +153,7 @@
       "positions": [],
       "persistent_id": "bd39cf1159208fe39f804045bb097cac071084865503769ca862515fd35f1289"
     }, "s10": {
-      "operation": "sum",
+      "operation": "atomic_sum",
       "inputs": [
         { "node": "s9", "output": 0 },
         { "node": "s8", "output": 0 },
@@ -163,7 +163,7 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "5a531ea30f94f3cc3a4e724e1e9a72540d2a574be0d63565e5caa388c9f59221"
+      "persistent_id": "8fb479ab08f1915eb684200d6b26ff49a810ccaeb45c6a40b4f0ddebb1ec51a4"
     }, "s11": {
       "operation": "inspect",
       "inputs": [
@@ -177,7 +177,7 @@
         {"start_line_number":2,"start_column":1,"end_line_number":2,"end_column":40},
         {"start_line_number":2,"start_column":1,"end_line_number":2,"end_column":40}
       ],
-      "persistent_id": "a5563f0944296ab7968e9015c9d8ced05a8e9955dec0aa1e727f76c2f4d05489"
+      "persistent_id": "cf472d4e3713ed0e8c91ebbf46cd813eaff94a440f8779390a9c96b745c19bab"
     }, "s12": {
       "operation": "constant",
       "inputs": [],

@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateZeroOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
@@ -645,12 +646,15 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 source.node().is(DBSPDelayOperator.class) ||
                 source.node().is(DBSPNegateOperator.class) ||
                 source.node().is(DBSPSumOperator.class) ||
+                source.node().is(DBSPAtomicSumOperator.class) ||
                 source.node().is(DBSPSubtractOperator.class) ||
                 source.node().is(DBSPNoopOperator.class)) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
-            if (source.node().is(DBSPSumOperator.class) || source.node().is(DBSPSubtractOperator.class)) {
+            if (source.node().is(DBSPSumOperator.class)
+                    || source.node().is(DBSPSubtractOperator.class)
+                    || source.node().is(DBSPAtomicSumOperator.class)) {
                 Projection projection = new Projection(this.compiler(), true, true);
                 projection.apply(operator.getFunction());
                 if (!projection.isProjection) {

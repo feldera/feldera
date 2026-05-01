@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
@@ -90,6 +91,11 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPSumOperator operator) {
+        this.identity(operator);
+    }
+
+    @Override
+    public void postorder(DBSPAtomicSumOperator operator) {
         this.identity(operator);
     }
 

@@ -1842,6 +1842,20 @@ public class InsertLimiters extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPAtomicSumOperator operator) {
+        // Treat like an identity function (like the Sum operator)
+        ReplacementDeltaExpansion expanded = this.getReplacement(operator);
+        if (expanded != null) {
+            OutputPort bound = this.processSumOrDiff(expanded.replacement);
+            if (bound != null && expanded.replacement != operator)
+                this.markBound(operator.outputPort(), bound);
+        } else {
+            this.nonMonotone(operator);
+        }
+        super.postorder(operator);
+    }
+
+    @Override
     public void postorder(DBSPSubtractOperator operator) {
         // Similar to sum
         ReplacementDeltaExpansion expanded = this.getReplacement(operator);
