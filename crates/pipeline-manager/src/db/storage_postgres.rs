@@ -8,7 +8,9 @@ use crate::db::pg_setup;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
 use crate::db::types::monitor::{
-    ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent, NewClusterMonitorEvent,
+    ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent,
+    ExtendedPipelineMonitorEvent, NewClusterMonitorEvent, PipelineMonitorEvent,
+    PipelineMonitorEventId,
 };
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
@@ -1356,6 +1358,128 @@ impl Storage for StoragePostgres {
             .await?;
         txn.commit().await?;
         Ok((num_deleted_due_to_timestamp, num_deleted_due_to_limit))
+    }
+
+    async fn list_pipeline_monitor_events_short(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+    ) -> Result<Vec<PipelineMonitorEvent>, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let events = operations::pipeline_monitor::list_pipeline_monitor_events_short(
+            &txn,
+            tenant_id,
+            pipeline_name,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(events)
+    }
+
+    async fn list_pipeline_monitor_events_extended(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+    ) -> Result<Vec<ExtendedPipelineMonitorEvent>, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let events = operations::pipeline_monitor::list_pipeline_monitor_events_extended(
+            &txn,
+            tenant_id,
+            pipeline_name,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(events)
+    }
+
+    async fn get_pipeline_monitor_event_short(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+        event_id: PipelineMonitorEventId,
+    ) -> Result<PipelineMonitorEvent, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let event = operations::pipeline_monitor::get_pipeline_monitor_event_short(
+            &txn,
+            tenant_id,
+            pipeline_name,
+            event_id,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(event)
+    }
+
+    async fn get_pipeline_monitor_event_extended(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+        event_id: PipelineMonitorEventId,
+    ) -> Result<ExtendedPipelineMonitorEvent, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let event = operations::pipeline_monitor::get_pipeline_monitor_event_extended(
+            &txn,
+            tenant_id,
+            pipeline_name,
+            event_id,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(event)
+    }
+
+    async fn get_latest_pipeline_monitor_event_short(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+    ) -> Result<PipelineMonitorEvent, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let event = operations::pipeline_monitor::get_latest_pipeline_monitor_event_short(
+            &txn,
+            tenant_id,
+            pipeline_name,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(event)
+    }
+
+    async fn get_latest_pipeline_monitor_event_extended(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+    ) -> Result<ExtendedPipelineMonitorEvent, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let event = operations::pipeline_monitor::get_latest_pipeline_monitor_event_extended(
+            &txn,
+            tenant_id,
+            pipeline_name,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(event)
+    }
+
+    async fn delete_pipeline_monitor_events_exceeding_retention(
+        &self,
+        retention_num: u32,
+    ) -> Result<u64, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let num_deleted =
+            operations::pipeline_monitor::delete_pipeline_monitor_events_exceeding_retention(
+                &txn,
+                retention_num,
+            )
+            .await?;
+        txn.commit().await?;
+        Ok(num_deleted)
     }
 }
 

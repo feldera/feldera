@@ -12,6 +12,7 @@ pub mod compiler;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod events_cleaner;
 pub mod license;
 pub mod logging;
 pub mod pipeline_env;

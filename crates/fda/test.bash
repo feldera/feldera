@@ -83,6 +83,12 @@ fda program set-config p1 --profile dev
 fda program set-config p1 --profile optimized
 fda program config p1
 fda program status p1
+fda events p1
+fda events p1 status
+fda events p1 all
+fda event p1 latest
+fda event p1 latest status
+fda event p1 latest all
 
 fda create pudf program.sql --udf-toml udf.toml --udf-rs udf.rs
 compare_output "fda program get pudf --udf-toml" "cat udf.toml"
