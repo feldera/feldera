@@ -16,7 +16,6 @@ use datafusion::datasource::listing::{
 use datafusion::logical_expr::LogicalPlan;
 use datafusion::physical_plan::PhysicalExpr;
 use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
-use datafusion::prelude::SessionConfig;
 use dbsp::circuit::tokio::TOKIO;
 use deltalake::datafusion::dataframe::DataFrame;
 use deltalake::datafusion::execution::context::SQLOptions;
@@ -34,7 +33,7 @@ use feldera_adapterlib::utils::datafusion::{
 };
 use feldera_storage::tokio::TOKIO_DEDICATED_IO;
 use feldera_types::adapter_stats::ConnectorHealth;
-use feldera_types::config::FtModel;
+use feldera_types::config::{FtModel, PipelineConfig};
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::delta_table::{DeltaTableReaderConfig, DeltaTableTransactionMode};
 use futures_util::StreamExt;
@@ -103,6 +102,7 @@ fn quote_sql_identifier<S: AsRef<str>>(ident: S) -> String {
 pub struct DeltaTableInputEndpoint {
     endpoint_name: String,
     config: DeltaTableReaderConfig,
+    datafusion: SessionContext,
     consumer: Box<dyn InputConsumer>,
 }
 
@@ -110,13 +110,32 @@ impl DeltaTableInputEndpoint {
     pub fn new(
         endpoint_name: &str,
         config: &DeltaTableReaderConfig,
+        pipeline_config: &PipelineConfig,
+        runtime_env: Arc<datafusion::execution::runtime_env::RuntimeEnv>,
         consumer: Box<dyn InputConsumer>,
     ) -> Self {
         register_storage_handlers();
 
+        // Configure datafusion not to generate Utf8View arrow types, which are
+        // not yet supported by the `serde_arrow` crate. The `SessionContext`
+        // shares the pipeline-wide `RuntimeEnv` so that the CDC-mode ORDER BY
+        // query spills to the same bounded memory pool and on-disk scratch
+        // dir as every other datafusion user in the pipeline.
+        let datafusion = feldera_adapterlib::utils::datafusion::create_session_context_with(
+            pipeline_config,
+            runtime_env,
+            |cfg| {
+                cfg.set_bool(
+                    "datafusion.execution.parquet.schema_force_view_types",
+                    false,
+                )
+            },
+        );
+
         Self {
             endpoint_name: endpoint_name.to_string(),
             config: config.clone(),
+            datafusion,
             consumer,
         }
     }
@@ -136,6 +155,7 @@ impl IntegratedInputEndpoint for DeltaTableInputEndpoint {
         Ok(Box::new(DeltaTableInputReader::new(
             self.endpoint_name,
             self.config,
+            self.datafusion,
             self.consumer,
             input_handle,
             resume_info,
@@ -152,6 +172,7 @@ impl DeltaTableInputReader {
     fn new(
         endpoint_name: String,
         mut config: DeltaTableReaderConfig,
+        datafusion: SessionContext,
         consumer: Box<dyn InputConsumer>,
         input_handle: &InputCollectionHandle,
         resume_info: Option<JsonValue>,
@@ -275,6 +296,7 @@ impl DeltaTableInputReader {
         let endpoint = Arc::new(DeltaTableInputEndpointInner::new(
             &endpoint_name,
             config,
+            datafusion,
             consumer,
             schema,
             resume_info.clone(),
@@ -605,17 +627,12 @@ impl DeltaTableInputEndpointInner {
     fn new(
         endpoint_name: &str,
         config: DeltaTableReaderConfig,
+        datafusion: SessionContext,
         consumer: Box<dyn InputConsumer>,
         schema: Relation,
         resume_info: Option<DeltaResumeInfo>,
     ) -> Self {
         let queue = Arc::new(InputQueue::new(consumer.clone()));
-        // Configure datafusion not to generate Utf8View arrow types, which are not yet
-        // supported by the `serde_arrow` crate.
-        let session_config = SessionConfig::new().set_bool(
-            "datafusion.execution.parquet.schema_force_view_types",
-            false,
-        );
 
         let metrics = Arc::new(DeltaTableMetrics::new());
         consumer.set_custom_metrics(Arc::clone(&metrics) as Arc<dyn ConnectorMetrics>);
@@ -627,7 +644,7 @@ impl DeltaTableInputEndpointInner {
             schema,
             config,
             consumer,
-            datafusion: SessionContext::new_with_config(session_config),
+            datafusion,
             transaction_index: AtomicUsize::new(0),
 
             // Set version to None by default so that the connector is checkpointable in the initial state.
