@@ -50,8 +50,7 @@ pub fn create_runtime_env(
     let mut builder = RuntimeEnvBuilder::new();
     if let Some(memory_mb_max) = pipeline_config.global.resources.memory_mb_max {
         let memory_bytes_max = memory_mb_max * 1_000_000;
-        builder = builder
-            .with_memory_pool(Arc::new(FairSpillPool::new(memory_bytes_max as usize)));
+        builder = builder.with_memory_pool(Arc::new(FairSpillPool::new(memory_bytes_max as usize)));
     }
     if let Some(storage) = &pipeline_config.storage_config {
         let path = PathBuf::from(storage.path.clone()).join(DATAFUSION_TMP_SUBDIR);
