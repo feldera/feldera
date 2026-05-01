@@ -1,57 +1,45 @@
-<script lang="ts">
-  import { formatDateTime } from '$lib/functions/format'
+<script lang="ts" module>
+  /**
+   * Statuses a status timeline can render. "No data" is represented by the
+   * absence of an event for a bucket, not as a value of this union.
+   */
+  export type EventType = 'healthy' | 'unhealthy' | 'major_issue' | 'transitioning'
 
-  export type EventType = 'healthy' | 'unhealthy' | 'major_issue'
-
-  interface TimelineEvent {
+  export interface TimelineEvent<S extends EventType = EventType> {
     timestamp: Date
-    type: EventType
+    type: S
     description: string
   }
 
-  export interface TimelineGroup {
+  export interface TimelineGroup<S extends EventType = EventType> {
     startTime: number
     endTime: number
-    status: EventType
-    events: TimelineEvent[]
+    status: S
+    events: TimelineEvent<S>[]
   }
+</script>
+
+<script lang="ts" generics="S extends EventType">
+  import { formatDateTime, formatDateTimeRange } from '$lib/functions/format'
 
   interface Props {
-    /**
-     * The text label for the timeline
-     */
+    /** The text label for the timeline */
     label: string
-    /**
-     * The list of events to display
-     */
-    events: TimelineEvent[]
-    /**
-     * The timestamp of the beginning of the timeline
-     */
+    /** The list of events to display */
+    events: TimelineEvent<S>[]
+    /** The timestamp of the beginning of the timeline */
     startAt: Date
-    /**
-     * The timestamp of the end of the timeline
-     */
+    /** The timestamp of the end of the timeline */
     endAt: Date
-    /**
-     * The duration of a single timeline item in milliseconds
-     */
+    /** The duration of a single timeline item in milliseconds */
     unitDurationMs: number
-    /**
-     * Container element CSS class
-     */
+    /** Container element CSS class */
     class?: string
-    /**
-     * Callback of a timeline item being clicked, which includes information about all events that are relevant to the item
-     */
-    onBarClick?: (group: TimelineGroup) => void
-    /**
-     * Whether to show timeline legend
-     */
-    legend?: boolean
-    /**
-     * Selected bar timestamp range
-     */
+    /** Callback of a timeline item being clicked */
+    onBarClick?: (group: TimelineGroup<S>) => void
+    /** Statuses to show in the legend. Pass an empty array to hide it. */
+    legend: S[]
+    /** Selected bar timestamp range */
     selectedBars?: { from: Date; to: Date } | null
   }
 
@@ -78,8 +66,8 @@
     const endTime = endAt.getTime()
     const numGroups = Math.ceil((endTime - startTime) / unitDurationMs)
 
-    const groupsArray: (TimelineGroup | null)[] = new Array(numGroups).fill(null)
-    const groupsMap = new Map<number, TimelineGroup>()
+    const groupsArray: (TimelineGroup<S> | null)[] = new Array(numGroups).fill(null)
+    const groupsMap = new Map<number, TimelineGroup<S>>()
 
     // Place events into appropriate groups
     for (const event of events) {
@@ -97,7 +85,7 @@
         group = {
           startTime: groupStart,
           endTime: groupEnd,
-          status: 'healthy',
+          status: 'healthy' as S,
           events: []
         }
         groupsMap.set(groupIndex, group)
@@ -105,12 +93,8 @@
       }
 
       group.events.push(event)
-      // Update group status based on event severity
-      if (event.type === 'major_issue') {
-        group.status = 'major_issue'
-      } else if (event.type === 'unhealthy' && group.status !== 'major_issue') {
-        group.status = 'unhealthy'
-      }
+      // Update group status based on event severity (highest severity wins)
+      group.status = pickWorseStatus(group.status, event.type)
     }
 
     return groupsArray
@@ -126,7 +110,19 @@
 
   const gapWidth = $derived(barWidth / BAR_TO_GAP_RATIO)
 
-  function getBarColor(status: TimelineGroup['status'], index: number): string {
+  // Higher number = worse status. Used by both bar coloring and group rollup.
+  const STATUS_SEVERITY: Record<EventType, number> = {
+    healthy: 0,
+    transitioning: 1,
+    unhealthy: 2,
+    major_issue: 3
+  }
+
+  function pickWorseStatus(a: S, b: S): S {
+    return STATUS_SEVERITY[b] > STATUS_SEVERITY[a] ? b : a
+  }
+
+  function getBarColor(status: EventType, index: number): string {
     // If this bar is hovered or persistently selected, use darker shade
     const isHighlighted = hoveredBarIndex === index || selectedBarIndices.includes(index)
 
@@ -135,13 +131,15 @@
         return isHighlighted ? 'fill-red-600' : 'fill-red-500'
       case 'unhealthy':
         return isHighlighted ? 'fill-yellow-600' : 'fill-yellow-500'
+      case 'transitioning':
+        return isHighlighted ? 'fill-blue-600' : 'fill-blue-500'
       case 'healthy':
       default:
         return isHighlighted ? 'fill-green-600' : 'fill-green-500'
     }
   }
 
-  function getStyle(status: TimelineGroup['status']) {
+  function getStyle(status: EventType | 'no_data') {
     switch (status) {
       case 'major_issue':
         return {
@@ -154,6 +152,18 @@
           bg: 'bg-yellow-500',
           text: 'text-yellow-500',
           label: 'Service degradation'
+        }
+      case 'transitioning':
+        return {
+          bg: 'bg-blue-500',
+          text: 'text-blue-500',
+          label: 'Transitioning'
+        }
+      case 'no_data':
+        return {
+          bg: 'bg-surface-300-700',
+          text: 'text-surface-300-700',
+          label: 'No data'
         }
       case 'healthy':
       default:
@@ -318,7 +328,7 @@
   index: number,
   colorClass: string,
   clickable: boolean,
-  group: TimelineGroup | null
+  group: TimelineGroup<S> | null
 )}
   <g
     id={getBarId(index)}
@@ -383,26 +393,25 @@
     <div class="flex flex-wrap justify-between">
       <div class="text-nowrap text-surface-600-400">
         {#if highlightedTimeRange}
-          {formatDateTime({ ms: highlightedTimeRange.from })} - {formatDateTime({
-            ms: highlightedTimeRange.to
-          })}
+          {formatDateTimeRange(
+            { ms: highlightedTimeRange.from },
+            {
+              ms: highlightedTimeRange.to
+            }
+          )}
         {:else}
           {formatDateTime(startAt)} - {formatDateTime(endAt)}
         {/if}
       </div>
-      {#if legend}
+      {#if legend.length}
         <div class="flex items-center gap-4 text-xs">
-          {#each ['healthy', 'unhealthy', 'major_issue'] as const as status}
+          {#each ['no_data' as const, ...legend] as status}
             {@const style = getStyle(status)}
             <div class="flex items-center gap-1.5">
               <div class="h-3 w-3 rounded-sm {style.bg}"></div>
               <span class="text-surface-600-300">{style.label}</span>
             </div>
           {/each}
-          <div class="flex items-center gap-1.5">
-            <div class="h-3 w-3 rounded-sm bg-surface-300-700"></div>
-            <span class="text-surface-600-300">No data</span>
-          </div>
         </div>
       {/if}
     </div>

@@ -1,18 +1,23 @@
-<script lang="ts">
+<script lang="ts" generics="S extends BaseHealthStatus, T extends string">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { untrack } from 'svelte'
-  import { match } from 'ts-pattern'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { formatDateTime } from '$lib/functions/format'
-  import type { HealthEventBucket } from '$lib/functions/pipelines/health'
+  import { formatDateTime, formatDateTimeRange } from '$lib/functions/format'
+  import type { BaseHealthStatus, HealthEventBucket } from '$lib/functions/pipelines/health'
 
-  let { eventParts, onClose }: { eventParts: HealthEventBucket; onClose: () => void } = $props()
-  let fullEvents: (null | {
-    timestamp: Date
-    description: string
-  })[] = $state([])
+  type Bucket = HealthEventBucket<S, T>
+  type EventDetail = { timestamp: Date; description: string }
 
-  const api = usePipelineManager()
+  let {
+    eventParts,
+    loadEventDetail,
+    onClose
+  }: {
+    eventParts: Bucket
+    loadEventDetail: (eventId: string, bucket: Bucket) => Promise<EventDetail | null>
+    onClose: () => void
+  } = $props()
+
+  let fullEvents: (null | EventDetail)[] = $state([])
   let loadingEvents = $state(false)
 
   let pageNum = $derived(eventParts.events.length)
@@ -38,15 +43,10 @@
 
     untrack(() => {
       loadingEvents = true
-      api.getClusterEvent(event.id).then(
-        (e) => {
-          fullEvents[currentPage] = {
-            timestamp: new Date(e.recorded_at),
-            description: match(eventParts.tag)
-              .with('api', () => e.api_self_info + '\n' + e.api_resources_info)
-              .with('compiler', () => e.compiler_self_info + '\n' + e.compiler_resources_info)
-              .with('runner', () => e.runner_self_info + '\n' + e.runner_resources_info)
-              .exhaustive()
+      loadEventDetail(event.id, eventParts).then(
+        (detail) => {
+          if (detail) {
+            fullEvents[currentPage] = detail
           }
           loadingEvents = false
         },
@@ -83,7 +83,7 @@
   </div>
 
   <span>
-    {formatDateTime(eventParts.timestampFrom)} - {formatDateTime(eventParts.timestampTo)}
+    {formatDateTimeRange(eventParts.timestampFrom, eventParts.timestampTo)}
   </span>
 
   <div class="flex flex-nowrap items-center gap-2">
@@ -106,7 +106,7 @@
     <span class="font-dm-mono whitespace-pre-wrap">
       {fullEvent.description}
     </span>
-  {:else}
+  {:else if loadingEvents}
     <Progress class="h-1" value={null}>
       <Progress.Track>
         <Progress.Range class="bg-primary-500" />

@@ -37,7 +37,7 @@
         "useConst": "off",
         "useExportType": "off",
         "useImportType": "off",
-        "useBlockStatements": "on"
+        "useBlockStatements": { "level": "warn", "fix": "safe" }
       },
       "suspicious": {
         "noAssignInExpressions": "info",

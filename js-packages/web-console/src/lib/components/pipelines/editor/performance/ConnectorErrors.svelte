@@ -4,7 +4,7 @@
   import { fade, slide } from 'svelte/transition'
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
-  import InlineDrawer from '$lib/components/layout/InlineDrawer.svelte'
+  import Drawer from '$lib/components/layout/Drawer.svelte'
   import { getCaseDependentName } from '$lib/functions/felderaRelation'
   import { formatDateTime } from '$lib/functions/format'
   import {
@@ -104,7 +104,9 @@
       for (let i = 0; i < sorted.length; i++) {
         if (i > 0) {
           const gap = sorted[i].index - sorted[i - 1].index - 1
-          if (gap > 0) result.push({ kind: 'gap', count: gap })
+          if (gap > 0) {
+            result.push({ kind: 'gap', count: gap })
+          }
         }
         result.push({ kind: 'error', error: sorted[i] })
       }
@@ -128,7 +130,9 @@
   }
 
   const displayItems = $derived.by(() => {
-    if (!status) return [] as DisplayItem[]
+    if (!status) {
+      return [] as DisplayItem[]
+    }
     const arrays = getErrorArrays(status)
     const combined =
       tagsFilter === 'all' ? Object.values(arrays).flat() : (arrays[tagsFilter] ?? [])
@@ -137,7 +141,7 @@
 </script>
 
 <!-- TODO: not mobile-friendly -->
-<InlineDrawer {open} side="right" width="w-[500px]">
+<Drawer bind:open side="right" width="w-[500px]" inlineClass="rounded pt-4 pl-4">
   <div class="bg-white-dark flex h-full flex-col gap-2 rounded p-4">
     <div class="flex items-start justify-between">
       <div>
@@ -228,4 +232,4 @@
       {/if}
     </div>
   </div>
-</InlineDrawer>
+</Drawer>

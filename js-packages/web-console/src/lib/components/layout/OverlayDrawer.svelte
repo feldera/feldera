@@ -29,14 +29,24 @@
     children,
     class: _class,
     width,
-    modal
+    modal,
+    onClose
   }: {
+    /**
+     * When `open` is true the drawer opens.
+     * Bindable: set to `false` when clicking away unless `onClose` is set.
+     */
     open: boolean
     side: keyof typeof classNames
     children?: Snippet
     class: string
     width: string
     modal: boolean
+    /**
+     * Called when the user dismisses the drawer by clicking the modal
+     * backdrop. If omitted, the backdrop click toggles the bound `open`.
+     */
+    onClose?: () => void
   } = $props()
 </script>
 
@@ -66,7 +76,11 @@
     role="presentation"
     class="relative z-40"
     onclick={() => {
-      open = !open
+      if (onClose) {
+        onClose()
+      } else {
+        open = !open
+      }
     }}
   >
     <div
