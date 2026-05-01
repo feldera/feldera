@@ -1,15 +1,18 @@
 use crate::api::support_data_collector::SupportBundleData;
 use crate::db::error::DBError;
+use crate::db::operations::pipeline_monitor::new_pipeline_monitor_event;
 use crate::db::operations::pipeline_parsing::{
-    parse_pipeline_row_all, parse_pipeline_row_monitoring, serialize_error_response,
-    serialize_program_error, PIPELINE_COLUMNS_ALL, PIPELINE_COLUMNS_MONITORING,
+    parse_pipeline_row_all, parse_pipeline_row_event_info, parse_pipeline_row_monitoring,
+    serialize_error_response, serialize_program_error, PIPELINE_COLUMNS_ALL,
+    PIPELINE_COLUMNS_EVENT_INFO, PIPELINE_COLUMNS_MONITORING,
 };
 use crate::db::operations::utils::{
     maybe_tenant_id_foreign_key_constraint_err, maybe_unique_violation,
 };
 use crate::db::types::pipeline::{
     bootstrap_policy_to_string, runtime_desired_status_to_string, runtime_status_to_string,
-    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
+    ExtendedPipelineDescr, ExtendedPipelineDescrEventInfo, ExtendedPipelineDescrMonitoring,
+    PipelineDescr, PipelineId,
 };
 use crate::db::types::program::{
     validate_program_status_transition, ProgramError, ProgramStatus, RustCompilationInfo,
@@ -156,6 +159,16 @@ pub async fn get_pipeline_by_id_for_monitoring(
     parse_pipeline_row_monitoring(&row)
 }
 
+pub async fn get_pipeline_by_id_for_event_info(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+) -> Result<ExtendedPipelineDescrEventInfo, DBError> {
+    let row = internal_get_pipeline_by_id(txn, tenant_id, pipeline_id, PIPELINE_COLUMNS_EVENT_INFO)
+        .await?;
+    parse_pipeline_row_event_info(&row)
+}
+
 pub(crate) async fn new_pipeline(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
@@ -251,6 +264,7 @@ pub(crate) async fn new_pipeline(
     .await
     .map_err(maybe_unique_violation)
     .map_err(|e| maybe_tenant_id_foreign_key_constraint_err(e, tenant_id))?;
+    new_pipeline_monitor_event(txn, tenant_id, PipelineId(new_id), Uuid::now_v7()).await?;
     Ok((PipelineId(new_id), Version(1)))
 }
 
@@ -529,6 +543,7 @@ pub(crate) async fn update_pipeline(
         assert_eq!(rows_affected, 1); // The row must exist as it has been retrieved before
     }
 
+    new_pipeline_monitor_event(txn, tenant_id, current.id, Uuid::now_v7()).await?;
     Ok(Version(current.version.0 + 1))
 }
 
@@ -817,6 +832,7 @@ pub(crate) async fn set_program_status(
         )
         .await?;
     if rows_affected > 0 {
+        new_pipeline_monitor_event(txn, tenant_id, pipeline_id, Uuid::now_v7()).await?;
         Ok(())
     } else {
         Err(DBError::UnknownPipeline { pipeline_id })
@@ -857,6 +873,7 @@ pub(crate) async fn dismiss_deployment_error(
         .await?;
     let modified_rows = txn.execute(&stmt, &[&tenant_id.0, &current.id.0]).await?;
     if modified_rows > 0 {
+        new_pipeline_monitor_event(txn, tenant_id, current.id, Uuid::now_v7()).await?;
         Ok(())
     } else {
         Err(DBError::UnknownPipeline {
@@ -997,6 +1014,7 @@ pub(crate) async fn set_deployment_resources_desired_status(
         )
         .await?;
     if modified_rows > 0 {
+        new_pipeline_monitor_event(txn, tenant_id, current.id, Uuid::now_v7()).await?;
         Ok(current.id)
     } else {
         Err(DBError::UnknownPipeline {
@@ -1411,6 +1429,7 @@ async fn set_deployment_resources_status(
         )
         .await?;
     if rows_affected > 0 {
+        new_pipeline_monitor_event(txn, tenant_id, pipeline_id, Uuid::now_v7()).await?;
         Ok(())
     } else {
         Err(DBError::UnknownPipeline { pipeline_id })
@@ -1476,6 +1495,7 @@ async fn remain_deployment_resources_status(
         )
         .await?;
     if rows_affected > 0 {
+        new_pipeline_monitor_event(txn, tenant_id, pipeline_id, Uuid::now_v7()).await?;
         Ok(())
     } else {
         Err(DBError::UnknownPipeline { pipeline_id })
@@ -1529,6 +1549,7 @@ pub(crate) async fn set_storage_status(
         )
         .await?;
     if rows_affected > 0 {
+        new_pipeline_monitor_event(txn, tenant_id, pipeline_id, Uuid::now_v7()).await?;
         Ok(())
     } else {
         Err(DBError::UnknownPipeline { pipeline_id })
@@ -1587,7 +1608,7 @@ pub(crate) async fn list_pipelines_across_all_tenants_for_monitoring(
 ) -> Result<Vec<(TenantId, ExtendedPipelineDescrMonitoring)>, DBError> {
     let stmt = txn
         .prepare_cached(&format!(
-            "SELECT {PIPELINE_COLUMNS_MONITORING}
+            "SELECT p.tenant_id, {PIPELINE_COLUMNS_MONITORING}
              FROM pipeline AS p
              ORDER BY p.id ASC
             "
@@ -1596,7 +1617,10 @@ pub(crate) async fn list_pipelines_across_all_tenants_for_monitoring(
     let rows: Vec<Row> = txn.query(&stmt, &[]).await?;
     let mut result = Vec::with_capacity(rows.len());
     for row in rows {
-        result.push((TenantId(row.get(1)), parse_pipeline_row_monitoring(&row)?));
+        result.push((
+            TenantId(row.get("tenant_id")),
+            parse_pipeline_row_monitoring(&row)?,
+        ));
     }
     Ok(result)
 }
@@ -1614,7 +1638,7 @@ pub(crate) async fn get_next_sql_compilation(
     // and computes the modulo with the total number of workers.
     let stmt = txn
         .prepare_cached(&format!(
-            "SELECT {PIPELINE_COLUMNS_ALL}
+            "SELECT p.tenant_id, {PIPELINE_COLUMNS_ALL}
              FROM pipeline AS p
              WHERE p.deployment_resources_status = 'stopped'
                    AND p.program_status = 'pending'
@@ -1637,7 +1661,10 @@ pub(crate) async fn get_next_sql_compilation(
         .await?;
     match row {
         None => Ok(None),
-        Some(row) => Ok(Some((TenantId(row.get(1)), parse_pipeline_row_all(&row)?))),
+        Some(row) => Ok(Some((
+            TenantId(row.get("tenant_id")),
+            parse_pipeline_row_all(&row)?,
+        ))),
     }
 }
 
@@ -1654,7 +1681,7 @@ pub(crate) async fn get_next_rust_compilation(
     // and computes the modulo with the total number of workers.
     let stmt = txn
         .prepare_cached(&format!(
-            "SELECT {PIPELINE_COLUMNS_ALL}
+            "SELECT p.tenant_id, {PIPELINE_COLUMNS_ALL}
              FROM pipeline AS p
              WHERE p.deployment_resources_status = 'stopped'
                    AND p.program_status = 'sql_compiled'
@@ -1677,7 +1704,10 @@ pub(crate) async fn get_next_rust_compilation(
         .await?;
     match row {
         None => Ok(None),
-        Some(row) => Ok(Some((TenantId(row.get(1)), parse_pipeline_row_all(&row)?))),
+        Some(row) => Ok(Some((
+            TenantId(row.get("tenant_id")),
+            parse_pipeline_row_all(&row)?,
+        ))),
     }
 }
 

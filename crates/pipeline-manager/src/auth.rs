@@ -1018,6 +1018,7 @@ mod test {
             individual_tenant: true,
             issuer_tenant: false,
             auth_audience: "feldera-api".to_string(),
+            pipeline_monitor_events_retention: 720,
         };
 
         let (conn, _temp) = crate::db::test::setup_pg().await;

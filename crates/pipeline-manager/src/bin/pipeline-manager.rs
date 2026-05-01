@@ -13,6 +13,7 @@ use pipeline_manager::config::{
     ApiServerConfig, CommonConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig,
 };
 use pipeline_manager::db::storage_postgres::StoragePostgres;
+use pipeline_manager::events_cleaner::events_cleaner;
 use pipeline_manager::runner::local_runner::LocalRunner;
 use pipeline_manager::runner::main::runner_main;
 use pipeline_manager::{ensure_default_crypto_provider, init_fd_limit, platform_enable_unstable};
@@ -140,6 +141,13 @@ fn main() -> anyhow::Result<()> {
             let db_clone = db.clone();
             tokio::spawn(async move {
                 cluster_monitor(db_clone, common_config_clone, LocalResourcesPoller {}).await;
+            });
+
+            // Spawn events cleaner
+            let db_clone = db.clone();
+            let api_config_clone = api_config.clone();
+            tokio::spawn(async move {
+                events_cleaner(db_clone, api_config_clone).await;
             });
 
             // The api-server blocks forever

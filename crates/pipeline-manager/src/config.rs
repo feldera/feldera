@@ -111,6 +111,11 @@ fn default_auth_audience() -> String {
     "feldera-api".to_string()
 }
 
+/// Default number of monitor events that are retained for each pipeline.
+fn default_pipeline_monitor_events_retention() -> u32 {
+    720
+}
+
 /// Determines the default amount of worker threads to spawn.
 fn default_http_workers() -> usize {
     thread::available_parallelism()
@@ -888,6 +893,11 @@ pub struct ApiServerConfig {
     #[serde(default = "default_auth_audience")]
     #[arg(long, default_value = "feldera-api", env = "FELDERA_AUTH_AUDIENCE")]
     pub auth_audience: String,
+
+    /// Number of monitor events that are retained for each pipeline.
+    #[serde(default = "default_pipeline_monitor_events_retention")]
+    #[arg(long, default_value_t = default_pipeline_monitor_events_retention(), env = "FELDERA_PIPELINE_MONITOR_EVENTS_RETENTION")]
+    pub pipeline_monitor_events_retention: u32,
 }
 
 impl ApiServerConfig {
@@ -932,6 +942,7 @@ impl ApiServerConfig {
             individual_tenant: true,
             authorized_groups: vec![],
             auth_audience: "feldera-api".to_string(),
+            pipeline_monitor_events_retention: 720,
         }
     }
 }

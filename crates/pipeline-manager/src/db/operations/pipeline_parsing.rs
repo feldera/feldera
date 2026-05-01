@@ -1,8 +1,11 @@
 use crate::db::error::DBError;
+use crate::db::types::monitor::{
+    ExtendedPipelineMonitorEvent, PipelineMonitorEvent, PipelineMonitorEventId,
+};
 use crate::db::types::pipeline::{
     parse_string_as_bootstrap_policy, parse_string_as_runtime_desired_status,
-    parse_string_as_runtime_status, ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring,
-    PipelineId,
+    parse_string_as_runtime_status, ExtendedPipelineDescr, ExtendedPipelineDescrEventInfo,
+    ExtendedPipelineDescrMonitoring, PipelineId,
 };
 use crate::db::types::program::{ProgramError, ProgramStatus};
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
@@ -20,7 +23,7 @@ use tracing::error;
 use uuid::Uuid;
 
 pub const PIPELINE_COLUMNS_ALL: &str =
-    "p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.platform_version, p.runtime_config,
+    "p.id, p.name, p.description, p.created_at, p.version, p.platform_version, p.runtime_config,
      p.program_code, p.udf_rust, p.udf_toml, p.program_config, p.program_version, p.program_status,
      p.program_status_since, p.program_error, p.program_info,
      p.program_binary_source_checksum, p.program_binary_integrity_checksum, p.program_info_integrity_checksum,
@@ -33,7 +36,7 @@ pub const PIPELINE_COLUMNS_ALL: &str =
      ";
 
 pub const PIPELINE_COLUMNS_MONITORING: &str =
-    "p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.platform_version,
+    "p.id, p.name, p.description, p.created_at, p.version, p.platform_version,
      p.program_config, p.program_version, p.program_status, p.program_status_since,
      p.deployment_error, p.deployment_location, p.refresh_version,
      p.storage_status, p.storage_status_details, p.deployment_id, p.deployment_initial,
@@ -41,6 +44,19 @@ pub const PIPELINE_COLUMNS_MONITORING: &str =
      p.deployment_resources_desired_status, p.deployment_resources_desired_status_since,
      p.deployment_runtime_status, p.deployment_runtime_status_details, p.deployment_runtime_status_since,
      p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since, p.bootstrap_policy
+     ";
+
+pub const PIPELINE_COLUMNS_EVENT_INFO: &str = "p.id,
+     p.program_status,
+     p.storage_status,
+     p.storage_status_details,
+     p.deployment_error,
+     p.deployment_resources_status,
+     p.deployment_resources_status_details,
+     p.deployment_resources_desired_status,
+     p.deployment_runtime_status,
+     p.deployment_runtime_status_details,
+     p.deployment_runtime_desired_status
      ";
 
 #[rustfmt::skip]
@@ -117,6 +133,80 @@ pub fn parse_pipeline_row_monitoring(row: &Row) -> Result<ExtendedPipelineDescrM
         deployment_runtime_status_since: parse_from_row_deployment_runtime_status_since(row),
         deployment_runtime_desired_status: parse_from_row_deployment_runtime_desired_status(row)?,
         deployment_runtime_desired_status_since: parse_from_row_deployment_runtime_desired_status_since(row),
+    })
+}
+
+#[rustfmt::skip]
+pub fn parse_pipeline_row_event_info(row: &Row) -> Result<ExtendedPipelineDescrEventInfo, DBError> {
+    Ok(ExtendedPipelineDescrEventInfo {
+        id: parse_from_row_id(row),
+        program_status: parse_from_row_program_status(row)?,
+        storage_status: parse_from_row_storage_status(row)?,
+        storage_status_details: parse_from_row_storage_status_details(row)?,
+        deployment_error: parse_from_row_deployment_error(row)?,
+        deployment_resources_status: parse_from_row_deployment_resources_status(row)?,
+        deployment_resources_status_details: parse_from_row_deployment_resources_status_details(row)?,
+        deployment_resources_desired_status: parse_from_row_deployment_resources_desired_status(row)?,
+        deployment_runtime_status: parse_from_row_deployment_runtime_status(row)?,
+        deployment_runtime_status_details: parse_from_row_deployment_runtime_status_details(row)?,
+        deployment_runtime_desired_status: parse_from_row_deployment_runtime_desired_status(row)?,
+    })
+}
+
+/// All pipeline monitor event columns.
+pub const PIPELINE_EVENT_COLUMNS_ALL: &str =
+    "e.event_id, e.recorded_at,
+     e.deployment_resources_status, e.deployment_resources_status_details, e.deployment_resources_desired_status,
+     e.deployment_runtime_status, e.deployment_runtime_status_details, e.deployment_runtime_desired_status,
+     e.deployment_error IS NOT NULL AS deployment_has_error, e.deployment_error,
+     e.program_status,
+     e.storage_status, e.storage_status_details";
+
+/// Only the status pipeline monitor event columns.
+pub const PIPELINE_EVENT_COLUMNS_SHORT: &str = "e.event_id, e.recorded_at,
+    e.deployment_resources_status, e.deployment_resources_desired_status,
+    e.deployment_runtime_status, e.deployment_runtime_desired_status,
+    e.deployment_error IS NOT NULL AS deployment_has_error,
+    e.program_status,
+    e.storage_status";
+
+pub fn parse_pipeline_event_row_extended(
+    row: &Row,
+) -> Result<ExtendedPipelineMonitorEvent, DBError> {
+    Ok(ExtendedPipelineMonitorEvent {
+        event_id: parse_from_row_event_id(row),
+        recorded_at: parse_from_row_recorded_at(row),
+        deployment_resources_status: parse_from_row_deployment_resources_status(row)?,
+        deployment_resources_status_details: parse_from_row_deployment_resources_status_details(
+            row,
+        )?,
+        deployment_resources_desired_status: parse_from_row_deployment_resources_desired_status(
+            row,
+        )?,
+        deployment_runtime_status: parse_from_row_deployment_runtime_status(row)?,
+        deployment_runtime_status_details: parse_from_row_deployment_runtime_status_details(row)?,
+        deployment_runtime_desired_status: parse_from_row_deployment_runtime_desired_status(row)?,
+        deployment_has_error: parse_from_row_deployment_has_error(row),
+        deployment_error: parse_from_row_deployment_error(row)?,
+        program_status: parse_from_row_program_status(row)?,
+        storage_status: parse_from_row_storage_status(row)?,
+        storage_status_details: parse_from_row_storage_status_details(row)?,
+    })
+}
+
+pub fn parse_pipeline_event_row_short(row: &Row) -> Result<PipelineMonitorEvent, DBError> {
+    Ok(PipelineMonitorEvent {
+        event_id: parse_from_row_event_id(row),
+        recorded_at: parse_from_row_recorded_at(row),
+        deployment_resources_status: parse_from_row_deployment_resources_status(row)?,
+        deployment_resources_desired_status: parse_from_row_deployment_resources_desired_status(
+            row,
+        )?,
+        deployment_runtime_status: parse_from_row_deployment_runtime_status(row)?,
+        deployment_runtime_desired_status: parse_from_row_deployment_runtime_desired_status(row)?,
+        deployment_has_error: parse_from_row_deployment_has_error(row),
+        program_status: parse_from_row_program_status(row)?,
+        storage_status: parse_from_row_storage_status(row)?,
     })
 }
 
@@ -345,6 +435,18 @@ fn parse_from_row_bootstrap_policy(row: &Row) -> Result<Option<BootstrapPolicy>,
     })
 }
 
+fn parse_from_row_event_id(row: &Row) -> PipelineMonitorEventId {
+    PipelineMonitorEventId(row.get("event_id"))
+}
+
+fn parse_from_row_recorded_at(row: &Row) -> DateTime<Utc> {
+    row.get::<_, DateTime<Utc>>("recorded_at")
+}
+
+fn parse_from_row_deployment_has_error(row: &Row) -> bool {
+    row.get::<_, bool>("deployment_has_error")
+}
+
 /// Parses string as a JSON value.
 fn deserialize_json_value(s: &str) -> Result<serde_json::Value, DBError> {
     serde_json::from_str::<serde_json::Value>(s).map_err(|e| DBError::InvalidJsonData {
@@ -407,11 +509,16 @@ mod tests {
     use super::{
         deserialize_error_response, deserialize_json_value, deserialize_program_error,
         deserialize_program_error_with_default, serialize_error_response, serialize_program_error,
-        PIPELINE_COLUMNS_ALL, PIPELINE_COLUMNS_MONITORING,
+        PIPELINE_COLUMNS_ALL, PIPELINE_COLUMNS_EVENT_INFO, PIPELINE_COLUMNS_MONITORING,
+        PIPELINE_EVENT_COLUMNS_ALL, PIPELINE_EVENT_COLUMNS_SHORT,
     };
     use crate::db::error::DBError;
+    use crate::db::types::monitor::{
+        ExtendedPipelineMonitorEvent, PipelineMonitorEvent, PipelineMonitorEventId,
+    };
     use crate::db::types::pipeline::{
-        ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineId,
+        ExtendedPipelineDescr, ExtendedPipelineDescrEventInfo, ExtendedPipelineDescrMonitoring,
+        PipelineId,
     };
     use crate::db::types::program::{
         ConnectorGenerationError, ProgramError, ProgramStatus, RustCompilationInfo,
@@ -428,32 +535,46 @@ mod tests {
     use std::collections::BTreeSet;
     use uuid::Uuid;
 
+    /// Splits the provided columns string into individual columns.
+    fn split_columns(s: &str) -> Vec<String> {
+        s.split(",")
+            .map(|s| s.split(".").collect_vec()[1].trim().to_string())
+            .collect()
+    }
+
     #[test]
     fn fields_consistency() {
         // Check that only the necessary fields are retrieved, and that the coverage of the fields
         // meets expectations (e.g., monitoring fields is a subset of all fields).
 
         // All columns
-        let mut vec_columns_all: Vec<String> = PIPELINE_COLUMNS_ALL
-            .split(",")
-            .map(|s| s.split(".").collect_vec()[1].trim().to_string())
-            .collect();
+        let mut vec_columns_all: Vec<String> = split_columns(PIPELINE_COLUMNS_ALL);
         vec_columns_all.sort();
         let set_columns_all = BTreeSet::from_iter(vec_columns_all.iter());
 
         // Monitoring columns
-        let mut vec_columns_monitoring: Vec<String> = PIPELINE_COLUMNS_MONITORING
-            .split(",")
-            .map(|s| s.split(".").collect_vec()[1].trim().to_string())
-            .collect();
+        let mut vec_columns_monitoring: Vec<String> = split_columns(PIPELINE_COLUMNS_MONITORING);
         vec_columns_monitoring.sort();
         let set_columns_monitoring = BTreeSet::from_iter(vec_columns_monitoring.iter());
+
+        // Event info columns
+        let mut vec_columns_event_info: Vec<String> = split_columns(PIPELINE_COLUMNS_EVENT_INFO);
+        vec_columns_event_info.sort();
+        let set_columns_event_info = BTreeSet::from_iter(vec_columns_event_info.iter());
 
         // Monitoring is subset of all columns
         for col in &set_columns_monitoring {
             assert!(
                 set_columns_all.contains(col),
-                "{col} is missing in {set_columns_monitoring:?}"
+                "{col} is missing in {set_columns_all:?}"
+            );
+        }
+
+        // Event info is subset of all columns
+        for col in &set_columns_event_info {
+            assert!(
+                set_columns_all.contains(col),
+                "{col} is missing in {set_columns_all:?}"
             );
         }
 
@@ -509,7 +630,6 @@ mod tests {
             .keys()
             .map(|s| s.to_string())
             .collect_vec();
-        all_obj_keys.push("tenant_id".to_string());
         all_obj_keys.sort();
         assert_eq!(all_obj_keys, vec_columns_all);
 
@@ -550,9 +670,124 @@ mod tests {
             .keys()
             .map(|s| s.to_string())
             .collect_vec();
-        monitoring_obj_keys.push("tenant_id".to_string());
         monitoring_obj_keys.sort();
         assert_eq!(monitoring_obj_keys, vec_columns_monitoring);
+
+        // Descriptor that should be the result of event info fields
+        let event_info_descr = serde_json::to_value(ExtendedPipelineDescrEventInfo {
+            id: PipelineId(Uuid::from_u128(1)),
+            program_status: ProgramStatus::Pending,
+            storage_status: StorageStatus::Cleared,
+            storage_status_details: None,
+            deployment_error: None,
+            deployment_resources_status: ResourcesStatus::Stopped,
+            deployment_resources_status_details: None,
+            deployment_resources_desired_status: ResourcesDesiredStatus::Stopped,
+            deployment_runtime_status: None,
+            deployment_runtime_status_details: None,
+            deployment_runtime_desired_status: None,
+        })
+        .unwrap();
+        let mut event_info_obj_keys = event_info_descr
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|s| s.to_string())
+            .collect_vec();
+        event_info_obj_keys.sort();
+        assert_eq!(event_info_obj_keys, vec_columns_event_info);
+    }
+
+    #[test]
+    fn fields_consistency_event() {
+        // Check that only the necessary fields are retrieved, and that the coverage of the fields
+        // meets expectations (e.g., short fields is a subset of all fields).
+
+        // All columns
+        let mut vec_columns_all: Vec<String> = split_columns(PIPELINE_EVENT_COLUMNS_ALL);
+        vec_columns_all = vec_columns_all
+            .iter_mut()
+            .map(|v| {
+                if v == "deployment_error IS NOT NULL AS deployment_has_error" {
+                    "deployment_has_error".to_string()
+                } else {
+                    v.to_string()
+                }
+            })
+            .collect();
+        vec_columns_all.sort();
+        let set_columns_all = BTreeSet::from_iter(vec_columns_all.iter());
+
+        // Monitoring columns
+        let mut vec_columns_short: Vec<String> = split_columns(PIPELINE_EVENT_COLUMNS_SHORT);
+        vec_columns_short = vec_columns_short
+            .iter_mut()
+            .map(|v| {
+                if v == "deployment_error IS NOT NULL AS deployment_has_error" {
+                    "deployment_has_error".to_string()
+                } else {
+                    v.to_string()
+                }
+            })
+            .collect();
+        vec_columns_short.sort();
+        let set_columns_short = BTreeSet::from_iter(vec_columns_short.iter());
+
+        // Short is subset of all columns
+        for col in &set_columns_short {
+            assert!(
+                set_columns_all.contains(col),
+                "{col} is missing in {set_columns_short:?}"
+            );
+        }
+
+        // Descriptor that should be the result of all fields
+        let all_descr = serde_json::to_value(ExtendedPipelineMonitorEvent {
+            event_id: PipelineMonitorEventId(Uuid::from_u128(1)),
+            recorded_at: Default::default(),
+            deployment_resources_status: ResourcesStatus::Stopped,
+            deployment_resources_status_details: None,
+            deployment_resources_desired_status: ResourcesDesiredStatus::Stopped,
+            deployment_runtime_status: None,
+            deployment_runtime_status_details: None,
+            deployment_runtime_desired_status: None,
+            deployment_has_error: false,
+            deployment_error: None,
+            program_status: ProgramStatus::Pending,
+            storage_status: StorageStatus::Cleared,
+            storage_status_details: None,
+        })
+        .unwrap();
+        let mut all_obj_keys = all_descr
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|s| s.to_string())
+            .collect_vec();
+        all_obj_keys.sort();
+        assert_eq!(all_obj_keys, vec_columns_all);
+
+        // Descriptor that should be the result of the short fields
+        let short_descr = serde_json::to_value(PipelineMonitorEvent {
+            event_id: PipelineMonitorEventId(Uuid::from_u128(1)),
+            recorded_at: Default::default(),
+            deployment_resources_status: ResourcesStatus::Stopped,
+            deployment_resources_desired_status: ResourcesDesiredStatus::Stopped,
+            deployment_runtime_status: None,
+            deployment_runtime_desired_status: None,
+            deployment_has_error: false,
+            program_status: ProgramStatus::Pending,
+            storage_status: StorageStatus::Cleared,
+        })
+        .unwrap();
+        let mut short_obj_keys = short_descr
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|s| s.to_string())
+            .collect_vec();
+        short_obj_keys.sort();
+        assert_eq!(short_obj_keys, vec_columns_short);
     }
 
     #[test]
