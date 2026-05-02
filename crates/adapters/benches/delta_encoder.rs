@@ -20,6 +20,8 @@ fn create_indexed_writer(threads: usize, table_uri: &str) -> DeltaTableWriter {
         threads: Some(threads),
         object_store_config: Default::default(),
         checkpoint_interval: None,
+        log_retention_duration: None,
+        enable_expired_log_cleanup: None,
     };
     let key_schema = Some(BenchKeyStruct::relation_schema());
     let mut value_schema = BenchTestStruct::relation_schema();

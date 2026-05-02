@@ -336,6 +336,17 @@ impl WriterTask {
                     .with_configuration_property(
                         deltalake::TableProperty::CheckpointInterval,
                         checkpoint_interval,
+                    )
+                    .with_configuration_property(
+                        deltalake::TableProperty::LogRetentionDuration,
+                        inner.config.log_retention_duration.clone(),
+                    )
+                    .with_configuration_property(
+                        deltalake::TableProperty::EnableExpiredLogCleanup,
+                        inner
+                            .config
+                            .enable_expired_log_cleanup
+                            .map(|b| b.to_string()),
                     );
 
                 match tokio::time::timeout(operation_timeout, create_future).await {
@@ -1103,6 +1114,8 @@ mod parallel {
                 threads: Some(threads),
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
+                log_retention_duration: None,
+                enable_expired_log_cleanup: None,
             },
             &key_schema,
             &value_relation(),
@@ -1402,6 +1415,8 @@ mod parallel {
                 threads: Some(4),
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
+                log_retention_duration: None,
+                enable_expired_log_cleanup: None,
             },
             &key_schema,
             &value_relation(),
@@ -1541,6 +1556,8 @@ mod parallel {
                 threads: Some(1),
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
+                log_retention_duration: None,
+                enable_expired_log_cleanup: None,
             },
             &key_schema,
             &value_relation(),
@@ -1561,6 +1578,69 @@ mod parallel {
         assert!(result.is_err(), "should fail after exhausting retries");
     }
 
+    /// `log_retention_duration` and `enable_expired_log_cleanup` should land on the created
+    /// Delta table's metadata when set, and be absent when not set.
+    #[test]
+    fn test_log_retention_table_properties() {
+        use dbsp::circuit::tokio::TOKIO;
+        use deltalake::open_table;
+        use std::time::Duration;
+
+        // Case 1: both options unset — neither property should appear in the table metadata.
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+        let _endpoint = make_endpoint(1, &table_uri, true);
+
+        let url = url::Url::from_file_path(&table_uri).unwrap();
+        let table = TOKIO.block_on(async move { open_table(url).await.unwrap() });
+        let config = table.snapshot().unwrap().table_config();
+        assert!(
+            config.log_retention_duration.is_none(),
+            "logRetentionDuration should not be set when option is unset"
+        );
+        assert!(
+            config.enable_expired_log_cleanup.is_none(),
+            "enableExpiredLogCleanup should not be set when option is unset"
+        );
+
+        // Case 2: both options set — both properties should be reflected in the table metadata.
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+        let _endpoint = DeltaTableWriter::new(
+            EndpointId::default(),
+            "test_endpoint",
+            &DeltaTableWriterConfig {
+                uri: table_uri.clone(),
+                mode: DeltaTableWriteMode::Truncate,
+                max_retries: Some(0),
+                threads: Some(1),
+                object_store_config: Default::default(),
+                checkpoint_interval: None,
+                log_retention_duration: Some("interval 7 days".to_string()),
+                enable_expired_log_cleanup: Some(false),
+            },
+            &Some(key_relation()),
+            &value_relation(),
+            Weak::new(),
+            false,
+        )
+        .expect("failed to create endpoint");
+
+        let url = url::Url::from_file_path(&table_uri).unwrap();
+        let table = TOKIO.block_on(async move { open_table(url).await.unwrap() });
+        let config = table.snapshot().unwrap().table_config();
+        assert_eq!(
+            config.log_retention_duration,
+            Some(Duration::from_secs(7 * 24 * 60 * 60)),
+            "logRetentionDuration should match the configured interval",
+        );
+        assert_eq!(
+            config.enable_expired_log_cleanup,
+            Some(false),
+            "enableExpiredLogCleanup should be set to false",
+        );
+    }
+
     /// Verify that threads=0 is rejected in config validation.
     #[test]
     fn test_threads_zero_rejected() {
@@ -1571,6 +1651,8 @@ mod parallel {
             threads: Some(0),
             object_store_config: Default::default(),
             checkpoint_interval: None,
+            log_retention_duration: None,
+            enable_expired_log_cleanup: None,
         };
         assert!(config.validate().is_err());
     }
@@ -1729,6 +1811,8 @@ mod parallel {
                 threads: Some(1),
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
+                log_retention_duration: None,
+                enable_expired_log_cleanup: None,
             },
             &key_schema,
             &value_relation(),

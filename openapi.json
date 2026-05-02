@@ -8402,6 +8402,16 @@
             "nullable": true,
             "minimum": 0
           },
+          "enable_expired_log_cleanup": {
+            "type": "boolean",
+            "description": "Whether to clean up expired log entries when a checkpoint is written.\n\nConfigures the `delta.enableExpiredLogCleanup` table property.  When set to `false`,\ntransaction log entries are retained indefinitely regardless of `log_retention_duration`.\n\nThe option is only available when creating the Delta table (`mode = append` and there is\nno existing table at the target location, or `mode = truncate`).\n\nDefault: `true` (Delta Lake default).",
+            "nullable": true
+          },
+          "log_retention_duration": {
+            "type": "string",
+            "description": "Log retention duration for newly created Delta tables.\n\nConfigures the `delta.logRetentionDuration` table property, which controls how long the\ntransaction log history of the table is kept.  Each time a checkpoint is written, Delta Lake\nautomatically cleans up log entries older than this interval (subject to\n`enable_expired_log_cleanup`).\n\nThe option is only available when creating the Delta table (`mode = append` and there is\nno existing table at the target location, or `mode = truncate`).\n\nThe value follows the Delta Lake interval syntax: `\"interval <N> <unit>\"`, where `<unit>`\nis one of `nanosecond[s]`, `microsecond[s]`, `millisecond[s]`, `second[s]`, `minute[s]`,\n`hour[s]`, `day[s]`, or `week[s]`.  Examples: `\"interval 30 days\"`, `\"interval 6 hours\"`.\n\nDefault: `\"interval 30 days\"` (Delta Lake default).",
+            "nullable": true
+          },
           "max_retries": {
             "type": "integer",
             "format": "int32",
