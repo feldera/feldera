@@ -2,8 +2,11 @@ use crate::{
     Circuit, DBData, DynZWeight, Position, RootCircuit, Scope, Stream, ZWeight,
     algebra::{OrdIndexedZSet, OrdIndexedZSetFactories},
     circuit::{
-        OwnershipPreference, circuit_builder::register_replay_stream, metadata::OperatorMeta,
-        operator_traits::Operator, splitter_output_chunk_size, splitter_output_first_chunk_size,
+        OwnershipPreference,
+        circuit_builder::register_replay_stream,
+        metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
+        operator_traits::Operator,
+        splitter_output_chunk_size, splitter_output_first_chunk_size,
     },
     dynamic::{
         ClonableTrait, DataTrait, DowncastTrait, DynData, DynPair, Erase, Factory, WithFactory,
@@ -21,7 +24,7 @@ use crate::{
 };
 use async_stream::stream;
 use futures::Stream as AsyncStream;
-use std::{borrow::Cow, cmp::Ordering, marker::PhantomData};
+use std::{borrow::Cow, cell::RefCell, cmp::Ordering, marker::PhantomData};
 
 /// A ranked batch pairs a value with its rank.
 pub(crate) type RankedBatch<K, V> = OrdIndexedZSet<K, DynPair<V, DynData>>;
@@ -412,6 +415,13 @@ struct Rank<
 
     val_factory: &'static dyn Factory<RV>,
     batch_factories: RankedSpineFactories<K, V>,
+
+    // Input batch sizes.
+    input_batch_stats: RefCell<BatchSizeStats>,
+
+    // Output batch sizes.
+    output_batch_stats: RefCell<BatchSizeStats>,
+
     _phantom: PhantomData<fn(&K, &V, &RV, &PF, &RF)>,
 }
 
@@ -435,6 +445,8 @@ where
             key_cmp,
             val_factory,
             batch_factories: batch_factories.clone(),
+            input_batch_stats: RefCell::new(BatchSizeStats::new()),
+            output_batch_stats: RefCell::new(BatchSizeStats::new()),
             _phantom: PhantomData,
         }
     }
@@ -467,7 +479,12 @@ where
         Cow::from("rank")
     }
 
-    fn metadata(&self, _meta: &mut OperatorMeta) {}
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            INPUT_BATCHES_STATS => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_STATS => self.output_batch_stats.borrow().metadata(),
+        });
+    }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
@@ -515,6 +532,8 @@ where
                 yield (RankedBatch::dyn_empty(&self.batch_factories), true, None);
                 return;
             };
+
+            self.input_batch_stats.borrow_mut().add_batch(delta.len());
 
             // println!("delta");
             // for (k, v, w) in delta.iter() {
@@ -701,6 +720,7 @@ where
                                 has_values = false;
                             }
                             let result = builder.done();
+                            self.output_batch_stats.borrow_mut().add_batch(result.len());
                             yield (result, false, joint_cursor.position());
                             builder = <RankedBatch::<K, V> as Batch>::Builder::with_capacity(&self.batch_factories, chunk_size + 1, chunk_size + 1);
                         }
@@ -733,6 +753,7 @@ where
                                 builder.push_key(delta_cursor.key());
                                 has_values = false;
                                 let result = builder.done();
+                                self.output_batch_stats.borrow_mut().add_batch(result.len());
                                 yield (result, false, delta_cursor.position());
                                 builder = <RankedBatch::<K, V> as Batch>::Builder::with_capacity(&self.batch_factories, chunk_size + 1, chunk_size + 1);
                             }
@@ -759,6 +780,8 @@ where
             }
 
             let result = builder.done();
+            self.output_batch_stats.borrow_mut().add_batch(result.len());
+
             yield (result, true, None);
         }
     }
