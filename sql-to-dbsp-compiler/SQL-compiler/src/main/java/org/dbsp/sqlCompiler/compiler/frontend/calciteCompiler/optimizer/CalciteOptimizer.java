@@ -9,6 +9,7 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.core.Correlate;
 import org.apache.calcite.rel.core.Join;
+import org.apache.calcite.rel.hint.Hintable;
 import org.apache.calcite.rel.rules.CoreRules;
 import org.apache.calcite.rel.rules.PruneEmptyRules;
 import org.apache.calcite.rel.rules.SingleValuesOptimizationRules;
@@ -48,6 +49,26 @@ public class CalciteOptimizer implements IWritesLogs {
                 return true;
         }
         return false;
+    }
+
+    static boolean containsHints(RelNode node) {
+        if (node instanceof Hintable ha)
+            return !ha.getHints().isEmpty();
+        for (RelNode input : node.getInputs()) {
+            if (containsHints(input))
+                return true;
+        }
+        return false;
+    }
+
+    static int joinCount(RelNode node) {
+        int recurse = 0;
+        for (RelNode input : node.getInputs()) {
+            recurse += joinCount(input);
+        }
+        if (node instanceof Join)
+            recurse += 1;
+        return recurse;
     }
 
     public interface CalciteOptimizerStep {
@@ -326,9 +347,10 @@ public class CalciteOptimizer implements IWritesLogs {
         var hyper = new BaseOptimizerStep("Hypergraph", 0) {
             HepProgram getProgram(RelNode node, int level) {
                 // only call this if there are no Correlates
-                if (!containsCorrelate(node)) {
+                if (!containsCorrelate(node) && !containsHints(node) && (joinCount(node) > 1)) {
                     this.addRules(level,
                             CoreRules.JOIN_TO_HYPER_GRAPH,
+                            // This rule loses hints
                             CoreRules.HYPER_GRAPH_OPTIMIZE);
                 }
                 return this.builder.build();

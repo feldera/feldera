@@ -347,7 +347,7 @@ values
   :   { VALUES | VALUE } expression [, expression ]*
 
 select
-  :   SELECT [ ALL | DISTINCT ]
+  :   SELECT [ hintComment ] [ ALL | DISTINCT ]
           { projectItem [, projectItem ]* }
       FROM tableExpression
       [ WHERE booleanExpression ]
@@ -360,7 +360,7 @@ select
 ```
 tablePrimary
   :   tableName '(' TABLE tableName ')'
-  |   tablePrimary '(' columnDecl [, columnDecl ]* ')'
+  |   tablePrimary [ hintComment ] '(' columnDecl [, columnDecl ]* ')'
   |   [ LATERAL ] '(' query ')'
   |   UNNEST '(' expression ')' [ WITH ORDINALITY ]
   |   TABLE '(' functionName '(' expression [, expression ]* ')' ')'
@@ -441,6 +441,54 @@ the column names are *not* used to reorder columns.
 
 In `orderItem`, if expression is a positive integer n, it denotes the
 nth item in the `SELECT` clause.
+
+## SQL hints
+
+A hint is an instruction to the optimizer.  When writing SQL, you may
+know information about the data unknown to the optimizer.  Hints
+enable you to make decisions normally made by the optimizer.
+
+We support hints in two locations:
+
+- Query Hint: right after the `SELECT` keyword;
+- Table Hint: right after the referenced table or view name.
+
+```
+SELECT /*+ hint1, hint2(a='1', b='2') */
+
+FROM
+  tableName /*+ hint3(5, 'x') */
+JOIN
+  tableName /*+ hint4(c='id'), hint5 */
+```
+
+The syntax of hints is:
+
+```
+hintComment
+  :   '/*+' hint [, hint ]* '*/'
+
+hint:
+      hintName
+  |   hintName '(' optionKey '=' optionVal [, optionKey '=' optionVal ]* ')'
+  |   hintName '(' hintOption [, hintOption ]* ')'
+
+optionKey
+  :   simpleIdentifier
+  |   stringLiteral
+
+optionVal
+  :   stringLiteral
+
+hintOption
+   :  simpleIdentifier
+   |  numericLiteral
+   |  stringLiteral
+```
+
+### Supported hints and their impact on query implementation
+
+Support for hints is under development.
 
 ## Creating indexes
 

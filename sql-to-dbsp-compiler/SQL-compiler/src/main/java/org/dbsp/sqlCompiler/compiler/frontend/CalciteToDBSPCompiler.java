@@ -74,6 +74,8 @@ import org.apache.calcite.sql.SqlUserDefinedTypeNameSpec;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
+import org.dbsp.sqlCompiler.circuit.annotation.JoinStrategy;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateZeroOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
@@ -1525,6 +1527,26 @@ public class CalciteToDBSPCompiler extends RelVisitor
         final IntermediateRel node = CalciteObject.create(join, conditionNode.getPositionRange());
         // The result is the sum of all these operators.
         final List<OutputPort> sumInputs = new ArrayList<>();
+        final Annotations strategies = new Annotations();
+        for (var hint: join.getHints()) {
+            switch (hint.hintName) {
+                case SqlToRelCompiler.HINT_BROADCAST_LEFT:
+                    strategies.add(new JoinStrategy(JoinStrategy.Strategy.BroadcastLeft));
+                    break;
+                case SqlToRelCompiler.HINT_BROADCAST_RIGHT:
+                    strategies.add(new JoinStrategy(JoinStrategy.Strategy.BroadcastRight));
+                    break;
+                case SqlToRelCompiler.HINT_BALANCE:
+                    strategies.add(new JoinStrategy(JoinStrategy.Strategy.Balance));
+                    break;
+                case SqlToRelCompiler.HINT_SHARD:
+                    strategies.add(new JoinStrategy(JoinStrategy.Strategy.Shard));
+                    break;
+                default:
+                    // Other hints are not about joins
+                    break;
+            }
+        }
 
         JoinRelType joinType = join.getJoinType();
         if (joinType == JoinRelType.ANTI || joinType == JoinRelType.SEMI)
@@ -1680,6 +1702,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             joinResult = new DBSPStreamJoinOperator(node, TypeCompiler.makeZSet(lr.getType()),
                     makeTuple, left.isMultiset || right.isMultiset,
                     leftNonNullIndex.outputPort(), rightNonNullIndex.outputPort(), false);
+            joinResult.addAnnotations(strategies, DBSPSimpleOperator.class);
             inner = joinResult;
 
             if (joinType == JoinRelType.LEFT && leftPulled == left && !hasFilter) {
@@ -1724,6 +1747,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         node, TypeCompiler.makeZSet(makeLeftTuple.getResultType()),
                         makeLeftTuple, left.isMultiset || right.isMultiset,
                         leftDiff.outputPort(), rightDiff.outputPort(), false);
+                lj.addAnnotations(strategies, DBSPSimpleOperator.class);
                 this.addOperator(lj);
                 final DBSPIntegrateOperator integrate = new DBSPIntegrateOperator(node, lj.outputPort());
                 // Additional casts may be needed to fix key field types on the left side

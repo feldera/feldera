@@ -23,11 +23,18 @@
 
 package org.dbsp.sqlCompiler.compiler.sql;
 
+import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.logical.LogicalJoin;
+import org.apache.calcite.rel.logical.LogicalProject;
+import org.apache.calcite.sql.SqlJoin;
 import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.SqlSetOption;
+import org.apache.calcite.sql.SqlTableRef;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
+import org.dbsp.sqlCompiler.compiler.errors.SourceFileContents;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
@@ -38,6 +45,9 @@ import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlDeclareView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlExtendedColumnDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlForeignKey;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
+import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -94,6 +104,46 @@ public class ParserTests {
         Assert.assertNotNull(node);
         Assert.assertEquals(1, node.size());
         Assert.assertTrue(node.get(0).statement() instanceof SqlSetOption);
+    }
+
+    @Test
+    public void hintTest() throws SqlParseException {
+        SqlToRelCompiler compiler = this.getCompiler();
+        List<ParsedStatement> node = compiler.parseStatements("""
+                CREATE TABLE T(x INT);
+                CREATE VIEW V AS SELECT /*+ broadcast */ * FROM T JOIN T AS S USING (x);""");
+        Assert.assertNotNull(node);
+        Assert.assertEquals(2, node.size());
+        Assert.assertTrue(node.get(1).statement() instanceof SqlCreateView);
+        SqlNode query = ((SqlCreateView) node.get(1).statement()).query;
+        Assert.assertTrue(query instanceof SqlSelect);
+        Assert.assertNotNull(((SqlSelect) query).getHints());
+        Assert.assertEquals(1, ((SqlSelect) query).getHints().size());
+
+        var sources = new SourceFileContents();
+        compiler.compile(node.get(0), sources);
+        RelStatement q = compiler.compile(node.get(1), sources);
+        Assert.assertTrue(q instanceof CreateViewStatement);
+        RelNode rel = q.to(CreateViewStatement.class).getRel();
+        Assert.assertTrue(rel instanceof LogicalProject);
+        LogicalProject proj = (LogicalProject) rel;
+        Assert.assertEquals(1, proj.getHints().size());
+        Assert.assertTrue(proj.getInput() instanceof LogicalJoin);
+        LogicalJoin join = (LogicalJoin) proj.getInput();
+        Assert.assertEquals(1, join.getHints().size());
+        Assert.assertEquals("broadcast", join.getHints().get(0).hintName);
+    }
+
+    @Test
+    public void hintGrammarExampleTests() throws SqlParseException {
+        SqlToRelCompiler compiler = this.getCompiler();
+        List<ParsedStatement> node = compiler.parseStatements("""
+                CREATE TABLE T(x INT);
+                CREATE TABLE S(x INT);
+                CREATE VIEW V AS SELECT /*+ hint1, hint2(a='1', b='2') */ *
+                FROM T /*+ hint3(5, 'x') */
+                JOIN S /*+ hint4(c='id'), hint5 */ on T.x = S.x;""");
+        Assert.assertNotNull(node);
     }
 
     @Test
