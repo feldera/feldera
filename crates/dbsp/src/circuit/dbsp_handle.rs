@@ -726,15 +726,10 @@ impl Runtime {
                             return;
                         }
                     }
-                    Ok(Command::BootstrapStep) => {
-                        if let Err(e) = circuit.transaction() {
-                            if status_sender.send(Err(e)).is_err() {
-                                return;
-                            }
-                        } else if status_sender
-                            .send(Ok(Response::BootstrapComplete(
-                                circuit.is_replay_complete(),
-                            )))
+                    Ok(Command::IsBootstrapComplete) => {
+                        let complete = circuit.is_replay_complete();
+                        if status_sender
+                            .send(Ok(Response::BootstrapComplete(complete)))
                             .is_err()
                         {
                             return;
@@ -932,8 +927,7 @@ enum Command {
     CommitTransaction,
     CommitProgress,
     Transaction,
-    /// Execute a step in bootstrap mode.
-    BootstrapStep,
+    IsBootstrapComplete,
     CompleteBootstrap,
     EnableProfiler,
     DumpProfile {
@@ -963,7 +957,7 @@ impl Debug for Command {
             Command::CommitTransaction => write!(f, "CommitTransaction"),
             Command::CommitProgress => write!(f, "CommitProgress"),
             Command::Transaction => write!(f, "Transaction"),
-            Command::BootstrapStep => write!(f, "BootstrapStep"),
+            Command::IsBootstrapComplete => write!(f, "IsBootstrapComplete"),
             Command::CompleteBootstrap => write!(f, "CompleteBootstrap"),
             Command::EnableProfiler => write!(f, "EnableProfiler"),
             Command::RetrieveGraph => write!(f, "RetrieveGraph"),
@@ -1245,13 +1239,49 @@ impl DBSPHandle {
         Ok(reply)
     }
 
+    /// Check if the bootstrap is complete and clear bootstrap info if it is.
+    ///
+    /// Should be called after a step or transaction is completed.
+    fn check_bootstrap_complete(&mut self) -> Result<(), DbspError> {
+        if self.bootstrap_in_progress() {
+            let mut replay_complete = Vec::with_capacity(self.status_receivers.len());
+
+            let result =
+                self.broadcast_command(Command::IsBootstrapComplete, |_worker, response| {
+                    let Response::BootstrapComplete(complete) = response else {
+                        panic!("Expected BootstrapComplete response, got {response:?}");
+                    };
+                    replay_complete.push(complete);
+                });
+
+            result?;
+
+            if replay_complete.iter().all(|complete| *complete) {
+                info!("Bootstrap complete");
+                self.send_complete_bootstrap()?;
+            }
+        }
+
+        Ok(())
+    }
+
     /// Start and instantly commit a transaction, waiting for the commit to complete.
     pub fn transaction(&mut self) -> Result<(), DbspError> {
-        if self.bootstrap_in_progress() {
-            self.step_bootstrap()
-        } else {
-            self.transaction_regular()
+        DBSP_STEP.fetch_add(1, Ordering::Relaxed);
+        let start = Instant::now();
+        let result = self.broadcast_command(Command::Transaction, |_, _| {});
+        DBSP_STEP_LATENCY_MICROSECONDS
+            .lock()
+            .unwrap()
+            .record_elapsed(start);
+        if let Some(handle) = self.runtime.as_ref() {
+            self.runtime_elapsed +=
+                start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
         }
+
+        self.check_bootstrap_complete()?;
+
+        result
     }
 
     /// Start a transaction.
@@ -1312,6 +1342,7 @@ impl DBSPHandle {
 
         if commit_complete {
             debug!("Commit complete");
+            self.check_bootstrap_complete()?;
         }
 
         Ok(commit_complete)
@@ -1370,55 +1401,6 @@ impl DBSPHandle {
         } else {
             0
         }
-    }
-
-    fn transaction_regular(&mut self) -> Result<(), DbspError> {
-        DBSP_STEP.fetch_add(1, Ordering::Relaxed);
-        let start = Instant::now();
-        let result = self.broadcast_command(Command::Transaction, |_, _| {});
-        DBSP_STEP_LATENCY_MICROSECONDS
-            .lock()
-            .unwrap()
-            .record_elapsed(start);
-        if let Some(handle) = self.runtime.as_ref() {
-            self.runtime_elapsed +=
-                start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
-        }
-        result
-    }
-
-    /// In the bootstrap mode, after performing a step, check if all workers have finished bootstrapping.
-    /// If so, notify all workers to exit the bootstrap phase and start normal operation.
-    fn step_bootstrap(&mut self) -> Result<(), DbspError> {
-        DBSP_STEP.fetch_add(1, Ordering::Relaxed);
-        let start = Instant::now();
-
-        let mut replay_complete = Vec::with_capacity(self.status_receivers.len());
-
-        let result = self.broadcast_command(Command::BootstrapStep, |_worker, response| {
-            let Response::BootstrapComplete(complete) = response else {
-                panic!("Expected BootstrapComplete response, got {response:?}");
-            };
-            replay_complete.push(complete);
-        });
-
-        DBSP_STEP_LATENCY_MICROSECONDS
-            .lock()
-            .unwrap()
-            .record_elapsed(start);
-        if let Some(handle) = self.runtime.as_ref() {
-            self.runtime_elapsed +=
-                start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
-        }
-
-        result?;
-
-        if replay_complete.iter().all(|complete| *complete) {
-            info!("Bootstrap complete");
-            self.send_complete_bootstrap()?;
-        }
-
-        Ok(())
     }
 
     /// The circuit has been resumed from a checkpoint and is currently bootstrapping the modified part of the circuit.
