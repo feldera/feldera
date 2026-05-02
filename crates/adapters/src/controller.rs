@@ -2930,6 +2930,7 @@ impl CircuitThread {
 
         self.step_sender
             .send_replace(StepStatus::new(self.step, StepAction::Idle));
+
         // If bootstrapping has completed, update the status flag.
         self.controller
             .status
@@ -2943,8 +2944,8 @@ impl CircuitThread {
         // as soon as input has been processed.
         Span::new("update")
             .with_category("Step")
-            .with_tooltip(|| format!("update ad-hoc tables after step {}", self.step))
-            .in_scope(|| self.update_snapshot());
+                .with_tooltip(|| format!("update ad-hoc tables after step {}", self.step))
+                .in_scope(|| self.update_snapshot());
 
         // Record that we've processed the records, unless there is a transaction in progress,
         // in which case records are ingested by the circuit but are not fully processed.
@@ -3003,91 +3004,95 @@ impl CircuitThread {
                     .start_commit_transaction()
                     .expect("should have been able to start transaction commit");
             }
+            Some(AdvanceTransaction::StartAndCommit) => {
+                self.controller.increment_transaction_number();
+                self.circuit
+                    .start_transaction()
+                    .expect("should have been able to start transaction");
+                self.circuit
+                    .start_commit_transaction()
+                    .expect("should have been able to start transaction commit");
+            }
             None => (),
         }
 
         let transaction_state = self.controller.get_transaction_state();
-        if transaction_state != TransactionState::None {
-            debug!("circuit thread: calling 'circuit.step'");
+        assert_ne!(transaction_state, TransactionState::None);
 
-            let committed = Span::new("step")
-                .with_category("Step")
-                .with_tooltip(|| format!("step {}", self.step))
-                .in_scope(|| self.circuit.step())
-                .unwrap_or_else(|e| {
-                    self.controller.error(Arc::new(e.into()), None);
-                    false
-                });
+        debug!("circuit thread: calling 'circuit.step'");
 
-            debug!("circuit thread: 'circuit.step' returned");
+        let committed = Span::new("step")
+            .with_category("Step")
+            .with_tooltip(|| format!("step {}", self.step))
+            .in_scope(|| self.circuit.step())
+            .unwrap_or_else(|e| {
+                self.controller.error(Arc::new(e.into()), None);
+                false
+            });
 
-            if let TransactionState::Committing {
-                tid,
-                start,
-                processed_records,
-            } = transaction_state
-            {
-                let n = self
-                    .controller
-                    .status
-                    .global_metrics
-                    .num_total_processed_records()
-                    - processed_records;
-                if !committed {
-                    let commit_updates = self.commit_updates.get_or_insert_default();
-                    if commit_updates.should_update_status() {
-                        match self.circuit.commit_progress() {
-                            Ok(progress) => {
-                                let summary = progress.summary();
-                                if commit_updates.should_display_status() {
-                                    info!(
-                                        "Transaction {tid}: Commit of {n} records in progress ({summary})"
-                                    );
-                                }
-                                self.controller
-                                    .status
-                                    .global_metrics
-                                    .set_commit_progress(Some(summary));
+        debug!("circuit thread: 'circuit.step' returned");
+
+        if let TransactionState::Committing {
+            tid,
+            start,
+            processed_records,
+        } = transaction_state
+        {
+            let n = self
+                .controller
+                .status
+                .global_metrics
+                .num_total_processed_records()
+                - processed_records;
+            if !committed {
+                let commit_updates = self.commit_updates.get_or_insert_default();
+                if commit_updates.should_update_status() {
+                    match self.circuit.commit_progress() {
+                        Ok(progress) => {
+                            let summary = progress.summary();
+                            if commit_updates.should_display_status() {
+                                info!(
+                                    "Transaction {tid}: Commit of {n} records in progress ({summary})"
+                                );
                             }
-                            Err(e) => {
-                                error!("Transaction {tid}: Error retrieving commit progress ({e})");
-                            }
+                            self.controller
+                                .status
+                                .global_metrics
+                                .set_commit_progress(Some(summary));
                         }
-                    };
-                } else {
-                    let duration = start.elapsed();
+                        Err(e) => {
+                            error!("Transaction {tid}: Error retrieving commit progress ({e})");
+                        }
+                    }
+                };
+            } else {
+                let duration = start.elapsed();
+                if duration >= COMMIT_DISPLAY_INTERVAL {
                     info!(
                         "Transaction {tid}: Finished committing {n} records in {:.1} seconds",
                         duration.as_secs_f64()
                     );
-                    Span::new("commit")
-                        .with_category("Transaction")
-                        .with_tooltip(|| format!("transaction {tid} committed {n} records"))
-                        .with_start(start)
-                        .record();
-                    TRANSACTION_COMMIT_TIME_MICROSECONDS.record_duration(duration);
-
-                    let mut transaction_info = self.controller.transaction_info.lock().unwrap();
-                    transaction_info.transaction_state = TransactionState::None;
-                    transaction_info.update_transaction_status();
-                    drop(transaction_info);
-
-                    self.commit_updates = None;
-                    self.controller
-                        .status
-                        .global_metrics
-                        .set_commit_progress(None);
                 }
+
+                Span::new("commit")
+                    .with_category("Transaction")
+                    .with_tooltip(|| format!("transaction {tid} committed {n} records"))
+                    .with_start(start)
+                    .record();
+                TRANSACTION_COMMIT_TIME_MICROSECONDS.record_duration(duration);
+
+                let mut transaction_info = self.controller.transaction_info.lock().unwrap();
+
+                transaction_info.transaction_state = TransactionState::None;
+                transaction_info.update_transaction_status();
+                drop(transaction_info);
+
+                self.commit_updates = None;
+                self.controller
+                    .status
+                    .global_metrics
+                    .set_commit_progress(None);
             }
-        } else {
-            debug!("circuit thread: calling 'circuit.transaction'");
-            self.controller.increment_transaction_number();
-            Span::new("step")
-                .with_category("Step")
-                .with_tooltip(|| format!("step {}", self.step))
-                .in_scope(|| self.circuit.transaction())
-                .unwrap_or_else(|e| self.controller.error(Arc::new(e.into()), None));
-            debug!("circuit thread: 'circuit.transaction' returned");
         }
     }
 
@@ -5135,6 +5140,10 @@ impl TransactionState {
         matches!(self, TransactionState::Committing { .. })
     }
 
+    fn is_started(&self) -> bool {
+        matches!(self, TransactionState::Started { .. })
+    }
+
     pub fn tid(&self) -> Option<TransactionId> {
         match self {
             TransactionState::None => None,
@@ -5168,8 +5177,14 @@ impl TransactionState {
 }
 
 enum AdvanceTransaction {
+    /// Start a new transaction.
     Start,
+
+    /// Commit the current transaction.
     Commit,
+
+    /// Start and instantly commit a new transaction.
+    StartAndCommit,
 }
 
 /// Phase of a transaction.
@@ -5258,7 +5273,7 @@ impl TransactionInitiators {
 
     /// Clear the transaction requested state.
     ///
-    /// Must be invoked when a transaction is committed.
+    /// Must be invoked when a transaction starts committing.
     fn clear(&mut self, is_multihost: bool) {
         self.transaction_id = None;
         self.initiated_by_api = None;
@@ -5369,7 +5384,7 @@ impl TransactionInfo {
 
     /// Start a new transaction from the API.
     fn start_transaction_from_api(&mut self) -> Result<TransactionId, ControllerError> {
-        if self.initiators.initiated_by_api.is_some() || self.transaction_state.is_committing() {
+        if self.initiators.initiated_by_api.is_some() {
             return Err(ControllerError::TransactionInProgress);
         }
 
@@ -5551,10 +5566,8 @@ impl TransactionInfo {
                 }
                 (TransactionState::None | TransactionState::Started { .. }, true) => Some(true),
                 (TransactionState::Committing { .. }, true) => {
-                    error!(
-                        "Invalid transaction state: actual state: {:?}; desired state {:?}",
-                        self.transaction_state, self.initiators
-                    );
+                    // We can get here if a new transaction has been initiated via the API while the
+                    // prevous transaction is committing.
                     return;
                 }
             },
@@ -6978,7 +6991,7 @@ impl ControllerInner {
         if transaction_info
             .initiators
             .is_ready_to_commit(transaction_info.is_multihost)
-            && transaction_info.transaction_state == TransactionState::None
+            && !transaction_info.transaction_state.is_started()
         {
             transaction_info.clear_initiators();
         }
@@ -7057,8 +7070,11 @@ impl ControllerInner {
             .is_committing()
     }
 
-    /// Advance transaction state from None to Started or from Started to committing in response
-    /// to desired state changes.
+    /// Advance transaction state before performing a step:
+    ///
+    /// - from None to Started if a transaction is requested by the API or a connector.
+    /// - from Started to Committing if transaction commit is requested
+    /// - from None to Committing if no transaction has been requested.
     ///
     /// Returns how the transaction is advancing (if it is).
     fn advance_transaction_state(&self) -> Option<AdvanceTransaction> {
@@ -7084,9 +7100,8 @@ impl ControllerInner {
                     // We are already in a transaction, so there is nothing to do.
                     None
                 }
-                TransactionState::Committing { .. } => unreachable!(
-                    "Requests to initiate a transaction are rejected while a transaction is committing but somehow one slipped through anyhow"
-                ),
+                // Don't start a new transaction until the current transaction has committed.
+                TransactionState::Committing { .. } => None,
             }
         } else {
             // The API and connectors want us to not be in a transaction, so
@@ -7130,8 +7145,6 @@ impl ControllerInner {
                     None
                 }
                 TransactionState::None => {
-                    // Nothing to do.
-                    //
                     // We know that there must not be any active initiators
                     // because:
                     //
@@ -7146,7 +7159,17 @@ impl ControllerInner {
                     //   clear all the initiators if they commit the last
                     //   initiator and no transaction has started.
                     assert!(!transaction_info.initiators.is_active(is_multihost));
-                    None
+                    assert!(transaction_info.initiators.transaction_id.is_none());
+
+                    // Start and instantly commit a new transaction.
+                    transaction_info.last_transaction_id += 1;
+
+                    transaction_info.transaction_state = TransactionState::Committing {
+                        tid: transaction_info.last_transaction_id,
+                        start: Instant::now(),
+                        processed_records: self.status.global_metrics.num_total_processed_records(),
+                    };
+                    Some(AdvanceTransaction::StartAndCommit)
                 }
             }
         };
