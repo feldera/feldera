@@ -251,7 +251,7 @@ public class Regression2Tests extends SqlIoTest {
 
     @Test
     public void issue5569() {
-        this.statementsFailingInCompilation("""
+        this.getCCS("""
                 CREATE TABLE tbl(
                 id INT,
                 intt INT);
@@ -261,8 +261,7 @@ public class Regression2Tests extends SqlIoTest {
                 QUALIFY
                 ROW_NUMBER() OVER (ORDER BY intt DESC) <= 2 OR
                 RANK() OVER (ORDER BY intt DESC) <= 2 OR
-                DENSE_RANK() OVER (ORDER BY intt DESC) <= 2;""",
-                "Ranking function ROW_NUMBER not yet implemented in a WINDOW aggregate");
+                DENSE_RANK() OVER (ORDER BY intt DESC) <= 2;""");
     }
 
     @Test
@@ -768,7 +767,7 @@ public class Regression2Tests extends SqlIoTest {
 
     @Test
     public void issue5822() {
-        this.statementsFailingInCompilation("""
+        this.getCCS("""
                 CREATE TABLE payments (
                   payment_id BIGINT,
                   customer_id BIGINT,
@@ -789,7 +788,7 @@ public class Regression2Tests extends SqlIoTest {
                     ORDER BY payment_time
                     RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                   ) AS running_amount
-                FROM payments""", "Ranking function ROW_NUMBER not yet implemented in a WINDOW aggregate");
+                FROM payments""");
     }
 
     @Test

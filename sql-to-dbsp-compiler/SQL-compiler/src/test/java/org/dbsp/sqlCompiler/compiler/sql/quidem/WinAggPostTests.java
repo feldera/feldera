@@ -555,37 +555,62 @@ public class WinAggPostTests extends PostBaseTests {
                 (9 rows)""");
     }
 
-    @Test @Ignore("Unsupported window aggregates")
+    @Test
+    public void testRowDifferentPartitions() {
+        // Validated on Postgres by making the query deterministic
+        this.qs("""
+                select *,
+                  row_number() over (order by deptno /*, ename, gender */) as r1,
+                  row_number() over (partition by deptno order by gender desc /*, ename */) as r2
+                from emp;
+                +-------+--------+--------+----+----+
+                | ENAME | DEPTNO | GENDER | R1 | R2 |
+                +-------+--------+--------+----+----+
+                | Wilma|         | F|        1 |  1 |
+                | Bob|        10 | M|        2 |  1 |
+                | Jane|       10 | F|        3 |  2 |
+                | Eric|       20 | M|        4 |  1 |
+                | Alice|      30 | F|        5 |  1 |
+                | Susan|      30 | F|        6 |  2 |
+                | Adam|       50 | M|        7 |  1 |
+                | Eve|        50 | F|        8 |  2 |
+                | Grace|      60 | F|        9 |  1 |
+                +-------+--------+--------+----+----+
+                (9 rows)""");
+    }
+
+    @Test
     public void testWindows2() {
+        // Nondeterministic queries, slightly different result in Feldera from Calcite
+        // Had to adjust results, since sorting is deterministic in Feldera.
+        // Validated on Postgres by making the query deterministic by uncommenting
+        // the commented-out sort helpers
         this.qs("""
                 -- [CALCITE-806] ROW_NUMBER should emit distinct values
-                --
-                -- We only run this test under JDK 1.8 because the results are
-                -- non-deterministic and are different (but still correct) on
-                -- JDK 1.7 and other platforms.
                 select *,
-                  row_number() over (order by deptno) as r1,
-                  row_number() over (partition by deptno order by gender desc) as r2,
-                  row_number() over (partition by deptno order by gender) as r3,
-                  row_number() over (partition by gender) as r4,
-                  row_number() over () as r
+                  row_number() over (order by deptno /* nulls first, ename, gender */) as r1,
+                  row_number() over (partition by deptno order by gender desc /*, ename */) as r2,
+                  row_number() over (partition by deptno order by gender /*, ename */) as r3,
+                  row_number() over (partition by gender order by ename /*, deptno */) as r4,
+                  row_number() over (/* order by ename, deptno, gender */) as r
                 from emp;
                 +-------+--------+--------+----+----+----+----+---+
                 | ENAME | DEPTNO | GENDER | R1 | R2 | R3 | R4 | R |
                 +-------+--------+--------+----+----+----+----+---+
-                | Adam  |     50 | M      |  6 |  1 |  2 |  1 | 7 |
-                | Alice |     30 | F      |  5 |  2 |  2 |  6 | 6 |
-                | Bob   |     10 | M      |  2 |  1 |  2 |  3 | 9 |
-                | Eric  |     20 | M      |  3 |  1 |  1 |  2 | 8 |
-                | Eve   |     50 | F      |  7 |  2 |  1 |  2 | 2 |
-                | Grace |     60 | F      |  8 |  1 |  1 |  4 | 4 |
-                | Jane  |     10 | F      |  1 |  2 |  1 |  3 | 3 |
-                | Susan |     30 | F      |  4 |  1 |  1 |  5 | 5 |
-                | Wilma |        | F      |  9 |  1 |  1 |  1 | 1 |
+                | Wilma|         | F|        1 |  1 |  1 |  6 | 9 |
+                | Bob|        10 | M|        2 |  1 |  2 |  2 | 3 |
+                | Jane|       10 | F|        3 |  2 |  1 |  4 | 7 |
+                | Eric|       20 | M|        4 |  1 |  1 |  3 | 4 |
+                | Alice|      30 | F|        5 |  1 |  1 |  1 | 2 |
+                | Susan|      30 | F|        6 |  2 |  2 |  5 | 8 |
+                | Adam|       50 | M|        7 |  1 |  2 |  1 | 1 |
+                | Eve|        50 | F|        8 |  2 |  1 |  2 | 5 |
+                | Grace|      60 | F|        9 |  1 |  1 |  3 | 6 |
                 +-------+--------+--------+----+----+----+----+---+
                 (9 rows)
 
                 -- As above, ROW_NUMBER without explicit ORDER BY
+                -- Feldera will order by ename, deptno
                 select deptno,
                   ename,
                   row_number() over (partition by deptno) as r
@@ -594,12 +619,12 @@ public class WinAggPostTests extends PostBaseTests {
                 +--------+-------+---+
                 | DEPTNO | ENAME | R |
                 +--------+-------+---+
-                |     10 | Jane  | 1 |
-                |     30 | Alice | 2 |
-                |     30 | Susan | 1 |
-                |     50 | Eve   | 1 |
-                |     60 | Grace | 1 |
-                |        | Wilma | 1 |
+                |     10 | Jane|   1 |
+                |     30 | Alice|  1 |
+                |     30 | Susan|  2 |
+                |     50 | Eve|    1 |
+                |     60 | Grace|  1 |
+                |        | Wilma|  1 |
                 +--------+-------+---+
                 (6 rows)""");
     }

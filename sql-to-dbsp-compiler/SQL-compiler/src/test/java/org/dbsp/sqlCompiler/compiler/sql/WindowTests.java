@@ -548,7 +548,7 @@ public class WindowTests extends ScottBaseTests {
         // Validated on postgres.
         var ccs = this.getCCS("""
                 CREATE TABLE T (
-                    id    STRING,
+                    id    VARCHAR,
                     score INT,
                     ts    INT
                 );
@@ -616,4 +616,46 @@ public class WindowTests extends ScottBaseTests {
                 -------------------------------------------
                  g| 100     | 60  | 1 | 1""");
     }
-}
+
+    @Test
+    public void testDifferentPartitionsRank() {
+        // Validated on postgres.
+        var ccs = this.getCCS("""
+                CREATE TABLE T (
+                    id    VARCHAR,
+                    score INT,
+                    ts    INT
+                );
+                CREATE VIEW V AS WITH ranked AS (
+                    SELECT
+                        id,
+                        score,
+                        ts,
+                
+                        RANK() OVER (PARTITION BY ID ORDER BY score DESC, ts) AS rnk_score,
+                        RANK() OVER (PARTITION BY score ORDER BY ts DESC, id) AS rnk_recent
+                    FROM t
+                )
+                SELECT * FROM ranked;""");
+        // no filtering first
+        ccs.stepWeightOne("""
+                INSERT INTO t VALUES
+                    ('a', 100, 10),
+                    ('b', 95,  20),
+                    ('c', 95,  30),
+                    ('d', 80,  40),
+                    ('e', 70,  50),
+                    ('f', 60,  60),
+                    ('g',100,  60);
+                """, """
+                 id | score | ts | rnk_score | rnk_recent
+                -------------------------------------------
+                 g| 100 | 60  | 1  | 1
+                 a| 100 | 10  | 1  | 2
+                 c| 95  | 30  | 1  | 1
+                 b| 95  | 20  | 1  | 2
+                 d| 80  | 40  | 1  | 1
+                 e| 70  | 50  | 1  | 1
+                 f| 60  | 60  | 1  | 1""");
+        }
+    }

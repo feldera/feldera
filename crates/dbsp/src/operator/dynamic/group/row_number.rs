@@ -6,7 +6,7 @@ use crate::{
         circuit_builder::register_replay_stream,
         metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::Operator,
-        splitter_output_chunk_size,
+        splitter_output_chunk_size, splitter_output_first_chunk_size,
     },
     dynamic::{ClonableTrait, DataTrait, DowncastTrait, DynData, DynPair, Erase},
     operator::{
@@ -454,7 +454,11 @@ where
 
             let mut delta_cursor = delta.cursor();
             let mut input_trace_cursor = input_trace.unwrap().cursor();
-            let mut builder = <RankedBatch::<K, V> as Batch>::Builder::with_capacity(&self.batch_factories, chunk_size + 1, chunk_size + 1);
+
+            // Limit the initial capacity of the builder in case the chunk size
+            // is bigger than memory (e.g. `usize::MAX`).
+            let capacity = splitter_output_first_chunk_size() + 1;
+            let mut builder = <RankedBatch::<K, V> as Batch>::Builder::with_capacity(&self.batch_factories, capacity, capacity);
 
             let mut out_val = self.batch_factories.val_factory().default_box();
 

@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyNOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
@@ -326,6 +327,23 @@ public class CircuitRewriter extends CircuitCloneVisitor {
             result = new DBSPRankOperator(operator.getRelNode(),
                     operator.numbering, function, rankCmpFunc,
                     orderFields, outputProducer, input)
+                    .copyAnnotations(operator);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPRowNumberOperator operator) {
+        DBSPExpression function = this.transform(operator.getFunction());
+        DBSPClosureExpression outputProducer = this.transform(operator.outputProducer)
+                .to(DBSPClosureExpression.class);
+        OutputPort input = this.mapped(operator.input());
+        DBSPSimpleOperator result = operator;
+        if (function != operator.function
+                || outputProducer != operator.outputProducer
+                || !input.equals(operator.input())) {
+            result = new DBSPRowNumberOperator(operator.getRelNode(),
+                    function, outputProducer, input)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);

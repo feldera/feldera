@@ -8,30 +8,6 @@ resolved in future releases.
 
 ## Window functions (`OVER` clause)
 
-### `ROW_NUMBER`, `RANK`, and `DENSE_RANK` require TopK pattern
-
-`ROW_NUMBER()`, `RANK()`, and `DENSE_RANK()` are **only supported when
-the compiler detects a TopK pattern**.  Feldera supports **one** TopK pattern per OVER query. A TopK pattern requires that
-the window function result is filtered using a `WHERE` clause:
-
-```sql
--- Supported: TopK pattern
-SELECT * FROM (
-   SELECT empno,
-          ROW_NUMBER() OVER (ORDER BY empno) AS rn
-   FROM empsalary
-) WHERE rn < 3;
-
--- NOT supported: standalone usage without TopK filter
-SELECT empno,
-       ROW_NUMBER() OVER (ORDER BY empno)
-FROM empsalary;
-```
-
-General-purpose `RANK`, `DENSE_RANK`, and `ROW_NUMBER` outside of TopK
-detection are not yet implemented.
-See [#3934](https://github.com/feldera/feldera/issues/3934).
-
 ### `NTILE` and `NTH_VALUE` are not supported
 
 The `NTILE()` and `NTH_VALUE()` window functions are not yet implemented.

@@ -1264,6 +1264,38 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
+    @Override
+    public VisitDecision preorder(DBSPRowNumberOperator operator) {
+        this.computeHash(operator);
+        this.innerVisitor.setOperatorContext(operator);
+        DBSPExpression comparator = operator.getFunction();
+
+        DBSPType streamType = this.streamType(operator);
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getNodeName(this.preferHash))
+                .append(": ");
+        streamType.accept(this.innerVisitor);
+        this.builder.append(" = ")
+                .append(this.getInputName(operator, 0))
+                .append(".")
+                .append(operator.operation);
+        this.builder.append("_persistent");
+        this.builder.append("::<");
+        this.builder.append(comparator.to(DBSPComparatorExpression.class).getComparatorStructName());
+        this.builder.append(", _, _>(").increase();
+        this.builder.append("hash,").newline();
+
+        operator.outputProducer.accept(this.innerVisitor);
+        this.builder.decrease()
+                .append(")")
+                .append(this.markDistinct(operator))
+                .append(";");
+        this.tagStream(operator);
+        this.innerVisitor.setOperatorContext(null);
+        return VisitDecision.STOP;
+    }
+
     String markDistinct(DBSPOperator operator, @SuppressWarnings("SameParameterValue") int outputNo) {
         if (!operator.isMultiset(outputNo))
             return ".mark_distinct()";

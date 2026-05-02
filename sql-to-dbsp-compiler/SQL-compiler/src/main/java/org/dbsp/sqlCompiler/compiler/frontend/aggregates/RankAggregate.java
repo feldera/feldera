@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
@@ -29,6 +30,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -57,19 +59,20 @@ public class RankAggregate extends WindowAggregates {
     }
 
     @Override
-    public DBSPSimpleOperator implement(DBSPSimpleOperator input, DBSPSimpleOperator lastOperator, boolean isLast) {
+    public DBSPSimpleOperator implement(DBSPSimpleOperator input, DBSPSimpleOperator lastOperator,
+                                        @Nullable List<Integer> previousPartitionKeys, boolean isLast) {
         SqlKind kind = this.call.getAggregation().kind;
         IntermediateRel node = CalciteObject.create(window, new SourcePositionRange(this.call.getParserPosition()));
         DBSPIndexedTopKOperator.Numbering numbering = switch (kind) {
             case RANK -> RANK;
             case DENSE_RANK -> DENSE_RANK;
-            // case ROW_NUMBER -> ROW_NUMBER;
+            case ROW_NUMBER -> ROW_NUMBER;
             default -> throw new UnimplementedException(
                     "Ranking function " + kind + " not yet implemented in a WINDOW aggregate",
                     node);
         };
 
-        OutputPort inputIndex = this.indexInput(lastOperator);
+        OutputPort inputIndex = this.indexInput(lastOperator, previousPartitionKeys);
 
         // Generate comparison function for sorting the vector
         DBSPType inputRowType = lastOperator.getOutputZSetElementType();
@@ -91,36 +94,43 @@ public class RankAggregate extends WindowAggregates {
         DBSPVariablePath o = inputRowType.ref().var();
         List<DBSPExpression> orderFields = new ArrayList<>();
         for (RelFieldCollation col: this.group.orderKeys.getFieldCollations()) {
-            orderFields.add(o.deref().field(col.getFieldIndex()));
+            orderFields.add(o.deref().field(col.getFieldIndex()).applyCloneIfNeeded());
         }
 
-        DBSPExpression projectionTuple = new DBSPTupleExpression(node, orderFields);
-        DBSPClosureExpression projectionFunc = projectionTuple.closure(o);
+        final DBSPSimpleOperator rank;
+        if (numbering == ROW_NUMBER) {
+            rank = new DBSPRowNumberOperator(node, comparator, outputProducer, diff.outputPort());
+            this.compiler.addOperator(rank);
+        } else {
+            DBSPExpression projectionTuple = new DBSPTupleExpression(node, orderFields);
+            DBSPClosureExpression projectionFunc = projectionTuple.closure(o);
 
-        List<DBSPAsymmetricFieldComparatorExpression.Collation> collations = new ArrayList<>();
-        int index = 0;
-        for (RelFieldCollation col: this.group.orderKeys.getFieldCollations()) {
-            var collation = new DBSPAsymmetricFieldComparatorExpression.Collation(
-                    col.getFieldIndex(), index,
-                    CalciteToDBSPCompiler.ascending(col), !CalciteToDBSPCompiler.nullsLast(col));
-            collations.add(collation);
-            index++;
+            List<DBSPAsymmetricFieldComparatorExpression.Collation> collations = new ArrayList<>();
+            int index = 0;
+            for (RelFieldCollation col : this.group.orderKeys.getFieldCollations()) {
+                var collation = new DBSPAsymmetricFieldComparatorExpression.Collation(
+                        col.getFieldIndex(), index,
+                        CalciteToDBSPCompiler.ascending(col), !CalciteToDBSPCompiler.nullsLast(col));
+                collations.add(collation);
+                index++;
+            }
+            DBSPAsymmetricFieldComparatorExpression rankCmpFunc =
+                    new DBSPAsymmetricFieldComparatorExpression(node, inputRowType, projectionTuple.type, collations);
+
+            rank = new DBSPRankOperator(
+                    node, numbering, comparator, rankCmpFunc,
+                    projectionFunc, outputProducer, diff.outputPort());
+            this.compiler.addOperator(rank);
         }
-        DBSPAsymmetricFieldComparatorExpression rankCmpFunc =
-                new DBSPAsymmetricFieldComparatorExpression(node, inputRowType, projectionTuple.type, collations);
-
-        DBSPRankOperator topK = new DBSPRankOperator(
-                node, numbering, comparator, rankCmpFunc,
-                projectionFunc, outputProducer, diff.outputPort());
-        this.compiler.addOperator(topK);
-        DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, topK.outputPort());
+        DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, rank.outputPort());
         this.compiler.addOperator(integral);
         // We must drop the index we built.
         return new DBSPDeindexOperator(node.maybeFinal(isLast), node, integral.outputPort());
     }
 
     // Implement RankAggregate followed by limit as TopK
-    public DBSPSimpleOperator implementAsTopK(int limit, DBSPSimpleOperator lastOperator, boolean isLast) {
+    public DBSPSimpleOperator implementAsTopK(int limit, DBSPSimpleOperator lastOperator,
+                                              @Nullable List<Integer> previousPartitionKeys, boolean isLast) {
         SqlKind kind = this.call.getAggregation().kind;
         IntermediateRel node = CalciteObject.create(window, new SourcePositionRange(this.call.getParserPosition()));
         DBSPIndexedTopKOperator.Numbering numbering = switch (kind) {
@@ -132,7 +142,7 @@ public class RankAggregate extends WindowAggregates {
                     node);
         };
 
-        OutputPort inputIndex = this.indexInput(lastOperator);
+        OutputPort inputIndex = this.indexInput(lastOperator, previousPartitionKeys);
 
         // Generate comparison function for sorting the vector
         DBSPType inputRowType = lastOperator.getOutputZSetElementType();

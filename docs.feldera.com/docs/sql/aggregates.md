@@ -213,8 +213,7 @@ The following window aggregate functions are supported:
   </tr>
   <tr>
     <td><a id="row_number"></a><code>ROW_NUMBER()</code></td>
-    <td>Returns the number of the current row within its partition, counting from 1.
-    `ROW_NUMBER` is currently only supported if the window is used to compute a TopK aggregate.</td>
+    <td>Returns the number of the current row within its partition, counting from 1.</td>
   </tr>
   <tr>
     <td><a id="window-sum"></a><code>SUM(</code><em>numeric</em><code>)</code></td>
@@ -222,10 +221,22 @@ The following window aggregate functions are supported:
   </tr>
 </table>
 
-Currently, the window aggregate function `ROW_NUMBER` is only
-supported if the compiler detects that it are being used to implement
-a TopK pattern.  This pattern is expressed in SQL with the following
-structure:
+::: warning Potential inefficiency
+
+The window aggregate functions `RANK`, `DENSE_RANK`, and `ROW_NUMBER`
+may be very expensive to evaluate incrementally, because it's possible
+for a very small input change to produce a very large output change:
+inserting or deleting a single row can change the numbering of all
+subsequent rows in the same group.  These functions can have a
+reasonable cost in three circumstances:
+
+- each modified group (created by `PARTITION BY`) is relatively small in size
+
+- new insertions and deletions feature rows that appear towards the
+  end of the order produced by the `ORDER BY` clause
+
+- they are used in a TopK pattern with a small limit.
+  The topK is expressed in SQL with the following structure:
 
 ```sql
 SELECT * FROM (
@@ -234,23 +245,6 @@ SELECT * FROM (
    FROM empsalary) emp
 WHERE rn < 3
 ```
-
-::: warning Potential inefficiency
-
-The window aggregate functions `RANK` and `DENSE_RANK` are supported,
-but may be very expensive to evaluate incrementally, because it's
-possible for a very small input change to produce a very large output
-change: inserting or deleting a single row can change the numbering of
-all subsequent rows in the same group.  These functions can have a
-reasonable cost in three circumstances:
-
-- each modified group (created by `PARTITION BY`) is relatively small in size
-
-- new insertions and deletions feature rows that appear towards the
-  end of the order produced by the `ORDER BY` clause
-
-- they are used in a TopK pattern with a small limit, as described
-  above.
 
 :::
 

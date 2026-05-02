@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
@@ -132,7 +133,8 @@ public class FirstLastAggregate extends WindowAggregates {
     }
 
     @Override
-    public DBSPSimpleOperator implement(DBSPSimpleOperator unusedInput, DBSPSimpleOperator lastOperator, boolean isLast) {
+    public DBSPSimpleOperator implement(DBSPSimpleOperator unusedInput, DBSPSimpleOperator lastOperator,
+                                        @Nullable List<Integer> previousPartitionKeys, boolean isLast) {
         // Similar to SimpleAggregates.implement
         DBSPType groupKeyType = this.partitionKeys().getType();
         DBSPType inputType = lastOperator.getOutputZSetElementType();
