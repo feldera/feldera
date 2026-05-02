@@ -321,3 +321,19 @@ pub struct ExtendedPipelineDescrMonitoring {
     pub bootstrap_policy: Option<BootstrapPolicy>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
 }
+
+/// Pipeline descriptor with all fields needed to create a monitor event.
+#[derive(Eq, PartialEq, Debug, Clone, Serialize)]
+pub struct ExtendedPipelineDescrEventInfo {
+    pub id: PipelineId,
+    pub program_status: ProgramStatus,
+    pub storage_status: StorageStatus,
+    pub storage_status_details: Option<serde_json::Value>,
+    pub deployment_error: Option<ErrorResponse>,
+    pub deployment_resources_status: ResourcesStatus,
+    pub deployment_resources_status_details: Option<serde_json::Value>,
+    pub deployment_resources_desired_status: ResourcesDesiredStatus,
+    pub deployment_runtime_status: Option<RuntimeStatus>,
+    pub deployment_runtime_status_details: Option<serde_json::Value>,
+    pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
+}

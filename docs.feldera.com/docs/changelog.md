@@ -14,6 +14,12 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        Pipeline monitoring: Feldera now monitors and persists a pipeline's health.
+        Events are queryable via `/v0/pipelines/[pipeline]/events?selector=[all|status]`
+        and a specific event via `/v0/pipelines/[pipeline]/events/[<event-id>|latest]?selector=[all|status]`.
+        All API clients support these endpoints. The Web Console will soon expose these
+        events via a tab too.
+
         API changes:
         - (New) Details about the storage status is a new pipeline field: `storage_status_details`.
           It does not get get cleared when the pipeline stops, only when the storage is cleared.

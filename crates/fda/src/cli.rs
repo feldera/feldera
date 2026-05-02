@@ -4,7 +4,9 @@ use std::fmt::Display;
 use std::path::PathBuf;
 
 use crate::make_client;
-use feldera_rest_api::types::{ClusterMonitorEventFieldSelector, CompilationProfile};
+use feldera_rest_api::types::{
+    ClusterMonitorEventFieldSelector, CompilationProfile, PipelineMonitorEventFieldSelector,
+};
 
 /// Autocompletion for pipeline names by trying to fetch them from the server.
 fn pipeline_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
@@ -728,6 +730,26 @@ pub enum PipelineAction {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
+    },
+    /// Retrieves all pipeline events and prints them.
+    Events {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+        /// Either `all` or `status` (default).
+        #[arg(default_value = "status")]
+        selector: PipelineMonitorEventFieldSelector,
+    },
+    /// Retrieve specific pipeline event.
+    Event {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+        /// Identifier (UUID) of the event or `latest`.
+        event_id: String,
+        /// Either `all` or `status` (default).
+        #[arg(default_value = "status")]
+        selector: PipelineMonitorEventFieldSelector,
     },
 }
 
