@@ -2,7 +2,27 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use utoipa::ToSchema;
 
-/// Configuration for reading data via HTTP.
+/// Configuration for data output via HTTP.
+///
+/// HTTP output adapters cannot be usefully configured as part of pipeline
+/// configuration.  Instead, instantiate them through the REST API as
+/// `/pipelines/{pipeline_name}/egress`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
+pub struct HttpOutputConfig {
+    /// Apply backpressure on the pipeline when the HTTP client cannot receive
+    /// data fast enough.
+    ///
+    /// When this flag is set to false (the default), the HTTP connector drops data
+    /// chunks if the client is not keeping up with its output.  This prevents
+    /// a slow HTTP client from slowing down the entire pipeline.
+    ///
+    /// When the flag is set to true, the connector waits for the client to receive
+    /// each chunk and blocks the pipeline if the client cannot keep up.
+    pub backpressure: bool,
+}
+
+/// Configuration for data input via HTTP.
 ///
 /// HTTP input adapters cannot be usefully configured as part of pipeline
 /// configuration.  Instead, instantiate them through the REST API as

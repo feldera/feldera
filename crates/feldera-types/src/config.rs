@@ -13,7 +13,7 @@ use crate::transport::clock::ClockConfig;
 use crate::transport::datagen::DatagenInputConfig;
 use crate::transport::delta_table::{DeltaTableReaderConfig, DeltaTableWriterConfig};
 use crate::transport::file::{FileInputConfig, FileOutputConfig};
-use crate::transport::http::HttpInputConfig;
+use crate::transport::http::{HttpInputConfig, HttpOutputConfig};
 use crate::transport::iceberg::IcebergReaderConfig;
 use crate::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
 use crate::transport::nats::NatsInputConfig;
@@ -1362,6 +1362,15 @@ pub struct InputEndpointConfig {
     pub connector_config: ConnectorConfig,
 }
 
+impl InputEndpointConfig {
+    pub fn new(stream: impl Into<Cow<'static, str>>, connector_config: ConnectorConfig) -> Self {
+        Self {
+            stream: stream.into(),
+            connector_config,
+        }
+    }
+}
+
 /// Deserialize the `start_after` property of a connector configuration.
 /// It requires a non-standard deserialization because we want to accept
 /// either a string or an array of strings.
@@ -1498,6 +1507,32 @@ pub struct ConnectorConfig {
 }
 
 impl ConnectorConfig {
+    pub fn new(transport: TransportConfig, format: Option<FormatConfig>) -> Self {
+        Self {
+            transport,
+            preprocessor: None,
+            format,
+            index: None,
+            output_buffer_config: Default::default(),
+            max_batch_size: None,
+            max_worker_batch_size: None,
+            max_queued_records: default_max_queued_records(),
+            paused: false,
+            labels: Vec::new(),
+            start_after: None,
+        }
+    }
+
+    pub fn with_max_batch_size(mut self, max_batch_size: Option<u64>) -> Self {
+        self.max_batch_size = max_batch_size;
+        self
+    }
+
+    pub fn with_max_queued_records(mut self, max_queued_records: u64) -> Self {
+        self.max_queued_records = max_queued_records;
+        self
+    }
+
     /// Compare two configs modulo the `paused` field.
     ///
     /// Used to compare checkpointed and current connector configs.
@@ -1601,6 +1636,15 @@ pub struct OutputEndpointConfig {
     pub connector_config: ConnectorConfig,
 }
 
+impl OutputEndpointConfig {
+    pub fn new(stream: impl Into<Cow<'static, str>>, connector_config: ConnectorConfig) -> Self {
+        Self {
+            stream: stream.into(),
+            connector_config,
+        }
+    }
+}
+
 /// Transport-specific endpoint configuration passed to
 /// `crate::OutputTransport::new_endpoint`
 /// and `crate::InputTransport::new_endpoint`.
@@ -1628,7 +1672,7 @@ pub enum TransportConfig {
     /// Direct HTTP input: cannot be instantiated through API
     HttpInput(HttpInputConfig),
     /// Direct HTTP output: cannot be instantiated through API
-    HttpOutput,
+    HttpOutput(HttpOutputConfig),
     /// Ad hoc input: cannot be instantiated through API
     AdHocInput(AdHocInputConfig),
     ClockInput(ClockConfig),
@@ -1654,7 +1698,7 @@ impl TransportConfig {
             TransportConfig::Datagen(_) => "datagen".to_string(),
             TransportConfig::Nexmark(_) => "nexmark".to_string(),
             TransportConfig::HttpInput(_) => "http_input".to_string(),
-            TransportConfig::HttpOutput => "http_output".to_string(),
+            TransportConfig::HttpOutput(_) => "http_output".to_string(),
             TransportConfig::AdHocInput(_) => "adhoc_input".to_string(),
             TransportConfig::RedisOutput(_) => "redis_output".to_string(),
             TransportConfig::ClockInput(_) => "clock".to_string(),
@@ -1668,7 +1712,7 @@ impl TransportConfig {
             self,
             TransportConfig::AdHocInput(_)
                 | TransportConfig::HttpInput(_)
-                | TransportConfig::HttpOutput
+                | TransportConfig::HttpOutput(_)
                 | TransportConfig::ClockInput(_)
         )
     }

@@ -28,7 +28,7 @@ use feldera_adapterlib::{
 use feldera_types::{
     config::{
         ConnectorConfig, DEFAULT_CLOCK_RESOLUTION_USECS, FormatConfig, FtModel,
-        InputEndpointConfig, OutputBufferConfig, PipelineConfig, TransportConfig,
+        InputEndpointConfig, PipelineConfig, TransportConfig,
     },
     format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat},
     program_schema::Relation,
@@ -48,17 +48,16 @@ use tokio::{
 
 /// The controller uses this configuration to add a clock input connector to each pipeline.
 pub fn now_endpoint_config(config: &PipelineConfig) -> InputEndpointConfig {
-    InputEndpointConfig {
-        stream: Cow::Borrowed("now"),
-        connector_config: ConnectorConfig {
-            transport: TransportConfig::ClockInput(ClockConfig {
+    InputEndpointConfig::new(
+        "now",
+        ConnectorConfig::new(
+            TransportConfig::ClockInput(ClockConfig {
                 clock_resolution_usecs: config
                     .global
                     .clock_resolution_usecs
                     .unwrap_or(DEFAULT_CLOCK_RESOLUTION_USECS),
             }),
-            preprocessor: None,
-            format: Some(FormatConfig {
+            Some(FormatConfig {
                 name: Cow::Borrowed("json"),
                 config: serde_json::to_value(JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
@@ -68,17 +67,13 @@ pub fn now_endpoint_config(config: &PipelineConfig) -> InputEndpointConfig {
                 })
                 .unwrap(),
             }),
-            index: None,
-            output_buffer_config: OutputBufferConfig::default(),
-            max_batch_size: Some(1),
-            max_worker_batch_size: None,
+        )
+        .with_max_batch_size(Some(1))
+        .with_max_queued_records(
             // This must be >1; otherwise the controller will pause the connector after every input.
-            max_queued_records: 2,
-            paused: false,
-            labels: vec![],
-            start_after: None,
-        },
-    }
+            2,
+        ),
+    )
 }
 
 pub struct ClockEndpoint {

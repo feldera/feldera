@@ -27,8 +27,7 @@ use feldera_macros::IsNone;
 use feldera_sqllib::{ByteArray, SqlString, Variant};
 use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::config::{
-    ConnectorConfig, FormatConfig, FtModel, InputEndpointConfig, OutputBufferConfig,
-    TransportConfig, default_max_queued_records,
+    ConnectorConfig, FormatConfig, FtModel, InputEndpointConfig, TransportConfig,
 };
 use feldera_types::deserialize_table_record;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
@@ -1538,11 +1537,10 @@ fn test_offset(
     kafka_options.insert("bootstrap.servers".into(), default_redpanda_server());
     kafka_options.insert("group.id".into(), "test-client".into());
 
-    let config = InputEndpointConfig {
-        stream: Cow::from("test_input"),
-        connector_config: ConnectorConfig {
-            preprocessor: None,
-            transport: TransportConfig::KafkaInput(KafkaInputConfig {
+    let config = InputEndpointConfig::new(
+        "test_input",
+        ConnectorConfig::new(
+            TransportConfig::KafkaInput(KafkaInputConfig {
                 log_level: Some(KafkaLogLevel::Debug),
                 start_from: match start_from {
                     KafkaStartFromConfig::Timestamp(_) => {
@@ -1560,20 +1558,12 @@ fn test_offset(
                 },
                 ..KafkaInputConfig::default(kafka_options, topic)
             }),
-            format: Some(FormatConfig {
+            Some(FormatConfig {
                 name: Cow::from("csv"),
                 config: json!({}),
             }),
-            index: None,
-            output_buffer_config: OutputBufferConfig::default(),
-            max_batch_size: None,
-            max_worker_batch_size: None,
-            max_queued_records: default_max_queued_records(),
-            paused: false,
-            labels: Vec::new(),
-            start_after: None,
-        },
-    };
+        ),
+    );
 
     let (endpoint, consumer, _parser, zset) =
         mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty()).unwrap();
@@ -1978,30 +1968,21 @@ fn test_input_partition(
     kafka_options.insert("bootstrap.servers".into(), default_redpanda_server());
     kafka_options.insert("group.id".into(), "test-client".into());
 
-    let config = InputEndpointConfig {
-        stream: Cow::from("test_input"),
-        connector_config: ConnectorConfig {
-            preprocessor: None,
-            transport: TransportConfig::KafkaInput(KafkaInputConfig {
+    let config = InputEndpointConfig::new(
+        "test_input",
+        ConnectorConfig::new(
+            TransportConfig::KafkaInput(KafkaInputConfig {
                 log_level: Some(KafkaLogLevel::Debug),
                 start_from: start_from.clone(),
                 partitions: Some(partitions.clone()),
                 ..KafkaInputConfig::default(kafka_options, topic)
             }),
-            format: Some(FormatConfig {
+            Some(FormatConfig {
                 name: Cow::from("csv"),
                 config: json!({}),
             }),
-            index: None,
-            output_buffer_config: OutputBufferConfig::default(),
-            max_batch_size: None,
-            max_worker_batch_size: None,
-            max_queued_records: default_max_queued_records(),
-            paused: false,
-            labels: Vec::new(),
-            start_after: None,
-        },
-    };
+        ),
+    );
 
     info!("kafka_input_partition: Building input pipeline");
 

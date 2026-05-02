@@ -26,7 +26,6 @@ use adhoc::AdHocInputEndpoint;
 use anyhow::Result as AnyResult;
 use clock::ClockEndpoint;
 use feldera_types::secret_resolver::resolve_secret_references_via_json;
-use http::HttpInputEndpoint;
 #[cfg(feature = "with-pubsub")]
 use pubsub::PubSubInputEndpoint;
 
@@ -109,7 +108,6 @@ pub fn input_transport_config_to_endpoint(
         TransportConfig::Nexmark(config) => Box::new(NexmarkEndpoint::new(config.clone())),
         #[cfg(not(feature = "with-nexmark"))]
         TransportConfig::Nexmark(_) => return Ok(None),
-        TransportConfig::HttpInput(config) => Box::new(HttpInputEndpoint::new(config)),
         TransportConfig::AdHocInput(config) => Box::new(AdHocInputEndpoint::new(config)),
         TransportConfig::ClockInput(config) => Box::new(ClockEndpoint::new(config)?),
         TransportConfig::FileOutput(_)
@@ -119,7 +117,8 @@ pub fn input_transport_config_to_endpoint(
         | TransportConfig::PostgresInput(_)
         | TransportConfig::PostgresCdcInput(_)
         | TransportConfig::PostgresOutput(_)
-        | TransportConfig::HttpOutput
+        | TransportConfig::HttpInput(_)
+        | TransportConfig::HttpOutput(_)
         | TransportConfig::RedisOutput(_)
         | TransportConfig::IcebergInput(_) => return Ok(None),
     };

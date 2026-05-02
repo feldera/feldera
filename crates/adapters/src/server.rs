@@ -1,10 +1,13 @@
 use crate::adhoc::set_snapshot;
 use crate::controller::{CompletionToken, ConsistentSnapshot, ControllerBuilder};
-use crate::format::{get_input_format, get_output_format};
+use crate::format::csv::CsvOutputFormat;
+use crate::format::get_input_format;
+use crate::format::json::JsonOutputFormat;
 use crate::server::metrics::{
     JsonFormatter, LabelStack, MetricsFormatter, MetricsWriter, PrometheusFormatter,
 };
 use crate::static_compile::catalog::OUTPUT_MAPPING;
+use crate::transport::http::HttpOutputFormat;
 use crate::util::{LongOperationWarning, RateLimitCheckResult, TokenBucketRateLimiter};
 use crate::{Catalog, dyn_event};
 use crate::{
@@ -63,6 +66,7 @@ use feldera_types::constants::STATUS_FILE;
 use feldera_types::coordination::{
     AdHocScan, CoordinationActivate, CoordinationStatus, Labels, RestartArgs, Step, StepRequest,
 };
+use feldera_types::format::json::JsonEncoderConfig;
 use feldera_types::pipeline_diff::PipelineDiff;
 use feldera_types::query_params::{
     ActivateParams, MetricsFormat, MetricsParameters, SamplyProfileGetParams, SamplyProfileParams,
@@ -73,6 +77,7 @@ use feldera_types::runtime_status::{
 };
 use feldera_types::suspend::{SuspendError, SuspendableResponse};
 use feldera_types::time_series::TimeSeries;
+use feldera_types::transport::http::HttpOutputConfig;
 use feldera_types::{
     checkpoint::CheckpointMetadata, config::TransportConfig, transport::http::HttpInputConfig,
 };
@@ -1224,6 +1229,7 @@ where
         .service(sync_checkpoint_status)
         .service(suspend)
         .service(input_endpoint)
+        .service(output_table_endpoint)
         .service(output_endpoint)
         .service(pause_input_endpoint)
         .service(start_input_endpoint)
@@ -2069,28 +2075,13 @@ async fn get_or_create_http_input_endpoint(
         name: endpoint_name.clone(),
     };
 
-    let endpoint = HttpInputEndpoint::new(config.clone());
+    let endpoint = HttpInputEndpoint::new(config.clone(), controller.register_api_connection()?);
     // Create endpoint config.
-    let config = InputEndpointConfig {
-        stream: Cow::from(table_name),
-        connector_config: ConnectorConfig {
-            transport: TransportConfig::HttpInput(config),
-            format: Some(format),
-            preprocessor: None,
-            index: None,
-            output_buffer_config: Default::default(),
-            max_batch_size: None,
-            max_worker_batch_size: None,
-            max_queued_records: HttpInputTransport::default_max_buffered_records(),
-            paused: false,
-            labels: vec![],
-            start_after: None,
-        },
-    };
-
-    if controller.register_api_connection().is_err() {
-        return Err(PipelineError::ApiConnectionLimit);
-    }
+    let config = InputEndpointConfig::new(
+        table_name,
+        ConnectorConfig::new(TransportConfig::HttpInput(config), Some(format))
+            .with_max_queued_records(HttpInputTransport::default_max_buffered_records()),
+    );
 
     controller
         .add_input_endpoint(
@@ -2100,7 +2091,6 @@ async fn get_or_create_http_input_endpoint(
             None,
         )
         .inspect_err(|e| {
-            controller.unregister_api_connection();
             debug!("Failed to create API endpoint: '{e}'");
         })?;
 
@@ -2196,23 +2186,28 @@ pub fn parser_config_from_http_request(
 /// HTTP request using the `InputFormat::config_from_http_request` method.
 pub fn encoder_config_from_http_request(
     endpoint_name: &str,
-    format_name: &str,
+    format: HttpOutputFormat,
     request: &HttpRequest,
 ) -> Result<FormatConfig, ControllerError> {
-    let format = get_output_format(format_name)
-        .ok_or_else(|| ControllerError::unknown_output_format(endpoint_name, format_name))?;
+    let format = match format {
+        HttpOutputFormat::Csv => {
+            Box::new(CsvOutputFormat) as Box<dyn feldera_adapterlib::format::OutputFormat>
+        }
+        HttpOutputFormat::Json => Box::new(JsonOutputFormat),
+    };
 
     let config = format.config_from_http_request(endpoint_name, request)?;
 
     Ok(FormatConfig {
-        name: Cow::from(format_name.to_string()),
+        name: format.name(),
         config: serde_json::to_value(config)
             .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, ""))?,
     })
 }
 
 /// URL-encoded arguments to the `/egress` endpoint.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 struct EgressArgs {
     /// Apply backpressure on the pipeline when the HTTP client cannot receive
     /// data fast enough.
@@ -2223,72 +2218,60 @@ struct EgressArgs {
     ///
     /// When the flag is set to true, the connector waits for the client to receive
     /// each chunk and blocks the pipeline if the client cannot keep up.
-    #[serde(default)]
     backpressure: bool,
 
-    /// Data format used to encode the output of the query, e.g., 'csv',
-    /// 'json' etc.
-    #[serde(default = "HttpOutputTransport::default_format")]
-    format: String,
+    /// Data format used to encode the output of the query.
+    format: HttpOutputFormat,
 }
 
-#[post("/egress/{table_name}")]
-async fn output_endpoint(
+async fn egress_inner(
     state: WebData<ServerState>,
-    path: web::Path<String>,
-    req: HttpRequest,
-    args: Query<EgressArgs>,
+    config: OutputEndpointConfig,
 ) -> Result<HttpResponse, PipelineError> {
-    debug!("/egress request:{req:?}");
-
-    let table_name = path.into_inner();
-
-    // Generate endpoint name depending on the query and output mode.
-    let endpoint_name = format!("{table_name}.api-{}", Uuid::new_v4());
-
-    // debug!("Endpoint name: '{endpoint_name}'");
+    let http_output_config = match &config.connector_config.transport {
+        TransportConfig::HttpOutput(config) => config.clone(),
+        _ => {
+            return Err(PipelineError::InvalidParam {
+                error: "Transport configuration must be HttpOutput".to_string(),
+            });
+        }
+    };
+    let format = match &config.connector_config.format {
+        Some(format) if format.name == "csv" => HttpOutputFormat::Csv,
+        Some(format) if format.name == "json" => {
+            let json_format: JsonEncoderConfig = serde_json::from_value(format.config.clone())
+                .map_err(|e| PipelineError::InvalidParam {
+                    error: format!("Invalid JSON format configuration: {e}"),
+                })?;
+            if !json_format.array {
+                return Err(PipelineError::InvalidParam {
+                    error: String::from(r#"JSON format configuration must set `"array": true`"#),
+                });
+            }
+            HttpOutputFormat::Json
+        }
+        _ => {
+            return Err(PipelineError::InvalidParam {
+                error: "Format configuration must be CSV or JSON".to_string(),
+            });
+        }
+    };
 
     // Create HTTP endpoint.
-    let endpoint = HttpOutputEndpoint::new(&endpoint_name, &args.format, args.backpressure);
-
-    // Create endpoint config.
-    let config = OutputEndpointConfig {
-        stream: Cow::from(table_name),
-        connector_config: ConnectorConfig {
-            transport: HttpOutputTransport::config(),
-            format: Some(encoder_config_from_http_request(
-                &endpoint_name,
-                &args.format,
-                &req,
-            )?),
-            preprocessor: None,
-            index: None,
-            output_buffer_config: Default::default(),
-            max_batch_size: None,
-            max_worker_batch_size: None,
-            max_queued_records: HttpOutputTransport::default_max_buffered_records(),
-            paused: false,
-            labels: vec![],
-            start_after: None,
-        },
-    };
+    let endpoint_name = format!("{}.api-{}", &config.stream, Uuid::new_v4());
+    let endpoint =
+        HttpOutputEndpoint::new(&endpoint_name, format, http_output_config.backpressure)?;
 
     // Connect endpoint.
     let controller = state.controller()?;
-    if controller.register_api_connection().is_err() {
-        return Err(PipelineError::ApiConnectionLimit);
-    }
+    let _guard = controller.register_api_connection()?;
 
-    let endpoint_id = controller
-        .add_output_endpoint(
-            &endpoint_name,
-            &config,
-            Box::new(endpoint.clone()) as Box<dyn OutputEndpoint>,
-            None,
-        )
-        .inspect_err(|_| {
-            controller.unregister_api_connection();
-        })?;
+    let endpoint_id = controller.add_output_endpoint(
+        &endpoint_name,
+        &config,
+        Box::new(endpoint.clone()) as Box<dyn OutputEndpoint>,
+        None,
+    )?;
 
     // We need to pass a callback to `request` to disconnect the endpoint when the
     // request completes.  Use a downgraded reference to `state`, so
@@ -2307,9 +2290,42 @@ async fn output_endpoint(
             && let Ok(controller) = state.controller()
         {
             controller.disconnect_output(&endpoint_id);
-            controller.unregister_api_connection();
         }
     })))
+}
+
+#[post("/egress")]
+async fn output_endpoint(
+    state: WebData<ServerState>,
+    args: web::Json<OutputEndpointConfig>,
+) -> Result<HttpResponse, PipelineError> {
+    egress_inner(state, args.into_inner()).await
+}
+
+#[post("/egress/{table_name}")]
+async fn output_table_endpoint(
+    state: WebData<ServerState>,
+    path: web::Path<String>,
+    req: HttpRequest,
+    args: Query<EgressArgs>,
+) -> Result<HttpResponse, PipelineError> {
+    debug!("/egress request:{req:?}");
+
+    let table_name = path.into_inner();
+
+    let format = encoder_config_from_http_request(&table_name, args.format, &req)?;
+    let config = OutputEndpointConfig::new(
+        table_name,
+        ConnectorConfig::new(
+            TransportConfig::HttpOutput(HttpOutputConfig {
+                backpressure: args.backpressure,
+            }),
+            Some(format),
+        )
+        .with_max_queued_records(HttpOutputTransport::default_max_buffered_records()),
+    );
+
+    egress_inner(state, config).await
 }
 
 /// This service journals the paused state, but it does not wait for the journal

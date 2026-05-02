@@ -38,7 +38,7 @@ use crate::transport::{input_transport_config_to_endpoint, output_transport_conf
 use crate::util::{LongOperationWarning, run_on_thread_pool};
 use crate::{
     CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint, ParseError,
-    PipelineState, TransportInputEndpoint,
+    PipelineError, PipelineState, TransportInputEndpoint,
 };
 use crate::{PipelinePhase, create_integrated_output_endpoint};
 use anyhow::{Context, Error as AnyError, anyhow};
@@ -687,8 +687,8 @@ impl Controller {
     ///
     /// * `endpoint_name` - endpoint name unique within the pipeline.
     ///
-    /// * `endpoint_config` - (partial) endpoint config.  Only `format.name` and
-    ///   `stream` fields need to be initialized.
+    /// * `endpoint_config` - Endpoint config.  The transport configuration is
+    ///   not used to create an endpoint since `endpoint` already exists.
     ///
     /// * `endpoint` - transport endpoint object.
     pub fn add_output_endpoint(
@@ -716,15 +716,11 @@ impl Controller {
     ///
     /// Fails if the number of connections exceeds the current limit,
     /// returning the number of existing API connections.
-    pub fn register_api_connection(&self) -> Result<(), u64> {
-        self.inner.register_api_connection()
+    pub fn register_api_connection(&self) -> Result<ApiConnectionGuard, PipelineError> {
+        self.inner.clone().register_api_connection()
     }
 
     /// Decrement the number of active API connections.
-    pub fn unregister_api_connection(&self) {
-        self.inner.unregister_api_connection();
-    }
-
     /// Return the number of active API connections.
     pub fn num_api_connections(&self) -> u64 {
         self.inner.num_api_connections()
@@ -2055,6 +2051,14 @@ impl Controller {
 
     pub fn layout(&self) -> &Layout {
         &self.inner.layout
+    }
+}
+
+pub struct ApiConnectionGuard(Arc<ControllerInner>);
+
+impl Drop for ApiConnectionGuard {
+    fn drop(&mut self) {
+        self.0.num_api_connections.fetch_sub(1, Ordering::AcqRel);
     }
 }
 
@@ -6162,20 +6166,18 @@ impl ControllerInner {
             .and_then(|ep| ep.reader.as_ref().cloned())
     }
 
-    fn register_api_connection(&self) -> Result<(), u64> {
-        let num_connections = self.num_api_connections.load(Ordering::Acquire);
-
-        if num_connections >= MAX_API_CONNECTIONS {
-            Err(num_connections)
-        } else {
-            self.num_api_connections.fetch_add(1, Ordering::AcqRel);
-            Ok(())
+    fn register_api_connection(self: Arc<Self>) -> Result<ApiConnectionGuard, PipelineError> {
+        fn update(count: u64) -> Option<u64> {
+            (count < MAX_API_CONNECTIONS).then_some(count + 1)
         }
-    }
 
-    fn unregister_api_connection(&self) {
-        let old = self.num_api_connections.fetch_sub(1, Ordering::AcqRel);
-        debug_assert!(old > 0);
+        match self
+            .num_api_connections
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, update)
+        {
+            Ok(_) => Ok(ApiConnectionGuard(self)),
+            Err(_) => Err(PipelineError::ApiConnectionLimit),
+        }
     }
 
     fn num_api_connections(&self) -> u64 {
@@ -6234,24 +6236,6 @@ impl ControllerInner {
         endpoint: Option<Box<dyn OutputEndpoint>>,
         initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Result<EndpointId, ControllerError> {
-        // NOTE: We release the lock after the check below and then re-acquire it in the end of the function
-        // to actually insert the new endpoint in the map. This means that this function is racey (a concurrent
-        // invocation can insert an endpoint with the same name). I think it's ok the way we use it: when
-        // initializing the pipeline, we have an endpoint map with names that are guaranteed to be unique;
-        // hence it's safe to call `add_output_endpoint` concurrently. In the future we may need to maintain
-        // a separate set of reserved endpoint names to avoid the race. The alternative solution that keeps
-        // the lock across the entire body of the function isn't good, because it will force serial connector
-        // initialization.
-        if self
-            .outputs
-            .read()
-            .unwrap()
-            .lookup_by_name(endpoint_name)
-            .is_some()
-        {
-            Err(ControllerError::duplicate_output_endpoint(endpoint_name))?;
-        }
-
         let resolved_connector_config = resolve_secret_references_in_connector_config(
             &self.secrets_dir,
             &endpoint_config.connector_config,
@@ -6329,73 +6313,96 @@ impl ControllerInner {
             initial_statistics,
         );
 
-        let (encoder, command_handler) = (|| {
-            if let Some(mut endpoint) = endpoint {
-                endpoint
-                    .connect(Box::new(
-                        move |fatal: bool, e: AnyError, error_tag: Option<&str>| {
-                            if let Some(controller) = self_weak.upgrade() {
-                                controller.output_transport_error(
-                                    endpoint_id,
-                                    &endpoint_name_str,
-                                    fatal,
-                                    e,
-                                    error_tag,
-                                )
-                            }
-                        },
-                    ))
-                    .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
-
-                let command_handler = endpoint.command_handler();
-
-                // Create probe.
-                let probe = Box::new(OutputProbe::new(
-                    endpoint_id,
-                    endpoint_name,
-                    endpoint,
-                    self.clone(),
-                ));
-
-                // Create encoder.
-                let format_config = resolved_connector_config
-                    .format
-                    .as_ref()
-                    .ok_or_else(|| ControllerError::output_format_not_specified(endpoint_name))?
-                    .clone();
-
-                let format = get_output_format(&format_config.name).ok_or_else(|| {
-                    ControllerError::unknown_output_format(endpoint_name, &format_config.name)
-                })?;
-                let encoder = format.new_encoder(
-                    endpoint_name,
-                    &resolved_connector_config,
-                    &handles.key_schema,
-                    &handles.value_schema,
-                    probe,
-                )?;
-
-                Ok((encoder, command_handler))
-            } else {
-                // `endpoint` is `None` - instantiate an integrated endpoint.
-                let endpoint = create_integrated_output_endpoint(
-                    endpoint_id,
-                    endpoint_name,
-                    &resolved_connector_config,
-                    &handles.key_schema,
-                    &handles.value_schema,
-                    self_weak,
-                    initial_statistics.is_some(),
-                )?;
-
-                let command_handler = endpoint.command_handler();
-
-                Ok((endpoint.into_encoder(), command_handler))
+        /// A guard to remove `endpoint` from `status` unless canceled.
+        ///
+        /// We're in the midst of adding an output endpoint, which can fail, and
+        /// if it fails we need to rollback adding the endpoint.
+        struct RemoveEndpointGuard<'a> {
+            status: &'a ControllerStatus,
+            endpoint_id: Option<EndpointId>,
+        }
+        impl<'a> RemoveEndpointGuard<'a> {
+            fn new(status: &'a ControllerStatus, endpoint_id: EndpointId) -> Self {
+                Self {
+                    status,
+                    endpoint_id: Some(endpoint_id),
+                }
             }
-        })()
-        .inspect_err(|_e: &ControllerError| {
-            self.status.remove_output(&endpoint_id);
-        })?;
+            fn cancel(mut self) {
+                self.endpoint_id = None;
+            }
+        }
+        impl<'a> Drop for RemoveEndpointGuard<'a> {
+            fn drop(&mut self) {
+                if let Some(endpoint_id) = self.endpoint_id {
+                    self.status.remove_output(&endpoint_id);
+                }
+            }
+        }
+        let guard = RemoveEndpointGuard::new(&self.status, endpoint_id);
+
+        let (encoder, command_handler) = if let Some(mut endpoint) = endpoint {
+            endpoint
+                .connect(Box::new(
+                    move |fatal: bool, e: AnyError, error_tag: Option<&str>| {
+                        if let Some(controller) = self_weak.upgrade() {
+                            controller.output_transport_error(
+                                endpoint_id,
+                                &endpoint_name_str,
+                                fatal,
+                                e,
+                                error_tag,
+                            )
+                        }
+                    },
+                ))
+                .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
+
+            let command_handler = endpoint.command_handler();
+
+            // Create probe.
+            let probe = Box::new(OutputProbe::new(
+                endpoint_id,
+                endpoint_name,
+                endpoint,
+                self.clone(),
+            ));
+
+            // Create encoder.
+            let format_config = resolved_connector_config
+                .format
+                .as_ref()
+                .ok_or_else(|| ControllerError::output_format_not_specified(endpoint_name))?
+                .clone();
+
+            let format = get_output_format(&format_config.name).ok_or_else(|| {
+                ControllerError::unknown_output_format(endpoint_name, &format_config.name)
+            })?;
+            let encoder = format.new_encoder(
+                endpoint_name,
+                &resolved_connector_config,
+                &handles.key_schema,
+                &handles.value_schema,
+                probe,
+            )?;
+
+            (encoder, command_handler)
+        } else {
+            // `endpoint` is `None` - instantiate an integrated endpoint.
+            let endpoint = create_integrated_output_endpoint(
+                endpoint_id,
+                endpoint_name,
+                &resolved_connector_config,
+                &handles.key_schema,
+                &handles.value_schema,
+                self_weak,
+                initial_statistics.is_some(),
+            )?;
+
+            let command_handler = endpoint.command_handler();
+
+            (endpoint.into_encoder(), command_handler)
+        };
 
         let parker = Parker::new();
         let endpoint_descr = OutputEndpointDescr::new(
@@ -6409,10 +6416,15 @@ impl ControllerInner {
         let disconnect_flag = endpoint_descr.disconnect_flag.clone();
         let controller = self.clone();
 
-        self.outputs
-            .write()
-            .unwrap()
-            .insert(endpoint_id, handles.clone(), endpoint_descr);
+        let mut outputs = self.outputs.write().unwrap();
+        if outputs.lookup_by_name(endpoint_name).is_some() {
+            Err(ControllerError::duplicate_output_endpoint(endpoint_name))?;
+        }
+        outputs.insert(endpoint_id, handles.clone(), endpoint_descr);
+        drop(outputs);
+
+        // We succeeded, cancel removal of the endpoint.
+        guard.cancel();
 
         let endpoint_name_string = endpoint_name.to_string();
         let output_buffer_config = endpoint_config

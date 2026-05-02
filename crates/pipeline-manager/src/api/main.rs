@@ -367,6 +367,7 @@ It contains the following fields:
         feldera_types::transport::file::FileInputConfig,
         feldera_types::transport::file::FileOutputConfig,
         feldera_types::transport::http::HttpInputConfig,
+        feldera_types::transport::http::HttpOutputConfig,
         feldera_types::transport::url::UrlInputConfig,
         feldera_types::transport::kafka::KafkaHeader,
         feldera_types::transport::kafka::KafkaHeaderValue,
@@ -564,6 +565,7 @@ fn api_scope() -> Scope {
         // Pipeline interaction endpoints
         .service(endpoints::pipeline_interaction::http_input)
         .service(endpoints::pipeline_interaction::http_output)
+        .service(endpoints::pipeline_interaction::http_output2)
         .service(endpoints::pipeline_interaction::checkpoint_pipeline)
         .service(endpoints::pipeline_interaction::sync_checkpoint)
         .service(endpoints::pipeline_interaction::get_checkpoint_status)
