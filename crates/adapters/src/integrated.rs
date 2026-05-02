@@ -1,9 +1,10 @@
 use crate::controller::{ControllerInner, EndpointId};
 use crate::transport::IntegratedInputEndpoint;
 use crate::{ControllerError, Encoder, InputConsumer, OutputEndpoint};
-use feldera_types::config::{ConnectorConfig, TransportConfig};
+use datafusion::execution::runtime_env::RuntimeEnv;
+use feldera_types::config::{ConnectorConfig, PipelineConfig, TransportConfig};
 use feldera_types::program_schema::Relation;
-use std::sync::Weak;
+use std::sync::{Arc, Weak};
 
 #[cfg(feature = "with-deltalake")]
 pub mod delta_table;
@@ -89,17 +90,31 @@ pub fn create_integrated_output_endpoint(
 pub fn create_integrated_input_endpoint(
     endpoint_name: &str,
     config: &ConnectorConfig,
+    pipeline_config: &PipelineConfig,
+    runtime_env: Arc<RuntimeEnv>,
     consumer: Box<dyn InputConsumer>,
 ) -> Result<Box<dyn IntegratedInputEndpoint>, ControllerError> {
     let ep: Box<dyn IntegratedInputEndpoint> = match &config.transport {
         #[cfg(feature = "with-deltalake")]
-        TransportConfig::DeltaTableInput(config) => Box::new(
-            delta_table::DeltaTableInputEndpoint::new(endpoint_name, config, consumer),
-        ),
+        TransportConfig::DeltaTableInput(config) => {
+            Box::new(delta_table::DeltaTableInputEndpoint::new(
+                endpoint_name,
+                config,
+                pipeline_config,
+                runtime_env,
+                consumer,
+            ))
+        }
         #[cfg(feature = "with-iceberg")]
-        TransportConfig::IcebergInput(config) => Box::new(
-            feldera_iceberg::IcebergInputEndpoint::new(endpoint_name, config, consumer),
-        ),
+        TransportConfig::IcebergInput(config) => {
+            Box::new(feldera_iceberg::IcebergInputEndpoint::new(
+                endpoint_name,
+                config,
+                pipeline_config,
+                runtime_env,
+                consumer,
+            ))
+        }
         TransportConfig::PostgresInput(config) => {
             Box::new(PostgresInputEndpoint::new(endpoint_name, config, consumer))
         }

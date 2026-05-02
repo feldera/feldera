@@ -3,10 +3,8 @@ use crate::{Controller, PipelineError};
 use actix_web::{HttpRequest, HttpResponse, http::header, web::Payload};
 use actix_ws::{AggregatedMessage, CloseCode, CloseReason, Closed, Session as WsSession};
 use datafusion::common::metadata::ScalarAndMetadata;
-use datafusion::common::{DFSchema, ParamValues, ScalarValue};
-use datafusion::execution::memory_pool::FairSpillPool;
-use datafusion::execution::runtime_env::RuntimeEnvBuilder;
-use datafusion::execution::{SessionState, SessionStateBuilder};
+use datafusion::common::{DFSchema, ParamValues};
+use datafusion::execution::SessionState;
 use datafusion::logical_expr::{EmptyRelation, Execute, LogicalPlan, Prepare, Statement};
 use datafusion::prelude::*;
 use datafusion::sql::parser::{DFParserBuilder, Statement as DFStatement};
@@ -15,64 +13,17 @@ use executor::{
     hash_query_result, infallible_from_bytestring, stream_arrow_query, stream_json_query,
     stream_parquet_query, stream_text_query,
 };
-use feldera_adapterlib::errors::journal::ControllerError;
-use feldera_types::config::PipelineConfig;
 use feldera_types::query::{AdHocResultFormat, AdhocQueryArgs, MAX_WS_FRAME_SIZE};
 use futures_util::StreamExt;
 use serde_json::json;
 use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
-use std::fs::create_dir_all;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::warn;
 
 mod executor;
 mod format;
 pub(crate) mod table;
-
-pub(crate) fn create_session_context(
-    config: &PipelineConfig,
-) -> Result<SessionContext, ControllerError> {
-    const SORT_IN_PLACE_THRESHOLD_BYTES: usize = 64 * 1024 * 1024;
-    const SORT_SPILL_RESERVATION_BYTES: usize = 64 * 1024 * 1024;
-    let session_config = SessionConfig::new()
-        .with_target_partitions(config.global.workers as usize)
-        .with_sort_in_place_threshold_bytes(SORT_IN_PLACE_THRESHOLD_BYTES)
-        .with_sort_spill_reservation_bytes(SORT_SPILL_RESERVATION_BYTES)
-        .set(
-            "datafusion.execution.planning_concurrency",
-            &ScalarValue::UInt64(Some(config.global.workers as u64)),
-        );
-    // Initialize datafusion memory limits
-    let mut runtime_env_builder = RuntimeEnvBuilder::new();
-    if let Some(memory_mb_max) = config.global.resources.memory_mb_max {
-        let memory_bytes_max = memory_mb_max * 1_000_000;
-        runtime_env_builder = runtime_env_builder
-            .with_memory_pool(Arc::new(FairSpillPool::new(memory_bytes_max as usize)));
-    }
-    // Initialize datafusion spill-to-disk directory
-    if let Some(storage) = &config.storage_config {
-        let path = PathBuf::from(storage.path.clone()).join("adhoc-tmp");
-        if !path.exists() {
-            create_dir_all(&path).map_err(|error| {
-                ControllerError::io_error(
-                    "unable to create ad-hoc scratch space directory during startup",
-                    error,
-                )
-            })?;
-        }
-        runtime_env_builder = runtime_env_builder.with_temp_file_path(path);
-    }
-
-    let runtime_env = runtime_env_builder.build_arc().unwrap();
-    let state = SessionStateBuilder::new()
-        .with_config(session_config)
-        .with_runtime_env(runtime_env)
-        .with_default_features()
-        .build();
-    Ok(SessionContext::from(state))
-}
 
 /// Helper for for closing the websocket session
 ///
@@ -462,6 +413,8 @@ mod tests {
     use super::*;
     use datafusion::arrow;
     use datafusion::arrow::record_batch::RecordBatch;
+    use datafusion::common::ScalarValue;
+    use datafusion::execution::SessionStateBuilder;
 
     fn test_state() -> SessionState {
         SessionStateBuilder::new().with_default_features().build()
