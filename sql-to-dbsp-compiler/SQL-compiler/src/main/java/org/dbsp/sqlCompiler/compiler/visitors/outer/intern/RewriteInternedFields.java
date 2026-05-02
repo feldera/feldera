@@ -307,6 +307,11 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPRowNumberOperator operator) {
+        this.uninternValue(operator);
+    }
+
+    @Override
     public void postorder(DBSPLagOperator operator) {
         // Unfortunately we have to unintern everything in the value,
         // since the comparator will touch all the input value fields

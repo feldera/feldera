@@ -25,6 +25,7 @@ import org.dbsp.util.ICastable;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -44,7 +45,7 @@ public abstract class WindowAggregates implements ICastable {
     public final int windowFieldIndex;
     final DBSPTypeTuple windowResultType;
     final DBSPTypeTuple inputRowType;
-    final List<Integer> partitionKeys;
+    public final List<Integer> partitionKeys;
     final DBSPVariablePath inputRowRefVar;
     final ExpressionCompiler eComp;
 
@@ -77,8 +78,8 @@ public abstract class WindowAggregates implements ICastable {
         return CalciteObject.create(this.window);
     }
 
-    OutputPort indexInput(DBSPSimpleOperator lastOperator) {
-        if (!lastOperator.is(DBSPDeindexOperator.class)) {
+    OutputPort indexInput(DBSPSimpleOperator lastOperator, @Nullable List<Integer> previousPartitionKeys) {
+        if (!lastOperator.is(DBSPDeindexOperator.class) || !this.partitionKeys.equals(previousPartitionKeys)) {
             DBSPType inputRowType = lastOperator.getOutputZSetElementType();
             DBSPVariablePath firstInputVar = inputRowType.ref().var();
             List<DBSPExpression> expressions = Linq.map(this.partitionKeys,
@@ -98,7 +99,9 @@ public abstract class WindowAggregates implements ICastable {
         }
     }
 
-    public abstract DBSPSimpleOperator implement(DBSPSimpleOperator input, DBSPSimpleOperator lastOperator, boolean isLast);
+    public abstract DBSPSimpleOperator implement(
+            DBSPSimpleOperator input, DBSPSimpleOperator lastOperator,
+            @Nullable List<Integer> previousPartitionKeys, boolean isLast);
 
     public void addAggregate(AggregateCall call) {
         this.aggregateCalls.add(call);

@@ -2650,6 +2650,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
         }
 
+        List<Integer> previousPartitionKeys = null;
         for (WindowAggregates ga: toProcess) {
             if (ga.is(RankAggregate.class)) {
                 // Check if we can compile it into a TopK aggregate:
@@ -2673,10 +2674,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
             if (lastOperator != input)
                 this.addOperator(lastOperator);
-            lastOperator = ga.implement(input, lastOperator, index == toProcess.size() - 1);
+            lastOperator = ga.implement(input, lastOperator, previousPartitionKeys, index == toProcess.size() - 1);
             shuffle.add(inputRowType.size() + elementIndex);
             elementIndex++;
             index++;
+            previousPartitionKeys = ga.partitionKeys;
         }
 
         shuffle.addAll(later);
@@ -2684,7 +2686,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (topKAggregate != null) {
             if (lastOperator != input)
                 this.addOperator(lastOperator);
-            lastOperator = topKAggregate.aggregate.implementAsTopK(topKAggregate.limit, lastOperator,  true);
+            lastOperator = topKAggregate.aggregate.implementAsTopK(
+                    topKAggregate.limit, lastOperator,  previousPartitionKeys, true);
         }
 
         // Permute the results to put the TopK results in their right place

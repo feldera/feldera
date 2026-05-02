@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
@@ -64,6 +65,11 @@ public class ValidateRecursiveOperators extends CircuitVisitor {
     @Override
     public void postorder(DBSPRankOperator node) {
         this.reject(node, "RANK", false);
+    }
+
+    @Override
+    public void postorder(DBSPRowNumberOperator node) {
+        this.reject(node, "ROW_NUMBER", false);
     }
 
     @Override

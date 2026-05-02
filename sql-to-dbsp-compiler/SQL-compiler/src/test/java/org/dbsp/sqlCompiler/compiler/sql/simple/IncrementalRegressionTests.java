@@ -69,15 +69,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
-    public void internalIssue126() {
-        this.statementsFailingInCompilation("""
-                create table P(a varchar, ts TIMESTAMP);
-                create view win AS
-                SELECT ROW_NUMBER() OVER (PARTITION BY a, HOUR(ts) ORDER BY ts DESC)
-                FROM P;""", "Ranking function ROW_NUMBER not yet implemented in a WINDOW aggregate");
-    }
-
-    @Test
     public void issue4447() {
         var ccs = this.getCCS("""
             CREATE TABLE TT(id INT, pid INT);

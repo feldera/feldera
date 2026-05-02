@@ -145,7 +145,8 @@ public class RangeAggregates extends WindowAggregates {
     }
 
     @Override
-    public DBSPSimpleOperator implement(DBSPSimpleOperator input, DBSPSimpleOperator lastOperator, boolean isLast) {
+    public DBSPSimpleOperator implement(DBSPSimpleOperator input, DBSPSimpleOperator lastOperator,
+                                        @Nullable List<Integer> previousPartitionKeys, boolean isLast) {
         // The final result is accumulated using join operators, which just keep adding columns to
         // the "lastOperator".
         List<RelFieldCollation> orderKeys = this.group.orderKeys.getFieldCollations();

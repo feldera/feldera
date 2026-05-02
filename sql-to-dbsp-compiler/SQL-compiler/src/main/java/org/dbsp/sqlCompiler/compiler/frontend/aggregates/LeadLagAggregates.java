@@ -25,6 +25,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -59,14 +60,15 @@ public class LeadLagAggregates extends WindowAggregates {
 
     @Override
     public DBSPSimpleOperator implement(
-            DBSPSimpleOperator unusedInput, DBSPSimpleOperator lastOperator, boolean isLast) {
+            DBSPSimpleOperator unusedInput, DBSPSimpleOperator lastOperator,
+            @Nullable List<Integer> previousPartitionKeys, boolean isLast) {
         // All the aggregate calls have the same arguments by construction
         AggregateCall lastCall = Utilities.last(this.aggregateCalls);
         SqlKind kind = lastCall.getAggregation().getKind();
         int offset = kind == SqlKind.LEAD ? -1 : +1;
         offset *= this.getLeadLagAmount(lastCall);
 
-        OutputPort inputIndexed = this.indexInput(lastOperator);
+        OutputPort inputIndexed = this.indexInput(lastOperator, previousPartitionKeys);
 
         // This operator is always incremental, so create the non-incremental version
         // of it by adding a Differentiator and an Integrator around it.

@@ -16,6 +16,9 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
+import java.util.List;
+
 /**
  * Simple aggregates used in an OVER, no LAG, or RANGE.
  */
@@ -27,7 +30,8 @@ public class SimpleAggregates extends WindowAggregates {
     }
 
     @Override
-    public DBSPSimpleOperator implement(DBSPSimpleOperator unusedInput, DBSPSimpleOperator lastOperator, boolean isLast) {
+    public DBSPSimpleOperator implement(DBSPSimpleOperator unusedInput, DBSPSimpleOperator lastOperator,
+                                        @Nullable List<Integer> previousPartitionKeys, boolean isLast) {
         DBSPTypeTuple tuple = this.windowResultType.slice(
                 this.windowFieldIndex, this.windowFieldIndex + this.aggregateCalls.size());
         DBSPType groupKeyType = this.partitionKeys().getType();
@@ -38,7 +42,7 @@ public class SimpleAggregates extends WindowAggregates {
                 this.window, this.aggregateCalls, this.window.constants, tuple, inputType,
                 0, this.group.keys, true);
 
-        OutputPort indexedInput = this.indexInput(lastOperator);
+        OutputPort indexedInput = this.indexInput(lastOperator, previousPartitionKeys);
 
         DBSPSimpleOperator aggregate = this.compiler.implementAggregateList(
                 this.node, groupKeyType, indexedInput, aggregates);

@@ -1353,7 +1353,11 @@ public class AggTests extends PostBaseTests {
                 |        |       | F |
                 +--------+-------+---+
                 (15 rows)
+                */
 
+    @Test
+    public void testRowNumber() {
+        this.qs("""
                 -- Test case for [CALCITE-5388] tempList expression inside EnumerableWindow.getPartitionIterator should be unoptimized
                 with
                     CTE1(rownr1, val1) as ( select ROW_NUMBER() OVER(ORDER BY id ASC), id from (values (1), (2)) as Vals1(id) ),
@@ -1370,6 +1374,6 @@ public class AggTests extends PostBaseTests {
                 |      1 |    1 |      1 |    1 |
                 |      2 |    2 |      2 |    2 |
                 +--------+------+--------+------+
-                (2 rows)
-                */
+                (2 rows)""");
+    }
 }
