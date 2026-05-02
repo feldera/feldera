@@ -2,8 +2,11 @@ use crate::{
     Circuit, DBData, DynZWeight, Position, RootCircuit, Scope, Stream, ZWeight,
     algebra::{OrdIndexedZSet, OrdIndexedZSetFactories},
     circuit::{
-        OwnershipPreference, circuit_builder::register_replay_stream, metadata::OperatorMeta,
-        operator_traits::Operator, splitter_output_chunk_size,
+        OwnershipPreference,
+        circuit_builder::register_replay_stream,
+        metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
+        operator_traits::Operator,
+        splitter_output_chunk_size,
     },
     dynamic::{ClonableTrait, DataTrait, DowncastTrait, DynData, DynPair, Erase},
     operator::{
@@ -20,7 +23,7 @@ use crate::{
 };
 use async_stream::stream;
 use futures::Stream as AsyncStream;
-use std::{borrow::Cow, cmp::Ordering, marker::PhantomData};
+use std::{borrow::Cow, cell::RefCell, cmp::Ordering, marker::PhantomData};
 
 pub struct RowNumberCustomOrdFactories<K, V, OV>
 where
@@ -177,7 +180,7 @@ where
                     let (v, rn) = v_rn.split();
                     let (row_number, num_rows) = unsafe { rn.downcast::<(RankType, RankType)>() };
                     let mut row_number = *row_number;
-                    // let (out_k, out_v) = f.split_mut();
+
                     for _ in 0..*num_rows {
                         k.clone_to(&mut out_k);
                         output_func(row_number, v, &mut out_v);
@@ -208,7 +211,7 @@ where
 ///   under the trace cursor (the sum can be 0).
 /// - `old_row_number` - the row_number of the value in the trace cursor
 /// - `old_num_rows` - the num_rows of the value in the trace cursor
-struct JointCursor<'a, K, V, C1, C2>
+struct JointRowNumCursor<'a, K, V, C1, C2>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -233,7 +236,7 @@ where
     phantom: PhantomData<fn(&K, &V)>,
 }
 
-impl<'a, K, V, C1, C2> JointCursor<'a, K, V, C1, C2>
+impl<'a, K, V, C1, C2> JointRowNumCursor<'a, K, V, C1, C2>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -338,9 +341,15 @@ where
     }
 }
 
-/// Implements both `rank` and `dense_rank` operators.
 struct RowNumber<K: DataTrait + ?Sized, V: DataTrait + ?Sized> {
     batch_factories: RankedSpineFactories<K, V>,
+
+    // Input batch sizes.
+    input_batch_stats: RefCell<BatchSizeStats>,
+
+    // Output batch sizes.
+    output_batch_stats: RefCell<BatchSizeStats>,
+
     _phantom: PhantomData<fn(&K, &V)>,
 }
 
@@ -352,6 +361,8 @@ where
     fn new(batch_factories: &RankedSpineFactories<K, V>) -> Self {
         Self {
             batch_factories: batch_factories.clone(),
+            input_batch_stats: RefCell::new(BatchSizeStats::new()),
+            output_batch_stats: RefCell::new(BatchSizeStats::new()),
             _phantom: PhantomData,
         }
     }
@@ -380,7 +391,12 @@ where
         Cow::from("row_number")
     }
 
-    fn metadata(&self, _meta: &mut OperatorMeta) {}
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            INPUT_BATCHES_STATS => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_STATS => self.output_batch_stats.borrow().metadata(),
+        });
+    }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
@@ -424,6 +440,8 @@ where
                 yield (RankedBatch::dyn_empty(&self.batch_factories), true, None);
                 return;
             };
+
+            self.input_batch_stats.borrow_mut().add_batch(delta.len());
 
             // println!("delta");
             // for (k, v, w) in delta.iter() {
@@ -478,8 +496,8 @@ where
                         1
                     };
 
-                    // Step 3: Recompute all ranks from the current position onward.
-                    let mut joint_cursor = JointCursor::new(&mut delta_cursor, &mut input_trace_cursor);
+                    // Step 2: Recompute all row numbers from the current position onward.
+                    let mut joint_cursor = JointRowNumCursor::new(&mut delta_cursor, &mut input_trace_cursor);
 
                     while let Some((val, new_num_rows, old)) = joint_cursor.get()  {
 
@@ -490,7 +508,13 @@ where
                             None
                         };
 
-                        current_row_number += new_num_rows;
+                        // This only matters if the input stream has negative weights.
+                        // The flat_map operator will drop output records with negative row_numbers.
+                        // Here we make sure we don't introduce negative or duplicate numbers by
+                        // moving the counter backward.
+                        if new_num_rows > 0 {
+                            current_row_number += new_num_rows;
+                        }
 
                         // Retract any old (value, row_number, weight) tuple.
                         let retraction: Option<(&V, (RankType, RankType))> = if let Some((old_rank, old_num_rows)) = old {
@@ -553,6 +577,7 @@ where
                                 has_values = false;
                             }
                             let result = builder.done();
+                            self.output_batch_stats.borrow_mut().add_batch(result.len());
                             yield (result, false, joint_cursor.position());
                             builder = <RankedBatch::<K, V> as Batch>::Builder::with_capacity(&self.batch_factories, chunk_size + 1, chunk_size + 1);
                         }
@@ -578,6 +603,7 @@ where
                             builder.push_key(delta_cursor.key());
                             has_values = false;
                             let result = builder.done();
+                            self.output_batch_stats.borrow_mut().add_batch(result.len());
                             yield (result, false, delta_cursor.position());
                             builder = <RankedBatch::<K, V> as Batch>::Builder::with_capacity(&self.batch_factories, chunk_size + 1, chunk_size + 1);
                         }
@@ -593,6 +619,7 @@ where
             }
 
             let result = builder.done();
+            self.output_batch_stats.borrow_mut().add_batch(result.len());
             yield (result, true, None);
         }
     }
