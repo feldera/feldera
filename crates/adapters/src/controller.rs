@@ -7110,7 +7110,7 @@ impl ControllerInner {
                     // Nothing to do.
                     //
                     // We know that there must not be any active initiators
-                    // because we cleared them when we started the transaction
+                    // because we cleared them when we started committing the transaction
                     // (the previous case) and we reject requests to initiate a
                     // transaction while a transaction is committing.
                     assert!(!transaction_info.initiators.is_active(is_multihost));
