@@ -1609,7 +1609,7 @@ pub struct OutputEndpointConfig {
 /// up the connector in the descriptor registry by name at runtime.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct PluginTransportConfig {
-    /// Connector name, as registered via `register_connector!`.
+    /// Connector name, as registered in `feldera_adapterlib_meta::CONNECTOR_METADATA_REGISTRY`.
     pub name: String,
 
     /// Connector-specific configuration blob.

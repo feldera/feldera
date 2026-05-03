@@ -150,13 +150,8 @@
 
 use rustls::crypto::CryptoProvider;
 
-// Force linkage of `feldera-datagen` so its `inventory::submit!` runs. Nothing
-// in this crate names a `feldera_datagen` item, and rustc drops unused deps —
-// without this line the rlib is silently omitted and `connector_by_name`
-// returns `None` for "datagen". The describer and per-pipeline workspaces have
-// their own generated `force_link.rs` covering the same ground; this line is
-// the equivalent for `dbsp_adapters`'s own test build.
-extern crate feldera_datagen as _;
+// `feldera_datagen` is referenced directly in `transport.rs` dispatch match,
+// so no explicit `extern crate` is needed here.
 
 pub(crate) mod adhoc;
 mod catalog;
@@ -172,8 +167,53 @@ pub(crate) mod util;
 #[cfg(test)]
 pub mod test;
 
-pub use feldera_adapterlib::transport::IntegratedOutputEndpoint;
+pub use feldera_adapterlib::transport::{
+    ConnectorDispatch, IntegratedInputEndpoint, IntegratedOutputEndpoint,
+    CONNECTOR_DISPATCH_REGISTRY,
+};
+pub use feldera_adapterlib::connector::OutputControllerRef;
 pub use integrated::create_integrated_output_endpoint;
+
+// ── Built-in connector builders (re-exported at the crate root) ──────────────
+//
+// pipeline-manager's per-pipeline `connector_dispatch.rs` codegen emits
+// `<crate_name>::build_<slot>_<name>(…)` for every connector referenced by
+// the SQL — built-in or external. For built-ins where `crate_name ==
+// "dbsp_adapters"`, the symbol must therefore be reachable at the crate
+// root. The block below mirrors each connector module's `pub fn
+// build_<slot>_<name>` into the root namespace, gated by the same feature
+// flag that gates the connector module itself.
+pub use integrated::{
+    build_postgres_input, build_postgres_output,
+};
+#[cfg(feature = "with-postgres-cdc")]
+pub use integrated::build_postgres_cdc_input;
+#[cfg(feature = "with-deltalake")]
+pub use integrated::{
+    build_delta_table_input, build_delta_table_output,
+};
+#[cfg(feature = "with-iceberg")]
+pub use integrated::build_iceberg_input;
+
+// Mirror through `transport`/`integrated` re-exports — each parent module
+// re-exports the build fns from its (possibly private) submodules, then
+// lib.rs lifts them to the crate root.
+pub use feldera_datagen::build_datagen;
+pub use transport::{
+    build_adhoc_input, build_clock, build_file_input,
+    build_http_input, build_s3_input, build_url_input,
+    build_file_output,
+};
+#[cfg(feature = "with-kafka")]
+pub use transport::{build_kafka_input, build_kafka_output};
+#[cfg(feature = "with-nats")]
+pub use transport::build_nats_input;
+#[cfg(feature = "with-nexmark")]
+pub use transport::build_nexmark;
+#[cfg(feature = "with-pubsub")]
+pub use transport::build_pub_sub_input;
+#[cfg(feature = "with-redis")]
+pub use transport::build_redis_output;
 
 pub use dbsp::DetailedError;
 pub use feldera_adapterlib::PipelineState;

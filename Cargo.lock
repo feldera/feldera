@@ -3948,6 +3948,7 @@ dependencies = [
  "etl-config",
  "etl-postgres",
  "feldera-adapterlib",
+ "feldera-adapterlib-meta",
  "feldera-datagen",
  "feldera-iceberg",
  "feldera-ir",
@@ -3973,6 +3974,7 @@ dependencies = [
  "itertools 0.14.0",
  "jemalloc_pprof",
  "libc",
+ "linkme",
  "mappings",
  "metrics-process",
  "mime",
@@ -5075,9 +5077,11 @@ dependencies = [
  "dbsp",
  "dyn-clone",
  "erased-serde",
+ "feldera-adapterlib-meta",
  "feldera-sqllib",
  "feldera-types",
  "inventory",
+ "linkme",
  "num-derive",
  "num-traits",
  "rmp-serde",
@@ -5091,6 +5095,17 @@ dependencies = [
  "tokio",
  "tracing",
  "xxhash-rust",
+]
+
+[[package]]
+name = "feldera-adapterlib-meta"
+version = "0.291.0"
+dependencies = [
+ "bitflags 2.10.0",
+ "feldera-types",
+ "linkme",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -5132,10 +5147,12 @@ dependencies = [
  "dbsp",
  "fake",
  "feldera-adapterlib",
+ "feldera-adapterlib-meta",
  "feldera-fxp",
  "feldera-types",
  "governor",
  "inventory",
+ "linkme",
  "num-traits",
  "rand 0.8.6",
  "rand_distr",
@@ -5230,7 +5247,7 @@ name = "feldera-platform-manifest"
 version = "0.291.0"
 dependencies = [
  "dbsp_adapters",
- "feldera-adapterlib",
+ "feldera-adapterlib-meta",
  "feldera-datagen",
  "serde_json",
 ]
@@ -7092,6 +7109,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc7281e4b2b1a1fae03463a7c49dd21464de50251a450f6da9715c40c7b21a70"
 
 [[package]]
+name = "linkme"
+version = "0.3.36"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e83272d46373fb8decca684579ac3e7c8f3d71d4cc3aa693df8759e260ae41cf"
+dependencies = [
+ "linkme-impl",
+]
+
+[[package]]
+name = "linkme-impl"
+version = "0.3.36"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32d59e20403c7d08fe62b4376edfe5c7fb2ef1e6b1465379686d0f21c8df444b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8417,6 +8454,7 @@ dependencies = [
  "dirs 5.0.1",
  "fdlimit",
  "feldera-adapterlib",
+ "feldera-adapterlib-meta",
  "feldera-cloud1-client",
  "feldera-datagen",
  "feldera-ir",

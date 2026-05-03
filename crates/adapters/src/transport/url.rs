@@ -476,14 +476,13 @@ struct Metadata {
 
 // ── Connector registry ────────────────────────────────────────────────────────
 
-use feldera_adapterlib::connector::{ConnectorDescriptor, ConnectorFlags, ConnectorKind, Direction};
 use serde_json::Value as JsonValue;
 
 fn url_input_config_schema() -> JsonValue {
     JsonValue::Object(Default::default())
 }
 
-fn build_url_input(
+pub fn build_url_input(
     config: &JsonValue,
     _endpoint_name: &str,
     _secrets_dir: &std::path::Path,
@@ -492,21 +491,18 @@ fn build_url_input(
     Ok(Box::new(UrlInputEndpoint::new(config)))
 }
 
-static URL_INPUT_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
-    name: "url_input",
-    direction: Direction::Input,
-    kind: ConnectorKind::Regular,
-    fault_tolerance: Some(FtModel::ExactlyOnce),
-    config_schema: url_input_config_schema,
-    default_format: None,
-    flags: ConnectorFlags::EMPTY,
-    build_input: Some(build_url_input),
-    build_output: None,
-    build_integrated_input: None,
-    build_integrated_output: None,
-};
-
-inventory::submit! { &URL_INPUT_DESCRIPTOR }
+#[linkme::distributed_slice(feldera_adapterlib_meta::CONNECTOR_METADATA_REGISTRY)]
+static URL_INPUT_META: feldera_adapterlib_meta::ConnectorDescriptor =
+    feldera_adapterlib_meta::ConnectorDescriptor {
+        name: "url_input",
+        crate_name: env!("CARGO_CRATE_NAME"),
+        direction: feldera_adapterlib_meta::Direction::Input,
+        kind: feldera_adapterlib_meta::ConnectorKind::Regular,
+        fault_tolerance: Some(feldera_types::config::FtModel::ExactlyOnce),
+        config_schema: url_input_config_schema,
+        default_format: None,
+        flags: feldera_adapterlib_meta::ConnectorFlags::EMPTY,
+    };
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -855,11 +851,8 @@ bar,false,-10
 
     #[test]
     fn url_input_descriptor() {
-        let d = feldera_adapterlib::connector::connector_by_name("url_input")
+        let d = feldera_adapterlib::meta::descriptor_by_name("url_input")
             .expect("url_input descriptor not registered");
-        assert!(d.build_input.is_some());
-        assert!(d.build_output.is_none());
-        assert!(d.build_integrated_input.is_none());
-        assert!(d.build_integrated_output.is_none());
+        assert!(d.direction.allows_input());
     }
 }

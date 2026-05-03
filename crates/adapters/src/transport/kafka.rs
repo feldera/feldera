@@ -34,14 +34,8 @@ mod nonft;
 
 // ── Connector registry ────────────────────────────────────────────────────────
 
-use feldera_adapterlib::{
-    connector::{ConnectorDescriptor, ConnectorFlags, ConnectorKind, Direction},
-    transport::{OutputEndpoint, TransportInputEndpoint},
-};
-use feldera_types::{
-    config::FtModel,
-    transport::kafka::{KafkaInputConfig, KafkaOutputConfig},
-};
+use feldera_adapterlib::transport::{OutputEndpoint, TransportInputEndpoint};
+use feldera_types::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
 use serde_json::Value as JsonValue;
 
 fn kafka_input_config_schema() -> JsonValue {
@@ -52,7 +46,7 @@ fn kafka_output_config_schema() -> JsonValue {
     JsonValue::Object(Default::default())
 }
 
-fn build_kafka_input(
+pub fn build_kafka_input(
     config: &JsonValue,
     _endpoint_name: &str,
     _secrets_dir: &std::path::Path,
@@ -61,7 +55,7 @@ fn build_kafka_input(
     Ok(Box::new(KafkaFtInputEndpoint::new(config)?))
 }
 
-fn build_kafka_output(
+pub fn build_kafka_output(
     config: &JsonValue,
     endpoint_name: &str,
     fault_tolerant: bool,
@@ -75,37 +69,31 @@ fn build_kafka_output(
     }
 }
 
-static KAFKA_INPUT_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
-    name: "kafka_input",
-    direction: Direction::Input,
-    kind: ConnectorKind::Regular,
-    fault_tolerance: Some(FtModel::ExactlyOnce),
-    config_schema: kafka_input_config_schema,
-    default_format: None,
-    flags: ConnectorFlags::EMPTY,
-    build_input: Some(build_kafka_input),
-    build_output: None,
-    build_integrated_input: None,
-    build_integrated_output: None,
-};
+#[linkme::distributed_slice(feldera_adapterlib_meta::CONNECTOR_METADATA_REGISTRY)]
+static KAFKA_INPUT_META: feldera_adapterlib_meta::ConnectorDescriptor =
+    feldera_adapterlib_meta::ConnectorDescriptor {
+        name: "kafka_input",
+        crate_name: env!("CARGO_CRATE_NAME"),
+        direction: feldera_adapterlib_meta::Direction::Input,
+        kind: feldera_adapterlib_meta::ConnectorKind::Regular,
+        fault_tolerance: Some(feldera_types::config::FtModel::ExactlyOnce),
+        config_schema: kafka_input_config_schema,
+        default_format: None,
+        flags: feldera_adapterlib_meta::ConnectorFlags::EMPTY,
+    };
 
-inventory::submit! { &KAFKA_INPUT_DESCRIPTOR }
-
-static KAFKA_OUTPUT_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
-    name: "kafka_output",
-    direction: Direction::Output,
-    kind: ConnectorKind::Regular,
-    fault_tolerance: Some(FtModel::ExactlyOnce),
-    config_schema: kafka_output_config_schema,
-    default_format: None,
-    flags: ConnectorFlags::EMPTY,
-    build_input: None,
-    build_output: Some(build_kafka_output),
-    build_integrated_input: None,
-    build_integrated_output: None,
-};
-
-inventory::submit! { &KAFKA_OUTPUT_DESCRIPTOR }
+#[linkme::distributed_slice(feldera_adapterlib_meta::CONNECTOR_METADATA_REGISTRY)]
+static KAFKA_OUTPUT_META: feldera_adapterlib_meta::ConnectorDescriptor =
+    feldera_adapterlib_meta::ConnectorDescriptor {
+        name: "kafka_output",
+        crate_name: env!("CARGO_CRATE_NAME"),
+        direction: feldera_adapterlib_meta::Direction::Output,
+        kind: feldera_adapterlib_meta::ConnectorKind::Regular,
+        fault_tolerance: Some(feldera_types::config::FtModel::ExactlyOnce),
+        config_schema: kafka_output_config_schema,
+        default_format: None,
+        flags: feldera_adapterlib_meta::ConnectorFlags::EMPTY,
+    };
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -113,22 +101,18 @@ inventory::submit! { &KAFKA_OUTPUT_DESCRIPTOR }
 mod registry_test {
     #[test]
     fn kafka_input_descriptor() {
-        let d = feldera_adapterlib::connector::connector_by_name("kafka_input")
+        let d = feldera_adapterlib::meta::descriptor_by_name("kafka_input")
             .expect("kafka_input descriptor not registered");
-        assert!(d.build_input.is_some());
-        assert!(d.build_output.is_none());
-        assert!(d.build_integrated_input.is_none());
-        assert!(d.build_integrated_output.is_none());
+        assert!(d.direction.allows_input());
+        assert!(!d.direction.allows_output());
     }
 
     #[test]
     fn kafka_output_descriptor() {
-        let d = feldera_adapterlib::connector::connector_by_name("kafka_output")
+        let d = feldera_adapterlib::meta::descriptor_by_name("kafka_output")
             .expect("kafka_output descriptor not registered");
-        assert!(d.build_input.is_none());
-        assert!(d.build_output.is_some());
-        assert!(d.build_integrated_input.is_none());
-        assert!(d.build_integrated_output.is_none());
+        assert!(!d.direction.allows_input());
+        assert!(d.direction.allows_output());
     }
 }
 

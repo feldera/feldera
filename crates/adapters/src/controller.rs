@@ -68,7 +68,7 @@ use dbsp::{
 };
 use dbsp::{Runtime, WeakRuntime};
 use enum_map::EnumMap;
-use feldera_adapterlib::connector::{ConnectorFlags, connector_by_name};
+use feldera_adapterlib::meta::{ConnectorFlags, descriptor_by_name as connector_by_name};
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::transport::{CommandHandler, InputReader, Resume, Watermark};

@@ -23,7 +23,6 @@
 use std::path::Path;
 
 use anyhow::Result as AnyResult;
-use feldera_adapterlib::connector_by_name;
 use feldera_types::secret_resolver::resolve_secret_references_via_json;
 use serde_json::Value as JsonValue;
 pub mod adhoc;
@@ -52,11 +51,33 @@ mod redis;
 
 use feldera_types::config::TransportConfig;
 
-
 #[cfg(test)]
 pub use crate::transport::file::set_barrier;
 
 pub use feldera_adapterlib::transport::*;
+
+// Built-in builders re-exported so the crate root can lift them; the
+// per-pipeline `connector_dispatch.rs` codegen calls
+// `dbsp_adapters::build_<slot>_<name>(…)` for both built-in and external
+// connectors. Submodules are private; re-exporting from inside `transport`
+// is what lets the lift in `lib.rs` work without making each submodule
+// public.
+pub use adhoc::build_adhoc_input;
+pub use clock::build_clock;
+pub use file::{build_file_input, build_file_output};
+pub use http::build_http_input;
+pub use s3::build_s3_input;
+pub use url::build_url_input;
+#[cfg(feature = "with-kafka")]
+pub use kafka::{build_kafka_input, build_kafka_output};
+#[cfg(feature = "with-nats")]
+pub use nats::build_nats_input;
+#[cfg(feature = "with-nexmark")]
+pub use nexmark::build_nexmark;
+#[cfg(feature = "with-pubsub")]
+pub use pubsub::build_pub_sub_input;
+#[cfg(feature = "with-redis")]
+pub use redis::output::build_redis_output;
 
 /// Extracts the inner config value from a `TransportConfig` as a `JsonValue`.
 ///
@@ -79,20 +100,18 @@ pub fn input_transport_config_to_endpoint(
     secrets_dir: &Path,
 ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
     let config = resolve_secret_references_via_json(secrets_dir, config)?;
-
-    // All input connectors are dispatched through the `ConnectorDescriptor` registry.
-    let name = config.name();
-    if let Some(descriptor) = connector_by_name(&name) {
-        return match descriptor.build_input {
-            Some(build_fn) => {
-                let config_value = transport_config_inner_as_json(&config)?;
-                Ok(Some(build_fn(&config_value, endpoint_name, secrets_dir)?))
-            }
-            None => Ok(None),
-        };
-    }
-
-    Ok(None)
+    let config_value = transport_config_inner_as_json(&config)?;
+    // The only dispatch path: pipeline-manager's per-pipeline codegen
+    // registers a `ConnectorDispatch` entry covering every connector the
+    // SQL references (built-in and external alike). In-crate test code
+    // that runs without codegen calls the per-builder helpers in
+    // `crate::test` directly instead of going through this fn.
+    feldera_adapterlib::transport::dispatch_input(
+        config.name().as_str(),
+        &config_value,
+        endpoint_name,
+        secrets_dir,
+    )
 }
 
 /// Creates an output transport endpoint instance using an output transport
@@ -111,23 +130,12 @@ pub fn output_transport_config_to_endpoint(
     secrets_dir: &Path,
 ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
     let config = resolve_secret_references_via_json(secrets_dir, config)?;
-
-    // All output connectors are dispatched through the `ConnectorDescriptor` registry.
-    let name = config.name();
-    if let Some(descriptor) = connector_by_name(&name) {
-        return match descriptor.build_output {
-            Some(build_fn) => {
-                let config_value = transport_config_inner_as_json(&config)?;
-                Ok(Some(build_fn(
-                    &config_value,
-                    endpoint_name,
-                    fault_tolerant,
-                    secrets_dir,
-                )?))
-            }
-            None => Ok(None),
-        };
-    }
-
-    Ok(None)
+    let config_value = transport_config_inner_as_json(&config)?;
+    feldera_adapterlib::transport::dispatch_output(
+        config.name().as_str(),
+        &config_value,
+        endpoint_name,
+        fault_tolerant,
+        secrets_dir,
+    )
 }

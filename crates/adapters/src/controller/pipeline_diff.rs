@@ -1,4 +1,4 @@
-use feldera_adapterlib::connector::{ConnectorKind, connector_by_name};
+use feldera_adapterlib::meta::{ConnectorKind, descriptor_by_name as connector_by_name};
 use feldera_adapterlib::errors::journal::ControllerError;
 use feldera_types::{
     config::PipelineConfig,

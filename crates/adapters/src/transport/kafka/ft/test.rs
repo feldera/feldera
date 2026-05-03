@@ -6,7 +6,7 @@ use crate::test::{
     wait_for_output_ordered, wait_for_output_unordered,
 };
 use crate::transport::kafka::ft::input::{BACKPRESSURE, Metadata};
-use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
+use crate::test::{build_test_input_endpoint, build_test_output_endpoint};
 use crate::{
     Controller, InputConsumer, ParseError,
     test::{
@@ -148,7 +148,7 @@ fn create_reader(
     }))
     .unwrap();
 
-    let endpoint = input_transport_config_to_endpoint(&config, "", default_secrets_directory())
+    let endpoint = build_test_input_endpoint(&config, "", default_secrets_directory())
         .unwrap()
         .unwrap();
     assert!(endpoint.fault_tolerance() == Some(FtModel::ExactlyOnce));
@@ -807,7 +807,7 @@ fn kafka_output_test(
     .unwrap();
 
     let mut endpoint =
-        output_transport_config_to_endpoint(&config, "", true, default_secrets_directory())
+        build_test_output_endpoint(&config, "", true, default_secrets_directory())
             .unwrap()
             .unwrap();
     assert!(endpoint.is_fault_tolerant());
@@ -835,7 +835,7 @@ fn _test() {
     .unwrap();
 
     let mut endpoint =
-        output_transport_config_to_endpoint(&config, "", true, default_secrets_directory())
+        build_test_output_endpoint(&config, "", true, default_secrets_directory())
             .unwrap()
             .unwrap();
     assert!(endpoint.is_fault_tolerant());

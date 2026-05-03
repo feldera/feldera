@@ -18,14 +18,15 @@ path = "src/lib.rs"
 # baked in by `build.rs`.  Pipeline-manager pulls this in without inheriting
 # the `dbsp_adapters` dep tree at runtime.
 
-# Build-deps drive the build.rs binary that walks `inventory` once during
-# platform compilation and emits `OUT_DIR/platform_manifest.json`.
-# `dbsp_adapters` and `feldera-datagen` are present here so their
-# `inventory::submit!` registrations end up in the build.rs binary's
-# linker-collected sections; `feldera-adapterlib` provides the descriptor
-# and serialization types; `serde_json` serializes the result.
+# Build-deps drive the build.rs binary that walks the linkme metadata
+# registry once during platform compilation and emits
+# `OUT_DIR/platform_manifest.json`.  `dbsp_adapters` and `feldera-datagen`
+# are present here so their `#[linkme::distributed_slice(CONNECTOR_METADATA_REGISTRY)]`
+# statics end up in the build.rs binary's linker-collected sections;
+# `feldera-adapterlib-meta` provides the descriptor and serialization
+# types; `serde_json` serializes the result.
 [build-dependencies]
-feldera-adapterlib = { workspace = true }
+feldera-adapterlib-meta = { workspace = true }
 feldera-datagen = { workspace = true }
 dbsp_adapters = { path = "../adapters" }
 serde_json = { workspace = true }

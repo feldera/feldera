@@ -22,6 +22,7 @@ use utoipa::ToSchema;
 
 use crate::api::error::ApiError;
 use crate::api::main::ServerState;
+#[allow(unused_imports)] // used in utoipa schema doc attributes
 use feldera_types::error::ErrorResponse;
 use crate::compiler::connectors::{
     load_platform_manifest, merge_manifests, parse_manifest_json, spawn_describer_build,

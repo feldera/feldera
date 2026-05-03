@@ -20,7 +20,6 @@ use xxhash_rust::xxh3::Xxh3Default;
 use crate::format::InputBuffer;
 use crate::{InputConsumer, InputEndpoint, InputReader, Parser, TransportInputEndpoint};
 use anyhow::{Result as AnyResult, anyhow};
-use feldera_adapterlib::connector::{ConnectorDescriptor, ConnectorFlags, ConnectorKind, Direction};
 use serde_json::Value as JsonValue;
 use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
 use dbsp_nexmark::generator::RandomGenerator;
@@ -486,7 +485,7 @@ fn nexmark_input_config_schema() -> JsonValue {
     JsonValue::Object(Default::default())
 }
 
-fn build_nexmark_input(
+pub fn build_nexmark(
     config: &JsonValue,
     _endpoint_name: &str,
     _secrets_dir: &std::path::Path,
@@ -495,31 +494,25 @@ fn build_nexmark_input(
     Ok(Box::new(NexmarkEndpoint::new(config)))
 }
 
-static NEXMARK_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
-    name: "nexmark",
-    direction: Direction::Input,
-    kind: ConnectorKind::Regular,
-    fault_tolerance: Some(FtModel::ExactlyOnce),
-    config_schema: nexmark_input_config_schema,
-    default_format: None,
-    flags: ConnectorFlags::EMPTY,
-    build_input: Some(build_nexmark_input),
-    build_output: None,
-    build_integrated_input: None,
-    build_integrated_output: None,
-};
-
-inventory::submit! { &NEXMARK_DESCRIPTOR }
+#[linkme::distributed_slice(feldera_adapterlib_meta::CONNECTOR_METADATA_REGISTRY)]
+static NEXMARK_META: feldera_adapterlib_meta::ConnectorDescriptor =
+    feldera_adapterlib_meta::ConnectorDescriptor {
+        name: "nexmark",
+        crate_name: env!("CARGO_CRATE_NAME"),
+        direction: feldera_adapterlib_meta::Direction::Input,
+        kind: feldera_adapterlib_meta::ConnectorKind::Regular,
+        fault_tolerance: Some(feldera_types::config::FtModel::ExactlyOnce),
+        config_schema: nexmark_input_config_schema,
+        default_format: None,
+        flags: feldera_adapterlib_meta::ConnectorFlags::EMPTY,
+    };
 
 #[cfg(test)]
 mod registry_test {
     #[test]
     fn nexmark_descriptor() {
-        let d = feldera_adapterlib::connector::connector_by_name("nexmark")
+        let d = feldera_adapterlib::meta::descriptor_by_name("nexmark")
             .expect("nexmark descriptor not registered");
-        assert!(d.build_input.is_some());
-        assert!(d.build_output.is_none());
-        assert!(d.build_integrated_input.is_none());
-        assert!(d.build_integrated_output.is_none());
+        assert!(d.direction.allows_input());
     }
 }

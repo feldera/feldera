@@ -15,7 +15,10 @@ rust-version = { workspace = true }
 
 
 [features]
+metadata = []
+impl = []
 default = [
+    "impl",
     "with-kafka",
     "with-deltalake",
     "with-iceberg",
@@ -58,6 +61,8 @@ with-postgres-cdc = ["etl", "etl-config", "etl-postgres"]
 [dependencies]
 feldera-types = { workspace = true }
 feldera-adapterlib = { workspace = true }
+feldera-adapterlib-meta = { workspace = true }
+linkme = { workspace = true }
 feldera-datagen = { workspace = true }
 feldera-observability = { workspace = true }
 feldera-samply = { workspace = true }

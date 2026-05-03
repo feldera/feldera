@@ -1,6 +1,7 @@
 use crate::compiler::connectors::{
-    describer_cache_key, describer_workspace_dir, extract_force_link_names, generate_force_link_rs,
-    load_connectors_toml, ConnectorsTomlContent,
+    describer_cache_key, describer_workspace_dir, filter_connectors_toml_for_sql,
+    generate_connector_dispatch_rs, load_connectors_toml, load_merged_manifest,
+    ConnectorsTomlContent,
 };
 use crate::compiler::util::{
     checksum_buffer, checksum_file, cleanup_specific_directories, cleanup_specific_files,
@@ -15,7 +16,9 @@ use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
-use crate::db::types::program::{CompilationProfile, RuntimeSelector, RustCompilationInfo};
+use crate::db::types::program::{
+    CompilationProfile, ProgramInfo, RuntimeSelector, RustCompilationInfo,
+};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{validate_program_config, validate_program_info};
 use crate::db::types::version::Version;
@@ -1009,6 +1012,7 @@ pub async fn perform_rust_compilation(
         udf_rust,
         udf_toml,
         &connectors_content,
+        &program_info,
     )
     .await?;
 
@@ -1286,6 +1290,7 @@ enum LockMode {
 
 /// Returns the [`LockMode`] appropriate for this build so the caller knows
 /// whether to pass `--locked`, `--offline`, or neither to `cargo build`.
+#[allow(clippy::too_many_arguments)]
 async fn prepare_workspace(
     config: &CompilerConfig,
     requested_runtime_version: &RuntimeSelector,
@@ -1295,6 +1300,7 @@ async fn prepare_workspace(
     udf_rust: &str,
     udf_toml: &str,
     connectors_content: &ConnectorsTomlContent,
+    program_info: &ProgramInfo,
 ) -> Result<LockMode, RustCompilationError> {
     // Workspace directory
     let workspace_dir = config.working_dir().join("rust-compilation");
@@ -1379,15 +1385,39 @@ async fn prepare_workspace(
         .join("udf.rs");
     recreate_file_with_content(&udf_rs_path, udf_rust).await?;
 
+    // Resolve the set of connector names the SQL references and the merged
+    // manifest once; both feed the Cargo.toml dep splice and the dispatch
+    // codegen below.
+    let referenced_names: std::collections::BTreeSet<String> = program_info
+        .input_connectors
+        .values()
+        .map(|c| c.connector_config.transport.name())
+        .chain(
+            program_info
+                .output_connectors
+                .values()
+                .map(|c| c.connector_config.transport.name()),
+        )
+        .collect();
+    let manifest = load_merged_manifest(config, tenant_id, connectors_content);
+
+    // Per-pipeline `[dependencies]` proportional cost: include only plugin
+    // crates whose connectors the SQL actually references. Built-in
+    // connectors (`crate_name == "dbsp_adapters" | "feldera_datagen"`) are
+    // reached transitively through `dbsp_adapters` (workspace-inherited)
+    // and never appear in `connectors.toml`, so they fall out naturally.
+    let referenced_crate_names: std::collections::BTreeSet<String> = referenced_names
+        .iter()
+        .filter_map(|n| manifest.get(n))
+        .map(|e| e.builder_crate.clone())
+        .collect();
+
     // Pipeline globals crate: Cargo.toml
     // ----------------------------------
-    // Inject UDF and connector force-link dependencies. `feldera-datagen` is
-    // a built-in force-link target (see `generate_force_link_rs`); the SQL
-    // compiler does not list it in the generated workspace's
-    // `[workspace.dependencies]`, so we add it here as a direct path dep.
+    // Inject UDF deps and the SQL-referenced subset of `connectors.toml`.
     let udf_cargo_toml_path = crates_dir.join(&pipeline_globals_crate).join("Cargo.toml");
-    let connectors_deps = connectors_content.as_str();
-    let dbsp_path = &config.dbsp_override_path;
+    let connectors_deps =
+        filter_connectors_toml_for_sql(connectors_content, &referenced_crate_names);
     let udf_cargo_toml_content = read_file_content(&udf_cargo_toml_path).await?.replace(
         "[dependencies]",
         &formatdoc! {r#"
@@ -1395,32 +1425,42 @@ async fn prepare_workspace(
             # START: UDF dependencies
             {udf_toml}
             # END: UDF dependencies
-            # START: Connector force-link dependencies
-            feldera-datagen = {{ path = "{dbsp_path}/crates/datagen" }}
+            # START: connector_dispatch.rs dependencies
+            # Explicit pins (not `workspace = true`): the SQL-compiler-emitted
+            # workspace Cargo.toml declares only a fixed set of
+            # `[workspace.dependencies]`, and these crates are not in it.
+            # Everything else the dispatch needs (TransportInputEndpoint,
+            # OutputControllerRef, the registry slot, etc.) is reached through
+            # `dbsp_adapters` re-exports, which is already workspace-inherited.
+            linkme = "0.3"
+            anyhow = "1"
+            # END: connector_dispatch.rs dependencies
+            # START: SQL-referenced external connector dependencies (subset of connectors.toml)
             {connectors_deps}
-            # END: Connector force-link dependencies
+            # END: SQL-referenced external connector dependencies
         "#},
     );
     recreate_file_with_content(&udf_cargo_toml_path, &udf_cargo_toml_content).await?;
 
-    // Pipeline globals crate: src/force_link.rs
-    // ------------------------------------------
-    // Forces the linker to include rlibs for any user-listed connectors so
-    // their inventory::submit! calls fire at pipeline startup.
-    let user_names = extract_force_link_names(connectors_content);
-    // Pipeline globals crate links `feldera-datagen` directly so the
-    // pipeline runtime can dispatch to datagen; force-link the built-in.
-    let force_link_content = generate_force_link_rs(&user_names, true);
-    let force_link_path = crates_dir
+    // Pipeline globals crate: src/connector_dispatch.rs
+    // -------------------------------------------------
+    // Emit one `match` arm per SQL-referenced connector — built-in and
+    // external alike — calling `<crate_name>::build_<slot>_<name>(…)`. The
+    // `pub static DISPATCH` is registered into
+    // `feldera_adapterlib::transport::CONNECTOR_DISPATCH_REGISTRY`, the
+    // sole runtime hook the bundled controller consults.
+    let connector_dispatch_content =
+        generate_connector_dispatch_rs(&referenced_names, &manifest);
+    let connector_dispatch_path = crates_dir
         .join(&pipeline_globals_crate)
         .join("src")
-        .join("force_link.rs");
-    recreate_file_with_content(&force_link_path, &force_link_content).await?;
+        .join("connector_dispatch.rs");
+    recreate_file_with_content(&connector_dispatch_path, &connector_dispatch_content).await?;
 
     // Pipeline globals crate: src/lib.rs
     // ------------------------------------
-    // Inject `mod force_link;` so the generated force_link module is
-    // compiled.  The SQL compiler emits inner attributes (`#![allow(...)]`)
+    // Inject `mod connector_dispatch;` so the generated dispatch is
+    // compiled. The SQL compiler emits inner attributes (`#![allow(...)]`)
     // and inner doc comments at the top of the file; inner attributes must
     // remain before any items, so we splice the `mod` declaration in
     // *after* the leading prelude block rather than at the very top.
@@ -1429,8 +1469,8 @@ async fn prepare_workspace(
         .join("src")
         .join("lib.rs");
     let existing_lib_rs = read_file_content(&lib_rs_path).await?;
-    if !existing_lib_rs.contains("mod force_link;") {
-        let patched = inject_force_link_mod(&existing_lib_rs);
+    if !existing_lib_rs.contains("mod connector_dispatch;") {
+        let patched = inject_globals_mod(&existing_lib_rs, "mod connector_dispatch;");
         recreate_file_with_content(&lib_rs_path, &patched).await?;
     }
 
@@ -1480,17 +1520,17 @@ async fn prepare_workspace(
             }
         }
 
-        // Crate src/: main.rs, lib.rs, udf.rs, stubs.rs (+ force_link.rs for globals)
+        // Crate src/: main.rs, lib.rs, udf.rs, stubs.rs (+ connector_dispatch.rs for globals)
         let src_content = if crate_name.ends_with("_main") {
             vec![("main.rs", true)]
         } else if crate_name.ends_with("_globals") {
-            // force_link.rs is injected by prepare_workspace (PR 10) before the
-            // copy loop runs; it must appear in the expected list.
+            // connector_dispatch.rs is injected by prepare_workspace before
+            // the copy loop runs; it must appear in the expected list.
             vec![
                 ("lib.rs", true),
                 ("udf.rs", true),
                 ("stubs.rs", true),
-                ("force_link.rs", true),
+                ("connector_dispatch.rs", true),
             ]
         } else {
             vec![("lib.rs", true)]
@@ -1599,15 +1639,15 @@ async fn prepare_workspace(
     Ok(lock_mode)
 }
 
-/// Splice `mod force_link;` into the globals crate's `lib.rs` after the
-/// leading prelude (line comments, inner doc comments, inner attributes,
-/// blank lines), so the inner attributes remain at the top of the file.
+/// Splice a top-level item (typically `mod foo;`) into the globals crate's
+/// `lib.rs` after the leading prelude (line comments, inner doc comments,
+/// inner attributes, blank lines), so the inner attributes remain at the top
+/// of the file.
 ///
 /// Falls back to a leading insertion only when the file is empty.
-fn inject_force_link_mod(existing: &str) -> String {
+fn inject_globals_mod(existing: &str, item: &str) -> String {
     let mut insert_at = 0usize;
-    for (idx, line) in existing.split_inclusive('\n').enumerate() {
-        let _ = idx;
+    for line in existing.split_inclusive('\n') {
         let trimmed = line.trim_start();
         let is_prelude = trimmed.is_empty()
             || trimmed.starts_with("//")
@@ -1618,9 +1658,10 @@ fn inject_force_link_mod(existing: &str) -> String {
             break;
         }
     }
-    let mut out = String::with_capacity(existing.len() + 17);
+    let mut out = String::with_capacity(existing.len() + item.len() + 1);
     out.push_str(&existing[..insert_at]);
-    out.push_str("mod force_link;\n");
+    out.push_str(item);
+    out.push('\n');
     out.push_str(&existing[insert_at..]);
     out
 }
@@ -2502,6 +2543,7 @@ mod test {
             &pipeline_descr.udf_rust,
             &pipeline_descr.udf_toml,
             &ConnectorsTomlContent(String::new()),
+            &program_info,
         )
         .await
         .unwrap();
@@ -2543,7 +2585,7 @@ mod test {
         );
         assert_eq!(
             list_content_as_sorted_names(&globals_crate_path.join("src")).await,
-            vec!["force_link.rs", "lib.rs", "stubs.rs", "udf.rs"]
+            vec!["connector_dispatch.rs", "lib.rs", "stubs.rs", "udf.rs"]
         );
         assert_eq!(
             read_file_content(&globals_crate_path.join("src").join("stubs.rs"))
@@ -2557,20 +2599,13 @@ mod test {
                 .unwrap(),
             pipeline_descr.udf_rust
         );
-        // lib.rs must contain the force_link module declaration spliced
+        // lib.rs must contain the connector_dispatch module declaration spliced
         // in after the leading inner-attribute prelude.
         assert!(
             read_file_content(&globals_crate_path.join("src").join("lib.rs"))
                 .await
                 .unwrap()
-                .contains("mod force_link;")
-        );
-        // force_link.rs must contain the built-in datagen entry.
-        assert!(
-            read_file_content(&globals_crate_path.join("src").join("force_link.rs"))
-                .await
-                .unwrap()
-                .contains("extern crate feldera_datagen as _;")
+                .contains("mod connector_dispatch;")
         );
         assert!(read_file_content(&globals_crate_path.join("Cargo.toml"))
             .await

@@ -1,0 +1,21 @@
+[package]
+name = "feldera-adapterlib-meta"
+description = "Connector metadata registry for Feldera — lightweight descriptor types only."
+categories = ["parsing"]
+authors = { workspace = true }
+version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+keywords = { workspace = true }
+readme = { workspace = true }
+rust-version = { workspace = true }
+edition = "2024"
+publish = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+linkme = { workspace = true }
+feldera-types = { workspace = true }
+bitflags = "2"

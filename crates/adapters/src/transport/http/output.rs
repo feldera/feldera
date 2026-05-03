@@ -301,8 +301,6 @@ however the HTTP transport does not support this representation."
 
 // ── Connector registry ────────────────────────────────────────────────────────
 
-use feldera_adapterlib::connector::{ConnectorDescriptor, ConnectorFlags, ConnectorKind, Direction};
-
 fn http_output_config_schema() -> serde_json::Value {
     serde_json::Value::Object(Default::default())
 }
@@ -310,18 +308,18 @@ fn http_output_config_schema() -> serde_json::Value {
 // `HttpOutputEndpoint` is created directly by the HTTP server (`server.rs`),
 // not through the standard factory, so `build_output` is `None`.  The
 // descriptor exists so controller code can look up its `kind` (Transient).
-static HTTP_OUTPUT_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
-    name: "http_output",
-    direction: Direction::Output,
-    kind: ConnectorKind::Transient,
-    fault_tolerance: None,
-    config_schema: http_output_config_schema,
-    default_format: None,
-    flags: ConnectorFlags::EMPTY,
-    build_input: None,
-    build_output: None,
-    build_integrated_input: None,
-    build_integrated_output: None,
-};
-
-inventory::submit! { &HTTP_OUTPUT_DESCRIPTOR }
+#[linkme::distributed_slice(feldera_adapterlib_meta::CONNECTOR_METADATA_REGISTRY)]
+static HTTP_OUTPUT_META: feldera_adapterlib_meta::ConnectorDescriptor =
+    feldera_adapterlib_meta::ConnectorDescriptor {
+        name: "http_output",
+        crate_name: env!("CARGO_CRATE_NAME"),
+        direction: feldera_adapterlib_meta::Direction::Output,
+        kind: feldera_adapterlib_meta::ConnectorKind::Transient,
+        fault_tolerance: None,
+        config_schema: http_output_config_schema,
+        default_format: None,
+        // HTTP_DIRECT: the HTTP server constructs HttpOutputEndpoint at
+        // request time; there is no `build_output_http_output` fn, so the
+        // codegen filter excludes this entry from per-pipeline dispatch.
+        flags: feldera_adapterlib_meta::ConnectorFlags::HTTP_DIRECT,
+    };

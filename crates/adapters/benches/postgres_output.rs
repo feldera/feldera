@@ -5,7 +5,7 @@ use bench_common::{
 };
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use dbsp_adapters::SerBatch;
-use feldera_adapterlib::connector::connector_by_name;
+use dbsp_adapters::integrated::build_postgres_output;
 use feldera_adapterlib::transport::IntegratedOutputEndpoint;
 use feldera_types::transport::postgres::{
     PostgresTlsConfig, PostgresWriteMode, PostgresWriterConfig,
@@ -73,14 +73,9 @@ fn make_config(threads: usize) -> PostgresWriterConfig {
 }
 
 fn create_endpoint(config: &PostgresWriterConfig) -> Box<dyn IntegratedOutputEndpoint> {
-    let descriptor = connector_by_name("postgres_output")
-        .expect("postgres_output descriptor not registered");
-    let build = descriptor
-        .build_integrated_output
-        .expect("postgres_output is not an integrated output connector");
     let config_value =
         serde_json::to_value(config).expect("failed to serialize PostgresWriterConfig");
-    build(
+    build_postgres_output(
         0,
         "bench_endpoint",
         &config_value,

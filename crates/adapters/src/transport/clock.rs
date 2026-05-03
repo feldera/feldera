@@ -255,14 +255,13 @@ impl InputReader for ClockReader {
 
 // ── Connector registry ────────────────────────────────────────────────────────
 
-use feldera_adapterlib::connector::{ConnectorDescriptor, ConnectorFlags, ConnectorKind, Direction};
 use serde_json::Value as JsonValue;
 
 fn clock_config_schema() -> JsonValue {
     JsonValue::Object(Default::default())
 }
 
-fn build_clock_input(
+pub fn build_clock(
     config: &JsonValue,
     _endpoint_name: &str,
     _secrets_dir: &std::path::Path,
@@ -271,21 +270,18 @@ fn build_clock_input(
     Ok(Box::new(ClockEndpoint::new(config)?))
 }
 
-static CLOCK_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
-    name: "clock",
-    direction: Direction::Input,
-    kind: ConnectorKind::Transient,
-    fault_tolerance: Some(FtModel::ExactlyOnce),
-    config_schema: clock_config_schema,
-    default_format: None,
-    flags: ConnectorFlags::AUTO_RECREATED_ON_RESTART,
-    build_input: Some(build_clock_input),
-    build_output: None,
-    build_integrated_input: None,
-    build_integrated_output: None,
-};
-
-inventory::submit! { &CLOCK_DESCRIPTOR }
+#[linkme::distributed_slice(feldera_adapterlib_meta::CONNECTOR_METADATA_REGISTRY)]
+static CLOCK_META: feldera_adapterlib_meta::ConnectorDescriptor =
+    feldera_adapterlib_meta::ConnectorDescriptor {
+        name: "clock",
+        crate_name: env!("CARGO_CRATE_NAME"),
+        direction: feldera_adapterlib_meta::Direction::Input,
+        kind: feldera_adapterlib_meta::ConnectorKind::Transient,
+        fault_tolerance: Some(feldera_types::config::FtModel::ExactlyOnce),
+        config_schema: clock_config_schema,
+        default_format: None,
+        flags: feldera_adapterlib_meta::ConnectorFlags::AUTO_RECREATED_ON_RESTART,
+    };
 
 // ─────────────────────────────────────────────────────────────────────────────
 

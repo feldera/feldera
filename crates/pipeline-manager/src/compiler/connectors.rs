@@ -105,14 +105,18 @@ pub async fn load_connectors_toml(
     Ok(ConnectorsTomlContent(row.content))
 }
 
-// ── Force-link helpers ────────────────────────────────────────────────────────
+// ── connectors.toml helpers ───────────────────────────────────────────────────
 
 /// Extract Rust crate identifier names from `connectors.toml` content.
+///
+/// Used by the describer's `main.rs` generator to emit `extern crate <name>
+/// as _;` lines that keep user plugin rlibs alive so their
+/// `#[linkme::distributed_slice(CONNECTOR_METADATA_REGISTRY)]` statics fire.
 ///
 /// Each non-blank, non-comment line is expected to contain `<key> = ...`.
 /// The substring before the first `=` is trimmed to yield the dep key; `-`
 /// characters are replaced with `_` to form a valid Rust identifier.
-pub fn extract_force_link_names(content: &ConnectorsTomlContent) -> Vec<String> {
+pub fn extract_user_plugin_crate_names(content: &ConnectorsTomlContent) -> Vec<String> {
     content
         .as_str()
         .lines()
@@ -131,12 +135,56 @@ pub fn extract_force_link_names(content: &ConnectorsTomlContent) -> Vec<String> 
         .collect()
 }
 
+/// Filter `connectors.toml` content to only entries whose Rust crate
+/// identifier appears in `referenced_crate_names`.
+///
+/// Per Step 7 of the connector-plugin migration: each per-pipeline
+/// workspace's `[dependencies]` should list only the external plugin
+/// crates that the pipeline's SQL actually references. Compiling unused
+/// plugin crates per pipeline is wasted work — even though the linker
+/// would GC their rlibs once nothing references their symbols, cargo
+/// still walks them and rustc still drives them through the build (or
+/// pulls them from sccache).
+///
+/// Blank lines and `#`-comment lines are preserved verbatim so the
+/// resulting blob retains its formatting; non-matching dep lines are
+/// dropped. Key normalisation (`-`→`_`) matches
+/// [`extract_user_plugin_crate_names`], so a `connectors.toml` line
+/// `acme-snowflake = ...` is kept when `referenced_crate_names` contains
+/// `"acme_snowflake"`.
+pub fn filter_connectors_toml_for_sql(
+    content: &ConnectorsTomlContent,
+    referenced_crate_names: &std::collections::BTreeSet<String>,
+) -> String {
+    let mut out = String::with_capacity(content.as_str().len());
+    for line in content.as_str().lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        }
+        let Some(key_part) = trimmed.split('=').next() else {
+            // Malformed line — keep verbatim so cargo can surface the error.
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        };
+        let key = key_part.trim().replace('-', "_");
+        if referenced_crate_names.contains(&key) {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
 /// Validate the line-shape of a `connectors.toml` blob without parsing it.
 ///
 /// Each non-blank, non-`#` line must have a non-empty key before the first
 /// `=` sign. Cargo is the authoritative parser of the value side; we only
-/// reject inputs that the line-based force-link extractor in
-/// [`extract_force_link_names`] cannot handle.
+/// reject inputs that the key extractor in
+/// [`extract_user_plugin_crate_names`] cannot handle.
 ///
 /// On failure returns `(line_number, reason)` (1-indexed).
 pub fn validate_connectors_toml_shape(content: &str) -> Result<(), (u32, String)> {
@@ -156,34 +204,182 @@ pub fn validate_connectors_toml_shape(content: &str) -> Result<(), (u32, String)
     Ok(())
 }
 
-/// Generate the content of `force_link.rs` for the given connector names.
+// ── Per-pipeline connector dispatch codegen ─────────────────────────────────
+
+/// Generate `connector_dispatch.rs` for the per-pipeline globals crate.
 ///
-/// The file has up to two sections:
-/// 1. Built-in section: `extern crate feldera_datagen as _;` — emitted only
-///    when `include_builtin_datagen` is `true`. Used by the platform
-///    describer (which links `dbsp_adapters` + `feldera-datagen`); the
-///    per-tenant user describer omits it because it does not link
-///    `feldera-datagen` (the platform manifest already carries datagen).
-/// 2. User section: one line per name extracted from `connectors.toml`.
+/// For every connector name referenced by the pipeline's SQL, emits one
+/// `match` arm per build slot (`has_build_input` / `has_build_output` /
+/// `has_build_integrated_input` / `has_build_integrated_output`). Built-in
+/// and external connectors are treated identically: the codegen calls
+/// `<builder_crate>::build_<slot>_<name>(…)` for each entry, so
+/// `dbsp_adapters` and external plugin crates use the same dispatch path.
 ///
-/// Placing this file in any compilation unit of the workspace forces the
-/// linker to include the rlibs so `inventory::submit!` calls fire.
-pub fn generate_force_link_rs(user_names: &[String], include_builtin_datagen: bool) -> String {
-    let mut out = String::new();
-    if include_builtin_datagen {
-        out.push_str(
-            "// === Built-in (implicit; not user-configurable) ===\n\
-             extern crate feldera_datagen as _;\n",
-        );
-    }
-    if !user_names.is_empty() {
-        out.push_str("// === User-listed (from connectors.toml) ===\n");
-        for name in user_names {
-            out.push_str(&format!("extern crate {name} as _;\n"));
+/// Connectors flagged [`ConnectorFlags::HTTP_DIRECT`] are excluded — they
+/// are constructed by the HTTP server, not the factory.
+///
+/// The generated module contains four free fns plus a single
+/// `#[linkme::distributed_slice(CONNECTOR_DISPATCH_REGISTRY)]` static.
+pub fn generate_connector_dispatch_rs(
+    referenced_names: &std::collections::BTreeSet<String>,
+    manifest: &std::collections::HashMap<
+        String,
+        feldera_adapterlib::connector::ConnectorManifestEntry,
+    >,
+) -> String {
+    use feldera_adapterlib::connector::ConnectorManifestEntry;
+    use feldera_adapterlib_meta::{ConnectorFlags, default_builder_fn};
+
+    // All entries the SQL references go through codegen; HTTP_DIRECT
+    // connectors are excluded because their endpoints are constructed by
+    // the HTTP server, not via the factory.
+    let mut entries: Vec<&ConnectorManifestEntry> = referenced_names
+        .iter()
+        .filter_map(|n| manifest.get(n))
+        .filter(|e| {
+            !ConnectorFlags::from_bits_truncate(e.flags_bits).contains(ConnectorFlags::HTTP_DIRECT)
+        })
+        .collect();
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+
+    let mut input_arms = String::new();
+    let mut output_arms = String::new();
+    let mut integrated_input_arms = String::new();
+    let mut integrated_output_arms = String::new();
+
+    for entry in &entries {
+        let crate_name = &entry.builder_crate;
+        let name = &entry.name;
+        let fn_name = default_builder_fn(name);
+        if entry.has_build_input {
+            input_arms.push_str(&format!(
+                "        \"{name}\" => Ok(Some({crate_name}::{fn_name}(config, endpoint_name, secrets_dir)?)),\n"
+            ));
+        }
+        if entry.has_build_output {
+            output_arms.push_str(&format!(
+                "        \"{name}\" => Ok(Some({crate_name}::{fn_name}(config, endpoint_name, fault_tolerant, secrets_dir)?)),\n"
+            ));
+        }
+        if entry.has_build_integrated_input {
+            integrated_input_arms.push_str(&format!(
+                "        \"{name}\" => Ok(Some({crate_name}::{fn_name}(config, endpoint_name, consumer)?)),\n"
+            ));
+        }
+        if entry.has_build_integrated_output {
+            integrated_output_arms.push_str(&format!(
+                "        \"{name}\" => Ok(Some({crate_name}::{fn_name}(endpoint_id, endpoint_name, config, key_schema, schema, controller, is_restart)?)),\n"
+            ));
         }
     }
-    out
+
+    format!(
+        r#"//! Auto-generated by feldera pipeline-manager. Do not edit.
+//!
+//! Per-pipeline connector dispatch table. Registered into
+//! `feldera_adapterlib::transport::CONNECTOR_DISPATCH_REGISTRY` so the
+//! runtime endpoint factory can resolve external connector names listed in
+//! `connectors.toml` and referenced by this pipeline's SQL.
+
+#![allow(unused_variables)]
+#![allow(unused_imports)]
+
+use anyhow::Result as AnyResult;
+use dbsp_adapters::{{
+    CONNECTOR_DISPATCH_REGISTRY, ConnectorDispatch, InputConsumer, IntegratedInputEndpoint,
+    IntegratedOutputEndpoint, OutputControllerRef, OutputEndpoint, TransportInputEndpoint,
+}};
+use feldera_types::program_schema::Relation;
+use serde_json::Value as JsonValue;
+use std::path::Path;
+use std::sync::Arc;
+
+fn build_input(
+    name: &str,
+    config: &JsonValue,
+    endpoint_name: &str,
+    secrets_dir: &Path,
+) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {{
+    match name {{
+{input_arms}        _ => Ok(None),
+    }}
+}}
+
+fn build_output(
+    name: &str,
+    config: &JsonValue,
+    endpoint_name: &str,
+    fault_tolerant: bool,
+    secrets_dir: &Path,
+) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {{
+    match name {{
+{output_arms}        _ => Ok(None),
+    }}
+}}
+
+fn build_integrated_input(
+    name: &str,
+    config: &JsonValue,
+    endpoint_name: &str,
+    consumer: Box<dyn InputConsumer>,
+) -> AnyResult<Option<Box<dyn IntegratedInputEndpoint>>> {{
+    match name {{
+{integrated_input_arms}        _ => Ok(None),
+    }}
+}}
+
+fn build_integrated_output(
+    name: &str,
+    endpoint_id: u64,
+    endpoint_name: &str,
+    config: &JsonValue,
+    key_schema: &Option<Relation>,
+    schema: &Relation,
+    controller: Arc<dyn OutputControllerRef>,
+    is_restart: bool,
+) -> AnyResult<Option<Box<dyn IntegratedOutputEndpoint>>> {{
+    match name {{
+{integrated_output_arms}        _ => Ok(None),
+    }}
+}}
+
+#[linkme::distributed_slice(CONNECTOR_DISPATCH_REGISTRY)]
+pub static DISPATCH: ConnectorDispatch = ConnectorDispatch {{
+    build_input,
+    build_output,
+    build_integrated_input,
+    build_integrated_output,
+}};
+"#
+    )
 }
+
+/// Load the merged manifest (platform + cached user) for `tenant_id`.
+///
+/// User entries are read from the describer's persisted `manifest.json` if
+/// present. When `connectors.toml` is empty, only the platform manifest is
+/// returned.  Reading the same on-disk artifact the describer wrote keeps
+/// rust-compile codegen consistent with what the SQL compiler validated
+/// against, without triggering a fresh describer build.
+pub fn load_merged_manifest(
+    config: &CompilerConfig,
+    tenant_id: TenantId,
+    content: &ConnectorsTomlContent,
+) -> std::collections::HashMap<String, feldera_adapterlib::connector::ConnectorManifestEntry> {
+    let platform = load_platform_manifest();
+    if content.is_empty() {
+        return platform;
+    }
+    let cache_key = describer_cache_key(content);
+    let workspace_dir = describer_workspace_dir(config, tenant_id, &cache_key);
+    let manifest_path = workspace_dir.join("manifest.json");
+    let user = match std::fs::read_to_string(&manifest_path) {
+        Ok(json) => parse_manifest_json(&json).unwrap_or_default(),
+        Err(_) => std::collections::HashMap::new(),
+    };
+    merge_manifests(platform, user)
+}
+
 
 // ── Platform manifest (built-in connector descriptors) ───────────────────────
 //
@@ -291,15 +487,112 @@ pub fn describer_workspace_dir(
 
 // ── Describer workspace preparation ──────────────────────────────────────────
 
-/// Write the user describer workspace files (`Cargo.toml`, `src/main.rs`,
-/// `src/force_link.rs`).
+/// Apply `default-features = false` to every dependency entry in a
+/// `connectors.toml` blob.
 ///
-/// The user describer compiles ONLY `feldera-adapterlib` + the user-listed
+/// The describer must compile user-listed connector crates in metadata-only
+/// mode so it does not drag in their heavy impl deps (`dbsp`, `rdkafka`,
+/// `datafusion`, etc.).  This requires `default-features = false` on each
+/// user dep entry.  Well-behaved plugins follow the `default = ["impl"]`
+/// convention (the impl feature gates the heavy deps), so building with
+/// `default-features = false` compiles only the cheap metadata path.
+///
+/// Transformation rules per line:
+/// - Blank or `#`-comment lines: passed through unchanged.
+/// - `name = "version"` → `name = { version = "version", default-features = false }`
+/// - `name = { ... }` (no `default-features` key) → append `, default-features = false`
+/// - `name = { ..., default-features = false, ... }` → unchanged
+/// - `name = { ..., default-features = true, ... }` → replaced with `false`
+/// - Any other form → passed through (Cargo will validate it).
+fn transform_deps_for_metadata_only(content: &str) -> String {
+    let mut out = String::with_capacity(content.len() + 64);
+    for line in content.lines() {
+        out.push_str(&inject_no_default_features(line));
+        out.push('\n');
+    }
+    // Preserve a trailing newline from the original content, but do not add a
+    // second one if the last `lines()` element already appended one.
+    // `str::lines()` never yields an empty trailing element, so one unconditional
+    // `push('\n')` per line is correct.  If the original was empty, `out` is also
+    // empty — nothing to strip.
+    out
+}
+
+/// Rewrite a single `connectors.toml` dep line to carry `default-features = false`.
+fn inject_no_default_features(line: &str) -> String {
+    let trimmed = line.trim();
+
+    // Pass blank lines and comments through unchanged.
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return line.to_owned();
+    }
+
+    let Some((key_part, value_part)) = trimmed.split_once('=') else {
+        // Malformed line; pass through and let Cargo report the error.
+        return line.to_owned();
+    };
+    let key = key_part.trim();
+    let value = value_part.trim();
+
+    // String form: name = "version"
+    if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
+        let ver = &value[1..value.len() - 1];
+        return format!("{key} = {{ version = \"{ver}\", default-features = false }}");
+    }
+
+    // Inline table form: name = { ... }
+    if value.starts_with('{') && value.ends_with('}') {
+        let inner = value[1..value.len() - 1].trim();
+
+        // Already carries `default-features = false` — leave as-is.
+        if inner.contains("default-features = false") || inner.contains("default-features=false") {
+            return line.to_owned();
+        }
+
+        // Explicit `true` — override to `false`.
+        if inner.contains("default-features = true") {
+            return format!(
+                "{key} = {{ {} }}",
+                inner.replace("default-features = true", "default-features = false")
+            );
+        }
+        if inner.contains("default-features=true") {
+            return format!(
+                "{key} = {{ {} }}",
+                inner.replace("default-features=true", "default-features = false")
+            );
+        }
+
+        // No `default-features` key — inject it.
+        if inner.is_empty() {
+            return format!("{key} = {{ default-features = false }}");
+        } else {
+            return format!("{key} = {{ {inner}, default-features = false }}");
+        }
+    }
+
+    // Unknown form — pass through and let Cargo validate.
+    line.to_owned()
+}
+
+/// Write the user describer workspace files (`Cargo.toml`, `src/main.rs`).
+///
+/// The user describer compiles ONLY `feldera-adapterlib-meta` + the user-listed
 /// connector crates from `connectors.toml`.  Built-in connectors live in
-/// the platform manifest cache produced by [`bootstrap_platform_manifest`]
-/// — pulling `dbsp_adapters` or `feldera-datagen` in here would link the
-/// entire built-in connector tree on every `connectors.toml` edit, which
-/// is the cost this split eliminates.
+/// the platform manifest cache produced by `feldera-platform-manifest`
+/// — pulling `dbsp_adapters`, `feldera-datagen`, or `feldera-adapterlib` in
+/// here would link the entire built-in connector tree (including `dbsp`,
+/// `feldera-sqllib`, `rdkafka`, `datafusion`, …) on every `connectors.toml`
+/// edit, which is the cost this split eliminates.
+///
+/// User-listed connector crates are compiled with `default-features = false`
+/// (see [`transform_deps_for_metadata_only`]).  Well-behaved plugins (those
+/// following the `default = ["impl"]` convention) compile only their cheap
+/// metadata side; the describer sees only the `CONNECTOR_METADATA_REGISTRY` entries
+/// without pulling in `rdkafka`, `datafusion`, etc.
+///
+/// External plugin rlibs are kept alive by `extern crate <name> as _;` lines
+/// emitted inline in `main.rs`.  No separate `force_link.rs` file is generated.
 ///
 /// Idempotent: existing files are overwritten only when their content changes.
 pub fn prepare_describer_workspace(
@@ -312,7 +605,10 @@ pub fn prepare_describer_workspace(
     std::fs::create_dir_all(&src_dir)?;
 
     // Cargo.toml — standalone workspace (no [workspace] parent).
-    let connectors_deps = content.as_str();
+    // Depends only on `feldera-adapterlib-meta` (cheap: serde + linkme +
+    // feldera-types) plus the user-listed connector crates compiled in
+    // metadata-only mode (`default-features = false`).
+    let connectors_deps = transform_deps_for_metadata_only(content.as_str());
     let dbsp_path = &config.dbsp_override_path;
     let cargo_toml = format!(
         r#"[workspace]
@@ -327,7 +623,7 @@ name = "feldera-describer"
 path = "src/main.rs"
 
 [dependencies]
-feldera-adapterlib = {{ path = "{dbsp_path}/crates/adapterlib" }}
+feldera-adapterlib-meta = {{ path = "{dbsp_path}/crates/adapterlib-meta" }}
 serde_json = "1"
 
 # User-listed connectors (from connectors.toml):
@@ -336,47 +632,49 @@ serde_json = "1"
     );
     write_if_changed(workspace_dir.join("Cargo.toml"), cargo_toml.as_bytes())?;
 
-    // src/main.rs — collect all registered descriptors, check for duplicates,
-    // then print the JSON manifest to stdout.
-    let main_rs = r#"mod force_link;
+    // src/main.rs — enumerate all registered descriptors via linkme, check for
+    // duplicates, then print the JSON manifest to stdout.
+    //
+    // `extern crate <name> as _;` lines keep user plugin rlibs alive so their
+    // `#[linkme::distributed_slice(CONNECTOR_METADATA_REGISTRY)]` sections fire.
+    let user_names = extract_user_plugin_crate_names(content);
+    let extern_crate_lines: String = user_names
+        .iter()
+        .map(|n| format!("extern crate {n} as _;\n"))
+        .collect();
 
-use feldera_adapterlib::connector::{registered_connectors, ConnectorManifestEntry};
+    let main_rs = format!(
+        r#"// Keep user plugin rlibs alive so their linkme sections fire.
+{extern_crate_lines}
+use feldera_adapterlib_meta::{{metadata_registry, ConnectorManifestEntry}};
 use std::collections::HashMap;
 
-fn main() {
+fn main() {{
     // Duplicate name detection — fail fast with a clear error.
     let mut seen: HashMap<&'static str, bool> = HashMap::new();
     let mut has_dupe = false;
-    for d in registered_connectors() {
-        if seen.insert(d.name, true).is_some() {
+    for d in metadata_registry() {{
+        if seen.insert(d.name, true).is_some() {{
             eprintln!(
-                "error: duplicate connector name '{}' — \
+                "error: duplicate connector name '{{}}' — \
                  remove one of the conflicting entries from connectors.toml",
                 d.name
             );
             has_dupe = true;
-        }
-    }
-    if has_dupe {
+        }}
+    }}
+    if has_dupe {{
         std::process::exit(1);
-    }
+    }}
 
-    let entries: Vec<ConnectorManifestEntry> = registered_connectors()
+    let entries: Vec<ConnectorManifestEntry> = metadata_registry()
         .map(ConnectorManifestEntry::from_descriptor)
         .collect();
-    println!("{}", serde_json::to_string(&entries).unwrap());
-}
-"#;
+    println!("{{}}", serde_json::to_string(&entries).unwrap());
+}}
+"#
+    );
     write_if_changed(src_dir.join("main.rs"), main_rs.as_bytes())?;
-
-    // src/force_link.rs — forces the linker to pull in user connector
-    // rlibs so `inventory::submit!` calls fire.  No built-in section: the
-    // user describer does not depend on `feldera-datagen`, and adding an
-    // `extern crate` for a crate that is not declared as a dep would fail
-    // to compile.
-    let user_names = extract_force_link_names(content);
-    let force_link_rs = generate_force_link_rs(&user_names, false);
-    write_if_changed(src_dir.join("force_link.rs"), force_link_rs.as_bytes())?;
 
     Ok(())
 }
@@ -855,13 +1153,14 @@ pub async fn load_or_build_manifest(
     build_and_run_describer(config, &workspace_dir, false, bus, tenant_id).await
 }
 
-/// Build a connector manifest from the in-process `inventory` (bundled connectors only).
+/// Build a connector manifest from the linkme-based metadata registry (bundled connectors only).
 ///
 /// Used for tenants with empty `connectors.toml` — no describer build is needed.
 pub fn build_in_process_manifest(
 ) -> std::collections::HashMap<String, feldera_adapterlib::connector::ConnectorManifestEntry> {
-    use feldera_adapterlib::connector::{registered_connectors, ConnectorManifestEntry};
-    registered_connectors()
+    use feldera_adapterlib::connector::ConnectorManifestEntry;
+    use feldera_adapterlib_meta::metadata_registry;
+    metadata_registry()
         .map(|d| (d.name.to_string(), ConnectorManifestEntry::from_descriptor(d)))
         .collect()
 }
@@ -1019,8 +1318,164 @@ mod tests {
     use super::*;
     use crate::config::CompilerConfig;
     use crate::db::types::program::CompilationProfile;
+    use feldera_adapterlib::connector::{ConnectorManifestEntry, Direction, ConnectorKind};
+    use std::collections::{BTreeSet, HashMap};
     use std::fs;
     use tempfile::TempDir;
+
+    fn external_input_entry(name: &str, crate_name: &str) -> ConnectorManifestEntry {
+        ConnectorManifestEntry {
+            adapterlib_api_version: feldera_types::constants::ADAPTERLIB_API_VERSION,
+            name: name.to_string(),
+            direction: Direction::Input,
+            kind: ConnectorKind::Regular,
+            fault_tolerance: None,
+            flags_bits: 0,
+            has_build_input: true,
+            has_build_output: false,
+            has_build_integrated_input: false,
+            has_build_integrated_output: false,
+            builder_crate: crate_name.to_string(),
+        }
+    }
+
+    #[test]
+    fn dispatch_codegen_emits_external_arm_default_convention() {
+        // Default convention: build_input_<name> for an Input connector.
+        let mut manifest = HashMap::new();
+        manifest.insert(
+            "hello_lines".to_string(),
+            external_input_entry("hello_lines", "connector_example"),
+        );
+        let names: BTreeSet<String> = ["hello_lines".to_string()].into_iter().collect();
+        let rs = generate_connector_dispatch_rs(&names, &manifest);
+        assert!(rs.contains(
+            r#""hello_lines" => Ok(Some(connector_example::build_hello_lines(config, endpoint_name, secrets_dir)?))"#
+        ));
+        assert!(rs.contains("CONNECTOR_DISPATCH_REGISTRY"));
+        assert!(rs.contains("pub static DISPATCH"));
+    }
+
+    #[test]
+    fn dispatch_codegen_emits_builtins_too() {
+        // Built-in connectors flow through the same codegen path as
+        // externals: codegen calls `dbsp_adapters::build_<slot>_<name>`
+        // directly, just like it would for a plugin crate.
+        let mut manifest = HashMap::new();
+        manifest.insert(
+            "kafka_input".to_string(),
+            ConnectorManifestEntry {
+                adapterlib_api_version: feldera_types::constants::ADAPTERLIB_API_VERSION,
+                name: "kafka_input".to_string(),
+                direction: Direction::Input,
+                kind: ConnectorKind::Regular,
+                fault_tolerance: None,
+                flags_bits: 0,
+                has_build_input: true,
+                has_build_output: false,
+                has_build_integrated_input: false,
+                has_build_integrated_output: false,
+                builder_crate: "dbsp_adapters".to_string(),
+            },
+        );
+        let names: BTreeSet<String> = ["kafka_input".to_string()].into_iter().collect();
+        let rs = generate_connector_dispatch_rs(&names, &manifest);
+        assert!(
+            rs.contains("dbsp_adapters::build_kafka_input(config, endpoint_name, secrets_dir)"),
+            "got: {rs}"
+        );
+    }
+
+    #[test]
+    fn dispatch_codegen_skips_http_direct() {
+        // HTTP_DIRECT-flagged connectors are filtered out: the HTTP
+        // server constructs them; there is no factory fn to call.
+        let mut manifest = HashMap::new();
+        manifest.insert(
+            "http_output".to_string(),
+            ConnectorManifestEntry {
+                adapterlib_api_version: feldera_types::constants::ADAPTERLIB_API_VERSION,
+                name: "http_output".to_string(),
+                direction: Direction::Output,
+                kind: ConnectorKind::Transient,
+                fault_tolerance: None,
+                flags_bits: feldera_adapterlib_meta::ConnectorFlags::HTTP_DIRECT.bits(),
+                has_build_input: false,
+                has_build_output: true,
+                has_build_integrated_input: false,
+                has_build_integrated_output: false,
+                builder_crate: "dbsp_adapters".to_string(),
+            },
+        );
+        let names: BTreeSet<String> = ["http_output".to_string()].into_iter().collect();
+        let rs = generate_connector_dispatch_rs(&names, &manifest);
+        assert!(!rs.contains("http_output"), "got: {rs}");
+    }
+
+    // ── filter_connectors_toml_for_sql ──────────────────────────────────────
+
+    fn toml(s: &str) -> ConnectorsTomlContent {
+        ConnectorsTomlContent(s.to_string())
+    }
+
+    #[test]
+    fn filter_keeps_referenced_drops_others() {
+        let content = toml(concat!(
+            "acme_snowflake = \"0.3\"\n",
+            "unused_plugin = { path = \"/x\" }\n",
+            "another_unused = \"1\"\n",
+        ));
+        let referenced: BTreeSet<String> = ["acme_snowflake".to_string()].into_iter().collect();
+        let out = filter_connectors_toml_for_sql(&content, &referenced);
+        assert!(out.contains("acme_snowflake"));
+        assert!(!out.contains("unused_plugin"));
+        assert!(!out.contains("another_unused"));
+    }
+
+    #[test]
+    fn filter_preserves_blank_and_comment_lines() {
+        // Blank/comment lines stay verbatim — they're harmless to Cargo and
+        // keep the resulting blob readable when an operator inspects it.
+        let content = toml(concat!(
+            "# External connector plugins\n",
+            "\n",
+            "acme_snowflake = \"0.3\"\n",
+            "# trailing comment\n",
+        ));
+        let referenced: BTreeSet<String> = ["acme_snowflake".to_string()].into_iter().collect();
+        let out = filter_connectors_toml_for_sql(&content, &referenced);
+        assert!(out.contains("# External connector plugins"));
+        assert!(out.contains("# trailing comment"));
+        assert!(out.contains("acme_snowflake"));
+    }
+
+    #[test]
+    fn filter_normalises_hyphens_to_underscores() {
+        // `connectors.toml` keys may use hyphens (Cargo accepts them);
+        // Rust crate identifiers normalise to underscores. The filter
+        // matches on the underscore form so a referenced
+        // `crate_name = "acme_snowflake"` keeps a `acme-snowflake = …`
+        // entry.
+        let content = toml("acme-snowflake = \"0.3\"\n");
+        let referenced: BTreeSet<String> = ["acme_snowflake".to_string()].into_iter().collect();
+        let out = filter_connectors_toml_for_sql(&content, &referenced);
+        assert!(out.contains("acme-snowflake"));
+    }
+
+    #[test]
+    fn filter_empty_referenced_set_drops_all_entries() {
+        let content = toml(concat!(
+            "# header\n",
+            "acme = \"1\"\n",
+            "other = \"2\"\n",
+        ));
+        let referenced: BTreeSet<String> = BTreeSet::new();
+        let out = filter_connectors_toml_for_sql(&content, &referenced);
+        assert!(!out.contains("acme"));
+        assert!(!out.contains("other"));
+        // Comments survive even when no entries match.
+        assert!(out.contains("# header"));
+    }
 
     /// Build a minimal `CompilerConfig` for testing the seed loader.
     fn make_config(toml_path: Option<&str>) -> CompilerConfig {
@@ -1212,7 +1667,7 @@ mod tests {
 
     fn manifest_json_with_version(version: u32) -> String {
         format!(
-            r#"[{{"adapterlib_api_version":{version},"name":"acme","direction":"input","kind":"regular","fault_tolerance":null,"flags_bits":0,"has_build_input":true,"has_build_output":false,"has_build_integrated_input":false,"has_build_integrated_output":false}}]"#
+            r#"[{{"adapterlib_api_version":{version},"name":"acme","direction":"input","kind":"regular","fault_tolerance":null,"flags_bits":0,"has_build_input":true,"has_build_output":false,"has_build_integrated_input":false,"has_build_integrated_output":false,"builder_crate":"acme_plugin"}}]"#
         )
     }
 
@@ -1244,5 +1699,84 @@ mod tests {
     fn malformed_manifest_json_returns_parse_error() {
         let err = check_manifest_api_versions("not json").unwrap_err();
         assert!(matches!(err, DescriberError::Parse(_)));
+    }
+
+    // --- inject_no_default_features / transform_deps_for_metadata_only ---
+
+    #[test]
+    fn inject_string_version_converts_to_table() {
+        assert_eq!(
+            inject_no_default_features(r#"acme = "0.3""#),
+            r#"acme = { version = "0.3", default-features = false }"#
+        );
+    }
+
+    #[test]
+    fn inject_path_table_appends_flag() {
+        assert_eq!(
+            inject_no_default_features(r#"my_plugin = { path = "/opt/connectors/my-plugin" }"#),
+            r#"my_plugin = { path = "/opt/connectors/my-plugin", default-features = false }"#
+        );
+    }
+
+    #[test]
+    fn inject_git_table_appends_flag() {
+        assert_eq!(
+            inject_no_default_features(r#"sap_cdc = { git = "https://github.com/acme/sap-cdc", rev = "abc123" }"#),
+            r#"sap_cdc = { git = "https://github.com/acme/sap-cdc", rev = "abc123", default-features = false }"#
+        );
+    }
+
+    #[test]
+    fn inject_already_false_is_unchanged() {
+        let line = r#"plugin = { path = "/x", default-features = false }"#;
+        assert_eq!(inject_no_default_features(line), line);
+    }
+
+    #[test]
+    fn inject_true_is_flipped_to_false() {
+        assert_eq!(
+            inject_no_default_features(r#"plugin = { path = "/x", default-features = true }"#),
+            r#"plugin = { path = "/x", default-features = false }"#
+        );
+    }
+
+    #[test]
+    fn inject_blank_and_comment_lines_pass_through() {
+        assert_eq!(inject_no_default_features(""), "");
+        assert_eq!(inject_no_default_features("   "), "   ");
+        assert_eq!(inject_no_default_features("# a comment"), "# a comment");
+    }
+
+    #[test]
+    fn inject_features_array_preserved() {
+        assert_eq!(
+            inject_no_default_features(r#"fancy = { version = "1.0", features = ["async", "tls"] }"#),
+            r#"fancy = { version = "1.0", features = ["async", "tls"], default-features = false }"#
+        );
+    }
+
+    #[test]
+    fn transform_full_content_roundtrip() {
+        let input = concat!(
+            "# External connector plugins\n",
+            "\n",
+            "acme_snowflake = \"0.3\"\n",
+            "my_sap_cdc = { git = \"https://github.com/acme/sap-cdc\", rev = \"abc123\" }\n",
+            "local_thing = { path = \"/opt/feldera/connectors/local-thing\" }\n",
+            "fancy = { version = \"1.0\", features = [\"async\", \"tls\"] }\n",
+        );
+        let output = transform_deps_for_metadata_only(input);
+        assert!(output.contains("# External connector plugins\n"));
+        assert!(output.contains("\n\n")); // blank line preserved
+        assert!(output.contains(r#"acme_snowflake = { version = "0.3", default-features = false }"#));
+        assert!(output.contains(r#"rev = "abc123", default-features = false"#));
+        assert!(output.contains(r#"path = "/opt/feldera/connectors/local-thing", default-features = false"#));
+        assert!(output.contains(r#"features = ["async", "tls"], default-features = false"#));
+    }
+
+    #[test]
+    fn transform_empty_content_returns_empty() {
+        assert_eq!(transform_deps_for_metadata_only(""), "");
     }
 }

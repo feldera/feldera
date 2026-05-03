@@ -1063,6 +1063,7 @@ mod tests {
                 has_build_output: false,
                 has_build_integrated_input: false,
                 has_build_integrated_output: false,
+                builder_crate: "dbsp_adapters".to_string(),
             }
         }
 

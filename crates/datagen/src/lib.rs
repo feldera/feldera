@@ -2285,7 +2285,6 @@ impl<'a> RecordGenerator<'a> {
 
 // ── Connector registry ────────────────────────────────────────────────────────
 
-use feldera_adapterlib::connector::{ConnectorDescriptor, ConnectorFlags, ConnectorKind, Direction};
 use feldera_types::config::FormatConfig;
 use feldera_types::format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat};
 use std::borrow::Cow;
@@ -2307,7 +2306,7 @@ fn datagen_default_format() -> FormatConfig {
     }
 }
 
-fn build_datagen_input(
+pub fn build_datagen(
     config: &serde_json::Value,
     _endpoint_name: &str,
     _secrets_dir: &std::path::Path,
@@ -2317,21 +2316,21 @@ fn build_datagen_input(
     Ok(Box::new(GeneratorEndpoint::new(config)))
 }
 
-static DATAGEN_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
-    name: "datagen",
-    direction: Direction::Input,
-    kind: ConnectorKind::Regular,
-    fault_tolerance: Some(FtModel::ExactlyOnce),
-    config_schema: datagen_config_schema,
-    default_format: Some(datagen_default_format),
-    flags: ConnectorFlags::EMPTY,
-    build_input: Some(build_datagen_input),
-    build_output: None,
-    build_integrated_input: None,
-    build_integrated_output: None,
-};
-
-inventory::submit! { &DATAGEN_DESCRIPTOR }
+#[linkme::distributed_slice(feldera_adapterlib_meta::CONNECTOR_METADATA_REGISTRY)]
+static DATAGEN_META: feldera_adapterlib_meta::ConnectorDescriptor =
+    feldera_adapterlib_meta::ConnectorDescriptor {
+        name: "datagen",
+        // Re-exported through `dbsp_adapters::build_datagen`; per-pipeline
+        // globals only depend on `dbsp_adapters`, so dispatch must reach the
+        // builder through that crate.
+        crate_name: "dbsp_adapters",
+        direction: feldera_adapterlib_meta::Direction::Input,
+        kind: feldera_adapterlib_meta::ConnectorKind::Regular,
+        fault_tolerance: Some(feldera_types::config::FtModel::ExactlyOnce),
+        config_schema: datagen_config_schema,
+        default_format: Some(datagen_default_format),
+        flags: feldera_adapterlib_meta::ConnectorFlags::EMPTY,
+    };
 
 // ─────────────────────────────────────────────────────────────────────────────
 

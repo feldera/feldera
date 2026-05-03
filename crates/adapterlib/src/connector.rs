@@ -1,41 +1,11 @@
-//! Connector descriptor and global registry.
+//! Connector build-fn types and serializable manifest entry.
 //!
-//! This module defines the [`ConnectorDescriptor`] type that connector crates
-//! submit via the [`register_connector!`] macro.  The controller and
-//! pipeline-manager discover all registered connectors at runtime through the
-//! [`registered_connectors`] and [`connector_by_name`] discovery functions.
-//!
-//! # Quick start
-//!
-//! ```rust,ignore
-//! use feldera_adapterlib::connector::{
-//!     ConnectorDescriptor, ConnectorFlags, ConnectorKind, Direction,
-//! };
-//! use feldera_types::config::FtModel;
-//!
-//! static MY_CONNECTOR: ConnectorDescriptor = ConnectorDescriptor {
-//!     name: "my_connector",
-//!     direction: Direction::Input,
-//!     kind: ConnectorKind::Regular,
-//!     fault_tolerance: Some(FtModel::AtLeastOnce),
-//!     config_schema: || serde_json::json!({}),
-//!     default_format: None,
-//!     flags: ConnectorFlags::EMPTY,
-//!     build_input: Some(my_build_input),
-//!     build_output: None,
-//!     build_integrated_input: None,
-//!     build_integrated_output: None,
-//! };
-//!
-//! feldera_adapterlib::register_connector!(&MY_CONNECTOR);
-//! ```
-//!
-//! # Naming
-//!
-//! This type is intentionally named `ConnectorDescriptor` rather than
-//! `ConnectorMetadata` to avoid collision with [`crate::ConnectorMetadata`],
-//! which describes per-record metadata such as the Kafka topic name or Avro
-//! schema ID that accompany individual output rows.
+//! Connector metadata is registered in
+//! [`feldera_adapterlib_meta::CONNECTOR_METADATA_REGISTRY`] via
+//! `#[linkme::distributed_slice]`; this module only houses the build-fn type
+//! aliases used by the per-pipeline dispatch table and a thin
+//! [`ConnectorManifestEntry`] wrapper that re-uses the meta crate's type for
+//! ABI stability.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -43,7 +13,6 @@ use std::sync::atomic::AtomicU64;
 
 use anyhow::{Error as AnyError, Result as AnyResult};
 use feldera_types::adapter_stats::ConnectorHealth;
-use feldera_types::config::{FormatConfig, FtModel};
 use feldera_types::program_schema::Relation;
 use serde_json::Value as JsonValue;
 
@@ -52,70 +21,15 @@ use crate::transport::{
     TransportInputEndpoint,
 };
 
-// ── Direction ─────────────────────────────────────────────────────────────────
-
-/// Which side(s) of a pipeline a connector can serve.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Direction {
-    /// Can only be used as an input (source) connector.
-    Input,
-    /// Can only be used as an output (sink) connector.
-    Output,
-    /// Can be used as either an input or an output connector.
-    InputOutput,
-}
-
-impl Direction {
-    /// Returns `true` if this direction allows use as an input.
-    pub fn allows_input(self) -> bool {
-        matches!(self, Direction::Input | Direction::InputOutput)
-    }
-
-    /// Returns `true` if this direction allows use as an output.
-    pub fn allows_output(self) -> bool {
-        matches!(self, Direction::Output | Direction::InputOutput)
-    }
-}
-
-// ── ConnectorKind ─────────────────────────────────────────────────────────────
-
-/// Implementation style of a connector.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ConnectorKind {
-    /// Transport and format are separate layers (the standard case for file,
-    /// Kafka, S3, …).  The controller selects a `Parser` / `Encoder` based on
-    /// the `format` field of the connector config.
-    Regular,
-    /// Transport and format are tightly coupled (Postgres, Delta Lake, …).
-    /// The connector creates its own record-level deserializer or serializer.
-    Integrated,
-    /// Connector is ephemeral and not re-created when the pipeline restarts
-    /// from a checkpoint (HTTP direct, Clock, AdHoc).
-    Transient,
-}
-
-// ── ConnectorFlags ────────────────────────────────────────────────────────────
-
-bitflags::bitflags! {
-    /// Capability flags for a connector.
-    #[derive(Default, Copy, Clone, Debug, PartialEq, Eq)]
-    pub struct ConnectorFlags: u32 {
-        /// Connector receives data over a direct HTTP connection managed by the
-        /// controller's built-in HTTP server (e.g. `http_input`).
-        const HTTP_DIRECT = 0x01;
-
-        /// Controller automatically re-creates this connector when resuming
-        /// from a checkpoint (e.g. `clock`).
-        const AUTO_RECREATED_ON_RESTART = 0x02;
-    }
-}
-
-impl ConnectorFlags {
-    /// No flags set.
-    pub const EMPTY: Self = Self::empty();
-}
+// ── Re-export the data-only types from the meta crate ────────────────────────
+//
+// Most callers reach these through `feldera_adapterlib::meta::*` already; the
+// re-exports here keep `feldera_adapterlib::connector::ConnectorManifestEntry`
+// (and the enums it carries) working for existing code that imports them from
+// this module.
+pub use feldera_adapterlib_meta::{
+    ConnectorFlags, ConnectorKind, ConnectorManifestEntry, Direction,
+};
 
 // ── OutputControllerRef ───────────────────────────────────────────────────────
 
@@ -203,247 +117,3 @@ pub type BuildIntegratedOutputFn = fn(
     controller: Arc<dyn OutputControllerRef>,
     is_restart: bool,
 ) -> AnyResult<Box<dyn IntegratedOutputEndpoint>>;
-
-// ── ConnectorDescriptor ───────────────────────────────────────────────────────
-
-/// Describes a connector and provides factory functions for constructing it.
-///
-/// Connector crates submit a `&'static ConnectorDescriptor` via the
-/// [`register_connector!`] macro.  The controller discovers all descriptors
-/// at runtime via [`registered_connectors`] and [`connector_by_name`].
-///
-/// Exactly one of the four `build_*` fields should be `Some`; which one
-/// depends on the connector's `kind` and `direction`.
-pub struct ConnectorDescriptor {
-    /// Serde tag name that appears as the `name` field in `TransportConfig`.
-    /// Must be globally unique; the describer binary (Phase 8) fails fast on
-    /// duplicate names.
-    pub name: &'static str,
-
-    /// Direction(s) this connector supports.
-    pub direction: Direction,
-
-    /// Implementation style (regular, integrated, or transient).
-    pub kind: ConnectorKind,
-
-    /// Best-case fault tolerance this connector can deliver at runtime.
-    /// `None` means no fault tolerance.
-    pub fault_tolerance: Option<FtModel>,
-
-    /// Returns the JSON Schema for this connector's config type.
-    ///
-    /// Used by the `GET /v0/connectors` discovery endpoint (Phase 9) and the
-    /// web-console config form (Phase 10).
-    pub config_schema: fn() -> JsonValue,
-
-    /// Optional default `FormatConfig` injected by the controller when no
-    /// `format` is specified in the connector configuration.  Used by the
-    /// `datagen` connector which defaults to JSON-Datagen format.
-    pub default_format: Option<fn() -> FormatConfig>,
-
-    /// Capability flags (currently empty; see [`ConnectorFlags`] for Phase 5
-    /// additions).
-    pub flags: ConnectorFlags,
-
-    /// Factory for regular input endpoints.  Set this for `kind == Regular`
-    /// and `direction` that allows input.
-    pub build_input: Option<BuildInputFn>,
-
-    /// Factory for regular output endpoints.  Set this for `kind == Regular`
-    /// and `direction` that allows output.
-    pub build_output: Option<BuildOutputFn>,
-
-    /// Factory for integrated input endpoints.  Set this for
-    /// `kind == Integrated` and `direction` that allows input.
-    pub build_integrated_input: Option<BuildIntegratedInputFn>,
-
-    /// Factory for integrated output endpoints.  Set this for
-    /// `kind == Integrated` and `direction` that allows output.
-    pub build_integrated_output: Option<BuildIntegratedOutputFn>,
-}
-
-// SAFETY: ConnectorDescriptor contains only 'static fn pointers and 'static str
-// references; it is safe to share across threads.
-unsafe impl Sync for ConnectorDescriptor {}
-unsafe impl Send for ConnectorDescriptor {}
-
-inventory::collect!(&'static ConnectorDescriptor);
-
-// ── Discovery API ─────────────────────────────────────────────────────────────
-
-/// Returns an iterator over every registered [`ConnectorDescriptor`].
-///
-/// The order of iteration is determined by link order and is not guaranteed to
-/// be stable across runs.
-pub fn registered_connectors() -> impl Iterator<Item = &'static ConnectorDescriptor> {
-    inventory::iter::<&'static ConnectorDescriptor>
-        .into_iter()
-        .copied()
-}
-
-/// Look up a registered connector by its serde `name`.
-///
-/// Returns `None` if no connector with that name has been registered.
-pub fn connector_by_name(name: &str) -> Option<&'static ConnectorDescriptor> {
-    registered_connectors().find(|d| d.name == name)
-}
-
-// ── ConnectorManifestEntry ────────────────────────────────────────────────────
-
-/// Serializable snapshot of a [`ConnectorDescriptor`], produced by the
-/// describer binary and consumed by pipeline-manager for direction validation.
-///
-/// This type is intentionally separate from [`ConnectorDescriptor`] because
-/// `ConnectorDescriptor` contains function pointers that cannot be serialized.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ConnectorManifestEntry {
-    /// `feldera-adapterlib` plugin API version at which this connector was
-    /// compiled. Must equal
-    /// [`feldera_types::constants::ADAPTERLIB_API_VERSION`] for the
-    /// pipeline-manager to accept this entry; a mismatch triggers a clear
-    /// "connector X was compiled against API vY, deployment uses vZ" error.
-    pub adapterlib_api_version: u32,
-    /// Unique connector name matching `TransportConfig::name()`.
-    pub name: String,
-    /// Direction(s) supported.
-    pub direction: Direction,
-    /// Implementation style.
-    pub kind: ConnectorKind,
-    /// Best-case fault tolerance; `None` = no FT.
-    pub fault_tolerance: Option<FtModel>,
-    /// Raw capability-flag bits (see [`ConnectorFlags`]).
-    pub flags_bits: u32,
-    /// Whether a regular-input factory is present.
-    pub has_build_input: bool,
-    /// Whether a regular-output factory is present.
-    pub has_build_output: bool,
-    /// Whether an integrated-input factory is present.
-    pub has_build_integrated_input: bool,
-    /// Whether an integrated-output factory is present.
-    pub has_build_integrated_output: bool,
-}
-
-impl ConnectorManifestEntry {
-    /// Convert a [`ConnectorDescriptor`] to a manifest entry.
-    ///
-    /// `adapterlib_api_version` is set to the value of
-    /// [`feldera_types::constants::ADAPTERLIB_API_VERSION`] that was compiled
-    /// into *this* build of `feldera-adapterlib`.
-    pub fn from_descriptor(d: &ConnectorDescriptor) -> Self {
-        Self {
-            adapterlib_api_version: feldera_types::constants::ADAPTERLIB_API_VERSION,
-            name: d.name.to_owned(),
-            direction: d.direction,
-            kind: d.kind,
-            fault_tolerance: d.fault_tolerance,
-            flags_bits: d.flags.bits(),
-            has_build_input: d.build_input.is_some(),
-            has_build_output: d.build_output.is_some(),
-            has_build_integrated_input: d.build_integrated_input.is_some(),
-            has_build_integrated_output: d.build_integrated_output.is_some(),
-        }
-    }
-}
-
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use feldera_types::config::FtModel;
-
-    fn stub_config_schema() -> JsonValue {
-        serde_json::json!({ "type": "object" })
-    }
-
-    fn stub_build_input(
-        _config: &JsonValue,
-        _endpoint_name: &str,
-        _secrets_dir: &Path,
-    ) -> AnyResult<Box<dyn TransportInputEndpoint>> {
-        unimplemented!("stub — not called in registry tests")
-    }
-
-    static STUB_INPUT_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
-        name: "__test_stub_input__",
-        direction: Direction::Input,
-        kind: ConnectorKind::Regular,
-        fault_tolerance: Some(FtModel::AtLeastOnce),
-        config_schema: stub_config_schema,
-        default_format: None,
-        flags: ConnectorFlags::EMPTY,
-        build_input: Some(stub_build_input),
-        build_output: None,
-        build_integrated_input: None,
-        build_integrated_output: None,
-    };
-
-    crate::register_connector!(&STUB_INPUT_DESCRIPTOR);
-
-    static STUB_OUTPUT_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
-        name: "__test_stub_output__",
-        direction: Direction::Output,
-        kind: ConnectorKind::Regular,
-        fault_tolerance: None,
-        config_schema: stub_config_schema,
-        default_format: None,
-        flags: ConnectorFlags::EMPTY,
-        build_input: None,
-        build_output: None,
-        build_integrated_input: None,
-        build_integrated_output: None,
-    };
-
-    crate::register_connector!(&STUB_OUTPUT_DESCRIPTOR);
-
-    #[test]
-    fn registered_connectors_are_iterable() {
-        let names: Vec<&str> = registered_connectors().map(|d| d.name).collect();
-        assert!(
-            names.contains(&"__test_stub_input__"),
-            "stub input connector not found; got {names:?}"
-        );
-        assert!(
-            names.contains(&"__test_stub_output__"),
-            "stub output connector not found; got {names:?}"
-        );
-    }
-
-    #[test]
-    fn connector_by_name_returns_correct_descriptor() {
-        let desc = connector_by_name("__test_stub_input__")
-            .expect("stub input connector not found by name");
-        assert_eq!(desc.name, "__test_stub_input__");
-        assert_eq!(desc.direction, Direction::Input);
-        assert_eq!(desc.kind, ConnectorKind::Regular);
-        assert_eq!(desc.fault_tolerance, Some(FtModel::AtLeastOnce));
-        assert!(desc.build_input.is_some());
-        assert!(desc.build_output.is_none());
-    }
-
-    #[test]
-    fn connector_by_name_returns_none_for_unknown() {
-        assert!(connector_by_name("__nonexistent_connector__").is_none());
-    }
-
-    #[test]
-    fn direction_helpers() {
-        assert!(Direction::Input.allows_input());
-        assert!(!Direction::Input.allows_output());
-        assert!(!Direction::Output.allows_input());
-        assert!(Direction::Output.allows_output());
-        assert!(Direction::InputOutput.allows_input());
-        assert!(Direction::InputOutput.allows_output());
-    }
-
-    #[test]
-    fn connector_flags_contains() {
-        let flags = ConnectorFlags::HTTP_DIRECT | ConnectorFlags::AUTO_RECREATED_ON_RESTART;
-        assert!(flags.contains(ConnectorFlags::HTTP_DIRECT));
-        assert!(flags.contains(ConnectorFlags::AUTO_RECREATED_ON_RESTART));
-        assert!(flags.contains(ConnectorFlags::HTTP_DIRECT | ConnectorFlags::AUTO_RECREATED_ON_RESTART));
-        assert!(!flags.contains(ConnectorFlags::from_bits_retain(0b0100)));
-        assert!(ConnectorFlags::EMPTY.contains(ConnectorFlags::EMPTY));
-        assert!(!ConnectorFlags::EMPTY.contains(ConnectorFlags::HTTP_DIRECT));
-    }
-}

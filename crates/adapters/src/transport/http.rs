@@ -29,5 +29,6 @@ pub struct Chunk {
     pub json_data: Option<JsonValue>,
 }
 
+pub use input::build_http_input;
 pub(crate) use input::{HttpInputEndpoint, HttpInputTransport};
 pub(crate) use output::{HttpOutputEndpoint, HttpOutputTransport};

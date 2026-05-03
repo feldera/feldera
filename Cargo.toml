@@ -13,6 +13,7 @@ edition = "2021"
 [workspace]
 members = [
   "crates/adapterlib",
+  "crates/adapterlib-meta",
   "crates/adapters",
   "crates/dbsp",
   "crates/feldera-macros",
@@ -137,6 +138,7 @@ feldera-types = { version = "0.291.0", path = "crates/feldera-types" }
 feldera-rest-api = { version = "0.291.0", path = "crates/rest-api" }
 feldera-ir = { version = "0.291.0", path = "crates/ir" }
 feldera-adapterlib = { version = "0.291.0", path = "crates/adapterlib" }
+feldera-adapterlib-meta = { version = "0.291.0", path = "crates/adapterlib-meta" }
 feldera-platform-manifest = { version = "0.291.0", path = "crates/platform-manifest" }
 feldera-samply = { version = "0.291.0", path = "crates/samply" }
 flate2 = "1.1.0"
@@ -162,6 +164,7 @@ indexmap = "2.7.1"
 indicatif = "0.17.0-rc.11"
 indoc = "2.0.5"
 inventory = "0.3"
+linkme = "0.3"
 itertools = "0.14.0"
 jemalloc_pprof = "0.7.0"
 # mappings v0.7.2 silently bumped pprof_util to "0.8", breaking jemalloc_pprof

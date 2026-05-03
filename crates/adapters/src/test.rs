@@ -56,7 +56,7 @@ mod iceberg;
 
 use crate::catalog::InputCollectionHandle;
 use crate::format::get_input_format;
-use crate::transport::input_transport_config_to_endpoint;
+use crate::{OutputEndpoint, TransportInputEndpoint};
 pub use data::{
     DatabricksPeople, DeltaTestStruct, EmbeddedStruct, IcebergTestStruct, KeyStruct, TestStruct,
     TestStruct2, generate_test_batch, generate_test_batches, generate_test_batches_with_weights,
@@ -73,6 +73,77 @@ pub use mock_input_consumer::{MockInputConsumer, MockInputParser};
 pub use mock_output_consumer::MockOutputConsumer;
 
 pub static DEFAULT_TIMEOUT_MS: u128 = 600_000;
+
+// ── Test-only built-in factory dispatch ──────────────────────────────────────
+//
+// Production binaries route every endpoint construction through
+// `CONNECTOR_DISPATCH_REGISTRY` (populated by pipeline-manager codegen);
+// no hand-written name match exists in the production hot path.
+//
+// In-crate tests (`mock_input_pipeline`, the kafka FT tests, etc.) do
+// not have a per-pipeline globals crate, so the registry is empty.
+// They go through the helpers below, which carry the same name → built-in
+// builder dispatch the in-tree match used to. Strictly test fixture —
+// `#[cfg(test)]`-gated by virtue of living in this module.
+
+pub(crate) fn build_test_input_endpoint(
+    config: &feldera_types::config::TransportConfig,
+    endpoint_name: &str,
+    secrets_dir: &std::path::Path,
+) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+    let config =
+        feldera_types::secret_resolver::resolve_secret_references_via_json(secrets_dir, config)?;
+    let name = config.name();
+    let config_value = serde_json::to_value(&config)?
+        .get("config")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    // The crate-root re-exports in `lib.rs` make every built-in builder
+    // reachable as `crate::build_<slot>_<name>(…)`. No need to peek into
+    // private connector submodules here.
+    match name.as_str() {
+        "file_input" => Ok(Some(crate::build_file_input(&config_value, endpoint_name, secrets_dir)?)),
+        "http_input" => Ok(Some(crate::build_http_input(&config_value, endpoint_name, secrets_dir)?)),
+        "url_input" => Ok(Some(crate::build_url_input(&config_value, endpoint_name, secrets_dir)?)),
+        "clock" => Ok(Some(crate::build_clock(&config_value, endpoint_name, secrets_dir)?)),
+        "s3_input" => Ok(Some(crate::build_s3_input(&config_value, endpoint_name, secrets_dir)?)),
+        "adhoc_input" => Ok(Some(crate::build_adhoc_input(&config_value, endpoint_name, secrets_dir)?)),
+        "datagen" => Ok(Some(crate::build_datagen(&config_value, endpoint_name, secrets_dir)?)),
+        #[cfg(feature = "with-kafka")]
+        "kafka_input" => Ok(Some(crate::build_kafka_input(&config_value, endpoint_name, secrets_dir)?)),
+        #[cfg(feature = "with-nats")]
+        "nats_input" => Ok(Some(crate::build_nats_input(&config_value, endpoint_name, secrets_dir)?)),
+        #[cfg(feature = "with-nexmark")]
+        "nexmark" => Ok(Some(crate::build_nexmark(&config_value, endpoint_name, secrets_dir)?)),
+        #[cfg(feature = "with-pubsub")]
+        "pub_sub_input" => Ok(Some(crate::build_pub_sub_input(&config_value, endpoint_name, secrets_dir)?)),
+        _ => Ok(None),
+    }
+}
+
+pub(crate) fn build_test_output_endpoint(
+    config: &feldera_types::config::TransportConfig,
+    endpoint_name: &str,
+    fault_tolerant: bool,
+    secrets_dir: &std::path::Path,
+) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
+    let config =
+        feldera_types::secret_resolver::resolve_secret_references_via_json(secrets_dir, config)?;
+    let name = config.name();
+    let config_value = serde_json::to_value(&config)?
+        .get("config")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    match name.as_str() {
+        "file_output" => Ok(Some(crate::build_file_output(&config_value, endpoint_name, fault_tolerant, secrets_dir)?)),
+        "http_output" => Ok(None),
+        #[cfg(feature = "with-kafka")]
+        "kafka_output" => Ok(Some(crate::build_kafka_output(&config_value, endpoint_name, fault_tolerant, secrets_dir)?)),
+        #[cfg(feature = "with-redis")]
+        "redis_output" => Ok(Some(crate::build_redis_output(&config_value, endpoint_name, fault_tolerant, secrets_dir)?)),
+        _ => Ok(None),
+    }
+}
 
 /// Wait for `predicate` to become `true`.
 ///
@@ -209,7 +280,7 @@ where
             .unwrap_or(&default_format),
     )?;
 
-    let endpoint = input_transport_config_to_endpoint(
+    let endpoint = build_test_input_endpoint(
         &config.connector_config.transport,
         "",
         default_secrets_directory(),

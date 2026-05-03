@@ -395,14 +395,13 @@ however the File transport does not support this representation."
 
 // ── Connector registry ────────────────────────────────────────────────────────
 
-use feldera_adapterlib::connector::{ConnectorDescriptor, ConnectorFlags, ConnectorKind, Direction};
 use serde_json::Value as JsonValue;
 
 fn file_input_config_schema() -> JsonValue {
     JsonValue::Object(Default::default())
 }
 
-fn build_file_input(
+pub fn build_file_input(
     config: &JsonValue,
     _endpoint_name: &str,
     _secrets_dir: &std::path::Path,
@@ -411,27 +410,24 @@ fn build_file_input(
     Ok(Box::new(FileInputEndpoint::new(config)))
 }
 
-static FILE_INPUT_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
-    name: "file_input",
-    direction: Direction::Input,
-    kind: ConnectorKind::Regular,
-    fault_tolerance: Some(FtModel::ExactlyOnce),
-    config_schema: file_input_config_schema,
-    default_format: None,
-    flags: ConnectorFlags::EMPTY,
-    build_input: Some(build_file_input),
-    build_output: None,
-    build_integrated_input: None,
-    build_integrated_output: None,
-};
-
-inventory::submit! { &FILE_INPUT_DESCRIPTOR }
+#[linkme::distributed_slice(feldera_adapterlib_meta::CONNECTOR_METADATA_REGISTRY)]
+static FILE_INPUT_META: feldera_adapterlib_meta::ConnectorDescriptor =
+    feldera_adapterlib_meta::ConnectorDescriptor {
+        name: "file_input",
+        crate_name: env!("CARGO_CRATE_NAME"),
+        direction: feldera_adapterlib_meta::Direction::Input,
+        kind: feldera_adapterlib_meta::ConnectorKind::Regular,
+        fault_tolerance: Some(feldera_types::config::FtModel::ExactlyOnce),
+        config_schema: file_input_config_schema,
+        default_format: None,
+        flags: feldera_adapterlib_meta::ConnectorFlags::EMPTY,
+    };
 
 fn file_output_config_schema() -> JsonValue {
     JsonValue::Object(Default::default())
 }
 
-fn build_file_output(
+pub fn build_file_output(
     config: &JsonValue,
     _endpoint_name: &str,
     _fault_tolerant: bool,
@@ -441,21 +437,18 @@ fn build_file_output(
     Ok(Box::new(FileOutputEndpoint::new(config)?))
 }
 
-static FILE_OUTPUT_DESCRIPTOR: ConnectorDescriptor = ConnectorDescriptor {
-    name: "file_output",
-    direction: Direction::Output,
-    kind: ConnectorKind::Regular,
-    fault_tolerance: None,
-    config_schema: file_output_config_schema,
-    default_format: None,
-    flags: ConnectorFlags::EMPTY,
-    build_input: None,
-    build_output: Some(build_file_output),
-    build_integrated_input: None,
-    build_integrated_output: None,
-};
-
-inventory::submit! { &FILE_OUTPUT_DESCRIPTOR }
+#[linkme::distributed_slice(feldera_adapterlib_meta::CONNECTOR_METADATA_REGISTRY)]
+static FILE_OUTPUT_META: feldera_adapterlib_meta::ConnectorDescriptor =
+    feldera_adapterlib_meta::ConnectorDescriptor {
+        name: "file_output",
+        crate_name: env!("CARGO_CRATE_NAME"),
+        direction: feldera_adapterlib_meta::Direction::Output,
+        kind: feldera_adapterlib_meta::ConnectorKind::Regular,
+        fault_tolerance: None,
+        config_schema: file_output_config_schema,
+        default_format: None,
+        flags: feldera_adapterlib_meta::ConnectorFlags::EMPTY,
+    };
 
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -111,6 +111,163 @@ where
     }
 }
 
+// ─── ConnectorDispatch ────────────────────────────────────────────────────────
+
+/// Per-pipeline dispatch table for external connector plugins.
+///
+/// Each entry is a fixed table of four function pointers, one per builder kind.
+/// The pipeline-manager emits one such entry into the per-pipeline globals
+/// crate's `connector_dispatch` module, where it is registered into
+/// [`CONNECTOR_DISPATCH_REGISTRY`] so the runtime can resolve external
+/// connector names that the bundled `dbsp_adapters` factory match does not
+/// know.
+///
+/// Each fn returns `Ok(None)` when the dispatch table does not handle the
+/// given `name` (allowing the runtime to fall through to the next mechanism)
+/// and `Ok(Some(_))` when it constructed the requested endpoint.
+pub struct ConnectorDispatch {
+    /// Build a regular input transport endpoint for `name`.
+    pub build_input: fn(
+        name: &str,
+        config: &serde_json::Value,
+        endpoint_name: &str,
+        secrets_dir: &std::path::Path,
+    ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>>,
+    /// Build a regular output transport endpoint for `name`.
+    pub build_output: fn(
+        name: &str,
+        config: &serde_json::Value,
+        endpoint_name: &str,
+        fault_tolerant: bool,
+        secrets_dir: &std::path::Path,
+    ) -> AnyResult<Option<Box<dyn OutputEndpoint>>>,
+    /// Build an integrated input endpoint for `name`.
+    pub build_integrated_input: fn(
+        name: &str,
+        config: &serde_json::Value,
+        endpoint_name: &str,
+        consumer: Box<dyn InputConsumer>,
+    ) -> AnyResult<Option<Box<dyn IntegratedInputEndpoint>>>,
+    /// Build an integrated output endpoint for `name`.
+    pub build_integrated_output: fn(
+        name: &str,
+        endpoint_id: u64,
+        endpoint_name: &str,
+        config: &serde_json::Value,
+        key_schema: &Option<Relation>,
+        schema: &Relation,
+        controller: Arc<dyn crate::connector::OutputControllerRef>,
+        is_restart: bool,
+    ) -> AnyResult<Option<Box<dyn IntegratedOutputEndpoint>>>,
+}
+
+// SAFETY: `ConnectorDispatch` contains only function pointers, which are
+// inherently `Send + Sync`.
+unsafe impl Send for ConnectorDispatch {}
+unsafe impl Sync for ConnectorDispatch {}
+
+/// Registry of per-pipeline connector dispatch tables.
+///
+/// The pipeline-manager codegens a `ConnectorDispatch` entry into the
+/// per-pipeline globals crate (see Phase 6 of the connector plugin refactor
+/// design) and registers it here via `#[linkme::distributed_slice]`. The
+/// runtime walks this slice once per endpoint construction as a fallback
+/// after the bundled `dbsp_adapters` factory match returns `Ok(None)`.
+///
+/// In production builds the slice contains exactly one entry (the per-pipeline
+/// dispatch). In `dbsp_adapters` unit tests and `mock_input_pipeline` the
+/// slice is empty — external connectors are not reachable in those contexts,
+/// which is correct: only bundled connectors participate in the in-tree
+/// factory match.
+#[linkme::distributed_slice]
+pub static CONNECTOR_DISPATCH_REGISTRY: [ConnectorDispatch] = [..];
+
+/// Search [`CONNECTOR_DISPATCH_REGISTRY`] for an input transport endpoint
+/// matching `name`.
+///
+/// Returns `Ok(None)` when no registered dispatch knows `name`.
+pub fn dispatch_input(
+    name: &str,
+    config: &serde_json::Value,
+    endpoint_name: &str,
+    secrets_dir: &std::path::Path,
+) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+    for dispatch in CONNECTOR_DISPATCH_REGISTRY.iter() {
+        if let Some(ep) = (dispatch.build_input)(name, config, endpoint_name, secrets_dir)? {
+            return Ok(Some(ep));
+        }
+    }
+    Ok(None)
+}
+
+/// Search [`CONNECTOR_DISPATCH_REGISTRY`] for an output transport endpoint
+/// matching `name`.
+pub fn dispatch_output(
+    name: &str,
+    config: &serde_json::Value,
+    endpoint_name: &str,
+    fault_tolerant: bool,
+    secrets_dir: &std::path::Path,
+) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
+    for dispatch in CONNECTOR_DISPATCH_REGISTRY.iter() {
+        if let Some(ep) =
+            (dispatch.build_output)(name, config, endpoint_name, fault_tolerant, secrets_dir)?
+        {
+            return Ok(Some(ep));
+        }
+    }
+    Ok(None)
+}
+
+/// Search [`CONNECTOR_DISPATCH_REGISTRY`] for an integrated input endpoint
+/// matching `name`.
+///
+/// `consumer` is moved into the first registered dispatch. Production
+/// pipelines register exactly one dispatch entry, so on a name miss the
+/// consumer is dropped and `Ok(None)` is returned to the caller, which then
+/// surfaces `unknown_input_transport`.
+pub fn dispatch_integrated_input(
+    name: &str,
+    config: &serde_json::Value,
+    endpoint_name: &str,
+    consumer: Box<dyn InputConsumer>,
+) -> AnyResult<Option<Box<dyn IntegratedInputEndpoint>>> {
+    let Some(dispatch) = CONNECTOR_DISPATCH_REGISTRY.iter().next() else {
+        return Ok(None);
+    };
+    (dispatch.build_integrated_input)(name, config, endpoint_name, consumer)
+}
+
+/// Search [`CONNECTOR_DISPATCH_REGISTRY`] for an integrated output endpoint
+/// matching `name`.
+#[allow(clippy::too_many_arguments)]
+pub fn dispatch_integrated_output(
+    name: &str,
+    endpoint_id: u64,
+    endpoint_name: &str,
+    config: &serde_json::Value,
+    key_schema: &Option<Relation>,
+    schema: &Relation,
+    controller: Arc<dyn crate::connector::OutputControllerRef>,
+    is_restart: bool,
+) -> AnyResult<Option<Box<dyn IntegratedOutputEndpoint>>> {
+    for dispatch in CONNECTOR_DISPATCH_REGISTRY.iter() {
+        if let Some(ep) = (dispatch.build_integrated_output)(
+            name,
+            endpoint_id,
+            endpoint_name,
+            config,
+            key_schema,
+            schema,
+            controller.clone(),
+            is_restart,
+        )? {
+            return Ok(Some(ep));
+        }
+    }
+    Ok(None)
+}
+
 /// Commands for an [InputReader] to execute.
 ///
 /// # Transitions

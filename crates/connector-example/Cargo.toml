@@ -16,20 +16,42 @@ publish = false
 [lib]
 crate-type = ["rlib"]
 
+# `impl` compiles the full connector implementation (depends on feldera-adapterlib
+# and every other heavy dep below).  `metadata` is a marker feature that is never
+# implied by `impl`; its absence is what the describer exploits — it builds this
+# crate with `default-features = false`, so only the descriptor static and its
+# cheap deps compile.  The `default = ["impl"]` ensures normal builds (pipeline
+# runtime, tests) compile everything.
+[features]
+default = ["impl"]
+impl = [
+    "dep:feldera-adapterlib",
+    "dep:anyhow",
+    "dep:chrono",
+    "dep:crossbeam",
+    "dep:tokio",
+    "dep:xxhash-rust",
+]
+metadata = []
+
 [dependencies]
-# Only feldera-adapterlib (and feldera-types for shared config types) are needed.
-# This demonstrates that a connector need not depend on `dbsp` or `adapters`.
-feldera-adapterlib = { path = "../adapterlib" }
+# Always needed: metadata registration (feldera-adapterlib-meta) and config types.
+feldera-adapterlib-meta = { path = "../adapterlib-meta" }
 feldera-types = { path = "../feldera-types" }
-# inventory is required because register_connector! expands to ::inventory::submit!
-inventory = "0.3"
-anyhow = "1"
-chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-crossbeam = "0.8"
+# linkme must be a *direct* dep of every crate that annotates a static with
+# #[linkme::distributed_slice]; transitive through feldera-adapterlib-meta is
+# not sufficient for the linker section to fire.
+linkme = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["sync"] }
-xxhash-rust = { version = "0.8", features = ["xxh3"] }
+
+# Impl-only deps: compiled only when feature = "impl" is active.
+feldera-adapterlib = { path = "../adapterlib", optional = true }
+anyhow = { version = "1", optional = true }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"], optional = true }
+crossbeam = { version = "0.8", optional = true }
+tokio = { version = "1", features = ["sync"], optional = true }
+xxhash-rust = { version = "0.8", features = ["xxh3"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"

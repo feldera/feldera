@@ -4,7 +4,7 @@ use bench_common::{
     BenchKeyStruct, BenchTestStruct, NoOpControllerRef, build_indexed_batch, generate_test_data,
 };
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use feldera_adapterlib::connector::connector_by_name;
+use dbsp_adapters::integrated::build_delta_table_output;
 use feldera_adapterlib::transport::IntegratedOutputEndpoint;
 use feldera_types::transport::delta_table::{DeltaTableWriteMode, DeltaTableWriterConfig};
 use std::sync::Arc;
@@ -26,14 +26,9 @@ fn create_indexed_writer(threads: usize, table_uri: &str) -> Box<dyn IntegratedO
     let key_schema = Some(BenchKeyStruct::relation_schema());
     let mut value_schema = BenchTestStruct::relation_schema();
     value_schema.materialized = true;
-    let descriptor = connector_by_name("delta_table_output")
-        .expect("delta_table_output descriptor not registered");
-    let build = descriptor
-        .build_integrated_output
-        .expect("delta_table_output is not an integrated output connector");
     let config_value =
         serde_json::to_value(&config).expect("failed to serialize DeltaTableWriterConfig");
-    build(
+    build_delta_table_output(
         0,
         "bench_endpoint",
         &config_value,
