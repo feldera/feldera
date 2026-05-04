@@ -54,6 +54,10 @@ public class RexOptimize extends RexShuttle {
                     return this.builder.makeLiteral(value.negate(), resultType, true, false);
                 }
             }
+            case CHECKED_PLUS:
+            case CHECKED_MINUS:
+            case CHECKED_TIMES:
+            case CHECKED_DIVIDE:
             case DIVIDE:
             case TIMES:
             case MINUS:
@@ -64,18 +68,22 @@ public class RexOptimize extends RexShuttle {
                     BigDecimal leftValue = Objects.requireNonNull(left.getValueAs(BigDecimal.class));
                     BigDecimal rightValue = Objects.requireNonNull(right.getValueAs(BigDecimal.class));
                     switch (call.getKind()) {
+                        case CHECKED_MINUS:
+                        case CHECKED_PLUS:
                         case PLUS:
                         case MINUS: {
-                            if (call.getKind() == SqlKind.MINUS) {
+                            if (call.getKind() == SqlKind.MINUS || call.getKind() == SqlKind.CHECKED_MINUS) {
                                 rightValue = rightValue.negate();
                             }
                             BigDecimal result = leftValue.add(rightValue);
                             return this.builder.makeLiteral(result, resultType, true, false);
                         }
+                        case CHECKED_TIMES:
                         case TIMES: {
                             BigDecimal result = leftValue.multiply(rightValue);
                             return this.builder.makeLiteral(result, resultType, true, false);
                         }
+                        case CHECKED_DIVIDE:
                         case DIVIDE: {
                             // Microsecond precision; values are in milliseconds, and we keep 3 more decimals
                             BigDecimal result = leftValue.divide(rightValue, 3, RoundingMode.FLOOR);

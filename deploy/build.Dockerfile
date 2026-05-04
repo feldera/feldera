@@ -116,10 +116,12 @@ ENV LANGUAGE=en_US:en
 # Making gcc, installed as a part of build-essentials, a default C compiler to build Rust dependencies
 ENV CC=gcc-13
 
+ENV GRADLE_VERSION=8.14.4
+
 # We use the ubuntu user here since it has the same UID and GID (1000) as the ci user on the machines
 # which helps with permissions when mounting volumes
 USER ubuntu
-ENV PATH="/home/ubuntu/.local/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.cargo/bin:/home/ubuntu/mold/bin:/home/ubuntu/gradle-8.7/bin:$PATH"
+ENV PATH="/home/ubuntu/.local/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.cargo/bin:/home/ubuntu/mold/bin:/home/ubuntu/gradle-${GRADLE_VERSION}/bin:$PATH"
 
 # Install rust
 ENV RUSTUP_HOME=/home/ubuntu/.rustup
@@ -137,9 +139,9 @@ RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.3"
 
 # Install gradle, the version needs to match the version that calcite uses which avoid reinstalling this every time we run build.sh
 RUN cd /home/ubuntu \
-    && curl -LO https://services.gradle.org/distributions/gradle-8.7-bin.zip \
-    && unzip gradle-8.7-bin.zip \
-    && rm gradle-8.7-bin.zip
+    && curl -LO https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip \
+    && unzip gradle-${GRADLE_VERSION}-bin.zip \
+    && rm gradle-${GRADLE_VERSION}-bin.zip
 
 # The download URL for mold uses x86_64/aarch64 whereas dpkg --print-architecture says amd64/arm64
 RUN arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x86_64/g"`; \
