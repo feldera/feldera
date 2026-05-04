@@ -493,6 +493,12 @@ impl BalancerInner {
         cluster_index: usize,
         ignore_fixed_policies: bool,
     ) -> Result<BTreeMap<NodeId, PartitioningPolicy>, BalancerError> {
+        if cluster_index == 0 && Runtime::worker_index() == 0 {
+            println!(
+                "solve_cluster 0: ignore_fixed_policies: {:?}",
+                ignore_fixed_policies
+            );
+        }
         let mut domains = BTreeMap::new();
         let mut current_effective_policy = BTreeMap::new();
 
@@ -503,6 +509,12 @@ impl BalancerInner {
             let exchange_sender_metadata: Vec<Option<RebalancingExchangeSenderExchangeMetadata>> =
                 self.metadata.get(stream).cloned().unwrap_or_default();
 
+            if cluster_index == 0 && Runtime::worker_index() == 0 {
+                println!(
+                    "exchange_sender_metadata: {:?}", exchange_sender_metadata
+                );
+            }
+
             if let Some(metadata) = exchange_sender_metadata
                 .first()
                 .and_then(|metadata| metadata.as_ref())
@@ -512,11 +524,13 @@ impl BalancerInner {
 
             let fixed_policy = self.get_fixed_policy(&exchange_sender_metadata, hints)?;
 
-            // println!(
-            //     "{} fixed_policy for {stream} (hints: {hints:?}): {:?}",
-            //     Runtime::worker_index(),
-            //     fixed_policy,
-            // );
+            if cluster_index == 0 && Runtime::worker_index() == 0 {
+                println!(
+                    "{} fixed_policy for {stream} (hints: {hints:?}): {:?}",
+                    Runtime::worker_index(),
+                    fixed_policy,
+                );
+            }
 
             let mut domain = self.compute_domain(&exchange_sender_metadata, hints);
             if let Some(fixed_policy) = &fixed_policy
@@ -535,12 +549,12 @@ impl BalancerInner {
             return Ok(solution);
         };
 
-        // if Runtime::worker_index() == 0 {
-        //     println!(
-        //         "found new solution: {:?}, current solution: {:?}",
-        //         solution, self.clusters[cluster_index].solution
-        //     );
-        // }
+        if cluster_index == 0 && Runtime::worker_index() == 0 {
+            println!(
+                "found new solution: {:?}, current solution: {:?}",
+                solution, self.clusters[cluster_index].solution
+            );
+        }
 
         // Check that the new solution is significantly better than the current solution.
 
@@ -549,6 +563,13 @@ impl BalancerInner {
             self.validate_solution(&current_effective_policy, &domains)
         {
             let new_solution_cost = self.validate_solution(&solution, &domains).unwrap();
+
+            if cluster_index == 0 && Runtime::worker_index() == 0 {
+                println!(
+                    "current_solution_cost: {:?}, new_solution_cost: {:?}",
+                    current_solution_cost, new_solution_cost
+                );
+            }
 
             if new_solution_cost.0 as f64 * balancer_min_relative_improvement_threshold()
                 < current_solution_cost.0 as f64
@@ -576,6 +597,9 @@ impl BalancerInner {
         domains: &BTreeMap<NodeId, BTreeMap<PartitioningPolicy, Cost>>,
     ) -> Result<BTreeMap<NodeId, PartitioningPolicy>, BalancerError> {
         //let cluster = &mut self.clusters[cluster_index];
+        if cluster_index == 0 && Runtime::worker_index() == 0 {
+            println!("solve_cluster_with_domains 0: domains: {:?}", domains);
+        }
 
         let mut maxsat = MaxSat::new();
         let mut variable_indexes = BTreeMap::new();
@@ -607,12 +631,12 @@ impl BalancerInner {
             })
             .collect();
 
-        // if Runtime::worker_index() == 0 {
-        //     println!(
-        //         "found new solution: {:?}, current solution: {:?}",
-        //         solution, self.clusters[cluster_index].solution
-        //     );
-        // }
+        if cluster_index == 0 && Runtime::worker_index() == 0 {
+            println!(
+                "found new solution: {:?}, current solution: {:?}",
+                solution, self.clusters[cluster_index].solution
+            );
+        }
 
         Ok(solution)
     }
