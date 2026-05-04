@@ -1767,10 +1767,10 @@ public class Regression1Tests extends SqlIoTest {
         this.statementsFailingInCompilation("""
                 CREATE TABLE T(x INT UNSIGNED);
                 CREATE VIEW V AS SELECT -x FROM T;""",
-                "Unary minus cannot be applied");
+                "Cannot apply '-' to arguments of type '-<INTEGER UNSIGNED>");
         this.statementsFailingInCompilation(
                 "CREATE VIEW V AS SELECT - CAST(1 AS INT UNSIGNED)",
-                "Unary minus cannot be applied");
+                "Cannot apply '-' to arguments of type '-<INTEGER UNSIGNED>'");
     }
 
     @Test
