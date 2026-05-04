@@ -294,21 +294,66 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     """
                     runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
                     runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
-            new Func(SqlStdOperatorTable.ACOS, "ACOS", SqlLibrary.STANDARD, "float#acos", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.ASIN, "ASIN", SqlLibrary.STANDARD, "float#asin", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.ATAN, "ATAN", SqlLibrary.STANDARD, "float#atan", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.ATAN2, "ATAN2", SqlLibrary.STANDARD, "float#atan2", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.CBRT, "CBRT", SqlLibrary.STANDARD, "float#cbrt", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.COS, "COS", SqlLibrary.STANDARD, "float#cos", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.COT, "COT", SqlLibrary.STANDARD, "float#cot", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.DEGREES, "DEGREES", SqlLibrary.STANDARD, "float#degrees", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.EXP, "EXP", SqlLibrary.STANDARD, "float#exp", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.RADIANS, "RADIANS", SqlLibrary.STANDARD, "float#radians", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.ROUND, "ROUND", SqlLibrary.STANDARD, "float#round,float#round2,decimal#round,decimal#round2", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.SIGN, "SIGN", SqlLibrary.STANDARD, "decimal#sign", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.SIN, "SIN", SqlLibrary.STANDARD, "float#sin", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.TAN, "TAN", SqlLibrary.STANDARD, "float#tan", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.TRUNCATE, "TRUNCATE", SqlLibrary.STANDARD, "decimal#truncate,decimal#truncate2,float#truncate,float#truncate2", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.ACOS, "ACOS", SqlLibrary.STANDARD, "float#acos",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.ASIN, "ASIN", SqlLibrary.STANDARD, "float#asin",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.ATAN, "ATAN", SqlLibrary.STANDARD, "float#atan",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.ATAN2, "ATAN2", SqlLibrary.STANDARD, "float#atan2",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.CBRT, "CBRT", SqlLibrary.STANDARD, "float#cbrt",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.COS, "COS", SqlLibrary.STANDARD, "float#cos",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.COT, "COT", SqlLibrary.STANDARD, "float#cot",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.DEGREES, "DEGREES", SqlLibrary.STANDARD, "float#degrees",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.EXP, "EXP", SqlLibrary.STANDARD, "float#exp",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.RADIANS, "RADIANS", SqlLibrary.STANDARD, "float#radians",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.ROUND, "ROUND", SqlLibrary.STANDARD, "float#round,float#round2,decimal#round,decimal#round2",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.SIGN, "SIGN", SqlLibrary.STANDARD, "decimal#sign",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.SIN, "SIN", SqlLibrary.STANDARD, "float#sin",
+                     """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.TAN, "TAN", SqlLibrary.STANDARD, "float#tan",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
+            new Func(SqlStdOperatorTable.TRUNCATE, "TRUNCATE", SqlLibrary.STANDARD, "decimal#truncate,decimal#truncate2,float#truncate,float#truncate2",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
             new Func(SqlStdOperatorTable.PI, "PI", SqlLibrary.STANDARD, "float#pi", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.NULLIF, "NULLIF", SqlLibrary.STANDARD, "comparisons#nullif", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.COALESCE, "COALESCE", SqlLibrary.STANDARD, "comparisons#coalesce", FunctionDocumentation.NO_FILE, false),
