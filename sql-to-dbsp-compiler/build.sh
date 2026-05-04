@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -e
+set -ex
 
 : "${CALCITE_BUILD_DIR:=./calcite-build}"
 : "${CALCITE_CURRENT:=1.41.0}"
@@ -57,7 +57,7 @@ if [ "${CALCITE_BUILD_NEXT}" = "y" ]; then
     fi
 
     pushd "${CALCITE_BUILD_DIR}" >/dev/null
-    jvm_version=$(./gradlew --version | sed -n 's/^JVM: *//p')
+    jvm_version=$(./gradlew --version | sed -n 's/^Launcher JVM: *//p')
     case $jvm_version in
         19* | 20* | 21*) ;;
         2[5-9]*)
@@ -68,9 +68,10 @@ if [ "${CALCITE_BUILD_NEXT}" = "y" ]; then
             echo "*** WARNING *** Only Java versions 19, 20, and 21 are known to work with Calcite but you have $jvm_version"
             ;;
     esac
+    echo "Building Calcite"
     ./gradlew build -x test -x checkStyleMain -x autoStyleJavaCheck build --console=plain -Dorg.gradle.logging.level=quiet
-
     for DIR in core linq4j; do
+        echo "Installing ${DIR}"
         ARTIFACT=calcite-${DIR}
         mvn install:install-file \
             -Dfile="${DIR}/build/libs/${ARTIFACT}-${CALCITE_NEXT}-SNAPSHOT.jar" \

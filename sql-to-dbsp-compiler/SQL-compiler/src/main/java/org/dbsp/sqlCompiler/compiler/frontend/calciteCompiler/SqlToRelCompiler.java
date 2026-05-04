@@ -2128,7 +2128,7 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         // Convert plan to use checked arithmetic
         // Must be done before optimizations.
-        ConvertToChecked checkedConverter = new ConvertToChecked(this.getRexBuilder());
+        ConvertToChecked checkedConverter = new ConvertToChecked(this.getRexBuilder(), true);
         RelNode checked = checkedConverter.visit(relRoot.rel);
         relRoot = relRoot.withRel(checked);
 

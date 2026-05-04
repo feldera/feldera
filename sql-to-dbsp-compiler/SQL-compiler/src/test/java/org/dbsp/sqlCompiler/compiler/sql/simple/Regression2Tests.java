@@ -1013,4 +1013,21 @@ public class Regression2Tests extends SqlIoTest {
                  d| 1""");
         ccs.visit(this.findLinear(ccs.compiler));
     }
+
+    @Test
+    public void calciteIssue7501() {
+        this.getCC("""
+                CREATE TABLE D(sk_cid INT, dt DATE, dm_sym VARCHAR, fhd DATE);
+                CREATE TABLE F(sk_cid INT);
+                CREATE TABLE S(sk_sid INT, sym VARCHAR);
+                
+                CREATE VIEW V AS
+                SELECT
+                   d.dt as dtn,
+                   fhd as sk_fhd
+                FROM D
+                JOIN S
+                   ON S.sym = D.dm_sym
+                LEFT JOIN F USING (sk_cid);""");
+    }
 }
