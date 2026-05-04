@@ -192,11 +192,11 @@ static CHECKPOINT_WRITTEN_MEGABYTES: ExponentialHistogram = ExponentialHistogram
 
 /// Duration of transaction ingest time, that is, from transaction start to
 /// start of commit.
-static TRANSACTION_INGEST_TIME: ExponentialHistogram = ExponentialHistogram::new();
+static TRANSACTION_INGEST_TIME_MICROSECONDS: ExponentialHistogram = ExponentialHistogram::new();
 
 /// Duration of transaction commit time, that is, from starting commit to
 /// finishing commit.
-static TRANSACTION_COMMIT_TIME: ExponentialHistogram = ExponentialHistogram::new();
+static TRANSACTION_COMMIT_TIME_MICROSECONDS: ExponentialHistogram = ExponentialHistogram::new();
 
 /// Number of records successfully processed at the time of the last successful
 /// checkpoint.
@@ -1629,13 +1629,13 @@ impl Controller {
             "transaction_ingest_seconds",
             "Transaction ingestion time, that is, from transaction start to start of commit.",
             labels,
-            &TRANSACTION_INGEST_TIME.snapshot(),
+            &HistogramDiv::new(TRANSACTION_INGEST_TIME_MICROSECONDS.snapshot(), 1_000_000.0),
         );
         metrics.histogram(
             "transaction_commit_seconds",
             "Transaction commit time, that is, from starting commit to finishing commit.",
             labels,
-            &TRANSACTION_COMMIT_TIME.snapshot(),
+            &HistogramDiv::new(TRANSACTION_COMMIT_TIME_MICROSECONDS.snapshot(), 1_000_000.0),
         );
 
         fn write_input_metric<F, M, T>(
@@ -3061,7 +3061,7 @@ impl CircuitThread {
                         .with_tooltip(|| format!("transaction {tid} committed {n} records"))
                         .with_start(start)
                         .record();
-                    TRANSACTION_COMMIT_TIME.record_duration(duration);
+                    TRANSACTION_COMMIT_TIME_MICROSECONDS.record_duration(duration);
 
                     let mut transaction_info = self.controller.transaction_info.lock().unwrap();
                     transaction_info.transaction_state = TransactionState::None;
@@ -7086,7 +7086,7 @@ impl ControllerInner {
                 } => {
                     // Commit the running transaction.
                     let duration = start.elapsed();
-                    TRANSACTION_INGEST_TIME.record_duration(duration);
+                    TRANSACTION_INGEST_TIME_MICROSECONDS.record_duration(duration);
                     let n = self.status.global_metrics.num_total_processed_records()
                         - processed_records;
                     info!(
