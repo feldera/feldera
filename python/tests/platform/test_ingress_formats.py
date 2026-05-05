@@ -118,22 +118,19 @@ def _change_stream_start(pipeline: str, object_name: str, use_new_api: bool):
     path = api_url(f"/pipelines/{pipeline}/egress/{encoded}")
     if use_new_api:
         json = {
-            "transport": {
-                "name": "http_output",
-                "config": {
-                    "backpressure": True
-                }
-            },
+            "transport": {"name": "http_output", "config": {"backpressure": True}},
             "format": {
                 "name": "json",
                 "config": {
                     "array": True,
-                }
-            }
+                },
+            },
         }
         return http_request("POST", path, stream=True, json=json)
     else:
-        return http_request("POST", path + "?format=json&backpressure=true", stream=True)
+        return http_request(
+            "POST", path + "?format=json&backpressure=true", stream=True
+        )
 
 
 def _read_json_events(resp, expected_count: int, timeout_s: float = 10.0):

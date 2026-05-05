@@ -2280,7 +2280,7 @@ async fn output_endpoint(
         TransportConfig::HttpOutput(config) => config.clone(),
         _ => {
             return Err(PipelineError::InvalidParam {
-                error: format!("Transport configuration must be `http_output`"),
+                error: "Transport configuration must be `http_output`".to_string(),
             });
         }
     };
@@ -2300,7 +2300,7 @@ async fn output_endpoint(
         }
         _ => {
             return Err(PipelineError::InvalidParam {
-                error: format!("Format must be configured as `csv` or `json`"),
+                error: "Format must be configured as `csv` or `json`".to_string(),
             });
         }
     };
