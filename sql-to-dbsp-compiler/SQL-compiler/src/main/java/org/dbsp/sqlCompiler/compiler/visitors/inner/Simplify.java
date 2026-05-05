@@ -792,7 +792,7 @@ public class Simplify extends ExpressionTranslator {
                         }
                     }
                 }
-            }  else if (opcode == DBSPOpcode.MUL || opcode == DBSPOpcode.INTERVAL_MUL) {
+            }  else if (opcode == DBSPOpcode.MUL || opcode == DBSPOpcode.MUL_INTERVAL) {
                 if (left.is(DBSPLiteral.class) && leftType.is(IsNumericType.class)) {
                     DBSPLiteral leftLit = left.to(DBSPLiteral.class);
                     IsNumericType iLeftType = leftType.to(IsNumericType.class);
@@ -830,7 +830,7 @@ public class Simplify extends ExpressionTranslator {
                                 .to(DBSPExpression.class);
                     }
                 }
-            } else if (opcode == DBSPOpcode.DIV || opcode == DBSPOpcode.INTERVAL_DIV) {
+            } else if (opcode == DBSPOpcode.DIV || opcode == DBSPOpcode.DIV_INTERVAL) {
                 if (right.is(DBSPLiteral.class)) {
                     DBSPLiteral rightLit = right.to(DBSPLiteral.class);
                     IsNumericType iRightType = rightType.to(IsNumericType.class);

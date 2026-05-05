@@ -660,8 +660,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         if (left.mayBeMonotone() &&
                 (expression.opcode == DBSPOpcode.DIV ||
                         expression.opcode == DBSPOpcode.MUL ||
-                        expression.opcode == DBSPOpcode.INTERVAL_MUL ||
-                        expression.opcode == DBSPOpcode.INTERVAL_DIV)) {
+                        expression.opcode == DBSPOpcode.MUL_INTERVAL ||
+                        expression.opcode == DBSPOpcode.DIV_INTERVAL)) {
             // Multiplying or dividing a monotone expression by
             // a positive constant produces a monotone result
             // TODO: multiplication is commutative.

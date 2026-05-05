@@ -103,6 +103,10 @@ But invalid casts such as: ``CAST('1234.1234' AS DECIMAL(6, 3))`` will throw a r
     <td>Ceiling function: nearest integer value greater than or equal to argument (result is a <code>DECIMAL</code> value).</td>
   </tr>
   <tr>
+    <td><a id="div_null"></a><code>DIV_NULL(numerator, denominator)</code></td>
+    <td>Like division, but returns `NULL` when denominator is zero.</td>
+  </tr>
+  <tr>
     <td><a id="floor"></a><code>FLOOR(value)</code></td>
     <td>Floor function: nearest integer value less than or equal to argument (result is a <code>DECIMAL</code> value).</td>
   </tr>

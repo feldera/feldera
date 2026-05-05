@@ -180,8 +180,8 @@ public class ValueNumbering extends InnerVisitor {
                 .add(expression.opcode.toString())
                 .add(this.getId(expression.right, expression, 1));
         boolean expensive = switch (expression.opcode) {
-            case MUL, MAP_CONVERT, INTERVAL_MUL, ADD, SUB, DIV, DIV_NULL, MOD, MUL_WEIGHT, CONCAT, IS_DISTINCT, SQL_INDEX,
-                 MAP_INDEX, VARIANT_INDEX, RUST_INDEX, INTERVAL_DIV -> true;
+            case MUL, MAP_CONVERT, MUL_INTERVAL, ADD, SUB, DIV, DIV_NULL, MOD, MUL_WEIGHT, CONCAT, IS_DISTINCT, SQL_INDEX,
+                 MAP_INDEX, VARIANT_INDEX, RUST_INDEX, DIV_INTERVAL -> true;
             default -> false;
         };
         this.checkRepresentation(expression, repr, expensive);

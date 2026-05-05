@@ -1,4 +1,7 @@
-use crate::{SqlString, some_function1, some_polymorphic_function1, some_polymorphic_function2};
+use crate::{
+    SqlString, finite_or_null, some_function1, some_polymorphic_function1,
+    some_polymorphic_function2,
+};
 use dbsp::algebra::{F32, F64};
 use lexical_core::format::STANDARD;
 use lexical_core::{ToLexicalWithOptions, WriteFloatOptions};
@@ -525,4 +528,30 @@ pub fn check() {
         Some(SqlString::from("1.23e10")),
         to_string_dN(Some(12300000000f64.into()))
     );
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn finite_or_null_d(value: F64) -> Option<F64> {
+    finite_or_null(value.into_inner()).map(|x| x.into())
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn finite_or_null_dN(value: Option<F64>) -> Option<F64> {
+    let value = value?;
+    finite_or_null_d(value)
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn finite_or_null_f(value: F32) -> Option<F32> {
+    finite_or_null(value.into_inner()).map(|x| x.into())
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn finite_or_null_fN(value: Option<F32>) -> Option<F32> {
+    let value = value?;
+    finite_or_null_f(value)
 }
