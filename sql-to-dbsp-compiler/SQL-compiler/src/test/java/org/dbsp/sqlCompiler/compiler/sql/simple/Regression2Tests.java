@@ -1052,4 +1052,132 @@ public class Regression2Tests extends SqlIoTest {
                    ON S.sym = D.dm_sym
                 LEFT JOIN F USING (sk_cid);""");
     }
+
+    @Test
+    public void testFiniteOrNull() {
+        this.qs("""
+                SELECT FINITE_OR_NULL(1e0);
+                 r
+                ---
+                 1
+                (1 row)
+                
+                SELECT FINITE_OR_NULL(CAST(NULL AS REAL));
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT FINITE_OR_NULL(1e0/0);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT FINITE_OR_NULL(0e0/0);
+                 r
+                ---
+                NULL
+                (1 row)""");
+    }
+
+    @Test
+    public void issue6181() {
+        var ccs = this.getCCS("""
+               CREATE TABLE T(x INT);
+               CREATE VIEW V AS SELECT DIV_NULL(INTERVAL '+1' HOURS, x) FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES (5);", """
+                 r
+                ---
+                 12 mins""");
+        ccs.stepWeightOne("INSERT INTO T VALUES (0);", """
+                 r
+                ---
+                NULL""");
+        this.qs("""
+               SELECT INTERVAL '+1' HOURS / 5;
+                r
+               ---
+                12 mins
+               (1 row)
+               
+               SELECT DIV_NULL(1, 0);
+                r
+               ---
+               NULL
+               (1 row)
+               
+               SELECT DIV_NULL(1, 0.0);
+                r
+               ---
+               NULL
+               (1 row)
+               
+               SELECT DIV_NULL(1, 0e0);
+                r
+               ---
+               NULL
+               (1 row)
+               
+               SELECT DIV_NULL(0, 0e0);
+                r
+               ---
+               NULL
+               (1 row)
+               
+               SELECT DIV_NULL(0, NULL);
+                r
+               ---
+               NULL
+               (1 row)
+               
+               SELECT DIV_NULL(CAST(0 AS REAL), NULL);
+                r
+               ---
+               NULL
+               (1 row)
+               
+               SELECT DIV_NULL(INTERVAL '1' HOURS, 1.0);
+                r
+               ---
+               1 hour
+               (1 row)
+               
+               SELECT DIV_NULL(INTERVAL '1' YEAR, 2.0);
+                r
+               ---
+               6 month
+               (1 row)
+               
+               SELECT DIV_NULL(1e0, 0);
+                r
+               ---
+               NULL
+               (1 row)
+               
+               SELECT DIV_NULL(CAST(1 AS BIGINT UNSIGNED), 0);
+                r
+               ---
+               NULL
+               (1 row)
+               
+               -- overflow
+               SELECT DIV_NULL(-2147483648, -1);
+                r
+               ---
+               NULL
+               (1 row)
+               
+               SELECT DIV_NULL(INTERVAL '1' MINUTE, 1e0);
+                r
+               ---
+                1 min
+               (1 row)
+               
+               SELECT DIV_NULL(INTERVAL '1' MINUTE, 0e0);
+                r
+               ---
+               NULL
+               (1 row)""");
+    }
 }

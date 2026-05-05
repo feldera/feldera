@@ -33,6 +33,7 @@ public enum DBSPOpcode {
     DIV("/", false),
     // DIV_NULL is like DIV, but returns NULL for a 0 denominator
     DIV_NULL("div_null", false),
+    DIV_INTERVAL_NULL("div_interval_null", false),
     MOD("%", false),
     EQ("==", false),
     NEQ("!=", false),
@@ -60,8 +61,8 @@ public enum DBSPOpcode {
     VARIANT_INDEX("indexV", false),
     RUST_INDEX("[]", false),
     // Interval-based operations
-    INTERVAL_MUL("*", false),
-    INTERVAL_DIV("/", false),
+    MUL_INTERVAL("*", false),
+    DIV_INTERVAL("/", false),
 
     // Aggregate operations.  These operations
     // handle NULL values differently from standard
@@ -131,7 +132,7 @@ public enum DBSPOpcode {
             case WRAP_BOOL, MAP_CONVERT, ARRAY_CONVERT, CONTROLLED_FILTER_GTE, AGG_LTE, AGG_GTE, AGG_ADD, AGG_MIN,
                  AGG_MAX, AGG_XOR, AGG_OR, AGG_AND, IS_DISTINCT, CONCAT, MIN, MAX, OR, AND, IS_NOT_FALSE, IS_NOT_TRUE,
                  AGG_MAX1, AGG_MIN1, INDICATOR -> false;
-            case NEG, INTERVAL_DIV, INTERVAL_MUL, DECIMAL_TO_INTEGER, INTEGER_TO_DECIMAL,
+            case NEG, DIV_INTERVAL, DIV_INTERVAL_NULL, MUL_INTERVAL, DECIMAL_TO_INTEGER, INTEGER_TO_DECIMAL,
                  SHORT_INTERVAL_TO_INTEGER, INTEGER_TO_SHORT_INTERVAL,
                  RUST_INDEX, VARIANT_INDEX, MAP_INDEX,
                  SQL_INDEX, XOR, BW_OR, MUL_WEIGHT, BW_AND, GTE, LTE, GT, LT, NEQ, EQ, MOD, DIV_NULL, DIV, MUL, SUB,

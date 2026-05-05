@@ -85,8 +85,9 @@ public class RustSqlRuntimeLibrary {
         this.arithmeticFunctions.put(DBSPOpcode.AGG_XOR, DBSPOpcode.AGG_XOR.toString());
         this.arithmeticFunctions.put(DBSPOpcode.CONTROLLED_FILTER_GTE, DBSPOpcode.CONTROLLED_FILTER_GTE.toString());
 
-        this.dateFunctions.put(DBSPOpcode.INTERVAL_MUL, "times");
-        this.dateFunctions.put(DBSPOpcode.INTERVAL_DIV, "div");
+        this.dateFunctions.put(DBSPOpcode.MUL_INTERVAL, "times");
+        this.dateFunctions.put(DBSPOpcode.DIV_INTERVAL, "div");
+        this.dateFunctions.put(DBSPOpcode.DIV_INTERVAL_NULL, "div_null");
         this.dateFunctions.put(DBSPOpcode.CONTROLLED_FILTER_GTE, DBSPOpcode.CONTROLLED_FILTER_GTE.toString());
 
         this.stringFunctions.put(DBSPOpcode.CONCAT, "concat");
@@ -166,7 +167,8 @@ public class RustSqlRuntimeLibrary {
             map = this.otherFunctions;
         }
         if (rtype != null && rtype.is(IsIntervalType.class)) {
-            if (opcode == DBSPOpcode.INTERVAL_MUL || opcode == DBSPOpcode.INTERVAL_DIV) {
+            if (opcode == DBSPOpcode.MUL_INTERVAL || opcode == DBSPOpcode.DIV_INTERVAL ||
+                    opcode == DBSPOpcode.DIV_INTERVAL_NULL) {
                 // e.g., 10 * INTERVAL
                 map = this.dateFunctions;
             }

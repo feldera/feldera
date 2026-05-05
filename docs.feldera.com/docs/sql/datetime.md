@@ -37,9 +37,7 @@ The following are legal time units:
 
 The date type represents a Gregorian calendar date, independent of
 time zone.  This extends to dates before the Gregorian calendar was
-introduced, effectively meaning that the dates use a <a
-href="https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar">Proleptic
-calendar</a>.
+introduced, effectively meaning that the dates use a <a href="https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar">Proleptic calendar</a>.
 
 ### Date literals
 
@@ -53,59 +51,28 @@ Values BC or values greater than 10,000 years are not supported.
 
 The following operations are available on dates:
 
-<a id="date_trunc"></a>
-`DATE_TRUNC(date, <unit>)`, where `<unit>` is a time unit, as
-described above, between `MILLENNIUM` and `DAY`.  Result is a `DATE`.
-Rounds down the date to the specified time unit.  Example:
-`DATE_TRUNC('2020-01-10', MONTH)` produces the result
-`2020-01-01`.
-
-<a id="date_extract"></a>
-`EXTRACT(<unit> FROM date)` where `<unit>` is a time unit, as
-described above.  Result is always a `BIGINT` value.
-`DATE_PART` is a synonym for `EXTRACT`.
+| Function | Arguments | Result | Description                                                                                                           | Example |
+|----------|-----------|--------|-----------------------------------------------------------------------------------------------------------------------|---------|
+| <a id="date_trunc"></a> `DATE_TRUNC(date, *unit*)` | `*unit*` is a time unit, as described above, between `MILLENNIUM` and `DAY` | `DATE` | Rounds down the date to the specified time unit.                                                                      | `DATE_TRUNC('2020-01-10', MONTH)` => `2020-01-01`. |
+| <a id="date_extract"></a>`EXTRACT(*unit* FROM date)` | `*unit*` is a time unit, as described above | `BIGINT` | `DATE_PART` is a synonym for `EXTRACT`                                                                                | |
+| <a id="date_floor"></a>`FLOOR(date TO *unit*)`, | `*unit*` is a time unit | `DATE` | Round date down to the specified unit                                                                                 | `FLOOR('2020-01-10' TO MONTH)` => `2020-01-01` |
+| <a id="date_ceil"></a>`CEIL(date TO *unit*)`, | `*unit*` is a time unit | `DATE` | Round date up to the specified unit                                                                                   | `CEIL('2020-01-10' TO MONTH)` => `2020-02-01` |
+| <a id="date_timestampdiff"></a>`TIMESTAMPDIFF(*unit*, left, right)` | *unit*, `DATE`, `DATE` | `INTEGER` | Computes the difference (right - left) between two dates values and expresses the result in the specified time units. | `TIMESTAMPDIFF(HOUR, '2020-01-01', '2020-02-01')` => `24` |
 
 The following abbreviations can be used as well:
 
-<a id="date_year"></a>
-`YEAR(date)` is an abbreviation for `EXTRACT(YEAR FROM date)`.
-
-<a id="date_month"></a>
-`MONTH(date)` is an abbreviation for `EXTRACT(MONTH FROM date)`.
-
-<a id="date_dayofmonth"></a>
-`DAYOFMONTH(date)` is an abbreviation for `EXTRACT(DAY FROM
-date)`.
-
-<a id="date_dayofweek"></a>
-`DAYOFWEEK(date)` is an abbreviation for `EXTRACT(DOW FROM
-date)`.
-
-<a id="date_hour"></a>
-`HOUR(date)` is an abbreviation for `EXTRACT(HOUR FROM date)`.
-For dates it always returns 0, since dates have no time component.
-
-<a id="date_minute"></a>
-`MINUTE(date)` is an abbreviation for `EXTRACT(MINUTE FROM date)`.
-For dates it always returns 0, since dates have no time component.
-
-<a id="date_second"></a>
-`SECOND(date)` is an abbreviation for `EXTRACT(SECOND FROM date)`.
-For dates it always returns 0, since dates have no time component.
-
-<a id="date_floor"></a>
-`FLOOR(date TO <unit>)`, where `<unit>` is a time unit.
-
-<a id="date_ceil"></a>
-`CEIL(date TO <unit>)`, where `<unit>` is a time unit.
+| Abbreviation | Same as | Notes |
+|--------------|---------|-------|
+| <a id="date_year"></a>`YEAR(date)` | `EXTRACT(YEAR FROM date)` | |
+| <a id="date_month"></a>`MONTH(date)` | `EXTRACT(MONTH FROM date)` | |
+| <a id="date_dayofmonth"></a>`DAYOFMONTH(date)` | `EXTRACT(DAY FROM date)` | |
+| <a id="date_dayofweek"></a>`DAYOFWEEK(date)` | `EXTRACT(DOW FROM date)` | |
+| <a id="date_hour"></a>`HOUR(date)` | `EXTRACT(HOUR FROM date)` | For dates it always returns 0, since dates have no time component. |
+| <a id="date_minute"></a>`MINUTE(date)` | `EXTRACT(MINUTE FROM date)` | For dates it always returns 0, since dates have no time component. |
+| <a id="date_second"></a>`SECOND(date)` | `EXTRACT(SECOND FROM date)` | For dates it always returns 0, since dates have no time component. |
 
 Values of type `DATE` can be compared using `=`, `<>`, `!=`, `<`, `>`,
 `<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
-
-<a id="date_timestampdiff"></a>
-`TIMESTAMPDIFF(<unit>, left, right)` computes the difference (right - left) between
-two dates values and expresses the result in the specified time units.
-The result is a 32-bit integer.
 
 ## Times
 
@@ -126,44 +93,24 @@ not allowed between quotes.
 
 ### Time operations
 
-<a id="time_trunc"></a>
-`TIME_TRUNC(time, <unit>)`, where `<unit>` is a time unit,
-as described above, between `HOUR` and `SECOND`.  Result is a
-`TIME`.  Rounds down the time to the specified time unit.
-Example: `TIME_TRUNC('12:34:56.78', MINUTE)` produces the
-result `12:34:00`.
+| Function | Arguments | Result | Description | Example |
+|----------|-----------|--------|-------------|---------|
+|<a id="time_trunc"></a>`TIME_TRUNC(time, *unit*)` | `*unit*` is a time unit, as described above, between `HOUR` and `SECOND` | `TIME` |  Rounds down the time to the specified time unit | `TIME_TRUNC('12:34:56.78', MINUTE)` => `12:34:00` |
+|<a id="time_extract"></a>`EXTRACT(*unit* FROM time)` | `*unit*` is a time unit from `HOUR`, `MINUTE`, `SECOND`, `MILLISECOND` | `BIGINT` | Extracts the specified part | `EXTRACT(HOUR FROM '17:23:59')` => `17` |
+|<a id="timestamp_timestampdiff"></a>`TIMESTAMPDIFF(*unit*, left, right)` | *unit* is a time unit | `INT` | Computes the difference (right - left) between two time values and expresses the result in the specified time units. | |
+|<a id="time_floor"></a>`FLOOR(time TO *unit*)` | `*unit*` is a time unit between `HOUR` and `MICROSECOND` | `TIME` | It rounds a time downward to the start of the next unit boundary unless the value is already exactly on that boundary. | `FLOOR('17:23:59' TO MINUTE)` => `17:23:00` |
+|<a id="time_ceil"></a> `CEIL(time TO *unit*)` | `*unit*` is a time unit between `HOUR` and `MICROSECOND` | `TIME` | It rounds a time upward to the start of the next unit boundary unless the value is already exactly on that boundary. | `CEIL('17:01:00' TO HOUR)` => `18:00:00` |
 
-<a id="time_extract"></a>
-`EXTRACT(<unit> FROM time)` where `<unit>` is a time unit from
-`HOUR`, `MINUTE`, `SECOND`, `MILLISECOND`; the semantics is as
-described above.  Result is always a `BIGINT` value.
+ The following abbreviations can be used as well:
 
-The following abbreviations can be used as well:
-
-<a id="time_hour"></a>
-`HOUR(time)` is an abbreviation for `EXTRACT(HOUR FROM time)`.
-
-<a id="time_minute"></a>
-`MINUTE(time)` is an abbreviation for `EXTRACT(MINUTE FROM time)`.
-
-<a id="time_second"></a>
-`SECOND(time)` is an abbreviation for `EXTRACT(SECOND FROM
-time)`.
+| Abbreviation | Same as |
+|--------------|---------|
+|<a id="time_hour"></a>`HOUR(time)` | `EXTRACT(HOUR FROM time)` |
+|<a id="time_minute"></a>`MINUTE(time)` | `EXTRACT(MINUTE FROM time)` |
+|<a id="time_second"></a>`SECOND(time)` | `EXTRACT(SECOND FROM time)` |
 
 Values of type `TIME` can be compared using `=`, `<>`, `!=`, `<`, `>`,
 `<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
-
-<a id="timestamp_timestampdiff"></a>
-`TIMESTAMPDIFF(<unit>, left, right)` computes the difference (right - left) between
-two time values and expresses the result in the specified time units.
-The result is a 32-bit integer.
-
-<a id="time_floor"></a>
-`FLOOR(time TO <unit>)`, where `<unit>` is a time unit between `HOUR` and
-`MICROSECOND`.
-
-<a id="time_ceil"></a> `CEIL(time TO <unit>)`, where `<unit>` is a
-time unit between `HOUR` and `MICROSECOND`.
 
 ## Timestamps
 
@@ -191,78 +138,82 @@ value as an (big integer) number of milliseconds since the Unix epoch.
 Conversely, a cast from a `TIMESTAMP` to a numeric value retrieves the
 number of milliseconds since the Unix epoch from the timestamp.
 
-<a id="convert_timezone"></a> `CONVERT_TIMEZONE`(tz1, tz2, timestamp).
-Converts the value of a timestamp from timezone tz1 to timezone tz2.
-The timezones are specified as `CHAR` values.  Example: `SELECT
-CONVERT_TIMEZONE('America/New_York', 'America/Los_Angeles', TIMESTAMP
-'2008-03-05 12:25:29')` returns `2008-03-05 09:25:29`.  If the
-conversion fails, or if a timezone cannot be parsed as as IANA
-timezone or as a fixed offset timezone (e.g, `+08:00`), the result is
-`NULL`.
-
-<a id="timestamp_trunc"></a>
-`TIMESTAMP_TRUNC(timestamp, <unit>)`, where `<unit>` is a time unit,
-as described above, between `MILLENNIUM` and `SECOND`.  Result is a
-`TIMESTAMP`.  Rounds down the timestamp to the specified time unit.
-Example: `TIMESTAMP_TRUNC('2020-01-10 10:00:00', MONTH)` produces the
-result `2020-01-01 00:00:00`.
-
-<a id="timestamp_extract"></a>
-`EXTRACT(<unit> FROM timestamp)` where `<unit>` is a time unit, as
-described above.  Result is always a `BIGINT` value.
+<table>
+  <tr>
+    <th>Operation</th>
+    <th>Arguments</th>
+    <th>Result</th>
+    <th>Description</th>
+    <th>Examples</th>
+  </tr>
+  <tr>
+    <td><a id="convert_timezone"></a><code>CONVERT_TIMEZONE</code>(tz1, tz2, timestamp).</td>
+    <td></td>
+    <td><code>TIMESTAMP</code></td>
+    <td>Converts the value of a timestamp from timezone tz1 to timezone tz2. The timezones are specified as <code>CHAR</code> values.  If the conversion fails, or if a timezone cannot be parsed as as IANA timezone or as a fixed offset timezone (e.g, <code>+08:00</code>), the result is <code>NULL</code></td>
+    <td><code>CONVERT_TIMEZONE('America/New_York', 'America/Los_Angeles', TIMESTAMP '2008-03-05 12:25:29')</code> => <code>2008-03-05 09:25:29</code></td>
+  </tr>
+  <tr>
+    <td><a id="timestamp_trunc"></a><code>TIMESTAMP_TRUNC</code>(timestamp, <em>unit</em>)</td>
+    <td><em>unit</em> is a time unit, as described above, between <code>MILLENNIUM</code> and <code>SECOND</code></td>
+    <td><code>TIMESTAMP</code></td>
+    <td>Rounds down the timestamp to the specified time unit</td>
+    <td><code>TIMESTAMP_TRUNC('2020-01-10 10:00:00', MONTH)</code> => <code>2020-01-01 00:00:00</code></td>
+  </tr>
+  <tr>
+    <td><a id="timestamp_extract"></a><code>EXTRACT</code>(<em>unit</em> FROM timestamp)</td>
+    <td><em>unit</em> is a time unit, as described above</td>
+    <td><code>BIGINT</code></td>
+    <td>Extract the specified unit from timestamp</td>
+    <td><code>EXTRACT(HOUR FROM '2024-05-04 17:23:59')</code> => <code>17</code></td>
+  </tr>
+  <tr>
+    <td><a id="timestamp_floor"></a><code>FLOOR</code>(timestamp TO <em>unit</em>)</td>
+    <td><em>unit</em> is a time unit</td>
+    <td><code>TIMESTAMP</code></td>
+    <td>Rounds a timestamp upward to the start of the specified unit boundary unless the value is already exactly on that boundary.</td>
+    <td><code>FLOOR('2024-05-04 17:23:59' TO MONTH)</code> => <code>2024-05-01 00:00:00</code></td>
+  </tr>
+  <tr>
+    <td><a id="timestamp_ceil"></a><code>CEIL</code>(timestamp TO <em>unit</em>)</td>
+    <td><em>unit</em> is a time unit</td>
+    <td><code>TIMESTAMP</code></td>
+    <td>Rounds a timestamp upward to the start of the next unit boundary unless the value is already exactly on that boundary.</td>
+    <td><code>CEIL('2024-05-04 17:23:01' TO MINUTE)</code> => <code>2024-05-04 17:24:00</code></td>
+  </tr>
+  <tr>
+    <td><a id="timestamp_timestampdiff"></a><code>TIMESTAMPDIFF</code>(<em>unit</em>, left, right)</td>
+    <td><em>unit</em> is a time unit, as described above</td>
+    <td><code>INTEGER</code></td>
+    <td>Computes the difference (right - left) between two timestamps and expresses the result in the specified time units.  One month is considered elapsed when the calendar
+month has increased and the calendar day and time is greater than or equal to the start. Weeks, quarters, and years follow from that.</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><a id="timestampadd"></a><code>TIMESTAMPADD</code>(<em>unit</em>, integer, timestamp)</td>
+    <td></td>
+    <td>Adding anything to a <code>TIMESTAMP</code> value produces <code>TIMESTAMP</code> result; Adding an interval of hours, minutes, or seconds to a <code>DATE</code> produces a <code>TIMESTAMP</code> result; Adding an interval of days, months, or longer to a <code>DATE</code> produces a <code>DATE</code> result; Adding an interval of hours, minutes, or seconds to a <code>TIME</code> produces a <code>TIME</code> result. </td>
+     <td>Adds an interval in the specified unit to a timestamp or date/time literal. The added value can be negative.</td>
+     <td></td>
+   </tr>
+</table>
 
 The following abbreviations can be used as well:
 
-<a id="timestamp_year"></a>
-`YEAR(timestamp)` is an abbreviation for `EXTRACT(YEAR FROM timestamp)`.
+| Abbreviation | Same as |
+|--------------|---------|
+|<a id="timestamp_year"></a>`YEAR(timestamp)` | `EXTRACT(YEAR FROM timestamp)` |
+|<a id="timestamp_month"></a>`MONTH(timestamp)` | `EXTRACT(MONTH FROM timestamp)` |
+|<a id="timestamp_dayofmonth"></a>`DAYOFMONTH(timestamp)` | `EXTRACT(DAY FROM timestamp)` |
+|<a id="timestamp_dayofweek"></a>`DAYOFWEEK(timestamp)` | `EXTRACT(DOW FROM timestamp)` |
+|<a id="timestamp_hour"></a>`HOUR(timestamp)` | `EXTRACT(HOUR FROM timestamp)` |
+|<a id="timestamp_minute"></a>`MINUTE(timestamp)` | `EXTRACT(MINUTE FROM timestamp)` |
+|<a id="timestamp_second"></a>`SECOND(timestamp)` | `EXTRACT(SECOND FROM timestamp)` |
 
-<a id="timestamp_month"></a>
-`MONTH(timestamp)` is an abbreviation for `EXTRACT(MONTH FROM timestamp)`.
-
-<a id="timestamp_dayofmonth"></a>
-`DAYOFMONTH(timestamp)` is an abbreviation for `EXTRACT(DAY FROM
-timestamp)`.
-
-<a id="timestamp_dayofweek"></a>
-`DAYOFWEEK(timestamp)` is an abbreviation for `EXTRACT(DOW FROM
-timestamp)`.
-
-<a id="timestamp_hour"></a>
-`HOUR(timestamp)` is an abbreviation for `EXTRACT(HOUR FROM timestamp)`.
-
-<a id="timestamp_minute"></a>
-`MINUTE(timestamp)` is an abbreviation for `EXTRACT(MINUTE FROM timestamp)`.
-
-<a id="timestamp_second"></a>
-`SECOND(timestamp)` is an abbreviation for `EXTRACT(SECOND FROM
-timestamp)`.
-
-<a id="timestamp_floor"></a>
-`FLOOR(timestamp TO <unit>)`, where `<unit>` is a time unit.
-
-<a id="timestamp_ceil"></a>
-`CEIL(timestamp TO <unit>)`, where `<unit>` is a time unit.
+`DATEDIFF` is a synonym for `TIMESTAMPDIFF`.
 
 Values of type `TIMESTAMP` can be compared using `=`, `<>`, `!=`, `<`,
 `>`, `<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
-
-<a id="timestamp_timestampdiff"></a>
-`TIMESTAMPDIFF(<unit>, left, right)` computes the difference (right - left) between
-two timestamps and expresses the result in the specified time units.
-The result is a 32-bit integer.  `DATEDIFF` is a synonym for
-`TIMESTAMPDIFF`.  One month is considered elapsed when the calendar
-month has increased and the calendar day and time is greater than or equal
-to the start. Weeks, quarters, and years follow from that.
-
-<a id="timestampadd"></a>
-`TIMESTAMPADD(<unit>, integer, timestamp)` adds an interval in the
-specified unit to a timestamp or date/time literal. The added value can be negative.  The type of the
-result is as follows:
-
-- Adding anything to a `TIMESTAMP` value produces a `TIMESTAMP` result
-- Adding an interval of hours, minutes, or seconds to a `DATE` produces a `TIMESTAMP` result
-- Adding an interval of days, months, or longer to a `DATE` produces a `DATE` result
-- Adding an interval of hours, minutes, or seconds to a `TIME` produces a `TIME` result
 
 To create a timestamp using the Unix EPOCH in seconds as a base, you
 can use the `TIMESTAMPADD` function.  The following code creates a
@@ -346,7 +297,7 @@ The following arithmetic operations are supported:
 | _time_ `-` _interval_             | `TIME`             | Subtract an interval from a time. Performs wrapping subtraction. |
 | _timestamp_ `-` _interval_        | `TIMESTAMP`        | Subtract an interval from a timestamp                            |
 | (_timestamp_ `-` _timestamp_) UNIT | `INTERVAL`        | Compute the difference between two timestamps as a short interval. E.g. `(ts1 - ts2) HOURS TO MINUTES` |
-| (`TIMESTAMP` `-` `TIMESTAMP`) UNIT | `INTERVAL`        | Compute the difference between two timestamps as a long interval. E.g. `(ts1 - ts2) YEARS TO MONTHS`   |
+| (_timestamp_ `-` _timestamp_) UNIT | `INTERVAL`        | Compute the difference between two timestamps as a long interval. E.g. `(ts1 - ts2) YEARS TO MONTHS`   |
 | _interval_ `-` _interval_         | `INTERVAL`         | Subtract two intervals                                           |
 | _interval_ `*` _double_           | `INTERVAL`         | Multiply an interval by a scalar                                 |
 | _interval_ `/` _double_           | `INTERVAL`         | Divide an interval by a scalar                                   |
@@ -383,17 +334,16 @@ The `Start` and `End` values may be provided in any order. If `Start` > `End`, t
 
 We support the following time period predicate operators:
 
-| Operation                | Syntax                                               | Semantics                           | Example                                                                                                     |
+| Operation                | Semantics                           | Example                                                                                                     |
 | ------------------------ | ---------------------------------------------------- |-------------------------------------| ----------------------------------------------------------------------------------------------------------- |
-| <a id="contains"></a>**CONTAINS (value)**     | `(Start1, End1) CONTAINS V`                          | `start1 <= V AND end1 >= V`         | `(DATE '2020-06-24', DATE '2020-06-22') CONTAINS DATE '2020-06-21'` => FALSE                               |
-|                      **CONTAINS (period)**    | `(Start1, End1) CONTAINS (Start2, End2)`             | `start1 <= start2 AND end1 >= end2` | `(DATE '2020-06-21', DATE '2020-06-25') CONTAINS (DATE '2020-06-22', DATE '2020-06-23')` => TRUE          |
-| <a id="overlaps"></a>**OVERLAPS**             | `(Start1, End1) OVERLAPS (Start2, End2)`             | `start1 <= end2 AND end1 >= start2` | `(DATE '2020-06-21', DATE '2020-06-23') OVERLAPS (DATE '2020-06-22', DATE '2020-06-24')` => TRUE          |
-| <a id="equals"></a>  **EQUALS**               | `(Start1, End1) EQUALS (Start2, End2)`               | `start1 = start2 AND end1 = end2`   | `(DATE '2020-06-21', DATE '2020-06-23') EQUALS (DATE '2020-06-21', DATE '2020-06-23')` => TRUE            |
-| <a id="precedes"></a>**PRECEDES**             | `(Start1, End1) PRECEDES (Start2, End2)`             | `end1 <= start2`                    | `(DATE '2020-06-21', DATE '2020-06-22') PRECEDES (DATE '2020-06-24', DATE '2020-06-25')` => TRUE          |
-| <a id="immediately-precedes"></a>**IMMEDIATELY PRECEDES** | `(Start1, End1) IMMEDIATELY PRECEDES (Start2, End2)` | `end1 = start2`         | `(DATE '2020-06-21', DATE '2020-06-22') IMMEDIATELY PRECEDES (DATE '2020-06-22', DATE '2020-06-23')` => TRUE |
-| <a id="succeeds"></a>**SUCCEEDS**             | `(Start1, End1) SUCCEEDS (Start2, End2)`             | `start1 >= end2`                    | `(DATE '2020-06-24', DATE '2020-06-25') SUCCEEDS (DATE '2020-06-21', DATE '2020-06-22')` => TRUE          |
-| <a id="immediately-succeeds"></a>**IMMEDIATELY SUCCEEDS** | `(Start1, End1) IMMEDIATELY SUCCEEDS (Start2, End2)` | `start1 = end2`         | `(DATE '2020-06-24', DATE '2020-06-25') IMMEDIATELY SUCCEEDS (DATE '2020-06-23', DATE '2020-06-24')` => TRUE |
-
+| <a id="contains"></a>(start, end) `CONTAINS` (value)   | value &le; start1 AND end1 &ge; value   | `(DATE '2020-06-24', DATE '2020-06-22') CONTAINS DATE '2020-06-21'` => `FALSE`                              |
+| (start1, end1) `CONTAINS` (start2, end2)               | start1 &le; start2 AND end1 &ge; end2   | `(DATE '2020-06-21', DATE '2020-06-25') CONTAINS (DATE '2020-06-22', DATE '2020-06-23')` => `TRUE`          |
+| <a id="overlaps"></a> (start1, end1) `OVERLAPS` (start2, end2) | start1 &le; end2 AND end1 &ge; start2 | `(DATE '2020-06-21', DATE '2020-06-23') OVERLAPS (DATE '2020-06-22', DATE '2020-06-24')` => TRUE          |
+| <a id="equals"></a>  (start1, end1) `EQUALS` (start2, end2)    | start1 = start2 AND end1 = end2   | `(DATE '2020-06-21', DATE '2020-06-23') EQUALS (DATE '2020-06-21', DATE '2020-06-23')` => TRUE            |
+| <a id="precedes"></a> (start1, end1) `PRECEDES` (start2, end2) | end1 &le; start2                    | `(DATE '2020-06-21', DATE '2020-06-22') PRECEDES (DATE '2020-06-24', DATE '2020-06-25')` => TRUE          |
+| <a id="immediately-precedes"></a> (start1, end1) `IMMEDIATELY PRECEDES` (start2, end2) | end1 = start2 | `(DATE '2020-06-21', DATE '2020-06-22') IMMEDIATELY PRECEDES (DATE '2020-06-22', DATE '2020-06-23')` => TRUE |
+| <a id="succeeds"></a> (start1, end1) `SUCCEEDS` (start2, end2)  | start1 &ge; end2                    | `(DATE '2020-06-24', DATE '2020-06-25') SUCCEEDS (DATE '2020-06-21', DATE '2020-06-22')` => TRUE          |
+| <a id="immediately-succeeds"></a> (start1, end1) `IMMEDIATELY SUCCEEDS` (start2, end2) | start1 = end2 | `(DATE '2020-06-24', DATE '2020-06-25') IMMEDIATELY SUCCEEDS (DATE '2020-06-23', DATE '2020-06-24')` => TRUE |
 
 ## Timezones
 

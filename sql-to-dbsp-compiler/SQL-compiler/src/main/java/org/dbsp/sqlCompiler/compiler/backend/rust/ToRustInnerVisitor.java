@@ -1711,14 +1711,14 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(")");
                 break;
             }
-            case ARRAY_CONVERT_SAFE, ARRAY_CONVERT, MAP_CONVERT, MAP_CONVERT_SAFE, DIV_NULL: {
+            case ARRAY_CONVERT_SAFE, ARRAY_CONVERT, MAP_CONVERT, MAP_CONVERT_SAFE: {
                 this.builder.append(expression.opcode.toString())
                         .append(expression.left.getType().nullableUnderlineSuffix())
                         .append(expression.right.getType().nullableUnderlineSuffix())
                         .append("(").increase();
                 this.visitingChild = 0;
                 expression.left.accept(this);
-                this.builder.append(", ");
+                this.builder.append(",").newline();
                 this.visitingChild = 1;
                 expression.right.accept(this);
                 this.builder.newline().decrease().append(")");
@@ -1767,7 +1767,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
                                     expression.opcode == DBSPOpcode.SUB ||
                                     expression.opcode == DBSPOpcode.MUL ||
                                     expression.opcode == DBSPOpcode.DIV ||
-                                    expression.opcode == DBSPOpcode.MOD;
+                                    expression.opcode == DBSPOpcode.MOD ||
+                                    expression.opcode == DBSPOpcode.DIV_NULL
+                            ;
                     if (genericArgCount > 0 && needsGenericArguments) {
                         this.builder.append("::<");
                         boolean first = expression.left.getType().emitGenericArguments(builder, true);
