@@ -1372,10 +1372,6 @@ impl Balancer {
         self.inner.borrow().get_policy()
     }
 
-    pub fn set_policy(&self, solution: &BTreeMap<NodeId, PartitioningPolicy>) {
-        self.inner.borrow_mut().set_policy(solution);
-    }
-
     pub fn set_policy_for_stream(&self, stream: NodeId, policy: PartitioningPolicy) {
         self.inner
             .borrow_mut()
