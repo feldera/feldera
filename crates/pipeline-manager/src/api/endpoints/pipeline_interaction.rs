@@ -1313,6 +1313,10 @@ pub(crate) async fn get_checkpoint_sync_status(
 /// Get the checkpoints for a pipeline
 ///
 /// Retrieve the current checkpoints made by a pipeline.
+///
+/// **Stability note**: for multihost pipelines, this endpoint returns the
+/// combined checkpoint list from all hosts.  The shape of this response may
+/// change in a future release.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -1321,7 +1325,10 @@ pub(crate) async fn get_checkpoint_sync_status(
     ),
     responses(
         (status = OK
-         , description = "Checkpoints retrieved successfully"
+         , description = "Checkpoints retrieved successfully. \
+                          For multihost pipelines the list contains entries \
+                          from all hosts; the shape of this response may \
+                          change in a future release."
          , content_type = "application/json"
          , body = CheckpointMetadata),
         (status = NOT_FOUND
