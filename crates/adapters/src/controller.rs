@@ -85,7 +85,7 @@ use feldera_types::adapter_stats::{
     ConnectorHealth, ExternalControllerStatus, ExternalInputEndpointStatus,
     ExternalOutputEndpointStatus,
 };
-use feldera_types::checkpoint::{CheckpointActivity, CheckpointMetadata};
+use feldera_types::checkpoint::{CheckpointActivity, CheckpointMetadata, HostInfo};
 use feldera_types::coordination::{
     self, AdHocCatalog, AdHocTableType, CheckpointCoordination, Completion, StepAction, StepInputs,
     StepRequest, StepStatus, TransactionCoordination,
@@ -145,7 +145,7 @@ mod error;
 mod journal;
 mod pipeline_diff;
 mod stats;
-mod sync;
+pub(crate) mod sync;
 mod validate;
 
 use crate::adhoc::table::AdHocTable;
@@ -289,7 +289,7 @@ impl ControllerBuilder {
     pub(crate) fn pull_once(&self, _sync: &SyncConfig) -> Result<(), ControllerError> {
         #[cfg(feature = "feldera-enterprise")]
         if let Some(storage) = &self.storage {
-            return sync::pull_once(storage, _sync);
+            return sync::pull_once(storage, _sync, None);
         };
 
         Ok(())
@@ -302,7 +302,7 @@ impl ControllerBuilder {
     {
         #[cfg(feature = "feldera-enterprise")]
         if let Some(storage) = &self.storage {
-            sync::continuous_pull(storage, _is_activated)
+            sync::continuous_pull(storage, _is_activated, None)
         } else {
             Err(ControllerError::InvalidStandby(
                 "standby mode requires storage configuration",
@@ -352,6 +352,17 @@ impl ControllerBuilder {
 
     pub(crate) fn storage(&self) -> Option<Arc<dyn StorageBackend>> {
         self.storage.as_ref().map(|storage| storage.backend.clone())
+    }
+
+    /// Returns the sync configuration, if one is present in the storage backend.
+    pub(crate) fn sync_config(&self) -> Option<SyncConfig> {
+        self.storage.as_ref().and_then(|s| {
+            if let StorageBackendConfig::File(ref file_cfg) = s.options.backend {
+                file_cfg.sync.clone()
+            } else {
+                None
+            }
+        })
     }
 }
 
@@ -2281,11 +2292,12 @@ struct CheckpointSyncThread {
     uuid: uuid::Uuid,
     storage: Arc<dyn StorageBackend>,
     config: SyncConfig,
+    host_info: Option<HostInfo>,
 }
 
 impl CheckpointSyncThread {
     fn run(self) -> Result<(), Arc<ControllerError>> {
-        match SYNCHRONIZER.push(self.uuid, self.storage, self.config) {
+        match SYNCHRONIZER.push(self.uuid, self.storage, self.config, self.host_info) {
             Err(err) => {
                 CHECKPOINT_SYNC_PUSH_FAILURES.fetch_add(1, Ordering::Relaxed);
                 Err(Arc::new(ControllerError::checkpoint_push_error(
@@ -2371,6 +2383,7 @@ impl RunningCheckpointSync {
                 ),
             ))?,
             config: sync.to_owned(),
+            host_info: circuit.controller.layout.host_info(),
         };
         let unparker = circuit.parker.unparker().clone();
         let join_handle = std::thread::Builder::new()
