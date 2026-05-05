@@ -69,6 +69,10 @@ of minimum integer value by -1) produce run time errors.
     <td>return absolute value.</td>
   </tr>
   <tr>
+    <td><a id="div_null"></a><code>DIV_NULL(numerator, denominator)</code></td>
+    <td>Like division, but returns `NULL` when denominator is zero.</td>
+  </tr>
+  <tr>
     <td><a id="mod"></a><code>MOD(left, right)</code></td>
     <td>integer modulus. Same as <code>left % right</code>.</td>
   </tr>

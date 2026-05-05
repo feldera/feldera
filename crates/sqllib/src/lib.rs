@@ -596,21 +596,6 @@ macro_rules! some_operator {
 
 pub(crate) use some_operator;
 
-macro_rules! for_all_int_operator {
-    ($func_name: ident) => {
-        some_operator!($func_name, i8, i8, i8);
-        some_operator!($func_name, i16, i16, i16);
-        some_operator!($func_name, i32, i32, i32);
-        some_operator!($func_name, i64, i64, i64);
-        some_operator!($func_name, i128, i128, i128);
-        some_operator!($func_name, u8, u8, u8);
-        some_operator!($func_name, u16, u16, u16);
-        some_operator!($func_name, u32, u32, u32);
-        some_operator!($func_name, u64, u64, u64);
-    };
-}
-pub(crate) use for_all_int_operator;
-
 #[doc(hidden)]
 #[inline(always)]
 pub fn wrap_bool(b: Option<bool>) -> bool {

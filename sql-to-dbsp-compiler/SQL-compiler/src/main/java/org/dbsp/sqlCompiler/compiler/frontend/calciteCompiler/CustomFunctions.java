@@ -71,6 +71,8 @@ public class CustomFunctions {
         this.functions.add(new BroundFunction());
         this.functions.add(new ConnectorMetadataFunction());
         this.functions.add(new ConvertTimezoneFunction());
+        this.functions.add(new DivNullFunction());
+        this.functions.add(new FiniteOrNullFunction());
         this.functions.add(new FormatDateFunction());
         this.functions.add(new FormatTimestampFunction());
         this.functions.add(new FormatTimeFunction());
@@ -274,6 +276,27 @@ public class CustomFunctions {
                     FunctionDocumentation.NO_FILE);
         }
     }
+
+    static class DivNullFunction extends NonOptimizedFunction {
+        public DivNullFunction() {
+            super("DIV_NULL",
+                    ReturnTypes.QUOTIENT_NULLABLE.andThen(SqlTypeTransforms.FORCE_NULLABLE),
+                    DIVISION_OPERATOR,
+                    SqlFunctionCategory.NUMERIC, "integer#div_null,decimal#div_null,float#div_null",
+                    FunctionDocumentation.NO_FILE);
+        }
+    }
+
+    static class FiniteOrNullFunction extends NonOptimizedFunction {
+        public FiniteOrNullFunction() {
+            super("FINITE_OR_NULL",
+                    ReturnTypes.ARG0.andThen(SqlTypeTransforms.FORCE_NULLABLE),
+                    OperandTypes.typeName(SqlTypeName.DOUBLE).or(OperandTypes.typeName(SqlTypeName.REAL)),
+                    SqlFunctionCategory.NUMERIC, "float#finite_or_null",
+                    FunctionDocumentation.NO_FILE);
+        }
+    }
+
 
     static class BroundFunction extends NonOptimizedFunction {
         private BroundFunction() {

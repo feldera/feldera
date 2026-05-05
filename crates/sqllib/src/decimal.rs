@@ -294,6 +294,70 @@ pub fn div_SqlDecimalN_SqlDecimalN<
 }
 
 #[doc(hidden)]
+pub fn div_null_SqlDecimal_SqlDecimal<
+    const P0: usize,
+    const S0: usize,
+    const P1: usize,
+    const S1: usize,
+    const P2: usize,
+    const S2: usize,
+>(
+    left: SqlDecimal<P0, S0>,
+    right: SqlDecimal<P1, S1>,
+) -> Option<SqlDecimal<P2, S2>> {
+    left.checked_div_generic::<P1, S1, P2, S2>(right)
+}
+
+#[doc(hidden)]
+pub fn div_null_SqlDecimalN_SqlDecimal<
+    const P0: usize,
+    const S0: usize,
+    const P1: usize,
+    const S1: usize,
+    const P2: usize,
+    const S2: usize,
+>(
+    left: Option<SqlDecimal<P0, S0>>,
+    right: SqlDecimal<P1, S1>,
+) -> Option<SqlDecimal<P2, S2>> {
+    let left = left?;
+    div_null_SqlDecimal_SqlDecimal::<P0, S0, P1, S1, P2, S2>(left, right)
+}
+
+#[doc(hidden)]
+pub fn div_null_SqlDecimal_SqlDecimalN<
+    const P0: usize,
+    const S0: usize,
+    const P1: usize,
+    const S1: usize,
+    const P2: usize,
+    const S2: usize,
+>(
+    left: SqlDecimal<P0, S0>,
+    right: Option<SqlDecimal<P1, S1>>,
+) -> Option<SqlDecimal<P2, S2>> {
+    let right = right?;
+    div_null_SqlDecimal_SqlDecimal::<P0, S0, P1, S1, P2, S2>(left, right)
+}
+
+#[doc(hidden)]
+pub fn div_null_SqlDecimalN_SqlDecimalN<
+    const P0: usize,
+    const S0: usize,
+    const P1: usize,
+    const S1: usize,
+    const P2: usize,
+    const S2: usize,
+>(
+    left: Option<SqlDecimal<P0, S0>>,
+    right: Option<SqlDecimal<P1, S1>>,
+) -> Option<SqlDecimal<P2, S2>> {
+    let left = left?;
+    let right = right?;
+    div_null_SqlDecimal_SqlDecimal::<P0, S0, P1, S1, P2, S2>(left, right)
+}
+
+#[doc(hidden)]
 pub fn modulo_SqlDecimal_SqlDecimal<
     const P0: usize,
     const S0: usize,

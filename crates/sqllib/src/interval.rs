@@ -385,6 +385,46 @@ some_polymorphic_function2!(
 );
 
 #[doc(hidden)]
+pub fn div_null_ShortInterval_SqlDecimal<const P: usize, const S: usize>(
+    left: ShortInterval,
+    right: SqlDecimal<P, S>,
+) -> Option<ShortInterval> {
+    let us = SqlDecimal::<38, 0>::try_from(left.microseconds())
+        .expect("overflow in short interval division while converting microseconds to DECIMAL");
+    let div = us.checked_div_generic::<P, S, 38, 0>(right)?;
+    let micros: i64 = div.try_into().ok()?;
+    Some(ShortInterval::from_microseconds(micros))
+}
+
+#[doc(hidden)]
+pub fn div_null_ShortIntervalN_SqlDecimal<const P: usize, const S: usize>(
+    left: Option<ShortInterval>,
+    right: SqlDecimal<P, S>,
+) -> Option<ShortInterval> {
+    let left = left?;
+    div_null_ShortInterval_SqlDecimal(left, right)
+}
+
+#[doc(hidden)]
+pub fn div_null_ShortInterval_SqlDecimalN<const P: usize, const S: usize>(
+    left: ShortInterval,
+    right: Option<SqlDecimal<P, S>>,
+) -> Option<ShortInterval> {
+    let right = right?;
+    div_null_ShortInterval_SqlDecimal(left, right)
+}
+
+#[doc(hidden)]
+pub fn div_null_ShortIntervalN_SqlDecimalN<const P: usize, const S: usize>(
+    left: Option<ShortInterval>,
+    right: Option<SqlDecimal<P, S>>,
+) -> Option<ShortInterval> {
+    let left = left?;
+    let right = right?;
+    div_null_ShortInterval_SqlDecimal(left, right)
+}
+
+#[doc(hidden)]
 pub fn times_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval {
     left * right
 }
@@ -428,6 +468,41 @@ pub fn div_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval {
 }
 
 some_polymorphic_function2!(div, ShortInterval, ShortInterval, i64, i64, ShortInterval);
+
+#[doc(hidden)]
+pub fn div_null_ShortInterval_i64(left: ShortInterval, right: i64) -> Option<ShortInterval> {
+    left.microseconds()
+        .checked_div(right)
+        .map(ShortInterval::from_microseconds)
+}
+
+#[doc(hidden)]
+pub fn div_null_ShortIntervalN_i64(
+    left: Option<ShortInterval>,
+    right: i64,
+) -> Option<ShortInterval> {
+    let left = left?;
+    div_null_ShortInterval_i64(left, right)
+}
+
+#[doc(hidden)]
+pub fn div_null_ShortInterval_i64N(
+    left: ShortInterval,
+    right: Option<i64>,
+) -> Option<ShortInterval> {
+    let right = right?;
+    div_null_ShortInterval_i64(left, right)
+}
+
+#[doc(hidden)]
+pub fn div_null_ShortIntervalN_i64N(
+    left: Option<ShortInterval>,
+    right: Option<i64>,
+) -> Option<ShortInterval> {
+    let left = left?;
+    let right = right?;
+    div_null_ShortInterval_i64(left, right)
+}
 
 #[doc(hidden)]
 pub fn plus_ShortInterval_ShortInterval_ShortInterval__(
@@ -740,6 +815,35 @@ pub fn div_LongInterval_i32(left: LongInterval, right: i32) -> LongInterval {
 some_polymorphic_function2!(div, LongInterval, LongInterval, i32, i32, LongInterval);
 
 #[doc(hidden)]
+pub fn div_null_LongInterval_i32(left: LongInterval, right: i32) -> Option<LongInterval> {
+    left.months
+        .checked_div(right)
+        .map(LongInterval::from_months)
+}
+
+#[doc(hidden)]
+pub fn div_null_LongIntervalN_i32(left: Option<LongInterval>, right: i32) -> Option<LongInterval> {
+    let left = left?;
+    div_null_LongInterval_i32(left, right)
+}
+
+#[doc(hidden)]
+pub fn div_null_LongInterval_i32N(left: LongInterval, right: Option<i32>) -> Option<LongInterval> {
+    let right = right?;
+    div_null_LongInterval_i32(left, right)
+}
+
+#[doc(hidden)]
+pub fn div_null_LongIntervalN_i32N(
+    left: Option<LongInterval>,
+    right: Option<i32>,
+) -> Option<LongInterval> {
+    let left = left?;
+    let right = right?;
+    div_null_LongInterval_i32(left, right)
+}
+
+#[doc(hidden)]
 pub fn div_LongInterval_d(left: LongInterval, right: F64) -> LongInterval {
     left / right
 }
@@ -762,6 +866,46 @@ some_polymorphic_function2!(
     SqlDecimal<P, S>,
     LongInterval
 );
+
+#[doc(hidden)]
+pub fn div_null_LongInterval_SqlDecimal<const P: usize, const S: usize>(
+    left: LongInterval,
+    right: SqlDecimal<P, S>,
+) -> Option<LongInterval> {
+    let us = SqlDecimal::<38, 0>::try_from(left.months())
+        .expect("overflow in long interval division while converting months to DECIMAL");
+    let div = us.checked_div_generic::<P, S, 38, 0>(right)?;
+    let months: i32 = div.try_into().ok()?;
+    Some(LongInterval::from_months(months))
+}
+
+#[doc(hidden)]
+pub fn div_null_LongIntervalN_SqlDecimal<const P: usize, const S: usize>(
+    left: Option<LongInterval>,
+    right: SqlDecimal<P, S>,
+) -> Option<LongInterval> {
+    let left = left?;
+    div_null_LongInterval_SqlDecimal(left, right)
+}
+
+#[doc(hidden)]
+pub fn div_null_LongInterval_SqlDecimalN<const P: usize, const S: usize>(
+    left: LongInterval,
+    right: Option<SqlDecimal<P, S>>,
+) -> Option<LongInterval> {
+    let right = right?;
+    div_null_LongInterval_SqlDecimal(left, right)
+}
+
+#[doc(hidden)]
+pub fn div_null_LongIntervalN_SqlDecimalN<const P: usize, const S: usize>(
+    left: Option<LongInterval>,
+    right: Option<SqlDecimal<P, S>>,
+) -> Option<LongInterval> {
+    let left = left?;
+    let right = right?;
+    div_null_LongInterval_SqlDecimal(left, right)
+}
 
 #[doc(hidden)]
 pub fn plus_LongInterval_LongInterval_LongInterval__(

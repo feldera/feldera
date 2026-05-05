@@ -1,11 +1,25 @@
 use std::ops::{Add, Div, Mul, Sub};
 
-use dbsp::algebra::{F32, F64, HasZero};
-use num::{PrimInt, Zero};
+use dbsp::algebra::{F32, F64};
+use num::{Float, PrimInt, Zero};
 use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub};
 use std::cmp::Ordering;
 
-use crate::{for_all_int_operator, some_existing_operator, some_operator, type_name};
+use crate::{some_existing_operator, some_operator, type_name};
+
+macro_rules! for_all_int_operator {
+    ($func_name: ident) => {
+        some_operator!($func_name, i8, i8, i8);
+        some_operator!($func_name, i16, i16, i16);
+        some_operator!($func_name, i32, i32, i32);
+        some_operator!($func_name, i64, i64, i64);
+        some_operator!($func_name, i128, i128, i128);
+        some_operator!($func_name, u8, u8, u8);
+        some_operator!($func_name, u16, u16, u16);
+        some_operator!($func_name, u32, u32, u32);
+        some_operator!($func_name, u64, u64, u64);
+    };
+}
 
 macro_rules! for_all_compare {
     // Arguments with different types
@@ -388,46 +402,154 @@ pub fn plus_u_u(left: usize, right: usize) -> usize {
 
 #[inline(always)]
 #[doc(hidden)]
-pub fn div_null__<T>(left: T, right: T) -> Option<T>
+pub fn div_null<T>(left: T, right: T) -> Option<T>
 where
-    T: Div<Output = T> + HasZero,
+    T: PrimInt,
 {
-    if right.is_zero() {
+    left.checked_div(&right)
+}
+
+// An operator which always produces a nullable result
+macro_rules! nullable_operator {
+    ($func_name: ident $(< $( const $var:ident : $ty: ty),* >)?, $short_name: ident, $arg_type: ty, $ret_type: ty) => {
+        ::paste::paste! {
+            #[inline(always)]
+            #[doc(hidden)]
+            pub fn [<$func_name _ $short_name _ $short_name >] $(< $( const $var : $ty ),* >)? ( arg0: $arg_type, arg1: $arg_type ) -> Option<$ret_type> {
+                $func_name $(:: < $($var),* >)? (arg0, arg1)
+            }
+
+            #[inline(always)]
+            #[doc(hidden)]
+            pub fn [<$func_name _ $short_name N _ $short_name N>] $(< $( const $var : $ty ),* >)? ( arg0: Option<$arg_type>, arg1: Option<$arg_type> ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg1 = arg1?;
+                [<$func_name _ $short_name _ $short_name>] $(:: < $($var),* >)? (arg0, arg1)
+            }
+
+            #[inline(always)]
+            #[doc(hidden)]
+            pub fn [<$func_name _ $short_name _ $short_name N>] $(< $( const $var : $ty ),* >)? ( arg0: $arg_type, arg1: Option<$arg_type> ) -> Option<$ret_type> {
+                let arg1 = arg1?;
+                [<$func_name _ $short_name _ $short_name>] $(:: < $($var),* >)? (arg0, arg1)
+            }
+
+            #[inline(always)]
+            #[doc(hidden)]
+            pub fn [<$func_name _ $short_name N _ $short_name>] $(< $( const $var : $ty ),* >)? ( arg0: Option<$arg_type>, arg1: $arg_type ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                [<$func_name _ $short_name _ $short_name>] $(:: < $($var),* >)? (arg0, arg1)
+            }
+        }
+    }
+}
+
+nullable_operator!(div_null, i8, i8, i8);
+nullable_operator!(div_null, i16, i16, i16);
+nullable_operator!(div_null, i32, i32, i32);
+nullable_operator!(div_null, i64, i64, i64);
+nullable_operator!(div_null, i128, i128, i128);
+nullable_operator!(div_null, u8, u8, u8);
+nullable_operator!(div_null, u16, u16, u16);
+nullable_operator!(div_null, u32, u32, u32);
+nullable_operator!(div_null, u64, u64, u64);
+nullable_operator!(div_null, u128, u128, u128);
+
+#[inline(always)]
+#[doc(hidden)]
+pub(crate) fn finite_or_null<T>(value: T) -> Option<T>
+where
+    T: Float,
+{
+    if value.is_nan() || value.is_infinite() {
         None
     } else {
-        Some(left.div(right))
+        Some(value)
     }
 }
 
 #[inline(always)]
 #[doc(hidden)]
-pub fn div_nullN_<T>(left: Option<T>, right: T) -> Option<T>
-where
-    T: Div<Output = T> + HasZero,
-{
-    let left = left?;
-    div_null__::<T>(left, right)
+pub fn finite_or_null_d(value: F64) -> Option<F64> {
+    finite_or_null(value.into_inner()).map(|x| x.into())
 }
 
 #[inline(always)]
 #[doc(hidden)]
-pub fn div_null_N<T>(left: T, right: Option<T>) -> Option<T>
-where
-    T: Div<Output = T> + HasZero,
-{
-    let right = right?;
-    div_null__(left, right)
+pub fn finite_or_null_dN(value: Option<F64>) -> Option<F64> {
+    let value = value?;
+    finite_or_null_d(value)
 }
 
 #[inline(always)]
 #[doc(hidden)]
-pub fn div_nullNN<T>(left: Option<T>, right: Option<T>) -> Option<T>
-where
-    T: Div<Output = T> + HasZero,
-{
+pub fn finite_or_null_f(value: F32) -> Option<F32> {
+    finite_or_null(value.into_inner()).map(|x| x.into())
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn finite_or_null_fN(value: Option<F32>) -> Option<F32> {
+    let value = value?;
+    finite_or_null_f(value)
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn div_null_d_d(left: F64, right: F64) -> Option<F64> {
+    let result = left.into_inner() / right.into_inner();
+    finite_or_null(result).map(|x| x.into())
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn div_null_dN_d(left: Option<F64>, right: F64) -> Option<F64> {
+    let left = left?;
+    div_null_d_d(left, right)
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn div_null_d_dN(left: F64, right: Option<F64>) -> Option<F64> {
+    let right = right?;
+    div_null_d_d(left, right)
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn div_null_dN_dN(left: Option<F64>, right: Option<F64>) -> Option<F64> {
     let left = left?;
     let right = right?;
-    div_null__(left, right)
+    div_null_d_d(left, right)
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn div_null_f_f(left: F32, right: F32) -> Option<F32> {
+    let result = left.into_inner() / right.into_inner();
+    finite_or_null(result).map(|x| x.into())
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn div_null_fN_f(left: Option<F32>, right: F32) -> Option<F32> {
+    let left = left?;
+    div_null_f_f(left, right)
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn div_null_f_fN(left: F32, right: Option<F32>) -> Option<F32> {
+    let right = right?;
+    div_null_f_f(left, right)
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn div_null_fN_fN(left: Option<F32>, right: Option<F32>) -> Option<F32> {
+    let left = left?;
+    let right = right?;
+    div_null_f_f(left, right)
 }
 
 #[inline(always)]
