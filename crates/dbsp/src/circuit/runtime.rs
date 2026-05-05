@@ -1016,7 +1016,17 @@ impl Runtime {
         match current_thread_type() {
             Some(ThreadType::Foreground) => WORKER_INDEX.get(),
             Some(ThreadType::Background) => TOKIO_WORKER_INDEX.get(),
-            None => 0,
+            None => RUNTIME.with_borrow(|runtime| match runtime {
+                Some(runtime) => {
+                    // We are running in an auxiliary thread.  Treat it like the
+                    // first thread in the local runtime.
+                    runtime.layout().local_workers().start
+                }
+                None => {
+                    // We are not running in a runtime.
+                    0
+                }
+            }),
         }
     }
 
