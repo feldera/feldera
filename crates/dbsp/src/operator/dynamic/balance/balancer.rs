@@ -510,9 +510,7 @@ impl BalancerInner {
                 self.metadata.get(stream).cloned().unwrap_or_default();
 
             if cluster_index == 0 && Runtime::worker_index() == 0 {
-                println!(
-                    "exchange_sender_metadata: {:?}", exchange_sender_metadata
-                );
+                println!("exchange_sender_metadata: {:?}", exchange_sender_metadata);
             }
 
             if let Some(metadata) = exchange_sender_metadata
@@ -666,7 +664,6 @@ impl BalancerInner {
             // println!("{} solving cluster {i}", Runtime::worker_index());
             //let cluster = &mut self.clusters[cluster_index];
             if !self.cluster_needs_refresh(i) {
-                solutions.extend(self.clusters[i].solution.clone());
                 continue;
             }
 
@@ -816,13 +813,20 @@ impl BalancerInner {
         ])
     }
 
-    // Get current policy for a stream.
+    /// Get current policy for a stream.
     fn get_policy_for_stream(&self, node_id: NodeId) -> Option<PartitioningPolicy> {
         //println!("stream_to_cluster({node_id}): {:?}", self.stream_to_cluster);
         let cluster_index = *self.stream_to_cluster.get(&node_id).unwrap();
         self.clusters[cluster_index].solution.get(&node_id).cloned()
     }
 
+    /// Set policy for a subset of streams.
+    ///
+    /// Policies for streams that are not listed in `solution` are not changed.
+    ///
+    /// Updates `last_distribution` for each stream in `solution`, so that the solution
+    /// is not reevaluated until the distribution changes by more than
+    /// `balancer_key_distribution_refresh_threshold()`.
     fn set_policy(&mut self, solution: &BTreeMap<NodeId, PartitioningPolicy>) {
         for (stream, policy) in solution.iter() {
             self.set_policy_for_stream(*stream, *policy);
