@@ -1121,6 +1121,51 @@ fn test_skewed_join_left(left_join: bool, auto_rebalance: bool) {
 }
 
 #[test]
+fn test_slow_skew() {
+    let num_partitions = 4;
+
+    let mut test_steps = vec![];
+
+    // Several evenly distributed batches. Expected policy: (Shard, Shard)
+    for _ in 0..10 {
+        let left_batch = generate_skewed_batch(num_partitions, 20, 1);
+        let right_batch = generate_skewed_batch(num_partitions, 10, 1);
+        test_steps.push(JoinTestStep {
+            left: left_batch,
+            right: right_batch,
+            left_policy_hint: None,
+            right_policy_hint: None,
+            expected_left_policy: Some(PartitioningPolicy::Shard),
+            expected_right_policy: Some(PartitioningPolicy::Shard),
+        });
+    }
+
+    // Introduce skew. Expected policy: (Balance, Broadcast)
+
+    for i in 0..100 {
+        let left_batch = generate_skewed_batch(num_partitions, 5, 5);
+        let right_batch = generate_skewed_batch(num_partitions, 1, 1);
+        test_steps.push(JoinTestStep {
+            left: left_batch,
+            right: right_batch,
+            left_policy_hint: None,
+            right_policy_hint: None,
+            expected_left_policy: if i >= 80 {
+                Some(PartitioningPolicy::Balance)
+            } else {
+                None
+            },
+            expected_right_policy: if i >= 80 {
+                Some(PartitioningPolicy::Broadcast)
+            } else {
+                None
+            },
+        });
+    }
+    test_join_with_balancer(num_partitions, false, false, test_steps, false, true);
+}
+
+#[test]
 fn test_skewed_inner_join_left() {
     test_skewed_join_left(false, true);
 }
