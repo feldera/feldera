@@ -1,12 +1,13 @@
 import unittest
+
+from feldera import Pipeline, PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import (
-    unique_pipeline_name,
-    FELDERA_TEST_NUM_WORKERS,
     FELDERA_TEST_NUM_HOSTS,
+    FELDERA_TEST_NUM_WORKERS,
+    unique_pipeline_name,
 )
 from tests import TEST_CLIENT
-from feldera import PipelineBuilder, Pipeline
 
 
 def sql(text_or_iterable):

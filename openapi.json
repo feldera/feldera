@@ -2573,7 +2573,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Get the checkpoints for a pipeline",
-        "description": "Retrieve the current checkpoints made by a pipeline.",
+        "description": "Retrieve the current checkpoints made by a pipeline.\n\n**Stability note**: for multihost pipelines, this endpoint returns the\ncombined checkpoint list from all hosts.  The shape of this response may\nchange in a future release.",
         "operationId": "get_checkpoints",
         "parameters": [
           {
@@ -2588,7 +2588,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Checkpoints retrieved successfully",
+            "description": "Checkpoints retrieved successfully. For multihost pipelines the list contains entries from all hosts; the shape of this response may change in a future release.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13551,8 +13551,9 @@
           },
           "standby": {
             "type": "boolean",
-            "description": "When `true`, the pipeline starts in **standby** mode; processing doesn't\nstart until activation (`POST /activate`).\nIf this pipeline was previously activated and the storage has not been\ncleared, the pipeline will auto activate, no newer checkpoints will be\nfetched.\n\nStandby behavior depends on `start_from_checkpoint`:\n- If `latest`, pipeline continuously fetches the latest available\ncheckpoint until activated.\n- If checkpoint UUID, pipeline fetches this checkpoint once and waits\nin standby until activated.\n\nDefault: `false`",
-            "default": false
+            "description": "**Deprecated.** Use `initial=standby` when starting the pipeline instead.",
+            "default": false,
+            "deprecated": true
           },
           "start_from_checkpoint": {
             "allOf": [

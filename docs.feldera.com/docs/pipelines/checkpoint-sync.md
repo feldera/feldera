@@ -45,10 +45,11 @@ seconds.
 
 ## Standby mode
 
-Pipelines can start in **standby** mode by setting `standby` to `true`. A
-standby pipeline does not process data. Instead, it continuously pulls the
-latest checkpoint from object store at the interval specified by
-`pull_interval`, staying ready for immediate activation.
+Pipelines can start in **standby** mode by passing `initial=standby` to the
+[start pipeline](/api/start-pipeline) endpoint. A standby
+pipeline does not process data. Instead, it continuously pulls the latest
+checkpoint from object store at the interval specified by `pull_interval`,
+staying ready for immediate activation.
 
 To activate a standby pipeline:
 
@@ -121,9 +122,9 @@ On its first start **B** pulls from `bucket-a/pipeline-a` (because
 | `secret_key`            | `string`        |             | S3 secret key. Not required if using environment-based auth.                                                                                                                                                                                                                                                                                                                        |
 | `start_from_checkpoint` | `string`        |             | Checkpoint UUID to resume from, or `latest` to restore from the latest checkpoint.                                                                                                                                                                                                                                                                                                  |
 | `fail_if_no_checkpoint` | `boolean`       | `false`     | When `true`, the pipeline fails to start if no checkpoint is found in any source (local storage, `bucket`, or `read_bucket`). When `false`, the pipeline starts from scratch instead.                                                                                                                                                                                               |
-| `standby`               | `boolean`       | `false`     | When `true`, the pipeline starts in **standby** mode. See [Standby mode](#standby-mode). `start_from_checkpoint` must be set to use standby mode.                                                                                                                                                                                                                                  |
+| `standby`               | `boolean`       | `false`     | **Deprecated.** Use `initial=standby` when starting the pipeline instead. See [Standby mode](#standby-mode).                                                                                                                                                                                                                                                                        |
 | `pull_interval`         | `integer(u64)`  | `10`        | Interval (in seconds) between fetch attempts for the latest checkpoint while in standby.                                                                                                                                                                                                                                                                                            |
-| `push_interval`         | `integer(u64)`  |             | Interval (in seconds) between automatic syncs of a local checkpoint to object store, measured from the completion of the previous sync. Disabled by default. See [Automatic checkpoint synchronization](#automatic-checkpoint-synchronization).                                                                                                                                      |
+| `push_interval`         | `integer(u64)`  |             | Interval (in seconds) between automatic syncs of a local checkpoint to object store, measured from the completion of the previous sync. Disabled by default. See [Automatic checkpoint synchronization](#automatic-checkpoint-synchronization).                                                                                                                                     |
 | `transfers`             | `integer (u8)`  | `20`        | Number of concurrent file transfers.                                                                                                                                                                                                                                                                                                                                                |
 | `checkers`              | `integer (u8)`  | `20`        | Number of parallel checkers for verification.                                                                                                                                                                                                                                                                                                                                       |
 | `ignore_checksum`       | `boolean`       | `false`     | Skip checksum verification after transfer and only check the file size. May improve throughput.                                                                                                                                                                                                                                                                                     |
@@ -166,28 +167,31 @@ Example policy:
 
 ```json
 {
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "AWS": "arn:aws:iam::USER_SID:user/USER_NAME"
-      },
-      "Action": [
-        "s3:ListBucket",
-        "s3:DeleteObject",
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:PutObjectAcl"
-      ],
-      "Resource": ["arn:aws:s3:::BUCKET_NAME/*", "arn:aws:s3:::BUCKET_NAME"]
-    },
-    {
-      "Effect": "Allow",
-      "Action": "s3:ListAllMyBuckets",
-      "Resource": "arn:aws:s3:::*"
-    }
-  ]
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::USER_SID:user/USER_NAME"
+            },
+            "Action": [
+                "s3:ListBucket",
+                "s3:DeleteObject",
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:PutObjectAcl"
+            ],
+            "Resource": [
+                "arn:aws:s3:::BUCKET_NAME/*",
+                "arn:aws:s3:::BUCKET_NAME"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": "s3:ListAllMyBuckets",
+            "Resource": "arn:aws:s3:::*"
+        }
+    ]
 }
 ```
 
@@ -255,13 +259,14 @@ curl http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status
 
 ### Response fields
 
-| Field      | Type            | Description                                                                                                  |
-| ---------- | --------------- | ------------------------------------------------------------------------------------------------------------ |
-| `success`  | `uuid \| null`  | UUID of the most recently successful manually triggered checkpoint sync (`POST /checkpoint/sync`).           |
-| `failure`  | `object \| null`| Details of the most recently failed manually triggered checkpoint sync. Contains `uuid` and `error` fields.  |
-| `periodic` | `uuid \| null`  | UUID of the most recently successful automatic periodic checkpoint sync (configured via `push_interval`).    |
+| Field      | Type             | Description                                                                                                 |
+| ---------- | ---------------- | ----------------------------------------------------------------------------------------------------------- |
+| `success`  | `uuid \| null`   | UUID of the most recently successful manually triggered checkpoint sync (`POST /checkpoint/sync`).          |
+| `failure`  | `object \| null` | Details of the most recently failed manually triggered checkpoint sync. Contains `uuid` and `error` fields. |
+| `periodic` | `uuid \| null`   | UUID of the most recently successful automatic periodic checkpoint sync (configured via `push_interval`).   |
 
 `success` and `periodic` track different sync mechanisms:
+
 - `success` is updated only by manual syncs triggered via `POST /checkpoint/sync`.
 - `periodic` is updated only by automatic syncs configured via `push_interval`.
 
@@ -276,37 +281,92 @@ curl http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status
 **Successful manual sync:**
 
 ```json
-{ "success": "019779b4-8760-75f2-bdf0-71b825e63610", "failure": null, "periodic": null }
+{
+    "success": "019779b4-8760-75f2-bdf0-71b825e63610",
+    "failure": null,
+    "periodic": null
+}
 ```
 
 **Failed manual sync:**
 
 ```json
 {
-  "success": null,
-  "failure": {
-    "uuid": "019779c1-8317-7a71-bd78-7b971f4a3c43",
-    "error": "Error pushing checkpoint to object store: ... SignatureDoesNotMatch ..."
-  },
-  "periodic": null
+    "success": null,
+    "failure": {
+        "uuid": "019779c1-8317-7a71-bd78-7b971f4a3c43",
+        "error": "Error pushing checkpoint to object store: ... SignatureDoesNotMatch ..."
+    },
+    "periodic": null
 }
 ```
 
 **Automatic periodic sync only (no manual syncs):**
 
 ```json
-{ "success": null, "failure": null, "periodic": "019779c1-8317-7a71-bd78-7b971f4a3c43" }
+{
+    "success": null,
+    "failure": null,
+    "periodic": "019779c1-8317-7a71-bd78-7b971f4a3c43"
+}
 ```
 
 **Both manual and automatic syncs:**
 
 ```json
 {
-  "success": "019779b4-8760-75f2-bdf0-71b825e63610",
-  "failure": null,
-  "periodic": "019779c1-8317-7a71-bd78-7b971f4a3c43"
+    "success": "019779b4-8760-75f2-bdf0-71b825e63610",
+    "failure": null,
+    "periodic": "019779c1-8317-7a71-bd78-7b971f4a3c43"
 }
 ```
+
+## Multihost pipelines
+
+In a multihost pipeline, each host pod maintains its own subdirectory inside
+the shared bucket (`host0/`, `host1/`, …). LSM tree reference files are stored
+at the bucket root and shared across all hosts, since workers on different hosts
+may reference the same files.
+
+### Remote layout
+
+```
+storage-bucket/
+├── w0-[UUID].feldera            # LSM tree reference file (shared across hosts)
+├── w1-[UUID].feldera            # LSM tree reference file (shared across hosts)
+├── dependencies/                # Per-checkpoint dependency manifests
+│   ├── [UUID-host0-ckpt1].json
+│   ├── [UUID-host1-ckpt1].json
+│   └── ...
+├── host0/
+│   ├── checkpoints.feldera      # Checkpoint catalog for host 0
+│   ├── [UUID-host0-ckpt1].zip   # Host 0 checkpoint data
+│   └── ...
+└── host1/
+    ├── checkpoints.feldera      # Checkpoint catalog for host 1
+    ├── [UUID-host1-ckpt1].zip   # Host 1 checkpoint data
+    └── ...
+```
+
+### How sync works
+
+The coordinator manages checkpoint sync for multihost pipelines. Before
+triggering a sync, the coordinator selects the same logical step across all
+host pods, ensuring their remote catalogs always represent a consistent
+snapshot. Each pod then syncs its own subdirectory independently.
+
+:::important
+The remote bucket must contain checkpoints written by a pipeline with the
+**same number of hosts**. Restoring into a pipeline with a different host count
+will cause the pipeline to fail.
+:::
+
+### Limitations
+
+- **`start_from_checkpoint` supports only `"latest"`** for multihost pipelines.
+  Restoring from a specific checkpoint UUID is not supported.
+- **Garbage collection** for multihost pipelines is not yet implemented.
+  Checkpoints accumulate in the bucket until GC support is added.
 
 ## Buckets with server side encryption
 

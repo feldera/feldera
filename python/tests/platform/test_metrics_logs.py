@@ -215,10 +215,10 @@ def test_pipeline_logs(pipeline_name):
     # Poll for logs availability
     wait_for_condition(
         "logs endpoint becomes available",
-        lambda: get(
-            api_url(f"/pipelines/{pipeline_name}/logs"), stream=True
-        ).status_code
-        == HTTPStatus.OK,
+        lambda: (
+            get(api_url(f"/pipelines/{pipeline_name}/logs"), stream=True).status_code
+            == HTTPStatus.OK
+        ),
         timeout_s=30.0,
         poll_interval_s=0.5,
     )
@@ -262,10 +262,10 @@ def test_pipeline_logs(pipeline_name):
     # Poll until logs become unavailable (404)
     wait_for_condition(
         "logs endpoint becomes unavailable after deletion",
-        lambda: get(
-            api_url(f"/pipelines/{pipeline_name}/logs"), stream=True
-        ).status_code
-        == HTTPStatus.NOT_FOUND,
+        lambda: (
+            get(api_url(f"/pipelines/{pipeline_name}/logs"), stream=True).status_code
+            == HTTPStatus.NOT_FOUND
+        ),
         timeout_s=30.0,
         poll_interval_s=0.5,
     )

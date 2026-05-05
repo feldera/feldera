@@ -235,6 +235,23 @@ impl Layout {
             Layout::Multihost { local_host_idx, .. } => *local_host_idx,
         }
     }
+
+    /// Returns [`HostInfo`] for this host when running in multihost mode,
+    /// or `None` for solo pipelines.
+    ///
+    /// [`HostInfo`]: feldera_types::checkpoint::HostInfo
+    pub fn host_info(&self) -> Option<feldera_types::checkpoint::HostInfo> {
+        match self {
+            Layout::Solo { .. } => None,
+            Layout::Multihost {
+                hosts,
+                local_host_idx,
+            } => Some(feldera_types::checkpoint::HostInfo {
+                host_idx: *local_host_idx,
+                n_hosts: hosts.len(),
+            }),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]

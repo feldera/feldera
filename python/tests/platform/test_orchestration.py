@@ -81,10 +81,10 @@ def test_pipeline_orchestration_basic(pipeline_name):
             # valuable test to pass.
             wait_for_condition(
                 f"pipeline stats for {cur_pipeline_name} are available",
-                lambda: get(
-                    api_url(f"/pipelines/{cur_pipeline_name}/stats")
-                ).status_code
-                == HTTPStatus.OK,
+                lambda: (
+                    get(api_url(f"/pipelines/{cur_pipeline_name}/stats")).status_code
+                    == HTTPStatus.OK
+                ),
                 timeout_s=30.0,
                 poll_interval_s=1.0,
             )
@@ -129,9 +129,11 @@ def test_pipeline_orchestration_basic(pipeline_name):
         assert resp.status_code == HTTPStatus.OK, (resp.status_code, resp.text)
         wait_for_condition(
             "connector start observed",
-            lambda: not _basic_orchestration_info(
-                cur_pipeline_name, table_name, connector_name
-            )[1],
+            lambda: (
+                not _basic_orchestration_info(
+                    cur_pipeline_name, table_name, connector_name
+                )[1]
+            ),
             timeout_s=10.0,
             poll_interval_s=0.5,
         )
