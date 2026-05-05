@@ -27,6 +27,8 @@ jobs:
       FELDERA_HOST: ${{ matrix.feldera_host }}
       FELDERA_API_KEY: ${{ secrets[matrix.feldera_api_key] }}
       FELDERA_RUNTIME_VERSION: ${{ github.sha }}
+      CI_K8S_MINIO_ACCESS_KEY_ID: ${{ secrets.CI_K8S_MINIO_TEST_BUCKET_ACCESS_KEY_ID }}
+      CI_K8S_MINIO_SECRET_ACCESS_KEY: ${{ secrets.CI_K8S_MINIO_TEST_BUCKET_SECRET_ACCESS_KEY }}
     container:
       image: ghcr.io/feldera/feldera-dev:sha-13b176e3436b4c753c4cf8287caba6be847f6d1b
     steps:

@@ -46,12 +46,30 @@ class DeltaTestLocation:
     local_dir: pathlib.Path | None = None
 
     @classmethod
-    def create(cls, pipeline_name: str) -> "DeltaTestLocation":
-        """Use the local filesystem for local runs and MinIO-backed S3 in CI."""
+    def create(
+        cls,
+        pipeline_name: str,
+        *,
+        mode: str = "truncate",
+        stable_subpath: str | None = None,
+    ) -> "DeltaTestLocation":
+        """Use the local filesystem for local runs and MinIO-backed S3 in CI.
+
+        :param mode: Value of the connector's ``mode`` field. Output
+            connectors use ``"truncate"`` (the default); input connectors
+            should pass ``"snapshot"``.
+        :param stable_subpath: When set, locates the table at a fixed
+            path so cached data persists across test runs. When unset,
+            a fresh random subpath is used (the original behavior). Use
+            a stable path only when the table contents are deterministic
+            and idempotent across runs.
+        """
+
         if runs_in_ci():
             access_key = required_env("CI_K8S_MINIO_ACCESS_KEY_ID")
             secret_key = required_env("CI_K8S_MINIO_SECRET_ACCESS_KEY")
-            prefix = f"{pipeline_name}/{uuid.uuid4().hex}"
+            tail = stable_subpath if stable_subpath is not None else uuid.uuid4().hex
+            prefix = f"{pipeline_name}/{tail}"
             root_path = f"{MINIO_BUCKET}/{prefix}"
             minio_endpoint = MINIO_ENDPOINT.rstrip("/")
             parsed_endpoint = urlparse(minio_endpoint)
@@ -68,7 +86,7 @@ class DeltaTestLocation:
                 uri=f"s3://{root_path}",
                 connector_config={
                     "uri": f"s3://{root_path}",
-                    "mode": "truncate",
+                    "mode": mode,
                     "aws_access_key_id": access_key,
                     "aws_secret_access_key": secret_key,
                     "aws_region": MINIO_REGION,
@@ -78,20 +96,24 @@ class DeltaTestLocation:
                 root_path=root_path,
             )
 
-        local_dir = pathlib.Path(
-            tempfile.mkdtemp(prefix=f"{pipeline_name}_delta_", dir="/tmp")
-        )
+        if stable_subpath is not None:
+            local_dir = pathlib.Path("/tmp") / f"{pipeline_name}_{stable_subpath}"
+            local_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            local_dir = pathlib.Path(
+                tempfile.mkdtemp(prefix=f"{pipeline_name}_delta_", dir="/tmp")
+            )
         return cls(
             uri=f"file://{local_dir}",
             connector_config={
                 "uri": f"file://{local_dir}",
-                "mode": "truncate",
+                "mode": mode,
             },
             root_path=str(local_dir),
             local_dir=local_dir,
         )
 
-    def _delta_storage_options(self) -> dict[str, str]:
+    def delta_storage_options(self) -> dict[str, str]:
         """Return `deltalake` storage_options derived from the connector config."""
         return {
             k: str(v)
@@ -99,7 +121,7 @@ class DeltaTestLocation:
             if k not in ("uri", "mode")
         }
 
-    def row_count(self) -> int:
+    def row_count(self, missing_ok: bool = False) -> int:
         """Return the row count of the current Delta snapshot.
 
         Uses the per-file `numRecords` stats recorded in the delta log, so
@@ -109,10 +131,19 @@ class DeltaTestLocation:
         test collection does not crash on aarch64 hosts where the wheel
         aborts on import; tests that need this method gate themselves
         with `@skip_on_arm64`.
+
+        :param missing_ok: When True, return ``-1`` if the table does not
+            exist instead of raising. Useful when probing a cache.
         """
         from deltalake import DeltaTable
+        from deltalake.exceptions import TableNotFoundError
 
-        dt = DeltaTable(self.uri, storage_options=self._delta_storage_options())
+        try:
+            dt = DeltaTable(self.uri, storage_options=self.delta_storage_options())
+        except TableNotFoundError:
+            if missing_ok:
+                return -1
+            raise
         return dt.count()
 
     def cleanup(self) -> None:
