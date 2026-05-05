@@ -9,10 +9,11 @@ use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use actix_http::StatusCode;
 use actix_web::{
-    HttpRequest, HttpResponse, get,
-    http::{Method, header},
+    get,
+    http::{header, Method},
     post,
     web::{self, Data as WebData, ReqData},
+    HttpRequest, HttpResponse,
 };
 use feldera_types::query_params::{MetricsParameters, SamplyProfileGetParams, SamplyProfileParams};
 use feldera_types::{program_schema::SqlIdentifier, query_params::ActivateParams};
