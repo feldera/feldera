@@ -985,6 +985,28 @@ public class Regression2Tests extends SqlIoTest {
     }
 
     @Test
+    public void testXxHash() {
+        this.qs("""
+                SELECT XXHASH('abc', 2);
+                 r
+                ---
+                 6026019377950218999
+                (1 row)
+                
+                SELECT XXHASH(x'010203', 2);
+                 r
+                ---
+                 2397937360598948438
+                (1 row)
+                
+                SELECT XXHASH(NULL, 2);
+                 r
+                ---
+                NULL
+                (1 row)""");
+    }
+
+    @Test
     public void issue5927a() {
         var ccs = this.getCCS("""
                 CREATE TABLE T(g VARCHAR, x INT);

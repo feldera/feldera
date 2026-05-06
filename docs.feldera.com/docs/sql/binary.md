@@ -119,4 +119,9 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
     <td>Generate an `INT` value from the first 4 bytes of the `binary`, where the 0-th byte is the MSB</td>
     <td><code>TO_INT(x'0abc')</code> => <code>2748</code></td>
   </tr>
+  <tr>
+    <td><a id="xxhash"></a><code>XXHASH ( binary, seed )</code></td>
+    <td>Computes the hash of the specified binary with the specified seed.</td>
+    <td><code>xxhash(x'010203', 2397937360598948438)</code> => <code>10</code></td>
+  </tr>
 </table>

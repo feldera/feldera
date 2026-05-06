@@ -255,6 +255,11 @@ example.
     <td>Converts <code>string</code> to all upper case.</td>
     <td><code>upper('tom')</code> => <code>TOM</code></td>
   </tr>
+  <tr>
+    <td><a id="xxhash"></a><code>XXHASH ( string, seed )</code></td>
+    <td>Computes the hash of the specified string with the specified seed.</td>
+    <td><code>xxhash('abc', 10)</code> => <code>6026019377950218999</code></td>
+  </tr>
 </table>
 
 ## `LIKE`

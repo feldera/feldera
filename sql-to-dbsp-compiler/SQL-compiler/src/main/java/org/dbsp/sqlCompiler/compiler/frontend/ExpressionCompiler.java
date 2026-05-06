@@ -1187,6 +1187,18 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case OTHER_FUNCTION: {
                 String opName = call.op.getName().toLowerCase();
                 switch (opName) {
+                    case "xxhash": {
+                        String opName1 = getCallName(call);
+                        validateArgCount(node, opName1, ops.size(), 2);
+                        DBSPExpression expr = this.strictnessCheck(ops, type);
+                        if (expr != null)
+                            return expr;
+                        DBSPExpression arg1 = ops.get(1);
+                        ops.set(1, arg1.cast(arg1.getNode(),
+                                DBSPTypeInteger.getType(CalciteObject.EMPTY, INT64, arg1.getType().mayBeNull),
+                                DBSPCastExpression.CastType.SqlUnsafe));
+                        return compilePolymorphicFunction(true, call, node, type, ops, 2);
+                    }
                     case "trunc":
                     case "truncate":
                     case "round": {

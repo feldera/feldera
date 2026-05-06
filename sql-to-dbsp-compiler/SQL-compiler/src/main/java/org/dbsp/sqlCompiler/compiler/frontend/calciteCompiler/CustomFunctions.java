@@ -88,6 +88,7 @@ public class CustomFunctions {
         this.functions.add(new SplitPartFunction());
         this.functions.add(new ToIntFunction());
         this.functions.add(new ToJsonFunction());
+        this.functions.add(new XxHashFunction());
         this.functions.add(new WriteLogFunction());
         this.udf = new HashMap<>();
         this.aggregates = new HashMap<>();
@@ -524,6 +525,15 @@ public class CustomFunctions {
                     ReturnTypes.BOOLEAN_NULLABLE,
                     OperandTypes.STRING_STRING,
                     SqlFunctionCategory.STRING, "string#rlike-function", FunctionDocumentation.NO_FILE);
+        }
+    }
+
+    static class XxHashFunction extends NonOptimizedFunction {
+        private XxHashFunction() {
+            super("XXHASH",
+                    ReturnTypes.BIGINT_NULLABLE,
+                    STRING_INTEGER,
+                    SqlFunctionCategory.STRING, "string#xxhash,binary#xxhash", FunctionDocumentation.NO_FILE);
         }
     }
 
