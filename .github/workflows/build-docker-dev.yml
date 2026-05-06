@@ -23,7 +23,7 @@ jobs:
             docker_platform: linux/arm64
     runs-on: ${{ matrix.runner }}
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-13b176e3436b4c753c4cf8287caba6be847f6d1b
+      image: ghcr.io/feldera/feldera-dev:sha-3613839bd73108aee58017bf75dda42f7a3d0bb4
 
     steps:
       - name: Show Kubernetes node
