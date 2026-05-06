@@ -121,6 +121,99 @@ class DeltaTestLocation:
             if k not in ("uri", "mode")
         }
 
+    def _s3_filesystem(self):
+        """Build a pyarrow ``S3FileSystem`` from the connector config.
+
+        Pyarrow imports are deferred to keep module-level test collection
+        cheap on hosts that don't read Delta tables.
+        """
+        import pyarrow.fs as pafs
+
+        cfg = self.connector_config
+        endpoint = str(cfg["aws_endpoint"]).rstrip("/")
+        parsed_endpoint = urlparse(endpoint)
+        return pafs.S3FileSystem(
+            access_key=str(cfg["aws_access_key_id"]),
+            secret_key=str(cfg["aws_secret_access_key"]),
+            region=str(cfg["aws_region"]),
+            scheme=parsed_endpoint.scheme,
+            endpoint_override=parsed_endpoint.netloc,
+        )
+
+    def log_json_paths(self) -> list[str]:
+        """List Delta transaction log JSON files in version order."""
+        if self.local_dir is not None:
+            return [
+                str(path)
+                for path in sorted((self.local_dir / "_delta_log").glob("*.json"))
+            ]
+
+        import pyarrow.fs as pafs
+
+        fs = self._s3_filesystem()
+        infos = fs.get_file_info(
+            pafs.FileSelector(f"{self.root_path}/_delta_log", recursive=False)
+        )
+        return sorted(
+            info.path
+            for info in infos
+            if info.type == pafs.FileType.File and info.path.endswith(".json")
+        )
+
+    def _read_text(self, path: str) -> str:
+        """Read a text file from the configured backend."""
+        if self.local_dir is not None:
+            return pathlib.Path(path).read_text(encoding="utf-8")
+
+        with self._s3_filesystem().open_input_file(path) as handle:
+            return handle.readall().decode("utf-8")
+
+    def _read_parquet(self, relative_path: str):
+        """Read a Delta data file (relative to ``root_path``) as a pyarrow.Table."""
+        import pyarrow.parquet as pq
+
+        if self.local_dir is not None:
+            return pq.read_table(self.local_dir / relative_path)
+
+        return pq.read_table(
+            f"{self.root_path}/{relative_path}", filesystem=self._s3_filesystem()
+        )
+
+    def read_rows(self) -> list[dict]:
+        """Read the active rows of the Delta table by replaying its log.
+
+        Walks ``_delta_log/*.json``, follows ``add``/``remove`` actions to
+        derive the current set of parquet files, reads them with pyarrow
+        and drops Feldera-internal ``__feldera_*`` columns. Works against
+        both local-filesystem and S3-backed (MinIO) tables; avoids the
+        ``deltalake`` Python package, whose wheel aborts on aarch64 hosts.
+        """
+        import json as _json
+
+        import pyarrow as pa
+
+        active: dict[str, None] = {}
+        for log_path in self.log_json_paths():
+            for line in self._read_text(log_path).splitlines():
+                action = _json.loads(line)
+                if (add := action.get("add")) is not None:
+                    active[add["path"]] = None
+                if (remove := action.get("remove")) is not None:
+                    active.pop(remove["path"], None)
+
+        if not active:
+            return []
+
+        tables = [self._read_parquet(rel) for rel in sorted(active)]
+        return [
+            {
+                key: value
+                for key, value in row.items()
+                if not key.startswith("__feldera_")
+            }
+            for row in pa.concat_tables(tables).to_pylist()
+        ]
+
     def row_count(self, missing_ok: bool = False) -> int:
         """Return the row count of the current Delta snapshot.
 

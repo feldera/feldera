@@ -1,10 +1,10 @@
 import json
-import pathlib
-import tempfile
 
-import pyarrow as pa
-import pyarrow.parquet as pq
-
+from feldera import PipelineBuilder
+from feldera.enums import BootstrapPolicy
+from feldera.pipeline import Pipeline
+from feldera.runtime_config import RuntimeConfig, Storage
+from feldera.testutils import FELDERA_TEST_NUM_WORKERS, skip_on_arm64
 from tests import TEST_CLIENT
 from tests.platform.helper import (
     create_pipeline,
@@ -12,6 +12,7 @@ from tests.platform.helper import (
     start_pipeline,
     wait_for_condition,
 )
+from tests.utils import DeltaTestLocation
 
 
 def sorted_rows(rows: list[dict]) -> list[dict]:
@@ -43,42 +44,6 @@ def collect_output_chunks(stream, expected_rows: int) -> tuple[list[dict], list[
         rows.extend(chunk.get("json_data") or [])
 
     return chunks, rows
-
-
-def _local_delta_dir(pipeline_name: str) -> pathlib.Path:
-    """Allocate a fresh local directory to back a Delta table for one test run."""
-    return pathlib.Path(tempfile.mkdtemp(prefix=f"{pipeline_name}_delta_", dir="/tmp"))
-
-
-def _delta_log_paths(local_dir: pathlib.Path) -> list[pathlib.Path]:
-    return sorted((local_dir / "_delta_log").glob("*.json"))
-
-
-def _read_delta_rows(local_dir: pathlib.Path) -> list[dict]:
-    """Read the active rows of a Delta table by replaying its transaction log.
-
-    Replays add/remove actions to derive the current set of parquet files and
-    reads them with pyarrow. Drops Feldera-internal `__feldera_*` columns. The
-    log-only approach avoids the `deltalake` package, whose wheel aborts on
-    aarch64 hosts, while still reflecting truncations and rewrites correctly.
-    """
-    active: dict[str, None] = {}
-    for log_path in _delta_log_paths(local_dir):
-        for line in log_path.read_text(encoding="utf-8").splitlines():
-            action = json.loads(line)
-            if (add := action.get("add")) is not None:
-                active[add["path"]] = None
-            if (remove := action.get("remove")) is not None:
-                active.pop(remove["path"], None)
-
-    if not active:
-        return []
-
-    tables = [pq.read_table(local_dir / rel) for rel in sorted(active)]
-    return [
-        {key: value for key, value in row.items() if not key.startswith("__feldera_")}
-        for row in pa.concat_tables(tables).to_pylist()
-    ]
 
 
 @gen_pipeline_name
@@ -135,73 +100,174 @@ def test_egress_send_snapshot(pipeline_name):
     assert all(chunk.get("snapshot") is False for chunk in delta_chunks)
 
 
-@gen_pipeline_name
-def test_delta_output_send_snapshot(pipeline_name):
-    """Drive a `delta_table_output` connector with `send_snapshot: true` and
-    confirm the sink reflects the materialized view contents on first start
-    and follows incremental updates afterwards.
+# Number of deterministic rows pushed into ``t1`` and expected to land
+# identically in every Delta sink. Large enough that the snapshot path
+# isn't trivially indistinguishable from a tiny delta.
+_NUM_ROWS = 1000
 
-    Uses a local filesystem-backed Delta table so the test runs without any
-    external storage. Reads the table by replaying its transaction log
-    (avoiding the `deltalake` Python package, which is unavailable on some
-    hosts).
+
+def _make_rows(n: int) -> list[dict]:
+    """Generate ``n`` deterministic rows. ``id`` is the integer primary key
+    used by the indexed views; ``n``/``s`` are derived from ``id`` so each
+    row is uniquely recognizable on read-back.
     """
-    local_dir = _local_delta_dir(pipeline_name)
-    connector = {
+    return [{"id": i, "n": i * 100, "s": f"row_{i:04d}"} for i in range(1, n + 1)]
+
+
+_ROWS = _make_rows(_NUM_ROWS)
+
+
+def _delta_connector(
+    location: DeltaTestLocation,
+    *,
+    send_snapshot: bool,
+    index: str | None = None,
+) -> dict:
+    """Build a `delta_table_output` connector config."""
+    connector: dict = {
         "name": "delta_out",
-        "send_snapshot": True,
+        "send_snapshot": send_snapshot,
         "transport": {
             "name": "delta_table_output",
-            "config": {
-                "uri": f"file://{local_dir}",
-                "mode": "truncate",
-            },
+            "config": location.connector_config,
         },
     }
+    if index is not None:
+        connector["index"] = index
+    return connector
 
-    sql = f"""
-    CREATE TABLE t1(id INT) WITH ('materialized' = 'true');
-    CREATE MATERIALIZED VIEW v1 WITH (
-      'connectors' = '{json.dumps([connector])}'
-    ) AS SELECT * FROM t1;
-    """.strip()
 
-    create_pipeline(pipeline_name, sql)
-    start_pipeline(pipeline_name)
+_VIEWS = (
+    # (label, view name, index name passed to connector, CREATE INDEX statements)
+    ("v_plain", "v_plain", None, ""),
+    (
+        "v_one_index",
+        "v_one_index",
+        "v_one_index_idx",
+        "CREATE INDEX v_one_index_idx ON v_one_index(id);",
+    ),
+    (
+        "v_two_indexes",
+        "v_two_indexes",
+        "v_two_indexes_idx_id",
+        "CREATE INDEX v_two_indexes_idx_id ON v_two_indexes(id);\n"
+        "CREATE INDEX v_two_indexes_idx_n ON v_two_indexes(n);",
+    ),
+    (
+        "v_two_indexes_2",
+        "v_two_indexes_2",
+        "v_two_indexes_2_idx_n",
+        "CREATE INDEX v_two_indexes_2_idx_id ON v_two_indexes_2(id);\n"
+        "CREATE INDEX v_two_indexes_2_idx_n ON v_two_indexes_2(n);",
+    ),
+)
 
-    TEST_CLIENT.push_to_pipeline(
-        pipeline_name,
-        "t1",
-        "json",
-        [{"id": 10}, {"id": 11}],
-        array=True,
-        update_format="raw",
-        wait=True,
-        wait_timeout_s=30.0,
+
+def _build_sql(locations: list[DeltaTestLocation], send_snapshot: bool) -> str:
+    """Render the pipeline SQL with all four views, choosing the value of
+    ``send_snapshot`` for each connector. Index-attached connectors use
+    the same index name across rounds (only the boolean flips), so the
+    pipeline diff between two SQL snapshots classifies each connector as
+    modified rather than added/removed.
+    """
+    parts = [
+        "CREATE TABLE t1(id INT NOT NULL, n BIGINT NOT NULL, s VARCHAR NOT NULL)\n"
+        "    WITH ('materialized' = 'true');",
+    ]
+    for (_, view, index, indexes_sql), loc in zip(_VIEWS, locations):
+        connector = _delta_connector(loc, send_snapshot=send_snapshot, index=index)
+        parts.append(
+            f"CREATE MATERIALIZED VIEW {view} WITH (\n"
+            f"    'connectors' = '{json.dumps([connector])}'\n"
+            f") AS SELECT * FROM t1;"
+        )
+        if indexes_sql:
+            parts.append(indexes_sql)
+    return "\n\n".join(parts)
+
+
+@skip_on_arm64  # https://github.com/delta-io/delta-rs/issues/4413
+@gen_pipeline_name
+def test_delta_output_send_snapshot_after_flag_flip(pipeline_name):
+    """Verify snapshot delivery to delta sinks across a connector
+    modification (`send_snapshot: false` → `send_snapshot: true`).
+
+    Four view shapes are exercised, each with its own delta sink:
+
+    * ``v_plain``         – materialized view, no index.
+    * ``v_one_index``     – materialized view with one ``CREATE INDEX``;
+                            the connector reads the view through that
+                            index.
+    * ``v_two_indexes``   – materialized view with two ``CREATE INDEX``;
+                            the connector reads through the first.
+    * ``v_two_indexes_2`` – materialized view with two ``CREATE INDEX``;
+                            the connector reads through the second.
+
+    Round 1 (`send_snapshot=false`):
+        Push the rows. They reach every delta sink as ordinary
+        incremental updates. Take a checkpoint, stop the pipeline.
+
+    Round 2 (`send_snapshot=true`):
+        Resume from the checkpoint with `send_snapshot` flipped to
+        ``true`` on every connector. The view rows are recovered from
+        the checkpoint and each connector replays them as its initial
+        snapshot, repopulating its delta sink from scratch.
+
+    Round 2 pushes no new data, so each delta sink reaching ``expected``
+    proves the initial snapshot delivered the full materialized-view
+    contents — for every combination of indexes and which index the
+    connector reads through.
+    """
+    locations = [
+        DeltaTestLocation.create(f"{pipeline_name}_{label}") for label, *_ in _VIEWS
+    ]
+    expected = sorted_rows(_ROWS)
+
+    # Round 1: send_snapshot=false. Push three rows; they land via the
+    # delta path.
+    pipeline = PipelineBuilder(
+        TEST_CLIENT,
+        name=pipeline_name,
+        sql=_build_sql(locations, send_snapshot=False),
+        runtime_config=RuntimeConfig(
+            workers=FELDERA_TEST_NUM_WORKERS,
+            storage=Storage(),
+        ),
+    ).create_or_replace()
+    pipeline.start()
+
+    pipeline.input_json("t1", _ROWS, wait=True, wait_timeout_s=30.0)
+
+    for (label, *_), loc in zip(_VIEWS, locations):
+        wait_for_condition(
+            f"round 1: {label} delta sink receives rows via the delta path",
+            lambda loc=loc: sorted_rows(loc.read_rows()) == expected,
+            timeout_s=60.0,
+            poll_interval_s=1.0,
+        )
+
+    pipeline.checkpoint(wait=True)
+    pipeline.stop(force=True)
+
+    # Round 2: flip to send_snapshot=true and resume from the checkpoint.
+    TEST_CLIENT.patch_pipeline(
+        name=pipeline_name,
+        sql=_build_sql(locations, send_snapshot=True),
+        runtime_config=RuntimeConfig(
+            workers=FELDERA_TEST_NUM_WORKERS,
+            storage=Storage(config={"start_from_checkpoint": "latest"}),
+        ).to_dict(),
     )
+    pipeline = Pipeline.get(pipeline_name, TEST_CLIENT)
+    pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW)
 
-    wait_for_condition(
-        "delta sink receives initial rows",
-        lambda: sorted_rows(_read_delta_rows(local_dir)) == [{"id": 10}, {"id": 11}],
-        timeout_s=30.0,
-        poll_interval_s=1.0,
-    )
+    for (label, *_), loc in zip(_VIEWS, locations):
+        wait_for_condition(
+            f"round 2: {label} delta sink rebuilt from the snapshot",
+            lambda loc=loc: sorted_rows(loc.read_rows()) == expected,
+            timeout_s=60.0,
+            poll_interval_s=1.0,
+        )
 
-    TEST_CLIENT.push_to_pipeline(
-        pipeline_name,
-        "t1",
-        "json",
-        [{"id": 12}],
-        array=True,
-        update_format="raw",
-        wait=True,
-        wait_timeout_s=30.0,
-    )
-
-    wait_for_condition(
-        "delta sink follows incremental updates",
-        lambda: sorted_rows(_read_delta_rows(local_dir))
-        == [{"id": 10}, {"id": 11}, {"id": 12}],
-        timeout_s=30.0,
-        poll_interval_s=1.0,
-    )
+    for (_, *_), loc in zip(_VIEWS, locations):
+        assert sorted_rows(loc.read_rows()) == expected

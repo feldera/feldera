@@ -506,7 +506,7 @@ CREATE MATERIALIZED VIEW closure AS
 
 @enterprise_only
 @single_host_only
-@skip_on_arm64
+@skip_on_arm64  # https://github.com/delta-io/delta-rs/issues/4413
 @gen_pipeline_name
 def test_runtime_upgrade_round_trip(pipeline_name: str) -> None:
     """Round-trip a checkpoint across a runtime upgrade.
