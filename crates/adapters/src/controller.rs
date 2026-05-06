@@ -2942,10 +2942,12 @@ impl CircuitThread {
         // query results always reflect all data that we have reported
         // processing; otherwise, there is a race for any code that runs a query
         // as soon as input has been processed.
-        Span::new("update")
-            .with_category("Step")
+        if self.controller.get_transaction_state() == TransactionState::None {
+            Span::new("update")
+                .with_category("Step")
                 .with_tooltip(|| format!("update ad-hoc tables after step {}", self.step))
                 .in_scope(|| self.update_snapshot());
+        }
 
         // Record that we've processed the records, unless there is a transaction in progress,
         // in which case records are ingested by the circuit but are not fully processed.
