@@ -200,7 +200,7 @@
 </script>
 
 <div class="absolute h-full w-full py-4">
-  <div class="pl-16">
+  <div class="px-4 pb-2">
     Used memory: {humanSize(metrics.at(-1)?.m.toNumber() ?? 0)}
   </div>
   {#key pipelineName}

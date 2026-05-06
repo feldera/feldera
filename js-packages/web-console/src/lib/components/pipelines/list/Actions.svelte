@@ -531,7 +531,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
           toastError('Waiting for pipeline to stop')
         )
       },
-      'The pipeline will stop processing inputs and make a checkpoint of its state.'
+      'The pipeline will stop processing inputs and create a checkpoint of its state.'
     )(pipeline.current.name)}
   ></DeleteDialog>
 {/snippet}

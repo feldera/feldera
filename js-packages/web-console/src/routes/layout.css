@@ -187,4 +187,11 @@ input:focus {
   height: 16px;
 }
 
+.btn-sm {
+  font-size: var(--text-base) /* 14px */;
+  line-height: var(--text-base--line-height) /* 20px */;
+  padding-block: calc(var(--spacing) * 1) /* 0.25rem = 4px */;
+  padding-inline: calc(var(--spacing) * 2) /* 0.5rem = 8px */;
+}
+
 /* The end of Skeleton UI overrides */

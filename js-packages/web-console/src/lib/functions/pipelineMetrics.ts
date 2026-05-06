@@ -4,11 +4,13 @@ import { discreteDerivative } from '$lib/functions/common/math'
 import { tuple } from '$lib/functions/common/tuple'
 import { normalizeCaseIndependentName } from '$lib/functions/felderaRelation'
 import type {
+  CheckpointActivity,
   ControllerStatus,
   InputEndpointMetrics,
   InputEndpointStatus,
   OutputEndpointMetrics,
-  OutputEndpointStatus
+  OutputEndpointStatus,
+  PermanentSuspendError
 } from '$lib/services/manager'
 import type { GlobalMetricsTimestamp, TimeSeriesEntry } from '$lib/types/pipelineManager'
 
@@ -41,7 +43,9 @@ export const emptyPipelineMetrics = {
   global: {
     transaction_status: 'NoTransaction',
     transaction_initiators: { initiated_by_connectors: {} }
-  } as GlobalMetricsTimestamp
+  } as GlobalMetricsTimestamp,
+  checkpoint_activity: { status: 'idle' } as CheckpointActivity,
+  permanent_checkpoint_errors: undefined as Array<PermanentSuspendError> | null | undefined
 }
 
 export type PipelineMetrics = typeof emptyPipelineMetrics & { lastTimestamp?: number }
@@ -189,7 +193,9 @@ export const accumulatePipelineMetrics =
           return tuple(relationName, metrics)
         })
       ),
-      global: globalWithTimestamp
+      global: globalWithTimestamp,
+      checkpoint_activity: newData.checkpoint_activity ?? { status: 'idle' as const },
+      permanent_checkpoint_errors: newData.permanent_checkpoint_errors
     }
   }
 
