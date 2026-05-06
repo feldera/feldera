@@ -5336,6 +5336,7 @@ dependencies = [
  "tracing",
  "typedmap",
  "uuid",
+ "xxhash-rust",
 ]
 
 [[package]]

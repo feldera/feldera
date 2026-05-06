@@ -31,6 +31,7 @@ use std::{
     sync::Arc,
 };
 use tracing::warn;
+use xxhash_rust::xxh64::xxh64;
 
 type StringRef = ArcStr;
 pub type InternedString = InternedStringId;
@@ -982,6 +983,14 @@ pub fn md5_s(source: SqlString) -> SqlString {
 }
 
 some_polymorphic_function1!(md5, s, SqlString, SqlString);
+
+#[doc(hidden)]
+pub fn xxhash_s_i64(source: SqlString, seed: i64) -> i64 {
+    let hash = xxh64(source.str().as_bytes(), seed as u64);
+    hash as i64
+}
+
+some_polymorphic_function2!(xxhash, s, SqlString, i64, i64, i64);
 
 #[doc(hidden)]
 pub fn intern(s: Option<SqlString>) -> Option<InternedString> {

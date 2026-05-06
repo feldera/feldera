@@ -26,6 +26,7 @@ use std::{
     fmt::Debug,
     io::Read,
 };
+use xxhash_rust::xxh64::xxh64;
 
 /// Values smaller than this size are allocated on the stack
 const THRESHOLD: usize = 32; // up to 256 bits
@@ -518,3 +519,11 @@ pub fn bin2utf8N(source: Option<ByteArray>) -> Option<SqlString> {
         Some(bytes) => bin2utf8_(bytes),
     }
 }
+
+#[doc(hidden)]
+pub fn xxhash_bytes_i64(source: ByteArray, seed: i64) -> i64 {
+    let hash = xxh64(&source.data, seed as u64);
+    hash as i64
+}
+
+some_polymorphic_function2!(xxhash, bytes, ByteArray, i64, i64, i64);
