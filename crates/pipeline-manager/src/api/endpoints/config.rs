@@ -175,7 +175,8 @@ pub(crate) async fn get_config(
     ),
     tag = "Platform"
 )]
-#[get("/config/authentication")]
+// Mounted inside `web::scope("/config")` in `main::public_scope`, so the macro path is scope-relative.
+#[get("/authentication")]
 pub(crate) async fn get_config_authentication(
     state: WebData<ServerState>,
     req: HttpRequest,
