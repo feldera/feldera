@@ -116,31 +116,46 @@ pub type Step = u64;
 pub enum StepAction {
     /// Wait for instructions from the coordinator.
     Idle,
-    /// Wait for a triggering event to occur, such as arrival of a sufficient
-    /// amount of data on an input connector.  If one does, execute a step.
+    /// Wait for a triggering condition to occur, such as arrival of a
+    /// sufficient amount of data on an input connector or if a transaction is
+    /// committing.  If one does, execute a step.
     Trigger,
     /// Execute a step.
     Step,
 }
 
 /// `/coordination/step/status` update, streamed by pipeline to coordinator.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct StepStatus {
     /// The step that is running or will run next.
     pub step: Step,
     /// Current action.
     pub action: StepAction,
+    /// Whether a transaction is open:
+    ///
+    /// - `None`: No transaction open or committing.
+    ///
+    /// - `Some(true)`: Transaction is open.
+    ///
+    /// - `Some(false)`: Transaction is committing.  The coordinator needs to
+    ///   execute at least one more step to commit it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transaction_status: Option<bool>,
 }
 
 impl StepStatus {
-    pub fn new(step: Step, action: StepAction) -> Self {
-        Self { step, action }
+    pub fn new(step: Step, action: StepAction, transaction_status: Option<bool>) -> Self {
+        Self {
+            step,
+            action,
+            transaction_status,
+        }
     }
     pub fn is_triggered(&self, step: Step) -> bool {
-        *self == Self::new(step, StepAction::Step) || self.is_idle(step + 1)
+        (self.step == step && self.action == StepAction::Step) || self.is_idle(step + 1)
     }
     pub fn is_idle(&self, step: Step) -> bool {
-        *self == Self::new(step, StepAction::Idle)
+        self.step == step && self.action == StepAction::Idle
     }
 }
 
@@ -152,7 +167,8 @@ pub struct StepRequest {
     ///
     /// - [Idle][]: Do not start a step.
     ///
-    /// - [Trigger][]: Start a step if input arrives on an input endpoint.
+    /// - [Trigger][]: Start a step if input arrives on an input endpoint or if
+    ///   a transaction is committing.
     ///
     /// - [Step][]: Start a step.
     ///
@@ -197,6 +213,12 @@ pub enum StepInputs {
     /// checkpoint to trigger a step.  For executing a step, use input only from
     /// input endpoints that are blocking a checkpoint.
     CheckpointBarriers,
+
+    /// Do not consider any input as triggering a step.  For executing a step,
+    /// do not use any input.
+    ///
+    /// This is for committing a transaction.
+    None,
 }
 
 /// `/coordination/checkpoint/status`, streamed by pipeline to coordinator.
@@ -228,19 +250,6 @@ pub enum CheckpointCoordination {
 /// `/coordination/transaction/status` update, streamed by pipeline to coordinator.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TransactionCoordination {
-    /// Whether a transaction is open:
-    ///
-    /// - `None`: No transaction open or committing.
-    ///
-    /// - `Some(true)`: Transaction is open.
-    ///
-    /// - `Some(false)`: Transaction is committing.  The coordinator needs to
-    ///   execute at least one more step to commit it.
-    ///
-    /// Only the API can open and close a transaction when coordination is
-    /// enabled.
-    pub status: Option<bool>,
-
     /// Endpoints that want to join a transaction, with their optional labels.
     pub requests: HashMap<String, Option<String>>,
 }

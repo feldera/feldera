@@ -2660,7 +2660,7 @@ impl CircuitThread {
         };
 
         let (step_sender, step_receiver) =
-            tokio::sync::watch::channel(StepStatus::new(step, StepAction::Idle));
+            tokio::sync::watch::channel(StepStatus::new(step, StepAction::Idle, None));
         let (checkpoint_sender, checkpoint_receiver) = tokio::sync::watch::channel(None);
         let (parker, backpressure_thread, command_receiver, controller) = ControllerInner::new(
             pipeline_config,
@@ -2910,8 +2910,13 @@ impl CircuitThread {
             .total_initiated_steps
             .store(self.step + 1, Ordering::Release);
 
-        self.step_sender
-            .send_replace(StepStatus::new(self.step, StepAction::Step));
+        self.step_sender.send_replace(StepStatus::new(
+            self.step,
+            StepAction::Step,
+            self.controller
+                .get_transaction_state()
+                .into_coordination_status(),
+        ));
         let total_consumed = match Span::new("input")
             .with_category("Step")
             .with_tooltip(|| format!("supply input before step {}", self.step + 1))
@@ -2928,8 +2933,12 @@ impl CircuitThread {
         self.controller.unpark_backpressure();
         self.step_circuit();
 
-        self.step_sender
-            .send_replace(StepStatus::new(self.step, StepAction::Idle));
+        let transaction_state = self.controller.get_transaction_state();
+        self.step_sender.send_replace(StepStatus::new(
+            self.step,
+            StepAction::Idle,
+            transaction_state.into_coordination_status(),
+        ));
 
         // If bootstrapping has completed, update the status flag.
         self.controller
@@ -2942,7 +2951,7 @@ impl CircuitThread {
         // query results always reflect all data that we have reported
         // processing; otherwise, there is a race for any code that runs a query
         // as soon as input has been processed.
-        if self.controller.get_transaction_state() == TransactionState::None {
+        if transaction_state == TransactionState::None {
             Span::new("update")
                 .with_category("Step")
                 .with_tooltip(|| format!("update ad-hoc tables after step {}", self.step))
@@ -3083,11 +3092,11 @@ impl CircuitThread {
                     .record();
                 TRANSACTION_COMMIT_TIME_MICROSECONDS.record_duration(duration);
 
-                let mut transaction_info = self.controller.transaction_info.lock().unwrap();
-
-                transaction_info.transaction_state = TransactionState::None;
-                transaction_info.update_transaction_status();
-                drop(transaction_info);
+                self.controller
+                    .transaction_info
+                    .lock()
+                    .unwrap()
+                    .transaction_state = TransactionState::None;
 
                 self.commit_updates = None;
                 self.controller
@@ -3468,9 +3477,17 @@ impl CircuitThread {
         };
 
         for (&endpoint_id, status) in statuses.iter() {
-            if inputs == StepInputs::CheckpointBarriers && !status.is_barrier()
-                || committing.contains(&status.endpoint_name)
-            {
+            let poll_endpoint = if committing.contains(&status.endpoint_name) {
+                // Do not include connectors that have requested commit.
+                false
+            } else {
+                match inputs {
+                    StepInputs::All => true,
+                    StepInputs::CheckpointBarriers => status.is_barrier(),
+                    StepInputs::None => false,
+                }
+            };
+            if !poll_endpoint {
                 if let Some(resume) = self.input_metadata.remove(&status.endpoint_name) {
                     step_metadata.insert(
                         endpoint_id,
@@ -5176,6 +5193,16 @@ impl TransactionState {
             } => Some(*processed_records),
         }
     }
+
+    /// Returns this transaction status in the format used in [StepStatus] and
+    /// [TransactionCoordination].
+    pub fn into_coordination_status(self) -> Option<bool> {
+        match self {
+            TransactionState::None => None,
+            TransactionState::Started { .. } => Some(true),
+            TransactionState::Committing { .. } => Some(false),
+        }
+    }
 }
 
 enum AdvanceTransaction {
@@ -5558,21 +5585,6 @@ impl TransactionInfo {
     /// changed.
     fn update_transaction_status(&self) {
         let coordination = TransactionCoordination {
-            status: match (
-                self.transaction_state,
-                self.initiators.is_ongoing(self.is_multihost),
-            ) {
-                (TransactionState::None, false) => None,
-                (TransactionState::Started { .. } | TransactionState::Committing { .. }, false) => {
-                    Some(false)
-                }
-                (TransactionState::None | TransactionState::Started { .. }, true) => Some(true),
-                (TransactionState::Committing { .. }, true) => {
-                    // We can get here if a new transaction has been initiated via the API while the
-                    // prevous transaction is committing.
-                    return;
-                }
-            },
             requests: self
                 .initiators
                 .initiated_by_connectors
@@ -6970,10 +6982,7 @@ impl ControllerInner {
     pub fn start_transaction_from_api(&self) -> Result<TransactionId, ControllerError> {
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
-        let transaction_id = transaction_info.start_transaction_from_api()?;
-        transaction_info.update_transaction_status();
-
-        Ok(transaction_id)
+        transaction_info.start_transaction_from_api()
     }
 
     /// Start committing the current transaction by setting desired state to None.
