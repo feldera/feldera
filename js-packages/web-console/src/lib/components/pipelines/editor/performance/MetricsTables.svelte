@@ -150,7 +150,7 @@
   {:else if hasErrors}
     <span
       data-testid="btn-icon-input-errors"
-      class="fd fd-circle-alert text-[16px] text-error-500"
+      class="fd fd-circle-alert cursor-pointer text-[16px] text-error-500"
       {...gotoErrorsBtnProps}
     ></span>
     <Tooltip placement="top"
@@ -211,7 +211,7 @@
   {#if hasErrors}
     <span
       data-testid="btn-icon-output-errors"
-      class="fd {hasFatalError ? 'fd-circle-x' : 'fd-circle-alert'} text-[16px] text-error-500"
+      class="fd {hasFatalError ? 'fd-circle-x' : 'fd-circle-alert'} cursor-pointer text-[16px] text-error-500"
       {...onErrorClick
         ? {
             onclick: (e) => {

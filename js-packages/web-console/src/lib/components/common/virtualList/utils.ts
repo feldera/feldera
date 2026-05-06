@@ -75,7 +75,9 @@ export const getGridIndices = (
   const endIndexOverScan = endIndexTemp + overScanColumn
   const endIndex = endIndexOverScan < itemCount ? endIndexOverScan : itemCount
 
-  for (let i = startIndex; i < endIndex; i++) indices.push(i)
+  for (let i = startIndex; i < endIndex; i++) {
+    indices.push(i)
+  }
 
   return indices
 }
@@ -97,7 +99,9 @@ export const getListIndices = (
   const endIndexOverScan = endIndexTemp + overScan
   const endIndex = endIndexOverScan < itemCount ? endIndexOverScan : itemCount
 
-  for (let i = startIndex; i < endIndex; i++) indices.push(i)
+  for (let i = startIndex; i < endIndex; i++) {
+    indices.push(i)
+  }
 
   return indices
 }

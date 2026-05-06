@@ -17,7 +17,9 @@
 
   // Handle clicks outside to hide banner
   $effect(() => {
-    if (!shouldShow) return
+    if (!shouldShow) {
+      return
+    }
 
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node

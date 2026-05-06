@@ -1,8 +1,12 @@
 import {
   type CombinedDesiredStatus as _CombinedDesiredStatus,
   type CombinedStatus as _CombinedStatus,
+  checkpointPipeline as _checkpointPipeline,
   deleteApiKey as _deleteApiKey,
   deletePipeline as _deletePipeline,
+  getCheckpointStatus as _getCheckpointStatus,
+  getCheckpointSyncStatus as _getCheckpointSyncStatus,
+  getCheckpoints as _getCheckpoints,
   getClusterEvent as _getClusterEvent,
   getConfig as _getConfig,
   getConfigSession as _getConfigSession,
@@ -18,6 +22,10 @@ import {
   postPipeline as _postPipeline,
   postUpdateRuntime as _postUpdateRuntime,
   putPipeline as _putPipeline,
+  syncCheckpoint as _syncCheckpoint,
+  type CheckpointMetadata,
+  type CheckpointResponse,
+  type CheckpointStatus,
   type ControllerStatus,
   type ErrorResponse,
   type GetPipelineSupportBundleData,
@@ -43,6 +51,11 @@ import {
 } from '$lib/services/manager'
 
 export type {
+  CheckpointActivity,
+  CheckpointFailure,
+  CheckpointMetadata,
+  CheckpointResponse,
+  CheckpointStatus,
   InputEndpointConfig,
   InputEndpointStatus,
   OutputEndpointConfig,
@@ -493,6 +506,41 @@ export const getOutputConnectorStatus = (
     }),
     (v) => v
   )
+
+export const getPipelineCheckpoints = (pipeline_name: string, options?: FetchOptions) => {
+  return mapResponse(
+    _getCheckpoints({ path: { pipeline_name }, ...options }),
+    (v) => v as unknown as CheckpointMetadata[]
+  )
+}
+
+export const checkpointPipeline = (pipeline_name: string, options?: FetchOptions) => {
+  return mapResponse(
+    _checkpointPipeline({ path: { pipeline_name }, ...options }),
+    (v) => v as CheckpointResponse
+  )
+}
+
+export const getCheckpointStatus = (pipeline_name: string, options?: FetchOptions) => {
+  return mapResponse(
+    _getCheckpointStatus({ path: { pipeline_name }, ...options }),
+    (v) => v as CheckpointStatus
+  )
+}
+
+export const syncCheckpoint = (pipeline_name: string, options?: FetchOptions) => {
+  return mapResponse(
+    _syncCheckpoint({ path: { pipeline_name }, ...options }),
+    (v) => v
+  )
+}
+
+export const getCheckpointSyncStatus = (pipeline_name: string, options?: FetchOptions) => {
+  return mapResponse(
+    _getCheckpointSyncStatus({ path: { pipeline_name }, ...options }),
+    (v) => v
+  )
+}
 
 export const deletePipeline = async (pipeline_name: string, options?: FetchOptions) => {
   await mapResponse(_deletePipeline({ path: { pipeline_name }, ...options }), (v) => v)
