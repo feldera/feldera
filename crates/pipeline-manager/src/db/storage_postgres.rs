@@ -293,6 +293,7 @@ impl Storage for StoragePostgres {
             new_id,
             platform_version,
             pipeline.clone(),
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
 
@@ -335,6 +336,7 @@ impl Storage for StoragePostgres {
                     &Some(pipeline.udf_rust.clone()),
                     &Some(pipeline.udf_toml.clone()),
                     &Some(pipeline.program_config.clone()),
+                    self.db_config.disable_pipeline_events_collection,
                 )
                 .await?;
                 false
@@ -350,6 +352,7 @@ impl Storage for StoragePostgres {
                     new_id,
                     platform_version,
                     pipeline.clone(),
+                    self.db_config.disable_pipeline_events_collection,
                 )
                 .await?;
                 true
@@ -447,6 +450,7 @@ impl Storage for StoragePostgres {
             udf_rust,
             udf_toml,
             program_config,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
 
@@ -493,6 +497,7 @@ impl Storage for StoragePostgres {
             &None,
             &None,
             &None,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
         txn.commit().await?;
@@ -520,6 +525,7 @@ impl Storage for StoragePostgres {
             &None,
             &None,
             &None,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
         txn.commit().await?;
@@ -549,6 +555,7 @@ impl Storage for StoragePostgres {
             &None,
             &None,
             &None,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
         txn.commit().await?;
@@ -576,6 +583,7 @@ impl Storage for StoragePostgres {
             &None,
             &None,
             &None,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
         txn.commit().await?;
@@ -607,6 +615,7 @@ impl Storage for StoragePostgres {
             &Some(program_binary_source_checksum.to_string()),
             &Some(program_binary_integrity_checksum.to_string()),
             &Some(program_info_integrity_checksum.to_string()),
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
         txn.commit().await?;
@@ -635,6 +644,7 @@ impl Storage for StoragePostgres {
             &None,
             &None,
             &None,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
         txn.commit().await?;
@@ -663,6 +673,7 @@ impl Storage for StoragePostgres {
             &None,
             &None,
             &None,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
         txn.commit().await?;
@@ -691,6 +702,7 @@ impl Storage for StoragePostgres {
             &None,
             &None,
             &None,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
         txn.commit().await?;
@@ -704,7 +716,13 @@ impl Storage for StoragePostgres {
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        operations::pipeline::dismiss_deployment_error(&txn, tenant_id, pipeline_name).await?;
+        operations::pipeline::dismiss_deployment_error(
+            &txn,
+            tenant_id,
+            pipeline_name,
+            self.db_config.disable_pipeline_events_collection,
+        )
+        .await?;
         txn.commit().await?;
         Ok(())
     }
@@ -727,6 +745,7 @@ impl Storage for StoragePostgres {
             Some(initial),
             Some(bootstrap_policy),
             dismiss_error,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
         txn.commit().await?;
@@ -748,6 +767,7 @@ impl Storage for StoragePostgres {
             None,
             None,
             false,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
         txn.commit().await?;
@@ -773,6 +793,7 @@ impl Storage for StoragePostgres {
                 None,
                 None,
                 false,
+                self.db_config.disable_pipeline_events_collection,
             )
             .await?;
             true
@@ -812,6 +833,7 @@ impl Storage for StoragePostgres {
             tenant_id,
             pipeline_id,
             StorageStatus::InUse,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
         operations::pipeline::set_deployment_resources_status_provisioning(
@@ -821,6 +843,7 @@ impl Storage for StoragePostgres {
             version_guard,
             deployment_id,
             deployment_config,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
         txn.commit().await?;
@@ -842,6 +865,7 @@ impl Storage for StoragePostgres {
             pipeline_id,
             version_guard,
             deployment_resources_status_details,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
         txn.commit().await?;
@@ -871,6 +895,7 @@ impl Storage for StoragePostgres {
             deployment_runtime_status,
             deployment_runtime_status_details,
             deployment_runtime_desired_status,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
         txn.commit().await?;
@@ -900,6 +925,7 @@ impl Storage for StoragePostgres {
             deployment_runtime_status_details,
             deployment_runtime_desired_status,
             storage_status_details,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
         txn.commit().await?;
@@ -938,6 +964,7 @@ impl Storage for StoragePostgres {
             None,
             None,
             false,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
         operations::pipeline::set_deployment_resources_status_stopping(
@@ -947,6 +974,7 @@ impl Storage for StoragePostgres {
             version_guard,
             deployment_error,
             storage_status_details,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
 
@@ -969,6 +997,7 @@ impl Storage for StoragePostgres {
             pipeline_id,
             version_guard,
             deployment_resources_status_details,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
 
@@ -989,6 +1018,7 @@ impl Storage for StoragePostgres {
             tenant_id,
             pipeline_id,
             version_guard,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
         txn.commit().await?;
@@ -1012,6 +1042,7 @@ impl Storage for StoragePostgres {
                 tenant_id,
                 pipeline.id,
                 StorageStatus::Clearing,
+                self.db_config.disable_pipeline_events_collection,
             )
             .await?;
         }
@@ -1031,6 +1062,7 @@ impl Storage for StoragePostgres {
             tenant_id,
             pipeline_id,
             StorageStatus::Cleared,
+            self.db_config.disable_pipeline_events_collection,
         )
         .await?;
         txn.commit().await?;
@@ -1104,6 +1136,7 @@ impl Storage for StoragePostgres {
                             &None,
                             &None,
                             &None,
+                            self.db_config.disable_pipeline_events_collection,
                         )
                         .await?;
                     }
@@ -1124,6 +1157,7 @@ impl Storage for StoragePostgres {
                         &None,
                         &None,
                         &None,
+                        self.db_config.disable_pipeline_events_collection,
                     )
                     .await?;
                 }
@@ -1193,6 +1227,7 @@ impl Storage for StoragePostgres {
                             &None,
                             &None,
                             &None,
+            self.db_config.disable_pipeline_events_collection,
                         )
                         .await?;
                     }
@@ -1213,6 +1248,7 @@ impl Storage for StoragePostgres {
                         &None,
                         &None,
                         &None,
+                        self.db_config.disable_pipeline_events_collection,
                     )
                     .await?;
                 }
@@ -1498,7 +1534,11 @@ impl StoragePostgres {
             }
             let connection_string = pg_inst.settings().url(db_name);
 
-            let db_config = DatabaseConfig::new(connection_string, None);
+            let db_config = DatabaseConfig::new(
+                connection_string,
+                None,
+                db_config.disable_pipeline_events_collection,
+            );
             return Self::initialize(&db_config, Some(pg_inst)).await;
         };
 

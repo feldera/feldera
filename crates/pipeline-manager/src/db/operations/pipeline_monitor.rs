@@ -184,7 +184,12 @@ pub(crate) async fn new_pipeline_monitor_event(
     tenant_id: TenantId,
     pipeline_id: PipelineId,
     new_event_id: Uuid,
+    disable_pipeline_events_collection: bool,
 ) -> Result<(), DBError> {
+    if disable_pipeline_events_collection {
+        // No new monitor event is created if collection is disabled.
+        return Ok(());
+    }
     let pipeline = get_pipeline_by_id_for_event_info(txn, tenant_id, pipeline_id).await?;
 
     let stmt = txn

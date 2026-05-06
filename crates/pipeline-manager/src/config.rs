@@ -641,15 +641,25 @@ pub struct DatabaseConfig {
     #[serde(default)]
     #[arg(long, env = "FELDERA_DB_TLS_DISABLE_HOSTNAME_VERIFY")]
     pub disable_tls_hostname_verify: bool,
+
+    /// Disable pipeline events from getting collected.
+    /// This does not affect their cleanup.
+    #[arg(long, env = "FELDERA_DB_DISABLE_PIPELINE_EVENTS_COLLECTION")]
+    pub disable_pipeline_events_collection: bool,
 }
 
 impl DatabaseConfig {
-    pub fn new(db_connection_string: String, db_tls_certificate_path: Option<String>) -> Self {
+    pub fn new(
+        db_connection_string: String,
+        db_tls_certificate_path: Option<String>,
+        disable_pipeline_events_collection: bool,
+    ) -> Self {
         Self {
             db_connection_string,
             db_tls_certificate_path,
             disable_tls_verify: false,
             disable_tls_hostname_verify: false,
+            disable_pipeline_events_collection,
         }
     }
 
