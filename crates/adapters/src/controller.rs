@@ -3206,7 +3206,22 @@ impl CircuitThread {
         let mut snapshot = BTreeMap::new();
         for (name, clh) in self.controller.catalog.output_iter() {
             if let Some(ih) = &clh.integrate_handle {
-                snapshot.insert(name.clone(), ih.take_from_all());
+                let batches = ih.take_from_all();
+                // The first index of a materialized view registers its
+                // integral under the view name with `alias_as_index =
+                // Some(index)` (see
+                // `register_materialized_output_map_persistent`). Also
+                // publish the snapshot under the alias so a connector
+                // configured with `index: <alias>` finds it via
+                // `enqueue_latest_snapshot`'s name lookup.
+                if let Some(alias) = &clh.alias_as_index {
+                    debug_assert_ne!(
+                        alias, name,
+                        "alias_as_index must differ from the catalog name",
+                    );
+                    snapshot.insert(alias.clone(), batches.clone());
+                }
+                snapshot.insert(name.clone(), batches);
             }
         }
 
