@@ -221,7 +221,7 @@ The following window aggregate functions are supported:
   </tr>
 </table>
 
-::: warning Potential inefficiency
+:::warning Potential inefficiency
 
 The window aggregate functions `RANK`, `DENSE_RANK`, and `ROW_NUMBER`
 may be very expensive to evaluate incrementally, because it's possible
