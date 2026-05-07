@@ -779,6 +779,7 @@ class TestPipeline(SharedTestPipeline):
         )
 
         # Verify egress data includes both values with insert_delete markers
+        self.pipeline.wait_for_idle()
         egress_result = out.to_dict()
         expected_egress = [
             {"c1": "test_value", "insert_delete": 1},
