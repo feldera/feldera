@@ -542,14 +542,67 @@ async fn add_cache_headers(
     Ok(res)
 }
 
-// Unauthenticated public endpoints and static UI assets, all served same-origin
-// in production. CORS is scoped to `/config/*` only — that's the one top-level
-// public endpoint the dev web console at :5173 needs to reach cross-origin
-// during OIDC bootstrap (before any token is available, so it can't go through
-// `/v0/*`). Every other route here is same-origin in practice (swagger UI,
-// healthz monitoring, static bundle), and keeping CORS off them is what allows
-// Firefox to honor `Cache-Control: immutable` on the bundle (no `Vary: Origin`,
-// no `Access-Control-Allow-Credentials`).
+/// Build the App that `run()` serves. Extracted as a free function so tests
+/// can drive the exact same wrap/service composition that ships in production
+/// rather than a hand-rolled stand-in. The caller chains `.app_data(...)` for
+/// `ServerState` and the awc client; tests that don't need handler success
+/// can skip those.
+fn build_app(
+    api_config: &ApiServerConfig,
+    auth_configuration: &Option<crate::auth::AuthConfiguration>,
+) -> App<
+    impl actix_web::dev::ServiceFactory<
+        actix_web::dev::ServiceRequest,
+        Config = (),
+        Response = actix_web::dev::ServiceResponse<impl MessageBody>,
+        Error = actix_web::Error,
+        InitError = (),
+    >,
+> {
+    let cors = api_config.cors();
+    let app = App::new()
+        .wrap_fn(|req, srv| {
+            let log_level = if req.method() == Method::GET && req.path() == "/healthz" {
+                Level::TRACE
+            } else {
+                Level::DEBUG
+            };
+            log_with_level!(log_level, "Request: {} {}", req.method(), req.path());
+            srv.call(req).map(log_response)
+        })
+        .wrap(middleware::Compress::default())
+        .wrap(observability::actix_middleware());
+
+    let app = match auth_configuration {
+        Some(auth_configuration) => {
+            let auth_middleware = HttpAuthentication::with_fn(crate::auth::auth_validator);
+            app.app_data(auth_configuration.clone())
+                .service(api_scope().wrap(auth_middleware).wrap(cors))
+        }
+        None => app.service(
+            api_scope()
+                .wrap_fn(|req, srv| {
+                    let req = crate::auth::tag_with_default_tenant_id(req);
+                    srv.call(req)
+                })
+                .wrap(cors),
+        ),
+    };
+
+    // `public_scope` MUST be the last `.service()` registered: it contains an
+    // empty-prefix sub-scope (the catch-all that serves the bundled
+    // web-console static files) that would shadow any service registered
+    // after it. The `public_scope_shadows_anything_registered_after_it` test
+    // pins this contract.
+    app.service(public_scope(api_config))
+}
+
+// Unauthenticated public endpoints and static UI assets. CORS is scoped to
+// `/config/*` only — it's the unauthenticated API surface that browser clients
+// may need to reach cross-origin. Every other route here is same-origin in practice
+// (swagger UI, healthz monitoring, static bundle), and keeping CORS off them
+// is what allows Firefox to honor `Cache-Control: immutable` on the bundle
+// (no `Vary: Origin`, no `Access-Control-Allow-Credentials`).
 //
 // Must be registered LAST in the App: the inner empty-prefix scope acts as the
 // SPA fallback and would otherwise shadow other top-level scopes.
@@ -793,43 +846,9 @@ pub async fn run(
     let state_cloned = state.clone();
     let server = HttpServer::new(move || {
         let client = WebData::new(common_config_cloned.awc_client());
-        let cors = api_config_cloned.cors();
-        let app = App::new()
+        build_app(&api_config_cloned, &auth_configuration)
             .app_data(state_cloned.clone())
             .app_data(client)
-            .wrap_fn(|req, srv| {
-                let log_level = if req.method() == Method::GET && req.path() == "/healthz" {
-                    Level::TRACE
-                } else {
-                    Level::DEBUG
-                };
-                log_with_level!(log_level, "Request: {} {}", req.method(), req.path());
-                srv.call(req).map(log_response)
-            })
-            .wrap(middleware::Compress::default())
-            .wrap(observability::actix_middleware());
-
-        let app = match &auth_configuration {
-            Some(auth_configuration) => {
-                let auth_middleware = HttpAuthentication::with_fn(crate::auth::auth_validator);
-                app.app_data(auth_configuration.clone())
-                    .service(api_scope().wrap(auth_middleware).wrap(cors))
-            }
-            None => app.service(
-                api_scope()
-                    .wrap_fn(|req, srv| {
-                        let req = crate::auth::tag_with_default_tenant_id(req);
-                        srv.call(req)
-                    })
-                    .wrap(cors),
-            ),
-        };
-
-        // `public_scope` MUST be the last `.service()` registered: it contains
-        // an empty-prefix sub-scope (the catch-all that serves the bundled
-        // web-console static files) that would shadow any service registered
-        // after it.
-        app.service(public_scope(&api_config_cloned))
     })
     .workers(common_config.http_workers)
     .worker_max_blocking_threads(std::cmp::max(512 / common_config.http_workers, 1));
@@ -1006,27 +1025,22 @@ mod tests {
         HttpResponse::Ok().body("ok")
     }
 
-    // -------- add_cache_headers unit tests --------
-
     /// Content-hashed bundle paths get year-long immutable caching plus
     /// `ACAO: *` so SvelteKit's `crossorigin` script loads can be reused
     /// from cache.
     #[actix_web::test]
     async fn cache_headers_immutable_path_sets_long_lived_cache_and_acao() {
-        let app = test::init_service(
-            App::new()
-                .wrap(middleware::from_fn(add_cache_headers))
-                .route(
-                    "/_app/immutable/{tail:.*}",
-                    web::get().to(ok_handler),
-                ),
-        )
-        .await;
+        // Drives the request through the full App that `run()` builds, so we
+        // verify both the middleware logic *and* that it's wrapped on the
+        // right scope. ResourceFiles will 404 since no bundle is embedded in
+        // the test build, but `add_cache_headers` still runs on the response
+        // and the assertions are against headers, not body.
+        let cfg = ApiServerConfig::test_config();
+        let app = test::init_service(build_app(&cfg, &None)).await;
         let req = test::TestRequest::get()
             .uri("/_app/immutable/bundle.abc123.js")
             .to_request();
         let res = test::call_service(&app, req).await;
-        assert_eq!(res.status(), 200);
         assert_eq!(
             res.headers().get(header::CACHE_CONTROL).unwrap(),
             "public, max-age=31536000, immutable",
@@ -1038,21 +1052,23 @@ mod tests {
         // The ACAO is what unblocks Firefox caching of the static JS bundle (consumed in
         // CORS mode because of SvelteKit's `<script type="module" crossorigin>`).
         assert_eq!(
-            res.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN).unwrap(),
+            res.headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .unwrap(),
             "*",
         );
     }
 
     /// Non-hashed static assets (favicons, root-level images) get a 24h
     /// cache and nothing else — no ACAO leak from the immutable branch.
+    /// Drives the production App so that "wiring removed" (someone deletes
+    /// the `add_cache_headers` wrap from `public_scope`'s static sub-scope)
+    /// fails this test alongside the immutable-branch test, even if the
+    /// middleware function's logic remains correct in isolation.
     #[actix_web::test]
     async fn cache_headers_short_cache_for_other_static_assets() {
-        let app = test::init_service(
-            App::new()
-                .wrap(middleware::from_fn(add_cache_headers))
-                .route("/favicon.png", web::get().to(ok_handler)),
-        )
-        .await;
+        let cfg = ApiServerConfig::test_config();
+        let app = test::init_service(build_app(&cfg, &None)).await;
         let req = test::TestRequest::get().uri("/favicon.png").to_request();
         let res = test::call_service(&app, req).await;
         assert_eq!(
@@ -1060,82 +1076,43 @@ mod tests {
             "public, max-age=86400",
         );
         // Only the immutable branch emits ACAO/EXPIRES.
-        assert!(res.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN).is_none());
+        assert!(res
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .is_none());
         assert!(res.headers().get(header::EXPIRES).is_none());
     }
 
-    /// Dynamic API and health paths must pass through untouched — no cache
-    /// headers, no CORS headers added by `add_cache_headers`.
-    #[actix_web::test]
-    async fn cache_headers_no_op_for_dynamic_paths() {
-        let app = test::init_service(
-            App::new()
-                .wrap(middleware::from_fn(add_cache_headers))
-                .route("/healthz", web::get().to(ok_handler))
-                .route("/v0/pipelines", web::get().to(ok_handler)),
-        )
-        .await;
-        for uri in ["/healthz", "/v0/pipelines"] {
-            let req = test::TestRequest::get().uri(uri).to_request();
-            let res = test::call_service(&app, req).await;
-            assert!(
-                res.headers().get(header::CACHE_CONTROL).is_none(),
-                "{uri} unexpectedly got Cache-Control",
-            );
-            assert!(
-                res.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN).is_none(),
-                "{uri} unexpectedly got ACAO",
-            );
-            assert!(
-                res.headers().get(header::EXPIRES).is_none(),
-                "{uri} unexpectedly got Expires",
-            );
-        }
-    }
-
     // -------- CORS surface integration tests --------
+    //
+    // All integration tests below use `build_app(&cfg, &None)` — the same
+    // function `run()` calls — so any future regression in the wrap/service
+    // composition shows up here. Tests skip `app_data(state)` because the
+    // assertions are about response *headers*, not handler success: requests
+    // either flow through actix-cors's preflight handler (no inner handler
+    // invoked) or 404 from a scope/ResourceFiles before reaching state-bound
+    // handlers.
 
-    /// Build an App that mirrors the no-auth branch of the factory in `run()`:
-    /// `api_scope()` and `public_scope()` are wrapped exactly the way the
-    /// production server wraps them, and only those wraps. Tests can then
-    /// assert the CORS surface per route family.
-    fn cors_test_app(
-        api_config: &ApiServerConfig,
-    ) -> App<
-        impl actix_web::dev::ServiceFactory<
-            actix_web::dev::ServiceRequest,
-            Config = (),
-            Response = actix_web::dev::ServiceResponse<BoxBody>,
-            Error = actix_web::Error,
-            InitError = (),
-        >,
-    > {
-        App::new()
-            .service(
-                api_scope()
-                    .wrap_fn(|req, srv| {
-                        let req = crate::auth::tag_with_default_tenant_id(req);
-                        srv.call(req)
-                    })
-                    .wrap(api_config.cors()),
-            )
-            .service(public_scope(api_config))
-    }
-
-    /// This test covers the fix of an issue where Firefox refused
-    /// to cache a credentialed-CORS response on the JS bundle path.
-    /// The test asserts that even with `Origin` set on the request,
-    /// the static asset response does *not* carry `Vary: Origin` or
-    /// `Access-Control-Allow-Credentials` (and does carry the static-only
-    /// `ACAO: *` from `add_cache_headers`). If a future refactor re-attaches
-    /// `actix-cors` to the static scope this test fails immediately.
+    /// Regression test for Firefox refusing to cache the JS bundle.
+    ///
+    /// Firefox will not cache a static response if it carries the
+    /// credentialed-CORS headers `Vary: Origin` and
+    /// `Access-Control-Allow-Credentials: true`. The fix was to keep the
+    /// static asset path out of the CORS wrap; this test validates that.
+    ///
+    /// Sends a request with an `Origin` header (which would normally trigger
+    /// `actix-cors` to add credentialed headers if it were wrapping this
+    /// path) and checks the response: it must not have `Vary: Origin` or
+    /// `Access-Control-Allow-Credentials`, and it must have `ACAO: *` from
+    /// `add_cache_headers`. If a future change wraps the static scope with
+    /// `actix-cors` again, this test fails.
     #[actix_web::test]
     async fn static_immutable_has_no_credentialed_cors_headers() {
         // test_config() leaves dev_mode=false, so .cors() returns the
         // credentialed variant — exactly the variant that *would* poison
         // Firefox caching if applied to /_app/immutable/.
         let cfg = ApiServerConfig::test_config();
-        let app = test::init_service(cors_test_app(&cfg)).await;
+        let app = test::init_service(build_app(&cfg, &None)).await;
 
         let req = test::TestRequest::get()
             .uri("/_app/immutable/bundle.abc123.js")
@@ -1156,18 +1133,20 @@ mod tests {
         }
         // The bundle-fix ACAO must still be there for CORS-mode script reuse.
         assert_eq!(
-            res.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN).unwrap(),
+            res.headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .unwrap(),
             "*",
         );
     }
 
-    /// `/config/authentication` is the one unauthenticated endpoint that the
-    /// dev console at :5173 must reach cross-origin (before any OIDC token is
-    /// issued). Verifies CORS preflight succeeds with credentialed CORS.
+    /// `/config/authentication` is the one unauthenticated endpoint
+    /// that must be reachable cross-origin (before any OIDC token is issued).
+    /// Verifies CORS preflight succeeds with credentialed CORS.
     #[actix_web::test]
     async fn config_authentication_preflight_returns_credentialed_cors() {
         let cfg = ApiServerConfig::test_config();
-        let app = test::init_service(cors_test_app(&cfg)).await;
+        let app = test::init_service(build_app(&cfg, &None)).await;
 
         let req = test::TestRequest::default()
             .method(Method::OPTIONS)
@@ -1203,7 +1182,7 @@ mod tests {
     #[actix_web::test]
     async fn v0_preflight_returns_credentialed_cors() {
         let cfg = ApiServerConfig::test_config();
-        let app = test::init_service(cors_test_app(&cfg)).await;
+        let app = test::init_service(build_app(&cfg, &None)).await;
 
         let req = test::TestRequest::default()
             .method(Method::OPTIONS)
@@ -1224,6 +1203,110 @@ mod tests {
                 .map(|h| h.to_str().unwrap_or("")),
             Some("true"),
             "/v0/* lost credentialed CORS",
+        );
+        // Credentialed CORS *must* echo the origin; `*` paired with
+        // `ACAC: true` is rejected by browsers per the fetch spec.
+        assert_eq!(
+            res.headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .map(|h| h.to_str().unwrap_or("")),
+            Some("http://example.com"),
+        );
+    }
+
+    /// Guards the static-asset middleware's blast radius: GET responses on
+    /// the credentialed-CORS routes (`/v0/*`, `/config/authentication`) must
+    /// never carry the static-only `ACAO: *` or `Cache-Control: immutable`.
+    /// If either leaks, the spec-incompatible `ACAO: *` + `ACAC: true` combo
+    /// would make browsers reject every API response.
+    #[actix_web::test]
+    async fn api_endpoints_dont_get_static_asset_headers() {
+        let cfg = ApiServerConfig::test_config();
+        let app = test::init_service(build_app(&cfg, &None)).await;
+
+        // Sweeps representative routes across every code path that could
+        // plausibly leak static-asset headers: api_scope 404s, api_scope real
+        // handlers (which 500 on `WebData<ServerState>` extraction since this
+        // test skips `app_data` — `actix-cors` still adds headers on the
+        // response), api_scope param routes, the cors-wrapped `/config`
+        // sub-scope, and the unwrapped public routes (`/healthz`, swagger).
+        // `/config/authentication` works through its real handler because
+        // `auth_provider = None` in test_config returns early without state.
+        for uri in [
+            "/v0/nonexistent",
+            "/v0/pipelines",
+            "/v0/pipelines/foo",
+            "/v0/pipelines/foo/stats",
+            "/v0/pipelines/foo/start",
+            "/v0/api_keys",
+            "/v0/api_keys/some_key",
+            "/v0/config",
+            "/v0/config/demos",
+            "/v0/config/session",
+            "/v0/cluster/events",
+            "/v0/metrics",
+            "/v0/cluster_healthz",
+            "/config/authentication",
+            "/healthz",
+            "/swagger-ui/index.html",
+        ] {
+            let req = test::TestRequest::get()
+                .uri(uri)
+                .insert_header((header::ORIGIN, "http://example.com"))
+                .to_request();
+            let res = test::call_service(&app, req).await;
+
+            assert_ne!(
+                res.headers()
+                    .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                    .map(|h| h.to_str().unwrap_or("")),
+                Some("*"),
+                "{uri} returned ACAO `*` — combined with ACAC `true` browsers will reject every API response",
+            );
+            let cache_control = res
+                .headers()
+                .get(header::CACHE_CONTROL)
+                .and_then(|h| h.to_str().ok())
+                .unwrap_or("");
+            assert!(
+                !cache_control.contains("immutable"),
+                "{uri} returned `Cache-Control: {cache_control}` — static-asset middleware leaked onto an API route",
+            );
+            assert!(
+                res.headers().get(header::EXPIRES).is_none(),
+                "{uri} returned an Expires header — static-asset middleware leaked onto an API route",
+            );
+        }
+    }
+
+    /// Pins the catch-all behavior of `public_scope`'s inner empty-prefix
+    /// scope — the SPA fallback that motivates the "register `public_scope` last"
+    /// rule in `run()`. If this fails, the catch-all has been weakened
+    /// (prefix narrowed, fallback service removed, `resolve_not_found_to_root`
+    /// dropped, etc.) and any service registered after `public_scope` will
+    /// silently become reachable instead of being shadowed.
+    #[actix_web::test]
+    async fn public_scope_shadows_anything_registered_after_it() {
+        // Drives `build_app` (the production factory) and chains an extra
+        // sentinel route onto it — exactly mirroring the shape of a
+        // misregistration in `run()`, where someone might add `.service(...)`
+        // after the `build_app(...)` call.
+        let cfg = ApiServerConfig::test_config();
+        let app = test::init_service(build_app(&cfg, &None).route(
+            "/sentinel-must-be-shadowed",
+            web::get().to(|| async { HttpResponse::Ok().body("LEAKED") }),
+        ))
+        .await;
+
+        let req = test::TestRequest::get()
+            .uri("/sentinel-must-be-shadowed")
+            .to_request();
+        let res = test::call_service(&app, req).await;
+        let body = test::read_body(res).await;
+        assert_ne!(
+            &body[..],
+            b"LEAKED",
+            "a route registered after build_app() was reached — public_scope's SPA catch-all must shadow it",
         );
     }
 }
