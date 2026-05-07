@@ -321,6 +321,25 @@ def transaction(pipeline: Pipeline, duration_seconds: int):
     log(f"Transaction committed in {time.monotonic() - commit_start} seconds")
 
 
+def transaction_num_records(pipeline: Pipeline, num_records: int):
+    """Run a transaction until it ingests a record count or reaches end of input."""
+
+    log(f"Running transaction for {num_records} records or end of input")
+    initial_records = number_of_processed_records(pipeline)
+    pipeline.start_transaction()
+
+    while not check_end_of_input(pipeline):
+        processed_records = number_of_processed_records(pipeline) - initial_records
+        if processed_records >= num_records:
+            break
+        time.sleep(3)
+
+    log("Committing transaction")
+    commit_start = time.monotonic()
+    pipeline.commit_transaction()
+    log(f"Transaction committed in {time.monotonic() - commit_start} seconds")
+
+
 def checkpoint_pipeline(pipeline: Pipeline):
     """Create a checkpoint and wait for it to complete."""
 
@@ -362,6 +381,12 @@ def number_of_processed_records(pipeline: Pipeline) -> int:
     """Get the total_processed_records metric."""
 
     return pipeline.stats().global_metrics.total_processed_records
+
+
+def number_of_input_records(pipeline: Pipeline) -> int:
+    """Get the total_input_records metric."""
+
+    return pipeline.stats().global_metrics.total_input_records
 
 
 def run_workload(
