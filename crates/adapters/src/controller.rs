@@ -3028,82 +3028,92 @@ impl CircuitThread {
         }
 
         let transaction_state = self.controller.get_transaction_state();
-        assert_ne!(transaction_state, TransactionState::None);
 
-        debug!("circuit thread: calling 'circuit.step'");
+        if transaction_state != TransactionState::None {
+            debug!("circuit thread: calling 'circuit.step'");
 
-        let committed = Span::new("step")
-            .with_category("Step")
-            .with_tooltip(|| format!("step {}", self.step))
-            .in_scope(|| self.circuit.step())
-            .unwrap_or_else(|e| {
-                self.controller.error(Arc::new(e.into()), None);
-                false
-            });
+            let committed = Span::new("step")
+                .with_category("Step")
+                .with_tooltip(|| format!("step {}", self.step))
+                .in_scope(|| self.circuit.step())
+                .unwrap_or_else(|e| {
+                    self.controller.error(Arc::new(e.into()), None);
+                    false
+                });
 
-        debug!("circuit thread: 'circuit.step' returned");
+            debug!("circuit thread: 'circuit.step' returned");
 
-        if let TransactionState::Committing {
-            tid,
-            start,
-            processed_records,
-        } = transaction_state
-        {
-            let n = self
-                .controller
-                .status
-                .global_metrics
-                .num_total_processed_records()
-                - processed_records;
-            if !committed {
-                let commit_updates = self.commit_updates.get_or_insert_default();
-                if commit_updates.should_update_status() {
-                    match self.circuit.commit_progress() {
-                        Ok(progress) => {
-                            let summary = progress.summary();
-                            if commit_updates.should_display_status() {
-                                info!(
-                                    "Transaction {tid}: Commit of {n} records in progress ({summary})"
-                                );
-                            }
-                            self.controller
-                                .status
-                                .global_metrics
-                                .set_commit_progress(Some(summary));
-                        }
-                        Err(e) => {
-                            error!("Transaction {tid}: Error retrieving commit progress ({e})");
-                        }
-                    }
-                };
-            } else {
-                let duration = start.elapsed();
-                if duration >= COMMIT_DISPLAY_INTERVAL {
-                    info!(
-                        "Transaction {tid}: Finished committing {n} records in {:.1} seconds",
-                        duration.as_secs_f64()
-                    );
-                }
-
-                Span::new("commit")
-                    .with_category("Transaction")
-                    .with_tooltip(|| format!("transaction {tid} committed {n} records"))
-                    .with_start(start)
-                    .record();
-                TRANSACTION_COMMIT_TIME_MICROSECONDS.record_duration(duration);
-
-                self.controller
-                    .transaction_info
-                    .lock()
-                    .unwrap()
-                    .transaction_state = TransactionState::None;
-
-                self.commit_updates = None;
-                self.controller
+            if let TransactionState::Committing {
+                tid,
+                start,
+                processed_records,
+            } = transaction_state
+            {
+                let n = self
+                    .controller
                     .status
                     .global_metrics
-                    .set_commit_progress(None);
+                    .num_total_processed_records()
+                    - processed_records;
+                if !committed {
+                    let commit_updates = self.commit_updates.get_or_insert_default();
+                    if commit_updates.should_update_status() {
+                        match self.circuit.commit_progress() {
+                            Ok(progress) => {
+                                let summary = progress.summary();
+                                if commit_updates.should_display_status() {
+                                    info!(
+                                        "Transaction {tid}: Commit of {n} records in progress ({summary})"
+                                    );
+                                }
+                                self.controller
+                                    .status
+                                    .global_metrics
+                                    .set_commit_progress(Some(summary));
+                            }
+                            Err(e) => {
+                                error!("Transaction {tid}: Error retrieving commit progress ({e})");
+                            }
+                        }
+                    };
+                } else {
+                    let duration = start.elapsed();
+                    if duration >= COMMIT_DISPLAY_INTERVAL {
+                        info!(
+                            "Transaction {tid}: Finished committing {n} records in {:.1} seconds",
+                            duration.as_secs_f64()
+                        );
+                    }
+
+                    Span::new("commit")
+                        .with_category("Transaction")
+                        .with_tooltip(|| format!("transaction {tid} committed {n} records"))
+                        .with_start(start)
+                        .record();
+                    TRANSACTION_COMMIT_TIME_MICROSECONDS.record_duration(duration);
+
+                    self.controller
+                        .transaction_info
+                        .lock()
+                        .unwrap()
+                        .transaction_state = TransactionState::None;
+
+                    self.commit_updates = None;
+                    self.controller
+                        .status
+                        .global_metrics
+                        .set_commit_progress(None);
+                }
             }
+        } else {
+            debug!("circuit thread: calling 'circuit.transaction'");
+            self.controller.increment_transaction_number();
+            Span::new("step")
+                .with_category("Step")
+                .with_tooltip(|| format!("step {}", self.step))
+                .in_scope(|| self.circuit.transaction())
+                .unwrap_or_else(|e| self.controller.error(Arc::new(e.into()), None));
+            debug!("circuit thread: 'circuit.transaction' returned");
         }
     }
 
@@ -7172,15 +7182,28 @@ impl ControllerInner {
                     assert!(!transaction_info.initiators.is_active(is_multihost));
                     assert!(transaction_info.initiators.transaction_id.is_none());
 
-                    // Start and instantly commit a new transaction.
-                    transaction_info.last_transaction_id += 1;
+                    if self
+                        .status
+                        .pipeline_config
+                        .global
+                        .dev_tweaks
+                        .disable_auto_transaction()
+                    {
+                        None
+                    } else {
+                        // Start and instantly commit a new transaction.
+                        transaction_info.last_transaction_id += 1;
 
-                    transaction_info.transaction_state = TransactionState::Committing {
-                        tid: transaction_info.last_transaction_id,
-                        start: Instant::now(),
-                        processed_records: self.status.global_metrics.num_total_processed_records(),
-                    };
-                    Some(AdvanceTransaction::StartAndCommit)
+                        transaction_info.transaction_state = TransactionState::Committing {
+                            tid: transaction_info.last_transaction_id,
+                            start: Instant::now(),
+                            processed_records: self
+                                .status
+                                .global_metrics
+                                .num_total_processed_records(),
+                        };
+                        Some(AdvanceTransaction::StartAndCommit)
+                    }
                 }
             }
         };
