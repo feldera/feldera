@@ -224,6 +224,10 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub negative_weight_multiplier: Option<u16>,
 
+    /// Don't automatically start a transaction for every step.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disable_auto_transaction: Option<bool>,
+
     /// Options not understood by this particular version.
     ///
     /// This allows the pipeline manager to take options that a custom or old
@@ -288,6 +292,10 @@ impl DevTweaks {
     }
     pub fn negative_weight_multiplier(&self) -> u16 {
         self.negative_weight_multiplier.unwrap_or(0)
+    }
+
+    pub fn disable_auto_transaction(&self) -> bool {
+        self.disable_auto_transaction.unwrap_or(false)
     }
 }
 
