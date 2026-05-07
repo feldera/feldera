@@ -84,7 +84,7 @@ import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
-import org.dbsp.util.RelJsonWriter;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelJsonWriter;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;

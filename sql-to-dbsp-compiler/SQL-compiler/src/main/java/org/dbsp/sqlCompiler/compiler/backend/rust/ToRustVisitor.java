@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.annotation.JoinStrategy;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
@@ -129,6 +130,7 @@ public class ToRustVisitor extends CircuitVisitor {
      * @param builder   Emit the output here.
      * @param metadata  Program metadata for the program compiled.
      * @param projectDeclarations Information about global per-circuit structures.
+     * @param materializations Data structures materialized at the end.
      */
     public ToRustVisitor(DBSPCompiler compiler, IIndentStream builder, ProgramMetadata metadata,
                          ProjectDeclarations projectDeclarations, LateMaterializations materializations) {
@@ -242,6 +244,11 @@ public class ToRustVisitor extends CircuitVisitor {
         }
     }
 
+    void emitBalancerHints() {
+        for (var hint: this.materializations.balancerHints)
+            hint.emit(this.builder);
+    }
+
     @Override
     public VisitDecision preorder(DBSPCircuit circuit) {
         IndentStream signature = new IndentStreamBuilder();
@@ -290,7 +297,7 @@ public class ToRustVisitor extends CircuitVisitor {
                         .newline();
         }
         this.builder
-                .append("let (circuit, streams) = Runtime::init_circuit(cconf, |circuit| {")
+                .append("let (mut circuit, streams) = Runtime::init_circuit(cconf, |circuit| {")
                 .increase();
         if (!this.useHandles)
             this.builder.append("let mut catalog = Catalog::new();").newline();
@@ -338,6 +345,9 @@ public class ToRustVisitor extends CircuitVisitor {
                 .decrease()
                 .append("})?;")
                 .newline();
+
+        // Balancer hints must be invoked after circuit construction is completed.
+        this.emitBalancerHints();
 
         this.builder
                 .append("Ok((circuit, streams))")
@@ -1022,7 +1032,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 this.builder.append(",").newline();
                 raw.tupFields[1].accept(this.innerVisitor);
                 this.builder.decrease().append(">");
-                this.builder.append("(hash, ").newline()
+                this.builder.append("(hash,").newline()
                         .append(this.getInputName(operator, 0))
                         .append(".clone()")
                         .append(", &SqlIdentifier::from(\"");
@@ -1145,7 +1155,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.operationCall(operator);
         this.builder.increase();
         operator.init.accept(this.innerVisitor);
-        this.builder.append(", ").newline();
+        this.builder.append(",").newline();
         operator.getFunction().accept(this.innerVisitor);
         this.innerVisitor.setOperatorContext(null);
         this.builder.newline().decrease().append(")")
@@ -1331,9 +1341,9 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(", ")
                 .newline();
         operator.getFunction().accept(this.innerVisitor);
-        this.builder.append(", ").newline();
+        this.builder.append(",").newline();
         operator.leftTimestamp.accept(this.innerVisitor);
-        this.builder.append(", ").newline();
+        this.builder.append(",").newline();
         operator.rightTimestamp.accept(this.innerVisitor);
         this.builder.newline()
                 .decrease()
@@ -1376,6 +1386,8 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(this.markDistinct(operator))
                 .append(";");
         this.tagStream(operator);
+        this.builder.newline();
+        this.emitBalancerHints(operator);
         this.innerVisitor.setOperatorContext(null);
         return VisitDecision.STOP;
     }
@@ -1413,9 +1425,9 @@ public class ToRustVisitor extends CircuitVisitor {
                 .increase();
         DBSPISizeLiteral offset = new DBSPISizeLiteral(operator.offset);
         offset.accept(this.innerVisitor);
-        this.builder.append(", ").newline();
+        this.builder.append(",").newline();
         operator.projection.accept(this.innerVisitor);
-        this.builder.append(", ").newline();
+        this.builder.append(",").newline();
         operator.getFunction().accept(this.innerVisitor);
         this.builder.newline()
                 .decrease()
@@ -1464,9 +1476,9 @@ public class ToRustVisitor extends CircuitVisitor {
         this.operationCall(operator);
         this.builder.increase();
         operator.partitioningFunction.accept(this.innerVisitor);
-        this.builder.append(", ").newline();
+        this.builder.append(",").newline();
         operator.getFunction().accept(this.innerVisitor);
-        this.builder.append(", ").newline();
+        this.builder.append(",").newline();
         this.emitWindowBounds(operator.lower, operator.upper);
         this.builder
                 .decrease()
@@ -1497,9 +1509,9 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(this.getInputName(operator, 1))
                 .append(", ");
         operator.partitioningFunction.accept(this.innerVisitor);
-        this.builder.append(", ").newline();
+        this.builder.append(",").newline();
         operator.getFunction().accept(this.innerVisitor);
-        this.builder.append(", ").newline();
+        this.builder.append(",").newline();
         this.emitWindowBounds(operator.lower, operator.upper);
         this.builder
                 .decrease()
@@ -1553,7 +1565,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.operationCall(operator);
         this.builder.increase();
         operator.getFunction().accept(this.innerVisitor);
-        this.builder.append(", ").newline();
+        this.builder.append(",").newline();
         operator.postProcess.accept(this.innerVisitor);
         this.builder.newline()
                 .decrease()
@@ -1583,11 +1595,11 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(this.getInputName(operator, 1))
                 // FIXME: temporary workaround until the compiler learns about TypedBox
                 .append(".apply(|bound| TypedBox::<_, DynData>::new(bound.clone()))")
-                .append(", ").newline();
+                .append(",").newline();
         operator.retainKeysFunction.accept(this.innerVisitor);
-        this.builder.append(", ").newline();
+        this.builder.append(",").newline();
         operator.getFunction().accept(this.innerVisitor);
-        this.builder.append(", ").newline();
+        this.builder.append(",").newline();
         operator.postProcess.accept(this.innerVisitor);
         this.builder.newline()
                 .decrease()
@@ -1689,6 +1701,23 @@ public class ToRustVisitor extends CircuitVisitor {
                 (more ? (operator.comment != null ? "\n" + operator.comment : "") : ""));
     }
 
+    /** Generate hints for the dynamic join balancer based on user-supplied annotations */
+    void emitBalancerHints(DBSPBinaryOperator operator) {
+        var strategies = operator.annotations.get(JoinStrategy.class);
+        for (var strategy: strategies) {
+            switch (strategy.strategy) {
+                case Shard:
+                case Balance:
+                case Broadcast: {
+                    this.materializations.recordHint(operator, strategy);
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+    }
+
     VisitDecision processJoinBase(DBSPJoinBaseOperator operator) {
         this.computeHash(operator);
         this.innerVisitor.setOperatorContext(operator);
@@ -1711,8 +1740,15 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(this.markDistinct(operator))
                 .append(";");
         this.tagStream(operator);
+        this.builder.newline();
+        this.emitBalancerHints(operator);
         this.innerVisitor.setOperatorContext(null);
         return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPStreamJoinOperator operator) {
+        return this.processJoinBase(operator);
     }
 
     @Override

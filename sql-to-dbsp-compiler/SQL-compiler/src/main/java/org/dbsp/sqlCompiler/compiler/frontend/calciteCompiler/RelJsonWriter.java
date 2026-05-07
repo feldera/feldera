@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.dbsp.util;
+package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
 import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
@@ -30,6 +30,7 @@ import org.apache.calcite.sql.SqlExplainLevel;
 import org.apache.calcite.util.JsonBuilder;
 import org.apache.calcite.util.Pair;
 import org.checkerframework.checker.nullness.qual.Nullable;
+import org.dbsp.util.Utilities;
 
 /** Reimplementation of RelJsonWriter from Calcite which exposes the RelIdMap. */
 public class RelJsonWriter implements RelWriter {

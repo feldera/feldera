@@ -408,11 +408,15 @@ public class BaseSQLTests {
         testsToRun.add(test);
     }
 
-    public CompilerOptions testOptions() {
-        CompilerOptions options = new CompilerOptions();
+    void ciOptions(CompilerOptions options) {
         if (Utilities.inCI())
             // Set to compile to multiple crates
             options.ioOptions.crates = "x";
+    }
+
+    public CompilerOptions testOptions() {
+        CompilerOptions options = new CompilerOptions();
+        this.ciOptions(options);
         options.ioOptions.testing = true;
         options.languageOptions.throwOnError = true;
         options.languageOptions.generateInputForEveryTable = true;

@@ -923,6 +923,23 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void testMerkleHints() {
+        // Hints should not change hashes
+        var cc0 = this.getCC("""
+                CREATE TABLE T(x INT);
+                CREATE VIEW V AS SELECT /*+ broadcast(T) */ * FROM T JOIN T AS S USING (x);""");
+        Assert.assertEquals(0, cc0.compiler.messages.exitCode);
+        Map<String, String> hash0 = this.collectHashes(cc0);
+
+        var cc1 = this.getCC("""
+                CREATE TABLE T(x INT);
+                CREATE VIEW V AS SELECT * FROM T JOIN T AS S USING (x);""");
+        Assert.assertEquals(0, cc1.compiler.messages.exitCode);
+        Map<String, String> hash1 = this.collectHashes(cc1);
+        Assert.assertEquals(hash0, hash1);
+    }
+
+    @Test
     public void testHashes() {
         var cc0 = this.getCC("""
                 CREATE TABLE t1(x int) WITH ('materialized'='true');

@@ -112,7 +112,8 @@ public class MultiCrates {
         this.main = new CrateGenerator(this.rootDirectory, CRATES_DIRECTORY, this.getMainName(),
                 mainWriter, enterprise, !compiler.options.generateMultiCrateMain());
         // Crate with global variables
-        this.globals = new CrateGenerator(this.rootDirectory, CRATES_DIRECTORY, this.getGlobalsName(), globalsWriter, enterprise, true);
+        this.globals = new CrateGenerator(this.rootDirectory, CRATES_DIRECTORY, this.getGlobalsName(),
+                globalsWriter, enterprise, true);
         this.main.addDependency(this.globals);
     }
 
@@ -275,13 +276,11 @@ public class MultiCrates {
     }
 
     void write() throws IOException {
-        this.globals.write(this.compiler);
         File file = new File(new File(
                 new File(new File(globals.baseDirectory, MultiCrates.CRATES_DIRECTORY), globals.crateName), "src"),
                 DBSPCompiler.UDF_FILE_NAME);
         if (!file.exists())
             Utilities.createEmptyFile(file.toPath());
-        this.main.write(compiler);
 
         for (CrateGenerator gen: this.semiCrates.values())
             gen.write(this.compiler);
@@ -300,5 +299,10 @@ public class MultiCrates {
             written.put(op, op);
             op.write(this.compiler);
         }
+
+        // Emit after processing the operators.
+        // This gives them a chance to accumulate information in LateMaterializations.
+        this.globals.write(this.compiler);
+        this.main.write(compiler);
     }
 }

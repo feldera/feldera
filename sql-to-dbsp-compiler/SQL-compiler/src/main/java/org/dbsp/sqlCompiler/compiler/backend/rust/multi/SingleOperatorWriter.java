@@ -29,6 +29,8 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.SortedMap;
+import java.util.TreeMap;
 
 /** Writes the implementation of a single operator as a function that instantiates
  * the operator in circuit. */
@@ -61,7 +63,8 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
 
     /** Collects all {@link DBSPStaticExpression}s that appear in an expression */
     static class FindStatics extends InnerVisitor {
-        final Map<String, DBSPStaticExpression> found = new HashMap<>();
+        // Use a sorted map for a deterministic iterator
+        final SortedMap<String, DBSPStaticExpression> found = new TreeMap<>();
 
         public FindStatics(DBSPCompiler compiler) {
             super(compiler);

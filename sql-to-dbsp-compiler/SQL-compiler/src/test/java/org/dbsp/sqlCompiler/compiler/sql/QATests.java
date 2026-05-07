@@ -7,7 +7,6 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.junit.Test;
 
 import java.io.File;
-import java.io.IOException;
 import java.sql.SQLException;
 
 /** Compile the SQL programs in the feldera-qa repository, and rust-compile the results. */

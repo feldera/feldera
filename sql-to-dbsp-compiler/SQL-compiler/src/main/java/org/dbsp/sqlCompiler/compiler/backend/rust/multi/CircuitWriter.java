@@ -132,7 +132,7 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
                         .append("let cconf = cconf.with_step_size(StepSize::FullSteps);")
                         .newline();
         }
-        this.builder().append("let (circuit, streams) = ");
+        this.builder().append("let (mut circuit, streams) = ");
         if (!useHandles)
             this.builder().append("dbsp_adapters::server::init_circuit(cconf, Box::new(");
         else
@@ -180,12 +180,18 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
                 .append(!useHandles ? ")" : "")
                 .append("?;")
                 .newline();
+        this.emitBalancerHints();
         this.builder()
                 .append("Ok((circuit, streams))")
                 .newline()
                 .decrease()
                 .append("}")
                 .newline();
+    }
+
+    void emitBalancerHints() {
+        for (var hint: this.materializations.balancerHints)
+            hint.emit(this.builder());
     }
 
     @Override
