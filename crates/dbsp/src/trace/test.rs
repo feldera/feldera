@@ -1226,6 +1226,420 @@ fn test_fallback_wset_roaring_filter_rebuilt_after_storage_merge() {
     });
 }
 
+/// Builds a `FallbackIndexedWSet` over `(key, value, weight)` triples.
+fn build_fallback_indexed_wset_i32(
+    tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>>,
+) -> crate::trace::FallbackIndexedWSet<DynI32, DynI32, DynZWeight> {
+    let factories = <crate::trace::FallbackIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<
+        i32,
+        i32,
+        ZWeight,
+    >();
+    let mut erased = indexed_zset_tuples(tuples);
+    crate::trace::FallbackIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+        &factories,
+        (),
+        &mut erased,
+    )
+}
+
+/// Builds a `FallbackIndexedWSet` and re-routes it to the requested storage
+/// tier, regardless of the runtime's `min_step_storage_bytes` default
+/// that gives more control over batch location.
+fn build_fallback_indexed_wset_i32_at(
+    tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>>,
+    location: BatchLocation,
+) -> crate::trace::FallbackIndexedWSet<DynI32, DynI32, DynZWeight> {
+    let factories = <crate::trace::FallbackIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<
+        i32,
+        i32,
+        ZWeight,
+    >();
+    let initial = build_fallback_indexed_wset_i32(tuples);
+    let builder = <crate::trace::FallbackIndexedWSet<
+        DynI32,
+        DynI32,
+        DynZWeight,
+    > as Batch>::Builder::for_merge(&factories, [&initial], Some(location));
+    ListMerger::merge(&factories, builder, vec![initial.merge_cursor(None, None)])
+}
+
+/// Strategy for the storage tier of a single proptest input batch.
+///
+/// Each batch independently picks `Memory` or `Storage` so a single test
+/// case typically runs the merger on a mix of cursor types.
+/// Bias toward `Storage`.
+fn batch_location_strategy() -> impl Strategy<Value = BatchLocation> {
+    prop_oneof![
+        2 => Just(BatchLocation::Storage),
+        1 => Just(BatchLocation::Memory),
+    ]
+}
+
+/// Strategy that produces a single batch's worth of `(key, value, weight)`
+/// triples with i32 keys spanning negative and positive ranges.
+fn merge_proptest_batch(max_tuples: usize) -> BoxedStrategy<Vec<Tup2<Tup2<i32, i32>, ZWeight>>> {
+    vec(
+        (-150_000..150_000i32, 0..32i32, -3..=3i64).prop_map(|(k, v, w)| Tup2(Tup2(k, v), w)),
+        0..=max_tuples,
+    )
+    .boxed()
+}
+
+/// Dense strategy: keys in `0..200` with up to 80 tuples per batch. Designed
+/// to maximize per-batch overlap and weight cancellation between merge inputs.
+fn merge_proptest_batch_dense(
+    max_tuples: usize,
+) -> BoxedStrategy<Vec<Tup2<Tup2<i32, i32>, ZWeight>>> {
+    vec(
+        (0..200i32, 0..16i32, -3..=3i64).prop_map(|(k, v, w)| Tup2(Tup2(k, v), w)),
+        0..=max_tuples,
+    )
+    .boxed()
+}
+
+/// Which membership-filter strategies the runtime is allowed to choose from.
+/// The merger picks one of these per output batch via `FilterPlan::decide_filter`.
+#[derive(Copy, Clone, Debug)]
+enum FilterConfig {
+    /// Bloom only: roaring disabled.
+    BloomOnly,
+    /// Roaring only: bloom disabled (false-positive rate forced to zero).
+    RoaringOnly,
+    /// Both enabled: the lookup predictor picks per output batch.
+    Both,
+    /// Neither enabled: file batches are written without a membership filter,
+    /// so `seek_key_exact` always reads the data block.
+    Neither,
+}
+
+impl FilterConfig {
+    /// Sets the dev tweaks that select this filter configuration.
+    fn apply(self, config: &mut CircuitConfig) {
+        match self {
+            Self::BloomOnly => {
+                config.dev_tweaks.enable_roaring = Some(false);
+            }
+            Self::RoaringOnly => {
+                config.dev_tweaks.enable_roaring = Some(true);
+                config.dev_tweaks.bloom_false_positive_rate = Some(0.0);
+            }
+            Self::Both => {
+                config.dev_tweaks.enable_roaring = Some(true);
+            }
+            Self::Neither => {
+                config.dev_tweaks.enable_roaring = Some(false);
+                config.dev_tweaks.bloom_false_positive_rate = Some(0.0);
+            }
+        }
+    }
+
+    /// Filter kinds the merged batch is allowed to end up with for this
+    /// configuration. `None` is always allowed because empty merges or merges
+    /// without a usable bounds plan get no filter.
+    fn allowed_filter_kinds(self) -> &'static [FilterKind] {
+        match self {
+            Self::BloomOnly => &[FilterKind::None, FilterKind::Bloom],
+            Self::RoaringOnly => &[FilterKind::None, FilterKind::Roaring],
+            Self::Both => &[FilterKind::None, FilterKind::Bloom, FilterKind::Roaring],
+            Self::Neither => &[FilterKind::None],
+        }
+    }
+}
+
+/// Per-input batch shape: the tuples to feed in plus the storage tier the
+/// input batch should reside in before the merger reads it.
+type MergeInputBatches = Vec<(Vec<Tup2<Tup2<i32, i32>, ZWeight>>, BatchLocation)>;
+
+/// Asserts that `merged.cursor().seek_key_exact` agrees with `expected` for
+/// every key present in `expected` and for every probe key in `extra_probes`.
+///
+/// Each probe runs on a fresh cursor in an order shuffled with a fixed
+/// seed, so we exercise the membership-filter and data-block lookup paths
+/// from a clean cursor state rather than reusing a single forward-walking
+/// cursor.
+fn assert_seek_key_exact_matches<B>(
+    merged: &B,
+    expected: &TestBatch<DynI32, DynI32, (), DynZWeight>,
+    extra_probes: impl IntoIterator<Item = i32>,
+    seed: u64,
+) where
+    B: BatchReader<Key = DynI32, Val = DynI32, Time = (), R = DynZWeight>,
+{
+    use rand::SeedableRng;
+    use rand::seq::SliceRandom;
+    use rand_chacha::ChaChaRng;
+    use std::collections::BTreeSet;
+
+    let mut present: BTreeSet<i32> = BTreeSet::new();
+    let mut probe = expected.cursor();
+    while probe.key_valid() {
+        present.insert(*probe.key().downcast_checked::<i32>());
+        probe.step_key();
+    }
+
+    // Deduplicate keys, then collect into a vector we can shuffle.
+    let probe_set: BTreeSet<i32> = present.iter().copied().chain(extra_probes).collect();
+    let mut probes: Vec<i32> = probe_set.into_iter().collect();
+    let mut rng = ChaChaRng::seed_from_u64(seed);
+    probes.shuffle(&mut rng);
+
+    for &k in &probes {
+        let mut cursor = merged.cursor();
+        let want = present.contains(&k);
+        let got = cursor.seek_key_exact(k.erase(), None);
+        assert_eq!(
+            got, want,
+            "seek_key_exact({k}) on a fresh cursor: expected {want}, got {got}",
+        );
+    }
+}
+
+/// Shared body for `indexed_wset_storage_merges_*` proptests. Generates
+/// inputs as a vec/file mix, runs `ListMerger::merge` to file storage, and
+/// validates the merged batch against a `TestBatch` reference. The input
+/// batches are reduced by an optional key filter `retain_above`.
+fn run_indexed_wset_storage_merges(
+    batches: MergeInputBatches,
+    retain_above: Option<i32>,
+    fc: FilterConfig,
+) {
+    let _temp_dir = tempdir().expect("Can't create temp dir for storage");
+    let mut config = mkconfig(_temp_dir.path());
+    fc.apply(&mut config);
+    // `min_storage_bytes` forces the merged batch to file; per-input tiers
+    // come from `build_fallback_indexed_wset_i32_at`.
+    config.storage.as_mut().unwrap().options.min_storage_bytes = Some(0);
+
+    run_in_circuit_with_storage_config(config, move || {
+        let factories =
+            <crate::trace::FallbackIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+
+        // Build inputs as a mix of vec-backed and file-backed fallback
+        // batches, as picked by `batch_location_strategy` per case.
+        let inputs: Vec<crate::trace::FallbackIndexedWSet<DynI32, DynI32, DynZWeight>> = batches
+            .iter()
+            .map(|(tuples, loc)| build_fallback_indexed_wset_i32_at(tuples.clone(), *loc))
+            .collect();
+
+        // Sanity check that each input batch resides where we requested it to be.
+        for (input, (_tuples, requested_loc)) in inputs.iter().zip(batches.iter()) {
+            if input.key_count() > 0 {
+                assert_eq!(input.location(), *requested_loc);
+            }
+        }
+
+        // Build a `TestBatch` reference from the union of input tuples,
+        // applying the same key filter.
+        let key_filter: Option<Filter<DynI32>> = retain_above.map(|threshold| {
+            Filter::new(Box::new(move |k: &DynI32| {
+                *k.downcast_checked::<i32>() > threshold
+            }))
+        });
+        let filtered_tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>> = batches
+            .iter()
+            .flat_map(|(tuples, _loc)| tuples.iter().copied())
+            .filter(|Tup2(Tup2(k, _), _)| retain_above.is_none_or(|threshold| *k > threshold))
+            .collect();
+        let mut expected_erased = indexed_zset_tuples(filtered_tuples);
+        let expected: TestBatch<DynI32, DynI32, (), DynZWeight> =
+            TestBatch::dyn_from_tuples(&TestBatchFactories::new(), (), &mut expected_erased);
+
+        // Force the merge through the file-backed builder.
+        let input_refs: Vec<&_> = inputs.iter().collect();
+        let builder = <crate::trace::FallbackIndexedWSet<
+            DynI32,
+            DynI32,
+            DynZWeight,
+        > as Batch>::Builder::for_merge(
+            &factories,
+            input_refs,
+            Some(BatchLocation::Storage),
+        );
+        let cursors: Vec<_> = inputs
+            .iter()
+            .map(|b| b.merge_cursor(key_filter.clone(), None))
+            .collect();
+        let merged: crate::trace::FallbackIndexedWSet<DynI32, DynI32, DynZWeight> =
+            ListMerger::merge(&factories, builder, cursors);
+
+        // Sanity check that destination forces file storage and that the
+        // merged batch's filter kind is consistent with the chosen config.
+        assert_eq!(merged.location(), BatchLocation::Storage);
+        let kind = merged.membership_filter_kind();
+        assert!(
+            fc.allowed_filter_kinds().contains(&kind),
+            "filter kind {kind:?} is not allowed under {fc:?}",
+        );
+        assert_batch_eq(&merged, &expected);
+
+        // Check some absent probes across the input range.
+        let absent_probes = (-150_000i32..=150_000).step_by(7_500);
+        assert_seek_key_exact_matches(&merged, &expected, absent_probes, 42);
+    });
+}
+
+/// Dense-key sibling of `run_indexed_wset_storage_merges`. Same merge plumbing
+/// but with the `0..200` key domain so we probe every possible key in
+/// `seek_key_exact` and so per-batch overlap is high.
+fn run_indexed_wset_storage_merges_dense(batches: MergeInputBatches, fc: FilterConfig) {
+    let _temp_dir = tempdir().expect("Can't create temp dir for storage");
+    let mut config = mkconfig(_temp_dir.path());
+    fc.apply(&mut config);
+    config.storage.as_mut().unwrap().options.min_storage_bytes = Some(0);
+
+    run_in_circuit_with_storage_config(config, move || {
+        let factories =
+            <crate::trace::FallbackIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+
+        let inputs: Vec<crate::trace::FallbackIndexedWSet<DynI32, DynI32, DynZWeight>> = batches
+            .iter()
+            .map(|(tuples, loc)| build_fallback_indexed_wset_i32_at(tuples.clone(), *loc))
+            .collect();
+
+        for (input, (_tuples, requested_loc)) in inputs.iter().zip(batches.iter()) {
+            if input.key_count() > 0 {
+                assert_eq!(input.location(), *requested_loc);
+            }
+        }
+
+        let mut expected_erased = indexed_zset_tuples(
+            batches
+                .iter()
+                .flat_map(|(t, _l)| t.iter().copied())
+                .collect(),
+        );
+        let expected: TestBatch<DynI32, DynI32, (), DynZWeight> =
+            TestBatch::dyn_from_tuples(&TestBatchFactories::new(), (), &mut expected_erased);
+
+        let input_refs: Vec<&_> = inputs.iter().collect();
+        let builder = <crate::trace::FallbackIndexedWSet<
+            DynI32,
+            DynI32,
+            DynZWeight,
+        > as Batch>::Builder::for_merge(
+            &factories,
+            input_refs,
+            Some(BatchLocation::Storage),
+        );
+        let cursors: Vec<_> = inputs.iter().map(|b| b.merge_cursor(None, None)).collect();
+        let merged: crate::trace::FallbackIndexedWSet<DynI32, DynI32, DynZWeight> =
+            ListMerger::merge(&factories, builder, cursors);
+
+        assert_eq!(merged.location(), BatchLocation::Storage);
+        let kind = merged.membership_filter_kind();
+        assert!(
+            fc.allowed_filter_kinds().contains(&kind),
+            "filter kind {kind:?} is not allowed under {fc:?}",
+        );
+
+        assert_batch_eq(&merged, &expected);
+
+        // Key domain is `0..200`; probe every value to cover present and
+        // absent paths exhaustively.
+        assert_seek_key_exact_matches(&merged, &expected, 0..200i32, 42);
+    });
+}
+
+proptest! {
+    // 32 cases per test × 8 tests = 256 cases per `cargo test` run. CI runs
+    // the suite many times across PRs so cumulative coverage compounds.
+    // Override with `PROPTEST_CASES=N` for occasional deeper sweeps.
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[test]
+    fn indexed_wset_storage_merges_bloom_only(
+        batches in vec(
+            (merge_proptest_batch(1_000), batch_location_strategy()),
+            1..=24usize,
+        ),
+        retain_above in proptest::option::of(-150_000..150_000i32),
+    ) {
+        run_indexed_wset_storage_merges(batches, retain_above, FilterConfig::BloomOnly);
+    }
+
+    #[test]
+    fn indexed_wset_storage_merges_roaring_only(
+        batches in vec(
+            (merge_proptest_batch(1_000), batch_location_strategy()),
+            1..=24usize,
+        ),
+        retain_above in proptest::option::of(-150_000..150_000i32),
+    ) {
+        run_indexed_wset_storage_merges(batches, retain_above, FilterConfig::RoaringOnly);
+    }
+
+    #[test]
+    fn indexed_wset_storage_merges_both(
+        batches in vec(
+            (merge_proptest_batch(1_000), batch_location_strategy()),
+            1..=24usize,
+        ),
+        retain_above in proptest::option::of(-150_000..150_000i32),
+    ) {
+        run_indexed_wset_storage_merges(batches, retain_above, FilterConfig::Both);
+    }
+
+    #[test]
+    fn indexed_wset_storage_merges_neither(
+        batches in vec(
+            (merge_proptest_batch(1_000), batch_location_strategy()),
+            1..=24usize,
+        ),
+        retain_above in proptest::option::of(-150_000..150_000i32),
+    ) {
+        run_indexed_wset_storage_merges(batches, retain_above, FilterConfig::Neither);
+    }
+
+    #[test]
+    fn indexed_wset_storage_merges_dense_bloom_only(
+        batches in vec(
+            (merge_proptest_batch_dense(100), batch_location_strategy()),
+            1..=10usize,
+        ),
+    ) {
+        run_indexed_wset_storage_merges_dense(batches, FilterConfig::BloomOnly);
+    }
+
+    #[test]
+    fn indexed_wset_storage_merges_dense_roaring_only(
+        batches in vec(
+            (merge_proptest_batch_dense(100), batch_location_strategy()),
+            1..=10usize,
+        ),
+    ) {
+        run_indexed_wset_storage_merges_dense(batches, FilterConfig::RoaringOnly);
+    }
+
+    #[test]
+    fn indexed_wset_storage_merges_dense_both(
+        batches in vec(
+            (merge_proptest_batch_dense(100), batch_location_strategy()),
+            1..=10usize,
+        ),
+    ) {
+        run_indexed_wset_storage_merges_dense(batches, FilterConfig::Both);
+    }
+
+    #[test]
+    fn indexed_wset_storage_merges_dense_neither(
+        batches in vec(
+            (merge_proptest_batch_dense(100), batch_location_strategy()),
+            1..=10usize,
+        ),
+    ) {
+        run_indexed_wset_storage_merges_dense(batches, FilterConfig::Neither);
+    }
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(1000))]
 
