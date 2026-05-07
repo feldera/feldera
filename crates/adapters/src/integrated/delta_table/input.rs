@@ -7,7 +7,6 @@ use crate::{ControllerError, InputConsumer, InputReader, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use arrow::array::BooleanArray;
 use chrono::{DateTime, Utc};
-use datafusion::catalog::TableProvider;
 use datafusion::common::arrow::array::RecordBatch;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::listing::{
@@ -53,7 +52,6 @@ use tokio::sync::watch::{Receiver, Sender, channel};
 use tokio::sync::{Semaphore, mpsc};
 use tokio::time::sleep;
 use tracing::{debug, info, trace, warn};
-use url::Url;
 
 /// Polling interval when following a delta table.
 const POLL_INTERVAL: Duration = Duration::from_millis(1000);
@@ -881,10 +879,12 @@ impl DeltaTableInputEndpointInner {
                 .collect::<Vec<String>>()
         };
 
-        let table_schema = table.schema();
+        let table_schema = table
+            .snapshot()
+            .expect("Delta table snapshot must be loaded before computing used columns")
+            .schema();
         let delta_columns = table_schema
             .fields()
-            .iter()
             .map(|f| f.name().to_string())
             .collect::<Vec<String>>();
 
@@ -1600,16 +1600,23 @@ impl DeltaTableInputEndpointInner {
                 DeltaResumeInfo::follow_mode(version, false);
         }
 
-        // Register object store with datafusion, so it will recognize individual parquet
-        // file URIs when processing transaction log.  The `object_store_url` function
-        // generates a unique URL, which only makes sense to datafusion.  We must append
-        // the same string to the relative file path we read from the log below to make
-        // sure datafusion links it to this object store.
-        let object_store_url = delta_table.log_store().object_store_url();
-        let url: &Url = object_store_url.as_ref();
-        self.datafusion
-            .runtime_env()
-            .register_object_store(url, delta_table.log_store().object_store(None));
+        // Register object store & url pairs with datafusion.
+        //
+        // - Synthetic `delta-rs://...` URL + table-prefixed store: used when
+        //   we build parquet URIs from `Add.path` entries in the transaction
+        //   log (see `process_actions` and the listing-table path).
+        // - Table root URL + bucket-root store: used by the snapshot
+        //   `TableProvider` since delta-rs 0.31.x, which plans scans against
+        //   the root URL via datafusion's standard parquet `FileSource`.
+        //   Without this second registration, `select ... from snapshot` fails
+        //   with "No suitable object store found for <root>".
+        let log_store = delta_table.log_store();
+        let runtime_env = self.datafusion.runtime_env();
+        runtime_env.register_object_store(
+            log_store.object_store_url().as_ref(),
+            log_store.object_store(None),
+        );
+        runtime_env.register_object_store(log_store.root_url(), log_store.root_object_store(None));
 
         // if let Some(schema) = delta_table.schema() {
         //     info!("Delta table schema: {schema:?}");
@@ -1637,8 +1644,15 @@ impl DeltaTableInputEndpointInner {
             &self.endpoint_name,
         );
 
+        let provider = table.table_provider().await.map_err(|e| {
+            ControllerError::input_transport_error(
+                &self.endpoint_name,
+                true,
+                anyhow!("failed to obtain Delta table provider for snapshot: {e}"),
+            )
+        })?;
         self.datafusion
-            .register_table("snapshot", table.clone())
+            .register_table("snapshot", provider)
             .map_err(|e| {
                 ControllerError::input_transport_error(
                     &self.endpoint_name,
@@ -2384,7 +2398,14 @@ impl DeltaTableInputEndpointInner {
         files: Vec<String>,
         description: &str,
     ) -> AnyResult<ListingTable> {
-        let schema = table.schema();
+        // `DeltaTable::snapshot()` returns the table state; calling `.snapshot()`
+        // on that state hands back the eager snapshot, which exposes the Arrow
+        // schema.
+        let schema = table
+            .snapshot()
+            .map_err(|e| anyhow!("error accessing Delta table snapshot: {e}"))?
+            .snapshot()
+            .arrow_schema();
 
         let mut urls = Vec::with_capacity(files.len());
         for file in files.iter() {

@@ -121,8 +121,12 @@ async fn wait_for_output_records<T>(
             .await
             .unwrap();
 
+        let provider = table
+            .table_provider()
+            .await
+            .expect("table_provider() failed while polling output table in test");
         let data = datafusion
-            .read_table(table.clone())
+            .read_table(provider)
             .unwrap()
             .collect()
             .await
@@ -1596,6 +1600,7 @@ async fn delta_table_cdc_rewrite_test() {
     };
     use deltalake::datafusion::prelude::{col, lit};
     use deltalake::kernel::{DataType as KernelDataType, PrimitiveType, StructField};
+    use std::num::NonZeroU64;
 
     init_logging();
 
@@ -1734,7 +1739,7 @@ async fn delta_table_cdc_rewrite_test() {
     let v_before = delta.version().unwrap();
     let (optimized, _) = delta
         .optimize()
-        .with_target_size(128 * 1024 * 1024)
+        .with_target_size(NonZeroU64::new(128 * 1024 * 1024).unwrap())
         .await
         .unwrap();
     assert!(
