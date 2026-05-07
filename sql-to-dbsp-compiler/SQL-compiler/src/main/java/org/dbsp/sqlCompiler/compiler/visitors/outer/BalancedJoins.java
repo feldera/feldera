@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.util.Linq;
@@ -56,8 +57,9 @@ public class BalancedJoins extends CircuitCloneWithGraphsVisitor {
 
         OutputPort left = this.mapped(operator.left());
         OutputPort right = this.mapped(operator.right());
-        DBSPJoinBaseOperator result = new DBSPLeftJoinOperator(operator.getRelNode(), operator.getOutputZSetType(),
-                operator.getFunction(), operator.isMultiset, left, right, true);
+        DBSPSimpleOperator result = new DBSPLeftJoinOperator(operator.getRelNode(), operator.getOutputZSetType(),
+                operator.getFunction(), operator.isMultiset, left, right, true)
+                .copyAnnotations(operator);
         this.map(operator, result);
     }
 
@@ -70,8 +72,9 @@ public class BalancedJoins extends CircuitCloneWithGraphsVisitor {
 
         OutputPort left = this.mapped(operator.left());
         OutputPort right = this.mapped(operator.right());
-        DBSPJoinBaseOperator result = new DBSPJoinOperator(operator.getRelNode(), operator.getOutputZSetType(),
-                operator.getFunction(), operator.isMultiset, left, right, true);
+        DBSPSimpleOperator result = new DBSPJoinOperator(operator.getRelNode(), operator.getOutputZSetType(),
+                operator.getFunction(), operator.isMultiset, left, right, true)
+                .copyAnnotations(operator);
         this.map(operator, result);
     }
 
@@ -84,9 +87,10 @@ public class BalancedJoins extends CircuitCloneWithGraphsVisitor {
 
         OutputPort left = this.mapped(operator.left());
         OutputPort right = this.mapped(operator.right());
-        DBSPJoinBaseOperator result = new DBSPJoinIndexOperator(
+        DBSPSimpleOperator result = new DBSPJoinIndexOperator(
                 operator.getRelNode(), operator.getOutputIndexedZSetType(),
-                operator.getFunction(), operator.isMultiset, left, right, true);
+                operator.getFunction(), operator.isMultiset, left, right, true)
+                .copyAnnotations(operator);
         this.map(operator, result);
     }
 
@@ -99,9 +103,10 @@ public class BalancedJoins extends CircuitCloneWithGraphsVisitor {
 
         OutputPort left = this.mapped(operator.left());
         OutputPort right = this.mapped(operator.right());
-        DBSPJoinBaseOperator result = new DBSPLeftJoinIndexOperator(
+        DBSPSimpleOperator result = new DBSPLeftJoinIndexOperator(
                 operator.getRelNode(), operator.getOutputIndexedZSetType(),
-                operator.getFunction(), operator.isMultiset, left, right, true);
+                operator.getFunction(), operator.isMultiset, left, right, true)
+                .copyAnnotations(operator);
         this.map(operator, result);
     }
 
@@ -114,10 +119,11 @@ public class BalancedJoins extends CircuitCloneWithGraphsVisitor {
 
         OutputPort left = this.mapped(operator.left());
         OutputPort right = this.mapped(operator.right());
-        DBSPJoinBaseOperator result = new DBSPJoinFilterMapOperator(
+        DBSPSimpleOperator result = new DBSPJoinFilterMapOperator(
                 operator.getRelNode(), operator.getOutputZSetType(),
                 operator.getFunction(), operator.filter, operator.map,
-                operator.isMultiset, left, right, true);
+                operator.isMultiset, left, right, true)
+                .copyAnnotations(operator);
         this.map(operator, result);
     }
 
@@ -130,10 +136,11 @@ public class BalancedJoins extends CircuitCloneWithGraphsVisitor {
 
         OutputPort left = this.mapped(operator.left());
         OutputPort right = this.mapped(operator.right());
-        DBSPJoinBaseOperator result = new DBSPLeftJoinFilterMapOperator(
+        DBSPSimpleOperator result = new DBSPLeftJoinFilterMapOperator(
                 operator.getRelNode(), operator.getOutputZSetType(),
                 operator.getFunction(), operator.filter, operator.map,
-                operator.isMultiset, left, right, true);
+                operator.isMultiset, left, right, true)
+                .copyAnnotations(operator);
         this.map(operator, result);
     }
 }

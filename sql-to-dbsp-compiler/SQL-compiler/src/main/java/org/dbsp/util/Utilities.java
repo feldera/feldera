@@ -62,6 +62,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -308,6 +309,8 @@ public class Utilities {
         return value;
     }
 
+    /** Print a ResultSet obtained from some database. */
+    @SuppressWarnings("unused")
     public static void showResultSet(ResultSet result, PrintStream out)
             throws SQLException {
         int columnCount = result.getMetaData().getColumnCount();
@@ -649,5 +652,13 @@ public class Utilities {
     /** True if the CI environment variable is set */
     public static boolean inCI() {
         return System.getenv("CI") != null;
+    }
+
+    /** Convert str to title case: capital followed by lowercase */
+    public static String titleCase(String str) {
+        if (str.isEmpty())
+            return str;
+        return str.substring(0, 1).toUpperCase(Locale.ENGLISH) +
+                str.substring(1).toLowerCase(Locale.ENGLISH);
     }
 }

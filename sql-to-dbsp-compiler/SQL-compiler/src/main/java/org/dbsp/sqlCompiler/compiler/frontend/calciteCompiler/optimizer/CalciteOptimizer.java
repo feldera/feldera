@@ -9,6 +9,8 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.core.Correlate;
 import org.apache.calcite.rel.core.Join;
+import org.apache.calcite.rel.hint.Hintable;
+import org.apache.calcite.rel.hint.RelHint;
 import org.apache.calcite.rel.rules.CoreRules;
 import org.apache.calcite.rel.rules.PruneEmptyRules;
 import org.apache.calcite.rel.rules.SingleValuesOptimizationRules;
@@ -23,6 +25,7 @@ import org.dbsp.util.Logger;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 /** Optimizer using the Calcite program rewrite rules */
 public class CalciteOptimizer implements IWritesLogs {
@@ -48,6 +51,38 @@ public class CalciteOptimizer implements IWritesLogs {
                 return true;
         }
         return false;
+    }
+
+    /** True if 'node' has hints that pass the specified predicate */
+    static boolean containsHints(RelNode node, Predicate<RelHint> predicate) {
+        if (node instanceof Hintable ha) {
+            if (!ha.getHints().isEmpty()) {
+                for (var hint : ha.getHints()) {
+                    if (predicate.test(hint))
+                        return true;
+                }
+            }
+        }
+        for (RelNode input : node.getInputs()) {
+            if (containsHints(input, predicate))
+                return true;
+        }
+        return false;
+    }
+
+    /** True if the specified node has join-related hints */
+    static boolean containsJoinHints(RelNode node) {
+        return containsHints(node, SqlToRelCompiler::isJoinHint);
+    }
+
+    static int joinCount(RelNode node) {
+        int recurse = 0;
+        for (RelNode input : node.getInputs()) {
+            recurse += joinCount(input);
+        }
+        if (node instanceof Join)
+            recurse += 1;
+        return recurse;
     }
 
     public interface CalciteOptimizerStep {
@@ -325,8 +360,10 @@ public class CalciteOptimizer implements IWritesLogs {
         ));
         var hyper = new BaseOptimizerStep("Hypergraph", 0) {
             HepProgram getProgram(RelNode node, int level) {
-                // only call this if there are no Correlates
-                if (!containsCorrelate(node)) {
+                // only call this if there are no Correlates or join hints
+                if (!containsCorrelate(node) &&
+                        !containsJoinHints(node) &&
+                        (joinCount(node) > 1)) {
                     this.addRules(level,
                             CoreRules.JOIN_TO_HYPER_GRAPH,
                             CoreRules.HYPER_GRAPH_OPTIMIZE);

@@ -15,9 +15,11 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.util.NullPrintStream;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.io.PrintStream;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Random;
@@ -470,6 +472,8 @@ public class IncrementalRegression2Tests extends SqlIoTest {
 
     @Test
     public void issue5935() {
+        PrintStream savedErr = System.err;
+        System.setErr(NullPrintStream.INSTANCE);
         var ccs = this.getCCS("""
                 CREATE TABLE orders (
                     order_id              INT NOT NULL PRIMARY KEY,
@@ -497,6 +501,7 @@ public class IncrementalRegression2Tests extends SqlIoTest {
                 LEFT JOIN customers AS sc
                     ON o.shipping_customer_id = sc.customer_id
                 ORDER BY o.order_id;""");
+        System.setErr(savedErr);
         // Validated on Postgres
         ccs.stepWeightOne("""
                 INSERT INTO CUSTOMERS VALUES

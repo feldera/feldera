@@ -35,7 +35,6 @@ import org.apache.calcite.config.NullCollation;
 import org.apache.calcite.jdbc.CalciteSchema;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptPlanner;
-import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.plan.hep.HepPlanner;
 import org.apache.calcite.plan.hep.HepProgramBuilder;
 import org.apache.calcite.prepare.CalciteCatalogReader;
@@ -43,7 +42,13 @@ import org.apache.calcite.prepare.Prepare;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.rel.RelVisitor;
+import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.core.TableScan;
+import org.apache.calcite.rel.externalize.RelWriterImpl;
+import org.apache.calcite.rel.hint.HintPredicates;
+import org.apache.calcite.rel.hint.HintStrategy;
+import org.apache.calcite.rel.hint.HintStrategyTable;
+import org.apache.calcite.rel.hint.RelHint;
 import org.apache.calcite.rel.logical.LogicalProject;
 import org.apache.calcite.rel.logical.LogicalTableScan;
 import org.apache.calcite.rel.logical.LogicalValues;
@@ -78,7 +83,6 @@ import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlCharStringLiteral;
 import org.apache.calcite.sql.SqlCollectionTypeNameSpec;
 import org.apache.calcite.sql.SqlDataTypeSpec;
-import org.apache.calcite.sql.SqlExplainFormat;
 import org.apache.calcite.sql.SqlExplainLevel;
 import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlIdentifier;
@@ -123,6 +127,7 @@ import org.apache.calcite.sql.validate.SqlValidatorUtil;
 import org.apache.calcite.sql2rel.ConvertToChecked;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
 import org.apache.calcite.tools.RelBuilder;
+import org.apache.calcite.util.Litmus;
 import org.dbsp.generated.parser.DbspParserImpl;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
@@ -179,6 +184,8 @@ import org.dbsp.util.Result;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.charset.Charset;
 import java.util.AbstractList;
 import java.util.ArrayList;
@@ -221,7 +228,7 @@ public class SqlToRelCompiler implements IWritesLogs {
     @Nullable
     private SqlValidator validator;
     @Nullable
-    private SqlToRelConverter converter;
+    private FelderaSqlToRelConverter converter;
     private final ExtraValidation extraValidator;
     private final CalciteConnectionConfig connectionConfig;
     private final IErrorReporter errorReporter;
@@ -262,6 +269,34 @@ public class SqlToRelCompiler implements IWritesLogs {
         DEFAULT_TYPE_ALIASES.put("BOOL", SqlTypeName.BOOLEAN);
     }
 
+    // Three Join hints.  In the SqlNode stage these hints hold a tableName argument,
+    // in the RelNode stage they hold a list with 2 elements (inputNo, tableName).
+    public static final String HINT_BROADCAST = "broadcast";
+    public static final String HINT_BALANCE = "balance";
+    public static final String HINT_SHARD = "shard";
+    // Hint holding the name of an aliased sub-relation; inserted by SqlToRelConverter.
+    public static final String HINT_ALIAS = "alias";
+
+    static final Set<String> JOIN_HINTS = new HashSet<>() {{
+        add(HINT_BALANCE);
+        add(HINT_BROADCAST);
+        add(HINT_SHARD);
+    }};
+
+    public static boolean isJoinHint(RelHint hint) {
+        return JOIN_HINTS.contains(hint.hintName);
+    }
+
+    boolean checkHintHasArgument(RelHint hint, Litmus unused) {
+        if (hint.listOptions.isEmpty()) {
+            this.errorReporter.reportError(new SourcePositionRange(hint.pos),
+                    "Invalid hint",
+                    "Hint " + Utilities.singleQuote(hint.hintName) + " requires a list of arguments");
+            return false;
+        }
+        return true;
+    }
+
     public SqlToRelCompiler(CompilerOptions options, IErrorReporter errorReporter) {
         this.options = options;
         this.errorReporter = errorReporter;
@@ -269,10 +304,10 @@ public class SqlToRelCompiler implements IWritesLogs {
         this.definedViews = new HashSet<>();
         this.extraValidator = new ExtraValidation(errorReporter);
 
+        java.util.Properties connConfigProp = new java.util.Properties();
         // This influences function name lookup.
         // We want that to be case-insensitive.
         // Notice that this does NOT affect the parser, only the validator.
-        java.util.Properties connConfigProp = new java.util.Properties();
         connConfigProp.put(CalciteConnectionProperty.CASE_SENSITIVE.camelName(), String.valueOf(true));
         connConfigProp.put(CalciteConnectionProperty.DEFAULT_NULL_COLLATION.camelName(), NULL_COLLATION);
         this.udt = new HashMap<>();
@@ -295,7 +330,22 @@ public class SqlToRelCompiler implements IWritesLogs {
         // We use a series of planner stages later to perform the real optimizations.
         RelOptPlanner planner = new HepPlanner(new HepProgramBuilder().build());
         planner.setExecutor(RexUtil.EXECUTOR);
+        HintStrategyTable hints = HintStrategyTable.builder()
+                .hintStrategy(HINT_BROADCAST, HintStrategy.builder(HintPredicates.JOIN)
+                        .optionChecker(this::checkHintHasArgument)
+                        .build())
+                .hintStrategy(HINT_SHARD, HintStrategy.builder(HintPredicates.JOIN)
+                        .optionChecker(this::checkHintHasArgument)
+                        .build())
+                .hintStrategy(HINT_BALANCE, HintStrategy.builder(HintPredicates.JOIN)
+                        .optionChecker(this::checkHintHasArgument)
+                        .build())
+                // Alias is an internal hint used by the compiler, not exposed to users
+                // It is really an annotation attached to a rel node remembering the original AS alias
+                .hintStrategy(HINT_ALIAS, HintStrategy.builder(HintPredicates.JOIN).build())
+                .build();
         this.cluster = RelOptCluster.create(planner, new RexBuilder(typeFactory));
+        this.cluster.setHintStrategies(hints);
         var metadataProvider = ChainedRelMetadataProvider.of(List.of(RelMdRowCount.SOURCE,
                 DefaultRelMetadataProvider.INSTANCE));
         this.cluster.setMetadataProvider(metadataProvider);
@@ -306,13 +356,14 @@ public class SqlToRelCompiler implements IWritesLogs {
                 .withExpand(true)
                 .withTrimUnusedFields(true)
                 .withRelBuilderConfigTransform(t -> t.withSimplify(false))
+                .withHintStrategyTable(hints)
                 ;
         this.validator = null;
         this.converter = null;
         this.usedViewDeclarations = new HashSet<>();
         this.declaredViews = new HashMap<>();
         this.relBuilder = this.converterConfig.getRelBuilderFactory()
-                .create(cluster, null)
+                .create(this.cluster, null)
                 .transform(this.converterConfig.getRelBuilderConfigTransform());
 
         SqlOperatorTable operatorTable = this.createOperatorTable();
@@ -640,7 +691,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 this.typeFactory,
                 validatorConfig
         );
-        this.converter = new SqlToRelConverter(
+        this.converter = new FelderaSqlToRelConverter(
                 (type, query, schema, path) -> null,
                 this.validator,
                 catalogReader,
@@ -670,9 +721,7 @@ public class SqlToRelCompiler implements IWritesLogs {
 
     /** aka EXPLAIN */
     public static String getPlan(RelNode rel) {
-        return RelOptUtil.dumpPlan("[Logical plan]", rel,
-                SqlExplainFormat.TEXT,
-                SqlExplainLevel.NON_COST_ATTRIBUTES);
+        return toString(rel, SqlExplainLevel.ALL_ATTRIBUTES, true);
     }
 
     public RexBuilder getRexBuilder() {
@@ -2054,6 +2103,14 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
     }
 
+    /** Convert a plan to a human-readable string. */
+    public static String toString(final RelNode rel, SqlExplainLevel detailLevel, boolean expand) {
+        final StringWriter sw = new StringWriter();
+        final RelWriter planWriter = new RelWriterImpl(new PrintWriter(sw), detailLevel, false, expand);
+        rel.explain(planWriter);
+        return sw.toString();
+    }
+
     @Nullable
     public CreateViewStatement compileCreateView(
             ParsedStatement node, Map<ProgramIdentifier, SqlLateness> lateness,
@@ -2125,6 +2182,12 @@ public class SqlToRelCompiler implements IWritesLogs {
             }
             props = new Properties(viewProperties);
         }
+
+        // System.out.println(getPlan(relRoot.rel));
+        RewriteJoinAnnotations joinConverter = new RewriteJoinAnnotations(this.errorReporter);
+        RelNode converted = joinConverter.visit(relRoot.rel);
+        joinConverter.done();
+        relRoot = relRoot.withRel(converted);
 
         // Convert plan to use checked arithmetic
         // Must be done before optimizations.
@@ -2286,6 +2349,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                         value = SqlLiteral.createBoolean(false, value.getParserPosition());
                 }
             }
+            Utilities.enforce(value != null);
             RexNode expression = this.getConverter().convertExpression(value);
             this.errorReporter.setErrorContext(SourcePositionRange.INVALID);
             return new SetOptionStatement(node, ProgramIdentifier.fromSqlId(id), expression);

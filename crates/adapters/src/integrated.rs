@@ -36,7 +36,7 @@ where
 }
 
 /// Create an instance of an integrated output endpoint given its config
-/// and output relation schema.p
+/// and output relation schema.
 #[allow(unused)]
 pub fn create_integrated_output_endpoint(
     endpoint_id: EndpointId,

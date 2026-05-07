@@ -42,6 +42,7 @@ import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.core.Uncollect;
 import org.apache.calcite.rel.core.Window;
+import org.apache.calcite.rel.hint.RelHint;
 import org.apache.calcite.rel.logical.LogicalAggregate;
 import org.apache.calcite.rel.logical.LogicalAsofJoin;
 import org.apache.calcite.rel.logical.LogicalCorrelate;
@@ -74,6 +75,8 @@ import org.apache.calcite.sql.SqlUserDefinedTypeNameSpec;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
+import org.dbsp.sqlCompiler.circuit.annotation.JoinStrategy;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateZeroOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
@@ -1520,11 +1523,29 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 TypeCompiler.makeZSet(resultType), operator.outputPort());
     }
 
+    JoinStrategy fromJoinHint(RelHint hint) {
+        JoinStrategy.Strategy strat = JoinStrategy.Strategy.valueOf(Utilities.titleCase(hint.hintName));
+        Utilities.enforce(hint.listOptions.size() == 2);
+        int input = Integer.parseInt(hint.listOptions.get(0));
+        String table = hint.listOptions.get(1);
+        return new JoinStrategy(new SourcePositionRange(hint.pos), strat, input, table);
+    }
+
     private void visitJoin(LogicalJoin join) {
         final CalciteObject conditionNode = CalciteObject.create(join, join.getCondition());
         final IntermediateRel node = CalciteObject.create(join, conditionNode.getPositionRange());
         // The result is the sum of all these operators.
         final List<OutputPort> sumInputs = new ArrayList<>();
+
+        final Annotations strategies = new Annotations();
+        for (var hint: join.getHints()) {
+            // We only consider hints with an empty inherit path.
+            // We assume the other hints were inserted by the optimizer during rewrites
+            if (SqlToRelCompiler.isJoinHint(hint) && hint.inheritPath.isEmpty()) {
+                var strategy = this.fromJoinHint(hint);
+                strategies.add(strategy);
+            }
+        }
 
         JoinRelType joinType = join.getJoinType();
         if (joinType == JoinRelType.ANTI || joinType == JoinRelType.SEMI)
@@ -1680,6 +1701,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             joinResult = new DBSPStreamJoinOperator(node, TypeCompiler.makeZSet(lr.getType()),
                     makeTuple, left.isMultiset || right.isMultiset,
                     leftNonNullIndex.outputPort(), rightNonNullIndex.outputPort(), false);
+            joinResult.addAnnotations(strategies, DBSPSimpleOperator.class);
             inner = joinResult;
 
             if (joinType == JoinRelType.LEFT && leftPulled == left && !hasFilter) {
@@ -1724,6 +1746,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         node, TypeCompiler.makeZSet(makeLeftTuple.getResultType()),
                         makeLeftTuple, left.isMultiset || right.isMultiset,
                         leftDiff.outputPort(), rightDiff.outputPort(), false);
+                lj.addAnnotations(strategies, DBSPSimpleOperator.class);
                 this.addOperator(lj);
                 final DBSPIntegrateOperator integrate = new DBSPIntegrateOperator(node, lj.outputPort());
                 // Additional casts may be needed to fix key field types on the left side

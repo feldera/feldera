@@ -8,7 +8,10 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -39,7 +42,7 @@ public class RelAnd extends CalciteRelNode {
                 .appendJsonLabelAndColon("and")
                 .append("[").increase();
         boolean first = true;
-        for (CalciteRelNode node : this.nodes) {
+        for (CalciteRelNode node : this.sort()) {
             if (!first)
                 stream.append(",");
             first = false;
@@ -79,9 +82,16 @@ public class RelAnd extends CalciteRelNode {
         throw new UnimplementedException("intermediate " + this);
     }
 
+    List<LastRel> sort() {
+        List<LastRel> list = new ArrayList<>(this.nodes);
+        list.sort(Comparator.comparingLong(LastRel::getId));
+        return list;
+    }
+
     @Override
     public String toString() {
-        return this.getId() + " And(" + String.join(",", Linq.map(this.nodes, CalciteObject::toString)) + ")";
+        // Sort for a deterministic order
+        return this.getId() + " And(" + String.join(",", Linq.map(this.sort(), CalciteObject::toString)) + ")";
     }
 
     @Override

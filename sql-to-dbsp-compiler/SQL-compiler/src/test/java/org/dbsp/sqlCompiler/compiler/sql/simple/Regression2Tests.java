@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
+import org.dbsp.sqlCompiler.circuit.annotation.JoinStrategy;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
@@ -8,6 +9,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
@@ -436,11 +438,14 @@ public class Regression2Tests extends SqlIoTest {
     public void issue5541c() {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.ioOptions.quiet = false;
+        PrintStream saved = System.err;
+        System.setErr(NullPrintStream.INSTANCE);
         compiler.submitStatementsForCompilation("""
                 CREATE TABLE T(x INT, z INT, y INT);
                 CREATE LOCAL VIEW V AS SELECT SUM(x) AS sum, AVG(z) AS max, y FROM T GROUP BY y;
                 CREATE VIEW W AS SELECT sum, y FROM V;""");
         var ccs = this.getCCS(compiler);
+        System.setErr(saved);
         ccs.visit(new CircuitVisitor(ccs.compiler) {
             int aggregates;
 
@@ -1179,5 +1184,87 @@ public class Regression2Tests extends SqlIoTest {
                ---
                NULL
                (1 row)""");
+    }
+
+    @Test
+    public void missingHintArgument() {
+            this.statementsFailingInCompilation("""
+                CREATE TABLE T(x INT);
+                CREATE TABLE S(x INT);
+                CREATE VIEW V AS SELECT /*+ broadcast */ *
+                FROM T JOIN S on T.x = S.x;""", "Invalid hint: Hint 'broadcast' requires a list of arguments");
+    }
+
+    @Test
+    public void testHints() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT);
+                CREATE TABLE S(x INT);
+                CREATE VIEW V AS SELECT /*+ broadcast(T), shard(S) */ * FROM T JOIN S USING (x);""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            boolean joinFound = false;
+
+            @Override
+            public void postorder(DBSPStreamJoinOperator join) {
+                this.joinFound = true;
+                Assert.assertEquals("[Broadcast(t), Shard(s)]", join.annotations.get(JoinStrategy.class).toString());
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertTrue(this.joinFound);
+            }
+        });
+    }
+
+    @Test
+    public void testThreeWayJoinHints() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT);
+                CREATE TABLE S(x INT);
+                CREATE TABLE U(x INT);
+                CREATE VIEW V AS SELECT /*+ broadcast(T), shard(S), balance(U) */ * FROM T JOIN S USING (x) JOIN U USING (x);""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            int joins = 0;
+
+            @Override
+            public void postorder(DBSPStreamJoinOperator join) {
+                String strat = join.annotations.get(JoinStrategy.class).toString();
+                this.joins++;
+                Assert.assertTrue(strat.equals("[Broadcast(t), Shard(s)]") || strat.equals("[Balance(u)]"));
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(2, this.joins);
+            }
+        });
+    }
+
+    @Test
+    public void testNoMatchingTableHint() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x INT);
+                CREATE VIEW V AS SELECT /*+ broadcast(X), shard(S) */ * FROM T JOIN T AS S USING (x);""",
+                "Cannot apply hint: Hint 'broadcast(x)' specifies an input which cannot be identified among the join inputs");
+    }
+
+    @Test
+    public void testConflictingHints() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x INT);
+                CREATE VIEW V AS SELECT /*+ broadcast(T), shard(S) */ * FROM T JOIN T AS S USING (x);""",
+                "Incompatible hints: Found two conflicting hints for the same collection: Shard(s)");
+    }
+
+    @Test
+    public void testAmbiguousHint() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x INT);
+                CREATE TABLE S(x INT);
+                CREATE VIEW V AS WITH
+                TMP AS (SELECT * FROM T JOIN S USING(x))
+                SELECT /*+ broadcast(T) */ * FROM T JOIN TMP USING (X);
+                """, "Ambiguous hint: Hint 'broadcast(t)' matches 2 different collections");
     }
 }

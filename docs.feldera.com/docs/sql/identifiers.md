@@ -107,7 +107,7 @@ GROUP BY x+1
 HAVING x+1 > 0;
 ```
 
-::: danger
+:::danger
 
 In order to preserve the semantics of standard SQL programs unchanged,
 a new column alias is used only if there is no column with the same

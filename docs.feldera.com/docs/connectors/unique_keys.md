@@ -19,7 +19,7 @@ sources and data delivery to external sinks in two key ways:
  from tables *without* primary keys. Deleting a non-existent record for
  such tables will produce unexpected results or even pipeline crashes.
 
-::: danger
+:::danger
 
 Deleting records that do not exist from a table without a primary key is
 an undefined operation, and can produce incorrect results or crashes.

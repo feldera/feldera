@@ -454,4 +454,13 @@ public class MultiCrateTests extends BaseSQLTests {
         File file = createInputScript(builder.toString());
         compileToMultiCrate(file.getAbsolutePath(), true, true);
     }
+
+    @Test
+    public void testHints() throws SQLException, IOException, InterruptedException {
+        String sql = """
+                CREATE TABLE T(x INT);
+                CREATE TABLE S(x INT);
+                CREATE VIEW V AS SELECT /*+ broadcast(T), shard(S) */ * FROM T JOIN S USING (x);""";
+        compileProgramToMultiCrate(sql, true);
+    }
 }

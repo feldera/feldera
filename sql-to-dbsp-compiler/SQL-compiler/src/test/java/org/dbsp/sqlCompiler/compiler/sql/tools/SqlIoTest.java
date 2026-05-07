@@ -52,6 +52,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
 
     public CompilerOptions testOptions() {
         CompilerOptions options = new CompilerOptions();
+        this.ciOptions(options);
         options.ioOptions.testing = true;
         options.ioOptions.quiet = true;
         options.ioOptions.emitHandles = true;
@@ -60,7 +61,9 @@ public abstract class SqlIoTest extends BaseSQLTests {
         options.languageOptions.generateInputForEveryTable = true;
         options.languageOptions.incrementalize = false;
         options.languageOptions.unrestrictedIOTypes = true;
-        options.ioOptions.verbosity = 2;
+        if (!options.ioOptions.multiCrates())
+            // Comments interfere with hashes
+            options.ioOptions.verbosity = 2;
         options.languageOptions.ignoreOrderBy = true;
         return options;
     }

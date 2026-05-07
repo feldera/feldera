@@ -194,7 +194,7 @@ CREATE TABLE my_table (
 )
 ```
 
-::: warning
+:::warning
 
 Notice that the data format provided by the connector contains data
 and metadata columns; for example, a metadata column is the "operation", which
