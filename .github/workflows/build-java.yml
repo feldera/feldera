@@ -20,9 +20,9 @@ jobs:
           echo "K8S node: ${K8S_NODE_NAME}"
 
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: |
             /home/ubuntu/.gradle
@@ -52,14 +52,14 @@ jobs:
           cp ./sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar build-artifacts/
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: feldera-sql-compiler
           path: build-artifacts
           retention-days: 7
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v5.1.0
+        uses: aws-actions/configure-aws-credentials@00943011d9042930efac3dcd3a170e4273319bc8 # v5.1.0
         with:
           role-to-assume: ${{ vars.SQL2DBSP_UPLOAD_ROLE }}
           role-session-name: gha-${{ github.run_id }}

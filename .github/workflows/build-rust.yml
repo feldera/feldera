@@ -42,10 +42,10 @@ jobs:
           echo "K8S node: ${K8S_NODE_NAME}"
 
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Cache Cargo registry and index
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: |
             ~/.cargo/registry
@@ -117,21 +117,21 @@ jobs:
 
       # Upload test binaries as one artifact
       - name: Upload test artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: feldera-test-binaries-${{ matrix.target }}
           path: build-artifacts
           retention-days: 7
 
       - name: Upload fda
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: fda-${{ matrix.target }}
           path: build-release-artifacts/fda
           retention-days: 7
 
       - name: Upload pipeline-manager
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: pipeline-manager-${{ matrix.target }}
           path: build-release-artifacts/pipeline-manager
@@ -159,13 +159,13 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
 
       - name: Cache Cargo registry and index
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: |
             ~/.cargo/registry
@@ -178,7 +178,7 @@ jobs:
         run: cargo build --release --locked -p fda --target=${{ matrix.target }}
 
       - name: Upload fda
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: fda-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/${{ matrix.fda_artifact }}

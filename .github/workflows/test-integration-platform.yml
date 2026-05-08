@@ -73,10 +73,10 @@ jobs:
       OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
 
       - name: Login to GHCR with GITHUB_TOKEN
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -200,7 +200,7 @@ jobs:
           echo "K8S node: ${K8S_NODE_NAME}"
 
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Check OIDC configuration and connectivity
         if: vars.OIDC_TEST_ISSUER != '' && vars.OIDC_TEST_CLIENT_ID != ''
@@ -229,7 +229,7 @@ jobs:
           IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
 
       - name: Download fda binary
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: fda-${{ matrix.target }}
           path: build
