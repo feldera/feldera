@@ -23,7 +23,10 @@ use crate::{
     },
 };
 
-use std::{ops::Range, panic::Location};
+use std::{
+    ops::{Not as _, Range},
+    panic::Location,
+};
 
 circuit_cache_key!(ShardId<C, D>((StreamId, Range<usize>) => Stream<C, D>));
 circuit_cache_key!(UnshardId<C, D>(StreamId => Stream<C, D>));
@@ -211,12 +214,12 @@ where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
 {
-    let offsets = unsafe { archived_root::<Vec<usize>>(&data) };
+    let offsets = unsafe { archived_root::<Vec<usize>>(data) };
     let mut output = pairs_factory.default_box();
     output.reserve(offsets.len());
     for offset in (0..offsets.len()).map(|i| offsets[i] as usize) {
         output.push_with(&mut |pair| {
-            unsafe { pair.deserialize_from_bytes(&data, offset) };
+            unsafe { pair.deserialize_from_bytes(data, offset) };
         })
     }
     output
@@ -492,11 +495,25 @@ pub fn shard_pairs<K, V>(
             PairsBuilder::with_capacity(location, pairs_factory, estimated_pairs)
         })
         .collect_vec();
-    for mut pairs in input_pairs {
-        for pair in pairs.dyn_iter_mut() {
-            let k = pair.fst();
-            let shard_index = k.default_hash() as usize % workers.len() + workers.start;
-            output[shard_index].push_val(pair, &mut serializer_inner);
+
+    // Merge the inputs and shard them into the outputs.
+    let mut inputs = input_pairs
+        .into_iter()
+        .flat_map(|pairs| pairs.is_empty().not().then_some((pairs, 0)))
+        .collect_vec();
+    while let Some(min_index) = inputs
+        .iter()
+        .map(|(pairs, index)| pairs.index(*index))
+        .position_min()
+    {
+        let (pairs, pairs_index) = &mut inputs[min_index];
+        let pair = &mut pairs[*pairs_index];
+        let shard_index = pair.fst().default_hash() as usize % workers.len() + workers.start;
+        output[shard_index].push_val(pair, &mut serializer_inner);
+
+        *pairs_index += 1;
+        if *pairs_index >= pairs.len() {
+            inputs.remove(min_index);
         }
     }
     output_pairs.extend(
