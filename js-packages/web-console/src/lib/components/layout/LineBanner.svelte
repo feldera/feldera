@@ -17,13 +17,15 @@
     center,
     end,
     variant = 'formal',
-    dismiss
+    dismiss,
+    testid
   }: {
     start?: Snippet
     center?: Snippet
     end?: Snippet
     variant?: keyof typeof variants
     dismiss?: () => void
+    testid?: string
   } = $props()
 </script>
 
@@ -64,6 +66,7 @@
   class="{variants[
     variant
   ]} flex min-h-9 flex-nowrap items-center gap-1 px-2 py-2 text-base font-medium sm:px-8"
+  data-testid={testid}
 >
   <div class="flex flex-nowrap items-center gap-2 sm:gap-6">
     {@render start?.()}
