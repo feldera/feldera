@@ -29,17 +29,17 @@ jobs:
       url: https://pypi.org/p/feldera
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ inputs.tag || github.ref }}
       - name: Install uv
-        uses: astral-sh/setup-uv@v2
+        uses: astral-sh/setup-uv@6dfebec6ddbcd197e02256fbdf54deb334fb7f06 # v2
         with:
           version: "0.11.3"
           enable-cache: true
           cache-dependency-glob: "python/uv.lock"
       - name: "Set up Python"
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version-file: "python/pyproject.toml"
       - name: Install the project
@@ -50,7 +50,7 @@ jobs:
 
       - name: Publish package
         if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
-        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
         with:
           packages-dir: ./python/dist
 
@@ -64,16 +64,16 @@ jobs:
       url: https://pypi.org/p/dbt-feldera
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ inputs.tag || github.ref }}
       - name: Install uv
-        uses: astral-sh/setup-uv@v2
+        uses: astral-sh/setup-uv@6dfebec6ddbcd197e02256fbdf54deb334fb7f06 # v2
         with:
           version: "0.11.3"
           enable-cache: true
       - name: "Set up Python"
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.10"
       - name: Install and build dbt-feldera
@@ -84,7 +84,7 @@ jobs:
           uv build
       - name: Publish dbt-feldera
         if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
-        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
         with:
           packages-dir: ./python/dbt-feldera/dist
 
