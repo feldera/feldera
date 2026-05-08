@@ -478,7 +478,8 @@ pub fn shard_pairs<K, V>(
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
 {
-    let pairs_per_shard = input_pairs.len() / workers.len();
+    let pairs_per_shard =
+        input_pairs.iter().map(|pairs| pairs.len()).sum::<usize>() / workers.len();
     let mut serializer_inner = None;
     let mut output = WorkerLocations::new()
         .enumerate()
