@@ -241,10 +241,10 @@ def tpch_tables(config: TPCHTestConfig):
     return {
         "lineitem": f"""
   CREATE TABLE LINEITEM (
-          L_ORDERKEY    INTEGER NOT NULL,
-          L_PARTKEY     INTEGER NOT NULL,
-          L_SUPPKEY     INTEGER NOT NULL,
-          L_LINENUMBER  INTEGER NOT NULL,
+          L_ORDERKEY    BIGINT NOT NULL,
+          L_PARTKEY     BIGINT NOT NULL,
+          L_SUPPKEY     BIGINT NOT NULL,
+          L_LINENUMBER  BIGINT NOT NULL,
           L_QUANTITY    DECIMAL(15,2) NOT NULL,
           L_EXTENDEDPRICE  DECIMAL(15,2) NOT NULL,
           L_DISCOUNT    DECIMAL(15,2) NOT NULL,
@@ -265,8 +265,8 @@ def tpch_tables(config: TPCHTestConfig):
   """,
         "orders": f"""
   CREATE TABLE ORDERS  (
-          O_ORDERKEY       INTEGER NOT NULL PRIMARY KEY,
-          O_CUSTKEY        INTEGER NOT NULL,
+          O_ORDERKEY       BIGINT NOT NULL PRIMARY KEY,
+          O_CUSTKEY        BIGINT NOT NULL,
           O_ORDERSTATUS    CHAR(1) NOT NULL,
           O_TOTALPRICE     DECIMAL(15,2) NOT NULL,
           O_ORDERDATE      DATE NOT NULL,
@@ -282,7 +282,7 @@ def tpch_tables(config: TPCHTestConfig):
         # https://github.com/feldera/feldera/issues/4448
         "part": f"""
   CREATE TABLE PART (
-          P_PARTKEY     INTEGER NOT NULL PRIMARY KEY,
+          P_PARTKEY     BIGINT NOT NULL PRIMARY KEY,
           P_NAME        VARCHAR(55) NOT NULL,
           P_MFGR        CHAR(25) NOT NULL,
           P_BRAND       CHAR(10) NOT NULL,
@@ -298,7 +298,7 @@ def tpch_tables(config: TPCHTestConfig):
   """,
         "customer": f"""
   CREATE TABLE CUSTOMER (
-          C_CUSTKEY     INTEGER NOT NULL PRIMARY KEY,
+          C_CUSTKEY     BIGINT NOT NULL PRIMARY KEY,
           C_NAME        VARCHAR(25) NOT NULL,
           C_ADDRESS     VARCHAR(40) NOT NULL,
           C_NATIONKEY   INTEGER NOT NULL,
@@ -313,7 +313,7 @@ def tpch_tables(config: TPCHTestConfig):
   """,
         "supplier": f"""
   CREATE TABLE SUPPLIER (
-          S_SUPPKEY     INTEGER NOT NULL PRIMARY KEY,
+          S_SUPPKEY     BIGINT NOT NULL PRIMARY KEY,
           S_NAME        CHAR(25) NOT NULL,
           S_ADDRESS     VARCHAR(40) NOT NULL,
           S_NATIONKEY   INTEGER NOT NULL,
@@ -327,8 +327,8 @@ def tpch_tables(config: TPCHTestConfig):
   """,
         "partsupp": f"""
   CREATE TABLE PARTSUPP (
-          PS_PARTKEY     INTEGER NOT NULL,
-          PS_SUPPKEY     INTEGER NOT NULL,
+          PS_PARTKEY     BIGINT NOT NULL,
+          PS_SUPPKEY     BIGINT NOT NULL,
           PS_AVAILQTY    INTEGER NOT NULL,
           PS_SUPPLYCOST  DECIMAL(15,2)  NOT NULL,
           PS_COMMENT     VARCHAR(199) NOT NULL,
