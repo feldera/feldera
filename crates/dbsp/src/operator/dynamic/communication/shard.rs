@@ -185,17 +185,7 @@ where
                   output_pairs: &mut Vec<Mailbox<Box<DynPairs<K, V>>>>| {
                 shard_pairs(input_pairs, &all_workers(), output_pairs, pairs_factory);
             },
-            move |data| {
-                let offsets = unsafe { archived_root::<Vec<usize>>(&data) };
-                let mut output = pairs_factory.default_box();
-                output.reserve(offsets.len());
-                for offset in (0..offsets.len()).map(|i| offsets[i] as usize) {
-                    output.push_with(&mut |pair| {
-                        unsafe { pair.deserialize_from_bytes(&data, offset) };
-                    })
-                }
-                output
-            },
+            move |data| deserialize_pairs(&data, pairs_factory),
             |output_pairs: &mut Vec<Box<DynPairs<K, V>>>, batch: Box<DynPairs<K, V>>| {
                 output_pairs.push(batch);
             },
@@ -211,6 +201,25 @@ where
         );
         output
     }
+}
+
+fn deserialize_pairs<K, V>(
+    data: &[u8],
+    pairs_factory: &'static dyn Factory<DynPairs<K, V>>,
+) -> Box<DynPairs<K, V>>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+{
+    let offsets = unsafe { archived_root::<Vec<usize>>(&data) };
+    let mut output = pairs_factory.default_box();
+    output.reserve(offsets.len());
+    for offset in (0..offsets.len()).map(|i| offsets[i] as usize) {
+        output.push_with(&mut |pair| {
+            unsafe { pair.deserialize_from_bytes(&data, offset) };
+        })
+    }
+    output
 }
 
 pub(crate) enum ShardBuilder<OB>
