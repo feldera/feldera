@@ -296,8 +296,31 @@ export class Visualizer {
         // Find ID of node with given persistent ID
         for (const [pid, node] of this.profile.byPersistentId) {
             if (pid.includes(query)) {
-                this.rendering?.search(node.id);
+                let success = this.rendering?.search(node.id);
+                if (success) {
+                    return;
+                }
             }
+        }
+
+        // Neither succeeded, check if we are searching for an unexpanded node
+        let nodeN = this.profile.simpleNodes.get(query);
+        if (nodeN.isSome()) {
+            let node = nodeN.unwrap();
+            let current = node.id;
+            // Find the outermost parent
+            while (true) {
+                let parent = this.profile.parents.get(current);
+                if (parent.isNone()) {
+                    break;
+                }
+                current = parent.unwrap();
+            }
+            // Current is the outermost parent
+            // Expansion will happen asynchronously,
+            // so we are not searching again, hopefully that is good
+            // enough to locate the node.
+            this.circuitSelector?.toggleExpand(current);
         }
     }
 
