@@ -23,8 +23,8 @@
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
+  import { fetchConfigs } from '$lib/compositions/configCache'
   import { closedIntervalAction } from '$lib/functions/common/promise'
-  import { getConfig } from '$lib/services/pipelineManager'
   import type { Snippet } from '$lib/types/svelte'
   import type { LayoutData } from './$types'
 
@@ -45,10 +45,14 @@
 
   // Check for backend version changes every 10 seconds, starting 10 seconds
   // after layout load (first tick is delayed by `periodMs`).
+  // Calls `fetchConfigs()` to both get the latest config and update the cache,
+  // otherwise `invalidateAll()` would re-render the root layout from a stale cache
+  // and trigger the version mismatch in a loop.
+  let dismissTimeout: ReturnType<typeof setTimeout> | undefined
   $effect.pre(() =>
     closedIntervalAction(async () => {
       try {
-        const config = await getConfig()
+        const { config } = await fetchConfigs()
         const currentVersion = data.feldera?.version
         const currentRevision = data.feldera?.revision
         if (
@@ -62,7 +66,9 @@
           // Show a notification that the backend was updated
           const msgId = `backend_version_changed`
 
-          const dismissTimeout = setTimeout(() => systemMessages.dismiss(msgId), 30000) // Auto-dismiss after 30 seconds
+          // Auto-dismiss after 30 seconds; clear any prior pending timer.
+          clearTimeout(dismissTimeout)
+          dismissTimeout = setTimeout(() => systemMessages.dismiss(msgId), 30000)
           systemMessages.upsert(msgId, {
             id: msgId,
             text: `Feldera was updated from version ${currentVersion} to ${config.version}.`,
@@ -178,6 +184,7 @@
         dismiss={message.dismissable !== 'never'
           ? () => systemMessages.dismiss(message.id)
           : undefined}
+        testid={`box-system-message-${message.id}`}
       >
         {#snippet start()}
           <span>{@html message.text}</span>
