@@ -158,21 +158,27 @@ def run_cli():
     tpch_test(config)
 
 
-def delta_input_connector(s3_path: str, region: str, table: str) -> str:
+def aws_access() -> str:
     if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
-        aws_access = f"""
-            "aws_access_key_id": "{os.environ.get("AWS_ACCESS_KEY_ID")}",
-            "aws_secret_access_key": "{os.environ.get("AWS_SECRET_ACCESS_KEY")}",
-        """
+        aws_access = f"""\
+                "aws_access_key_id": "{os.environ.get("AWS_ACCESS_KEY_ID")}",
+                "aws_secret_access_key": "{os.environ.get("AWS_SECRET_ACCESS_KEY")}","""
+        if os.environ.get("AWS_SESSION_TOKEN"):
+            aws_access += f"""
+                "aws_session_token": "{os.environ.get("AWS_SESSION_TOKEN")}","""
     else:
-        aws_access = '"aws_skip_signature": "true",'
+        aws_access = """\
+                "aws_skip_signature": "true","""
+    return aws_access
 
+
+def delta_input_connector(s3_path: str, region: str, table: str) -> str:
     return f"""{{
         "transport": {{
             "name": "delta_table_input",
             "config": {{
                 "uri": "{s3_path}/{table}",
-                {aws_access}
+{aws_access()}
                 "aws_region": "{region}",
                 "mode": "snapshot"
             }}
@@ -198,21 +204,13 @@ def file_input_connector(path: str, table: str) -> str:
 
 
 def s3_input_connector(bucket: str, prefix: str, region: str, table: str) -> str:
-    if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
-        aws_access = f"""
-            "aws_access_key_id": "{os.environ.get("AWS_ACCESS_KEY_ID")}",
-            "aws_secret_access_key": "{os.environ.get("AWS_SECRET_ACCESS_KEY")}",
-        """
-    else:
-        aws_access = '"aws_skip_signature": "true",'
-
     return f"""{{
         "transport": {{
             "name": "s3_input",
             "config": {{
                 "bucket_name": "{bucket}",
                 "key": "{prefix}/{table}.csv",
-                {aws_access}
+                {aws_access()}
                 "region": "{region}"
             }}
         }},
