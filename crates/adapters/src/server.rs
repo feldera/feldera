@@ -1238,6 +1238,7 @@ where
         .service(reset_output_endpoint)
         .service(reset_status)
         .service(rebalance)
+        .service(start_compaction)
         .service(coordination_activate_handler)
         .service(coordination_status)
         .service(coordination_step_request)
@@ -2482,6 +2483,12 @@ async fn completion_status(
 async fn rebalance(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     state.controller()?.rebalance().await?;
 
+    Ok(HttpResponse::Ok().into())
+}
+
+#[post("/start_compaction")]
+async fn start_compaction(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    state.controller()?.start_compaction().await?;
     Ok(HttpResponse::Ok().into())
 }
 

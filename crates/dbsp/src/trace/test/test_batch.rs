@@ -1393,6 +1393,8 @@ where
     ) -> Result<(), crate::Error> {
         todo!()
     }
+
+    fn initiate_compaction(&self) {}
 }
 
 /// Test random sampling methods.

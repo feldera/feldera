@@ -1101,6 +1101,12 @@ where
     fn is_flush_complete(&self) -> bool {
         !self.flush_output
     }
+
+    fn start_compaction(&mut self) {
+        if let Some(trace) = self.trace.as_mut() {
+            trace.initiate_compaction()
+        }
+    }
 }
 
 impl<C, B, T> StrictOperator<T> for AccumulateZ1Trace<C, B, T>

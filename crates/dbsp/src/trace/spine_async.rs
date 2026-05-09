@@ -12,7 +12,7 @@ use crate::{
         max_level0_batch_size_records,
         metadata::{
             BLOOM_FILTER_BITS_PER_KEY, BLOOM_FILTER_HIT_RATE_PERCENT, BLOOM_FILTER_HITS_COUNT,
-            BLOOM_FILTER_MISSES_COUNT, BLOOM_FILTER_SIZE_BYTES, COMPLETED_MERGES,
+            BLOOM_FILTER_MISSES_COUNT, BLOOM_FILTER_SIZE_BYTES, COMPACTION_STATE, COMPLETED_MERGES,
             LOOSE_BATCHES_COUNT, LOOSE_MEMORY_RECORDS_COUNT, LOOSE_STORAGE_RECORDS_COUNT,
             MERGE_BACKPRESSURE_WAIT_TIME_SECONDS, MERGE_REDUCTION_PERCENT, MERGING_BATCHES_COUNT,
             MERGING_MEMORY_RECORDS_COUNT, MERGING_SIZE_BYTES, MERGING_STORAGE_RECORDS_COUNT,
@@ -134,6 +134,59 @@ impl<B: Batch + Send + Sync> From<(Vec<String>, &Spine<B>)> for CommittedSpine {
     }
 }
 
+/// State of the compaction process in a slot.
+///
+/// ```text
+///      │
+///      ▼
+///    ┌──────┐                            ┌─────────┐
+///    │ none ├───────────────────────────►│requested│
+///    └──────┘                            └────┬────┘
+///       ▲                                     │
+///       │                                     │
+///       │                                     │
+///       │                                     │
+///       │         ┌───────────┐               │
+///       └─────────┤in progress│◄──────────────┘
+///                 └───────────┘
+/// ```
+///
+/// * none -> requested:
+///   - triggered by the `initiate_compaction` method in the first non-empty slot of the spine.
+///   - triggered when compaction completes in the previous slot.
+/// * requested -> in progress:
+///   - triggered when the slot finishes processing any ongoing merge and discovers that
+///     compaction status has been set to requested. It starts a new merge including _all_
+///     batches at the current level.
+/// * in progress -> none:
+///   - the merge completes; the resulting batch is pushed to the next slot regardless of
+///     its size; compaction is initiated at the next slot.
+/// * requested -> none:
+///   - there is <=1 batches in the current slot. Compaction completes instantly and the
+///     batch is pushed to the next slot; compaction is initiated at the next slot.
+///
+/// The following invariant guarantees that the compaction process completes after processing all
+/// batches in the spine:
+/// Each slot must:
+/// 1. Complete its own compaction (which may be a noop if there's <=1 batches on this level)
+/// 2. Trigger compaction at the next level after local compaction is done
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CompactionStatus {
+    None,
+    Requested,
+    InProgress,
+}
+
+impl Display for CompactionStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CompactionStatus::None => write!(f, "none"),
+            CompactionStatus::Requested => write!(f, "requested"),
+            CompactionStatus::InProgress => write!(f, "in progress"),
+        }
+    }
+}
+
 /// A group of batches with similar sizes (as determined by [size_from_level]).
 #[derive(Clone, SizeOf)]
 struct Slot<B>
@@ -166,6 +219,10 @@ where
     /// Wake up the task that handles merges at this level.
     #[size_of(skip)]
     notify: Arc<Notify>,
+
+    /// State of the compaction process in this slot.
+    #[size_of(skip)]
+    compaction_status: CompactionStatus,
 }
 
 impl<B> Default for Slot<B>
@@ -181,6 +238,7 @@ where
             n_merged_batches: 0,
             n_steps: 0,
             notify: Arc::new(Notify::new()),
+            compaction_status: CompactionStatus::None,
         }
     }
 }
@@ -216,12 +274,23 @@ where
         let merge_counts = &MERGE_COUNTS[level];
 
         // Start a merge if there is no ongoing merge and there are either enough loose batches to start a merge,
-        // or we are under high memory pressure and there's at least one in-memory batch in this slot.
+        // or we are under high memory pressure and there's at least one in-memory batch in this slot, or
+        // compaction has been requested and there are more than one batches in the slot.
         if self.merging_batches.is_none()
             && (self.loose_batches.len() >= *merge_counts.start()
-                || self.must_relieve_memory_pressure())
+                || self.must_relieve_memory_pressure()
+                || (self.compaction_status == CompactionStatus::Requested
+                    && self.loose_batches.len() > 1))
         {
-            let n = std::cmp::min(*merge_counts.end(), self.loose_batches.len());
+            // Compaction requested - merge all batches in the slot.
+            let max_batches = if self.compaction_status == CompactionStatus::Requested {
+                self.compaction_status = CompactionStatus::InProgress;
+                usize::MAX
+            } else {
+                *merge_counts.end()
+            };
+
+            let n = std::cmp::min(max_batches, self.loose_batches.len());
             let batches = self.loose_batches.drain(..n).collect::<Vec<_>>();
             self.merging_batches = Some(batches.clone());
             Some(batches)
@@ -408,7 +477,28 @@ where
                 )
             })
             .record();
-        if !new_batch.is_empty() {
+
+        if slot.compaction_status == CompactionStatus::InProgress {
+            // We finished merging all batches in the slot as part of compaction.
+            slot.compaction_status = CompactionStatus::None;
+
+            // If there are more non-empty slots above, push compaction results to the next slot
+            // and initiate compaction there; otherwise, compaction is finished for the spine.
+            if let Some(last_level) = self.last_non_empty_slot()
+                && last_level > level
+            {
+                self.initiate_compaction_at_level(
+                    level + 1,
+                    if new_batch.is_empty() {
+                        vec![]
+                    } else {
+                        vec![new_batch]
+                    },
+                );
+            } else if !new_batch.is_empty() {
+                self.add_batch(new_batch, new_level);
+            }
+        } else if !new_batch.is_empty() {
             self.add_batch(new_batch, new_level);
         }
     }
@@ -420,6 +510,49 @@ where
     /// of that is measuring the size of the batches, which can require I/O.
     fn metadata_snapshot(&self) -> ([Slot<B>; MAX_LEVELS], SpineStats) {
         (self.slots.clone(), self.spine_stats.clone())
+    }
+
+    /// Non-empty slot with the smallest index.
+    fn first_non_empty_slot(&self) -> Option<usize> {
+        for (i, slot) in self.slots.iter().enumerate() {
+            if !slot.loose_batches.is_empty() || slot.merging_batches.is_some() {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    /// Non-empty slot with the largest index.
+    fn last_non_empty_slot(&self) -> Option<usize> {
+        for (i, slot) in self.slots.iter().enumerate().rev() {
+            if !slot.loose_batches.is_empty() || slot.merging_batches.is_some() {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    fn initiate_compaction(&mut self) {
+        let Some(level) = self.first_non_empty_slot() else {
+            return;
+        };
+
+        self.initiate_compaction_at_level(level, Vec::new());
+    }
+
+    /// Push batches to the slot at the given level and initiate compaction.
+    fn initiate_compaction_at_level(&mut self, level: usize, batches: Vec<Arc<B>>) {
+        let slot = &mut self.slots[level];
+        slot.loose_batches.extend(batches);
+
+        // Note: if compaction is already in progress in this slot, this means that the
+        // user triggered a new compaction run before the previous one completed. In this
+        // case, we reset the state back to Requested, which will cause the slot to start a new
+        // round of merging right after the current one before pushing the results to the next
+        // slot.
+        // Effectively, we are merging the two compaction sweeps into one.
+        slot.compaction_status = CompactionStatus::Requested;
+        slot.notify.notify_one();
     }
 }
 
@@ -709,6 +842,11 @@ where
                     ])),
                 )]);
             }
+            meta.extend([MetricReading::new(
+                COMPACTION_STATE,
+                vec![(Cow::Borrowed("slot"), index.to_string().into())],
+                MetaItem::String(slot.compaction_status.to_string()),
+            )]);
 
             let mut negative_weight_count = 0;
             let mut has_negative_weight_counts = false;
@@ -882,6 +1020,11 @@ where
         ]);
 
         cache_stats.metadata(meta);
+    }
+
+    fn initiate_compaction(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.initiate_compaction();
     }
 }
 
@@ -1059,7 +1202,30 @@ where
         // Figuring out what merges to start requires the lock. Then we drop
         // the lock to actually start them, in case that's expensive (it
         // might require creating a file, for example).
-        let start_merge = self.state.lock().unwrap().slots[level].try_start_merge(level);
+        let start_merge = {
+            let mut state = self.state.lock().unwrap();
+            let last_non_empty_slot = state.last_non_empty_slot();
+            let slot = &mut state.slots[level];
+            let start_merge = slot.try_start_merge(level);
+
+            // There is nothing to merge at the current level - initiate compaction at the next level.
+            if slot.compaction_status == CompactionStatus::Requested
+                && slot.merging_batches.is_none()
+            {
+                slot.compaction_status = CompactionStatus::None;
+
+                if let Some(last_level) = last_non_empty_slot
+                    && last_level > level
+                {
+                    // There can still be 1 batch in the current slot - move this batch to the next level.
+                    let batches = slot.loose_batches.drain(..).collect::<Vec<_>>();
+
+                    state.initiate_compaction_at_level(level + 1, batches);
+                }
+            }
+
+            start_merge
+        };
 
         let snapshot = if value_filter
             .as_ref()
@@ -1816,6 +1982,10 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         self.merger.metadata(meta);
+    }
+
+    fn initiate_compaction(&self) {
+        self.merger.initiate_compaction();
     }
 }
 
