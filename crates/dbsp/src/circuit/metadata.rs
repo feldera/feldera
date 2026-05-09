@@ -127,6 +127,7 @@ pub const MERGING_MEMORY_RECORDS_COUNT: MetricId =
 pub const MERGING_STORAGE_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("merging_storage_records_count"));
 pub const COMPLETED_MERGES: MetricId = MetricId(Cow::Borrowed("completed_merges"));
+pub const COMPACTION_STATE: MetricId = MetricId(Cow::Borrowed("compaction_state_count"));
 pub const NEGATIVE_WEIGHT_COUNT: MetricId = MetricId(Cow::Borrowed("negative_weight_count"));
 pub const BLOOM_FILTER_BITS_PER_KEY: MetricId =
     MetricId(Cow::Borrowed("bloom_filter_bits_per_key"));
@@ -161,7 +162,7 @@ pub const PREFIX_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("prefix_batche
 pub const INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("input_integral_records_count"));
 
-pub const CIRCUIT_METRICS: [CircuitMetric; 66] = [
+pub const CIRCUIT_METRICS: [CircuitMetric; 67] = [
     // State
     CircuitMetric {
         name: USED_MEMORY_BYTES,
@@ -306,6 +307,12 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 66] = [
         category: CircuitMetricCategory::State,
         advanced: true,
         description: "Information about the batches that were compacted (merged).",
+    },
+    CircuitMetric {
+        name: COMPACTION_STATE,
+        category: CircuitMetricCategory::State,
+        advanced: true,
+        description: "0 - no compaction in progress, 1 - compaction requested, 2 - compaction in progress.",
     },
     // Inputs
     CircuitMetric {

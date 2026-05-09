@@ -1093,6 +1093,8 @@ pub trait Node: Any {
     /// from a checkpoint must be backfilled from clean state.
     fn clear_state(&mut self) -> Result<(), DbspError>;
 
+    fn start_compaction(&mut self);
+
     /// Place operator in the replay mode.
     ///
     /// In the replay mode the operator streams its stored state to a temporary
@@ -1823,6 +1825,8 @@ pub trait CircuitBase: 'static {
     fn get_current_balancer_policy(&self) -> BTreeMap<NodeId, PartitioningPolicy>;
 
     fn rebalance(&self);
+
+    fn start_compaction(&self);
 }
 
 /// The circuit interface.  All DBSP computation takes place within a circuit.
@@ -3443,6 +3447,13 @@ where
     fn rebalance(&self) {
         self.inner().balancer.rebalance()
     }
+
+    fn start_compaction(&self) {
+        let _ = self.map_local_nodes_mut(&mut |node| {
+            node.start_compaction();
+            Ok(())
+        });
+    }
 }
 
 impl<P, T> Circuit for ChildCircuit<P, T>
@@ -4594,6 +4605,10 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn start_compaction(&mut self) {
+        self.operator.start_compaction()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
@@ -4739,6 +4754,10 @@ where
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn start_compaction(&mut self) {
+        self.operator.start_compaction()
     }
 
     fn clear_state(&mut self) -> Result<(), DbspError> {
@@ -4902,6 +4921,10 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn start_compaction(&mut self) {
+        self.operator.start_compaction()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
@@ -5054,6 +5077,10 @@ where
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn start_compaction(&mut self) {
+        self.operator.start_compaction()
     }
 
     fn clear_state(&mut self) -> Result<(), DbspError> {
@@ -5267,6 +5294,10 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn start_compaction(&mut self) {
+        self.operator.start_compaction()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
@@ -5452,6 +5483,10 @@ where
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn start_compaction(&mut self) {
+        self.operator.start_compaction()
     }
 
     fn clear_state(&mut self) -> Result<(), DbspError> {
@@ -5665,6 +5700,10 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn start_compaction(&mut self) {
+        self.operator.start_compaction()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
@@ -5848,6 +5887,10 @@ where
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn start_compaction(&mut self) {
+        self.operator.start_compaction()
     }
 
     fn clear_state(&mut self) -> Result<(), DbspError> {
@@ -6056,6 +6099,10 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn start_compaction(&mut self) {
+        self.operator.start_compaction()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
@@ -6247,6 +6294,10 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn start_compaction(&mut self) {
+        self.operator.start_compaction()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
@@ -6428,6 +6479,10 @@ where
             .restore(base, self.persistent_id().as_deref())
     }
 
+    fn start_compaction(&mut self) {
+        self.operator.borrow_mut().start_compaction()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.borrow_mut().clear_state()
     }
@@ -6592,6 +6647,8 @@ where
         // See comment in `commit`.
         Ok(())
     }
+
+    fn start_compaction(&mut self) {}
 
     fn clear_state(&mut self) -> Result<(), DbspError> {
         Ok(())
@@ -6819,6 +6876,10 @@ where
 
     fn restore(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
         Ok(())
+    }
+
+    fn start_compaction(&mut self) {
+        self.circuit.start_compaction();
     }
 
     fn clear_state(&mut self) -> Result<(), DbspError> {
@@ -7566,6 +7627,10 @@ impl CircuitHandle {
 
     pub fn rebalance(&self) {
         self.circuit.rebalance()
+    }
+
+    pub fn start_compaction(&self) {
+        self.circuit.start_compaction()
     }
 }
 

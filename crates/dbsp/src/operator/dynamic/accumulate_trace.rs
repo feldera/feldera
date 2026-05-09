@@ -930,6 +930,12 @@ where
     fn flush(&mut self) {
         self.flush = true;
     }
+
+    fn start_compaction(&mut self) {
+        if let Some(trace) = self.trace.as_mut() {
+            trace.initiate_compaction()
+        }
+    }
 }
 
 impl<C, B, T> StrictOperator<T> for AccumulateZ1Trace<C, B, T>

@@ -1158,6 +1158,12 @@ where
     fn flush(&mut self) {
         self.flush = true;
     }
+
+    fn start_compaction(&mut self) {
+        if let Some(trace) = self.trace.as_mut() {
+            trace.initiate_compaction()
+        }
+    }
 }
 
 impl<C, B, T> StrictOperator<T> for Z1Trace<C, B, T>
@@ -1280,6 +1286,8 @@ mod test {
     use std::{
         cmp::max,
         collections::{BTreeMap, BTreeSet},
+        thread,
+        time::{Duration, Instant},
     };
 
     use crate::{
@@ -1618,6 +1626,99 @@ mod test {
         }
 
         test_integrate_trace_retain(batches, 10, 10);
+    }
+
+    fn spine_batches_count_values(profile: &crate::profile::DbspProfile) -> Vec<usize> {
+        let profile_json: serde_json::Value = serde_json::from_str(&profile.as_json()).unwrap();
+        let mut counts = Vec::new();
+        collect_spine_batches_count_values(&profile_json, &mut counts);
+        counts
+    }
+
+    fn collect_spine_batches_count_values(value: &serde_json::Value, counts: &mut Vec<usize>) {
+        match value {
+            serde_json::Value::Object(object) => {
+                if object.get("metric_id").and_then(serde_json::Value::as_str)
+                    == Some("spine_batches_count")
+                {
+                    let count = object
+                        .get("value")
+                        .and_then(|value| {
+                            (value.get("type").and_then(serde_json::Value::as_str) == Some("count"))
+                                .then(|| value.get("value").and_then(serde_json::Value::as_u64))
+                                .flatten()
+                        })
+                        .expect("spine_batches_count must be serialized as a count");
+
+                    counts.push(usize::try_from(count).unwrap());
+                }
+
+                for value in object.values() {
+                    collect_spine_batches_count_values(value, counts);
+                }
+            }
+            serde_json::Value::Array(array) => {
+                for value in array {
+                    collect_spine_batches_count_values(value, counts);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn test_start_compaction_accumulate_integrate_trace() {
+        const NUM_BATCHES: usize = 100;
+        const RECORDS_PER_BATCH: usize = 1000;
+
+        let (mut dbsp, input_handle) = Runtime::init_circuit(2, move |circuit| {
+            let (stream, handle) = circuit.add_input_indexed_zset::<i32, i32>();
+            let _trace = stream.shard().accumulate_integrate_trace();
+            Ok(handle)
+        })
+        .unwrap();
+
+        for batch in 0..NUM_BATCHES {
+            let mut tuples = Vec::with_capacity(RECORDS_PER_BATCH);
+            for record in 0..RECORDS_PER_BATCH {
+                let key = (batch * RECORDS_PER_BATCH + record) as i32;
+                tuples.push(Tup2(key, Tup2(record as i32, 1)));
+            }
+
+            input_handle.append(&mut tuples);
+            dbsp.transaction().unwrap();
+        }
+
+        let profile = dbsp.retrieve_profile().unwrap();
+        let counts = spine_batches_count_values(&profile);
+        println!("SPINE_BATCHES_COUNT values before compaction: {counts:?}");
+        assert!(
+            !counts.is_empty(),
+            "profile should contain at least one SPINE_BATCHES_COUNT metric"
+        );
+
+        dbsp.start_compaction().unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(60);
+        loop {
+            let profile = dbsp.retrieve_profile().unwrap();
+            let counts = spine_batches_count_values(&profile);
+            println!("SPINE_BATCHES_COUNT values after compaction request: {counts:?}");
+            assert!(
+                !counts.is_empty(),
+                "profile should contain at least one SPINE_BATCHES_COUNT metric"
+            );
+
+            if counts.iter().all(|count| *count <= 1) {
+                break;
+            }
+
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for all SPINE_BATCHES_COUNT values to be <= 1: {counts:?}"
+            );
+            thread::sleep(Duration::from_secs(5));
+        }
     }
 
     proptest! {
