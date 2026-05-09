@@ -1593,6 +1593,13 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         self.client.rebalance_pipeline(self.name)
 
+    def start_compaction(self):
+        """
+        Initiate immediate compaction of the pipeline's state.
+        """
+
+        self.client.start_compaction_pipeline(self.name)
+
     def generate_completion_token(self, table_name: str, connector_name: str) -> str:
         """
         Returns a completion token that can be passed to :meth:`.Pipeline.completion_token_status` to

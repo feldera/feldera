@@ -1506,6 +1506,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
     def rebalance_pipeline(self, pipeline_name: str):
         self.http.post(path=f"/pipelines/{pipeline_name}/rebalance")
 
+    def start_compaction_pipeline(self, pipeline_name: str):
+        self.http.post(path=f"/pipelines/{pipeline_name}/start_compaction")
+
     def get_checkpoints(self, pipeline_name: str):
         return self.http.get(path=f"/pipelines/{pipeline_name}/checkpoints")
 

@@ -855,6 +855,12 @@ impl Runtime {
                             return;
                         }
                     }
+                    Ok(Command::StartCompaction) => {
+                        circuit.start_compaction();
+                        if status_sender.send(Ok(Response::Unit)).is_err() {
+                            return;
+                        }
+                    }
                     // Nothing to do: do some housekeeping and relinquish the CPU if there's none
                     // left.
                     Err(TryRecvError::Empty) => {
@@ -947,6 +953,7 @@ enum Command {
     GetCurrentBalancerPolicy(String),
     Rebalance,
     SetAutoRebalance(bool),
+    StartCompaction,
 }
 
 impl Debug for Command {
@@ -988,6 +995,7 @@ impl Debug for Command {
             Command::SetAutoRebalance(enable) => {
                 f.debug_tuple("SetAutoRebalance").field(enable).finish()
             }
+            Command::StartCompaction => write!(f, "StartCompaction"),
         }
     }
 }
@@ -1717,6 +1725,11 @@ impl DBSPHandle {
 
     pub fn rebalance(&mut self) -> Result<(), DbspError> {
         self.broadcast_command(Command::Rebalance, |_, _| {})?;
+        Ok(())
+    }
+
+    pub fn start_compaction(&mut self) -> Result<(), DbspError> {
+        self.broadcast_command(Command::StartCompaction, |_, _| {})?;
         Ok(())
     }
 }

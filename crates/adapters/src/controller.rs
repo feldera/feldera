@@ -470,6 +470,8 @@ pub type SyncCheckpointCallbackFn = Box<dyn FnOnce(Result<(), Arc<ControllerErro
 /// Rebalance callback argument to [`Controller::rebalance`].
 pub type RebalanceCallbackFn = Box<dyn FnOnce(Result<(), ControllerError>) + Send>;
 
+pub type StartCompactionCallbackFn = Box<dyn FnOnce(Result<(), ControllerError>) + Send>;
+
 /// A command that [Controller] can send to [Controller::circuit_thread].
 ///
 /// There is no type for a command reply.  Instead, the command implementation
@@ -481,6 +483,7 @@ enum Command {
     Suspend(SuspendCallbackFn),
     SyncCheckpoint((uuid::Uuid, SyncCheckpointCallbackFn)),
     Rebalance(RebalanceCallbackFn),
+    StartCompaction(StartCompactionCallbackFn),
 }
 
 impl Command {
@@ -496,6 +499,7 @@ impl Command {
                 callback(Err(Arc::new(ControllerError::ControllerExit)))
             }
             Command::Rebalance(callback) => callback(Err(ControllerError::ControllerExit)),
+            Command::StartCompaction(callback) => callback(Err(ControllerError::ControllerExit)),
         }
     }
 }
@@ -1989,6 +1993,19 @@ impl Controller {
         Ok(())
     }
 
+    pub async fn start_compaction(&self) -> Result<(), ControllerError> {
+        let (sender, receiver) = oneshot::channel();
+        self.inner
+            .send_command(Command::StartCompaction(Box::new(move |result| {
+                if sender.send(result).is_err() {
+                    error!("`/start_compaction` result could not be sent");
+                }
+            })));
+        self.inner.circuit_thread_unparker.unpark();
+        receiver.await.unwrap()?;
+        Ok(())
+    }
+
     /// Returns an object for monitoring the step that the controller has
     /// completed.
     pub fn step_watcher(&self) -> tokio::sync::watch::Receiver<StepStatus> {
@@ -3356,6 +3373,11 @@ impl CircuitThread {
                 Command::Rebalance(reply_callback) => reply_callback(
                     self.circuit
                         .rebalance()
+                        .map_err(ControllerError::dbsp_error),
+                ),
+                Command::StartCompaction(reply_callback) => reply_callback(
+                    self.circuit
+                        .start_compaction()
                         .map_err(ControllerError::dbsp_error),
                 ),
             }

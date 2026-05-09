@@ -305,6 +305,11 @@ pub trait Operator: 'static {
     fn flush_progress(&self) -> Option<Position> {
         None
     }
+
+    /// Start compaction of the operator's state.
+    ///
+    /// Only defined for operators that support compaction. No-op for all other operators.
+    fn start_compaction(&mut self) {}
 }
 
 /// A source operator that injects data from the outside world or from the

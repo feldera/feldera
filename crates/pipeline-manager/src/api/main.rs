@@ -235,6 +235,7 @@ It contains the following fields:
         endpoints::pipeline_interaction::get_pipeline_time_series,
         endpoints::pipeline_interaction::get_pipeline_time_series_stream,
         endpoints::pipeline_interaction::post_pipeline_rebalance,
+        endpoints::pipeline_interaction::post_pipeline_start_compaction,
 
         // API keys
         endpoints::api_key::list_api_keys,
@@ -677,6 +678,7 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::start_samply_profile)
         .service(endpoints::pipeline_interaction::support_bundle::get_pipeline_support_bundle)
         .service(endpoints::pipeline_interaction::post_pipeline_rebalance)
+        .service(endpoints::pipeline_interaction::post_pipeline_start_compaction)
         .service(endpoints::pipeline_interaction::pipeline_adhoc_sql)
         .service(endpoints::pipeline_interaction::completion_token)
         .service(endpoints::pipeline_interaction::completion_status)

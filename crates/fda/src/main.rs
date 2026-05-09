@@ -1946,6 +1946,20 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 }
             }
         }
+        PipelineAction::StartCompaction { name } => {
+            client
+                .post_pipeline_start_compaction()
+                .pipeline_name(name.clone())
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to initiate compaction",
+                    1,
+                ))
+                .unwrap();
+            println!("Initiated compaction for pipeline {name}.");
+        }
         PipelineAction::Bench { args } => bench::bench(client, format, args).await,
         PipelineAction::DismissError { name } => {
             let response = client

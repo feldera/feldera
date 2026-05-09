@@ -313,6 +313,8 @@ pub trait Trace: BatchReader {
 
     /// Allows the trace to report additional metadata.
     fn metadata(&self, _meta: &mut OperatorMeta) {}
+
+    fn initiate_compaction(&self);
 }
 
 /// Where a batch is stored.

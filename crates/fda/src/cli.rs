@@ -724,6 +724,12 @@ pub enum PipelineAction {
         #[arg(long)]
         delta_ms: Option<u64>,
     },
+    /// Initiate compaction.
+    StartCompaction {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
     /// Clear the storage resources of a pipeline.
     ///
     /// Note that the pipeline must be stopped before clearing its storage resources.

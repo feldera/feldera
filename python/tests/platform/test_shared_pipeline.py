@@ -92,6 +92,17 @@ class TestPipeline(SharedTestPipeline):
         assert stats.get("inputs") is not None
         assert stats.get("outputs") is not None
 
+    def test_start_compaction(self):
+        self.pipeline.start()
+        self.pipeline.input_json("tbl", [{"id": 1}, {"id": 2}])
+
+        before = list(self.pipeline.query("SELECT COUNT(*) AS num_rows FROM v0"))
+        self.pipeline.start_compaction()
+        self.pipeline.start_compaction()
+        after = list(self.pipeline.query("SELECT COUNT(*) AS num_rows FROM v0"))
+
+        assert after == before
+
     def test_case_sensitive_views_listen(self):
         self.pipeline.start_paused()
 

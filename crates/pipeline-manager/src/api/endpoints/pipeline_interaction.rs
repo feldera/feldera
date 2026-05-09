@@ -1145,6 +1145,58 @@ pub(crate) async fn post_pipeline_rebalance(
         .await
 }
 
+/// Initiate compaction.
+///
+/// Initiate immediate compaction of the pipeline's state.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+            , description = "Compaction started successfully"),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline Lifecycle"
+)]
+#[post("/pipelines/{pipeline_name}/start_compaction")]
+pub(crate) async fn post_pipeline_start_compaction(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::POST,
+            "start_compaction",
+            "",
+            Some(Duration::from_secs(120)),
+            None,
+        )
+        .await
+}
+
 /// Sync Checkpoints To S3
 ///
 /// Syncs latest checkpoints to the object store configured in pipeline config.
