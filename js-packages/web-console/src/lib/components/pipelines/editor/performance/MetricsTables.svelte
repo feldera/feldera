@@ -502,7 +502,7 @@
 {/snippet}
 
 {#snippet tableMultiConnectorCell(data: AggregatedInputEndpointMetrics, isExpanded: boolean)}
-  {@const runningCount = data.connectors.filter((c) => c.paused === false).length}
+  {@const runningCount = data.connectors.filter((c) => c.paused === false && c.metrics.end_of_input === false).length}
   {@const anyErrors = data.connectors.some(inputHasErrors)}
   {@const anyFatalError = data.connectors.some((c) => c.fatal_error != null)}
   {@const anyBarrier = data.connectors.some((c) => c.barrier === true)}

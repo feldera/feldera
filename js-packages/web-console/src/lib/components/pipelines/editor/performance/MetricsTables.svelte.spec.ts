@@ -421,6 +421,26 @@ describe('MetricsTables.svelte', () => {
       await renderComponent(buildMetrics(status))
       await expect.element(page.getByText('3 connectors')).toBeInTheDocument()
     })
+
+    it('combined row shows paused icon (not running) when one connector is end-of-input and the other is paused', async () => {
+      const status = makeStatus(
+        [],
+        [
+          makeInputStatus('t1', {
+            endpoint_name: 'c1',
+            paused: false,
+            metrics: makeInputMetrics({ end_of_input: true })
+          }),
+          makeInputStatus('t1', {
+            endpoint_name: 'c2',
+            paused: true
+          })
+        ]
+      )
+      await renderComponent(buildMetrics(status))
+      await expect.element(page.getByTestId('box-icon-paused')).toBeInTheDocument()
+      await expect.element(page.getByTestId('box-icon-running')).not.toBeInTheDocument()
+    })
   })
 
   describe('F. Error count buttons & callbacks', () => {
