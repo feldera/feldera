@@ -26,7 +26,7 @@ interface JsonMetricBase {
 interface MetricValue { };
 
 // Base types
-interface PersistentIdMetricValue extends MetricValue {
+interface StringMetricValue extends MetricValue {
     type: "string";
     value: string;
 }
@@ -52,6 +52,11 @@ interface DurationMetricValue {
 interface BytesMetricValue {
     type: "bytes";
     value: number;
+}
+
+interface BoolMetricValue {
+    type: "bool";
+    value: boolean;
 }
 
 interface PercentMetricValue {
@@ -110,12 +115,13 @@ interface CacheStatsValue extends MetricValue {
 }
 
 type JsonMetricValue =
+    BoolMetricValue |
     CountMetricValue |
     BytesMetricValue |
     PercentMetricValue |
     DurationMetricValue |
     StatsMetricValue |
-    PersistentIdMetricValue |
+    StringMetricValue |
     DistributionValue |
     RetainmentValue |
     IntMetricValue |
@@ -373,6 +379,10 @@ class BooleanValue extends PropertyValue {
             throw new TypeError(`Expected a valid boolean, got, ${id}`);
         }
         this.value = id;
+    }
+
+    static fromBoolMetric(value: BoolMetricValue): BooleanValue {
+        return new BooleanValue(value.value);
     }
 
     getNumericValue(): Option<number> {
@@ -721,12 +731,17 @@ export class Measurement {
         let metric_id = metric.metric_id;
         let kind = metric_id.split("_").pop(); // count, bytes, etc
         if (metric.labels) {
-           let labels = metric.labels.map(e => e.join(":")).join(".");
-           if (metric.labels.length !== 0) {
-               metric_id = metric_id + "." + labels;
-           }
+            let labels = metric.labels.map(e => e.join(":")).join(".");
+            if (metric.labels.length !== 0) {
+                metric_id = metric_id + "." + labels;
+            }
         }
         switch (kind) {
+            case "bool": {
+                let m = metric.value as BoolMetricValue;
+                let value = BooleanValue.fromBoolMetric(m);
+                return [new Measurement(metric_id, Option.some(value))];
+            }
             case "bytes": {
                 let m = metric.value as BytesMetricValue;
                 let bytes = BytesValue.fromBytesMetric(m);
@@ -767,7 +782,7 @@ export class Measurement {
                 ];
             }
             case "id": { // persistent_id
-                let s = metric.value as PersistentIdMetricValue;
+                let s = metric.value as StringMetricValue;
                 let str = StringValue.fromString(s.value);
                 return [new Measurement(metric_id, Option.some(str))];
             }
@@ -844,6 +859,11 @@ export class Measurement {
                     new Measurement(metric_id + ".merges", Option.some(merges)),
                     new Measurement(metric_id + ".steps", Option.some(steps)),
                 ];
+            }
+            case "policy": {
+                let s = metric.value as StringMetricValue;
+                let str = StringValue.fromString(s.value);
+                return [new Measurement(metric_id, Option.some(str))];
             }
         }
         return [];
