@@ -64,9 +64,6 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 use typedmap::TypedDashMap;
 
-/// The number of tuples a stateful operator outputs per step during replay.
-pub const DEFAULT_REPLAY_STEP_SIZE: usize = 10000;
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum Error {
     /// Specified persistent id is not found in the circuit.
@@ -304,7 +301,6 @@ struct RuntimeInner {
     /// Panic info collected from failed worker threads.
     panic_info: Vec<EnumMap<ThreadType, RwLock<Option<WorkerPanicInfo>>>>,
     panicked: AtomicBool,
-    replay_step_size: AtomicUsize,
 
     /// Tokio runtime that runs async merger tasks (see `AsyncMerger`).
     tokio_merger_runtime: Mutex<Option<TokioRuntime>>,
@@ -511,7 +507,6 @@ impl RuntimeInner {
                 .map(|_| EnumMap::from_fn(|_| RwLock::new(None)))
                 .collect(),
             panicked: AtomicBool::new(false),
-            replay_step_size: AtomicUsize::new(DEFAULT_REPLAY_STEP_SIZE),
             tokio_merger_runtime: Mutex::new(None),
             exchange_listener: Mutex::new(config.exchange_listener),
         })
@@ -1061,29 +1056,6 @@ impl Runtime {
 
     pub fn get_step_size(&self) -> StepSize {
         self.inner().step_size
-    }
-
-    /// Configure the number of tuples a stateful operator outputs per step during replay.
-    ///
-    /// The default is `DEFAULT_REPLAY_STEP_SIZE`.
-    pub fn set_replay_step_size(&self, step_size: usize) {
-        self.inner()
-            .replay_step_size
-            .store(step_size, Ordering::Release);
-    }
-
-    /// Get currently configured replay step size.
-    ///
-    /// Returns `DEFAULT_REPLAY_STEP_SIZE` if the current thread doesn't have a runtime.
-    pub fn replay_step_size() -> usize {
-        RUNTIME
-            .with(|rt| Some(rt.borrow().as_ref()?.get_replay_step_size()))
-            .unwrap_or(DEFAULT_REPLAY_STEP_SIZE)
-    }
-
-    /// Get currently configured replay step size.
-    pub fn get_replay_step_size(&self) -> usize {
-        self.inner().replay_step_size.load(Ordering::Acquire)
     }
 
     /// Returns the worker index as a string.
