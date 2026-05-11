@@ -1397,20 +1397,6 @@ impl DBSPHandle {
         Ok(progress)
     }
 
-    pub fn set_replay_step_size(&mut self, step_size: usize) {
-        if let Some(handle) = self.runtime.as_ref() {
-            handle.runtime().set_replay_step_size(step_size);
-        }
-    }
-
-    pub fn get_replay_step_size(&self) -> usize {
-        if let Some(handle) = self.runtime.as_ref() {
-            handle.runtime().get_replay_step_size()
-        } else {
-            0
-        }
-    }
-
     /// The circuit has been resumed from a checkpoint and is currently bootstrapping the modified part of the circuit.
     pub fn bootstrap_in_progress(&self) -> bool {
         self.bootstrap_info.is_some()

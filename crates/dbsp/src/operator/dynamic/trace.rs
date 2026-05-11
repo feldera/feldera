@@ -1,6 +1,6 @@
-use crate::Runtime;
 use crate::circuit::circuit_builder::{StreamId, register_replay_stream};
 use crate::circuit::metadata::{INPUT_RECORDS_COUNT, MEMORY_ALLOCATIONS_COUNT, RETAINMENT_BOUNDS};
+use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::{Factory, Weight, WeightTrait};
 use crate::operator::require_persistent_id;
 use crate::trace::spine_async::WithSnapshot;
@@ -1184,7 +1184,7 @@ where
 {
     fn get_output(&mut self) -> T {
         //println!("Z1-{}::get_output", &self.global_id);
-        let replay_step_size = Runtime::replay_step_size();
+        let replay_step_size = splitter_output_chunk_size();
 
         if self.replay_mode {
             // One output per transaction.
@@ -1228,6 +1228,7 @@ where
                 self.delta_stream.as_ref().unwrap().value().put(batch);
                 if !replay.borrow_cursor().key_valid() {
                     self.replay_state = None;
+                    self.flush_output = false;
                 }
             } else {
                 // Continue producing empty outputs as long as the circuit is in the replay mode.
@@ -1236,10 +1237,11 @@ where
                     .unwrap()
                     .value()
                     .put(B::dyn_empty(&self.batch_factories));
+                self.flush_output = false;
             }
+        } else {
+            self.flush_output = false;
         }
-
-        self.flush_output = false;
 
         let mut result = self.trace.take().unwrap();
         result.clear_dirty_flag();

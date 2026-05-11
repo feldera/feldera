@@ -1,7 +1,8 @@
 use feldera_types::config::StorageConfig;
 
 use crate::{
-    CmpFunc, DBData, OrdZSet, OutputHandle, RootCircuit, Runtime, Stream, ZSetHandle, ZWeight,
+    CmpFunc, DBData, IndexedZSetHandle, OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit,
+    Runtime, Stream, ZSetHandle, ZWeight,
     circuit::dbsp_handle::CircuitStorageConfig,
     default_hash, indexed_zset,
     operator::{
@@ -148,43 +149,6 @@ type CircuitFn<I1, I2, O1, O2> = Arc<
 ///```
 ///
 /// The common part of the two circuits must return identical results.
-fn test_replay<I1, I2, I3, O1, O2, O3>(
-    circuit_constructor1: CircuitFn<I1, I2, O1, O2>,
-    circuit_constructor2: CircuitFn<I2, I3, O2, O3>,
-    inputs1: Vec<I1::Chunk>,
-    inputs2_1: Vec<I2::Chunk>,
-    inputs2_2: Vec<I2::Chunk>,
-    inputs3: Vec<I3::Chunk>,
-) where
-    I1: TestDataType,
-    I2: TestDataType,
-    I3: TestDataType,
-    O1: TestDataType,
-    O2: TestDataType,
-    O3: TestDataType,
-{
-    // Run with replay step size < splitter chunk size.
-    test_replay_with_step_size::<I1, I2, I3, O1, O2, O3>(
-        circuit_constructor1.clone(),
-        circuit_constructor2.clone(),
-        inputs1.clone(),
-        inputs2_1.clone(),
-        inputs2_2.clone(),
-        inputs3.clone(),
-        Some(1),
-    );
-
-    // Run without replay step size > splitter chunk size.
-    test_replay_with_step_size::<I1, I2, I3, O1, O2, O3>(
-        circuit_constructor1,
-        circuit_constructor2,
-        inputs1,
-        inputs2_1,
-        inputs2_2,
-        inputs3,
-        None,
-    );
-}
 
 fn circuit_config(path: &PathBuf) -> CircuitConfig {
     CircuitConfig::with_workers(NUM_WORKERS)
@@ -202,14 +166,13 @@ fn circuit_config(path: &PathBuf) -> CircuitConfig {
         ))
 }
 
-fn test_replay_with_step_size<I1, I2, I3, O1, O2, O3>(
+fn test_replay<I1, I2, I3, O1, O2, O3>(
     circuit_constructor1: CircuitFn<I1, I2, O1, O2>,
     circuit_constructor2: CircuitFn<I2, I3, O2, O3>,
     inputs1: Vec<I1::Chunk>,
     inputs2_1: Vec<I2::Chunk>,
     inputs2_2: Vec<I2::Chunk>,
     inputs3: Vec<I3::Chunk>,
-    replay_step_size: Option<usize>,
 ) where
     I1: TestDataType,
     I2: TestDataType,
@@ -342,10 +305,6 @@ fn test_replay_with_step_size<I1, I2, I3, O1, O2, O3>(
                 Ok(circuit_constructor2_clone(circuit))
             })
             .unwrap();
-
-        if let Some(replay_step_size) = replay_step_size {
-            circuit.set_replay_step_size(replay_step_size);
-        }
 
         while circuit.bootstrap_in_progress() {
             circuit.transaction().unwrap();
@@ -1736,8 +1695,6 @@ fn regression1() {
                 .add_input_map_persistent::<u64, u64, u64, _>(Some("input_map"), |v, u| *v = *u);
             input_stream.set_persistent_id(Some("input_map"));
 
-            //let input_stream = input_stream.apply_owned(|x| x).set_persistent_id(Some("input_map2"));
-
             let aggregate = input_stream
                 .aggregate_persistent(Some("aggregate1"), Max)
                 .set_persistent_id(Some("aggregate1"));
@@ -1755,8 +1712,189 @@ fn regression1() {
     }
     println!("Replay finished");
 
-    //let output = output_handle2.take_from_all().concat().consolidate();
     let actual_output = &output_handle2.concat().consolidate();
 
+    // The bug causes the output to be empty.
     assert_eq!(actual_output, &indexed_zset!(0 => {0 => 1}));
+}
+
+/// Unit test for the replay behavior of Z1Trace and AccumulateZ1Trace operators.
+/// Operators must correctly replay their contents during bootstrap as one atomic transaction.
+
+#[derive(Clone, Copy, Debug)]
+enum ReplayTraceKind {
+    IntegrateTrace,
+    AccumulateTrace,
+}
+
+type IndexedReplayBatch = Vec<Tup2<u64, Tup2<u64, ZWeight>>>;
+
+fn add_replay_trace(
+    stream: &Stream<RootCircuit, OrdIndexedZSet<u64, u64>>,
+    trace_kind: ReplayTraceKind,
+) {
+    match trace_kind {
+        ReplayTraceKind::IntegrateTrace => {
+            stream.integrate_trace();
+        }
+        ReplayTraceKind::AccumulateTrace => {
+            stream.accumulate_trace();
+        }
+    }
+}
+
+fn transactional_bootstrap_circuit1(
+    circuit: &mut RootCircuit,
+    trace_kind: ReplayTraceKind,
+) -> IndexedZSetHandle<u64, u64> {
+    let (input_stream, input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
+    input_stream.set_persistent_id(Some("input"));
+    add_replay_trace(&input_stream, trace_kind);
+    input_handle
+}
+
+fn transactional_bootstrap_circuit2(
+    circuit: &mut RootCircuit,
+    trace_kind: ReplayTraceKind,
+) -> (
+    IndexedZSetHandle<u64, u64>,
+    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, u64>>>,
+) {
+    let (input_stream, input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
+    input_stream.set_persistent_id(Some("input"));
+    add_replay_trace(&input_stream, trace_kind);
+
+    let output_handle = input_stream.accumulate_output_persistent(Some("output"));
+
+    (input_handle, output_handle)
+}
+
+fn replay_batch_to_indexed_zset(batches: &[IndexedReplayBatch]) -> OrdIndexedZSet<u64, u64> {
+    OrdIndexedZSet::from_tuples(
+        (),
+        batches
+            .iter()
+            .flatten()
+            .map(|Tup2(key, Tup2(value, weight))| Tup2(Tup2(*key, *value), *weight))
+            .collect(),
+    )
+}
+
+fn run_transactional_bootstrap_test(
+    trace_kind: ReplayTraceKind,
+    batches: Vec<IndexedReplayBatch>,
+    expect_multistep_replay: bool,
+) {
+    init_test_logger();
+
+    let path = tempfile::tempdir().unwrap().keep();
+    let expected = replay_batch_to_indexed_zset(&batches);
+
+    let checkpoint = {
+        let (mut circuit, input_handle) =
+            Runtime::init_circuit(circuit_config(&path), move |circuit| {
+                Ok(transactional_bootstrap_circuit1(circuit, trace_kind))
+            })
+            .unwrap();
+
+        for mut batch in batches.clone() {
+            input_handle.append(&mut batch);
+            circuit.transaction().unwrap();
+        }
+
+        let checkpoint = circuit.checkpoint().run().unwrap();
+        circuit.kill().unwrap();
+        checkpoint
+    };
+
+    let mut circuit_config = circuit_config(&path);
+    circuit_config.storage.as_mut().unwrap().init_checkpoint = Some(checkpoint.uuid);
+
+    let (mut circuit, (_input_handle, output_handle)) =
+        Runtime::init_circuit(circuit_config, move |circuit| {
+            Ok(transactional_bootstrap_circuit2(circuit, trace_kind))
+        })
+        .unwrap();
+
+    assert_eq!(output_handle.num_nonempty_mailboxes(), 0);
+
+    if circuit.bootstrap_in_progress() {
+        circuit.start_transaction().unwrap();
+        circuit.start_commit_transaction().unwrap();
+
+        let mut incomplete_commit_steps = 0;
+        loop {
+            let commit_complete = circuit.step().unwrap();
+            if commit_complete {
+                break;
+            }
+
+            incomplete_commit_steps += 1;
+        }
+
+        if expect_multistep_replay {
+            assert!(
+                incomplete_commit_steps > 0,
+                "{trace_kind:?} replay finished in a single commit step despite the splitter chunk size"
+            );
+        }
+    }
+
+    assert!(!circuit.bootstrap_in_progress());
+    assert_eq!(output_handle.concat().consolidate(), expected);
+
+    circuit.kill().unwrap();
+}
+
+fn transactional_bootstrap_cases() -> Vec<(Vec<IndexedReplayBatch>, bool)> {
+    vec![
+        (vec![], false),
+        (vec![vec![Tup2(1, Tup2(10, 1))]], false),
+        (
+            vec![vec![Tup2(1, Tup2(10, 1)), Tup2(1, Tup2(11, 1))]],
+            false,
+        ),
+        (
+            vec![
+                vec![
+                    Tup2(1, Tup2(10, 1)),
+                    Tup2(1, Tup2(11, 1)),
+                    Tup2(2, Tup2(20, 1)),
+                ],
+                vec![
+                    Tup2(1, Tup2(11, -1)),
+                    Tup2(1, Tup2(12, 1)),
+                    Tup2(4, Tup2(40, 2)),
+                    Tup2(5, Tup2(50, 2)),
+                    Tup2(6, Tup2(50, 2)),
+                    Tup2(7, Tup2(50, 2)),
+                    Tup2(8, Tup2(50, 2)),
+                    Tup2(9, Tup2(50, 2)),
+                ],
+            ],
+            true,
+        ),
+    ]
+}
+
+#[test]
+fn test_integrate_trace_bootstrap_is_transactional() {
+    for (batches, expect_multistep_replay) in transactional_bootstrap_cases() {
+        run_transactional_bootstrap_test(
+            ReplayTraceKind::IntegrateTrace,
+            batches,
+            expect_multistep_replay,
+        );
+    }
+}
+
+#[test]
+fn test_accumulate_trace_bootstrap_is_transactional() {
+    for (batches, expect_multistep_replay) in transactional_bootstrap_cases() {
+        run_transactional_bootstrap_test(
+            ReplayTraceKind::AccumulateTrace,
+            batches,
+            expect_multistep_replay,
+        );
+    }
 }
