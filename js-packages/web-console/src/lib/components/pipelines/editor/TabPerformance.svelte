@@ -24,8 +24,8 @@
   import { formatDateTime, useElapsedTime } from '$lib/functions/format'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import {
-    CustomJSONParserTransformStream,
-    parseCancellable,
+    createBigNumberStreamParser,
+    parseStream,
     pushAsCircularBuffer
   } from '$lib/functions/pipelines/changeStream'
   import { getDeploymentStatusLabel, isMetricsAvailable } from '$lib/functions/pipelines/status'
@@ -104,8 +104,12 @@
       cancelStream = undefined
       return undefined
     }
-    const { cancel } = parseCancellable(
+    const { cancel } = parseStream(
       result,
+      createBigNumberStreamParser<TimeSeriesEntry>({
+        paths: ['$'],
+        separator: ''
+      }),
       {
         pushChanges: (rows: TimeSeriesEntry[]) => {
           pushAsCircularBuffer(
@@ -134,10 +138,6 @@
           }
         }
       },
-      new CustomJSONParserTransformStream<TimeSeriesEntry>({
-        paths: ['$'],
-        separator: ''
-      }),
       {
         bufferSize: 8 * 1024 * 1024
       }
