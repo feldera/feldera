@@ -1497,10 +1497,20 @@ pub(crate) fn register_replay_stream<C, B>(
     // We currently only support using operators in the top-level circuit
     // as replay sources.
     if TypeId::of::<()>() == TypeId::of::<C::Time>() {
-        circuit.cache_insert(
-            ReplaySource::new(stream.stream_id()),
-            Box::new(replay_stream.clone()),
-        );
+        // If a replay source already exists, don't overwrite it. This normally shouldn't
+        // happen as we should not have more than one integral for each stream. One situation
+        // where this does happen today is for input streams that have an integral without
+        // an accumulator as part of input_upsert, and another integral with an accumulator
+        // created by a downstream join or aggregate. In this case, we want to use the former
+        // for replay, as the latter may have been added in the new version of the program
+        // and may be empty, while the former can have state (conversely, if the input integral
+        // is empty, the downstream integral is guaranteed to be empty too).
+        if !circuit.cache_contains(&ReplaySource::new(stream.stream_id())) {
+            circuit.cache_insert(
+                ReplaySource::new(stream.stream_id()),
+                Box::new(replay_stream.clone()),
+            );
+        }
     }
 }
 

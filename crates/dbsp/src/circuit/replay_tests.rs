@@ -3,7 +3,7 @@ use feldera_types::config::StorageConfig;
 use crate::{
     CmpFunc, DBData, OrdZSet, OutputHandle, RootCircuit, Runtime, Stream, ZSetHandle, ZWeight,
     circuit::dbsp_handle::CircuitStorageConfig,
-    default_hash,
+    default_hash, indexed_zset,
     operator::{
         Max, Min,
         time_series::{RelOffset, RelRange},
@@ -186,6 +186,22 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
     );
 }
 
+fn circuit_config(path: &PathBuf) -> CircuitConfig {
+    CircuitConfig::with_workers(NUM_WORKERS)
+        .with_splitter_chunk_size_records(2)
+        .with_mode(Mode::Persistent)
+        .with_storage(Some(
+            CircuitStorageConfig::for_config(
+                StorageConfig {
+                    path: path.to_string_lossy().into_owned(),
+                    cache: Default::default(),
+                },
+                Default::default(),
+            )
+            .unwrap(),
+        ))
+}
+
 fn test_replay_with_step_size<I1, I2, I3, O1, O2, O3>(
     circuit_constructor1: CircuitFn<I1, I2, O1, O2>,
     circuit_constructor2: CircuitFn<I2, I3, O2, O3>,
@@ -209,22 +225,6 @@ fn test_replay_with_step_size<I1, I2, I3, O1, O2, O3>(
 
     let path = tempfile::tempdir().unwrap().keep();
     println!("Running replay_test in {}", path.display());
-
-    fn circuit_config(path: &PathBuf) -> CircuitConfig {
-        CircuitConfig::with_workers(NUM_WORKERS)
-            .with_splitter_chunk_size_records(2)
-            .with_mode(Mode::Persistent)
-            .with_storage(Some(
-                CircuitStorageConfig::for_config(
-                    StorageConfig {
-                        path: path.to_string_lossy().into_owned(),
-                        cache: Default::default(),
-                    },
-                    Default::default(),
-                )
-                .unwrap(),
-            ))
-    }
 
     // Create both reference circuits, feed I1 and I2 to circuit1; feed I2 and I3 to circuit2.
     let mut reference_output1 = Vec::new();
@@ -1689,4 +1689,74 @@ fn test_rolling_circuit() {
         sequence(20, 40),
         std::iter::repeat_n((), 20).collect(),
     );
+}
+
+// Regression test:
+//
+// Pipeline 1:
+// ---> input_map
+//
+// Pipeline 2:
+// ---> input_map ---> aggregate --> output
+//
+// The second pipeline should replay the input from the input_map operator.
+// A bug prevented this from happening, because the integral built by the
+// aggregate operator was used to replay instead.
+
+#[test]
+fn regression1() {
+    init_test_logger();
+
+    let path = tempfile::tempdir().unwrap().keep();
+
+    let (mut circuit1, input_handle1) =
+        Runtime::init_circuit(circuit_config(&path), move |circuit| {
+            let (input_stream, input_handle) = circuit
+                .add_input_map_persistent::<u64, u64, u64, _>(Some("input_map"), |v, u| *v = *u);
+            input_stream.set_persistent_id(Some("input_map"));
+            Ok(input_handle)
+        })
+        .unwrap();
+
+    input_handle1.push(0, crate::operator::Update::Insert(0));
+
+    circuit1.transaction().unwrap();
+
+    // Checkpoint.
+    let checkpoint = circuit1.checkpoint().run().unwrap();
+    circuit1.kill().unwrap();
+
+    // Restart the second circuit from the checkpoint.
+    let mut circuit_config = circuit_config(&path);
+    circuit_config.storage.as_mut().unwrap().init_checkpoint = Some(checkpoint.uuid);
+
+    let (mut circuit2, (_input_handle2, output_handle2)) =
+        Runtime::init_circuit(circuit_config, move |circuit| {
+            let (input_stream, input_handle) = circuit
+                .add_input_map_persistent::<u64, u64, u64, _>(Some("input_map"), |v, u| *v = *u);
+            input_stream.set_persistent_id(Some("input_map"));
+
+            //let input_stream = input_stream.apply_owned(|x| x).set_persistent_id(Some("input_map2"));
+
+            let aggregate = input_stream
+                .aggregate_persistent(Some("aggregate1"), Max)
+                .set_persistent_id(Some("aggregate1"));
+
+            let output_handle = aggregate
+                .accumulate_trace()
+                .apply(|trace| trace.ro_snapshot().consolidate())
+                .output_persistent(Some("output"));
+            Ok((input_handle, output_handle))
+        })
+        .unwrap();
+
+    while circuit2.bootstrap_in_progress() {
+        circuit2.transaction().unwrap();
+    }
+    println!("Replay finished");
+
+    //let output = output_handle2.take_from_all().concat().consolidate();
+    let actual_output = &output_handle2.concat().consolidate();
+
+    assert_eq!(actual_output, &indexed_zset!(0 => {0 => 1}));
 }
