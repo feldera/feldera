@@ -3,7 +3,7 @@
   export type Row =
     | { relationName: string; columns: Field[] }
     | XgressEntry
-    | { skippedBytes: number }
+    | { relationName: string; skippedBytes: number }
   export type ChangeStreamData = {
     rows: Row[]
     headers: number[]
