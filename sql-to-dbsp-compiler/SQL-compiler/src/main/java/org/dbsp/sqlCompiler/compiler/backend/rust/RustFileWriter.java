@@ -20,7 +20,6 @@ public class RustFileWriter extends RustWriter {
     StructuresUsed used = new StructuresUsed();
     boolean findUsed = true;
     boolean slt = false;
-    boolean test = false;
     final LateMaterializations materializations;
 
     public RustFileWriter(LateMaterializations materializations) {
@@ -42,12 +41,6 @@ public class RustFileWriter extends RustWriter {
     /** Special support for running the SLT tests */
     public RustFileWriter forSlt() {
         this.slt = true;
-        this.test = true;
-        return this;
-    }
-
-    public RustFileWriter withTest(boolean test) {
-        this.test = test;
         return this;
     }
 
@@ -119,17 +112,13 @@ public class RustFileWriter extends RustWriter {
             this.outputBuilder.append(BaseRustCodeGenerator.ALLOC_PREAMBLE);
         if (this.generateUdfInclude)
             this.generateUdfInclude();
-        if (this.test)
+        if (compiler.options.ioOptions.testing)
             this.builder().append("""
                     #[cfg(test)]
                     use readers::*;""").newline();
 
         for (String dep : this.dependencies)
-            this.builder().append("use ").append(dep).append("::*;");
-
-        if (this.declareSourceMap) {
-            SourcePositionResource.generateDeclaration(this.outputBuilder);
-        }
+            this.builder().append("use ").append(dep).append("::*;").newline();
 
         ToRustInnerVisitor innerVisitor = new ToRustInnerVisitor(compiler, this.builder(), null, false);
         ProjectDeclarations declarationsDone = new ProjectDeclarations();

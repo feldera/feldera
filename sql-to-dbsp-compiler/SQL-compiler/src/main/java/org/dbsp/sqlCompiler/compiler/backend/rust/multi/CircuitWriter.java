@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust.multi;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -60,6 +61,9 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
                             .append(",");
                 }
             }
+            if (useHandles && node.is(DBSPInputMapWithWaterlineOperator.class)) {
+                this.builder().append("handle_").append(name);
+            }
             this.builder().append(")");
         }
         this.builder().append(" = ");
@@ -82,14 +86,14 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
             name = input.getName(false);
             this.builder().append("&")
                     .append(name)
-                    .append(",");
+                    .append(".clone(), ");
         }
         if (node.is(DBSPControlledKeyFilterOperator.class)) {
             DBSPControlledKeyFilterOperator filter = node.to(DBSPControlledKeyFilterOperator.class);
             if (this.materializations.hasRight(filter)) {
                 DBSPSourceMultisetOperator source = this.materializations.getLeft(filter);
                 String sourceName = source.getNodeName(false);
-                this.builder().append("handle_").append(sourceName);
+                this.builder().append("handle_").append(sourceName).append(".clone()");
             }
         }
         this.builder().append(");").newline();
@@ -118,6 +122,7 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
             signature.decrease().append(")");
         }
 
+        SourcePositionResource.generateDeclaration(this.builder(), circuit.name);
         this.builder().append("pub fn ")
                 .append(circuit.getName());
 
@@ -148,8 +153,9 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
         CircuitVisitor collector = new CollectSourcePositions(compiler, sourcePositionResource)
                 .getCircuitVisitor(true);
         collector.apply(circuit);
-        sourcePositionResource.generateInitializer(this.builder());
-        SourcePositionResource.generateReference(this.builder(), CircuitWriter.SOURCE_MAP_VARIABLE_NAME);
+        sourcePositionResource.generateInitializer(this.builder(), circuit.name);
+        SourcePositionResource.generateReference(
+                this.builder(), CircuitWriter.SOURCE_MAP_VARIABLE_NAME, circuit.name);
 
         // Process sources first
         for (DBSPOperator node : circuit.getAllOperators())
@@ -166,11 +172,11 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
             this.builder().append("Ok((");
             for (IInputOperator operator: circuit.sourceOperators.values()) {
                 String name = operator.asOperator().getNodeName(false);
-                this.builder().append("handle_").append(name).append(", ");
+                this.builder().append("handle_").append(name).append(".clone(), ");
             }
             for (DBSPSinkOperator operator: circuit.sinkOperators.values()) {
                 String name = operator.getNodeName(false);
-                this.builder().append(name).append(", ");
+                this.builder().append(name).append(".clone(), ");
             }
             this.builder().append("))");
         }

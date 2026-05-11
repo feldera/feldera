@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -20,15 +21,16 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
@@ -105,9 +107,15 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
         this.builder()
                 .append(RustWriter.COMMON_PREAMBLE)
                 .append(RustWriter.STANDARD_PREAMBLE);
+        if (compiler.options.ioOptions.testing) {
+            this.builder().append("""
+                    #[cfg(test)]
+                    use readers::*;""").newline();
+        }
         ToRustVisitor visitor = new ToRustVisitor(
                 compiler, this.builder(), this.circuit.metadata, new ProjectDeclarations(), this.materializations)
                 .withPreferHash(true);
+        visitor.innerVisitor.setOperatorContext(this.operator);
         final String name = this.operator.getNodeName(true);
         this.builder().newline();
         for (String dep: this.dependencies)
@@ -182,6 +190,19 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
                     streamType.accept(visitor.innerVisitor);
                     this.builder().append(",");
                 }
+                if (useHandles && operator.is(DBSPInputMapWithWaterlineOperator.class)) {
+                    DBSPInputMapWithWaterlineOperator wop = operator.to(DBSPInputMapWithWaterlineOperator.class);
+                    DBSPTypeIndexedZSet ix = wop.getOutputIndexedZSetType();
+                    this.builder().append("MapHandle<");
+                    ix.keyType.accept(visitor.innerVisitor);
+                    this.builder().append(", ");
+                    ix.elementType.accept(visitor.innerVisitor);
+                    this.builder().append(", ");
+                    DBSPTypeStruct upsertStruct = wop.getStructUpsertType(
+                            new ProgramIdentifier(wop.getOriginalRowType().hashName + "_upsert", false));
+                    upsertStruct.toTupleDeep().accept(visitor.innerVisitor);
+                    this.builder().append(">");
+                }
                 this.builder().append(")");
             }
         }
@@ -255,6 +276,10 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
                     OutputPort port = operator.getOutput(i);
                     this.builder().append(port.getName(true));
                     this.builder().append(", ");
+
+                }
+                if (useHandles && operator.is(DBSPInputMapWithWaterlineOperator.class)) {
+                    this.builder().append("handle");
                 }
                 this.builder().append(")");
             } else if (operator.is(DBSPSourceBaseOperator.class)) {

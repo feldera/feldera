@@ -524,7 +524,8 @@ public class Regression2Tests extends SqlIoTest {
             }
         });
 
-        Assert.assertTrue(found[0]);
+        // When generating code for multi crates the statics are generated differently
+        Assert.assertTrue(found[0] || cc.compiler.options.ioOptions.multiCrates());
     }
 
     @Test

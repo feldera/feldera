@@ -25,7 +25,6 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
     boolean generateUdfInclude = true;
     boolean generateMalloc = true;
     boolean generateTuples = true;
-    boolean declareSourceMap = false;
 
     protected BaseRustCodeGenerator() {
         this.id = crdId++;
@@ -36,11 +35,6 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
 
     public BaseRustCodeGenerator withGenerateTuples(boolean generate) {
         this.generateTuples = generate;
-        return this;
-    }
-
-    public BaseRustCodeGenerator withDeclareSourceMap(boolean declare) {
-        this.declareSourceMap = declare;
         return this;
     }
 
@@ -100,7 +94,8 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
             static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
             #[allow(non_upper_case_globals)]
             #[export_name = "malloc_conf"]
-            pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\\0";""";
+            pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\\0";
+            """;
 
     public static final String STANDARD_PREAMBLE = """
             use dbsp::{

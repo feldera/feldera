@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
@@ -156,10 +157,15 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     public final DBSPCompiler compiler;
     protected final List<IDBSPInnerNode> context;
     @Nullable protected DBSPOperator operatorContext;
+    @Nullable protected DBSPCircuit circuitContext;
 
     @Override
     public void setOperatorContext(@Nullable DBSPOperator operatorContext) {
         this.operatorContext = operatorContext;
+    }
+
+    public void setCircuitContext(@Nullable DBSPCircuit circuit) {
+        this.circuitContext = circuit;
     }
 
     public InnerVisitor(DBSPCompiler compiler) {

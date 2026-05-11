@@ -123,6 +123,15 @@ public final class MultiCratesWriter extends RustWriter {
             """.replace("$ROOT", relativePath));
         }
 
+        if (options.ioOptions.testing) {
+            cargoStream.println("""
+                # Only used in tests
+                readers = { path = "../lib/readers" }
+                uuid = { version = "1.17.0" }
+                metrics = { version = "0.23.0" }
+                metrics-util = { version = "0.17.0" }""");
+        }
+
         cargoStream.close();
     }
 
@@ -144,7 +153,7 @@ public final class MultiCratesWriter extends RustWriter {
                     .withUdf(false).withMalloc(false).withGenerateTuples(false);
             CrateGenerator test = new CrateGenerator(
                     this.rootDirectory, MultiCrates.CRATES_DIRECTORY, MultiCratesWriter.getTestName(), writer,
-                    crates.enterprise(), true);
+                    crates.enterprise(), true, compiler.options.ioOptions.testing);
             RustWriter.StructuresUsed locallyUsed = new RustWriter.StructuresUsed();
             FindInnerResources finder = new FindInnerResources(compiler, locallyUsed);
 

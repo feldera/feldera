@@ -733,6 +733,17 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPWindowBoundExpression bound) {
+        String beforeAfter = bound.isPreceding ? "Before" : "After";
+        this.builder.append("RelOffset::")
+                .append(beforeAfter)
+                .append("(");
+        bound.representation.accept(this);
+        this.builder.append(")");
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPComment comment) {
         if (comment.comment.contains("\n")) {
             this.builder.append("/* ")
@@ -2012,7 +2023,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
             NeedsSourceMap finder = new NeedsSourceMap(this.compiler);
             finder.apply(function.body);
             if (finder.found) {
-                SourcePositionResource.generateReference(this.builder, CircuitWriter.SOURCE_MAP_VARIABLE_NAME);
+                SourcePositionResource.generateReference(
+                        this.builder, CircuitWriter.SOURCE_MAP_VARIABLE_NAME,
+                        Objects.requireNonNull(this.circuitContext).name);
             }
             function.body.accept(this);
             this.builder.decrease()

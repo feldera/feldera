@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.StubsWriter;
+import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCrates;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCratesWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.MultiCrateTests;
@@ -318,24 +319,33 @@ public class BaseSQLTests {
         HashMap<Long, DBSPFunction> inputFunctions = new HashMap<>();
         PrintStream outputStream = null;
         RustWriter writer;
-        String directory;
+        final String directory;
+        final String executionDirectory;
         Path stubsDir;
         String testCrate = "";
 
         if (!multiCrates) {
             outputStream = new PrintStream(Files.newOutputStream(getTestFilePath()));
             // We do not need to run the LateMaterializations
-            writer = new RustFileWriter(new LateMaterializations(compiler)).withTest(true);
+            writer = new RustFileWriter(new LateMaterializations(compiler));
             writer.setOutputBuilder(new IndentStream(outputStream));
             directory = RUST_DIRECTORY;
+            executionDirectory = ".";
             stubsDir = Paths.get(directory);
             createEmptyStubs();
         } else {
             directory = RUST_MULTI_DIRECTORY;
+            executionDirectory = "../..";
             MultiCratesWriter multiWriter = new MultiCratesWriter(directory, "x", true);
             testCrate = MultiCratesWriter.getTestName();
             writer = multiWriter;
             stubsDir = multiWriter.stubsDirectory();
+
+            // Make sure there is no stray udf.rs file from a previous test
+            Path path = Paths.get(BaseSQLTests.RUST_MULTI_DIRECTORY + "/crates",
+                    MultiCrates.FILE_PREFIX + "x_globals", "src", DBSPCompiler.UDF_FILE_NAME);
+            File udfFile = path.toFile();
+            Utilities.deleteFile(udfFile, true);
         }
         StubsWriter stubsWriter = new StubsWriter(stubsDir.resolve(DBSPCompiler.STUBS_FILE_NAME));
 
@@ -347,7 +357,7 @@ public class BaseSQLTests {
                         " are not compiled with the same options: "
                         + test.ccs.compiler.options.diff(compiler.options));
             test.ccs.circuit.setName("circuit" + testNumber);
-            List<DBSPFunction> testers = test.createTesterCode(testNumber, RUST_DIRECTORY, inputFunctions);
+            List<DBSPFunction> testers = test.createTesterCode(testNumber, directory, executionDirectory, inputFunctions);
             writer.add(test.ccs.circuit);
             if (multiCrates) {
                 stubsWriter.add(test.ccs.circuit);
@@ -362,7 +372,7 @@ public class BaseSQLTests {
             testNumber++;
         }
         writer.write(compiler);
-        if (outputStream !=null)
+        if (outputStream != null)
             outputStream.close();
         stubsWriter.write(compiler);
         if (!skipRust) {

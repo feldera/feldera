@@ -32,8 +32,10 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Data structure representing the crates generated for a program
  * when compiled using multiple crates. */
@@ -78,6 +80,13 @@ public class MultiCrates {
         this.materializations = materializations;
         boolean enterprise = this.enterprise();
 
+        CircuitWriter mainWriter = new CircuitWriter(this.materializations);
+        BaseRustCodeGenerator globalsWriter = new RustFileWriter(this.materializations)
+                .withUdf(true).withMalloc(false).withGenerateTuples(false);
+        // Main crate contains the circuit
+        this.main = new CrateGenerator(this.rootDirectory, CRATES_DIRECTORY, this.getMainName(), mainWriter,
+                enterprise, !compiler.options.generateMultiCrateMain(), compiler.options.ioOptions.testing);
+
         // One crate for each tuple size used
         for (int i : used.tupleSizesUsed) {
             if (used.isPredefined(i)) continue;
@@ -86,8 +95,10 @@ public class MultiCrates {
             BaseRustCodeGenerator tWriter = new RustFileWriter(this.materializations)
                     .setUsed(t).withUdf(false).withMalloc(false);
             CrateGenerator tuple = new CrateGenerator(
-                    this.rootDirectory, CRATES_DIRECTORY, FILE_PREFIX + "tuple" + i, tWriter, enterprise, true);
+                    this.rootDirectory, CRATES_DIRECTORY, FILE_PREFIX + "tuple" + i, tWriter,
+                    enterprise, true, compiler.options.ioOptions.testing);
             Utilities.putNew(this.tupleCrates, i, tuple);
+            this.main.addDependency(tuple);
         }
 
         // One crate for each semigroup size used
@@ -97,7 +108,8 @@ public class MultiCrates {
             BaseRustCodeGenerator tWriter = new RustFileWriter(this.materializations)
                     .setUsed(t).withUdf(false).withMalloc(false);
             CrateGenerator semi = new CrateGenerator(
-                    this.rootDirectory, CRATES_DIRECTORY, FILE_PREFIX + "semi" + i, tWriter, enterprise, true);
+                    this.rootDirectory, CRATES_DIRECTORY, FILE_PREFIX + "semi" + i, tWriter,
+                    enterprise, true, compiler.options.ioOptions.testing);
             if (!used.isPredefined(i)) {
                 CrateGenerator tuple = Utilities.getExists(this.tupleCrates, i);
                 semi.addDependency(tuple);
@@ -105,22 +117,17 @@ public class MultiCrates {
             Utilities.putNew(this.semiCrates, i, semi);
         }
 
-        CircuitWriter mainWriter = new CircuitWriter(this.materializations);
-        BaseRustCodeGenerator globalsWriter = new RustFileWriter(this.materializations)
-                .withUdf(true).withMalloc(false).withGenerateTuples(false).withDeclareSourceMap(true);
-        // Main crate contains the circuit
-        this.main = new CrateGenerator(this.rootDirectory, CRATES_DIRECTORY, this.getMainName(),
-                mainWriter, enterprise, !compiler.options.generateMultiCrateMain());
         // Crate with global variables
         this.globals = new CrateGenerator(this.rootDirectory, CRATES_DIRECTORY, this.getGlobalsName(),
-                globalsWriter, enterprise, true);
+                globalsWriter, enterprise, true, compiler.options.ioOptions.testing);
         this.main.addDependency(this.globals);
     }
 
     CrateGenerator createOperatorCrate(DBSPCircuit circuit, DBSPOperator operator, ICircuit parent, boolean enterprise) {
         String name = FILE_PREFIX + operator.getNodeName(true);
         SingleOperatorWriter single = new SingleOperatorWriter(operator, circuit, parent, this.materializations);
-        return new CrateGenerator(this.rootDirectory, CRATES_DIRECTORY, name, single, enterprise, true);
+        return new CrateGenerator(this.rootDirectory, CRATES_DIRECTORY, name, single,
+                enterprise, true, compiler.options.ioOptions.testing);
     }
 
     static class UsesComparator extends InnerVisitor {
@@ -217,6 +224,7 @@ public class MultiCrates {
         RustWriter.StructuresUsed locallyUsed = new RustWriter.StructuresUsed();
         RustWriter.FindInnerResources finder = new RustWriter.FindInnerResources(compiler, locallyUsed);
 
+        Set<String> globalDeclarations = new HashSet<>();
         for (IDBSPNode node: nodes) {
             if (node.is(IDBSPInnerNode.class))
                 this.globals.add(node);
@@ -224,7 +232,11 @@ public class MultiCrates {
                 DBSPCircuit circuit = node.to(DBSPCircuit.class);
                 this.main.add(circuit);
                 for (DBSPDeclaration decl: circuit.declarations) {
-                    this.globals.add(decl.item);
+                    // The same declaration may be repeated in multiple circuits
+                    if (!globalDeclarations.contains(decl.item.getName())) {
+                        this.globals.add(decl.item);
+                        globalDeclarations.add(decl.item.getName());
+                    }
                 }
                 this.declarationMap = circuit.declarationMap;
                 for (DBSPOperator operator: circuit.allOperators) {
@@ -233,7 +245,8 @@ public class MultiCrates {
                         DBSPNestedOperator nested = operator.to(DBSPNestedOperator.class);
                         NestedOperatorWriter writer = new NestedOperatorWriter(nested, circuit, this.materializations);
                         String name = FILE_PREFIX + operator.getNodeName(true);
-                        op = new CrateGenerator(this.rootDirectory, CRATES_DIRECTORY, name, writer, this.enterprise(), true);
+                        op = new CrateGenerator(this.rootDirectory, CRATES_DIRECTORY, name, writer,
+                                this.enterprise(), true, compiler.options.ioOptions.testing);
                         op.add(nested);
                         for (DBSPOperator inside: nested.getAllOperators()) {
                             if (inside.is(DBSPViewDeclarationOperator.class))
@@ -279,8 +292,9 @@ public class MultiCrates {
         File file = new File(new File(
                 new File(new File(globals.baseDirectory, MultiCrates.CRATES_DIRECTORY), globals.crateName), "src"),
                 DBSPCompiler.UDF_FILE_NAME);
-        if (!file.exists())
+        if (!file.exists()) {
             Utilities.createEmptyFile(file.toPath());
+        }
 
         for (CrateGenerator gen: this.semiCrates.values())
             gen.write(this.compiler);

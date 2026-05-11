@@ -431,10 +431,16 @@ public class Utilities {
 
     public static void createEmptyFile(Path path) {
         try {
+            File parent = path.getParent().toFile();
+            if (!parent.exists()) {
+                Files.createDirectories(path.getParent());
+            }
             PrintStream outputStream = new PrintStream(Files.newOutputStream(path));
             outputStream.println();
             outputStream.close();
-        } catch (IOException ignored) {}
+        } catch (IOException e) {
+            throw new RuntimeException("Cannot create file " + path + ": " + e.getMessage());
+        }
     }
 
     public static void runProcess(String directory, String... commands) throws IOException, InterruptedException {
