@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;

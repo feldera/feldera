@@ -98,7 +98,7 @@ public class DBSPInputMapWithWaterlineOperator
             case 0 -> this.outputType;
             case 1 -> this.errorType;
             case 2 -> new DBSPTypeTypedBox(this.lub.getResultType(), false);
-            default -> throw new InternalCompilerError("Unpexected output " + outputNo);
+            default -> throw new InternalCompilerError("Unexpected output " + outputNo);
         };
     }
 

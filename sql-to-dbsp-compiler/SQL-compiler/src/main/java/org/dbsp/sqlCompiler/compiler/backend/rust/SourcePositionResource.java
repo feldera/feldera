@@ -57,22 +57,26 @@ public class SourcePositionResource {
         return new HashAndIndex(name, expression.index);
     }
 
-    public static final String STATIC_NAME = "SOURCE_MAP_STATIC";
+    static final String STATIC_NAME_PREFIX = "SOURCE_MAP_STATIC";
 
     public boolean isEmpty() {
         return this.keyToPosition.isEmpty();
     }
 
-    public static void generateDeclaration(IIndentStream builder) {
+    private static String staticName(String name) {
+        return STATIC_NAME_PREFIX + "_" + name;
+    }
+
+    public static void generateDeclaration(IIndentStream builder, String name) {
         builder.append("pub static ")
-                .append(STATIC_NAME)
+                .append(staticName(name))
                 .append(": ")
                 .append("OnceLock<SourceMap> = OnceLock::new();")
                 .newline();
     }
 
-    public void generateInitializer(IIndentStream builder) {
-        builder.append(STATIC_NAME)
+    public void generateInitializer(IIndentStream builder, String name) {
+        builder.append(staticName(name))
                 .append(".get_or_init(|| {")
                 .increase()
                 .append("let mut m = SourceMap::new();")
@@ -93,11 +97,11 @@ public class SourcePositionResource {
                 .newline();
     }
 
-    public static void generateReference(IIndentStream builder, String sourceMapName) {
+    public static void generateReference(IIndentStream builder, String sourceMapName, String staticName) {
         builder.append("let ")
                 .append(sourceMapName)
                 .append(" = ")
-                .append(STATIC_NAME)
+                .append(staticName(staticName))
                 .append(".get().unwrap();")
                 .newline();
     }

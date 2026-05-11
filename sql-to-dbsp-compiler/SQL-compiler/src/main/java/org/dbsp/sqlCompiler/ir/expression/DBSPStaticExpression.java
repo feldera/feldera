@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.backend.MerkleInner;
@@ -14,6 +15,8 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Utilities;
+
+import javax.annotation.Nullable;
 
 /** Represents an expression that is compiled into a
  * Lazy declaration and a reference to the lazy lock value.
@@ -30,9 +33,11 @@ public class DBSPStaticExpression extends DBSPExpression {
         this.name = name;
     }
 
-    public static String generateName(DBSPExpression initializer, DBSPCompiler compiler) {
+    public static String generateName(
+            DBSPExpression initializer, @Nullable DBSPOperator operatorContext, DBSPCompiler compiler) {
         IndentStream stream = new IndentStreamBuilder();
         ToRustInnerVisitor toRust = new ToRustInnerVisitor(compiler, stream, null, false);
+        toRust.setOperatorContext(operatorContext);
         initializer.accept(toRust);
         stream.append(":");
         initializer.type.accept(toRust);

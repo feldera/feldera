@@ -69,7 +69,7 @@ impl fmt::Display for SourcePositionRange {
 
 /// Maps "keys" to source line position information
 #[doc(hidden)]
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct SourceMap {
     map: BTreeMap<(&'static str, u32), SourcePosition>,
 }

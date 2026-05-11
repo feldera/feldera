@@ -65,12 +65,13 @@ public class TestCase {
      * Generates a Rust function which tests a {@link DBSPCircuit}.
      * @param changeFunction Maps a Change id to a function that generates the contents of the change.
      *                       Used to share changes between many tests.
+     * @param executionDirectory  Relative directory where executable will run.
      *
      * @return The code for a function that runs the circuit with the specified
      * input and tests the produced output, plus the code for functions that generate
      * new inputs. */
     List<DBSPFunction> createTesterCode(
-            int testNumber, @SuppressWarnings("SameParameterValue") String codeDirectory,
+            int testNumber, String codeDirectory, String executionDirectory,
             Map<Long, DBSPFunction> changeFunction) throws IOException {
         List<DBSPFunction> result = new ArrayList<>();
 
@@ -114,7 +115,7 @@ public class TestCase {
                 tableData[i] = inputs.getSet(i);
             String functionName = "input" + changeId;
             DBSPFunction inputFunction = TableData.createInputFunction(
-                    this.ccs.compiler, functionName, tableData, codeDirectory);
+                    this.ccs.compiler, functionName, tableData, codeDirectory, executionDirectory);
             if (!changeFunction.containsKey(changeId)) {
                 result.add(inputFunction);
                 changeFunction.put(changeId, inputFunction);
@@ -191,7 +192,8 @@ public class TestCase {
                 // Currently we don't have any tests with this case.
 
                 TableData expected = outputs.getSet(i);
-                DBSPExpression viewContents = expected.createOutput(this.ccs.compiler, "out" + testNumber, codeDirectory);
+                DBSPExpression viewContents = expected.createOutput(this.ccs.compiler, "out" + testNumber,
+                        codeDirectory, executionDirectory);
                 DBSPExpression actual = new DBSPApplyExpression("read_output_spine", DBSPTypeAny.getDefault(),
                         streams.getVarReference().field(changes.inputs.getSetCount() + i + skippedOutputs).borrow());
                 var produced = new DBSPLetStatement("produced_result", actual);

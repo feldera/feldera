@@ -156,6 +156,10 @@ public class ToRustVisitor extends CircuitVisitor {
         return this;
     }
 
+    String getCircuitName() {
+        return this.getCircuit().name;
+    }
+
     void processNode(IDBSPNode node) {
         DBSPOperator op = node.as(DBSPOperator.class);
         if (op != null)
@@ -307,9 +311,10 @@ public class ToRustVisitor extends CircuitVisitor {
                 .getCircuitVisitor(true);
         collector.apply(circuit);
         if (!this.sourcePositionResource.isEmpty()) {
-            SourcePositionResource.generateDeclaration(this.builder);
-            this.sourcePositionResource.generateInitializer(this.builder);
-            SourcePositionResource.generateReference(this.builder, CircuitWriter.SOURCE_MAP_VARIABLE_NAME);
+            SourcePositionResource.generateDeclaration(this.builder, this.getCircuitName());
+            this.sourcePositionResource.generateInitializer(this.builder, this.getCircuitName());
+            SourcePositionResource.generateReference(
+                    this.builder, CircuitWriter.SOURCE_MAP_VARIABLE_NAME, this.getCircuitName());
         }
 
         registerPreprocessors(this.compiler, this.builder);
@@ -1441,19 +1446,10 @@ public class ToRustVisitor extends CircuitVisitor {
 
     void emitWindowBounds(DBSPWindowBoundExpression lower, DBSPWindowBoundExpression upper) {
         this.builder.append("RelRange::new(").increase();
-        this.emitWindowBound(lower);
+        lower.accept(this.innerVisitor);
         this.builder.append(",").newline();
-        this.emitWindowBound(upper);
+        upper.accept(this.innerVisitor);
         this.builder.newline().decrease().append(")");
-    }
-
-    void emitWindowBound(DBSPWindowBoundExpression bound) {
-        String beforeAfter = bound.isPreceding ? "Before" : "After";
-        this.builder.append("RelOffset::")
-                .append(beforeAfter)
-                .append("(");
-        bound.representation.accept(this.innerVisitor);
-        this.builder.append(")");
     }
 
     boolean inOuterCircuit() {
