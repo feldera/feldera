@@ -7607,10 +7607,16 @@ impl CircuitHandle {
             return true;
         };
 
-        replay_info.replay_sources.keys().all(|node_id| {
+        // Bootstrapping is finished when all replay sources have completed their replay and the
+        // transaction has been committed.
+
+        let all_complete = replay_info.replay_sources.keys().all(|node_id| {
             self.circuit
                 .map_local_node_mut(*node_id, &mut |node| node.is_replay_complete())
-        })
+        });
+
+        all_complete && self.is_commit_complete()
+
     }
 
     /// Finalize the replay phase of the circuit.
