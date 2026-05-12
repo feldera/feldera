@@ -2977,6 +2977,75 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/clock/advance": {
+      "post": {
+        "tags": [
+          "Metrics & Debugging"
+        ],
+        "summary": "Advance Clock",
+        "description": "Moves `NOW()` forward by a specified amount. Returns the\ncurrent clock time of the circuit.\n\nRequires `dev_tweaks.now_http_driven = true` on the pipeline.\n\nForward-only: `delta_ms` is `u64`, so negative bodies are rejected at\nJSON parse time.  `delta_ms = null` or omitted advances by one\n`clock_resolution`.  Non-zero values round up to the next\n`clock_resolution` boundary, so a sub-resolution delta still moves\nthe clock by one full tick.\n\nThe returned `now_ms` is the value the worker will emit on its next\npipeline step; queries against materialized views may observe the\nprevious `NOW()` until that step completes.  Callers that need\nread-after-write semantics should poll the view.",
+        "operationId": "clock_advance",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Milliseconds to add to NOW(); zero reads the current value, null/omitted: advance by one clock_resolution.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClockAdvanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Clock advanced successfully; body contains the new NOW().",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClockAdvanceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Clock not in http-driven mode, or malformed body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Pipeline is not running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/commit_transaction": {
       "post": {
         "tags": [
@@ -7452,6 +7521,35 @@
           }
         }
       },
+      "ClockAdvanceRequest": {
+        "type": "object",
+        "description": "Body of `POST /clock/advance`.\n\n`delta_ms` is unsigned; negative values fail JSON deserialization.\n`Some(0)` reads the current `NOW()` without moving it or rounding\nit; `Some(n)` advances by `n` ms; `None` (`null` or omitted)\nadvances by one `clock_resolution`.  Non-zero values round up to\nthe next `clock_resolution` boundary, so a sub-resolution delta\nstill moves the clock by one full tick.",
+        "properties": {
+          "delta_ms": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          }
+        }
+      },
+      "ClockAdvanceResponse": {
+        "type": "object",
+        "description": "Response of `POST /clock/advance`: the new `NOW()` value as both\nmilliseconds since epoch (signed; pre-1970 anchors yield negative\nvalues) and an RFC 3339 string.",
+        "required": [
+          "now_ms",
+          "now"
+        ],
+        "properties": {
+          "now": {
+            "type": "string"
+          },
+          "now_ms": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "ClockConfig": {
         "type": "object",
         "required": [
@@ -7462,6 +7560,16 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          },
+          "http_driven": {
+            "type": "boolean",
+            "description": "If `true`, the clock does not advance on wall-clock cadence.\n`NOW()` is held at its current value and only advances when an\nexternal caller invokes the pipeline's `POST /clock/advance`\nendpoint.  Populated from `DevTweaks::now_http_driven`."
+          },
+          "now_offset_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Target value for `NOW()` at the worker's first emitted tick, in\nmilliseconds since the Unix epoch.\n\nPopulated verbatim from `DevTweaks::now_offset` at endpoint\nconstruction; the wall-clock delta is computed inside the\nconnector's worker task from a single `SystemTime::now()`\nreading, so there is no drift between config construction and\nthe first emitted tick.  `None` means no shift is applied.",
+            "nullable": true
           }
         }
       },
@@ -8761,6 +8869,19 @@
             "default": null,
             "nullable": true,
             "minimum": 0
+          },
+          "now_http_driven": {
+            "type": "boolean",
+            "description": "Drive `NOW()` from an external HTTP endpoint instead of wall clock.\n\nWhen `true`, the clock connector emits one initial tick (using\n`now_offset` if set, otherwise wall clock) and then holds that\nvalue.  Subsequent calls to `POST /clock/advance` move `NOW()`\nforward by the requested delta.  Negative deltas are rejected;\nthe clock is forward-only.",
+            "default": null,
+            "nullable": true
+          },
+          "now_offset": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Override the timestamp returned by SQL `NOW()` at pipeline start.\n\nWhen set, the clock connector anchors `NOW()` to this RFC 3339\ntimestamp the first time the pipeline starts and advances at\nwall-clock cadence from there:\n`NOW() = now_offset + (wall_clock - wall_clock_at_start)`.\n\nAny RFC 3339 timestamp parseable by `chrono::DateTime<Utc>` is\naccepted (years `0001` through `9999`), in the past or future\nrelative to wall clock.\n\nThis is a testing knob for queries that depend on `NOW()`.\n\nOn resume the clock continues from the last journaled `NOW()`;\n`now_offset`'s value is honored only on a fresh start:\n\n| Initial run | Resume from checkpoint | Post-replay `NOW()` |\n|---|---|---|\n| no offset | no offset | wall clock (unchanged) |\n| offset    | offset    | wall-clock pace from the last journaled value; the new offset value is ignored |\n| offset    | no offset | jumps to wall clock (explicit opt-out of the anchor) |\n| no offset | offset    | wall-clock pace from the last journaled value; the new offset value is ignored |",
+            "default": null,
+            "nullable": true
           },
           "splitter_chunk_size_records": {
             "type": "integer",

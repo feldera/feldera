@@ -231,6 +231,7 @@ It contains the following fields:
         endpoints::pipeline_interaction::completion_status,
         endpoints::pipeline_interaction::start_transaction,
         endpoints::pipeline_interaction::commit_transaction,
+        endpoints::pipeline_interaction::clock_advance,
         endpoints::pipeline_interaction::get_pipeline_time_series,
         endpoints::pipeline_interaction::get_pipeline_time_series_stream,
         endpoints::pipeline_interaction::post_pipeline_rebalance,
@@ -448,6 +449,8 @@ It contains the following fields:
         feldera_types::preprocess::PreprocessorConfig,
         feldera_types::transaction::StartTransactionResponse,
         feldera_types::transaction::CommitProgressSummary,
+        feldera_types::transport::clock::ClockAdvanceRequest,
+        feldera_types::transport::clock::ClockAdvanceResponse,
         feldera_types::time_series::TimeSeries,
         feldera_types::time_series::SampleStatistics,
         feldera_types::suspend::SuspendError,
@@ -679,6 +682,7 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::completion_status)
         .service(endpoints::pipeline_interaction::start_transaction)
         .service(endpoints::pipeline_interaction::commit_transaction)
+        .service(endpoints::pipeline_interaction::clock_advance)
         // API keys endpoints
         .service(endpoints::api_key::list_api_keys)
         .service(endpoints::api_key::get_api_key)

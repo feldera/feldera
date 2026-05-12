@@ -785,6 +785,42 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         return int(resp.get("transaction_id"))
 
+    def advance_clock(
+        self,
+        pipeline_name: str,
+        delta_ms: Optional[int] = None,
+    ) -> Dict[str, int | str]:
+        """
+        Advance the externally-driven `NOW()` clock and return its new value.
+
+        Requires `dev_tweaks.now_http_driven = True` on the pipeline.  The
+        clock is forward-only.
+
+        :param pipeline_name: The name of the pipeline.
+
+        :param delta_ms: Milliseconds to add to `NOW()`.  ``0`` reads the
+            current value without moving the clock; ``None`` (the default)
+            advances by one ``clock_resolution`` (one configured tick).
+            Must be non-negative.  Non-zero values round up to the next
+            ``clock_resolution`` boundary, so a sub-resolution delta still
+            moves the clock by one full tick.
+
+        The returned ``now_ms`` is the value the worker will emit on its
+        next pipeline step; queries against materialized views may
+        observe the previous ``NOW()`` until that step completes.  Poll
+        the view if you need read-after-write semantics.
+
+        :return: A dict ``{"now_ms": <int>, "now": <RFC 3339 str>}``.
+
+        :raises FelderaAPIError: If the clock is not in http-driven mode,
+            the body is malformed, or the pipeline is not running.
+        """
+
+        return self.http.post(
+            path=f"/pipelines/{pipeline_name}/clock/advance",
+            body={"delta_ms": delta_ms},
+        )
+
     def commit_transaction(
         self,
         pipeline_name: str,

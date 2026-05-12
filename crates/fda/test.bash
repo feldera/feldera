@@ -60,6 +60,7 @@ fda shutdown p1 || true
 fda delete --force p1 || true
 fda delete --force p2 || true
 fda clear pudf && fda delete pudf || true
+fda delete --force pclock || true
 fda delete unknown || true
 fda delete --force punknown || true
 fda apikey delete a || true
@@ -132,6 +133,45 @@ fda start-transaction p1
 fda commit-transaction p1 --no-wait
 
 fda shutdown p1
+
+# Clock advance smoke test (testing knob).  Uses a dedicated pipeline
+# `pclock` whose SQL references NOW(); the clock connector is only
+# registered when the program contains a NOW() stream.
+echo "Testing clock advance..."
+fda shutdown pclock || true
+fda delete --force pclock || true
+cat > clock.sql <<EOF
+CREATE MATERIALIZED VIEW v AS SELECT NOW() AS t;
+EOF
+fda create pclock clock.sql
+
+# Without `now_http_driven` the pipeline rejects with 400.
+fda start pclock
+sleep 2
+fail_on_success fda clock-advance pclock
+fda shutdown pclock
+
+# Reconfigure for http-driven mode anchored at a fixed RFC 3339 instant.
+fda set-config pclock dev_tweaks '{"now_http_driven": true, "now_offset": "2030-01-01T00:00:00Z"}'
+fda start pclock
+sleep 2
+
+# delta_ms = 0 is a read; pin the anchor (2030-01-01 == 1893456000000 ms).
+fda --format json clock-advance pclock --delta-ms 0 | jq -e '.now_ms == 1893456000000'
+# Explicit forward advance.
+fda clock-advance pclock --delta-ms 60000
+# Omitting --delta-ms advances by one clock_resolution.
+fda clock-advance pclock
+# Aliases resolve to the same command.
+fda set-clock pclock --delta-ms 0
+fda clock-set pclock --delta-ms 0
+# Negative delta is rejected by clap (`u64`).
+fail_on_success fda clock-advance pclock --delta-ms -1
+
+fda shutdown pclock
+fda clear pclock
+fda delete pclock
+rm clock.sql
 
 if $enterprise; then
     enterprise_only=

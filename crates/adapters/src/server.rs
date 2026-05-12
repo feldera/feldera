@@ -1252,6 +1252,7 @@ where
         .service(coordination_adhoc_scan)
         .service(coordination_labels_incomplete)
         .service(coordination_restart)
+        .service(clock_advance)
 }
 
 /// Implements `/start`, `/pause`, `/activate`:
@@ -2043,6 +2044,46 @@ async fn start_transaction(state: WebData<ServerState>) -> Result<impl Responder
 async fn commit_transaction(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
     state.controller()?.start_commit_transaction()?;
     Ok(HttpResponse::Ok().json("Transaction commit initiated"))
+}
+
+/// Advance the externally-driven `NOW()` clock and return its new value.
+///
+/// Requires `dev_tweaks.now_http_driven = true`.
+#[post("/clock/advance")]
+async fn clock_advance(
+    state: WebData<ServerState>,
+    body: web::Json<feldera_types::transport::clock::ClockAdvanceRequest>,
+) -> Result<impl Responder, PipelineError> {
+    use feldera_types::transport::clock::ClockAdvanceResponse;
+    let controller = state.controller()?;
+    let reader =
+        controller
+            .get_input_endpoint("now")
+            .ok_or_else(|| PipelineError::InvalidParam {
+                error: "this pipeline's program does not reference `NOW()`; \
+                        the clock connector is not active and cannot be advanced"
+                    .to_string(),
+            })?;
+    let clock_reader = reader
+        .as_any()
+        .downcast::<crate::transport::clock::ClockReader>()
+        .map_err(|_| PipelineError::InvalidParam {
+            error: "the `now` input endpoint is not the built-in clock connector".to_string(),
+        })?;
+
+    let now_ms =
+        clock_reader
+            .advance(body.delta_ms)
+            .await
+            .map_err(|e| PipelineError::InvalidParam {
+                error: e.to_string(),
+            })?;
+
+    let now = chrono::DateTime::<Utc>::from_timestamp_millis(now_ms)
+        .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+        .unwrap_or_else(|| format!("{now_ms} ms since epoch"));
+
+    Ok(HttpResponse::Ok().json(ClockAdvanceResponse { now_ms, now }))
 }
 
 #[derive(Debug, Deserialize)]
