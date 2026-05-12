@@ -43,6 +43,16 @@ def _is_502(exc: BaseException) -> bool:
     return isinstance(exc, FelderaAPIError) and exc.status_code == 502
 
 
+_SENSITIVE_HEADERS = {"authorization", "cookie", "proxy-authorization", "x-api-key"}
+
+
+def _redact_headers(headers: dict) -> dict:
+    return {
+        key: "[REDACTED]" if key.lower() in _SENSITIVE_HEADERS else value
+        for key, value in headers.items()
+    }
+
+
 class HttpRequests:
     def __init__(self, config: Config) -> None:
         self.config = config
@@ -194,7 +204,7 @@ class HttpRequests:
             "sending %s request to: %s with headers: %s, and params: %s",
             http_method.__name__,
             request_path,
-            str(self.headers),
+            _redact_headers(self.headers),
             str(params),
         )
 
