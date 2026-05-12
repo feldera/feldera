@@ -12,6 +12,12 @@ The Python SDK documentation is available at: https://docs.feldera.com/python
 uv pip install feldera
 ```
 
+For Arrow IPC query support, install the optional Arrow extra:
+
+```bash
+uv pip install 'feldera[arrow]'
+```
+
 ### Example usage
 
 The Python client interacts with the API server of the Feldera instance.
