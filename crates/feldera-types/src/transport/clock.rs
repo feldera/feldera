@@ -6,6 +6,14 @@ use utoipa::ToSchema;
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, ToSchema)]
 pub struct ClockConfig {
     pub clock_resolution_usecs: u64,
+
+    /// Signed offset, in milliseconds, added to wall-clock time before
+    /// rounding to the clock resolution.
+    ///
+    /// Populated from `DevTweaks::now_offset` at endpoint construction.
+    /// `None` means no shift is applied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub now_offset_delta_ms: Option<i64>,
 }
 
 impl ClockConfig {

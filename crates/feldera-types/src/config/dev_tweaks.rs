@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -228,6 +229,26 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub disable_auto_transaction: Option<bool>,
 
+    /// Override the timestamp returned by SQL `NOW()` at pipeline start.
+    ///
+    /// When set, the clock connector anchors `NOW()` to this RFC 3339
+    /// timestamp the first time the pipeline starts and advances at
+    /// wall-clock cadence from there:
+    /// `NOW() = now_offset + (wall_clock - wall_clock_at_start)`.
+    ///
+    /// Any RFC 3339 timestamp from `1970-01-01T00:00:00Z` through year
+    /// `9999` is accepted, in the past or future relative to wall clock.
+    /// Earlier values are silently clamped to the epoch.
+    ///
+    /// This is a testing knob for queries that depend on `NOW()`.
+    ///
+    /// Checkpoint/restart re-anchors the offset.  Set `now_offset` to
+    /// `1970-01-01T00:00:00Z`, run for a day, checkpoint, then restart:
+    /// replayed ticks are exact, but the next new tick emits
+    /// `1970-01-01T00:00:00Z` again rather than `1970-01-02T00:00:00Z`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub now_offset: Option<DateTime<Utc>>,
+
     /// Options not understood by this particular version.
     ///
     /// This allows the pipeline manager to take options that a custom or old
@@ -296,6 +317,21 @@ impl DevTweaks {
 
     pub fn disable_auto_transaction(&self) -> bool {
         self.disable_auto_transaction.unwrap_or(false)
+    }
+
+    /// Milliseconds to add to wall-clock time when reporting `NOW()`,
+    /// computed from [`Self::now_offset`] and `wall_clock_at_start`.
+    ///
+    /// Returns `None` if no override is configured.  The subtraction
+    /// saturates rather than overflows; in practice the inputs are
+    /// `chrono`-bounded RFC 3339 timestamps whose millisecond difference
+    /// stays well below `i64::MAX`, but saturating is defense in depth.
+    pub fn now_offset_delta_ms(&self, wall_clock_at_start: DateTime<Utc>) -> Option<i64> {
+        self.now_offset.map(|target| {
+            target
+                .timestamp_millis()
+                .saturating_sub(wall_clock_at_start.timestamp_millis())
+        })
     }
 }
 
