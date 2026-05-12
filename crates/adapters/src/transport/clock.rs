@@ -48,6 +48,14 @@ use tokio::{
 
 /// The controller uses this configuration to add a clock input connector to each pipeline.
 pub fn now_endpoint_config(config: &PipelineConfig) -> InputEndpointConfig {
+    // Compute the offset delta once, at endpoint construction, against the
+    // current wall clock.  The connector then advances `NOW()` at wall-clock
+    // cadence from this anchor for the rest of the pipeline's lifetime.
+    let now_offset_delta_ms = config
+        .global
+        .dev_tweaks
+        .now_offset_delta_ms(chrono::Utc::now());
+
     InputEndpointConfig::new(
         "now",
         ConnectorConfig::new(
@@ -56,6 +64,7 @@ pub fn now_endpoint_config(config: &PipelineConfig) -> InputEndpointConfig {
                     .global
                     .clock_resolution_usecs
                     .unwrap_or(DEFAULT_CLOCK_RESOLUTION_USECS),
+                now_offset_delta_ms,
             }),
             Some(FormatConfig {
                 name: Cow::Borrowed("json"),
@@ -131,24 +140,43 @@ impl ClockReader {
     }
 
     /// Current timestamp in milliseconds, rounded to `clock_resolution_ms`.
+    ///
+    /// Reads the wall clock and forwards to [`Self::current_time_at`] for
+    /// the actual math.  Split out so tests can supply a fixed wall clock.
     fn current_time(config: &ClockConfig) -> u64 {
-        let now = SystemTime::now();
-        let now_millis = now
+        Self::current_time_at(config, SystemTime::now())
+    }
+
+    /// Timestamp in milliseconds for a given wall-clock instant, shifted
+    /// by `config.now_offset_delta_ms` if set, then rounded to the clock
+    /// resolution.
+    fn current_time_at(config: &ClockConfig, wall: SystemTime) -> u64 {
+        let wall_ms = wall
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
-            .as_millis() as u64;
+            .as_millis() as i64;
+        let shifted_ms = wall_ms
+            .saturating_add(config.now_offset_delta_ms.unwrap_or(0))
+            .max(0) as u64;
         let clock_resolution_ms = config.clock_resolution_ms();
-        now_millis - now_millis % clock_resolution_ms
+        shifted_ms - shifted_ms % clock_resolution_ms
     }
 
     /// Time when we want to trigger the next clock tick, assuming we triggered one at `previous_tick`.
     ///
     /// Returns time as `Instant`, so it can be used with `sleep_until`. This also ensures that
     /// we don't need to worry about timezone or daylight changes.
+    ///
+    /// `previous_tick` is the timestamp we just emitted (in the shifted
+    /// timeline if `now_offset_delta_ms` is set).  Wake-ups are paced by
+    /// wall-clock duration, so we undo the offset before scheduling.
     fn next_tick_time(config: &ClockConfig, previous_tick: &u64) -> Instant {
-        let next_tick = previous_tick + config.clock_resolution_ms();
+        let next_tick_ms = previous_tick.saturating_add(config.clock_resolution_ms());
+        let next_wall_clock_ms = (next_tick_ms as i64)
+            .saturating_sub(config.now_offset_delta_ms.unwrap_or(0))
+            .max(0) as u64;
 
-        let target_time = UNIX_EPOCH + Duration::from_millis(next_tick);
+        let target_time = UNIX_EPOCH + Duration::from_millis(next_wall_clock_ms);
         let now = SystemTime::now();
         let duration_until = target_time.duration_since(now).unwrap_or(Duration::ZERO);
 
@@ -452,5 +480,110 @@ mod test {
 
         controller.stop().unwrap();
         println!("Clock test is finished");
+    }
+
+    /// `current_time_at` with a fixed wall clock and a configured offset
+    /// emits exactly the configured target timestamp.  Fully deterministic:
+    /// the wall clock is supplied by the test, not read from the system.
+    #[test]
+    fn test_current_time_with_offset() {
+        use chrono::{TimeZone, Utc};
+        use feldera_types::transport::clock::ClockConfig;
+        use std::time::{Duration, UNIX_EPOCH};
+
+        // An arbitrary fixed wall-clock instant; the actual value is
+        // irrelevant because we compute the delta against it.
+        let wall_ms: i64 = 1_700_000_000_000;
+        let wall = UNIX_EPOCH + Duration::from_millis(wall_ms as u64);
+
+        let past = Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap();
+        let future = Utc.with_ymd_and_hms(2036, 1, 1, 0, 0, 0).unwrap();
+
+        let make = |target: chrono::DateTime<Utc>| ClockConfig {
+            clock_resolution_usecs: 1_000_000,
+            now_offset_delta_ms: Some(target.timestamp_millis() - wall_ms),
+        };
+
+        let past_ts = super::ClockReader::current_time_at(&make(past), wall);
+        let future_ts = super::ClockReader::current_time_at(&make(future), wall);
+
+        assert_eq!(past_ts, past.timestamp_millis() as u64);
+        assert_eq!(future_ts, future.timestamp_millis() as u64);
+    }
+
+    /// Pre-epoch offsets clamp to `0`.
+    #[test]
+    fn test_current_time_with_pre_epoch_offset_clamps_to_zero() {
+        use chrono::{TimeZone, Utc};
+        use feldera_types::transport::clock::ClockConfig;
+        use std::time::{Duration, UNIX_EPOCH};
+
+        let wall_ms: i64 = 1_700_000_000_000;
+        let wall = UNIX_EPOCH + Duration::from_millis(wall_ms as u64);
+
+        // A pre-epoch target (year 1900) and a one-millisecond-before-epoch
+        // target both fall under the wire-format floor.
+        for target in [
+            Utc.with_ymd_and_hms(1900, 1, 1, 0, 0, 0).unwrap(),
+            Utc.timestamp_millis_opt(-1).unwrap(),
+        ] {
+            let config = ClockConfig {
+                clock_resolution_usecs: 1_000_000,
+                now_offset_delta_ms: Some(target.timestamp_millis() - wall_ms),
+            };
+            let ts = super::ClockReader::current_time_at(&config, wall);
+            assert_eq!(ts, 0, "{target} should clamp to epoch, got {ts}");
+        }
+
+        // Exactly epoch is the floor: it should *not* clamp away, it
+        // should emit 0 as the legitimate epoch timestamp.
+        let epoch_config = ClockConfig {
+            clock_resolution_usecs: 1_000_000,
+            now_offset_delta_ms: Some(0 - wall_ms),
+        };
+        assert_eq!(super::ClockReader::current_time_at(&epoch_config, wall), 0);
+    }
+
+    /// `now_endpoint_config` translates `DevTweaks::now_offset` into a
+    /// populated `ClockConfig::now_offset_delta_ms`, and leaves the field
+    /// `None` when no override is configured.  Checks only the wiring;
+    /// the delta arithmetic itself lives in [`test_current_time_with_offset`].
+    #[test]
+    fn test_now_endpoint_config_with_offset() {
+        use feldera_types::config::{PipelineConfig, TransportConfig};
+
+        let delta_of = |body: serde_json::Value| -> Option<i64> {
+            let config: PipelineConfig = serde_json::from_value(body).unwrap();
+            let endpoint = super::now_endpoint_config(&config);
+            let TransportConfig::ClockInput(clock_config) = &endpoint.connector_config.transport
+            else {
+                panic!("expected ClockInput transport");
+            };
+            clock_config.now_offset_delta_ms
+        };
+
+        // Past target.
+        assert!(
+            delta_of(json!({
+                "name": "test", "workers": 1, "fault_tolerance": {}, "inputs": {},
+                "dev_tweaks": { "now_offset": "1970-01-01T00:00:00Z" },
+            }))
+            .is_some(),
+        );
+        // Future target.
+        assert!(
+            delta_of(json!({
+                "name": "test", "workers": 1, "fault_tolerance": {}, "inputs": {},
+                "dev_tweaks": { "now_offset": "2036-01-01T00:00:00Z" },
+            }))
+            .is_some(),
+        );
+        // No override → no delta.
+        assert!(
+            delta_of(json!({
+                "name": "test", "workers": 1, "fault_tolerance": {}, "inputs": {},
+            }))
+            .is_none(),
+        );
     }
 }
