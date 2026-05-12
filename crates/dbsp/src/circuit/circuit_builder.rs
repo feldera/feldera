@@ -7616,7 +7616,6 @@ impl CircuitHandle {
         });
 
         all_complete && self.is_commit_complete()
-
     }
 
     /// Finalize the replay phase of the circuit.

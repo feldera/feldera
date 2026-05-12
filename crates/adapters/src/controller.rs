@@ -2491,6 +2491,10 @@ struct CircuitThread {
     input_metadata: HashMap<String, Option<Resume>>,
 
     commit_updates: Option<CommitUpdates>,
+
+    /// Set to true on startup if the circuit requires bootstrapping.
+    /// Cleared when the circuit completes bootstrapping.
+    bootstrapping: bool,
 }
 
 struct CommitUpdates {
@@ -2759,9 +2763,9 @@ impl CircuitThread {
             incarnation_uuid,
         )?;
 
-        controller
-            .status
-            .set_bootstrap_in_progress(circuit.bootstrap_in_progress());
+        let bootstrapping = circuit.bootstrap_in_progress();
+
+        controller.status.set_bootstrap_in_progress(bootstrapping);
 
         let input_metadata = input_metadata.map(|input_metadata| {
             input_metadata
@@ -2777,7 +2781,7 @@ impl CircuitThread {
 
         // The pipeline hasn't changed based on input and output persistent id values,
         // yet the circuit is bootstrapping. This is a bug.
-        if can_replay && circuit.bootstrap_in_progress() {
+        if can_replay && bootstrapping {
             return Err(ControllerError::UnexpectedBootstrap {
                 bootstrap_info: circuit.bootstrap_info().clone(),
             });
@@ -2798,10 +2802,10 @@ impl CircuitThread {
                 }?;
 
                 // The above code ensures that replay and bootstrapping cannot happen at the same time.
-                assert!(!(ft.is_replaying() && circuit.bootstrap_in_progress()));
+                assert!(!(ft.is_replaying() && bootstrapping));
 
                 // Disable journaling while we're bootstrapping the circuit.
-                if circuit.bootstrap_in_progress() {
+                if bootstrapping {
                     ft.disable();
                 }
 
@@ -2829,6 +2833,7 @@ impl CircuitThread {
             checkpoint_sender,
             input_metadata: input_metadata.unwrap_or_default(),
             commit_updates: None,
+            bootstrapping,
         })
     }
 
@@ -2857,10 +2862,7 @@ impl CircuitThread {
         // so that if the first step() we perform below before entering the loop
         // ends up finishing bootstrapping, we will still perform an extra step to initialize
         // the output table snapshots inside the loop.
-        let mut trigger = StepTrigger::new(
-            self.controller.clone(),
-            self.circuit.bootstrap_in_progress(),
-        );
+        let mut trigger = StepTrigger::new(self.controller.clone());
         if config.global.cpu_profiler {
             self.circuit.enable_cpu_profiler().unwrap_or_else(|e| {
                 error!("Failed to enable CPU profiler: {e}");
@@ -2875,7 +2877,7 @@ impl CircuitThread {
         //
         // Skip this during bootstrap to avoid a slow first step. We don't guarantee
         // that view snapshots are up-to-date until bootstrap is complete.
-        if !self.circuit.bootstrap_in_progress()
+        if !self.bootstrapping
             && let Err(error) = self.step()
         {
             let _ = init_status_sender.send(Err(error));
@@ -2949,7 +2951,11 @@ impl CircuitThread {
                 self.last_checkpoint(),
                 self.last_checkpoint_sync(),
                 self.replaying(),
-                self.circuit.bootstrap_in_progress(),
+                // `status.bootstrap_in_progress` is cleared one transaction after circuit bootstrapping is complete,
+                // which is required to initialize the output snapshots.
+                // We want the trigger to trigger that extra transaction; therefore we pass `status.bootstrap_in_progress`
+                // rather than `self.bootstrapping` here.
+                self.controller.status.bootstrap_in_progress(),
                 self.checkpoint_requested(),
                 self.sync_checkpoint_requested(),
                 coordination_request,
@@ -3022,11 +3028,6 @@ impl CircuitThread {
             transaction_state.into_coordination_status(),
         ));
 
-        // If bootstrapping has completed, update the status flag.
-        self.controller
-            .status
-            .set_bootstrap_in_progress(self.circuit.bootstrap_in_progress());
-
         // Update `trace_snapshot` to the latest traces.
         //
         // We do this before updating `total_processed_records` so that ad hoc
@@ -3038,6 +3039,20 @@ impl CircuitThread {
                 .with_category("Step")
                 .with_tooltip(|| format!("update ad-hoc tables after step {}", self.step))
                 .in_scope(|| self.update_snapshot());
+
+            let bootstrapping = self.circuit.bootstrap_in_progress();
+
+            // If bootstrapping has completed, clear self.bootstrapping, but don't update the status flag
+            // until the circuit performs an extra transaction to initialize output snapshots
+            // (`StepTrigger::trigger` makes sure to force a step as long as `controller.status.bootstrap_in_progress()`
+            // is true).
+            if self.bootstrapping && !bootstrapping {
+                self.bootstrapping = false;
+            } else {
+                self.controller
+                    .status
+                    .set_bootstrap_in_progress(bootstrapping);
+            }
         }
 
         // Record that we've processed the records, unless there is a transaction in progress,
@@ -4243,10 +4258,6 @@ struct StepTrigger {
 
     /// Time between automatic checkpoint syncs.
     sync_interval: Option<Duration>,
-
-    /// The circuit is bootstrapping. Used to detect the transition from bootstrapping
-    /// to normal mode.
-    bootstrapping: bool,
 }
 
 /// Action for the controller to take.
@@ -4267,7 +4278,7 @@ enum Action {
 
 impl StepTrigger {
     /// Returns a new [StepTrigger].
-    fn new(controller: Arc<ControllerInner>, bootstrapping: bool) -> Self {
+    fn new(controller: Arc<ControllerInner>) -> Self {
         let config = &controller.status.pipeline_config.global;
         let max_buffering_delay = Duration::from_micros(config.max_buffering_delay_usecs);
         let min_batch_size_records = config.min_batch_size_records;
@@ -4287,7 +4298,6 @@ impl StepTrigger {
             max_buffering_delay,
             min_batch_size_records,
             checkpoint_interval,
-            bootstrapping,
             sync_interval,
         }
     }
@@ -4349,16 +4359,7 @@ impl StepTrigger {
                 }
                 _ => Some(Action::Park(None)),
             }
-        } else if replaying
-            || self.controller.transaction_commit_requested()
-            || bootstrapping
-            || self.bootstrapping
-        {
-            // The `self.bootstrapping` condition above detects a transition
-            // from bootstrapping to normal operation and makes sure that the
-            // circuit performs an extra step in the normal mode in order to
-            // initialize output table snapshots of output relations that did
-            // not participate in bootstrapping.
+        } else if replaying || self.controller.transaction_commit_requested() || bootstrapping {
             Some(Action::Step)
         } else if timer_expired(next_checkpoint, now) && !checkpoint_requested {
             Some(Action::Checkpoint)
@@ -4425,7 +4426,6 @@ impl StepTrigger {
             }
         };
 
-        self.bootstrapping = bootstrapping;
         if result == Action::Step {
             self.buffer_timeout = None;
         }
