@@ -515,19 +515,6 @@ class illarg_qualify_top_k_legal(TstView):
                       ROW_NUMBER() OVER (ORDER BY intt DESC) <= 2"""
 
 
-# Negative Test
-class illarg_qualify_top_k_illegal(TstView):
-    def __init__(self):
-        self.sql = """CREATE MATERIALIZED VIEW qualify_top_k_illegal AS SELECT
-                      id, intt
-                      FROM illegal_tbl
-                      QUALIFY
-                      ROW_NUMBER() OVER (ORDER BY intt DESC) <= 2 OR
-                      RANK() OVER (ORDER BY intt DESC) <= 2 OR
-                      DENSE_RANK() OVER (ORDER BY intt DESC) <= 2"""
-        self.expected_error = "Not yet implemented"
-
-
 # IS TRUE/IS FALSE/IS NOT TRUE/IS NOT FALSE
 class illarg_is_true_false_legal(TstView):
     def __init__(self):

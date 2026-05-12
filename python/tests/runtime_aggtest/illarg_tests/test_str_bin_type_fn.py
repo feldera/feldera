@@ -54,7 +54,7 @@ class illarg_concat_cast_legal(TstView):
                 "reall": "-57681.18-57681.18",
                 "dbl": "-38.2711234601246-38.2711234601246",
                 "booll": "TRUETRUE",
-                "tmestmp": "2020-06-21 14:23:442020-06-21 14:23:44",
+                "tmestmp": "2020-06-21 14:23:44.1236542020-06-21 14:23:44.123654",
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
             }
         ]
@@ -160,7 +160,7 @@ class illarg_right_legal(TstView):
 class illarg_right_cast_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"tmestmp": "44", "uuidd": "4c"}]
+        self.data = [{"tmestmp": "54", "uuidd": "4c"}]
         self.sql = """CREATE MATERIALIZED VIEW right_cast_legal AS SELECT
                       RIGHT(tmestmp, 2) AS tmestmp,
                       RIGHT(uuidd, 2) AS uuidd

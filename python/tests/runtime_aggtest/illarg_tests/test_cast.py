@@ -174,7 +174,7 @@ class illarg_cast_timestamp_legal(TstView):
                 "to_decimal1": None,
                 "to_real": Decimal("1.5927495E+12"),
                 "to_double": Decimal("1592749424123"),
-                "to_varchar": "2020-06-21 14:23:44",
+                "to_varchar": "2020-06-21 14:23:44.123654",
                 "to_date": "2020-06-21",
                 "to_time": "14:23:44.123654",
             }
@@ -209,7 +209,10 @@ class illarg_cast_date_legal(TstView):
 class illarg_cast_time_legal(TstView):
     def __init__(self):
         self.data = [
-            {"to_varchar": "14:23:44", "to_timestamp": "1970-01-01T14:23:44.456"}
+            {
+                "to_varchar": "14:23:44.456000000",
+                "to_timestamp": "1970-01-01T14:23:44.456",
+            }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_time_legal AS SELECT
                       CAST(tme AS VARCHAR) AS to_varchar,
