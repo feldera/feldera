@@ -33,6 +33,7 @@ public class RustFileWriter extends RustWriter {
             preamble += """
                 #[cfg(test)]
                 use sltsqlvalue::*;
+                use readers::read_csv;
                 """;
         }
         return preamble;
