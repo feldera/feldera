@@ -4,6 +4,7 @@
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
+  import { uuidV7Timestamp } from '$lib/functions/common/date'
   import { humanSize } from '$lib/functions/common/string'
   import { useElapsedTime } from '$lib/functions/format'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
@@ -18,16 +19,18 @@
     checkpoints,
     metrics,
     checkpointStatus,
-    lastCheckpointAt,
     onShowCheckpoints
   }: {
     pipelineName: string
     checkpoints: CheckpointMetadata[]
     metrics: { current: PipelineMetrics }
     checkpointStatus: CheckpointStatus | null
-    lastCheckpointAt: Date | null
     onShowCheckpoints: () => void
   } = $props()
+
+  const lastCheckpointAt = $derived(
+    uuidV7Timestamp(checkpoints.at(-1)?.uuid ?? '')?.toDate() ?? null
+  )
 
   const api = usePipelineManager()
   const isEnterprise = usePremiumFeatures()
@@ -54,15 +57,15 @@
   const lastCheckpointSuccess = $derived(checkpointStatus?.success)
   const showCheckpointFailure = $derived(
     checkpointFailure != null &&
-      (lastCheckpointSuccess == null ||
-        checkpointFailure.sequence_number > lastCheckpointSuccess)
+      (lastCheckpointSuccess == null || checkpointFailure.sequence_number > lastCheckpointSuccess)
   )
   const isPermanentlyUnavailable = $derived.by(() => {
     const errors = metrics.current.permanent_checkpoint_errors
-    return errors != null &&
+    return (
+      errors != null &&
       errors.length > 0 &&
-      !(errors.length === 1 &&
-        errors[0] === 'EnterpriseFeature')
+      !(errors.length === 1 && errors[0] === 'EnterpriseFeature')
+    )
   })
   const activityVisible = $derived(
     isPermanentlyUnavailable ||
@@ -80,7 +83,9 @@
     <div class="ml-auto flex items-center gap-4">
       <span class=""
         >{checkpoints.length}
-        {checkpoints.length === 1 ? 'checkpoint' : 'checkpoints'} using {humanSize(totalBytes)}</span
+        {checkpoints.length === 1 ? 'checkpoint' : 'checkpoints'} using {humanSize(
+          totalBytes
+        )}</span
       >
       <button class="btn preset-filled-surface-100-900" onclick={onShowCheckpoints}>
         All checkpoints

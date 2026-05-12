@@ -71,17 +71,6 @@
   let openDrawer = $state<DrawerState | null>(null)
   let checkpoints = $state<CheckpointMetadata[]>([])
   let checkpointStatus = $state<CheckpointStatus | null>(null)
-  let lastCheckpointAt = $state<Date | null>(null)
-  let prevActivityStatus = $state<string | null>(null)
-
-  $effect(() => {
-    const status = metrics.current.checkpoint_activity.status
-    if (prevActivityStatus === 'in_progress' && status === 'idle') {
-      lastCheckpointAt = new Date()
-    }
-    prevActivityStatus = status
-  })
-
   const handleConnectorSelect = (
     relationName: string,
     connectorName: string,
@@ -353,7 +342,6 @@
           {checkpoints}
           {metrics}
           {checkpointStatus}
-          {lastCheckpointAt}
           onShowCheckpoints={() => (openDrawer = { kind: 'checkpoints' })}
         />
         <TransactionStatus {metrics} class="w-full"></TransactionStatus>
