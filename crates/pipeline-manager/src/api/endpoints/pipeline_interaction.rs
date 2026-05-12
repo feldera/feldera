@@ -2284,3 +2284,69 @@ pub(crate) async fn commit_transaction(
 
     Ok(response)
 }
+
+/// Advance Clock
+///
+/// Moves `NOW()` forward by a specified amount. Returns the
+/// current clock time of the circuit.
+///
+/// Requires `dev_tweaks.now_http_driven = true` on the pipeline.
+///
+/// Forward-only: `delta_ms` is `u64`, so negative bodies are rejected at
+/// JSON parse time.  `delta_ms = null` or omitted advances by one
+/// `clock_resolution`.  Non-zero values round up to the next
+/// `clock_resolution` boundary, so a sub-resolution delta still moves
+/// the clock by one full tick.
+///
+/// The returned `now_ms` is the value the worker will emit on its next
+/// pipeline step; queries against materialized views may observe the
+/// previous `NOW()` until that step completes.  Callers that need
+/// read-after-write semantics should poll the view.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    request_body(
+        content = ClockAdvanceRequest,
+        content_type = "application/json",
+        description = "Milliseconds to add to NOW(); zero reads the current value, null/omitted: advance by one clock_resolution."),
+    responses(
+        (status = OK
+            , description = "Clock advanced successfully; body contains the new NOW()."
+            , content_type = "application/json"
+            , body = ClockAdvanceResponse),
+        (status = BAD_REQUEST
+            , description = "Clock not in http-driven mode, or malformed body."
+            , body = ErrorResponse),
+        (status = SERVICE_UNAVAILABLE
+            , description = "Pipeline is not running."
+            , body = ErrorResponse),
+    ),
+    tag = "Metrics & Debugging"
+)]
+#[post("/pipelines/{pipeline_name}/clock/advance")]
+pub(crate) async fn clock_advance(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    request: HttpRequest,
+    body: web::Payload,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+
+    state
+        .runner
+        .forward_streaming_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            "clock/advance",
+            request,
+            body,
+            None,
+        )
+        .await
+}

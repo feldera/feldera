@@ -205,6 +205,14 @@ fn type_replacement() -> Vec<(&'static str, &'static str)> {
             "NatsInputConfig",
             "feldera_types::transport::nats::NatsInputConfig",
         ),
+        (
+            "ClockAdvanceRequest",
+            "feldera_types::transport::clock::ClockAdvanceRequest",
+        ),
+        (
+            "ClockAdvanceResponse",
+            "feldera_types::transport::clock::ClockAdvanceResponse",
+        ),
     ]
 }
 

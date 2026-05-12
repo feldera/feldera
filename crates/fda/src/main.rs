@@ -8,6 +8,7 @@ use feldera_rest_api::types::*;
 use feldera_rest_api::*;
 use feldera_types::config::{FtModel, RuntimeConfig, StorageOptions};
 use feldera_types::error::ErrorResponse;
+use feldera_types::transport::clock::ClockAdvanceRequest;
 use futures_util::StreamExt;
 use json_to_table::json_to_table;
 use log::{debug, error, info, trace, warn};
@@ -1909,6 +1910,41 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 ))
                 .unwrap();
             println!("Initiated rebalancing for pipeline {name}.");
+        }
+        PipelineAction::ClockAdvance { name, delta_ms } => {
+            let response = client
+                .clock_advance()
+                .pipeline_name(name.clone())
+                .body(ClockAdvanceRequest { delta_ms })
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to advance clock",
+                    1,
+                ))
+                .unwrap();
+            let body = response.into_inner();
+            match format {
+                OutputFormat::Text => {
+                    println!("NOW() = {} ({} ms)", body.now, body.now_ms);
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&body)
+                            .expect("failed to serialize clock advance response")
+                    );
+                }
+                _ => {
+                    eprintln!(
+                        "Unsupported output format, falling back to text: {}",
+                        format
+                    );
+                    println!("NOW() = {} ({} ms)", body.now, body.now_ms);
+                    std::process::exit(1);
+                }
+            }
         }
         PipelineAction::Bench { args } => bench::bench(client, format, args).await,
         PipelineAction::DismissError { name } => {
