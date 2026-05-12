@@ -147,9 +147,6 @@ impl Notifications {
 }
 
 enum TransactionPhase {
-    /// Not started
-    Idle,
-
     /// Started, but not yet committing.
     Started,
 
@@ -360,7 +357,7 @@ impl Inner {
             notifications: Notifications::new(num_async_nodes),
             handles: JoinSet::new(),
             waiting: false,
-            transaction_phase: TransactionPhase::Idle,
+            transaction_phase: TransactionPhase::CommitComplete,
             global_commit_consensus: Broadcast::new(),
             metadata_broadcast: Broadcast::new(),
             before_first_step: true,
