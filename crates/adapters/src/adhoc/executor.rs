@@ -5,13 +5,12 @@ use arrow::util::pretty::pretty_format_batches;
 use arrow_json::WriterBuilder;
 use arrow_json::writer::LineDelimited;
 use async_stream::{stream, try_stream};
-use bytes::Bytes;
+use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
 use datafusion::common::hash_utils::create_hashes;
 use datafusion::common::{DataFusionError, Result as DFResult};
 use datafusion::dataframe::DataFrame;
 use datafusion::execution::SendableRecordBatchStream;
-use feldera_storage::tokio::TOKIO;
 use feldera_types::query::MAX_WS_FRAME_SIZE;
 use futures::stream::Stream;
 use futures_util::future::{BoxFuture, FutureExt};
@@ -22,10 +21,8 @@ use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
 use sha2::{Digest, Sha256};
 use std::convert::Infallible;
-use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::Receiver;
 use tokio::sync::{mpsc, oneshot};
-use tokio::task::JoinHandle;
 
 use super::format;
 use crate::PipelineError;
@@ -206,17 +203,18 @@ pub(crate) fn stream_json_query(
     }
 }
 
+/// Async byte sink used by the parquet writer.
+///
+/// `parquet::arrow::AsyncArrowWriter` drives this through the
+/// `AsyncFileWriter` trait, awaiting each `write` future before issuing the
+/// next, so byte ordering is preserved.
 struct ChannelWriter {
     tx: mpsc::Sender<Bytes>,
-    handles: Vec<JoinHandle<Result<(), SendError<Bytes>>>>,
 }
 
 impl ChannelWriter {
     fn new(tx: mpsc::Sender<Bytes>) -> Self {
-        Self {
-            tx,
-            handles: vec![],
-        }
+        Self { tx }
     }
 }
 
@@ -237,115 +235,60 @@ impl AsyncFileWriter for ChannelWriter {
     }
 }
 
-impl std::io::Write for ChannelWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        // Clone the buffer and send it
-        let bytes = Bytes::copy_from_slice(buf);
-        let len = bytes.len();
-        let tx = self.tx.clone();
-        let handle = TOKIO.spawn(async move {
-            // Tests can force a deliberate scheduling reorder of consecutive
-            // writes via `test_support::force_reorder_writes` to demonstrate
-            // that the per-call-spawn pattern below loses the ordering the
-            // sync `StreamWriter` requires. The delay is a no-op outside
-            // tests and outside the forced-reorder window.
-            #[cfg(test)]
-            test_support::maybe_reorder_delay().await;
-            tx.send(bytes).await
-        });
-        self.handles.push(handle);
-        Ok(len)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        // It's ok for this to be a no-op, we don't require a flush anywhere.
-        //
-        // The proper way to implement this is to block until everything in `handles`
-        // completed but we can't do that in a sync interface.
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod test_support {
-    use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
-    use std::time::Duration;
-
-    /// When `> 0`, the next `force_reorder_writes` consecutive writes through
-    /// `ChannelWriter::write` get an artificial per-call delay of
-    /// `(REORDER_REMAINING - 1) * REORDER_STEP_MS` milliseconds — i.e. earlier
-    /// writes wait longer, so later writes win the race into the receiver and
-    /// the byte stream comes out in reverse order. This lets a test reproduce
-    /// the ordering hazard without flakiness.
-    static REORDER_REMAINING: AtomicI64 = AtomicI64::new(0);
-    static REORDER_INDEX: AtomicUsize = AtomicUsize::new(0);
-    const REORDER_STEP_MS: u64 = 5;
-
-    pub(crate) fn force_reorder_writes(n: usize) {
-        REORDER_INDEX.store(0, Ordering::SeqCst);
-        REORDER_REMAINING.store(n as i64, Ordering::SeqCst);
-    }
-
-    pub(crate) async fn maybe_reorder_delay() {
-        // Each call decrements the budget; once it hits zero the delay is
-        // disabled so unrelated tests aren't affected.
-        let remaining = REORDER_REMAINING.fetch_sub(1, Ordering::SeqCst);
-        if remaining <= 0 {
-            return;
-        }
-        let i = REORDER_INDEX.fetch_add(1, Ordering::SeqCst);
-        let delay_ms = (remaining as u64).saturating_sub(1) * REORDER_STEP_MS;
-        // Suppress unused warning for `i` when there's nothing to vary on.
-        let _ = i;
-        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-    }
-}
-
+/// Streams an ad-hoc query as Arrow IPC stream-format bytes.
+///
+/// Encodes one record batch at a time into an in-memory `Vec<u8>` via the
+/// synchronous `arrow::ipc::writer::StreamWriter`, then yields the buffer
+/// as a single `Bytes` chunk. Memory is bounded by one record batch.
+///
+/// arrow-rs does not yet ship an async IPC stream writer; see
+/// <https://github.com/apache/arrow-rs/issues/7812>,
+/// <https://github.com/apache/arrow-rs/issues/9212>, and
+/// <https://github.com/apache/arrow-rs/pull/9241>. Once that lands the
+/// per-batch buffering here can be replaced with a direct async sink.
 pub(crate) fn stream_arrow_query(
     df: DataFrame,
 ) -> impl Stream<Item = Result<Bytes, DataFusionError>> {
-    let (tx, mut rx) = mpsc::channel(1024);
+    try_stream! {
+        let schema = df.schema().inner().clone();
+        let mut stream = execute_stream(df)
+            .await
+            .map_err(|e| DataFusionError::Execution(format!(
+                "ad-hoc query worker did not return a stream: {e}"
+            )))??;
 
-    let mut stream_job = Box::pin(
-        async move {
-            let mut channel_writer = ChannelWriter::new(tx);
-            let schema = df.schema().inner().clone();
-            let mut stream = execute_stream(df)
-                .await
-                .expect("unable to receive stream")?;
-            let mut writer = StreamWriter::try_new(&mut channel_writer, &schema).unwrap();
-
-            while let Some(batch) = stream.next().await {
-                let batch = batch?;
-                writer.write(&batch).map_err(DataFusionError::from)?;
-            }
-            writer.flush().map_err(DataFusionError::from)?;
-            writer.finish().map_err(DataFusionError::from)?;
-            <datafusion::common::Result<_>>::Ok(())
+        // `try_new` writes the schema message to the inner buffer. The
+        // `BytesMut` behind `BufMut::writer()` is a single allocation
+        // that we slice off in O(1) chunks via `split()` after each
+        // synchronous write: encoded batches share that backing storage
+        // until it fills, and each `freeze()` hands the receiver a
+        // tight `Bytes` view without an extra allocation. The
+        // `.get_mut().get_mut()` chain reaches through the `bytes::buf::Writer`
+        // wrapper into the underlying `BytesMut`.
+        const CHUNK_CAPACITY: usize = 64 * 1024;
+        let mut writer = StreamWriter::try_new(
+            BytesMut::with_capacity(CHUNK_CAPACITY).writer(),
+            &schema,
+        )
+        .map_err(DataFusionError::from)?;
+        let header = writer.get_mut().get_mut().split();
+        if !header.is_empty() {
+            yield header.freeze();
         }
-        .fuse(),
-    );
 
-    stream! {
-        loop {
-            select! {
-                stream_res = stream_job.as_mut() => {
-                    match stream_res {
-                        Ok(()) => {}
-                        Err(err) => {
-                            yield Err(err);
-                        }
-                    }
-                },
-                maybe_bytes = rx.recv().fuse() => {
-                    if let Some(bytes) = maybe_bytes {
-                        yield Ok(bytes);
-                    } else {
-                        // Channel closed, we're done
-                        break;
-                    }
-                }
+        while let Some(batch) = stream.next().await {
+            let batch = batch?;
+            writer.write(&batch).map_err(DataFusionError::from)?;
+            let chunk = writer.get_mut().get_mut().split();
+            if !chunk.is_empty() {
+                yield chunk.freeze();
             }
+        }
+
+        writer.finish().map_err(DataFusionError::from)?;
+        let tail = writer.into_inner().map_err(DataFusionError::from)?.into_inner();
+        if !tail.is_empty() {
+            yield tail.freeze();
         }
     }
 }
@@ -550,113 +493,125 @@ mod tests {
         assert_ne!(h_empty, hash_batches(&schema, &[one]));
     }
 
-    /// Encodes a few record batches through the production `ChannelWriter` +
-    /// `StreamWriter` plumbing (the same plumbing `stream_arrow_query` used to
-    /// rely on) and tries to decode the byte stream the receiver collected.
+    /// Drives a synthetic DataFusion query through `stream_arrow_query`,
+    /// collects the streamed Arrow IPC bytes, and decodes them back. Each
+    /// iteration creates fresh state so we don't accidentally test caching.
     ///
-    /// The helper is shared by two tests: one runs without reordering and
-    /// confirms the encoder/decoder pair is otherwise correct; the other
-    /// activates `test_support::force_reorder_writes` to make every adjacent
-    /// pair of writes land out of order and demonstrates that the resulting
-    /// Arrow IPC stream is corrupted. The corruption mode reproduces the
-    /// non-deterministic failures reported against PR #4226 / issue #4287.
-    async fn round_trip_through_channel_writer(
-        force_reorder: bool,
-    ) -> Result<Vec<RecordBatch>, arrow::error::ArrowError> {
+    /// The synthetic query selects from a five-batch in-memory table; this
+    /// shape (multiple small batches) maximises the number of `write_all`
+    /// calls the IPC encoder makes, which is what previously surfaced the
+    /// per-call ordering race.
+    async fn round_trip_via_stream_arrow_query()
+    -> Result<Vec<RecordBatch>, arrow::error::ArrowError> {
         use arrow::ipc::reader::StreamReader;
+        use datafusion::datasource::MemTable;
+        use datafusion::prelude::SessionContext;
 
-        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
-        let batches: Vec<RecordBatch> = (0..4)
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, false),
+            Field::new("name", DataType::Utf8, false),
+        ]));
+        let batches: Vec<RecordBatch> = (0..5)
             .map(|i| {
                 RecordBatch::try_new(
                     schema.clone(),
-                    vec![Arc::new(Int32Array::from(vec![i, i + 1, i + 2, i + 3]))],
+                    vec![
+                        Arc::new(Int32Array::from(vec![i, i + 1, i + 2, i + 3, i + 4])),
+                        Arc::new(StringArray::from(vec!["a", "bb", "ccc", "dddd", "eeeee"])),
+                    ],
                 )
                 .unwrap()
             })
             .collect();
+        let mem = MemTable::try_new(schema, vec![batches]).unwrap();
+        let ctx = SessionContext::new();
+        ctx.register_table("t", Arc::new(mem)).unwrap();
+        let df = ctx.sql("SELECT * FROM t ORDER BY id").await.unwrap();
 
-        let (tx, mut rx) = mpsc::channel::<Bytes>(1024);
-        // `try_new` writes the schema, plus each `write(&batch)` causes
-        // ~6 sequential `Write::write` calls (continuation marker, length,
-        // flatbuf, padding, body, padding). With four batches that's roughly
-        // 1 (schema) + 4 * 6 = 25 writes; we budget a comfortable upper bound.
-        if force_reorder {
-            test_support::force_reorder_writes(64);
-        }
-
-        let mut channel_writer = ChannelWriter::new(tx);
-        {
-            let mut writer = StreamWriter::try_new(&mut channel_writer, &schema).unwrap();
-            for batch in &batches {
-                writer.write(batch).unwrap();
-            }
-            writer.finish().unwrap();
-        }
-        let handles = std::mem::take(&mut channel_writer.handles);
-        drop(channel_writer);
-        for h in handles {
-            // Awaiting the handles guarantees every spawned `tx.send` has
-            // either delivered its bytes or returned. The race we care about
-            // is the *order* in which deliveries land, not whether they land.
-            let _ = h.await;
-        }
-
-        let mut buf = Vec::new();
-        while let Some(bytes) = rx.recv().await {
-            buf.extend_from_slice(&bytes);
+        let mut buf = Vec::<u8>::new();
+        let mut stream = Box::pin(stream_arrow_query(df));
+        while let Some(chunk) = stream.next().await {
+            buf.extend_from_slice(&chunk.expect("stream_arrow_query yielded an error"));
         }
 
         let reader = StreamReader::try_new(buf.as_slice(), None)?;
         reader.collect::<Result<Vec<_>, _>>()
     }
 
-    /// Sanity check: without forced reordering, the round trip succeeds and the
-    /// decoded batches equal the input. This baseline keeps the reordering
-    /// test honest — if it ever starts passing, that means the producer or
-    /// helper changed, not that the bug fixed itself.
+    /// Round-trips one query through `stream_arrow_query` + `StreamReader`.
     #[test]
-    fn channel_writer_roundtrip_baseline() {
+    fn stream_arrow_query_decodes_cleanly() {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
             .build()
             .unwrap();
         let decoded = rt
-            .block_on(round_trip_through_channel_writer(false))
-            .expect("baseline round trip should not corrupt the stream");
-        assert_eq!(decoded.len(), 4);
-        for (i, batch) in decoded.iter().enumerate() {
-            let col = batch
-                .column(0)
-                .as_any()
-                .downcast_ref::<Int32Array>()
-                .unwrap();
-            let i = i as i32;
-            assert_eq!(col.values(), &[i, i + 1, i + 2, i + 3]);
+            .block_on(round_trip_via_stream_arrow_query())
+            .expect("stream_arrow_query output failed to parse");
+        let rows: usize = decoded.iter().map(|b| b.num_rows()).sum();
+        assert_eq!(rows, 25, "expected exactly 25 rows in the result");
+        for batch in &decoded {
+            assert_eq!(batch.num_columns(), 2);
         }
     }
 
-    /// Demonstrates the bug: `ChannelWriter::write` spawns one tokio task per
-    /// `std::io::Write::write` call, and the tasks race to deliver their bytes
-    /// to the mpsc receiver. With more than a couple of writes per record
-    /// batch the order is not preserved, and the Arrow IPC stream framing is
-    /// invalid on the receiving end. The same symptom (`Invalid flatbuffers
-    /// message` / `negative metadata length` / "bytes moved from the middle to
-    /// the end") was observed in production in issue #4287 and against PR
-    /// #4226's earlier attempt to use Arrow IPC from the Python SDK.
+    /// Regression check for #4287: 200 round trips on a 4-worker runtime,
+    /// every decoded stream must parse cleanly.
     #[test]
-    fn channel_writer_corrupts_stream_when_writes_are_reordered() {
+    fn stream_arrow_query_is_stable_under_contention() {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(4)
             .enable_all()
             .build()
             .unwrap();
-        let result = rt.block_on(round_trip_through_channel_writer(true));
-        assert!(
-            result.is_err(),
-            "expected the StreamReader to reject a stream whose writes the \
-             ChannelWriter delivered out of order, but it accepted: {result:?}"
-        );
+        rt.block_on(async {
+            for i in 0..200 {
+                round_trip_via_stream_arrow_query()
+                    .await
+                    .unwrap_or_else(|e| panic!("iteration {i} failed: {e}"));
+            }
+        });
+    }
+
+    /// Empty result must still produce a parseable Arrow IPC stream: the
+    /// schema header is emitted, the batch loop is skipped, and
+    /// `writer.finish()` writes the end-of-stream marker.
+    #[test]
+    fn stream_arrow_query_handles_empty_result() {
+        use arrow::ipc::reader::StreamReader;
+        use datafusion::datasource::MemTable;
+        use datafusion::prelude::SessionContext;
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        rt.block_on(async {
+            let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
+            let mem = MemTable::try_new(schema.clone(), vec![vec![]]).unwrap();
+            let ctx = SessionContext::new();
+            ctx.register_table("t", Arc::new(mem)).unwrap();
+            let df = ctx.sql("SELECT * FROM t").await.unwrap();
+
+            let mut buf = Vec::<u8>::new();
+            let mut stream = Box::pin(stream_arrow_query(df));
+            while let Some(chunk) = stream.next().await {
+                buf.extend_from_slice(&chunk.expect("stream_arrow_query yielded an error"));
+            }
+
+            let reader = StreamReader::try_new(buf.as_slice(), None)
+                .expect("empty-result stream must carry a valid schema header");
+            let batches: Vec<RecordBatch> = reader
+                .collect::<Result<Vec<_>, _>>()
+                .expect("empty-result stream must decode without framing errors");
+            let rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+            assert_eq!(rows, 0);
+            for batch in &batches {
+                assert_eq!(batch.num_columns(), 1);
+            }
+        });
     }
 }
