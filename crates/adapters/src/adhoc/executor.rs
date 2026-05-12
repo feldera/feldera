@@ -243,7 +243,16 @@ impl std::io::Write for ChannelWriter {
         let bytes = Bytes::copy_from_slice(buf);
         let len = bytes.len();
         let tx = self.tx.clone();
-        let handle = TOKIO.spawn(async move { tx.send(bytes).await });
+        let handle = TOKIO.spawn(async move {
+            // Tests can force a deliberate scheduling reorder of consecutive
+            // writes via `test_support::force_reorder_writes` to demonstrate
+            // that the per-call-spawn pattern below loses the ordering the
+            // sync `StreamWriter` requires. The delay is a no-op outside
+            // tests and outside the forced-reorder window.
+            #[cfg(test)]
+            test_support::maybe_reorder_delay().await;
+            tx.send(bytes).await
+        });
         self.handles.push(handle);
         Ok(len)
     }
@@ -254,6 +263,41 @@ impl std::io::Write for ChannelWriter {
         // The proper way to implement this is to block until everything in `handles`
         // completed but we can't do that in a sync interface.
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test_support {
+    use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    /// When `> 0`, the next `force_reorder_writes` consecutive writes through
+    /// `ChannelWriter::write` get an artificial per-call delay of
+    /// `(REORDER_REMAINING - 1) * REORDER_STEP_MS` milliseconds — i.e. earlier
+    /// writes wait longer, so later writes win the race into the receiver and
+    /// the byte stream comes out in reverse order. This lets a test reproduce
+    /// the ordering hazard without flakiness.
+    static REORDER_REMAINING: AtomicI64 = AtomicI64::new(0);
+    static REORDER_INDEX: AtomicUsize = AtomicUsize::new(0);
+    const REORDER_STEP_MS: u64 = 5;
+
+    pub(crate) fn force_reorder_writes(n: usize) {
+        REORDER_INDEX.store(0, Ordering::SeqCst);
+        REORDER_REMAINING.store(n as i64, Ordering::SeqCst);
+    }
+
+    pub(crate) async fn maybe_reorder_delay() {
+        // Each call decrements the budget; once it hits zero the delay is
+        // disabled so unrelated tests aren't affected.
+        let remaining = REORDER_REMAINING.fetch_sub(1, Ordering::SeqCst);
+        if remaining <= 0 {
+            return;
+        }
+        let i = REORDER_INDEX.fetch_add(1, Ordering::SeqCst);
+        let delay_ms = (remaining as u64).saturating_sub(1) * REORDER_STEP_MS;
+        // Suppress unused warning for `i` when there's nothing to vary on.
+        let _ = i;
+        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
     }
 }
 
@@ -504,5 +548,115 @@ mod tests {
         )
         .unwrap();
         assert_ne!(h_empty, hash_batches(&schema, &[one]));
+    }
+
+    /// Encodes a few record batches through the production `ChannelWriter` +
+    /// `StreamWriter` plumbing (the same plumbing `stream_arrow_query` used to
+    /// rely on) and tries to decode the byte stream the receiver collected.
+    ///
+    /// The helper is shared by two tests: one runs without reordering and
+    /// confirms the encoder/decoder pair is otherwise correct; the other
+    /// activates `test_support::force_reorder_writes` to make every adjacent
+    /// pair of writes land out of order and demonstrates that the resulting
+    /// Arrow IPC stream is corrupted. The corruption mode reproduces the
+    /// non-deterministic failures reported against PR #4226 / issue #4287.
+    async fn round_trip_through_channel_writer(
+        force_reorder: bool,
+    ) -> Result<Vec<RecordBatch>, arrow::error::ArrowError> {
+        use arrow::ipc::reader::StreamReader;
+
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
+        let batches: Vec<RecordBatch> = (0..4)
+            .map(|i| {
+                RecordBatch::try_new(
+                    schema.clone(),
+                    vec![Arc::new(Int32Array::from(vec![i, i + 1, i + 2, i + 3]))],
+                )
+                .unwrap()
+            })
+            .collect();
+
+        let (tx, mut rx) = mpsc::channel::<Bytes>(1024);
+        // `try_new` writes the schema, plus each `write(&batch)` causes
+        // ~6 sequential `Write::write` calls (continuation marker, length,
+        // flatbuf, padding, body, padding). With four batches that's roughly
+        // 1 (schema) + 4 * 6 = 25 writes; we budget a comfortable upper bound.
+        if force_reorder {
+            test_support::force_reorder_writes(64);
+        }
+
+        let mut channel_writer = ChannelWriter::new(tx);
+        {
+            let mut writer = StreamWriter::try_new(&mut channel_writer, &schema).unwrap();
+            for batch in &batches {
+                writer.write(batch).unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        let handles = std::mem::take(&mut channel_writer.handles);
+        drop(channel_writer);
+        for h in handles {
+            // Awaiting the handles guarantees every spawned `tx.send` has
+            // either delivered its bytes or returned. The race we care about
+            // is the *order* in which deliveries land, not whether they land.
+            let _ = h.await;
+        }
+
+        let mut buf = Vec::new();
+        while let Some(bytes) = rx.recv().await {
+            buf.extend_from_slice(&bytes);
+        }
+
+        let reader = StreamReader::try_new(buf.as_slice(), None)?;
+        reader.collect::<Result<Vec<_>, _>>()
+    }
+
+    /// Sanity check: without forced reordering, the round trip succeeds and the
+    /// decoded batches equal the input. This baseline keeps the reordering
+    /// test honest — if it ever starts passing, that means the producer or
+    /// helper changed, not that the bug fixed itself.
+    #[test]
+    fn channel_writer_roundtrip_baseline() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        let decoded = rt
+            .block_on(round_trip_through_channel_writer(false))
+            .expect("baseline round trip should not corrupt the stream");
+        assert_eq!(decoded.len(), 4);
+        for (i, batch) in decoded.iter().enumerate() {
+            let col = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .unwrap();
+            let i = i as i32;
+            assert_eq!(col.values(), &[i, i + 1, i + 2, i + 3]);
+        }
+    }
+
+    /// Demonstrates the bug: `ChannelWriter::write` spawns one tokio task per
+    /// `std::io::Write::write` call, and the tasks race to deliver their bytes
+    /// to the mpsc receiver. With more than a couple of writes per record
+    /// batch the order is not preserved, and the Arrow IPC stream framing is
+    /// invalid on the receiving end. The same symptom (`Invalid flatbuffers
+    /// message` / `negative metadata length` / "bytes moved from the middle to
+    /// the end") was observed in production in issue #4287 and against PR
+    /// #4226's earlier attempt to use Arrow IPC from the Python SDK.
+    #[test]
+    fn channel_writer_corrupts_stream_when_writes_are_reordered() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
+            .enable_all()
+            .build()
+            .unwrap();
+        let result = rt.block_on(round_trip_through_channel_writer(true));
+        assert!(
+            result.is_err(),
+            "expected the StreamReader to reject a stream whose writes the \
+             ChannelWriter delivered out of order, but it accepted: {result:?}"
+        );
     }
 }
