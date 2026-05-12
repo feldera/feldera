@@ -264,6 +264,7 @@ def build_pipeline(
     tables: dict,
     views: List[ViewSpec],
     resources: Optional[Resources] = None,
+    dev_tweaks: Optional[dict] = None,
 ) -> Pipeline:
     sql = generate_program(tables, views)
 
@@ -277,6 +278,7 @@ def build_pipeline(
             resources=resources,
             workers=FELDERA_TEST_NUM_WORKERS,
             hosts=FELDERA_TEST_NUM_HOSTS,
+            dev_tweaks=dev_tweaks,
         ),
     ).create_or_replace()
 
