@@ -23,7 +23,7 @@ use tracing::error;
 use uuid::Uuid;
 
 pub const PIPELINE_COLUMNS_ALL: &str =
-    "p.id, p.name, p.description, p.created_at, p.version, p.platform_version, p.runtime_config,
+    "p.id, p.name, p.description, p.metadata, p.created_at, p.version, p.platform_version, p.runtime_config,
      p.program_code, p.udf_rust, p.udf_toml, p.program_config, p.program_version, p.program_status,
      p.program_status_since, p.program_error, p.program_info,
      p.program_binary_source_checksum, p.program_binary_integrity_checksum, p.program_info_integrity_checksum,
@@ -36,7 +36,7 @@ pub const PIPELINE_COLUMNS_ALL: &str =
      ";
 
 pub const PIPELINE_COLUMNS_MONITORING: &str =
-    "p.id, p.name, p.description, p.created_at, p.version, p.platform_version, p.runtime_config,
+    "p.id, p.name, p.description, p.metadata, p.created_at, p.version, p.platform_version, p.runtime_config,
      p.program_config, p.program_version, p.program_status, p.program_status_since,
      p.deployment_error, p.deployment_location, p.refresh_version,
      p.storage_status, p.storage_status_details, p.deployment_id, p.deployment_initial,
@@ -65,6 +65,7 @@ pub fn parse_pipeline_row_all(row: &Row) -> Result<ExtendedPipelineDescr, DBErro
         id: parse_from_row_id(row),
         name: parse_from_row_name(row),
         description: parse_from_row_description(row),
+        metadata: parse_from_row_metadata(row),
         created_at: parse_from_row_created_at(row),
         version: parse_from_row_version(row),
         platform_version: parse_from_row_platform_version(row),
@@ -109,6 +110,7 @@ pub fn parse_pipeline_row_monitoring(row: &Row) -> Result<ExtendedPipelineDescrM
         id: parse_from_row_id(row),
         name: parse_from_row_name(row),
         description: parse_from_row_description(row),
+        metadata: parse_from_row_metadata(row),
         created_at: parse_from_row_created_at(row),
         version: parse_from_row_version(row),
         platform_version: parse_from_row_platform_version(row),
@@ -221,6 +223,10 @@ fn parse_from_row_name(row: &Row) -> String {
 
 fn parse_from_row_description(row: &Row) -> String {
     row.get("description")
+}
+
+fn parse_from_row_metadata(row: &Row) -> String {
+    row.get("metadata")
 }
 
 fn parse_from_row_created_at(row: &Row) -> DateTime<Utc> {
@@ -584,6 +590,7 @@ mod tests {
             id: PipelineId(Uuid::from_u128(1)),
             name: "".to_string(),
             description: "".to_string(),
+            metadata: "".to_string(),
             created_at: Default::default(),
             version: Version(1),
             platform_version: "".to_string(),
@@ -639,6 +646,7 @@ mod tests {
             id: PipelineId(Uuid::from_u128(1)),
             name: "".to_string(),
             description: "".to_string(),
+            metadata: "".to_string(),
             created_at: Default::default(),
             version: Version(1),
             platform_version: "".to_string(),

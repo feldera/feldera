@@ -33,6 +33,7 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
         id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
         name: "example1".to_string(),
         description: "Description of the pipeline example1".to_string(),
+        metadata: "".to_string(),
         created_at: Default::default(),
         version: Version(4),
         platform_version: "v0".to_string(),
@@ -91,6 +92,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c9")),
         name: "example2".to_string(),
         description: "Description of the pipeline example2".to_string(),
+        metadata: "".to_string(),
         created_at: Default::default(),
         version: Version(1),
         platform_version: "v0".to_string(),
@@ -181,6 +183,7 @@ fn pipeline_info_internal_to_external(pipeline: PipelineInfoInternal) -> Pipelin
         id: pipeline.id,
         name: pipeline.name,
         description: pipeline.description,
+        metadata: pipeline.metadata,
         created_at: pipeline.created_at,
         version: pipeline.version,
         platform_version: pipeline.platform_version,
@@ -239,6 +242,7 @@ fn pipeline_selected_info_internal_to_external(
         id: pipeline.id,
         name: pipeline.name,
         description: pipeline.description,
+        metadata: pipeline.metadata,
         created_at: pipeline.created_at,
         version: pipeline.version,
         platform_version: pipeline.platform_version,
@@ -321,6 +325,7 @@ pub(crate) fn pipeline_post_put() -> PostPutPipeline {
     PostPutPipeline {
         name: "example1".to_string(),
         description: Some("Description of the pipeline example1".to_string()),
+        metadata: None,
         runtime_config: Some(RuntimeConfig {
             workers: 16,
             tracing_endpoint_jaeger: "".to_string(),
@@ -342,6 +347,7 @@ pub(crate) fn patch_pipeline() -> PatchPipeline {
     PatchPipeline {
         name: None,
         description: Some("This is a new description".to_string()),
+        metadata: None,
         runtime_config: None,
         program_code: Some("CREATE TABLE table3 ( col3 INT );".to_string()),
         udf_rust: None,

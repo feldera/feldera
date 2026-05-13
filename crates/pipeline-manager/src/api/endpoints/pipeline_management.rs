@@ -94,7 +94,10 @@ pub struct ConnectorStats {
 pub struct PipelineInfo {
     pub id: PipelineId,
     pub name: String,
+    /// Deprecated: use `metadata` instead.
+    #[schema(deprecated)]
     pub description: String,
+    pub metadata: String,
     pub created_at: DateTime<Utc>,
     pub version: Version,
     pub platform_version: String,
@@ -144,6 +147,7 @@ pub struct PipelineInfoInternal {
     pub id: PipelineId,
     pub name: String,
     pub description: String,
+    pub metadata: String,
     pub created_at: DateTime<Utc>,
     pub version: Version,
     pub platform_version: String,
@@ -185,6 +189,7 @@ impl PipelineInfoInternal {
             id: extended_pipeline.id,
             name: extended_pipeline.name,
             description: extended_pipeline.description,
+            metadata: extended_pipeline.metadata,
             created_at: extended_pipeline.created_at,
             version: extended_pipeline.version,
             platform_version: extended_pipeline.platform_version,
@@ -246,7 +251,10 @@ impl PipelineInfoInternal {
 pub struct PipelineSelectedInfo {
     pub id: PipelineId,
     pub name: String,
+    /// Deprecated: use `metadata` instead.
+    #[schema(deprecated)]
     pub description: String,
+    pub metadata: String,
     pub created_at: DateTime<Utc>,
     pub version: Version,
     pub platform_version: String,
@@ -304,6 +312,7 @@ pub struct PipelineSelectedInfoInternal {
     pub id: PipelineId,
     pub name: String,
     pub description: String,
+    pub metadata: String,
     pub created_at: DateTime<Utc>,
     pub version: Version,
     pub platform_version: String,
@@ -357,6 +366,7 @@ impl PipelineSelectedInfoInternal {
             id: extended_pipeline.id,
             name: extended_pipeline.name,
             description: extended_pipeline.description,
+            metadata: extended_pipeline.metadata,
             created_at: extended_pipeline.created_at,
             version: extended_pipeline.version,
             platform_version: extended_pipeline.platform_version,
@@ -420,6 +430,7 @@ impl PipelineSelectedInfoInternal {
             id: extended_pipeline.id,
             name: extended_pipeline.name,
             description: extended_pipeline.description,
+            metadata: extended_pipeline.metadata,
             created_at: extended_pipeline.created_at,
             version: extended_pipeline.version,
             platform_version: extended_pipeline.platform_version,
@@ -492,7 +503,8 @@ pub enum PipelineFieldSelector {
     /// The selection includes the following fields:
     /// - `id`
     /// - `name`
-    /// - `description`
+    /// - `description` (deprecated, use `metadata`)
+    /// - `metadata`
     /// - `created_at`
     /// - `version`
     /// - `platform_version`
@@ -533,7 +545,8 @@ pub enum PipelineFieldSelector {
     /// The selection includes the following fields:
     /// - `id`
     /// - `name`
-    /// - `description`
+    /// - `description` (deprecated, use `metadata`)
+    /// - `metadata`
     /// - `created_at`
     /// - `version`
     /// - `platform_version`
@@ -595,7 +608,10 @@ pub struct GetPipelineParameters {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct PostPutPipeline {
     pub name: String,
+    /// Deprecated: use `metadata` instead.
+    #[schema(deprecated)]
     pub description: Option<String>,
+    pub metadata: Option<String>,
     pub runtime_config: Option<RuntimeConfig>,
     pub program_code: String,
     pub udf_rust: Option<String>,
@@ -613,6 +629,7 @@ pub struct PostPutPipeline {
 pub struct PostPutPipelineInternal {
     pub name: String,
     pub description: Option<String>,
+    pub metadata: Option<String>,
     pub runtime_config: Option<serde_json::Value>,
     pub program_code: String,
     pub udf_rust: Option<String>,
@@ -627,6 +644,7 @@ impl From<PostPutPipelineInternal> for PipelineDescr {
         PipelineDescr {
             name: value.name.clone(),
             description: value.description.clone().unwrap_or("".to_string()),
+            metadata: value.metadata.clone().unwrap_or("".to_string()),
             runtime_config: value.runtime_config.clone().unwrap_or(json!({})),
             program_code: value.program_code.clone(),
             udf_rust: value.udf_rust.clone().unwrap_or("".to_string()),
@@ -645,7 +663,13 @@ impl From<PostPutPipelineInternal> for PipelineDescr {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct PatchPipeline {
     pub name: Option<String>,
+    /// Deprecated: use `metadata` instead.
+    #[schema(deprecated)]
     pub description: Option<String>,
+    /// Free-form client-side annotation. Unlike the other fields, `metadata`
+    /// can be patched at any time — including while the pipeline is running —
+    /// because it has no effect on the deployed pipeline.
+    pub metadata: Option<String>,
     pub runtime_config: Option<RuntimeConfig>,
     pub program_code: Option<String>,
     pub udf_rust: Option<String>,
@@ -662,6 +686,7 @@ pub struct PatchPipeline {
 pub struct PatchPipelineInternal {
     pub name: Option<String>,
     pub description: Option<String>,
+    pub metadata: Option<String>,
     pub runtime_config: Option<serde_json::Value>,
     pub program_code: Option<String>,
     pub udf_rust: Option<String>,
@@ -1159,6 +1184,7 @@ pub(crate) async fn patch_pipeline(
             &pipeline_name,
             &body.name,
             &body.description,
+            &body.metadata,
             &state.common_config.platform_version,
             false,
             &body.runtime_config,
@@ -1246,6 +1272,7 @@ pub(crate) async fn post_update_runtime(
         .update_pipeline(
             *tenant_id,
             &pipeline_name,
+            &None,
             &None,
             &None,
             &state.common_config.platform_version,

@@ -129,6 +129,9 @@ pub struct PipelineDescr {
     /// Pipeline description.
     pub description: String,
 
+    /// Arbitrary user-provided metadata text.
+    pub metadata: String,
+
     /// Pipeline runtime configuration.
     pub runtime_config: serde_json::Value,
 
@@ -152,6 +155,7 @@ impl PipelineDescr {
         Self {
             name: "test_pipeline".to_string(),
             description: "Test pipeline".to_string(),
+            metadata: "".to_string(),
             runtime_config: json!({}),
             program_code: "CREATE TABLE test (col1 INT);".to_string(),
             udf_rust: "".to_string(),
@@ -176,6 +180,9 @@ pub struct ExtendedPipelineDescr {
 
     /// Pipeline description.
     pub description: String,
+
+    /// Arbitrary user-provided metadata text.
+    pub metadata: String,
 
     /// Timestamp when the pipeline was originally created.
     pub created_at: DateTime<Utc>,
@@ -311,6 +318,7 @@ pub struct ExtendedPipelineDescrMonitoring {
     pub id: PipelineId,
     pub name: String,
     pub description: String,
+    pub metadata: String,
     pub created_at: DateTime<Utc>,
     pub version: Version,
     pub platform_version: String,

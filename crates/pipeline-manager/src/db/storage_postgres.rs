@@ -326,15 +326,18 @@ impl Storage for StoragePostgres {
                     false, // Done by user
                     tenant_id,
                     original_name,
-                    &Some(pipeline.name.clone()),
-                    &Some(pipeline.description.clone()),
+                    &operations::pipeline::PipelineFieldUpdates {
+                        name: &Some(pipeline.name.clone()),
+                        description: &Some(pipeline.description.clone()),
+                        metadata: &Some(pipeline.metadata.clone()),
+                        runtime_config: &Some(pipeline.runtime_config.clone()),
+                        program_code: &Some(pipeline.program_code.clone()),
+                        udf_rust: &Some(pipeline.udf_rust.clone()),
+                        udf_toml: &Some(pipeline.udf_toml.clone()),
+                        program_config: &Some(pipeline.program_config.clone()),
+                    },
                     platform_version,
                     bump_platform_version,
-                    &Some(pipeline.runtime_config.clone()),
-                    &Some(pipeline.program_code.clone()),
-                    &Some(pipeline.udf_rust.clone()),
-                    &Some(pipeline.udf_toml.clone()),
-                    &Some(pipeline.program_config.clone()),
                 )
                 .await?;
                 false
@@ -421,6 +424,7 @@ impl Storage for StoragePostgres {
         original_name: &str,
         name: &Option<String>,
         description: &Option<String>,
+        metadata: &Option<String>,
         platform_version: &str,
         bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,
@@ -438,15 +442,18 @@ impl Storage for StoragePostgres {
             false, // Done by user
             tenant_id,
             original_name,
-            name,
-            description,
+            &operations::pipeline::PipelineFieldUpdates {
+                name,
+                description,
+                metadata,
+                runtime_config,
+                program_code,
+                udf_rust,
+                udf_toml,
+                program_config,
+            },
             platform_version,
             bump_platform_version,
-            runtime_config,
-            program_code,
-            udf_rust,
-            udf_toml,
-            program_config,
         )
         .await?;
 
@@ -1149,15 +1156,18 @@ impl Storage for StoragePostgres {
                         true, // Done by compiler
                         tenant_id,
                         &pipeline.name,
-                        &None,
-                        &None,
+                        &operations::pipeline::PipelineFieldUpdates {
+                            name: &None,
+                            description: &None,
+                            metadata: &None,
+                            runtime_config: &None,
+                            program_code: &None,
+                            udf_rust: &None,
+                            udf_toml: &None,
+                            program_config: &None,
+                        },
                         platform_version,
                         true,
-                        &None,
-                        &None,
-                        &None,
-                        &None,
-                        &None,
                     )
                     .await?;
                 }
@@ -1238,15 +1248,18 @@ impl Storage for StoragePostgres {
                         true, // Done by compiler
                         tenant_id,
                         &pipeline.name,
-                        &None,
-                        &None,
+                        &operations::pipeline::PipelineFieldUpdates {
+                            name: &None,
+                            description: &None,
+                            metadata: &None,
+                            runtime_config: &None,
+                            program_code: &None,
+                            udf_rust: &None,
+                            udf_toml: &None,
+                            program_config: &None,
+                        },
                         platform_version,
                         true,
-                        &None,
-                        &None,
-                        &None,
-                        &None,
-                        &None,
                     )
                     .await?;
                 }

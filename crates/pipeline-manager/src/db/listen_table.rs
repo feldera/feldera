@@ -384,6 +384,7 @@ mod test {
                 PipelineDescr {
                     name: "example".to_string(),
                     description: "Description of example".to_string(),
+                    metadata: "".to_string(),
                     runtime_config: json!({}),
                     program_code: "CREATE TABLE example ( col1 INT );".to_string(),
                     udf_rust: "".to_string(),
@@ -414,6 +415,7 @@ mod test {
                 "example",
                 &Some("example-renamed".to_string()),
                 &Some("Description of example2".to_string()),
+                &None,
                 "v0",
                 false,
                 &None,

@@ -210,7 +210,7 @@ pub(crate) async fn new_pipeline(
     let stmt = txn
 
         .prepare_cached(
-            "INSERT INTO pipeline (id, tenant_id, name, description, created_at, version, platform_version, runtime_config,
+            "INSERT INTO pipeline (id, tenant_id, name, description, metadata, created_at, version, platform_version, runtime_config,
                                    program_code, udf_rust, udf_toml, program_config, program_version, program_status,
                                    program_status_since, program_error, program_info,
                                    program_binary_source_checksum, program_binary_integrity_checksum,
@@ -221,14 +221,14 @@ pub(crate) async fn new_pipeline(
                                    deployment_runtime_status, deployment_runtime_status_since,
                                    deployment_runtime_desired_status, deployment_runtime_desired_status_since
                                    )
-            VALUES ($1, $2, $3, $4, now(), $5, $6, $7,
-                    $8, $9, $10, $11, $12, $13,
-                    now(), $14, NULL,
+            VALUES ($1, $2, $3, $4, $5, now(), $6, $7, $8,
+                    $9, $10, $11, $12, $13, $14,
+                    now(), $15, NULL,
                     NULL, NULL,
-                    NULL, NULL, NULL, TRUE, $15, $16, NULL,
+                    NULL, NULL, NULL, TRUE, $16, $17, NULL,
                     NULL, NULL,
-                    $17, now(),
                     $18, now(),
+                    $19, now(),
                     NULL, NULL,
                     NULL, NULL)",
         )
@@ -240,25 +240,26 @@ pub(crate) async fn new_pipeline(
             &tenant_id.0,                        // $2: tenant_id
             &pipeline.name,                      // $3: name
             &pipeline.description,               // $4: description
-            &Version(1).0,                       // $5: version
-            &platform_version.to_string(),       // $6: platform_version
-            &runtime_config.to_string(),         // $7: runtime_config
-            &pipeline.program_code,              // $8: program_code
-            &pipeline.udf_rust,                  // $9: udf_rust
-            &pipeline.udf_toml,                  // $10: udf_toml
-            &program_config.to_string(),         // $11: program_config
-            &Version(1).0,                       // $12: program_version
-            &ProgramStatus::Pending.to_string(), // $13: program_status
-            // $14: program_error
+            &pipeline.metadata,                  // $5: metadata
+            &Version(1).0,                       // $6: version
+            &platform_version.to_string(),       // $7: platform_version
+            &runtime_config.to_string(),         // $8: runtime_config
+            &pipeline.program_code,              // $9: program_code
+            &pipeline.udf_rust,                  // $10: udf_rust
+            &pipeline.udf_toml,                  // $11: udf_toml
+            &program_config.to_string(),         // $12: program_config
+            &Version(1).0,                       // $13: program_version
+            &ProgramStatus::Pending.to_string(), // $14: program_status
+            // $15: program_error
             &serialize_program_error(&ProgramError {
                 sql_compilation: None,
                 rust_compilation: None,
                 system_error: None,
             })?,
-            &Version(1).0,                                // $15: refresh_version
-            &StorageStatus::Cleared.to_string(),          // $16: storage_status
-            &ResourcesStatus::Stopped.to_string(),        // $17: deployment_resources_status
-            &ResourcesDesiredStatus::Stopped.to_string(), // $18: deployment_resources_desired_status
+            &Version(1).0,                                // $16: refresh_version
+            &StorageStatus::Cleared.to_string(),          // $17: storage_status
+            &ResourcesStatus::Stopped.to_string(),        // $18: deployment_resources_status
+            &ResourcesDesiredStatus::Stopped.to_string(), // $19: deployment_resources_desired_status
         ],
     )
     .await
@@ -266,6 +267,47 @@ pub(crate) async fn new_pipeline(
     .map_err(|e| maybe_tenant_id_foreign_key_constraint_err(e, tenant_id))?;
     new_pipeline_monitor_event(txn, tenant_id, PipelineId(new_id), Uuid::now_v7()).await?;
     Ok((PipelineId(new_id), Version(1)))
+}
+
+/// Bundle of patchable pipeline fields — i.e. the contents of a `PATCH`
+/// request body. Methods that classify a patch (e.g. "is this a metadata-only
+/// update?") destructure this struct exhaustively, so adding a new patchable
+/// field forces every such classifier to be revisited or fail to compile.
+pub(crate) struct PipelineFieldUpdates<'a> {
+    pub name: &'a Option<String>,
+    pub description: &'a Option<String>,
+    pub metadata: &'a Option<String>,
+    pub runtime_config: &'a Option<serde_json::Value>,
+    pub program_code: &'a Option<String>,
+    pub udf_rust: &'a Option<String>,
+    pub udf_toml: &'a Option<String>,
+    pub program_config: &'a Option<serde_json::Value>,
+}
+
+impl PipelineFieldUpdates<'_> {
+    /// Returns true iff `metadata` is set and every other patchable field is
+    /// `None`. The exhaustive destructuring is load-bearing: it prevents a
+    /// future field from being silently classified as "not present" here.
+    pub fn is_metadata_only(&self) -> bool {
+        let Self {
+            name,
+            description,
+            metadata,
+            runtime_config,
+            program_code,
+            udf_rust,
+            udf_toml,
+            program_config,
+        } = self;
+        metadata.is_some()
+            && name.is_none()
+            && description.is_none()
+            && runtime_config.is_none()
+            && program_code.is_none()
+            && udf_rust.is_none()
+            && udf_toml.is_none()
+            && program_config.is_none()
+    }
 }
 
 /// Modify pipeline.
@@ -278,24 +320,29 @@ pub(crate) async fn new_pipeline(
 /// * `bump_platform_version` - if true, the platform_version of the pipeline will be updated to the
 ///   provided `platform_version`. In addition, the platform_version will be updated unconditionally
 ///   if the program code or program settings are getting updated by this request.
-/// * Other arguments correspond to fields that can be updated. If an argument is `None`, the corresponding
-///   field is not updated.
-#[allow(clippy::too_many_arguments)]
+/// * `updates` - patchable fields. Each `Some` value is applied; `None` leaves the corresponding
+///   field unchanged.
 pub(crate) async fn update_pipeline(
     txn: &Transaction<'_>,
     is_compiler_update: bool,
     tenant_id: TenantId,
     original_name: &str,
-    name: &Option<String>,
-    description: &Option<String>,
+    updates: &PipelineFieldUpdates<'_>,
     platform_version: &str,
     mut bump_platform_version: bool,
-    runtime_config: &Option<serde_json::Value>,
-    program_code: &Option<String>,
-    udf_rust: &Option<String>,
-    udf_toml: &Option<String>,
-    program_config: &Option<serde_json::Value>,
 ) -> Result<Version, DBError> {
+    // Dereference in the pattern so each binding has the original reference
+    // type (e.g. `name: &Option<String>`) rather than `&&Option<String>`.
+    let &PipelineFieldUpdates {
+        name,
+        description,
+        metadata,
+        runtime_config,
+        program_code,
+        udf_rust,
+        udf_toml,
+        program_config,
+    } = updates;
     if let Some(name) = name {
         validate_pipeline_name(name)?;
     }
@@ -344,23 +391,32 @@ pub(crate) async fn update_pipeline(
     // This will also return an error if the pipeline does not exist.
     let current = get_pipeline(txn, tenant_id, original_name).await?;
 
+    // `metadata` is a free-form client-side annotation that has no impact
+    // on the deployed pipeline, so we allow patching it regardless of deployment status.
+    // Requests that touch only `metadata` skip the stopped-state gate below.
+    let is_metadata_only_update =
+        !is_compiler_update && !bump_platform_version && updates.is_metadata_only();
+
     // Pipeline update is allowed if either:
     // - Current status is `Stopped` AND desired status is `Stopped`
     // - Current status is `Stopped` AND desired status is `Provisioned` AND it is the
     //   compiler doing the update to bump platform version (the early start mechanism)
-    if !matches!(
-        (
-            is_compiler_update,
-            current.deployment_resources_status,
-            current.deployment_resources_desired_status
-        ),
-        (_, ResourcesStatus::Stopped, ResourcesDesiredStatus::Stopped)
-            | (
-                true,
-                ResourcesStatus::Stopped,
-                ResourcesDesiredStatus::Provisioned
+    // - The update only touches `metadata` (see above).
+    if !(is_metadata_only_update
+        || matches!(
+            (
+                is_compiler_update,
+                current.deployment_resources_status,
+                current.deployment_resources_desired_status
             ),
-    ) {
+            (_, ResourcesStatus::Stopped, ResourcesDesiredStatus::Stopped)
+                | (
+                    true,
+                    ResourcesStatus::Stopped,
+                    ResourcesDesiredStatus::Provisioned
+                ),
+        ))
+    {
         return Err(DBError::UpdateRestrictedToStopped);
     }
 
@@ -370,6 +426,7 @@ pub(crate) async fn update_pipeline(
             || (bump_platform_version
                 && name.is_none()
                 && description.is_none()
+                && metadata.is_none()
                 && runtime_config.is_none()
                 && program_code.is_none()
                 && udf_rust.is_none()
@@ -377,12 +434,55 @@ pub(crate) async fn update_pipeline(
                 && program_config.is_none())
     );
 
+    // Metadata-only fast path. `metadata` is a free-form client-side annotation
+    // (e.g. folder paths in the UI tree view) with no deployment semantics, so
+    // patching it must be invisible to anything watching the pipeline's state:
+    //
+    // - `version` is *not* incremented. The runner automaton uses it as a guard
+    //   on every resources-status transition (see `pipeline_automata.rs`); only
+    //   `TransitionToProvisioning` retries on `OutdatedPipelineVersion`, every
+    //   other transition surfaces it as a hard error. Bumping `version` here
+    //   would crash mid-flight transitions whenever a metadata patch landed
+    //   concurrently.
+    // - `refresh_version` is *not* incremented. It is the client-visible
+    //   "material change happened" counter; folder moves are not material.
+    // - No `pipeline_monitor_event` is emitted. Such an event triggers a
+    //   Postgres `NOTIFY` that wakes the per-pipeline runner. The runner has
+    //   nothing to do for a metadata change, so emitting the event would be
+    //   pure wake-up noise on every drag-and-drop.
+    //
+    // Consequently this branch issues a narrow `UPDATE pipeline SET metadata`
+    // (no version columns touched) and returns `current.version` unchanged.
+    if is_metadata_only_update {
+        // Short-circuit no-op patches: nothing to write, version stays put.
+        let new_metadata = metadata
+            .as_ref()
+            .expect("metadata-only update has Some(metadata)");
+        if *new_metadata == current.metadata {
+            return Ok(current.version);
+        }
+        let stmt = txn
+            .prepare_cached(
+                "UPDATE pipeline
+                     SET metadata = $1
+                     WHERE tenant_id = $2 AND name = $3",
+            )
+            .await?;
+        let rows_affected = txn
+            .execute(&stmt, &[new_metadata, &tenant_id.0, &original_name])
+            .await
+            .map_err(maybe_unique_violation)?;
+        assert_eq!(rows_affected, 1); // The row must exist as it has been retrieved above
+        return Ok(current.version);
+    }
+
     // If nothing changes in any of the core fields, return the current version
     if (name.is_none() || name.as_ref().is_some_and(|v| *v == current.name))
         && (description.is_none()
             || description
                 .as_ref()
                 .is_some_and(|v| *v == current.description))
+        && (metadata.is_none() || metadata.as_ref().is_some_and(|v| *v == current.metadata))
         && (!bump_platform_version || platform_version == current.platform_version.as_str())
         && (runtime_config.is_none()
             || runtime_config
@@ -494,15 +594,16 @@ pub(crate) async fn update_pipeline(
             "UPDATE pipeline
                  SET name = COALESCE($1, name),
                      description = COALESCE($2, description),
-                     platform_version = COALESCE($3, platform_version),
-                     runtime_config = COALESCE($4, runtime_config),
-                     program_code = COALESCE($5, program_code),
-                     udf_rust = COALESCE($6, udf_rust),
-                     udf_toml = COALESCE($7, udf_toml),
-                     program_config = COALESCE($8, program_config),
+                     metadata = COALESCE($3, metadata),
+                     platform_version = COALESCE($4, platform_version),
+                     runtime_config = COALESCE($5, runtime_config),
+                     program_code = COALESCE($6, program_code),
+                     udf_rust = COALESCE($7, udf_rust),
+                     udf_toml = COALESCE($8, udf_toml),
+                     program_config = COALESCE($9, program_config),
                      version = version + 1,
                      refresh_version = refresh_version + 1
-                 WHERE tenant_id = $9 AND name = $10",
+                 WHERE tenant_id = $10 AND name = $11",
         )
         .await?;
     let rows_affected = txn
@@ -511,6 +612,7 @@ pub(crate) async fn update_pipeline(
             &[
                 &name,
                 &description,
+                &metadata,
                 &if bump_platform_version {
                     Some(platform_version.to_string())
                 } else {

@@ -132,6 +132,7 @@ impl CompilerTest {
                 PipelineDescr {
                     name: name.to_string(),
                     description: "not-used".to_string(),
+                    metadata: "".to_string(),
                     runtime_config: json!({}),
                     program_code: program_code.to_string(),
                     udf_rust: udf_rust.to_string(),
