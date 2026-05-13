@@ -3,9 +3,11 @@ import logging
 import pathlib
 import time
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Dict, Generator, Mapping, Optional
+from typing import Any, Dict, Generator, Mapping, Optional
 from urllib.parse import quote
 
+import pyarrow as pa
+import pyarrow.ipc
 import requests
 
 from feldera.enums import BootstrapPolicy, PipelineFieldSelector, PipelineStatus
@@ -18,9 +20,6 @@ from feldera.rest.pipeline import Pipeline
 from feldera.rest.retry import RetryConfig
 
 logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    import pyarrow as pa
 
 
 def _validate_no_none_keys_in_map(data):
@@ -40,17 +39,6 @@ def _validate_no_none_keys_in_map(data):
 
 def _prepare_boolean_input(value: bool) -> str:
     return "true" if value else "false"
-
-
-def _import_pyarrow_ipc():
-    try:
-        import pyarrow.ipc as ipc
-    except ImportError as exc:
-        raise ImportError(
-            "pyarrow is required for Arrow IPC queries. Install it with `pip install feldera[arrow]`."
-        ) from exc
-
-    return ipc
 
 
 class FelderaClient:
@@ -1275,7 +1263,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
     def query_as_arrow(
         self, pipeline_name: str, query: str
-    ) -> Generator["pa.RecordBatch", None, None]:
+    ) -> Generator[pa.RecordBatch, None, None]:
         """
         Executes an ad-hoc query on the specified pipeline and returns the result
         as a generator that yields PyArrow RecordBatches.
@@ -1284,8 +1272,6 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param query: The SQL query to be executed.
         :return: A generator that yields each query batch as a ``pyarrow.RecordBatch``.
         """
-        ipc = _import_pyarrow_ipc()
-
         params = {
             "pipeline_name": pipeline_name,
             "sql": query,
@@ -1298,7 +1284,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         )
 
         try:
-            with ipc.open_stream(resp.raw) as reader:
+            with pyarrow.ipc.open_stream(resp.raw) as reader:
                 for batch in reader:
                     yield batch
         finally:

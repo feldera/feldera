@@ -5,7 +5,6 @@ from collections import deque
 from datetime import datetime
 from threading import Event
 from typing import (
-    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
@@ -17,6 +16,7 @@ from typing import (
 from uuid import UUID
 
 import pandas
+import pyarrow as pa
 
 from feldera._callback_runner import CallbackRunner
 from feldera._helpers import chunk_dataframe, ensure_dataframe_has_columns
@@ -44,9 +44,6 @@ from feldera.rest.sql_view import SQLView
 from feldera.runtime_config import RuntimeConfig
 from feldera.stats import InputEndpointStatus, OutputEndpointStatus, PipelineStatistics
 from feldera.types import CheckpointMetadata
-
-if TYPE_CHECKING:
-    import pyarrow as pa
 
 
 class Pipeline:
@@ -1019,7 +1016,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         self.client.query_as_parquet(self.name, query, path)
 
-    def query_arrow(self, query: str) -> Generator["pa.RecordBatch", None, None]:
+    def query_arrow(self, query: str) -> Generator[pa.RecordBatch, None, None]:
         """
         Executes an ad-hoc SQL query on this pipeline and returns a generator
         that yields the result as PyArrow RecordBatches.

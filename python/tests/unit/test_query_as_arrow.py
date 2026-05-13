@@ -1,24 +1,17 @@
 """Unit tests for FelderaClient.query_as_arrow and Pipeline.query_arrow."""
 
-import builtins
 import io
-import sys
 from unittest.mock import MagicMock
 
+import pyarrow as pa
+import pyarrow.ipc as ipc
 import pytest
 
 from feldera.rest.feldera_client import FelderaClient
 
 
-def _import_arrow_modules():
-    pa = pytest.importorskip("pyarrow")
-    ipc = pytest.importorskip("pyarrow.ipc")
-    return pa, ipc
-
-
-def _make_ipc_bytes(table) -> bytes:
+def _make_ipc_bytes(table: pa.Table) -> bytes:
     """Serialise a ``pyarrow.Table`` to Arrow IPC stream bytes."""
-    _, ipc = _import_arrow_modules()
     buf = io.BytesIO()
     with ipc.new_stream(buf, table.schema) as writer:
         if table.num_rows > 0:
@@ -43,7 +36,6 @@ def client() -> FelderaClient:
 
 class TestQueryAsArrow:
     def test_non_empty_result_yields_correct_data(self, client: FelderaClient):
-        pa, _ = _import_arrow_modules()
         schema = pa.schema([("id", pa.int64()), ("name", pa.utf8())])
         expected = pa.table({"id": [1, 2, 3], "name": ["a", "b", "c"]}, schema=schema)
         client.http.get.return_value = _mock_response(_make_ipc_bytes(expected))
@@ -58,7 +50,6 @@ class TestQueryAsArrow:
         assert result.column("name").to_pylist() == ["a", "b", "c"]
 
     def test_http_called_with_correct_params(self, client: FelderaClient):
-        pa, _ = _import_arrow_modules()
         schema = pa.schema([("id", pa.int64())])
         table = pa.table({"id": [42]}, schema=schema)
         client.http.get.return_value = _mock_response(_make_ipc_bytes(table))
@@ -76,7 +67,6 @@ class TestQueryAsArrow:
         )
 
     def test_empty_result_yields_no_batches(self, client: FelderaClient):
-        pa, _ = _import_arrow_modules()
         schema = pa.schema([("id", pa.int64()), ("value", pa.float64())])
         empty = pa.table(
             {
@@ -93,27 +83,7 @@ class TestQueryAsArrow:
 
         assert result_batches == []
 
-    def test_missing_pyarrow_raises_helpful_import_error(
-        self, client: FelderaClient, monkeypatch
-    ):
-        real_import = builtins.__import__
-
-        def _import(name, globals=None, locals=None, fromlist=(), level=0):
-            if name == "pyarrow" or name.startswith("pyarrow."):
-                raise ImportError("No module named 'pyarrow'")
-            return real_import(name, globals, locals, fromlist, level)
-
-        monkeypatch.delitem(sys.modules, "pyarrow", raising=False)
-        monkeypatch.delitem(sys.modules, "pyarrow.ipc", raising=False)
-        monkeypatch.setattr(builtins, "__import__", _import)
-
-        with pytest.raises(ImportError, match="pip install feldera\\[arrow\\]"):
-            next(client.query_as_arrow("my_pipeline", "SELECT 1"))
-
-        client.http.get.assert_not_called()
-
     def test_response_closed_after_full_consumption(self, client: FelderaClient):
-        pa, _ = _import_arrow_modules()
         schema = pa.schema([("id", pa.int64())])
         table = pa.table({"id": [1, 2]}, schema=schema)
         resp = _mock_response(_make_ipc_bytes(table))
