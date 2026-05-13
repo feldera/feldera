@@ -1,4 +1,4 @@
-use super::{DeMapHandle, DeSetHandle, DeZSetHandle, SerCollectionHandleImpl};
+use super::{DeMapHandle, DeZSetHandle, SerCollectionHandleImpl};
 use crate::catalog::{InputCollectionHandle, SerBatchReaderHandle};
 use crate::{Catalog, ControllerError, catalog::OutputCollectionHandles};
 use dbsp::circuit::Layout;
@@ -10,7 +10,7 @@ use dbsp::utils::Tup1;
 use dbsp::{Batch, Circuit as _, OrdZSet, Runtime};
 use dbsp::{
     DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet, ZWeight,
-    operator::{MapHandle, SetHandle, ZSetHandle},
+    operator::{MapHandle, ZSetHandle},
     typed_batch::BatchReader,
 };
 use feldera_adapterlib::catalog::CircuitCatalog;
@@ -107,17 +107,23 @@ impl Catalog {
         let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
 
         self.register_input_collection_handle(InputCollectionHandle::new(
-            relation_schema,
+            relation_schema.clone(),
             DeZSetHandle::new(handle),
             stream.local_node_id(),
         ))
         .unwrap();
 
-        // Inputs are also outputs.
-        self.register_output_zset_persistent(
-            Self::output_persistent_id(&stream).as_deref(),
-            stream,
-            schema,
+        let circuit = stream.circuit().clone();
+        circuit.region(
+            &format!("create table {}", relation_schema.name.name()),
+            move || {
+                // Inputs are also outputs.
+                self.register_output_zset_persistent_inner(
+                    Self::output_persistent_id(&stream).as_deref(),
+                    stream,
+                    &relation_schema,
+                );
+            },
         );
     }
 
@@ -144,94 +150,24 @@ impl Catalog {
         let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
 
         self.register_input_collection_handle(InputCollectionHandle::new(
-            relation_schema,
+            relation_schema.clone(),
             DeZSetHandle::new(handle),
             stream.local_node_id(),
         ))
         .unwrap();
 
-        // Inputs are also outputs.
-        self.register_materialized_output_zset_persistent(
-            Self::output_persistent_id(&stream).as_deref(),
-            stream,
-            schema,
-        );
-    }
-
-    /// Add an input stream created using `add_input_set` to catalog.
-    ///
-    /// Adds a `DeCollectionHandle` to the catalog, which will deserialize
-    /// input records into type `D` before converting them to `Z::Key` using
-    /// the `From` trait.
-    pub fn register_input_set<Z, D>(
-        &mut self,
-        stream: Stream<RootCircuit, Z>,
-        handle: SetHandle<Z::Key>,
-        schema: &str,
-    ) where
-        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
-            + SerializeWithContext<SqlSerdeConfig>
-            + From<Z::Key>
-            + Clone
-            + Debug
-            + Send
-            + Sync
-            + 'static,
-        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
-        Z::InnerBatch: Send,
-        Z::Key: Sync + From<D>,
-    {
-        let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
-
-        self.register_input_collection_handle(InputCollectionHandle::new(
-            relation_schema,
-            DeSetHandle::new(handle),
-            stream.local_node_id(),
-        ))
-        .unwrap();
-
-        // Inputs are also outputs.
-        self.register_output_zset_persistent(
-            Self::output_persistent_id(&stream).as_deref(),
-            stream,
-            schema,
-        );
-    }
-
-    /// Like `register_input_set`, but additionally materializes the integral
-    /// of the stream and makes it queryable.
-    pub fn register_materialized_input_set<Z, D>(
-        &mut self,
-        stream: Stream<RootCircuit, Z>,
-        handle: SetHandle<Z::Key>,
-        schema: &str,
-    ) where
-        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
-            + SerializeWithContext<SqlSerdeConfig>
-            + From<Z::Key>
-            + Clone
-            + Debug
-            + Send
-            + Sync
-            + 'static,
-        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
-        Z::InnerBatch: Send,
-        Z::Key: Sync + From<D>,
-    {
-        let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
-
-        self.register_input_collection_handle(InputCollectionHandle::new(
-            relation_schema,
-            DeSetHandle::new(handle),
-            stream.local_node_id(),
-        ))
-        .unwrap();
-
-        // Inputs are also outputs.
-        self.register_materialized_output_zset_persistent(
-            Self::output_persistent_id(&stream).as_deref(),
-            stream,
-            schema,
+        let circuit = stream.circuit().clone();
+        circuit.region(
+            &format!("create materialized table {}", relation_schema.name.name()),
+            move || {
+                // Inputs are also outputs.
+                self.register_materialized_output_zset_persistent_inner(
+                    Self::output_persistent_id(&stream).as_deref(),
+                    stream,
+                    &relation_schema,
+                    false,
+                );
+            },
         );
     }
 
@@ -459,6 +395,33 @@ impl Catalog {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
         let name = schema.name.clone();
 
+        let circuit = stream.circuit().clone();
+
+        circuit.region(&format!("create view {}", name.name()), move || {
+            self.register_output_zset_persistent_inner(persistent_id, stream, &schema)
+        });
+    }
+
+    pub fn register_output_zset_persistent_inner<Z, D>(
+        &mut self,
+        persistent_id: Option<&str>,
+        stream: Stream<RootCircuit, Z>,
+        schema: &Relation,
+    ) where
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<Z::Key>
+            + Clone
+            + Debug
+            + Send
+            + Sync
+            + 'static,
+        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
+        Z::InnerBatch: Send,
+        Z::Key: Sync + From<D>,
+    {
+        let name = schema.name.clone();
+
         if name == SqlIdentifier::new(INTERNED_STRING_RELATION_NAME, false) {
             if TypeId::of::<Z>() != TypeId::of::<OrdZSet<Tup1<SqlString>>>() {
                 panic!(
@@ -484,7 +447,7 @@ impl Catalog {
 
         let handles = OutputCollectionHandles {
             key_schema: None,
-            value_schema: schema,
+            value_schema: schema.clone(),
             index_of: None,
             alias_as_index: None,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
@@ -517,6 +480,8 @@ impl Catalog {
         self.register_materialized_output_zset_persistent(None, stream, schema)
     }
 
+    /// Like `register_output_zset`, but additionally materializes the integral
+    /// of the stream and makes it queryable.
     pub fn register_materialized_output_zset_persistent<Z, D>(
         &mut self,
         persistent_id: Option<&str>,
@@ -534,47 +499,82 @@ impl Catalog {
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
+        let circuit = stream.circuit().clone();
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
         let name = schema.name.clone();
 
-        let (integrate_handle, delta_handle, enable_count) =
-            stream
-                .circuit()
-                .region(&format!("materialized output ({})", name.name()), || {
-                    // The integral of this stream is used by the ad hoc query
-                    // engine. The engine treats the integral computed by each
-                    // worker as a separate partition.  This means that
-                    // integrals should not contain negative weights, since
-                    // datafusion cannot handle those.  Negative weights can
-                    // arise from operators like antijoin that can produce the
-                    // same record with +1 and -1 weights in different workers.
-                    // To avoid this, we shard the stream, so that such records
-                    // get canceled out.
-                    let stream = self.gather_output_to_host(&name, &stream, true);
+        circuit.region(
+            &format!("create materialized view {}", name.name()),
+            move || {
+                self.register_materialized_output_zset_persistent_inner(
+                    persistent_id,
+                    stream,
+                    &schema,
+                    true,
+                )
+            },
+        );
+    }
 
-                    // Create handle for the stream itself.
-                    let (delta_handle, enable_count, delta_gid) =
-                        stream.accumulate_output_persistent_with_gid(persistent_id);
-                    stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
+    /// `gather_integral` indicates whether the stream must be materialized on
+    /// the host assigned to this stream. This is necessary in order to be able
+    /// to send a snapshot of the collection a connector attached to this stream.
+    pub fn register_materialized_output_zset_persistent_inner<Z, D>(
+        &mut self,
+        persistent_id: Option<&str>,
+        stream: Stream<RootCircuit, Z>,
+        schema: &Relation,
+        gather_integral: bool,
+    ) where
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<Z::Key>
+            + Clone
+            + Debug
+            + Send
+            + 'static,
+        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
+        Z::InnerBatch: Send,
+        Z::Key: Sync + From<D>,
+    {
+        let name = schema.name.clone();
 
-                    let (integrate_handle, integrate_gid) = stream
-                        .accumulate_integrate_trace()
-                        .apply(|t| {
-                            TypedBatch::<Z::Key, (), ZWeight, _>::new(t.inner().ro_snapshot())
-                        })
-                        .output_persistent_with_gid(
-                            persistent_id.map(|id| format!("{id}.integral")).as_deref(),
-                        );
-                    stream
-                        .circuit()
-                        .set_mir_node_id(&integrate_gid, persistent_id);
+        // The integral of this stream is used by the ad hoc query
+        // engine. The engine treats the integral computed by each
+        // worker as a separate partition.  This means that
+        // integrals should not contain negative weights, since
+        // datafusion cannot handle those.  Negative weights can
+        // arise from operators like antijoin that can produce the
+        // same record with +1 and -1 weights in different workers.
+        // To avoid this, we shard the stream, so that such records
+        // get canceled out.
+        let gathered_stream = self.gather_output_to_host(&name, &stream, true);
 
-                    (integrate_handle, delta_handle, enable_count)
-                });
+        // Create handle for the stream itself.
+        let (delta_handle, enable_count, delta_gid) =
+            gathered_stream.accumulate_output_persistent_with_gid(persistent_id);
+        gathered_stream
+            .circuit()
+            .set_mir_node_id(&delta_gid, persistent_id);
+
+        let integral_stream = if gather_integral {
+            gathered_stream.accumulate_integrate_trace()
+        } else {
+            stream.accumulate_integrate_trace()
+        };
+
+        let (integrate_handle, integrate_gid) = integral_stream
+            .apply(|t| TypedBatch::<Z::Key, (), ZWeight, _>::new(t.inner().ro_snapshot()))
+            .output_persistent_with_gid(
+                persistent_id.map(|id| format!("{id}.integral")).as_deref(),
+            );
+        gathered_stream
+            .circuit()
+            .set_mir_node_id(&integrate_gid, persistent_id);
 
         let handles = OutputCollectionHandles {
             key_schema: None,
-            value_schema: schema,
+            value_schema: schema.clone(),
             index_of: None,
             alias_as_index: None,
             integrate_handle: Some(Arc::new(<SerCollectionHandleImpl<_, D, ()>>::new(
@@ -725,18 +725,25 @@ impl Catalog {
         let name = schema.name.clone();
 
         let stream = stream.try_sharded_version();
-        let stream = self.gather_output_to_host(&name, &stream, false);
+
+        // Shard the stream if it needs to be materialized.
+        let gathered_stream =
+            self.gather_output_to_host(&name, &stream, materialized && accumulate);
 
         let (delta_handle, enable_count, delta_gid) =
-            stream.accumulate_output_persistent_with_gid(persistent_id);
-        stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
+            gathered_stream.accumulate_output_persistent_with_gid(persistent_id);
+        gathered_stream
+            .circuit()
+            .set_mir_node_id(&delta_gid, persistent_id);
 
         let integrate_handle = if materialized {
             let (integrate_handle, integral_gid) = if accumulate {
-                // `integrate_trace` below should return the existing integral created by the InputUpsert operator.
-                stream.accumulate_integrate_trace()
+                gathered_stream.accumulate_integrate_trace()
             } else {
-                stream.integrate_trace()
+                // This is an integral of an input table with a primary key. We don't support sending a snapshot
+                // of table to a connector, so we don't need to use the gathered stream.
+                // `integrate_trace` should return the existing integral created by the InputUpsert operator.
+                stream.shard().integrate_trace()
             }
             .apply(|s| TypedBatch::<K, V, ZWeight, _>::new(s.inner().ro_snapshot()))
             .output_persistent_with_gid(
@@ -745,7 +752,7 @@ impl Catalog {
                     .as_deref(),
             );
 
-            stream
+            gathered_stream
                 .circuit()
                 .set_mir_node_id(&integral_gid, persistent_id);
             Some(

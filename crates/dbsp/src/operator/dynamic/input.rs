@@ -364,40 +364,42 @@ impl RootCircuit {
 
         let zset_factories = factories.zset_factories.clone();
 
-        let (input, input_handle) = Input::new(
-            Location::caller(),
-            move |tuples: Vec<Box<DynPairs<_, _>>>| {
-                let mut pairs = weighted_pairs_factory.default_box();
-                let mut batcher =
-                    <FallbackWSet<_, _> as Batch>::Batcher::new_batcher(&zset_factories, ());
-                for mut tuples in tuples {
-                    pairs.from_pairs(tuples.as_mut());
-                    batcher.push_batch(&mut pairs);
-                }
-                batcher.seal()
-            },
-            Arc::new(|| vec![pairs_factory.default_box()]),
-        );
+        self.region("input_zset", || {
+            let (input, input_handle) = Input::new(
+                Location::caller(),
+                move |tuples: Vec<Box<DynPairs<_, _>>>| {
+                    let mut pairs = weighted_pairs_factory.default_box();
+                    let mut batcher =
+                        <FallbackWSet<_, _> as Batch>::Batcher::new_batcher(&zset_factories, ());
+                    for mut tuples in tuples {
+                        pairs.from_pairs(tuples.as_mut());
+                        batcher.push_batch(&mut pairs);
+                    }
+                    batcher.seal()
+                },
+                Arc::new(|| vec![pairs_factory.default_box()]),
+            );
 
-        // This stream doesn't strictly need to be sharded. We shard it to make sure that when it is materialized,
-        // the resulting integral can be used to bootstrap any streams derived from it, avoiding the following
-        // situation where the integral cannot be used to backfill the bottom circuit:
-        //
-        // input--->[shard]--->[integral]
-        //       |--->[some other operator]
-        //
-        // This adds small overhead to tables that don't get materialized and hence don't need to get sharded.
-        // If this proves to be a problem in practice, we can add a variant of this function that doesn't shard
-        // its output stream for use with non-materializes tables.
-        let stream = self.add_source(input).dyn_shard(&factories.zset_factories);
+            // This stream doesn't strictly need to be sharded. We shard it to make sure that when it is materialized,
+            // the resulting integral can be used to bootstrap any streams derived from it, avoiding the following
+            // situation where the integral cannot be used to backfill the bottom circuit:
+            //
+            // input--->[shard]--->[integral]
+            //       |--->[some other operator]
+            //
+            // This adds small overhead to tables that don't get materialized and hence don't need to get sharded.
+            // If this proves to be a problem in practice, we can add a variant of this function that doesn't shard
+            // its output stream for use with non-materializes tables.
+            let stream = self.add_source(input).dyn_shard(&factories.zset_factories);
 
-        let zset_handle = <CollectionHandle<DynPair<K, DynUnit>, DynZWeight>>::new(
-            factories.pair_factory,
-            factories.pairs_factory,
-            input_handle,
-        );
+            let zset_handle = <CollectionHandle<DynPair<K, DynUnit>, DynZWeight>>::new(
+                factories.pair_factory,
+                factories.pairs_factory,
+                input_handle,
+            );
 
-        (stream, zset_handle)
+            (stream, zset_handle)
+        })
     }
 
     /// Create an input stream that carries values of type

@@ -89,6 +89,7 @@ pub struct DeltaTableWriter {
 const CHUNK_SIZE: usize = 100_000;
 
 impl DeltaTableWriter {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         endpoint_id: EndpointId,
         endpoint_name: &str,
