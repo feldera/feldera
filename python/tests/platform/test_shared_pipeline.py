@@ -9,7 +9,6 @@ import unittest
 import zipfile
 
 import pandas as pd
-import pytest
 
 from feldera import Pipeline
 from feldera.enums import CompletionTokenStatus, PipelineFieldSelector, PipelineStatus
@@ -169,7 +168,7 @@ class TestPipeline(SharedTestPipeline):
         self.assertCountEqual(got, expected)
 
     def test_adhoc_query_arrow(self):
-        pa = pytest.importorskip("pyarrow")
+        import pyarrow as pa
 
         data = "1\n2\n"
         self.pipeline.start()
