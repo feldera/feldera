@@ -120,6 +120,9 @@ fda connector p1 example unknown start || true
 
 # Adhoc queries
 fda query p1 "SELECT * FROM example"
+# Arrow IPC is the recommended format; verify it produces output and the
+# text-mode pretty-printer downstream of the parser handles it.
+fda --format arrow_ipc query p1 "SELECT * FROM example"
 
 # Runtime errors during query execution must surface as a non-zero exit
 # code in WebSocket mode, otherwise scripts have no way to detect a

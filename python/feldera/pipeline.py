@@ -974,8 +974,13 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Executes an ad-hoc SQL query on this pipeline and returns a generator
         that yields the rows of the result as Python dictionaries. For
         ``INSERT`` and ``DELETE`` queries, consider using :meth:`.execute`
-        instead. All floating-point numbers are deserialized as Decimal objects
+        instead. All floating-point numbers are deserialized as ``Decimal``
         to avoid precision loss.
+
+        For new code, prefer :meth:`.query_arrow`: Arrow IPC keeps full
+        SQL type fidelity, lets ``MAP`` keys be non-string values, and
+        returns every column even when two share a name. See
+        https://github.com/feldera/feldera/issues/4219.
 
         Note:
             You can only ``SELECT`` from materialized tables and views.
@@ -994,7 +999,9 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         :raises FelderaAPIError: If the query is invalid.
         """
 
-        return self.client.query_as_json(self.name, query)
+        # Delegate to the non-deprecated internal helper so calls through
+        # `query()` don't surface a DeprecationWarning to user code.
+        return self.client._query_json_stream(self.name, query)
 
     def query_parquet(self, query: str, path: str):
         """

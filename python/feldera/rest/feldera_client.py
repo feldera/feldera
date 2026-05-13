@@ -2,6 +2,7 @@ import json
 import logging
 import pathlib
 import time
+import warnings
 from decimal import Decimal
 from typing import Any, Dict, Generator, Mapping, Optional
 from urllib.parse import quote
@@ -1275,6 +1276,11 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         Executes an ad-hoc query on the specified pipeline and returns the result
         as a generator that yields PyArrow RecordBatches.
 
+        Arrow IPC preserves SQL type fidelity that the JSON format cannot:
+        integers wider than 53 bits, ``MAP`` keys that are not strings, and
+        result sets where two columns share a name. Prefer this method over
+        :meth:`.query_as_json` when programmatically inspecting results.
+
         :param pipeline_name: The name of the pipeline to query.
         :param query: The SQL query to be executed.
         :return: A generator that yields each query batch as a ``pyarrow.RecordBatch``.
@@ -1297,18 +1303,13 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         finally:
             resp.close()
 
-    def query_as_json(
+    def _query_json_stream(
         self, pipeline_name: str, query: str
     ) -> Generator[Mapping[str, Any], None, None]:
-        """
-        Executes an ad-hoc query on the specified pipeline and returns the result as a generator that yields
-        rows of the query as Python dictionaries.
-        All floating-point numbers are deserialized as Decimal objects to avoid precision loss.
-
-        :param pipeline_name: The name of the pipeline to query.
-        :param query: The SQL query to be executed.
-        :return: A generator that yields each row of the result as a Python dictionary, deserialized from JSON.
-        """
+        """Internal JSON streaming used by both `query_as_json` and the
+        higher-level dict-returning APIs. Does not emit a deprecation
+        warning so callers within Feldera can keep delegating to it
+        without making user code noisy."""
         params = {
             "pipeline_name": pipeline_name,
             "sql": query,
@@ -1324,6 +1325,39 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         for chunk in resp.iter_lines(chunk_size=1024):
             if chunk:
                 yield json.loads(chunk, parse_float=Decimal)
+
+    def query_as_json(
+        self, pipeline_name: str, query: str
+    ) -> Generator[Mapping[str, Any], None, None]:
+        """
+        Executes an ad-hoc query on the specified pipeline and returns the result as a generator that yields
+        rows of the query as Python dictionaries.
+
+        Finite floating-point numbers are decoded with ``decimal.Decimal``
+        so the digits printed on the JSON line round-trip exactly. JSON
+        cannot represent ``NaN``, ``Infinity`` or ``-Infinity``; the
+        server emits those as ``null`` and they arrive here as ``None``.
+
+        .. deprecated::
+            The JSON format coerces numbers to ``f64`` (losing precision for
+            wide integers), drops ``NaN`` and infinities, cannot represent
+            SQL ``MAP`` keys that are not strings, and silently drops
+            result columns that share a name. Use
+            :meth:`.query_as_arrow` instead. See
+            https://github.com/feldera/feldera/issues/4219.
+
+        :param pipeline_name: The name of the pipeline to query.
+        :param query: The SQL query to be executed.
+        :return: A generator that yields each row of the result as a Python dictionary, deserialized from JSON.
+        """
+        warnings.warn(
+            "query_as_json is deprecated; switch to query_as_arrow for "
+            "type-faithful results. See "
+            "https://github.com/feldera/feldera/issues/4219.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        yield from self._query_json_stream(pipeline_name, query)
 
     def input_connector_stats(
         self, pipeline_name: str, table_name: str, connector_name: str

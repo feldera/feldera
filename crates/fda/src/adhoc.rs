@@ -9,7 +9,7 @@ use feldera_rest_api::Client;
 use feldera_types::query::{AdHocResultFormat, AdhocQueryArgs};
 use futures_util::SinkExt;
 use futures_util::StreamExt;
-use log::{debug, error, trace, warn};
+use log::{debug, error, trace};
 use reqwest_websocket::{CloseCode, Message, RequestBuilderExt};
 
 use crate::UPGRADE_NOTICE;
@@ -155,8 +155,11 @@ pub(crate) async fn handle_adhoc_query(
     let format = match format {
         OutputFormat::Text => AdHocResultFormat::Text,
         OutputFormat::Json => {
-            warn!(
-                "The JSON format is deprecated for ad-hoc queries, see https://github.com/feldera/feldera/issues/4219 for the tracking issue."
+            // JSON requested; log deprecation warning to stderr.
+            eprintln!(
+                "warning: the JSON format for ad-hoc queries is deprecated. \
+                 Prefer `--format arrow_ipc` or the default text mode. \
+                 See https://github.com/feldera/feldera/issues/4219."
             );
             AdHocResultFormat::Json
         }
