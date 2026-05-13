@@ -1,74 +1,37 @@
 <script lang="ts">
-  import { Datatable, TableHandler } from '@vincjo/datatables'
-  import { Popover, Select, Tooltip } from 'common-ui'
-  import { match } from 'ts-pattern'
-  import { page } from '$app/state'
-  import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
-  import ThSort from '$lib/components/pipelines/table/ThSort.svelte'
-  import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
+  import PipelineTreeView from '$lib/components/pipelines/PipelineTreeView.svelte'
+  import {
+    usePipelineList,
+    useUpdatePipelineList
+  } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { dateMax } from '$lib/functions/common/date'
   import { matchesSubstring } from '$lib/functions/common/string'
   import { type NamesInUnion, unionName } from '$lib/functions/common/union'
+  import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
   import { formatDateTime } from '$lib/functions/format'
   import type {
     PipelineStatus as PipelineStatusType,
     PipelineThumb
   } from '$lib/services/pipelineManager'
   import type { Snippet } from '$lib/types/svelte'
-  import PipelineVersion from './table/PipelineVersion.svelte'
 
   let {
-    pipelines,
     header,
     preHeaderEnd,
     selectedPipelines = $bindable()
   }: {
-    pipelines: PipelineThumb[]
     header?: Snippet
     preHeaderEnd?: Snippet
     selectedPipelines: string[]
   } = $props()
 
+  const pipelineList = usePipelineList()
+  const pipelines = $derived(pipelineList.pipelines ?? [])
+
   let controlsHeight = $state(0)
 
-  const pipelinesWithLastChange = $derived(
-    pipelines.map((pipeline) => ({
-      ...pipeline,
-      lastStatusSince: dateMax(
-        new Date(pipeline.deploymentStatusSince),
-        new Date(pipeline.programStatusSince)
-      )
-    }))
-  )
-
-  // svelte-ignore state_referenced_locally
-  const table = new TableHandler(pipelinesWithLastChange, {
-    rowsPerPage: undefined,
-    selectBy: 'name'
-  })
-  $effect(() => {
-    table.setRows(pipelinesFiltered)
-  })
-  $effect(() => {
-    selectedPipelines = table.selected as string[]
-  })
-  $effect(() => {
-    table.selected = selectedPipelines
-  })
-
-  const statusMatchesFilter = (
-    entry: NamesInUnion<PipelineStatusType>,
-    _value: keyof typeof filterStatuses
-  ) => {
-    const value = filterStatuses.find((f) => f[0] === _value)![1]
-    return !value.length || value.includes(entry)
-  }
-  const statusFilter = table.createFilter(
-    (row) => unionName(row.status),
-    statusMatchesFilter as any
-  )
-
-  const filterStatuses: [string, NamesInUnion<PipelineStatusType>[]][] = [
+  const filterStatuses: [string, NamesInUnion<PipelineThumb['status']>[]][] = [
     ['All Pipelines', []],
     ['Running', ['Running']],
     ['Paused', ['Paused']],
@@ -78,25 +41,101 @@
   ]
 
   let nameSearch = $state('')
-  const pipelinesFiltered = $derived(
-    pipelinesWithLastChange.filter((p) => matchesSubstring(p.name, nameSearch))
+  let statusFilterKey = $state('All Pipelines')
+
+  const visiblePipelines = $derived(
+    pipelines
+      .filter((p) => matchesSubstring(p.name, nameSearch))
+      .filter((p) => {
+        const allowed = filterStatuses.find((f) => f[0] === statusFilterKey)![1]
+        return !allowed.length || allowed.includes(unionName(p.status))
+      })
+      .map((pipeline) => ({
+        ...pipeline,
+        lastStatusSince: dateMax(
+          new Date(pipeline.deploymentStatusSince),
+          new Date(pipeline.programStatusSince)
+        )
+      }))
   )
 
-  const { formatElapsedTime } = useElapsedTime()
-  const td = 'py-1 text-base border-t-[0.5px]'
+  // metadata stores a JSON object; folder path lives in the `path` field.
+  const parseMetadata = (metadata: string): Record<string, unknown> => {
+    if (!metadata) {
+      return {}
+    }
+    try {
+      const v = JSON.parse(metadata)
+      return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
+    } catch {
+      return {}
+    }
+  }
+  const getFolderPath = (p: { metadata?: string | null }) => {
+    const v = parseMetadata(p.metadata ?? '')
+    const path = typeof v.path === 'string' ? v.path : ''
+    return path.replace(/^\/+|\/+$/g, '')
+  }
+  const buildMetadata = (existing: string, newPath: string) => {
+    const obj = parseMetadata(existing)
+    if (newPath) {
+      obj.path = newPath
+    } else {
+      delete obj.path
+    }
+    return Object.keys(obj).length ? JSON.stringify(obj) : ''
+  }
+
+  const api = usePipelineManager()
+  const { updatePipeline, discardPendingListRefresh } = useUpdatePipelineList()
+  const movePipeline = (name: string, newFolderPath: string) => {
+    const current = pipelineList.pipelines?.find((p) => p.name === name)
+    if (!current) {
+      return
+    }
+    const newMetadata = buildMetadata(current.metadata ?? '', newFolderPath)
+    if (newMetadata === (current.metadata ?? '')) {
+      return
+    }
+    discardPendingListRefresh()
+    updatePipeline(name, (p) => ({ ...p, metadata: newMetadata }))
+    api.patchPipeline(name, { metadata: newMetadata })
+  }
+  const createFolderFor = (a: string, b: string, newFolderPath: string) => {
+    movePipeline(a, newFolderPath)
+    movePipeline(b, newFolderPath)
+  }
+  // Move a whole folder: re-path every leaf whose folder path equals or starts
+  // with `oldPath`, replacing that prefix with `newPath`. Empty string = top
+  // level; treated like any other path here.
+  const moveFolder = (oldPath: string, newPath: string) => {
+    if (oldPath === newPath) {
+      return
+    }
+    for (const p of pipelineList.pipelines ?? []) {
+      const path = getFolderPath(p)
+      const matchesExact = path === oldPath
+      const matchesPrefix = oldPath !== '' && path.startsWith(oldPath + '/')
+      if (!matchesExact && !matchesPrefix) {
+        continue
+      }
+      const suffix = matchesExact ? '' : path.slice(oldPath.length) // includes leading '/'
+      const target = (newPath + suffix).replace(/^\/+|\/+$/g, '')
+      movePipeline(p.name, target)
+    }
+  }
 </script>
 
-<div class="pipeline-table-wrapper bg-white-dark w-fit min-w-full">
+<div class="bg-white-dark">
   <div class="bg-white-dark sticky top-0 z-10 pb-2" bind:clientHeight={controlsHeight}>
     <div class="sticky left-0 max-w-[100cqi] px-2 md:px-8">
       {#if header}
         {@render header()}
       {/if}
       <div
-        class="relative mt-2 flex flex-row items-center gap-2 sm:justify-end sm:gap-4"
+        class="relative mt-2 flex flex-row items-stretch gap-2 sm:items-end sm:justify-end sm:gap-4"
         class:lg:-mt-7={!!header}
-        class:lg:mb-0={!!header}
-      >
+        class:lg:mb-0={!!header}>
         <input
           data-testid="input-pipeline-search"
           class="input h-9 sm:w-60"
@@ -104,168 +143,29 @@
           placeholder="Search pipelines..."
           oninput={(e) => {
             nameSearch = e.currentTarget.value
-          }}
-        />
-        <Select
+          }} />
+        <select
           data-testid="select-pipeline-status"
-          class="h-9 text-base! sm:w-40"
-          onchange={(e) => {
-            statusFilter.value = filterStatuses.find((v) => e.currentTarget.value === v[0])![0]
-            statusFilter.set()
-          }}
-        >
+          class="h_-9 select sm:w-40"
+          bind:value={statusFilterKey}>
           {#each filterStatuses as filter (filter[0])}
             <option value={filter[0]}>{filter[0]}</option>
           {/each}
-        </Select>
+        </select>
         {@render preHeaderEnd?.()}
       </div>
     </div>
   </div>
-  <Datatable headless {table}>
-    <table class="bg-inherit md:px-6">
-      <thead style="top: {controlsHeight}px; z-index: 1;">
-        <tr>
-          <th class="w-10 px-2 text-left"
-            ><input
-              class="checkbox"
-              type="checkbox"
-              checked={table.isAllSelected}
-              onclick={() => table.selectAll()}
-            /></th
-          >
-          <ThSort class="px-1 py-1" {table} field="name"
-            ><span class="text-base font-normal text-surface-950-50">Pipeline name</span></ThSort
-          >
-          <th class="px-1 py-1 text-left"
-            ><span class="text-base font-normal text-surface-950-50">Storage</span></th
-          >
-          <ThSort {table} class="px-1 py-1" field="status"
-            ><span class="ml-8 text-base font-normal text-surface-950-50">Status</span></ThSort
-          >
-          <th class="px-1 py-1 text-left"
-            ><span class="text-base font-normal text-surface-950-50">Message</span></th
-          >
-          <ThSort
-            {table}
-            class="w-20 py-1 pr-4 text-right xl:w-32"
-            field={(p) => p.connectors?.numErrors}
-          >
-            <span class="text-base font-normal text-surface-950-50">
-              <span class="inline xl:hidden">Errors</span>
-              <span class="hidden xl:!inline">Runtime errors</span>
-            </span>
-          </ThSort>
-          <ThSort {table} class="w-20 px-1 py-1 xl:w-32" field="platformVersion">
-            <span class="text-base font-normal text-surface-950-50">
-              Runtime <span class="hidden xl:!inline">version</span>
-            </span>
-          </ThSort>
-          <ThSort {table} class="px-1 py-1" field="lastStatusSince"
-            ><span class="text-base font-normal text-surface-950-50">Status changed</span></ThSort
-          >
-          <ThSort {table} class="px-1 py-1" field="deploymentResourcesStatusSince"
-            ><span class="text-base font-normal text-surface-950-50">Deployed on</span></ThSort
-          >
-        </tr>
-      </thead>
-      <tbody>
-        {#each table.rows as pipeline}
-          <tr class="group" data-testid="box-row-{pipeline.name}"
-            ><td class="{td} border-surface-100-900 px-2 group-hover:bg-surface-50-950">
-              <input
-                class="checkbox"
-                type="checkbox"
-                checked={table.selected.includes(pipeline.name)}
-                onclick={() => table.select(pipeline.name)}
-              />
-            </td>
-            <td class="{td} relative w-3/12 border-surface-100-900 group-hover:bg-surface-50-950"
-              ><a
-                class=" absolute top-2 w-full overflow-hidden overflow-ellipsis whitespace-nowrap"
-                href="/pipelines/{pipeline.name}/">{pipeline.name}</a
-              ></td
-            >
-            <td class="{td} relative w-12 border-surface-100-900 group-hover:bg-surface-50-950">
-              <div
-                class="fd {pipeline.storageStatus === 'Cleared'
-                  ? 'fd-database-off text-surface-500'
-                  : 'fd-database'} text-center text-[20px]"
-              ></div>
-              <Tooltip
-                >{match(pipeline.storageStatus)
-                  .with('InUse', () => 'Storage in use')
-                  .with('Clearing', () => 'Clearing storage')
-                  .with('Cleared', () => 'Storage cleared')
-                  .exhaustive()}</Tooltip
-              >
-            </td>
-            <td class="pr-2 {td} w-36 border-surface-100-900 group-hover:bg-surface-50-950"
-              ><PipelineStatus status={pipeline.status}></PipelineStatus></td
-            >
-            <td
-              class="{td} relative border-surface-100-900 whitespace-pre-wrap group-hover:bg-surface-50-950"
-            >
-              <span
-                class="absolute top-1.5 w-full overflow-hidden align-middle overflow-ellipsis whitespace-nowrap"
-              >
-                {#if pipeline.deploymentError}
-                  {@const message = pipeline.deploymentError.message}
-                  <span class="fd fd-circle-alert pr-2 text-[20px] text-error-500"></span>
-                  <Popover class="z-10" strategy="fixed">
-                    <div
-                      class="scrollbar flex max-h-[50vh] max-w-[80vw] overflow-auto whitespace-pre-wrap"
-                    >
-                      {message}
-                    </div>
-                  </Popover>
-                  {message.slice(0, ((idx) => (idx > 0 ? idx : undefined))(message.indexOf('\n')))}
-                {/if}
-              </span>
-            </td>
-            <td class="{td} border-surface-100-900 pr-4 group-hover:bg-surface-50-950">
-              <div class="text-right text-nowrap">
-                {pipeline.connectors?.numErrors ?? '-'}
-              </div>
-            </td>
-            <td class="{td} relative border-surface-100-900 group-hover:bg-surface-50-950">
-              <div class="flex w-full flex-nowrap items-center gap-2 text-nowrap">
-                <PipelineVersion
-                  pipelineName={pipeline.name}
-                  runtimeVersion={pipeline.platformVersion}
-                  baseRuntimeVersion={page.data.feldera!.version}
-                  configuredRuntimeVersion={pipeline.programConfig.runtime_version}
-                ></PipelineVersion>
-              </div>
-            </td>
-            <td class="{td} relative w-28 border-surface-100-900 group-hover:bg-surface-50-950">
-              <div class="w-32 text-right text-nowrap">
-                {formatElapsedTime(pipeline.lastStatusSince, 'dhm')} ago
-              </div>
-            </td>
-            <td class="{td} relative w-40 border-surface-100-900 group-hover:bg-surface-50-950">
-              <div class="pr-1 text-right text-nowrap">
-                {pipeline.deploymentResourcesStatus === 'Provisioned'
-                  ? formatDateTime(pipeline.deploymentResourcesStatusSince)
-                  : ''}
-              </div>
-            </td>
-          </tr>
-        {:else}
-          <tr>
-            <td class={td}></td>
-            <td class={td} colspan={99}>No pipelines found</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </Datatable>
+  {#if visiblePipelines.length === 0}
+    <div class="px-2 py-4 md:px-8">No pipelines found</div>
+  {:else}
+    <PipelineTreeView
+      items={visiblePipelines}
+      {getFolderPath}
+      bind:selected={selectedPipelines}
+      onMoveToFolder={movePipeline}
+      onCreateFolderFor={createFolderFor}
+      onMoveFolder={moveFolder}
+      stickyTop={controlsHeight} />
+  {/if}
 </div>
-
-<style>
-  /* Datatable wraps our <table> in an <article class="thin-scrollbar"> whose default
-     overflow:auto would clip the sticky header. Reach in via :global to override. */
-  .pipeline-table-wrapper :global(article.thin-scrollbar) {
-    overflow: visible !important;
-  }
-</style>

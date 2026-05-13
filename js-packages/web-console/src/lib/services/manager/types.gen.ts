@@ -3267,7 +3267,13 @@ export type PartialProgramInfo = {
  * change.
  */
 export type PatchPipeline = {
+  /**
+   * Deprecated: use `metadata` instead.
+   *
+   * @deprecated
+   */
   description?: string | null
+  metadata?: string | null
   name?: string | null
   program_code?: string | null
   program_config?: ProgramConfig | null
@@ -3572,8 +3578,14 @@ export type PipelineInfo = {
   deployment_runtime_status_since?: string | null
   deployment_status: CombinedStatus
   deployment_status_since: string
+  /**
+   * Deprecated: use `metadata` instead.
+   *
+   * @deprecated
+   */
   description: string
   id: PipelineId
+  metadata: string
   name: string
   platform_version: string
   program_code: string
@@ -3644,8 +3656,14 @@ export type PipelineSelectedInfo = {
   deployment_runtime_status_since?: string | null
   deployment_status: CombinedStatus
   deployment_status_since: string
+  /**
+   * Deprecated: use `metadata` instead.
+   *
+   * @deprecated
+   */
   description: string
   id: PipelineId
+  metadata: string
   name: string
   platform_version: string
   program_code?: string | null
@@ -3716,7 +3734,13 @@ export type PipelineTemplateConfig = {
  * (for strings: an empty string `""`, for objects: an empty dictionary `{}`).
  */
 export type PostPutPipeline = {
+  /**
+   * Deprecated: use `metadata` instead.
+   *
+   * @deprecated
+   */
   description?: string | null
+  metadata?: string | null
   name: string
   program_code: string
   program_config?: ProgramConfig | null
