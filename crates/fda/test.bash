@@ -131,6 +131,11 @@ fail_on_success fda query p1 "SELECT 1/0"
 fail_on_success fda --format arrow_ipc query p1 "SELECT 1/0"
 fail_on_success fda --format json query p1 "SELECT 1/0"
 
+# Intermediate `SELECT`s still error today; we plan to support
+# `select; select; ...` once a streaming protocol can frame multiple
+# result sets back to the caller.
+fail_on_success fda query p1 "SELECT 1; SELECT 2"
+
 # Transaction tests
 echo "Testing transaction commands..."
 fail_on_success fda commit-transaction p1

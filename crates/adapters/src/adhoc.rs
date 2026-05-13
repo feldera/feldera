@@ -297,6 +297,10 @@ pub(crate) async fn execute_sql(
 
 /// Plan and translate `sql` against `state`, applying `PREPARE`/`EXECUTE`
 /// substitution within the scope of a single ad-hoc request.
+///
+/// Only the final statement returns rows. Earlier statements may be
+/// `PREPARE`s or any non-result-producing statement (e.g. `INSERT`),
+/// executed for their side effect.
 async fn execute_sql_with_state(
     state: SessionState,
     sql: &str,
@@ -315,9 +319,6 @@ async fn execute_sql_with_state(
     let mut prepared: HashMap<String, LogicalPlan> = HashMap::new();
     let sql_options = SQLOptions::new().with_allow_ddl(false);
 
-    // For now, only the final statement may produce a result set. All
-    // preceding statements must be PREPAREs whose inner plans are stashed
-    // for a later EXECUTE in the same request.
     while statements.len() > 1 {
         let stmt = statements.pop_front().unwrap();
         let plan = state.statement_to_plan(stmt).await?;
@@ -326,13 +327,39 @@ async fn execute_sql_with_state(
                 sql_options.verify_plan(&input)?;
                 prepared.insert(name, (*input).clone());
             }
-            _ => {
+            LogicalPlan::Statement(Statement::Execute(Execute { name, parameters })) => {
+                // `EXECUTE` of a previously-prepared statement, used here
+                // for its side effects (e.g. a prepared INSERT).
+                let prepared_plan =
+                    prepared
+                        .remove(&name)
+                        .ok_or_else(|| PipelineError::AdHocQueryError {
+                            error: format!(
+                                "prepared statement '{name}' is not defined in this request"
+                            ),
+                            df: None,
+                        })?;
+                let values = execute_parameters_to_scalars(&parameters)?;
+                let bound = prepared_plan.replace_params_with_values(&ParamValues::List(values))?;
+                sql_options.verify_plan(&bound)?;
+                drain_intermediate_plan(&state, bound).await?;
+            }
+            other if is_result_producing_plan(&other) => {
                 return Err(PipelineError::AdHocQueryError {
-                    error: "only PREPARE statements may precede the final statement \
-                            in a multi-statement ad-hoc query"
+                    error: "only the final statement in a multi-statement \
+                            ad-hoc query may return a result set; \
+                            move SELECTs to the end or split into \
+                            separate requests"
                         .to_string(),
                     df: None,
                 });
+            }
+            other => {
+                // Non-result-producing intermediate statement (INSERT,
+                // UPDATE, DELETE, EXPLAIN, ...). Execute it for its side
+                // effects and discard the per-statement count row.
+                sql_options.verify_plan(&other)?;
+                drain_intermediate_plan(&state, other).await?;
             }
         }
     }
@@ -372,6 +399,26 @@ async fn execute_sql_with_state(
 
     sql_options.verify_plan(&final_plan)?;
     Ok(DataFrame::new(state, final_plan))
+}
+
+/// True if executing this plan would surface rows to the caller. Used to
+/// reject queries like `SELECT; INSERT` where the early `SELECT` would
+/// otherwise be silently dropped.
+fn is_result_producing_plan(plan: &LogicalPlan) -> bool {
+    !matches!(plan, LogicalPlan::Dml(_) | LogicalPlan::Statement(_))
+}
+
+/// Execute an intermediate statement for its side effects and drop the
+/// resulting batches. INSERTs produce a one-row count; we keep that
+/// count out of the response stream so only the request's final
+/// statement contributes rows.
+async fn drain_intermediate_plan(
+    state: &SessionState,
+    plan: LogicalPlan,
+) -> Result<(), PipelineError> {
+    let df = DataFrame::new(state.clone(), plan);
+    let _ = df.collect().await?;
+    Ok(())
 }
 
 /// Convert `EXECUTE` positional parameters to DataFusion's `ScalarAndMetadata`
@@ -614,15 +661,74 @@ mod tests {
         assert_eq!(total_rows, 0);
     }
 
+    /// An intermediate `SELECT` (or any other result-producing statement)
+    /// must be rejected: only one result set comes back per request, so
+    /// executing the earlier SELECT silently would discard its rows.
     #[tokio::test]
-    async fn non_prepare_intermediate_statement_errors() {
+    async fn intermediate_select_is_rejected() {
         let state = test_state();
         let err = execute_sql_with_state(state, "SELECT 1; SELECT 2")
             .await
             .unwrap_err();
-        assert!(
-            format!("{err:?}").contains("PREPARE"),
-            "unexpected error: {err:?}"
-        );
+        let msg = format!("{err}");
+        assert!(msg.contains("final statement"), "unexpected error: {msg}");
+    }
+
+    /// Multiple `INSERT`s followed by a `SELECT` must execute in order,
+    /// committing each insert's side effect, and only surface the final
+    /// `SELECT`'s rows.
+    #[tokio::test]
+    async fn intermediate_inserts_run_and_final_select_returns_rows() {
+        use datafusion::arrow::array::Int64Array;
+        use datafusion::arrow::datatypes::{DataType, Field, Schema};
+        use datafusion::datasource::MemTable;
+        use std::sync::Arc;
+
+        // Register a writable in-memory table so DML executes for real.
+        let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Int64, false)]));
+        let mem = MemTable::try_new(schema.clone(), vec![vec![]]).unwrap();
+        let ctx = SessionContext::new_with_state(test_state());
+        ctx.register_table("t", Arc::new(mem)).unwrap();
+        let state = ctx.state();
+
+        let batches = collect_rows(
+            state,
+            "INSERT INTO t VALUES (1); INSERT INTO t VALUES (2); \
+             SELECT SUM(x) AS s FROM t",
+        )
+        .await;
+        let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+        assert_eq!(total_rows, 1);
+        let col = batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("int64 column");
+        assert_eq!(col.value(0), 3);
+    }
+
+    /// A trailing `INSERT` (no final SELECT) must still execute, and
+    /// the final statement's count row is surfaced as today.
+    #[tokio::test]
+    async fn final_insert_returns_count() {
+        use datafusion::arrow::datatypes::{DataType, Field, Schema};
+        use datafusion::datasource::MemTable;
+        use std::sync::Arc;
+
+        let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Int64, false)]));
+        let mem = MemTable::try_new(schema.clone(), vec![vec![]]).unwrap();
+        let ctx = SessionContext::new_with_state(test_state());
+        ctx.register_table("t", Arc::new(mem)).unwrap();
+        let state = ctx.state();
+
+        let batches = collect_rows(
+            state,
+            "INSERT INTO t VALUES (10); INSERT INTO t VALUES (20)",
+        )
+        .await;
+        // The final INSERT yields a single-row count batch; check only
+        // that one row came back.
+        let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+        assert_eq!(total_rows, 1);
     }
 }
