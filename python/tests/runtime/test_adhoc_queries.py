@@ -235,6 +235,20 @@ class TestAdhocQueries(SharedTestPipeline):
         assert prepared_rows and prepared_rows[0].get("c") == 1
         assert self._count("SELECT COUNT(*) AS c FROM t1") == 7
 
+        # Multiple non-PREPARE statements in a single request: earlier
+        # INSERTs run for their side effect; the trailing SELECT returns
+        # its rows.
+        chain_rows = list(
+            self.pipeline.query(
+                "INSERT INTO t1 VALUES "
+                "(200,'2020-02-02','11111111-1111-1111-1111-111111111111');"
+                "INSERT INTO t1 VALUES "
+                "(201,'2020-02-02','22222222-2222-2222-2222-222222222222');"
+                "SELECT COUNT(*) AS c FROM t1 WHERE id BETWEEN 200 AND 201"
+            )
+        )
+        assert chain_rows and chain_rows[0].get("c") == 2
+
         # Non-materialized table via its materialized view
         assert self._count("SELECT COUNT(*) AS c FROM view_of_not_materialized") == 0
         ins_nm = list(
