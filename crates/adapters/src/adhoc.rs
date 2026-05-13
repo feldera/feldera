@@ -408,8 +408,36 @@ fn parse_sql_statements(
         .with_dialect(dialect.as_ref())
         .with_recursion_limit(recursion_limit)
         .build()?
-        .parse_statements()?;
+        .parse_statements()
+        .map_err(format_parser_error)?;
     Ok(statements)
+}
+
+/// Convert a DataFusion error coming out of the SQL parser into a
+/// `PipelineError` whose message is the parser's `Display`, not its
+/// `Debug` form. The parser already appends the location ("at Line: X,
+/// Column: Y") to its messages; preserving that string gives the user
+/// something like
+///   `sql parser error: Expected: end of statement, found: in at Line: 1, Column: 30`
+/// instead of the wrapped
+///   `SQL error: ParserError("Expected: ... at Line: 1, Column: 30")`.
+///
+/// The DataFusion parser may wrap its `DataFusionError::SQL` in a
+/// `DataFusionError::Diagnostic`; unwrap that here so the inner parser
+/// message reaches the user.
+fn format_parser_error(error: datafusion::error::DataFusionError) -> PipelineError {
+    use datafusion::error::DataFusionError;
+    let inner = match error {
+        DataFusionError::Diagnostic(_, inner) => *inner,
+        other => other,
+    };
+    match inner {
+        DataFusionError::SQL(parser_err, _) => PipelineError::AdHocQueryError {
+            error: parser_err.to_string(),
+            df: None,
+        },
+        other => PipelineError::from(other),
+    }
 }
 
 /// Stream the result of an ad-hoc query using a HTTP streaming response.
@@ -499,6 +527,33 @@ mod tests {
     fn invalid_sql_returns_error() {
         let state = test_state();
         assert!(parse_sql_statements(&state, "SELECT * FROM").is_err());
+    }
+
+    /// Parser errors must include the line/column of the offending token so
+    /// the user can locate the typo without re-reading the query in their
+    /// head.
+    #[test]
+    fn parse_error_message_carries_location() {
+        let state = test_state();
+        // 'in' is not a valid statement starter here; the parser stops on the
+        // token after the column reference, which is at line 1 / column 30.
+        let err = parse_sql_statements(&state, "select * from foo where bar = in baz")
+            .expect_err("expected a parser error");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("Line: 1"),
+            "missing line number in error message: {msg}"
+        );
+        assert!(
+            msg.contains("Column:"),
+            "missing column number in error message: {msg}"
+        );
+        // The `Debug`-formatted `ParserError("...")` wrapper from earlier
+        // versions of the message should be gone.
+        assert!(
+            !msg.contains("ParserError(\""),
+            "raw Debug wrapper leaked into error message: {msg}"
+        );
     }
 
     #[test]
