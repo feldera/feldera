@@ -6,9 +6,7 @@ configureTestClient()
 test.describe('Backend version banner', () => {
   test.setTimeout(60_000)
 
-  test('polling refreshes feldera_config_cache when backend version changes', async ({
-    page
-  }) => {
+  test('polling refreshes feldera_config_cache when backend version changes', async ({ page }) => {
     // Intercept /v0/config and overwrite version/revision. Direct localStorage
     // poisoning does not work — `lazyUpdateConfig()` is scheduled ~2s after
     // any warm-cache load() and calls `fetchConfigs()`, which overwrites the
@@ -53,11 +51,9 @@ test.describe('Backend version banner', () => {
     // Cold-cache boot: load() calls fetchConfigs() → intercepted → writes
     // OLD into feldera_config_cache and into data.feldera.version.
     await page.goto('/demos')
-    await page.waitForFunction(
-      () => !!localStorage.getItem('feldera_config_cache'),
-      null,
-      { timeout: 3_000 }
-    )
+    await page.waitForFunction(() => !!localStorage.getItem('feldera_config_cache'), null, {
+      timeout: 3_000
+    })
 
     // Sanity check: the boot fetch wrote OLD. If this is wrong the route
     // mock isn't intercepting, and every later assertion is a false positive.

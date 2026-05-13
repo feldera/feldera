@@ -11,6 +11,7 @@
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
+  import { fetchConfigs } from '$lib/compositions/configCache'
   import {
     useClusterHealth,
     useRefreshClusterHealth
@@ -23,7 +24,6 @@
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
-  import { fetchConfigs } from '$lib/compositions/configCache'
   import { closedIntervalAction } from '$lib/functions/common/promise'
   import type { Snippet } from '$lib/types/svelte'
   import type { LayoutData } from './$types'

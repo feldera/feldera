@@ -342,7 +342,9 @@ export function findSplice<T>(
   ...insertItems: T[]
 ): [T] | undefined {
   const idx = arr.findIndex(predicate)
-  if (idx === -1) return undefined
+  if (idx === -1) {
+    return undefined
+  }
 
   // splice: at idx, remove exactly 1 element, then insert any insertItems
   return arr.splice(idx, 1, ...insertItems) as [T]

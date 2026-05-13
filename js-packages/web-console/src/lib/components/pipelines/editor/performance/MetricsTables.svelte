@@ -211,7 +211,9 @@
   {#if hasErrors}
     <span
       data-testid="btn-icon-output-errors"
-      class="fd {hasFatalError ? 'fd-circle-x' : 'fd-circle-alert'} cursor-pointer text-[16px] text-error-500"
+      class="fd {hasFatalError
+        ? 'fd-circle-x'
+        : 'fd-circle-alert'} cursor-pointer text-[16px] text-error-500"
       {...onErrorClick
         ? {
             onclick: (e) => {
@@ -502,7 +504,9 @@
 {/snippet}
 
 {#snippet tableMultiConnectorCell(data: AggregatedInputEndpointMetrics, isExpanded: boolean)}
-  {@const runningCount = data.connectors.filter((c) => c.paused === false && c.metrics.end_of_input === false).length}
+  {@const runningCount = data.connectors.filter(
+    (c) => c.paused === false && c.metrics.end_of_input === false
+  ).length}
   {@const anyErrors = data.connectors.some(inputHasErrors)}
   {@const anyFatalError = data.connectors.some((c) => c.fatal_error != null)}
   {@const anyBarrier = data.connectors.some((c) => c.barrier === true)}

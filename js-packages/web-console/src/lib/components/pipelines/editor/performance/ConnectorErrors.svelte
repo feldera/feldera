@@ -130,7 +130,7 @@
   })
 </script>
 
-<div class="bg-white-dark flex h-full flex-col gap-2 rounded pt-4 px-4">
+<div class="bg-white-dark flex h-full flex-col gap-2 rounded px-4 pt-4">
   <div class="flex items-start justify-between">
     <div>
       <div class="font-medium">{relationName} · {strippedConnectorName}</div>
@@ -159,7 +159,7 @@
     </SegmentedControl>
     <span class="text-surface-500">errors</span>
   </div>
-  <div class="scrollbar flex-1 overflow-y-auto pr-4 -mr-4">
+  <div class="-mr-4 scrollbar flex-1 overflow-y-auto pr-4">
     {#if loading}
       <div class="p-2 text-surface-500">Loading…</div>
     {:else if displayItems.length === 0}

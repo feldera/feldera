@@ -111,7 +111,9 @@ describe('closedIntervalAction', () => {
     let calls = 0
     const action = vi.fn(async () => {
       calls++
-      if (calls === 1) await firstDone
+      if (calls === 1) {
+        await firstDone
+      }
     })
 
     const cancel = closedIntervalAction(action, 1000)
@@ -136,7 +138,9 @@ describe('closedIntervalAction', () => {
     let calls = 0
     const action = vi.fn(async () => {
       calls++
-      if (calls === 1) throw new Error('boom')
+      if (calls === 1) {
+        throw new Error('boom')
+      }
     })
 
     const cancel = closedIntervalAction(action, 1000)

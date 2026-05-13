@@ -63,7 +63,9 @@ export function useReactiveWaiter<T>(
     const currentValue = reactiveState()
     const waitingWaiters = Array.from(activeWaiters.values()).filter((waiter) => waiter.isWaiting)
 
-    if (waitingWaiters.length === 0) return
+    if (waitingWaiters.length === 0) {
+      return
+    }
 
     for (const waiter of waitingWaiters) {
       try {

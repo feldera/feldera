@@ -67,7 +67,9 @@ export const closedIntervalAction = (
   }
 
   const tick = () => {
-    if (state.name !== 'scheduled') return
+    if (state.name !== 'scheduled') {
+      return
+    }
     state = { name: 'running' }
     Promise.resolve()
       .then(action)
@@ -78,7 +80,9 @@ export const closedIntervalAction = (
   }
 
   const afterTick = () => {
-    if (state.name !== 'running') return
+    if (state.name !== 'running') {
+      return
+    }
     const now = Date.now()
     nextAt += periodMs
     // If we fell far behind (e.g. action took longer than one period), reset cadence

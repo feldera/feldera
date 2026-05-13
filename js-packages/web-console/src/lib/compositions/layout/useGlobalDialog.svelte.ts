@@ -34,7 +34,9 @@ export const useGlobalDialog = () => {
     },
     set dialog(value: typeof globalDialog) {
       globalDialog = value
-      if (!value) globalOnClickAway = null
+      if (!value) {
+        globalOnClickAway = null
+      }
     },
     get onClickAway() {
       return globalOnClickAway

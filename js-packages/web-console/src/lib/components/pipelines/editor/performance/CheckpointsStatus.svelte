@@ -42,12 +42,12 @@
   <CheckpointDialog onConfirm={handleCheckpoint} />
 {/snippet}
 
-<div class="bg-white-dark flex h-full flex-col gap-2 rounded pt-4 px-4">
+<div class="bg-white-dark flex h-full flex-col gap-2 rounded px-4 pt-4">
   <div class="flex items-start justify-between">
     <div class="text-lg font-medium">Checkpoints</div>
     <button class="fd fd-x text-[20px]" onclick={onClose} aria-label="Close"></button>
   </div>
-  <div class="scrollbar flex-1 overflow-y-auto pr-4 -mr-4">
+  <div class="-mr-4 scrollbar flex-1 overflow-y-auto pr-4">
     {#if checkpoints.length === 0}
       <div class="p-2 text-surface-500">No checkpoints</div>
     {:else}

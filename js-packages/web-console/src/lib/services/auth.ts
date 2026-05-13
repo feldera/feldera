@@ -97,7 +97,9 @@ export const errorResponseMiddleware = (error: unknown, response: Response | und
   if (error && typeof error === 'object') {
     try {
       ;(error as any).response = response
-      if (response) (error as any).status = response.status
+      if (response) {
+        ;(error as any).status = response.status
+      }
       return error
     } catch {
       // Frozen / non-extensible — fall through to a fresh object.
