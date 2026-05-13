@@ -166,6 +166,10 @@ impl ClockReader {
     /// guarantees `NOW()` moves strictly forward (a sub-resolution
     /// advance moves the clock by one full resolution).  Requires
     /// `http_driven` mode.
+    ///
+    /// The returned value is the `NOW()` the worker will emit on its
+    /// next pipeline step; queries against materialized views may
+    /// observe the previous value until that step completes.
     pub async fn advance(&self, delta_ms: Option<u64>) -> AnyResult<i64> {
         let (reply, rx) = oneshot::channel();
         self.clock_sender
@@ -354,6 +358,7 @@ impl ClockReader {
                         if !config.http_driven {
                             next_tick = Some(Self::next_tick_time(&config, &now, effective_delta_ms));
                         }
+
                     }
                     Some(InputReaderCommand::Disconnect) => {
                         break;
@@ -930,10 +935,32 @@ mod test {
             let reader = controller.get_input_endpoint("now").unwrap();
             let clock_reader = reader.as_any().downcast::<super::ClockReader>().unwrap();
 
+            // `advance()` is async w.r.t. emission: it returns when the
+            // worker has updated state and requested a step, but the
+            // matching Queue (which actually journals the value) is
+            // processed by the controller separately.  Wait for each
+            // emission to be observed by the test circuit before doing
+            // the next thing — gives us a deterministic signal rather
+            // than relying on sleep.
+            let wait_for_emit = |expected: i64| {
+                let deadline = std::time::Instant::now() + Duration::from_secs(30);
+                while std::time::Instant::now() < deadline {
+                    if test_stats.last_value() == expected {
+                        return;
+                    }
+                    sleep(Duration::from_millis(10));
+                }
+                panic!(
+                    "emit of {expected} never observed (last: {})",
+                    test_stats.last_value()
+                );
+            };
+
             // First advance, lands before the checkpoint.
             TOKIO
                 .block_on(clock_reader.advance(Some(one_day_ms as u64)))
                 .unwrap();
+            wait_for_emit(anchor_ms + one_day_ms);
             controller.checkpoint().unwrap();
 
             // Second advance, lands after the checkpoint marker.  This
@@ -942,11 +969,7 @@ mod test {
                 .block_on(clock_reader.advance(Some(one_day_ms as u64)))
                 .unwrap();
             assert_eq!(post, anchor_ms + 2 * one_day_ms);
-            // `advance()` returns when the worker has requested a step,
-            // but the Queue that actually records the value to the
-            // journal is asynchronous.  Wait for it to drain or there
-            // will be nothing for run 2 to replay.
-            sleep(Duration::from_secs(1));
+            wait_for_emit(anchor_ms + 2 * one_day_ms);
             controller.stop().unwrap();
             post
         };
