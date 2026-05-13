@@ -102,7 +102,9 @@ export const createSseClient = <TData = unknown>({
     const signal = options.signal ?? new AbortController().signal
 
     while (true) {
-      if (signal.aborted) break
+      if (signal.aborted) {
+        break
+      }
 
       attempt++
 
@@ -132,9 +134,13 @@ export const createSseClient = <TData = unknown>({
         const _fetch = options.fetch ?? globalThis.fetch
         const response = await _fetch(request)
 
-        if (!response.ok) throw new Error(`SSE failed: ${response.status} ${response.statusText}`)
+        if (!response.ok) {
+          throw new Error(`SSE failed: ${response.status} ${response.statusText}`)
+        }
 
-        if (!response.body) throw new Error('No body in SSE response')
+        if (!response.body) {
+          throw new Error('No body in SSE response')
+        }
 
         const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
 
@@ -153,7 +159,9 @@ export const createSseClient = <TData = unknown>({
         try {
           while (true) {
             const { done, value } = await reader.read()
-            if (done) break
+            if (done) {
+              break
+            }
             buffer += value
             // Normalize line endings: CRLF -> LF, then CR -> LF
             buffer = buffer.replace(/\r\n/g, '\n').replace(/\r/g, '\n')

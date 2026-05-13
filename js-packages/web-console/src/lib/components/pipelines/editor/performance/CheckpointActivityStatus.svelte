@@ -28,12 +28,13 @@
   )
 
   const formatPermanentError = (e: (typeof permanentErrors & {})[number]) => {
-    if (typeof e === 'string')
+    if (typeof e === 'string') {
       return e === 'StorageRequired'
         ? 'Storage must be configured'
         : e === 'EnterpriseFeature'
           ? 'Enterprise feature'
           : e
+    }
     if ('UnsupportedInputEndpoint' in e) {
       return `Input "${e.UnsupportedInputEndpoint}" does not support checkpointing`
     }
@@ -55,8 +56,9 @@
           return r
       }
     }
-    if (r && typeof r === 'object' && 'InputEndpointBarrier' in r)
+    if (r && typeof r === 'object' && 'InputEndpointBarrier' in r) {
       return `Input "${(r as { InputEndpointBarrier: string }).InputEndpointBarrier}" barrier`
+    }
     return String(r)
   }
 </script>

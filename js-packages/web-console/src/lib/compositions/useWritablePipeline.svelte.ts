@@ -100,7 +100,9 @@ export const useRefreshPipeline = ({
   $effect(() => {
     const ps = getPipelines()
     untrack(() => {
-      if (getDeleted?.()) return
+      if (getDeleted?.()) {
+        return
+      }
       const pipeline = getPipeline().current
       if (!pipeline || !ps) {
         return

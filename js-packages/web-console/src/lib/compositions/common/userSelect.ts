@@ -319,7 +319,9 @@ export const virtualSelect = (
         expectCaretFromClick = false
         if (selection.anchorNode && root.contains(selection.anchorNode)) {
           const pos = domPointToLogical(selection.anchorNode, selection.anchorOffset)
-          if (pos) caretPosition = pos
+          if (pos) {
+            caretPosition = pos
+          }
         }
       }
       // Selection collapsed — decide whether to preserve the tracked selection.
@@ -512,7 +514,9 @@ export const virtualSelect = (
   }
 
   function oncopy(e: ClipboardEvent) {
-    if (currentSelection === null) return
+    if (currentSelection === null) {
+      return
+    }
     let content: string
     if (currentSelection === 'all') {
       content = getCopyContent('all')
@@ -597,14 +601,18 @@ export const virtualSelect = (
   // Starting a new drag-selection is unaffected: handleSelectionChange will set
   // currentSelection when the Range appears.
   function handlePointerDown(e: PointerEvent) {
-    if (e.button !== 0) return
+    if (e.button !== 0) {
+      return
+    }
     // Ignore clicks on the scrollbar. We use elementFromPoint to detect this:
     // if the hit element is the scroll container itself (not a descendant), the
     // click landed on the scrollbar or empty padding. This works for both Chrome's
     // classic scrollbar (which occupies space outside clientWidth) and Firefox's
     // overlay scrollbar (which hovers over content and doesn't reduce clientWidth).
     const hitEl = document.elementFromPoint(e.clientX, e.clientY)
-    if (hitEl === node) return
+    if (hitEl === node) {
+      return
+    }
 
     // Shift+click with an off-screen caretPosition: the browser can't create the
     // right Range (the original caret node was recycled), so we'll handle it in

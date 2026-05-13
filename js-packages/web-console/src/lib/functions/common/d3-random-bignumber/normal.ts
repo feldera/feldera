@@ -27,12 +27,13 @@ export const randomNormalBigNumber: RandomNormalBigNumber = (function sourceRand
         ;(y = x), (x = null)
       }
       // Otherwise, generate a new x and y.
-      else
+      else {
         do {
           x = source() * 2 - 1
           y = source() * 2 - 1
           r = new BigNumber(x).pow(2).plus(new BigNumber(y).pow(2)).toNumber()
         } while (!r || r > 1)
+      }
 
       return mu.plus(
         sigma.times(y).times(

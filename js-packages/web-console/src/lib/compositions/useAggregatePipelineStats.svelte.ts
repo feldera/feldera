@@ -62,7 +62,9 @@ export const useAggregatePipelineStats = (
       return
     }
     metricsAvailable
-    if (options?.getDeleted?.()) return
+    if (options?.getDeleted?.()) {
+      return
+    }
     const cancel = untrack(() => closedIntervalAction(() => doFetch(pipelineName), refetchMs))
     return () => {
       cancel()

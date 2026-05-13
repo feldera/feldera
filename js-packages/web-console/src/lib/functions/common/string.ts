@@ -15,7 +15,9 @@ export const escapeRegExp = (value: string) => {
  * @returns
  */
 export const isUrl = (url: string | undefined) => {
-  if (!url) return false
+  if (!url) {
+    return false
+  }
   try {
     new URL(url)
   } catch (e) {
@@ -76,12 +78,18 @@ export function nthIndexOf(
   n: number,
   position: number = 0
 ): number {
-  if (n <= 0) return -1
+  if (n <= 0) {
+    return -1
+  }
 
   const index = str.indexOf(substring, position)
 
-  if (index === -1) return -1
-  if (n === 1) return index
+  if (index === -1) {
+    return -1
+  }
+  if (n === 1) {
+    return index
+  }
 
   return nthIndexOf(str, substring, n - 1, index + 1)
 }

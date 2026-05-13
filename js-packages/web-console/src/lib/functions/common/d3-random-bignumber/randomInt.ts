@@ -27,7 +27,9 @@ export interface RandomIntBigNumber extends RandomBigNumberGenerationSource {
 
 export const randomIntBigNumber: RandomIntBigNumber = (function sourceRandomIntBigNumber(source) {
   function randomIntBigNumber(min: BigNumber, max?: BigNumber) {
-    if (arguments.length < 2) (max = min), (min = new BigNumber(0))
+    if (arguments.length < 2) {
+      ;(max = min), (min = new BigNumber(0))
+    }
     min = min!.decimalPlaces(0, BigNumber.ROUND_FLOOR)
     max = max!.decimalPlaces(0, BigNumber.ROUND_FLOOR).minus(min)
     return () => max!.times(source()).plus(min!).decimalPlaces(0, BigNumber.ROUND_FLOOR)
