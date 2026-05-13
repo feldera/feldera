@@ -55,9 +55,6 @@ def _view_now(pipeline) -> str:
 
 
 class TestClockAdvance(unittest.TestCase):
-    @unittest.skip(
-        "POST /clock/advance is new in this PR; re-enable once the platform CI is updated."
-    )
     def test_anchor_plus_advance(self):
         pipeline_name = unique_pipeline_name("test_clock_advance")
 
@@ -135,9 +132,6 @@ class TestClockAdvance(unittest.TestCase):
             pipeline.stop(force=True)
             pipeline.clear_storage()
 
-    @unittest.skip(
-        "POST /clock/advance is new in this PR; re-enable once the platform CI is updated."
-    )
     def test_pre_epoch_anchor(self):
         """Pre-1970 anchor: `now_ms` is negative end-to-end."""
         pipeline_name = unique_pipeline_name("test_pre_epoch_clock")
