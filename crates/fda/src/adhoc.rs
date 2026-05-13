@@ -91,11 +91,16 @@ async fn handle_websocket_message_generic(
             if code == CloseCode::Normal {
                 trace!("Websocket normal closure.");
             } else if code == CloseCode::Error {
+                // A runtime error during query execution closes the WS
+                // with `CloseCode::Error`. The server already sent the
+                // error details in a preceding text frame, so we don't
+                // print another message here; we only need to surface a
+                // non-zero exit code for scripts and CI.
+                // Tracks https://github.com/feldera/feldera/issues/4973
                 if !reason.is_empty() {
-                    warn!("Error encountered during query processing: {}.", reason);
-                } else {
-                    warn!("Error encountered during query processing.");
+                    eprintln!("ERROR: {}.", reason);
                 }
+                std::process::exit(1);
             } else {
                 eprint!("Connection unexpectedly closed by pipeline ({})", code);
                 if !reason.is_empty() {

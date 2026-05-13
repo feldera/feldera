@@ -121,6 +121,13 @@ fda connector p1 example unknown start || true
 # Adhoc queries
 fda query p1 "SELECT * FROM example"
 
+# Runtime errors during query execution must surface as a non-zero exit
+# code in WebSocket mode, otherwise scripts have no way to detect a
+# failure.
+fail_on_success fda query p1 "SELECT 1/0"
+fail_on_success fda --format arrow_ipc query p1 "SELECT 1/0"
+fail_on_success fda --format json query p1 "SELECT 1/0"
+
 # Transaction tests
 echo "Testing transaction commands..."
 fail_on_success fda commit-transaction p1
