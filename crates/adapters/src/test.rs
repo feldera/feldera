@@ -364,7 +364,7 @@ where
                 persistent_output_id.as_ref().map(|s| s.as_str()),
                 input.clone(),
                 if index_is_alias {
-                    Some(SqlIdentifier::from(&format!("test_output{i}")))
+                    Some(SqlIdentifier::from(&format!("idx{i}")))
                 } else {
                     None
                 },
