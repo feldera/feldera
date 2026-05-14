@@ -9,14 +9,14 @@ describe('CheckpointDialog.svelte', () => {
       await render(CheckpointDialog, { onConfirm: vi.fn() })
       await expect
         .element(page.getByTestId('box-dialog-title'))
-        .toHaveTextContent('Checkpoint the current pipeline state')
+        .toHaveTextContent('Create a checkpoint?')
     })
 
     it('renders the warning description', async () => {
       await render(CheckpointDialog, { onConfirm: vi.fn() })
       await expect
         .element(page.getByTestId('box-dialog-description'))
-        .toHaveTextContent('Create the checkpoint?')
+        .toHaveTextContent('may delete the oldest checkpoint')
     })
 
     it('labels the action button "Checkpoint"', async () => {

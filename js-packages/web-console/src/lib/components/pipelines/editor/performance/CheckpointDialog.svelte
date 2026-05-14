@@ -9,9 +9,9 @@
 
 <GenericDialog
   content={{
-    title: 'Checkpoint the current pipeline state',
+    title: 'Create a checkpoint?',
     description:
-      'Create the checkpoint? This may delete the oldest checkpoint, and will temporarily increase load on the pipeline.',
+      'This may delete the oldest checkpoint and briefly increase pipeline load.',
     onSuccess: {
       name: 'Checkpoint',
       'data-testid': 'btn-confirm-checkpoint',
@@ -21,4 +21,5 @@
       }
     }
   }}
+  swapActions
 ></GenericDialog>

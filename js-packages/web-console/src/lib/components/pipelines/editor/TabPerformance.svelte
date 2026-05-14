@@ -183,8 +183,7 @@
 </script>
 
 {#snippet label()}
-  <span class="inline sm:hidden"> Perf </span>
-  <span class="hidden sm:inline"> Performance </span>
+  Runtime
 {/snippet}
 
 {#if isMetricsAvailable(pipeline.current.status) === 'no'}

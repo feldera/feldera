@@ -11,6 +11,7 @@
     danger,
     disabled,
     noclose,
+    swapActions,
     children
   }: {
     content: GlobalDialogContent
@@ -18,6 +19,7 @@
     disabled?: boolean
     /** When set, the dialog has no "X" button and does not auto-close on cancel/click-away. */
     noclose?: boolean
+    swapActions?: boolean
     children?: Snippet
   } = $props()
 
@@ -67,11 +69,12 @@
       <button
         onclick={() => cancel()}
         class="btn preset-filled-surface-50-950 px-4"
+        class:order-last={swapActions}
         data-testid="btn-dialog-cancel"
       >
         {content.onCancel?.name ?? 'Cancel'}
       </button>
-      <div>
+      <div class:order-first={swapActions}>
         <button
           {disabled}
           onclick={content.onSuccess.callback}
