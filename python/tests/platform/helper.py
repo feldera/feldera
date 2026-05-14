@@ -13,23 +13,24 @@ No automatic cleanup; pipelines are left in place for inspection after failures.
 from __future__ import annotations
 
 import json
-import time
-import pytest
-import requests
-import logging
-from typing import Any, Dict, Iterable
+import os
 from http import HTTPStatus
+from typing import Any, Dict, Iterable
 from urllib.parse import quote, quote_plus
 
+import pytest
+import requests
+
+from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
 from feldera.testutils_oidc import get_oidc_test_helper
 from tests import (
-    FELDERA_REQUESTS_VERIFY,
     API_KEY,
     BASE_URL,
+    FELDERA_REQUESTS_VERIFY,
     TEST_CLIENT,
     unique_pipeline_name,
 )
-from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
+from tests.utils import wait_for_condition
 
 API_PREFIX = "/v0"
 
@@ -122,18 +123,24 @@ def delete(path: str, **kw) -> requests.Response:
 
 
 def create_pipeline(name: str, sql: str):
-    r = post_json(
-        api_url("/pipelines"),
-        {
-            "name": name,
-            "program_code": sql,
-            "runtime_config": {
-                "workers": FELDERA_TEST_NUM_WORKERS,
-                "hosts": FELDERA_TEST_NUM_HOSTS,
-                "logging": "debug",
-            },
+    payload: Dict[str, Any] = {
+        "name": name,
+        "program_code": sql,
+        "runtime_config": {
+            "workers": FELDERA_TEST_NUM_WORKERS,
+            "hosts": FELDERA_TEST_NUM_HOSTS,
+            "logging": "debug",
         },
-    )
+    }
+    # Mirror `PipelineBuilder`: in CI `FELDERA_RUNTIME_VERSION` pins the runtime
+    # in theory this isn't needed because all platform tests should NOT run with
+    # a runtime version set and a runtime test should NOT use this function and
+    # use PipelineBuilder, but it avoids a footgun in case a runtime test were to
+    # ever use this helper by accident
+    runtime_version = os.environ.get("FELDERA_RUNTIME_VERSION")
+    if runtime_version:
+        payload["program_config"] = {"runtime_version": runtime_version}
+    r = post_json(api_url("/pipelines"), payload)
     assert r.status_code == HTTPStatus.CREATED, r.text
     wait_for_program_success(name, 1)
 
@@ -242,59 +249,6 @@ def wait_for_program_success(
         timeout_s=timeout_s,
         poll_interval_s=poll_interval_s,
     )
-
-
-def wait_for_condition(
-    description: str,
-    predicate_func,
-    timeout_s: float | None,
-    poll_interval_s: float,
-) -> None:
-    """
-    Waits until the condition is met by regularly checking if `predicate_func()` returns `True`.
-
-    :param description: Human-readable description used in timeout/errors.
-    :param predicate_func: Callable function (taking `this` pipeline as argument) returning `True` when condition is met.
-    :param timeout_s: Maximum wait time in seconds. `None` means there is no timeout.
-    :param poll_interval_s: Poll interval in seconds. The timeout is enforced at this granularity.
-
-    :raises TimeoutError: If the condition is not met within the specified timeout.
-    """
-    # Polling interval should not exceed the timeout
-    if timeout_s is not None and poll_interval_s > timeout_s:
-        raise ValueError(
-            f"poll interval ({poll_interval_s}s) cannot be larger than"
-            f" timeout ({timeout_s}s)"
-        )
-
-    # Waiting constant variables
-    timestamp_start_s = time.monotonic()
-    timestamp_deadline_s = timestamp_start_s + timeout_s
-    if timeout_s is None:
-        timeout_info = "no timeout is enforced"
-    else:
-        timeout_info = f"timeout: {timeout_s:.1}s"
-
-    # Waiting loop: exits either if the predicate function returns a value which evaluates to `True`
-    # or a timeout (if enforced) -- whichever occurs first.
-    attempt = 0
-    while True:
-        timestamp_now_s = time.monotonic()
-        if timestamp_now_s > timestamp_deadline_s:
-            raise TimeoutError(
-                f"timeout ({timeout_s:.1}s) waiting for condition '{description}'"
-            )
-        attempt += 1
-        if predicate_func():
-            logging.debug(
-                f"condition '{description}' has been met after {timestamp_now_s - timestamp_start_s:.1}s"
-            )
-            return
-        else:
-            logging.debug(
-                f"condition '{description}' is not yet met (attempt: {attempt}); {timestamp_now_s - timestamp_start_s:.1}s have passed ({timeout_info})"
-            )
-        time.sleep(poll_interval_s)
 
 
 def extract_object_by_name(

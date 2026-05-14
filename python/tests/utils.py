@@ -1,7 +1,9 @@
+import logging
 import os
 import pathlib
 import shutil
 import tempfile
+import time
 import uuid
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -248,3 +250,44 @@ class DeltaTestLocation:
         if self.local_dir is not None:
             shutil.rmtree(self.local_dir, ignore_errors=True)
             self.local_dir = None
+
+
+def wait_for_condition(
+    description: str,
+    predicate_func,
+    timeout_s: float | None,
+    poll_interval_s: float,
+) -> None:
+    """Poll ``predicate_func`` until it returns truthy or the timeout elapses.
+
+    :param description: Human-readable description used in timeout/errors.
+    :param predicate_func: Callable returning ``True`` when condition is met.
+    :param timeout_s: Maximum wait time in seconds. ``None`` means wait forever.
+    :param poll_interval_s: Poll interval in seconds.
+
+    :raises TimeoutError: If the condition is not met within ``timeout_s``.
+    """
+    if timeout_s is not None and poll_interval_s > timeout_s:
+        raise ValueError(
+            f"poll interval ({poll_interval_s}s) cannot be larger than"
+            f" timeout ({timeout_s}s)"
+        )
+
+    timestamp_start_s = time.monotonic()
+    timestamp_deadline_s = (
+        timestamp_start_s + timeout_s if timeout_s is not None else float("inf")
+    )
+    attempt = 0
+    while True:
+        if time.monotonic() > timestamp_deadline_s:
+            raise TimeoutError(
+                f"timeout ({timeout_s:.1f}s) waiting for condition '{description}'"
+            )
+        attempt += 1
+        if predicate_func():
+            logging.debug(
+                f"condition '{description}' met after"
+                f" {time.monotonic() - timestamp_start_s:.1f}s"
+            )
+            return
+        time.sleep(poll_interval_s)

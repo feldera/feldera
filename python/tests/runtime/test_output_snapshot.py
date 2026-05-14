@@ -5,14 +5,8 @@ from feldera.enums import BootstrapPolicy
 from feldera.pipeline import Pipeline
 from feldera.runtime_config import RuntimeConfig, Storage
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, skip_on_arm64
-from tests import TEST_CLIENT
-from tests.platform.helper import (
-    create_pipeline,
-    gen_pipeline_name,
-    start_pipeline,
-    wait_for_condition,
-)
-from tests.utils import DeltaTestLocation
+from tests import TEST_CLIENT, unique_pipeline_name
+from tests.utils import DeltaTestLocation, wait_for_condition
 
 
 def sorted_rows(rows: list[dict]) -> list[dict]:
@@ -46,15 +40,20 @@ def collect_output_chunks(stream, expected_rows: int) -> tuple[list[dict], list[
     return chunks, rows
 
 
-@gen_pipeline_name
-def test_egress_send_snapshot(pipeline_name):
+def test_egress_send_snapshot():
+    pipeline_name = unique_pipeline_name("test_egress_send_snapshot")
     sql = """
     CREATE TABLE t1(id INT) WITH ('materialized' = 'true');
     CREATE MATERIALIZED VIEW v1 AS SELECT * FROM t1;
     """.strip()
 
-    create_pipeline(pipeline_name, sql)
-    start_pipeline(pipeline_name)
+    pipeline = PipelineBuilder(
+        TEST_CLIENT,
+        name=pipeline_name,
+        sql=sql,
+        runtime_config=RuntimeConfig(workers=FELDERA_TEST_NUM_WORKERS),
+    ).create_or_replace()
+    pipeline.start()
 
     TEST_CLIENT.push_to_pipeline(
         pipeline_name,
@@ -187,8 +186,7 @@ def _build_sql(locations: list[DeltaTestLocation], send_snapshot: bool) -> str:
 
 
 @skip_on_arm64  # https://github.com/delta-io/delta-rs/issues/4413
-@gen_pipeline_name
-def test_delta_output_send_snapshot_after_flag_flip(pipeline_name):
+def test_delta_output_send_snapshot_after_flag_flip():
     """Verify snapshot delivery to delta sinks across a connector
     modification (`send_snapshot: false` → `send_snapshot: true`).
 
@@ -218,6 +216,9 @@ def test_delta_output_send_snapshot_after_flag_flip(pipeline_name):
     contents — for every combination of indexes and which index the
     connector reads through.
     """
+    pipeline_name = unique_pipeline_name(
+        "test_delta_output_send_snapshot_after_flag_flip"
+    )
     locations = [
         DeltaTestLocation.create(f"{pipeline_name}_{label}") for label, *_ in _VIEWS
     ]
