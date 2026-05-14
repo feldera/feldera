@@ -743,6 +743,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             no_wait,
             initial,
             bootstrap_policy,
+            silent_bootstrap,
             no_dismiss_error,
         } => {
             if initial != "standby" && initial != "paused" && initial != "running" {
@@ -863,6 +864,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .pipeline_name(name.clone())
                 .initial(&initial)
                 .bootstrap_policy(&bootstrap_policy)
+                .silent_bootstrap(silent_bootstrap)
                 .dismiss_error(false) // It has already been separately dismissed
                 .send()
                 .await
@@ -958,10 +960,14 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 );
             }
         }
-        PipelineAction::Approve { name } => {
+        PipelineAction::Approve {
+            name,
+            silent_bootstrap,
+        } => {
             let response = client
                 .post_pipeline_approve()
                 .pipeline_name(name.clone())
+                .silent_bootstrap(silent_bootstrap)
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
@@ -1030,6 +1036,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             no_wait,
             initial,
             bootstrap_policy,
+            silent_bootstrap,
             no_dismiss_error,
         } => {
             let current_status = client
@@ -1077,6 +1084,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     no_wait,
                     initial,
                     bootstrap_policy,
+                    silent_bootstrap,
                     no_dismiss_error,
                 },
                 client,
@@ -1664,6 +1672,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             start,
             initial,
             bootstrap_policy,
+            silent_bootstrap,
             no_dismiss_error,
         } => {
             let client2 = client.clone();
@@ -1676,6 +1685,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         no_wait: false,
                         initial,
                         bootstrap_policy,
+                        silent_bootstrap,
                         no_dismiss_error,
                     },
                     client,

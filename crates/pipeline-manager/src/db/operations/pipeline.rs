@@ -10,7 +10,7 @@ use crate::db::operations::utils::{
     maybe_tenant_id_foreign_key_constraint_err, maybe_unique_violation,
 };
 use crate::db::types::pipeline::{
-    bootstrap_policy_to_string, runtime_desired_status_to_string, runtime_status_to_string,
+    bootstrap_config_to_string, runtime_desired_status_to_string, runtime_status_to_string,
     ExtendedPipelineDescr, ExtendedPipelineDescrEventInfo, ExtendedPipelineDescrMonitoring,
     PipelineDescr, PipelineId,
 };
@@ -31,7 +31,7 @@ use crate::db::types::utils::{
 use crate::db::types::version::Version;
 use deadpool_postgres::Transaction;
 use feldera_types::error::ErrorResponse;
-use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
+use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus, RuntimeStatus};
 use rmp_serde::{from_slice, to_vec};
 use serde_json::json;
 use tokio_postgres::Row;
@@ -889,7 +889,7 @@ pub(crate) async fn set_deployment_resources_desired_status(
     pipeline_name: &str,
     new_desired_status: ResourcesDesiredStatus,
     initial_runtime_desired_status: Option<RuntimeDesiredStatus>,
-    bootstrap_policy: Option<BootstrapPolicy>,
+    bootstrap_config: Option<BootstrapConfig>,
     dismiss_error: bool,
 ) -> Result<PipelineId, DBError> {
     let current = get_pipeline(txn, tenant_id, pipeline_name).await?;
@@ -917,15 +917,15 @@ pub(crate) async fn set_deployment_resources_desired_status(
     //            runner notices. Otherwise, another (not desired) status transition will set it
     //            to NULL.
     // - Provisioned: new value
-    let (final_deployment_initial, final_bootstrap_policy) = match new_desired_status {
+    let (final_deployment_initial, final_bootstrap_config) = match new_desired_status {
         ResourcesDesiredStatus::Stopped => {
             check_precondition(
                 initial_runtime_desired_status.is_none(),
                 "initial_runtime_desired_status should be None when becoming desired Stopped",
             )?;
             check_precondition(
-                bootstrap_policy.is_none(),
-                "bootstrap_policy should be None when becoming desired Stopped",
+                bootstrap_config.is_none(),
+                "bootstrap_config should be None when becoming desired Stopped",
             )?;
             if current.deployment_resources_status == ResourcesStatus::Stopped {
                 (None, None)
@@ -939,10 +939,10 @@ pub(crate) async fn set_deployment_resources_desired_status(
                 "initial_runtime_desired_status should be Some when becoming desired Provisioned",
             )?;
             check_precondition(
-                bootstrap_policy.is_some(),
-                "bootstrap_policy should be Some when becoming desired Provisioned",
+                bootstrap_config.is_some(),
+                "bootstrap_config should be Some when becoming desired Provisioned",
             )?;
-            (initial_runtime_desired_status, bootstrap_policy)
+            (initial_runtime_desired_status, bootstrap_config)
         }
     };
 
@@ -956,9 +956,9 @@ pub(crate) async fn set_deployment_resources_desired_status(
     }
 
     // If the current bootstrap policy is already set, it cannot be changed
-    if let Some(current_bootstrap_policy) = current.bootstrap_policy {
-        if let Some(new_bootstrap_policy) = final_bootstrap_policy {
-            if current_bootstrap_policy != new_bootstrap_policy {
+    if let Some(current_bootstrap_config) = current.bootstrap_policy {
+        if let Some(new_bootstrap_config) = final_bootstrap_config {
+            if current_bootstrap_config != new_bootstrap_config {
                 return Err(DBError::BootstrapPolicyImmutableUnlessStopped);
             }
         }
@@ -1003,7 +1003,7 @@ pub(crate) async fn set_deployment_resources_desired_status(
             &[
                 &new_desired_status.to_string(),
                 &final_deployment_initial.map(runtime_desired_status_to_string),
-                &final_bootstrap_policy.map(bootstrap_policy_to_string),
+                &final_bootstrap_config.map(bootstrap_config_to_string),
                 &match final_deployment_error {
                     None => None,
                     Some(v) => Some(serialize_error_response(&v)?),
@@ -1359,7 +1359,7 @@ async fn set_deployment_resources_status(
     final_deployment_location: Option<String>,
     new_storage_status_details: Option<serde_json::Value>,
     final_deployment_initial: Option<RuntimeDesiredStatus>,
-    final_bootstrap_policy: Option<BootstrapPolicy>,
+    final_bootstrap_config: Option<BootstrapConfig>,
 ) -> Result<(), DBError> {
     // Validate that the new or existing deployment configuration is valid
     if let Some(deployment_config) = &final_deployment_config {
@@ -1417,7 +1417,7 @@ async fn set_deployment_resources_status(
                 &new_storage_status_details.map(|v| v.to_string()), // $4: storage_status_details
                 &final_deployment_id,                            // $5: deployment_id
                 &final_deployment_initial.map(runtime_desired_status_to_string), // $6: deployment_initial
-                &final_bootstrap_policy.map(bootstrap_policy_to_string), // $7: bootstrap_policy
+                &final_bootstrap_config.map(bootstrap_config_to_string), // $7: bootstrap_config
                 &final_deployment_resources_status.to_string(), // $8: deployment_resources_status,
                 &final_deployment_resources_status_details.map(|v| v.to_string()), // $9: deployment_resources_status_details,
                 &final_deployment_runtime_status.map(runtime_status_to_string), // $10: deployment_runtime_status,

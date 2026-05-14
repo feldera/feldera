@@ -15,7 +15,9 @@ use actix_web::{
     web::{self, Data as WebData, ReqData},
     HttpRequest, HttpResponse,
 };
-use feldera_types::query_params::{MetricsParameters, SamplyProfileGetParams, SamplyProfileParams};
+use feldera_types::query_params::{
+    ApproveParameters, MetricsParameters, SamplyProfileGetParams, SamplyProfileParams,
+};
 use feldera_types::{program_schema::SqlIdentifier, query_params::ActivateParams};
 use std::time::Duration;
 use tracing::{debug, info};
@@ -1781,6 +1783,7 @@ pub(crate) async fn post_pipeline_activate(
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        ApproveParameters,
     ),
     responses(
         (status = ACCEPTED
@@ -1809,7 +1812,7 @@ pub(crate) async fn post_pipeline_approve(
     _client: WebData<awc::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
-    request: HttpRequest,
+    query: web::Query<ApproveParameters>,
 ) -> Result<HttpResponse, ManagerError> {
     {
         let pipeline_name = path.into_inner();
@@ -1821,7 +1824,11 @@ pub(crate) async fn post_pipeline_approve(
                 &pipeline_name,
                 Method::POST,
                 "approve",
-                request.query_string(),
+                if query.into_inner().silent_bootstrap {
+                    "silent_bootstrap=true"
+                } else {
+                    ""
+                },
                 None,
                 None,
             )

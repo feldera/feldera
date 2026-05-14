@@ -486,6 +486,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         pipeline_name: str,
         initial: str = "running",
         bootstrap_policy: Optional[BootstrapPolicy] = None,
+        silent_bootstrap: bool = False,
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
@@ -513,6 +514,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         if bootstrap_policy is not None:
             start_params["bootstrap_policy"] = bootstrap_policy.value
 
+        if silent_bootstrap:
+            start_params["silent_bootstrap"] = "true"
+
         self.http.post(
             path=f"/pipelines/{pipeline_name}/start",
             params=start_params,
@@ -531,6 +535,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         self,
         pipeline_name: str,
         bootstrap_policy: Optional[BootstrapPolicy] = None,
+        silent_bootstrap: bool = False,
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
@@ -550,6 +555,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             pipeline_name,
             "running",
             bootstrap_policy,
+            silent_bootstrap,
             wait,
             timeout_s,
             dismiss_error,
@@ -559,6 +565,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         self,
         pipeline_name: str,
         bootstrap_policy: Optional[BootstrapPolicy] = None,
+        silent_bootstrap: bool = False,
         wait: bool = True,
         timeout_s: float | None = None,
         dismiss_error: bool = True,
@@ -577,6 +584,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             pipeline_name,
             "paused",
             bootstrap_policy,
+            silent_bootstrap,
             wait,
             timeout_s,
             dismiss_error,
@@ -586,6 +594,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         self,
         pipeline_name: str,
         bootstrap_policy: Optional[BootstrapPolicy] = None,
+        silent_bootstrap: bool = False,
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
@@ -604,6 +613,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             pipeline_name,
             "standby",
             bootstrap_policy,
+            silent_bootstrap,
             wait,
             timeout_s,
             dismiss_error,

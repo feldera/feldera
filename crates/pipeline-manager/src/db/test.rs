@@ -37,7 +37,7 @@ use feldera_types::config::{
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{
-    BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus, StorageStatusDetails,
+    BootstrapConfig, BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus, StorageStatusDetails,
 };
 use openssl::sha;
 use proptest::prelude::*;
@@ -1620,7 +1620,7 @@ async fn pipeline_transition_after_quick_stop() {
             tenant_id,
             "example1",
             RuntimeDesiredStatus::Paused,
-            BootstrapPolicy::default(),
+            BootstrapConfig::default(),
             false,
         )
         .await
@@ -1841,7 +1841,7 @@ async fn pipeline_deployment() {
             tenant_id,
             "example1",
             RuntimeDesiredStatus::Paused,
-            BootstrapPolicy::default(),
+            BootstrapConfig::default(),
             false,
         )
         .await
@@ -2047,7 +2047,7 @@ async fn pipeline_deployment() {
             tenant_id,
             "example1",
             RuntimeDesiredStatus::Paused,
-            BootstrapPolicy::default(),
+            BootstrapConfig::default(),
             false,
         )
         .await
@@ -2170,7 +2170,7 @@ async fn pipeline_deployment() {
                 tenant_id,
                 "example1",
                 RuntimeDesiredStatus::Paused,
-                BootstrapPolicy::default(),
+                BootstrapConfig::default(),
                 false,
             )
             .await
@@ -2188,7 +2188,7 @@ async fn pipeline_deployment() {
             tenant_id,
             "example1",
             RuntimeDesiredStatus::Paused,
-            BootstrapPolicy::default(),
+            BootstrapConfig::default(),
             false,
         )
         .await
@@ -2260,7 +2260,7 @@ async fn pipeline_deployment() {
                 tenant_id,
                 "example1",
                 RuntimeDesiredStatus::Paused,
-                BootstrapPolicy::default(),
+                BootstrapConfig::default(),
                 false,
             )
             .await
@@ -2278,7 +2278,7 @@ async fn pipeline_deployment() {
             tenant_id,
             "example1",
             RuntimeDesiredStatus::Paused,
-            BootstrapPolicy::default(),
+            BootstrapConfig::default(),
             false,
         )
         .await
@@ -2318,7 +2318,7 @@ async fn pipeline_deployment() {
             tenant_id,
             "example1",
             RuntimeDesiredStatus::Paused,
-            BootstrapPolicy::default(),
+            BootstrapConfig::default(),
             true,
         )
         .await
@@ -2457,7 +2457,7 @@ async fn pipeline_provision_version_guard() {
             tenant_id,
             &pipeline.name,
             RuntimeDesiredStatus::Running,
-            BootstrapPolicy::default(),
+            BootstrapConfig::default(),
             false,
         )
         .await
@@ -2523,7 +2523,7 @@ async fn pipeline_provision_version_guard() {
             tenant_id,
             &pipeline.name,
             RuntimeDesiredStatus::Paused,
-            BootstrapPolicy::Allow,
+            BootstrapConfig::from(BootstrapPolicy::Allow),
             false,
         )
         .await
@@ -3473,8 +3473,8 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::SetDeploymentResourcesDesiredStatusProvisioned(tenant_id, pipeline_name, initial, dismiss_error) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.set_deployment_resources_desired_status_provisioned(tenant_id, &pipeline_name, initial, BootstrapPolicy::default(), dismiss_error).await;
-                                let impl_response = handle.db.set_deployment_resources_desired_status_provisioned(tenant_id, &pipeline_name, initial, BootstrapPolicy::default(), dismiss_error).await;
+                                let model_response = model.set_deployment_resources_desired_status_provisioned(tenant_id, &pipeline_name, initial, BootstrapConfig::default(), dismiss_error).await;
+                                let impl_response = handle.db.set_deployment_resources_desired_status_provisioned(tenant_id, &pipeline_name, initial, BootstrapConfig::default(), dismiss_error).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::SetDeploymentResourcesDesiredStatusStoppedIfNotProvisioned(tenant_id, pipeline_name) => {
@@ -4760,7 +4760,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_name: &str,
         initial: RuntimeDesiredStatus,
-        bootstrap_policy: BootstrapPolicy,
+        bootstrap_config: BootstrapConfig,
         dismiss_error: bool,
     ) -> Result<PipelineId, DBError> {
         // Validate
@@ -4783,7 +4783,7 @@ impl Storage for Mutex<DbModel> {
         }
         if pipeline
             .bootstrap_policy
-            .is_some_and(|v| v != bootstrap_policy)
+            .is_some_and(|v| v != bootstrap_config)
         {
             return Err(DBError::BootstrapPolicyImmutableUnlessStopped);
         }
@@ -4808,7 +4808,7 @@ impl Storage for Mutex<DbModel> {
 
         // Apply changes: update
         pipeline.deployment_initial = Some(initial);
-        pipeline.bootstrap_policy = Some(bootstrap_policy);
+        pipeline.bootstrap_policy = Some(bootstrap_config);
         pipeline.deployment_resources_desired_status = new_resources_desired_status;
         pipeline.deployment_resources_desired_status_since = Utc::now();
         pipeline.deployment_error = new_deployment_error;

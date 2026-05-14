@@ -1,9 +1,14 @@
+import json
+import os
+import uuid
+
 from feldera.enums import BootstrapPolicy, PipelineStatus
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 from tests import TEST_CLIENT, enterprise_only
 from .helper import (
     gen_pipeline_name,
+    wait_for_condition,
 )
 from feldera.testutils import (
     FELDERA_TEST_NUM_WORKERS,
@@ -274,6 +279,141 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
 
     pipeline.checkpoint(True)
 
+    pipeline.stop(force=True)
+
+
+@enterprise_only
+@gen_pipeline_name
+def test_silent_bootstrap_enterprise(pipeline_name):
+    """
+    Enterprise: silent bootstrapping must process backfilled records without
+    transmitting them to output connectors.
+    """
+
+    output_path = os.path.join(
+        "/tmp", f"feldera_silent_bootstrap_{uuid.uuid4().hex}.json"
+    )
+
+    def sql_for_view(view_expr: str) -> str:
+        connectors = json.dumps(
+            [
+                {
+                    "name": "out",
+                    "transport": {
+                        "name": "file_output",
+                        "config": {"path": output_path},
+                    },
+                    "format": {"name": "json"},
+                }
+            ]
+        )
+        return f"""
+CREATE TABLE t1(x int) WITH ('materialized'='true');
+CREATE MATERIALIZED VIEW v1
+WITH ('connectors' = '{connectors}')
+AS SELECT {view_expr} AS x FROM t1;
+"""
+
+    def output_metrics():
+        return pipeline.output_connector_stats("v1", "out").metrics
+
+    def processed_records() -> int:
+        return output_metrics().total_processed_input_records or 0
+
+    def transmitted_records() -> int:
+        return output_metrics().transmitted_records or 0
+
+    def wait_for_output_progress(
+        min_processed_records: int, expected_transmitted_records: int
+    ):
+        wait_for_condition(
+            f"output connector reaches {min_processed_records} processed records",
+            lambda: processed_records() >= min_processed_records,
+            timeout_s=120.0,
+            poll_interval_s=1.0,
+        )
+        assert transmitted_records() == expected_transmitted_records
+
+    pipeline = PipelineBuilder(
+        TEST_CLIENT,
+        pipeline_name,
+        sql=sql_for_view("x"),
+        runtime_config=RuntimeConfig(
+            workers=FELDERA_TEST_NUM_WORKERS,
+            hosts=FELDERA_TEST_NUM_HOSTS,
+            fault_tolerance_model=None,
+        ),
+    ).create_or_replace()
+
+    pipeline.start()
+    pipeline.input_json("t1", [{"x": 1}, {"x": 2}, {"x": 3}])
+    wait_for_output_progress(min_processed_records=3, expected_transmitted_records=3)
+    expected_processed_records = 3
+    pipeline.checkpoint(True)
+    pipeline.stop(force=True)
+
+    pipeline.modify(sql=sql_for_view("x + 1"))
+    pipeline.start(
+        bootstrap_policy=BootstrapPolicy.ALLOW,
+        silent_bootstrap=True,
+        timeout_s=300,
+    )
+    wait_for_output_progress(
+        min_processed_records=expected_processed_records,
+        expected_transmitted_records=0,
+    )
+
+    pipeline.input_json("t1", [{"x": 5}])
+    expected_processed_records += 1
+    wait_for_output_progress(
+        min_processed_records=expected_processed_records,
+        expected_transmitted_records=1,
+    )
+    assert list(pipeline.query("SELECT COUNT(*) AS c FROM v1;")) == [{"c": 4}]
+    pipeline.checkpoint(True)
+    pipeline.stop(force=True)
+
+    pipeline.modify(sql=sql_for_view("x + 2"))
+    pipeline.start(
+        bootstrap_policy=BootstrapPolicy.ALLOW,
+        silent_bootstrap=True,
+        timeout_s=300,
+    )
+    wait_for_output_progress(
+        min_processed_records=expected_processed_records,
+        expected_transmitted_records=0,
+    )
+
+    pipeline.input_json("t1", [{"x": 6}])
+    expected_processed_records += 1
+    wait_for_output_progress(
+        min_processed_records=expected_processed_records,
+        expected_transmitted_records=1,
+    )
+    assert list(pipeline.query("SELECT COUNT(*) AS c FROM v1;")) == [{"c": 5}]
+    pipeline.checkpoint(True)
+    pipeline.stop(force=True)
+
+    # Final round with silent bootstrap disabled should produce all accumulated records.
+    pipeline.modify(sql=sql_for_view("x + 3"))
+    pipeline.start(
+        bootstrap_policy=BootstrapPolicy.ALLOW,
+        silent_bootstrap=False,
+        timeout_s=300,
+    )
+    wait_for_output_progress(
+        min_processed_records=expected_processed_records,
+        expected_transmitted_records=expected_processed_records,
+    )
+
+    pipeline.input_json("t1", [{"x": 7}])
+    expected_processed_records += 1
+    wait_for_output_progress(
+        min_processed_records=expected_processed_records,
+        expected_transmitted_records=expected_processed_records,
+    )
+    assert list(pipeline.query("SELECT COUNT(*) AS c FROM v1;")) == [{"c": 6}]
+    pipeline.checkpoint(True)
     pipeline.stop(force=True)
 
 

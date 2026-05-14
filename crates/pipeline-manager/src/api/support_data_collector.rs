@@ -1263,7 +1263,7 @@ mod tests {
     use crate::db::types::pipeline::PipelineDescr;
     use crate::db::types::program::{RustCompilationInfo, SqlCompilationInfo};
     use crate::db::types::version::Version;
-    use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
+    use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus, RuntimeStatus};
     use serde_json::json;
     use std::sync::Arc;
     use tokio::sync::Mutex;
@@ -1484,7 +1484,7 @@ mod tests {
                 tenant_id,
                 "test_pipeline",
                 RuntimeDesiredStatus::Running,
-                BootstrapPolicy::default(),
+                BootstrapConfig::default(),
                 false,
             )
             .await
@@ -1681,7 +1681,7 @@ mod tests {
                 tenant_id,
                 "test_pipeline",
                 RuntimeDesiredStatus::Running,
-                BootstrapPolicy::default(),
+                BootstrapConfig::default(),
                 false,
             )
             .await
@@ -1859,7 +1859,7 @@ mod tests {
                 tenant_id,
                 "test_pipeline",
                 RuntimeDesiredStatus::Running,
-                BootstrapPolicy::default(),
+                BootstrapConfig::default(),
                 false,
             )
             .await
@@ -1967,7 +1967,7 @@ mod tests {
                 tenant_id,
                 "test_pipeline",
                 RuntimeDesiredStatus::Running,
-                BootstrapPolicy::default(),
+                BootstrapConfig::default(),
                 false,
             )
             .await

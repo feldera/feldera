@@ -2458,6 +2458,9 @@ struct CircuitThread {
     ft: Option<FtState>,
     parker: Parker,
 
+    /// Whether to suppress output connector records during bootstrapping.
+    silent_bootstrap: bool,
+
     checkpoint_delay_warning: Option<LongOperationWarning>,
     checkpoint_requests: Vec<CheckpointRequest>,
     running_checkpoint: Option<RunningCheckpoint>,
@@ -2662,9 +2665,10 @@ impl CircuitThread {
 
             if !diff.is_empty() {
                 info!("Pipeline changes detected: {diff}");
-                if state.bootstrap_policy() == BootstrapPolicy::Reject {
+                let bootstrap_policy = state.bootstrap_config().active_bootstrap_policy();
+                if bootstrap_policy == BootstrapPolicy::Reject {
                     return Err(ControllerError::BootstrapRejectedByUser);
-                } else if state.bootstrap_policy() == BootstrapPolicy::AwaitApproval {
+                } else if bootstrap_policy == BootstrapPolicy::AwaitApproval {
                     info!("Awaiting user approval before bootstrapping modified pipeline.");
                     state.set_phase(PipelinePhase::Initializing(
                         InitializationState::AwaitingApproval(Box::new(diff.clone())),
@@ -2672,7 +2676,7 @@ impl CircuitThread {
                 }
 
                 loop {
-                    match state.bootstrap_policy() {
+                    match state.bootstrap_config().active_bootstrap_policy() {
                         BootstrapPolicy::Allow => {
                             info!(
                                 "User approved pipeline changes. Proceeding with initialization."
@@ -2823,6 +2827,9 @@ impl CircuitThread {
             backpressure_thread,
             storage,
             parker,
+            silent_bootstrap: state
+                .map(|state| state.bootstrap_config().silent_bootstrap)
+                .unwrap_or(false),
             checkpoint_delay_warning: None,
             checkpoint_requests: Vec::new(),
             running_checkpoint: None,
@@ -3826,15 +3833,36 @@ impl CircuitThread {
     ///   this step. If `processed_records` is `None`, we're in the middle of a
     ///   transaction and the records are not fully processed yet.
     fn push_output(&mut self, processed_records: Option<ProcessedRecords>) {
+        let silent_bootstrap =
+            self.silent_bootstrap && self.controller.status.bootstrap_in_progress();
+
         let outputs = self.controller.outputs.read().unwrap();
         for (_stream, (output_handles, endpoints)) in outputs.iter_by_stream() {
-            let delta_batch = output_handles.delta_handle.as_ref().concat();
-            let num_delta_records = delta_batch.len();
+            let (mut delta_batch, num_delta_records) = if silent_bootstrap {
+                let _ = output_handles.delta_handle.take_from_all();
+                (None, 0)
+            } else {
+                let delta_batch = output_handles.delta_handle.as_ref().concat();
+                let num_delta_records = delta_batch.len();
 
-            let mut delta_batch = Some(delta_batch);
+                (Some(delta_batch), num_delta_records)
+            };
 
             for (i, endpoint_id) in endpoints.iter().enumerate() {
                 let endpoint = outputs.lookup_by_id(endpoint_id).unwrap();
+
+                // Silent bootstrap: send empty batch for progress tracking only.
+                if silent_bootstrap {
+                    self.controller.status.enqueue_batch(*endpoint_id, 0);
+                    endpoint.queue.push(BatchQueueEntry {
+                        step: self.step,
+                        batch_type: OutputBatchType::Delta,
+                        data: None,
+                        processed_records,
+                    });
+                    endpoint.unparker.unpark();
+                    continue;
+                }
 
                 if endpoint.created_during_transaction_number
                     == self.controller.get_transaction_number()

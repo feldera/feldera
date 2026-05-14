@@ -352,6 +352,9 @@ pub enum PipelineAction {
         // TODO: auto-complete
         #[arg(long, short = 'b', default_value = "await_approval")]
         bootstrap_policy: String,
+        /// Bootstrap the pipeline with output connectors disabled.
+        #[arg(long, default_value_t = false)]
+        silent_bootstrap: bool,
         /// Do not dismiss any deployment error before starting.
         #[arg(long, default_value_t = false)]
         no_dismiss_error: bool,
@@ -362,6 +365,9 @@ pub enum PipelineAction {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
+        /// Bootstrap the pipeline with output connectors disabled.
+        #[arg(long, default_value_t = false)]
+        silent_bootstrap: bool,
     },
 
     /// Checkpoint a fault-tolerant pipeline.
@@ -415,6 +421,9 @@ pub enum PipelineAction {
         /// The bootstrap policy to use.
         #[arg(long, short = 'b', default_value = "await_approval")]
         bootstrap_policy: String,
+        /// Bootstrap the pipeline with output connectors disabled.
+        #[arg(long, default_value_t = false)]
+        silent_bootstrap: bool,
         /// Do not dismiss any deployment error before starting.
         #[arg(long, default_value_t = false)]
         no_dismiss_error: bool,
@@ -614,6 +623,9 @@ pub enum PipelineAction {
         /// The bootstrap policy to use.
         #[arg(long, short = 'b', default_value = "await_approval")]
         bootstrap_policy: String,
+        /// Bootstrap the pipeline with output connectors disabled.
+        #[arg(long, default_value_t = false, requires("start"))]
+        silent_bootstrap: bool,
         /// Do not dismiss any deployment error before starting.
         #[arg(long, default_value_t = false, requires("start"))]
         no_dismiss_error: bool,
