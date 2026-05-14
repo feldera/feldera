@@ -50,7 +50,6 @@ use chrono::{DateTime, Utc};
 use crossbeam::{
     queue::SegQueue,
     sync::{Parker, ShardedLock, Unparker},
-    utils::CachePadded,
 };
 use datafusion::prelude::*;
 use dbsp::circuit::circuit_builder::BootstrapInfo;
@@ -508,7 +507,7 @@ enum Command {
 struct OutputEndpointControl {
     /// `true` once this endpoint has delivered its initial snapshot, or
     /// initialized to `true` when `send_snapshot` was `false` at startup.
-    initial_snapshot_sent: CachePadded<AtomicBool>,
+    initial_snapshot_sent: AtomicBool,
 }
 
 impl OutputEndpointControl {
@@ -524,7 +523,7 @@ impl OutputEndpointControl {
         // is desired; also carry the checkpointed value through on restart.
         let delivered = !send_snapshot || snapshot_already_sent;
         Self {
-            initial_snapshot_sent: CachePadded::new(AtomicBool::new(delivered)),
+            initial_snapshot_sent: AtomicBool::new(delivered),
         }
     }
 

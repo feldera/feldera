@@ -26,6 +26,11 @@ The `send_snapshot` query parameter controls how the connector starts:
   includes a `snapshot` field: `true` for snapshot data, `false` for
   subsequent deltas.
 
+`send_snapshot=true` works whether the pipeline is `Running` or `Paused`:
+when the client connects, the snapshot is delivered from the most recent
+cached view state, even if the pipeline is paused and no new input is
+flowing.
+
 ## Example usage
 
 We will subscribe to a stream of updates to the `average_price` view for pipeline `supply-chain-pipeline`.
