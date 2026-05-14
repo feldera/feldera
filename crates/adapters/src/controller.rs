@@ -2620,6 +2620,7 @@ impl CircuitThread {
             input_metadata,
             input_statistics,
             output_statistics,
+            modified_output_endpoints,
             pipeline_diff,
             incarnation_uuid,
         } = controller_init;
@@ -2753,6 +2754,7 @@ impl CircuitThread {
             initial_start_time,
             &resume_info,
             &output_statistics,
+            modified_output_endpoints,
             step_receiver,
             checkpoint_receiver,
             incarnation_uuid,
@@ -4480,6 +4482,13 @@ pub struct ControllerInit {
     /// checkpoints don't have statistics.
     output_statistics: HashMap<String, CheckpointOutputEndpointMetrics>,
 
+    /// Output endpoints whose definition or associated relation changed
+    /// across the checkpoint restart. Stats are preserved (so cumulative
+    /// counters survive), but `add_output_endpoint` treats these endpoints
+    /// as fresh: `continue_previous_state = false` and
+    /// `snapshot_already_sent = false`.
+    modified_output_endpoints: HashSet<String>,
+
     /// When starting from a checkpoint, contains the diff between the checkpointed and the
     /// current pipeline config computed using `compute_pipeline_diff`
     pub pipeline_diff: Option<PipelineDiff>,
@@ -4503,6 +4512,7 @@ impl ControllerInit {
             input_metadata: None,
             input_statistics: HashMap::new(),
             output_statistics: HashMap::new(),
+            modified_output_endpoints: HashSet::new(),
             pipeline_diff: None,
             incarnation_uuid: Uuid::nil(),
         })
@@ -4568,21 +4578,32 @@ impl ControllerInit {
 
         let pipeline_diff = compute_pipeline_diff(&checkpoint_config, &config)?;
 
-        // Drop output statistics for connectors whose definition or associated
-        // view has changed since the checkpoint.  A connector whose definition
-        // changed must be treated as a new connector: e.g. in `truncate` mode
-        // the table must be re-truncated rather than preserved from the
-        // previous incarnation, since an `is_restart` derived from stale stats
-        // would wrongly keep the old data.
+        // Record which surviving output connectors changed across the
+        // restart. The cumulative `transmitted_records` counter is preserved
+        // for these connectors; `add_output_endpoint` consults
+        // `modified_output_endpoints` to force `continue_previous_state =
+        // false` (so truncate-mode integrated sinks re-truncate) and to clear
+        // `snapshot_already_sent` (so `send_snapshot: true` re-fires).
+        let modified_output_endpoints: HashSet<String> = output_statistics
+            .keys()
+            .filter(|name| {
+                config
+                    .outputs
+                    .get(name.as_str())
+                    .is_some_and(|output_config| {
+                        pipeline_diff.is_affected_connector(name)
+                            || pipeline_diff.is_affected_relation(&output_config.stream)
+                    })
+            })
+            .cloned()
+            .collect();
+
+        // Drop output statistics for connectors that no longer exist in the
+        // new config; resurrecting their stats would have no endpoint to
+        // attach to.
         let output_statistics: HashMap<_, _> = output_statistics
             .into_iter()
-            .filter(|(name, _)| {
-                let Some(output_config) = config.outputs.get(name.as_str()) else {
-                    return false;
-                };
-                !pipeline_diff.is_affected_connector(name)
-                    && !pipeline_diff.is_affected_relation(&output_config.stream)
-            })
+            .filter(|(name, _)| config.outputs.contains_key(name.as_str()))
             .collect();
 
         // For any input connectors that have not been modified, and whose associated table hasn't been modified,
@@ -4717,6 +4738,7 @@ impl ControllerInit {
             input_metadata: Some(input_metadata.0),
             input_statistics,
             output_statistics,
+            modified_output_endpoints,
             processed_records,
             initial_start_time: Some(initial_start_time),
             pipeline_diff: Some(pipeline_diff),
@@ -5814,6 +5836,14 @@ pub struct ControllerInner {
     /// state.  `None` means "not in progress".  Set by the circuit thread in
     /// `set_checkpoint_coordination`, read by the HTTP thread.
     checkpoint_started: Mutex<Option<DateTime<Utc>>>,
+
+    /// Output endpoint names whose definition or associated relation
+    /// changed across the checkpoint restart. `add_output_endpoint` uses
+    /// this to force a fresh snapshot (`snapshot_already_sent = false`)
+    /// and to treat the target as new (`continue_previous_state = false`)
+    /// without discarding the carried-over counters in
+    /// `initial_statistics`.
+    modified_output_endpoints: HashSet<String>,
 }
 
 impl Drop for ControllerInner {
@@ -5834,6 +5864,7 @@ impl ControllerInner {
         initial_start_time: Option<DateTime<Utc>>,
         resume_info: &HashMap<String, (JsonValue, CheckpointInputEndpointMetrics)>,
         output_statistics: &HashMap<String, CheckpointOutputEndpointMetrics>,
+        modified_output_endpoints: HashSet<String>,
         step_receiver: tokio::sync::watch::Receiver<StepStatus>,
         checkpoint_receiver: tokio::sync::watch::Receiver<Option<CheckpointCoordination>>,
         incarnation_uuid: Uuid,
@@ -5888,6 +5919,7 @@ impl ControllerInner {
                 input_completion_notify: Arc::new(Notify::new()),
                 checkpoint_delay_started: Mutex::new(None),
                 checkpoint_started: Mutex::new(None),
+                modified_output_endpoints,
             }
         });
 
@@ -6505,6 +6537,12 @@ impl ControllerInner {
         }
         let guard = RemoveEndpointGuard::new(&self.status, endpoint_id);
 
+        // `connector_definition_changed` is true when the endpoint's config or
+        // associated relation changed across this checkpoint restart. It feeds
+        // both the integrated-sink lifecycle decision (re-truncate vs reopen)
+        // and the `send_snapshot` re-fire decision.
+        let connector_definition_changed = self.modified_output_endpoints.contains(endpoint_name);
+
         let (encoder, command_handler) = if let Some(mut endpoint) = endpoint {
             endpoint
                 .connect(Box::new(
@@ -6554,6 +6592,12 @@ impl ControllerInner {
             (encoder, command_handler)
         } else {
             // `endpoint` is `None` - instantiate an integrated endpoint.
+            // Resume the previous incarnation only when there is one and its
+            // definition has not changed; otherwise the integrated sink is
+            // treated as fresh (delta-table truncate mode re-truncates rather
+            // than preserving stale data).
+            let continue_previous_state =
+                initial_statistics.is_some() && !connector_definition_changed;
             let endpoint = create_integrated_output_endpoint(
                 endpoint_id,
                 endpoint_name,
@@ -6561,7 +6605,7 @@ impl ControllerInner {
                 &handles.key_schema,
                 &handles.value_schema,
                 self_weak,
-                initial_statistics.is_some(),
+                continue_previous_state,
                 endpoint_config.connector_config.index.is_some(),
             )?;
 
@@ -6571,14 +6615,16 @@ impl ControllerInner {
         };
 
         let parker = Parker::new();
-        // Recover "snapshot already delivered" state from the checkpoint, so a
-        // `send_snapshot: true` connector does not re-send its snapshot on
-        // checkpoint restart. `initial_statistics` is intentionally cleared by
-        // the caller for modified connectors so they do receive a fresh
-        // snapshot.
-        let snapshot_already_sent = initial_statistics
-            .map(|stats| stats.snapshot_sent)
-            .unwrap_or(false);
+        // Recover "snapshot already delivered" state from the checkpoint so a
+        // `send_snapshot: true` connector does not re-send its snapshot on a
+        // checkpoint restart. When the connector or its relation has changed
+        // across the restart, clear the flag so the fresh snapshot fires;
+        // cumulative counters in `initial_statistics` are preserved
+        // independently.
+        let snapshot_already_sent = !connector_definition_changed
+            && initial_statistics
+                .map(|stats| stats.snapshot_sent)
+                .unwrap_or(false);
         let endpoint_descr = OutputEndpointDescr::new(
             endpoint_name,
             &stream_name,

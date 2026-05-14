@@ -97,7 +97,7 @@ impl DeltaTableWriter {
         key_schema: &Option<Relation>,
         value_schema: &Relation,
         controller: Weak<ControllerInner>,
-        is_restart: bool,
+        continue_previous_state: bool,
         is_index: bool,
     ) -> Result<Self, ControllerError> {
         config.validate().map_err(|e| {
@@ -172,7 +172,7 @@ impl DeltaTableWriter {
         // Panic safety: block_on() panics if called from a tokio async context.
         // new() is called from sync controller code (connect_output), so this is fine.
         let task = TOKIO
-            .block_on(WriterTask::create(inner.clone(), is_restart))
+            .block_on(WriterTask::create(inner.clone(), continue_previous_state))
             .map_err(|e| {
                 ControllerError::output_transport_error(
                     endpoint_name,
@@ -269,7 +269,10 @@ impl WriterTask {
         }
     }
 
-    async fn create(inner: Arc<DeltaTableWriterInner>, is_restart: bool) -> AnyResult<Self> {
+    async fn create(
+        inner: Arc<DeltaTableWriterInner>,
+        continue_previous_state: bool,
+    ) -> AnyResult<Self> {
         let mut storage_options = inner.config.object_store_config.clone();
 
         // FIXME: S3 does not support the atomic rename operation required by delta. This is not a problem
@@ -289,14 +292,14 @@ impl WriterTask {
             // that always returns an error.
             DeltaTableWriteMode::Append => SaveMode::Ignore,
             DeltaTableWriteMode::Truncate => {
-                if is_restart {
+                if continue_previous_state {
                     SaveMode::Ignore
                 } else {
                     SaveMode::Overwrite
                 }
             }
             DeltaTableWriteMode::ErrorIfExists => {
-                if is_restart {
+                if continue_previous_state {
                     SaveMode::Ignore
                 } else {
                     SaveMode::ErrorIfExists
@@ -307,7 +310,7 @@ impl WriterTask {
         info!(
             "delta_table {}: {} delta table '{}' in '{save_mode:?}' mode",
             &inner.endpoint_name,
-            if is_restart {
+            if continue_previous_state {
                 "reopening"
             } else {
                 "opening or creating"
@@ -1105,7 +1108,7 @@ mod parallel {
         table_uri: &str,
         indexed: bool,
         mode: DeltaTableWriteMode,
-        is_restart: bool,
+        continue_previous_state: bool,
     ) -> DeltaTableWriter {
         let key_schema = if indexed { Some(key_relation()) } else { None };
         DeltaTableWriter::new(
@@ -1122,7 +1125,7 @@ mod parallel {
             &key_schema,
             &value_relation(),
             Weak::new(),
-            is_restart,
+            continue_previous_state,
             indexed,
         )
         .expect("failed to create endpoint")
@@ -1795,7 +1798,7 @@ mod parallel {
     }
 
     /// Simulate a pipeline restart: drop the first endpoint, create a new one
-    /// on the same table with `is_restart=true`. Data written before the
+    /// on the same table with `continue_previous_state=true`. Data written before the
     /// restart must survive.
     #[test]
     fn test_truncate_preserves_data_across_restart() {
@@ -1813,7 +1816,7 @@ mod parallel {
 
         assert_eq!(read_delta_output(&table_uri).len(), 50);
 
-        // Restart: create a new endpoint with is_restart=true.
+        // Restart: create a new endpoint with continue_previous_state=true.
         let more_records: Vec<DeltaTestStruct> = (50..80).map(make_record).collect();
         let batch2 = build_insert_batch(&more_records);
         {
@@ -1845,7 +1848,7 @@ mod parallel {
         }
         assert_eq!(read_output(&table_uri).len(), 50);
 
-        // New pipeline start (is_restart=false) with truncate: old data is wiped.
+        // New pipeline start (continue_previous_state=false) with truncate: old data is wiped.
         let new_records: Vec<DeltaTestStruct> = (100..110).map(make_record).collect();
         let batch2 = build_insert_batch(&new_records);
         {
