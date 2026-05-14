@@ -808,12 +808,16 @@ impl ControllerStatus {
     /// Must be invoked any time this metric can change, i.e., after every output
     /// produced by an output connector as well as after each step.
     ///
+    /// The `transaction_state` parameter indicates the state of the current transaction when the
+    /// function is invoked after a step. Otherwise, if it is invoked by an output connector, it is None.
+    ///
     /// Computes `total_completed_records` as the minimum `total_processed_input_records` across
     /// all output connectors. In case there are no output connectors attached to the pipeline,
-    /// returns `total_processed_records`.
+    /// and the transaction state is None, it returns `total_processed_records`. Otherwise, it there
+    /// is currently a transaction in progress, it returns `total_completed_records`.
     ///
     /// Also updates watermark trackers in input endpoints.
-    pub fn update_total_completed_records(&self) {
+    pub fn update_total_completed_records(&self, transaction_state: Option<TransactionState>) {
         // Compute new `total_completed_records` atomically, protected by the output status lock.
         // However we don't want to call `watermarks_update_completed` while holding the lock, as that
         // will take the input status lock. This is not necessarily a bug, but it will complicate
@@ -825,8 +829,19 @@ impl ControllerStatus {
 
         let output_status = self.output_status();
 
-        let mut total_completed_records = self.global_metrics.num_total_processed_records();
-        let mut total_completed_steps = self.global_metrics.total_initiated_steps();
+        let (mut total_completed_records, mut total_completed_steps) =
+            if transaction_state == Some(TransactionState::None) || transaction_state.is_none() {
+                (
+                    self.num_total_processed_records(),
+                    self.global_metrics.total_initiated_steps(),
+                )
+            } else {
+                (
+                    self.num_total_completed_records(),
+                    self.global_metrics.total_completed_steps(),
+                )
+            };
+
         for output_ep in output_status.values() {
             total_completed_records =
                 total_completed_records.min(output_ep.num_total_processed_input_records());
@@ -1085,7 +1100,7 @@ impl ControllerStatus {
                 circuit_thread_unparker.unpark();
             }
         };
-        self.update_total_completed_records();
+        self.update_total_completed_records(None);
     }
 
     pub fn update_output_memory(&self, endpoint_id: EndpointId, memory: usize) {
@@ -1101,7 +1116,7 @@ impl ControllerStatus {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
             endpoint_stats.output_buffered_batches(processed);
         }
-        self.update_total_completed_records();
+        self.update_total_completed_records(None);
     }
 
     pub fn output_buffer(&self, endpoint_id: EndpointId, num_bytes: usize, num_records: usize) {
@@ -1193,14 +1208,7 @@ impl ControllerStatus {
         // All received records have been processed by the circuit.
         let total_input_records = self.num_total_input_records();
 
-        if self.num_total_processed_records() != total_input_records {
-            return false;
-        }
-
-        // Outputs have been pushed to their respective transport endpoints.
-        if !self.output_status().values().all(|endpoint_stats| {
-            endpoint_stats.num_total_processed_input_records() == total_input_records
-        }) {
+        if self.num_total_completed_records() != total_input_records {
             return false;
         }
 

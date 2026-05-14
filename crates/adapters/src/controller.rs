@@ -1346,7 +1346,7 @@ impl Controller {
             "pipeline_complete",
             "Transitions from 0 to 1 when pipeline completes.",
             labels,
-            status.pipeline_complete() as u8,
+            self.pipeline_complete() as u8,
         );
         metrics.counter(
             "records_late_total",
@@ -2977,9 +2977,9 @@ impl CircuitThread {
 
         // Record that we've processed the records, unless there is a transaction in progress,
         // in which case records are ingested by the circuit but are not fully processed.
-        let processed_records = self.processed_records(total_consumed);
-        let processed_records = if self.controller.get_transaction_state() == TransactionState::None
-        {
+        let transaction_state = self.controller.get_transaction_state();
+        let processed_records = self.processed_records(total_consumed, Some(transaction_state));
+        let processed_records = if transaction_state == TransactionState::None {
             Some(ProcessedRecords {
                 total_processed_input_records: processed_records,
                 total_processed_steps: self.step,
@@ -3679,10 +3679,16 @@ impl CircuitThread {
     /// Reports that `total_consumed` has been consumed.
     ///
     /// Returns the total number of records processed.
-    fn processed_records(&mut self, total_consumed: BufferSize) -> u64 {
+    fn processed_records(
+        &mut self,
+        total_consumed: BufferSize,
+        transaction_state: Option<TransactionState>,
+    ) -> u64 {
         let processed_records = self.controller.status.processed_data(total_consumed);
         // If there are no output connectors, completed records can only get updated here.
-        self.controller.status.update_total_completed_records();
+        self.controller
+            .status
+            .update_total_completed_records(transaction_state);
         processed_records
     }
 
