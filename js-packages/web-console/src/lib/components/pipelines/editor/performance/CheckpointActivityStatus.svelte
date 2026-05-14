@@ -1,7 +1,7 @@
 <script lang="ts">
   import Dayjs from 'dayjs'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
-  import { useElapsedTime } from '$lib/functions/format'
+  import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import type { CheckpointStatus } from '$lib/services/manager'
 

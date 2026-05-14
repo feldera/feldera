@@ -1,18 +1,16 @@
 <script lang="ts">
-  import { format } from 'd3-format'
   import { slide } from 'svelte/transition'
+  import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
   import { uuidV7Timestamp } from '$lib/functions/common/date'
   import { humanSize } from '$lib/functions/common/string'
-  import { useElapsedTime } from '$lib/functions/format'
+  import { formatQty } from '$lib/functions/format'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import type { CheckpointMetadata, CheckpointStatus } from '$lib/services/manager'
   import CheckpointActivityStatus from './CheckpointActivityStatus.svelte'
   import CheckpointDialog from './CheckpointDialog.svelte'
-
-  const formatQty = (v: number) => format(',.0f')(v)
 
   const {
     pipelineName,
@@ -143,13 +141,13 @@
       <div class="flex flex-col">
         <div class="text-sm text-nowrap">Processed records</div>
         <div class="pt-2 font-dm-mono text-nowrap">
-          {last.processed_records != null ? formatQty(last.processed_records) : '—'}
+          {formatQty(last.processed_records)}
         </div>
       </div>
       <div class="flex flex-col">
         <div class="text-sm text-nowrap">Steps</div>
         <div class="pt-2 font-dm-mono text-nowrap">
-          {last.steps != null ? formatQty(last.steps) : '—'}
+          {formatQty(last.steps)}
         </div>
       </div>
       {@render allCheckpoints()}

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { format } from 'd3-format'
   import type { EChartsOption } from 'echarts'
   import { LineChart } from 'echarts/charts'
   import { GridComponent, TitleComponent, TooltipComponent } from 'echarts/components'
@@ -7,11 +6,10 @@
   import { CanvasRenderer } from 'echarts/renderers'
   import { Chart } from 'svelte-echarts'
   import { getThemeColor } from '$lib/functions/common/color'
+  import { formatQty } from '$lib/functions/format'
   import { calcPipelineThroughput, type PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import type { Pipeline } from '$lib/services/pipelineManager'
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
-
-  const formatQty = (v: number) => format(v >= 1000 ? '.3s' : '.0f')(v)
 
   const {
     pipeline,
@@ -91,7 +89,7 @@
       max: throughput.yMax,
       axisLabel: {
         formatter(val: number) {
-          return formatQty(val)
+          return formatQty(val, 'rounded')
         }
       },
       splitLine: {
@@ -105,7 +103,7 @@
       show: true,
       position: 'top' as const,
       formatter: (x: any) => {
-        return formatQty(x.value[1])
+        return formatQty(x.value[1], 'rounded')
       }
     },
     color: primaryColor,
@@ -126,7 +124,7 @@
 
 <div class="absolute h-full w-full py-4">
   <div class="px-4 pb-2 whitespace-nowrap">
-    Throughput: {formatQty(throughput.current)} records/s
+    Throughput: {formatQty(throughput.current, 'rounded')} records/s
   </div>
   {#key pipelineName}
     <Chart init={(dom, theme, opts) => (ref = init(dom, theme, opts))} {options} />
