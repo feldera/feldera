@@ -2892,6 +2892,66 @@ mod test_with_kafka {
         println!("{stats}")
     }
 
+    async fn start_test_server(config_str: &str, deployment_id: Uuid) -> TestServer {
+        let mut config_file = NamedTempFile::new().unwrap();
+        config_file.write_all(config_str.as_bytes()).unwrap();
+
+        println!("Creating HTTP server");
+
+        let state = WebData::new(ServerState::new(
+            PipelinePhase::Initializing(InitializationState::Starting),
+            String::default(),
+            RuntimeDesiredStatus::Paused,
+            BootstrapPolicy::Allow,
+            deployment_id,
+            None,
+        ));
+        let state_clone = state.clone();
+
+        let args = ServerArgs {
+            config_file: config_file.path().display().to_string(),
+            metadata_file: None,
+            bind_address: "127.0.0.1".to_string(),
+            default_port: None,
+            storage_location: None,
+            enable_https: false,
+            https_tls_cert_path: None,
+            https_tls_key_path: None,
+            initial: RuntimeDesiredStatus::Paused,
+            bootstrap_policy: BootstrapPolicy::Allow,
+            deployment_id,
+            host_id: None,
+        };
+
+        let config = parse_config(&args.config_file).unwrap();
+        let builder = ControllerBuilder::new(&config).unwrap();
+        thread::spawn(move || {
+            bootstrap(
+                builder,
+                Box::new(|workers| {
+                    Ok(test_circuit::<TestStruct>(
+                        workers,
+                        &TestStruct::schema(),
+                        &[None],
+                    ))
+                }),
+                state_clone,
+            )
+        });
+
+        let server =
+            actix_test::start(move || build_app(App::new().wrap(Logger::default()), state.clone()));
+
+        let start = Instant::now();
+        while server.get("/stats").send().await.unwrap().status() == StatusCode::SERVICE_UNAVAILABLE
+        {
+            assert!(start.elapsed() < Duration::from_millis(20_000));
+            sleep(Duration::from_millis(200));
+        }
+
+        server
+    }
+
     #[actix_web::test]
     async fn test_server() {
         ensure_default_crypto_provider();
@@ -2942,62 +3002,7 @@ outputs:
         format:
             name: csv
 "#;
-
-        let mut config_file = NamedTempFile::new().unwrap();
-        config_file.write_all(config_str.as_bytes()).unwrap();
-
-        println!("Creating HTTP server");
-
-        let state = WebData::new(ServerState::new(
-            PipelinePhase::Initializing(InitializationState::Starting),
-            String::new(),
-            RuntimeDesiredStatus::Paused,
-            BootstrapPolicy::Allow,
-            Uuid::new_v4(),
-            None,
-        ));
-        let state_clone = state.clone();
-
-        let args = ServerArgs {
-            config_file: config_file.path().display().to_string(),
-            metadata_file: None,
-            bind_address: "127.0.0.1".to_string(),
-            default_port: None,
-            storage_location: None,
-            enable_https: false,
-            https_tls_cert_path: None,
-            https_tls_key_path: None,
-            initial: RuntimeDesiredStatus::Paused,
-            bootstrap_policy: BootstrapPolicy::Allow,
-            deployment_id: uuid::Uuid::nil(),
-            host_id: None,
-        };
-
-        let config = parse_config(&args.config_file).unwrap();
-        let builder = ControllerBuilder::new(&config).unwrap();
-        thread::spawn(move || {
-            bootstrap(
-                builder,
-                Box::new(|workers| {
-                    Ok(test_circuit::<TestStruct>(
-                        workers,
-                        &TestStruct::schema(),
-                        &[None],
-                    ))
-                }),
-                state_clone,
-            )
-        });
-
-        let server =
-            actix_test::start(move || build_app(App::new().wrap(Logger::default()), state.clone()));
-
-        let start = Instant::now();
-        while server.get("/stats").send().await.unwrap().status() == StatusCode::SERVICE_UNAVAILABLE
-        {
-            assert!(start.elapsed() < Duration::from_millis(20_000));
-            sleep(Duration::from_millis(200));
-        }
+        let server = start_test_server(config_str, Uuid::new_v4()).await;
 
         // Write data to Kafka.
         println!("Send test data");
@@ -3235,62 +3240,7 @@ name: test
 inputs:
 outputs:
 "#;
-
-        let mut config_file = NamedTempFile::new().unwrap();
-        config_file.write_all(config_str.as_bytes()).unwrap();
-
-        println!("Creating HTTP server");
-
-        let state = WebData::new(ServerState::new(
-            PipelinePhase::Initializing(InitializationState::Starting),
-            String::default(),
-            RuntimeDesiredStatus::Paused,
-            BootstrapPolicy::Allow,
-            Uuid::default(),
-            None,
-        ));
-        let state_clone = state.clone();
-
-        let args = ServerArgs {
-            config_file: config_file.path().display().to_string(),
-            metadata_file: None,
-            bind_address: "127.0.0.1".to_string(),
-            default_port: None,
-            storage_location: None,
-            enable_https: false,
-            https_tls_cert_path: None,
-            https_tls_key_path: None,
-            initial: RuntimeDesiredStatus::Paused,
-            bootstrap_policy: BootstrapPolicy::Allow,
-            deployment_id: Uuid::default(),
-            host_id: None,
-        };
-
-        let config = parse_config(&args.config_file).unwrap();
-        let builder = ControllerBuilder::new(&config).unwrap();
-        thread::spawn(move || {
-            bootstrap(
-                builder,
-                Box::new(|workers| {
-                    Ok(test_circuit::<TestStruct>(
-                        workers,
-                        &TestStruct::schema(),
-                        &[None],
-                    ))
-                }),
-                state_clone,
-            )
-        });
-
-        let server =
-            actix_test::start(move || build_app(App::new().wrap(Logger::default()), state.clone()));
-
-        let start = Instant::now();
-        while server.get("/stats").send().await.unwrap().status() == StatusCode::SERVICE_UNAVAILABLE
-        {
-            assert!(start.elapsed() < Duration::from_millis(20_000));
-            sleep(Duration::from_millis(200));
-        }
+        let server = start_test_server(config_str, Uuid::default()).await;
 
         // Start pipeline.
         println!("/start");
@@ -3343,62 +3293,7 @@ name: test
 inputs:
 outputs:
 "#;
-
-        let mut config_file = NamedTempFile::new().unwrap();
-        config_file.write_all(config_str.as_bytes()).unwrap();
-
-        println!("Creating HTTP server");
-
-        let state = WebData::new(ServerState::new(
-            PipelinePhase::Initializing(InitializationState::Starting),
-            String::default(),
-            RuntimeDesiredStatus::Paused,
-            BootstrapPolicy::Allow,
-            Uuid::default(),
-            None,
-        ));
-        let state_clone = state.clone();
-
-        let args = ServerArgs {
-            config_file: config_file.path().display().to_string(),
-            metadata_file: None,
-            bind_address: "127.0.0.1".to_string(),
-            default_port: None,
-            storage_location: None,
-            enable_https: false,
-            https_tls_cert_path: None,
-            https_tls_key_path: None,
-            initial: RuntimeDesiredStatus::Paused,
-            bootstrap_policy: BootstrapPolicy::Allow,
-            deployment_id: Uuid::default(),
-            host_id: None,
-        };
-
-        let config = parse_config(&args.config_file).unwrap();
-        let builder = ControllerBuilder::new(&config).unwrap();
-        thread::spawn(move || {
-            bootstrap(
-                builder,
-                Box::new(|workers| {
-                    Ok(test_circuit::<TestStruct>(
-                        workers,
-                        &TestStruct::schema(),
-                        &[None],
-                    ))
-                }),
-                state_clone,
-            )
-        });
-
-        let server =
-            actix_test::start(move || build_app(App::new().wrap(Logger::default()), state.clone()));
-
-        let start = Instant::now();
-        while server.get("/stats").send().await.unwrap().status() == StatusCode::SERVICE_UNAVAILABLE
-        {
-            assert!(start.elapsed() < Duration::from_millis(20_000));
-            sleep(Duration::from_millis(200));
-        }
+        let server = start_test_server(config_str, Uuid::default()).await;
 
         println!("/start");
         let resp = server.get("/start").send().await.unwrap();
