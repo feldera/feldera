@@ -6,7 +6,6 @@
 
 <script lang="ts">
   import { SegmentedControl } from '@skeletonlabs/skeleton-svelte'
-  import { format } from 'd3-format'
   import Dayjs from 'dayjs'
   import PipelineMemoryGraph from '$lib/components/layout/pipelines/PipelineMemoryGraph.svelte'
   import PipelineStorageGraph from '$lib/components/layout/pipelines/PipelineStorageGraph.svelte'
@@ -21,7 +20,8 @@
     type PipelineManagerApi,
     usePipelineManager
   } from '$lib/compositions/usePipelineManager.svelte'
-  import { formatDateTime, useElapsedTime } from '$lib/functions/format'
+  import { formatDateTime, formatQty } from '$lib/functions/format'
+  import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import {
     createBigNumberStreamParser,
@@ -35,9 +35,6 @@
   import CheckpointsIndicator from './performance/CheckpointsIndicator.svelte'
   import TransactionStatus from './performance/TransactionStatus.svelte'
   import Drawer from '$lib/components/layout/Drawer.svelte'
-
-  const formatQty = (v: number) =>
-    typeof v === 'number' && Number.isFinite(v) ? format(',.0f')(v) : 'unknown'
 
   const {
     pipeline,

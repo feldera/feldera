@@ -1,10 +1,8 @@
 <script lang="ts">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
-  import { format } from 'd3-format'
   import { slide } from 'svelte/transition'
+  import { formatQty } from '$lib/functions/format'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
-
-  const formatQty = (v: number) => format(',.0f')(v)
 
   let { metrics, class: _class = '' }: { metrics: { current: PipelineMetrics }; class?: string } =
     $props()

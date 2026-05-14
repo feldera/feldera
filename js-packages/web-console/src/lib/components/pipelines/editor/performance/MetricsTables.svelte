@@ -1,12 +1,12 @@
 <script lang="ts">
   import { SegmentedControl } from '@skeletonlabs/skeleton-svelte'
-  import { format } from 'd3-format'
   import type { HTMLAttributes } from 'svelte/elements'
   import Popover from '$lib/components/common/Popover.svelte'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import { count } from '$lib/functions/common/array'
   import { humanSize } from '$lib/functions/common/string'
+  import { formatQty } from '$lib/functions/format'
   import type {
     AggregatedInputEndpointMetrics,
     AggregatedMetrics,
@@ -16,8 +16,6 @@
   import type { InputEndpointMetrics, OutputEndpointMetrics } from '$lib/services/manager'
   import type { Snippet } from '$lib/types/svelte'
   import type { ConnectorErrorFilter } from './ConnectorErrors.svelte'
-
-  const formatQty = (v: number) => format(',.0f')(v)
 
   let {
     metrics,

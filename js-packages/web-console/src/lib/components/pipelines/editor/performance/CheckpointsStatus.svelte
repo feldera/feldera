@@ -1,10 +1,11 @@
 <script lang="ts">
   import { slide } from 'svelte/transition'
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
+  import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { uuidV7Timestamp } from '$lib/functions/common/date'
   import { humanSize } from '$lib/functions/common/string'
-  import { formatDateTime, useElapsedTime } from '$lib/functions/format'
+  import { formatDateTime } from '$lib/functions/format'
   import type { CheckpointMetadata } from '$lib/services/manager'
   import CheckpointDialog from './CheckpointDialog.svelte'
 

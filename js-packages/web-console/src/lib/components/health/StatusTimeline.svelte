@@ -14,7 +14,8 @@
 </script>
 
 <script lang="ts" generics="S extends string">
-  import { formatDateTime, formatDateTimeRange, useElapsedTime } from '$lib/functions/format'
+  import { formatDateTime, formatDateTimeRange } from '$lib/functions/format'
+  import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
 
   interface Props {
     /** The text label for the timeline */

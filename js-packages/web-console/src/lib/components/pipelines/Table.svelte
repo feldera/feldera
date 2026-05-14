@@ -6,10 +6,11 @@
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
   import ThSort from '$lib/components/pipelines/table/ThSort.svelte'
+  import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
   import { dateMax } from '$lib/functions/common/date'
   import { matchesSubstring } from '$lib/functions/common/string'
   import { type NamesInUnion, unionName } from '$lib/functions/common/union'
-  import { formatDateTime, useElapsedTime } from '$lib/functions/format'
+  import { formatDateTime } from '$lib/functions/format'
   import type {
     PipelineStatus as PipelineStatusType,
     PipelineThumb
