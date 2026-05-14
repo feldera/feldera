@@ -3485,7 +3485,7 @@
           {
             "name": "send_snapshot",
             "in": "query",
-            "description": "Set to `true` to send a full snapshot of a materialized view before streaming incremental updates. The default is `false`.",
+            "description": "Set to `true` to send a full snapshot of a materialized view before streaming incremental updates. The default is `false`. Works on a paused pipeline: the snapshot is delivered from the latest cached view state without requiring the pipeline to be running.",
             "required": false,
             "schema": {
               "type": "boolean",

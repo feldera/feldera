@@ -160,7 +160,8 @@ view, not just changes since the connector was created.
 
 The snapshot is sent exactly once per connector lifetime. Resuming the
 pipeline from a checkpoint does not re-send it. Modifying the connector
-triggers a fresh snapshot on the next start.
+triggers a fresh snapshot on the next start, and is delivered even if the
+pipeline is started or resumed in `Paused` state.
 
 ```sql
 CREATE MATERIALIZED VIEW V
