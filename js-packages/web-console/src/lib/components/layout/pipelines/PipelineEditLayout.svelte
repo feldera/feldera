@@ -184,7 +184,7 @@
     { icon: 'fd fd-panel-bottom', text: 'Monitoring', value: showMonitoringPanel },
     {
       icon: 'fd fd-panel-right',
-      text: 'Interaction',
+      text: 'Inspect',
       value: showInteractionPanel,
       show: isScreenLg.current
     }

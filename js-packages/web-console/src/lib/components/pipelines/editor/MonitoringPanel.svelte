@@ -197,7 +197,7 @@
 
 {#snippet TabControlChangeStream()}
   <span class="inline sm:hidden"> Changes </span>
-  <span class="hidden sm:inline"> Changes Stream </span>
+  <span class="hidden sm:inline"> Change Stream </span>
 {/snippet}
 
 {#snippet TabHealth()}
