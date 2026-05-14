@@ -51,6 +51,7 @@ PIPELINE_FIELD_SELECTOR_ALL_FIELDS = [
     "deployment_initial",
     "deployment_id",
     "bootstrap_policy",
+    "silent_bootstrap",
 ]
 
 PIPELINE_FIELD_SELECTOR_STATUS_FIELDS = [
@@ -84,6 +85,7 @@ PIPELINE_FIELD_SELECTOR_STATUS_FIELDS = [
     "storage_status",
     "storage_status_details",
     "bootstrap_policy",
+    "silent_bootstrap",
 ]
 
 
@@ -255,6 +257,7 @@ def test_pipeline_get_selector(pipeline_name):
             else:
                 obj = val
             keys = sorted(obj.keys())
+            print(f"keys: {keys}")
             assert sorted(expected_fields) == keys
 
 

@@ -506,6 +506,7 @@ metrics"""
     def start(
         self,
         bootstrap_policy: Optional[BootstrapPolicy] = None,
+        silent_bootstrap: bool = False,
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
@@ -520,6 +521,7 @@ metrics"""
         - If the pipeline is in PAUSED state, use `.meth:resume` instead.
 
         :param bootstrap_policy: The bootstrap policy to use.
+        :param silent_bootstrap: Set True to bootstrap the pipeline with output connectors disabled. False by default.
         :param timeout_s: The maximum time (in seconds) to wait for the
             pipeline to start.
         :param wait: Set True to wait for the pipeline to start. True by default
@@ -531,6 +533,7 @@ metrics"""
         self.client.start_pipeline(
             self.name,
             bootstrap_policy=bootstrap_policy,
+            silent_bootstrap=silent_bootstrap,
             wait=wait,
             timeout_s=timeout_s,
             dismiss_error=dismiss_error,
@@ -539,6 +542,7 @@ metrics"""
     def start_paused(
         self,
         bootstrap_policy: Optional[BootstrapPolicy] = None,
+        silent_bootstrap: bool = False,
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
@@ -557,6 +561,7 @@ metrics"""
         return self.client.start_pipeline_as_paused(
             self.name,
             bootstrap_policy=bootstrap_policy,
+            silent_bootstrap=silent_bootstrap,
             wait=wait,
             timeout_s=timeout_s,
             dismiss_error=dismiss_error,
@@ -565,6 +570,7 @@ metrics"""
     def start_standby(
         self,
         bootstrap_policy: Optional[BootstrapPolicy] = None,
+        silent_bootstrap: bool = False,
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
@@ -583,6 +589,7 @@ metrics"""
         self.client.start_pipeline_as_standby(
             self.name,
             bootstrap_policy=bootstrap_policy,
+            silent_bootstrap=silent_bootstrap,
             wait=wait,
             timeout_s=timeout_s,
             dismiss_error=dismiss_error,
@@ -591,6 +598,7 @@ metrics"""
     def restart(
         self,
         bootstrap_policy: Optional[BootstrapPolicy] = None,
+        silent_bootstrap: bool = False,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
     ):
@@ -611,6 +619,7 @@ metrics"""
         self.stop(force=True, timeout_s=timeout_s)
         self.start(
             bootstrap_policy=bootstrap_policy,
+            silent_bootstrap=silent_bootstrap,
             timeout_s=timeout_s,
             dismiss_error=dismiss_error,
         )
@@ -655,7 +664,7 @@ metrics"""
 
         self.client.dismiss_error_pipeline(self.name)
 
-    def approve(self):
+    def approve(self, silent_bootstrap: bool = False):
         """
         Approves the pipeline to proceed with bootstrapping.
 
@@ -665,7 +674,7 @@ metrics"""
         before proceeding with the bootstrapping process.
         """
 
-        self.client.approve_pipeline(self.name)
+        self.client.approve_pipeline(self.name, silent_bootstrap=silent_bootstrap)
 
     def resume(self, wait: bool = True, timeout_s: Optional[float] = None):
         """

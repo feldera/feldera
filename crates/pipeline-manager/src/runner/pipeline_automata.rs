@@ -1297,7 +1297,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             None
         };
 
-        let bootstrap_policy =
+        let bootstrap_config =
             if Self::platform_version_requires_bootstrap_policy(&pipeline.platform_version) {
                 Some(pipeline.bootstrap_policy.unwrap_or_default())
             } else {
@@ -1318,7 +1318,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             .pipeline_handle
             .provision(
                 deployment_initial,
-                bootstrap_policy,
+                bootstrap_config,
                 &deployment_id,
                 &deployment_config,
                 program_info,
@@ -1827,7 +1827,7 @@ mod test {
     use async_trait::async_trait;
     use feldera_types::config::{PipelineConfig, StorageConfig};
     use feldera_types::program_schema::ProgramSchema;
-    use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
+    use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus, RuntimeStatus};
     use serde_json::json;
     use std::str::FromStr;
     use std::sync::Arc;
@@ -1867,7 +1867,7 @@ mod test {
         async fn provision(
             &mut self,
             _: RuntimeDesiredStatus,
-            _: Option<BootstrapPolicy>,
+            _: Option<BootstrapConfig>,
             _: &Uuid,
             _: &PipelineConfig,
             _: &serde_json::Value,
@@ -1921,7 +1921,7 @@ mod test {
                     automaton.tenant_id,
                     &pipeline.name,
                     initial,
-                    BootstrapPolicy::default(),
+                    BootstrapConfig::default(),
                     true,
                 )
                 .await

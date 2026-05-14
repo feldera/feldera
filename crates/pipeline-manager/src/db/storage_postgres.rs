@@ -28,7 +28,7 @@ use async_trait::async_trait;
 use deadpool_postgres::{Manager, Pool, RecyclingMethod};
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
-use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
+use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus, RuntimeStatus};
 use tokio_postgres::Row;
 use tracing::{debug, info};
 use uuid::Uuid;
@@ -714,7 +714,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         pipeline_name: &str,
         initial: RuntimeDesiredStatus,
-        bootstrap_policy: BootstrapPolicy,
+        bootstrap_config: BootstrapConfig,
         dismiss_error: bool,
     ) -> Result<PipelineId, DBError> {
         let mut client = self.pool.get().await?;
@@ -725,7 +725,7 @@ impl Storage for StoragePostgres {
             pipeline_name,
             ResourcesDesiredStatus::Provisioned,
             Some(initial),
-            Some(bootstrap_policy),
+            Some(bootstrap_config),
             dismiss_error,
         )
         .await?;

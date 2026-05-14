@@ -223,6 +223,41 @@ impl Display for BootstrapPolicy {
     }
 }
 
+/// Bootstrap-related configuration for a deployment start request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, ToSchema, Default)]
+pub struct BootstrapConfig {
+    /// Bootstrap policy.
+    #[serde(default)]
+    pub bootstrap_policy: Option<BootstrapPolicy>,
+    /// Bootstrap the pipeline with output connectors disabled.
+    #[serde(default)]
+    pub silent_bootstrap: bool,
+}
+
+impl From<BootstrapPolicy> for BootstrapConfig {
+    fn from(bootstrap_policy: BootstrapPolicy) -> Self {
+        Self {
+            bootstrap_policy: Some(bootstrap_policy),
+            silent_bootstrap: false,
+        }
+    }
+}
+
+impl BootstrapConfig {
+    pub fn with_silent_bootstrap(self, silent_bootstrap: bool) -> Self {
+        Self {
+            silent_bootstrap,
+            ..self
+        }
+    }
+
+    /// Returns the bootstrap policy for an active deployment.
+    pub fn active_bootstrap_policy(&self) -> BootstrapPolicy {
+        self.bootstrap_policy
+            .expect("bootstrap policy must be set for an active deployment")
+    }
+}
+
 /// Details about pipeline storage, which are returned as part of the regular runtime status polling
 /// by the runner.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

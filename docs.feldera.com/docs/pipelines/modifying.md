@@ -131,6 +131,27 @@ from input connectors. Input connectors that were not modified in the new versio
 whose tables have not changed resume ingestion from their checkpointed position in the input stream;
 other input connectors will start from the initial state specified in their configuration.
 
+### Silent bootstrapping
+
+By default, bootstrapping sends the complete contents of new and modified views
+to their output connectors. This is useful when the connected sink must be
+rebuilt from the bootstrapped view contents, but it can produce duplicate or
+stale records if the sink already contains the correct data. This is the case
+for example when bootstrapping is triggered by a Feldera upgrade (see
+[below](#caveat-1-feldera-runtime-upgrade-can-modify-the-pipeline)).
+
+Set `silent_bootstrap=true` to bootstrap the pipeline with output connectors
+disabled for the duration of bootstrapping. The pipeline still evaluates the
+new and modified views and updates its internal state. Output connector progress
+also advances through the bootstrapped input records, but no bootstrapped output
+records are transmitted to external sinks. Once bootstrapping completes and the
+pipeline enters `Running` or `Paused`, output connectors resume normal operation
+and emit subsequent incremental changes.
+
+Use silent bootstrapping when the external sink already has the desired contents.
+Do not use it if the sink needs to receive the full contents of newly
+added or modified views during bootstrap.
+
 ## Caveats and limitations
 
 ### Caveat 1: Feldera runtime upgrade can modify the pipeline
@@ -155,6 +176,9 @@ If this is undesirable, use one of the following methods to avoid updating the S
    the pipeline's code, it will continue running with its original runtime.
 
 2. Pin the pipeline to a specific runtime version using the [`runtime_version` property](/pipelines/lifecycle).
+
+3. Use [silent bootstrapping](#silent-bootstrapping) to avoid sending duplicate data to output
+   connectors during bootstrapping.
 
 ### Caveat 2: Starting from an S3 checkpoint
 
@@ -215,6 +239,11 @@ All of this functionality is also available via the Python SDK and the `fda` CLI
   `await_approval`, `allow`, and `reject`. The default value is `await_approval`. See the
   [Restart the pipeline](#3-restart-the-pipeline) section above for details.
 
+* The `silent_bootstrap` argument to the [`/start` endpoint](/api/start-pipeline) and
+  [`/approve` endpoint](/api/approve-bootstrap). Set this argument to `true`
+  to suppress output connector records during bootstrapping, as described in
+  [Silent bootstrapping](#silent-bootstrapping).
+
 * Two runtime states reported by the [pipeline status endpoint](/api/get-pipeline) in the `deployment_runtime_status` field:
   * `AwaitingApproval` - When starting the pipeline with `bootstrap_policy=await_approval`, if the pipeline
     requires bootstrapping, it will stop in the `AwaitingApproval` state waiting for the user to approve the
@@ -227,6 +256,8 @@ All of this functionality is also available via the Python SDK and the `fda` CLI
 
 * The [`/approve` endpoint](/api/approve-bootstrap).
   Invoking this endpoint transitions the pipeline from the `AwaitingApproval` to `Bootstrapping` state.
+  Use `/approve?silent_bootstrap=true` to approve the changes while suppressing
+  output connector records produced during bootstrapping.
 
 ## WebConsole
 

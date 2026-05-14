@@ -72,3 +72,11 @@ pub struct SamplyProfileGetParams {
     /// If false or not provided, returns the last collected profile.
     pub latest: bool,
 }
+
+/// Query parameters to the `/approve` endpoint.
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+pub struct ApproveParameters {
+    /// Bootstrap the pipeline with output connectors disabled.
+    #[serde(default)]
+    pub silent_bootstrap: bool,
+}

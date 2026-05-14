@@ -3,7 +3,7 @@ use crate::db::types::monitor::{
     ExtendedPipelineMonitorEvent, PipelineMonitorEvent, PipelineMonitorEventId,
 };
 use crate::db::types::pipeline::{
-    parse_string_as_bootstrap_policy, parse_string_as_runtime_desired_status,
+    parse_string_as_bootstrap_config, parse_string_as_runtime_desired_status,
     parse_string_as_runtime_status, ExtendedPipelineDescr, ExtendedPipelineDescrEventInfo,
     ExtendedPipelineDescrMonitoring, PipelineId,
 };
@@ -17,7 +17,7 @@ use crate::db::types::utils::{
 use crate::db::types::version::Version;
 use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
-use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
+use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus, RuntimeStatus};
 use tokio_postgres::Row;
 use tracing::error;
 use uuid::Uuid;
@@ -89,7 +89,7 @@ pub fn parse_pipeline_row_all(row: &Row) -> Result<ExtendedPipelineDescr, DBErro
         storage_status_details: parse_from_row_storage_status_details(row)?,
         deployment_id: parse_from_row_deployment_id(row),
         deployment_initial: parse_from_row_deployment_initial(row)?,
-        bootstrap_policy: parse_from_row_bootstrap_policy(row)?,
+        bootstrap_policy: parse_from_row_bootstrap_config(row)?,
         deployment_resources_status: parse_from_row_deployment_resources_status(row)?,
         deployment_resources_status_since: parse_from_row_deployment_resources_status_since(row),
         deployment_resources_status_details: parse_from_row_deployment_resources_status_details(row)?,
@@ -123,7 +123,7 @@ pub fn parse_pipeline_row_monitoring(row: &Row) -> Result<ExtendedPipelineDescrM
         storage_status_details: parse_from_row_storage_status_details(row)?,
         deployment_id: parse_from_row_deployment_id(row),
         deployment_initial: parse_from_row_deployment_initial(row)?,
-        bootstrap_policy: parse_from_row_bootstrap_policy(row)?,
+        bootstrap_policy: parse_from_row_bootstrap_config(row)?,
         deployment_resources_status: parse_from_row_deployment_resources_status(row)?,
         deployment_resources_status_since: parse_from_row_deployment_resources_status_since(row),
         deployment_resources_desired_status: parse_from_row_deployment_resources_desired_status(row)?,
@@ -428,10 +428,10 @@ fn parse_from_row_deployment_runtime_desired_status_since(row: &Row) -> Option<D
     row.get("deployment_runtime_desired_status_since")
 }
 
-fn parse_from_row_bootstrap_policy(row: &Row) -> Result<Option<BootstrapPolicy>, DBError> {
+fn parse_from_row_bootstrap_config(row: &Row) -> Result<Option<BootstrapConfig>, DBError> {
     Ok(match row.get::<_, Option<String>>("bootstrap_policy") {
         None => None,
-        Some(s) => Some(parse_string_as_bootstrap_policy(s)?),
+        Some(s) => Some(parse_string_as_bootstrap_config(s)?),
     })
 }
 

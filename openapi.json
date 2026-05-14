@@ -1946,6 +1946,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "silent_bootstrap",
+            "in": "query",
+            "description": "Bootstrap the pipeline with output connectors disabled.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -5019,9 +5028,19 @@
           {
             "name": "bootstrap_policy",
             "in": "query",
+            "description": "Bootstrap policy.",
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/BootstrapPolicy"
+            }
+          },
+          {
+            "name": "silent_bootstrap",
+            "in": "query",
+            "description": "Bootstrap the pipeline with output connectors disabled.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           },
           {

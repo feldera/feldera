@@ -5,7 +5,9 @@ use crate::db::types::storage::StorageStatus;
 use crate::db::types::version::Version;
 use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
-use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
+use feldera_types::runtime_status::{
+    BootstrapConfig, BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus,
+};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Display;
@@ -99,12 +101,22 @@ pub fn bootstrap_policy_to_string(bootstrap: BootstrapPolicy) -> String {
     .to_string()
 }
 
-pub fn parse_string_as_bootstrap_policy(s: String) -> Result<BootstrapPolicy, DBError> {
+/// Serialize BootstrapConfig as a JSON string.
+pub fn bootstrap_config_to_string(bootstrap: BootstrapConfig) -> String {
+    serde_json::to_string(&bootstrap).unwrap()
+}
+
+/// Backward compatible deserialization of the bootstrap_policy field.
+///
+/// Old format: bootstrap policy only, silent_bootstrap is implied to be false.
+/// New format: BootstrapConfig serialized as a JSON string.
+pub fn parse_string_as_bootstrap_config(s: String) -> Result<BootstrapConfig, DBError> {
     match s.as_str() {
-        "allow" => Ok(BootstrapPolicy::Allow),
-        "reject" => Ok(BootstrapPolicy::Reject),
-        "await_approval" => Ok(BootstrapPolicy::AwaitApproval),
-        _ => Err(DBError::InvalidBootstrap(s)),
+        "allow" => Ok(BootstrapConfig::from(BootstrapPolicy::Allow)),
+        "reject" => Ok(BootstrapConfig::from(BootstrapPolicy::Reject)),
+        "await_approval" => Ok(BootstrapConfig::from(BootstrapPolicy::AwaitApproval)),
+        _ => serde_json::from_str::<BootstrapConfig>(&s)
+            .map_err(|_| DBError::InvalidBootstrap(s.clone())),
     }
 }
 
@@ -248,9 +260,12 @@ pub struct ExtendedPipelineDescr {
     /// Initial runtime desired status of the current deployment.
     pub deployment_initial: Option<RuntimeDesiredStatus>,
 
-    /// Policy enforced when the pipeline has to bootstrap
-    /// due to detected changes caused by recompilation.
-    pub bootstrap_policy: Option<BootstrapPolicy>,
+    /// Configuration used to bootstrap the pipeline if changes are detected.
+    // TODO: This field is called `bootstrap_policy` to match the corresponding column
+    // in the database. We should rename the column and the field, but I don't want to
+    // introduce a DB migration just for this. Perhaps we can bundle this change with
+    // some other migration.
+    pub bootstrap_policy: Option<BootstrapConfig>,
 
     /// Resources status of the current deployment.
     pub deployment_resources_status: ResourcesStatus,
@@ -318,7 +333,7 @@ pub struct ExtendedPipelineDescrMonitoring {
     pub deployment_runtime_status_details: Option<serde_json::Value>,
     pub deployment_runtime_status_since: Option<DateTime<Utc>>,
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
-    pub bootstrap_policy: Option<BootstrapPolicy>,
+    pub bootstrap_policy: Option<BootstrapConfig>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
 }
 

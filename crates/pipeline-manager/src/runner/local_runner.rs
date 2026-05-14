@@ -17,7 +17,7 @@ use feldera_observability::ReqwestTracingExt;
 use feldera_types::config::{
     PipelineConfig, PipelineConfigProgramInfo, StorageCacheConfig, StorageConfig,
 };
-use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus};
+use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus};
 use reqwest::StatusCode;
 use serde_json::json;
 use std::io::ErrorKind;
@@ -424,7 +424,7 @@ impl PipelineExecutor for LocalRunner {
     async fn provision(
         &mut self,
         deployment_initial: RuntimeDesiredStatus,
-        bootstrap_policy: Option<BootstrapPolicy>,
+        bootstrap_config: Option<BootstrapConfig>,
         deployment_id: &Uuid,
         deployment_config: &PipelineConfig,
         _program_info: &serde_json::Value,
@@ -587,10 +587,15 @@ impl PipelineExecutor for LocalRunner {
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
 
-            if let Some(bootstrap_policy) = bootstrap_policy {
+            if let Some(bootstrap_config) = bootstrap_config {
                 command
                     .arg("--bootstrap-policy")
-                    .arg(bootstrap_policy_to_string(bootstrap_policy));
+                    .arg(bootstrap_policy_to_string(
+                        bootstrap_config.active_bootstrap_policy(),
+                    ));
+                if bootstrap_config.silent_bootstrap {
+                    command.arg("--silent-bootstrap");
+                }
             }
 
             if let Some((https_tls_cert_path, https_tls_key_path)) =
