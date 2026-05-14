@@ -50,7 +50,7 @@ jobs:
 
       - name: Python runtime_aggtest test
         if: ${{ vars.CI_DRY_RUN != 'true' && !contains(vars.CI_SKIP_JOBS, 'runtime-aggtest') }}
-        run: bash ./tests/runtime_aggtest/run.sh
+        run: uv run --locked ./tests/runtime_aggtest/run.sh
         working-directory: python
         env:
           RUNTIME_AGGTEST_JOBS: ${{ vars.RUNTIME_AGGTEST_JOBS }}
