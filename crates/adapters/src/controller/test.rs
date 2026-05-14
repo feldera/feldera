@@ -1358,6 +1358,119 @@ fn ft_send_snapshot_resent_on_flag_flip() {
     check_file_contents(&output_path, 500..1000);
 }
 
+/// End-to-end: modified `send_snapshot: true` delta sink delivers its
+/// snapshot on a restart that never calls `start()` (stays paused).
+#[cfg(feature = "with-deltalake")]
+#[test]
+fn ft_send_snapshot_delta_delivered_while_paused() {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let tempdir_path = tempdir.path();
+    let storage_dir = tempdir_path.join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_path = tempdir_path.join("input.csv");
+    let delta_dir = tempdir_path.join("delta_output");
+    let delta_uri = format!("file://{}", delta_dir.display());
+    File::create_new(&input_path).unwrap();
+
+    fn build_config(
+        input_path: &Path,
+        delta_uri: &str,
+        storage_dir: &Path,
+        send_snapshot: bool,
+    ) -> PipelineConfig {
+        serde_json::from_value(json!({
+            "name": "test",
+            "workers": 4,
+            "storage_config": { "path": storage_dir },
+            "storage": true,
+            "fault_tolerance": {},
+            "clock_resolution_usecs": null,
+            "inputs": {
+                "test_input1": {
+                    "stream": "test_input1",
+                    "transport": {
+                        "name": "file_input",
+                        "config": {
+                            "path": input_path.display().to_string(),
+                            "follow": true,
+                        },
+                    },
+                    "format": { "name": "csv" },
+                },
+            },
+            "outputs": {
+                "test_output1": {
+                    "stream": "test_output1",
+                    "send_snapshot": send_snapshot,
+                    "transport": {
+                        "name": "delta_table_output",
+                        "config": {
+                            "uri": delta_uri,
+                            "mode": "truncate",
+                        },
+                    },
+                },
+            },
+        }))
+        .unwrap()
+    }
+
+    // Round 0: send_snapshot=false; push 500 records. The delta sink writes
+    // them as CDC inserts via the normal delta path. Checkpoint, stop.
+    {
+        let mut writer = CsvWriterBuilder::new()
+            .has_headers(false)
+            .from_writer(File::options().append(true).open(&input_path).unwrap());
+        for id in 0..500 {
+            writer.serialize(TestStruct::for_id(id as u32)).unwrap();
+        }
+        writer.flush().unwrap();
+    }
+    let config_off = build_config(&input_path, &delta_uri, &storage_dir, false);
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[Some("output")],
+            ))
+        },
+        &config_off,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+    wait(|| !controller.is_replaying(), 10_000).unwrap();
+    wait_for_records(&controller, &[500]);
+    controller.checkpoint().unwrap();
+    controller.stop().unwrap();
+
+    // Round 1: flip send_snapshot=true and restart, but do NOT call
+    // `controller.start()` — the pipeline stays in the default `Paused`
+    // state. The connector definition changed, so `is_snapshot_pending`
+    // becomes true; with the fix, registration requests a step that fires
+    // even while paused and delivers the snapshot (500 records) to the
+    // truncated delta table. `transmitted_records` should reach 1000
+    // (500 carried over from the checkpoint seed + 500 from the snapshot).
+    let config_on = build_config(&input_path, &delta_uri, &storage_dir, true);
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[Some("output")],
+            ))
+        },
+        &config_on,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    // Notably: NO `controller.start()` — pipeline stays paused.
+    wait_for_records(&controller, &[1000]);
+    controller.stop().unwrap();
+}
+
 /// Runs a basic test of suspend and resume, without fault tolerance.
 ///
 /// For each element of `rounds`, the test writes the specified number of

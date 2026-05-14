@@ -3155,6 +3155,93 @@ outputs:
         assert!(!snapshot2_chunks.is_empty());
         assert!(snapshot2_chunks.iter().all(|chunk| chunk.snapshot));
     }
+
+    /// Connecting to `/egress?send_snapshot=true` while the pipeline is
+    /// Paused must still deliver the cached materialized-view snapshot.
+    ///
+    /// Without the fix, the snapshot stalls indefinitely: registration calls
+    /// `request_snapshot_delivery`, which short-circuits when the pipeline is
+    /// not `Running`, so no step fires and `push_output` never runs the
+    /// `is_snapshot_pending` path. The HTTP client receives only the 3-second
+    /// keepalive empties and times out.
+    #[actix_web::test]
+    async fn test_http_egress_send_snapshot_while_paused() {
+        ensure_default_crypto_provider();
+
+        let initial_data = vec![
+            vec![TestStruct::for_id(1), TestStruct::for_id(2)],
+            vec![TestStruct::for_id(3)],
+        ];
+
+        let server = start_test_server(
+            r#"
+name: test
+inputs:
+outputs:
+"#,
+            Uuid::new_v4(),
+        )
+        .await;
+
+        // Start, push data, wait for it to land in the materialized view so
+        // `trace_snapshots` is populated before we pause.
+        let resp = server.get("/start").send().await.unwrap();
+        assert!(resp.status().is_success());
+
+        let CompletionTokenResponse { token } =
+            TestHttpSender::send_stream_deserialize_resp::<CompletionTokenResponse>(
+                server.post("/ingress/test_input1"),
+                &initial_data,
+            )
+            .await;
+        wait_for_completion(&server, &token).await;
+
+        // Pause; subsequent egress request must still see the snapshot.
+        let resp = server.get("/pause").send().await.unwrap();
+        assert!(resp.status().is_success());
+        // The /pause API returns immediately after setting the desired state;
+        // give the circuit thread a moment to actually stop stepping so we
+        // exercise the truly-paused path (not a race with the last in-flight
+        // step).
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        let mut response = server
+            .post("/egress/test_output1?format=csv&backpressure=true&send_snapshot=true")
+            .send()
+            .await
+            .unwrap();
+        assert!(response.status().is_success());
+
+        let (snapshot_chunks, mut snapshot_records) = match timeout(
+            Duration::from_secs(10),
+            collect_output_chunks(&mut response, initial_data.iter().map(Vec::len).sum()),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(error) => {
+                print_stats(&server).await;
+                panic!(
+                    "timed out waiting for snapshot output while paused: {error:?} \
+                     (expected the snapshot to be delivered without resuming)"
+                );
+            }
+        };
+        snapshot_records.sort();
+        assert_eq!(snapshot_records, flatten_and_sort_batches(&initial_data));
+        assert!(
+            !snapshot_chunks.is_empty(),
+            "expected at least one chunk with payload"
+        );
+        assert!(
+            snapshot_chunks.iter().all(|chunk| chunk.snapshot),
+            "expected all data chunks to be marked snapshot=true while paused, got: {:?}",
+            snapshot_chunks
+                .iter()
+                .map(|c| c.snapshot)
+                .collect::<Vec<_>>()
+        );
+    }
 }
 
 #[cfg(test)]
@@ -3179,10 +3266,7 @@ mod test_with_kafka {
         test_runner::TestRunner,
     };
     use serde_json::{Value as JsonValue, json};
-    use std::{
-        thread::sleep,
-        time::Duration,
-    };
+    use std::{thread::sleep, time::Duration};
     use uuid::Uuid;
 
     #[actix_web::test]

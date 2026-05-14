@@ -6765,13 +6765,9 @@ impl ControllerInner {
         true
     }
 
-    /// Requests a circuit step so that `push_output` delivers the pending
-    /// snapshot on the next step. Called at endpoint registration when
-    /// `send_snapshot: true` and the endpoint has not yet delivered.
+    /// Request a step so `push_output` delivers the pending snapshot; fires even when paused.
     fn request_snapshot_delivery(&self) {
-        if self.state() == PipelineState::Running {
-            self.request_step();
-        }
+        self.request_step();
     }
 
     fn push_batch_to_encoder(
