@@ -2858,6 +2858,7 @@ mod test_with_kafka {
     use actix_web::{App, http::StatusCode, middleware::Logger, web::Data as WebData};
     use feldera_types::runtime_status::RuntimeDesiredStatus;
     use feldera_types::{
+        adapter_stats::{ExternalControllerStatus, TransactionStatus},
         completion_token::{CompletionStatus, CompletionStatusResponse, CompletionTokenResponse},
         runtime_status::BootstrapPolicy,
     };
@@ -3317,5 +3318,177 @@ outputs:
         assert!(resp.status().is_success());
 
         TestHttpReceiver::wait_for_output_unordered(&mut egress_resp, &data).await;
+    }
+
+    /// Regression test for issue #6231.
+    /// In a pipeline without output connectors, the number of completed records,
+    /// completed steps, and the `pipeline_complete` flag are updated before the current transaction
+    /// completes.
+    #[actix_web::test]
+    async fn test_transaction_completion_without_output_connectors() {
+        ensure_default_crypto_provider();
+
+        let data = vec![vec![
+            TestStruct::for_id(1),
+            TestStruct::for_id(2),
+            TestStruct::for_id(3),
+        ]];
+        let input_records = data.iter().map(Vec::len).sum::<usize>() as u64;
+
+        // Keep the controller free of configured output connectors.  This
+        // exercises the no-output path in completion accounting instead of
+        // waiting for any egress connector to report progress.
+        let config_str = r#"
+name: test
+inputs:
+outputs:
+"#;
+
+        let mut config_file = NamedTempFile::new().unwrap();
+        config_file.write_all(config_str.as_bytes()).unwrap();
+
+        println!("Creating HTTP server");
+
+        let state = WebData::new(ServerState::new(
+            PipelinePhase::Initializing(InitializationState::Starting),
+            String::default(),
+            RuntimeDesiredStatus::Paused,
+            BootstrapPolicy::Allow,
+            Uuid::default(),
+            None,
+        ));
+        let state_clone = state.clone();
+
+        let args = ServerArgs {
+            config_file: config_file.path().display().to_string(),
+            metadata_file: None,
+            bind_address: "127.0.0.1".to_string(),
+            default_port: None,
+            storage_location: None,
+            enable_https: false,
+            https_tls_cert_path: None,
+            https_tls_key_path: None,
+            initial: RuntimeDesiredStatus::Paused,
+            bootstrap_policy: BootstrapPolicy::Allow,
+            deployment_id: Uuid::default(),
+            host_id: None,
+        };
+
+        let config = parse_config(&args.config_file).unwrap();
+        let builder = ControllerBuilder::new(&config).unwrap();
+        thread::spawn(move || {
+            bootstrap(
+                builder,
+                Box::new(|workers| {
+                    Ok(test_circuit::<TestStruct>(
+                        workers,
+                        &TestStruct::schema(),
+                        &[None],
+                    ))
+                }),
+                state_clone,
+            )
+        });
+
+        let server =
+            actix_test::start(move || build_app(App::new().wrap(Logger::default()), state.clone()));
+
+        let start = Instant::now();
+        while server.get("/stats").send().await.unwrap().status() == StatusCode::SERVICE_UNAVAILABLE
+        {
+            assert!(start.elapsed() < Duration::from_millis(20_000));
+            sleep(Duration::from_millis(200));
+        }
+
+        println!("/start");
+        let resp = server.get("/start").send().await.unwrap();
+        assert!(resp.status().is_success());
+
+        println!("/start_transaction");
+        let resp = server.post("/start_transaction").send().await.unwrap();
+        assert!(resp.status().is_success());
+
+        // Push input through HTTP ingress while the transaction is open.  The
+        // endpoint returns a completion token for exactly the records that this
+        // request placed into the pipeline.
+        let req = server.post("/ingress/test_input1");
+        let CompletionTokenResponse { token } =
+            TestHttpSender::send_stream_deserialize_resp::<CompletionTokenResponse>(req, &data)
+                .await;
+        println!("completion token: {token}");
+
+        // Give the pipeline time to process the input inside the transaction.
+        // Before commit, records must not be reported as completed.
+        sleep(Duration::from_millis(5000));
+        let stats = server
+            .get("/stats")
+            .send()
+            .await
+            .unwrap()
+            .json::<ExternalControllerStatus>()
+            .await
+            .unwrap();
+        assert!(!stats.global_metrics.pipeline_complete);
+        assert_eq!(stats.global_metrics.total_completed_records, 0);
+
+        let CompletionStatusResponse { status, .. } = server
+            .get(format!("/completion_status?token={token}"))
+            .send()
+            .await
+            .unwrap()
+            .json::<CompletionStatusResponse>()
+            .await
+            .unwrap();
+        assert_eq!(status, CompletionStatus::InProgress);
+
+        println!("/commit_transaction");
+        let resp = server.post("/commit_transaction").send().await.unwrap();
+        assert!(resp.status().is_success());
+
+        // Wait for the transaction to commit.
+        async_wait(
+            || async {
+                let stats = server
+                    .get("/stats")
+                    .send()
+                    .await
+                    .unwrap()
+                    .json::<ExternalControllerStatus>()
+                    .await
+                    .unwrap();
+                stats.global_metrics.transaction_status == TransactionStatus::NoTransaction
+            },
+            20_000,
+        )
+        .await
+        .unwrap();
+
+        async_wait(
+            || async {
+                let CompletionStatusResponse { status, .. } = server
+                    .get(format!("/completion_status?token={token}"))
+                    .send()
+                    .await
+                    .unwrap()
+                    .json::<CompletionStatusResponse>()
+                    .await
+                    .unwrap();
+                status == CompletionStatus::Complete
+            },
+            20_000,
+        )
+        .await
+        .unwrap();
+
+        let stats = server
+            .get("/stats")
+            .send()
+            .await
+            .unwrap()
+            .json::<ExternalControllerStatus>()
+            .await
+            .unwrap();
+        assert!(stats.global_metrics.pipeline_complete);
+        assert_eq!(stats.global_metrics.total_completed_records, input_records,);
     }
 }

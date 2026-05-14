@@ -94,7 +94,7 @@ where
         &json_file.path().display().to_string(),
     );
     input_pipeline.start();
-    wait(|| input_pipeline.status().pipeline_complete(), 400_000).expect("timeout");
+    wait(|| input_pipeline.pipeline_complete(), 400_000).expect("timeout");
     input_pipeline.stop().unwrap();
 
     info!("Read delta snapshot in {:?}", start.elapsed());
@@ -640,7 +640,7 @@ fn delta_table_output_test(
 
     controller.start();
 
-    wait(|| controller.status().pipeline_complete(), 100_000).unwrap();
+    wait(|| controller.pipeline_complete(), 100_000).unwrap();
 
     if verify {
         let parquet_files =
