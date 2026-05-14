@@ -2837,37 +2837,27 @@ impl StoredStatus {
     }
 }
 
+/// Helpers shared between the HTTP-only and Kafka-using server tests. Lives
+/// outside `mod test_with_kafka` so it stays available when `with-kafka` is
+/// off.
 #[cfg(test)]
-#[cfg(feature = "with-kafka")]
-mod test_with_kafka {
+mod test_http_helpers {
     use super::{ServerArgs, ServerState, bootstrap, build_app, parse_config};
     use crate::{
-        controller::{ControllerBuilder, MAX_API_CONNECTIONS},
-        ensure_default_crypto_provider,
+        controller::ControllerBuilder,
         server::{InitializationState, PipelinePhase},
-        test::{
-            TestStruct, async_wait, generate_test_batches,
-            http::{TestHttpReceiver, TestHttpSender},
-            kafka::{BufferConsumer, KafkaResources, TestProducer},
-            test_circuit,
-        },
+        test::{TestStruct, async_wait, test_circuit},
     };
     use actix_test::TestServer;
     use actix_web::{App, http::StatusCode, middleware::Logger, web::Bytes, web::Data as WebData};
     use awc::error::PayloadError;
     use csv::ReaderBuilder as CsvReaderBuilder;
-    use feldera_types::runtime_status::RuntimeDesiredStatus;
     use feldera_types::{
-        adapter_stats::{ExternalControllerStatus, TransactionStatus},
-        completion_token::{CompletionStatus, CompletionStatusResponse, CompletionTokenResponse},
-        runtime_status::BootstrapPolicy,
+        completion_token::{CompletionStatus, CompletionStatusResponse},
+        runtime_status::{BootstrapPolicy, RuntimeDesiredStatus},
     };
     use futures::{Stream, StreamExt};
-    use proptest::{
-        strategy::{Strategy, ValueTree},
-        test_runner::TestRunner,
-    };
-    use serde_json::{self, Value as JsonValue, json};
+    use serde_json::Value as JsonValue;
     use std::{
         io::Write,
         thread,
@@ -2875,10 +2865,9 @@ mod test_with_kafka {
         time::{Duration, Instant},
     };
     use tempfile::NamedTempFile;
-    use tokio::time::timeout;
     use uuid::Uuid;
 
-    async fn print_stats(server: &TestServer) {
+    pub(super) async fn print_stats(server: &TestServer) {
         let stats = serde_json::to_string_pretty(
             &server
                 .get("/stats")
@@ -2894,7 +2883,7 @@ mod test_with_kafka {
         println!("{stats}")
     }
 
-    async fn start_test_server(config_str: &str, deployment_id: Uuid) -> TestServer {
+    pub(super) async fn start_test_server(config_str: &str, deployment_id: Uuid) -> TestServer {
         let mut config_file = NamedTempFile::new().unwrap();
         config_file.write_all(config_str.as_bytes()).unwrap();
 
@@ -2954,7 +2943,7 @@ mod test_with_kafka {
         server
     }
 
-    fn flatten_and_sort_batches(data: &[Vec<TestStruct>]) -> Vec<TestStruct> {
+    pub(super) fn flatten_and_sort_batches(data: &[Vec<TestStruct>]) -> Vec<TestStruct> {
         let mut records = data
             .iter()
             .flat_map(|batch| batch.iter().cloned())
@@ -2982,7 +2971,7 @@ mod test_with_kafka {
             .collect()
     }
 
-    async fn collect_output_chunks<S>(
+    pub(super) async fn collect_output_chunks<S>(
         response: &mut S,
         num_records: usize,
     ) -> (Vec<crate::transport::http::Chunk>, Vec<TestStruct>)
@@ -3019,7 +3008,7 @@ mod test_with_kafka {
         (chunks, records)
     }
 
-    async fn wait_for_completion(server: &TestServer, token: &str) {
+    pub(super) async fn wait_for_completion(server: &TestServer, token: &str) {
         async_wait(
             || async {
                 let resp = server
@@ -3039,6 +3028,162 @@ mod test_with_kafka {
         .await
         .unwrap();
     }
+}
+
+/// Server tests that exercise HTTP egress/ingress only — no Kafka required.
+#[cfg(test)]
+mod test_http {
+    use super::test_http_helpers::{
+        collect_output_chunks, flatten_and_sort_batches, print_stats, start_test_server,
+        wait_for_completion,
+    };
+    use crate::{
+        ensure_default_crypto_provider,
+        test::{TestStruct, http::TestHttpSender},
+    };
+    use feldera_types::completion_token::CompletionTokenResponse;
+    use std::time::Duration;
+    use tokio::time::timeout;
+    use uuid::Uuid;
+
+    /// Verifies the `send_snapshot` HTTP egress mode:
+    /// 1. Pushes initial data, connects with `send_snapshot=true`, and
+    ///    verifies the snapshot chunks carry `snapshot: true`.
+    /// 2. Pushes more data and verifies incremental delta chunks arrive
+    ///    with `snapshot: false`.
+    /// 3. Opens a second connection and verifies it receives a full
+    ///    snapshot of all data (initial + follow).
+    #[actix_web::test]
+    async fn test_http_egress_send_snapshot() {
+        ensure_default_crypto_provider();
+
+        let initial_data = vec![
+            vec![TestStruct::for_id(1), TestStruct::for_id(2)],
+            vec![TestStruct::for_id(3)],
+        ];
+        let follow_data = vec![vec![TestStruct::for_id(10), TestStruct::for_id(11)]];
+
+        let server = start_test_server(
+            r#"
+name: test
+inputs:
+outputs:
+"#,
+            Uuid::new_v4(),
+        )
+        .await;
+
+        let resp = server.get("/start").send().await.unwrap();
+        assert!(resp.status().is_success());
+
+        let CompletionTokenResponse { token } =
+            TestHttpSender::send_stream_deserialize_resp::<CompletionTokenResponse>(
+                server.post("/ingress/test_input1"),
+                &initial_data,
+            )
+            .await;
+        wait_for_completion(&server, &token).await;
+
+        let mut response = server
+            .post("/egress/test_output1?format=csv&backpressure=true&send_snapshot=true")
+            .send()
+            .await
+            .unwrap();
+        assert!(response.status().is_success());
+
+        let (snapshot_chunks, mut snapshot_records) = match timeout(
+            Duration::from_secs(10),
+            collect_output_chunks(&mut response, initial_data.iter().map(Vec::len).sum()),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(error) => {
+                print_stats(&server).await;
+                panic!("timed out waiting for snapshot output: {error:?}");
+            }
+        };
+        snapshot_records.sort();
+        assert_eq!(snapshot_records, flatten_and_sort_batches(&initial_data));
+        assert!(!snapshot_chunks.is_empty());
+        assert!(snapshot_chunks.iter().all(|chunk| chunk.snapshot));
+
+        let CompletionTokenResponse { token } = TestHttpSender::send_stream_deserialize_resp::<
+            CompletionTokenResponse,
+        >(
+            server.post("/ingress/test_input1"), &follow_data
+        )
+        .await;
+        wait_for_completion(&server, &token).await;
+
+        let (delta_chunks, mut delta_records) = timeout(
+            Duration::from_secs(10),
+            collect_output_chunks(&mut response, follow_data.iter().map(Vec::len).sum()),
+        )
+        .await
+        .expect("timed out waiting for follow output");
+        delta_records.sort();
+        assert_eq!(delta_records, flatten_and_sort_batches(&follow_data));
+        assert!(!delta_chunks.is_empty());
+        assert!(delta_chunks.iter().all(|chunk| !chunk.snapshot));
+
+        // Open a second connection: it should receive a snapshot of all data
+        // (initial + follow) since the view is materialized.
+        let all_data_len: usize = initial_data.iter().map(Vec::len).sum::<usize>()
+            + follow_data.iter().map(Vec::len).sum::<usize>();
+
+        let mut response2 = server
+            .post("/egress/test_output1?format=csv&backpressure=true&send_snapshot=true")
+            .send()
+            .await
+            .unwrap();
+        assert!(response2.status().is_success());
+
+        let (snapshot2_chunks, mut snapshot2_records) = timeout(
+            Duration::from_secs(10),
+            collect_output_chunks(&mut response2, all_data_len),
+        )
+        .await
+        .expect("timed out waiting for second connection snapshot");
+        snapshot2_records.sort();
+
+        let mut all_expected = flatten_and_sort_batches(&initial_data);
+        all_expected.extend(flatten_and_sort_batches(&follow_data));
+        all_expected.sort();
+
+        assert_eq!(snapshot2_records, all_expected);
+        assert!(!snapshot2_chunks.is_empty());
+        assert!(snapshot2_chunks.iter().all(|chunk| chunk.snapshot));
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "with-kafka")]
+mod test_with_kafka {
+    use super::test_http_helpers::{print_stats, start_test_server};
+    use crate::{
+        controller::MAX_API_CONNECTIONS,
+        ensure_default_crypto_provider,
+        test::{
+            TestStruct, async_wait, generate_test_batches,
+            http::{TestHttpReceiver, TestHttpSender},
+            kafka::{BufferConsumer, KafkaResources, TestProducer},
+        },
+    };
+    use feldera_types::{
+        adapter_stats::{ExternalControllerStatus, TransactionStatus},
+        completion_token::{CompletionStatus, CompletionStatusResponse, CompletionTokenResponse},
+    };
+    use proptest::{
+        strategy::{Strategy, ValueTree},
+        test_runner::TestRunner,
+    };
+    use serde_json::{Value as JsonValue, json};
+    use std::{
+        thread::sleep,
+        time::Duration,
+    };
+    use uuid::Uuid;
 
     #[actix_web::test]
     async fn test_server() {
@@ -3308,116 +3453,6 @@ outputs:
 
         drop(buffer_consumer);
         drop(kafka_resources);
-    }
-
-    /// Verifies the `send_snapshot` HTTP egress mode:
-    /// 1. Pushes initial data, connects with `send_snapshot=true`, and
-    ///    verifies the snapshot chunks carry `snapshot: true`.
-    /// 2. Pushes more data and verifies incremental delta chunks arrive
-    ///    with `snapshot: false`.
-    /// 3. Opens a second connection and verifies it receives a full
-    ///    snapshot of all data (initial + follow).
-    #[actix_web::test]
-    async fn test_http_egress_send_snapshot() {
-        ensure_default_crypto_provider();
-
-        let initial_data = vec![
-            vec![TestStruct::for_id(1), TestStruct::for_id(2)],
-            vec![TestStruct::for_id(3)],
-        ];
-        let follow_data = vec![vec![TestStruct::for_id(10), TestStruct::for_id(11)]];
-
-        let server = start_test_server(
-            r#"
-name: test
-inputs:
-outputs:
-"#,
-            Uuid::new_v4(),
-        )
-        .await;
-
-        let resp = server.get("/start").send().await.unwrap();
-        assert!(resp.status().is_success());
-
-        let CompletionTokenResponse { token } =
-            TestHttpSender::send_stream_deserialize_resp::<CompletionTokenResponse>(
-                server.post("/ingress/test_input1"),
-                &initial_data,
-            )
-            .await;
-        wait_for_completion(&server, &token).await;
-
-        let mut response = server
-            .post("/egress/test_output1?format=csv&backpressure=true&send_snapshot=true")
-            .send()
-            .await
-            .unwrap();
-        assert!(response.status().is_success());
-
-        let (snapshot_chunks, mut snapshot_records) = match timeout(
-            Duration::from_secs(10),
-            collect_output_chunks(&mut response, initial_data.iter().map(Vec::len).sum()),
-        )
-        .await
-        {
-            Ok(result) => result,
-            Err(error) => {
-                print_stats(&server).await;
-                panic!("timed out waiting for snapshot output: {error:?}");
-            }
-        };
-        snapshot_records.sort();
-        assert_eq!(snapshot_records, flatten_and_sort_batches(&initial_data));
-        assert!(!snapshot_chunks.is_empty());
-        assert!(snapshot_chunks.iter().all(|chunk| chunk.snapshot));
-
-        let CompletionTokenResponse { token } = TestHttpSender::send_stream_deserialize_resp::<
-            CompletionTokenResponse,
-        >(
-            server.post("/ingress/test_input1"), &follow_data
-        )
-        .await;
-        wait_for_completion(&server, &token).await;
-
-        let (delta_chunks, mut delta_records) = timeout(
-            Duration::from_secs(10),
-            collect_output_chunks(&mut response, follow_data.iter().map(Vec::len).sum()),
-        )
-        .await
-        .expect("timed out waiting for follow output");
-        delta_records.sort();
-        assert_eq!(delta_records, flatten_and_sort_batches(&follow_data));
-        assert!(!delta_chunks.is_empty());
-        assert!(delta_chunks.iter().all(|chunk| !chunk.snapshot));
-
-        // Open a second connection: it should receive a snapshot of all data
-        // (initial + follow) since the view is materialized.
-        let all_data_len: usize = initial_data.iter().map(Vec::len).sum::<usize>()
-            + follow_data.iter().map(Vec::len).sum::<usize>();
-
-        let mut response2 = server
-            .post("/egress/test_output1?format=csv&backpressure=true&send_snapshot=true")
-            .send()
-            .await
-            .unwrap();
-        assert!(response2.status().is_success());
-
-        let (snapshot2_chunks, mut snapshot2_records) = timeout(
-            Duration::from_secs(10),
-            collect_output_chunks(&mut response2, all_data_len),
-        )
-        .await
-        .expect("timed out waiting for second connection snapshot");
-        snapshot2_records.sort();
-
-        let mut all_expected = flatten_and_sort_batches(&initial_data);
-        all_expected.extend(flatten_and_sort_batches(&follow_data));
-        all_expected.sort();
-
-        assert_eq!(snapshot2_records, all_expected);
-        assert!(!snapshot2_chunks.is_empty());
-        assert!(snapshot2_chunks.iter().all(|chunk| chunk.snapshot));
     }
 
     #[actix_web::test]

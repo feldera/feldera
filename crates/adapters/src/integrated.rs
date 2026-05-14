@@ -45,7 +45,7 @@ pub fn create_integrated_output_endpoint(
     key_schema: &Option<Relation>,
     schema: &Relation,
     controller: Weak<ControllerInner>,
-    is_restart: bool,
+    continue_previous_state: bool,
     is_index: bool,
 ) -> Result<Box<dyn IntegratedOutputEndpoint>, ControllerError> {
     let ep: Box<dyn IntegratedOutputEndpoint> = match &connector_config.transport {
@@ -57,7 +57,7 @@ pub fn create_integrated_output_endpoint(
             key_schema,
             schema,
             controller,
-            is_restart,
+            continue_previous_state,
             is_index,
         )?),
         TransportConfig::PostgresOutput(config) => Box::new(PostgresOutputEndpoint::new(
