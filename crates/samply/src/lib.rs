@@ -13,10 +13,10 @@
 //! This crate can be integrated into an existing profiler workflow.  For
 //! example, the [Feldera incremental compute engine] runs `samply` as a
 //! subprocess, targeting itself.  While `samply` runs, Feldera uses [Capture],
-//! [Span], and [Event] to record annotations.  After `samply` completes,
-//! Feldera finishes the capture to obtain [Annotations], applies them, and then
-//! passes the postprocessed output to the user.  The annotation step is
-//! invisible to the user.
+//! [Span], [LongSpan], and [Event] to record annotations.  After `samply`
+//! completes, Feldera finishes the capture to obtain [Annotations], applies
+//! them, and then passes the postprocessed output to the user.  The annotation
+//! step is invisible to the user.
 //!
 //! Short of this kind of integration, where a process effectively profiles
 //! itself, there must be some way to enable capturing and saving profile data.
@@ -43,6 +43,7 @@ use std::{
     fmt::{Debug, Display},
     io::{Cursor, Read},
     iter::{once, repeat_n},
+    mem::swap,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicI64, Ordering},
@@ -64,7 +65,40 @@ use serde_json::{Value, json};
 use size_of::HumanBytes;
 use tracing::warn;
 
-#[derive(Copy, Clone, Debug)]
+/// Atomic `Option<Timestamp>`.
+///
+/// Treats `i64::MIN` as a niche.
+#[derive(Debug)]
+struct AtomicOptionTimestamp(AtomicI64);
+
+impl Default for AtomicOptionTimestamp {
+    fn default() -> Self {
+        Self::new(None)
+    }
+}
+
+impl AtomicOptionTimestamp {
+    fn new(value: Option<Timestamp>) -> Self {
+        Self(AtomicI64::new(
+            value.map_or(i64::MIN, |timestamp| timestamp.0),
+        ))
+    }
+
+    fn load(&self) -> Option<Timestamp> {
+        let value = self.0.load(Ordering::Relaxed);
+        (value != i64::MIN).then_some(Timestamp(value))
+    }
+
+    fn store(&self, value: Option<Timestamp>) {
+        self.0.store(
+            value.map_or(i64::MIN, |timestamp| timestamp.0),
+            Ordering::Relaxed,
+        )
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
 struct Timestamp(
     /// In nanoseconds in terms of `CLOCK_MONOTONIC`.
     i64,
@@ -156,20 +190,19 @@ impl SpanInner {
         }
     }
 
-    #[cold]
-    fn record(self, is_span: bool) {
-        let marker = Marker {
+    fn into_marker(self, end: MarkerEnd) -> Marker {
+        Marker {
             start: self.start,
-            end: if is_span {
-                Timestamp::now()
-            } else {
-                self.start
-            },
+            end,
             category: self.category,
             name: self.name,
             tooltip: self.tooltip,
-        };
-        QUEUE.with(|queue| queue.push(marker));
+        }
+    }
+
+    #[cold]
+    fn record(self, end: MarkerEnd) {
+        QUEUE.with(|queue| queue.push(self.into_marker(end)));
     }
 }
 
@@ -187,8 +220,8 @@ impl SpanInner {
 pub struct Span(Option<SpanInner>);
 
 impl Span {
-    /// The number of bytes of memory used during capture to record a [Span] or
-    /// [Event].
+    /// The number of bytes of memory used during capture to record a [Span],
+    /// [LongSpan], or [Event].
     pub const BYTES: usize = std::mem::size_of::<Marker>();
 
     /// Constructs a new [Span] with the given name.  When the constructed
@@ -272,8 +305,92 @@ impl Span {
 impl Drop for Span {
     fn drop(&mut self) {
         if let Some(inner) = self.0.take() {
-            inner.record(true)
+            inner.record(MarkerEnd::At(Timestamp::now()))
         }
+    }
+}
+
+/// Builds a [LongSpan] for annotating a long timespan.
+pub struct LongSpanBuilder(SpanInner);
+
+impl LongSpanBuilder {
+    /// Constructs a new [LongSpanBuilder] with the given name.
+    ///
+    /// The name should ordinarily be a short static string indicating what
+    /// happens during the span.  The Firefox Profiler's marker chart view shows
+    /// all the spans in a thread with the same name and category on a single
+    /// horizontal timeline (unless that would cause overlaps).
+    #[must_use]
+    pub fn new(name: &'static str) -> Self {
+        Self(SpanInner::new(name))
+    }
+
+    /// Adds `category` to this span.
+    ///
+    /// The Firefox Profiler's marker chart view groups the markers in each
+    /// category and labels them with the category name.
+    ///
+    /// The default category is "Other".
+    #[must_use]
+    pub fn with_category(mut self, category: &'static str) -> Self {
+        self.0.category = category;
+        self
+    }
+
+    /// Adds `tooltip` to this span.
+    ///
+    /// The Firefox Profiler shows the given tooltip in the marker chart
+    /// timeline (often truncated) and on hover, and as "details" in the marker
+    /// table view.
+    #[must_use]
+    pub fn with_tooltip(mut self, tooltip: impl Into<String>) -> Self {
+        self.0.tooltip = tooltip.into();
+        self
+    }
+
+    /// Sets the starting time for this span to `start`.  The default starting
+    /// time is when the [LongSpanBuilder] was constructed, so this is only
+    /// useful if it's easier to create the span just before recording it.
+    #[must_use]
+    pub fn with_start(mut self, start: Instant) -> Self {
+        self.0.start = start.into();
+        self
+    }
+
+    /// Builds the [LongSpan].
+    #[must_use]
+    pub fn build(self) -> LongSpan {
+        let timestamp = Arc::new(AtomicOptionTimestamp::default());
+        QUEUE.with(|queue| {
+            queue.push_long_span(self.0.into_marker(MarkerEnd::Long(timestamp.clone())))
+        });
+        LongSpan(timestamp)
+    }
+}
+
+/// A relatively expensive way to annotate a longer timespan during [Capture]s.
+///
+/// `LongSpan` is much like [Span].  However, whereas [Span] is optimized to
+/// minimize time and space overhead when a capture is not active, `LongSpan`
+/// always tracks the span.  This allows it to show up in captures that start
+/// after the `LongSpan` is allocated or that end before the `LongSpan` is
+/// recorded.
+///
+/// [samply]: https://github.com/mstange/samply?tab=readme-ov-file#samply
+pub struct LongSpan(Arc<AtomicOptionTimestamp>);
+
+impl LongSpan {
+    /// Marks this `LongSpan` as complete.
+    ///
+    /// This is equivalent to dropping it.
+    pub fn complete(self) {
+        // [Drop] completes the span.
+    }
+}
+
+impl Drop for LongSpan {
+    fn drop(&mut self) {
+        self.0.store(Some(Timestamp::now()));
     }
 }
 
@@ -339,7 +456,8 @@ impl Event {
     /// Records the event.
     pub fn record(self) {
         if let Some(inner) = self.0 {
-            inner.record(false);
+            let end = MarkerEnd::At(inner.start);
+            inner.record(end);
         }
     }
 }
@@ -487,6 +605,7 @@ impl Capture {
 
     /// Finishes recording profile annotations and returns what was recorded.
     pub fn finish(mut self) -> Annotations {
+        let end_time = Timestamp::now();
         CAPTURING.store(false, Ordering::Release);
         let remaining_blocks = FREE_BLOCKS.load(Ordering::Relaxed);
         if remaining_blocks <= 0 {
@@ -496,8 +615,24 @@ impl Capture {
             tracing::info!("marker capture used {}", HumanBytes::from(used_bytes));
         }
 
+        let markers = self
+            .all_threads()
+            .into_iter()
+            .map(|thread| {
+                let mut blocks = thread.queue.take_blocks();
+
+                let long_spans = thread.queue.take_long_spans();
+                if !long_spans.is_empty() {
+                    blocks.0.push(Block(long_spans));
+                }
+
+                (thread.tid, (thread.name, blocks))
+            })
+            .collect();
+
         Annotations {
-            markers: self.take_markers(),
+            end_time,
+            markers,
             memory: self.take_memory(),
         }
     }
@@ -519,13 +654,8 @@ impl Capture {
         CAPTURING.load(Ordering::Acquire)
     }
 
-    fn take_markers(&mut self) -> HashMap<usize, (Option<String>, Blocks)> {
-        let all_threads = ALL_THREAD_MARKERS.lock().unwrap();
-        let mut markers = HashMap::new();
-        for thread in &*all_threads {
-            markers.insert(thread.tid, (thread.name.clone(), thread.queue.take()));
-        }
-        markers
+    fn all_threads(&mut self) -> Vec<ThreadMarkers> {
+        ALL_THREAD_MARKERS.lock().unwrap().clone()
     }
 
     fn take_memory(&mut self) -> Vec<(Timestamp, usize)> {
@@ -603,6 +733,7 @@ impl AnnotationOptions {
 ///
 /// Obtained from [Capture::finish].
 pub struct Annotations {
+    end_time: Timestamp,
     markers: HashMap<usize, (Option<String>, Blocks)>,
     memory: Vec<(Timestamp, usize)>,
 }
@@ -709,7 +840,10 @@ impl Annotations {
                         name: profile.shared.add_name(&marker.tooltip),
                     });
                     thread.markers.start_time.push(marker.start);
-                    thread.markers.end_time.push(marker.end);
+                    thread
+                        .markers
+                        .end_time
+                        .push(marker.end.timestamp().unwrap_or(self.end_time));
                     thread
                         .markers
                         .name
@@ -884,12 +1018,60 @@ impl Annotations {
 /// Whether capturing is active.
 static CAPTURING: AtomicBool = AtomicBool::new(false);
 
+/// End time of a marker.
+#[derive(Clone, Debug)]
+enum MarkerEnd {
+    /// A particular end time for a [Span].
+    At(Timestamp),
+
+    /// A possible end time for a [LongSpan].  If the span has not yet ended,
+    /// this is `None`.
+    Long(Arc<AtomicOptionTimestamp>),
+}
+
+impl MarkerEnd {
+    /// Returns true if this marker should be dropped because it is no longer
+    /// significant.
+    fn should_keep(&self, capturing: bool) -> bool {
+        if let MarkerEnd::Long(timestamp) = self {
+            if timestamp.load().is_some() {
+                // Drop it if there is no capture running, because it ended
+                // before any new capture can start.
+                capturing
+            } else if Arc::strong_count(timestamp) > 1 {
+                // There's another owner who might eventually complete this span.
+                true
+            } else {
+                // This span is orphaned and will never complete.  One could
+                // argue for keeping it.  We drop it to avoid having a kind of
+                // memory leak.
+                //
+                // We keep it if a capture is running, so that it is included in
+                // the current capture.
+                capturing
+            }
+        } else {
+            false
+        }
+    }
+
+    /// Returns the inner timestamp, or `None` if there isn't one yet because
+    /// this is an ongoing [LongSpan].
+    fn timestamp(&self) -> Option<Timestamp> {
+        match self {
+            MarkerEnd::At(timestamp) => Some(*timestamp),
+            MarkerEnd::Long(timestamp) => timestamp.load(),
+        }
+    }
+}
+
 /// A single marker as captured.
+#[derive(Clone, Debug)]
 struct Marker {
     /// Start time.
     start: Timestamp,
     /// End time.
-    end: Timestamp,
+    end: MarkerEnd,
     /// Category (used for outer grouping).
     category: &'static str,
     /// Name (used for inner grouping).
@@ -899,6 +1081,7 @@ struct Marker {
 }
 
 /// Markers for a given thread.
+#[derive(Clone)]
 struct ThreadMarkers {
     /// The thread's tid.
     ///
@@ -913,8 +1096,8 @@ struct ThreadMarkers {
 
     /// The thread's markers.
     ///
-    /// The thread itself records markers by pushing them onto the queue.
-    /// [Capture::finish] pops them all off.
+    /// The thread itself records [Event]s and [Span]s by pushing them onto the
+    /// queue.  [Capture::finish] pops them all off.
     queue: Arc<Queue>,
 }
 
@@ -983,11 +1166,48 @@ impl Blocks {
     }
 }
 
-struct Queue(std::sync::Mutex<Blocks>);
+#[derive(Debug, Default)]
+struct LongSpans {
+    markers: Vec<Marker>,
+}
+
+impl LongSpans {
+    fn push(&mut self, marker: Marker) {
+        if self.markers.len() == self.markers.capacity() {
+            // Do garbage collection.
+            let capturing = Capture::is_active();
+            self.markers
+                .retain(|marker| marker.end.should_keep(capturing));
+        }
+        self.markers.push(marker);
+    }
+
+    fn append(&mut self, other: &mut Vec<Marker>) {
+        if self.markers.is_empty() {
+            swap(&mut self.markers, other);
+        } else {
+            self.markers.append(other);
+        }
+    }
+}
+
+struct Queue {
+    /// Records [Span] and [Event] markers.
+    blocks: std::sync::Mutex<Blocks>,
+
+    /// Records [LongSpan] markers.
+    ///
+    /// These are recorded separately because they are not accounted the same
+    /// way and because they need to be garbage collected.
+    long_spans: std::sync::Mutex<LongSpans>,
+}
 
 impl Queue {
     fn new() -> Arc<Self> {
-        let queue = Arc::new(Self(Default::default()));
+        let queue = Arc::new(Self {
+            blocks: Default::default(),
+            long_spans: Default::default(),
+        });
         ALL_THREAD_MARKERS
             .lock()
             .unwrap()
@@ -995,12 +1215,35 @@ impl Queue {
         queue
     }
 
+    /// Adds `marker` if there's room with the limit.
     fn push(&self, marker: Marker) {
-        self.0.lock().unwrap().push(marker);
+        self.blocks.lock().unwrap().push(marker);
     }
 
-    fn take(&self) -> Blocks {
-        std::mem::take(&mut *self.0.lock().unwrap())
+    /// Adds `marker` to the collection of long spans.
+    fn push_long_span(&self, marker: Marker) {
+        self.long_spans.lock().unwrap().push(marker);
+    }
+
+    fn take_blocks(&self) -> Blocks {
+        std::mem::take(&mut *self.blocks.lock().unwrap())
+    }
+
+    fn take_long_spans(&self) -> Vec<Marker> {
+        let old_long_spans = std::mem::take(&mut *self.long_spans.lock().unwrap()).markers;
+
+        // Requeue the long spans that we removed that should stay in place.
+        let mut new_long_spans = Vec::with_capacity(old_long_spans.capacity());
+        for marker in &old_long_spans {
+            if marker.end.should_keep(false) {
+                new_long_spans.push(marker.clone());
+            }
+        }
+        if !new_long_spans.is_empty() {
+            self.long_spans.lock().unwrap().append(&mut new_long_spans);
+        }
+
+        old_long_spans
     }
 }
 
