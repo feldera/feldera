@@ -2159,16 +2159,18 @@ impl InputEndpointStatus {
     ) {
         let num_records = step_results.amt.records as u64;
         let num_bytes = step_results.amt.bytes as u64;
-        Event::new("input")
-            .with_category("Step")
-            .with_tooltip(|| {
-                format!(
-                    "{} submitted {num_records} records ({} bytes) for step {total_initiated_steps}",
-                    &self.endpoint_name,
-                    HumanBytes::from(num_bytes)
-                )
-            })
-            .record();
+        if num_records > 0 {
+            Event::new("input")
+                .with_category("Step")
+                .with_tooltip(|| {
+                    format!(
+                        "{} submitted {num_records} records ({} bytes) for step {total_initiated_steps}",
+                        &self.endpoint_name,
+                        HumanBytes::from(num_bytes)
+                    )
+                })
+                .record();
+        }
         *self.progress.lock().unwrap() = Some(step_results);
         self.metrics
             .buffered_records
