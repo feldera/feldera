@@ -78,7 +78,10 @@ use std::{
 };
 use std::{ops::RangeInclusive, sync::Mutex};
 use textwrap::indent;
-use tokio::{sync::Notify, task::yield_now};
+use tokio::{
+    sync::{Notify, futures::OwnedNotified},
+    task::yield_now,
+};
 mod index_set;
 mod list_merger;
 mod push_merger;
@@ -685,15 +688,18 @@ where
     }
 
     /// Adds `batch` to the shared merging state and wakes up the merger.
-    /// Returns true if the spine contains "too many" batches.
-    fn add_batch(&mut self, batch: Arc<B>, merge: bool) -> bool {
+    fn add_batch(
+        &mut self,
+        batch: Arc<B>,
+        merge: bool,
+    ) -> std::sync::MutexGuard<'_, SharedState<B>> {
         debug_assert!(!batch.is_empty());
         let level = Spine::<B>::size_to_level(&batch, self.max_level0_batch_size_records, merge);
         self.merge_workers.start(level);
 
         let mut state = self.state.lock().unwrap();
         state.add_batch(batch, level);
-        state.should_apply_backpressure()
+        state
     }
 
     /// Blocks until the number of batches in the spine has declined below the
@@ -717,6 +723,15 @@ where
             .with_category("Spine")
             .with_start(start)
             .record();
+    }
+
+    fn backpressure_waiter(&self) -> Option<OwnedNotified> {
+        let notify = self.no_backpressure.clone().notified_owned();
+        self.state
+            .lock()
+            .unwrap()
+            .should_apply_backpressure()
+            .then_some(notify)
     }
 
     /// Adds `batches` to the shared merging state and wakes up the merger.
@@ -1033,6 +1048,7 @@ where
     B: Batch,
 {
     fn drop(&mut self) {
+        self.no_backpressure.notify_waiters();
         self.state.lock().unwrap().request_exit = true;
 
         for level in 0..MAX_LEVELS {
@@ -1873,8 +1889,15 @@ where
         let batch = Self::maybe_flush_batch(batch, &self.factories, || {
             self.merger.state.lock().unwrap().get_filters()
         });
-        if self.insert_without_blocking(batch) {
-            self.merger.backpressure_wait().await;
+        if !batch.is_empty() {
+            self.dirty = true;
+            if self
+                .merger
+                .add_batch(batch, false)
+                .should_apply_backpressure()
+            {
+                self.merger.backpressure_wait().await;
+            }
         }
     }
 
@@ -2147,13 +2170,16 @@ where
     ///   may do this beforehand by calling [Spine::maybe_flush_batch].
     ///
     /// - Waiting until the number of batches in the spine falls below the level
-    ///   at which we impose backpressure.  The caller may do so afterward by
-    ///   calling [Spine::backpressure_wait].
+    ///   at which we impose backpressure.  The function returns true if
+    ///   backpressure is warranted.  The caller may do so afterward by calling
+    ///   [Spine::backpressure_wait].
     pub fn insert_without_blocking(&mut self, batch: impl Into<Arc<B>>) -> bool {
         let batch = batch.into();
         if !batch.is_empty() {
             self.dirty = true;
-            self.merger.add_batch(batch, false)
+            self.merger
+                .add_batch(batch, false)
+                .should_apply_backpressure()
         } else {
             false
         }
@@ -2163,6 +2189,12 @@ where
     /// which we impose backpressure.
     pub async fn backpressure_wait(&self) {
         self.merger.backpressure_wait().await;
+    }
+
+    /// Returns an object that can be used to wait for backpressure to be
+    /// relieved.  Returns `None` if no backpressure is needed.
+    pub fn backpressure_waiter(&self) -> Option<OwnedNotified> {
+        self.merger.backpressure_waiter()
     }
 }
 
