@@ -120,11 +120,12 @@ def _delta_connector(
     location: DeltaTestLocation,
     *,
     send_snapshot: bool,
+    name: str = "delta_out",
     index: str | None = None,
 ) -> dict:
     """Build a `delta_table_output` connector config."""
     connector: dict = {
-        "name": "delta_out",
+        "name": name,
         "send_snapshot": send_snapshot,
         "transport": {
             "name": "delta_table_output",
@@ -185,6 +186,58 @@ def _build_sql(locations: list[DeltaTestLocation], send_snapshot: bool) -> str:
     return "\n\n".join(parts)
 
 
+def _build_sql_round3(
+    locations: list[DeltaTestLocation],
+    delta1_location: DeltaTestLocation,
+    delta2_location: DeltaTestLocation,
+    delta3_location: DeltaTestLocation,
+) -> str:
+    """Render SQL for round 3.
+
+    The original connectors remain unchanged with ``send_snapshot=true``.
+    The new view forces bootstrapping.  ``delta2`` and ``delta3`` are added
+    to an existing view with snapshot enabled and disabled, respectively.
+    """
+    parts = [
+        "CREATE TABLE t1(id INT NOT NULL, n BIGINT NOT NULL, s VARCHAR NOT NULL)\n"
+        "    WITH ('materialized' = 'true');",
+    ]
+    for (label, view, index, indexes_sql), loc in zip(_VIEWS, locations):
+        connectors = [
+            _delta_connector(loc, send_snapshot=True, index=index),
+        ]
+        if label == "v_plain":
+            connectors.extend(
+                [
+                    _delta_connector(
+                        delta2_location,
+                        send_snapshot=True,
+                        name="delta2",
+                    ),
+                    _delta_connector(
+                        delta3_location,
+                        send_snapshot=False,
+                        name="delta3",
+                    ),
+                ]
+            )
+        parts.append(
+            f"CREATE MATERIALIZED VIEW {view} WITH (\n"
+            f"    'connectors' = '{json.dumps(connectors)}'\n"
+            f") AS SELECT * FROM t1;"
+        )
+        if indexes_sql:
+            parts.append(indexes_sql)
+
+    delta1 = _delta_connector(delta1_location, send_snapshot=False, name="delta1")
+    parts.append(
+        "CREATE MATERIALIZED VIEW v_added WITH (\n"
+        f"    'connectors' = '{json.dumps([delta1])}'\n"
+        ") AS SELECT * FROM t1;"
+    )
+    return "\n\n".join(parts)
+
+
 @skip_on_arm64  # https://github.com/delta-io/delta-rs/issues/4413
 def test_delta_output_send_snapshot_after_flag_flip():
     """Verify snapshot delivery to delta sinks across a connector
@@ -215,6 +268,13 @@ def test_delta_output_send_snapshot_after_flag_flip():
     proves the initial snapshot delivered the full materialized-view
     contents — for every combination of indexes and which index the
     connector reads through.
+
+    Round 3 adds a new view with a new Delta connector (``delta1``) and
+    adds two Delta connectors to an existing view: ``delta2`` with
+    ``send_snapshot=true`` and ``delta3`` with ``send_snapshot=false``.
+    Adding the view forces actual bootstrapping.  ``delta1`` and
+    ``delta2`` should be populated during startup, while ``delta3``
+    should remain empty until future deltas arrive.
     """
     pipeline_name = unique_pipeline_name(
         "test_delta_output_send_snapshot_after_flag_flip"
@@ -222,6 +282,9 @@ def test_delta_output_send_snapshot_after_flag_flip():
     locations = [
         DeltaTestLocation.create(f"{pipeline_name}_{label}") for label, *_ in _VIEWS
     ]
+    delta1_location = DeltaTestLocation.create(f"{pipeline_name}_delta1")
+    delta2_location = DeltaTestLocation.create(f"{pipeline_name}_delta2")
+    delta3_location = DeltaTestLocation.create(f"{pipeline_name}_delta3")
     expected = sorted_rows(_ROWS)
 
     # Round 1: send_snapshot=false. Push three rows; they land via the
@@ -272,3 +335,40 @@ def test_delta_output_send_snapshot_after_flag_flip():
 
     for (_, *_), loc in zip(_VIEWS, locations):
         assert sorted_rows(loc.read_rows()) == expected
+
+    pipeline.checkpoint(wait=True)
+    pipeline.stop(force=True)
+
+    # Round 3: add a new view and new output connectors to an existing view.
+    # The new view forces bootstrapping.  The connector on the new view and
+    # the existing-view connector with send_snapshot=true are populated during
+    # startup; the existing-view connector with send_snapshot=false is not.
+    TEST_CLIENT.patch_pipeline(
+        name=pipeline_name,
+        sql=_build_sql_round3(
+            locations,
+            delta1_location,
+            delta2_location,
+            delta3_location,
+        ),
+        runtime_config=RuntimeConfig(
+            workers=FELDERA_TEST_NUM_WORKERS,
+            storage=Storage(config={"start_from_checkpoint": "latest"}),
+        ).to_dict(),
+    )
+    pipeline = Pipeline.get(pipeline_name, TEST_CLIENT)
+    pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW)
+
+    wait_for_condition(
+        "round 3: delta1 on new bootstrapped view receives rows",
+        lambda: sorted_rows(delta1_location.read_rows()) == expected,
+        timeout_s=60.0,
+        poll_interval_s=1.0,
+    )
+    wait_for_condition(
+        "round 3: delta2 on existing view receives snapshot rows",
+        lambda: sorted_rows(delta2_location.read_rows()) == expected,
+        timeout_s=60.0,
+        poll_interval_s=1.0,
+    )
+    assert delta3_location.read_rows() == []

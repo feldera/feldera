@@ -3035,10 +3035,16 @@ impl CircuitThread {
         // processing; otherwise, there is a race for any code that runs a query
         // as soon as input has been processed.
         if transaction_state == TransactionState::None {
-            Span::new("update")
-                .with_category("Step")
-                .with_tooltip(|| format!("update ad-hoc tables after step {}", self.step))
-                .in_scope(|| self.update_snapshot());
+            // Don't update the snapshot until bootstrapping is complete (including the additional post-bootstrap transaction).
+            // This guarantees that:
+            // 1. Ad hoc queries observe a consistent view of the data.
+            // 2. Ad hoc snapshots are up-to-date before the pipeline is marked as running.
+            if !self.controller.status.bootstrap_in_progress() {
+                Span::new("update")
+                    .with_category("Step")
+                    .with_tooltip(|| format!("update ad-hoc tables after step {}", self.step))
+                    .in_scope(|| self.update_snapshot());
+            }
 
             let bootstrapping = self.circuit.bootstrap_in_progress();
 
