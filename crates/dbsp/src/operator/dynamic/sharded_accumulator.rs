@@ -11,7 +11,7 @@ use std::{
 use feldera_samply::Span;
 use itertools::{Itertools as _, zip_eq};
 use rkyv::AlignedVec;
-use size_of::{SizeOf, TotalSize};
+use size_of::{HumanBytes, SizeOf, TotalSize};
 
 use crate::{
     Circuit, NumEntries, Runtime, Scope, Stream,
@@ -216,7 +216,9 @@ where
         );
         let worker_locations = WorkerLocations::for_layout(layout);
         let mut data = batches.into_iter();
+        let mut remote_waiters = Vec::new();
         let mut local_waiters = Vec::new();
+        let mut serialized_bytes = 0;
         for receivers in layout.all_hosts() {
             match worker_locations[receivers.start] {
                 WorkerLocation::Local => {
@@ -241,7 +243,6 @@ where
                     }
                 }
                 WorkerLocation::Remote => {
-                    let mut serialized_bytes = 0;
                     let items = receivers
                         .clone()
                         .map(|_| {
@@ -258,11 +259,13 @@ where
                         })
                         .collect_vec();
                     let this = self.clone();
-                    this.clients
-                        .connect(receivers.start)
-                        .await
-                        .send(this.exchange_id, sender, items)
-                        .await;
+                    if let Some(waiter) = this.clients.connect(receivers.start).await.send(
+                        this.exchange_id,
+                        sender,
+                        items,
+                    ) {
+                        remote_waiters.push(waiter);
+                    }
                 }
             }
         }
@@ -283,6 +286,21 @@ where
                 });
             for (_receiver, waiter) in local_waiters {
                 waiter.await;
+            }
+        }
+        if !remote_waiters.is_empty() {
+            let _span = Span::new("remote send wait")
+                .with_category("Exchange")
+                .with_tooltip(|| {
+                    format!(
+                        "exchange {} wait for {} to drain from {} tx buffers",
+                        self.exchange_id,
+                        HumanBytes::from(serialized_bytes),
+                        remote_waiters.len()
+                    )
+                });
+            for waiter in remote_waiters {
+                waiter.wait().await;
             }
         }
     }
