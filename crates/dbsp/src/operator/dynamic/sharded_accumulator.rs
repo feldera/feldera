@@ -11,13 +11,18 @@ use std::{
 use feldera_samply::Span;
 use itertools::{Itertools as _, zip_eq};
 use rkyv::AlignedVec;
+use size_of::{SizeOf, TotalSize};
 
 use crate::{
-    Circuit, Runtime, Scope, Stream,
+    Circuit, NumEntries, Runtime, Scope, Stream,
     circuit::{
         OwnershipPreference, StepSize, WorkerLocation, WorkerLocations,
         circuit_builder::StreamId,
-        metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OperatorLocation, OperatorMeta},
+        metadata::{
+            ALLOCATED_MEMORY_BYTES, BatchSizeStats, INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT,
+            MetaItem, OUTPUT_BATCHES_STATS, OperatorLocation, OperatorMeta, SHARED_MEMORY_BYTES,
+            STATE_RECORDS_COUNT, USED_MEMORY_BYTES,
+        },
         operator_traits::{Operator, SinkOperator, SourceOperator},
     },
     circuit_cache_key,
@@ -27,7 +32,7 @@ use crate::{
         },
         dynamic::shard_batch,
     },
-    trace::{Batch, Spine, deserialize_indexed_wset},
+    trace::{Batch, BatchReader as _, Spine, Trace, deserialize_indexed_wset},
 };
 
 circuit_cache_key!(local StreamingExchangeCacheId<B: Batch>(ExchangeId => Arc<ShardedAccumulator<B>>));
@@ -508,6 +513,7 @@ where
     B: Batch,
 {
     exchange: Arc<ShardedAccumulator<B>>,
+    output_batch_stats: BatchSizeStats,
     location: OperatorLocation,
     flushed: bool,
 }
@@ -519,6 +525,7 @@ where
     fn new(location: OperatorLocation, exchange: Arc<ShardedAccumulator<B>>) -> Self {
         Self {
             exchange,
+            output_batch_stats: BatchSizeStats::new(),
             location,
             flushed: false,
         }
@@ -527,7 +534,7 @@ where
 
 impl<B> Operator for ShardedAccumulatorReceiver<B>
 where
-    B: Batch,
+    B: Batch<Time = ()>,
 {
     fn name(&self) -> std::borrow::Cow<'static, str> {
         Cow::Borrowed("ShardedAccumulatorReceiver")
@@ -566,6 +573,29 @@ where
         // I don't know the right solution.
         true
     }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        let rxq = self.exchange.rxq(Runtime::worker_index());
+
+        // This loop could produce confusing results if there's more than one
+        // spine, but we don't expect to see that in practice.
+        let mut total_size = 0;
+        let mut bytes = TotalSize::zero();
+        for spine in rxq.spines.iter().map(|entry| &entry.spine) {
+            spine.metadata(meta);
+            total_size += spine.num_entries_deep();
+            bytes += spine.size_of();
+        }
+
+        meta.extend(metadata! {
+            STATE_RECORDS_COUNT => MetaItem::Count(total_size),
+            ALLOCATED_MEMORY_BYTES => MetaItem::bytes(bytes.total_bytes()),
+            USED_MEMORY_BYTES => MetaItem::bytes(bytes.used_bytes()),
+            MEMORY_ALLOCATIONS_COUNT => MetaItem::Count(bytes.distinct_allocations()),
+            SHARED_MEMORY_BYTES => MetaItem::bytes(bytes.shared_bytes()),
+            OUTPUT_BATCHES_STATS => self.output_batch_stats.metadata(),
+        });
+    }
 }
 
 impl<B> SourceOperator<Option<Spine<B>>> for ShardedAccumulatorReceiver<B>
@@ -575,6 +605,7 @@ where
     async fn eval(&mut self) -> Option<Spine<B>> {
         let output = self.exchange.receive();
         if let Some(spine) = &output {
+            self.output_batch_stats.add_batch(spine.len());
             spine.backpressure_wait().await;
             self.flushed = true;
         }
