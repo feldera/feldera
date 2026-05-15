@@ -395,6 +395,7 @@ def run_workload(
     views: List[ViewSpec],
     transaction: bool = True,
     stop: bool = True,
+    resources: Optional[Resources] = None
 ) -> Pipeline:
     """
     Helper to run a pipeline to completion and validate the views afterwards using ad-hoc queries.
@@ -404,7 +405,7 @@ def run_workload(
     frameworks in the `tests` directory.
     """
 
-    pipeline = build_pipeline(pipeline_name, tables, views)
+    pipeline = build_pipeline(pipeline_name, tables, views, resources)
 
     pipeline.start()
     start_time = time.monotonic()

@@ -20,6 +20,7 @@ from feldera.testutils import (
     validate_outputs,
     wait_end_of_input,
 )
+from feldera.runtime_config import Resources
 import tempfile
 import os
 import argparse
@@ -38,8 +39,10 @@ class TPCHTestConfig:
         input_dir: Optional[str] = None,
         segment_size: Optional[int] = None,
         num_segments: Optional[int] = None,
+        resources: Optional[Resources] = None,
     ):
         self.mode = mode
+        self.resources = resources
 
         if mode not in ["transaction", "stream", "checkpoint"]:
             raise ValueError(f"Unknown mode: {mode}")
@@ -145,6 +148,14 @@ def run_cli():
         help="Approximate number of records ingested per segment. Only used in checkpoint mode.",
     )
 
+    parser.add_argument(
+        "--memory-mb",
+        type=int,
+        nargs="?",
+        default=None,
+        help="Memory size in MB"
+    )
+
     args = parser.parse_args()
 
     if sum(x is not None for x in (args.s3_bucket, args.s3_path, args.input_dir)) > 1:
@@ -171,6 +182,11 @@ def run_cli():
 
     mode = args.mode
 
+    resources = Resources(
+        memory_mb_max=args.memory_mb,
+        memory_mb_min=args.memory_mb
+    )
+
     log(f"Test mode: {mode}")
     log(f"Input mode: {input_mode}")
 
@@ -184,6 +200,7 @@ def run_cli():
         input_dir=args.input_dir,
         segment_size=args.segment_size,
         num_segments=args.num_segments,
+        resources=resources
     )
 
     tpch_test(config)
@@ -1423,6 +1440,7 @@ def tpch_test(config: TPCHTestConfig):
             unique_pipeline_name("tpc-h-checkpoint"),
             tables,
             [],
+            config.resources,
             dev_tweaks={"adaptive_joins": True},
         )
         if config.segment_size is not None:
@@ -1527,6 +1545,7 @@ def tpch_test(config: TPCHTestConfig):
             views,
             transaction=True,
             stop=False,
+            resources=config.resources
         )
         count = next(
             pipeline.query(
@@ -1545,6 +1564,7 @@ def tpch_test(config: TPCHTestConfig):
             views,
             transaction=False,
             stop=False,
+            resources=config.resources
         )
         count = next(
             pipeline.query(
