@@ -263,7 +263,7 @@ where
         /// The minimum number of batches to merge is key to performance.  The
         /// maximum number seems much less important.
         const MERGE_COUNTS: [RangeInclusive<usize>; MAX_LEVELS] = [
-            8..=64,
+            8..=128,
             8..=64,
             3..=64,
             3..=64,
