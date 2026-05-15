@@ -1042,6 +1042,28 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         """
         return self.client.query_as_arrow(self.name, query)
 
+    def query_arrow_dicts(self, query: str) -> Generator[Mapping[str, Any], None, None]:
+        """
+        Executes an ad-hoc SQL query on this pipeline and returns a generator
+        that yields the result as a list of Dictionaries.
+
+        Note:
+            You can only ``SELECT`` from materialized tables and views.
+
+        :param query: The SQL query to be executed.
+
+        :raises FelderaAPIError: If the pipeline is not in a RUNNING or PAUSED
+            state.
+        :raises FelderaAPIError: If querying a non materialized table or view.
+        :raises FelderaAPIError: If the query is invalid.
+
+        :return: A generator that yields ``pyarrow.Mapping`` objects.
+        """
+        batches = self.query_arrow(query)
+        for batch in batches:
+            for row in batch.to_pylist():
+                yield row
+
     def query_tabular(self, query: str) -> Generator[str, None, None]:
         """
         Executes a SQL query on this pipeline and returns the result as a
