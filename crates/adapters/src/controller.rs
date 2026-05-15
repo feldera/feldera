@@ -1149,9 +1149,9 @@ impl Controller {
         // Calculate a maximum memory consumption for markers.
         //
         // In experiments, a busy worker thread can emit over 1,000 markers per
-        // second.  Round that up to 2,000 to allow for expansion, then double
-        // it to allow for other threads.
-        let markers_per_second = self.layout().local_workers().len().saturating_mul(2000 * 2);
+        // second.  Round that up to 2,000 to allow for expansion, then
+        // quadruple it to allow for other threads.
+        let markers_per_second = self.layout().local_workers().len().saturating_mul(2000 * 4);
         let memory_limit = markers_per_second
             .saturating_mul(Span::BYTES)
             .saturating_mul(duration as usize);
