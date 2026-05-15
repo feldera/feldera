@@ -1800,6 +1800,231 @@ async fn delta_table_cdc_rewrite_test() {
     read_pipeline.stop().unwrap();
 }
 
+/// `cdc_delete_filter` is parsed against the snapshot schema at
+/// connector startup, so an expression that references a column that
+/// does not exist on the Delta table must fail before any row flows
+/// through the pipeline, with an error that names the missing column
+/// and the `cdc_delete_filter` setting.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_cdc_invalid_delete_filter_test() {
+    use crate::test::TestStruct;
+    use deltalake::kernel::{DataType as KernelDataType, PrimitiveType, StructField};
+
+    init_logging();
+
+    let struct_fields = vec![
+        StructField::new("id", KernelDataType::Primitive(PrimitiveType::Long), false),
+        StructField::new(
+            "b",
+            KernelDataType::Primitive(PrimitiveType::Boolean),
+            false,
+        ),
+        StructField::new("s", KernelDataType::Primitive(PrimitiveType::String), false),
+        StructField::new(
+            "__feldera_op",
+            KernelDataType::Primitive(PrimitiveType::String),
+            false,
+        ),
+        StructField::new(
+            "__feldera_ts",
+            KernelDataType::Primitive(PrimitiveType::TimestampNtz),
+            false,
+        ),
+    ];
+
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let _ = create_table(&table_uri, &HashMap::new(), &struct_fields).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let result = {
+        let table_uri = table_uri.clone();
+        let storage_dir = storage_dir.path().to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            let pipeline_config: PipelineConfig = serde_json::from_value(json!({
+                "name": "test",
+                "workers": 4,
+                "storage_config": { "path": storage_dir },
+                "inputs": {
+                    "test_input1": {
+                        "stream": "test_input1",
+                        "transport": {
+                            "name": "delta_table_input",
+                            "config": {
+                                "uri": table_uri,
+                                "mode": "cdc",
+                                "cdc_delete_filter": "no_such_column = 'd'",
+                                "cdc_order_by": "__feldera_ts",
+                            }
+                        }
+                    }
+                }
+            }))
+            .unwrap();
+            Controller::with_test_config(
+                move |workers| {
+                    Ok(test_circuit::<TestStruct>(
+                        workers,
+                        &TestStruct::schema(),
+                        &[Some("output")],
+                    ))
+                },
+                &pipeline_config,
+                Box::new(move |_, _| {}),
+            )
+        })
+        .await
+        .unwrap()
+    };
+
+    let err = match result {
+        Ok(_) => panic!("controller should fail to start with an invalid cdc_delete_filter"),
+        Err(e) => e,
+    };
+    let msg = err.to_string();
+    assert!(
+        msg.contains("no_such_column"),
+        "expected error to name the missing column 'no_such_column', got: {msg}",
+    );
+    assert!(
+        msg.contains("cdc_delete_filter"),
+        "expected error to mention 'cdc_delete_filter', got: {msg}",
+    );
+}
+
+/// Assert the logical-plan shape of the CDC `DataFrame`: filter on
+/// both sides of an `EXCEPT ALL`, then a sort by `cdc_order_by`. Also
+/// checks that an `order_by` referencing an unknown column fails at
+/// build time.
+#[tokio::test]
+async fn build_cdc_dataframe_plan_structure() {
+    use crate::integrated::delta_table::input::build_cdc_dataframe;
+    use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, TimeUnit};
+    use datafusion::datasource::MemTable;
+
+    let arrow_schema = Arc::new(ArrowSchema::new(vec![
+        ArrowField::new("id", ArrowDataType::Int64, false),
+        ArrowField::new("b", ArrowDataType::Boolean, false),
+        ArrowField::new("__feldera_op", ArrowDataType::Utf8, false),
+        ArrowField::new(
+            "__feldera_ts",
+            ArrowDataType::Timestamp(TimeUnit::Microsecond, None),
+            false,
+        ),
+    ]));
+
+    // Two independently-registered tables so the filter expression has
+    // to resolve against each side of the set difference.
+    let ctx = SessionContext::new();
+    let empty = || Arc::new(MemTable::try_new(arrow_schema.clone(), vec![vec![]]).unwrap());
+    ctx.register_table("cdc_adds", empty()).unwrap();
+    ctx.register_table("cdc_removes", empty()).unwrap();
+
+    // Full path: filter + removes + order_by.
+    let df = build_cdc_dataframe(
+        ctx.table("cdc_adds").await.unwrap(),
+        Some(ctx.table("cdc_removes").await.unwrap()),
+        Some("id % 2 = 0"),
+        "__feldera_ts",
+        "unit-test",
+    )
+    .unwrap();
+    let plan = format!("{}", df.logical_plan().display_indent());
+
+    assert!(
+        plan.contains("Sort: "),
+        "expected a Sort node; plan was:\n{plan}"
+    );
+    assert!(
+        plan.contains("__feldera_ts"),
+        "expected sort key '__feldera_ts'; plan was:\n{plan}"
+    );
+    assert!(
+        plan.contains("LeftAnti"),
+        "expected a LeftAnti join (DataFusion encoding of EXCEPT); plan was:\n{plan}"
+    );
+    // EXCEPT ALL uses a LeftAnti join without a Distinct wrapper;
+    // EXCEPT DISTINCT inserts a `Distinct:` node above the join.
+    assert!(
+        !plan.contains("Distinct:"),
+        "expected EXCEPT ALL (no Distinct node); plan was:\n{plan}"
+    );
+    let filter_lines = plan
+        .lines()
+        .filter(|line| line.trim_start().starts_with("Filter:"))
+        .count();
+    assert_eq!(
+        filter_lines, 2,
+        "expected Filter applied to both adds and removes; plan was:\n{plan}"
+    );
+
+    // No removes: no set-difference in the plan.
+    let df = build_cdc_dataframe(
+        ctx.table("cdc_adds").await.unwrap(),
+        None,
+        Some("id % 2 = 0"),
+        "__feldera_ts",
+        "unit-test",
+    )
+    .unwrap();
+    let plan = format!("{}", df.logical_plan().display_indent());
+    assert!(
+        plan.contains("Sort: "),
+        "expected Sort even without removes; plan was:\n{plan}"
+    );
+    assert!(
+        !plan.contains("LeftAnti"),
+        "no removes -> no LeftAnti join; plan was:\n{plan}"
+    );
+    let filter_lines = plan
+        .lines()
+        .filter(|line| line.trim_start().starts_with("Filter:"))
+        .count();
+    assert_eq!(
+        filter_lines, 1,
+        "expected one Filter (adds only); plan was:\n{plan}"
+    );
+
+    // No filter: set difference and sort, no Filter node.
+    let df = build_cdc_dataframe(
+        ctx.table("cdc_adds").await.unwrap(),
+        Some(ctx.table("cdc_removes").await.unwrap()),
+        None,
+        "__feldera_ts",
+        "unit-test",
+    )
+    .unwrap();
+    let plan = format!("{}", df.logical_plan().display_indent());
+    assert!(plan.contains("Sort: "), "expected Sort; plan was:\n{plan}");
+    assert!(
+        plan.contains("LeftAnti"),
+        "expected LeftAnti join; plan was:\n{plan}"
+    );
+    assert!(
+        !plan.contains("Filter:"),
+        "no filter configured -> no Filter node; plan was:\n{plan}"
+    );
+
+    // Invalid `order_by`: error surfaces at build time.
+    let err = build_cdc_dataframe(
+        ctx.table("cdc_adds").await.unwrap(),
+        None,
+        None,
+        "no_such_column",
+        "unit-test",
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        err.contains("no_such_column"),
+        "expected error to name the missing column; got: {err}"
+    );
+    assert!(
+        err.contains("cdc_order_by"),
+        "expected error to mention 'cdc_order_by'; got: {err}"
+    );
+}
+
 /// Pin the exact set of arrow types that the `EXCEPT ALL` cancellation
 /// step in `do_process_cdc_transaction` cannot handle.
 ///
