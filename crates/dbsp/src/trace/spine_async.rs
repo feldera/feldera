@@ -1119,7 +1119,7 @@ where
                     let notify = self.state.lock().unwrap().slots[level].notify.clone();
 
                     loop {
-                        self.merge_step(&mut merger, merger_type, level);
+                        let work = self.merge_step(&mut merger, merger_type, level);
 
                         {
                             let state = self.state.lock().unwrap();
@@ -1132,7 +1132,7 @@ where
                             }
                         }
 
-                        if merger.is_none() {
+                        if !work {
                             // No more merge work currently available -- wait for the next merges to be started
                             // or for a global memory pressure notification.
                             self.idle.notify_all();
@@ -1152,99 +1152,96 @@ where
         });
     }
 
+    /// Tries to do some merging at the given `level`, using `opt_merger` to
+    /// maintain state.  Creates mergers of type `merger_type`.
+    ///
+    /// Returns true if some merging work was done, false if there was no work
+    /// to do.
     fn merge_step(
         self: &Arc<Self>,
         opt_merger: &mut Option<Merge<B>>,
         merger_type: MergerType,
         level: usize,
-    ) {
-        // Run in-progress merges.
-        let ((key_filter, value_filter), frontier) = {
-            let shared = self.state.lock().unwrap();
-            (shared.get_filters(), shared.frontier.clone())
-        };
-
-        if let Some(merger) = opt_merger.as_mut() {
-            // Run level-0 merges to completion.  For other levels, we
-            // supply as much fuel as the average level-0 merge.  Along with
-            // round-robinning between levels, this means that we invest
-            // about the same amount of effort into merges at each level,
-            // which should ensure that the higher-level merges complete in
-            // time to keep batches from piling up.
-            let fuel = if level == 0 {
-                isize::MAX
-            } else {
-                self.worker_state.avg_slot0_merge_fuel()
-            };
-            merger.merge(&frontier, fuel);
-            if merger.done {
-                if level == 0 {
-                    self.worker_state.report_slot0_merge(merger.fuel);
-                }
-                let merger = opt_merger.take().unwrap();
-                let new_batch = Arc::new(merger.builder.done());
-                let new_level =
-                    Spine::<B>::size_to_level(&new_batch, self.max_level0_batch_size_records, true);
-                self.state.lock().unwrap().merge_complete(
-                    level,
-                    new_batch,
-                    new_level,
-                    merger.start,
-                    merger.elapsed,
-                    merger.n_steps,
-                );
-                self.start(new_level);
-            }
-        }
-
-        // Start new merges out of loose batches.
-        //
-        // Figuring out what merges to start requires the lock. Then we drop
-        // the lock to actually start them, in case that's expensive (it
-        // might require creating a file, for example).
-        let start_merge = {
-            let mut state = self.state.lock().unwrap();
-            let last_non_empty_slot = state.last_non_empty_slot();
-            let slot = &mut state.slots[level];
-            let start_merge = slot.try_start_merge(level);
-
-            // There is nothing to merge at the current level - initiate compaction at the next level.
-            if slot.compaction_status == CompactionStatus::Requested
-                && slot.merging_batches.is_none()
-            {
-                slot.compaction_status = CompactionStatus::None;
-
-                if let Some(last_level) = last_non_empty_slot
-                    && last_level > level
-                {
-                    // There can still be 1 batch in the current slot - move this batch to the next level.
-                    let batches = slot.loose_batches.drain(..).collect::<Vec<_>>();
-
-                    state.initiate_compaction_at_level(level + 1, batches);
-                }
-            }
-
-            start_merge
-        };
-
-        let snapshot = if value_filter
-            .as_ref()
-            .map(|f| f.requires_snapshot())
-            .unwrap_or(false)
-        {
-            Some(Arc::new(self.state.lock().unwrap().get_snapshot()))
+    ) -> bool {
+        let merger = if let Some(merger) = opt_merger {
+            merger
         } else {
-            None
-        };
-        if let Some(batches) = start_merge {
-            *opt_merger = Some(Merge::new(
+            // Get all the state we need to create the merger, then drop the
+            // lock.
+            let mut state = self.state.lock().unwrap();
+            let batches = if let Some(batches) = state.slots[level].try_start_merge(level) {
+                batches
+            } else {
+                // There is nothing to merge at the current level - initiate compaction at the next level.
+                if state.slots[level].compaction_status == CompactionStatus::Requested {
+                    state.slots[level].compaction_status = CompactionStatus::None;
+
+                    if let Some(last_level) = state.last_non_empty_slot()
+                        && last_level > level
+                    {
+                        // There can still be 1 batch in the current slot - move this batch to the next level.
+                        let batches = state.slots[level].loose_batches.drain(..).collect();
+
+                        state.initiate_compaction_at_level(level + 1, batches);
+                    }
+                }
+                return false;
+            };
+
+            let key_filter = state.key_filter.clone();
+            let value_filter = state.value_filter.clone();
+            let frontier = state.frontier.clone();
+            let snapshot = value_filter
+                .as_ref()
+                .is_some_and(|value_filter| value_filter.requires_snapshot())
+                .then(|| Arc::new(state.get_snapshot()));
+            drop(state);
+
+            // Create the merger.
+            //
+            // Creating the merger might require doing I/O, so it's important
+            // not to hold the lock.
+            opt_merger.insert(Merge::new(
                 merger_type,
                 batches,
                 &key_filter,
                 &value_filter,
-                snapshot.clone(),
-            ));
+                snapshot,
+                frontier,
+            ))
+        };
+
+        // Run level-0 merges to completion.  For other levels, we
+        // supply as much fuel as the average level-0 merge.  Along with
+        // round-robinning between levels, this means that we invest
+        // about the same amount of effort into merges at each level,
+        // which should ensure that the higher-level merges complete in
+        // time to keep batches from piling up.
+        let fuel = if level == 0 {
+            isize::MAX
+        } else {
+            self.worker_state.avg_slot0_merge_fuel()
+        };
+        merger.merge(fuel);
+        if merger.done {
+            if level == 0 {
+                self.worker_state.report_slot0_merge(merger.fuel);
+            }
+            let merger = opt_merger.take().unwrap();
+            let new_batch = Arc::new(merger.builder.done());
+            let new_level =
+                Spine::<B>::size_to_level(&new_batch, self.max_level0_batch_size_records, true);
+            self.state.lock().unwrap().merge_complete(
+                level,
+                new_batch,
+                new_level,
+                merger.start,
+                merger.elapsed,
+                merger.n_steps,
+            );
+            self.start(new_level);
         }
+        true
     }
 }
 
@@ -1292,10 +1289,17 @@ where
     /// Done?
     done: bool,
 
+    /// Creation time.
     start: Instant,
+
+    /// Time spent running merge steps.
     elapsed: Duration,
 
+    /// Number of merge steps executed.
     n_steps: usize,
+
+    /// Frontier.
+    frontier: B::Time,
 
     /// The merger itself.
     inner: MergeInner<B>,
@@ -1319,6 +1323,7 @@ where
         key_filter: &Option<Filter<B::Key>>,
         value_filter: &Option<GroupFilter<B::Val>>,
         snapshot: Option<Arc<SpineSnapshot<B>>>,
+        frontier: B::Time,
     ) -> Self {
         let factories = batches[0].factories();
         let batch_refs: Vec<&B> = batches.iter().map(|b| b.as_ref()).collect();
@@ -1330,6 +1335,7 @@ where
             elapsed: Duration::ZERO,
             n_steps: 0,
             done: false,
+            frontier,
             inner: match merger_type {
                 MergerType::ListMerger => MergeInner::ListMerger(ArcListMerger::new(
                     &factories,
@@ -1348,18 +1354,20 @@ where
         }
     }
 
-    fn merge(&mut self, frontier: &B::Time, mut fuel: isize) -> isize {
+    fn merge(&mut self, mut fuel: isize) -> isize {
         debug_assert!(fuel > 0);
         let supplied_fuel = fuel;
         let start = Instant::now();
         match &mut self.inner {
             MergeInner::ListMerger(merger) => {
-                merger.work(&mut self.builder, frontier, &mut fuel);
+                merger.work(&mut self.builder, &self.frontier, &mut fuel);
                 self.done = fuel > 0;
             }
             MergeInner::PushMerger(merger) => {
-                self.done =
-                    merger.merge(&mut self.builder, frontier, &mut fuel).is_ok() && fuel > 0;
+                self.done = merger
+                    .merge(&mut self.builder, &self.frontier, &mut fuel)
+                    .is_ok()
+                    && fuel > 0;
                 if !self.done {
                     merger.run();
                 }
