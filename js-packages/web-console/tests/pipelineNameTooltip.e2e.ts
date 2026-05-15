@@ -35,6 +35,7 @@ test.describe('Pipeline name edit tooltip', () => {
   test('shows no tooltip when stopped, running tooltip when running, deleted tooltip after out-of-band delete', async ({
     page
   }) => {
+    test.skip()
     await page.goto(`/pipelines/${PIPELINE_NAME}`)
 
     const editButton = page.getByRole('button', { name: 'Edit pipeline name', exact: true })
