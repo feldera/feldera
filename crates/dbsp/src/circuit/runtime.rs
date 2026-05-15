@@ -24,6 +24,7 @@ use core_affinity::{CoreId, get_core_ids};
 use crossbeam::sync::{Parker, Unparker};
 use enum_map::{Enum, EnumMap, enum_map};
 use feldera_buffer_cache::ThreadType;
+use feldera_samply::LongSpanBuilder;
 use feldera_storage::fbuf::FBuf;
 use feldera_storage::fbuf::slab::{FBufSlabs, FBufSlabsStats, set_thread_slab_pool};
 use feldera_types::config::{DevTweaks, StorageCompression, StorageConfig, StorageOptions};
@@ -722,6 +723,7 @@ impl Runtime {
         runtime.spawn_aux_thread("rss-monitor", Parker::new(), |parker| {
             let runtime = Runtime::runtime().unwrap();
 
+            let mut pressure_span = None;
             while !Runtime::kill_in_progress() {
                 let process_rss = process_rss_bytes().unwrap_or_default();
                 runtime
@@ -756,6 +758,13 @@ impl Runtime {
                         current_memory_pressure
                     }
                 };
+                if pressure_span.is_none() || new_memory_pressure != previous_pressure {
+                    pressure_span = Some(
+                        LongSpanBuilder::new("memory-pressure")
+                            .with_tooltip(new_memory_pressure.to_string())
+                            .build(),
+                    );
+                }
 
                 runtime
                     .inner()
@@ -774,6 +783,7 @@ impl Runtime {
                 }
                 parker.park_timeout(Duration::from_secs(1));
             }
+            drop(pressure_span);
         });
 
         let workers = workers
