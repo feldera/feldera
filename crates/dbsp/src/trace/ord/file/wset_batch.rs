@@ -832,10 +832,11 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn with_capacity(
+    fn with_capacity_in_location(
         factories: &<FileWSet<K, R> as BatchReader>::Factories,
         key_capacity: usize,
         _value_capacity: usize,
+        _location: Option<BatchLocation>,
     ) -> Self {
         Self {
             factories: factories.clone(),

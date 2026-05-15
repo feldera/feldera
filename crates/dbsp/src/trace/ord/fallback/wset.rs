@@ -495,17 +495,18 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn with_capacity(
+    fn with_capacity_in_location(
         factories: &FallbackWSetFactories<K, R>,
         key_capacity: usize,
         _value_capacity: usize,
+        location: Option<BatchLocation>,
     ) -> Self {
         Self {
             factories: factories.clone(),
             inner: BuilderInner::new(
                 factories,
                 key_capacity,
-                BuildTo::for_capacity(key_capacity, 0),
+                BuildTo::for_capacity(key_capacity, 0, location),
             ),
         }
     }

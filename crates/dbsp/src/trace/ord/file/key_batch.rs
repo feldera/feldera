@@ -677,10 +677,11 @@ where
     R: WeightTrait + ?Sized,
 {
     #[inline]
-    fn with_capacity(
+    fn with_capacity_in_location(
         factories: &FileKeyBatchFactories<K, T, R>,
         key_capacity: usize,
         _value_capacity: usize,
+        _location: Option<BatchLocation>,
     ) -> Self {
         Self {
             factories: factories.clone(),

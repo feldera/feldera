@@ -408,17 +408,19 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    fn with_capacity(
+    fn with_capacity_in_location(
         factories: &FallbackKeyBatchFactories<K, T, R>,
         key_capacity: usize,
         value_capacity: usize,
+        location: Option<BatchLocation>,
     ) -> Self {
         Self {
             factories: factories.clone(),
-            inner: BuilderInner::Vec(VecKeyBuilder::with_capacity(
+            inner: BuilderInner::Vec(VecKeyBuilder::with_capacity_in_location(
                 &factories.vec,
                 key_capacity,
                 value_capacity,
+                location,
             )),
         }
     }

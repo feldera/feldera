@@ -4,6 +4,7 @@
 #![allow(clippy::type_complexity)]
 
 use crate::storage::file::FilterStats;
+use crate::trace::BatchLocation;
 use crate::{
     DBData, DBWeight, NumEntries, Timestamp,
     dynamic::{
@@ -873,10 +874,11 @@ where
     R: WeightTrait + ?Sized,
     T: Timestamp,
 {
-    fn with_capacity(
+    fn with_capacity_in_location(
         factories: &TestBatchFactories<K, V, T, R>,
         _key_capacity: usize,
         _value_capacity: usize,
+        _location: Option<BatchLocation>,
     ) -> Self {
         Self {
             result: TestBatch::new(factories),
