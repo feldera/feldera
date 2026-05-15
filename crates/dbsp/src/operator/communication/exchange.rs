@@ -135,25 +135,22 @@ struct ByteBoundedSender {
 }
 
 impl ByteBoundedSender {
-    /// Sends a message and blocks until there is room in the channel.  Returns
-    /// an error if there is no receiver left.
+    /// Sends a message and returns:
     ///
-    /// This simple implementation isn't going to work well if there are lots of
-    /// senders running in parallel, since it doesn't prevent starvation.
-    pub async fn send(&self, message: ExchangeMessage) -> Result<(), SendError<ExchangeMessage>> {
+    /// - `Ok(None)` if the message fit within the channel's bound.
+    ///
+    /// - `Ok(Some(bound))` if the message overfills the channel's bound.  The
+    ///   caller should call `bound.wait()` to wait for the channel to drain
+    ///   before sending another message.
+    ///
+    /// - `Err(error)` if there is no receiver left.
+    pub fn send(
+        &self,
+        message: ExchangeMessage,
+    ) -> Result<Option<Arc<ByteBound>>, SendError<ExchangeMessage>> {
         let len = message.data.len().try_into().unwrap();
         self.tx.send(message)?;
-        let remaining = self.bound.remaining.fetch_sub(len, Ordering::AcqRel) - len;
-        if remaining < 0 {
-            loop {
-                let notified = self.bound.notify.notified();
-                if self.bound.remaining.load(Ordering::Acquire) >= 0 {
-                    break;
-                }
-                notified.await;
-            }
-        }
-        Ok(())
+        Ok(self.bound.reserve(len))
     }
 }
 
@@ -178,9 +175,28 @@ impl ByteBoundedReceiver {
     }
 }
 
-struct ByteBound {
+pub struct ByteBound {
     remaining: AtomicIsize,
     notify: Notify,
+}
+
+impl ByteBound {
+    /// Subtracts `len` from the channel's remaining capacity.  If the channel
+    /// is overfilled, returns a clone of this `ByteBound` to allow the caller
+    /// to wait for it to drain.
+    fn reserve(self: &Arc<Self>, len: isize) -> Option<Arc<Self>> {
+        let remaining = self.remaining.fetch_sub(len, Ordering::AcqRel) - len;
+        (remaining < 0).then(|| self.clone())
+    }
+
+    /// Waits until this channel's capacity is no longer overfilled.
+    pub async fn wait(&self) {
+        while let notified = self.notify.notified()
+            && self.remaining.load(Ordering::Acquire) < 0
+        {
+            notified.await;
+        }
+    }
 }
 
 /// Returns a pair of multi-producer, single-consumer channel sender and
@@ -292,15 +308,19 @@ impl ExchangeClient {
         }
     }
 
-    pub async fn send(&self, exchange_id: ExchangeId, sender: usize, data: Vec<FBuf>) {
+    pub fn send(
+        &self,
+        exchange_id: ExchangeId,
+        sender: usize,
+        data: Vec<FBuf>,
+    ) -> Option<Arc<ByteBound>> {
         self.tx
             .send(ExchangeMessage {
                 exchange_id,
                 sender,
                 data,
             })
-            .await
-            .expect("remote exchange failed");
+            .expect("remote exchange failed")
     }
 }
 
@@ -923,7 +943,6 @@ where
                     }
                 }
                 WorkerLocation::Remote => {
-                    let mut serialized_bytes = 0;
                     let items = receivers
                         .clone()
                         .map(|_| {
@@ -932,16 +951,17 @@ where
                                 .into_tx()
                                 .expect("remote mailboxes should always be serialized")
                         })
-                        .inspect(|serialized| {
-                            serialized_bytes += serialized.len();
-                        })
                         .collect_vec();
-                    let this = self.clone();
-                    this.clients
-                        .connect(receivers.start)
-                        .await
-                        .send(this.exchange_id, sender, items)
-                        .await;
+
+                    // We discard the return value that could allow us to wait
+                    // for the channel tx buffer to drain, because exchange is
+                    // synchronous, meaning that it will drain before we send
+                    // the next message.
+                    let _ = self.clients.connect(receivers.start).await.send(
+                        self.exchange_id,
+                        sender,
+                        items,
+                    );
                 }
             }
         }
