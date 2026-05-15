@@ -8,6 +8,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
+use feldera_samply::Span;
 use itertools::{Itertools as _, zip_eq};
 use rkyv::AlignedVec;
 
@@ -174,6 +175,9 @@ where
             .unwrap()
     }
 
+    /// Delivers `batch`, sent by local or remote `sender`, to local worker
+    /// `receiver`.  If `flush` is true, this is the final batch in the
+    /// transaction.  Returns true if the receiving spine has too many batches.
     fn deliver(
         &self,
         factories: &B::Factories,
@@ -181,11 +185,14 @@ where
         receiver: usize,
         batch: B,
         flush: bool,
-    ) {
+    ) -> bool {
         // Spill the batch to disk, if we should, without taking the rxq lock.
         let batch = Spine::maybe_flush_batch(batch, factories, || (None, None));
-
-        self.rxq(receiver).deliver(factories, sender, batch, flush);
+        if flush || !batch.is_empty() {
+            self.rxq(receiver).deliver(factories, sender, batch, flush)
+        } else {
+            false
+        }
     }
 
     async fn send(self: &Arc<Self>, batch: B, flush: bool) {
@@ -204,6 +211,7 @@ where
         );
         let worker_locations = WorkerLocations::for_layout(layout);
         let mut data = batches.into_iter();
+        let mut local_waiters = Vec::new();
         for receivers in layout.all_hosts() {
             match worker_locations[receivers.start] {
                 WorkerLocation::Local => {
@@ -213,7 +221,18 @@ where
                             .expect("data should include one item per peer")
                             .into_plain()
                             .expect("local data should not be serialized");
-                        self.deliver(&self.factories, sender, receiver, item, flush);
+                        if self.deliver(&self.factories, sender, receiver, item, flush)
+                            && !flush
+                            && let Some(waiter) = self
+                                .rxq(receiver)
+                                .spines
+                                .back()
+                                .unwrap()
+                                .spine
+                                .backpressure_waiter()
+                        {
+                            local_waiters.push((receiver, waiter));
+                        }
                     }
                 }
                 WorkerLocation::Remote => {
@@ -240,6 +259,25 @@ where
                         .send(this.exchange_id, sender, items)
                         .await;
                 }
+            }
+        }
+
+        if !local_waiters.is_empty() {
+            let _span = Span::new("local send wait")
+                .with_category("Exchange")
+                .with_tooltip(|| {
+                    format!(
+                        "exchange {} wait for batches to merge in {} receive queues (for workers {})",
+                        self.exchange_id,
+                        local_waiters.len(),
+                        local_waiters
+                            .iter()
+                            .map(|(receiver, _waiter)| receiver)
+                            .format(", ")
+                    )
+                });
+            for (_receiver, waiter) in local_waiters {
+                waiter.await;
             }
         }
     }
@@ -351,11 +389,17 @@ where
         }
     }
 
-    fn deliver(&mut self, factories: &B::Factories, sender: usize, batch: Arc<B>, flush: bool) {
+    fn deliver(
+        &mut self,
+        factories: &B::Factories,
+        sender: usize,
+        batch: Arc<B>,
+        flush: bool,
+    ) -> bool {
         let index = self.n_flushes[sender] - self.n_received;
         let entry = &mut self.spines[index];
 
-        entry.spine.insert_without_blocking(batch);
+        let should_block = entry.spine.insert_without_blocking(batch);
 
         if flush {
             entry.n_unflushed -= 1;
@@ -369,6 +413,8 @@ where
                 ));
             }
         }
+
+        should_block
     }
 
     fn receive(&mut self) -> Option<Spine<B>> {
