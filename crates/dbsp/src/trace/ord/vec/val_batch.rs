@@ -1,5 +1,6 @@
 use crate::ZWeight;
 use crate::storage::file::{FilterStats, TouchedWindowCount};
+use crate::trace::BatchLocation;
 use crate::trace::cursor::Position;
 use crate::trace::ord::merge_batcher::MergeBatcher;
 use crate::{
@@ -656,10 +657,11 @@ where
     T: Timestamp,
     O: OrdOffset,
 {
-    fn with_capacity(
+    fn with_capacity_in_location(
         factories: &VecValBatchFactories<K, V, T, R>,
         key_capacity: usize,
         value_capacity: usize,
+        _location: Option<BatchLocation>,
     ) -> Self {
         let mut keys = factories.layer_factories.keys.default_box();
         keys.reserve_exact(key_capacity);

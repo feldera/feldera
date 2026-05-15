@@ -1025,11 +1025,27 @@ where
     /// Creates an empty builder with estimated capacities for keys and
     /// key-value pairs.  Only `tuple_capacity >= key_capacity` makes sense but
     /// implementations must tolerate contradictory capacity requests.
+    ///
+    /// The caller may optionally specify a preferred `location`.  The builder
+    /// should honor it if it can, but some builders only build in one specific
+    /// location.
+    fn with_capacity_in_location(
+        factories: &Output::Factories,
+        key_capacity: usize,
+        value_capacity: usize,
+        location: Option<BatchLocation>,
+    ) -> Self;
+
+    /// Creates an empty builder with estimated capacities for keys and
+    /// key-value pairs.  Only `tuple_capacity >= key_capacity` makes sense but
+    /// implementations must tolerate contradictory capacity requests.
     fn with_capacity(
         factories: &Output::Factories,
         key_capacity: usize,
         value_capacity: usize,
-    ) -> Self;
+    ) -> Self {
+        Self::with_capacity_in_location(factories, key_capacity, value_capacity, None)
+    }
 
     /// Creates an empty builder to hold the result of merging
     /// `batches`. Optionally, `location` can specify the preferred location for
@@ -1043,10 +1059,9 @@ where
         B: Batch<Key = Output::Key, Val = Output::Val, Time = Output::Time, R = Output::R>,
         I: IntoIterator<Item = &'a B> + Clone,
     {
-        let _ = location;
         let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
         let value_capacity = batches.into_iter().map(|b| b.len()).sum();
-        Self::with_capacity(factories, key_capacity, value_capacity)
+        Self::with_capacity_in_location(factories, key_capacity, value_capacity, location)
     }
 
     /// Adds time-diff pair `(time, weight)`.

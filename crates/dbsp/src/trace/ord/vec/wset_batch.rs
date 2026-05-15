@@ -1,4 +1,5 @@
 use crate::storage::file::{FilterStats, TouchedWindowCount};
+use crate::trace::BatchLocation;
 use crate::{
     DBData, DBWeight, NumEntries,
     algebra::{NegByRef, ZRingValue},
@@ -664,10 +665,11 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn with_capacity(
+    fn with_capacity_in_location(
         factories: &VecWSetFactories<K, R>,
         key_capacity: usize,
         _value_capacity: usize,
+        _location: Option<BatchLocation>,
     ) -> Self {
         let mut keys = factories.layer_factories.keys.default_box();
         keys.reserve_exact(key_capacity);

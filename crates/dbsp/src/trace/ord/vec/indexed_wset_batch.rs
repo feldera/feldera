@@ -1,4 +1,5 @@
 use crate::storage::file::{FilterStats, SerializerInner, TouchedWindowCount};
+use crate::trace::BatchLocation;
 use crate::trace::ord::merge_batcher::MergeBatcher;
 use crate::{
     DBData, DBWeight, Error, NumEntries,
@@ -823,10 +824,11 @@ where
     R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
-    fn with_capacity(
+    fn with_capacity_in_location(
         factories: &VecIndexedWSetFactories<K, V, R>,
         key_capacity: usize,
         value_capacity: usize,
+        _location: Option<BatchLocation>,
     ) -> Self {
         let mut keys = factories.layer_factories.keys.default_box();
         keys.reserve_exact(key_capacity);
