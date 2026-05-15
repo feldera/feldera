@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -45,5 +47,22 @@ impl TryFrom<u8> for MemoryPressure {
             3 => Ok(MemoryPressure::Critical),
             _ => Err(()),
         }
+    }
+}
+
+impl MemoryPressure {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MemoryPressure::Low => "low",
+            MemoryPressure::Moderate => "moderate",
+            MemoryPressure::High => "high",
+            MemoryPressure::Critical => "critical",
+        }
+    }
+}
+
+impl Display for MemoryPressure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
