@@ -235,20 +235,6 @@ class TestAdhocQueries(SharedTestPipeline):
         assert prepared_rows and prepared_rows[0].get("c") == 1
         assert self._count("SELECT COUNT(*) AS c FROM t1") == 7
 
-        # Multiple non-PREPARE statements in a single request: earlier
-        # INSERTs run for their side effect; the trailing SELECT returns
-        # its rows.
-        chain_rows = list(
-            self.pipeline.query(
-                "INSERT INTO t1 VALUES "
-                "(200,'2020-02-02','11111111-1111-1111-1111-111111111111');"
-                "INSERT INTO t1 VALUES "
-                "(201,'2020-02-02','22222222-2222-2222-2222-222222222222');"
-                "SELECT COUNT(*) AS c FROM t1 WHERE id BETWEEN 200 AND 201"
-            )
-        )
-        assert chain_rows and chain_rows[0].get("c") == 2
-
         # Non-materialized table via its materialized view
         assert self._count("SELECT COUNT(*) AS c FROM view_of_not_materialized") == 0
         ins_nm = list(
@@ -541,3 +527,76 @@ class TestAdhocQueriesArrow(SharedTestPipeline):
         assert math.isinf(rows["neg_inf"]["r"]) and rows["neg_inf"]["r"] < 0
         assert math.isnan(rows["nan"]["d"])
         assert math.isnan(rows["nan"]["r"])
+
+
+class TestAdhocReadAfterWrite(SharedTestPipeline):
+    """Regression tests for
+    https://github.com/feldera/feldera/issues/6243 .
+
+    A multi-statement adhoc request must see its own intermediate
+    INSERTs in the trailing SELECT. The earlier bug was that the SELECT
+    ran against the snapshot captured before the request started, so
+    inserts in the same request stayed invisible.
+    """
+
+    @property
+    def pipeline(self):
+        return self.p
+
+    @sql(
+        """CREATE TABLE example (
+          id INT NOT NULL PRIMARY KEY
+        ) WITH ('materialized' = 'true');"""
+    )
+    def test_insert_then_select_in_same_request_sees_inserts(self):
+        self.pipeline.start()
+
+        rows = list(
+            self.pipeline.query(
+                "INSERT INTO example VALUES (2222);"
+                " INSERT INTO example VALUES (3333);"
+                " SELECT COUNT(*) AS c FROM example"
+            )
+        )
+        assert rows, "trailing SELECT must return a row"
+        assert rows[0].get("c") == 2, (
+            f"trailing SELECT should see both intermediate inserts, got {rows!r}"
+        )
+
+    @sql(
+        """CREATE TABLE example2 (
+          id INT NOT NULL PRIMARY KEY
+        ) WITH ('materialized' = 'true');"""
+    )
+    def test_multi_statement_query_during_open_transaction(self):
+        """While a user transaction is open, `update_snapshot()` is
+        skipped, so the trailing SELECT only sees the pre-transaction
+        baseline. Pin that shape so we notice if the gating changes.
+        """
+        self.pipeline.start()
+
+        # Seed one row outside the transaction as the baseline.
+        self.pipeline.execute("INSERT INTO example2 VALUES (1)")
+
+        tid = self.pipeline.start_transaction()
+        rows_during = list(
+            self.pipeline.query(
+                "INSERT INTO example2 VALUES (2);"
+                " INSERT INTO example2 VALUES (3);"
+                " SELECT COUNT(*) AS c FROM example2"
+            )
+        )
+        self.pipeline.commit_transaction(transaction_id=tid, wait=True)
+
+        assert rows_during, "trailing SELECT must return a row"
+        count_during = rows_during[0].get("c")
+        assert count_during == 1, (
+            f"during the open transaction the SELECT must observe only "
+            f"the pre-transaction baseline, got {count_during}"
+        )
+
+        # After commit, a fresh adhoc query must see all three rows.
+        rows_after = list(self.pipeline.query("SELECT COUNT(*) AS c FROM example2"))
+        assert rows_after and rows_after[0].get("c") == 3, (
+            f"after commit, all three inserts must be visible, got {rows_after!r}"
+        )

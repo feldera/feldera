@@ -3022,18 +3022,15 @@ impl CircuitThread {
         self.step_circuit();
 
         let transaction_state = self.controller.get_transaction_state();
-        self.step_sender.send_replace(StepStatus::new(
-            self.step,
-            StepAction::Idle,
-            transaction_state.into_coordination_status(),
-        ));
 
-        // Update `trace_snapshot` to the latest traces.
+        // Update `trace_snapshot` to the latest traces *before* signaling
+        // `Idle` on the step watcher, so subscribers can rely on
+        // `latest_consistent_snapshot()` being current the moment they
+        // observe Idle.
         //
-        // We do this before updating `total_processed_records` so that ad hoc
-        // query results always reflect all data that we have reported
-        // processing; otherwise, there is a race for any code that runs a query
-        // as soon as input has been processed.
+        // We also keep this before updating `total_processed_records` so
+        // that ad hoc query results always reflect all data that we have
+        // reported processing.
         if transaction_state == TransactionState::None {
             let bootstrapping = self.circuit.bootstrap_in_progress();
 
@@ -3060,6 +3057,12 @@ impl CircuitThread {
                     .set_bootstrap_in_progress(bootstrapping);
             }
         }
+
+        self.step_sender.send_replace(StepStatus::new(
+            self.step,
+            StepAction::Idle,
+            transaction_state.into_coordination_status(),
+        ));
 
         // Record that we've processed the records, unless there is a transaction in progress,
         // in which case records are ingested by the circuit but are not fully processed.
