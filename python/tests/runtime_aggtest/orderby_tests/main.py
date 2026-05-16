@@ -14,16 +14,13 @@ from orderby_arr_time import *  # noqa: F403
 def main():
     """Run SQLite tests to populate expected results, then run Feldera tests with updated data"""
 
-    print("\nRunning SQLite tests")
     ta = discover_sqlite_tests(
         "orderby_", ["orderby_", "test_"], True
     )  # runs SQLite and updates .data
 
-    print("\nRunning Feldera tests")
     ta.run_tests(
         "orderby_tests"
     )  # run Feldera tests using SAME accumulator and objects with updated .data
-
 
 if __name__ == "__main__":
     main()

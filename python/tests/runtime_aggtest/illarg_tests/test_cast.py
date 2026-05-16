@@ -1,6 +1,15 @@
 from tests.runtime_aggtest.aggtst_base import TstView
 from decimal import Decimal
+from datetime import datetime
 
+def t(s):
+    return datetime.strptime(s, "%H:%M:%S.%f").time()
+
+def d(s):
+    return datetime.strptime(s, "%Y-%m-%d").date()
+
+def ts(s):
+    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S.%f")
 
 # INT to other types
 # Casting a numeric value to TIMESTAMP interprets the value as epoch seconds
@@ -9,18 +18,18 @@ class illarg_cast_int(TstView):
         self.data = [
             {
                 "to_decimal": Decimal("-12.00"),
-                "to_real": Decimal("-12.0"),
-                "to_double": Decimal("-12.0"),
+                "to_real": "-12.0",
+                "to_double": "-12.0",
                 "to_bool": True,
                 "to_varchar": "-12",
-                "to_binary": "f4",
-                "to_timestamp": "1970-01-01T00:00:00",
+                "to_binary": bytes.fromhex("f4"),
+                "to_timestamp": ts("1970-01-01T00:00:00.0"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_int AS SELECT
                       CAST(intt AS DECIMAL(6,2)) AS to_decimal,
-                      CAST(intt AS REAL) AS to_real,
-                      CAST(intt AS DOUBLE) AS to_double,
+                      CAST(CAST(intt AS REAL) AS VARCHAR) AS to_real,
+                      CAST(CAST(intt AS DOUBLE) AS VARCHAR) AS to_double,
                       CAST(intt AS BOOL) AS to_bool,
                       CAST(intt AS VARCHAR) AS to_varchar,
                       CAST(intt AS BINARY) AS to_binary,
@@ -35,17 +44,17 @@ class illarg_cast_decimal_legal(TstView):
         self.data = [
             {
                 "to_intt": -1111,
-                "to_real": Decimal("-1111.52"),
-                "to_double": Decimal("-1111.52"),
+                "to_real": "-1111.52",
+                "to_double": "-1111.52",
                 "to_bool": True,
                 "to_varchar": "-1111.52",
-                "to_timestamp": "1969-12-31T23:59:59",
+                "to_timestamp": ts("1969-12-31T23:59:59.0"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_decimal_legal AS SELECT
                       CAST(decimall AS INT) AS to_intt,
-                      CAST(decimall AS REAL) AS to_real,
-                      CAST(decimall AS DOUBLE) AS to_double,
+                      CAST(CAST(decimall AS REAL) AS VARCHAR) AS to_real,
+                      CAST(CAST(decimall AS DOUBLE) AS VARCHAR) AS to_double,
                       CAST(decimall AS BOOL) AS to_bool,
                       CAST(decimall AS VARCHAR) AS to_varchar,
                       CAST(decimall AS TIMESTAMP) AS to_timestamp
@@ -60,16 +69,16 @@ class illarg_cast_real_legal(TstView):
             {
                 "to_int": -57681,
                 "to_decimal": None,
-                "to_double": Decimal("-57681.1796875"),
+                "to_double": "-57681.1796875",
                 "to_bool": True,
                 "to_varchar": "-57681.18",
-                "to_timestamp": "1969-12-31T23:59:03",
+                "to_timestamp": ts("1969-12-31T23:59:03.0"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_real_legal AS SELECT
                       CAST(reall AS INT) AS to_int,
                       SAFE_CAST(reall AS DECIMAL(6,2)) AS to_decimal,
-                      CAST(reall AS DOUBLE) AS to_double,
+                      CAST(CAST(reall AS DOUBLE) AS VARCHAR) AS to_double,
                       CAST(reall AS BOOL) AS to_bool,
                       CAST(reall AS VARCHAR) AS to_varchar,
                       CAST(reall AS TIMESTAMP) AS to_timestamp
@@ -84,16 +93,16 @@ class illarg_cast_double_legal(TstView):
             {
                 "to_intt": -38,
                 "to_decimal": Decimal("-38.27"),
-                "to_real": Decimal("-38.271122"),
+                "to_real": "-38.271122",
                 "to_bool": True,
                 "to_varchar": "-38.2711234601246",
-                "to_timestamp": "1970-01-01T00:00:00",
+                "to_timestamp": ts("1970-01-01T00:00:00.0"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_double_legal AS SELECT
                       CAST(dbl AS INT) AS to_intt,
                       CAST(dbl AS DECIMAL(6,2)) AS to_decimal,
-                      CAST(dbl AS REAL) AS to_real,
+                      CAST(CAST(dbl AS REAL) AS VARCHAR) AS to_real,
                       CAST(dbl AS BOOL) AS to_bool,
                       CAST(dbl AS VARCHAR) AS to_varchar,
                       CAST(dbl AS TIMESTAMP) AS to_timestamp
@@ -119,10 +128,10 @@ class illarg_cast_varchar_legal(TstView):
             {
                 "to_int": None,
                 "to_decimal": None,
-                "to_real": Decimal("0.0"),
-                "to_double": Decimal("0.0"),
+                "to_real": "0.0",
+                "to_double": "0.0",
                 "to_bool": False,
-                "to_binary": "68",
+                "to_binary": bytes.fromhex("68"),
                 "to_timestamp": None,
                 "to_date": None,
                 "to_time": None,
@@ -132,8 +141,8 @@ class illarg_cast_varchar_legal(TstView):
         self.sql = """CREATE MATERIALIZED VIEW cast_varchar_legal AS SELECT
                       SAFE_CAST(str AS INT) AS to_int,
                       SAFE_CAST(str AS DECIMAL(6,2)) AS to_decimal,
-                      CAST(str AS REAL) AS to_real,
-                      CAST(str AS DOUBLE) AS to_double,
+                      CAST(CAST(str AS REAL) AS VARCHAR) AS to_real,
+                      CAST(CAST(str AS DOUBLE) AS VARCHAR) AS to_double,
                       CAST(str AS BOOL) AS to_bool,
                       CAST(str AS BINARY) AS to_binary,
                       SAFE_CAST(str AS TIMESTAMP) AS to_timestamp,
@@ -170,21 +179,21 @@ class illarg_cast_timestamp_legal(TstView):
         self.data = [
             {
                 "to_int": None,
-                "to_decimal": 1592749424123,
+                "to_decimal": Decimal("1592749424123"),
                 "to_decimal1": None,
-                "to_real": Decimal("1.5927495E+12"),
-                "to_double": Decimal("1592749424123"),
+                "to_real": "1592749500000.0",
+                "to_double": "1592749424123.0",
                 "to_varchar": "2020-06-21 14:23:44.123654",
-                "to_date": "2020-06-21",
-                "to_time": "14:23:44.123654",
+                "to_date": d("2020-06-21"),
+                "to_time": t("14:23:44.123654"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_timestamp_legal AS SELECT
                       SAFE_CAST(tmestmp AS INT) AS to_int,
                       CAST(tmestmp AS DECIMAL) AS to_decimal,
                       SAFE_CAST(tmestmp AS DECIMAL(6,2)) AS to_decimal1,
-                      SAFE_CAST(tmestmp AS REAL) AS to_real,
-                      CAST(tmestmp AS DOUBLE) AS to_double,
+                      CAST(SAFE_CAST(tmestmp AS REAL) AS VARCHAR) AS to_real,
+                      CAST(CAST(tmestmp AS DOUBLE) AS VARCHAR) AS to_double,
                       CAST(tmestmp AS VARCHAR) AS to_varchar,
                       CAST(tmestmp AS DATE) AS to_date,
                       CAST(tmestmp AS TIME) AS to_time
@@ -196,7 +205,7 @@ class illarg_cast_timestamp_legal(TstView):
 class illarg_cast_date_legal(TstView):
     def __init__(self):
         self.data = [
-            {"to_varchar": "2020-06-21", "to_timestamp": "2020-06-21T00:00:00"}
+            {"to_varchar": "2020-06-21", "to_timestamp": ts("2020-06-21T00:00:00.0")}
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_date_legal AS SELECT
                       CAST(datee AS VARCHAR) AS to_varchar,
@@ -211,7 +220,7 @@ class illarg_cast_time_legal(TstView):
         self.data = [
             {
                 "to_varchar": "14:23:44.456000000",
-                "to_timestamp": "1970-01-01T14:23:44.456",
+                "to_timestamp": ts("1970-01-01T14:23:44.456"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_time_legal AS SELECT
@@ -225,7 +234,7 @@ class illarg_cast_time_legal(TstView):
 class illarg_cast_uuid(TstView):
     def __init__(self):
         self.data = [
-            {"to_varchar": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c", "to_binary": "42"}
+            {"to_varchar": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c", "to_binary": bytes.fromhex("42")}
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_uuid AS SELECT
                       CAST(uuidd AS VARCHAR) AS to_varchar,
@@ -259,7 +268,7 @@ class illarg_cast_array_legal(TstView):
 
 class illarg_cast_array_legal1(TstView):
     def __init__(self):
-        self.data = [{"to_ts": "2020-10-01T00:00:00"}]
+        self.data = [{"to_ts": ts("2020-10-01T00:00:00.0")}]
         self.sql = """CREATE MATERIALIZED VIEW cast_array_legal1 AS SELECT
                       SAFE_CAST(arr[6] AS TIMESTAMP) AS to_ts
                       FROM illegal_tbl
@@ -269,7 +278,7 @@ class illarg_cast_array_legal1(TstView):
 # MAP to other types
 class illarg_safe_cast_map_legal(TstView):
     def __init__(self):
-        self.data = [{"to_map": {"a": "12", "b": "17"}}]
+        self.data = [{"to_map": [("a", "12"), ("b", "17")]}]
         self.sql = """CREATE MATERIALIZED VIEW safe_cast_map_legal AS SELECT
                       SAFE_CAST(mapp AS MAP<VARCHAR, VARCHAR>) AS to_map
                       FROM illegal_tbl

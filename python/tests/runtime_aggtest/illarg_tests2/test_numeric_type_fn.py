@@ -7,9 +7,9 @@ from decimal import Decimal
 class illarg_abs_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"dbl": Decimal("0.82711234601246"), "decimall": Decimal("0.52")}]
+        self.data = [{"dbl": "0.82711234601246", "decimall": Decimal("0.52")}]
         self.sql = """CREATE MATERIALIZED VIEW abs_legal AS SELECT
-                      ABS(dbl) AS dbl,
+                      CAST(ABS(dbl) AS VARCHAR) AS dbl,
                       ABS(decimall) AS decimall
                       FROM illegal_tbl
                       WHERE id = 1"""
@@ -287,9 +287,9 @@ class illarg_cbrt_illegal(TstView):
 class illarg_ceil_legal(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{"dbl": Decimal("-38.0"), "decimall": -1111}]
+        self.data = [{"dbl": "-38.0", "decimall": -1111}]
         self.sql = """CREATE MATERIALIZED VIEW ceil_legal AS SELECT
-                      CEIL(dbl) AS dbl,
+                      CAST(CEIL(dbl) AS VARCHAR) AS dbl,
                       CEIL(decimall) AS decimall
                       FROM illegal_tbl
                       WHERE id = 0"""
@@ -567,9 +567,9 @@ class illarg_exp_illegal(TstView):
 class illarg_floor_legal(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{"reall": Decimal("-1"), "decimall": -1}]
+        self.data = [{"reall": "-1.0", "decimall": Decimal(-1)}]
         self.sql = """CREATE MATERIALIZED VIEW floor_legal AS SELECT
-                      FLOOR(reall) AS reall,
+                      CAST(FLOOR(reall) AS VARCHAR) AS reall,
                       FLOOR(decimall) AS decimall
                       FROM illegal_tbl
                       WHERE id = 1"""
@@ -702,9 +702,9 @@ class illarg_pow_legal(TstView):
 class illarg_pow_cast_legal(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{"arr": Decimal("196")}]
+        self.data = [{"arr": "196.0"}]
         self.sql = """CREATE MATERIALIZED VIEW pow_cast_legal AS SELECT
-                      POWER(ARR[2], 2) AS arr
+                      CAST(POWER(ARR[2], 2) AS VARCHAR) AS arr
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -785,9 +785,9 @@ class illarg_round_illegal(TstView):
 class illarg_roundvd_legal(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{"dbl": Decimal("-38.27")}]
+        self.data = [{"dbl": "-38.27"}]
         self.sql = """CREATE MATERIALIZED VIEW roundvd_legal AS SELECT
-                      ROUND(dbl, 2) AS dbl
+                      CAST(ROUND(dbl, 2) AS VARCHAR) AS dbl
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -847,9 +847,9 @@ class illarg_sec_illegal(TstView):
 class illarg_sech_legal(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{"dbl": Decimal("4.78731782390219E-17")}]
+        self.data = [{"dbl": "4.78731782390219e-17"}]
         self.sql = """CREATE MATERIALIZED VIEW sech_legal AS SELECT
-                      SECH(dbl) AS dbl
+                      CAST(SECH(dbl) AS VARCHAR) AS dbl
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -909,9 +909,9 @@ class illarg_sin_illegal(TstView):
 class illarg_sinh_legal(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{"dbl": Decimal("-2.088852331899055E+16")}]
+        self.data = [{"dbl": "-2.088852331899055e16"}]
         self.sql = """CREATE MATERIALIZED VIEW sinh_legal AS SELECT
-                      SINH(dbl) AS dbl
+                      CAST(SINH(dbl) AS VARCHAR) AS dbl
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -919,9 +919,9 @@ class illarg_sinh_legal(TstView):
 class illarg_sinh_cast_legal(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{"arr": Decimal("601302.1420819727")}]
+        self.data = [{"arr": "601302.1420819727"}]
         self.sql = """CREATE MATERIALIZED VIEW sinh_cast_legal AS SELECT
-                      SINH(ARR[2]) AS arr
+                      CAST(SINH(ARR[2]) AS VARCHAR) AS arr
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -950,9 +950,9 @@ class illarg_sqrt_legal(TstView):
 class illarg_sqrt_cast_legal(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{"intt": Decimal("3.4641016151377544")}]
+        self.data = [{"intt": "3.4641016151377544"}]
         self.sql = """CREATE MATERIALIZED VIEW sqrt_cast_legal AS SELECT
-                      SQRT(- intt) AS intt
+                      CAST(SQRT(- intt) AS VARCHAR) AS intt
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -1002,9 +1002,9 @@ class illarg_tan_illegal(TstView):
 class illarg_tanh_legal(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{"dbl": Decimal("-1.0")}]
+        self.data = [{"dbl": "-1.0"}]
         self.sql = """CREATE MATERIALIZED VIEW tanh_legal AS SELECT
-                      TANH(dbl) AS dbl
+                      CAST(TANH(dbl) AS VARCHAR) AS dbl
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -1064,9 +1064,9 @@ class illarg_truncate_illegal(TstView):
 class illarg_truncatevd_legal(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{"dbl": Decimal("-38.27")}]
+        self.data = [{"dbl": "-38.27"}]
         self.sql = """CREATE MATERIALIZED VIEW truncatevd_legal AS SELECT
-                      TRUNCATE(dbl, 2) AS dbl
+                      CAST(TRUNCATE(dbl, 2) AS VARCHAR) AS dbl
                       FROM illegal_tbl
                       WHERE id = 0"""
 

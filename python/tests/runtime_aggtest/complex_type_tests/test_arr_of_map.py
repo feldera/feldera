@@ -32,11 +32,11 @@ class cmpxtst_arr_of_map_unnest(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"id": 0, "c1_val": {"p": "hi", "q": "hello"}, "idx": 1},
-            {"id": 0, "c1_val": {"r": "bye", "s": "ciao"}, "idx": 2},
+            {"id": 0, "c1_val": [("p", "hi"), ("q", "hello")], "idx": 1},
+            {"id": 0, "c1_val": [("r", "bye"), ("s", "ciao")], "idx": 2},
             {"id": 1, "c1_val": None, "idx": 3},
-            {"id": 1, "c1_val": {"u": "elo", "v": "konichiwa"}, "idx": 1},
-            {"id": 1, "c1_val": {"w": "bye", "z": "sayonara"}, "idx": 2},
+            {"id": 1, "c1_val": [("u", "elo"), ("v", "konichiwa")], "idx": 1},
+            {"id": 1, "c1_val": [("w", "bye"), ("z", "sayonara")], "idx": 2},
         ]
         self.sql = """CREATE MATERIALIZED VIEW arr_of_map_unnest AS SELECT
                       id,  c1_val, idx
@@ -50,18 +50,18 @@ class cmpxtst_arr_of_map_field_access(TstView):
         self.data = [
             {
                 "id": 0,
-                "c1_val1": {"p": "hi", "q": "hello"},
-                "c1_val2": {"r": "bye", "s": "ciao"},
-                "c2_val1": {"a": 23, "b": 45},
-                "c2_val2": {"t": None},
+                "c1_val1": [("p", "hi"), ("q", "hello")],
+                "c1_val2": [("r","bye"), ("s", "ciao")],
+                "c2_val1": [("a", 23), ("b", 45)],
+                "c2_val2": [("t", None)],
                 "c1_val3": None,
             },
             {
                 "id": 1,
-                "c1_val1": {"u": "elo", "v": "konichiwa"},
-                "c1_val2": {"w": "bye", "z": "sayonara"},
+                "c1_val1": [("u", "elo"), ("v", "konichiwa")],
+                "c1_val2": [("w", "bye"), ("z", "sayonara")],
                 "c1_val3": None,
-                "c2_val1": {"x": 22, "y": 44},
+                "c2_val1": [("x", 22), ("y", 44)],
                 "c2_val2": None,
             },
         ]

@@ -1,5 +1,14 @@
 from tests.runtime_aggtest.aggtst_base import TstView
+from datetime import datetime
 
+def t(s):
+    return datetime.strptime(s, "%H:%M:%S.%f").time()
+
+def d(s):
+    return datetime.strptime(s, "%Y-%m-%d").date()
+
+def ts(s):
+    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S.%f")
 
 # Timestamp/Date/Time type functions
 # DATE_TRUNC
@@ -8,12 +17,12 @@ class illarg_date_trunc_legal(TstView):
         # checked manually
         self.data = [
             {
-                "yr": "2020-01-01T00:00:00",
-                "mth": "2020-06-01T00:00:00",
-                "day": "2020-06-21T00:00:00",
-                "yr1": "2020-01-01",
-                "mth1": "2020-06-01",
-                "day1": "2020-06-21",
+                "yr": ts("2020-01-01T00:00:00.0"),
+                "mth": ts("2020-06-01T00:00:00.0"),
+                "day": ts("2020-06-21T00:00:00.0"),
+                "yr1": d("2020-01-01"),
+                "mth1": d("2020-06-01"),
+                "day1": d("2020-06-21"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW date_trunc_legal AS SELECT
@@ -44,12 +53,12 @@ class illarg_trunc_ts_legal(TstView):
         # checked manually
         self.data = [
             {
-                "yr": "2020-01-01T00:00:00",
-                "mth": "2020-06-01T00:00:00",
-                "day": "2020-06-21T00:00:00",
-                "hr": "2020-06-21T14:00:00",
-                "min": "2020-06-21T14:23:00",
-                "sec": "2020-06-21T14:23:44",
+                "yr":  ts("2020-01-01T00:00:00.0"),
+                "mth": ts("2020-06-01T00:00:00.0"),
+                "day": ts("2020-06-21T00:00:00.0"),
+                "hr":  ts("2020-06-21T14:00:00.0"),
+                "min": ts("2020-06-21T14:23:00.0"),
+                "sec": ts("2020-06-21T14:23:44.0"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW ts_trunc_ts_legal AS SELECT
@@ -68,9 +77,9 @@ class illarg_ts_trunc_datee_legal(TstView):
         # checked manually
         self.data = [
             {
-                "yr": "2020-01-01T00:00:00",
-                "mth": "2020-06-01T00:00:00",
-                "datee": "2020-06-21T00:00:00",
+                "yr": ts("2020-01-01T00:00:00.0"),
+                "mth": ts("2020-06-01T00:00:00.0"),
+                "datee": ts("2020-06-21T00:00:00.0"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW ts_trunc_datee_legal AS SELECT
@@ -96,7 +105,7 @@ class illarg_ts_trunc_illegal(TstView):
 class illarg_tme_trunc_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"yr": "14:00:00", "min": "14:23:00", "sec": "14:23:44"}]
+        self.data = [{"yr": t("14:00:00.0"), "min": t("14:23:00.0"), "sec": t("14:23:44.0")}]
         self.sql = """CREATE MATERIALIZED VIEW tme_trunc_legal AS SELECT
                       TIME_TRUNC(tme, HOUR) AS yr,
                       TIME_TRUNC(tme, MINUTE) AS min,
@@ -255,14 +264,14 @@ class illarg_floor_ts_legal(TstView):
         # checked manually
         self.data = [
             {
-                "yr": "2020-01-01T00:00:00",
-                "mth": "2020-06-01T00:00:00",
-                "day": "2020-06-21T00:00:00",
-                "hr": "2020-06-21T14:00:00",
-                "min": "2020-06-21T14:23:00",
-                "sec": "2020-06-21T14:23:44",
-                "millsec": "2020-06-21T14:23:44.123",
-                "microsec": "2020-06-21T14:23:44.123654",
+                "yr":  ts("2020-01-01T00:00:00.0"),
+                "mth": ts("2020-06-01T00:00:00.0"),
+                "day": ts("2020-06-21T00:00:00.0"),
+                "hr":  ts("2020-06-21T14:00:00.0"),
+                "min": ts("2020-06-21T14:23:00.0"),
+                "sec": ts("2020-06-21T14:23:44.0"),
+                "millsec": ts("2020-06-21T14:23:44.123"),
+                "microsec": ts("2020-06-21T14:23:44.123654"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW floor_ts_legal AS SELECT
@@ -281,7 +290,7 @@ class illarg_floor_ts_legal(TstView):
 class illarg_floor_date_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"yr": "2020-01-01", "mth": "2020-06-01", "day": "2020-06-21"}]
+        self.data = [{"yr": d("2020-01-01"), "mth": d("2020-06-01"), "day": d("2020-06-21")}]
         self.sql = """CREATE MATERIALIZED VIEW floor_date_legal AS SELECT
                       FLOOR(datee TO YEAR) AS yr,
                       FLOOR(datee TO MONTH) AS mth,
@@ -295,11 +304,11 @@ class illarg_floor_time_legal(TstView):
         # checked manually
         self.data = [
             {
-                "hr": "14:00:00",
-                "min": "14:23:00",
-                "sec": "14:23:44",
-                "millsec": "14:23:44.456",
-                "microsec": "14:23:44.456",
+                "hr":  t("14:00:00.0"),
+                "min": t("14:23:00.0"),
+                "sec": t("14:23:44.0"),
+                "millsec": t("14:23:44.456"),
+                "microsec": t("14:23:44.456"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW floor_time_legal AS SELECT
@@ -317,16 +326,16 @@ class illarg_floor_legal_ts_date(TstView):
         # checked manually
         self.data = [
             {
-                "millennium": "2000-01-01T00:00:00",
-                "century": "2000-01-01T00:00:00",
-                "decade": "2020-01-01T00:00:00",
-                "quarter": "2020-04-01T00:00:00",
-                "week": "2020-06-21T00:00:00",
-                "millennium1": "2000-01-01",
-                "century1": "2000-01-01",
-                "decade1": "2020-01-01",
-                "quarter1": "2020-04-01",
-                "week1": "2020-06-21",
+                "millennium": ts("2000-01-01T00:00:00.0"),
+                "century": ts("2000-01-01T00:00:00.0"),
+                "decade": ts("2020-01-01T00:00:00.0"),
+                "quarter": ts("2020-04-01T00:00:00.0"),
+                "week": ts("2020-06-21T00:00:00.0"),
+                "millennium1": d("2000-01-01"),
+                "century1": d("2000-01-01"),
+                "decade1": d("2020-01-01"),
+                "quarter1": d("2020-04-01"),
+                "week1": d("2020-06-21"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW floor_legal_ts_date AS SELECT
@@ -361,14 +370,14 @@ class illarg_ceil_ts_legal(TstView):
         # checked manually
         self.data = [
             {
-                "yr": "2021-01-01T00:00:00",
-                "mth": "2020-07-01T00:00:00",
-                "day": "2020-06-22T00:00:00",
-                "hr": "2020-06-21T15:00:00",
-                "min": "2020-06-21T14:24:00",
-                "sec": "2020-06-21T14:23:45",
-                "millsec": "2020-06-21T14:23:44.124",
-                "microsec": "2020-06-21T14:23:44.123654",
+                "yr":  ts("2021-01-01T00:00:00.0"),
+                "mth": ts("2020-07-01T00:00:00.0"),
+                "day": ts("2020-06-22T00:00:00.0"),
+                "hr":  ts("2020-06-21T15:00:00.0"),
+                "min": ts("2020-06-21T14:24:00.0"),
+                "sec": ts("2020-06-21T14:23:45.0"),
+                "millsec": ts("2020-06-21T14:23:44.124"),
+                "microsec": ts("2020-06-21T14:23:44.123654"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW ceil_ts_legal AS SELECT
@@ -387,7 +396,7 @@ class illarg_ceil_ts_legal(TstView):
 class illarg_ceil_date_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"yr": "2021-01-01", "mth": "2020-07-01", "day": "2020-06-21"}]
+        self.data = [{"yr": d("2021-01-01"), "mth": d("2020-07-01"), "day": d("2020-06-21")}]
         self.sql = """CREATE MATERIALIZED VIEW ceil_date_legal AS SELECT
                       CEIL(datee TO YEAR) AS yr,
                       CEIL(datee TO MONTH) AS mth,
@@ -401,11 +410,11 @@ class illarg_ceil_time_legal(TstView):
         # checked manually
         self.data = [
             {
-                "hr": "15:00:00",
-                "min": "14:24:00",
-                "sec": "14:23:45",
-                "millsec": "14:23:44.456",
-                "microsec": "14:23:44.456",
+                "hr":  t("15:00:00.0"),
+                "min": t("14:24:00.0"),
+                "sec": t("14:23:45.0"),
+                "millsec": t("14:23:44.456"),
+                "microsec": t("14:23:44.456"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW ceil_time_legal AS SELECT
@@ -434,16 +443,16 @@ class illarg_ceil_legal_legal_ts_date(TstView):
         # checked manually
         self.data = [
             {
-                "millennium": "3000-01-01T00:00:00",
-                "century": "2100-01-01T00:00:00",
-                "decade": "2030-01-01T00:00:00",
-                "quarter": "2020-07-01T00:00:00",
-                "week": "2020-06-28T00:00:00",
-                "millennium1": "3000-01-01",
-                "century1": "2100-01-01",
-                "decade1": "2030-01-01",
-                "quarter1": "2020-07-01",
-                "week1": "2020-06-21",
+                "millennium": ts("3000-01-01T00:00:00.0"),
+                "century": ts("2100-01-01T00:00:00.0"),
+                "decade": ts("2030-01-01T00:00:00.0"),
+                "quarter": ts("2020-07-01T00:00:00.0"),
+                "week": ts("2020-06-28T00:00:00.0"),
+                "millennium1": d("3000-01-01"),
+                "century1": d("2100-01-01"),
+                "decade1": d("2030-01-01"),
+                "quarter1": d("2020-07-01"),
+                "week1": d("2020-06-21"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW ceil_legal_legal_ts_date AS SELECT
@@ -551,14 +560,14 @@ class illarg_tsadd_ts_legal(TstView):
         # checked manually
         self.data = [
             {
-                "yr": "2022-06-21T14:23:44.123654",
-                "mth": "2020-08-21T14:23:44.123654",
-                "day": "2020-06-23T14:23:44.123654",
-                "hr": "2020-06-21T16:23:44.123654",
-                "min": "2020-06-21T14:25:44.123654",
-                "sec": "2020-06-21T14:23:46.123654",
-                "millisec": "2020-06-21T14:23:44.125654",
-                "microsec": "2020-06-21T14:23:44.123656",
+                "yr":  ts("2022-06-21T14:23:44.123654"),
+                "mth": ts("2020-08-21T14:23:44.123654"),
+                "day": ts("2020-06-23T14:23:44.123654"),
+                "hr":  ts("2020-06-21T16:23:44.123654"),
+                "min": ts("2020-06-21T14:25:44.123654"),
+                "sec": ts("2020-06-21T14:23:46.123654"),
+                "millisec": ts("2020-06-21T14:23:44.125654"),
+                "microsec": ts("2020-06-21T14:23:44.123656"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW tsadd_ts_legal AS SELECT
@@ -579,14 +588,14 @@ class illarg_tsadd_ts1_legal(TstView):
         # checked manually
         self.data = [
             {
-                "yr": "2022-06-21T14:23:44.123654",
-                "mth": "2020-08-21T14:23:44.123654",
-                "day": "2020-06-23T14:23:44.123654",
-                "hr": "2020-06-21T16:23:44.123654",
-                "min": "2020-06-21T14:25:44.123654",
-                "sec": "2020-06-21T14:23:46.123654",
-                "millisec": "2020-06-21T14:23:44.125654",
-                "microsec": "2020-06-21T14:23:44.123656",
+                "yr":       ts("2022-06-21T14:23:44.123654"),
+                "mth":      ts("2020-08-21T14:23:44.123654"),
+                "day":      ts("2020-06-23T14:23:44.123654"),
+                "hr":       ts("2020-06-21T16:23:44.123654"),
+                "min":      ts("2020-06-21T14:25:44.123654"),
+                "sec":      ts("2020-06-21T14:23:46.123654"),
+                "millisec": ts("2020-06-21T14:23:44.125654"),
+                "microsec": ts("2020-06-21T14:23:44.123656"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW tsadd_ts1_legal AS SELECT
@@ -605,7 +614,7 @@ class illarg_tsadd_ts1_legal(TstView):
 class illarg_tsadd_datee_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"yr": "2022-06-21", "mth": "2020-08-21", "day": "2020-06-23"}]
+        self.data = [{"yr": d("2022-06-21"), "mth": d("2020-08-21"), "day": d("2020-06-23")}]
         self.sql = """CREATE MATERIALIZED VIEW tsadd_datee_legal AS SELECT
                       TIMESTAMPADD(YEAR, 2, datee) AS yr,
                       TIMESTAMPADD(MONTH, 2, datee) AS mth,
@@ -619,11 +628,11 @@ class illarg_tsadd_tme_legal(TstView):
         # checked manually
         self.data = [
             {
-                "hr": "16:23:44.456",
-                "min": "14:25:44.456",
-                "sec": "14:23:46.456",
-                "millisec": "14:23:44.458",
-                "microsec": "14:23:44.456002",
+                "hr":       t("16:23:44.456"),
+                "min":      t("14:25:44.456"),
+                "sec":      t("14:23:46.456"),
+                "millisec": t("14:23:44.458"),
+                "microsec": t("14:23:44.456002"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW tsadd_legal AS SELECT
@@ -684,7 +693,7 @@ class illarg_format_date_illegal(TstView):
 class illarg_parse_date_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"datee": "2021-01-20"}]
+        self.data = [{"datee": d("2021-01-20")}]
         self.sql = """CREATE MATERIALIZED VIEW parse_date_legal AS SELECT
                       PARSE_DATE('%Y-%m-%d', ARR[4]) AS datee
                       FROM illegal_tbl
@@ -716,7 +725,7 @@ class illarg_parse_datee_illegal1(TstView):
 class illarg_parse_ts_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"ts": "2020-10-01T00:00:00"}]
+        self.data = [{"ts": ts("2020-10-01T00:00:00.0")}]
         self.sql = """CREATE MATERIALIZED VIEW parse_ts_legal AS SELECT
                       PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', ARR[6]) AS ts
                       FROM illegal_tbl
@@ -748,7 +757,7 @@ class illarg_parse_ts_illegal1(TstView):
 class illarg_parse_tme_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"tme": "10:10:00"}]
+        self.data = [{"tme": t("10:10:00.0")}]
         self.sql = """CREATE MATERIALIZED VIEW parse_tme_legal AS SELECT
                       PARSE_TIME('%H:%M', ARR[5]) AS tme
                       FROM illegal_tbl

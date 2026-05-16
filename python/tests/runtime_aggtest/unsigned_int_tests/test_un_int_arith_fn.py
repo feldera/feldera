@@ -30,18 +30,18 @@ class un_int_acos(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("1.5707963267948966"),
-                "small_un_int": Decimal("1.5707963267948966"),
-                "un_intt": Decimal("1.5707963267948966"),
-                "big_un_int": Decimal("1.5707963267948966"),
+                "tiny_un_int": "1.5707963267948966",
+                "small_un_int": "1.5707963267948966",
+                "un_intt": "1.5707963267948966",
+                "big_un_int": "1.5707963267948966",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW acos_un_intt AS SELECT
                       id,
-                      ACOS(tiny_int) AS tiny_un_int,
-                      ACOS(small_int) AS small_un_int,
-                      ACOS(intt) AS un_intt,
-                      ACOS(big_int) AS big_un_int
+                      CAST(ACOS(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(ACOS(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(ACOS(intt) AS VARCHAR) AS un_intt,
+                      CAST(ACOS(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl1
                       WHERE id = 0"""
 
@@ -52,18 +52,18 @@ class un_int_acosh(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("2.8872709503576206"),
-                "small_un_int": Decimal("9.922505555965195"),
-                "un_intt": Decimal("21.552840542537893"),
-                "big_un_int": Decimal("44.08509906057516"),
+                "tiny_un_int": "2.8872709503576206",
+                "small_un_int": "9.922505555965195",
+                "un_intt": "21.552840542537893",
+                "big_un_int": "44.08509906057516",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW acosh_un_intt AS SELECT
                       id,
-                      ACOSH(tiny_int) AS tiny_un_int,
-                      ACOSH(small_int) AS small_un_int,
-                      ACOSH(intt) AS un_intt,
-                      ACOSH(big_int) AS big_un_int
+                      CAST(ACOSH(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(ACOSH(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(ACOSH(intt) AS VARCHAR) AS un_intt,
+                      CAST(ACOSH(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -73,18 +73,18 @@ class un_int_asin(TstView):
         self.data = [
             {
                 "id": 1,
-                "tiny_un_int": Decimal("1.5707963267948966"),
-                "small_un_int": Decimal("1.5707963267948966"),
-                "un_intt": Decimal("1.5707963267948966"),
-                "big_un_int": Decimal("1.5707963267948966"),
+                "tiny_un_int": "1.5707963267948966",
+                "small_un_int": "1.5707963267948966",
+                "un_intt": "1.5707963267948966",
+                "big_un_int": "1.5707963267948966",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW asin_un_intt AS SELECT
                       id,
-                      ASIN(tiny_int) AS tiny_un_int,
-                      ASIN(small_int) AS small_un_int,
-                      ASIN(intt) AS un_intt,
-                      ASIN(big_int) AS big_un_int
+                      CAST(ASIN(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(ASIN(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(ASIN(intt) AS VARCHAR) AS un_intt,
+                      CAST(ASIN(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl1
                       WHERE id = 1"""
 
@@ -95,18 +95,18 @@ class un_int_asinh(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("2.8934439858858716"),
-                "small_un_int": Decimal("9.922505560778585"),
-                "un_intt": Decimal("21.552840542537893"),
-                "big_un_int": Decimal("44.08509906057516"),
+                "tiny_un_int": "2.8934439858858716",
+                "small_un_int": "9.922505560778585",
+                "un_intt": "21.552840542537893",
+                "big_un_int": "44.08509906057516",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW asinh_un_intt AS SELECT
                       id,
-                      ASINH(tiny_int) AS tiny_un_int,
-                      ASINH(small_int) AS small_un_int,
-                      ASINH(intt) AS un_intt,
-                      ASINH(big_int) AS big_un_int
+                      CAST(ASINH(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(ASINH(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(ASINH(intt) AS VARCHAR) AS un_intt,
+                      CAST(ASINH(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -116,19 +116,19 @@ class un_int_atan(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("1.460139105621001"),
-                "small_un_int": Decimal("1.5706982106256668"),
-                "un_intt": Decimal("1.5707963259224271"),
-                "big_un_int": Decimal("1.5707963267948966"),
+                "tiny_un_int": "1.460139105621001",
+                "small_un_int": "1.5706982106256668",
+                "un_intt": "1.5707963259224271",
+                "big_un_int": "1.5707963267948966",
             }
         ]
 
         self.sql = """CREATE MATERIALIZED VIEW atan_un_intt AS SELECT
                       id,
-                      ATAN(tiny_int) AS tiny_un_int,
-                      ATAN(small_int) AS small_un_int,
-                      ATAN(intt) AS un_intt,
-                      ATAN(big_int) AS big_un_int
+                      CAST(ATAN(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(ATAN(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(ATAN(intt) AS VARCHAR) AS un_intt,
+                      CAST(ATAN(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -138,18 +138,18 @@ class un_int_cbrt(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("2.080083823051904"),
-                "small_un_int": Decimal("21.681357558087388"),
-                "un_intt": Decimal("1046.5257220023252"),
-                "big_un_int": Decimal("1912618.7992433792"),
+                "tiny_un_int": "2.080083823051904",
+                "small_un_int": "21.681357558087388",
+                "un_intt": "1046.5257220023252",
+                "big_un_int": "1912618.799243379",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cbrt_un_intt AS SELECT
                       id,
-                      CBRT(tiny_int) AS tiny_un_int,
-                      CBRT(small_int) AS small_un_int,
-                      CBRT(intt) AS un_intt,
-                      CBRT(big_int) AS big_un_int
+                      CAST(CBRT(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(CBRT(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(CBRT(intt) AS VARCHAR) AS un_intt,
+                      CAST(CBRT(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -159,18 +159,18 @@ class un_int_cos(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("-0.9111302618846769"),
-                "small_un_int": Decimal("0.7816859829714614"),
-                "un_intt": Decimal("-0.9355219612196043"),
-                "big_un_int": Decimal("-0.7925127445218715"),
+                "tiny_un_int": "-0.9111302618846769",
+                "small_un_int": "0.7816859829714614",
+                "un_intt": "-0.9355219612196043",
+                "big_un_int": "-0.7925127445218715",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cos_un_intt AS SELECT
                       id,
-                      COS(tiny_int) AS tiny_un_int,
-                      COS(small_int) AS small_un_int,
-                      COS(intt) AS un_intt,
-                      COS(big_int) AS big_un_int
+                      CAST(COS(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(COS(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(COS(intt) AS VARCHAR) AS un_intt,
+                      CAST(COS(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -181,18 +181,18 @@ class un_int_cosh(TstView):
         self.data = [
             {
                 "id": 1,
-                "tiny_un_int": Decimal("1.5430806348152437"),
-                "small_un_int": Decimal("1.5430806348152437"),
-                "un_intt": Decimal("1.5430806348152437"),
-                "big_un_int": Decimal("1.5430806348152437"),
+                "tiny_un_int": "1.5430806348152437",
+                "small_un_int": "1.5430806348152437",
+                "un_intt": "1.5430806348152437",
+                "big_un_int": "1.5430806348152437",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cosh_un_intt AS SELECT
                       id,
-                      COSH(tiny_int) AS tiny_un_int,
-                      COSH(small_int) AS small_un_int,
-                      COSH(intt) AS un_intt,
-                      COSH(big_int) AS big_un_int
+                      CAST(COSH(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(COSH(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(COSH(intt) AS VARCHAR) AS un_intt,
+                      CAST(COSH(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl1
                       WHERE id = 1"""
 
@@ -203,18 +203,18 @@ class un_int_degrees(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("515.662015617741"),
-                "small_un_int": Decimal("583958.5847973351"),
-                "un_intt": Decimal("65670807080.68737"),
-                "big_un_int": Decimal("4.00874003085199E+20"),
+                "tiny_un_int": "515.662015617741",
+                "small_un_int": "583958.5847973351",
+                "un_intt": "65670807080.68737",
+                "big_un_int": "4.00874003085199e20",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW degrees_un_intt AS SELECT
                       id,
-                      DEGREES(tiny_int) AS tiny_un_int,
-                      DEGREES(small_int) AS small_un_int,
-                      DEGREES(intt) AS un_intt,
-                      DEGREES(big_int) AS big_un_int
+                      CAST(DEGREES(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(DEGREES(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(DEGREES(intt) AS VARCHAR) AS un_intt,
+                      CAST(DEGREES(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -224,18 +224,18 @@ class un_int_exp(TstView):
         self.data = [
             {
                 "id": 1,
-                "tiny_un_int": Decimal("2.718281828459045"),
-                "small_un_int": Decimal("2.718281828459045"),
-                "un_intt": Decimal("2.718281828459045"),
-                "big_un_int": Decimal("2.718281828459045"),
+                "tiny_un_int": "2.718281828459045",
+                "small_un_int": "2.718281828459045",
+                "un_intt": "2.718281828459045",
+                "big_un_int": "2.718281828459045",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW exp_un_intt AS SELECT
                       id,
-                      EXP(tiny_int) AS tiny_un_int,
-                      EXP(small_int) AS small_un_int,
-                      EXP(intt) AS un_intt,
-                      EXP(big_int) AS big_un_int
+                      CAST(EXP(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(EXP(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(EXP(intt) AS VARCHAR) AS un_intt,
+                      CAST(EXP(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl1
                       WHERE id = 1"""
 
@@ -246,18 +246,18 @@ class un_int_ln(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("2.1972245773362196"),
-                "small_un_int": Decimal("9.229358377811945"),
-                "un_intt": Decimal("20.85969336197795"),
-                "big_un_int": Decimal("43.39195188001521"),
+                "tiny_un_int": "2.1972245773362196",
+                "small_un_int": "9.229358377811945",
+                "un_intt": "20.85969336197795",
+                "big_un_int": "43.39195188001521",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW ln_un_intt AS SELECT
                       id,
-                      LN(tiny_int) AS tiny_un_int,
-                      LN(small_int) AS small_un_int,
-                      LN(intt) AS un_intt,
-                      LN(big_int) AS big_un_int
+                      CAST(LN(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(LN(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(LN(intt) AS VARCHAR) AS un_intt,
+                      CAST(LN(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -267,18 +267,18 @@ class un_int_log(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("2.1972245773362196"),
-                "small_un_int": Decimal("9.229358377811945"),
-                "un_intt": Decimal("20.85969336197795"),
-                "big_un_int": Decimal("43.39195188001521"),
+                "tiny_un_int": "2.1972245773362196",
+                "small_un_int": "9.229358377811945",
+                "un_intt": "20.85969336197795",
+                "big_un_int": "43.39195188001521",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW log_un_intt AS SELECT
                       id,
-                      LOG(tiny_int) AS tiny_un_int,
-                      LOG(small_int) AS small_un_int,
-                      LOG(intt) AS un_intt,
-                      LOG(big_int) AS big_un_int
+                      CAST(LOG(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(LOG(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(LOG(intt) AS VARCHAR) AS un_intt,
+                      CAST(LOG(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -288,18 +288,18 @@ class un_int_log10(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("0.9542425094393249"),
-                "small_un_int": Decimal("4.008259414991275"),
-                "un_intt": Decimal("9.059249721300915"),
-                "big_un_int": Decimal("18.844885260502043"),
+                "tiny_un_int": "0.9542425094393249",
+                "small_un_int": "4.008259414991275",
+                "un_intt": "9.059249721300915",
+                "big_un_int": "18.844885260502043",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW log10_un_intt AS SELECT
                       id,
-                      LOG10(tiny_int) AS tiny_un_int,
-                      LOG10(small_int) AS small_un_int,
-                      LOG10(intt) AS un_intt,
-                      LOG10(big_int) AS big_un_int
+                      CAST(LOG10(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(LOG10(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(LOG10(intt) AS VARCHAR) AS un_intt,
+                      CAST(LOG10(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -309,18 +309,18 @@ class un_int_radians(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("0.15707963267948966"),
-                "small_un_int": Decimal("177.88395736326206"),
-                "un_intt": Decimal("20004471.8082297"),
-                "big_un_int": Decimal("1.2211320447938237E+17"),
+                "tiny_un_int": "0.15707963267948966",
+                "small_un_int": "177.88395736326206",
+                "un_intt": "20004471.8082297",
+                "big_un_int": "1.2211320447938237e17",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW radians_un_intt AS SELECT
                       id,
-                      RADIANS(tiny_int) AS tiny_un_int,
-                      RADIANS(small_int) AS small_un_int,
-                      RADIANS(intt) AS un_intt,
-                      RADIANS(big_int) AS big_un_int
+                      CAST(RADIANS(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(RADIANS(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(RADIANS(intt) AS VARCHAR) AS un_intt,
+                      CAST(RADIANS(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -330,18 +330,18 @@ class un_int_sin(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("0.4121184852417566"),
-                "small_un_int": Decimal("0.6236722087971696"),
-                "un_intt": Decimal("-0.3532685381913101"),
-                "big_un_int": Decimal("0.6098553515141201"),
+                "tiny_un_int": "0.4121184852417566",
+                "small_un_int": "0.6236722087971696",
+                "un_intt": "-0.3532685381913101",
+                "big_un_int": "0.6098553515141201",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW sin_un_intt AS SELECT
                       id,
-                      SIN(tiny_int) AS tiny_un_int,
-                      SIN(small_int) AS small_un_int,
-                      SIN(intt) AS un_intt,
-                      SIN(big_int) AS big_un_int
+                      CAST(SIN(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(SIN(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(SIN(intt) AS VARCHAR) AS un_intt,
+                      CAST(SIN(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -351,18 +351,18 @@ class un_int_sinh(TstView):
         self.data = [
             {
                 "id": 1,
-                "tiny_un_int": Decimal("1.1752011936438014"),
-                "small_un_int": Decimal("1.1752011936438014"),
-                "un_intt": Decimal("1.1752011936438014"),
-                "big_un_int": Decimal("1.1752011936438014"),
+                "tiny_un_int": "1.1752011936438014",
+                "small_un_int": "1.1752011936438014",
+                "un_intt": "1.1752011936438014",
+                "big_un_int": "1.1752011936438014",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW sinh_un_intt AS SELECT
                       id,
-                      SINH(tiny_int) AS tiny_un_int,
-                      SINH(small_int) AS small_un_int,
-                      SINH(intt) AS un_intt,
-                      SINH(big_int) AS big_un_int
+                      CAST(SINH(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(SINH(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(SINH(intt) AS VARCHAR) AS un_intt,
+                      CAST(SINH(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl1
                       WHERE id = 1"""
 
@@ -373,18 +373,18 @@ class un_int_sqrt(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("3.0"),
-                "small_un_int": Decimal("100.9554357129917"),
-                "un_intt": Decimal("33855.159222783164"),
-                "big_un_int": Decimal("2645103256.866663"),
+                "tiny_un_int": "3.0",
+                "small_un_int": "100.9554357129917",
+                "un_intt": "33855.159222783164",
+                "big_un_int": "2645103256.866663",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW sqrt_un_intt AS SELECT
                       id,
-                      SQRT(tiny_int) AS tiny_un_int,
-                      SQRT(small_int) AS small_un_int,
-                      SQRT(intt) AS un_intt,
-                      SQRT(big_int) AS big_un_int
+                      CAST(SQRT(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(SQRT(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(SQRT(intt) AS VARCHAR) AS un_intt,
+                      CAST(SQRT(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -394,18 +394,18 @@ class un_int_tan(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("-0.4523156594418099"),
-                "small_un_int": Decimal("0.7978551776333174"),
-                "un_intt": Decimal("0.3776165101787321"),
-                "big_un_int": Decimal("-0.7695211915892282"),
+                "tiny_un_int": "-0.45231565944180985",
+                "small_un_int": "0.7978551776333173",
+                "un_intt": "0.37761651017873205",
+                "big_un_int": "-0.7695211915892282",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW tan_un_intt AS SELECT
                       id,
-                      TAN(tiny_int) AS tiny_un_int,
-                      TAN(small_int) AS small_un_int,
-                      TAN(intt) AS un_intt,
-                      TAN(big_int) AS big_un_int
+                      CAST(TAN(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(TAN(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(TAN(intt) AS VARCHAR) AS un_intt,
+                      CAST(TAN(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -415,18 +415,18 @@ class un_int_atan2(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("1.3521273809209546"),
-                "small_un_int": Decimal("1.5706000944583258"),
-                "un_intt": Decimal("1.5707963250499575"),
-                "big_un_int": Decimal("1.5707963267948966"),
+                "tiny_un_int": "1.3521273809209546",
+                "small_un_int": "1.5706000944583258",
+                "un_intt": "1.5707963250499575",
+                "big_un_int": "1.5707963267948966",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW atan2_un_intt AS SELECT
                       id,
-                      ATAN2(tiny_int, 2) AS tiny_un_int,
-                      ATAN2(small_int, 2) AS small_un_int,
-                      ATAN2(intt, 2) AS un_intt,
-                      ATAN2(big_int, 2) AS big_un_int
+                      CAST(ATAN2(tiny_int, 2) AS VARCHAR) AS tiny_un_int,
+                      CAST(ATAN2(small_int, 2) AS VARCHAR) AS small_un_int,
+                      CAST(ATAN2(intt, 2) AS VARCHAR) AS un_intt,
+                      CAST(ATAN2(big_int, 2) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -436,18 +436,18 @@ class un_int_power(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("81.0"),
-                "small_un_int": Decimal("103876864.0"),
-                "un_intt": Decimal("1.3137098088693018E+18"),
-                "big_un_int": Decimal("4.895200910921146E+37"),
+                "tiny_un_int": "81.0",
+                "small_un_int": "103876864.0",
+                "un_intt": "1.3137098088693018e18",
+                "big_un_int": "4.895200910921146e37",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW power_un_intt AS SELECT
                       id,
-                      POWER(tiny_int, 2) AS tiny_un_int,
-                      POWER(small_int, 2) AS small_un_int,
-                      POWER(intt, 2) AS un_intt,
-                      POWER(big_int, 2) AS big_un_int
+                      CAST(POWER(tiny_int, 2) AS VARCHAR) AS tiny_un_int,
+                      CAST(POWER(small_int, 2) AS VARCHAR) AS small_un_int,
+                      CAST(POWER(intt, 2) AS VARCHAR) AS un_intt,
+                      CAST(POWER(big_int, 2) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -623,18 +623,18 @@ class un_int_cot(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("-2.2108454109991946"),
-                "small_un_int": Decimal("1.2533602939900772"),
-                "un_intt": Decimal("2.648189295342737"),
-                "big_un_int": Decimal("-1.299509371450555"),
+                "tiny_un_int": "-2.210845410999195",
+                "small_un_int": "1.2533602939900774",
+                "un_intt": "2.6481892953427373",
+                "big_un_int": "-1.299509371450555",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cot_un_intt AS SELECT
                       id,
-                      COT(tiny_int) AS tiny_un_int,
-                      COT(small_int) AS small_un_int,
-                      COT(intt) AS un_intt,
-                      COT(big_int) AS big_un_int
+                      CAST(COT(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(COT(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(COT(intt) AS VARCHAR) AS un_intt,
+                      CAST(COT(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -644,18 +644,18 @@ class un_int_coth(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("1.0000000304599599"),
-                "small_un_int": Decimal("1.0"),
-                "un_intt": Decimal("1.0"),
-                "big_un_int": Decimal("1.0"),
+                "tiny_un_int": "1.0000000304599599",
+                "small_un_int": "1.0",
+                "un_intt": "1.0",
+                "big_un_int": "1.0",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW coth_un_intt AS SELECT
                       id,
-                      COTH(tiny_int) AS tiny_un_int,
-                      COTH(small_int) AS small_un_int,
-                      COTH(intt) AS un_intt,
-                      COTH(big_int) AS big_un_int
+                      CAST(COTH(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(COTH(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(COTH(intt) AS VARCHAR) AS un_intt,
+                      CAST(COTH(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -665,18 +665,18 @@ class un_int_csc(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("2.426486643551989"),
-                "small_un_int": Decimal("1.6034063822222029"),
-                "un_intt": Decimal("-2.8307077814511095"),
-                "big_un_int": Decimal("1.6397330900142915"),
+                "tiny_un_int": "2.426486643551989",
+                "small_un_int": "1.6034063822222029",
+                "un_intt": "-2.8307077814511095",
+                "big_un_int": "1.6397330900142915",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW csc_un_intt AS SELECT
                       id,
-                      CSC(tiny_int) AS tiny_un_int,
-                      CSC(small_int) AS small_un_int,
-                      CSC(intt) AS un_intt,
-                      CSC(big_int) AS big_un_int
+                      CAST(CSC(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(CSC(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(CSC(intt) AS VARCHAR) AS un_intt,
+                      CAST(CSC(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -686,18 +686,18 @@ class un_int_csch(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("0.0002468196119324168"),
-                "small_un_int": Decimal("0.0"),
-                "un_intt": Decimal("0.0"),
-                "big_un_int": Decimal("0.0"),
+                "tiny_un_int": "0.0002468196119324168",
+                "small_un_int": "0.0",
+                "un_intt": "0.0",
+                "big_un_int": "0.0",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW csch_un_intt AS SELECT
                       id,
-                      CSCH(tiny_int) AS tiny_un_int,
-                      CSCH(small_int) AS small_un_int,
-                      CSCH(intt) AS un_intt,
-                      CSCH(big_int) AS big_un_int
+                      CAST(CSCH(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(CSCH(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(CSCH(intt) AS VARCHAR) AS un_intt,
+                      CAST(CSCH(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -707,18 +707,18 @@ class un_int_sec(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("-1.097537906304962"),
-                "small_un_int": Decimal("1.2792860839062903"),
-                "un_intt": Decimal("-1.068921993767349"),
-                "big_un_int": Decimal("-1.2618093613160846"),
+                "tiny_un_int": "-1.097537906304962",
+                "small_un_int": "1.2792860839062903",
+                "un_intt": "-1.068921993767349",
+                "big_un_int": "-1.2618093613160846",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW sec_un_intt AS SELECT
                       id,
-                      SEC(tiny_int) AS tiny_un_int,
-                      SEC(small_int) AS small_un_int,
-                      SEC(intt) AS un_intt,
-                      SEC(big_int) AS big_un_int
+                      CAST(SEC(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(SEC(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(SEC(intt) AS VARCHAR) AS un_intt,
+                      CAST(SEC(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 
@@ -728,18 +728,18 @@ class un_int_sech(TstView):
         self.data = [
             {
                 "id": 0,
-                "tiny_un_int": Decimal("0.00024681960441430155"),
-                "small_un_int": Decimal("0.0"),
-                "un_intt": Decimal("0.0"),
-                "big_un_int": Decimal("0.0"),
+                "tiny_un_int": "0.0002468196044143015",
+                "small_un_int": "0.0",
+                "un_intt": "0.0",
+                "big_un_int": "0.0",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW sech_un_intt AS SELECT
                       id,
-                      SECH(tiny_int) AS tiny_un_int,
-                      SECH(small_int) AS small_un_int,
-                      SECH(intt) AS un_intt,
-                      SECH(big_int) AS big_un_int
+                      CAST(SECH(tiny_int) AS VARCHAR) AS tiny_un_int,
+                      CAST(SECH(small_int) AS VARCHAR) AS small_un_int,
+                      CAST(SECH(intt) AS VARCHAR) AS un_intt,
+                      CAST(SECH(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl"""
 
 

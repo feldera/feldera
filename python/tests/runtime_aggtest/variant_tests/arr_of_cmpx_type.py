@@ -58,8 +58,8 @@ class varnttst_read_arr_of_cmpx(TstView):
                     ['"are you okay,"', '"mate?"'],
                 ],
                 "arr_map": [
-                    {'"p"': '"12 friends"', '"q"': '"paint on"'},
-                    {'"r"': '"48 canvases"', '"s"': '"each!?"'},
+                    [('"p"', '"12 friends"'), ('"q"', '"paint on"')],
+                    [('"r"', '"48 canvases"'), ('"s"', '"each!?"')],
                 ],
                 "arr_row": [
                     {"v1": '"345"', "v2": '"bye"'},
@@ -80,7 +80,7 @@ class varnttst_read_arr_of_cmpx(TstView):
             {
                 "id": 2,
                 "arr_arr": [[None, None], [None]],
-                "arr_map": [{'"p"': None, '"q"': None}, {'"r"': None, '"s"': None}],
+                "arr_map": [[('"p"', None), ('"q"', None)], [('"r"', None), ('"s"', None)]],
                 "arr_row": [{"v1": None, "v2": None}, {"v1": None, "v2": None}],
                 "arr_udt": [{"v1": None, "v2": None}, {"v1": None, "v2": None}],
             },
@@ -177,12 +177,12 @@ class varnttst_arr_of_map_unnest_varnt(TstView):
         self.data = [
             {
                 "id": 0,
-                "map_val": {'"p"': '"12 friends"', '"q"': '"paint on"'},
+                "map_val": [('"p"', '"12 friends"'), ('"q"', '"paint on"')],
                 "idx": 1,
             },
-            {"id": 0, "map_val": {'"r"': '"48 canvases"', '"s"': '"each!?"'}, "idx": 2},
-            {"id": 2, "map_val": {'"p"': None, '"q"': None}, "idx": 1},
-            {"id": 2, "map_val": {'"r"': None, '"s"': None}, "idx": 2},
+            {"id": 0, "map_val": [('"r"', '"48 canvases"'), ('"s"', '"each!?"')], "idx": 2},
+            {"id": 2, "map_val": [('"p"', None), ('"q"', None)], "idx": 1},
+            {"id": 2, "map_val": [('"r"', None), ('"s"', None)], "idx": 2},
         ]
         self.sql = """CREATE MATERIALIZED VIEW arr_of_map_unnest_varnt AS SELECT
                       id,  map_val, idx
@@ -196,14 +196,14 @@ class varnttst_arr_of_map_field_access_varnt(TstView):
         self.data = [
             {
                 "id": 0,
-                "arr_map1": {'"p"': '"12 friends"', '"q"': '"paint on"'},
-                "arr_map2": {'"r"': '"48 canvases"', '"s"': '"each!?"'},
+                "arr_map1": [('"p"', '"12 friends"'), ('"q"', '"paint on"')],
+                "arr_map2": [('"r"', '"48 canvases"'), ('"s"', '"each!?"')],
             },
             {"id": 1, "arr_map1": None, "arr_map2": None},
             {
                 "id": 2,
-                "arr_map1": {'"p"': None, '"q"': None},
-                "arr_map2": {'"r"': None, '"s"': None},
+                "arr_map1": [('"p"', None), ('"q"', None)],
+                "arr_map2": [('"r"', None), ('"s"', None)],
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW arr_of_map_field_access_varnt AS SELECT

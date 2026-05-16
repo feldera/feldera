@@ -49,7 +49,7 @@ class varnttst_read_udt_of_cmpx(TstView):
             {
                 "id": 0,
                 "udt_arr": {"arr_vnt": ['"45, 62"', '"bye, bye, friends!!"']},
-                "udt_map": {"map_vnt": {'"c"': '"sayonara,"', '"d"': '"everyone!"'}},
+                "udt_map": {"map_vnt": [('"c"', '"sayonara,"'), ('"d"', '"everyone!"')]},
                 "udt_row": {"row_vnt": {"v1": '"24, 25"', "v2": '"adios"'}},
                 "udt_udt": {"udt_vnt": {"v1": '"are you"', "v2": '"alright, mate?"'}},
             },
@@ -63,7 +63,7 @@ class varnttst_read_udt_of_cmpx(TstView):
             {
                 "id": 2,
                 "udt_arr": {"arr_vnt": [None]},
-                "udt_map": {"map_vnt": {'"c"': None, '"d"': None}},
+                "udt_map": {"map_vnt": [('"c"', None), ('"d"', None)]},
                 "udt_row": {"row_vnt": {"v1": "null", "v2": "null"}},
                 "udt_udt": {"udt_vnt": {"v1": None, "v2": None}},
             },
@@ -143,14 +143,14 @@ class varnttst_udt_of_map_field_access_varnt(TstView):
         self.data = [
             {
                 "id": 0,
-                "udt_map1": {'"c"': '"sayonara,"', '"d"': '"everyone!"'},
-                "map_vnt": {'"c"': '"sayonara,"', '"d"': '"everyone!"'},
+                "udt_map1": [('"c"', '"sayonara,"'), ('"d"', '"everyone!"')],
+                "map_vnt": [('"c"', '"sayonara,"'), ('"d"', '"everyone!"')],
             },
             {"id": 1, "udt_map1": None, "map_vnt": None},
             {
                 "id": 2,
-                "udt_map1": {'"c"': None, '"d"': None},
-                "map_vnt": {'"c"': None, '"d"': None},
+                "udt_map1": [('"c"', None), ('"d"', None)],
+                "map_vnt": [('"c"', None), ('"d"', None)],
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW udt_of_map_field_access_varnt AS SELECT

@@ -1,5 +1,8 @@
 from tests.runtime_aggtest.aggtst_base import TstView
+import pyarrow as pa
 
+def mkmap(d):
+    return pa.array(d, type=pa.map_(pa.string(), pa.int64())).to_pylist()
 
 class aggtst_array_arr_agg_value(TstView):
     def __init__(self):
@@ -8,7 +11,7 @@ class aggtst_array_arr_agg_value(TstView):
             {
                 "c1": [[12, 22], [23, 56, 16], [23, 56, 16], [49]],
                 "c2": [None, [55, 66, None], [99], [32, 34, 22, 12]],
-                "c3": [[{"a": 5, "b": 66}], [{"c": 2}], None, [{"x": 1}]],
+                "c3": [mkmap([{"a": 5, "b": 66}]), mkmap([{"c": 2}]), None, mkmap([{"x": 1}])],
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW array_arr_agg AS SELECT
@@ -24,13 +27,13 @@ class aggtst_array_arr_agg_gby(TstView):
                 "id": 0,
                 "c1": [[12, 22], [23, 56, 16]],
                 "c2": [None, [55, 66, None]],
-                "c3": [[{"a": 5, "b": 66}], [{"c": 2}]],
+                "c3": [mkmap([{"a": 5, "b": 66}]), mkmap([{"c": 2}])],
             },
             {
                 "id": 1,
                 "c1": [[23, 56, 16], [49]],
                 "c2": [[99], [32, 34, 22, 12]],
-                "c3": [None, [{"x": 1}]],
+                "c3": [None, mkmap([{"x": 1}])],
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW array_arr_agg_gby AS SELECT
@@ -46,7 +49,7 @@ class aggtst_array_arr_agg_distinct(TstView):
             {
                 "c1": [[12, 22], [23, 56, 16], [49]],
                 "c2": [None, [32, 34, 22, 12], [55, 66, None], [99]],
-                "c3": [None, [{"a": 5, "b": 66}], [{"c": 2}], [{"x": 1}]],
+                "c3": [None, mkmap([{"a": 5, "b": 66}]), mkmap([{"c": 2}]), mkmap([{"x": 1}])],
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW array_arr_agg_distinct AS SELECT
@@ -62,13 +65,13 @@ class aggtst_array_arr_agg_distinct_gby(TstView):
                 "id": 0,
                 "c1": [[12, 22], [23, 56, 16]],
                 "c2": [None, [55, 66, None]],
-                "c3": [[{"a": 5, "b": 66}], [{"c": 2}]],
+                "c3": [mkmap([{"a": 5, "b": 66}]), mkmap([{"c": 2}])],
             },
             {
                 "id": 1,
                 "c1": [[23, 56, 16], [49]],
                 "c2": [[32, 34, 22, 12], [99]],
-                "c3": [None, [{"x": 1}]],
+                "c3": [None, mkmap([{"x": 1}])],
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW array_arr_agg_distinct_gby AS SELECT
@@ -84,7 +87,7 @@ class aggtst_array_arr_agg_where(TstView):
             {
                 "f_c1": [[23, 56, 16], [23, 56, 16]],
                 "f_c2": [[55, 66, None], [99]],
-                "f_c3": [[{"c": 2}], None],
+                "f_c3": [mkmap([{"c": 2}]), None],
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW array_arr_agg_where AS SELECT
@@ -100,7 +103,7 @@ class aggtst_array_arr_agg_where_gby(TstView):
                 "id": 0,
                 "f_c1": [[23, 56, 16]],
                 "f_c2": [[55, 66, None]],
-                "f_c3": [[{"c": 2}]],
+                "f_c3": [mkmap([{"c": 2}])],
             },
             {"id": 1, "f_c1": [[23, 56, 16]], "f_c2": [[99]], "f_c3": [None]},
         ]

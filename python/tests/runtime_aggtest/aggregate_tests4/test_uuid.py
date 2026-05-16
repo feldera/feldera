@@ -85,10 +85,10 @@ class aggtst_uuid_to_binary(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"id": 0, "c1_bin": "72", "c2_bin": "859d5430c3e14544b107b888582902e2"},
-            {"id": 0, "c1_bin": "ba", "c2_bin": "cd88e41a6ffb4aaf826eefffdedf3c31"},
-            {"id": 1, "c1_bin": "29", "c2_bin": "9a6b78db668a4507b5b51f164e6f1eba"},
-            {"id": 1, "c1_bin": "8b", "c2_bin": "42b8fec7c7a3453196114bde80f9cb4c"},
+            {"id": 0, "c1_bin": bytes.fromhex("72"), "c2_bin": bytes.fromhex("859d5430c3e14544b107b888582902e2")},
+            {"id": 0, "c1_bin": bytes.fromhex("ba"), "c2_bin": bytes.fromhex("cd88e41a6ffb4aaf826eefffdedf3c31")},
+            {"id": 1, "c1_bin": bytes.fromhex("29"), "c2_bin": bytes.fromhex("9a6b78db668a4507b5b51f164e6f1eba")},
+            {"id": 1, "c1_bin": bytes.fromhex("8b"), "c2_bin": bytes.fromhex("42b8fec7c7a3453196114bde80f9cb4c")},
         ]
         self.sql = """CREATE MATERIALIZED VIEW uuid_to_binary AS SELECT
                       id,
@@ -103,23 +103,23 @@ class aggtst_uuid_to_varbinary(TstView):
         self.data = [
             {
                 "id": 0,
-                "c1_vbin": "724b11b75a714d18b241299f82d9b403",
-                "c2_vbin": "859d5430c3e14544b107b888582902e2",
+                "c1_vbin": bytes.fromhex("724b11b75a714d18b241299f82d9b403"),
+                "c2_vbin": bytes.fromhex("859d5430c3e14544b107b888582902e2"),
             },
             {
                 "id": 0,
-                "c1_vbin": "ba15a45fe4794fa7a45eb73e3d03436b",
-                "c2_vbin": "cd88e41a6ffb4aaf826eefffdedf3c31",
+                "c1_vbin": bytes.fromhex("ba15a45fe4794fa7a45eb73e3d03436b"),
+                "c2_vbin": bytes.fromhex("cd88e41a6ffb4aaf826eefffdedf3c31"),
             },
             {
                 "id": 1,
-                "c1_vbin": "2976a23e788c419ebe564fb1f1013761",
-                "c2_vbin": "9a6b78db668a4507b5b51f164e6f1eba",
+                "c1_vbin": bytes.fromhex("2976a23e788c419ebe564fb1f1013761"),
+                "c2_vbin": bytes.fromhex("9a6b78db668a4507b5b51f164e6f1eba"),
             },
             {
                 "id": 1,
-                "c1_vbin": "8bad7a167c4d490a9f9750c51e7990ec",
-                "c2_vbin": "42b8fec7c7a3453196114bde80f9cb4c",
+                "c1_vbin": bytes.fromhex("8bad7a167c4d490a9f9750c51e7990ec"),
+                "c2_vbin": bytes.fromhex("42b8fec7c7a3453196114bde80f9cb4c"),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW uuid_to_varbinary AS SELECT

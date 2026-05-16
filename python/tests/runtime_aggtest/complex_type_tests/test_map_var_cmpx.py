@@ -1,11 +1,53 @@
 from tests.runtime_aggtest.aggtst_base import TstView
-from test_map_tbl import map_var_cmpx_tbl_data
-
 
 class cmpxtst_map_var_cmpx_v(TstView):
     def __init__(self):
-        # checked manually
-        self.data = map_var_cmpx_tbl_data
+        self.data = [
+            {
+                "id": 0,
+                "arr": [("a", ["hello", "bye"]), ("b", ["see you"])],
+                "arr1": [("a", ["hi"])],
+                "mapp": [("a", [("a", 12)]), ("b", [("b", 17)])],
+                "mapp1": [("x", [("y", 1)])],
+                "roww": [("a", {"i1": 4, "v1": "cat"}), ("b", {"i1": 7, "v1": "dog"})],
+                "roww1": [("a", {"i1": None, "v1": "ok"})],
+                "udt": [("a", {"i1": 4, "v1": "cat"})],
+                "udt1": [("a", {"i1": None, "v1": "dog"})],
+            },
+            {
+                "id": 1,
+                "arr": [("a", [None, "bye"]), ("b", None)],
+                "arr1": [("a", [])],
+                "mapp": [("a", None), ("b", [("b", None)])],
+                "mapp1": [("a", [("b", None)])],
+                "roww": [("a", None), ("b", {"i1": 5, "v1": None})],
+                "roww1": [("a", {"i1": None, "v1": "x"})],
+                "udt": [("a", None), ("b", {"i1": 3, "v1": None})],
+                "udt1": [("a", {"i1": None, "v1": "y"})],
+            },
+            {
+                "id": 2,
+                "arr": [("a", ["x", None])],
+                "arr1": [("a", ["z"])],
+                "mapp": [("a", [("x", 1)])],
+                "mapp1": [("a", [("x", None)])],
+                "roww": [("a", {"i1": 1, "v1": None})],
+                "roww1": [("a", {"i1": None, "v1": "valid"})],
+                "udt": [("a", {"i1": 9, "v1": None})],
+                "udt1": [("a", {"i1": None, "v1": "valid"})],
+            },
+            {
+                "id": 3,
+                "arr": None,
+                "mapp": None,
+                "roww": None,
+                "udt": None,
+                "arr1": [],
+                "mapp1": [],
+                "roww1": [],
+                "udt1": [],
+            },
+        ]
         self.sql = """CREATE MATERIALIZED VIEW map_var_cmpx_v AS SELECT
                       *
                       FROM map_var_cmpx_tbl"""
@@ -96,23 +138,23 @@ class cmpxtst_map_var_mapp_field_access(TstView):
         self.data = [
             {
                 "id": 0,
-                "mapp_a": {"a": 12},
-                "mapp_b": {"b": 17},
+                "mapp_a": [("a", 12)],
+                "mapp_b": [("b", 17)],
                 "mapp_a1": None,
-                "mapp_x1": {"y": 1},
+                "mapp_x1": [("y", 1)],
             },
             {
                 "id": 1,
                 "mapp_a": None,
-                "mapp_b": {"b": None},
-                "mapp_a1": {"b": None},
+                "mapp_b": [("b", None)],
+                "mapp_a1": [("b", None)],
                 "mapp_x1": None,
             },
             {
                 "id": 2,
-                "mapp_a": {"x": 1},
+                "mapp_a": [("x", 1)],
                 "mapp_b": None,
-                "mapp_a1": {"x": None},
+                "mapp_a1": [("x", None)],
                 "mapp_x1": None,
             },
             {"id": 3, "mapp_a": None, "mapp_b": None, "mapp_a1": None, "mapp_x1": None},
