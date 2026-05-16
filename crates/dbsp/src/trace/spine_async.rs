@@ -1945,7 +1945,14 @@ where
         let backend = Runtime::storage_backend().unwrap();
         let committed: CommittedSpine = (ids, self as &Self).into();
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
-        backend.write(&Self::checkpoint_file(base, persistent_id), as_bytes)?;
+        // Push the pspine state file committer into the shared list so the
+        // checkpoint commit phase calls `.commit()` on it. Otherwise the
+        // file is fsynced inside `complete()` but never explicitly
+        // committed alongside the rest of the checkpoint, leaving its
+        // durability guarantee tied to the implementation detail.
+        let pspine_writer =
+            backend.write(&Self::checkpoint_file(base, persistent_id), as_bytes)?;
+        files.push(pspine_writer);
 
         // Write the batches as a separate file, this allows to parse it
         // in `Checkpointer` without the need to know the exact Spine type.

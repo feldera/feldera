@@ -212,9 +212,11 @@ impl Checkpointer {
         processed_records: Option<u64>,
     ) -> Result<CheckpointMetadata, Error> {
         // Write marker file to ensure that this directory is detected as a
-        // checkpoint.
+        // checkpoint. Explicitly commit it so the durability guarantee
+        // does not depend on the implicit fsync inside `complete()`.
         self.backend
-            .write(&Self::checkpoint_dir(uuid).child("CHECKPOINT"), FBuf::new())?;
+            .write(&Self::checkpoint_dir(uuid).child("CHECKPOINT"), FBuf::new())
+            .and_then(|reader| reader.commit())?;
 
         let mut md = CheckpointMetadata {
             uuid,
