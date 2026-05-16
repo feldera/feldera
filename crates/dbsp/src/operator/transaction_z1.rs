@@ -1,6 +1,7 @@
 use std::{borrow::Cow, sync::Arc};
 
 use feldera_storage::{FileCommitter, StoragePath};
+use rkyv::bytecheck;
 use size_of::SizeOf;
 
 use crate::{
@@ -45,6 +46,7 @@ pub struct TransactionZ1<T> {
 }
 
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
+#[archive_attr(derive(rkyv::CheckBytes))]
 pub struct CommittedTransactionZ1 {
     old_value: Vec<u8>,
     new_value: Vec<u8>,
@@ -143,7 +145,13 @@ where
 
         let z1_path = Self::checkpoint_file(base, persistent_id);
         let content = Runtime::storage_backend().unwrap().read(&z1_path)?;
-        let committed = unsafe { rkyv::archived_root::<CommittedTransactionZ1>(&content) };
+        let committed =
+            rkyv::check_archived_root::<CommittedTransactionZ1>(&content).map_err(|e| {
+                crate::circuit::checkpointer::checkpoint_invalid_data_error(
+                    "Transaction Z1 checkpoint validation failed",
+                    format!("{z1_path}: {e}"),
+                )
+            })?;
 
         let mut old_value = self.zero.clone();
         let mut new_value = self.zero.clone();

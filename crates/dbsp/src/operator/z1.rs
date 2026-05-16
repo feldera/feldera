@@ -19,6 +19,7 @@ use crate::{
     storage::file::to_bytes,
 };
 use feldera_storage::{FileCommitter, StoragePath};
+use rkyv::bytecheck;
 use size_of::{Context, SizeOf};
 use std::sync::Arc;
 use std::{borrow::Cow, mem::replace};
@@ -226,6 +227,7 @@ pub struct Z1<T> {
 }
 
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
+#[archive_attr(derive(rkyv::CheckBytes))]
 pub struct CommittedZ1 {
     values: Vec<u8>,
 }
@@ -327,7 +329,12 @@ where
 
         let z1_path = Self::checkpoint_file(base, persistent_id);
         let content = Runtime::storage_backend().unwrap().read(&z1_path)?;
-        let committed = unsafe { rkyv::archived_root::<CommittedZ1>(&content) };
+        let committed = rkyv::check_archived_root::<CommittedZ1>(&content).map_err(|e| {
+            crate::circuit::checkpointer::checkpoint_invalid_data_error(
+                "Z1 checkpoint validation failed",
+                format!("{z1_path}: {e}"),
+            )
+        })?;
 
         let mut values = self.zero.clone();
         values.restore(committed.values.as_slice())?;
@@ -615,6 +622,27 @@ mod test {
         circuit::operator_traits::{Operator, StrictOperator, StrictUnaryOperator, UnaryOperator},
         operator::{Z1, Z1Nested},
     };
+
+    use super::CommittedZ1;
+
+    /// Garbage bytes must surface as a structured error from
+    /// `check_archived_root`, never as a panic or undefined behavior.
+    /// This is the rkyv layer that `Z1::restore` relies on after the fix.
+    #[test]
+    fn rkyv_validation_rejects_corrupt_z1_bytes() {
+        let mut bytes = vec![0u8; 64];
+        for (i, b) in bytes.iter_mut().enumerate() {
+            *b = (i as u8).wrapping_mul(31).wrapping_add(7);
+        }
+        let result = std::panic::catch_unwind(|| {
+            rkyv::check_archived_root::<CommittedZ1>(&bytes).map(|_| ()).err()
+        });
+        match result {
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("check_archived_root accepted garbage as valid CommittedZ1"),
+            Err(_) => panic!("check_archived_root panicked on garbage input"),
+        }
+    }
 
     #[tokio::test]
     async fn z1_test() {

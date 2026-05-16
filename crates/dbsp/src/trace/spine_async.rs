@@ -1963,17 +1963,33 @@ where
         let pspine_path = Self::checkpoint_file(base, persistent_id);
 
         let content = Runtime::storage_backend().unwrap().read(&pspine_path)?;
-        let archived = unsafe { rkyv::archived_root::<CommittedSpine>(&content) };
+        let archived = rkyv::check_archived_root::<CommittedSpine>(&content).map_err(|e| {
+            crate::circuit::checkpointer::checkpoint_invalid_data_error(
+                "Spine checkpoint validation failed",
+                format!("{pspine_path}: {e}"),
+            )
+        })?;
 
-        let committed: CommittedSpine = archived.deserialize(&mut Deserializer::default()).unwrap();
+        let committed: CommittedSpine = archived
+            .deserialize(&mut Deserializer::default())
+            .map_err(|e| {
+                crate::circuit::checkpointer::checkpoint_invalid_data_error(
+                    "Spine checkpoint deserialize failed",
+                    format!("{pspine_path}: {e:?}"),
+                )
+            })?;
         self.dirty = committed.dirty;
         self.key_filter = None;
         self.value_filter = None;
         for batch in committed.batches {
-            let batch = B::from_path(&self.factories.clone(), &batch.clone().into())
-                .unwrap_or_else(|error| {
-                    panic!("Failed to read batch {batch} for checkpoint ({error}).")
-                });
+            let batch = B::from_path(&self.factories.clone(), &batch.clone().into()).map_err(
+                |error| {
+                    crate::circuit::checkpointer::checkpoint_invalid_data_error(
+                        "Spine batch read failed",
+                        format!("{batch}: {error}"),
+                    )
+                },
+            )?;
             self.insert_without_blocking(batch);
         }
 
