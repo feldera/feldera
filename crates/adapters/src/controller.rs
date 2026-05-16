@@ -7985,7 +7985,7 @@ impl RunningCheckpoint {
                 .map(|c| c.uuid())
                 .collect::<HashSet<_>>(),
         ) {
-            warn!("error removing old checkpoints: {error}");
+            error!("error removing old checkpoints: {error}");
         }
 
         if let Some(ft) = &mut circuit.ft
