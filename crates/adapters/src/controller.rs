@@ -3409,7 +3409,12 @@ impl CircuitThread {
             warn!("checkpoint failed: {error}");
         }
 
-        // Update the coordinator.
+        // Update the coordinator and, on success, advance the checkpointed-step
+        // counter so that connectors blocking on `checkpoint_watcher()` can
+        // release their pending acknowledgments.
+        if let Ok(checkpoint) = &result {
+            self.controller.status.notify_checkpoint(checkpoint.step);
+        }
         self.set_checkpoint_coordination(Some(match &result {
             Ok(_) => CheckpointCoordination::Done,
             Err(error) => CheckpointCoordination::Error(error.to_string()),
@@ -7684,6 +7689,21 @@ impl InputConsumer for InputProbe {
 
     fn completion_watcher(&self) -> Option<tokio::sync::watch::Receiver<Completion>> {
         Some(self.controller.status.completion_notifier.subscribe())
+    }
+
+    fn checkpoint_watcher(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
+        if self
+            .controller
+            .status
+            .pipeline_config
+            .global
+            .fault_tolerance
+            .is_enabled()
+        {
+            Some(self.controller.status.checkpoint_notifier.subscribe())
+        } else {
+            None
+        }
     }
 
     fn error(&self, fatal: bool, error: AnyError, tag: Option<&str>) {

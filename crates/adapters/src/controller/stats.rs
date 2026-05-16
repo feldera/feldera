@@ -452,6 +452,12 @@ pub struct ControllerStatus {
     /// Watch channel for notifying subscribers about [Completion] updates.
     pub completion_notifier: watch::Sender<Completion>,
 
+    /// Watch channel for notifying input adapters when a durable checkpoint
+    /// completes.  Carries the checkpointed step count (same semantics as
+    /// `total_completed_steps`: value `n` means steps `0..n` are durable).
+    /// Only fired when fault tolerance is enabled.
+    pub checkpoint_notifier: watch::Sender<u64>,
+
     /// Input endpoint configs and metrics.
     pub(crate) inputs: InputsStatus,
 
@@ -484,6 +490,7 @@ impl ControllerStatus {
     ) -> Self {
         let (time_series_notifier, _) = broadcast::channel(1024); // Buffer for up to 1024 time series updates
         let (completion_notifier, _) = watch::channel(Completion::default());
+        let (checkpoint_notifier, _) = watch::channel(0u64);
         Self {
             pipeline_config,
             global_metrics: GlobalControllerMetrics::new(
@@ -494,6 +501,7 @@ impl ControllerStatus {
             time_series: Mutex::new(VecDeque::with_capacity(60)),
             time_series_notifier,
             completion_notifier,
+            checkpoint_notifier,
             inputs: RwLock::new(BTreeMap::new()),
             outputs: RwLock::new(BTreeMap::new()),
         }
@@ -874,6 +882,21 @@ impl ControllerStatus {
                 }
             });
         }
+    }
+
+    /// Notify input adapters that a checkpoint covering `step` steps has
+    /// completed.  Wakes any watchers (e.g. the Postgres CDC connector when
+    /// fault tolerance is enabled) that are deferring slot advancement until
+    /// a durable checkpoint exists.
+    pub fn notify_checkpoint(&self, step: Step) {
+        self.checkpoint_notifier.send_if_modified(|current| {
+            if *current < step {
+                *current = step;
+                true
+            } else {
+                false
+            }
+        });
     }
 
     /// Notify all watermark trackers about a new value for `total_completed_records`.

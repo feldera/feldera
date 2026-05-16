@@ -767,18 +767,34 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// so connectors that have no custom metrics need not override it.
     fn set_custom_metrics(&self, _metrics: Arc<dyn ConnectorMetrics>) {}
 
-    /// Returns a watch receiver that tracks completion of pipeline steps.
+    /// Returns a watch receiver that fires each time pipeline step processing
+    /// completes.  The value is the count of fully-processed steps
+    /// (`total_completed_steps`): a record ingested in step `n` is done when
+    /// the value exceeds `n`.
     ///
-    /// The receiver yields [`Completion`] values whose `total_completed_steps`
-    /// field indicates how many steps have been fully processed (circuit
-    /// execution + all output connectors).
+    /// Input adapters can use this to defer acknowledgment (e.g. a CDC
+    /// connector holding a replication slot) until their data has been
+    /// processed by the circuit and all output connectors.
     ///
-    /// Input adapters that need to defer acknowledgment until data is durably
-    /// processed (e.g., CDC adapters controlling a replication slot) can use
-    /// this to detect when their data has been consumed.
-    ///
-    /// Return `None` if the consumer does not support completion tracking.
+    /// Returns `None` if the consumer does not support completion tracking.
     fn completion_watcher(&self) -> Option<tokio::sync::watch::Receiver<Completion>>;
+
+    /// Returns a watch receiver that fires each time a durable checkpoint
+    /// completes.  The value is the count of checkpointed steps: a record
+    /// ingested in step `n` is durably stored when the value exceeds `n`.
+    ///
+    /// Input adapters that require at-least-once delivery stronger than step
+    /// completion (e.g. a CDC connector that must not advance its replication
+    /// slot past the last checkpoint) can wait on this rather than on
+    /// [`completion_watcher`][Self::completion_watcher].
+    ///
+    /// Returns `Some` only when fault tolerance is enabled for the pipeline
+    /// (which implies storage is configured and checkpoints are scheduled).
+    /// Returns `None` otherwise, in which case the connector should fall back
+    /// to [`completion_watcher`][Self::completion_watcher].
+    fn checkpoint_watcher(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
+        None
+    }
 
     /// Endpoint failed.
     ///

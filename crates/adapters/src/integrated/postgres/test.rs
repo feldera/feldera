@@ -2131,6 +2131,7 @@ fn test_pg_input_tls() {
 mod cdc_tests {
     use super::*;
     use crate::test::wait;
+    use feldera_types::config::PipelineConfig;
     use pg::pg_connect;
 
     /// Helper: creates a table, publication, and sets REPLICA IDENTITY FULL.
@@ -2578,6 +2579,102 @@ mod cdc_tests {
                 let msg = format!("cdc_all_types_test: error: {e}");
                 println!("{msg}");
                 err_sender.send(msg).unwrap()
+            }),
+        )
+        .unwrap();
+
+        (controller, err_receiver)
+    }
+
+    /// Like `cdc_simple_test_circuit` but with fault tolerance enabled,
+    /// file storage at `storage_dir`, and a 3600-second checkpoint interval so
+    /// that no automatic checkpoint fires during the test.  With fault
+    /// tolerance enabled the connector uses strict mode: the replication slot
+    /// only advances after a durable checkpoint.
+    fn cdc_ft_test_circuit(
+        url: &str,
+        publication: &str,
+        source_table: &str,
+        storage_dir: &Path,
+        output_path: &Path,
+    ) -> (Controller, crossbeam::channel::Receiver<String>) {
+        let schema = TestStruct::schema();
+        let config: PipelineConfig = serde_json::from_value(json!({
+            "name": "cdc_ft_test",
+            "workers": 1,
+            "storage_config": { "path": storage_dir },
+            "storage": true,
+            "fault_tolerance": { "checkpoint_interval_secs": 3600 },
+            "inputs": {
+                "cdc_in": {
+                    "stream": "test_input1",
+                    "transport": {
+                        "name": "postgres_cdc_input",
+                        "config": {
+                            "uri": url,
+                            "publication": publication,
+                            "source_table": source_table,
+                        },
+                    },
+                },
+            },
+            "outputs": {
+                "test_output1": {
+                    "stream": "test_output1",
+                    "transport": {
+                        "name": "file_output",
+                        "config": { "path": output_path },
+                    },
+                    "format": {
+                        "name": "json",
+                        "config": { "update_format": "insert_delete", "array": false },
+                    },
+                },
+            },
+        }))
+        .unwrap();
+
+        let (err_sender, err_receiver) = crossbeam::channel::unbounded();
+        let controller = Controller::with_test_config(
+            move |workers| {
+                Ok({
+                    let (circuit, catalog) = Runtime::init_circuit(workers, move |circuit| {
+                        let mut catalog = Catalog::new();
+                        let (input, hinput) = circuit.add_input_zset::<TestStruct>();
+                        let input_schema = serde_json::to_string(&Relation::new(
+                            "test_input1".into(),
+                            schema.clone(),
+                            false,
+                            BTreeMap::new(),
+                        ))
+                        .unwrap();
+                        let output_schema = serde_json::to_string(&Relation::new(
+                            "test_output1".into(),
+                            schema,
+                            false,
+                            BTreeMap::new(),
+                        ))
+                        .unwrap();
+                        catalog.register_materialized_input_zset::<_, TestStruct>(
+                            input.clone(),
+                            hinput,
+                            &input_schema,
+                        );
+                        catalog.register_materialized_output_zset::<_, TestStruct>(
+                            input,
+                            &output_schema,
+                        );
+                        Ok(catalog)
+                    })
+                    .unwrap();
+                    (circuit, Box::new(catalog))
+                })
+            },
+            &config,
+            Box::new(move |e, _| {
+                let msg = format!("cdc_ft_test: error: {e}");
+                println!("{msg}");
+                err_sender.send(msg).unwrap();
             }),
         )
         .unwrap();
@@ -3085,5 +3182,111 @@ mod cdc_tests {
         );
 
         controller_2.stop().unwrap();
+    }
+
+    // -------------------------------------------------------------------
+    // Fault-tolerance / strict-mode tests
+    // -------------------------------------------------------------------
+
+    /// With fault tolerance enabled the replication slot LSN is not
+    /// advanced until a Feldera checkpoint completes.  When the pipeline is
+    /// stopped before any checkpoint occurs and then restarted with the same
+    /// connection identity (same slot), Postgres replays all events from the
+    /// original slot position — guaranteeing at-least-once delivery.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege.
+    #[test]
+    #[serial]
+    #[ignore]
+    fn test_cdc_ft_mode_holds_slot() {
+        let url = postgres_url();
+        let table_name = "cdc_test_strict_hold";
+        let publication = "cdc_pub_strict_hold";
+
+        let mut table = CdcTestTable::new_simple(table_name, publication, &url);
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (1, true, NULL, 'first')"
+        ));
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (2, false, 42, 'second')"
+        ));
+
+        // --- Run 1: FT mode (strict), no checkpoint fires (interval = 3600 s) ---
+        let storage = tempfile::tempdir().unwrap();
+        let out_1 = NamedTempFile::new().unwrap();
+        let (ctrl_1, errs_1) = cdc_ft_test_circuit(
+            &url,
+            publication,
+            &format!("public.{table_name}"),
+            storage.path(),
+            out_1.path(),
+        );
+        ctrl_1.start();
+
+        wait(
+            || count_inserts(&read_output_json(out_1.path())) >= 2 || !errs_1.is_empty(),
+            60_000,
+        )
+        .expect("timeout: run 1 did not receive snapshot rows");
+        assert!(
+            errs_1.is_empty(),
+            "unexpected errors in run 1: {:?}",
+            errs_1.try_recv()
+        );
+
+        // Stop without a checkpoint — slot LSN is still at the snapshot position.
+        ctrl_1.stop().unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // --- Run 2: fresh output, same slot (same url/publication/source_table) ---
+        let out_2 = NamedTempFile::new().unwrap();
+        let storage_2 = tempfile::tempdir().unwrap();
+        let (ctrl_2, errs_2) = cdc_ft_test_circuit(
+            &url,
+            publication,
+            &format!("public.{table_name}"),
+            storage_2.path(),
+            out_2.path(),
+        );
+        ctrl_2.start();
+
+        // Insert a new row to confirm replication is flowing.
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (3, true, 99, 'third')"
+        ));
+
+        wait(
+            || count_inserts(&read_output_json(out_2.path())) >= 3 || !errs_2.is_empty(),
+            60_000,
+        )
+        .expect("timeout: run 2 did not receive expected rows");
+        assert!(
+            errs_2.is_empty(),
+            "unexpected errors in run 2: {:?}",
+            errs_2.try_recv()
+        );
+
+        let rows = read_output_json(out_2.path());
+        let ids: Vec<i64> = rows
+            .iter()
+            .filter_map(|r| {
+                r.get("insert")
+                    .and_then(|v| v.get("id"))
+                    .and_then(|v| v.as_i64())
+            })
+            .collect();
+
+        // The slot was held back in run 1 — rows 1 and 2 must be redelivered.
+        assert!(
+            ids.contains(&1),
+            "row 1 must be redelivered (slot held); ids={ids:?}"
+        );
+        assert!(
+            ids.contains(&2),
+            "row 2 must be redelivered (slot held); ids={ids:?}"
+        );
+        assert!(ids.contains(&3), "row 3 (new) must appear; ids={ids:?}");
+
+        ctrl_2.stop().unwrap();
     }
 }
