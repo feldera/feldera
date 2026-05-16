@@ -111,6 +111,22 @@ Ad-hoc queries can use CPU resources, memory and, to a lesser extent, storage (f
 especially if they are complex or involve scanning large datasets. Since these resources are shared with the
 Feldera SQL engine, such queries may reduce pipeline performance during ad-hoc query execution.
 
+### Read-after-write within a request
+
+Within a multi-statement request, the snapshot advances after each
+statement. A trailing `SELECT` observes the side effects of earlier
+`INSERT`s on tables in the same request:
+
+```sql
+INSERT INTO t VALUES (1);
+SELECT COUNT(*) FROM t;  -- returns 1
+```
+
+Materialized views derived from those inserts refresh when the
+surrounding transaction commits. While a transaction is open, a query
+against a view sees only the pre-transaction state, even if earlier
+statements in the same request inserted into the view's source tables.
+
 ## Examples
 
 ### Inserting Complex Data Types

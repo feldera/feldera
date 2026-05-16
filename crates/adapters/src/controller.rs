@@ -3031,19 +3031,19 @@ impl CircuitThread {
         // We also keep this before updating `total_processed_records` so
         // that ad hoc query results always reflect all data that we have
         // reported processing.
+        // Keep `trace_snapshots` current on every step regardless of
+        // bootstrap or transaction state, so ad-hoc queries can read
+        // the freshest data including read-your-own-writes within one
+        // request. Connectors with `send_snapshot=true` still defer
+        // until bootstrap completes; that gate now lives in
+        // `enqueue_latest_snapshot`.
+        Span::new("update")
+            .with_category("Step")
+            .with_tooltip(|| format!("update ad-hoc tables after step {}", self.step))
+            .in_scope(|| self.update_snapshot());
+
         if transaction_state == TransactionState::None {
             let bootstrapping = self.circuit.bootstrap_in_progress();
-
-            // Don't update the snapshot until bootstrapping is complete (including the additional post-bootstrap transaction).
-            // This guarantees that:
-            // 1. Ad hoc queries observe a consistent view of the data.
-            // 2. Ad hoc snapshots are up-to-date before the pipeline is marked as running.
-            if !bootstrapping && !self.bootstrapping {
-                Span::new("update")
-                    .with_category("Step")
-                    .with_tooltip(|| format!("update ad-hoc tables after step {}", self.step))
-                    .in_scope(|| self.update_snapshot());
-            }
 
             // If bootstrapping has completed, clear self.bootstrapping, but don't update the status flag
             // until the circuit performs an extra transaction to initialize output snapshots
@@ -6707,6 +6707,17 @@ impl ControllerInner {
         processed_records: Option<ProcessedRecords>,
         step: Option<Step>,
     ) -> bool {
+        // Defer the initial snapshot delivery until bootstrap completes
+        // and no transaction is in flight; this is the gate that
+        // guarantees `send_snapshot=true` connectors receive a
+        // consistent, fully-formed view. Adhoc queries hit
+        // `trace_snapshots` directly and are not subject to this gate.
+        if self.status.bootstrap_in_progress()
+            || self.get_transaction_state() != TransactionState::None
+        {
+            return false;
+        }
+
         // Look up the most recent cached snapshot for this stream. Return early
         // if no snapshot has been produced yet (pipeline hasn't completed a step).
         // This method is only called from the circuit thread (via `push_output`),
