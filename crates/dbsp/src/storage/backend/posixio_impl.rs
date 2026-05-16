@@ -37,6 +37,17 @@ use std::{
 };
 use tracing::warn;
 
+/// fsync the directory at `path` so a freshly-created child entry (a
+/// rename target or a new subdirectory) becomes durable. Without this,
+/// POSIX gives no guarantee that the directory entry survives a crash
+/// even if the child file itself has been fully fsynced.
+fn fsync_dir(path: &Path) -> Result<(), StorageError> {
+    let dir = File::open(path)
+        .map_err(|e| StorageError::stdio(e.kind(), "open dir for fsync", path.display()))?;
+    dir.sync_all()
+        .map_err(|e| StorageError::stdio(e.kind(), "fsync dir", path.display()))
+}
+
 pub(super) struct PosixReader {
     path: StoragePath,
     file: Arc<File>,
@@ -584,6 +595,10 @@ impl StorageBackend for PosixBackend {
     fn file_system_path(&self) -> Option<&Path> {
         Some(self.base.as_path())
     }
+
+    fn fsync_dir(&self, dir: &StoragePath) -> Result<(), StorageError> {
+        fsync_dir(&self.fs_path(dir))
+    }
 }
 
 pub(crate) struct DefaultBackendFactory;
@@ -654,6 +669,20 @@ mod tests {
             StorageCacheConfig::default(),
             &FileBackendConfig::default(),
         ))
+    }
+
+    /// `fsync_dir` must succeed on a real directory and surface an error on
+    /// missing or non-directory paths.
+    #[test]
+    fn fsync_dir_helper() {
+        let tempdir = tempfile::tempdir().unwrap();
+        super::fsync_dir(tempdir.path()).expect("fsync on tempdir should succeed");
+
+        let missing = tempdir.path().join("does-not-exist");
+        assert!(
+            super::fsync_dir(&missing).is_err(),
+            "fsync_dir must surface a missing-dir error",
+        );
     }
 
     /// Write 10 MiB total in 1 KiB chunks.  `VectoredWrite` flushes its buffer when it
