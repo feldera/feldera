@@ -189,8 +189,14 @@ impl Checkpointer {
 
         md.size = Some(self.measure_checkpoint_storage_use(uuid)?);
 
+        // Persist the catalog first, then add to the in-memory list only on
+        // success. Otherwise a failed write leaves callers with a phantom
+        // checkpoint that no future restart will recognize.
         self.checkpoint_list.push_back(md.clone());
-        self.update_checkpoint_file()?;
+        if let Err(e) = self.update_checkpoint_file() {
+            self.checkpoint_list.pop_back();
+            return Err(e);
+        }
         Ok(md)
     }
 
@@ -456,13 +462,101 @@ impl<T: Default> Checkpoint for EmptyCheckpoint<T> {
 mod test {
     use std::sync::Arc;
 
-    use feldera_storage::StorageBackend;
+    use feldera_storage::{StorageBackend, StoragePath};
     use feldera_types::config::{FileBackendConfig, StorageCacheConfig};
     use std::collections::HashSet;
 
     use crate::storage::backend::posixio_impl::PosixBackend;
 
     use super::Checkpointer;
+
+    /// Backend wrapper that delegates everything to an inner backend but
+    /// fails writes whose path equals `fail_on`.
+    struct CatalogFailingBackend {
+        inner: Arc<dyn StorageBackend>,
+        fail_on: StoragePath,
+    }
+
+    impl feldera_storage::StorageBackend for CatalogFailingBackend {
+        fn create_named(
+            &self,
+            name: &StoragePath,
+        ) -> Result<Box<dyn feldera_storage::FileWriter>, feldera_storage::error::StorageError>
+        {
+            if name == &self.fail_on {
+                return Err(feldera_storage::error::StorageError::StdIo {
+                    kind: std::io::ErrorKind::PermissionDenied,
+                    operation: "injected catalog write failure",
+                    path: None,
+                });
+            }
+            self.inner.create_named(name)
+        }
+
+        fn open(
+            &self,
+            name: &StoragePath,
+        ) -> Result<Arc<dyn feldera_storage::FileReader>, feldera_storage::error::StorageError>
+        {
+            self.inner.open(name)
+        }
+
+        fn list(
+            &self,
+            parent: &StoragePath,
+            cb: &mut dyn FnMut(&StoragePath, feldera_storage::StorageFileType),
+        ) -> Result<(), feldera_storage::error::StorageError> {
+            self.inner.list(parent, cb)
+        }
+
+        fn delete(
+            &self,
+            name: &StoragePath,
+        ) -> Result<(), feldera_storage::error::StorageError> {
+            self.inner.delete(name)
+        }
+
+        fn delete_recursive(
+            &self,
+            name: &StoragePath,
+        ) -> Result<(), feldera_storage::error::StorageError> {
+            self.inner.delete_recursive(name)
+        }
+
+        fn usage(&self) -> Arc<std::sync::atomic::AtomicI64> {
+            self.inner.usage()
+        }
+    }
+
+    /// A failed `commit` must not leave the new checkpoint in the in-memory
+    /// list. Otherwise callers see a checkpoint that no restart will find.
+    #[test]
+    fn failed_commit_rolls_back_in_memory_list() {
+        use feldera_types::constants::CHECKPOINT_FILE_NAME;
+        let tempdir = tempfile::tempdir().unwrap();
+        let posix: Arc<dyn StorageBackend> = Arc::new(PosixBackend::new(
+            tempdir.path(),
+            StorageCacheConfig::default(),
+            &FileBackendConfig::default(),
+        ));
+        let backend: Arc<dyn StorageBackend> = Arc::new(CatalogFailingBackend {
+            inner: posix,
+            fail_on: CHECKPOINT_FILE_NAME.into(),
+        });
+        let mut checkpointer = Checkpointer::new(backend).unwrap();
+
+        let uuid = uuid::Uuid::now_v7();
+        let result = checkpointer.commit(uuid, 0, None, Some(0), Some(0));
+        assert!(result.is_err(), "commit should fail when catalog write fails");
+
+        assert!(
+            !checkpointer
+                .checkpoint_list
+                .iter()
+                .any(|cpm| cpm.uuid == uuid),
+            "failed commit left UUID {uuid} in the in-memory checkpoint list",
+        );
+    }
 
     struct Empty;
     struct MinCheckpoints;
