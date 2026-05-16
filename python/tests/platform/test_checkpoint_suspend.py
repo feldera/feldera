@@ -5,6 +5,7 @@ from urllib.parse import quote_plus
 
 import pytest
 
+from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
 from tests import TEST_CLIENT, enterprise_only
 from tests.platform.test_ingress_formats import create_pipeline
 from .helper import (
@@ -18,6 +19,7 @@ from .helper import (
     connector_action,
     wait_for_condition,
     gen_pipeline_name,
+    patch_json,
 )
 
 
@@ -33,6 +35,17 @@ def _adhoc_count(name: str) -> int:
         return 0
     line = json.loads(txt.split("\n")[0])
     return line.get("c") or 0
+
+
+def _max_rss_bytes_metric(pipeline_name: str) -> int | None:
+    r = get(api_url(f"/pipelines/{pipeline_name}/metrics?format=json"))
+    assert r.status_code == HTTPStatus.OK, r.text
+    for metric in json.loads(r.text):
+        if metric.get("key") == "max_rss_bytes":
+            values = metric.get("values", [])
+            assert len(values) == 1, metric
+            return values[0].get("value")
+    return None
 
 
 @gen_pipeline_name
@@ -123,6 +136,17 @@ def test_suspend_enterprise(pipeline_name):
       5. Start c2 -> c2 runs, triggers start_after dependency for c3 -> data from both.
       6. Suspend/resume again -> all connectors in EOI, verify no new data arrives.
     """
+    before_max_rss_mb = 64_000
+    after_max_rss_mb = 65_000
+
+    def runtime_config(max_rss_mb: int) -> dict:
+        return {
+            "workers": FELDERA_TEST_NUM_WORKERS,
+            "hosts": FELDERA_TEST_NUM_HOSTS,
+            "logging": "debug",
+            "max_rss_mb": max_rss_mb,
+        }
+
     sql = r"""
     CREATE TABLE t1 (
         x int
@@ -173,9 +197,15 @@ def test_suspend_enterprise(pipeline_name):
     """.strip()
 
     create_pipeline(pipeline_name, sql)
+    resp = patch_json(
+        api_url(f"/pipelines/{pipeline_name}"),
+        {"runtime_config": runtime_config(before_max_rss_mb)},
+    )
+    assert resp.status_code == HTTPStatus.OK, resp.text
 
     # Start pipeline (all connectors remain paused)
     start_pipeline(pipeline_name)
+    assert _max_rss_bytes_metric(pipeline_name) == before_max_rss_mb * 1_000_000
     assert connector_paused(pipeline_name, "t1", "c1")
     assert connector_paused(pipeline_name, "t1", "c2")
     assert connector_paused(pipeline_name, "t1", "c3")
@@ -192,7 +222,15 @@ def test_suspend_enterprise(pipeline_name):
 
     # Suspend (non-force) and resume pipeline
     stop_pipeline(pipeline_name, force=False)
+
+    # Update runtime config to increase max_rss_mb.
+    resp = patch_json(
+        api_url(f"/pipelines/{pipeline_name}"),
+        {"runtime_config": runtime_config(after_max_rss_mb)},
+    )
+    assert resp.status_code == HTTPStatus.OK, resp.text
     start_pipeline(pipeline_name)
+    assert _max_rss_bytes_metric(pipeline_name) == after_max_rss_mb * 1_000_000
     # After resume: c1 running (EOI), c2,c3 still paused
     assert not connector_paused(pipeline_name, "t1", "c1")
     assert connector_paused(pipeline_name, "t1", "c2")
