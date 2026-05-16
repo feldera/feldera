@@ -2802,7 +2802,8 @@ fn init_logging(default_level: &str) {
         .with(
             tracing_subscriber::fmt::layer()
                 .with_target(false)
-                .without_time(),
+                .without_time()
+                .with_writer(std::io::stderr),
         )
         .try_init();
 }
