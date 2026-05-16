@@ -12,6 +12,10 @@ pub const STATUS_FILE: &str = "status.json";
 
 pub const STEPS_FILE: &str = "steps.bin";
 
+/// Single file inside a checkpoint dir that records what the checkpoint
+/// owns: the batch files it references at the storage root and the
+/// per-operator state files inside its own dir. See
+/// `CheckpointDependencies` for the on-disk shape.
 pub const CHECKPOINT_DEPENDENCIES: &str = "dependencies.json";
 
 pub const ADHOC_TEMP_DIR: &str = "adhoc-tmp";
