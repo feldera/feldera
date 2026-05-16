@@ -75,6 +75,7 @@ pub use ord::{
     VecWSetFactories,
 };
 
+use rkyv::bytecheck;
 use rkyv::{Deserialize, archived_root};
 
 use crate::{
@@ -131,6 +132,7 @@ impl<T> DBData for T where
 
 /// A spine that is serialized to a file.
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
+#[archive_attr(derive(rkyv::CheckBytes))]
 pub(crate) struct CommittedSpine {
     pub batches: Vec<String>,
     pub merged: Vec<(String, String)>,

@@ -28,6 +28,7 @@ use async_stream::stream;
 use feldera_storage::{FileCommitter, StoragePath};
 use futures::Stream as AsyncStream;
 use rkyv::Deserialize;
+use rkyv::bytecheck;
 use std::{
     borrow::Cow,
     cell::{Cell, RefCell},
@@ -85,6 +86,7 @@ where
 
 /// A window that is serialized to a file.
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
+#[archive_attr(derive(rkyv::CheckBytes))]
 struct CommittedWindow {
     window: Option<(Vec<u8>, Vec<u8>)>,
 }
@@ -209,8 +211,19 @@ where
 
         let window_path = Self::checkpoint_file(base, persistent_id);
         let content = Runtime::storage_backend().unwrap().read(&window_path)?;
-        let archived = unsafe { rkyv::archived_root::<CommittedWindow>(&content) };
-        let committed: CommittedWindow = archived.deserialize(&mut rkyv::Infallible).unwrap();
+        let archived = rkyv::check_archived_root::<CommittedWindow>(&content).map_err(|e| {
+            crate::circuit::checkpointer::checkpoint_invalid_data_error(
+                "Window checkpoint validation failed",
+                format!("{window_path}: {e}"),
+            )
+        })?;
+        let committed: CommittedWindow =
+            archived.deserialize(&mut rkyv::Infallible).map_err(|e| {
+                crate::circuit::checkpointer::checkpoint_invalid_data_error(
+                    "Window checkpoint deserialize failed",
+                    format!("{window_path}: {e:?}"),
+                )
+            })?;
 
         *self.window.borrow_mut() = committed.window.map(|(a, b)| {
             // Serialize the window bounds back into the key.

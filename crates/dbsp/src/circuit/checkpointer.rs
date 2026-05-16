@@ -432,6 +432,18 @@ impl Checkpointer {
     }
 }
 
+/// Build a `StorageError::StdIo { InvalidData, .. }` from an operator's
+/// checkpoint-restore failure. `operation` is the static stage tag (e.g.
+/// "Z1 checkpoint validation failed"); `detail` is the pre-formatted
+/// `"<path>: <err>"` payload the call site already constructs.
+pub(crate) fn checkpoint_invalid_data_error(operation: &'static str, detail: String) -> Error {
+    Error::Storage(StorageError::StdIo {
+        kind: ErrorKind::InvalidData,
+        operation,
+        path: Some(detail),
+    })
+}
+
 /// Trait for types that can be check-pointed and restored.
 ///
 /// This is to be used for any additional state within circuit operators
