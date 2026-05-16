@@ -569,9 +569,10 @@ class TestAdhocReadAfterWrite(SharedTestPipeline):
         ) WITH ('materialized' = 'true');"""
     )
     def test_multi_statement_query_during_open_transaction(self):
-        """While a user transaction is open, `update_snapshot()` is
-        skipped, so the trailing SELECT only sees the pre-transaction
-        baseline. Pin that shape so we notice if the gating changes.
+        """An ad-hoc request running inside a user transaction must
+        still see its own intermediate INSERTs in the trailing SELECT.
+        Adhoc reads pull from `trace_snapshots`, which updates on every
+        step regardless of transaction state.
         """
         self.pipeline.start()
 
@@ -590,12 +591,12 @@ class TestAdhocReadAfterWrite(SharedTestPipeline):
 
         assert rows_during, "trailing SELECT must return a row"
         count_during = rows_during[0].get("c")
-        assert count_during == 1, (
-            f"during the open transaction the SELECT must observe only "
-            f"the pre-transaction baseline, got {count_during}"
+        assert count_during == 3, (
+            f"trailing SELECT inside the transaction must observe all "
+            f"three rows (baseline + two intermediate inserts), got {count_during}"
         )
 
-        # After commit, a fresh adhoc query must see all three rows.
+        # After commit, a fresh adhoc query still sees the same three rows.
         rows_after = list(self.pipeline.query("SELECT COUNT(*) AS c FROM example2"))
         assert rows_after and rows_after[0].get("c") == 3, (
             f"after commit, all three inserts must be visible, got {rows_after!r}"
