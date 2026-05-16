@@ -485,9 +485,7 @@ class TestAdhocQueriesArrow(SharedTestPipeline):
         """
         self.pipeline.start()
 
-        self.pipeline.input_json(
-            "has_variant", [{"v": {"a": 1, "b": [2, 3]}}]
-        )
+        self.pipeline.input_json("has_variant", [{"v": {"a": 1, "b": [2, 3]}}])
 
         batches = list(self.pipeline.query_arrow("SELECT * FROM has_variant"))
         assert batches, "expected at least one batch"
@@ -529,4 +527,3 @@ class TestAdhocQueriesArrow(SharedTestPipeline):
         assert math.isinf(rows["neg_inf"]["r"]) and rows["neg_inf"]["r"] < 0
         assert math.isnan(rows["nan"]["d"])
         assert math.isnan(rows["nan"]["r"])
-
