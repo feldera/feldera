@@ -204,12 +204,40 @@ impl Checkpointer {
     }
 
     /// Reads the list of checkpoints available through `backend`.
+    ///
+    /// A missing `checkpoints.feldera` is treated as "no checkpoints yet"
+    /// only when the storage directory holds no UUID-shaped subdirectories.
+    /// If UUID directories exist, the catalog has been lost while the
+    /// checkpoints themselves are likely still on disk; proceeding would
+    /// let `gc_startup` recursively delete them. Refuse to start instead.
     pub fn read_checkpoints(
         backend: &dyn StorageBackend,
     ) -> Result<VecDeque<CheckpointMetadata>, Error> {
         match backend.read_json(&StoragePath::from(CHECKPOINT_FILE_NAME)) {
             Ok(checkpoints) => Ok(checkpoints),
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(VecDeque::new()),
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                let mut orphan_uuid_dirs: Vec<String> = Vec::new();
+                backend.list(&StoragePath::default(), &mut |path, file_type| {
+                    if file_type == StorageFileType::Directory {
+                        if let Some(name) = path.filename() {
+                            if Uuid::parse_str(name).is_ok() {
+                                orphan_uuid_dirs.push(name.to_string());
+                            }
+                        }
+                    }
+                })?;
+                if !orphan_uuid_dirs.is_empty() {
+                    return Err(Error::Storage(StorageError::StdIo {
+                        kind: ErrorKind::InvalidData,
+                        operation: "checkpoint catalog (checkpoints.feldera) missing while \
+                                    UUID-named checkpoint directories remain in the storage \
+                                    root; restore the catalog from backup, or delete those \
+                                    directories to start with a fresh catalog",
+                        path: Some(CHECKPOINT_FILE_NAME.to_string()),
+                    }));
+                }
+                Ok(VecDeque::new())
+            }
             Err(error) => Err(error)?,
         }
     }
@@ -465,6 +493,7 @@ mod test {
 
     use feldera_storage::{StorageBackend, StoragePath};
     use feldera_types::config::{FileBackendConfig, StorageCacheConfig};
+    use feldera_types::constants::CHECKPOINT_FILE_NAME;
     use std::collections::HashSet;
 
     use crate::storage::backend::posixio_impl::PosixBackend;
@@ -523,6 +552,51 @@ mod test {
 
         fn usage(&self) -> Arc<std::sync::atomic::AtomicI64> {
             self.inner.usage()
+        }
+    }
+
+    /// Losing `checkpoints.feldera` while UUID checkpoint dirs survive on
+    /// disk must surface as `InvalidData` from `Checkpointer::new`. The dirs
+    /// must remain untouched so an operator can recover the catalog.
+    #[test]
+    fn missing_catalog_preserves_checkpoint_dirs() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let make_backend = || -> Arc<dyn StorageBackend> {
+            Arc::new(PosixBackend::new(
+                tempdir.path(),
+                StorageCacheConfig::default(),
+                &FileBackendConfig::default(),
+            ))
+        };
+
+        let mut checkpointer = Checkpointer::new(make_backend()).unwrap();
+        let uuids: Vec<_> = (0..Checkpointer::MIN_CHECKPOINT_THRESHOLD)
+            .map(|i| {
+                let uuid = uuid::Uuid::now_v7();
+                checkpointer
+                    .commit(uuid, 0, None, Some(i as u64), Some(0))
+                    .unwrap();
+                uuid
+            })
+            .collect();
+        drop(checkpointer);
+
+        std::fs::remove_file(tempdir.path().join(CHECKPOINT_FILE_NAME)).unwrap();
+
+        let err = Checkpointer::new(make_backend())
+            .err()
+            .expect("missing catalog with orphan UUID dirs must error");
+        assert!(
+            format!("{err}").contains("checkpoint catalog (checkpoints.feldera) missing"),
+            "expected catalog-missing error, got: {err}",
+        );
+
+        for uuid in &uuids {
+            let path = tempdir.path().join(uuid.to_string());
+            assert!(
+                path.exists(),
+                "startup wiped UUID dir {uuid} after losing the catalog",
+            );
         }
     }
 
