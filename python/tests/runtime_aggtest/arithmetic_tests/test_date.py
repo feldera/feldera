@@ -1,5 +1,5 @@
 from tests.runtime_aggtest.aggtst_base import TstView
-
+import datetime
 
 class arithtst_adate_minus_date(TstView):
     def __init__(self):
@@ -79,24 +79,24 @@ class arithtst_date_minus_sinterval(TstView):
         self.data = [
             {
                 "id": 0,
-                "seconds": "2014-11-05",
-                "minutes": "2014-11-05",
-                "hours": "2014-11-05",
-                "days": "2014-11-05",
+                "seconds": datetime.date(2014, 11, 5),
+                "minutes": datetime.date(2014, 11, 5),
+                "hours": datetime.date(2014, 11, 5),
+                "days": datetime.date(2014, 11, 5),
             },
             {
                 "id": 1,
-                "seconds": "2023-02-26",
-                "minutes": "2023-02-26",
-                "hours": "2023-02-26",
-                "days": "2023-02-26",
+                "seconds": datetime.date(2023, 2, 26),
+                "minutes": datetime.date(2023, 2, 26),
+                "hours": datetime.date(2023, 2, 26),
+                "days": datetime.date(2023, 2, 26),
             },
             {
                 "id": 2,
-                "seconds": "1948-12-02",
-                "minutes": "1948-12-02",
-                "hours": "1948-12-02",
-                "days": "1948-12-02",
+                "seconds": datetime.date(1948, 12, 2),
+                "minutes": datetime.date(1948, 12, 2),
+                "hours": datetime.date(1948, 12, 2),
+                "days": datetime.date(1948, 12, 2),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW date_minus_sinterval AS SELECT
@@ -115,9 +115,9 @@ class arithtst_date_minus_linterval(TstView):
         # The result of subtracting MONTH type interval matches with MySQL
         # whereas YEARS behaves similarly as MONTHS in terms of accuracy
         self.data = [
-            {"id": 0, "months": "2014-11-05", "years": "2014-11-05"},
-            {"id": 1, "months": "2023-02-21", "years": "2023-02-21"},
-            {"id": 2, "months": "1948-12-21", "years": "1948-12-21"},
+            {"id": 0, "months": datetime.date(2014, 11, 5), "years": datetime.date(2014, 11, 5)},
+            {"id": 1, "months": datetime.date(2023, 2, 21), "years": datetime.date(2023, 2, 21)},
+            {"id": 2, "months": datetime.date(1948, 12, 21), "years": datetime.date(1948, 12, 21)},
         ]
         self.sql = """CREATE MATERIALIZED VIEW date_minus_linterval AS SELECT
                       v1.id,
@@ -133,24 +133,24 @@ class arithtst_date_plus_sinterval(TstView):
         self.data = [
             {
                 "id": 0,
-                "seconds": "2035-01-05",
-                "minutes": "2035-01-05",
-                "hours": "2035-01-05",
-                "days": "2035-01-05",
+                "seconds": datetime.date(2035, 1, 5),
+                "minutes": datetime.date(2035, 1, 5),
+                "hours": datetime.date(2035, 1, 5),
+                "days": datetime.date(2035, 1, 5),
             },
             {
                 "id": 1,
-                "seconds": "2017-10-15",
-                "minutes": "2017-10-15",
-                "hours": "2017-10-15",
-                "days": "2017-10-15",
+                "seconds": datetime.date(2017, 10, 15),
+                "minutes": datetime.date(2017, 10, 15),
+                "hours": datetime.date(2017, 10, 15),
+                "days": datetime.date(2017, 10, 15),
             },
             {
                 "id": 2,
-                "seconds": "1990-01-08",
-                "minutes": "1990-01-08",
-                "hours": "1990-01-08",
-                "days": "1990-01-08",
+                "seconds": datetime.date(1990, 1, 8),
+                "minutes": datetime.date(1990, 1, 8),
+                "hours": datetime.date(1990, 1, 8),
+                "days": datetime.date(1990, 1, 8),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW date_plus_interval AS SELECT
@@ -169,9 +169,9 @@ class arithtst_date_plus_linterval(TstView):
         # The result of adding MONTH type interval matches with MySQL
         # whereas YEARS behaves similarly as MONTHS in terms of accuracy
         self.data = [
-            {"id": 0, "months": "2035-01-05", "years": "2035-01-05"},
-            {"id": 1, "months": "2017-10-21", "years": "2017-10-21"},
-            {"id": 2, "months": "1989-12-21", "years": "1989-12-21"},
+            {"id": 0, "months": datetime.date(2035, 1, 5), "years": datetime.date(2035, 1, 5)},
+            {"id": 1, "months": datetime.date(2017, 10, 21), "years": datetime.date(2017, 10, 21)},
+            {"id": 2, "months": datetime.date(1989, 12, 21), "years": datetime.date(1989, 12, 21)},
         ]
         self.sql = """CREATE MATERIALIZED VIEW date_plus_linterval AS SELECT
                       v1.id,
@@ -188,24 +188,24 @@ class arithtst_dt_sub_sinterval(TstView):
         self.data = [
             {
                 "id": 0,
-                "sec_str": "2014-11-05",
-                "min_str": "2014-11-05",
-                "hrs_str": "2014-11-05",
-                "day_str": "2014-11-05",
+                "sec_str": datetime.date(2014, 11, 5),
+                "min_str": datetime.date(2014, 11, 5),
+                "hrs_str": datetime.date(2014, 11, 5),
+                "day_str": datetime.date(2014, 11, 5),
             },
             {
                 "id": 1,
-                "sec_str": "2023-02-26",
-                "min_str": "2023-02-26",
-                "hrs_str": "2023-02-26",
-                "day_str": "2023-02-26",
+                "sec_str": datetime.date(2023, 2, 26),
+                "min_str": datetime.date(2023, 2, 26),
+                "hrs_str": datetime.date(2023, 2, 26),
+                "day_str": datetime.date(2023, 2, 26),
             },
             {
                 "id": 2,
-                "sec_str": "1948-12-02",
-                "min_str": "1948-12-02",
-                "hrs_str": "1948-12-02",
-                "day_str": "1948-12-02",
+                "sec_str": datetime.date(1948, 12, 2),
+                "min_str": datetime.date(1948, 12, 2),
+                "hrs_str": datetime.date(1948, 12, 2),
+                "day_str": datetime.date(1948, 12, 2),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW dt_sub_sinterval AS SELECT
@@ -222,9 +222,9 @@ class arithtst_dt_sub_linterval(TstView):
     def __init__(self):
         # Validated on MySQL
         self.data = [
-            {"id": 0, "mths_str": "2014-11-05", "yrs_str": "2014-12-05"},
-            {"id": 1, "mths_str": "2023-02-21", "yrs_str": "2022-06-21"},
-            {"id": 2, "mths_str": "1948-12-21", "yrs_str": "1949-06-21"},
+            {"id": 0, "mths_str": datetime.date(2014, 11, 5), "yrs_str": datetime.date(2014, 12, 5)},
+            {"id": 1, "mths_str": datetime.date(2023, 2, 21), "yrs_str": datetime.date(2022, 6, 21)},
+            {"id": 2, "mths_str": datetime.date(1948, 12, 21), "yrs_str": datetime.date(1949, 6, 21)},
         ]
         self.sql = """CREATE MATERIALIZED VIEW dt_sub_linterval AS SELECT
                       v1.id,
@@ -240,24 +240,24 @@ class arithtst_dt_add_sinterval(TstView):
         self.data = [
             {
                 "id": 0,
-                "sec_str": "2035-01-05",
-                "min_str": "2035-01-05",
-                "hrs_str": "2035-01-05",
-                "day_str": "2035-01-05",
+                "sec_str": datetime.date(2035, 1, 5),
+                "min_str": datetime.date(2035, 1, 5),
+                "hrs_str": datetime.date(2035, 1, 5),
+                "day_str": datetime.date(2035, 1, 5),
             },
             {
                 "id": 1,
-                "sec_str": "2017-10-15",
-                "min_str": "2017-10-15",
-                "hrs_str": "2017-10-15",
-                "day_str": "2017-10-15",
+                "sec_str": datetime.date(2017, 10, 15),
+                "min_str": datetime.date(2017, 10, 15),
+                "hrs_str": datetime.date(2017, 10, 15),
+                "day_str": datetime.date(2017, 10, 15),
             },
             {
                 "id": 2,
-                "sec_str": "1990-01-08",
-                "min_str": "1990-01-08",
-                "hrs_str": "1990-01-08",
-                "day_str": "1990-01-08",
+                "sec_str": datetime.date(1990, 1, 8),
+                "min_str": datetime.date(1990, 1, 8),
+                "hrs_str": datetime.date(1990, 1, 8),
+                "day_str": datetime.date(1990, 1, 8),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW dt_add_sinterval AS SELECT
@@ -274,9 +274,9 @@ class arithtst_dt_add_linterval(TstView):
     def __init__(self):
         # Validated on MySQL
         self.data = [
-            {"id": 0, "mths_str": "2035-01-05", "yrs_str": "2034-12-05"},
-            {"id": 1, "mths_str": "2017-10-21", "yrs_str": "2018-06-21"},
-            {"id": 2, "mths_str": "1989-12-21", "yrs_str": "1989-06-21"},
+            {"id": 0, "mths_str": datetime.date(2035, 1, 5), "yrs_str": datetime.date(2034, 12, 5)},
+            {"id": 1, "mths_str": datetime.date(2017, 10, 21), "yrs_str": datetime.date(2018, 6, 21)},
+            {"id": 2, "mths_str": datetime.date(1989, 12, 21), "yrs_str": datetime.date(1989, 6, 21)},
         ]
         self.sql = """CREATE MATERIALIZED VIEW dt_add_linterval AS SELECT
                       v1.id,
@@ -396,33 +396,33 @@ class arithtst_dt_minus_interval(TstView):
         self.data = [
             {
                 "id": 0,
-                "ytm": "2014-11-05",
-                "dth": "2014-11-05",
-                "dtm": "2014-11-05",
-                "dts": "2014-11-05",
-                "htm": "2014-11-05",
-                "hts": "2014-11-05",
-                "mts": "2014-11-05",
+                "ytm": datetime.date(2014, 11, 5),
+                "dth": datetime.date(2014, 11, 5),
+                "dtm": datetime.date(2014, 11, 5),
+                "dts": datetime.date(2014, 11, 5),
+                "htm": datetime.date(2014, 11, 5),
+                "hts": datetime.date(2014, 11, 5),
+                "mts": datetime.date(2014, 11, 5),
             },
             {
                 "id": 1,
-                "ytm": "2023-02-21",
-                "dth": "2023-02-26",
-                "dtm": "2023-02-26",
-                "dts": "2023-02-26",
-                "htm": "2023-02-26",
-                "hts": "2023-02-26",
-                "mts": "2023-02-26",
+                "ytm": datetime.date(2023, 2, 21),
+                "dth": datetime.date(2023, 2, 26),
+                "dtm": datetime.date(2023, 2, 26),
+                "dts": datetime.date(2023, 2, 26),
+                "htm": datetime.date(2023, 2, 26),
+                "hts": datetime.date(2023, 2, 26),
+                "mts": datetime.date(2023, 2, 26),
             },
             {
                 "id": 2,
-                "ytm": "1948-12-21",
-                "dth": "1948-12-02",
-                "dtm": "1948-12-02",
-                "dts": "1948-12-02",
-                "htm": "1948-12-02",
-                "hts": "1948-12-02",
-                "mts": "1948-12-02",
+                "ytm": datetime.date(1948, 12, 21),
+                "dth": datetime.date(1948, 12, 2),
+                "dtm": datetime.date(1948, 12, 2),
+                "dts": datetime.date(1948, 12, 2),
+                "htm": datetime.date(1948, 12, 2),
+                "hts": datetime.date(1948, 12, 2),
+                "mts": datetime.date(1948, 12, 2),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW dt_minus_interval AS SELECT
@@ -444,33 +444,33 @@ class arithtst_dt_plus_interval(TstView):
         self.data = [
             {
                 "id": 0,
-                "ytm": "2035-01-05",
-                "dth": "2035-01-05",
-                "dtm": "2035-01-05",
-                "dts": "2035-01-05",
-                "htm": "2035-01-05",
-                "hts": "2035-01-05",
-                "mts": "2035-01-05",
+                "ytm": datetime.date(2035, 1, 5),
+                "dth": datetime.date(2035, 1, 5),
+                "dtm": datetime.date(2035, 1, 5),
+                "dts": datetime.date(2035, 1, 5),
+                "htm": datetime.date(2035, 1, 5),
+                "hts": datetime.date(2035, 1, 5),
+                "mts": datetime.date(2035, 1, 5),
             },
             {
                 "id": 1,
-                "ytm": "2017-10-21",
-                "dth": "2017-10-15",
-                "dtm": "2017-10-15",
-                "dts": "2017-10-15",
-                "htm": "2017-10-15",
-                "hts": "2017-10-15",
-                "mts": "2017-10-15",
+                "ytm": datetime.date(2017, 10, 21),
+                "dth": datetime.date(2017, 10, 15),
+                "dtm": datetime.date(2017, 10, 15),
+                "dts": datetime.date(2017, 10, 15),
+                "htm": datetime.date(2017, 10, 15),
+                "hts": datetime.date(2017, 10, 15),
+                "mts": datetime.date(2017, 10, 15),
             },
             {
                 "id": 2,
-                "ytm": "1989-12-21",
-                "dth": "1990-01-08",
-                "dtm": "1990-01-08",
-                "dts": "1990-01-08",
-                "htm": "1990-01-08",
-                "hts": "1990-01-08",
-                "mts": "1990-01-08",
+                "ytm": datetime.date(1989, 12, 21),
+                "dth": datetime.date(1990, 1, 8),
+                "dtm": datetime.date(1990, 1, 8),
+                "dts": datetime.date(1990, 1, 8),
+                "htm": datetime.date(1990, 1, 8),
+                "hts": datetime.date(1990, 1, 8),
+                "mts": datetime.date(1990, 1, 8),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW dt_plus_interval AS SELECT
@@ -493,33 +493,33 @@ class arithtst_dt_minus_dttinterval(TstView):
         self.data = [
             {
                 "id": 0,
-                "ytm_str": "2014-11-05",
-                "dth_str": "2014-11-05",
-                "dtm_str": "2014-11-05",
-                "dts_str": "2014-11-05",
-                "htm_str": "2014-11-05",
-                "hts_str": "2014-11-05",
-                "mts_str": "2014-11-05",
+                "ytm_str": datetime.date(2014, 11, 5),
+                "dth_str": datetime.date(2014, 11, 5),
+                "dtm_str": datetime.date(2014, 11, 5),
+                "dts_str": datetime.date(2014, 11, 5),
+                "htm_str": datetime.date(2014, 11, 5),
+                "hts_str": datetime.date(2014, 11, 5),
+                "mts_str": datetime.date(2014, 11, 5),
             },
             {
                 "id": 1,
-                "ytm_str": "2023-02-21",
-                "dth_str": "2023-02-26",
-                "dtm_str": "2023-02-26",
-                "dts_str": "2023-02-26",
-                "htm_str": "2023-02-26",
-                "hts_str": "2023-02-26",
-                "mts_str": "2023-02-26",
+                "ytm_str": datetime.date(2023, 2, 21),
+                "dth_str": datetime.date(2023, 2, 26),
+                "dtm_str": datetime.date(2023, 2, 26),
+                "dts_str": datetime.date(2023, 2, 26),
+                "htm_str": datetime.date(2023, 2, 26),
+                "hts_str": datetime.date(2023, 2, 26),
+                "mts_str": datetime.date(2023, 2, 26),
             },
             {
                 "id": 2,
-                "ytm_str": "1948-12-21",
-                "dth_str": "1948-12-02",
-                "dtm_str": "1948-12-02",
-                "dts_str": "1948-12-02",
-                "htm_str": "1948-12-02",
-                "hts_str": "1948-12-02",
-                "mts_str": "1948-12-02",
+                "ytm_str": datetime.date(1948, 12, 21),
+                "dth_str": datetime.date(1948, 12, 2),
+                "dtm_str": datetime.date(1948, 12, 2),
+                "dts_str": datetime.date(1948, 12, 2),
+                "htm_str": datetime.date(1948, 12, 2),
+                "hts_str": datetime.date(1948, 12, 2),
+                "mts_str": datetime.date(1948, 12, 2),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW dt_minus_dttinterval AS SELECT
@@ -541,33 +541,33 @@ class arithtst_dt_plus_dttinterval(TstView):
         self.data = [
             {
                 "id": 0,
-                "ytm_str": "2035-01-05",
-                "dth_str": "2035-01-05",
-                "dtm_str": "2035-01-05",
-                "dts_str": "2035-01-05",
-                "htm_str": "2035-01-05",
-                "hts_str": "2035-01-05",
-                "mts_str": "2035-01-05",
+                "ytm_str": datetime.date(2035, 1, 5),
+                "dth_str": datetime.date(2035, 1, 5),
+                "dtm_str": datetime.date(2035, 1, 5),
+                "dts_str": datetime.date(2035, 1, 5),
+                "htm_str": datetime.date(2035, 1, 5),
+                "hts_str": datetime.date(2035, 1, 5),
+                "mts_str": datetime.date(2035, 1, 5),
             },
             {
                 "id": 1,
-                "ytm_str": "2017-10-21",
-                "dth_str": "2017-10-15",
-                "dtm_str": "2017-10-15",
-                "dts_str": "2017-10-15",
-                "htm_str": "2017-10-15",
-                "hts_str": "2017-10-15",
-                "mts_str": "2017-10-15",
+                "ytm_str": datetime.date(2017, 10, 21),
+                "dth_str": datetime.date(2017, 10, 15),
+                "dtm_str": datetime.date(2017, 10, 15),
+                "dts_str": datetime.date(2017, 10, 15),
+                "htm_str": datetime.date(2017, 10, 15),
+                "hts_str": datetime.date(2017, 10, 15),
+                "mts_str": datetime.date(2017, 10, 15),
             },
             {
                 "id": 2,
-                "ytm_str": "1989-12-21",
-                "dth_str": "1990-01-08",
-                "dtm_str": "1990-01-08",
-                "dts_str": "1990-01-08",
-                "htm_str": "1990-01-08",
-                "hts_str": "1990-01-08",
-                "mts_str": "1990-01-08",
+                "ytm_str": datetime.date(1989, 12, 21),
+                "dth_str": datetime.date(1990, 1, 8),
+                "dtm_str": datetime.date(1990, 1, 8),
+                "dts_str": datetime.date(1990, 1, 8),
+                "htm_str": datetime.date(1990, 1, 8),
+                "hts_str": datetime.date(1990, 1, 8),
+                "mts_str": datetime.date(1990, 1, 8),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW dt_plus_dttinterval AS SELECT

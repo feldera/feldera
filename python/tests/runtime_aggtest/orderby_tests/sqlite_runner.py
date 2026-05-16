@@ -5,7 +5,22 @@ from tests.runtime_aggtest.aggtst_base import Table, View, DEBUG
 from tests.runtime_aggtest.atest_run import discover_tests
 from automate_orderby_views import AutomateOrderByTests
 from decimal import Decimal
+from datetime import datetime
 
+def t(s):
+    if s is None:
+        return s;
+    return datetime.strptime(s, "%H:%M:%S").time()
+
+def d(s):
+    if s is None:
+        return s;
+    return datetime.strptime(s, "%Y-%m-%d").date()
+
+def ts(s):
+    if s is None:
+        return s;
+    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S")
 
 sqlite_db_path = ":memory:"  # Create an in-memory database
 
@@ -44,12 +59,16 @@ class SQLiteRunner:
         """Create view in SQLite and return normalized results"""
         self.create_view(view)
 
+        self.cur.execute(f"PRAGMA table_info({view.name})")
+        types = [desc[2] for desc in self.cur.fetchall()]
+
         self.cur.execute(f"SELECT * FROM {view.name}")
         columns = [desc[0] for desc in self.cur.description]
+
         rows = self.cur.fetchall()
 
         # Normalize the result from SQLite as lists of dictionaries
-        return normalize_sqlite_rows(columns, rows)
+        return normalize_sqlite_rows(columns, rows, types)
 
     def evaluate_views(self, tables: list[Table], views: list[View]):
         """Execute all tables and views in SQLite and update expected data with the view results"""
@@ -101,16 +120,24 @@ def discover_sqlite_tests(
     return ta
 
 
-def normalize_sqlite_rows(columns, rows):
+def normalize_sqlite_rows(columns, rows, types):
     """Convert result from SQLite to lists of dicts with column names"""
     result = []
     for row in rows:
         row_dict = {}
-        for col, value in zip(columns, row):
-            # If output contains Floating Point values for any column, convert them to Decimal values
-            if isinstance(value, float):
-                row_dict[col] = Decimal(str(value))
-            else:
-                row_dict[col] = value
+        for col, value, type in zip(columns, row, types):
+            if type.startswith("DECIMAL"):
+                if value is not None:
+                    value = Decimal(str(value))
+            elif type == "TIME":
+                value = t(value)
+            elif type == "DATE":
+                value = d(value)
+            elif type == "TIMESTAMP":
+                value = ts(value)
+            elif type == "REAL" or type == "DOUBLE":
+                if value is not None:
+                    value = float(str(value))
+            row_dict[col] = value
         result.append(row_dict)
     return result

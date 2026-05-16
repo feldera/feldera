@@ -1,6 +1,12 @@
 from tests.runtime_aggtest.aggtst_base import TstView
 from decimal import Decimal
+from datetime import datetime
 
+def t(s):
+    return datetime.strptime(s, "%H:%M:%S.%f").time()
+
+def d(s):
+    return datetime.strptime(s, "%Y-%m-%d").date()
 
 class asof_test1(TstView):
     def __init__(self):
@@ -64,14 +70,14 @@ class asof_test4(TstView):
     def __init__(self):
         # Validated on DuckDB
         self.data = [
-            {"id": 1, "t1_reall": Decimal("-57681.18"), "t2_reall": None},
-            {"id": 2, "t1_reall": Decimal("2.56"), "t2_reall": Decimal("-0.1234567")},
-            {"id": 3, "t1_reall": Decimal("0.5"), "t2_reall": Decimal("-987.0")},
-            {"id": 4, "t1_reall": Decimal("0.0"), "t2_reall": None},
+            {"id": 1, "t1_reall": "-57681.18", "t2_reall": None},
+            {"id": 2, "t1_reall": "2.56", "t2_reall": "-0.1234567"},
+            {"id": 3, "t1_reall": "0.5", "t2_reall": "-987.0"},
+            {"id": 4, "t1_reall": "0.0", "t2_reall": None},
             {"id": 5, "t1_reall": None, "t2_reall": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW asof_test4 AS SELECT
-                        t1.id, t1.reall AS t1_reall, t2.reall AS t2_reall
+                        t1.id, CAST(t1.reall AS VARCHAR) AS t1_reall, CAST(t2.reall AS VARCHAR) AS t2_reall
                         FROM asof_tbl1 t1
                         LEFT ASOF JOIN asof_tbl2 t2
                         MATCH_CONDITION ( t1.reall >= t2.reall )
@@ -82,14 +88,14 @@ class asof_test5(TstView):
     def __init__(self):
         # Validated on DuckDB
         self.data = [
-            {"id": 1, "t1_dbl": Decimal("-38.2711234601246"), "t2_dbl": None},
-            {"id": 2, "t1_dbl": Decimal("-0.82711234601246"), "t2_dbl": None},
-            {"id": 3, "t1_dbl": Decimal("0.125"), "t2_dbl": Decimal("-999.9999999")},
-            {"id": 4, "t1_dbl": Decimal("0.0"), "t2_dbl": None},
+            {"id": 1, "t1_dbl": "-38.2711234601246", "t2_dbl": None},
+            {"id": 2, "t1_dbl": "-0.82711234601246", "t2_dbl": None},
+            {"id": 3, "t1_dbl": "0.125", "t2_dbl": "-999.9999999"},
+            {"id": 4, "t1_dbl": "0.0", "t2_dbl": None},
             {"id": 5, "t1_dbl": None, "t2_dbl": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW asof_test5 AS SELECT
-                        t1.id, t1.dbl AS t1_dbl, t2.dbl AS t2_dbl
+                        t1.id, CAST(t1.dbl AS VARCHAR) AS t1_dbl, CAST(t2.dbl AS VARCHAR) AS t2_dbl
                         FROM asof_tbl1 t1
                         LEFT ASOF JOIN asof_tbl2 t2
                         MATCH_CONDITION ( t1.dbl >= t2.dbl)
@@ -118,10 +124,10 @@ class asof_test7(TstView):
     def __init__(self):
         # Validated on DuckDB
         self.data = [
-            {"id": 1, "t1_bin": "0a1620", "t2_bin": None},
-            {"id": 2, "t1_bin": "10172c", "t2_bin": "0f3716"},
-            {"id": 3, "t1_bin": "11172c", "t2_bin": "0c1037"},
-            {"id": 4, "t1_bin": "16172c", "t2_bin": None},
+            {"id": 1, "t1_bin": bytes.fromhex("0a1620"), "t2_bin": None},
+            {"id": 2, "t1_bin": bytes.fromhex("10172c"), "t2_bin": bytes.fromhex("0f3716")},
+            {"id": 3, "t1_bin": bytes.fromhex("11172c"), "t2_bin": bytes.fromhex("0c1037")},
+            {"id": 4, "t1_bin": bytes.fromhex("16172c"), "t2_bin": None},
             {"id": 5, "t1_bin": None, "t2_bin": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW asof_test7 AS SELECT
@@ -136,10 +142,10 @@ class asof_test8(TstView):
     def __init__(self):
         # Validated on DuckDB
         self.data = [
-            {"id": 1, "t1_tme": "13:23:44.456", "t2_tme": None},
-            {"id": 2, "t1_tme": "19:23:44.456", "t2_tme": None},
-            {"id": 3, "t1_tme": "01:23:44.456", "t2_tme": "00:23:44.456"},
-            {"id": 4, "t1_tme": "23:23:44.456", "t2_tme": "22:23:44.456"},
+            {"id": 1, "t1_tme": t("13:23:44.456"), "t2_tme": None},
+            {"id": 2, "t1_tme": t("19:23:44.456"), "t2_tme": None},
+            {"id": 3, "t1_tme": t("01:23:44.456"), "t2_tme": t("00:23:44.456")},
+            {"id": 4, "t1_tme": t("23:23:44.456"), "t2_tme": t("22:23:44.456")},
             {"id": 5, "t1_tme": None, "t2_tme": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW asof_test8 AS SELECT
@@ -154,17 +160,17 @@ class asof_test9(TstView):
     def __init__(self):
         # Validated on DuckDB
         self.data = [
-            {"id": 1, "t1_tmestmp": "2000-06-21T14:23:44.123", "t2_tmestmp": None},
-            {"id": 2, "t1_tmestmp": "2019-06-21T14:23:44.123", "t2_tmestmp": None},
+            {"id": 1, "t1_tmestmp": datetime.fromisoformat("2000-06-21T14:23:44.123"), "t2_tmestmp": None},
+            {"id": 2, "t1_tmestmp": datetime.fromisoformat("2019-06-21T14:23:44.123"), "t2_tmestmp": None},
             {
                 "id": 3,
-                "t1_tmestmp": "1978-06-21T14:23:44.123",
-                "t2_tmestmp": "1977-06-21T14:23:44.123",
+                "t1_tmestmp": datetime.fromisoformat("1978-06-21T14:23:44.123"),
+                "t2_tmestmp": datetime.fromisoformat("1977-06-21T14:23:44.123"),
             },
             {
                 "id": 4,
-                "t1_tmestmp": "2002-06-21T14:23:44.123",
-                "t2_tmestmp": "2001-06-21T14:23:44.123",
+                "t1_tmestmp": datetime.fromisoformat("2002-06-21T14:23:44.123"),
+                "t2_tmestmp": datetime.fromisoformat("2001-06-21T14:23:44.123"),
             },
             {"id": 5, "t1_tmestmp": None, "t2_tmestmp": None},
         ]
@@ -180,10 +186,10 @@ class asof_test10(TstView):
     def __init__(self):
         # Validated on DuckDB
         self.data = [
-            {"id": 1, "t1_datee": "2000-06-21", "t2_datee": None},
-            {"id": 2, "t1_datee": "2019-06-21", "t2_datee": None},
-            {"id": 3, "t1_datee": "1978-06-21", "t2_datee": "1977-06-21"},
-            {"id": 4, "t1_datee": "2002-06-21", "t2_datee": "2001-06-21"},
+            {"id": 1, "t1_datee": d("2000-06-21"), "t2_datee": None},
+            {"id": 2, "t1_datee": d("2019-06-21"), "t2_datee": None},
+            {"id": 3, "t1_datee": d("1978-06-21"), "t2_datee": d("1977-06-21")},
+            {"id": 4, "t1_datee": d("2002-06-21"), "t2_datee": d("2001-06-21")},
             {"id": 5, "t1_datee": None, "t2_datee": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW asof_test10 AS SELECT
@@ -258,10 +264,10 @@ class asof_test13(TstView):
     def __init__(self):
         # Validated on DuckDB
         self.data = [
-            {"id": 1, "t1_mapp": {"a": 15, "b": None}, "t2_mapp": None},
-            {"id": 2, "t1_mapp": {"a": 3, "b": 9}, "t2_mapp": {"a": 1, "b": 9}},
-            {"id": 3, "t1_mapp": {"a": 11, "b": 22}, "t2_mapp": None},
-            {"id": 4, "t1_mapp": {"a": 200, "b": 200}, "t2_mapp": {"a": 100, "b": 200}},
+            {"id": 1, "t1_mapp": [("a", 15), ("b", None)], "t2_mapp": None},
+            {"id": 2, "t1_mapp": [("a", 3), ("b", 9)], "t2_mapp": [("a", 1), ("b", 9)]},
+            {"id": 3, "t1_mapp": [("a", 11), ("b", 22)], "t2_mapp": None},
+            {"id": 4, "t1_mapp": [("a", 200), ("b", 200)], "t2_mapp": [("a", 100), ("b", 200)]},
             {"id": 5, "t1_mapp": None, "t2_mapp": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW asof_test13 AS SELECT
@@ -338,14 +344,14 @@ class asof_test18(TstView):
     def __init__(self):
         # Validated on DuckDB
         self.data = [
-            {"id": 1, "t3_reall": Decimal("10.001"), "t1_reall": Decimal("-57681.18")},
-            {"id": 2, "t3_reall": Decimal("-0.1234567"), "t1_reall": None},
-            {"id": 3, "t3_reall": Decimal("-987.0"), "t1_reall": None},
-            {"id": 4, "t3_reall": Decimal("1.618"), "t1_reall": Decimal("0.0")},
-            {"id": 5, "t3_reall": Decimal("12.618"), "t1_reall": None},
+            {"id": 1, "t3_reall": "10.001", "t1_reall": "-57681.18"},
+            {"id": 2, "t3_reall": "-0.1234567", "t1_reall": None},
+            {"id": 3, "t3_reall": "-987.0", "t1_reall": None},
+            {"id": 4, "t3_reall": "1.618", "t1_reall": "0.0"},
+            {"id": 5, "t3_reall": "12.618", "t1_reall": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW asof_test18 AS SELECT
-                        t3.id, t3.reall AS t3_reall, t1.reall AS t1_reall
+                        t3.id, CAST(t3.reall AS VARCHAR) AS t3_reall, CAST(t1.reall AS VARCHAR) AS t1_reall
                         FROM asof_tbl3 t3
                         LEFT ASOF JOIN asof_tbl1 t1
                         MATCH_CONDITION ( t3.reall >= t1.reall )
@@ -358,20 +364,20 @@ class asof_test19(TstView):
         self.data = [
             {
                 "id": 1,
-                "t3_dbl": Decimal("10.000001"),
-                "t1_dbl": Decimal("-38.2711234601246"),
+                "t3_dbl": "10.000001",
+                "t1_dbl": "-38.2711234601246",
             },
             {
                 "id": 2,
-                "t3_dbl": Decimal("-0.00256"),
-                "t1_dbl": Decimal("-0.82711234601246"),
+                "t3_dbl": "-0.00256",
+                "t1_dbl": "-0.82711234601246",
             },
-            {"id": 3, "t3_dbl": Decimal("-999.9999999"), "t1_dbl": None},
-            {"id": 4, "t3_dbl": Decimal("3.14159265358979"), "t1_dbl": Decimal("0.0")},
-            {"id": 5, "t3_dbl": Decimal("13.14159265358979"), "t1_dbl": None},
+            {"id": 3, "t3_dbl": "-999.9999999", "t1_dbl": None},
+            {"id": 4, "t3_dbl": "3.14159265358979", "t1_dbl": "0.0"},
+            {"id": 5, "t3_dbl": "13.14159265358979", "t1_dbl": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW asof_test19 AS SELECT
-                        t3.id, t3.dbl AS t3_dbl, t1.dbl AS t1_dbl
+                        t3.id, CAST(t3.dbl AS VARCHAR) AS t3_dbl, CAST(t1.dbl AS VARCHAR) AS t1_dbl
                         FROM asof_tbl3 t3
                         LEFT ASOF JOIN asof_tbl1 t1
                         MATCH_CONDITION ( t3.dbl >= t1.dbl)
@@ -400,11 +406,11 @@ class asof_test21(TstView):
     def __init__(self):
         # Validated on DuckDB
         self.data = [
-            {"id": 1, "t3_bin": "0b1620", "t1_bin": "0a1620"},
-            {"id": 2, "t3_bin": "0f3716", "t1_bin": None},
-            {"id": 3, "t3_bin": "0c1037", "t1_bin": None},
-            {"id": 4, "t3_bin": "2c5863", "t1_bin": "16172c"},
-            {"id": 5, "t3_bin": "90bcc7", "t1_bin": None},
+            {"id": 1, "t3_bin": bytes.fromhex("0b1620"), "t1_bin": bytes.fromhex("0a1620")},
+            {"id": 2, "t3_bin": bytes.fromhex("0f3716"), "t1_bin": None},
+            {"id": 3, "t3_bin": bytes.fromhex("0c1037"), "t1_bin": None},
+            {"id": 4, "t3_bin": bytes.fromhex("2c5863"), "t1_bin": bytes.fromhex("16172c")},
+            {"id": 5, "t3_bin": bytes.fromhex("90bcc7"), "t1_bin": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW asof_test21 AS SELECT
                         t3.id, t3.bin AS t3_bin, t1.bin AS t1_bin
@@ -418,11 +424,11 @@ class asof_test22(TstView):
     def __init__(self):
         # Validated on DuckDB
         self.data = [
-            {"id": 1, "t3_tme": "14:23:44.456", "t1_tme": "13:23:44.456"},
-            {"id": 2, "t3_tme": "20:23:44.456", "t1_tme": "19:23:44.456"},
-            {"id": 3, "t3_tme": "00:23:44.456", "t1_tme": None},
-            {"id": 4, "t3_tme": "22:23:44.456", "t1_tme": None},
-            {"id": 5, "t3_tme": "20:23:44.456", "t1_tme": None},
+            {"id": 1, "t3_tme": t("14:23:44.456"), "t1_tme": t("13:23:44.456")},
+            {"id": 2, "t3_tme": t("20:23:44.456"), "t1_tme": t("19:23:44.456")},
+            {"id": 3, "t3_tme": t("00:23:44.456"), "t1_tme": None},
+            {"id": 4, "t3_tme": t("22:23:44.456"), "t1_tme": None},
+            {"id": 5, "t3_tme": t("20:23:44.456"), "t1_tme": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW asof_test22 AS SELECT
                         t3.id, t3.tme AS t3_tme, t1.tme AS t1_tme
@@ -438,17 +444,17 @@ class asof_test23(TstView):
         self.data = [
             {
                 "id": 1,
-                "t3_tmestmp": "2020-06-21T14:23:44.123",
-                "t1_tmestmp": "2000-06-21T14:23:44.123",
+                "t3_tmestmp": datetime.fromisoformat("2020-06-21T14:23:44.123"),
+                "t1_tmestmp": datetime.fromisoformat("2000-06-21T14:23:44.123"),
             },
             {
                 "id": 2,
-                "t3_tmestmp": "2021-06-21T14:23:44.123",
-                "t1_tmestmp": "2019-06-21T14:23:44.123",
+                "t3_tmestmp": datetime.fromisoformat("2021-06-21T14:23:44.123"),
+                "t1_tmestmp": datetime.fromisoformat("2019-06-21T14:23:44.123"),
             },
-            {"id": 3, "t3_tmestmp": "1977-06-21T14:23:44.123", "t1_tmestmp": None},
-            {"id": 4, "t3_tmestmp": "2001-06-21T14:23:44.123", "t1_tmestmp": None},
-            {"id": 5, "t3_tmestmp": "2000-06-21T14:23:44.123", "t1_tmestmp": None},
+            {"id": 3, "t3_tmestmp": datetime.fromisoformat("1977-06-21T14:23:44.123"), "t1_tmestmp": None},
+            {"id": 4, "t3_tmestmp": datetime.fromisoformat("2001-06-21T14:23:44.123"), "t1_tmestmp": None},
+            {"id": 5, "t3_tmestmp": datetime.fromisoformat("2000-06-21T14:23:44.123"), "t1_tmestmp": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW asof_test23 AS SELECT
                         t3.id, t3.tmestmp AS t3_tmestmp, t1.tmestmp AS t1_tmestmp
@@ -462,11 +468,11 @@ class asof_test24(TstView):
     def __init__(self):
         # Validated on DuckDB
         self.data = [
-            {"id": 1, "t3_datee": "2020-06-21", "t1_datee": "2000-06-21"},
-            {"id": 2, "t3_datee": "2021-06-21", "t1_datee": "2019-06-21"},
-            {"id": 3, "t3_datee": "1977-06-21", "t1_datee": None},
-            {"id": 4, "t3_datee": "2001-06-21", "t1_datee": None},
-            {"id": 5, "t3_datee": "2000-06-21", "t1_datee": None},
+            {"id": 1, "t3_datee": d("2020-06-21"), "t1_datee": d("2000-06-21")},
+            {"id": 2, "t3_datee": d("2021-06-21"), "t1_datee": d("2019-06-21")},
+            {"id": 3, "t3_datee": d("1977-06-21"), "t1_datee": None},
+            {"id": 4, "t3_datee": d("2001-06-21"), "t1_datee": None},
+            {"id": 5, "t3_datee": d("2000-06-21"), "t1_datee": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW asof_test24 AS SELECT
                         t3.id, t3.datee AS t3_datee, t1.datee AS t1_datee
@@ -548,11 +554,11 @@ class asof_test27(TstView):
     def __init__(self):
         # Validated on DuckDB
         self.data = [
-            {"id": 1, "t3_mapp": {"a": 25, "b": None}, "t1_mapp": {"a": 15, "b": None}},
-            {"id": 2, "t3_mapp": {"a": 1, "b": 9}, "t1_mapp": None},
-            {"id": 3, "t3_mapp": {"a": 21, "b": 22}, "t1_mapp": {"a": 11, "b": 22}},
-            {"id": 4, "t3_mapp": {"a": 100, "b": 200}, "t1_mapp": None},
-            {"id": 5, "t3_mapp": {"a": 1000, "b": 2000}, "t1_mapp": None},
+            {"id": 1, "t3_mapp": [("a", 25), ("b", None)], "t1_mapp": [("a", 15), ("b", None)]},
+            {"id": 2, "t3_mapp": [("a", 1), ("b", 9)], "t1_mapp": None},
+            {"id": 3, "t3_mapp": [("a", 21), ("b", 22)], "t1_mapp": [("a", 11), ("b", 22)]},
+            {"id": 4, "t3_mapp": [("a", 100), ("b", 200)], "t1_mapp": None},
+            {"id": 5, "t3_mapp": [("a", 1000), ("b", 2000)], "t1_mapp": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW asof_test27 AS SELECT
                         t3.id, t3.mapp AS t3_mapp, t1.mapp AS t1_mapp

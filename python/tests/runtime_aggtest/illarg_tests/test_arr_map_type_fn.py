@@ -613,7 +613,7 @@ class illarg_arr_repeat__legal(TstView):
         self.data = [
             {
                 "roww": [{"i1": 5, "v1": None}, {"i1": 5, "v1": None}],
-                "mapp": [{"a": 15, "b": None}, {"a": 15, "b": None}],
+                "mapp": [[("a", 15), ("b", None)], [("a", 15), ("b", None)]],
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW arr_repeat_cmpxtype_legal AS SELECT

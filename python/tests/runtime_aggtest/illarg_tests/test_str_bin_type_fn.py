@@ -116,7 +116,7 @@ class illarg_concatws_illegal(TstView):
 class illarg_left_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"str": "he", "bin": "0b16"}]
+        self.data = [{"str": "he", "bin": bytes.fromhex("0b16")}]
         self.sql = """CREATE MATERIALIZED VIEW left_legal AS SELECT
                       LEFT(str, 2) AS str,
                       LEFT(bin, 2) AS bin
@@ -149,7 +149,7 @@ class illarg_left_illegal(TstView):
 class illarg_right_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"str": "o ", "bin": "1620"}]
+        self.data = [{"str": "o ", "bin": bytes.fromhex("1620")}]
         self.sql = """CREATE MATERIALIZED VIEW right_legal AS SELECT
                       RIGHT(str, 2) AS str,
                       RIGHT(bin, 2) AS bin
@@ -322,7 +322,7 @@ class illarg_substr_legal(TstView):
 class illarg_substr_cast_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"bin": "1620", "uuidd": "2b8"}]
+        self.data = [{"bin": bytes.fromhex("1620"), "uuidd": "2b8"}]
         self.sql = """CREATE MATERIALIZED VIEW substr_cast_legal AS SELECT
                       SUBSTR(bin, 2, 3) AS bin,
                       SUBSTR(uuidd, 2, 3) AS uuidd
@@ -354,7 +354,7 @@ class illarg_substring_legal(TstView):
 class illarg_substring_cast_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"tmestmp": "020", "bin": "1620"}]
+        self.data = [{"tmestmp": "020", "bin": bytes.fromhex("1620")}]
         self.sql = """CREATE MATERIALIZED VIEW substring_cast_legal AS SELECT
                       SUBSTRING(tmestmp from 2 for 3) AS tmestmp,
                       SUBSTRING(bin from 2 for 3) AS bin
@@ -621,7 +621,7 @@ class illarg_md5_illegal(TstView):
 class illarg_bin_concat_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"bin": "0b16200b1620", "str": "hello hello "}]
+        self.data = [{"bin": bytes.fromhex("0b16200b1620"), "str": "hello hello "}]
         self.sql = """CREATE MATERIALIZED VIEW bin_concat_legal AS SELECT
                       bin || bin AS bin,
                       str || str AS str
@@ -698,7 +698,7 @@ class illarg_octet_length_illegal(TstView):
 class illarg_bin_overlay_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"bin": "0b0203"}]
+        self.data = [{"bin": bytes.fromhex("0b0203")}]
         self.sql = """CREATE MATERIALIZED VIEW bin_overlay_legal AS SELECT
                       OVERLAY(bin placing x'0203' from 2 for 3) AS bin
                       FROM illegal_tbl
@@ -753,7 +753,7 @@ class illarg_bin_position_cast_legal(TstView):
 class illarg_bin_substring_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"bin": "20"}]
+        self.data = [{"bin": bytes.fromhex("20")}]
         self.sql = """CREATE MATERIALIZED VIEW bin_substring_legal AS SELECT
                       SUBSTRING(bin, 3) AS bin
                       FROM illegal_tbl
@@ -775,7 +775,7 @@ class illarg_bin_substring_cast_legal(TstView):
 class illarg_bin_substring1_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"bin": "0b16"}]
+        self.data = [{"bin": bytes.fromhex("0b16")}]
         self.sql = """CREATE MATERIALIZED VIEW bin_substring1_legal AS SELECT
                       SUBSTRING(bin FROM 1 FOR 2) AS bin
                       FROM illegal_tbl

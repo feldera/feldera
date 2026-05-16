@@ -50,8 +50,8 @@ class varnttst_read_cmpx_var(TstView):
             {
                 "id": 0,
                 "arr": ['"12, 22"', '"hello, hi, bye"'],
-                "mapp": {"a": '"ciao!"', "b": '"hello 45 234"'},
-                "mapp1": {'"c"': '"olaa,"', '"d"': '"friends!!"'},
+                "mapp": [("a", '"ciao!"'), ("b", '"hello 45 234"')],
+                "mapp1": [('"c"', '"olaa,"'), ('"d"', '"friends!!"')],
                 "roww": {"v1": '"20"', "v2": '"bye bye!"'},
                 "udt": {"v1": '"ferris"', "v2": '"flies away?"'},
             },
@@ -66,8 +66,8 @@ class varnttst_read_cmpx_var(TstView):
             {
                 "id": 2,
                 "arr": [None, None],
-                "mapp": {"a": None, "b": None},
-                "mapp1": {'"c"': None, '"d"': None},
+                "mapp": [("a", None), ("b", None)],
+                "mapp1": [('"c"',None), ('"d"', None)],
                 "roww": {"v1": "null", "v2": "null"},
                 "udt": {"v1": None, "v2": None},
             },

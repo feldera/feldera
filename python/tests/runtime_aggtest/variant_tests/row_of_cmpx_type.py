@@ -61,8 +61,8 @@ class varnttst_read_row_of_cmpx(TstView):
                     "v2": ['"hi ,"', '"how are you?"'],
                 },
                 "row_map": {
-                    "v1": {'"x"': '"bella"', '"y"': '"ciao"'},
-                    "v2": {'"a"': '"good-bye"', '"b"': '"for now!"'},
+                    "v1": [('"x"', '"bella"'), ('"y"', '"ciao"')],
+                    "v2": [('"a"', '"good-bye"'), ('"b"', '"for now!"')],
                 },
                 "row_row": {
                     "v1": {"v11": '"the quick"', "v12": '"brown fox"'},
@@ -83,7 +83,7 @@ class varnttst_read_row_of_cmpx(TstView):
             {
                 "id": 2,
                 "row_arr": {"v1": None, "v2": ['"check1"']},
-                "row_map": {"v1": None, "v2": {'"c"': '"check2"'}},
+                "row_map": {"v1": None, "v2": [('"c"', '"check2"')]},
                 "row_row": {
                     "v1": {"v11": None, "v12": None},
                     "v2": {"v21": None, "v22": '"check3"'},
@@ -168,11 +168,11 @@ class varnttst_row_of_map_field_access_varnt(TstView):
         self.data = [
             {
                 "id": 0,
-                "row_map1": {'"x"': '"bella"', '"y"': '"ciao"'},
-                "row_map2": {'"a"': '"good-bye"', '"b"': '"for now!"'},
+                "row_map1": [('"x"', '"bella"'), ('"y"', '"ciao"')],
+                "row_map2": [('"a"', '"good-bye"'), ('"b"', '"for now!"')],
             },
             {"id": 1, "row_map1": None, "row_map2": None},
-            {"id": 2, "row_map1": None, "row_map2": {'"c"': '"check2"'}},
+            {"id": 2, "row_map1": None, "row_map2": [('"c"', '"check2"')]},
         ]
         self.sql = """CREATE MATERIALIZED VIEW row_of_map_field_access_varnt AS SELECT
                       id,

@@ -1,6 +1,15 @@
 from tests.runtime_aggtest.aggtst_base import TstView
 from decimal import Decimal
+from datetime import datetime
 
+def t(s):
+    return datetime.strptime(s, "%H:%M:%S.%f").time()
+
+def d(s):
+    return datetime.strptime(s, "%Y-%m-%d").date()
+
+def ts(s):
+    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S.%f")
 
 # Comparison Operators
 
@@ -1240,17 +1249,17 @@ class illarg_coalesce_legal(TstView):
             {
                 "intt": -12,
                 "decimall": Decimal("-1111.52"),
-                "reall": Decimal("-57681.18"),
-                "dbl": Decimal("-38.2711234601246"),
+                "reall": "-57681.18",
+                "dbl": "-38.2711234601246",
                 "booll": True,
                 "str": "hello ",
-                "bin": "0b1620",
-                "tmestmp": "2020-06-21T14:23:44.123654",
-                "datee": "2020-06-21",
-                "tme": "14:23:44.456",
+                "bin": bytes.fromhex("0b1620"),
+                "tmestmp": ts("2020-06-21T14:23:44.123654"),
+                "datee": d("2020-06-21"),
+                "tme": t("14:23:44.456"),
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
                 "arr": ["bye", "14", "See you!", "-0.52", None, "14", "hello ", "TRUE"],
-                "mapp": {"a": 12, "b": 17},
+                "mapp": [("a", 12), ("b", 17)],
                 "roww": {"i1": 4, "v1": "cat"},
                 "udt": {"i1": 4, "v1": "cat"},
             }
@@ -1258,8 +1267,8 @@ class illarg_coalesce_legal(TstView):
         self.sql = """CREATE MATERIALIZED VIEW coalesce_legal AS SELECT
                       COALESCE(NULL, intt, -1) intt,
                       COALESCE(NULL, decimall, -1) AS decimall,
-                      COALESCE(NULL, reall, -1) AS reall,
-                      COALESCE(NULL, dbl, -1) AS dbl,
+                      CAST(COALESCE(NULL, reall, -1) AS VARCHAR) AS reall,
+                      CAST(COALESCE(NULL, dbl, -1) AS VARCHAR) AS dbl,
                       COALESCE(NULL, booll, False) AS booll,
                       COALESCE(NULL, str, -1) AS str,
                       COALESCE(NULL, bin, X'0B1620') AS bin,
@@ -1294,17 +1303,17 @@ class illarg_greatest_legal(TstView):
             {
                 "intt": -1,
                 "decimall": Decimal("-0.52"),
-                "reall": Decimal("-0.1234567"),
-                "dbl": Decimal("-0.82711234601246"),
+                "reall": "-0.1234567",
+                "dbl": "-0.82711234601246",
                 "booll": True,
                 "str": "hello ",
-                "bin": "1f8b080000000000ff4b4bcd49492d4a0400218115ac07000000",
-                "tmestmp": "2020-06-21T14:23:44.123654",
-                "datee": "2020-06-21",
-                "tme": "14:23:44.456",
+                "bin": bytes.fromhex("1f8b080000000000ff4b4bcd49492d4a0400218115ac07000000"),
+                "tmestmp": ts("2020-06-21T14:23:44.123654"),
+                "datee": d("2020-06-21"),
+                "tme": t("14:23:44.456"),
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
                 "arr": ["ciao"],
-                "mapp": {"a": 13, "b": 17},
+                "mapp": [("a", 13), ("b", 17)],
                 "roww": {"i1": 5, "v1": None},
                 "udt": {"i1": 5, "v1": None},
             }
@@ -1312,8 +1321,8 @@ class illarg_greatest_legal(TstView):
         self.sql = """CREATE MATERIALIZED VIEW greatest_legal AS SELECT
                         GREATEST(intt, -1) AS intt,
                         GREATEST(decimall, -0.52) AS decimall,
-                        GREATEST(reall, -0.1234567) AS reall,
-                        GREATEST(dbl, -0.82711234601246) AS dbl,
+                        CAST(GREATEST(reall, -0.1234567) AS VARCHAR) AS reall,
+                        CAST(GREATEST(dbl, -0.82711234601246) AS VARCHAR) AS dbl,
                         GREATEST(booll, FALSE) AS booll,
                         GREATEST(str, '0.12') AS str,
                         GREATEST(bin, X'1F8B080000000000FF4B4BCD49492D4A0400218115AC07000000') AS bin,
@@ -1360,17 +1369,17 @@ class illarg_greatest_ignore_nulls_legal(TstView):
             {
                 "intt": -1,
                 "decimall": Decimal("-0.52"),
-                "reall": Decimal("-0.1234567"),
-                "dbl": Decimal("-0.82711234601246"),
+                "reall": "-0.1234567",
+                "dbl": "-0.82711234601246",
                 "booll": True,
                 "str": "hello ",
-                "bin": "1f8b080000000000ff4b4bcd49492d4a0400218115ac07000000",
-                "tmestmp": "2020-06-21T14:23:44.123654",
-                "datee": "2020-06-21",
-                "tme": "14:23:44.456",
+                "bin": bytes.fromhex("1f8b080000000000ff4b4bcd49492d4a0400218115ac07000000"),
+                "tmestmp": ts("2020-06-21T14:23:44.123654"),
+                "datee": d("2020-06-21"),
+                "tme": t("14:23:44.456"),
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
                 "arr": ["ciao"],
-                "mapp": {"a": 13, "b": 17},
+                "mapp": [("a", 13), ("b", 17)],
                 "roww": {"i1": 5, "v1": None},
                 "udt": {"i1": 5, "v1": None},
             }
@@ -1378,8 +1387,8 @@ class illarg_greatest_ignore_nulls_legal(TstView):
         self.sql = """CREATE MATERIALIZED VIEW greatest_ignore_nulls_legal AS SELECT
                         GREATEST_IGNORE_NULLS(NULL, intt, -1) AS intt,
                         GREATEST_IGNORE_NULLS(NULL, decimall, -0.52) AS decimall,
-                        GREATEST_IGNORE_NULLS(NULL, reall, -0.1234567) AS reall,
-                        GREATEST_IGNORE_NULLS(NULL, dbl, -0.82711234601246) AS dbl,
+                        CAST(GREATEST_IGNORE_NULLS(NULL, reall, -0.1234567) AS VARCHAR) AS reall,
+                        CAST(GREATEST_IGNORE_NULLS(NULL, dbl, -0.82711234601246) AS VARCHAR) AS dbl,
                         GREATEST_IGNORE_NULLS(NULL, booll, FALSE) AS booll,
                         GREATEST_IGNORE_NULLS(NULL, str, '0.12') AS str,
                         GREATEST_IGNORE_NULLS(NULL, bin, X'1F8B080000000000FF4B4BCD49492D4A0400218115AC07000000') AS bin,
@@ -1414,17 +1423,17 @@ class illarg_least_legal(TstView):
             {
                 "intt": -12,
                 "decimall": Decimal("-1111.52"),
-                "reall": Decimal("-57681.1796875"),
-                "dbl": Decimal("-38.2711234601246"),
+                "reall": "-57681.1796875",
+                "dbl": "-38.2711234601246",
                 "booll": False,
                 "str": "0.12",
-                "bin": "0b1620",
-                "tmestmp": "2020-06-21T14:23:44",
-                "datee": "2020-06-21",
-                "tme": "14:23:44",
+                "bin": bytes.fromhex("0b1620"),
+                "tmestmp": ts("2020-06-21T14:23:44.0"),
+                "datee": d("2020-06-21"),
+                "tme": t("14:23:44.0"),
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
                 "arr": ["apple"],
-                "mapp": {"a": 12, "b": 17},
+                "mapp": [("a", 12), ("b", 17)],
                 "roww": {"i1": 4, "v1": "cat"},
                 "udt": {"i1": 4, "v1": "cat"},
             }
@@ -1432,8 +1441,8 @@ class illarg_least_legal(TstView):
         self.sql = """CREATE MATERIALIZED VIEW least_legal AS SELECT
                         LEAST(intt, -1) AS intt,
                         LEAST(decimall, -0.52) AS decimall,
-                        LEAST(reall, -0.1234567) AS reall,
-                        LEAST(dbl, -0.82711234601246) AS dbl,
+                        CAST(LEAST(reall, -0.1234567) AS VARCHAR) AS reall,
+                        CAST(LEAST(dbl, -0.82711234601246) AS VARCHAR) AS dbl,
                         LEAST(booll, FALSE) AS booll,
                         LEAST(str, '0.12') AS str,
                         LEAST(bin, X'1F8B080000000000FF4B4BCD49492D4A0400218115AC07000000') AS bin,
@@ -1468,17 +1477,17 @@ class illarg_least_ignore_nulls_legal(TstView):
             {
                 "intt": -12,
                 "decimall": Decimal("-1111.52"),
-                "reall": Decimal("-57681.1796875"),
-                "dbl": Decimal("-38.2711234601246"),
+                "reall": "-57681.1796875",
+                "dbl": "-38.2711234601246",
                 "booll": False,
                 "str": "0.12",
-                "bin": "0b1620",
-                "tmestmp": "2020-06-21T14:23:44",
-                "datee": "2020-06-21",
-                "tme": "14:23:44",
+                "bin": bytes.fromhex("0b1620"),
+                "tmestmp": ts("2020-06-21T14:23:44.0"),
+                "datee": d("2020-06-21"),
+                "tme": t("14:23:44.0"),
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
                 "arr": ["apple"],
-                "mapp": {"a": 12, "b": 17},
+                "mapp": [("a", 12), ("b", 17)],
                 "roww": {"i1": 4, "v1": "cat"},
                 "udt": {"i1": 4, "v1": "cat"},
             }
@@ -1486,8 +1495,8 @@ class illarg_least_ignore_nulls_legal(TstView):
         self.sql = """CREATE MATERIALIZED VIEW least_ignore_nulls_legal AS SELECT
                         LEAST_IGNORE_NULLS(NULL, intt, -1) AS intt,
                         LEAST_IGNORE_NULLS(NULL, decimall, -0.52) AS decimall,
-                        LEAST_IGNORE_NULLS(NULL, reall, -0.1234567) AS reall,
-                        LEAST_IGNORE_NULLS(NULL, dbl, -0.82711234601246) AS dbl,
+                        CAST(LEAST_IGNORE_NULLS(NULL, reall, -0.1234567) AS VARCHAR) AS reall,
+                        CAST(LEAST_IGNORE_NULLS(NULL, dbl, -0.82711234601246) AS VARCHAR) AS dbl,
                         LEAST_IGNORE_NULLS(NULL, booll, FALSE) AS booll,
                         LEAST_IGNORE_NULLS(NULL, str, '0.12') AS str,
                         LEAST_IGNORE_NULLS(NULL, bin, X'1F8B080000000000FF4B4BCD49492D4A0400218115AC07000000') AS bin,
@@ -1576,17 +1585,17 @@ class illarg_nullif_legal(TstView):
             {
                 "intt": None,
                 "decimall": Decimal("-1111.52"),
-                "reall": Decimal("-57681.18"),
-                "dbl": Decimal("-38.2711234601246"),
+                "reall": "-57681.18",
+                "dbl": "-38.2711234601246",
                 "booll": True,
                 "str": "hello ",
-                "bin": "0b1620",
-                "tmestmp": "2020-06-21T14:23:44.123654",
+                "bin": bytes.fromhex("0b1620"),
+                "tmestmp": ts("2020-06-21T14:23:44.123654"),
                 "datee": None,
-                "tme": "14:23:44.456",
+                "tme": t("14:23:44.456"),
                 "uuidd": None,
                 "arr": ["bye", "14", "See you!", "-0.52", None, "14", "hello ", "TRUE"],
-                "mapp": {"a": 12, "b": 17},
+                "mapp": [("a", 12), ("b", 17)],
                 "roww": None,
                 "udt": None,
             }
@@ -1594,8 +1603,8 @@ class illarg_nullif_legal(TstView):
         self.sql = """CREATE MATERIALIZED VIEW nullif_legal AS SELECT
                         NULLIF(intt, -12) AS intt,
                         NULLIF(decimall, -0.52) AS decimall,
-                        NULLIF(reall, -0.1234567) AS reall,
-                        NULLIF(dbl, -0.82711234601246) AS dbl,
+                        CAST(NULLIF(reall, -0.1234567) AS VARCHAR) AS reall,
+                        CAST(NULLIF(dbl, -0.82711234601246) AS VARCHAR) AS dbl,
                         NULLIF(booll, FALSE) AS booll,
                         NULLIF(str, '0.12') AS str,
                         NULLIF(bin, X'1F8B080000000000FF4B4BCD49492D4A0400218115AC07000000') AS bin,
