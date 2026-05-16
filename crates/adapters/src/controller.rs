@@ -4666,7 +4666,7 @@ impl ControllerInit {
                 // Can't change number of workers or hosts yet.
                 hosts: checkpoint_config.global.hosts,
                 workers: checkpoint_config.global.workers,
-                max_rss_mb: checkpoint_config.global.max_rss_mb,
+                max_rss_mb: config.global.max_rss_mb,
 
                 // The checkpoint determines the fault tolerance model, but the
                 // pipeline manager can override the details of the
