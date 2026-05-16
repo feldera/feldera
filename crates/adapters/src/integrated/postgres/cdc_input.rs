@@ -163,16 +163,19 @@ impl InputReader for PostgresCdcInputReader {
 
                 if !senders.is_empty() {
                     if let Some(tx) = self.inner.completion_tx.as_ref() {
-                        // Read completed steps AFTER flush — the step containing
-                        // our data hasn't completed yet, so waiting for this value
-                        // to increase guarantees our data was processed.
-                        let completed = self
+                        // Snapshot total_completed_steps AFTER flush.  The
+                        // data will land in the next step (>completed), so
+                        // this value is the correct lower bound for both
+                        // fast mode (fire when completed_steps > this) and
+                        // strict mode (fire when checkpointed_steps > this,
+                        // per the `total_checkpointed_steps >= n` semantics).
+                        let step_at_flush = self
                             .inner
                             .completion_rx
                             .as_ref()
                             .map(|rx| rx.borrow().total_completed_steps)
                             .unwrap_or(0);
-                        let _ = tx.send((completed, senders));
+                        let _ = tx.send((step_at_flush, senders));
                     } else {
                         // No completion tracking — fire immediately.
                         for sender in senders {
@@ -206,9 +209,14 @@ struct PostgresCdcInputInner {
     /// Deferred async result senders from `write_events`, waiting to be paired
     /// with a step number during the next `Queue` command.
     pending_senders: Arc<Mutex<DeferredSenders>>,
-    /// Watch receiver for step completion (cloned into the Queue handler).
+    /// Watch receiver for step completion — used to snapshot `step_at_flush`
+    /// in the Queue handler.  Always tracks `total_completed_steps`.
     completion_rx: Option<tokio::sync::watch::Receiver<Completion>>,
-    /// Sender for passing (completed_at_flush, senders) to the background task.
+    /// Watcher source for the background task.  Taken once by `worker_task_inner`.
+    /// `Strict` when fault tolerance is enabled (gates slot on checkpoint);
+    /// `Fast` otherwise (gates slot on step completion).
+    watcher_rx: Mutex<Option<WatcherReceiver>>,
+    /// Sender for passing (step_at_flush, senders) to the background task.
     /// Created once at construction time if completion tracking is available.
     completion_tx: Option<mpsc::UnboundedSender<(u64, DeferredSenders)>>,
     /// Receiver half, taken once by worker_task_inner to spawn the background task.
@@ -234,7 +242,14 @@ impl PostgresCdcInputInner {
             xxh3_64(identity.as_bytes())
         };
 
-        let (completion_tx, completion_task_rx) = if completion_rx.is_some() {
+        // Use strict mode (gate slot on checkpoint) when fault tolerance is enabled;
+        // fast mode (gate slot on step completion) otherwise.
+        let watcher_rx = match consumer.checkpoint_watcher() {
+            Some(rx) => Some(WatcherReceiver::Strict(rx)),
+            None => completion_rx.clone().map(WatcherReceiver::Fast),
+        };
+
+        let (completion_tx, completion_task_rx) = if watcher_rx.is_some() {
             let (tx, rx) = mpsc::unbounded_channel();
             (Some(tx), Some(rx))
         } else {
@@ -249,6 +264,7 @@ impl PostgresCdcInputInner {
             pipeline_id,
             pending_senders: Arc::new(Mutex::new(Vec::new())),
             completion_rx,
+            watcher_rx: Mutex::new(watcher_rx),
             completion_tx,
             completion_task_rx: Mutex::new(completion_task_rx),
         }
@@ -321,9 +337,9 @@ impl PostgresCdcInputInner {
         };
 
         // Spawn the completion watcher background task if tracking is available.
-        // The channel was created in new(); we take the receiver here.
+        // The watcher and the channel were created in new(); we take them here.
         let completion_handle = match (
-            self.consumer.completion_watcher(),
+            self.watcher_rx.lock().unwrap().take(),
             self.completion_task_rx.lock().unwrap().take(),
         ) {
             (Some(watcher), Some(rx)) => Some(tokio::spawn(completion_watcher_task(
@@ -828,14 +844,43 @@ fn array_cell_to_json(arr: &ArrayCell) -> Value {
     }
 }
 
-/// Background task that watches for Feldera step completion and fires deferred
-/// ETL async result senders when the step containing their data has completed.
+/// Typed watch receiver used by the completion watcher background task.
 ///
-/// Each entry is `(completed_at_flush, senders)` where `completed_at_flush` is
-/// the value of `total_completed_steps` at the time the data was flushed to the
-/// circuit. The data is processed once `total_completed_steps > completed_at_flush`.
+/// `Fast` waits for step completion (`total_completed_steps`); used when fault
+/// tolerance is not enabled.  `Strict` waits for checkpoint completion; used
+/// when fault tolerance is enabled so the replication slot only advances past
+/// the last durable checkpoint, preserving at-least-once correctness for
+/// stateful circuits after a crash.
+enum WatcherReceiver {
+    Fast(tokio::sync::watch::Receiver<Completion>),
+    Strict(tokio::sync::watch::Receiver<u64>),
+}
+
+impl WatcherReceiver {
+    async fn changed(&mut self) -> Result<(), tokio::sync::watch::error::RecvError> {
+        match self {
+            Self::Fast(rx) => rx.changed().await,
+            Self::Strict(rx) => rx.changed().await,
+        }
+    }
+
+    fn frontier(&self) -> u64 {
+        match self {
+            Self::Fast(rx) => rx.borrow().total_completed_steps,
+            Self::Strict(rx) => *rx.borrow(),
+        }
+    }
+}
+
+/// Background task that fires deferred ETL async result senders when the
+/// completion frontier passes the step recorded at Queue time.
+///
+/// Each entry is `(step_at_flush, senders)` where `step_at_flush` is the
+/// value of `total_completed_steps` at the time the data was flushed to the
+/// circuit.  The data lands in the next step, so we fire when the frontier
+/// strictly exceeds `step_at_flush`.
 async fn completion_watcher_task(
-    mut completion_rx: tokio::sync::watch::Receiver<Completion>,
+    mut watcher: WatcherReceiver,
     mut pending_rx: mpsc::UnboundedReceiver<(u64, DeferredSenders)>,
     endpoint_name: String,
 ) {
@@ -843,19 +888,19 @@ async fn completion_watcher_task(
 
     loop {
         tokio::select! {
-            result = completion_rx.changed() => {
+            result = watcher.changed() => {
                 if result.is_err() {
                     break; // Sender dropped (pipeline shutting down)
                 }
-                let completed = completion_rx.borrow().total_completed_steps;
-                fire_completed(&mut waiting, completed);
+                let f = watcher.frontier();
+                fire_completed(&mut waiting, f);
             }
             maybe_entry = pending_rx.recv() => {
                 match maybe_entry {
                     Some((step_at_flush, senders)) => {
-                        let completed = completion_rx.borrow().total_completed_steps;
-                        if completed > step_at_flush {
-                            // Already complete — fire immediately.
+                        let f = watcher.frontier();
+                        if f > step_at_flush {
+                            // Already past the threshold — fire immediately.
                             for sender in senders {
                                 sender.send(Ok(()));
                             }
@@ -1489,5 +1534,335 @@ mod tests {
         let cols = cache.get(&42).map(|info| info.column_names.clone());
         assert_eq!(cols, Some(vec!["id".to_string(), "amount".to_string()]));
         assert_eq!(cache.get(&99).map(|info| info.column_names.clone()), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // fire_completed unit tests
+    // -----------------------------------------------------------------------
+
+    /// Creates an `AsyncResult` sender and a future that resolves to `true` when
+    /// the sender is fired with `Ok(())`.  Works in both sync and async contexts
+    /// because the pending side is wrapped in a tokio oneshot that the caller
+    /// can `.await`.
+    fn make_async_sender() -> (
+        WriteEventsResult<()>,
+        impl std::future::Future<Output = bool>,
+    ) {
+        let (async_result, pending) = etl::destination::async_result::AsyncResult::<()>::new(());
+        let fut = async move { pending.await.into_result().is_ok() };
+        (async_result, fut)
+    }
+
+    /// Sync-only helper: spawns a background OS thread so `fire_completed`
+    /// (which is sync) can be tested without a tokio runtime on the test thread.
+    fn make_tracked_sender_sync() -> (WriteEventsResult<()>, std::sync::mpsc::Receiver<bool>) {
+        let (flag_tx, flag_rx) = std::sync::mpsc::channel();
+        let (async_result, pending) = etl::destination::async_result::AsyncResult::<()>::new(());
+        std::thread::spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap()
+                .block_on(async move {
+                    let result = pending.await;
+                    let _ = flag_tx.send(result.into_result().is_ok());
+                });
+        });
+        (async_result, flag_rx)
+    }
+
+    #[test]
+    fn test_fire_completed_fires_when_past_frontier() {
+        let (sender, flag_rx) = make_tracked_sender_sync();
+        let mut waiting: Vec<(u64, DeferredSenders)> = vec![(5, vec![sender])];
+
+        // completed_steps=5 is NOT strictly greater than step_at_flush=5 — should not fire.
+        fire_completed(&mut waiting, 5);
+        assert_eq!(waiting.len(), 1, "should still be waiting at step=5");
+
+        // completed_steps=6 is strictly greater — should fire.
+        fire_completed(&mut waiting, 6);
+        assert!(waiting.is_empty(), "entry should have been removed");
+
+        let fired = flag_rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
+        assert!(fired, "sender should have been fired with Ok(())");
+    }
+
+    #[test]
+    fn test_fire_completed_does_not_fire_at_equal_frontier() {
+        let (sender, _flag_rx) = make_tracked_sender_sync();
+        let mut waiting: Vec<(u64, DeferredSenders)> = vec![(10, vec![sender])];
+        fire_completed(&mut waiting, 10);
+        assert_eq!(
+            waiting.len(),
+            1,
+            "step_at_flush==completed_steps must not fire"
+        );
+    }
+
+    #[test]
+    fn test_fire_completed_fires_only_ready_entries() {
+        let (s1, rx1) = make_tracked_sender_sync();
+        let (s2, _rx2) = make_tracked_sender_sync();
+        let mut waiting: Vec<(u64, DeferredSenders)> = vec![
+            (3, vec![s1]), // fires at completed=4
+            (7, vec![s2]), // stays waiting at completed=4
+        ];
+        fire_completed(&mut waiting, 4);
+        assert_eq!(waiting.len(), 1, "only the step=7 entry should remain");
+        assert_eq!(waiting[0].0, 7);
+        let fired = rx1.recv_timeout(std::time::Duration::from_secs(2)).unwrap();
+        assert!(fired);
+    }
+
+    #[test]
+    fn test_fire_completed_empty_waiting() {
+        let mut waiting: Vec<(u64, DeferredSenders)> = vec![];
+        fire_completed(&mut waiting, 100);
+        assert!(waiting.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // completion_watcher_task unit tests
+    // -----------------------------------------------------------------------
+
+    fn make_completion(completed: u64) -> Completion {
+        Completion {
+            total_completed_steps: completed,
+        }
+    }
+
+    const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+    #[tokio::test]
+    async fn test_watcher_fast_mode_fires_on_completed_steps() {
+        let (completion_tx, completion_rx) = tokio::sync::watch::channel(make_completion(0));
+        let (pending_tx, pending_rx) = mpsc::unbounded_channel::<(u64, DeferredSenders)>();
+
+        tokio::spawn(completion_watcher_task(
+            WatcherReceiver::Fast(completion_rx),
+            pending_rx,
+            "test-fast".to_string(),
+        ));
+
+        let (sender, fired_fut) = make_async_sender();
+        pending_tx.send((2, vec![sender])).unwrap();
+
+        // Advance completed_steps past step_at_flush=2.
+        completion_tx.send(make_completion(3)).unwrap();
+
+        let fired = tokio::time::timeout(TIMEOUT, fired_fut)
+            .await
+            .expect("timed out waiting for fast-mode fire");
+        assert!(
+            fired,
+            "fast mode must fire when total_completed_steps > step_at_flush"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_watcher_strict_mode_does_not_fire_on_completed_steps_only() {
+        let (completion_tx, completion_rx) = tokio::sync::watch::channel(make_completion(0));
+        let (checkpoint_tx, checkpoint_rx) = tokio::sync::watch::channel(0u64);
+        let (pending_tx, pending_rx) = mpsc::unbounded_channel::<(u64, DeferredSenders)>();
+
+        // completion_rx is only used to read step_at_flush in Queue; the task
+        // uses checkpoint_rx for the strict-mode frontier.
+        let _ = completion_tx;
+
+        tokio::spawn(completion_watcher_task(
+            WatcherReceiver::Strict(checkpoint_rx),
+            pending_rx,
+            "test-strict".to_string(),
+        ));
+
+        let (sender, fired_fut) = make_async_sender();
+        pending_tx.send((2, vec![sender])).unwrap();
+
+        // Only advance the checkpoint notifier to 0 (no change) — must not fire.
+        let _ = checkpoint_tx.send(0);
+        tokio::task::yield_now().await;
+
+        // The future must NOT resolve — a very short timeout should expire.
+        let did_fire = tokio::time::timeout(std::time::Duration::from_millis(50), fired_fut).await;
+        assert!(
+            did_fire.is_err(),
+            "strict mode must NOT fire when checkpoint frontier has not advanced past step_at_flush"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_watcher_strict_mode_fires_on_checkpointed_steps() {
+        let (checkpoint_tx, checkpoint_rx) = tokio::sync::watch::channel(0u64);
+        let (pending_tx, pending_rx) = mpsc::unbounded_channel::<(u64, DeferredSenders)>();
+
+        tokio::spawn(completion_watcher_task(
+            WatcherReceiver::Strict(checkpoint_rx),
+            pending_rx,
+            "test-strict-fires".to_string(),
+        ));
+
+        let (sender, fired_fut) = make_async_sender();
+        pending_tx.send((2, vec![sender])).unwrap();
+
+        // Checkpoint step advances past step_at_flush=2 — must fire.
+        checkpoint_tx.send(3).unwrap();
+
+        let fired = tokio::time::timeout(TIMEOUT, fired_fut)
+            .await
+            .expect("timed out waiting for strict-mode fire");
+        assert!(
+            fired,
+            "strict mode must fire when checkpointed step > step_at_flush"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_watcher_fires_immediately_when_already_past_frontier() {
+        // completed_steps already beyond step_at_flush at task start.
+        let (_completion_tx, completion_rx) = tokio::sync::watch::channel(make_completion(10));
+        let (pending_tx, pending_rx) = mpsc::unbounded_channel::<(u64, DeferredSenders)>();
+
+        tokio::spawn(completion_watcher_task(
+            WatcherReceiver::Fast(completion_rx),
+            pending_rx,
+            "test-already-done".to_string(),
+        ));
+
+        let (sender, fired_fut) = make_async_sender();
+        pending_tx.send((5, vec![sender])).unwrap();
+
+        let fired = tokio::time::timeout(TIMEOUT, fired_fut)
+            .await
+            .expect("timed out waiting for immediate fire");
+        assert!(
+            fired,
+            "must fire immediately when frontier already exceeds step_at_flush"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_watcher_strict_fires_immediately_when_checkpointed_past_frontier() {
+        let (_checkpoint_tx, checkpoint_rx) = tokio::sync::watch::channel(10u64);
+        let (pending_tx, pending_rx) = mpsc::unbounded_channel::<(u64, DeferredSenders)>();
+
+        tokio::spawn(completion_watcher_task(
+            WatcherReceiver::Strict(checkpoint_rx),
+            pending_rx,
+            "test-strict-already-done".to_string(),
+        ));
+
+        let (sender, fired_fut) = make_async_sender();
+        pending_tx.send((5, vec![sender])).unwrap();
+
+        let fired = tokio::time::timeout(TIMEOUT, fired_fut)
+            .await
+            .expect("timed out waiting for immediate strict-mode fire");
+        assert!(
+            fired,
+            "strict mode must fire immediately when checkpointed step already exceeds step_at_flush"
+        );
+    }
+
+    /// Regression: at Queue time the checkpointed step (2) lags the flush
+    /// frontier (5).  A partial checkpoint advancing to 4 does not cover the
+    /// step containing the new data, so strict mode must NOT fire.
+    #[tokio::test]
+    async fn test_watcher_strict_does_not_fire_on_partial_checkpoint() {
+        let (checkpoint_tx, checkpoint_rx) = tokio::sync::watch::channel(2u64);
+        let (pending_tx, pending_rx) = mpsc::unbounded_channel::<(u64, DeferredSenders)>();
+
+        tokio::spawn(completion_watcher_task(
+            WatcherReceiver::Strict(checkpoint_rx),
+            pending_rx,
+            "test-strict-partial".to_string(),
+        ));
+
+        let (sender, fired_fut) = make_async_sender();
+        // step_at_flush = 5.
+        pending_tx.send((5, vec![sender])).unwrap();
+
+        // Partial checkpoint advances to 4 — still below step_at_flush=5.
+        checkpoint_tx.send(4).unwrap();
+        tokio::task::yield_now().await;
+
+        let did_fire = tokio::time::timeout(std::time::Duration::from_millis(50), fired_fut).await;
+        assert!(
+            did_fire.is_err(),
+            "strict mode must NOT fire when checkpoint (4) does not exceed step_at_flush (5)"
+        );
+    }
+
+    /// Regression: after a partial checkpoint stalls, a full checkpoint that
+    /// passes step_at_flush must fire.
+    #[tokio::test]
+    async fn test_watcher_strict_fires_when_checkpoint_passes_step_at_flush() {
+        let (checkpoint_tx, checkpoint_rx) = tokio::sync::watch::channel(2u64);
+        let (pending_tx, pending_rx) = mpsc::unbounded_channel::<(u64, DeferredSenders)>();
+
+        tokio::spawn(completion_watcher_task(
+            WatcherReceiver::Strict(checkpoint_rx),
+            pending_rx,
+            "test-strict-passes".to_string(),
+        ));
+
+        let (sender, fired_fut) = make_async_sender();
+        pending_tx.send((5, vec![sender])).unwrap();
+
+        // Full checkpoint advances past step_at_flush=5 — must fire.
+        checkpoint_tx.send(6).unwrap();
+
+        let fired = tokio::time::timeout(TIMEOUT, fired_fut)
+            .await
+            .expect("timed out waiting for strict fire after lagging checkpoint");
+        assert!(
+            fired,
+            "strict mode must fire when checkpointed step (6) > step_at_flush (5)"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_watcher_multiple_batches_different_thresholds() {
+        let (completion_tx, completion_rx) = tokio::sync::watch::channel(make_completion(0));
+        let (pending_tx, pending_rx) = mpsc::unbounded_channel::<(u64, DeferredSenders)>();
+
+        tokio::spawn(completion_watcher_task(
+            WatcherReceiver::Fast(completion_rx),
+            pending_rx,
+            "test-multi".to_string(),
+        ));
+
+        let (s1, f1) = make_async_sender(); // fires at completed > 1
+        let (s2, f2) = make_async_sender(); // fires at completed > 4
+        let (s3, f3) = make_async_sender(); // fires at completed > 7
+
+        pending_tx.send((1, vec![s1])).unwrap();
+        pending_tx.send((4, vec![s2])).unwrap();
+        pending_tx.send((7, vec![s3])).unwrap();
+
+        // Advance to 2 — only s1 fires.
+        completion_tx.send(make_completion(2)).unwrap();
+        assert!(
+            tokio::time::timeout(TIMEOUT, f1)
+                .await
+                .expect("s1 timed out")
+        );
+
+        // Advance to 5 — s2 fires.
+        completion_tx.send(make_completion(5)).unwrap();
+        assert!(
+            tokio::time::timeout(TIMEOUT, f2)
+                .await
+                .expect("s2 timed out")
+        );
+
+        // Advance to 8 — s3 fires.
+        completion_tx.send(make_completion(8)).unwrap();
+        assert!(
+            tokio::time::timeout(TIMEOUT, f3)
+                .await
+                .expect("s3 timed out")
+        );
     }
 }
