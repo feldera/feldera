@@ -262,13 +262,22 @@ impl Checkpointer {
             )
             .and_then(|reader| reader.commit())?;
 
+        // Barrier fsync the checkpoint dir so every rename done by operators
+        // committing their state files into this dir becomes durable.
+        self.backend.fsync_dir(&cp_dir)?;
+
         md.size = Some(self.measure_checkpoint_storage_use(uuid)?);
 
         // Persist the catalog first, then add to the in-memory list only on
         // success. Otherwise a failed write leaves callers with a phantom
-        // checkpoint that no future restart will recognize.
+        // checkpoint that no future restart will recognize. The same rollback
+        // applies when the post-rename parent-dir fsync fails: the rename is
+        // not yet durable, so a crash can drop it and leave the same phantom.
         self.checkpoint_list.push_back(md.clone());
-        if let Err(e) = self.update_checkpoint_file() {
+        let result = self
+            .update_checkpoint_file()
+            .and_then(|_| Ok(self.backend.fsync_dir(&StoragePath::default())?));
+        if let Err(e) = result {
             self.checkpoint_list.pop_back();
             return Err(e);
         }

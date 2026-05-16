@@ -133,6 +133,20 @@ pub trait StorageBackend: Send + Sync {
         Ok(reader)
     }
 
+    /// Flushes the directory entry metadata for `dir` to stable storage.
+    ///
+    /// POSIX `fsync(file)` guarantees the file's data is durable but says
+    /// nothing about whether the file's name in its parent directory is
+    /// durable. After renaming files into a directory or creating new
+    /// subdirectories, the caller can use this barrier to make those
+    /// directory entries durable in one syscall.
+    ///
+    /// Backends that do not have a meaningful notion of directory
+    /// durability (e.g. object stores) may treat this as a no-op.
+    fn fsync_dir(&self, _dir: &StoragePath) -> Result<(), StorageError> {
+        Ok(())
+    }
+
     /// Returns a value that represents the number of bytes of storage in use.
     /// The storage backend updates this value when its own functions cause more
     /// or less storage to be used:
