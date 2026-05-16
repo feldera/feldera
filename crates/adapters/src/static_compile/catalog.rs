@@ -518,7 +518,7 @@ impl Catalog {
 
     /// `gather_integral` indicates whether the stream must be materialized on
     /// the host assigned to this stream. This is necessary in order to be able
-    /// to send a snapshot of the collection a connector attached to this stream.
+    /// to send a snapshot of the collection to a connector attached to this stream.
     pub fn register_materialized_output_zset_persistent_inner<Z, D>(
         &mut self,
         persistent_id: Option<&str>,
@@ -560,7 +560,11 @@ impl Catalog {
         let integral_stream = if gather_integral {
             gathered_stream.accumulate_integrate_trace()
         } else {
-            stream.accumulate_integrate_trace()
+            // Our transaction semantics currently promises to update table snapshots after every step,
+            // not just on commit, so that ad hoc queries that modify (INSERT) and instantly read (SELECT)
+            // the table see their own changes even when there is a transaction in progress.  Therefore,
+            // we use `integrate_trace` instead of `accumulate_integrate_trace` here.
+            stream.integrate_trace()
         };
 
         let (integrate_handle, integrate_gid) = integral_stream

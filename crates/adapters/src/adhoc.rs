@@ -382,8 +382,7 @@ async fn execute_sql_with_state(
 
     // The snapshot pinned in `state` was captured at request start, before
     // any intermediate INSERT ran. Refresh it so the trailing SELECT sees
-    // the just-written rows. Tracks
-    // https://github.com/feldera/feldera/issues/6243.
+    // the just-written rows.
     if intermediate_wrote_data
         && let Some(controller) = controller
         && let Some(watcher) = step_watcher.as_mut()
@@ -455,17 +454,12 @@ fn plan_writes_data(plan: &LogicalPlan) -> bool {
     matches!(plan, LogicalPlan::Dml(_))
 }
 
-/// Wait for the controller to complete at least one full step after
-/// the intermediate writes returned, then update `state`'s pinned
-/// snapshot to the freshly produced one. The controller updates
-/// `trace_snapshots` at the end of every non-transactional step, so
-/// observing the next `Idle` transition is enough to guarantee that
-/// our writes are visible.
-///
-/// `watcher` must have been created before the intermediate writes
-/// happened so the steps that drain them are already buffered as
-/// unseen changes; otherwise this function would block waiting for
-/// a future step that may never be triggered on an idle pipeline.
+/// Wait for the controller to drain the intermediate writes, then pin the
+/// resulting snapshot in `state`. Relies on two controller invariants:
+/// `update_snapshot()` runs before each `Idle` notification (so any `Idle`
+/// observed after subscribing already reflects our writes), and `watcher`
+/// must be subscribed before the writes are submitted or we may sleep
+/// forever on an otherwise idle pipeline.
 async fn refresh_snapshot_after_writes(
     controller: &Controller,
     watcher: &mut tokio::sync::watch::Receiver<feldera_types::coordination::StepStatus>,

@@ -568,7 +568,7 @@ class TestAdhocReadAfterWrite(SharedTestPipeline):
           id INT NOT NULL PRIMARY KEY
         ) WITH ('materialized' = 'true');"""
     )
-    def test_multi_statement_query_during_open_transaction(self):
+    def test_multi_statement_query_during_open_transaction_pk(self):
         """An ad-hoc request running inside a user transaction must
         still see its own intermediate INSERTs in the trailing SELECT.
         Adhoc reads pull from `trace_snapshots`, which updates on every
@@ -598,6 +598,41 @@ class TestAdhocReadAfterWrite(SharedTestPipeline):
 
         # After commit, a fresh adhoc query still sees the same three rows.
         rows_after = list(self.pipeline.query("SELECT COUNT(*) AS c FROM example2"))
+        assert rows_after and rows_after[0].get("c") == 3, (
+            f"after commit, all three inserts must be visible, got {rows_after!r}"
+        )
+
+    @sql(
+        """CREATE TABLE example3 (
+          id INT
+        ) WITH ('materialized' = 'true');"""
+    )
+    def test_multi_statement_query_during_open_transaction_no_pk(self):
+        """Same as test_multi_statement_query_during_open_transaction_pk, but for a table without a primary key."""
+        self.pipeline.start()
+
+        # Seed one row outside the transaction as the baseline.
+        self.pipeline.execute("INSERT INTO example3 VALUES (1)")
+
+        tid = self.pipeline.start_transaction()
+        rows_during = list(
+            self.pipeline.query(
+                "INSERT INTO example3 VALUES (2);"
+                " INSERT INTO example3 VALUES (3);"
+                " SELECT COUNT(*) AS c FROM example3"
+            )
+        )
+        self.pipeline.commit_transaction(transaction_id=tid, wait=True)
+
+        assert rows_during, "trailing SELECT must return a row"
+        count_during = rows_during[0].get("c")
+        assert count_during == 3, (
+            f"trailing SELECT inside the transaction must observe all "
+            f"three rows (baseline + two intermediate inserts), got {count_during}"
+        )
+
+        # After commit, a fresh adhoc query still sees the same three rows.
+        rows_after = list(self.pipeline.query("SELECT COUNT(*) AS c FROM example3"))
         assert rows_after and rows_after[0].get("c") == 3, (
             f"after commit, all three inserts must be visible, got {rows_after!r}"
         )
