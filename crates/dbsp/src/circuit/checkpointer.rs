@@ -258,11 +258,14 @@ impl Checkpointer {
             return Ok(HashSet::new());
         }
 
-        let mut batch_files_to_keep: HashSet<_> = except
-            .iter()
-            .filter_map(|uuid| self.backend.gather_batches_for_checkpoint_uuid(*uuid).ok())
-            .flatten()
-            .collect();
+        // Make sure to keep every batch referenced by a checkpoint in `except`.
+        // Errors must propagate; silently swallowing them would let GC delete
+        // batches we promised to keep.
+        let mut batch_files_to_keep: HashSet<StoragePath> = HashSet::new();
+        for uuid in &except {
+            let batches = self.backend.gather_batches_for_checkpoint_uuid(*uuid)?;
+            batch_files_to_keep.extend(batches);
+        }
 
         let to_remove: HashSet<_> = self
             .checkpoint_list
@@ -287,17 +290,17 @@ impl Checkpointer {
         // to remove the checkpoint files again (see also [`Self::gc_startup`]).
         self.update_checkpoint_file()?;
 
-        // Find the first checkpoint in checkpoint list that is not in `except`.
-        self.checkpoint_list
+        // Also keep batches of the newest retained checkpoint not in `except`
+        // (its merger may still depend on them). Errors must propagate so we
+        // never delete a batch we couldn't prove safe.
+        if let Some(retained) = self
+            .checkpoint_list
             .iter()
-            .filter(|c| !except.contains(&c.uuid))
-            .take(1)
-            .filter_map(|c| self.backend.gather_batches_for_checkpoint(c).ok())
-            .for_each(|batches| {
-                for batch in batches {
-                    batch_files_to_keep.insert(batch);
-                }
-            });
+            .find(|c| !except.contains(&c.uuid))
+        {
+            let batches = self.backend.gather_batches_for_checkpoint(retained)?;
+            batch_files_to_keep.extend(batches);
+        }
 
         for cpm in &to_remove {
             for batch_file in self
@@ -521,6 +524,45 @@ mod test {
         fn usage(&self) -> Arc<std::sync::atomic::AtomicI64> {
             self.inner.usage()
         }
+    }
+
+    /// `gc_checkpoint` must not silently drop a "protect this checkpoint"
+    /// request when the protected checkpoint has corrupt metadata. Otherwise
+    /// shared batches are deleted out from under a retained checkpoint.
+    #[test]
+    fn gc_checkpoint_propagates_corrupt_protected_metadata() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let backend: Arc<dyn StorageBackend> = Arc::new(PosixBackend::new(
+            tempdir.path(),
+            StorageCacheConfig::default(),
+            &FileBackendConfig::default(),
+        ));
+        let mut checkpointer = Checkpointer::new(backend).unwrap();
+
+        // Need more than MIN_CHECKPOINT_THRESHOLD checkpoints so gc has work.
+        let mut uuids = Vec::new();
+        for i in 0..Checkpointer::MIN_CHECKPOINT_THRESHOLD + 1 {
+            let uuid = uuid::Uuid::now_v7();
+            checkpointer
+                .commit(uuid, 0, None, Some(i as u64), Some(0))
+                .unwrap();
+            uuids.push(uuid);
+        }
+
+        // Corrupt the metadata of the newest checkpoint (the one we'll protect).
+        let protected = *uuids.last().unwrap();
+        let pspine = tempdir
+            .path()
+            .join(protected.to_string())
+            .join("pspine-batches-trace.dat");
+        std::fs::write(&pspine, b"{not valid json").unwrap();
+
+        let except: HashSet<_> = [protected].into_iter().collect();
+        let result = checkpointer.gc_checkpoint(except);
+        assert!(
+            result.is_err(),
+            "gc_checkpoint should not return Ok with corrupt metadata on protected checkpoint {protected}",
+        );
     }
 
     /// Startup must not panic when a checkpoint dir contains a malformed
