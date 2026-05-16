@@ -7197,6 +7197,19 @@ impl CircuitHandle {
 
         // debug!("CircuitHandle::restore: restoring from checkpoint {}", base);
 
+        // In persistent mode, refuse to silently treat a vanished state
+        // file as backfill. dependencies.json records every state file at
+        // commit time; if any are gone, the corruption is structural and
+        // operators need to see it. A missing backend in persistent mode is
+        // an invariant violation, surface it rather than skipping verify.
+        if Runtime::mode() == Mode::Persistent {
+            let backend = Runtime::storage_backend()?;
+            crate::circuit::checkpointer::Checkpointer::verify_checkpoint_intact(
+                backend.as_ref(),
+                base,
+            )?;
+        }
+
         // Initialize `need_backfill` to operators without a checkpoint.
         // Fail if there are any errors other than NotFound.
         // By the end of this, `need_backfill` will contain all new integrals and output

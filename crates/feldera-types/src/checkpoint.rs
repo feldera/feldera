@@ -138,9 +138,114 @@ pub struct PSpineBatches {
     pub files: Vec<String>,
 }
 
+/// Serialized form of `dependencies.json` on disk.
+///
+/// Two formats. New checkpoints write the struct form (`V2`) carrying both
+/// the batch list referenced at the storage root *and* the list of per-operator
+/// state files inside the checkpoint dir. Old checkpoints stored only the
+/// batch-filename array (`V1`); they remain readable so a rolling upgrade
+/// across in-flight checkpoints is safe.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum CheckpointDependencies {
+    V2 {
+        /// Batch filenames at the storage root (`w*.feldera`) that the
+        /// checkpoint references for GC retention.
+        batches: Vec<String>,
+        /// Per-operator state filenames inside the checkpoint dir
+        /// (e.g. `pspine-*.dat`, `z1-*.dat`, `CHECKPOINT`). Consumed by
+        /// restore-time verification. Defaulted to empty for forward compat.
+        #[serde(default)]
+        state_files: Vec<String>,
+    },
+    /// Legacy form: JSON array of batch filenames at the storage root
+    /// (`w*.feldera`). No state-file manifest.
+    V1(Vec<String>),
+}
+
+impl CheckpointDependencies {
+    /// Batch files the checkpoint references at the storage root
+    /// (`w*.feldera`). Present in both V1 and V2 checkpoints.
+    pub fn batches(&self) -> &[String] {
+        match self {
+            CheckpointDependencies::V2 { batches, .. } => batches,
+            CheckpointDependencies::V1(batches) => batches,
+        }
+    }
+
+    /// Per-operator state files the checkpoint owned at commit time. These
+    /// live inside the checkpoint dir (e.g. `pspine-*.dat`, `z1-*.dat`).
+    /// Empty for V1 checkpoints, which predate the state-file manifest.
+    pub fn state_files(&self) -> &[String] {
+        match self {
+            CheckpointDependencies::V2 { state_files, .. } => state_files,
+            CheckpointDependencies::V1(_) => &[],
+        }
+    }
+}
+
+/// Serialized form written to `dependencies.json`.  Always emits V2.
+#[derive(Debug, Serialize)]
+pub struct CheckpointDependenciesWrite<'a> {
+    pub batches: &'a [String],
+    pub state_files: &'a [String],
+}
+
 #[derive(Debug)]
 pub struct CheckpointSyncMetrics {
     pub duration: Duration,
     pub speed: u64,
     pub bytes: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CheckpointDependencies, CheckpointDependenciesWrite};
+
+    /// Legacy bare-array dependencies.json from older checkpoints must still
+    /// parse, yielding an empty state-file list (no manifest verification).
+    #[test]
+    fn deserialize_v1_legacy_array() {
+        let raw = r#"["w0-aaa.feldera", "w1-bbb.feldera"]"#;
+        let deps: CheckpointDependencies = serde_json::from_str(raw).unwrap();
+        assert!(deps.state_files().is_empty());
+        assert_eq!(deps.batches(), &["w0-aaa.feldera", "w1-bbb.feldera"]);
+    }
+
+    /// Current struct form carries both lists.
+    #[test]
+    fn deserialize_v2_struct() {
+        let raw = r#"{
+            "batches": ["w0-aaa.feldera"],
+            "state_files": ["pspine-0-zzz.dat", "CHECKPOINT"]
+        }"#;
+        let deps: CheckpointDependencies = serde_json::from_str(raw).unwrap();
+        assert_eq!(deps.state_files(), &["pspine-0-zzz.dat", "CHECKPOINT"]);
+        assert_eq!(deps.batches(), &["w0-aaa.feldera"]);
+    }
+
+    /// V2 without `state_files` (partial writer, partial migration)
+    /// deserializes with an empty state-file list rather than failing.
+    #[test]
+    fn deserialize_v2_missing_state_files_defaults_to_empty() {
+        let raw = r#"{"batches": ["w0-aaa.feldera"]}"#;
+        let deps: CheckpointDependencies = serde_json::from_str(raw).unwrap();
+        assert!(deps.state_files().is_empty());
+        assert_eq!(deps.batches(), &["w0-aaa.feldera"]);
+    }
+
+    /// Writes emit V2 and round-trip back to the same content.
+    #[test]
+    fn write_v2_round_trips() {
+        let batches = vec!["w0-x.feldera".to_string()];
+        let state_files = vec!["pspine-0-y.dat".to_string()];
+        let json = serde_json::to_string(&CheckpointDependenciesWrite {
+            batches: &batches,
+            state_files: &state_files,
+        })
+        .unwrap();
+        let deps: CheckpointDependencies = serde_json::from_str(&json).unwrap();
+        assert_eq!(deps.state_files(), state_files.as_slice());
+        assert_eq!(deps.batches(), batches.as_slice());
+    }
 }

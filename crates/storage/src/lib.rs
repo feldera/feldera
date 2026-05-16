@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicI64;
 
-use feldera_types::checkpoint::{CheckpointMetadata, PSpineBatches};
+use feldera_types::checkpoint::{CheckpointDependencies, CheckpointMetadata, PSpineBatches};
 use feldera_types::config::{StorageBackendConfig, StorageConfig, StorageOptions};
 use feldera_types::constants::{CHECKPOINT_DEPENDENCIES, CREATE_FILE_EXTENSION};
 use serde::de::DeserializeOwned;
@@ -205,15 +205,20 @@ impl dyn StorageBackend {
         // batch referenced by the checkpoint at commit time. Prefer it
         // over the per-spine `pspine-batches-*.dat` scan below: a valid
         // commit always writes it, and it captures the full list in one
-        // place so a single read suffices.
+        // place so a single read suffices. See `CheckpointDependencies`
+        // for the accepted JSON forms.
         let deps_path = checkpoint_dir.child(CHECKPOINT_DEPENDENCIES);
-        match self.read_json::<Vec<String>>(&deps_path) {
-            Ok(files) => {
-                return Ok(files.into_iter().map(StoragePath::from).collect());
+        match self.read_json::<CheckpointDependencies>(&deps_path) {
+            Ok(deps) => {
+                return Ok(deps
+                    .batches()
+                    .iter()
+                    .map(|b| StoragePath::from(b.as_str()))
+                    .collect());
             }
             Err(error) if error.kind() == ErrorKind::NotFound => {
-                // Fall back to scanning per-spine metadata. Older
-                // checkpoints predate `dependencies.json`.
+                // Fall back to scanning per-spine sidecars. Predates the
+                // `dependencies.json` snapshot entirely.
             }
             Err(error) => return Err(error),
         }

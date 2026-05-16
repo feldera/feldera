@@ -3,12 +3,13 @@
 use crate::dynamic::{self, data::DataTyped};
 use crate::storage::file::SerializerInner;
 use crate::{Error, NumEntries, TypedBox};
-use feldera_types::checkpoint::CheckpointMetadata;
+use feldera_types::checkpoint::{
+    CheckpointDependencies, CheckpointDependenciesWrite, CheckpointMetadata,
+};
 use feldera_types::constants::{
     ACTIVATION_MARKER_FILE, ADHOC_TEMP_DIR, CHECKPOINT_DEPENDENCIES, CHECKPOINT_FILE_NAME,
     DBSP_FILE_EXTENSION, STATE_FILE, STATUS_FILE, STEPS_FILE,
 };
-use itertools::Itertools;
 use size_of::SizeOf;
 
 use std::io::ErrorKind;
@@ -154,6 +155,54 @@ impl Checkpointer {
         uuid.to_string().into()
     }
 
+    /// Confirm every state file recorded for this checkpoint at commit time
+    /// is still on disk.
+    ///
+    /// Callers use this before restoring a persistent-mode checkpoint to
+    /// distinguish "operator is new since the checkpoint" (file legitimately
+    /// absent) from "operator state was committed but the file vanished"
+    /// (storage corruption). V1 checkpoints have no state-file list, so
+    /// the check is a no-op for them, preserving backwards compatibility.
+    pub fn verify_checkpoint_intact(
+        backend: &dyn StorageBackend,
+        cp_dir: &StoragePath,
+    ) -> Result<(), StorageError> {
+        let deps: CheckpointDependencies =
+            match backend.read_json(&cp_dir.child(CHECKPOINT_DEPENDENCIES)) {
+                Ok(d) => d,
+                Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+                Err(error) => return Err(error),
+            };
+        let state_files = deps.state_files();
+        // V1 checkpoints have no state-file manifest; nothing to verify against.
+        if state_files.is_empty() {
+            return Ok(());
+        }
+
+        let mut present: HashSet<String> = HashSet::new();
+        backend.list(cp_dir, &mut |path, file_type| {
+            if file_type != StorageFileType::Directory {
+                if let Some(name) = path.filename() {
+                    present.insert(name.to_string());
+                }
+            }
+        })?;
+
+        let missing: Vec<String> = state_files
+            .iter()
+            .filter(|name| !present.contains(*name))
+            .cloned()
+            .collect();
+        if !missing.is_empty() {
+            return Err(StorageError::StdIo {
+                kind: ErrorKind::InvalidData,
+                operation: "checkpoint state files missing from checkpoint dir",
+                path: Some(format!("{}: {}", cp_dir, missing.join(", "))),
+            });
+        }
+        Ok(())
+    }
+
     pub(super) fn commit(
         &mut self,
         uuid: Uuid,
@@ -177,11 +226,39 @@ impl Checkpointer {
         };
 
         let batches = self.gather_batches_for_checkpoint(&md)?;
+        let batches_vec: Vec<String> = batches.into_iter().map(|p| p.to_string()).collect();
+
+        // Single source of truth for what this checkpoint owns:
+        //   * `batches`     -> the w*.feldera files at the storage root the
+        //                       checkpoint references (used by GC)
+        //   * `state_files` -> every per-operator state file in this
+        //                       checkpoint dir (used by restore to detect
+        //                       silent state-file loss in persistent mode)
+        // Listing the dir captures every file that operators wrote during
+        // their checkpoint phase. Dependencies.json itself is excluded
+        // because it is what we are about to write. The CHECKPOINT marker
+        // written above is captured here too, so verify_checkpoint_intact
+        // also catches a missing marker on restore.
+        let cp_dir = Self::checkpoint_dir(uuid);
+        let mut state_files: Vec<String> = Vec::new();
+        self.backend.list(&cp_dir, &mut |path, file_type| {
+            if file_type != StorageFileType::Directory {
+                if let Some(name) = path.filename() {
+                    if name != CHECKPOINT_DEPENDENCIES {
+                        state_files.push(name.to_string());
+                    }
+                }
+            }
+        })?;
+        state_files.sort_unstable();
 
         self.backend
             .write_json(
-                &Self::checkpoint_dir(uuid).child(CHECKPOINT_DEPENDENCIES),
-                &batches.into_iter().map(|p| p.to_string()).collect_vec(),
+                &cp_dir.child(CHECKPOINT_DEPENDENCIES),
+                &CheckpointDependenciesWrite {
+                    batches: &batches_vec,
+                    state_files: &state_files,
+                },
             )
             .and_then(|reader| reader.commit())?;
 
@@ -553,6 +630,43 @@ mod test {
         fn usage(&self) -> Arc<std::sync::atomic::AtomicI64> {
             self.inner.usage()
         }
+    }
+
+    /// `verify_checkpoint_intact` errors when a state file listed in
+    /// `dependencies.json` is missing from the checkpoint dir.
+    #[test]
+    fn verify_checkpoint_intact_detects_missing_state_file() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let backend: Arc<dyn StorageBackend> = Arc::new(PosixBackend::new(
+            tempdir.path(),
+            StorageCacheConfig::default(),
+            &FileBackendConfig::default(),
+        ));
+        let mut checkpointer = Checkpointer::new(backend.clone()).unwrap();
+
+        let uuid = uuid::Uuid::now_v7();
+        // Pre-populate a per-operator state file before commit so the
+        // dependencies record captures it in state_files.
+        let cp_dir = tempdir.path().join(uuid.to_string());
+        std::fs::create_dir_all(&cp_dir).unwrap();
+        let state_file = cp_dir.join("pspine-trace.dat");
+        std::fs::write(&state_file, b"spine state").unwrap();
+
+        checkpointer.commit(uuid, 0, None, Some(0), Some(0)).unwrap();
+        drop(checkpointer);
+
+        let cp_path: StoragePath = uuid.to_string().into();
+        Checkpointer::verify_checkpoint_intact(backend.as_ref(), &cp_path)
+            .expect("intact checkpoint should verify");
+
+        // Lose the per-operator file. The dependencies record still names it.
+        std::fs::remove_file(&state_file).unwrap();
+        let err = Checkpointer::verify_checkpoint_intact(backend.as_ref(), &cp_path)
+            .expect_err("missing state file should be reported");
+        assert!(
+            format!("{err}").contains("pspine-trace.dat"),
+            "error should mention the missing file, got: {err}",
+        );
     }
 
     /// Verifies that GC uses `dependencies.json` as the authoritative list
