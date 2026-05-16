@@ -555,6 +555,105 @@ mod test {
         }
     }
 
+    /// Verifies that GC uses `dependencies.json` as the authoritative list
+    /// of batches to keep, so a checkpoint survives missing or corrupted
+    /// `pspine-batches-*.dat` files.
+    #[test]
+    fn missing_pspine_batches_preserves_batches() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let make_backend = || -> Arc<dyn StorageBackend> {
+            Arc::new(PosixBackend::new(
+                tempdir.path(),
+                StorageCacheConfig::default(),
+                &FileBackendConfig::default(),
+            ))
+        };
+
+        let mut checkpointer = Checkpointer::new(make_backend()).unwrap();
+        let uuid = uuid::Uuid::now_v7();
+        // Pre-populate a batch file and a pspine-batches entry that
+        // references it before calling commit, so the commit-time
+        // dependencies.json captures the batch in its snapshot.
+        let cp_dir = tempdir.path().join(uuid.to_string());
+        std::fs::create_dir_all(&cp_dir).unwrap();
+        let batch_filename = "w0-aaaaaaaa.feldera";
+        let batch_path = tempdir.path().join(batch_filename);
+        std::fs::write(&batch_path, b"batch payload").unwrap();
+        let pspine_batches_path = cp_dir.join("pspine-batches-trace.dat");
+        std::fs::write(
+            &pspine_batches_path,
+            serde_json::to_vec(&serde_json::json!({
+                "files": [batch_filename]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        checkpointer.commit(uuid, 0, None, Some(0), Some(0)).unwrap();
+        drop(checkpointer);
+
+        // Now lose the per-spine metadata, keeping dependencies.json intact.
+        std::fs::remove_file(&pspine_batches_path).unwrap();
+        assert!(cp_dir.join("dependencies.json").exists());
+        assert!(batch_path.exists());
+
+        let _restarted = Checkpointer::new(make_backend()).unwrap();
+        assert!(
+            batch_path.exists(),
+            "startup GC deleted live batch {} after losing pspine-batches metadata",
+            batch_path.display(),
+        );
+    }
+
+    /// Older checkpoints predate `dependencies.json` and only carry the
+    /// per-spine `pspine-batches-*.dat` files. GC must still be able to
+    /// gather their batches from those files alone.
+    #[test]
+    fn legacy_checkpoint_without_dependencies_json_preserves_batches() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let make_backend = || -> Arc<dyn StorageBackend> {
+            Arc::new(PosixBackend::new(
+                tempdir.path(),
+                StorageCacheConfig::default(),
+                &FileBackendConfig::default(),
+            ))
+        };
+
+        let mut checkpointer = Checkpointer::new(make_backend()).unwrap();
+        let uuid = uuid::Uuid::now_v7();
+        let cp_dir = tempdir.path().join(uuid.to_string());
+        std::fs::create_dir_all(&cp_dir).unwrap();
+        let batch_filename = "w0-legacy.feldera";
+        let batch_path = tempdir.path().join(batch_filename);
+        std::fs::write(&batch_path, b"batch payload").unwrap();
+        let pspine_batches_path = cp_dir.join("pspine-batches-trace.dat");
+        std::fs::write(
+            &pspine_batches_path,
+            serde_json::to_vec(&serde_json::json!({
+                "files": [batch_filename]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        checkpointer.commit(uuid, 0, None, Some(0), Some(0)).unwrap();
+        drop(checkpointer);
+
+        // Simulate an old checkpoint: drop `dependencies.json` entirely,
+        // keep the per-spine file. The fallback scan should still find
+        // the referenced batch.
+        std::fs::remove_file(cp_dir.join("dependencies.json")).unwrap();
+        assert!(pspine_batches_path.exists());
+        assert!(batch_path.exists());
+
+        let _restarted = Checkpointer::new(make_backend()).unwrap();
+        assert!(
+            batch_path.exists(),
+            "startup GC deleted batch {} on legacy checkpoint with no dependencies.json",
+            batch_path.display(),
+        );
+    }
+
     /// Losing `checkpoints.feldera` while UUID checkpoint dirs survive on
     /// disk must surface as `InvalidData` from `Checkpointer::new`. The dirs
     /// must remain untouched so an operator can recover the catalog.
@@ -625,11 +724,11 @@ mod test {
 
         // Corrupt the metadata of the newest checkpoint (the one we'll protect).
         let protected = *uuids.last().unwrap();
-        let pspine = tempdir
+        let deps = tempdir
             .path()
             .join(protected.to_string())
-            .join("pspine-batches-trace.dat");
-        std::fs::write(&pspine, b"{not valid json").unwrap();
+            .join("dependencies.json");
+        std::fs::write(&deps, b"{not valid json").unwrap();
 
         let except: HashSet<_> = [protected].into_iter().collect();
         let result = checkpointer.gc_checkpoint(except);
@@ -639,8 +738,8 @@ mod test {
         );
     }
 
-    /// Startup must not panic when a checkpoint dir contains a malformed
-    /// `pspine-batches-*.dat`. The corrupt metadata should surface as an
+    /// Startup must not panic when a checkpoint dir contains malformed
+    /// dependency metadata. The corrupt metadata should surface as an
     /// `Err` from `Checkpointer::new` so the caller can decide what to do.
     #[test]
     fn corrupt_pspine_batches_returns_error_not_panic() {
@@ -660,11 +759,11 @@ mod test {
             .unwrap();
         drop(checkpointer);
 
-        let pspine = tempdir
+        let deps = tempdir
             .path()
             .join(uuid.to_string())
-            .join("pspine-batches-trace.dat");
-        std::fs::write(&pspine, b"{not valid json").unwrap();
+            .join("dependencies.json");
+        std::fs::write(&deps, b"{not valid json").unwrap();
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             Checkpointer::new(make_backend())
