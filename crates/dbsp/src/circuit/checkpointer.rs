@@ -675,7 +675,9 @@ mod test {
         let state_file = cp_dir.join("pspine-trace.dat");
         std::fs::write(&state_file, b"spine state").unwrap();
 
-        checkpointer.commit(uuid, 0, None, Some(0), Some(0)).unwrap();
+        checkpointer
+            .commit(uuid, 0, None, Some(0), Some(0))
+            .unwrap();
         drop(checkpointer);
 
         let cp_path: StoragePath = uuid.to_string().into();
@@ -726,7 +728,9 @@ mod test {
         )
         .unwrap();
 
-        checkpointer.commit(uuid, 0, None, Some(0), Some(0)).unwrap();
+        checkpointer
+            .commit(uuid, 0, None, Some(0), Some(0))
+            .unwrap();
         drop(checkpointer);
 
         // Now lose the per-spine metadata, keeping dependencies.json intact.
@@ -773,7 +777,9 @@ mod test {
         )
         .unwrap();
 
-        checkpointer.commit(uuid, 0, None, Some(0), Some(0)).unwrap();
+        checkpointer
+            .commit(uuid, 0, None, Some(0), Some(0))
+            .unwrap();
         drop(checkpointer);
 
         // Simulate an old checkpoint: drop `dependencies.json` entirely,

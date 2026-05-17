@@ -635,7 +635,9 @@ mod test {
             *b = (i as u8).wrapping_mul(31).wrapping_add(7);
         }
         let result = std::panic::catch_unwind(|| {
-            rkyv::check_archived_root::<CommittedZ1>(&bytes).map(|_| ()).err()
+            rkyv::check_archived_root::<CommittedZ1>(&bytes)
+                .map(|_| ())
+                .err()
         });
         match result {
             Ok(Some(_)) => {}
