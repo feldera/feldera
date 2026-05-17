@@ -1,7 +1,6 @@
-from tests.runtime_aggtest.aggtst_base import TstView
+from tests.runtime_aggtest.aggtst_base import TstTable, TstView
 
 
-# NOTE: SINH, COSH, EXP tests are supplied smaller input due to: https://github.com/feldera/feldera/issues/5520
 # ABS
 class un_int_abs(TstView):
     def __init__(self):
@@ -364,6 +363,22 @@ class un_int_sinh(TstView):
                       CAST(SINH(big_int) AS VARCHAR) AS big_un_int
                       FROM un_int_datagen_tbl1
                       WHERE id = 1"""
+
+
+
+class tableIssue5520(TstTable):
+    def __init__(self):
+        self.sql = "CREATE TABLE tbl5520(dbl DOUBLE);"
+        self.data = [ { "dbl": 10192.0 } ]
+
+
+# SINH
+class issue5520(TstView):
+    def __init__(self):
+        self.data = [{ "d": "Infinity" }]
+        self.sql = """CREATE MATERIALIZED VIEW issue5520view AS SELECT
+                      CAST(SINH(dbl) AS VARCHAR) AS d
+                      FROM tbl5520"""
 
 
 # SQRT

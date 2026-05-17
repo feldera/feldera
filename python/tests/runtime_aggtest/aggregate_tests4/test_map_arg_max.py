@@ -1,11 +1,6 @@
 from tests.runtime_aggtest.aggtst_base import TstView
 import pyarrow as pa
 
-
-def mkmap(d):
-    return pa.array(d, type=pa.map_(pa.string(), pa.int64())).to_pylist()
-
-
 class aggtst_map_arg_max_value(TstView):
     def __init__(self):
         # checked manually
