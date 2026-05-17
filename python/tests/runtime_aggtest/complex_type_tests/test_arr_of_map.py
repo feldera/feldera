@@ -51,7 +51,7 @@ class cmpxtst_arr_of_map_field_access(TstView):
             {
                 "id": 0,
                 "c1_val1": [("p", "hi"), ("q", "hello")],
-                "c1_val2": [("r","bye"), ("s", "ciao")],
+                "c1_val2": [("r", "bye"), ("s", "ciao")],
                 "c2_val1": [("a", 23), ("b", 45)],
                 "c2_val2": [("t", None)],
                 "c1_val3": None,

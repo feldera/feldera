@@ -38,8 +38,16 @@ class aggtst_map_array_agg_gby(TstView):
             },
             {
                 "id": 1,
-                "c1": [[("f", 45), ("h", 66)], [("q", 11), ("v", 66)], [("x", 8), ("y", 6)]],
-                "c2": [[("f", 1)], [("q", 11), ("v", 66), ("x", None)], [("i", 5), ("j", 66)]],
+                "c1": [
+                    [("f", 45), ("h", 66)],
+                    [("q", 11), ("v", 66)],
+                    [("x", 8), ("y", 6)],
+                ],
+                "c2": [
+                    [("f", 1)],
+                    [("q", 11), ("v", 66), ("x", None)],
+                    [("i", 5), ("j", 66)],
+                ],
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW map_array_agg_gby AS SELECT
@@ -84,8 +92,16 @@ class aggtst_map_array_agg_distinct_gby(TstView):
             },
             {
                 "id": 1,
-                "c1": [[("f", 45), ("h", 66)], [("q", 11), ("v", 66)], [("x", 8), ("y", 6)]],
-                "c2": [[("f", 1)], [("i", 5), ("j", 66)], [("q", 11), ("v", 66), ("x", None)]],
+                "c1": [
+                    [("f", 45), ("h", 66)],
+                    [("q", 11), ("v", 66)],
+                    [("x", 8), ("y", 6)],
+                ],
+                "c2": [
+                    [("f", 1)],
+                    [("i", 5), ("j", 66)],
+                    [("q", 11), ("v", 66), ("x", None)],
+                ],
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW map_array_agg_distinct_gby AS SELECT

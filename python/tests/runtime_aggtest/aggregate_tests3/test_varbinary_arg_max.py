@@ -48,7 +48,7 @@ class aggtst_varbinary_arg_max_distinct_gby(TstView):
 class aggtst_varbinary_arg_max_where(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"c1":bytes.fromhex( "17382115"), "c2": bytes.fromhex("63141f4d")}]
+        self.data = [{"c1": bytes.fromhex("17382115"), "c2": bytes.fromhex("63141f4d")}]
         self.sql = """CREATE MATERIALIZED VIEW varbinary_arg_max_where AS SELECT
                       ARG_MAX(c1, c2) FILTER(WHERE c1 < c2) AS c1, ARG_MAX(c2, c1) FILTER(WHERE c1 < c2) AS c2
                       FROM varbinary_tbl"""

@@ -2,14 +2,18 @@ from tests.runtime_aggtest.aggtst_base import TstView, TstTable
 from decimal import Decimal
 from datetime import datetime
 
+
 def t(s):
     return datetime.strptime(s, "%H:%M:%S").time()
+
 
 def d(s):
     return datetime.strptime(s, "%Y-%m-%d").date()
 
+
 def ts(s):
     return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S")
+
 
 # INTEGER
 class varnttst_int_tbl(TstTable):
@@ -579,7 +583,11 @@ class varnttst_variant_to_binary(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"id": 0, "binary": bytes.fromhex("0c162000"), "vbinary": bytes.fromhex("17382115")},
+            {
+                "id": 0,
+                "binary": bytes.fromhex("0c162000"),
+                "vbinary": bytes.fromhex("17382115"),
+            },
             {"id": 1, "binary": None, "vbinary": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW variant_to_binary AS SELECT
@@ -593,7 +601,11 @@ class varnttst_variant_to_otherbinary(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"id": 0, "bin_to_vbin": bytes.fromhex("0c1620"), "vbin_to_bin": bytes.fromhex("17382115")},
+            {
+                "id": 0,
+                "bin_to_vbin": bytes.fromhex("0c1620"),
+                "vbin_to_bin": bytes.fromhex("17382115"),
+            },
             {"id": 1, "bin_to_vbin": None, "vbin_to_bin": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW variant_to_otherbinary AS SELECT

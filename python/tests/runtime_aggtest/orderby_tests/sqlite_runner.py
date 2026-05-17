@@ -7,20 +7,24 @@ from automate_orderby_views import AutomateOrderByTests
 from decimal import Decimal
 from datetime import datetime
 
+
 def t(s):
     if s is None:
-        return s;
+        return s
     return datetime.strptime(s, "%H:%M:%S").time()
+
 
 def d(s):
     if s is None:
-        return s;
+        return s
     return datetime.strptime(s, "%Y-%m-%d").date()
+
 
 def ts(s):
     if s is None:
-        return s;
+        return s
     return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S")
+
 
 sqlite_db_path = ":memory:"  # Create an in-memory database
 

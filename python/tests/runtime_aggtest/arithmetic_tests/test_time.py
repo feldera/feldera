@@ -1,6 +1,7 @@
 from tests.runtime_aggtest.aggtst_base import TstView
 import datetime
 
+
 class arithtst_atime_minus_time(TstView):
     def __init__(self):
         # Result validation is not required for local views
@@ -219,8 +220,18 @@ class arithtst_tme_minus_interval(TstView):
         # The result of subtracting "HOUR TO SECOND" and "MINUTE TO SECOND" type intervals matches with Postgres
         # Subtracting HOUR to MINUTE produces the same result as subtracting 'HOUR TO SECOND' and "MINUTE TO SECOND" type intervals
         self.data = [
-            {"id": 0, "htm": datetime.time(12, 45, 12), "hts": datetime.time(12, 45, 12), "mts": datetime.time(12, 45, 12)},
-            {"id": 1, "htm": datetime.time(14, 17, 9), "hts": datetime.time(14, 17, 9), "mts": datetime.time(14, 17, 9)},
+            {
+                "id": 0,
+                "htm": datetime.time(12, 45, 12),
+                "hts": datetime.time(12, 45, 12),
+                "mts": datetime.time(12, 45, 12),
+            },
+            {
+                "id": 1,
+                "htm": datetime.time(14, 17, 9),
+                "hts": datetime.time(14, 17, 9),
+                "mts": datetime.time(14, 17, 9),
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW tme_minus_interval AS SELECT
                               v1.id,
@@ -237,8 +248,18 @@ class arithtst_time_plus_interval(TstView):
         # The result of adding "HOUR TO SECOND" and "MINUTE TO SECOND" type intervals matches with Postgres
         # Adding HOUR to MINUTE produces the same result as adding 'HOUR TO SECOND' and "MINUTE TO SECOND" type intervals
         self.data = [
-            {"id": 0, "htm": datetime.time(0, 16, 18), "hts": datetime.time(0, 16, 18), "mts": datetime.time(0, 16, 18)},
-            {"id": 1, "htm": datetime.time(2, 30, 41), "hts": datetime.time(2, 30, 41), "mts": datetime.time(2, 30, 41)},
+            {
+                "id": 0,
+                "htm": datetime.time(0, 16, 18),
+                "hts": datetime.time(0, 16, 18),
+                "mts": datetime.time(0, 16, 18),
+            },
+            {
+                "id": 1,
+                "htm": datetime.time(2, 30, 41),
+                "hts": datetime.time(2, 30, 41),
+                "mts": datetime.time(2, 30, 41),
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW time_plus_interval AS SELECT
                               v1.id,
@@ -280,8 +301,16 @@ class arithtst_tme_plus_tmeinterval(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {"htm_str": datetime.time(0, 15, 45), "hts_str": datetime.time(0, 16, 18), "mts_str": datetime.time(0, 16, 18)},
-            {"htm_str": datetime.time(2, 30, 55), "hts_str": datetime.time(2, 30, 41), "mts_str": datetime.time(2, 30, 41)},
+            {
+                "htm_str": datetime.time(0, 15, 45),
+                "hts_str": datetime.time(0, 16, 18),
+                "mts_str": datetime.time(0, 16, 18),
+            },
+            {
+                "htm_str": datetime.time(2, 30, 55),
+                "hts_str": datetime.time(2, 30, 41),
+                "mts_str": datetime.time(2, 30, 41),
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW tme_plus_tmeinterval AS SELECT
                               c1 + CAST(v1.htm_str AS INTERVAL HOUR TO MINUTE)  AS htm_str,

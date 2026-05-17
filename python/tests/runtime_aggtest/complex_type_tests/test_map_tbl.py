@@ -1,8 +1,6 @@
 from tests.runtime_aggtest.aggtst_base import TstTable
 
 
-
-
 class cmpxtst_map_var_cmpx_tbl(TstTable):
     """Define the table used by the MAP tests that use MAP with scalar keys and complex values"""
 

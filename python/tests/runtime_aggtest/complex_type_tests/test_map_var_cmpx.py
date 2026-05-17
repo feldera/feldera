@@ -1,5 +1,6 @@
 from tests.runtime_aggtest.aggtst_base import TstView
 
+
 class cmpxtst_map_var_cmpx_v(TstView):
     def __init__(self):
         self.data = [

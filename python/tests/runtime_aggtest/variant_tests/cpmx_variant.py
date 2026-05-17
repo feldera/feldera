@@ -67,7 +67,7 @@ class varnttst_read_cmpx_var(TstView):
                 "id": 2,
                 "arr": [None, None],
                 "mapp": [("a", None), ("b", None)],
-                "mapp1": [('"c"',None), ('"d"', None)],
+                "mapp1": [('"c"', None), ('"d"', None)],
                 "roww": {"v1": "null", "v2": "null"},
                 "udt": {"v1": None, "v2": None},
             },

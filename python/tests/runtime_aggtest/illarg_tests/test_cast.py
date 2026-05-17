@@ -2,14 +2,18 @@ from tests.runtime_aggtest.aggtst_base import TstView
 from decimal import Decimal
 from datetime import datetime
 
+
 def t(s):
     return datetime.strptime(s, "%H:%M:%S.%f").time()
+
 
 def d(s):
     return datetime.strptime(s, "%Y-%m-%d").date()
 
+
 def ts(s):
     return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S.%f")
+
 
 # INT to other types
 # Casting a numeric value to TIMESTAMP interprets the value as epoch seconds
@@ -234,7 +238,10 @@ class illarg_cast_time_legal(TstView):
 class illarg_cast_uuid(TstView):
     def __init__(self):
         self.data = [
-            {"to_varchar": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c", "to_binary": bytes.fromhex("42")}
+            {
+                "to_varchar": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
+                "to_binary": bytes.fromhex("42"),
+            }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_uuid AS SELECT
                       CAST(uuidd AS VARCHAR) AS to_varchar,

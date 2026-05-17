@@ -1,8 +1,10 @@
 from tests.runtime_aggtest.aggtst_base import TstView
 import pyarrow as pa
 
+
 def mkmap(d):
     return pa.array(d, type=pa.map_(pa.string(), pa.int64())).to_pylist()
+
 
 class aggtst_map_arg_max_value(TstView):
     def __init__(self):
@@ -62,7 +64,11 @@ class aggtst_map_arg_max_where_gby(TstView):
         # checked manually
         self.data = [
             {"id": 0, "c1": [("q", 11), ("v", 66)], "c2": [("q", 22)]},
-            {"id": 1, "c1": [("q", 11), ("v", 66)], "c2": [("q", 11), ("v", 66), ("x", None)]},
+            {
+                "id": 1,
+                "c1": [("q", 11), ("v", 66)],
+                "c2": [("q", 11), ("v", 66), ("x", None)],
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW map_arg_max_where_gby AS SELECT
                       id, ARG_MAX(c1, c2) FILTER(WHERE c1 < c2) AS c1, ARG_MAX(c2, c1) FILTER(WHERE c1 < c2) AS c2

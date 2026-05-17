@@ -85,10 +85,26 @@ class aggtst_uuid_to_binary(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"id": 0, "c1_bin": bytes.fromhex("72"), "c2_bin": bytes.fromhex("859d5430c3e14544b107b888582902e2")},
-            {"id": 0, "c1_bin": bytes.fromhex("ba"), "c2_bin": bytes.fromhex("cd88e41a6ffb4aaf826eefffdedf3c31")},
-            {"id": 1, "c1_bin": bytes.fromhex("29"), "c2_bin": bytes.fromhex("9a6b78db668a4507b5b51f164e6f1eba")},
-            {"id": 1, "c1_bin": bytes.fromhex("8b"), "c2_bin": bytes.fromhex("42b8fec7c7a3453196114bde80f9cb4c")},
+            {
+                "id": 0,
+                "c1_bin": bytes.fromhex("72"),
+                "c2_bin": bytes.fromhex("859d5430c3e14544b107b888582902e2"),
+            },
+            {
+                "id": 0,
+                "c1_bin": bytes.fromhex("ba"),
+                "c2_bin": bytes.fromhex("cd88e41a6ffb4aaf826eefffdedf3c31"),
+            },
+            {
+                "id": 1,
+                "c1_bin": bytes.fromhex("29"),
+                "c2_bin": bytes.fromhex("9a6b78db668a4507b5b51f164e6f1eba"),
+            },
+            {
+                "id": 1,
+                "c1_bin": bytes.fromhex("8b"),
+                "c2_bin": bytes.fromhex("42b8fec7c7a3453196114bde80f9cb4c"),
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW uuid_to_binary AS SELECT
                       id,

@@ -89,6 +89,7 @@ class orderby_tbl_sqlite_decimal_char(TstTable):
             {"c1": 4538.22, "c2": "see you"},
         ]
 
+
 # trouble comparing serialized double from Sqlite and Feldera
 # class orderby_tbl_sqlite_real_date(TstTable):
 #     """Define the table used by the order by/limit tests with REAL and DATE values"""

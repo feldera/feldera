@@ -80,7 +80,10 @@ class varnttst_read_arr_of_cmpx(TstView):
             {
                 "id": 2,
                 "arr_arr": [[None, None], [None]],
-                "arr_map": [[('"p"', None), ('"q"', None)], [('"r"', None), ('"s"', None)]],
+                "arr_map": [
+                    [('"p"', None), ('"q"', None)],
+                    [('"r"', None), ('"s"', None)],
+                ],
                 "arr_row": [{"v1": None, "v2": None}, {"v1": None, "v2": None}],
                 "arr_udt": [{"v1": None, "v2": None}, {"v1": None, "v2": None}],
             },
@@ -180,7 +183,11 @@ class varnttst_arr_of_map_unnest_varnt(TstView):
                 "map_val": [('"p"', '"12 friends"'), ('"q"', '"paint on"')],
                 "idx": 1,
             },
-            {"id": 0, "map_val": [('"r"', '"48 canvases"'), ('"s"', '"each!?"')], "idx": 2},
+            {
+                "id": 0,
+                "map_val": [('"r"', '"48 canvases"'), ('"s"', '"each!?"')],
+                "idx": 2,
+            },
             {"id": 2, "map_val": [('"p"', None), ('"q"', None)], "idx": 1},
             {"id": 2, "map_val": [('"r"', None), ('"s"', None)], "idx": 2},
         ]

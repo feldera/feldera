@@ -43,7 +43,12 @@ class asof_lasof_map_chain(TstView):
                 "t2_mapp": [("a", 1), ("b", 9)],
                 "t3_mapp": [("a", 1), ("b", 9)],
             },
-            {"id": 3, "t1_mapp": [("a", 11), ("b", 22)], "t2_mapp": None, "t3_mapp": None},
+            {
+                "id": 3,
+                "t1_mapp": [("a", 11), ("b", 22)],
+                "t2_mapp": None,
+                "t3_mapp": None,
+            },
             {
                 "id": 4,
                 "t1_mapp": [("a", 200), ("b", 200)],
@@ -229,7 +234,12 @@ class asof_lasof_cross_map_join(TstView):
                 "t2_mapp": [("a", 100), ("b", 200)],
                 "t3_mapp": [("a", 25), ("b", None)],
             },
-            {"id": 5, "t1_mapp": None, "t2_mapp": None, "t3_mapp": [("a", 1), ("b", 9)]},
+            {
+                "id": 5,
+                "t1_mapp": None,
+                "t2_mapp": None,
+                "t3_mapp": [("a", 1), ("b", 9)],
+            },
             {
                 "id": 5,
                 "t1_mapp": None,
@@ -242,7 +252,12 @@ class asof_lasof_cross_map_join(TstView):
                 "t2_mapp": None,
                 "t3_mapp": [("a", 1000), ("b", 2000)],
             },
-            {"id": 5, "t1_mapp": None, "t2_mapp": None, "t3_mapp": [("a", 21), ("b", 22)]},
+            {
+                "id": 5,
+                "t1_mapp": None,
+                "t2_mapp": None,
+                "t3_mapp": [("a", 21), ("b", 22)],
+            },
             {
                 "id": 5,
                 "t1_mapp": None,
@@ -422,7 +437,12 @@ class asof_cross_lasof_map_join(TstView):
                 "t2_mapp": [("a", 100), ("b", 200)],
                 "t3_mapp": [("a", 25), ("b", None)],
             },
-            {"id": 5, "t1_mapp": None, "t2_mapp": None, "t3_mapp": [("a", 1), ("b", 9)]},
+            {
+                "id": 5,
+                "t1_mapp": None,
+                "t2_mapp": None,
+                "t3_mapp": [("a", 1), ("b", 9)],
+            },
             {
                 "id": 5,
                 "t1_mapp": None,
@@ -435,7 +455,12 @@ class asof_cross_lasof_map_join(TstView):
                 "t2_mapp": None,
                 "t3_mapp": [("a", 1000), ("b", 2000)],
             },
-            {"id": 5, "t1_mapp": None, "t2_mapp": None, "t3_mapp": [("a", 21), ("b", 22)]},
+            {
+                "id": 5,
+                "t1_mapp": None,
+                "t2_mapp": None,
+                "t3_mapp": [("a", 21), ("b", 22)],
+            },
             {
                 "id": 5,
                 "t1_mapp": None,
@@ -499,7 +524,12 @@ class asof_lasof_inner_mapp_join(TstView):
                 "t2_mapp": [("a", 1), ("b", 9)],
                 "t3_mapp": [("a", 1), ("b", 9)],
             },
-            {"id": 3, "t1_mapp": [("a", 11), ("b", 22)], "t2_mapp": None, "t3_mapp": None},
+            {
+                "id": 3,
+                "t1_mapp": [("a", 11), ("b", 22)],
+                "t2_mapp": None,
+                "t3_mapp": None,
+            },
             {
                 "id": 4,
                 "t1_mapp": [("a", 200), ("b", 200)],
@@ -574,7 +604,12 @@ class asof_lasof_outer_map_join(TstView):
                 "t2_mapp": [("a", 1), ("b", 9)],
                 "t3_mapp": [("a", 1), ("b", 9)],
             },
-            {"id": 3, "t1_mapp": [("a", 11), ("b", 22)], "t2_mapp": None, "t3_mapp": None},
+            {
+                "id": 3,
+                "t1_mapp": [("a", 11), ("b", 22)],
+                "t2_mapp": None,
+                "t3_mapp": None,
+            },
             {
                 "id": 4,
                 "t1_mapp": [("a", 200), ("b", 200)],
@@ -640,7 +675,12 @@ class asof_lasof_left_map_join(TstView):
                 "t2_mapp": [("a", 1), ("b", 9)],
                 "t3_mapp": [("a", 1), ("b", 9)],
             },
-            {"id": 3, "t1_mapp": [("a", 11), ("b", 22)], "t2_mapp": None, "t3_mapp": None},
+            {
+                "id": 3,
+                "t1_mapp": [("a", 11), ("b", 22)],
+                "t2_mapp": None,
+                "t3_mapp": None,
+            },
             {
                 "id": 4,
                 "t1_mapp": [("a", 200), ("b", 200)],

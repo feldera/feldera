@@ -3,14 +3,18 @@
 from tests.runtime_aggtest.aggtst_base import TstTable, TstView
 from datetime import datetime
 
+
 def t(s):
     return datetime.strptime(s, "%H:%M:%S").time()
+
 
 def d(s):
     return datetime.strptime(s, "%Y-%m-%d").date()
 
+
 def ts(s):
     return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S")
+
 
 class orderby_tbl_manual_binary_ts(TstTable):
     """Define the table used by the order by/limit tests with Binary and Timestamp values"""
@@ -38,7 +42,7 @@ class orderby_binary_ts_v(TstView):
     def __init__(self):
         self.data = [
             {"c1": bytes.fromhex("0a0c1c0e"), "c2": ts("2007-12-15T20:20:00")},
-            {"c1": bytes.fromhex("0c1620"), "c2":   ts("1987-06-05T06:43:00")},
+            {"c1": bytes.fromhex("0c1620"), "c2": ts("1987-06-05T06:43:00")},
             {"c1": bytes.fromhex("0c1620"), "c2": None},
             {"c1": bytes.fromhex("17382115"), "c2": ts("2020-06-21T14:00:00")},
             {"c1": bytes.fromhex("17382115"), "c2": ts("2014-11-05T08:27:00")},

@@ -22,5 +22,6 @@ def main():
         "orderby_tests"
     )  # run Feldera tests using SAME accumulator and objects with updated .data
 
+
 if __name__ == "__main__":
     main()
