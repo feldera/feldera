@@ -6,8 +6,18 @@ class aggtst_binary_array_agg_value(TstView):
         # Validated on Postgres
         self.data = [
             {
-                "c1": [bytes.fromhex("0c1620"), bytes.fromhex("17382115"), bytes.fromhex("17382115"), bytes.fromhex("312b541d")],
-                "c2": [None, bytes.fromhex("37424d58"), bytes.fromhex("63141f4d"), bytes.fromhex("2022160c")],
+                "c1": [
+                    bytes.fromhex("0c1620"),
+                    bytes.fromhex("17382115"),
+                    bytes.fromhex("17382115"),
+                    bytes.fromhex("312b541d"),
+                ],
+                "c2": [
+                    None,
+                    bytes.fromhex("37424d58"),
+                    bytes.fromhex("63141f4d"),
+                    bytes.fromhex("2022160c"),
+                ],
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW binary_array_agg AS SELECT
@@ -19,8 +29,16 @@ class aggtst_binary_array_agg_gby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {"id": 0, "c1": [bytes.fromhex("0c1620"), bytes.fromhex("17382115")], "c2": [None, bytes.fromhex("37424d58")]},
-            {"id": 1, "c1": [bytes.fromhex("17382115"), bytes.fromhex("312b541d")], "c2": [bytes.fromhex("63141f4d"), bytes.fromhex("2022160c")]},
+            {
+                "id": 0,
+                "c1": [bytes.fromhex("0c1620"), bytes.fromhex("17382115")],
+                "c2": [None, bytes.fromhex("37424d58")],
+            },
+            {
+                "id": 1,
+                "c1": [bytes.fromhex("17382115"), bytes.fromhex("312b541d")],
+                "c2": [bytes.fromhex("63141f4d"), bytes.fromhex("2022160c")],
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW binary_array_agg_gby AS SELECT
                       id, ARRAY_AGG(c1) AS c1, ARRAY_AGG(c2) AS c2
@@ -33,8 +51,17 @@ class aggtst_binary_array_agg_distinct(TstView):
         # Validated on Postgres
         self.data = [
             {
-                "c1": [bytes.fromhex("0c1620"), bytes.fromhex("17382115"), bytes.fromhex("312b541d")],
-                "c2": [None, bytes.fromhex("2022160c"), bytes.fromhex("37424d58"), bytes.fromhex("63141f4d")],
+                "c1": [
+                    bytes.fromhex("0c1620"),
+                    bytes.fromhex("17382115"),
+                    bytes.fromhex("312b541d"),
+                ],
+                "c2": [
+                    None,
+                    bytes.fromhex("2022160c"),
+                    bytes.fromhex("37424d58"),
+                    bytes.fromhex("63141f4d"),
+                ],
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW binary_array_agg_distinct AS SELECT
@@ -46,8 +73,16 @@ class aggtst_binary_array_agg_distinct_gby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {"id": 0, "c1": [bytes.fromhex("0c1620"), bytes.fromhex("17382115")], "c2": [None, bytes.fromhex("37424d58")]},
-            {"id": 1, "c1": [bytes.fromhex("17382115"), bytes.fromhex("312b541d")], "c2": [bytes.fromhex("2022160c"), bytes.fromhex("63141f4d")]},
+            {
+                "id": 0,
+                "c1": [bytes.fromhex("0c1620"), bytes.fromhex("17382115")],
+                "c2": [None, bytes.fromhex("37424d58")],
+            },
+            {
+                "id": 1,
+                "c1": [bytes.fromhex("17382115"), bytes.fromhex("312b541d")],
+                "c2": [bytes.fromhex("2022160c"), bytes.fromhex("63141f4d")],
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW binary_array_agg_distinct_gby AS SELECT
                       id, ARRAY_AGG(DISTINCT c1) AS c1, ARRAY_AGG(DISTINCT c2) AS c2
@@ -59,7 +94,10 @@ class aggtst_binary_array_agg_where(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {"f_c1": [bytes.fromhex("17382115"), bytes.fromhex("17382115")], "f_c2": [bytes.fromhex("37424d58"), bytes.fromhex("63141f4d")]}
+            {
+                "f_c1": [bytes.fromhex("17382115"), bytes.fromhex("17382115")],
+                "f_c2": [bytes.fromhex("37424d58"), bytes.fromhex("63141f4d")],
+            }
         ]
         self.sql = """CREATE MATERIALIZED VIEW binary_array_where AS SELECT
                       ARRAY_AGG(c1) FILTER(WHERE c1 < c2) AS f_c1, ARRAY_AGG(c2) FILTER(WHERE c1 < c2) AS f_c2
@@ -70,8 +108,16 @@ class aggtst_binary_array_agg_where_gby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {"id": 0, "f_c1": [bytes.fromhex("17382115")], "f_c2": [bytes.fromhex("37424d58")]},
-            {"id": 1, "f_c1": [bytes.fromhex("17382115")], "f_c2": [bytes.fromhex("63141f4d")]},
+            {
+                "id": 0,
+                "f_c1": [bytes.fromhex("17382115")],
+                "f_c2": [bytes.fromhex("37424d58")],
+            },
+            {
+                "id": 1,
+                "f_c1": [bytes.fromhex("17382115")],
+                "f_c2": [bytes.fromhex("63141f4d")],
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW binary_array_where_gby AS SELECT
                       id, ARRAY_AGG(c1) FILTER(WHERE c1 < c2) AS f_c1, ARRAY_AGG(c2) FILTER(WHERE c1 < c2) AS f_c2

@@ -1,6 +1,7 @@
 from tests.runtime_aggtest.aggtst_base import TstView
 import datetime
 
+
 class arithtst_atimestamp_minus_timestamp(TstView):
     def __init__(self):
         # Result validation is not required for local views

@@ -1,14 +1,18 @@
 from tests.runtime_aggtest.aggtst_base import TstView
 from datetime import datetime
 
+
 def t(s):
     return datetime.strptime(s, "%H:%M:%S").time()
+
 
 def d(s):
     return datetime.strptime(s, "%Y-%m-%d").date()
 
+
 def ts(s):
     return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S")
+
 
 class orderby_binary_timestamp1(TstView):
     def __init__(self):

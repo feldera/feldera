@@ -143,8 +143,10 @@ class View(SqlObject):
             # WARNING: this test will not work if some results contain NaN, which
             # cannot be compared for equality
             tc = unittest.TestCase()
-            tc.maxDiff = None  # display the difference between expected and actual results
-                               # during an assertion error, even if the difference is large
+            tc.maxDiff = (
+                None  # display the difference between expected and actual results
+            )
+            # during an assertion error, even if the difference is large
             self.assert_result(
                 data, expected, f"\nASSERTION ERROR: failed view: {self.name}"
             )

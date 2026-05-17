@@ -6,6 +6,7 @@ from tests import TEST_CLIENT, unique_pipeline_name
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
+
 # Test serialization of doubles
 class TestDouble(unittest.TestCase):
     def test_local(self):
@@ -49,10 +50,11 @@ SELECT 1/d as one, 0/d as zero FROM t;
         data = list(pipeline.query_arrow_dicts("SELECT * FROM v"))
         print(data)
         assert len(data) == 1
-        assert data[0]["one"] == float('inf')
+        assert data[0]["one"] == float("inf")
         assert math.isnan(data[0]["zero"])
         pipeline.stop(force=True)
         pipeline.delete(True)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -49,7 +49,9 @@ class aggtst_time_min_distinct_gby(TstView):
 class aggtst_time_min_where(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{"f_c1": datetime.time(9, 15, 0), "f_c2": datetime.time(16, 30, 0)}]
+        self.data = [
+            {"f_c1": datetime.time(9, 15, 0), "f_c2": datetime.time(16, 30, 0)}
+        ]
         self.sql = """CREATE MATERIALIZED VIEW time_min_where AS SELECT
                       MIN(c1) FILTER (WHERE c1 > '08:30:00') AS f_c1, MIN(c2) FILTER (WHERE c1 > '08:30:00') AS f_c2
                       FROM time_tbl"""
@@ -60,7 +62,11 @@ class aggtst_time_min_where_gby(TstView):
         # Validated on Postgres
         self.data = [
             {"id": 0, "f_c1": datetime.time(14, 0, 0), "f_c2": None},
-            {"id": 1, "f_c1": datetime.time(9, 15, 0), "f_c2": datetime.time(16, 30, 0)},
+            {
+                "id": 1,
+                "f_c1": datetime.time(9, 15, 0),
+                "f_c2": datetime.time(16, 30, 0),
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW time_min_where_gby AS SELECT
                       id, MIN(c1) FILTER (WHERE c1 > '08:30:00') AS f_c1, MIN(c2) FILTER (WHERE c1 > '08:30:00') AS f_c2

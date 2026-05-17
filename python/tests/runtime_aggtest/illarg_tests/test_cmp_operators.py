@@ -2,14 +2,18 @@ from tests.runtime_aggtest.aggtst_base import TstView
 from decimal import Decimal
 from datetime import datetime
 
+
 def t(s):
     return datetime.strptime(s, "%H:%M:%S.%f").time()
+
 
 def d(s):
     return datetime.strptime(s, "%Y-%m-%d").date()
 
+
 def ts(s):
     return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S.%f")
+
 
 # Comparison Operators
 
@@ -1307,7 +1311,9 @@ class illarg_greatest_legal(TstView):
                 "dbl": "-0.82711234601246",
                 "booll": True,
                 "str": "hello ",
-                "bin": bytes.fromhex("1f8b080000000000ff4b4bcd49492d4a0400218115ac07000000"),
+                "bin": bytes.fromhex(
+                    "1f8b080000000000ff4b4bcd49492d4a0400218115ac07000000"
+                ),
                 "tmestmp": ts("2020-06-21T14:23:44.123654"),
                 "datee": d("2020-06-21"),
                 "tme": t("14:23:44.456"),
@@ -1373,7 +1379,9 @@ class illarg_greatest_ignore_nulls_legal(TstView):
                 "dbl": "-0.82711234601246",
                 "booll": True,
                 "str": "hello ",
-                "bin": bytes.fromhex("1f8b080000000000ff4b4bcd49492d4a0400218115ac07000000"),
+                "bin": bytes.fromhex(
+                    "1f8b080000000000ff4b4bcd49492d4a0400218115ac07000000"
+                ),
                 "tmestmp": ts("2020-06-21T14:23:44.123654"),
                 "datee": d("2020-06-21"),
                 "tme": t("14:23:44.456"),

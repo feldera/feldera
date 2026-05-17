@@ -1,5 +1,4 @@
 from tests.runtime_aggtest.aggtst_base import TstView
-from decimal import Decimal
 
 
 # NOTE: SINH, COSH, EXP tests are supplied smaller input due to: https://github.com/feldera/feldera/issues/5520

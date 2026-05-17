@@ -2,11 +2,14 @@ from tests.runtime_aggtest.aggtst_base import TstView
 from decimal import Decimal
 from datetime import datetime
 
+
 def t(s):
     return datetime.strptime(s, "%H:%M:%S.%f").time()
 
+
 def d(s):
     return datetime.strptime(s, "%Y-%m-%d").date()
+
 
 class asof_test1(TstView):
     def __init__(self):
@@ -125,8 +128,16 @@ class asof_test7(TstView):
         # Validated on DuckDB
         self.data = [
             {"id": 1, "t1_bin": bytes.fromhex("0a1620"), "t2_bin": None},
-            {"id": 2, "t1_bin": bytes.fromhex("10172c"), "t2_bin": bytes.fromhex("0f3716")},
-            {"id": 3, "t1_bin": bytes.fromhex("11172c"), "t2_bin": bytes.fromhex("0c1037")},
+            {
+                "id": 2,
+                "t1_bin": bytes.fromhex("10172c"),
+                "t2_bin": bytes.fromhex("0f3716"),
+            },
+            {
+                "id": 3,
+                "t1_bin": bytes.fromhex("11172c"),
+                "t2_bin": bytes.fromhex("0c1037"),
+            },
             {"id": 4, "t1_bin": bytes.fromhex("16172c"), "t2_bin": None},
             {"id": 5, "t1_bin": None, "t2_bin": None},
         ]
@@ -160,8 +171,16 @@ class asof_test9(TstView):
     def __init__(self):
         # Validated on DuckDB
         self.data = [
-            {"id": 1, "t1_tmestmp": datetime.fromisoformat("2000-06-21T14:23:44.123"), "t2_tmestmp": None},
-            {"id": 2, "t1_tmestmp": datetime.fromisoformat("2019-06-21T14:23:44.123"), "t2_tmestmp": None},
+            {
+                "id": 1,
+                "t1_tmestmp": datetime.fromisoformat("2000-06-21T14:23:44.123"),
+                "t2_tmestmp": None,
+            },
+            {
+                "id": 2,
+                "t1_tmestmp": datetime.fromisoformat("2019-06-21T14:23:44.123"),
+                "t2_tmestmp": None,
+            },
             {
                 "id": 3,
                 "t1_tmestmp": datetime.fromisoformat("1978-06-21T14:23:44.123"),
@@ -267,7 +286,11 @@ class asof_test13(TstView):
             {"id": 1, "t1_mapp": [("a", 15), ("b", None)], "t2_mapp": None},
             {"id": 2, "t1_mapp": [("a", 3), ("b", 9)], "t2_mapp": [("a", 1), ("b", 9)]},
             {"id": 3, "t1_mapp": [("a", 11), ("b", 22)], "t2_mapp": None},
-            {"id": 4, "t1_mapp": [("a", 200), ("b", 200)], "t2_mapp": [("a", 100), ("b", 200)]},
+            {
+                "id": 4,
+                "t1_mapp": [("a", 200), ("b", 200)],
+                "t2_mapp": [("a", 100), ("b", 200)],
+            },
             {"id": 5, "t1_mapp": None, "t2_mapp": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW asof_test13 AS SELECT
@@ -406,10 +429,18 @@ class asof_test21(TstView):
     def __init__(self):
         # Validated on DuckDB
         self.data = [
-            {"id": 1, "t3_bin": bytes.fromhex("0b1620"), "t1_bin": bytes.fromhex("0a1620")},
+            {
+                "id": 1,
+                "t3_bin": bytes.fromhex("0b1620"),
+                "t1_bin": bytes.fromhex("0a1620"),
+            },
             {"id": 2, "t3_bin": bytes.fromhex("0f3716"), "t1_bin": None},
             {"id": 3, "t3_bin": bytes.fromhex("0c1037"), "t1_bin": None},
-            {"id": 4, "t3_bin": bytes.fromhex("2c5863"), "t1_bin": bytes.fromhex("16172c")},
+            {
+                "id": 4,
+                "t3_bin": bytes.fromhex("2c5863"),
+                "t1_bin": bytes.fromhex("16172c"),
+            },
             {"id": 5, "t3_bin": bytes.fromhex("90bcc7"), "t1_bin": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW asof_test21 AS SELECT
@@ -452,9 +483,21 @@ class asof_test23(TstView):
                 "t3_tmestmp": datetime.fromisoformat("2021-06-21T14:23:44.123"),
                 "t1_tmestmp": datetime.fromisoformat("2019-06-21T14:23:44.123"),
             },
-            {"id": 3, "t3_tmestmp": datetime.fromisoformat("1977-06-21T14:23:44.123"), "t1_tmestmp": None},
-            {"id": 4, "t3_tmestmp": datetime.fromisoformat("2001-06-21T14:23:44.123"), "t1_tmestmp": None},
-            {"id": 5, "t3_tmestmp": datetime.fromisoformat("2000-06-21T14:23:44.123"), "t1_tmestmp": None},
+            {
+                "id": 3,
+                "t3_tmestmp": datetime.fromisoformat("1977-06-21T14:23:44.123"),
+                "t1_tmestmp": None,
+            },
+            {
+                "id": 4,
+                "t3_tmestmp": datetime.fromisoformat("2001-06-21T14:23:44.123"),
+                "t1_tmestmp": None,
+            },
+            {
+                "id": 5,
+                "t3_tmestmp": datetime.fromisoformat("2000-06-21T14:23:44.123"),
+                "t1_tmestmp": None,
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW asof_test23 AS SELECT
                         t3.id, t3.tmestmp AS t3_tmestmp, t1.tmestmp AS t1_tmestmp
@@ -554,9 +597,17 @@ class asof_test27(TstView):
     def __init__(self):
         # Validated on DuckDB
         self.data = [
-            {"id": 1, "t3_mapp": [("a", 25), ("b", None)], "t1_mapp": [("a", 15), ("b", None)]},
+            {
+                "id": 1,
+                "t3_mapp": [("a", 25), ("b", None)],
+                "t1_mapp": [("a", 15), ("b", None)],
+            },
             {"id": 2, "t3_mapp": [("a", 1), ("b", 9)], "t1_mapp": None},
-            {"id": 3, "t3_mapp": [("a", 21), ("b", 22)], "t1_mapp": [("a", 11), ("b", 22)]},
+            {
+                "id": 3,
+                "t3_mapp": [("a", 21), ("b", 22)],
+                "t1_mapp": [("a", 11), ("b", 22)],
+            },
             {"id": 4, "t3_mapp": [("a", 100), ("b", 200)], "t1_mapp": None},
             {"id": 5, "t3_mapp": [("a", 1000), ("b", 2000)], "t1_mapp": None},
         ]

@@ -1,6 +1,7 @@
 from tests.runtime_aggtest.aggtst_base import TstView
 import datetime
 
+
 class arithtst_adate_minus_date(TstView):
     def __init__(self):
         # Result validation is not required for local views
@@ -115,9 +116,21 @@ class arithtst_date_minus_linterval(TstView):
         # The result of subtracting MONTH type interval matches with MySQL
         # whereas YEARS behaves similarly as MONTHS in terms of accuracy
         self.data = [
-            {"id": 0, "months": datetime.date(2014, 11, 5), "years": datetime.date(2014, 11, 5)},
-            {"id": 1, "months": datetime.date(2023, 2, 21), "years": datetime.date(2023, 2, 21)},
-            {"id": 2, "months": datetime.date(1948, 12, 21), "years": datetime.date(1948, 12, 21)},
+            {
+                "id": 0,
+                "months": datetime.date(2014, 11, 5),
+                "years": datetime.date(2014, 11, 5),
+            },
+            {
+                "id": 1,
+                "months": datetime.date(2023, 2, 21),
+                "years": datetime.date(2023, 2, 21),
+            },
+            {
+                "id": 2,
+                "months": datetime.date(1948, 12, 21),
+                "years": datetime.date(1948, 12, 21),
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW date_minus_linterval AS SELECT
                       v1.id,
@@ -169,9 +182,21 @@ class arithtst_date_plus_linterval(TstView):
         # The result of adding MONTH type interval matches with MySQL
         # whereas YEARS behaves similarly as MONTHS in terms of accuracy
         self.data = [
-            {"id": 0, "months": datetime.date(2035, 1, 5), "years": datetime.date(2035, 1, 5)},
-            {"id": 1, "months": datetime.date(2017, 10, 21), "years": datetime.date(2017, 10, 21)},
-            {"id": 2, "months": datetime.date(1989, 12, 21), "years": datetime.date(1989, 12, 21)},
+            {
+                "id": 0,
+                "months": datetime.date(2035, 1, 5),
+                "years": datetime.date(2035, 1, 5),
+            },
+            {
+                "id": 1,
+                "months": datetime.date(2017, 10, 21),
+                "years": datetime.date(2017, 10, 21),
+            },
+            {
+                "id": 2,
+                "months": datetime.date(1989, 12, 21),
+                "years": datetime.date(1989, 12, 21),
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW date_plus_linterval AS SELECT
                       v1.id,
@@ -222,9 +247,21 @@ class arithtst_dt_sub_linterval(TstView):
     def __init__(self):
         # Validated on MySQL
         self.data = [
-            {"id": 0, "mths_str": datetime.date(2014, 11, 5), "yrs_str": datetime.date(2014, 12, 5)},
-            {"id": 1, "mths_str": datetime.date(2023, 2, 21), "yrs_str": datetime.date(2022, 6, 21)},
-            {"id": 2, "mths_str": datetime.date(1948, 12, 21), "yrs_str": datetime.date(1949, 6, 21)},
+            {
+                "id": 0,
+                "mths_str": datetime.date(2014, 11, 5),
+                "yrs_str": datetime.date(2014, 12, 5),
+            },
+            {
+                "id": 1,
+                "mths_str": datetime.date(2023, 2, 21),
+                "yrs_str": datetime.date(2022, 6, 21),
+            },
+            {
+                "id": 2,
+                "mths_str": datetime.date(1948, 12, 21),
+                "yrs_str": datetime.date(1949, 6, 21),
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW dt_sub_linterval AS SELECT
                       v1.id,
@@ -274,9 +311,21 @@ class arithtst_dt_add_linterval(TstView):
     def __init__(self):
         # Validated on MySQL
         self.data = [
-            {"id": 0, "mths_str": datetime.date(2035, 1, 5), "yrs_str": datetime.date(2034, 12, 5)},
-            {"id": 1, "mths_str": datetime.date(2017, 10, 21), "yrs_str": datetime.date(2018, 6, 21)},
-            {"id": 2, "mths_str": datetime.date(1989, 12, 21), "yrs_str": datetime.date(1989, 6, 21)},
+            {
+                "id": 0,
+                "mths_str": datetime.date(2035, 1, 5),
+                "yrs_str": datetime.date(2034, 12, 5),
+            },
+            {
+                "id": 1,
+                "mths_str": datetime.date(2017, 10, 21),
+                "yrs_str": datetime.date(2018, 6, 21),
+            },
+            {
+                "id": 2,
+                "mths_str": datetime.date(1989, 12, 21),
+                "yrs_str": datetime.date(1989, 6, 21),
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW dt_add_linterval AS SELECT
                       v1.id,

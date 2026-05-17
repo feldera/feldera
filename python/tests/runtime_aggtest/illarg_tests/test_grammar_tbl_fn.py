@@ -1,14 +1,18 @@
 from tests.runtime_aggtest.aggtst_base import TstTable, TstView
 from datetime import datetime
 
+
 def t(s):
     return datetime.strptime(s, "%H:%M:%S.%f").time()
+
 
 def d(s):
     return datetime.strptime(s, "%Y-%m-%d").date()
 
+
 def ts(s):
     return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S.%f")
+
 
 # CONNECTOR_METADATA
 class illarg_connector_metadata_legal_tbl(TstTable):

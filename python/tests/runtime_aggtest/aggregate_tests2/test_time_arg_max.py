@@ -1,6 +1,7 @@
 from tests.runtime_aggtest.aggtst_base import TstView
 import datetime
 
+
 class aggtst_time_arg_max_value(TstView):
     def __init__(self):
         # checked manually

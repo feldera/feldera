@@ -15,7 +15,11 @@ class aggtst_varbinary_arg_min_gby(TstView):
         # checked manually
         self.data = [
             {"id": 0, "c1": bytes.fromhex("17382115"), "c2": None},
-            {"id": 1, "c1": bytes.fromhex("312b541d0b"), "c2": bytes.fromhex("63141f4d")},
+            {
+                "id": 1,
+                "c1": bytes.fromhex("312b541d0b"),
+                "c2": bytes.fromhex("63141f4d"),
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW varbinary_arg_min_gby AS SELECT
                       id, ARG_MIN(c1, c2) AS c1, ARG_MIN(c2, c1) AS c2
@@ -37,7 +41,11 @@ class aggtst_varbinary_arg_min_distinct_gby(TstView):
         # checked manually
         self.data = [
             {"id": 0, "c1": bytes.fromhex("17382115"), "c2": None},
-            {"id": 1, "c1": bytes.fromhex("312b541d0b"), "c2": bytes.fromhex("63141f4d")},
+            {
+                "id": 1,
+                "c1": bytes.fromhex("312b541d0b"),
+                "c2": bytes.fromhex("63141f4d"),
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW varbinary_arg_min_distinct_gby AS SELECT
                       id, ARG_MIN(DISTINCT c1, c2) AS c1, ARG_MIN(DISTINCT c2, c1) AS c2

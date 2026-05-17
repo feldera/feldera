@@ -49,7 +49,9 @@ class varnttst_read_udt_of_cmpx(TstView):
             {
                 "id": 0,
                 "udt_arr": {"arr_vnt": ['"45, 62"', '"bye, bye, friends!!"']},
-                "udt_map": {"map_vnt": [('"c"', '"sayonara,"'), ('"d"', '"everyone!"')]},
+                "udt_map": {
+                    "map_vnt": [('"c"', '"sayonara,"'), ('"d"', '"everyone!"')]
+                },
                 "udt_row": {"row_vnt": {"v1": '"24, 25"', "v2": '"adios"'}},
                 "udt_udt": {"udt_vnt": {"v1": '"are you"', "v2": '"alright, mate?"'}},
             },

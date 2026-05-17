@@ -4,7 +4,9 @@ from tests.runtime_aggtest.aggtst_base import TstView
 class aggtst_varbinary_max_value(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"c1": bytes.fromhex("312b541d0b"), "c2": bytes.fromhex("63141f4d")}]
+        self.data = [
+            {"c1": bytes.fromhex("312b541d0b"), "c2": bytes.fromhex("63141f4d")}
+        ]
         self.sql = """CREATE MATERIALIZED VIEW varbinary_max AS SELECT
                       MAX(c1) AS c1, MAX(c2) AS c2
                       FROM varbinary_tbl"""
@@ -15,7 +17,11 @@ class aggtst_varbinary_max_gby(TstView):
         # checked manually
         self.data = [
             {"id": 0, "c1": bytes.fromhex("17382115"), "c2": bytes.fromhex("37424d58")},
-            {"id": 1, "c1": bytes.fromhex("312b541d0b"), "c2": bytes.fromhex("63141f4d")},
+            {
+                "id": 1,
+                "c1": bytes.fromhex("312b541d0b"),
+                "c2": bytes.fromhex("63141f4d"),
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW varbinary_max_gby AS SELECT
                       id, MAX(c1) AS c1, MAX(c2) AS c2
@@ -26,7 +32,9 @@ class aggtst_varbinary_max_gby(TstView):
 class aggtst_varbinary_max_distinct(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"c1": bytes.fromhex("312b541d0b"), "c2": bytes.fromhex("63141f4d")}]
+        self.data = [
+            {"c1": bytes.fromhex("312b541d0b"), "c2": bytes.fromhex("63141f4d")}
+        ]
         self.sql = """CREATE MATERIALIZED VIEW varbinary_max_distinct AS SELECT
                       MAX(DISTINCT c1) AS c1, MAX(DISTINCT c2) AS c2
                       FROM varbinary_tbl"""
@@ -37,7 +45,11 @@ class aggtst_varbinary_max_distinct_gby(TstView):
         # checked manually
         self.data = [
             {"id": 0, "c1": bytes.fromhex("17382115"), "c2": bytes.fromhex("37424d58")},
-            {"id": 1, "c1": bytes.fromhex("312b541d0b"), "c2": bytes.fromhex("63141f4d")},
+            {
+                "id": 1,
+                "c1": bytes.fromhex("312b541d0b"),
+                "c2": bytes.fromhex("63141f4d"),
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW varbinary_max_distinct_gby AS SELECT
                       id, MAX(DISTINCT c1) AS c1, MAX(DISTINCT c2) AS c2

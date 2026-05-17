@@ -1,6 +1,7 @@
 from tests.runtime_aggtest.aggtst_base import TstView
 import datetime
 
+
 class aggtst_timestamp_array_agg_value(TstView):
     def __init__(self):
         # Validated on Postgres
@@ -31,13 +32,22 @@ class aggtst_timestamp_array_agg_gby(TstView):
         self.data = [
             {
                 "id": 0,
-                "c1": [datetime.datetime(2014, 11, 5, 8, 27, 0), datetime.datetime(2020, 6, 21, 14, 0, 0)],
+                "c1": [
+                    datetime.datetime(2014, 11, 5, 8, 27, 0),
+                    datetime.datetime(2020, 6, 21, 14, 0, 0),
+                ],
                 "c2": [datetime.datetime(2024, 12, 5, 12, 45, 0), None],
             },
             {
                 "id": 1,
-                "c1": [datetime.datetime(2020, 6, 21, 14, 0, 0), datetime.datetime(2024, 12, 5, 9, 15, 0)],
-                "c2": [datetime.datetime(2023, 2, 26, 18, 0, 0), datetime.datetime(2014, 11, 5, 16, 30, 0)],
+                "c1": [
+                    datetime.datetime(2020, 6, 21, 14, 0, 0),
+                    datetime.datetime(2024, 12, 5, 9, 15, 0),
+                ],
+                "c2": [
+                    datetime.datetime(2023, 2, 26, 18, 0, 0),
+                    datetime.datetime(2014, 11, 5, 16, 30, 0),
+                ],
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW timestamp_array_agg_gby AS SELECT
@@ -75,13 +85,22 @@ class aggtst_timestamp_array_agg_distinct_gby(TstView):
         self.data = [
             {
                 "id": 0,
-                "c1": [datetime.datetime(2014, 11, 5, 8, 27, 0), datetime.datetime(2020, 6, 21, 14, 0, 0)],
+                "c1": [
+                    datetime.datetime(2014, 11, 5, 8, 27, 0),
+                    datetime.datetime(2020, 6, 21, 14, 0, 0),
+                ],
                 "c2": [None, datetime.datetime(2024, 12, 5, 12, 45, 0)],
             },
             {
                 "id": 1,
-                "c1": [datetime.datetime(2020, 6, 21, 14, 0, 0), datetime.datetime(2024, 12, 5, 9, 15, 0)],
-                "c2": [datetime.datetime(2014, 11, 5, 16, 30, 0), datetime.datetime(2023, 2, 26, 18, 0, 0)],
+                "c1": [
+                    datetime.datetime(2020, 6, 21, 14, 0, 0),
+                    datetime.datetime(2024, 12, 5, 9, 15, 0),
+                ],
+                "c2": [
+                    datetime.datetime(2014, 11, 5, 16, 30, 0),
+                    datetime.datetime(2023, 2, 26, 18, 0, 0),
+                ],
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW timestamp_array_agg_distinct_gby AS SELECT
@@ -100,7 +119,11 @@ class aggtst_timestamp_array_agg_where(TstView):
                     datetime.datetime(2020, 6, 21, 14, 0, 0),
                     datetime.datetime(2024, 12, 5, 9, 15, 0),
                 ],
-                "f_c2": [None, datetime.datetime(2023, 2, 26, 18, 0, 0), datetime.datetime(2014, 11, 5, 16, 30, 0)],
+                "f_c2": [
+                    None,
+                    datetime.datetime(2023, 2, 26, 18, 0, 0),
+                    datetime.datetime(2014, 11, 5, 16, 30, 0),
+                ],
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW timestamp_array_where AS SELECT
@@ -112,11 +135,21 @@ class aggtst_timestamp_array_agg_where_gby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {"id": 0, "f_c1": [datetime.datetime(2020, 6, 21, 14, 0, 0)], "f_c2": [None]},
+            {
+                "id": 0,
+                "f_c1": [datetime.datetime(2020, 6, 21, 14, 0, 0)],
+                "f_c2": [None],
+            },
             {
                 "id": 1,
-                "f_c1": [datetime.datetime(2020, 6, 21, 14, 0, 0), datetime.datetime(2024, 12, 5, 9, 15, 0)],
-                "f_c2": [datetime.datetime(2023, 2, 26, 18, 0, 0), datetime.datetime(2014, 11, 5, 16, 30, 0)],
+                "f_c1": [
+                    datetime.datetime(2020, 6, 21, 14, 0, 0),
+                    datetime.datetime(2024, 12, 5, 9, 15, 0),
+                ],
+                "f_c2": [
+                    datetime.datetime(2023, 2, 26, 18, 0, 0),
+                    datetime.datetime(2014, 11, 5, 16, 30, 0),
+                ],
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW timestamp_array_where_gby AS SELECT
