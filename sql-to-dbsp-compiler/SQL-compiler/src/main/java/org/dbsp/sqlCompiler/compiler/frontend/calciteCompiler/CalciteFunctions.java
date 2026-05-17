@@ -49,49 +49,102 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
 
             new Func(SqlStdOperatorTable.AND, "AND", SqlLibrary.STANDARD, "boolean#and", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.AS, "AS", SqlLibrary.STANDARD, "grammar#as", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.DEFAULT, "DEFAULT", SqlLibrary.STANDARD, "grammar#default", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.AS, "AS", SqlLibrary.STANDARD, "grammar#as",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
+            new Func(SqlStdOperatorTable.DEFAULT, "DEFAULT", SqlLibrary.STANDARD, "grammar#default",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
             new Func(SqlStdOperatorTable.FILTER, "FILTER", SqlLibrary.STANDARD, "aggregates#filter", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.CUBE, "CUBE", SqlLibrary.STANDARD, "grammar#cube", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.ROLLUP, "ROLLUP", SqlLibrary.STANDARD, "grammar#cube", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.GROUPING_SETS, "GROUPING SETS", SqlLibrary.STANDARD, "grammar#grouping-functions", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.GROUPING, "GROUPING", SqlLibrary.STANDARD, "grammar#grouping", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.CUBE, "CUBE", SqlLibrary.STANDARD, "grammar#cube",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
+            new Func(SqlStdOperatorTable.ROLLUP, "ROLLUP", SqlLibrary.STANDARD, "grammar#cube",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
+            new Func(SqlStdOperatorTable.GROUPING_SETS, "GROUPING SETS", SqlLibrary.STANDARD, "grammar#grouping-functions",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
+            new Func(SqlStdOperatorTable.GROUPING, "GROUPING", SqlLibrary.STANDARD, "grammar#grouping",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
             // new Func(SqlStdOperatorTable.GROUP_ID, "GROUP ID", SqlLibrary.STANDARD, "grammar", FunctionDocumentation.NO_FILE, false),
             // new Func(SqlStdOperatorTable.GROUPING_ID, "GROUPING ID", SqlLibrary.STANDARD, "grammar", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.CONCAT, "||", SqlLibrary.STANDARD, "string#concat,binary#concat", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.DIVIDE, "/", SqlLibrary.STANDARD, "operators#muldiv", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.PERCENT_REMAINDER, "%", SqlLibrary.STANDARD, "operators#muldiv", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.DIVIDE_INTEGER, "/", SqlLibrary.STANDARD, "operators#muldiv", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.CONCAT, "||", SqlLibrary.STANDARD, "string#concat,binary#concat",
+                    """
+                    runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py""", false),
+            new Func(SqlStdOperatorTable.DIVIDE, "/", SqlLibrary.STANDARD, "operators#muldiv",
+                    "runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py", false),
+            new Func(SqlStdOperatorTable.PERCENT_REMAINDER, "%", SqlLibrary.STANDARD, "operators#muldiv",
+                    "runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py", false),
+            new Func(SqlStdOperatorTable.DIVIDE_INTEGER, "/", SqlLibrary.STANDARD, "operators#muldiv",
+                    "runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py", false),
             new Func(SqlStdOperatorTable.DOT, ".", SqlLibrary.STANDARD, "grammar#as", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.EQUALS, "=", SqlLibrary.STANDARD, "comparisons#eq", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.GREATER_THAN, ">", SqlLibrary.STANDARD, "comparisons#gt", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.IS_DISTINCT_FROM, "IS DISTINCT FROM", SqlLibrary.STANDARD, "comparisons#distinct", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.IS_NOT_DISTINCT_FROM, "IS NOT DISTINCT FROM", SqlLibrary.STANDARD, "comparisons#notdistinct", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.EQUALS, "=", SqlLibrary.STANDARD, "comparisons#eq",
+                    "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
+            new Func(SqlStdOperatorTable.GREATER_THAN, ">", SqlLibrary.STANDARD, "comparisons#gt",
+                    "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
+            new Func(SqlStdOperatorTable.IS_DISTINCT_FROM, "IS DISTINCT FROM", SqlLibrary.STANDARD, "comparisons#distinct",
+                    """
+                    runtime_aggtest/illarg_tests/test_cmp_operators.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py
+                    """, false),
+            new Func(SqlStdOperatorTable.IS_NOT_DISTINCT_FROM, "IS NOT DISTINCT FROM", SqlLibrary.STANDARD, "comparisons#notdistinct",
+                    """
+                    runtime_aggtest/illarg_tests/test_cmp_operators.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py""", false),
             new Func(SqlStdOperatorTable.GREATER_THAN_OR_EQUAL, ">=", SqlLibrary.STANDARD, "comparisons#gte", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.IN, "IN", SqlLibrary.STANDARD, "comparisons#in", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.NOT_IN, "NOT IN", SqlLibrary.STANDARD, "comparisons#in", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.IN, "IN", SqlLibrary.STANDARD, "comparisons#in",
+                    """
+                    runtime_aggtest/illarg_tests/test_cmp_operators.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py""", false),
+            new Func(SqlStdOperatorTable.NOT_IN, "NOT IN", SqlLibrary.STANDARD, "comparisons#in",
+                    """
+                    runtime_aggtest/illarg_tests/test_cmp_operators.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py""", false),
             new Func(SqlStdOperatorTable.SEARCH, "", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.LESS_THAN, "<", SqlLibrary.STANDARD, "comparisons#lt", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.LESS_THAN_OR_EQUAL, "<=", SqlLibrary.STANDARD, "comparisons#lte", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.MINUS, "-", SqlLibrary.STANDARD, "operators#plusminus", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.MULTIPLY, "*", SqlLibrary.STANDARD, "operators#muldiv", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.NOT_EQUALS, "<>", SqlLibrary.STANDARD, "comparisons#ne", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.LESS_THAN, "<", SqlLibrary.STANDARD, "comparisons#lt",
+                    "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
+            new Func(SqlStdOperatorTable.LESS_THAN_OR_EQUAL, "<=", SqlLibrary.STANDARD, "comparisons#lte",
+                    "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
+            new Func(SqlStdOperatorTable.MINUS, "-", SqlLibrary.STANDARD, "operators#plusminus",
+                    "runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py", false),
+            new Func(SqlStdOperatorTable.MULTIPLY, "*", SqlLibrary.STANDARD, "operators#muldiv",
+                    "runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py", false),
+            new Func(SqlStdOperatorTable.NOT_EQUALS, "<>", SqlLibrary.STANDARD, "comparisons#ne",
+                    "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
             new Func(SqlStdOperatorTable.OR, "OR", SqlLibrary.STANDARD, "boolean#or", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.PLUS, "+", SqlLibrary.STANDARD, "operators#plusminus", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.PLUS, "+", SqlLibrary.STANDARD, "operators#plusminus",
+                    "runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py", false),
             new Func(SqlStdOperatorTable.DATETIME_PLUS, "+", SqlLibrary.STANDARD, "datetime#Other-datetimetimestamptime-interval-operations", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.INTERVAL, "INTERVAL", SqlLibrary.STANDARD, "datetime#time-intervals", FunctionDocumentation.NO_FILE, false),
 
-            new Func(SqlStdOperatorTable.DESC, "DESC", SqlLibrary.STANDARD, "grammar#order", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.NULLS_FIRST, "NULLS FIRST", SqlLibrary.STANDARD, "grammar#order", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.NULLS_LAST, "NULLS LAST", SqlLibrary.STANDARD, "grammar#order", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.IS_NOT_NULL, "IS NOT NULL", SqlLibrary.STANDARD, "comparisons#isnotnull,operators#isnull", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.IS_NULL, "IS NULL", SqlLibrary.STANDARD, "comparisons#isnull,operators#isnull", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.IS_NOT_TRUE, "IS NOT TRUE", SqlLibrary.STANDARD, "operators#isnull", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.IS_TRUE, "IS TRUE", SqlLibrary.STANDARD, "operators#isnull", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.IS_NOT_FALSE, "IS NOT FALSE", SqlLibrary.STANDARD, "operators#isnull", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.IS_FALSE, "IS FALSE", SqlLibrary.STANDARD, "operators#isnull", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.IS_NOT_UNKNOWN, "IS NOT UNKNOWN", SqlLibrary.STANDARD, "operators#isnull", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.IS_UNKNOWN, "IS UNKNOWN", SqlLibrary.STANDARD, "operators#isnull", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.DESC, "DESC", SqlLibrary.STANDARD, "grammar#order",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
+            new Func(SqlStdOperatorTable.NULLS_FIRST, "NULLS FIRST", SqlLibrary.STANDARD, "grammar#order",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
+            new Func(SqlStdOperatorTable.NULLS_LAST, "NULLS LAST", SqlLibrary.STANDARD, "grammar#order",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
+            new Func(SqlStdOperatorTable.IS_NOT_NULL, "IS NOT NULL", SqlLibrary.STANDARD, "comparisons#isnotnull,operators#isnull",
+                    """
+                    runtime_aggtest/illarg_tests/test_cmp_operators.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py
+                    """, false),
+            new Func(SqlStdOperatorTable.IS_NULL, "IS NULL", SqlLibrary.STANDARD, "comparisons#isnull,operators#isnull",
+                    """
+                    runtime_aggtest/illarg_tests/test_cmp_operators.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py""", false),
+            new Func(SqlStdOperatorTable.IS_NOT_TRUE, "IS NOT TRUE", SqlLibrary.STANDARD, "operators#isnull",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
+            new Func(SqlStdOperatorTable.IS_TRUE, "IS TRUE", SqlLibrary.STANDARD, "operators#isnull",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
+            new Func(SqlStdOperatorTable.IS_NOT_FALSE, "IS NOT FALSE", SqlLibrary.STANDARD, "operators#isnull",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
+            new Func(SqlStdOperatorTable.IS_FALSE, "IS FALSE", SqlLibrary.STANDARD, "operators#isnull",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
+            new Func(SqlStdOperatorTable.IS_NOT_UNKNOWN, "IS NOT UNKNOWN", SqlLibrary.STANDARD, "operators#isnull",
+                    """
+                    runtime_aggtest/illarg_tests/test_cmp_operators.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py""", false),
+            new Func(SqlStdOperatorTable.IS_UNKNOWN, "IS UNKNOWN", SqlLibrary.STANDARD, "operators#isnull",
+                    """
+                    runtime_aggtest/illarg_tests/test_cmp_operators.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py""", false),
             new Func(SqlStdOperatorTable.IS_EMPTY, "IS EMPTY", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
 
             new Func(SqlStdOperatorTable.EXISTS, "EXISTS", SqlLibrary.STANDARD, "comparisons#exists",
@@ -99,8 +152,10 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     runtime_aggtest/illarg_tests/test_{cmp_operators,arr_map_type_fn}.py|
                     runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py""", false),
             new Func(SqlStdOperatorTable.NOT, "NOT", SqlLibrary.STANDARD, "boolean#not", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.UNARY_MINUS, "-", SqlLibrary.STANDARD, "operators#plusminus", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.UNARY_PLUS, "+", SqlLibrary.STANDARD, "operators#plusminus", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.UNARY_MINUS, "-", SqlLibrary.STANDARD, "operators#plusminus",
+                    "runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py", false),
+            new Func(SqlStdOperatorTable.UNARY_PLUS, "+", SqlLibrary.STANDARD, "operators#plusminus",
+                    "runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py", false),
             new Func(SqlStdOperatorTable.EXPLICIT_TABLE, "TABLE", SqlLibrary.STANDARD, "table#syntax", FunctionDocumentation.NO_FILE, false),
 
             // aggregates
@@ -177,7 +232,6 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             // window
             new Func(SqlStdOperatorTable.DENSE_RANK, "DENSE_RANK", SqlLibrary.STANDARD, "aggregates#dense_rank",
                 """
-                runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py|
                 runtime_aggtest/illarg_tests2/test_window_agg.py""", true),
             new Func(SqlStdOperatorTable.LAG, "LAG", SqlLibrary.STANDARD, "aggregates#lag",
                 "runtime_aggtest/illarg_tests2/test_window_agg.py", true),
@@ -185,7 +239,6 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                 "runtime_aggtest/illarg_tests2/test_window_agg.py", true),
             new Func(SqlStdOperatorTable.RANK, "RANK", SqlLibrary.STANDARD, "aggregates#rank",
                 """
-                runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py|
                 runtime_aggtest/illarg_tests2/test_window_agg.py""", true),
             new Func(SqlStdOperatorTable.ROW_NUMBER, "ROW_NUMBER", SqlLibrary.STANDARD, "aggregates#row_number",
                 """
@@ -196,8 +249,10 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.MAP_QUERY, "MAP", SqlLibrary.STANDARD, "aggregates#map", FunctionDocumentation.NO_FILE, true),
             // Constructors
             new Func(SqlStdOperatorTable.ROW, "ROW", SqlLibrary.STANDARD, "types#row_constructor", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.ARRAY_VALUE_CONSTRUCTOR, "ARRAY", SqlLibrary.STANDARD, "array#constructor", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.MAP_VALUE_CONSTRUCTOR, "MAP", SqlLibrary.STANDARD, "map#map-literals", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.ARRAY_VALUE_CONSTRUCTOR, "ARRAY", SqlLibrary.STANDARD, "array#constructor",
+                "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
+            new Func(SqlStdOperatorTable.MAP_VALUE_CONSTRUCTOR, "MAP", SqlLibrary.STANDARD, "map#map-literals",
+                "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
 
             new Func(SqlStdOperatorTable.IGNORE_NULLS, "IGNORE NULLS", SqlLibrary.STANDARD, "grammar#window-aggregates", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.RESPECT_NULLS, "RESPECT NULLS", SqlLibrary.STANDARD, "grammar#window-aggregates", FunctionDocumentation.NO_FILE, false),
@@ -207,7 +262,8 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                  runtime_aggtest/variant_tests/{row_of_cmpx_type,cpmx_variant,arr_cmpx_varnt_unnest,arr_of_cmpx_type,udt_of_cmpx_type,arr_unnest_varnt}.py""", false),
             // Unnest with ordinality is the same as UNNEST
             new Func(SqlStdOperatorTable.UNNEST_WITH_ORDINALITY, "UNNEST WITH ORDINALITY", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.LATERAL, "LATERAL", SqlLibrary.STANDARD, "grammar#lateral", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.LATERAL, "LATERAL", SqlLibrary.STANDARD, "grammar#lateral",
+                "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
             new Func(SqlStdOperatorTable.COLLECTION_TABLE, "TABLE", SqlLibrary.STANDARD, "grammar", FunctionDocumentation.NO_FILE, false),
 
             new Func(SqlStdOperatorTable.OVERLAPS, "OVERLAPS", SqlLibrary.STANDARD, "datetime#overlaps",
@@ -232,13 +288,19 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                      "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
             new Func(SqlStdOperatorTable.SYMMETRIC_NOT_BETWEEN, "NOT BETWEEN SYMMETRIC", SqlLibrary.STANDARD, "comparisons#symmetric-notbetween",
                      "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
-            new Func(SqlStdOperatorTable.VALUES, "VALUES", SqlLibrary.STANDARD, "grammar#values", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.VALUES, "VALUES", SqlLibrary.STANDARD, "grammar#values",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
 
             new Func(SqlStdOperatorTable.NOT_LIKE, "NOT LIKE", SqlLibrary.STANDARD, "string#like", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.LIKE, "LIKE", SqlLibrary.STANDARD, "string#like", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.ESCAPE, "ESCAPE", SqlLibrary.STANDARD, "string#like", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.CASE, "CASE", SqlLibrary.STANDARD, "comparisons#case", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.OVER, "OVER", SqlLibrary.STANDARD, "grammar#window-aggregates", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.CASE, "CASE", SqlLibrary.STANDARD, "comparisons#case",
+                    """
+                    runtime_aggtest/illarg_tests/test_cmp_operators.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py
+                    """, false),
+            new Func(SqlStdOperatorTable.OVER, "OVER", SqlLibrary.STANDARD, "grammar#window-aggregates",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
             new Func(SqlStdOperatorTable.REINTERPRET, "", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
 
             // Functions
@@ -355,18 +417,36 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
                     runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
             new Func(SqlStdOperatorTable.PI, "PI", SqlLibrary.STANDARD, "float#pi", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.NULLIF, "NULLIF", SqlLibrary.STANDARD, "comparisons#nullif", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.COALESCE, "COALESCE", SqlLibrary.STANDARD, "comparisons#coalesce", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.NULLIF, "NULLIF", SqlLibrary.STANDARD, "comparisons#nullif",
+                    """
+                    runtime_aggtest/illarg_tests/test_cmp_operators.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py""", false),
+            new Func(SqlStdOperatorTable.COALESCE, "COALESCE", SqlLibrary.STANDARD, "comparisons#coalesce",
+                    """
+                    runtime_aggtest/illarg_tests/test_cmp_operators.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py""", false),
             new Func(SqlStdOperatorTable.FLOOR, "FLOOR", SqlLibrary.STANDARD,
-                    "decimal#floor,float#floor,datetime#date_floor,datetime#timestamp_floor,datetime#time_floor", FunctionDocumentation.NO_FILE, false),
+                    "decimal#floor,float#floor,datetime#date_floor,datetime#timestamp_floor,datetime#time_floor",
+                    """
+                    runtime_aggtest/illarg_tests2/test_{date_time_fn,numeric_type_fn}.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
             new Func(SqlStdOperatorTable.CEIL, "CEIL", SqlLibrary.STANDARD,
-                    "decimal#ceil,float#ceil,datetime#date_ceil,datetime#timestamp_ceil,datetime#time_ceil", FunctionDocumentation.NO_FILE, false),
+                    "decimal#ceil,float#ceil,datetime#date_ceil,datetime#timestamp_ceil,datetime#time_ceil",
+                    """
+                    runtime_aggtest/illarg_tests2/test_{date_time_fn,numeric_type_fn}.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
             new Func(SqlStdOperatorTable.TIMESTAMP_ADD, "TIMESTAMPADD", SqlLibrary.STANDARD,
-                    "datetime#timestampadd", FunctionDocumentation.NO_FILE, false),
+                    "datetime#timestampadd",
+                    """
+                    runtime_aggtest/illarg_tests2/test_date_time_fn.py|
+                    runtime_aggtest/lateness_tests/test_check.py""", false),
             new Func(SqlStdOperatorTable.TIMESTAMP_DIFF, "TIMESTAMPDIFF", SqlLibrary.STANDARD,
-                    "datetime#date_timestampdiff,datetime#timestamp_timestampdiff", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.CAST, "CAST", SqlLibrary.STANDARD, "casts#casts-and-data-type-conversions", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.EXTRACT, "EXTRACT", SqlLibrary.STANDARD, "datetime#time_extract,datetime#date_extract,datetime#timestamp_extract", FunctionDocumentation.NO_FILE, false),
+                    "datetime#date_timestampdiff,datetime#timestamp_timestampdiff",
+                    "runtime_aggtest/illarg_tests2/test_date_time_fn.py", false),
+            new Func(SqlStdOperatorTable.CAST, "CAST", SqlLibrary.STANDARD, "casts#casts-and-data-type-conversions",
+                    "runtime_aggtest/illarg_tests/test_cast.py", false),
+            new Func(SqlStdOperatorTable.EXTRACT, "EXTRACT", SqlLibrary.STANDARD, "datetime#time_extract,datetime#date_extract,datetime#timestamp_extract",
+                    "runtime_aggtest/illarg_tests2/test_date_time_fn.py", false),
             new Func(SqlStdOperatorTable.YEAR, "YEAR", SqlLibrary.STANDARD,
                     "datetime#year", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.QUARTER, "QUARTER", SqlLibrary.STANDARD,
@@ -388,15 +468,20 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.SECOND, "SECOND", SqlLibrary.STANDARD,
                     "datetime#date_second,datetime#time_second,datetime#timestamp_second", FunctionDocumentation.NO_FILE, false),
 
-            new Func(SqlStdOperatorTable.ELEMENT, "ELEMENT", SqlLibrary.STANDARD, "array#element", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.ITEM, "SAFE_OFFSET", SqlLibrary.STANDARD, "array#safe_offset", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.ELEMENT, "ELEMENT", SqlLibrary.STANDARD, "array#element",
+                    "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
+            new Func(SqlStdOperatorTable.ITEM, "SAFE_OFFSET", SqlLibrary.STANDARD, "array#safe_offset",
+                    "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
             new Func(SqlStdOperatorTable.SLICE, "$SLICE", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.ELEMENT_SLICE, "$ELEMENT_SLICE", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.SCALAR_QUERY, "$SCALAR_QUERY", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.STRUCT_ACCESS, "$STRUCT_ACCESS", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.CARDINALITY, "CARDINALITY", SqlLibrary.STANDARD, "array#cardinality,map#cardinality", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.TUMBLE, "TUMBLE", SqlLibrary.STANDARD, "table#tumble", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.HOP, "HOP", SqlLibrary.STANDARD, "table#hop", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.CARDINALITY, "CARDINALITY", SqlLibrary.STANDARD, "array#cardinality,map#cardinality",
+                    "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
+            new Func(SqlStdOperatorTable.TUMBLE, "TUMBLE", SqlLibrary.STANDARD, "table#tumble",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
+            new Func(SqlStdOperatorTable.HOP, "HOP", SqlLibrary.STANDARD, "table#hop",
+                    "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
 
             // SqlLibraryOperators operators
             // DATEADD is not implemented, but give a better error message
@@ -408,90 +493,211 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlLibraryOperators.DATE_SUB, "DATE_SUB", SqlLibrary.BIG_QUERY, "datetime#date_sub", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.DATE_PART, "DATE_PART", SqlLibrary.POSTGRESQL,
                     "datetime#date_extract,datetime#time_extract,datetime#timestamp_extract", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.IF, "IF", SqlLibrary.BIG_QUERY, "comparisons#if", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.LEN, "LEN", SqlLibrary.SPARK, "string#char_length", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.LENGTH, "LENGTH", SqlLibrary.POSTGRESQL, "string#char_length", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.SUBSTR_BIG_QUERY, "SUBSTR", SqlLibrary.BIG_QUERY, "string#substr", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.SPLIT, "SPLIT", SqlLibrary.BIG_QUERY, "string#split", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlLibraryOperators.IF, "IF", SqlLibrary.BIG_QUERY, "comparisons#if",
+                     "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
+            new Func(SqlLibraryOperators.LEN, "LEN", SqlLibrary.SPARK, "string#char_length",
+                     """
+                     runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn,arr_map_type_fn}.py|
+                     runtime_aggtest/illarg_tests2/test_date_time_fn.py|
+                     runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py
+                     """, false),
+            new Func(SqlLibraryOperators.LENGTH, "LENGTH", SqlLibrary.POSTGRESQL, "string#char_length",
+                    "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn,arr_map_type_fn}.py|",false),
+            new Func(SqlLibraryOperators.SUBSTR_BIG_QUERY, "SUBSTR", SqlLibrary.BIG_QUERY, "string#substr",
+                    "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py|",false),
+            new Func(SqlLibraryOperators.SPLIT, "SPLIT", SqlLibrary.BIG_QUERY, "string#split",
+                     """
+                     runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py|
+                     runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py
+                     """, false),
             // https://issues.apache.org/jira/browse/CALCITE-7468
             // new Func(SqlLibraryOperators.SPLIT_PART, "SPLIT_PART", SqlLibrary.POSTGRESQL, "string#split_part", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.GREATEST, "GREATEST", SqlLibrary.BIG_QUERY, "comparisons#greatest", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.LEAST, "LEAST", SqlLibrary.BIG_QUERY, "comparisons#least", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.SAFE_CAST, "SAFE_CAST", SqlLibrary.BIG_QUERY, "casts#safe-casts", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlLibraryOperators.GREATEST, "GREATEST", SqlLibrary.BIG_QUERY, "comparisons#greatest",
+                     """
+                     runtime_aggtest/illarg_tests/test_cmp_operators.py|
+                     runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py
+                     """, false),
+            new Func(SqlLibraryOperators.LEAST, "LEAST", SqlLibrary.BIG_QUERY, "comparisons#least",
+                     """
+                     runtime_aggtest/illarg_tests/test_cmp_operators.py|
+                     runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py
+                     """, false),
+            new Func(SqlLibraryOperators.SAFE_CAST, "SAFE_CAST", SqlLibrary.BIG_QUERY, "casts#safe-casts",
+                    "runtime_aggtest/illarg_tests/test_cast.py",false),
 
-            new Func(SqlLibraryOperators.REGEXP_REPLACE_2, "REGEXP_REPLACE", SqlLibrary.REDSHIFT, "string#regexp_replace", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.REGEXP_REPLACE_3, "REGEXP_REPLACE", SqlLibrary.REDSHIFT, "string#regexp_replace", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlLibraryOperators.REGEXP_REPLACE_2, "REGEXP_REPLACE", SqlLibrary.REDSHIFT, "string#regexp_replace",
+                    "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
+            new Func(SqlLibraryOperators.REGEXP_REPLACE_3, "REGEXP_REPLACE", SqlLibrary.REDSHIFT, "string#regexp_replace",
+                    "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
 
             // More aggregates
-            new Func(SqlLibraryOperators.BOOL_AND, "BOOL_AND", SqlLibrary.POSTGRESQL, "aggregates#logical_and", FunctionDocumentation.NO_FILE, true),
-            new Func(SqlLibraryOperators.BOOL_OR, "BOOL_OR", SqlLibrary.POSTGRESQL, "aggregates#logical_or", FunctionDocumentation.NO_FILE, true),
+            new Func(SqlLibraryOperators.BOOL_AND, "BOOL_AND", SqlLibrary.POSTGRESQL, "aggregates#logical_and",
+                    "runtime_aggtest/illarg_tests/test_agg.py", true),
+            new Func(SqlLibraryOperators.BOOL_OR, "BOOL_OR", SqlLibrary.POSTGRESQL, "aggregates#logical_or",
+                    "runtime_aggtest/illarg_tests/test_agg.py", true),
             new Func(SqlLibraryOperators.LOGICAL_OR, "LOGICAL_OR", SqlLibrary.BIG_QUERY, "aggregates#logical_or", FunctionDocumentation.NO_FILE, true),
             new Func(SqlLibraryOperators.LOGICAL_AND, "LOGICAL_AND", SqlLibrary.BIG_QUERY, "aggregates#logical_and", FunctionDocumentation.NO_FILE, true),
-            new Func(SqlLibraryOperators.COUNTIF, "COUNTIF", SqlLibrary.BIG_QUERY, "aggregates#countif", FunctionDocumentation.NO_FILE, true),
-            new Func(SqlLibraryOperators.ARRAY_AGG, "ARRAY_AGG", SqlLibrary.BIG_QUERY, "aggregates#array_agg", FunctionDocumentation.NO_FILE, true),
+            new Func(SqlLibraryOperators.COUNTIF, "COUNTIF", SqlLibrary.BIG_QUERY, "aggregates#countif",
+                    """
+                    runtime_aggtest/aggregate_tests3/test_un_int_countif.py|
+                    runtime_aggtest/illarg_tests/test_agg.py
+                    """, true),
+            new Func(SqlLibraryOperators.ARRAY_AGG, "ARRAY_AGG", SqlLibrary.BIG_QUERY, "aggregates#array_agg",
+                    """
+                    runtime_aggtest/aggregate_tests/test_{decimal_arr_agg,empty_set,row_arr_agg}.py|
+                    runtime_aggtest/aggregate_tests2/test_{timestamp_arr_agg,charn_arr_agg,time_arr_agg,date_arr_agg}.py|
+                    runtime_aggtest/aggregate_tests3/test_{binary_arr_agg,varbinary_arr_agg,empty_set,un_int_array_agg}.py|
+                    runtime_aggtest/aggregate_tests4/test_{varcharn_arragg,array,varchar_arr_agg,map_arr_agg,array_arr_agg}.py|
+                    runtime_aggtest/illarg_tests/test_{grammar_tbl_fn,agg}.py
+                    """, true),
 
             new Func(SqlLibraryOperators.DATE, "DATE", SqlLibrary.BIG_QUERY, "datetime#date-literals", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.TIME, "TIME", SqlLibrary.BIG_QUERY, "datetime#time-literals", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.TIMESTAMP, "TIMESTAMP", SqlLibrary.BIG_QUERY, "datetime#timestamp-literals", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.LEFT, "LEFT", SqlLibrary.POSTGRESQL, "string#left,binary#left", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.REPEAT, "REPEAT", SqlLibrary.POSTGRESQL, "string#repeat", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.RIGHT, "RIGHT", SqlLibrary.POSTGRESQL, "string#right,binary#right", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlLibraryOperators.LEFT, "LEFT", SqlLibrary.POSTGRESQL, "string#left,binary#left",
+                    """
+                    runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py
+                    """, false),
+            new Func(SqlLibraryOperators.REPEAT, "REPEAT", SqlLibrary.POSTGRESQL, "string#repeat",
+                    "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
+            new Func(SqlLibraryOperators.RIGHT, "RIGHT", SqlLibrary.POSTGRESQL, "string#right,binary#right",
+                    """
+                    runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py
+                    """, false),
             new Func(SqlLibraryOperators.ILIKE, "ILIKE", SqlLibrary.POSTGRESQL, "string#ilike", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.NOT_ILIKE, "NOT ILIKE", SqlLibrary.POSTGRESQL, "string#ilike", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.RLIKE, "RLIKE", SqlLibrary.MYSQL, "string#rlike", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlLibraryOperators.RLIKE, "RLIKE", SqlLibrary.MYSQL, "string#rlike",
+                    "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py",false),
             new Func(SqlLibraryOperators.NOT_RLIKE, "NOT RLIKE", SqlLibrary.MYSQL, "string#rlike", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.CONCAT_FUNCTION, "CONCAT", SqlLibrary.MYSQL, "string#concat", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.CONCAT_WS, "CONCAT_WS", SqlLibrary.MYSQL, "string#concat_ws", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlLibraryOperators.CONCAT_FUNCTION, "CONCAT", SqlLibrary.MYSQL, "string#concat",
+                    """
+                    runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py
+                    """, false),
+            new Func(SqlLibraryOperators.CONCAT_WS, "CONCAT_WS", SqlLibrary.MYSQL, "string#concat_ws",
+                    "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
             new Func(SqlLibraryOperators.ARRAY, "ARRAY", SqlLibrary.SPARK, "array#array", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.MAP, "MAP", SqlLibrary.SPARK, "map", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.ARRAY_APPEND, "ARRAY_APPEND", SqlLibrary.SPARK, "array#append", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.ARRAY_COMPACT, "ARRAY_COMPACT", SqlLibrary.SPARK, "array#compact", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.ARRAY_CONCAT, "ARRAY_CONCAT", SqlLibrary.SPARK, "array#concat", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.ARRAY_DISTINCT, "ARRAY_DISTINCT", SqlLibrary.SPARK, "array#distinct", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.ARRAY_JOIN, "ARRAY_JOIN", SqlLibrary.SPARK, "array#join", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.ARRAY_LENGTH, "ARRAY_LENGTH", SqlLibrary.SPARK, "array#length", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.ARRAY_MAX, "ARRAY_MAX", SqlLibrary.SPARK, "array#max", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.ARRAY_MIN, "ARRAY_MIN", SqlLibrary.SPARK, "array#min", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.ARRAY_PREPEND, "ARRAY_PREPEND", SqlLibrary.SPARK, "array#prepend", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.ARRAY_REPEAT, "ARRAY_REPEAT", SqlLibrary.SPARK, "array#repeat", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.ARRAY_REVERSE, "ARRAY_REVERSE", SqlLibrary.SPARK, "array#reverse", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlLibraryOperators.ARRAY_APPEND, "ARRAY_APPEND", SqlLibrary.SPARK, "array#append",
+                    "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
+            new Func(SqlLibraryOperators.ARRAY_COMPACT, "ARRAY_COMPACT", SqlLibrary.SPARK, "array#compact",
+                     "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
+            new Func(SqlLibraryOperators.ARRAY_CONCAT, "ARRAY_CONCAT", SqlLibrary.SPARK, "array#concat",
+                     "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
+            new Func(SqlLibraryOperators.ARRAY_DISTINCT, "ARRAY_DISTINCT", SqlLibrary.SPARK, "array#distinct",
+                     "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
+            new Func(SqlLibraryOperators.ARRAY_JOIN, "ARRAY_JOIN", SqlLibrary.SPARK, "array#join",
+                     "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
+            new Func(SqlLibraryOperators.ARRAY_LENGTH, "ARRAY_LENGTH", SqlLibrary.SPARK, "array#length",
+                     "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
+            new Func(SqlLibraryOperators.ARRAY_MAX, "ARRAY_MAX", SqlLibrary.SPARK, "array#max",
+                     "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
+            new Func(SqlLibraryOperators.ARRAY_MIN, "ARRAY_MIN", SqlLibrary.SPARK, "array#min",
+                     "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
+            new Func(SqlLibraryOperators.ARRAY_PREPEND, "ARRAY_PREPEND", SqlLibrary.SPARK, "array#prepend",
+                     "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
+            new Func(SqlLibraryOperators.ARRAY_REPEAT, "ARRAY_REPEAT", SqlLibrary.SPARK, "array#repeat",
+                     "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
+            new Func(SqlLibraryOperators.ARRAY_REVERSE, "ARRAY_REVERSE", SqlLibrary.SPARK, "array#reverse",
+                     "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
             new Func(SqlLibraryOperators.ARRAY_SIZE, "ARRAY_SIZE", SqlLibrary.SPARK, "array#size", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.ARRAY_TO_STRING, "ARRAY_TO_STRING", SqlLibrary.SPARK, "array#to_string", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.SORT_ARRAY, "SORT_ARRAY", SqlLibrary.SPARK, "array#sort", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.TO_HEX, "TO_HEX", SqlLibrary.BIG_QUERY, "binary#to_hex", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.DATE_TRUNC, "DATE_TRUNC", SqlLibrary.BIG_QUERY, "datetime#date_trunc", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.TIME_TRUNC, "TIME_TRUNC", SqlLibrary.BIG_QUERY, "datetime#time_trunc", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.TIMESTAMP_TRUNC, "TIMESTAMP_TRUNC", SqlLibrary.BIG_QUERY, "datetime#timestamp_trunc", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlLibraryOperators.ARRAY_TO_STRING, "ARRAY_TO_STRING", SqlLibrary.SPARK, "array#to_string",
+                    "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
+            new Func(SqlLibraryOperators.SORT_ARRAY, "SORT_ARRAY", SqlLibrary.SPARK, "array#sort",
+                    "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
+            new Func(SqlLibraryOperators.TO_HEX, "TO_HEX", SqlLibrary.BIG_QUERY, "binary#to_hex",
+                    "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
+            new Func(SqlLibraryOperators.DATE_TRUNC, "DATE_TRUNC", SqlLibrary.BIG_QUERY, "datetime#date_trunc",
+                    "runtime_aggtest/illarg_tests2/test_date_time_fn.py", false),
+            new Func(SqlLibraryOperators.TIME_TRUNC, "TIME_TRUNC", SqlLibrary.BIG_QUERY, "datetime#time_trunc",
+                    "runtime_aggtest/illarg_tests2/test_date_time_fn.py", false),
+            new Func(SqlLibraryOperators.TIMESTAMP_TRUNC, "TIMESTAMP_TRUNC", SqlLibrary.BIG_QUERY, "datetime#timestamp_trunc",
+                    "runtime_aggtest/illarg_tests2/test_date_time_fn.py", false),
             new Func(SqlLibraryOperators.CHR, "CHR", SqlLibrary.POSTGRESQL, "string#chr", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.TANH, "TANH", SqlLibrary.ALL, "float#tanh", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.COTH, "COTH", SqlLibrary.ALL, "float#coth", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.COSH, "COSH", SqlLibrary.ALL, "float#cosh", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.ACOSH, "ACOSH", SqlLibrary.ALL, "float#acosh", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.ASINH, "ASINH", SqlLibrary.ALL, "float#asinh", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.ATANH, "ATANH", SqlLibrary.ALL, "float#atanh", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.SECH, "SECH", SqlLibrary.ALL, "float#sech", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.CSCH, "CSCH", SqlLibrary.ALL, "float#csch", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.SINH, "SINH", SqlLibrary.ALL, "float#sinh", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.CSC, "CSC", SqlLibrary.ALL, "float#csc", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.SEC, "SEC", SqlLibrary.ALL, "float#sec", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.IS_INF, "IS_INF", SqlLibrary.BIG_QUERY, "float#is_inf", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.IS_NAN, "IS_NAN", SqlLibrary.BIG_QUERY, "float#is_nan", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.LOG, "LOG", SqlLibrary.BIG_QUERY, "float#log", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlLibraryOperators.TANH, "TANH", SqlLibrary.ALL, "float#tanh",
+                    "runtime_aggtest/illarg_tests2/test_numeric_type_fn.py", false),
+            new Func(SqlLibraryOperators.COTH, "COTH", SqlLibrary.ALL, "float#coth",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py
+                    """, false),
+            new Func(SqlLibraryOperators.COSH, "COSH", SqlLibrary.ALL, "float#cosh",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py
+                    """, false),
+            new Func(SqlLibraryOperators.ACOSH, "ACOSH", SqlLibrary.ALL, "float#acosh",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py
+                    """, false),
+            new Func(SqlLibraryOperators.ASINH, "ASINH", SqlLibrary.ALL, "float#asinh",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py
+                    """, false),
+            new Func(SqlLibraryOperators.ATANH, "ATANH", SqlLibrary.ALL, "float#atanh",
+                    "runtime_aggtest/illarg_tests2/test_numeric_type_fn.py", false),
+            new Func(SqlLibraryOperators.SECH, "SECH", SqlLibrary.ALL, "float#sech",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py
+                    """, false),
+            new Func(SqlLibraryOperators.CSCH, "CSCH", SqlLibrary.ALL, "float#csch",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py
+                    """, false),
+            new Func(SqlLibraryOperators.SINH, "SINH", SqlLibrary.ALL, "float#sinh",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py
+                    """, false),
+            new Func(SqlLibraryOperators.CSC, "CSC", SqlLibrary.ALL, "float#csc",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py
+                    """, false),
+            new Func(SqlLibraryOperators.SEC, "SEC", SqlLibrary.ALL, "float#sec",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py
+                    """, false),
+            new Func(SqlLibraryOperators.IS_INF, "IS_INF", SqlLibrary.BIG_QUERY, "float#is_inf",
+                    "runtime_aggtest/illarg_tests2/test_numeric_type_fn.py", false),
+            new Func(SqlLibraryOperators.IS_NAN, "IS_NAN", SqlLibrary.BIG_QUERY, "float#is_nan",
+                    "runtime_aggtest/illarg_tests2/test_numeric_type_fn.py", false),
+            new Func(SqlLibraryOperators.LOG, "LOG", SqlLibrary.BIG_QUERY, "float#log",
+                    """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py
+                    """, false),
             new Func(SqlLibraryOperators.INFIX_CAST, "::", SqlLibrary.POSTGRESQL, "casts#coloncolon", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.NULL_SAFE_EQUAL, "<=>", SqlLibrary.MYSQL, "operators#comparisons", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlLibraryOperators.NULL_SAFE_EQUAL, "<=>", SqlLibrary.MYSQL, "operators#comparisons",
+                    "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
             // new Func(SqlLibraryOperators.OFFSET, "OFFSET", SqlLibrary.BIG_QUERY, "", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.SAFE_OFFSET, "SAFE_OFFSET", SqlLibrary.BIG_QUERY, "", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlLibraryOperators.SAFE_OFFSET, "SAFE_OFFSET", SqlLibrary.BIG_QUERY, "",
+                    "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
             // new Func(SqlLibraryOperators.ORDINAL, "ORDINAL", SqlLibrary.BIG_QUERY, "array", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.TRUNC_BIG_QUERY, "TRUNC", SqlLibrary.BIG_QUERY,
-                    "decimal#trunc,float#trunc", FunctionDocumentation.NO_FILE, false),
+                    "decimal#trunc,float#trunc",
+                    """
+                    runtime_aggtest/illarg_tests2/test_{date_time_fn,numeric_type_fn}.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py
+                    """, false),
             new Func(SqlLibraryOperators.MAP_CONTAINS_KEY, "MAP_CONTAINS_KEY", SqlLibrary.SPARK,
-                    "map#map_contains_key", FunctionDocumentation.NO_FILE, false),
+                    "map#map_contains_key",
+                    "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
             new Func(SqlLibraryOperators.MD5, "MD5", SqlLibrary.SPARK,
-                    "string#md5,binary#md5", FunctionDocumentation.NO_FILE, false),
+                    "string#md5,binary#md5",
+                    "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
             new Func(SqlLibraryOperators.IFNULL, "IFNULL", SqlLibrary.BIG_QUERY,
                     "comparisons#ifnull", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.MAP_KEYS, "MAP_KEYS", SqlLibrary.SPARK,
-                    "map#map_keys", FunctionDocumentation.NO_FILE, false),
+                    "map#map_keys",
+                    "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
             new Func(SqlLibraryOperators.MAP_VALUES, "MAP_VALUES", SqlLibrary.SPARK,
                     "map#map_values", FunctionDocumentation.NO_FILE, false)
             // new Func(SqlLibraryOperators.SAFE_ORDINAL, "SAFE_ORDINAL", SqlLibrary.BIG_QUERY, "array", FunctionDocumentation.NO_FILE, false),
