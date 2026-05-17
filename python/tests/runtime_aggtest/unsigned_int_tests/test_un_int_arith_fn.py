@@ -365,17 +365,16 @@ class un_int_sinh(TstView):
                       WHERE id = 1"""
 
 
-
 class tableIssue5520(TstTable):
     def __init__(self):
         self.sql = "CREATE TABLE tbl5520(dbl DOUBLE);"
-        self.data = [ { "dbl": 10192.0 } ]
+        self.data = [{"dbl": 10192.0}]
 
 
 # SINH
 class issue5520(TstView):
     def __init__(self):
-        self.data = [{ "d": "Infinity" }]
+        self.data = [{"d": "Infinity"}]
         self.sql = """CREATE MATERIALIZED VIEW issue5520view AS SELECT
                       CAST(SINH(dbl) AS VARCHAR) AS d
                       FROM tbl5520"""

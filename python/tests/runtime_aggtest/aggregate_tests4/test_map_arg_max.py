@@ -1,5 +1,5 @@
 from tests.runtime_aggtest.aggtst_base import TstView
-import pyarrow as pa
+
 
 class aggtst_map_arg_max_value(TstView):
     def __init__(self):
