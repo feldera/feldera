@@ -48,7 +48,6 @@ SELECT 1/d as one, 0/d as zero FROM t;
 
         pipeline.wait_for_completion()
         data = list(pipeline.query_arrow_dicts("SELECT * FROM v"))
-        print(data)
         assert len(data) == 1
         assert data[0]["one"] == float("inf")
         assert math.isnan(data[0]["zero"])

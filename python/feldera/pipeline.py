@@ -1045,7 +1045,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
     def query_arrow_dicts(self, query: str) -> Generator[Mapping[str, Any], None, None]:
         """
         Executes an ad-hoc SQL query on this pipeline and returns a generator
-        that yields the result as a list of Dictionaries.
+        that yields the result as a sequence of Dictionaries.
 
         Note:
             You can only ``SELECT`` from materialized tables and views.
