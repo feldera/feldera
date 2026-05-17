@@ -116,9 +116,7 @@ impl Checkpointer {
         in_use_paths.insert(ACTIVATION_MARKER_FILE.into());
         for cpm in self.checkpoint_list.iter() {
             in_use_paths.insert(cpm.uuid.to_string().into());
-            let batches = self
-                .gather_batches_for_checkpoint(cpm)
-                .expect("Batches for a checkpoint should be discoverable");
+            let batches = self.gather_batches_for_checkpoint(cpm)?;
             for batch in batches {
                 in_use_paths.insert(batch);
             }
@@ -509,10 +507,7 @@ mod test {
             self.inner.list(parent, cb)
         }
 
-        fn delete(
-            &self,
-            name: &StoragePath,
-        ) -> Result<(), feldera_storage::error::StorageError> {
+        fn delete(&self, name: &StoragePath) -> Result<(), feldera_storage::error::StorageError> {
             self.inner.delete(name)
         }
 
@@ -525,6 +520,43 @@ mod test {
 
         fn usage(&self) -> Arc<std::sync::atomic::AtomicI64> {
             self.inner.usage()
+        }
+    }
+
+    /// Startup must not panic when a checkpoint dir contains a malformed
+    /// `pspine-batches-*.dat`. The corrupt metadata should surface as an
+    /// `Err` from `Checkpointer::new` so the caller can decide what to do.
+    #[test]
+    fn corrupt_pspine_batches_returns_error_not_panic() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let make_backend = || -> Arc<dyn StorageBackend> {
+            Arc::new(PosixBackend::new(
+                tempdir.path(),
+                StorageCacheConfig::default(),
+                &FileBackendConfig::default(),
+            ))
+        };
+
+        let mut checkpointer = Checkpointer::new(make_backend()).unwrap();
+        let uuid = uuid::Uuid::now_v7();
+        checkpointer
+            .commit(uuid, 0, None, Some(0), Some(0))
+            .unwrap();
+        drop(checkpointer);
+
+        let pspine = tempdir
+            .path()
+            .join(uuid.to_string())
+            .join("pspine-batches-trace.dat");
+        std::fs::write(&pspine, b"{not valid json").unwrap();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            Checkpointer::new(make_backend())
+        }));
+        match result {
+            Ok(Err(_)) => {}
+            Ok(Ok(_)) => panic!("Checkpointer accepted corrupt metadata without an error"),
+            Err(_) => panic!("Checkpointer panicked on corrupt pspine-batches"),
         }
     }
 
@@ -547,7 +579,10 @@ mod test {
 
         let uuid = uuid::Uuid::now_v7();
         let result = checkpointer.commit(uuid, 0, None, Some(0), Some(0));
-        assert!(result.is_err(), "commit should fail when catalog write fails");
+        assert!(
+            result.is_err(),
+            "commit should fail when catalog write fails"
+        );
 
         assert!(
             !checkpointer
