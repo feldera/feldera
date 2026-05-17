@@ -1950,8 +1950,7 @@ where
         // file is fsynced inside `complete()` but never explicitly
         // committed alongside the rest of the checkpoint, leaving its
         // durability guarantee tied to the implementation detail.
-        let pspine_writer =
-            backend.write(&Self::checkpoint_file(base, persistent_id), as_bytes)?;
+        let pspine_writer = backend.write(&Self::checkpoint_file(base, persistent_id), as_bytes)?;
         files.push(pspine_writer);
 
         // Write the batches as a separate file, this allows to parse it
@@ -1989,14 +1988,13 @@ where
         self.key_filter = None;
         self.value_filter = None;
         for batch in committed.batches {
-            let batch = B::from_path(&self.factories.clone(), &batch.clone().into()).map_err(
-                |error| {
+            let batch =
+                B::from_path(&self.factories.clone(), &batch.clone().into()).map_err(|error| {
                     crate::circuit::checkpointer::checkpoint_invalid_data_error(
                         "Spine batch read failed",
                         format!("{batch}: {error}"),
                     )
-                },
-            )?;
+                })?;
             self.insert_without_blocking(batch);
         }
 
