@@ -7,7 +7,9 @@ use crate::api::endpoints::pipeline_management::{
 };
 use crate::api::error::ApiError;
 use crate::db::error::DBError;
-use crate::db::types::pipeline::{ClientMetadata, ExtendedPipelineDescr, PipelineId};
+use crate::db::types::pipeline::{
+    ClientMetadata, ExtendedPipelineDescr, PatchClientMetadata, PipelineId,
+};
 use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramError, ProgramStatus};
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::storage::StorageStatus;
@@ -33,7 +35,7 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
         id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
         name: "example1".to_string(),
         client_metadata: ClientMetadata {
-            description: Some("Description of the pipeline example1".to_string()),
+            description: "Description of the pipeline example1".to_string(),
             ..ClientMetadata::default()
         },
         created_at: Default::default(),
@@ -94,7 +96,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c9")),
         name: "example2".to_string(),
         client_metadata: ClientMetadata {
-            description: Some("Description of the pipeline example2".to_string()),
+            description: "Description of the pipeline example2".to_string(),
             ..ClientMetadata::default()
         },
         created_at: Default::default(),
@@ -327,7 +329,7 @@ pub(crate) fn pipeline_post_put() -> PostPutPipeline {
     PostPutPipeline {
         name: "example1".to_string(),
         client_metadata: ClientMetadata {
-            description: Some("Description of the pipeline example1".to_string()),
+            description: "Description of the pipeline example1".to_string(),
             ..ClientMetadata::default()
         },
         runtime_config: Some(RuntimeConfig {
@@ -350,9 +352,9 @@ pub(crate) fn pipeline_post_put() -> PostPutPipeline {
 pub(crate) fn patch_pipeline() -> PatchPipeline {
     PatchPipeline {
         name: None,
-        client_metadata: ClientMetadata {
+        client_metadata: PatchClientMetadata {
             description: Some("This is a new description".to_string()),
-            ..ClientMetadata::default()
+            ..PatchClientMetadata::default()
         },
         runtime_config: None,
         program_code: Some("CREATE TABLE table3 ( col3 INT );".to_string()),

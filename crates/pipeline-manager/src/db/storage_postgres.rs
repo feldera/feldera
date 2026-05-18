@@ -13,7 +13,7 @@ use crate::db::types::monitor::{
     PipelineMonitorEventId,
 };
 use crate::db::types::pipeline::{
-    ClientMetadata, ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr,
+    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PatchClientMetadata, PipelineDescr,
     PipelineId,
 };
 use crate::db::types::program::{
@@ -321,21 +321,9 @@ impl Storage for StoragePostgres {
         let current = operations::pipeline::get_pipeline(&txn, tenant_id, original_name).await;
         let is_new: bool = match current {
             Ok(_) => {
-                // Pipeline already exists, as such update it
-                // For a full POST/PUT, client_metadata is the replacement —
-                // *not* a patch on top of the existing value. Pass an
-                // "overwrite-all" patch by setting any missing field to its
-                // empty marker (which apply_patch interprets as a clear).
-                let client_metadata_overwrite = ClientMetadata {
-                    description: Some(
-                        pipeline
-                            .client_metadata
-                            .description
-                            .clone()
-                            .unwrap_or_default(),
-                    ),
-                    tags: Some(pipeline.client_metadata.tags.clone().unwrap_or_default()),
-                };
+                // Pipeline already exists, as such update it. For a full
+                // POST/PUT, client_metadata is the replacement, not a patch on
+                // top of the existing value.
                 operations::pipeline::update_pipeline(
                     &txn,
                     false, // Done by user
@@ -343,7 +331,9 @@ impl Storage for StoragePostgres {
                     original_name,
                     &operations::pipeline::PipelineFieldUpdates {
                         name: &Some(pipeline.name.clone()),
-                        client_metadata: &client_metadata_overwrite,
+                        client_metadata: operations::pipeline::ClientMetadataUpdate::Replace(
+                            &pipeline.client_metadata,
+                        ),
                         runtime_config: &Some(pipeline.runtime_config.clone()),
                         program_code: &Some(pipeline.program_code.clone()),
                         udf_rust: &Some(pipeline.udf_rust.clone()),
@@ -437,7 +427,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         original_name: &str,
         name: &Option<String>,
-        client_metadata: &ClientMetadata,
+        client_metadata: &PatchClientMetadata,
         platform_version: &str,
         bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,
@@ -457,7 +447,7 @@ impl Storage for StoragePostgres {
             original_name,
             &operations::pipeline::PipelineFieldUpdates {
                 name,
-                client_metadata,
+                client_metadata: operations::pipeline::ClientMetadataUpdate::Patch(client_metadata),
                 runtime_config,
                 program_code,
                 udf_rust,
@@ -1170,7 +1160,9 @@ impl Storage for StoragePostgres {
                         &pipeline.name,
                         &operations::pipeline::PipelineFieldUpdates {
                             name: &None,
-                            client_metadata: &ClientMetadata::default(),
+                            client_metadata: operations::pipeline::ClientMetadataUpdate::Patch(
+                                &PatchClientMetadata::default(),
+                            ),
                             runtime_config: &None,
                             program_code: &None,
                             udf_rust: &None,
@@ -1261,7 +1253,9 @@ impl Storage for StoragePostgres {
                         &pipeline.name,
                         &operations::pipeline::PipelineFieldUpdates {
                             name: &None,
-                            client_metadata: &ClientMetadata::default(),
+                            client_metadata: operations::pipeline::ClientMetadataUpdate::Patch(
+                                &PatchClientMetadata::default(),
+                            ),
                             runtime_config: &None,
                             program_code: &None,
                             udf_rust: &None,

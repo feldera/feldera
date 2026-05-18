@@ -2052,7 +2052,7 @@ mod test {
                 PipelineDescr {
                     name: "example1".to_string(),
                     client_metadata: ClientMetadata {
-                        description: Some("Description of example1".to_string()),
+                        description: "Description of example1".to_string(),
                         ..ClientMetadata::default()
                     },
                     runtime_config: json!({}),

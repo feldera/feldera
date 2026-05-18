@@ -12,7 +12,7 @@ use crate::db::operations::utils::{
 use crate::db::types::pipeline::{
     bootstrap_config_to_string, runtime_desired_status_to_string, runtime_status_to_string,
     ClientMetadata, ExtendedPipelineDescr, ExtendedPipelineDescrEventInfo,
-    ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
+    ExtendedPipelineDescrMonitoring, PatchClientMetadata, PipelineDescr, PipelineId,
 };
 use crate::db::types::program::{
     validate_program_status_transition, ProgramError, ProgramStatus, RustCompilationInfo,
@@ -177,6 +177,7 @@ pub(crate) async fn new_pipeline(
     pipeline: PipelineDescr,
 ) -> Result<(PipelineId, Version), DBError> {
     validate_pipeline_name(&pipeline.name)?;
+    pipeline.client_metadata.validate()?;
     // Validate runtime configuration JSON when deserializing it
     // and reserialize it to have it contain current default values
     let runtime_config =
@@ -268,15 +269,52 @@ pub(crate) async fn new_pipeline(
     Ok((PipelineId(new_id), Version(1)))
 }
 
-/// Bundle of patchable pipeline fields — i.e. the contents of a `PATCH`
-/// request body. `update_pipeline` destructures this struct exhaustively so
-/// adding a new patchable field forces the call sites and the classifier
+/// How an update should treat the stored client metadata.
+///
+/// A `PATCH` request merges individual fields, whereas a `POST`/`PUT` request
+/// supplies a complete pipeline and therefore replaces the metadata.
+/// Keeping the two cases explicit (rather than encoding "replace" as a patch
+/// in which every field is forced to `Some`) lets an empty string or empty
+/// list survive a patch as a real value.
+#[derive(Clone, Copy)]
+pub(crate) enum ClientMetadataUpdate<'a> {
+    /// Merge: each `Some` field overwrites the stored value; each `None` field
+    /// leaves it unchanged. Used by `PATCH /v0/pipelines/<name>`.
+    Patch(&'a PatchClientMetadata),
+    /// Replace the stored value with this one in full. Used by `POST`/`PUT`.
+    Replace(&'a ClientMetadata),
+}
+
+impl ClientMetadataUpdate<'_> {
+    /// Computes the new stored value given the `current` one.
+    pub(crate) fn resolved(&self, current: &ClientMetadata) -> ClientMetadata {
+        match *self {
+            ClientMetadataUpdate::Patch(patch) => {
+                let mut merged = current.clone();
+                merged.apply_patch(patch);
+                merged
+            }
+            ClientMetadataUpdate::Replace(value) => value.clone(),
+        }
+    }
+
+    /// True when the update provably cannot change the stored value: an empty
+    /// patch. A `Replace` always intends to write, even if the value it writes
+    /// happens to equal the current one.
+    pub(crate) fn is_noop_patch(&self) -> bool {
+        matches!(*self, ClientMetadataUpdate::Patch(patch) if patch.is_empty())
+    }
+}
+
+/// Bundle of patchable pipeline fields, i.e. the contents of a `PATCH` request
+/// body. `update_pipeline` destructures this struct exhaustively so adding a
+/// new patchable field forces the call sites and the classifier
 /// (`core_changed` etc.) to be revisited or fail to compile.
 pub(crate) struct PipelineFieldUpdates<'a> {
     pub name: &'a Option<String>,
-    /// Patch to apply to the stored `ClientMetadata`. An empty value (all
-    /// fields `None`) means the patch does not touch client metadata.
-    pub client_metadata: &'a ClientMetadata,
+    /// How to update the stored `ClientMetadata` (merge for `PATCH`, replace
+    /// for `POST`/`PUT`).
+    pub client_metadata: ClientMetadataUpdate<'a>,
     pub runtime_config: &'a Option<serde_json::Value>,
     pub program_code: &'a Option<String>,
     pub udf_rust: &'a Option<String>,
@@ -309,7 +347,7 @@ pub(crate) async fn update_pipeline(
     // type (e.g. `name: &Option<String>`) rather than `&&Option<String>`.
     let &PipelineFieldUpdates {
         name,
-        client_metadata: client_metadata_patch,
+        client_metadata: client_metadata_update,
         runtime_config,
         program_code,
         udf_rust,
@@ -364,15 +402,15 @@ pub(crate) async fn update_pipeline(
     // This will also return an error if the pipeline does not exist.
     let current = get_pipeline(txn, tenant_id, original_name).await?;
 
-    // Apply the patch to a copy of the current client metadata so we can both
-    // detect "did anything actually change?" and persist the merged value
-    // below.
-    let new_client_metadata = {
-        let mut cm = current.client_metadata.clone();
-        cm.apply_patch(client_metadata_patch.clone());
-        cm
-    };
+    // Resolve the new client metadata (a `PATCH` merges, a `POST`/`PUT`
+    // replaces) so we can both detect "did anything actually change?" and
+    // persist the value below.
+    let new_client_metadata = client_metadata_update.resolved(&current.client_metadata);
     let client_metadata_changed = new_client_metadata != current.client_metadata;
+    // Validate only the fields the client is actually changing, so values
+    // stored before a constraint existed (e.g. a long migrated description)
+    // stay readable and patchable until they are themselves modified.
+    new_client_metadata.validate_changes(&current.client_metadata)?;
 
     // Determine whether any "core" (version-bumping) field will actually
     // change. A `Some(v)` value with `v == current` is *not* a change.
@@ -420,7 +458,7 @@ pub(crate) async fn update_pipeline(
         !is_compiler_update
             || (bump_platform_version
                 && name.is_none()
-                && client_metadata_patch.is_empty()
+                && client_metadata_update.is_noop_patch()
                 && runtime_config.is_none()
                 && program_code.is_none()
                 && udf_rust.is_none()
@@ -434,8 +472,8 @@ pub(crate) async fn update_pipeline(
     }
 
     // Client-metadata-only fast path. Client metadata (description, tags, ...)
-    // is client-generated data with no deployment semantics, so
-    // patching it must be invisible to anything watching the pipeline's state:
+    // is client-generated data with no deployment semantics, so patching it
+    // must not disturb anything watching the pipeline's state:
     //
     // - `version` is *not* incremented. The runner automaton uses it as a guard
     //   on every resources-status transition (see `pipeline_automata.rs`); only
@@ -446,10 +484,14 @@ pub(crate) async fn update_pipeline(
     // - `refresh_version` is *not* incremented. It is the client-visible
     //   "material change happened" counter; client-metadata edits are not
     //   material.
-    // - No `pipeline_monitor_event` is emitted. Such an event triggers a
-    //   Postgres `NOTIFY` that wakes the per-pipeline runner. The runner has
-    //   nothing to do for a metadata change, so emitting the event would be
-    //   pure wake-up noise on every edit.
+    //
+    // Note that this UPDATE still fires the row-level `pipeline_notify` trigger,
+    // which issues a Postgres `NOTIFY` on the `pipeline` channel
+    // just like any other write to the row. We do not try to suppress
+    // it: the woken runner simply re-reads the pipeline, sees that neither
+    // `version` nor `refresh_version` changed, and goes back to sleep.
+    // (The `pipeline_monitor_event` table is a separate audit log
+    // and plays no part in this wake-up.)
     //
     // Consequently this branch issues a narrow `UPDATE pipeline SET
     // client_metadata` (no version columns touched) and returns

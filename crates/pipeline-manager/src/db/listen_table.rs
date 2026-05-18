@@ -251,7 +251,9 @@ mod test {
         listen_table, NotificationError, PipelineNotification, PIPELINE_NOTIFY_CHANNEL_CAPACITY,
     };
     use super::{parse_notification, Operation};
-    use crate::db::types::pipeline::{ClientMetadata, PipelineDescr, PipelineId};
+    use crate::db::types::pipeline::{
+        ClientMetadata, PatchClientMetadata, PipelineDescr, PipelineId,
+    };
     use crate::db::types::program::ProgramConfig;
     use crate::db::types::tenant::TenantId;
     use crate::{auth::TenantRecord, db::storage::Storage};
@@ -384,7 +386,7 @@ mod test {
                 PipelineDescr {
                     name: "example".to_string(),
                     client_metadata: ClientMetadata {
-                        description: Some("Description of example".to_string()),
+                        description: "Description of example".to_string(),
                         ..ClientMetadata::default()
                     },
                     runtime_config: json!({}),
@@ -416,9 +418,9 @@ mod test {
                 tenant_id,
                 "example",
                 &Some("example-renamed".to_string()),
-                &ClientMetadata {
+                &PatchClientMetadata {
                     description: Some("Description of example2".to_string()),
-                    ..ClientMetadata::default()
+                    ..PatchClientMetadata::default()
                 },
                 "v0",
                 false,

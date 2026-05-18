@@ -7,8 +7,8 @@ use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::types::combined_status::{combine_since, CombinedDesiredStatus, CombinedStatus};
 use crate::db::types::pipeline::{
-    ClientMetadata, ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr,
-    PipelineId,
+    ClientMetadata, ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PatchClientMetadata,
+    PipelineDescr, PipelineId,
 };
 use crate::db::types::program::{ProgramConfig, ProgramError, ProgramStatus};
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
@@ -95,8 +95,8 @@ pub struct ConnectorStats {
 pub struct PipelineInfo {
     pub id: PipelineId,
     pub name: String,
-    /// Client-generated data (description, tags, ...).
-    /// Each annotation appears as an optional top-level field on the wire.
+    /// Client-generated data (description, tags, ...). Each field is always
+    /// present on the wire: an unset description is `""` and unset tags `[]`.
     #[serde(flatten)]
     pub client_metadata: ClientMetadata,
     pub created_at: DateTime<Utc>,
@@ -251,8 +251,8 @@ impl PipelineInfoInternal {
 pub struct PipelineSelectedInfo {
     pub id: PipelineId,
     pub name: String,
-    /// Client-generated data (description, tags, ...).
-    /// Each annotation appears as an optional top-level field on the wire.
+    /// Client-generated data (description, tags, ...). Each field is always
+    /// present on the wire: an unset description is `""` and unset tags `[]`.
     #[serde(flatten)]
     pub client_metadata: ClientMetadata,
     pub created_at: DateTime<Utc>,
@@ -661,13 +661,12 @@ impl From<PostPutPipelineInternal> for PipelineDescr {
 pub struct PatchPipeline {
     pub name: Option<String>,
     /// Client-generated data (description, tags, ...).
-    /// Each field is independently patchable: a `Some` value sets/clears it;
-    /// a missing field leaves the stored value untouched. Unlike the other
-    /// fields, these annotations can be patched at any time — including while
-    /// the pipeline is running — because they have no effect on the deployed
-    /// pipeline.
+    /// Each field is patched independently: a present value overwrites the
+    /// stored one, and a missing field leaves it untouched. Unlike the other
+    /// fields, these can be patched at any time (including while the pipeline
+    /// is running), because they have no effect on the deployed pipeline.
     #[serde(flatten)]
-    pub client_metadata: ClientMetadata,
+    pub client_metadata: PatchClientMetadata,
     pub runtime_config: Option<RuntimeConfig>,
     pub program_code: Option<String>,
     pub udf_rust: Option<String>,
@@ -684,7 +683,7 @@ pub struct PatchPipeline {
 pub struct PatchPipelineInternal {
     pub name: Option<String>,
     #[serde(flatten)]
-    pub client_metadata: ClientMetadata,
+    pub client_metadata: PatchClientMetadata,
     pub runtime_config: Option<serde_json::Value>,
     pub program_code: Option<String>,
     pub udf_rust: Option<String>,
@@ -1270,7 +1269,7 @@ pub(crate) async fn post_update_runtime(
             *tenant_id,
             &pipeline_name,
             &None,
-            &ClientMetadata::default(),
+            &PatchClientMetadata::default(),
             &state.common_config.platform_version,
             true, // bump platform version.
             &None,

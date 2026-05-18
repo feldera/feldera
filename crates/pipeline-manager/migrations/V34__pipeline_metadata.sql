@@ -5,6 +5,7 @@
 ALTER TABLE pipeline ADD COLUMN client_metadata TEXT NOT NULL DEFAULT '';
 
 -- Copy existing description values into client_metadata.description.
+-- Descriptions are subject to validation, but existing (migrated) values are exempt until changed
 UPDATE pipeline SET client_metadata = json_build_object('description', description)::text WHERE description != '';
 
 -- The standalone description column is superseded by client_metadata.description.

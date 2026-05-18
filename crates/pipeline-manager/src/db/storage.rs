@@ -7,7 +7,7 @@ use crate::db::types::monitor::{
     PipelineMonitorEventId,
 };
 use crate::db::types::pipeline::{
-    ClientMetadata, ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr,
+    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PatchClientMetadata, PipelineDescr,
     PipelineId,
 };
 use crate::db::types::program::{RustCompilationInfo, SqlCompilationInfo};
@@ -215,7 +215,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         original_name: &str,
         name: &Option<String>,
-        client_metadata: &ClientMetadata,
+        client_metadata: &PatchClientMetadata,
         platform_version: &str,
         bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,

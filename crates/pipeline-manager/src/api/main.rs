@@ -273,6 +273,7 @@ It contains the following fields:
         // Pipeline
         crate::db::types::pipeline::PipelineId,
         crate::db::types::pipeline::ClientMetadata,
+        crate::db::types::pipeline::PatchClientMetadata,
         crate::db::types::combined_status::CombinedStatus,
         crate::db::types::combined_status::CombinedDesiredStatus,
         crate::db::types::resources_status::ResourcesStatus,

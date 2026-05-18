@@ -697,7 +697,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     .post_pipeline()
                     .body(PostPutPipeline {
                         description: None,
-                        tags: None,
+                        tags: Vec::new(),
                         name: name.to_string(),
                         program_code: program_code.unwrap_or_default(),
                         udf_rust,

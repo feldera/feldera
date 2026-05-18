@@ -377,6 +377,7 @@ export type {
   OutputEndpointMetrics,
   OutputEndpointStatus,
   PartialProgramInfo,
+  PatchClientMetadata,
   PatchPipeline,
   PatchPipelineData,
   PatchPipelineError,

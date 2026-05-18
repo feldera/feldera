@@ -313,28 +313,31 @@ export type Chunk = {
 }
 
 /**
- * Free-form client-side annotations stored alongside a pipeline.
+ * Client-generated data stored alongside a pipeline (the canonical form used
+ * for storage, creation, and API responses).
  *
- * Persisted as a single JSON object in the `client_metadata` text column
- * (renamed from `metadata` in V35). The schema lives in code, not the
- * database — adding a new annotation field only requires extending this
- * struct, never a DB migration.
+ * These fields are stored together as a single JSON object in the
+ * `client_metadata` text column. The set of fields is defined here in Rust
+ * rather than as database columns, so adding a new field only requires
+ * extending this struct, not a new migration.
  *
- * Deserialization is lenient: unknown keys are ignored so older readers do
- * not break when newer writers add fields. Empty / missing values
- * (description == "", empty tags) are normalized to `None` so that the
- * serialized form stays minimal (`{}` for fully empty metadata, which we
- * further collapse to `""` in storage).
+ * Every field is always present: an unset description is `""` and unset tags
+ * are `[]`. The optional, field-by-field form used by `PATCH` request bodies
+ * is [`PatchClientMetadata`].
+ *
+ * Deserialization is lenient: missing keys take their default and unknown
+ * keys are ignored, so a database (or request) written by a different build
+ * still loads.
  */
 export type ClientMetadata = {
   /**
    * Human-readable description of the pipeline.
    */
-  description?: string | null
+  description?: string
   /**
-   * Free-form tags for grouping / filtering.
+   * Self-descriptive tags for grouping / filtering.
    */
-  tags?: Array<string> | null
+  tags?: Array<string>
 }
 
 /**
@@ -723,15 +726,34 @@ export type ConnectorConfig = OutputBufferConfig & {
    */
   max_batch_size?: number | null
   /**
-   * Backpressure threshold.
+   * Backpressure threshold, in bytes.
+   *
+   * Maximal number of bytes queued by the endpoint before the endpoint
+   * is paused by the backpressure mechanism.
+   *
+   * For input endpoints, this setting bounds the number of bytes that have
+   * been received from the input transport but haven't yet been consumed by
+   * the circuit since the circuit, since the circuit is still busy processing
+   * previous inputs.
+   *
+   * This setting is not yet implemented for output endpoints.
+   *
+   * Note that this is not a hard bound: there can be a small delay between
+   * the backpressure mechanism is triggered and the endpoint is paused, during
+   * which more data may be queued.
+   *
+   * When this is unspecified, it defaults to `1000 * max_queued_records`.
+   */
+  max_queued_bytes?: number | null
+  /**
+   * Backpressure threshold, in records.
    *
    * Maximal number of records queued by the endpoint before the endpoint
    * is paused by the backpressure mechanism.
    *
    * For input endpoints, this setting bounds the number of records that have
    * been received from the input transport but haven't yet been consumed by
-   * the circuit since the circuit, since the circuit is still busy processing
-   * previous inputs.
+   * the circuit, since the circuit is still busy processing previous inputs.
    *
    * For output endpoints, this setting bounds the number of records that have
    * been produced by the circuit but not yet sent via the output transport endpoint
@@ -1681,6 +1703,12 @@ export type DevTweaks = {
    * quota mechanism.
    */
   storage_mb_max?: number | null
+  /**
+   * Enable streaming exchange.
+   *
+   * `false`
+   */
+  streaming_exchange?: boolean | null
   [key: string]:
     | unknown
     | boolean
@@ -1730,6 +1758,8 @@ export type DevTweaks = {
     | boolean
     | null
     | number
+    | null
+    | boolean
     | null
     | undefined
 }
@@ -3276,11 +3306,33 @@ export type PartialProgramInfo = {
   output_connectors: {
     [key: string]: OutputEndpointConfig
   }
-  schema: ProgramSchema
+  /**
+   * Schema of the compiled SQL.
+   */
+  schema: unknown
   /**
    * Generated user defined function (UDF) stubs Rust code: stubs.rs
    */
   udf_stubs: string
+}
+
+/**
+ * Client-generated metadata as supplied in a `PATCH` request body: the
+ * field-by-field patch form of [`ClientMetadata`].
+ *
+ * Each field is optional. A `Some` value overwrites the stored field; a
+ * `None` (absent) field leaves it unchanged. An empty string or empty list is
+ * a value in its own right, not a request to unset the field.
+ */
+export type PatchClientMetadata = {
+  /**
+   * Human-readable description of the pipeline.
+   */
+  description?: string | null
+  /**
+   * Self-descriptive tags for grouping / filtering.
+   */
+  tags?: Array<string> | null
 }
 
 /**
@@ -3291,7 +3343,7 @@ export type PartialProgramInfo = {
  * it is required to again pass the whole runtime configuration with the
  * change.
  */
-export type PatchPipeline = ClientMetadata & {
+export type PatchPipeline = PatchClientMetadata & {
   name?: string | null
   program_code?: string | null
   program_config?: ProgramConfig | null
@@ -4140,7 +4192,10 @@ export type ProgramInfo = {
   output_connectors: {
     [key: string]: OutputEndpointConfig
   }
-  schema: ProgramSchema
+  /**
+   * Schema of the compiled SQL.
+   */
+  schema: unknown
   /**
    * Generated user defined function (UDF) stubs Rust code: stubs.rs
    */
@@ -4157,7 +4212,10 @@ export type ProgramIr = {
   mir: {
     [key: string]: MirNode
   }
-  program_schema: ProgramSchema
+  /**
+   * Program schema.
+   */
+  program_schema: unknown
 }
 
 /**
@@ -4397,9 +4455,9 @@ export type ResourcesDesiredStatus = 'Stopped' | 'Provisioned'
  * Pipeline resources status.
  *
  * ```text
- * /start (early start failed)
- * ┌───────────────────┐
- * │                   ▼
+ * /start (early start or provision check failed)
+ * ┌───┐
+ * │   ▼
  * Stopped ◄────────── Stopping
  * /start │                   ▲
  * │                   │ /stop?force=true
@@ -4999,6 +5057,7 @@ export type SqlType =
   | 'Time'
   | 'Date'
   | 'Timestamp'
+  | 'TimestampTz'
   | {
       Interval: IntervalUnit
     }

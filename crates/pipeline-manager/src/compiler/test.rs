@@ -134,7 +134,7 @@ impl CompilerTest {
                 PipelineDescr {
                     name: name.to_string(),
                     client_metadata: ClientMetadata {
-                        description: Some("not-used".to_string()),
+                        description: "not-used".to_string(),
                         ..ClientMetadata::default()
                     },
                     runtime_config: json!({}),

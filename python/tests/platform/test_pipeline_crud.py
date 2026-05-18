@@ -17,6 +17,7 @@ PIPELINE_FIELD_SELECTOR_ALL_FIELDS = [
     "id",
     "name",
     "description",
+    "tags",
     "created_at",
     "version",
     "platform_version",
@@ -58,6 +59,7 @@ PIPELINE_FIELD_SELECTOR_STATUS_FIELDS = [
     "id",
     "name",
     "description",
+    "tags",
     "created_at",
     "version",
     "platform_version",
@@ -124,6 +126,7 @@ def test_pipeline_post(pipeline_name):
     pipeline = r.json()
     assert pipeline["name"] == name_min
     assert pipeline["description"] == ""
+    assert pipeline["tags"] == []
     assert isinstance(pipeline["runtime_config"], dict)
     assert pipeline["program_code"] == ""
     assert pipeline.get("udf_rust", "") == ""
@@ -151,6 +154,7 @@ def test_pipeline_post(pipeline_name):
         {
             "name": name_all,
             "description": "description-3",
+            "tags": ["alpha", "beta-1"],
             "runtime_config": {"workers": 123},
             "program_code": "sql-3",
             "udf_rust": "rust-3",
@@ -162,6 +166,7 @@ def test_pipeline_post(pipeline_name):
     pipeline = r.json()
     assert pipeline["name"] == name_all
     assert pipeline["description"] == "description-3"
+    assert pipeline["tags"] == ["alpha", "beta-1"]
     assert pipeline["runtime_config"]["workers"] == 123
     assert pipeline["program_code"] == "sql-3"
     assert pipeline["udf_rust"] == "rust-3"
@@ -452,3 +457,142 @@ def test_pipeline_connector_endpoint_naming(pipeline_name):
         "v2.c1",
         "v3.unnamed-0",
     ]
+
+
+@gen_pipeline_name
+def test_pipeline_tags(pipeline_name):
+    cleanup_pipeline(pipeline_name)
+
+    # Create with tags.
+    r = post_json(
+        f"{API_PREFIX}/pipelines",
+        {
+            "name": pipeline_name,
+            "description": "initial",
+            "tags": ["prod", "team-billing"],
+            "program_code": "",
+        },
+    )
+    assert r.status_code == HTTPStatus.CREATED
+    assert r.json()["tags"] == ["prod", "team-billing"]
+
+    # Tags round-trip on read.
+    r = get(f"{API_PREFIX}/pipelines/{pipeline_name}")
+    assert r.status_code == HTTPStatus.OK
+    assert r.json()["tags"] == ["prod", "team-billing"]
+
+    # PATCH replaces the whole tags list; description is left untouched.
+    r = patch_json(
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
+        {"tags": ["staging"]},
+    )
+    assert r.status_code == HTTPStatus.OK
+    obj = r.json()
+    assert obj["tags"] == ["staging"]
+    assert obj["description"] == "initial"
+
+    # PATCH of description leaves tags untouched (fields patch independently).
+    r = patch_json(
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
+        {"description": "changed"},
+    )
+    assert r.status_code == HTTPStatus.OK
+    obj = r.json()
+    assert obj["description"] == "changed"
+    assert obj["tags"] == ["staging"]
+
+    # PATCH with an empty list clears the tags (an empty list is a real value).
+    r = patch_json(
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
+        {"tags": []},
+    )
+    assert r.status_code == HTTPStatus.OK
+    assert r.json()["tags"] == []
+
+    # PUT replaces the pipeline wholesale: omitting tags resets them to empty.
+    r = put_json(
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
+        {
+            "name": pipeline_name,
+            "tags": ["only-tag"],
+            "program_code": "",
+        },
+    )
+    assert r.status_code == HTTPStatus.OK
+    assert r.json()["tags"] == ["only-tag"]
+
+    r = put_json(
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
+        {"name": pipeline_name, "program_code": ""},
+    )
+    assert r.status_code == HTTPStatus.OK
+    assert r.json()["tags"] == []
+
+
+@gen_pipeline_name
+def test_pipeline_tags_invalid(pipeline_name):
+    cleanup_pipeline(pipeline_name)
+
+    # Each of these tags violates the constraints (disallowed character, too
+    # long, empty) and must be rejected at creation time.
+    invalid_tag_sets = [
+        ["bad,tag"],
+        ["a" * 51],
+        [""],
+        ["ok", "also,bad"],
+    ]
+    for tags in invalid_tag_sets:
+        r = post_json(
+            f"{API_PREFIX}/pipelines",
+            {"name": pipeline_name, "tags": tags, "program_code": ""},
+        )
+        assert r.status_code == HTTPStatus.BAD_REQUEST, (
+            f"tags {tags} should be rejected"
+        )
+
+    # A valid set of tags (every allowed character class) is accepted.
+    r = post_json(
+        f"{API_PREFIX}/pipelines",
+        {
+            "name": pipeline_name,
+            "tags": ["a-z_0/9", "with space", "pipe|sep", "back\\slash", "dot.dot"],
+            "program_code": "",
+        },
+    )
+    assert r.status_code == HTTPStatus.CREATED
+
+    # Patching to an invalid tag is rejected too.
+    r = patch_json(
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
+        {"tags": ["bad?tag"]},
+    )
+    assert r.status_code == HTTPStatus.BAD_REQUEST
+
+
+@gen_pipeline_name
+def test_pipeline_description_length(pipeline_name):
+    name_ok = pipeline_name + "-ok"
+    name_long = pipeline_name + "-long"
+    cleanup_pipeline(name_ok)
+    cleanup_pipeline(name_long)
+
+    # A description of exactly the maximum length (300) is accepted.
+    r = post_json(
+        f"{API_PREFIX}/pipelines",
+        {"name": name_ok, "description": "a" * 300, "program_code": ""},
+    )
+    assert r.status_code == HTTPStatus.CREATED
+
+    # One character over the limit is rejected on creation.
+    r = post_json(
+        f"{API_PREFIX}/pipelines",
+        {"name": name_long, "description": "a" * 301, "program_code": ""},
+    )
+    assert r.status_code == HTTPStatus.BAD_REQUEST
+
+    # Patching an existing pipeline to an over-long description is rejected.
+    r = patch_json(
+        f"{API_PREFIX}/pipelines/{name_ok}",
+        {"description": "a" * 301},
+    )
+    assert r.status_code == HTTPStatus.BAD_REQUEST
