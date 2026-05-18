@@ -1780,6 +1780,12 @@ impl<'a> CheckpointBuilder<'a> {
     /// commit it later.
     pub fn prepare(self) -> Result<CheckpointCommitter, DbspError> {
         let checkpointer = self.handle.checkpointer()?.clone();
+
+        // Write an empty catalog before the UUID directory is created by
+        // operators.  This prevents read_checkpoints from seeing orphaned UUID
+        // directories during the first checkpoint commit on fresh storage.
+        checkpointer.lock().unwrap().ensure_catalog_exists()?;
+
         let uuid = Uuid::now_v7();
         let checkpoint_dir = Checkpointer::checkpoint_dir(uuid);
         let mut readers = Vec::new();

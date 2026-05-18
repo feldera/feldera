@@ -203,6 +203,21 @@ impl Checkpointer {
         Ok(())
     }
 
+    /// Writes an empty `checkpoints.feldera` catalog if one does not yet exist.
+    ///
+    /// Call this before creating a new checkpoint UUID directory so that
+    /// `read_checkpoints` never observes UUID directories without a catalog
+    /// (which would trigger the "orphaned directory" error).
+    pub(super) fn ensure_catalog_exists(&self) -> Result<(), Error> {
+        if !self
+            .backend
+            .exists(&StoragePath::from(CHECKPOINT_FILE_NAME))?
+        {
+            self.update_checkpoint_file()?;
+        }
+        Ok(())
+    }
+
     pub(super) fn commit(
         &mut self,
         uuid: Uuid,
