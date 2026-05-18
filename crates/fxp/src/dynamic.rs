@@ -12,6 +12,7 @@ use crate::{
     parse_decimal, pow10, u256::I256,
 };
 
+use num_traits::CheckedDiv;
 use rand::Rng;
 use rand::distributions::uniform::{UniformInt, UniformSampler};
 
@@ -163,6 +164,18 @@ impl DynamicDecimal {
     pub const fn abs(self) -> Self {
         Self::new(self.sig.abs(), self.exponent)
     }
+
+    /// Deserializes [DynamicDecimal] into `Fixed`.  If successful, returns the
+    /// original value from before serialization.  If `S < value.exponent`, then
+    /// some trailing decimals are lost, by rounding toward even.  Returns an
+    /// error` if the value is out of range for this type.
+    #[doc(hidden)]
+    pub fn into_fixed_round_even<const P: usize, const S: usize>(
+        self,
+    ) -> Result<Fixed<P, S>, OutOfRange> {
+        Fixed::<P, S>::try_new_with_exponent_round_even(self.sig, S as i32 - self.exponent as i32)
+            .ok_or(OutOfRange)
+    }
 }
 
 impl<const P: usize, const S: usize> From<Fixed<P, S>> for DynamicDecimal {
@@ -236,12 +249,10 @@ impl Mul<DynamicDecimal> for DynamicDecimal {
     }
 }
 
-impl Div<DynamicDecimal> for DynamicDecimal {
-    type Output = Self;
-
-    fn div(self, other: DynamicDecimal) -> DynamicDecimal {
+impl CheckedDiv for DynamicDecimal {
+    fn checked_div(&self, other: &DynamicDecimal) -> Option<DynamicDecimal> {
         if other.sig == 0i128 {
-            panic!("Division by zero");
+            None
         } else {
             // We have to choose an arbitrary number of digits after the decimal
             // point where we stop.
@@ -253,14 +264,25 @@ impl Div<DynamicDecimal> for DynamicDecimal {
                 // A shift this big would exceed the range of I256, so we can't
                 // calculate it, but the ultimate result would also overflow, so
                 // we don't have to.
-                panic!("Division overflow");
+                None
             } else {
                 let scaled = I256::from_product(self.sig, pow10(shift_left as usize));
                 let div = scaled.narrowing_div(other.sig).unwrap();
                 let exp = self.exponent.saturating_sub(other.exponent + digits);
                 let adjust = div * pow10(exp as usize);
-                DynamicDecimal::new(adjust, digits)
+                Some(DynamicDecimal::new(adjust, digits))
             }
+        }
+    }
+}
+
+impl Div<DynamicDecimal> for DynamicDecimal {
+    type Output = Self;
+
+    fn div(self, other: DynamicDecimal) -> DynamicDecimal {
+        match self.checked_div(&other) {
+            None => panic!("Overflow dividing {} / {}", self, other),
+            Some(v) => v,
         }
     }
 }

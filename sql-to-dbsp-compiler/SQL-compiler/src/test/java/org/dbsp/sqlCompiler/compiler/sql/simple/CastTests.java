@@ -592,6 +592,7 @@ public class CastTests extends SqlIoTest {
 
         // Rows and columns match the array of types above.
         final CanConvert[][] legal = {
+//             <--integers----------->                      <-Long-> <---short------------------->
 // To:   N, B, I8,16,32,64,U8,U6,U3,U6,De,r, d, c, v, b, vb,ym,y, m, d, h, dh,m,dm,hm, s, ds,hs,ms,t, ts,dt,ro,a, m, V, U
 /*From                                                                                                                    */
 /* N */{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F },
@@ -638,10 +639,25 @@ public class CastTests extends SqlIoTest {
         Assert.assertEquals(types.length, legal[0].length);
         StringBuilder program = new StringBuilder();
         boolean first = true;
+        program.append("CREATE LOCAL VIEW T AS SELECT ");
+        for (int i = 0; i < types.length; i++) {
+            if (!first)
+                program.append(", ");
+            first = false;
+            if (i > 0)
+                program.append("CAST(");
+            program.append(values[i]);
+            if (i > 0)
+                program.append(" AS ").append(types[i]).append(")");
+            program.append(" AS col").append(i).append("\n");
+        }
+        program.append(";\n");
+
+        first = true;
         program.append("CREATE VIEW V AS SELECT ");
         for (int i = 0; i < types.length; i++) {
             String type = types[i];
-            String value = values[i];
+            String value = "col" + i;
             if (legal[i][i] == CanConvert.F)
                 continue;
             if (!first)
@@ -649,10 +665,11 @@ public class CastTests extends SqlIoTest {
             first = false;
             program.append("CAST(").append(value).append(" AS ").append(type).append(")\n");
         }
-        program.append(";\n");
+        program.append(" FROM T;\n");
 
         for (int i = 0; i < types.length; i++) {
             String value = values[i];
+            String coli = "col" + i;
             String from = types[i];
             if (!Linq.any(legal[i], p -> p == T)) continue;
             program.append("CREATE VIEW V").append(i).append(" AS SELECT ");
@@ -679,13 +696,16 @@ public class CastTests extends SqlIoTest {
                     // Special case
                     program.append(value);
                 else
-                    program.append("CAST(").append(value).append(" AS ").append(from).append(")");
+                    program.append("CAST(").append(coli).append(" AS ").append(from).append(")");
                 program.append(" AS ").append(to).append(")");
                 program.append("\n");
             }
-            program.append(";\n");
+            program.append(" FROM T;\n");
         }
         // Disable Calcite optimizations so it doesn't do constant-folding
+        // Despite this, this program still does not generate all possible cast com
+        // binations:
+        // for some interval casts it generates reinterpret casts.
         CompilerOptions options = this.testOptions();
         options.languageOptions.optimizationLevel = 0;
         DBSPCompiler compiler = new DBSPCompiler(options);
@@ -734,5 +754,50 @@ public class CastTests extends SqlIoTest {
                  r
                 -----
                  1000""");
+    }
+
+    @Test
+    public void issue6257() {
+        // Calcite rounds by truncating, so we are tied to that behavior
+        this.qs("""
+                SELECT CAST(INTERVAL '10' DAY AS BIGINT);
+                 r
+                ---
+                 10
+                (1 row)
+                
+                SELECT SAFE_CAST(INTERVAL '1000' DAY AS TINYINT);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT CAST(INTERVAL '10.6' SECONDS AS INT);
+                 r
+                ---
+                 10
+                (1 row)
+                
+                SELECT CAST(INTERVAL '10.135' SECONDS AS DECIMAL(10, 2));
+                 r
+                ---
+                 10.13
+                (1 row)
+                
+                SELECT CAST(INTERVAL '-10.135' SECONDS AS DECIMAL(10, 2));
+                 r
+                ---
+                 -10.13
+                (1 row)
+                
+                SELECT SAFE_CAST(INTERVAL '1000.123' SECONDS AS DECIMAL(2, 2));
+                 r
+                ---
+                NULL
+                (1 row)""");
+        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CAST(INTERVAL '10' MONTHS AS DOUBLE)",
+                "Cast function cannot convert value of type INTERVAL MONTH NOT NULL to type DOUBLE NOT NULL");
+        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CAST(INTERVAL '10' SECONDS AS REAL)",
+                "Cast function cannot convert value of type INTERVAL SECOND NOT NULL to type REAL NOT NULL");
     }
 }

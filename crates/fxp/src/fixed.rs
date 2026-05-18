@@ -300,7 +300,7 @@ impl<const P: usize, const S: usize> Fixed<P, S> {
 
     /// Returns `Self(value * 10**exponent)`, rounding to even if `exponent` is
     /// negative, if the computed value is in the correct range for the type.
-    fn try_new_with_exponent_round_even(value: i128, exponent: i32) -> Option<Self> {
+    pub(super) fn try_new_with_exponent_round_even(value: i128, exponent: i32) -> Option<Self> {
         i128_mul_pow10_round_even(value, exponent).and_then(Self::try_new)
     }
 
