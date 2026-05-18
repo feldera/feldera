@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
 import type { CheckpointMetadata } from '$lib/services/manager'
@@ -21,6 +21,7 @@ vi.mock('$lib/compositions/layout/useGlobalDialog.svelte', () => ({
 }))
 
 import CheckpointsStatus from './CheckpointsStatus.svelte'
+import SnippetRenderer from './SnippetRenderer.svelte'
 
 function makeCheckpoint(overrides?: Partial<CheckpointMetadata>): CheckpointMetadata {
   return {
@@ -93,6 +94,80 @@ describe('CheckpointsStatus.svelte', () => {
       await page.getByTestId('btn-make-checkpoint').click()
       expect(setDialogMock).toHaveBeenCalledOnce()
       expect(setDialogMock.mock.calls[0][0]).not.toBeNull()
+    })
+  })
+
+  describe('D. Creating-checkpoint button state', () => {
+    it('shows "Creating checkpoint..." and is disabled when checkpointInProgress is true', async () => {
+      await render(CheckpointsStatus, {
+        checkpoints: [],
+        onClose: vi.fn(),
+        onCheckpoint: vi.fn(),
+        checkpointInProgress: true
+      })
+      const btn = page.getByTestId('btn-make-checkpoint')
+      await expect.element(btn).toHaveTextContent('Creating checkpoint...')
+      await expect.element(btn).toBeDisabled()
+    })
+
+    it('shows "Create checkpoint" and is enabled when checkpointInProgress is false', async () => {
+      await render(CheckpointsStatus, {
+        checkpoints: [],
+        onClose: vi.fn(),
+        onCheckpoint: vi.fn(),
+        checkpointInProgress: false
+      })
+      const btn = page.getByTestId('btn-make-checkpoint')
+      await expect.element(btn).toHaveTextContent('Create checkpoint')
+      await expect.element(btn).not.toBeDisabled()
+    })
+
+    describe('with fake timers', () => {
+      beforeEach(() => {
+        vi.useFakeTimers()
+        setDialogMock.mockClear()
+      })
+
+      afterEach(() => {
+        vi.useRealTimers()
+      })
+
+      it('shows "Creating checkpoint..." immediately after confirm, stays disabled while in progress, and returns to normal once done', async () => {
+        // Regression test: before the fix, the button re-enabled after the 2 s ClickFeedback
+        // timeout even though the checkpoint was still running.
+        const { rerender, unmount } = await render(CheckpointsStatus, {
+          checkpoints: [],
+          onClose: vi.fn(),
+          onCheckpoint: vi.fn(),
+          checkpointInProgress: false
+        })
+
+        await page.getByTestId('btn-make-checkpoint').click()
+        const dialogSnippet = setDialogMock.mock.calls[0][0]
+        const { unmount: unmountDialog } = await render(SnippetRenderer, { content: dialogSnippet })
+        await page.getByTestId('btn-confirm-checkpoint').click()
+
+        // Immediately after confirmation the button must already show the in-progress state
+        const btn = page.getByTestId('btn-make-checkpoint')
+        await expect.element(btn).toHaveTextContent('Creating checkpoint...')
+        await expect.element(btn).toBeDisabled()
+
+        // Parent signals that the checkpoint is now in progress
+        await rerender({ checkpointInProgress: true })
+
+        // Advance past the ClickFeedback 2 s internal timeout — the external prop must keep the button locked
+        await vi.advanceTimersByTimeAsync(2_500)
+        await expect.element(btn).toHaveTextContent('Creating checkpoint...')
+        await expect.element(btn).toBeDisabled()
+
+        // Checkpoint completes — button must return to normal
+        await rerender({ checkpointInProgress: false })
+        await expect.element(btn).toHaveTextContent('Create checkpoint')
+        await expect.element(btn).not.toBeDisabled()
+
+        unmountDialog()
+        unmount()
+      })
     })
   })
 })

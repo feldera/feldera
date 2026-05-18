@@ -53,16 +53,18 @@
 
 {#if transactionStatus !== 'NoTransaction'}
   <div class="flex flex-wrap items-center gap-x-8 gap-y-2 {_class}" transition:slide>
-    <div class="flex w-28 flex-col items-center mr-14">
+    <div class="mr-14 flex w-28 flex-col items-center">
       <div class="text-sm text-nowrap">Transaction status</div>
-      <div class="pt-2 flex flex-nowrap justify-center items-center gap-2">
+      <div class="flex flex-nowrap items-center justify-center gap-2 pt-2">
         <div></div>
         {#if transactionStatus === 'TransactionInProgress'}
           <div class="pointer-events-none chip bg-tertiary-50-950 uppercase">Started</div>
         {:else if transactionStatus === 'CommitInProgress'}
           <div class="pointer-events-none chip bg-warning-200-800 uppercase">Committing</div>
         {/if}
-        <div class="font-dm-mono text-sm w-0 text-nowrap"><span class="select-none">ID:</span>{transactionId}</div>
+        <div class="w-0 font-dm-mono text-sm text-nowrap">
+          <span class="select-none">ID:</span>{transactionId}
+        </div>
       </div>
     </div>
 
@@ -86,7 +88,9 @@
           <Progress class="h-2" value={combinedPercent} max={100}>
             <Progress.Track class="bg-surface-600-400">
               <Progress.Range
-                class="bg-yellow-500 {disableTransition ? 'duration-0' : 'duration-2000 ease-linear'}"
+                class="bg-yellow-500 {disableTransition
+                  ? 'duration-0'
+                  : 'duration-2000 ease-linear'}"
               />
             </Progress.Track>
           </Progress>
