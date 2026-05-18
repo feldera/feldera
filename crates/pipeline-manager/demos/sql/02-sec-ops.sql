@@ -52,12 +52,12 @@ SET FELDERA_IGNORE_WARNING_UNUSED_COLUMN = 1;
 SET FELDERA_IGNORE_WARNING_UNUSED = 1;
 
 -- CI/CD pipelines.
-create table pipeline (
-    pipeline_id bigint not null primary key,
-    create_date timestamp not null,
-    createdby_user_id bigint not null,
-    update_date timestamp,
-    updatedby_user_id bigint
+CREATE TABLE pipeline (
+    pipeline_id BIGINT NOT NULL PRIMARY KEY,
+    create_date TIMESTAMP NOT NULL,
+    createdby_user_id BIGINT NOT NULL,
+    update_date TIMESTAMP,
+    updatedby_user_id BIGINT
 ) WITH ('connectors' = '[{
     "name": "pipeline",
     "transport": {
@@ -78,10 +78,10 @@ create table pipeline (
 }]');
 
 -- Git commits used by each pipeline.
-create table pipeline_sources (
-    pipeline_source_id bigint not null primary key,
-    git_commit_id bigint not null,
-    pipeline_id bigint not null foreign key references pipeline(pipeline_id)
+CREATE TABLE pipeline_sources (
+    pipeline_source_id BIGINT NOT NULL PRIMARY KEY,
+    git_commit_id BIGINT NOT NULL,
+    pipeline_id BIGINT NOT NULL FOREIGN KEY REFERENCES pipeline(pipeline_id)
 ) WITH (
     'connectors' = '[{
         "name": "pipelie_sources",
@@ -103,14 +103,14 @@ create table pipeline_sources (
 );
 
 -- Binary artifacts created by CI pipelines.
-create table artifact (
-    artifact_id bigint not null primary key,
+CREATE TABLE artifact (
+    artifact_id BIGINT NOT NULL PRIMARY KEY,
     -- artifact_uri varchar not null,
-    checksum varchar not null,
-    artifact_size_in_bytes bigint not null,
-    artifact_type int not null,
-    builtby_pipeline_id bigint not null foreign key references pipeline(pipeline_id),
-    parent_artifact_id bigint foreign key references artifact(artifact_id)
+    checksum VARCHAR NOT NULL,
+    artifact_size_in_bytes BIGINT NOT NULL,
+    artifact_type INT NOT NULL,
+    builtby_pipeline_id BIGINT NOT NULL FOREIGN KEY REFERENCES pipeline(pipeline_id),
+    parent_artifact_id BIGINT FOREIGN KEY REFERENCES artifact(artifact_id)
 ) WITH (
     'connectors' = '[{
         "name": "artifact",
@@ -134,14 +134,14 @@ create table artifact (
 );
 
 -- Vulnerabilities discovered in source code.
-create table vulnerability (
-    vulnerability_id bigint not null primary key,
-    discovered_in bigint not null,
-    discovery_date timestamp not null,
-    checksum varchar not null,
-    vulnerability_reference_id varchar,
-    severity int,
-    priority varchar
+CREATE TABLE vulnerability (
+    vulnerability_id BIGINT NOT NULL PRIMARY KEY,
+    discovered_in BIGINT NOT NULL,
+    discovery_date TIMESTAMP NOT NULL,
+    checksum VARCHAR NOT NULL,
+    vulnerability_reference_id VARCHAR,
+    severity INT,
+    priority VARCHAR
 )
 WITH (
     -- Instruct Feldera to store the snapshot of the table, allowing the
@@ -170,9 +170,9 @@ WITH (
 );
 
 -- Kubernetes clusters.
-create table k8scluster (
-    k8scluster_id bigint not null primary key,
-    name varchar not null)
+CREATE TABLE k8scluster (
+    k8scluster_id BIGINT NOT NULL PRIMARY KEY,
+    name VARCHAR NOT NULL)
 WITH  (
     'connectors' = '[{
         "name": "k8scluster",
@@ -192,12 +192,12 @@ WITH  (
 
 
 -- Deployed Kubernetes objects.
-create table k8sobject (
-    k8sobject_id bigint not null primary key,
-    artifact_id bigint not null foreign key references artifact(artifact_id),
-    checksum varchar not null,
-    deployed_id bigint not null foreign key references k8scluster(k8scluster_id),
-    k8snamespace varchar not null
+CREATE TABLE k8sobject (
+    k8sobject_id BIGINT NOT NULL PRIMARY KEY,
+    artifact_id BIGINT NOT NULL FOREIGN KEY REFERENCES artifact(artifact_id),
+    checksum VARCHAR NOT NULL,
+    deployed_id BIGINT NOT NULL FOREIGN KEY REFERENCES k8scluster(k8scluster_id),
+    k8snamespace VARCHAR NOT NULL
 )WITH  (
     'connectors' = '[{
         "name": "k8sobject",
@@ -220,11 +220,11 @@ create table k8sobject (
 );
 
 -- Vulnerabilities that affect each CI/CD pipeline.
-create view pipeline_vulnerability (
+CREATE VIEW pipeline_vulnerability (
     pipeline_id,
     vulnerability_id
-) as
-    SELECT pipeline_sources.pipeline_id as pipeline_id, vulnerability.vulnerability_id as vulnerability_id FROM
+) AS
+    SELECT pipeline_sources.pipeline_id AS pipeline_id, vulnerability.vulnerability_id AS vulnerability_id FROM
     pipeline_sources
     INNER JOIN
     vulnerability
@@ -236,29 +236,29 @@ create view pipeline_vulnerability (
 -- input. This pattern continues below, where we continue building more complex
 -- views on top. This illustrates how Feldera enables the construction of complex
 -- analytical pipelines in a modular way.
-create view artifact_vulnerability (
+CREATE VIEW artifact_vulnerability (
     artifact_id,
     vulnerability_id
-) as
-    SELECT artifact.artifact_id as artifact_id, pipeline_vulnerability.vulnerability_id as vulnerability_id FROM
+) AS
+    SELECT artifact.artifact_id AS artifact_id, pipeline_vulnerability.vulnerability_id AS vulnerability_id FROM
     artifact
     INNER JOIN
     pipeline_vulnerability
     ON artifact.builtby_pipeline_id = pipeline_vulnerability.pipeline_id;
 
 -- Vulnerabilities in the artifact or any of its children.
-create view transitive_artifact_vulnerability(
+CREATE VIEW transitive_artifact_vulnerability(
     artifact_id,
     via_artifact_id,
     vulnerability_id
-) as
-    SELECT artifact_id, artifact_id as via_artifact_id, vulnerability_id from artifact_vulnerability
+) AS
+    SELECT artifact_id, artifact_id AS via_artifact_id, vulnerability_id FROM artifact_vulnerability
     UNION
     (
         SELECT
-            artifact.parent_artifact_id as artifact_id,
-            artifact.artifact_id as via_artifact_id,
-            artifact_vulnerability.vulnerability_id as vulnerability_id FROM
+            artifact.parent_artifact_id AS artifact_id,
+            artifact.artifact_id AS via_artifact_id,
+            artifact_vulnerability.vulnerability_id AS vulnerability_id FROM
         artifact
         INNER JOIN
         artifact_vulnerability
@@ -267,10 +267,10 @@ create view transitive_artifact_vulnerability(
     );
 
 -- Vulnerabilities that affect each k8s object.
-create view k8sobject_vulnerability (
+CREATE VIEW k8sobject_vulnerability (
     k8sobject_id,
     vulnerability_id
-) as
+) AS
     SELECT k8sobject.k8sobject_id, transitive_artifact_vulnerability.vulnerability_id FROM
     k8sobject
     INNER JOIN
@@ -278,12 +278,12 @@ create view k8sobject_vulnerability (
     ON k8sobject.artifact_id = transitive_artifact_vulnerability.artifact_id;
 
 -- Vulnerabilities that affect each k8s cluster.
-create view k8scluster_vulnerability (
+CREATE VIEW k8scluster_vulnerability (
     k8scluster_id,
     vulnerability_id
-) as
+) AS
     SELECT
-        k8sobject.deployed_id as k8scluster_id,
+        k8sobject.deployed_id AS k8scluster_id,
         k8sobject_vulnerability.vulnerability_id FROM
     k8sobject_vulnerability
     INNER JOIN
@@ -293,7 +293,7 @@ create view k8scluster_vulnerability (
 -- Per-cluster statistics:
 -- * Number of vulnerabilities.
 -- * Most severe vulnerability.
-create materialized view k8scluster_vulnerability_stats (
+CREATE MATERIALIZED VIEW k8scluster_vulnerability_stats (
     k8scluster_id,
     k8scluster_name,
     total_vulnerabilities,
@@ -301,18 +301,18 @@ create materialized view k8scluster_vulnerability_stats (
 ) AS
     SELECT
         cluster_id,
-        k8scluster.name as k8scluster_name,
+        k8scluster.name AS k8scluster_name,
         total_vulnerabilities,
         most_severe_vulnerability
     FROM
     (
         SELECT
             cluster_id,
-            COUNT(*) as total_vulnerabilities,
-            MAX(severity) as most_severe_vulnerability
+            COUNT(*) AS total_vulnerabilities,
+            MAX(severity) AS most_severe_vulnerability
         FROM
         (
-            SELECT k8scluster_vulnerability.k8scluster_id as cluster_id, vulnerability.vulnerability_id, vulnerability.severity FROM
+            SELECT k8scluster_vulnerability.k8scluster_id AS cluster_id, vulnerability.vulnerability_id, vulnerability.severity FROM
             k8scluster_vulnerability
             INNER JOIN
             vulnerability

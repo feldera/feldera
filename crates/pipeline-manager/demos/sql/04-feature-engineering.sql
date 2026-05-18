@@ -27,7 +27,7 @@ SET FELDERA_IGNORE_WARNING_UNUSED_COLUMN = 1;
 -- Customers.
 CREATE TABLE customer (
     id BIGINT NOT NULL,
-    name varchar,
+    name VARCHAR,
     state VARCHAR,
     -- Lateness annotation: customer records cannot arrive more than 7 days out of order.
     ts TIMESTAMP LATENESS INTERVAL 7 DAYS
@@ -102,7 +102,7 @@ FROM
 CREATE VIEW transaction_with_history AS
 SELECT
     *,
-    SUM(case when out_of_state then 1 else 0 end) OVER window_30_day as out_of_state_count
+    SUM(CASE WHEN out_of_state THEN 1 ELSE 0 END) OVER window_30_day AS out_of_state_count
 FROM
     enriched_transaction
 WINDOW window_30_day AS (PARTITION BY customer_id ORDER BY ts RANGE BETWEEN INTERVAL 30 DAYS PRECEDING AND CURRENT ROW);
@@ -145,9 +145,9 @@ WHERE
 -- You should _always_ see empty output!
 CREATE MATERIALIZED VIEW user_stats AS
 WITH
-    total_amt AS (select customer_id, sum(amt) AS total_amt FROM enriched_transaction GROUP BY customer_id),
-    red_amt AS (select customer_id, sum(amt) AS red_amt FROM red_transactions GROUP BY customer_id),
-    green_amt AS (select customer_id, sum(amt) AS green_amt FROM green_transactions GROUP BY customer_id)
+    total_amt AS (SELECT customer_id, SUM(amt) AS total_amt FROM enriched_transaction GROUP BY customer_id),
+    red_amt AS (SELECT customer_id, SUM(amt) AS red_amt FROM red_transactions GROUP BY customer_id),
+    green_amt AS (SELECT customer_id, SUM(amt) AS green_amt FROM green_transactions GROUP BY customer_id)
 SELECT
     total_amt.customer_id,
     COALESCE(red_amt, 0) as red_amt,
