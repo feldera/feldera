@@ -37,9 +37,9 @@ RUN apt-get update --fix-missing && \
 
 ## Setup Java and Python
 
-RUN apt-get install -y \
+RUN apt-get install --no-install-recommends -y \
    gcc clang libclang-dev python3-pip python3-plumbum \
-   hub numactl openjdk-21-jdk maven
+   hub numactl openjdk-21-jdk-headless maven
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ## Install nodejs
