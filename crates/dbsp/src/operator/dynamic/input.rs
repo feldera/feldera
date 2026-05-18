@@ -18,7 +18,7 @@ use crate::{
             upsert::UpdateSetFactories,
         },
     },
-    trace::{Batch, BatchFactories, BatchReaderFactories, Batcher, FallbackWSet, Rkyv},
+    trace::{Batch, BatchFactories, BatchReaderFactories, Batcher, Builder, FallbackWSet, Rkyv},
     utils::Tup2,
 };
 use std::{
@@ -253,6 +253,112 @@ where
             upsert_pair_factory: self.upsert_pair_factory,
         }
     }
+}
+
+/// Convert a vector of vectors or updates into an indexed Z-set of upserts.
+///
+/// 1. Sort each vector of pairs by key.
+/// 2. Iterate over the vectors together and find the last update U in the last vector for each key.
+/// 3. Add the (K, (time, U)) tuple to the output indexed Z-set.
+pub fn pairs_to_upsert_batch<K, U>(
+    factories: &OrdIndexedZSetFactories<K, DynPair<DynData, U>>,
+    input_pairs: Vec<Box<DynPairs<K, U>>>,
+    time: u32,
+) -> OrdIndexedZSet<K, DynPair<DynData, U>>
+where
+    K: DataTrait + ?Sized,
+    U: DataTrait + ?Sized,
+{
+    struct UpsertPosition<K, U>
+    where
+        K: DataTrait + ?Sized,
+        U: DataTrait + ?Sized,
+    {
+        pairs: Box<DynPairs<K, U>>,
+        position: usize,
+    }
+
+    let mut inputs = input_pairs
+        .into_iter()
+        .filter_map(|mut pairs| {
+            // Upserts are order-sensitive, so use stable sorting and keep the
+            // last update for each key within each input vector.
+            pairs.sort_by_key();
+            pairs.dedup_by_key_keep_last();
+
+            pairs
+                .is_empty()
+                .not()
+                .then_some(UpsertPosition { pairs, position: 0 })
+        })
+        .collect::<Vec<_>>();
+
+    let capacity = inputs.iter().map(|input| input.pairs.len()).sum();
+    let mut builder = <OrdIndexedZSet<K, DynPair<DynData, U>> as Batch>::Builder::with_capacity(
+        factories, capacity, capacity,
+    );
+    let mut key = factories.key_factory().default_box();
+    let mut val = factories.val_factory().default_box();
+    let time_val: Box<DynData> = Box::new(time).erase_box();
+    let mut weight: Box<DynZWeight> = Box::new(1 as ZWeight).erase_box();
+
+    while !inputs.is_empty() {
+        let min_index = (0..inputs.len())
+            .min_by(|a, b| {
+                inputs[*a]
+                    .pairs
+                    .index(inputs[*a].position)
+                    .fst()
+                    .cmp(inputs[*b].pairs.index(inputs[*b].position).fst())
+            })
+            .unwrap();
+
+        inputs[min_index]
+            .pairs
+            .index(inputs[min_index].position)
+            .fst()
+            .clone_to(&mut key);
+
+        // If the same key appears in multiple vectors, the later vector wins.
+        let mut selected_index = min_index;
+        for index in min_index + 1..inputs.len() {
+            if inputs[index].pairs.index(inputs[index].position).fst() == &*key {
+                selected_index = index;
+            }
+        }
+
+        {
+            let selected_position = inputs[selected_index].position;
+            let update = inputs[selected_index]
+                .pairs
+                .index_mut(selected_position)
+                .snd_mut();
+            let (val_time, val_update) = val.split_mut();
+            time_val.clone_to(val_time);
+            update.clone_to(val_update);
+        }
+
+        // Advance all vectors that contributed the current key.
+        let mut index = 0;
+        while index < inputs.len() {
+            if inputs[index].pairs.index(inputs[index].position).fst() == &*key {
+                inputs[index].position += 1;
+                if inputs[index].position == inputs[index].pairs.len() {
+                    inputs.remove(index);
+                } else {
+                    index += 1;
+                }
+            } else {
+                index += 1;
+            }
+        }
+
+        **weight = 1;
+        builder.push_val_diff_mut(&mut *val, &mut *weight);
+        builder.push_key_mut(&mut *key);
+    }
+
+    builder.done()
 }
 
 impl RootCircuit {
@@ -1377,7 +1483,7 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> UpsertHandle<K, V> {
 mod test {
     use crate::{
         OutputHandle, RootCircuit, Runtime, Stream, ZWeight,
-        dynamic::{DowncastTrait, DynData, Erase},
+        dynamic::{DowncastTrait, DynData, DynPair, DynPairs, Erase, LeanVec},
         indexed_zset,
         operator::{
             IndexedZSetHandle, MapHandle, SetHandle, StagedBuffers, Update, ZSetHandle,
@@ -1392,12 +1498,13 @@ mod test {
         zset,
     };
     use anyhow::Result as AnyResult;
+    use proptest::prelude::*;
     use rand::seq::index;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
     use std::{
         cmp::max,
-        collections::{BTreeSet, HashMap, VecDeque},
+        collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
         iter::once,
         ops::Mul,
     };
@@ -1427,6 +1534,187 @@ mod test {
                 result
             })
             .collect()
+    }
+
+    fn dyn_upsert_pairs(upserts: Vec<Tup2<u64, u64>>) -> Box<DynPairs<DynData, DynData>> {
+        Box::new(LeanVec::from(upserts)).erase_box()
+    }
+
+    fn dyn_upsert_batch_tuples(
+        batch: &crate::algebra::OrdIndexedZSet<DynData, DynPair<DynData, DynData>>,
+    ) -> Vec<(u64, u32, u64, ZWeight)> {
+        let mut cursor = batch.cursor();
+        let mut result = Vec::new();
+
+        while cursor.key_valid() {
+            while cursor.val_valid() {
+                let (time, update) = cursor.val().split();
+                result.push((
+                    *cursor.key().downcast_checked::<u64>(),
+                    *time.downcast_checked::<u32>(),
+                    *update.downcast_checked::<u64>(),
+                    *cursor.weight().downcast_checked::<ZWeight>(),
+                ));
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+
+        result
+    }
+
+    #[test]
+    fn pairs_to_upsert_batch_empty() {
+        let factories = BatchReaderFactories::new::<u64, Tup2<u32, u64>, ZWeight>();
+        let batch = super::pairs_to_upsert_batch(&factories, Vec::new(), 5);
+
+        assert!(dyn_upsert_batch_tuples(&batch).is_empty());
+    }
+
+    #[test]
+    fn pairs_to_upsert_batch_keeps_last_update_for_key() {
+        let factories = BatchReaderFactories::new::<u64, Tup2<u32, u64>, ZWeight>();
+        let batch = super::pairs_to_upsert_batch(
+            &factories,
+            vec![
+                // The final value for key 2 in this vector is 21.
+                dyn_upsert_pairs(vec![Tup2(2, 20), Tup2(1, 10), Tup2(2, 21)]),
+                dyn_upsert_pairs(vec![Tup2(1, 11), Tup2(3, 30)]),
+                // This vector is later than the previous two, so its values
+                // for keys 1 and 2 win.
+                dyn_upsert_pairs(vec![Tup2(2, 22), Tup2(1, 12)]),
+            ],
+            7,
+        );
+
+        assert_eq!(
+            dyn_upsert_batch_tuples(&batch),
+            vec![(1, 7, 12, 1), (2, 7, 22, 1), (3, 7, 30, 1)]
+        );
+    }
+
+    #[test]
+    fn pairs_to_upsert_batch_sorts_unsorted_input() {
+        let factories = BatchReaderFactories::new::<u64, Tup2<u32, u64>, ZWeight>();
+        let batch = super::pairs_to_upsert_batch(
+            &factories,
+            vec![dyn_upsert_pairs(vec![
+                Tup2(5, 50),
+                Tup2(1, 10),
+                Tup2(3, 30),
+                Tup2(2, 20),
+            ])],
+            11,
+        );
+
+        assert_eq!(
+            dyn_upsert_batch_tuples(&batch),
+            vec![
+                (1, 11, 10, 1),
+                (2, 11, 20, 1),
+                (3, 11, 30, 1),
+                (5, 11, 50, 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn pairs_to_upsert_batch_keeps_last_duplicate_within_vector() {
+        let factories = BatchReaderFactories::new::<u64, Tup2<u32, u64>, ZWeight>();
+        let batch = super::pairs_to_upsert_batch(
+            &factories,
+            vec![dyn_upsert_pairs(vec![
+                Tup2(4, 40),
+                Tup2(2, 20),
+                Tup2(4, 41),
+                Tup2(2, 21),
+                Tup2(4, 42),
+            ])],
+            12,
+        );
+
+        assert_eq!(
+            dyn_upsert_batch_tuples(&batch),
+            vec![(2, 12, 21, 1), (4, 12, 42, 1)]
+        );
+    }
+
+    #[test]
+    fn pairs_to_upsert_batch_later_vector_wins_for_same_key() {
+        let factories = BatchReaderFactories::new::<u64, Tup2<u32, u64>, ZWeight>();
+        let batch = super::pairs_to_upsert_batch(
+            &factories,
+            vec![
+                dyn_upsert_pairs(vec![Tup2(1, 10), Tup2(2, 20), Tup2(3, 30)]),
+                dyn_upsert_pairs(vec![Tup2(2, 200), Tup2(4, 40)]),
+                dyn_upsert_pairs(vec![Tup2(1, 100), Tup2(2, 201)]),
+            ],
+            13,
+        );
+
+        assert_eq!(
+            dyn_upsert_batch_tuples(&batch),
+            vec![
+                (1, 13, 100, 1),
+                (2, 13, 201, 1),
+                (3, 13, 30, 1),
+                (4, 13, 40, 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn pairs_to_upsert_batch_ignores_empty_vectors() {
+        let factories = BatchReaderFactories::new::<u64, Tup2<u32, u64>, ZWeight>();
+        let batch = super::pairs_to_upsert_batch(
+            &factories,
+            vec![
+                dyn_upsert_pairs(vec![]),
+                dyn_upsert_pairs(vec![Tup2(7, 70)]),
+                dyn_upsert_pairs(vec![]),
+            ],
+            14,
+        );
+
+        assert_eq!(dyn_upsert_batch_tuples(&batch), vec![(7, 14, 70, 1)]);
+    }
+
+    proptest! {
+        #[test]
+        fn proptest_pairs_to_upsert_batch_matches_last_update_model(
+            input in prop::collection::vec(
+                prop::collection::vec((0u8..16, any::<u8>()), 0..20),
+                0..10,
+            ),
+            time in any::<u32>(),
+        ) {
+            let factories = BatchReaderFactories::new::<u64, Tup2<u32, u64>, ZWeight>();
+            let input_pairs = input
+                .iter()
+                .map(|pairs| {
+                    dyn_upsert_pairs(
+                        pairs
+                            .iter()
+                            .map(|(key, value)| Tup2(*key as u64, *value as u64))
+                            .collect(),
+                    )
+                })
+                .collect();
+            let batch = super::pairs_to_upsert_batch(&factories, input_pairs, time);
+
+            let mut expected_by_key = BTreeMap::new();
+            for pairs in input {
+                for (key, value) in pairs {
+                    expected_by_key.insert(key as u64, value as u64);
+                }
+            }
+            let expected = expected_by_key
+                .into_iter()
+                .map(|(key, value)| (key, time, value, 1))
+                .collect::<Vec<_>>();
+
+            prop_assert_eq!(dyn_upsert_batch_tuples(&batch), expected);
+        }
     }
 
     fn input_test_circuit(
