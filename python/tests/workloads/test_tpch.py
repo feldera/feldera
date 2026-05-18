@@ -149,11 +149,7 @@ def run_cli():
     )
 
     parser.add_argument(
-        "--memory-mb",
-        type=int,
-        nargs="?",
-        default=None,
-        help="Memory size in MB"
+        "--memory-mb", type=int, nargs="?", default=None, help="Memory size in MB"
     )
 
     args = parser.parse_args()
@@ -182,10 +178,7 @@ def run_cli():
 
     mode = args.mode
 
-    resources = Resources(
-        memory_mb_max=args.memory_mb,
-        memory_mb_min=args.memory_mb
-    )
+    resources = Resources(memory_mb_max=args.memory_mb, memory_mb_min=args.memory_mb)
 
     log(f"Test mode: {mode}")
     log(f"Input mode: {input_mode}")
@@ -200,7 +193,7 @@ def run_cli():
         input_dir=args.input_dir,
         segment_size=args.segment_size,
         num_segments=args.num_segments,
-        resources=resources
+        resources=resources,
     )
 
     tpch_test(config)
@@ -1545,7 +1538,7 @@ def tpch_test(config: TPCHTestConfig):
             views,
             transaction=True,
             stop=False,
-            resources=config.resources
+            resources=config.resources,
         )
         count = next(
             pipeline.query(
@@ -1564,7 +1557,7 @@ def tpch_test(config: TPCHTestConfig):
             views,
             transaction=False,
             stop=False,
-            resources=config.resources
+            resources=config.resources,
         )
         count = next(
             pipeline.query(
