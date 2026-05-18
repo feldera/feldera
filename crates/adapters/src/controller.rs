@@ -3595,9 +3595,11 @@ impl CircuitThread {
         // involve ingesting some inputs from connectors. By pausing those inputs
         // we may prevent the transaction from ever completing.
         //
-        // Don't pause inputs if a checkpoint has already started: once it has started,
-        // the checkpoint may be processing in a background thread but this shouldn't
-        // stop the pipeline from processing inputs.
+        // Don't pause inputs if a checkpoint has already started, unless a suspend
+        // is requested:  once it has started, the checkpoint may be processing in a
+        // background thread but this shouldn't stop the pipeline from processing inputs.
+        //
+        // On suspend, we only allow barrier inputs as the pipeline will just checkpoint and stop.
         //
         // FIXME: the last point means that checkpoints can get delayed indefinitely
         // if the user runs end-to-end transactions. One possible way to solve this
@@ -3606,7 +3608,11 @@ impl CircuitThread {
         let coordination_request = self.controller.coordination_request.lock().unwrap().clone();
         let inputs = if self.checkpoint_requested()
             && self.ft.is_none()
-            && self.running_checkpoint.is_none()
+            && (self
+                .checkpoint_requests
+                .iter()
+                .any(|x| matches!(x, CheckpointRequest::SuspendCommand(_)))
+                || self.running_checkpoint.is_none())
             && self.controller.get_transaction_state() == TransactionState::None
         {
             tracing::debug!(
