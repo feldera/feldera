@@ -152,6 +152,19 @@ def log(*args, **kwargs):
     print(prefix, *args, **kwargs)
 
 
+# Cap on rows logged when a view validation fails. A failing TPC-H or test_now run
+# can otherwise emit tens of megabytes on a single line, which blows up CI log capture.
+_ROW_DIFF_LOG_LIMIT = 20
+
+
+def _log_row_diff(label: str, rows: list) -> None:
+    if not rows:
+        return
+    log(f"{label} ({len(rows)} rows; showing first {min(len(rows), _ROW_DIFF_LOG_LIMIT)}):")
+    for row in rows[:_ROW_DIFF_LOG_LIMIT]:
+        log(json.dumps(row, default=str))
+
+
 def unique_pipeline_name(base_name: str) -> str:
     """
     In CI, multiple tests of different runs can run against the same Feldera instance, we
@@ -231,13 +244,14 @@ def validate_view(pipeline: Pipeline, view: ViewSpec):
                 pipeline.query(f"({view_query}) except (select * from {view.name})")
             )
 
-            if extra_rows:
-                log("Extra rows in Feldera output, but not in the ad hoc query output")
-                log(json.dumps(extra_rows, default=str))
-
-            if missing_rows:
-                log("Extra rows in the ad hoc query output, but not in Feldera output")
-                log(json.dumps(missing_rows, default=str))
+            _log_row_diff(
+                "Extra rows in Feldera output, but not in the ad hoc query output",
+                extra_rows,
+            )
+            _log_row_diff(
+                "Extra rows in the ad hoc query output, but not in Feldera output",
+                missing_rows,
+            )
         except Exception as e:
             log(f"Error querying view '{view.name}': {e}")
             log(f"Ad-hoc Query: {view_query}")
