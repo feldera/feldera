@@ -395,7 +395,7 @@ def run_workload(
     views: List[ViewSpec],
     transaction: bool = True,
     stop: bool = True,
-    resources: Optional[Resources] = None
+    resources: Optional[Resources] = None,
 ) -> Pipeline:
     """
     Helper to run a pipeline to completion and validate the views afterwards using ad-hoc queries.
