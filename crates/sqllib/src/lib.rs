@@ -77,12 +77,107 @@ use dbsp::{
     typed_batch::{SpineSnapshot, TypedBatch},
     utils::*,
 };
-use num::PrimInt;
+use num::{PrimInt, Signed};
 use num_traits::Pow;
 use std::marker::PhantomData;
 use std::ops::{Deref, Neg};
 use std::sync::OnceLock;
 use std::{fmt::Debug, sync::atomic::Ordering};
+
+#[allow(dead_code)]
+#[doc(hidden)]
+pub(crate) fn div_round_nearest<T>(a: T, b: T) -> T
+where
+    T: PrimInt + Signed,
+{
+    // Code tries to avoid overflows
+    debug_assert!(b > T::zero());
+    let q = a / b;
+    let r = (a % b).abs();
+    if r.is_zero() {
+        return q;
+    }
+
+    if r > b - r {
+        q + a.signum()
+    } else if r < b - r {
+        q
+    } else {
+        // Tie
+        let two = T::one() + T::one();
+        if (q % two).is_zero() {
+            q
+        } else {
+            q + a.signum()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------
+    // divisor = 1000
+    // -----------------------------
+    #[test]
+    fn test_rounding_1000() {
+        assert_eq!(div_round_nearest(0, 1000), 0);
+        assert_eq!(div_round_nearest(1, 1000), 0);
+        assert_eq!(div_round_nearest(499, 1000), 0);
+        assert_eq!(div_round_nearest(500, 1000), 0);
+        assert_eq!(div_round_nearest(501, 1000), 1);
+        assert_eq!(div_round_nearest(999, 1000), 1);
+        assert_eq!(div_round_nearest(1000, 1000), 1);
+        assert_eq!(div_round_nearest(1499, 1000), 1);
+        assert_eq!(div_round_nearest(1500, 1000), 2);
+        assert_eq!(div_round_nearest(1501, 1000), 2);
+
+        assert_eq!(div_round_nearest(-1, 1000), 0);
+        assert_eq!(div_round_nearest(-499, 1000), 0);
+        assert_eq!(div_round_nearest(-500, 1000), 0);
+        assert_eq!(div_round_nearest(-501, 1000), -1);
+        assert_eq!(div_round_nearest(-999, 1000), -1);
+        assert_eq!(div_round_nearest(-1000, 1000), -1);
+        assert_eq!(div_round_nearest(-1499, 1000), -1);
+        assert_eq!(div_round_nearest(-1500, 1000), -2);
+        assert_eq!(div_round_nearest(-1501, 1000), -2);
+    }
+
+    #[test]
+    fn test_extremes() {
+        assert_eq!(div_round_nearest(i64::MAX, 1000), 9_223_372_036_854_776);
+        assert_eq!(div_round_nearest(i64::MIN, 1000), -9_223_372_036_854_776);
+    }
+
+    #[test]
+    fn test_rounding_7() {
+        assert_eq!(div_round_nearest(0, 7), 0);
+        assert_eq!(div_round_nearest(1, 7), 0);
+        assert_eq!(div_round_nearest(2, 7), 0);
+        assert_eq!(div_round_nearest(3, 7), 0);
+        assert_eq!(div_round_nearest(4, 7), 1);
+        assert_eq!(div_round_nearest(5, 7), 1);
+        assert_eq!(div_round_nearest(6, 7), 1);
+        assert_eq!(div_round_nearest(7, 7), 1);
+        assert_eq!(div_round_nearest(8, 7), 1);
+        assert_eq!(div_round_nearest(9, 7), 1);
+        assert_eq!(div_round_nearest(10, 7), 1);
+        assert_eq!(div_round_nearest(11, 7), 2);
+
+        assert_eq!(div_round_nearest(-1, 7), 0);
+        assert_eq!(div_round_nearest(-2, 7), 0);
+        assert_eq!(div_round_nearest(-3, 7), 0);
+        assert_eq!(div_round_nearest(-4, 7), -1);
+        assert_eq!(div_round_nearest(-5, 7), -1);
+        assert_eq!(div_round_nearest(-6, 7), -1);
+        assert_eq!(div_round_nearest(-7, 7), -1);
+        assert_eq!(div_round_nearest(-8, 7), -1);
+        assert_eq!(div_round_nearest(-9, 7), -1);
+        assert_eq!(div_round_nearest(-10, 7), -1);
+        assert_eq!(div_round_nearest(-11, 7), -2);
+    }
+}
 
 /// Convert a value of a SQL data type to an integer
 /// that preserves ordering.  Used for partitioned_rolling_aggregates

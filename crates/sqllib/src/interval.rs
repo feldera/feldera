@@ -23,10 +23,10 @@ use crate::{Time, Timestamp};
 
 /// A ShortInterval can express a difference between two [Time]
 /// values, two [Date] values, or two [Timestamp] values.  The
-/// representation is a (positive or negative) number of milliseconds.
+/// representation is a (positive or negative) number of microseconds.
 /// While there are functions that can extract nanosecond-precision
 /// values from a ShortInterval, the precision is always limited to
-/// milliseconds.
+/// microseconds.
 #[derive(
     Debug,
     Default,
@@ -111,10 +111,34 @@ impl ShortInterval {
 
     /// Extract the length of the interval in nanoseconds.  The result
     /// can be negative.  The granularity of the representation is
-    /// actually milliseconds, so this function will always return a
-    /// number that is a multiple of 1 million.
+    /// actually microseconds, so this function will always return a
+    /// number that is a multiple of 1000.
     pub fn nanoseconds(&self) -> i64 {
         self.microseconds * 1_000
+    }
+
+    /// Extract the length of the interval in milliseconds.  The
+    /// result can be negative.
+    pub fn seconds(&self) -> i64 {
+        self.microseconds / 1_000_000
+    }
+
+    /// Extract the length of the interval in minutes.  The
+    /// result can be negative.
+    pub fn minutes(&self) -> i64 {
+        self.microseconds / (60 * 1_000_000)
+    }
+
+    /// Extract the length of the interval in minutes.  The
+    /// result can be negative.
+    pub fn hours(&self) -> i64 {
+        self.microseconds / (60 * 60 * 1_000_000i64)
+    }
+
+    /// Extract the length of the interval in minutes.  The
+    /// result can be negative.
+    pub fn days(&self) -> i64 {
+        self.microseconds / (24 * 60 * 60 * 1_000_000i64)
     }
 }
 
@@ -152,7 +176,6 @@ pub fn to_bound_ShortInterval_Date_u64(value: &ShortInterval) -> u64 {
 /// This function is used in rolling window computations, to compute a window bound.
 /// Window bounds are always positive.
 pub fn to_bound_ShortInterval_Timestamp_u128(value: &ShortInterval) -> u128 {
-    // express value in milliseconds
     value.microseconds as u128
 }
 
@@ -160,7 +183,6 @@ pub fn to_bound_ShortInterval_Timestamp_u128(value: &ShortInterval) -> u128 {
 /// This function is used in rolling window computations, to compute a window bound.
 /// Window bounds are always positive.
 pub fn to_bound_ShortInterval_Timestamp_u64(value: &ShortInterval) -> u64 {
-    // express value in milliseconds
     value.microseconds as u64
 }
 

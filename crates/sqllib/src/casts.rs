@@ -20,12 +20,19 @@ use crate::{
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use dbsp::algebra::{F32, F64, HasOne, HasZero};
 use num::{One, Zero};
-use num_traits::cast::NumCast;
+use num_traits::{CheckedDiv, cast::NumCast};
 use regex::{Captures, Regex};
 use smallstr::SmallString;
-use std::{error::Error, fmt::Display, iter::once, ops::Div};
-use std::{fmt::Write, str::FromStr};
-use std::{marker::PhantomData, sync::LazyLock};
+use std::{
+    error::Error,
+    fmt::Display,
+    fmt::Write,
+    iter::once,
+    marker::PhantomData,
+    ops::{Div, Mul},
+    str::FromStr,
+    sync::LazyLock,
+};
 
 trait ToSmallString: Display {
     fn to_small_string<const N: usize>(&self) -> SmallString<[u8; N]>;
@@ -1717,103 +1724,143 @@ pub fn cast_to_i64_Weight(w: Weight) -> SqlResult<i64> {
     Ok(w as i64)
 }
 
+// Creates a cast function from an interval to an integer
+macro_rules! cast_interval_to_integer {
+    ($result_type: ty, $type_name: ident, $arg_type: ty, $intermediate_type: ty, $method: ident) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            pub fn [<cast_to_ $result_type _ $type_name >](value: $arg_type) -> SqlResult<$result_type> {
+                [< cast_to_ $result_type _ $intermediate_type >]( value. $method() )
+            }
+
+            cast_function!($result_type, $result_type, $type_name, $arg_type);
+        }
+    }
+}
+
+cast_interval_to_integer!(i8, LongInterval_YEARS, LongInterval, i32, years);
+cast_interval_to_integer!(i16, LongInterval_YEARS, LongInterval, i32, years);
+cast_interval_to_integer!(i32, LongInterval_YEARS, LongInterval, i32, years);
+cast_interval_to_integer!(i64, LongInterval_YEARS, LongInterval, i32, years);
+cast_interval_to_integer!(u8, LongInterval_YEARS, LongInterval, i32, years);
+cast_interval_to_integer!(u16, LongInterval_YEARS, LongInterval, i32, years);
+cast_interval_to_integer!(u32, LongInterval_YEARS, LongInterval, i32, years);
+cast_interval_to_integer!(u64, LongInterval_YEARS, LongInterval, i32, years);
+
+cast_interval_to_integer!(i8, LongInterval_MONTHS, LongInterval, i32, months);
+cast_interval_to_integer!(i16, LongInterval_MONTHS, LongInterval, i32, months);
+cast_interval_to_integer!(i32, LongInterval_MONTHS, LongInterval, i32, months);
+cast_interval_to_integer!(i64, LongInterval_MONTHS, LongInterval, i32, months);
+cast_interval_to_integer!(u8, LongInterval_MONTHS, LongInterval, i32, months);
+cast_interval_to_integer!(u16, LongInterval_MONTHS, LongInterval, i32, months);
+cast_interval_to_integer!(u32, LongInterval_MONTHS, LongInterval, i32, months);
+cast_interval_to_integer!(u64, LongInterval_MONTHS, LongInterval, i32, months);
+
+cast_interval_to_integer!(i8, ShortInterval_SECONDS, ShortInterval, i64, seconds);
+cast_interval_to_integer!(i16, ShortInterval_SECONDS, ShortInterval, i64, seconds);
+cast_interval_to_integer!(i32, ShortInterval_SECONDS, ShortInterval, i64, seconds);
+cast_interval_to_integer!(i64, ShortInterval_SECONDS, ShortInterval, i64, seconds);
+cast_interval_to_integer!(u8, ShortInterval_SECONDS, ShortInterval, i64, seconds);
+cast_interval_to_integer!(u16, ShortInterval_SECONDS, ShortInterval, i64, seconds);
+cast_interval_to_integer!(u32, ShortInterval_SECONDS, ShortInterval, i64, seconds);
+cast_interval_to_integer!(u64, ShortInterval_SECONDS, ShortInterval, i64, seconds);
+
+cast_interval_to_integer!(i8, ShortInterval_MINUTES, ShortInterval, i64, minutes);
+cast_interval_to_integer!(i16, ShortInterval_MINUTES, ShortInterval, i64, minutes);
+cast_interval_to_integer!(i32, ShortInterval_MINUTES, ShortInterval, i64, minutes);
+cast_interval_to_integer!(i64, ShortInterval_MINUTES, ShortInterval, i64, minutes);
+cast_interval_to_integer!(u8, ShortInterval_MINUTES, ShortInterval, i64, minutes);
+cast_interval_to_integer!(u16, ShortInterval_MINUTES, ShortInterval, i64, minutes);
+cast_interval_to_integer!(u32, ShortInterval_MINUTES, ShortInterval, i64, minutes);
+cast_interval_to_integer!(u64, ShortInterval_MINUTES, ShortInterval, i64, minutes);
+
+cast_interval_to_integer!(i8, ShortInterval_HOURS, ShortInterval, i64, hours);
+cast_interval_to_integer!(i16, ShortInterval_HOURS, ShortInterval, i64, hours);
+cast_interval_to_integer!(i32, ShortInterval_HOURS, ShortInterval, i64, hours);
+cast_interval_to_integer!(i64, ShortInterval_HOURS, ShortInterval, i64, hours);
+cast_interval_to_integer!(u8, ShortInterval_HOURS, ShortInterval, i64, hours);
+cast_interval_to_integer!(u16, ShortInterval_HOURS, ShortInterval, i64, hours);
+cast_interval_to_integer!(u32, ShortInterval_HOURS, ShortInterval, i64, hours);
+cast_interval_to_integer!(u64, ShortInterval_HOURS, ShortInterval, i64, hours);
+
+cast_interval_to_integer!(i8, ShortInterval_DAYS, ShortInterval, i64, days);
+cast_interval_to_integer!(i16, ShortInterval_DAYS, ShortInterval, i64, days);
+cast_interval_to_integer!(i32, ShortInterval_DAYS, ShortInterval, i64, days);
+cast_interval_to_integer!(i64, ShortInterval_DAYS, ShortInterval, i64, days);
+cast_interval_to_integer!(u8, ShortInterval_DAYS, ShortInterval, i64, days);
+cast_interval_to_integer!(u16, ShortInterval_DAYS, ShortInterval, i64, days);
+cast_interval_to_integer!(u32, ShortInterval_DAYS, ShortInterval, i64, days);
+cast_interval_to_integer!(u64, ShortInterval_DAYS, ShortInterval, i64, days);
+
 #[doc(hidden)]
-pub fn cast_to_i8_LongInterval_YEARS(value: LongInterval) -> SqlResult<i8> {
-    cast_to_i8_i32(value.years())
+pub fn cast_to_SqlDecimal_LongInterval_YEARS<const P: usize, const S: usize>(
+    value: LongInterval,
+) -> SqlResult<SqlDecimal<P, S>> {
+    cast_to_SqlDecimal_i32::<P, S>(value.years())
 }
 
 #[doc(hidden)]
-pub fn cast_to_i8_LongInterval_MONTHS(value: LongInterval) -> SqlResult<i8> {
-    cast_to_i8_i32(value.months())
+pub fn cast_to_SqlDecimal_LongInterval_MONTHS<const P: usize, const S: usize>(
+    value: LongInterval,
+) -> SqlResult<SqlDecimal<P, S>> {
+    cast_to_SqlDecimal_i32::<P, S>(value.months())
+}
+
+cast_function!(SqlDecimal <const P: usize, const S: usize>, SqlDecimal<P, S>, LongInterval_YEARS, LongInterval);
+cast_function!(SqlDecimal <const P: usize, const S: usize>, SqlDecimal<P, S>, LongInterval_MONTHS, LongInterval);
+
+fn convert_to_SqlDecimal_ShortInterval<const P: usize, const S: usize>(
+    value: ShortInterval,
+    divider: i64,
+) -> SqlResult<SqlDecimal<P, S>> {
+    let v = DynamicDecimal::from(value.microseconds());
+    let num = DynamicDecimal::from(divider);
+    let div = match v.checked_div(&num) {
+        None => Err(SqlRuntimeError::from_string(format!(
+            "Error converting {value} to DECIMAL",
+        )))?,
+        Some(result) => result,
+    };
+    feldera_fxp::Fixed::<P, S>::try_from(div).map_err(|e| {
+        SqlRuntimeError::from_string(format!(
+            "Overflow during conversion of {value} to DECIMAL: {}",
+            e
+        ))
+    })
 }
 
 #[doc(hidden)]
-pub fn cast_to_i16_LongInterval_YEARS(value: LongInterval) -> SqlResult<i16> {
-    cast_to_i16_i32(value.years())
+pub fn cast_to_SqlDecimal_ShortInterval_SECONDS<const P: usize, const S: usize>(
+    value: ShortInterval,
+) -> SqlResult<SqlDecimal<P, S>> {
+    convert_to_SqlDecimal_ShortInterval::<P, S>(value, 1_000_000)
 }
 
 #[doc(hidden)]
-pub fn cast_to_i16_LongInterval_MONTHS(value: LongInterval) -> SqlResult<i16> {
-    cast_to_i16_i32(value.months())
+pub fn cast_to_SqlDecimal_ShortInterval_MINUTES<const P: usize, const S: usize>(
+    value: ShortInterval,
+) -> SqlResult<SqlDecimal<P, S>> {
+    convert_to_SqlDecimal_ShortInterval::<P, S>(value, 60 * 1_000_000)
 }
 
 #[doc(hidden)]
-pub fn cast_to_i32_LongInterval_YEARS(value: LongInterval) -> SqlResult<i32> {
-    Ok(value.years())
+pub fn cast_to_SqlDecimal_ShortInterval_HOURS<const P: usize, const S: usize>(
+    value: ShortInterval,
+) -> SqlResult<SqlDecimal<P, S>> {
+    convert_to_SqlDecimal_ShortInterval::<P, S>(value, 60 * 60 * 1_000_000i64)
 }
 
 #[doc(hidden)]
-pub fn cast_to_i32_LongInterval_MONTHS(value: LongInterval) -> SqlResult<i32> {
-    Ok(value.months())
+pub fn cast_to_SqlDecimal_ShortInterval_DAYS<const P: usize, const S: usize>(
+    value: ShortInterval,
+) -> SqlResult<SqlDecimal<P, S>> {
+    convert_to_SqlDecimal_ShortInterval::<P, S>(value, 24 * 60 * 60 * 1_000_000i64)
 }
 
-#[doc(hidden)]
-pub fn cast_to_i64_LongInterval_YEARS(value: LongInterval) -> SqlResult<i64> {
-    Ok(value.years() as i64)
-}
-
-#[doc(hidden)]
-pub fn cast_to_i64_LongInterval_MONTHS(value: LongInterval) -> SqlResult<i64> {
-    Ok(value.months() as i64)
-}
-
-#[doc(hidden)]
-pub fn cast_to_u8_LongInterval_YEARS(value: LongInterval) -> SqlResult<u8> {
-    cast_to_u8_i32(value.years())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u8_LongInterval_MONTHS(value: LongInterval) -> SqlResult<u8> {
-    cast_to_u8_i32(value.months())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u16_LongInterval_YEARS(value: LongInterval) -> SqlResult<u16> {
-    cast_to_u16_i32(value.years())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u16_LongInterval_MONTHS(value: LongInterval) -> SqlResult<u16> {
-    cast_to_u16_i32(value.months())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u32_LongInterval_YEARS(value: LongInterval) -> SqlResult<u32> {
-    cast_to_u32_i32(value.years())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u32_LongInterval_MONTHS(value: LongInterval) -> SqlResult<u32> {
-    cast_to_u32_i32(value.months())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u64_LongInterval_YEARS(value: LongInterval) -> SqlResult<u64> {
-    cast_to_u64_i32(value.years())
-}
-
-#[doc(hidden)]
-pub fn cast_to_u64_LongInterval_MONTHS(value: LongInterval) -> SqlResult<u64> {
-    cast_to_u64_i32(value.months())
-}
-
-cast_function!(i8, i8, LongInterval_MONTHS, LongInterval);
-cast_function!(i8, i8, LongInterval_YEARS, LongInterval);
-cast_function!(i16, i16, LongInterval_MONTHS, LongInterval);
-cast_function!(i16, i16, LongInterval_YEARS, LongInterval);
-cast_function!(i32, i32, LongInterval_MONTHS, LongInterval);
-cast_function!(i32, i32, LongInterval_YEARS, LongInterval);
-cast_function!(i64, i64, LongInterval_MONTHS, LongInterval);
-cast_function!(i64, i64, LongInterval_YEARS, LongInterval);
-
-cast_function!(u8, u8, LongInterval_MONTHS, LongInterval);
-cast_function!(u8, u8, LongInterval_YEARS, LongInterval);
-cast_function!(u16, u16, LongInterval_MONTHS, LongInterval);
-cast_function!(u16, u16, LongInterval_YEARS, LongInterval);
-cast_function!(u32, u32, LongInterval_MONTHS, LongInterval);
-cast_function!(u32, u32, LongInterval_YEARS, LongInterval);
-cast_function!(u64, u64, LongInterval_MONTHS, LongInterval);
-cast_function!(u64, u64, LongInterval_YEARS, LongInterval);
+cast_function!(SqlDecimal <const P: usize, const S: usize>, SqlDecimal<P, S>, ShortInterval_SECONDS, ShortInterval);
+cast_function!(SqlDecimal <const P: usize, const S: usize>, SqlDecimal<P, S>, ShortInterval_MINUTES, ShortInterval);
+cast_function!(SqlDecimal <const P: usize, const S: usize>, SqlDecimal<P, S>, ShortInterval_HOURS, ShortInterval);
+cast_function!(SqlDecimal <const P: usize, const S: usize>, SqlDecimal<P, S>, ShortInterval_DAYS, ShortInterval);
 
 //////// casts to Short interval
 
@@ -1834,13 +1881,38 @@ pub fn cast_to_ShortInterval_DAYS_i32(value: i32) -> SqlResult<ShortInterval> {
 
 #[doc(hidden)]
 pub fn cast_to_ShortInterval_DAYS_i64(value: i64) -> SqlResult<ShortInterval> {
-    let val = value.checked_mul(86400 * 1000);
+    let val = value.checked_mul(86400 * 1000 * 1000);
     match val {
         None => Err(SqlRuntimeError::from_string(format!(
             "Overflow during conversion of {value} to INTERVAL DAYS"
         ))),
-        Some(value) => Ok(ShortInterval::from_milliseconds(value)),
+        Some(value) => Ok(ShortInterval::from_microseconds(value)),
     }
+}
+
+fn convert_to_ShortInterval_SqlDecimal<const P: usize, const S: usize>(
+    value: SqlDecimal<P, S>,
+    multiplier: i64,
+    kind: &'static str,
+) -> SqlResult<ShortInterval> {
+    let dd = DynamicDecimal::from(value);
+    let mul = DynamicDecimal::from(multiplier);
+    let val = dd.mul(mul);
+    i64::try_from(val)
+        .map(ShortInterval::from_microseconds)
+        .map_err(|e| {
+            SqlRuntimeError::from_string(format!(
+                "Overflow during conversion of {value} to INTERVAL {}: {}",
+                kind, e
+            ))
+        })
+}
+
+#[doc(hidden)]
+pub fn cast_to_ShortInterval_DAYS_SqlDecimal<const P: usize, const S: usize>(
+    value: SqlDecimal<P, S>,
+) -> SqlResult<ShortInterval> {
+    convert_to_ShortInterval_SqlDecimal::<P, S>(value, 86400i64 * 1000 * 1000, "DAYS")
 }
 
 #[doc(hidden)]
@@ -1873,6 +1945,13 @@ pub fn cast_to_ShortInterval_HOURS_i64(value: i64) -> SqlResult<ShortInterval> {
 }
 
 #[doc(hidden)]
+pub fn cast_to_ShortInterval_HOURS_SqlDecimal<const P: usize, const S: usize>(
+    value: SqlDecimal<P, S>,
+) -> SqlResult<ShortInterval> {
+    convert_to_ShortInterval_SqlDecimal::<P, S>(value, 3600i64 * 1000 * 1000, "DAYS")
+}
+
+#[doc(hidden)]
 #[inline]
 pub fn cast_to_ShortInterval_MINUTES_i8(value: i8) -> SqlResult<ShortInterval> {
     cast_to_ShortInterval_MINUTES_i64(value as i64)
@@ -1902,6 +1981,13 @@ pub fn cast_to_ShortInterval_MINUTES_i64(value: i64) -> SqlResult<ShortInterval>
 }
 
 #[doc(hidden)]
+pub fn cast_to_ShortInterval_MINUTES_SqlDecimal<const P: usize, const S: usize>(
+    value: SqlDecimal<P, S>,
+) -> SqlResult<ShortInterval> {
+    convert_to_ShortInterval_SqlDecimal::<P, S>(value, 60 * 1_000_000, "MINUTES")
+}
+
+#[doc(hidden)]
 #[inline]
 pub fn cast_to_ShortInterval_SECONDS_i8(value: i8) -> SqlResult<ShortInterval> {
     cast_to_ShortInterval_SECONDS_i64(value as i64)
@@ -1928,6 +2014,13 @@ pub fn cast_to_ShortInterval_SECONDS_i64(value: i64) -> SqlResult<ShortInterval>
         ))),
         Some(value) => Ok(ShortInterval::from_milliseconds(value)),
     }
+}
+
+#[doc(hidden)]
+pub fn cast_to_ShortInterval_SECONDS_SqlDecimal<const P: usize, const S: usize>(
+    value: SqlDecimal<P, S>,
+) -> SqlResult<ShortInterval> {
+    convert_to_ShortInterval_SqlDecimal::<P, S>(value, 1_000_000, "SECONDS")
 }
 
 #[doc(hidden)]
@@ -2082,35 +2175,41 @@ cast_function!(ShortInterval_DAYS, ShortInterval, i8, i8);
 cast_function!(ShortInterval_DAYS, ShortInterval, i16, i16);
 cast_function!(ShortInterval_DAYS, ShortInterval, i32, i32);
 cast_function!(ShortInterval_DAYS, ShortInterval, i64, i64);
-cast_function!(ShortInterval_HOURS, ShortInterval, i8, i8);
-cast_function!(ShortInterval_HOURS, ShortInterval, i16, i16);
-cast_function!(ShortInterval_HOURS, ShortInterval, i32, i32);
-cast_function!(ShortInterval_HOURS, ShortInterval, i64, i64);
-cast_function!(ShortInterval_MINUTES, ShortInterval, i8, i8);
-cast_function!(ShortInterval_MINUTES, ShortInterval, i16, i16);
-cast_function!(ShortInterval_MINUTES, ShortInterval, i32, i32);
-cast_function!(ShortInterval_MINUTES, ShortInterval, i64, i64);
-cast_function!(ShortInterval_SECONDS, ShortInterval, i8, i8);
-cast_function!(ShortInterval_SECONDS, ShortInterval, i16, i16);
-cast_function!(ShortInterval_SECONDS, ShortInterval, i32, i32);
-cast_function!(ShortInterval_SECONDS, ShortInterval, i64, i64);
-
 cast_function!(ShortInterval_DAYS, ShortInterval, u8, u8);
 cast_function!(ShortInterval_DAYS, ShortInterval, u16, u16);
 cast_function!(ShortInterval_DAYS, ShortInterval, u32, u32);
 cast_function!(ShortInterval_DAYS, ShortInterval, u64, u64);
+cast_function!(ShortInterval_DAYS <const P: usize, const S: usize>, ShortInterval, SqlDecimal, SqlDecimal<P, S>);
+
+cast_function!(ShortInterval_HOURS, ShortInterval, i8, i8);
+cast_function!(ShortInterval_HOURS, ShortInterval, i16, i16);
+cast_function!(ShortInterval_HOURS, ShortInterval, i32, i32);
+cast_function!(ShortInterval_HOURS, ShortInterval, i64, i64);
 cast_function!(ShortInterval_HOURS, ShortInterval, u8, u8);
 cast_function!(ShortInterval_HOURS, ShortInterval, u16, u16);
 cast_function!(ShortInterval_HOURS, ShortInterval, u32, u32);
 cast_function!(ShortInterval_HOURS, ShortInterval, u64, u64);
+cast_function!(ShortInterval_HOURS <const P: usize, const S: usize>, ShortInterval, SqlDecimal, SqlDecimal<P, S>);
+
+cast_function!(ShortInterval_MINUTES, ShortInterval, i8, i8);
+cast_function!(ShortInterval_MINUTES, ShortInterval, i16, i16);
+cast_function!(ShortInterval_MINUTES, ShortInterval, i32, i32);
+cast_function!(ShortInterval_MINUTES, ShortInterval, i64, i64);
 cast_function!(ShortInterval_MINUTES, ShortInterval, u8, u8);
 cast_function!(ShortInterval_MINUTES, ShortInterval, u16, u16);
 cast_function!(ShortInterval_MINUTES, ShortInterval, u32, u32);
 cast_function!(ShortInterval_MINUTES, ShortInterval, u64, u64);
+cast_function!(ShortInterval_MINUTES <const P: usize, const S: usize>, ShortInterval, SqlDecimal, SqlDecimal<P, S>);
+
+cast_function!(ShortInterval_SECONDS, ShortInterval, i8, i8);
+cast_function!(ShortInterval_SECONDS, ShortInterval, i16, i16);
+cast_function!(ShortInterval_SECONDS, ShortInterval, i32, i32);
+cast_function!(ShortInterval_SECONDS, ShortInterval, i64, i64);
 cast_function!(ShortInterval_SECONDS, ShortInterval, u8, u8);
 cast_function!(ShortInterval_SECONDS, ShortInterval, u16, u16);
 cast_function!(ShortInterval_SECONDS, ShortInterval, u32, u32);
 cast_function!(ShortInterval_SECONDS, ShortInterval, u64, u64);
+cast_function!(ShortInterval_SECONDS <const P: usize, const S: usize>, ShortInterval, SqlDecimal, SqlDecimal<P, S>);
 
 //////// casts to ShortIntervalN
 
@@ -2159,6 +2258,14 @@ pub fn cast_to_LongInterval_YEARS_i64(value: i64) -> SqlResult<LongInterval> {
 }
 
 #[doc(hidden)]
+pub fn cast_to_LongInterval_YEARS_SqlDecimal<const P: usize, const S: usize>(
+    value: SqlDecimal<P, S>,
+) -> SqlResult<LongInterval> {
+    let value = cast_to_i32_SqlDecimal::<P, S>(value)?;
+    cast_to_LongInterval_YEARS_i32(value)
+}
+
+#[doc(hidden)]
 #[inline]
 pub fn cast_to_LongInterval_MONTHS_i8(value: i8) -> SqlResult<LongInterval> {
     cast_to_LongInterval_MONTHS_i32(value as i32)
@@ -2186,6 +2293,14 @@ pub fn cast_to_LongInterval_MONTHS_i64(value: i64) -> SqlResult<LongInterval> {
             )));
         }
     };
+    cast_to_LongInterval_MONTHS_i32(value)
+}
+
+#[doc(hidden)]
+pub fn cast_to_LongInterval_MONTHS_SqlDecimal<const P: usize, const S: usize>(
+    value: SqlDecimal<P, S>,
+) -> SqlResult<LongInterval> {
+    let value = cast_to_i32_SqlDecimal::<P, S>(value)?;
     cast_to_LongInterval_MONTHS_i32(value)
 }
 
@@ -2269,19 +2384,21 @@ cast_function!(LongInterval_YEARS, LongInterval, i8, i8);
 cast_function!(LongInterval_YEARS, LongInterval, i16, i16);
 cast_function!(LongInterval_YEARS, LongInterval, i32, i32);
 cast_function!(LongInterval_YEARS, LongInterval, i64, i64);
-cast_function!(LongInterval_MONTHS, LongInterval, i8, i8);
-cast_function!(LongInterval_MONTHS, LongInterval, i16, i16);
-cast_function!(LongInterval_MONTHS, LongInterval, i32, i32);
-cast_function!(LongInterval_MONTHS, LongInterval, i64, i64);
-
 cast_function!(LongInterval_YEARS, LongInterval, u8, u8);
 cast_function!(LongInterval_YEARS, LongInterval, u16, u16);
 cast_function!(LongInterval_YEARS, LongInterval, u32, u32);
 cast_function!(LongInterval_YEARS, LongInterval, u64, u64);
+cast_function!(LongInterval_YEARS <const P: usize, const S: usize>, LongInterval, SqlDecimal, SqlDecimal<P, S>);
+
+cast_function!(LongInterval_MONTHS, LongInterval, i8, i8);
+cast_function!(LongInterval_MONTHS, LongInterval, i16, i16);
+cast_function!(LongInterval_MONTHS, LongInterval, i32, i32);
+cast_function!(LongInterval_MONTHS, LongInterval, i64, i64);
 cast_function!(LongInterval_MONTHS, LongInterval, u8, u8);
 cast_function!(LongInterval_MONTHS, LongInterval, u16, u16);
 cast_function!(LongInterval_MONTHS, LongInterval, u32, u32);
 cast_function!(LongInterval_MONTHS, LongInterval, u64, u64);
+cast_function!(LongInterval_MONTHS <const P: usize, const S: usize>, LongInterval, SqlDecimal, SqlDecimal<P, S>);
 
 #[doc(hidden)]
 pub fn cast_to_LongInterval_YEARS_s(value: SqlString) -> SqlResult<LongInterval> {
