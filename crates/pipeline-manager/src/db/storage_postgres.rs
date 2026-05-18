@@ -13,7 +13,8 @@ use crate::db::types::monitor::{
     PipelineMonitorEventId,
 };
 use crate::db::types::pipeline::{
-    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
+    ClientMetadata, ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr,
+    PipelineId,
 };
 use crate::db::types::program::{
     ProgramConfig, ProgramInfo, ProgramStatus, RustCompilationInfo, SqlCompilationInfo,
@@ -321,6 +322,20 @@ impl Storage for StoragePostgres {
         let is_new: bool = match current {
             Ok(_) => {
                 // Pipeline already exists, as such update it
+                // For a full POST/PUT, client_metadata is the replacement —
+                // *not* a patch on top of the existing value. Pass an
+                // "overwrite-all" patch by setting any missing field to its
+                // empty marker (which apply_patch interprets as a clear).
+                let client_metadata_overwrite = ClientMetadata {
+                    description: Some(
+                        pipeline
+                            .client_metadata
+                            .description
+                            .clone()
+                            .unwrap_or_default(),
+                    ),
+                    tags: Some(pipeline.client_metadata.tags.clone().unwrap_or_default()),
+                };
                 operations::pipeline::update_pipeline(
                     &txn,
                     false, // Done by user
@@ -328,8 +343,7 @@ impl Storage for StoragePostgres {
                     original_name,
                     &operations::pipeline::PipelineFieldUpdates {
                         name: &Some(pipeline.name.clone()),
-                        description: &Some(pipeline.description.clone()),
-                        metadata: &Some(pipeline.metadata.clone()),
+                        client_metadata: &client_metadata_overwrite,
                         runtime_config: &Some(pipeline.runtime_config.clone()),
                         program_code: &Some(pipeline.program_code.clone()),
                         udf_rust: &Some(pipeline.udf_rust.clone()),
@@ -423,8 +437,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         original_name: &str,
         name: &Option<String>,
-        description: &Option<String>,
-        metadata: &Option<String>,
+        client_metadata: &ClientMetadata,
         platform_version: &str,
         bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,
@@ -444,8 +457,7 @@ impl Storage for StoragePostgres {
             original_name,
             &operations::pipeline::PipelineFieldUpdates {
                 name,
-                description,
-                metadata,
+                client_metadata,
                 runtime_config,
                 program_code,
                 udf_rust,
@@ -1158,8 +1170,7 @@ impl Storage for StoragePostgres {
                         &pipeline.name,
                         &operations::pipeline::PipelineFieldUpdates {
                             name: &None,
-                            description: &None,
-                            metadata: &None,
+                            client_metadata: &ClientMetadata::default(),
                             runtime_config: &None,
                             program_code: &None,
                             udf_rust: &None,
@@ -1250,8 +1261,7 @@ impl Storage for StoragePostgres {
                         &pipeline.name,
                         &operations::pipeline::PipelineFieldUpdates {
                             name: &None,
-                            description: &None,
-                            metadata: &None,
+                            client_metadata: &ClientMetadata::default(),
                             runtime_config: &None,
                             program_code: &None,
                             udf_rust: &None,

@@ -139,7 +139,7 @@
           </div>
         {:else if pipelines.pipelines.length}
           {@const ps = pipelines.pipelines}
-          <PipelineTable bind:selectedPipelines {header}>
+          <PipelineTable pipelines={pipelines.pipelines} bind:selectedPipelines {header}>
             {#snippet preHeaderEnd()}
               <AvailableActions pipelines={ps} bind:selectedPipelines></AvailableActions>
               {#if !selectedPipelines.length}

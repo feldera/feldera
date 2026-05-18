@@ -7,7 +7,7 @@ use crate::api::endpoints::pipeline_management::{
 };
 use crate::api::error::ApiError;
 use crate::db::error::DBError;
-use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId};
+use crate::db::types::pipeline::{ClientMetadata, ExtendedPipelineDescr, PipelineId};
 use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramError, ProgramStatus};
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::storage::StorageStatus;
@@ -32,8 +32,10 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
     ExtendedPipelineDescr {
         id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
         name: "example1".to_string(),
-        description: "Description of the pipeline example1".to_string(),
-        metadata: "".to_string(),
+        client_metadata: ClientMetadata {
+            description: Some("Description of the pipeline example1".to_string()),
+            ..ClientMetadata::default()
+        },
         created_at: Default::default(),
         version: Version(4),
         platform_version: "v0".to_string(),
@@ -91,8 +93,10 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
     ExtendedPipelineDescr {
         id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c9")),
         name: "example2".to_string(),
-        description: "Description of the pipeline example2".to_string(),
-        metadata: "".to_string(),
+        client_metadata: ClientMetadata {
+            description: Some("Description of the pipeline example2".to_string()),
+            ..ClientMetadata::default()
+        },
         created_at: Default::default(),
         version: Version(1),
         platform_version: "v0".to_string(),
@@ -182,8 +186,7 @@ fn pipeline_info_internal_to_external(pipeline: PipelineInfoInternal) -> Pipelin
     PipelineInfo {
         id: pipeline.id,
         name: pipeline.name,
-        description: pipeline.description,
-        metadata: pipeline.metadata,
+        client_metadata: pipeline.client_metadata,
         created_at: pipeline.created_at,
         version: pipeline.version,
         platform_version: pipeline.platform_version,
@@ -241,8 +244,7 @@ fn pipeline_selected_info_internal_to_external(
     PipelineSelectedInfo {
         id: pipeline.id,
         name: pipeline.name,
-        description: pipeline.description,
-        metadata: pipeline.metadata,
+        client_metadata: pipeline.client_metadata,
         created_at: pipeline.created_at,
         version: pipeline.version,
         platform_version: pipeline.platform_version,
@@ -324,8 +326,10 @@ pub(crate) fn list_pipeline_selected_info() -> Vec<PipelineSelectedInfo> {
 pub(crate) fn pipeline_post_put() -> PostPutPipeline {
     PostPutPipeline {
         name: "example1".to_string(),
-        description: Some("Description of the pipeline example1".to_string()),
-        metadata: None,
+        client_metadata: ClientMetadata {
+            description: Some("Description of the pipeline example1".to_string()),
+            ..ClientMetadata::default()
+        },
         runtime_config: Some(RuntimeConfig {
             workers: 16,
             tracing_endpoint_jaeger: "".to_string(),
@@ -346,8 +350,10 @@ pub(crate) fn pipeline_post_put() -> PostPutPipeline {
 pub(crate) fn patch_pipeline() -> PatchPipeline {
     PatchPipeline {
         name: None,
-        description: Some("This is a new description".to_string()),
-        metadata: None,
+        client_metadata: ClientMetadata {
+            description: Some("This is a new description".to_string()),
+            ..ClientMetadata::default()
+        },
         runtime_config: None,
         program_code: Some("CREATE TABLE table3 ( col3 INT );".to_string()),
         udf_rust: None,

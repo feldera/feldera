@@ -91,6 +91,7 @@ export type {
   CheckpointSyncFailure,
   CheckpointSyncStatus,
   Chunk,
+  ClientMetadata,
   ClientOptions,
   ClockAdvanceData,
   ClockAdvanceError,

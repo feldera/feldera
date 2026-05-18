@@ -120,17 +120,81 @@ pub fn parse_string_as_bootstrap_config(s: String) -> Result<BootstrapConfig, DB
     }
 }
 
+/// Client-generated data stored alongside a pipeline.
+///
+/// Persisted as a single JSON object in the `client_metadata` text column
+/// (renamed from `metadata` in V35). The schema lives in code, not the
+/// database — adding a new annotation field only requires extending this
+/// struct, never a DB migration.
+///
+/// Deserialization is lenient: unknown keys are ignored so older readers do
+/// not break when newer writers add fields. Empty / missing values
+/// (description == "", empty tags) are normalized to `None` so that the
+/// serialized form stays minimal (`{}` for fully empty metadata, which we
+/// further collapse to `""` in storage).
+#[derive(Default, Eq, PartialEq, Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ClientMetadata {
+    /// Human-readable description of the pipeline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// Self-descriptive tags for grouping / filtering.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+}
+
+impl ClientMetadata {
+    /// Parses the on-disk representation. An empty string represents the
+    /// default (empty) metadata. Invalid JSON or any non-object value is
+    /// also treated as empty — a single corrupted row must never block reads,
+    /// and the loss is bounded to client-generated data.
+    pub fn from_db_string(s: &str) -> Self {
+        if s.is_empty() {
+            return Self::default();
+        }
+        serde_json::from_str(s).unwrap_or_default()
+    }
+
+    /// Serializes to the on-disk representation. Fully empty metadata
+    /// round-trips as `""` (the column default), not `"{}"`, to keep new
+    /// rows lexically identical to migration-defaulted rows.
+    pub fn to_db_string(&self) -> String {
+        if self.is_empty() {
+            String::new()
+        } else {
+            // Serializing a fixed-shape struct of strings cannot fail.
+            serde_json::to_string(self).expect("ClientMetadata serialization is infallible")
+        }
+    }
+
+    /// True when no annotations are set.
+    pub fn is_empty(&self) -> bool {
+        self.description.is_none() && self.tags.is_none()
+    }
+
+    /// Applies a patch in-place: every `Some` field in `patch` overwrites
+    /// the corresponding field here. Empty-string description and empty
+    /// `tags` vector are interpreted as explicit clears (stored as `None`)
+    /// so that the on-disk JSON stays minimal.
+    pub fn apply_patch(&mut self, patch: ClientMetadata) {
+        let ClientMetadata { description, tags } = patch;
+        if let Some(d) = description {
+            self.description = if d.is_empty() { None } else { Some(d) };
+        }
+        if let Some(t) = tags {
+            self.tags = if t.is_empty() { None } else { Some(t) };
+        }
+    }
+}
+
 /// Pipeline descriptor.
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct PipelineDescr {
     /// Pipeline name.
     pub name: String,
 
-    /// Pipeline description.
-    pub description: String,
-
-    /// Arbitrary user-provided metadata text.
-    pub metadata: String,
+    /// Client-generated data (description, tags, ...).
+    pub client_metadata: ClientMetadata,
 
     /// Pipeline runtime configuration.
     pub runtime_config: serde_json::Value,
@@ -154,8 +218,10 @@ impl PipelineDescr {
         use serde_json::json;
         Self {
             name: "test_pipeline".to_string(),
-            description: "Test pipeline".to_string(),
-            metadata: "".to_string(),
+            client_metadata: ClientMetadata {
+                description: Some("Test pipeline".to_string()),
+                ..ClientMetadata::default()
+            },
             runtime_config: json!({}),
             program_code: "CREATE TABLE test (col1 INT);".to_string(),
             udf_rust: "".to_string(),
@@ -178,17 +244,15 @@ pub struct ExtendedPipelineDescr {
     /// Pipeline name.
     pub name: String,
 
-    /// Pipeline description.
-    pub description: String,
-
-    /// Arbitrary user-provided metadata text.
-    pub metadata: String,
+    /// Client-generated data (description, tags, ...).
+    pub client_metadata: ClientMetadata,
 
     /// Timestamp when the pipeline was originally created.
     pub created_at: DateTime<Utc>,
 
-    /// Pipeline version, incremented every time name, description, runtime_config, program_code,
+    /// Pipeline version, incremented every time name, runtime_config, program_code,
     /// udf_rust, udf_toml, program_config or platform_version is/are modified.
+    /// Changes to `client_metadata` do not bump `version`.
     pub version: Version,
 
     /// Pipeline platform version.
@@ -317,8 +381,7 @@ pub struct ExtendedPipelineDescr {
 pub struct ExtendedPipelineDescrMonitoring {
     pub id: PipelineId,
     pub name: String,
-    pub description: String,
-    pub metadata: String,
+    pub client_metadata: ClientMetadata,
     pub created_at: DateTime<Utc>,
     pub version: Version,
     pub platform_version: String,

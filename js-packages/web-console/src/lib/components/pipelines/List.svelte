@@ -3,7 +3,8 @@
 </script>
 
 <script lang="ts">
-  import SidebarPipelineTreeView from '$lib/components/pipelines/SidebarPipelineTreeView.svelte'
+  import PipelineStatus from '$lib/components/pipelines/list/PipelineStatusDot.svelte'
+  import { resolve } from '$lib/functions/svelte'
   import { matchesSubstring } from '$lib/functions/common/string'
   import { type PipelineThumb } from '$lib/services/pipelineManager'
 
@@ -38,19 +39,34 @@
 <div
   class="relative scrollbar flex flex-col gap-2 pr-2"
   style="overflow-y: overlay;"
-  use:bindScrollY={{ scrollY }}>
+  use:bindScrollY={{ scrollY }}
+>
   <div class="bg-white-dark sticky top-0 -mr-1 flex items-center gap-2 pb-2 pl-2">
     <input
       class="input h-8 min-w-0 flex-1"
       type="search"
       placeholder="Search pipelines..."
-      bind:value={nameSearch} />
+      bind:value={nameSearch}
+    />
     <button onclick={onclose} class="fd fd-x btn-icon text-[24px]" aria-label="Close pipelines list"
     ></button>
   </div>
   {#if visiblePipelines}
-    <SidebarPipelineTreeView pipelines={visiblePipelines} {pipelineName} {onaction}
-    ></SidebarPipelineTreeView>
+    {#each visiblePipelines as pipeline}
+      <a
+        class="flex h-9 flex-nowrap items-center justify-between gap-2 rounded py-2 pl-4 {pipelineName ===
+        pipeline.name
+          ? 'bg-surface-50-950'
+          : 'hover:bg-surface-50-950'}"
+        onclick={onaction}
+        href={resolve(`/pipelines/${encodeURI(pipeline.name)}/`)}
+      >
+        <div class="min-w-0 overflow-hidden py-1 overflow-ellipsis whitespace-nowrap">
+          {pipeline.name}
+        </div>
+        <PipelineStatus {...pipeline}></PipelineStatus>
+      </a>
+    {/each}
   {:else}
     {@render placeholderList()}
   {/if}

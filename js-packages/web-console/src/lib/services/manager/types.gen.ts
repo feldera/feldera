@@ -313,6 +313,31 @@ export type Chunk = {
 }
 
 /**
+ * Free-form client-side annotations stored alongside a pipeline.
+ *
+ * Persisted as a single JSON object in the `client_metadata` text column
+ * (renamed from `metadata` in V35). The schema lives in code, not the
+ * database — adding a new annotation field only requires extending this
+ * struct, never a DB migration.
+ *
+ * Deserialization is lenient: unknown keys are ignored so older readers do
+ * not break when newer writers add fields. Empty / missing values
+ * (description == "", empty tags) are normalized to `None` so that the
+ * serialized form stays minimal (`{}` for fully empty metadata, which we
+ * further collapse to `""` in storage).
+ */
+export type ClientMetadata = {
+  /**
+   * Human-readable description of the pipeline.
+   */
+  description?: string | null
+  /**
+   * Free-form tags for grouping / filtering.
+   */
+  tags?: Array<string> | null
+}
+
+/**
  * Body of `POST /clock/advance`.
  *
  * `delta_ms` is unsigned; negative values fail JSON deserialization.
@@ -3266,14 +3291,7 @@ export type PartialProgramInfo = {
  * it is required to again pass the whole runtime configuration with the
  * change.
  */
-export type PatchPipeline = {
-  /**
-   * Deprecated: use `metadata` instead.
-   *
-   * @deprecated
-   */
-  description?: string | null
-  metadata?: string | null
+export type PatchPipeline = ClientMetadata & {
   name?: string | null
   program_code?: string | null
   program_config?: ProgramConfig | null
@@ -3559,7 +3577,7 @@ export type PipelineId = string
  * Pipeline information.
  * It both includes fields which are user-provided and system-generated.
  */
-export type PipelineInfo = {
+export type PipelineInfo = ClientMetadata & {
   created_at: string
   deployment_desired_status: CombinedDesiredStatus
   deployment_desired_status_since: string
@@ -3578,14 +3596,7 @@ export type PipelineInfo = {
   deployment_runtime_status_since?: string | null
   deployment_status: CombinedStatus
   deployment_status_since: string
-  /**
-   * Deprecated: use `metadata` instead.
-   *
-   * @deprecated
-   */
-  description: string
   id: PipelineId
-  metadata: string
   name: string
   platform_version: string
   program_code: string
@@ -3636,7 +3647,7 @@ export type PipelineMonitorEventSelectedInfo = {
  * It both includes fields which are user-provided and system-generated.
  * If an optional field is not selected (i.e., is `None`), it will not be serialized.
  */
-export type PipelineSelectedInfo = {
+export type PipelineSelectedInfo = ClientMetadata & {
   connectors?: ConnectorStats | null
   created_at: string
   deployment_desired_status: CombinedDesiredStatus
@@ -3656,14 +3667,7 @@ export type PipelineSelectedInfo = {
   deployment_runtime_status_since?: string | null
   deployment_status: CombinedStatus
   deployment_status_since: string
-  /**
-   * Deprecated: use `metadata` instead.
-   *
-   * @deprecated
-   */
-  description: string
   id: PipelineId
-  metadata: string
   name: string
   platform_version: string
   program_code?: string | null
@@ -3733,14 +3737,7 @@ export type PipelineTemplateConfig = {
  * Fields which are optional and not provided will be set to their empty type value
  * (for strings: an empty string `""`, for objects: an empty dictionary `{}`).
  */
-export type PostPutPipeline = {
-  /**
-   * Deprecated: use `metadata` instead.
-   *
-   * @deprecated
-   */
-  description?: string | null
-  metadata?: string | null
+export type PostPutPipeline = ClientMetadata & {
   name: string
   program_code: string
   program_config?: ProgramConfig | null

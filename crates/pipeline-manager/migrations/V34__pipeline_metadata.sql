@@ -1,6 +1,11 @@
--- Add metadata field to the pipeline table.
--- This is arbitrary, optional text provided by the user.
-ALTER TABLE pipeline ADD COLUMN metadata TEXT NOT NULL DEFAULT '';
+-- Add client_metadata column to the pipeline table.
+-- Holds client-side annotations as a JSON object (e.g. description, tags).
+-- Schema-free extensibility: new annotation fields only require extending the Rust
+-- ClientMetadata struct, not a DB migration.
+ALTER TABLE pipeline ADD COLUMN client_metadata TEXT NOT NULL DEFAULT '';
 
--- Copy existing description values into the metadata JSON "description" field.
-UPDATE pipeline SET metadata = json_build_object('description', description)::text WHERE description != '';
+-- Copy existing description values into client_metadata.description.
+UPDATE pipeline SET client_metadata = json_build_object('description', description)::text WHERE description != '';
+
+-- The standalone description column is superseded by client_metadata.description.
+ALTER TABLE pipeline DROP COLUMN description;
