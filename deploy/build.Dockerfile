@@ -28,7 +28,7 @@ RUN apt-get update --fix-missing && apt-get install -y \
     # To download tools
     curl  \
     # For running the SQL compiler
-    openjdk-21-jdk -y \
+    openjdk-21-jdk-headless -y \
     # Install locale-gen
     locales \
     # To add the nodesource debian repository
