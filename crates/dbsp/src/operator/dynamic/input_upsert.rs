@@ -1,38 +1,45 @@
 use crate::{
-    Circuit, DBData, NumEntries, RootCircuit, Stream, ZWeight,
-    algebra::{HasOne, HasZero, IndexedZSet, OrdZSet, ZTrace},
+    Circuit, DBData, NumEntries, Position, RootCircuit, Stream, ZWeight,
+    algebra::{HasOne, HasZero, IndexedZSet, OrdIndexedZSet, OrdZSet, ZTrace},
     circuit::{
         OwnershipPreference, Scope,
         checkpointer::Checkpoint,
         circuit_builder::{CircuitBase, RefStreamValue, register_replay_stream},
         metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::{BinaryOperator, Operator, TernaryOperator},
+        splitter_output_chunk_size, splitter_output_first_chunk_size,
     },
     declare_trait_object,
     dynamic::{
-        ClonableTrait, Data, DataTrait, DynOpt, DynPairs, Erase, Factory, LeanVec, WithFactory,
+        ClonableTrait, Data, DataTrait, DynData, DynOpt, DynPair, DynPairs, Erase, Factory,
+        LeanVec, WithFactory,
     },
     operator::{
         Z1,
+        async_stream_operators::StreamingBinaryOperator,
         dynamic::{
             time_series::LeastUpperBoundFunc,
             trace::{DelayedTraceId, TraceBounds, TraceId, UntimedTraceAppend, Z1Trace},
         },
     },
     trace::{
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Rkyv, Spine,
-        cursor::Cursor,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Rkyv, Spine, Trace,
+        WithSnapshot, cursor::Cursor,
     },
     utils::Tup2,
 };
+use async_stream::stream;
 use feldera_macros::IsNone;
+use futures::Stream as AsyncStream;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
     borrow::Cow,
+    cell::RefCell,
     marker::PhantomData,
     mem::take,
     ops::{Deref, Neg},
+    rc::Rc,
 };
 
 use super::trace::BoundsId;
@@ -699,6 +706,190 @@ where
             OwnershipPreference::PREFER_OWNED,
             OwnershipPreference::PREFER_OWNED,
         )
+    }
+}
+
+#[allow(dead_code)]
+pub struct BulkInputUpsert<T, U, B>
+where
+    T: BatchReader,
+    B: Batch,
+    U: DataTrait + ?Sized,
+{
+    batch_factories: B::Factories,
+    opt_val_factory: &'static dyn Factory<DynOpt<B::Val>>,
+    patch_func: PatchFunc<T::Val, U>,
+
+    // Input batch sizes.
+    input_batch_stats: RefCell<BatchSizeStats>,
+
+    // Output batch sizes.
+    output_batch_stats: RefCell<BatchSizeStats>,
+
+    phantom: PhantomData<B>,
+}
+
+#[allow(dead_code)]
+impl<T, U, B> BulkInputUpsert<T, U, B>
+where
+    T: BatchReader,
+    B: Batch,
+    U: DataTrait + ?Sized,
+{
+    pub fn new(
+        batch_factories: B::Factories,
+        opt_val_factory: &'static dyn Factory<DynOpt<B::Val>>,
+        patch_func: PatchFunc<T::Val, U>,
+    ) -> Self {
+        Self {
+            batch_factories,
+            opt_val_factory,
+            patch_func,
+            input_batch_stats: RefCell::new(BatchSizeStats::new()),
+            output_batch_stats: RefCell::new(BatchSizeStats::new()),
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<T, U, B> Operator for BulkInputUpsert<T, U, B>
+where
+    T: BatchReader,
+    U: DataTrait + ?Sized,
+    B: Batch,
+{
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("BulkInputUpsert")
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            INPUT_BATCHES_STATS => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_STATS => self.output_batch_stats.borrow().metadata(),
+        });
+    }
+
+    fn fixedpoint(&self, _scope: Scope) -> bool {
+        true
+    }
+}
+
+impl<T, U, B>
+    StreamingBinaryOperator<
+        T,
+        Option<Spine<OrdIndexedZSet<T::Key, DynPair<DynData, DynUpdate<T::Val, U>>>>>,
+        B,
+    > for BulkInputUpsert<T, U, B>
+where
+    T: ZTrace<Time = ()> + WithSnapshot<Batch = <T as Trace>::Batch> + 'static,
+    U: DataTrait + ?Sized,
+    B: IndexedZSet<Key = T::Key, Val = T::Val>,
+{
+    fn eval(
+        self: Rc<Self>,
+        trace: &T,
+        updates: &Option<Spine<OrdIndexedZSet<T::Key, DynPair<DynData, DynUpdate<T::Val, U>>>>>,
+    ) -> impl AsyncStream<Item = (B, bool, Option<Position>)> + 'static {
+        let chunk_size = splitter_output_chunk_size();
+        let updates = updates.as_ref().map(|updates| updates.ro_snapshot());
+        let trace = updates.as_ref().map(|_| trace.ro_snapshot());
+
+        stream! {
+            let Some(updates) = updates else {
+                yield (B::dyn_empty(&self.batch_factories), true, None);
+                return;
+            };
+
+            self.input_batch_stats.borrow_mut().add_batch(updates.len());
+
+            let capacity = splitter_output_first_chunk_size();
+            let mut builder = B::Builder::with_capacity(&self.batch_factories, capacity, capacity);
+            let mut key_updates = self
+                .batch_factories
+                .weighted_vals_factory()
+                .default_box();
+            let mut cur_val: Box<DynOpt<T::Val>> = self.opt_val_factory.default_box();
+            let trace = trace.unwrap();
+            let mut trace_cursor = trace.cursor();
+            let mut updates_cursor = updates.cursor();
+
+            while updates_cursor.key_valid() {
+                key_updates.clear();
+                cur_val.set_none();
+
+                if trace_cursor.seek_key_exact(updates_cursor.key(), None) {
+                    if trace_cursor.val_valid() {
+                        let weight = **trace_cursor.weight();
+                        debug_assert_eq!(weight, ZWeight::one());
+
+                        let val = trace_cursor.val();
+
+                        key_updates.push_with(&mut |item| {
+                            let (v, w) = item.split_mut();
+
+                            val.clone_to(v);
+                            **w = weight.neg()
+                        });
+                        cur_val.from_ref(val);
+                    }
+                }
+
+                updates_cursor.fast_forward_vals();
+                debug_assert!(updates_cursor.val_valid());
+                let update = updates_cursor.val().snd();
+
+                match update.get() {
+                    UpdateRef::Delete => {}
+                    UpdateRef::Insert(val) => {
+                        key_updates.push_with(&mut |item| {
+                            let (v, w) = item.split_mut();
+
+                            val.clone_to(v);
+                            **w = HasOne::one();
+                        });
+                    }
+                    UpdateRef::Update(upd) => {
+                        if let Some(val) = cur_val.get_mut() {
+                            (self.patch_func)(val, upd);
+                            key_updates.push_with(&mut |item| {
+                                let (v, w) = item.split_mut();
+
+                                val.move_to(v);
+                                **w = HasOne::one();
+                            });
+                        } else {
+                            // TODO: report missing key.
+                        }
+                    }
+                }
+
+                key_updates.consolidate();
+                if !key_updates.is_empty() {
+                    for pair in key_updates.dyn_iter_mut() {
+                        let (v, d) = pair.split_mut();
+                        builder.push_val_diff_mut(v, d);
+                    }
+                    builder.push_key(updates_cursor.key());
+                }
+
+                if builder.num_tuples() >= chunk_size {
+                    let result = builder.done();
+                    self.output_batch_stats.borrow_mut().add_batch(result.len());
+                    yield (result, false, updates_cursor.position());
+                    builder = B::Builder::with_capacity(
+                        &self.batch_factories,
+                        chunk_size,
+                        chunk_size,
+                    );
+                }
+
+                updates_cursor.step_key();
+            }
+
+            let result = builder.done();
+            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            yield (result, true, updates_cursor.position());
+        }
     }
 }
 
