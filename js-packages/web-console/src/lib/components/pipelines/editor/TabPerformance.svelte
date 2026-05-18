@@ -363,6 +363,7 @@
           {checkpoints}
           onClose={() => (openDrawer = null)}
           onCheckpoint={() => api.checkpointPipeline(pipelineName)}
+          checkpointInProgress={metrics.current.checkpoint_activity.status !== 'idle'}
         />
       {/if}
     </Drawer>

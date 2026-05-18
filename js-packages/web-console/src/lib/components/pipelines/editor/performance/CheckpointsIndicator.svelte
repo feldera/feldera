@@ -1,5 +1,6 @@
 <script lang="ts">
   import { slide } from 'svelte/transition'
+  import ClickFeedback from '$lib/components/common/ClickFeedback.svelte'
   import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
@@ -35,18 +36,7 @@
   const { formatElapsedTime } = useElapsedTime()
   const globalDialog = useGlobalDialog()
 
-  let checkpointRequested = $state(false)
-
-  const handleCheckpoint = () => {
-    checkpointRequested = true
-    api.checkpointPipeline(pipelineName).finally(() => {
-      checkpointRequested = false
-    })
-  }
-
-  const openCheckpointDialog = () => {
-    globalDialog.dialog = checkpointDialog
-  }
+  let clickFeedback = $state<() => void>()
 
   const last = $derived(checkpoints.at(-1))
   const totalBytes = $derived(checkpoints.reduce((sum, cp) => sum + (cp.size ?? 0), 0))
@@ -73,7 +63,12 @@
 </script>
 
 {#snippet checkpointDialog()}
-  <CheckpointDialog onConfirm={handleCheckpoint} />
+  <CheckpointDialog
+    onConfirm={() => {
+      clickFeedback?.()
+      api.checkpointPipeline(pipelineName)
+    }}
+  />
 {/snippet}
 
 {#snippet allCheckpoints()}
@@ -153,13 +148,20 @@
       {@render allCheckpoints()}
     {:else if isEnterprise.value}
       <div class="hr"></div>
-      <button
-        class="ml-auto btn preset-outlined-primary-500 btn-sm"
-        onclick={openCheckpointDialog}
-        disabled={checkpointRequested}
+      <ClickFeedback
+        active={metrics.current.checkpoint_activity.status !== 'idle'}
+        bind:clickFeedback
       >
-        {checkpointRequested ? 'Requesting...' : 'Create first checkpoint'}
-      </button>
+        {#snippet children({ active })}
+          <button
+            class="ml-auto btn preset-outlined-primary-500 btn-sm"
+            onclick={() => (globalDialog.dialog = checkpointDialog)}
+            disabled={active}
+          >
+            {active ? 'Creating checkpoint...' : 'Create first checkpoint'}
+          </button>
+        {/snippet}
+      </ClickFeedback>
       {@render allCheckpoints()}
     {/if}
   </div>

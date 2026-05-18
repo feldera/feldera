@@ -1,5 +1,6 @@
 <script lang="ts">
   import { slide } from 'svelte/transition'
+  import ClickFeedback from '$lib/components/common/ClickFeedback.svelte'
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
   import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
@@ -12,35 +13,28 @@
   const {
     checkpoints,
     onClose,
-    onCheckpoint
+    onCheckpoint,
+    checkpointInProgress = false
   }: {
     checkpoints: CheckpointMetadata[]
     onClose: () => void
     onCheckpoint?: () => void
+    checkpointInProgress?: boolean
   } = $props()
 
   const globalDialog = useGlobalDialog()
-
-  let requested = $state(false)
-  const handleCheckpoint = () => {
-    if (!onCheckpoint) {
-      return
-    }
-    requested = true
-    onCheckpoint()
-    // Reset after a short delay so the button becomes clickable again
-    setTimeout(() => (requested = false), 3_000)
-  }
-
-  const openCheckpointDialog = () => {
-    globalDialog.dialog = checkpointDialog
-  }
-
   const elapsed = useElapsedTime()
+
+  let clickFeedback = $state<() => void>()
 </script>
 
 {#snippet checkpointDialog()}
-  <CheckpointDialog onConfirm={handleCheckpoint} />
+  <CheckpointDialog
+    onConfirm={() => {
+      clickFeedback?.()
+      onCheckpoint?.()
+    }}
+  />
 {/snippet}
 
 <div class="bg-white-dark flex h-full flex-col gap-2 rounded px-4 pt-4">
@@ -99,13 +93,17 @@
     {/if}
   </div>
   {#if onCheckpoint}
-    <button
-      class="btn w-full preset-outlined-primary-500 btn-sm"
-      data-testid="btn-make-checkpoint"
-      onclick={openCheckpointDialog}
-      disabled={requested}
-    >
-      {requested ? 'Requesting checkpoint...' : 'Create checkpoint'}
-    </button>
+    <ClickFeedback active={checkpointInProgress} bind:clickFeedback>
+      {#snippet children({ active })}
+        <button
+          class="btn w-full preset-outlined-primary-500 btn-sm"
+          data-testid="btn-make-checkpoint"
+          onclick={() => (globalDialog.dialog = checkpointDialog)}
+          disabled={active}
+        >
+          {active ? 'Creating checkpoint...' : 'Create checkpoint'}
+        </button>
+      {/snippet}
+    </ClickFeedback>
   {/if}
 </div>
