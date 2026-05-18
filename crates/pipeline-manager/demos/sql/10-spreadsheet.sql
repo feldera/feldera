@@ -5,28 +5,28 @@
 
 -- Given a cell value as a formula (e.g., =A0+B0), and a context with cell values
 -- referenced in the formula, returns the computed value of the cell
-create function cell_value(cell varchar(64), mentions_ids bigint array, mentions_values varchar(64) array) returns varchar(64);
+CREATE FUNCTION cell_value(cell VARCHAR(64), mentions_ids BIGINT ARRAY, mentions_values VARCHAR(64) ARRAY) RETURNS VARCHAR(64);
 
 -- Given a cell value e.g., =A0+B0, returns an array of cell ids that were mentioned in the formula
-create function mentions(cell varchar(64)) returns bigint array;
+CREATE FUNCTION mentions(cell VARCHAR(64)) RETURNS BIGINT ARRAY;
 
 -- Forward declaration of spreadsheet view
-declare recursive view spreadsheet_view (
-     id bigint not null,
-     background integer not null,
-     raw_value varchar(64) not null,
-     computed_value varchar(64)
+DECLARE RECURSIVE VIEW spreadsheet_view (
+     id BIGINT NOT NULL,
+     background INTEGER NOT NULL,
+     raw_value VARCHAR(64) NOT NULL,
+     computed_value VARCHAR(64)
 );
 
 -- Raw spreadsheet cell data coming from backend/user, updates
 -- are inserted as new entries with newer timestamps
-create table spreadsheet_data (
-     id bigint not null,
-     ip varchar(45) not null,
-     ts timestamp not null,
-     raw_value varchar(64) not null,
-     background integer not null
-) with (
+CREATE TABLE spreadsheet_data (
+     id BIGINT NOT NULL,
+     ip VARCHAR(45) NOT NULL,
+     ts TIMESTAMP NOT NULL,
+     raw_value VARCHAR(64) NOT NULL,
+     background INTEGER NOT NULL
+) WITH (
       'materialized' = 'true',
       'connectors' = '[{
         "name": "data",
@@ -50,132 +50,132 @@ create table spreadsheet_data (
 
 -- Get the latest cell value for the spreadsheet.
 -- (By finding the one with the highest `ts` for a given `id`)
-create view latest_cells as with
-       max_ts_per_cell as (
-           select
+CREATE VIEW latest_cells AS WITH
+       max_ts_per_cell AS (
+           SELECT
                id,
-               max(ts) as max_ts
-           from
+               MAX(ts) AS max_ts
+           FROM
                spreadsheet_data
-           group by
+           GROUP BY
                id
        )
-   select
+   SELECT
        s.id,
        s.raw_value,
        s.background,
        -- The append with null is silly but crucial to ensure that the
        -- cross join in `latest_cells_with_mention` returns all cells
        -- not just those that reference another cell
-       ARRAY_APPEND(mentions(s.raw_value), null) as mentioned_cell_ids
-   from
+       ARRAY_APPEND(mentions(s.raw_value), null) AS mentioned_cell_ids
+   FROM
        spreadsheet_data s
-           join max_ts_per_cell mt on s.id = mt.id and s.ts = mt.max_ts;
+           JOIN max_ts_per_cell mt ON s.id = mt.id AND s.ts = mt.max_ts;
 
 -- List all mentioned ids per latest cell
-create view latest_cells_with_mentions as
-select
+CREATE VIEW latest_cells_with_mentions AS
+SELECT
     s.id,
     s.raw_value,
     s.background,
     m.mentioned_id
-from
-    latest_cells s, unnest(s.mentioned_cell_ids) as m(mentioned_id);
+FROM
+    latest_cells s, UNNEST(s.mentioned_cell_ids) AS m(mentioned_id);
 
 -- Like latest_cells_with_mentions, but enrich it with values of mentioned cells
-create local view mentions_with_values as
-select
+CREATE LOCAL VIEW mentions_with_values AS
+SELECT
     m.id,
     m.raw_value,
     m.background,
     m.mentioned_id,
-    sv.computed_value as mentioned_value
-from
+    sv.computed_value AS mentioned_value
+FROM
     latest_cells_with_mentions m
-        left join
-    spreadsheet_view sv on m.mentioned_id = sv.id;
+        LEFT JOIN
+    spreadsheet_view sv ON m.mentioned_id = sv.id;
 
 -- We aggregate mentioned values and ids back into arrays
-create local view mentions_aggregated as
-select
+CREATE LOCAL VIEW mentions_aggregated AS
+SELECT
     id,
     raw_value,
     background,
-    ARRAY_AGG(mentioned_id) as mentions_ids,
-    ARRAY_AGG(mentioned_value) as mentions_values
-from
+    ARRAY_AGG(mentioned_id) AS mentions_ids,
+    ARRAY_AGG(mentioned_value) AS mentions_values
+FROM
     mentions_with_values
-group by
+GROUP BY
     id,
     raw_value,
     background;
 
 -- Calculate the final spreadsheet by executing the UDF for the formula
-create materialized view spreadsheet_view as
-select
+CREATE MATERIALIZED VIEW spreadsheet_view AS
+SELECT
     id,
     background,
     raw_value,
     cell_value(raw_value, mentions_ids, mentions_values) AS computed_value
-from
+FROM
     mentions_aggregated;
 
 -- Figure out which IPs currently reached their API limit
-create materialized view api_limit_reached as
-select
+CREATE MATERIALIZED VIEW api_limit_reached AS
+SELECT
     ip
-from
+FROM
     spreadsheet_data
-where
+WHERE
     ts >= NOW() - INTERVAL 60 MINUTES
-group by
+GROUP BY
     ip
-having
-    count(*) > 100;
+HAVING
+    COUNT(*) > 100;
 
 -- Compute statistics
-create materialized view spreadsheet_statistics as
-with filled_total as (
-    select
-        count(distinct id) as filled_total
-    from
+CREATE MATERIALIZED VIEW spreadsheet_statistics AS
+WITH filled_total AS (
+    SELECT
+        COUNT(DISTINCT id) AS filled_total
+    FROM
         spreadsheet_data
 ),
-filled_this_hour as (
-    select
-        count(*) as filled_this_hour
-    from
+filled_this_hour AS (
+    SELECT
+        COUNT(*) AS filled_this_hour
+    FROM
         spreadsheet_data
-    where
+    WHERE
         ts >= NOW() - INTERVAL 1 HOUR
 ),
-filled_today as (
-    select
-        count(*) as filled_today
-    from
+filled_today AS (
+    SELECT
+        COUNT(*) AS filled_today
+    FROM
         spreadsheet_data
-    where
+    WHERE
         ts >= NOW() - INTERVAL 1 DAY
 ),
-filled_this_week as (
-    select
-        count(*) as filled_this_week
-    from
+filled_this_week AS (
+    SELECT
+        COUNT(*) AS filled_this_week
+    FROM
         spreadsheet_data
-    where
+    WHERE
         ts >= NOW() - INTERVAL 1 WEEK
 ),
-currently_active_users as (
-    select
-        count(distinct ip) as currently_active_users
-    from
+currently_active_users AS (
+    SELECT
+        COUNT(DISTINCT ip) AS currently_active_users
+    FROM
         spreadsheet_data
-    where
+    WHERE
         ts >= NOW() - INTERVAL 5 MINUTE
 )
-select
-    (select filled_total from filled_total) as filled_total,
-    (select filled_this_hour from filled_this_hour) as filled_this_hour,
-    (select filled_today from filled_today) as filled_today,
-    (select filled_this_week from filled_this_week) as filled_this_week,
-    (select currently_active_users from currently_active_users) as currently_active_users;
+SELECT
+    (SELECT filled_total FROM filled_total) AS filled_total,
+    (SELECT filled_this_hour FROM filled_this_hour) AS filled_this_hour,
+    (SELECT filled_today FROM filled_today) AS filled_today,
+    (SELECT filled_this_week FROM filled_this_week) AS filled_this_week,
+    (SELECT currently_active_users FROM currently_active_users) AS currently_active_users;

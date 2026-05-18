@@ -225,32 +225,32 @@ CREATE TABLE REGION  (
 );
 
 -- Pricing Summary Report
-create materialized view q1
-as select
+CREATE MATERIALIZED VIEW q1
+AS SELECT
         l_returnflag,
         l_linestatus,
-        sum(l_quantity) as sum_qty,
-        sum(l_extendedprice) as sum_base_price,
-        sum(l_extendedprice * (1 - l_discount)) as sum_disc_price,
-        sum(l_extendedprice * (1 - l_discount) * (1 + l_tax)) as sum_charge,
-        avg(l_quantity) as avg_qty,
-        avg(l_extendedprice) as avg_price,
-        avg(l_discount) as avg_disc,
-        count(*) as count_order
-from
+        SUM(l_quantity) AS sum_qty,
+        SUM(l_extendedprice) AS sum_base_price,
+        SUM(l_extendedprice * (1 - l_discount)) AS sum_disc_price,
+        SUM(l_extendedprice * (1 - l_discount) * (1 + l_tax)) AS sum_charge,
+        AVG(l_quantity) AS avg_qty,
+        AVG(l_extendedprice) AS avg_price,
+        AVG(l_discount) AS avg_disc,
+        COUNT(*) AS count_order
+FROM
         lineitem
-where
-        l_shipdate <= date '1998-12-01' - interval '90' day
-group by
+WHERE
+        l_shipdate <= DATE '1998-12-01' - INTERVAL '90' DAY
+GROUP BY
         l_returnflag,
         l_linestatus
-order by
+ORDER BY
         l_returnflag,
         l_linestatus;
 
 -- Minimum Cost Supplier
-create materialized view q2
-as select
+CREATE MATERIALIZED VIEW q2
+AS SELECT
         s_acctbal,
         s_name,
         n_name,
@@ -259,188 +259,188 @@ as select
         s_address,
         s_phone,
         s_comment
-from
+FROM
         part,
         supplier,
         partsupp,
         nation,
         region
-where
+WHERE
         p_partkey = ps_partkey
-        and s_suppkey = ps_suppkey
-        and p_size = 15
-        and p_type like '%BRASS'
-        and s_nationkey = n_nationkey
-        and n_regionkey = r_regionkey
-        and r_name = 'EUROPE'
-        and ps_supplycost = (
-                select
-                        min(ps_supplycost)
-                from
+        AND s_suppkey = ps_suppkey
+        AND p_size = 15
+        AND p_type LIKE '%BRASS'
+        AND s_nationkey = n_nationkey
+        AND n_regionkey = r_regionkey
+        AND r_name = 'EUROPE'
+        AND ps_supplycost = (
+                SELECT
+                        MIN(ps_supplycost)
+                FROM
                         partsupp,
                         supplier,
                         nation,
                         region
-                where
+                WHERE
                         p_partkey = ps_partkey
-                        and s_suppkey = ps_suppkey
-                        and s_nationkey = n_nationkey
-                        and n_regionkey = r_regionkey
-                        and r_name = 'EUROPE'
+                        AND s_suppkey = ps_suppkey
+                        AND s_nationkey = n_nationkey
+                        AND n_regionkey = r_regionkey
+                        AND r_name = 'EUROPE'
         )
-order by
-        s_acctbal desc,
+ORDER BY
+        s_acctbal DESC,
         n_name,
         s_name,
         p_partkey
-limit 100;
+LIMIT 100;
 
 -- Shipping Priority
-create materialized view q3
-as select
+CREATE MATERIALIZED VIEW q3
+AS SELECT
         l_orderkey,
-        sum(l_extendedprice * (1 - l_discount)) as revenue,
+        SUM(l_extendedprice * (1 - l_discount)) AS revenue,
         o_orderdate,
         o_shippriority
-from
+FROM
         customer,
         orders,
         lineitem
-where
+WHERE
         c_mktsegment = 'BUILDING'
-        and c_custkey = o_custkey
-        and l_orderkey = o_orderkey
-        and o_orderdate < date '1995-03-15'
-        and l_shipdate > date '1995-03-15'
-group by
+        AND c_custkey = o_custkey
+        AND l_orderkey = o_orderkey
+        AND o_orderdate < DATE '1995-03-15'
+        AND l_shipdate > DATE '1995-03-15'
+GROUP BY
         l_orderkey,
         o_orderdate,
         o_shippriority
-order by
-        revenue desc,
+ORDER BY
+        revenue DESC,
         o_orderdate
-limit 10;
+LIMIT 10;
 
 -- Order Priority Checking
-create materialized view q4
-as select
+CREATE MATERIALIZED VIEW q4
+AS SELECT
         o_orderpriority,
-        count(*) as order_count
-from
+        COUNT(*) AS order_count
+FROM
         orders
-where
-        o_orderdate >= date '1993-07-01'
-        and o_orderdate < date '1993-07-01' + interval '3' month
-        and exists (
-                select
+WHERE
+        o_orderdate >= DATE '1993-07-01'
+        AND o_orderdate < DATE '1993-07-01' + INTERVAL '3' MONTH
+        AND EXISTS (
+                SELECT
                         *
-                from
+                FROM
                         lineitem
-                where
+                WHERE
                         l_orderkey = o_orderkey
-                        and l_commitdate < l_receiptdate
+                        AND l_commitdate < l_receiptdate
         )
-group by
+GROUP BY
         o_orderpriority
-order by
+ORDER BY
         o_orderpriority;
 
 -- Local Supplier Volume
-create materialized view q5
-as select
+CREATE MATERIALIZED VIEW q5
+AS SELECT
         n_name,
-        sum(l_extendedprice * (1 - l_discount)) as revenue
-from
+        SUM(l_extendedprice * (1 - l_discount)) AS revenue
+FROM
         customer,
         orders,
         lineitem,
         supplier,
         nation,
         region
-where
+WHERE
         c_custkey = o_custkey
-        and l_orderkey = o_orderkey
-        and l_suppkey = s_suppkey
-        and c_nationkey = s_nationkey
-        and s_nationkey = n_nationkey
-        and n_regionkey = r_regionkey
-        and r_name = 'ASIA'
-        and o_orderdate >= date '1994-01-01'
-        and o_orderdate < date '1994-01-01' + interval '1' year
-group by
+        AND l_orderkey = o_orderkey
+        AND l_suppkey = s_suppkey
+        AND c_nationkey = s_nationkey
+        AND s_nationkey = n_nationkey
+        AND n_regionkey = r_regionkey
+        AND r_name = 'ASIA'
+        AND o_orderdate >= DATE '1994-01-01'
+        AND o_orderdate < DATE '1994-01-01' + INTERVAL '1' YEAR
+GROUP BY
         n_name
-order by
-        revenue desc;
+ORDER BY
+        revenue DESC;
 
 -- Forecasting Revenue Change
-create materialized view q6
-as select
-        sum(l_extendedprice * l_discount) as revenue
-from
+CREATE MATERIALIZED VIEW q6
+AS SELECT
+        SUM(l_extendedprice * l_discount) AS revenue
+FROM
         lineitem
-where
-        l_shipdate >= date '1994-01-01'
-        and l_shipdate < date '1994-01-01' + interval '1' year
-        and l_discount between .06 - 0.01 and .06 + 0.01
-        and l_quantity < 24;
+WHERE
+        l_shipdate >= DATE '1994-01-01'
+        AND l_shipdate < DATE '1994-01-01' + INTERVAL '1' YEAR
+        AND l_discount BETWEEN .06 - 0.01 AND .06 + 0.01
+        AND l_quantity < 24;
 
 -- Volume Shipping
-create materialized view q7
-as select
+CREATE MATERIALIZED VIEW q7
+AS SELECT
         supp_nation,
         cust_nation,
         l_year,
-        sum(volume) as revenue
-from
+        SUM(volume) AS revenue
+FROM
         (
-                select
-                        n1.n_name as supp_nation,
-                        n2.n_name as cust_nation,
-                        year(l_shipdate) as l_year,
-                        l_extendedprice * (1 - l_discount) as volume
-                from
+                SELECT
+                        n1.n_name AS supp_nation,
+                        n2.n_name AS cust_nation,
+                        YEAR(l_shipdate) AS l_year,
+                        l_extendedprice * (1 - l_discount) AS volume
+                FROM
                         supplier,
                         lineitem,
                         orders,
                         customer,
                         nation n1,
                         nation n2
-                where
+                WHERE
                         s_suppkey = l_suppkey
-                        and o_orderkey = l_orderkey
-                        and c_custkey = o_custkey
-                        and s_nationkey = n1.n_nationkey
-                        and c_nationkey = n2.n_nationkey
-                        and (
-                                (n1.n_name = 'FRANCE' and n2.n_name = 'GERMANY')
-                                or (n1.n_name = 'GERMANY' and n2.n_name = 'FRANCE')
+                        AND o_orderkey = l_orderkey
+                        AND c_custkey = o_custkey
+                        AND s_nationkey = n1.n_nationkey
+                        AND c_nationkey = n2.n_nationkey
+                        AND (
+                                (n1.n_name = 'FRANCE' AND n2.n_name = 'GERMANY')
+                                OR (n1.n_name = 'GERMANY' AND n2.n_name = 'FRANCE')
                         )
-                        and l_shipdate between date '1995-01-01' and date '1996-12-31'
-        ) as shipping
-group by
+                        AND l_shipdate BETWEEN DATE '1995-01-01' AND DATE '1996-12-31'
+        ) AS shipping
+GROUP BY
         supp_nation,
         cust_nation,
         l_year
-order by
+ORDER BY
         supp_nation,
         cust_nation,
         l_year;
 
 -- National Market Share
-create materialized view q8
-as select
+CREATE MATERIALIZED VIEW q8
+AS SELECT
         o_year,
-        sum(case
-                when nation = 'BRAZIL' then volume
-                else 0
-        end) / sum(volume) as mkt_share
-from
+        SUM(CASE
+                WHEN nation = 'BRAZIL' THEN volume
+                ELSE 0
+        END) / SUM(volume) AS mkt_share
+FROM
         (
-                select
-                        year(o_orderdate) as o_year,
-                        l_extendedprice * (1 - l_discount) as volume,
-                        n2.n_name as nation
-                from
+                SELECT
+                        YEAR(o_orderdate) AS o_year,
+                        l_extendedprice * (1 - l_discount) AS volume,
+                        n2.n_name AS nation
+                FROM
                         part,
                         supplier,
                         lineitem,
@@ -449,82 +449,82 @@ from
                         nation n1,
                         nation n2,
                         region
-                where
+                WHERE
                         p_partkey = l_partkey
-                        and s_suppkey = l_suppkey
-                        and l_orderkey = o_orderkey
-                        and o_custkey = c_custkey
-                        and c_nationkey = n1.n_nationkey
-                        and n1.n_regionkey = r_regionkey
-                        and r_name = 'AMERICA'
-                        and s_nationkey = n2.n_nationkey
-                        and o_orderdate between date '1995-01-01' and date '1996-12-31'
-                        and p_type = 'ECONOMY ANODIZED STEEL'
-        ) as all_nations
-group by
+                        AND s_suppkey = l_suppkey
+                        AND l_orderkey = o_orderkey
+                        AND o_custkey = c_custkey
+                        AND c_nationkey = n1.n_nationkey
+                        AND n1.n_regionkey = r_regionkey
+                        AND r_name = 'AMERICA'
+                        AND s_nationkey = n2.n_nationkey
+                        AND o_orderdate BETWEEN DATE '1995-01-01' AND DATE '1996-12-31'
+                        AND p_type = 'ECONOMY ANODIZED STEEL'
+        ) AS all_nations
+GROUP BY
         o_year
-order by
+ORDER BY
         o_year;
 
 -- Product Type Profit Measure
-create materialized view q9
-as select
+CREATE MATERIALIZED VIEW q9
+AS SELECT
         nation,
         o_year,
-        sum(amount) as sum_profit
-from
+        SUM(amount) AS sum_profit
+FROM
         (
-                select
-                        n_name as nation,
-                        year(o_orderdate) as o_year,
-                        l_extendedprice * (1 - l_discount) - ps_supplycost * l_quantity as amount
-                from
+                SELECT
+                        n_name AS nation,
+                        YEAR(o_orderdate) AS o_year,
+                        l_extendedprice * (1 - l_discount) - ps_supplycost * l_quantity AS amount
+                FROM
                         part,
                         supplier,
                         lineitem,
                         partsupp,
                         orders,
                         nation
-                where
+                WHERE
                         s_suppkey = l_suppkey
-                        and ps_suppkey = l_suppkey
-                        and ps_partkey = l_partkey
-                        and p_partkey = l_partkey
-                        and o_orderkey = l_orderkey
-                        and s_nationkey = n_nationkey
-                        and p_name like '%green%'
-        ) as profit
-group by
+                        AND ps_suppkey = l_suppkey
+                        AND ps_partkey = l_partkey
+                        AND p_partkey = l_partkey
+                        AND o_orderkey = l_orderkey
+                        AND s_nationkey = n_nationkey
+                        AND p_name LIKE '%green%'
+        ) AS profit
+GROUP BY
         nation,
         o_year
-order by
+ORDER BY
         nation,
-        o_year desc;
+        o_year DESC;
 
 -- Returned Item Reporting
-create materialized view q10
-as select
+CREATE MATERIALIZED VIEW q10
+AS SELECT
         c_custkey,
         c_name,
-        sum(l_extendedprice * (1 - l_discount)) as revenue,
+        SUM(l_extendedprice * (1 - l_discount)) AS revenue,
         c_acctbal,
         n_name,
         c_address,
         c_phone,
         c_comment
-from
+FROM
         customer,
         orders,
         lineitem,
         nation
-where
+WHERE
         c_custkey = o_custkey
-        and l_orderkey = o_orderkey
-        and o_orderdate >= date '1993-10-01'
-        and o_orderdate < date '1993-10-01' + interval '3' month
-        and l_returnflag = 'R'
-        and c_nationkey = n_nationkey
-group by
+        AND l_orderkey = o_orderkey
+        AND o_orderdate >= DATE '1993-10-01'
+        AND o_orderdate < DATE '1993-10-01' + INTERVAL '3' MONTH
+        AND l_returnflag = 'R'
+        AND c_nationkey = n_nationkey
+GROUP BY
         c_custkey,
         c_name,
         c_acctbal,
@@ -532,6 +532,6 @@ group by
         n_name,
         c_address,
         c_comment
-order by
-        revenue desc
-limit 20;
+ORDER BY
+        revenue DESC
+LIMIT 20;

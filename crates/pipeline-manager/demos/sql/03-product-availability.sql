@@ -29,7 +29,7 @@ CREATE TABLE warehouse (
     id INT NOT NULL PRIMARY KEY,
     name VARCHAR NOT NULL,
     address VARCHAR NOT NULL
-) with (
+) WITH (
     'materialized' = 'true',
     'connectors' = '[{
         "name": "warehouse",
@@ -54,7 +54,7 @@ CREATE TABLE product (
     name VARCHAR NOT NULL,
     mass DECIMAL(38, 2) NOT NULL,
     volume DECIMAL(38, 2) NOT NULL
-) with (
+) WITH (
     'materialized' = 'true',
     'connectors' = '[{
         "name": "product",
@@ -81,7 +81,7 @@ CREATE TABLE storage (
     num_available INT NOT NULL,
     updated_at TIMESTAMP NOT NULL,
     PRIMARY KEY (warehouse_id, product_id)
-) with (
+) WITH (
     'materialized' = 'true',
     'connectors' = '[{
         "name": "storage",
