@@ -17,22 +17,8 @@
   type FolderNode = { kind: 'folder'; path: string; name: string; children: TreeNode[] }
   type TreeNode = FolderNode | { kind: 'leaf'; item: PipelineThumb }
 
-  const parseMetadata = (metadata: string): Record<string, unknown> => {
-    if (!metadata) {
-      return {}
-    }
-    try {
-      const v = JSON.parse(metadata)
-      return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
-    } catch {
-      return {}
-    }
-  }
-
   const getFolderPath = (p: PipelineThumb): string => {
-    const v = parseMetadata(p.metadata ?? '')
-    const path = typeof v.path === 'string' ? v.path : ''
-    return path.replace(/^\/+|\/+$/g, '')
+    return (p.path ?? '').replace(/^\/+|\/+$/g, '')
   }
 
   const sortNode = (node: FolderNode) => {

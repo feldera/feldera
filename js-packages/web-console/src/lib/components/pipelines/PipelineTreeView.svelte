@@ -7,8 +7,9 @@
   import DraggableTreeView from '$lib/components/pipelines/DraggableTreeView.svelte'
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
   import PipelineVersion from '$lib/components/pipelines/table/PipelineVersion.svelte'
-  import { formatDateTime, useElapsedTime } from '$lib/functions/format'
+  import { formatDateTime } from '$lib/functions/format'
   import type { PipelineThumb } from '$lib/services/pipelineManager'
+  import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
 
   // A pipeline row enriched with the derived `lastStatusSince` column.
   type Row = PipelineThumb & { lastStatusSince: Date }
@@ -51,13 +52,11 @@
     containerClass="pipeline-grid md:px-6"
     dropTargetClass="bg-primary-50-950/50"
     dndContainer="pipeline-tree"
-    defaultExpanded={false}
-  >
+    defaultExpanded={false}>
     {#snippet header()}
       <div
         class="pipeline-row pipeline-row--header bg-white-dark"
-        style="position: sticky; top: {stickyTop}px; z-index: 1;"
-      >
+        style="position: sticky; top: {stickyTop}px; z-index: 1;">
         <div class="pipeline-cell px-2">
           <div class="flex items-center gap-2">
             <span class="w-5" aria-hidden="true"></span>
@@ -68,8 +67,7 @@
               indeterminate={someSelected}
               onclick={() => {
                 selected = allSelected ? [] : items.map((p) => p.name)
-              }}
-            />
+              }} />
           </div>
         </div>
         <div class="pipeline-cell pipeline-cell--header">Pipeline name</div>
@@ -101,39 +99,33 @@
             title="Drag to move folder"
             aria-label="Drag handle"
             role="button"
-            tabindex="-1">⋮⋮</span
-          >
+            tabindex="-1">⋮⋮</span>
           <input
             class="checkbox"
             type="checkbox"
             checked={ctx.checkState === 'all'}
             indeterminate={ctx.checkState === 'some'}
-            onchange={() => ctx.toggleSelection()}
-          />
+            onchange={() => ctx.toggleSelection()} />
         </div>
       </div>
       <div class="pipeline-cell pipeline-cell--folder-name">
         <div
           class="flex flex-nowrap items-center gap-2"
-          style="padding-left: {ctx.depth * 1.25}rem"
-        >
+          style="padding-left: {ctx.depth * 1.25}rem">
           <button
             class="fd {ctx.isExpanded ? 'fd-chevron-down' : 'fd-chevron-right'} text-[18px]"
             aria-label={ctx.isExpanded ? 'Collapse folder' : 'Expand folder'}
-            onclick={() => ctx.toggleExpanded()}
-          ></button>
+            onclick={() => ctx.toggleExpanded()}></button>
           <DoubleClickInput
             value={node.name}
             onvalue={(name) => ctx.renameFolder(name)}
             class="font-medium"
-            inputClass="input py-0 pl-1 -ml-1 h-6 text-base w-fit"
-          >
+            inputClass="input py-0 pl-1 -ml-1 h-6 text-base w-fit">
             {#snippet children()}
               <!-- svelte-ignore a11y_click_events_have_key_events -->
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <span onclick={() => ctx.toggleExpanded()} class="font-medium"
-                >{node.name || '(root)'}</span
-              >
+                >{node.name || '(root)'}</span>
             {/snippet}
           </DoubleClickInput>
           <span class="text-surface-500">({ctx.leafCount})</span>
@@ -151,8 +143,7 @@
             title="Drag to move pipeline"
             aria-label="Drag handle"
             role="button"
-            tabindex="-1">⋮⋮</span
-          >
+            tabindex="-1">⋮⋮</span>
           <input
             class="checkbox"
             type="checkbox"
@@ -161,30 +152,27 @@
               selected = selected.includes(pipeline.name)
                 ? selected.filter((n) => n !== pipeline.name)
                 : [...selected, pipeline.name]
-            }}
-          />
+            }} />
         </div>
       </div>
       <div class="pipeline-cell">
         <a
           class="block w-full overflow-hidden overflow-ellipsis whitespace-nowrap"
           style="padding-left: var(--tree-indent, 0)"
-          href="/pipelines/{pipeline.name}/">{pipeline.name}</a
-        >
+          href="/pipelines/{pipeline.name}/">{pipeline.name}</a>
       </div>
       <div class="pipeline-cell relative">
         <div
           class="fd {pipeline.storageStatus === 'Cleared'
             ? 'fd-database-off text-surface-500'
-            : 'fd-database'} text-center text-[20px]"
-        ></div>
+            : 'fd-database'} text-center text-[20px]">
+        </div>
         <Tooltip
           >{match(pipeline.storageStatus)
             .with('InUse', () => 'Storage in use')
             .with('Clearing', () => 'Clearing storage')
             .with('Cleared', () => 'Storage cleared')
-            .exhaustive()}</Tooltip
-        >
+            .exhaustive()}</Tooltip>
       </div>
       <div class="pipeline-cell pr-2">
         <PipelineStatus status={pipeline.status}></PipelineStatus>
@@ -196,8 +184,7 @@
             <span class="fd fd-circle-alert pr-2 text-[20px] text-error-500"></span>
             <Popover class="z-10" strategy="fixed">
               <div
-                class="scrollbar flex max-h-[50vh] max-w-[80vw] overflow-auto whitespace-pre-wrap"
-              >
+                class="scrollbar flex max-h-[50vh] max-w-[80vw] overflow-auto whitespace-pre-wrap">
                 {message}
               </div>
             </Popover>
@@ -211,8 +198,7 @@
             pipelineName={pipeline.name}
             runtimeVersion={pipeline.platformVersion}
             baseRuntimeVersion={page.data.feldera!.version}
-            configuredRuntimeVersion={pipeline.programConfig.runtime_version}
-          ></PipelineVersion>
+            configuredRuntimeVersion={pipeline.programConfig.runtime_version}></PipelineVersion>
         </div>
       </div>
       <div class="pipeline-cell">

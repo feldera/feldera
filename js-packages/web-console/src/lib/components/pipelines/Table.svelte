@@ -59,31 +59,9 @@
       }))
   )
 
-  // metadata stores a JSON object; folder path lives in the `path` field.
-  const parseMetadata = (metadata: string): Record<string, unknown> => {
-    if (!metadata) {
-      return {}
-    }
-    try {
-      const v = JSON.parse(metadata)
-      return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
-    } catch {
-      return {}
-    }
-  }
-  const getFolderPath = (p: { metadata?: string | null }) => {
-    const v = parseMetadata(p.metadata ?? '')
-    const path = typeof v.path === 'string' ? v.path : ''
-    return path.replace(/^\/+|\/+$/g, '')
-  }
-  const buildMetadata = (existing: string, newPath: string) => {
-    const obj = parseMetadata(existing)
-    if (newPath) {
-      obj.path = newPath
-    } else {
-      delete obj.path
-    }
-    return Object.keys(obj).length ? JSON.stringify(obj) : ''
+  // Folder path lives in the top-level `path` field of client metadata.
+  const getFolderPath = (p: { path?: string | null }) => {
+    return (p.path ?? '').replace(/^\/+|\/+$/g, '')
   }
 
   const api = usePipelineManager()
@@ -93,13 +71,12 @@
     if (!current) {
       return
     }
-    const newMetadata = buildMetadata(current.metadata ?? '', newFolderPath)
-    if (newMetadata === (current.metadata ?? '')) {
+    if (newFolderPath === (current.path ?? '')) {
       return
     }
     discardPendingListRefresh()
-    updatePipeline(name, (p) => ({ ...p, metadata: newMetadata }))
-    api.patchPipeline(name, { metadata: newMetadata })
+    updatePipeline(name, (p) => ({ ...p, path: newFolderPath }))
+    api.patchPipeline(name, { path: newFolderPath })
   }
   const createFolderFor = (a: string, b: string, newFolderPath: string) => {
     movePipeline(a, newFolderPath)

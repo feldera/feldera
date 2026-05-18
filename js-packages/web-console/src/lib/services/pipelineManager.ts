@@ -242,8 +242,9 @@ const toPipelineThumb = (
   pipeline: Omit<ExtendedPipelineDescr, 'program_code' | 'program_error' | 'udf_rust' | 'udf_toml'>
 ) => ({
   name: pipeline.name,
-  description: pipeline.description,
-  metadata: pipeline.metadata ?? '',
+  description: pipeline.description ?? '',
+  tags: pipeline.tags ?? [],
+  path: pipeline.path ?? '',
   storageStatus: pipeline.storage_status,
   ...consolidatePipelineStatus(
     pipeline.program_status,
@@ -274,7 +275,8 @@ const toPipeline = <
 ) => ({
   name: pipeline.name,
   description: pipeline.description ?? '',
-  metadata: pipeline.metadata ?? '',
+  tags: pipeline.tags ?? [],
+  path: pipeline.path ?? '',
   runtimeConfig: pipeline.runtime_config,
   programConfig: pipeline.program_config!,
   programCode: pipeline.program_code ?? '',
@@ -295,8 +297,9 @@ const toExtendedPipeline = ({
   deploymentStatus: deployment_status,
   deploymentStatusSince: pipeline.deployment_status_since,
   programStatusSince: pipeline.program_status_since,
-  description: pipeline.description,
-  metadata: pipeline.metadata ?? '',
+  description: pipeline.description ?? '',
+  tags: pipeline.tags ?? [],
+  path: pipeline.path ?? '',
   id: pipeline.id,
   name: pipeline.name,
   programCode: pipeline.program_code ?? '',
@@ -330,7 +333,8 @@ const toExtendedPipeline = ({
 const fromPipeline = <T extends Partial<Pipeline>>(pipeline: T) => ({
   name: pipeline?.name,
   description: pipeline?.description,
-  metadata: pipeline?.metadata,
+  tags: pipeline?.tags,
+  path: pipeline?.path,
   runtime_config: pipeline?.runtimeConfig,
   program_config: pipeline?.programConfig,
   program_code: pipeline?.programCode,
