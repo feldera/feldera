@@ -181,10 +181,10 @@ impl Checkpointer {
 
         let mut present: HashSet<String> = HashSet::new();
         backend.list(cp_dir, &mut |path, file_type| {
-            if file_type != StorageFileType::Directory {
-                if let Some(name) = path.filename() {
-                    present.insert(name.to_string());
-                }
+            if file_type != StorageFileType::Directory
+                && let Some(name) = path.filename()
+            {
+                present.insert(name.to_string());
             }
         })?;
 
@@ -244,12 +244,11 @@ impl Checkpointer {
         let cp_dir = Self::checkpoint_dir(uuid);
         let mut state_files: Vec<String> = Vec::new();
         self.backend.list(&cp_dir, &mut |path, file_type| {
-            if file_type != StorageFileType::Directory {
-                if let Some(name) = path.filename() {
-                    if name != CHECKPOINT_DEPENDENCIES {
-                        state_files.push(name.to_string());
-                    }
-                }
+            if file_type != StorageFileType::Directory
+                && let Some(name) = path.filename()
+                && name != CHECKPOINT_DEPENDENCIES
+            {
+                state_files.push(name.to_string());
             }
         })?;
         state_files.sort_unstable();
@@ -306,12 +305,11 @@ impl Checkpointer {
             Err(error) if error.kind() == ErrorKind::NotFound => {
                 let mut orphan_uuid_dirs: Vec<String> = Vec::new();
                 backend.list(&StoragePath::default(), &mut |path, file_type| {
-                    if file_type == StorageFileType::Directory {
-                        if let Some(name) = path.filename() {
-                            if Uuid::parse_str(name).is_ok() {
-                                orphan_uuid_dirs.push(name.to_string());
-                            }
-                        }
+                    if file_type == StorageFileType::Directory
+                        && let Some(name) = path.filename()
+                        && Uuid::parse_str(name).is_ok()
+                    {
+                        orphan_uuid_dirs.push(name.to_string());
                     }
                 })?;
                 if !orphan_uuid_dirs.is_empty() {
