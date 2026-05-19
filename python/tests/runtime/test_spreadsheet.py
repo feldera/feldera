@@ -4,7 +4,8 @@ import unittest
 
 import time
 from feldera import PipelineBuilder
-from tests import TEST_CLIENT, unique_pipeline_name
+from tests import TEST_CLIENT
+from tests.platform.helper import PipelineTestCase
 
 
 def make_value(id: int, raw: str, computed: str) -> dict:
@@ -17,7 +18,7 @@ def make_value(id: int, raw: str, computed: str) -> dict:
     }
 
 
-class TestUDF(unittest.TestCase):
+class TestUDF(PipelineTestCase):
     def test_local(self):
         dir = "../crates/pipeline-manager/demos/sql/"
         # Read the file ../crates/pipeline-manager/demos/sql/10-spreadsheet.sql
@@ -30,7 +31,7 @@ class TestUDF(unittest.TestCase):
 
         pipeline = PipelineBuilder(
             TEST_CLIENT,
-            name=unique_pipeline_name("test_spreadsheet"),
+            name=self.register_for_cleanup("test_spreadsheet"),
             sql=sql,
             udf_rust=udfs,
             udf_toml=toml,

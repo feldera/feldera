@@ -1,15 +1,15 @@
 import unittest
 from feldera.testutils import (
-    unique_pipeline_name,
     FELDERA_TEST_NUM_WORKERS,
     FELDERA_TEST_NUM_HOSTS,
 )
 from tests import TEST_CLIENT
+from tests.platform.helper import PipelineTestCase
 from feldera import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 
 
-class TestPipelineBuilder(unittest.TestCase):
+class TestPipelineBuilder(PipelineTestCase):
     def test_connector_orchestration(self):
         sql = """
         CREATE TABLE numbers (
@@ -28,7 +28,7 @@ class TestPipelineBuilder(unittest.TestCase):
         );
         """
 
-        pipeline_name = unique_pipeline_name("test_connector_orchestration")
+        pipeline_name = self.register_for_cleanup("test_connector_orchestration")
 
         pipeline = PipelineBuilder(
             TEST_CLIENT,

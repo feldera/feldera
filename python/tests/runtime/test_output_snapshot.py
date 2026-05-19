@@ -5,7 +5,7 @@ from feldera.enums import BootstrapPolicy
 from feldera.pipeline import Pipeline
 from feldera.runtime_config import RuntimeConfig, Storage
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, skip_on_arm64
-from tests import TEST_CLIENT, unique_pipeline_name
+from tests import TEST_CLIENT
 from tests.utils import DeltaTestLocation, wait_for_condition
 
 
@@ -40,8 +40,7 @@ def collect_output_chunks(stream, expected_rows: int) -> tuple[list[dict], list[
     return chunks, rows
 
 
-def test_egress_send_snapshot():
-    pipeline_name = unique_pipeline_name("test_egress_send_snapshot")
+def test_egress_send_snapshot(pipeline_name):
     sql = """
     CREATE TABLE t1(id INT) WITH ('materialized' = 'true');
     CREATE MATERIALIZED VIEW v1 AS SELECT * FROM t1;
@@ -239,7 +238,7 @@ def _build_sql_round3(
 
 
 @skip_on_arm64  # https://github.com/delta-io/delta-rs/issues/4413
-def test_delta_output_send_snapshot_after_flag_flip():
+def test_delta_output_send_snapshot_after_flag_flip(pipeline_name):
     """Verify snapshot delivery to delta sinks across a connector
     modification (`send_snapshot: false` → `send_snapshot: true`).
 
@@ -276,9 +275,6 @@ def test_delta_output_send_snapshot_after_flag_flip():
     ``delta2`` should be populated during startup, while ``delta3``
     should remain empty until future deltas arrive.
     """
-    pipeline_name = unique_pipeline_name(
-        "test_delta_output_send_snapshot_after_flag_flip"
-    )
     locations = [
         DeltaTestLocation.create(f"{pipeline_name}_{label}") for label, *_ in _VIEWS
     ]

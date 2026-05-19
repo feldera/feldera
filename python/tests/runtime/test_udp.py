@@ -1,13 +1,14 @@
 import unittest
 
 from feldera import PipelineBuilder
-from tests import TEST_CLIENT, unique_pipeline_name
+from tests import TEST_CLIENT
+from tests.platform.helper import PipelineTestCase
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 
 # Test user-defined preprocessor
-class TestUDP(unittest.TestCase):
+class TestUDP(PipelineTestCase):
     def test_local(self):
         sql = """
 CREATE TABLE t (
@@ -98,7 +99,7 @@ tracing = { version = "0.1.40" }
 
         pipeline = PipelineBuilder(
             TEST_CLIENT,
-            name=unique_pipeline_name("test_udps"),
+            name=self.register_for_cleanup("test_udps"),
             sql=sql,
             udf_rust=udfs,
             udf_toml=toml,

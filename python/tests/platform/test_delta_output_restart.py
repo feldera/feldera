@@ -26,7 +26,6 @@ from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import (
     FELDERA_TEST_NUM_HOSTS,
     FELDERA_TEST_NUM_WORKERS,
-    unique_pipeline_name,
 )
 from tests import TEST_CLIENT, enterprise_only, skip_on_arm64
 from tests.utils import DeltaTestLocation
@@ -91,12 +90,11 @@ def _seed_50_rows_and_suspend(name: str, loc: DeltaTestLocation):
 
 @enterprise_only
 @skip_on_arm64  # https://github.com/delta-io/delta-rs/issues/4413
-def test_clean_resume_preserves_table():
+def test_clean_resume_preserves_table(pipeline_name):
     """Restarting an unchanged pipeline keeps the delta table contents."""
-    name = unique_pipeline_name("delta_restart_clean")
-    loc = DeltaTestLocation.create(name)
+    loc = DeltaTestLocation.create(pipeline_name)
     try:
-        pipeline = _seed_50_rows_and_suspend(name, loc)
+        pipeline = _seed_50_rows_and_suspend(pipeline_name, loc)
 
         # Resume the SAME pipeline object — connector identity is preserved.
         pipeline.start()
@@ -104,25 +102,21 @@ def test_clean_resume_preserves_table():
 
         pipeline.input_json("t", [{"id": i} for i in range(50, 80)], wait=True)
         assert loc.row_count() == 80
-
-        pipeline.stop(force=True)
-        pipeline.clear_storage()
     finally:
         loc.cleanup()
 
 
 @enterprise_only
 @skip_on_arm64  # https://github.com/delta-io/delta-rs/issues/4413
-def test_modified_connector_re_truncates_on_resume():
+def test_modified_connector_re_truncates_on_resume(pipeline_name):
     """Changing the connector config on resume makes it a new incarnation that re-truncates."""
-    name = unique_pipeline_name("delta_restart_conn_modified")
-    loc = DeltaTestLocation.create(name)
+    loc = DeltaTestLocation.create(pipeline_name)
     try:
-        _seed_50_rows_and_suspend(name, loc)
+        _seed_50_rows_and_suspend(pipeline_name, loc)
 
         # Resume with a MODIFIED connector config (extra `checkpoint_interval` field).
         pipeline = _build_pipeline(
-            name,
+            pipeline_name,
             _sql(loc, extra_connector_options={"checkpoint_interval": 60}),
         )
         pipeline.start()
@@ -130,31 +124,24 @@ def test_modified_connector_re_truncates_on_resume():
 
         pipeline.input_json("t", [{"id": i} for i in range(50, 80)], wait=True)
         assert loc.row_count() == 30
-
-        pipeline.stop(force=True)
-        pipeline.clear_storage()
     finally:
         loc.cleanup()
 
 
 @enterprise_only
 @skip_on_arm64  # https://github.com/delta-io/delta-rs/issues/4413
-def test_modified_view_re_truncates_on_resume():
+def test_modified_view_re_truncates_on_resume(pipeline_name):
     """Changing the view's schema on resume forces a rebuild from scratch."""
-    name = unique_pipeline_name("delta_restart_view_modified")
-    loc = DeltaTestLocation.create(name)
+    loc = DeltaTestLocation.create(pipeline_name)
     try:
-        _seed_50_rows_and_suspend(name, loc)
+        _seed_50_rows_and_suspend(pipeline_name, loc)
 
         # Resume with a MODIFIED view (adds an `extra` column).
-        pipeline = _build_pipeline(name, _sql(loc, extra_view_column=True))
+        pipeline = _build_pipeline(pipeline_name, _sql(loc, extra_view_column=True))
         pipeline.start()
         assert loc.row_count() == 0  # rebuilt empty
 
         pipeline.input_json("t", [{"id": i} for i in range(50, 80)], wait=True)
         assert loc.row_count() == 30
-
-        pipeline.stop(force=True)
-        pipeline.clear_storage()
     finally:
         loc.cleanup()

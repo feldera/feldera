@@ -3,15 +3,15 @@ import unittest
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import (
-    unique_pipeline_name,
     FELDERA_TEST_NUM_WORKERS,
     FELDERA_TEST_NUM_HOSTS,
 )
 from tests import TEST_CLIENT
+from tests.platform.helper import PipelineTestCase
 from feldera.enums import PipelineStatus
 
 
-class TestPipeline(unittest.TestCase):
+class TestPipeline(PipelineTestCase):
     def test_update_runtime(self):
         """
         Test the /update_runtime API.
@@ -20,7 +20,7 @@ class TestPipeline(unittest.TestCase):
         (by calling /update_runtime) or when updating the pipeline code.
         """
 
-        pipeline_name = unique_pipeline_name("test_update_runtime")
+        pipeline_name = self.register_for_cleanup("test_update_runtime")
 
         sql = """
         CREATE TABLE tbl(id INT) WITH ('materialized' = 'true');

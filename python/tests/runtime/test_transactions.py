@@ -1,12 +1,13 @@
 import unittest
 
 from feldera import PipelineBuilder
-from tests import TEST_CLIENT, unique_pipeline_name
+from tests import TEST_CLIENT
+from tests.platform.helper import PipelineTestCase
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 
-class TestTransactions(unittest.TestCase):
+class TestTransactions(PipelineTestCase):
     def test_dynamic_output_connector(self):
         # When an output connector is created during a transaction, it should not receive any outputs until the next transaction.
 
@@ -18,7 +19,7 @@ class TestTransactions(unittest.TestCase):
 
         pipeline = PipelineBuilder(
             TEST_CLIENT,
-            name=unique_pipeline_name("test_dynamic_output_connector"),
+            name=self.register_for_cleanup("test_dynamic_output_connector"),
             sql=sql,
             runtime_config=RuntimeConfig(
                 workers=FELDERA_TEST_NUM_WORKERS,

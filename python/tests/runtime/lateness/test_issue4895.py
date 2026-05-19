@@ -2,22 +2,22 @@ import unittest
 
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.testutils import (
-    unique_pipeline_name,
     FELDERA_TEST_NUM_WORKERS,
     FELDERA_TEST_NUM_HOSTS,
 )
 from tests import TEST_CLIENT
+from tests.platform.helper import PipelineTestCase
 from feldera.enums import PipelineStatus
 from feldera.runtime_config import RuntimeConfig
 
 
-class TestIssue4895(unittest.TestCase):
+class TestIssue4895(PipelineTestCase):
     def test_issue4895(self):
         """
         LATENESS is applied correctly to materialized tables
         """
 
-        pipeline_name = unique_pipeline_name("test_issue4895")
+        pipeline_name = self.register_for_cleanup("test_issue4895")
 
         sql = """
         create table t (x int lateness 0) with

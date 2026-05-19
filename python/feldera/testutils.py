@@ -423,39 +423,46 @@ def run_workload(
 
     pipeline = build_pipeline(pipeline_name, tables, views, resources)
 
-    pipeline.start()
-    start_time = time.monotonic()
-
-    if transaction:
-        try:
-            pipeline.start_transaction()
-        except Exception as e:
-            log(f"Error starting transaction: {e}")
-
-    if transaction:
-        wait_end_of_input(pipeline, timeout_s=3600)
-    else:
-        pipeline.wait_for_completion(force_stop=False, timeout_s=3600)
-
-    elapsed = time.monotonic() - start_time
-    log(f"Data ingested in {elapsed}")
-
-    if transaction:
+    try:
+        pipeline.start()
         start_time = time.monotonic()
-        try:
-            pipeline.commit_transaction(transaction_id=None, wait=True, timeout_s=None)
-            log(f"Commit took {time.monotonic() - start_time}")
-        except Exception as e:
-            log(f"Error committing transaction: {e}")
 
-        log("Waiting for outputs to flush")
-        start_time = time.monotonic()
-        pipeline.wait_for_completion(force_stop=False, timeout_s=3600)
-        log(f"Flushing outputs took {time.monotonic() - start_time}")
+        if transaction:
+            try:
+                pipeline.start_transaction()
+            except Exception as e:
+                log(f"Error starting transaction: {e}")
 
-    validate_outputs(pipeline, tables, views)
+        if transaction:
+            wait_end_of_input(pipeline, timeout_s=3600)
+        else:
+            pipeline.wait_for_completion(force_stop=False, timeout_s=3600)
 
-    if stop:
-        pipeline.stop(force=True)
+        elapsed = time.monotonic() - start_time
+        log(f"Data ingested in {elapsed}")
+
+        if transaction:
+            start_time = time.monotonic()
+            try:
+                pipeline.commit_transaction(
+                    transaction_id=None, wait=True, timeout_s=None
+                )
+                log(f"Commit took {time.monotonic() - start_time}")
+            except Exception as e:
+                log(f"Error committing transaction: {e}")
+
+            log("Waiting for outputs to flush")
+            start_time = time.monotonic()
+            pipeline.wait_for_completion(force_stop=False, timeout_s=3600)
+            log(f"Flushing outputs took {time.monotonic() - start_time}")
+
+        validate_outputs(pipeline, tables, views)
+    finally:
+        if stop:
+            try:
+                pipeline.stop(force=True)
+                pipeline.clear_storage()
+            except Exception as e:
+                log(f"Error during pipeline cleanup: {e}")
 
     return pipeline
