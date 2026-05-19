@@ -43,7 +43,7 @@
 
   const pipelineName = $derived(pipeline.current.name)
 
-  const valueMax = $derived(metrics.length ? Math.max(...metrics.map((v) => v.s.toNumber())) : 0)
+  const valueMax = $derived(metrics.length ? Math.max(...metrics.map((v) => v.s)) : 0)
   const yMaxStep = $derived(2 ** Math.ceil(Math.log2(valueMax * 1.25)))
   const yMax = $derived(valueMax !== 0 ? yMaxStep : 1024 * 2048)
   const yMin = 0
@@ -64,8 +64,8 @@
       series: [
         {
           data: metrics.map((m) => ({
-            name: m.t.toString(),
-            value: tuple(m.t.toNumber(), m.s.toNumber() ?? 0)
+            id: m.t,
+            value: tuple(m.t, m.s ?? 0)
           }))
         }
       ],
@@ -161,8 +161,8 @@
           opacity: 0
         },
         data: metrics.map((m) => ({
-          name: m.t.toString(),
-          value: tuple(m.t.toNumber(), m.s.toNumber() ?? 0)
+          id: m.t,
+          value: tuple(m.t, m.s ?? 0)
         })),
         markLine: {
           animation: false,
@@ -206,7 +206,7 @@
     <span>
       <span class="hidden sm:inline">Used storage:</span>
       <span class="inline sm:hidden">Storage:</span>
-      {humanSize(metrics.at(-1)?.s.toNumber() ?? 0)}
+      {humanSize(metrics.at(-1)?.s ?? 0)}
     </span>
     {@render headerAction?.()}
   </div>

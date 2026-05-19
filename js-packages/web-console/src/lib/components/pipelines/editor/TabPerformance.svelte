@@ -23,11 +23,9 @@
   import { formatDateTime, formatQty } from '$lib/functions/format'
   import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
-  import {
-    createBigNumberStreamParser,
-    parseStream,
-    pushAsCircularBuffer
-  } from '$lib/functions/pipelines/changeStream'
+  import { pushAsCircularBuffer } from '$lib/functions/pipelines/changeStream'
+  import { JSONParser } from '@streamparser/json-whatwg'
+  import type { ParsedElementInfo } from '@streamparser/json/utils/types/parsedElementInfo.js'
   import { getDeploymentStatusLabel, isMetricsAvailable } from '$lib/functions/pipelines/status'
   import type { CheckpointMetadata, CheckpointStatus } from '$lib/services/manager'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
@@ -79,56 +77,62 @@
 
   let cancelStream: (() => void) | undefined
 
-  const endMetricsStream = (id?: string) => {
+  const endMetricsStream = () => {
     cancelStream?.()
     cancelStream = undefined
     timeSeries = []
   }
   const startMetricsStream = async (api: PipelineManagerApi, targetPipelineName: string) => {
-    const result = await api.pipelineTimeSeriesStream(pipelineName)
+    const result = await api.pipelineTimeSeriesStream(targetPipelineName)
     if (result instanceof Error) {
       cancelStream = undefined
-      return undefined
+      return
     }
-    const { cancel } = parseStream(
-      result,
-      createBigNumberStreamParser<TimeSeriesEntry>({
-        paths: ['$'],
-        separator: ''
-      }),
-      {
-        pushChanges: (rows: TimeSeriesEntry[]) => {
-          pushAsCircularBuffer(
-            () => timeSeries,
-            63,
-            (v: TimeSeriesEntry) => v
-          )(rows)
-        },
-        onBytesSkipped: (skippedBytes) => {},
-        onParseEnded: () => {
-          if (metricsAvailable && cancelStream) {
-            endMetricsStream()
-            if (pipelineName !== targetPipelineName) {
-              return
-            }
-            startMetricsStream(api, targetPipelineName)
-          }
-        },
-        onNetworkError: () => {
-          if (metricsAvailable && cancelStream) {
-            endMetricsStream()
-            if (pipelineName !== targetPipelineName) {
-              return
-            }
-            startMetricsStream(api, targetPipelineName)
-          }
-        }
-      },
-      {
-        bufferSize: 8 * 1024 * 1024
-      }
+    // Not routed through `parseStream` — the load shedding is unnecessary
+    // metrics stream. Metric values parsed as JS numbers —
+    // record counts and byte sizes sit well below `Number.MAX_SAFE_INTEGER`.
+    const appendRow = pushAsCircularBuffer(
+      () => timeSeries,
+      63,
+      (v: TimeSeriesEntry) => v
     )
-    cancelStream = cancel
+    const abortCtrl = new AbortController()
+    cancelStream = () => {
+      abortCtrl.abort()
+      result.cancel()
+    }
+    try {
+      await result.stream
+        .pipeThrough(new JSONParser({ paths: ['$'], separator: '' }))
+        .pipeTo(
+          new WritableStream<ParsedElementInfo>({
+            write(chunk) {
+              appendRow([chunk.value as TimeSeriesEntry])
+            }
+          }),
+          { signal: abortCtrl.signal }
+        )
+    } catch (e) {
+      // Only log unexpected failures — `AbortError` from `cancelStream` is intentional.
+      if (!abortCtrl.signal.aborted) {
+        console.warn('Pipeline metrics stream error:', e)
+      }
+    }
+    if (cancelStream) {
+      cancelStream = undefined
+    }
+    // Restart on natural EOS / transient errors only. Skip if cancelled, if
+    // metrics are no longer available, or if the user navigated away mid-stream.
+    if (abortCtrl.signal.aborted) {
+      return
+    }
+    if (!metricsAvailable) {
+      return
+    }
+    if (pipelineName !== targetPipelineName) {
+      return
+    }
+    startMetricsStream(api, targetPipelineName)
   }
 
   const pipelineName = $derived(pipeline.current.name)

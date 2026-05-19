@@ -13,7 +13,11 @@ const pipelines = [thumb('orders'), thumb('payments'), thumb('fraud-detection')]
 
 // Each rendered pipeline is an <a>; the only other interactive elements are the
 // search box and the close button, so counting links counts visible pipelines.
-const visibleNames = () => page.getByRole('link').elements().map((el) => el.textContent?.trim())
+const visibleNames = () =>
+  page
+    .getByRole('link')
+    .elements()
+    .map((el) => el.textContent?.trim())
 
 describe('pipeline list search', () => {
   it('lists every pipeline before any search term is entered', async () => {

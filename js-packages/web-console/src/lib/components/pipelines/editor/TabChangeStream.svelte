@@ -113,35 +113,37 @@
 
       const { cancel } = parseStream(
         result,
-        createBigNumberStreamParser<XgressEntry>({
-          paths: ['$.json_data.*'],
-          separator: ''
-        }),
+        newlineJsonDecoder<XgressEntry>(
+          createBigNumberStreamParser<XgressEntry>({
+            paths: ['$.json_data.*'],
+            separator: ''
+          }),
+          {
+            bufferSize: 4 * 1024 * 1024,
+            onBytesSkipped: (skippedBytes) => {
+              const cs = changeStream[tenantName][pipelineName]
+              // Coalesce consecutive skip markers for the same relation: if the row
+              // at the tail is already a skip marker tagged with this relation, just
+              // bump its byte count in place instead of pushing another row. Keeps
+              // the change-stream view from getting flooded with one-line "Skipped N bytes"
+              // entries when backpressure drops sustained traffic.
+              const lastRow = cs.rows.at(-1)
+              if (lastRow && 'skippedBytes' in lastRow && lastRow.relationName === relationName) {
+                lastRow.skippedBytes += skippedBytes
+              } else {
+                appendForRelation([{ relationName, skippedBytes }])
+              }
+              cs.totalSkippedBytes += skippedBytes
+            }
+          }
+        ),
         {
           pushChanges: (rows: XgressEntry[]) => {
             appendForRelation(rows as unknown as Row[], rows[0])
           },
-          onBytesSkipped: (skippedBytes) => {
-            const cs = changeStream[tenantName][pipelineName]
-            // Coalesce consecutive skip markers for the same relation: if the row at
-            // the tail is already a skip marker tagged with this relation, just bump
-            // its byte count in place instead of pushing another row. Keeps the
-            // change-stream view from getting flooded with one-line "Skipped N bytes"
-            // entries when backpressure drops sustained traffic.
-            const lastRow = cs.rows.at(-1)
-            if (lastRow && 'skippedBytes' in lastRow && lastRow.relationName === relationName) {
-              lastRow.skippedBytes += skippedBytes
-            } else {
-              appendForRelation([{ relationName, skippedBytes }])
-            }
-            cs.totalSkippedBytes += skippedBytes
-          },
           onParseEnded: () => {
             pipelinesRelations[tenantName][pipelineName][relationName].cancelStream = undefined
           }
-        },
-        {
-          bufferSize: 4 * 1024 * 1024
         }
       )
       return () => {
@@ -244,6 +246,7 @@
   import {
     appendRowsForRelation,
     createBigNumberStreamParser,
+    newlineJsonDecoder,
     parseStream
   } from '$lib/functions/pipelines/changeStream'
   import JSONbig from 'true-json-bigint'

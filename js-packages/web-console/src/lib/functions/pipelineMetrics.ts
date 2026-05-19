@@ -203,12 +203,9 @@ export const accumulatePipelineMetrics =
  * @returns Time series of throughput with smoothing window over 3 data intervals
  */
 export const calcPipelineThroughput = (metrics: TimeSeriesEntry[]) => {
-  const series = discreteDerivative(metrics, (n1, n0) => {
-    return {
-      name: n1.t.toFixed(),
-      value: tuple(n1.t.toNumber(), n1.r.minus(n0.r).toNumber())
-    }
-  })
+  const series = discreteDerivative(metrics, (n1, n0) => ({
+    value: tuple(n1.t, n1.r - n0.r)
+  }))
 
   const avgN = Math.min(Math.ceil(series.length / 5), 4)
   const valueMax = series.length

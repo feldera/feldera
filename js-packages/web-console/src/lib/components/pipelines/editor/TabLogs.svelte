@@ -28,9 +28,9 @@
   import { emptySearchState, type SearchState } from 'common-ui'
 
   import {
-    parseCancellable,
-    pushAsCircularBuffer,
-    SplitNewlineTransformStream
+    newlineTextDecoder,
+    parseStream,
+    pushAsCircularBuffer
   } from '$lib/functions/pipelines/changeStream'
   import { type ExtendedPipeline, type PipelineStatus } from '$lib/services/pipelineManager'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
@@ -159,8 +159,14 @@
         tryRestartStream(pipelineName, isServerOverloaded ? attempts + 1 : 0)
         return
       }
-      const { cancel } = parseCancellable(
+      const { cancel } = parseStream<string>(
         result,
+        newlineTextDecoder({
+          bufferSize: 16 * 1024 * 1024,
+          onBytesSkipped: (bytes) => {
+            streams[pipelineName].totalSkippedBytes += bytes
+          }
+        }),
         {
           pushChanges: (changes: string[]) => {
             const droppedNum = pushAsCircularBuffer(
@@ -179,14 +185,7 @@
               return
             }
             tryRestartStream(pipelineName, 0)
-          },
-          onBytesSkipped(bytes) {
-            streams[pipelineName].totalSkippedBytes += bytes
           }
-        },
-        new SplitNewlineTransformStream(),
-        {
-          bufferSize: 16 * 1024 * 1024
         }
       )
       streams[pipelineName] = {

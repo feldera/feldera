@@ -14,10 +14,11 @@
 import { BigNumber } from 'bignumber.js'
 import { describe, expect, it } from 'vitest'
 import type { ChangeStreamData, Row } from '$lib/components/pipelines/editor/ChangeStream.svelte'
-import type { XgressEntry } from '$lib/services/pipelineManager'
 import {
   appendRowsForRelation,
   createBigNumberStreamParser,
+  newlineJsonDecoder,
+  newlineTextDecoder,
   parseStream,
   type StreamingJsonParser
 } from './changeStream'
@@ -39,15 +40,16 @@ const makeMockStream = (chunks: (Uint8Array | string)[]): ReadableStream<Uint8Ar
   })
 }
 
-// Runs `parseStream` over `chunks` and resolves the returned Promise once the stream has ended and the
-// last flush has fired. Returns everything the consumer would have observed.
+// Runs `parseStream` over `chunks` with a JSON decoder and resolves once the
+// stream has ended and the last flush has fired. Returns everything the
+// consumer would have observed.
 const runParseStream = <T>(
   chunks: (Uint8Array | string)[],
   parserOpts: Parameters<typeof createBigNumberStreamParser<T>>[0] = {
     paths: ['$'],
     separator: ''
   },
-  options?: Parameters<typeof parseStream<T>>[3]
+  options?: { bufferSize?: number; flushIntervalMs?: number }
 ) =>
   new Promise<{
     values: T[]
@@ -59,17 +61,19 @@ const runParseStream = <T>(
     const parser = createBigNumberStreamParser<T>(parserOpts)
     parseStream<T>(
       { stream: makeMockStream(chunks), cancel: () => {} },
-      parser,
+      newlineJsonDecoder<T>(parser, {
+        bufferSize: options?.bufferSize,
+        onBytesSkipped: (n) => skipped.push(n)
+      }),
       {
         pushChanges: (vs) => {
           for (const v of vs) {
             values.push(v)
           }
         },
-        onBytesSkipped: (n) => skipped.push(n),
         onParseEnded: () => resolve({ values, skipped, parser })
       },
-      options
+      { flushIntervalMs: options?.flushIntervalMs }
     )
   })
 
@@ -160,6 +164,127 @@ describe('parseStream', () => {
     // JS Number would coerce this to 1e19; BigNumber preserves it verbatim.
     expect(values[0].v.toFixed()).toBe(huge)
   })
+})
+
+// Same shape as `runParseStream`, but drives `newlineTextDecoder` over the same
+// `parseStream` orchestrator and collects the emitted line strings.
+const runNewlineTextDecoder = (
+  chunks: (Uint8Array | string)[],
+  options?: { bufferSize?: number; bufferWindowMs?: number; flushIntervalMs?: number }
+) =>
+  new Promise<{ values: string[]; skipped: number[] }>((resolve) => {
+    const values: string[] = []
+    const skipped: number[] = []
+    parseStream<string>(
+      { stream: makeMockStream(chunks), cancel: () => {} },
+      newlineTextDecoder({
+        bufferSize: options?.bufferSize,
+        bufferWindowMs: options?.bufferWindowMs,
+        onBytesSkipped: (n) => skipped.push(n)
+      }),
+      {
+        pushChanges: (vs) => {
+          for (const v of vs) {
+            values.push(v)
+          }
+        },
+        onParseEnded: () => resolve({ values, skipped })
+      },
+      { flushIntervalMs: options?.flushIntervalMs ?? 10 }
+    )
+  })
+
+describe('newlineTextDecoder', () => {
+  it('emits each LF-terminated line with the trailing newline preserved', async () => {
+    const { values, skipped } = await runNewlineTextDecoder(['a\nb\nc\n'])
+    expect(values).toEqual(['a\n', 'b\n', 'c\n'])
+    expect(skipped).toEqual([])
+  })
+
+  it('reassembles a line that straddles two network chunks', async () => {
+    // `bar` arrives in chunk 1 with no terminator; it must be held as leftover
+    // and joined to `baz\n` from chunk 2 to form a single `barbaz\n` line.
+    const { values, skipped } = await runNewlineTextDecoder(['foo\nbar', 'baz\nqux\n'])
+    expect(values).toEqual(['foo\n', 'barbaz\n', 'qux\n'])
+    expect(skipped).toEqual([])
+  })
+
+  it('preserves CRLF line terminators on each emitted line', async () => {
+    // The docstring explicitly promises CRLF is preserved — log viewers rely on
+    // it so that copy-out round-trips byte-for-byte to the server's framing.
+    const { values, skipped } = await runNewlineTextDecoder(['one\r\ntwo\r\nthree\r\n'])
+    expect(values).toEqual(['one\r\n', 'two\r\n', 'three\r\n'])
+    expect(skipped).toEqual([])
+  })
+
+  it('does not emit a trailing partial line that lacks a newline', async () => {
+    const { values, skipped } = await runNewlineTextDecoder(['done\ndangling'])
+    expect(values).toEqual(['done\n'])
+    // Partial-tail-on-close is the connection-cut case, not a shedding event.
+    expect(skipped).toEqual([])
+  })
+
+  it('sheds a whole parser chunk and reports its byte count when the budget is exceeded', async () => {
+    // Each 21-byte line is its own network chunk → its own parser chunk. With a
+    // 25-byte budget, the first parser chunk fits (0+21≤25); the next two each
+    // overflow (21+21>25) and must be dropped wholesale, with their lengths
+    // reported via `onBytesSkipped`. `bufferWindowMs` is set well beyond the
+    // test's wall-clock so the budget never resets mid-test.
+    const lineA = 'A'.repeat(20) + '\n'
+    const lineB = 'B'.repeat(20) + '\n'
+    const lineC = 'C'.repeat(20) + '\n'
+    const { values, skipped } = await runNewlineTextDecoder([lineA, lineB, lineC], {
+      bufferSize: 25,
+      bufferWindowMs: 60_000
+    })
+    expect(values).toEqual([lineA])
+    expect(skipped).toEqual([lineB.length, lineC.length])
+  })
+
+  it("emits an empty line as just '\\n' (the line terminator is the whole record)", async () => {
+    // Blank lines are real records in log streams — the forward scan must not
+    // collapse them into a no-op.
+    const { values, skipped } = await runNewlineTextDecoder(['a\n\nb\n'])
+    expect(values).toEqual(['a\n', '\n', 'b\n'])
+    expect(skipped).toEqual([])
+  })
+
+  it('reassembles a CRLF whose CR and LF arrive in different network chunks', async () => {
+    // The text decoder scans for '\n', so a lone '\r' at the end of a network
+    // chunk must be held as leftover and merged with the leading '\n' of the
+    // next chunk; the resulting line must still end in '\r\n' (not '\n' with
+    // the '\r' eaten or stranded as a partial record).
+    const { values, skipped } = await runNewlineTextDecoder(['foo\r', '\nbar\r\n'])
+    expect(values).toEqual(['foo\r\n', 'bar\r\n'])
+    expect(skipped).toEqual([])
+  })
+
+  it('handles a line whose terminator lands exactly on the parser-chunk boundary', async () => {
+    // `PARSER_CHUNK_TARGET_BYTES` is private to the module; the value 16 KiB is
+    // fixed by the implementation. Construct an input whose '\n' sits at
+    // position `target - 1`, so the post-newline `scan` cursor equals `target`
+    // exactly — the boundary case for the `scan >= target` break. The next
+    // parser chunk must resume cleanly at the byte immediately after the
+    // boundary and emit the following line in full.
+    const PARSER_CHUNK_TARGET_BYTES = 16 * 1024
+    const bigLine = 'A'.repeat(PARSER_CHUNK_TARGET_BYTES - 1) + '\n'
+    const tail = 'tail\n'
+    const { values, skipped } = await runNewlineTextDecoder([bigLine + tail])
+    expect(values).toEqual([bigLine, tail])
+    expect(skipped).toEqual([])
+  })
+
+  it('purges a runaway record whose unterminated leftover exceeds MAX_LINE_SIZE', async () => {
+    // `MAX_LINE_SIZE` is private to the module; the value 16 MiB is fixed by the
+    // implementation. One byte over the cap, with no newline anywhere, must
+    // trigger the purge: nothing is emitted and the full leftover length is
+    // reported through `onBytesSkipped`.
+    const MAX_LINE_SIZE = 16 * 1024 * 1024
+    const runaway = new Uint8Array(MAX_LINE_SIZE + 1).fill(0x58) // 'X'
+    const { values, skipped } = await runNewlineTextDecoder([runaway])
+    expect(values).toEqual([])
+    expect(skipped).toEqual([MAX_LINE_SIZE + 1])
+  }, 30_000)
 })
 
 describe('appendRowsForRelation', () => {
