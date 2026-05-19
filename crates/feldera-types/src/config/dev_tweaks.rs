@@ -57,11 +57,9 @@ pub struct DevTweaks {
     pub merger: Option<MergerType>,
 
     /// If set, the maximum amount of storage, in MiB, for the POSIX backend to
-    /// allow to be in use before failing all writes with [StorageFull].  This
+    /// allow to be in use before failing all writes with `StorageFull`.  This
     /// is useful for testing on top of storage that does not implement its own
     /// quota mechanism.
-    ///
-    /// [StorageFull]: std::io::ErrorKind::StorageFull
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_mb_max: Option<u64>,
 
