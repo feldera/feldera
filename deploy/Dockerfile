@@ -13,8 +13,6 @@ RUN apt update --fix-missing && apt install \
   # pkg-config is required for cargo to find libssl
   libssl-dev pkg-config \
   cmake \
-  # Go is required to build aws-lc-fips-sys when rustls is built with FIPS
-  golang-go \
   # rdkafka dependency needs libsasl2-dev zlib and a CXX compiler
   libsasl2-dev zlib1g-dev build-essential \
   # To install rust
@@ -78,6 +76,17 @@ RUN arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x86
   && rm mold-2.40.1-$arch-linux.tar.gz
 ENV PATH="$PATH:/home/ubuntu/.cargo/bin:/home/ubuntu/mold/bin"
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold -C link-arg=-Wl,--compress-debug-sections=zlib"
+
+# Go is required to build aws-lc-fips-sys when rustls is built with FIPS.
+# Installed from upstream rather than Ubuntu's golang-go package because the
+# 24.04 package is stuck at 1.22.2 and ships many unfixed CVEs that fail our
+# image scan. Revert to apt's golang-go once Ubuntu ships a patched version.
+RUN arch=`dpkg --print-architecture`; \
+  curl -LO https://go.dev/dl/go1.25.10.linux-$arch.tar.gz \
+  && tar -xzf go1.25.10.linux-$arch.tar.gz \
+  && mv go goroot \
+  && rm go1.25.10.linux-$arch.tar.gz
+ENV PATH="$PATH:/home/ubuntu/goroot/bin"
 
 # Install Samply for profiling
 RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/feldera/samply/releases/download/v0.13.2/samply-installer.sh | sh
