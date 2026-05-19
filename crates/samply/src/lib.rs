@@ -1030,8 +1030,12 @@ enum MarkerEnd {
 }
 
 impl MarkerEnd {
-    /// Returns true if this marker should be dropped because it is no longer
+    /// Returns false if this marker should be dropped because it is no longer
     /// significant.
+    ///
+    /// `capturing` specifies whether a capture is currently running.  More
+    /// markers are relevant when a capture is running because they will be
+    /// recorded when the capture ends.
     fn should_keep(&self, capturing: bool) -> bool {
         if let MarkerEnd::Long(timestamp) = self {
             if timestamp.load().is_some() {
