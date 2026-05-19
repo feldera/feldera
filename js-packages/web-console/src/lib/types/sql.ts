@@ -7,6 +7,7 @@ export type SQLValueJS =
   | boolean
   | BigNumber
   | Dayjs
+  | Uint8Array
   | SQLValueJS[]
   | Map<string, SQLValueJS>
   | null

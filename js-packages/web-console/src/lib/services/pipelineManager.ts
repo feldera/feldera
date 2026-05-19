@@ -953,7 +953,7 @@ export const adHocQuery = async (pipelineName: string, query: string, options?: 
   return streamResponse(
     streamingFetch(
       getAuthenticatedFetch(options),
-      `${felderaEndpoint}/v0/pipelines/${pipelineName}/query?sql=${encodeURIComponent(query)}&format=json`,
+      `${felderaEndpoint}/v0/pipelines/${pipelineName}/query?sql=${encodeURIComponent(query)}&format=arrow_ipc`,
       {}
     )
   )
