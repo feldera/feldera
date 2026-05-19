@@ -282,16 +282,20 @@ public class CalciteOptimizer implements IWritesLogs {
             HepProgram getProgram(RelNode node, int level) {
                 this.builder.addMatchOrder(HepMatchOrder.BOTTOM_UP);
                 this.addRules(level,
-                        CoreRules.JOIN_CONDITION_PUSH,
                         CoreRules.JOIN_PUSH_EXPRESSIONS,
-                        CoreRules.FILTER_INTO_JOIN,
+                        new FilterJoinRule.JoinConditionPushRule(),
+                        new FilterJoinRule.FilterIntoJoinRule(),
+                        // CoreRules.JOIN_CONDITION_PUSH,
+                        // CoreRules.FILTER_INTO_JOIN, // replaced by the rule above
                         CoreRules.EXPAND_FILTER_DISJUNCTION_GLOBAL,
                         CoreRules.EXPAND_JOIN_DISJUNCTION_GLOBAL,
                         CoreRules.JOIN_EXPAND_OR_TO_UNION_RULE,
-                        CoreRules.JOIN_CONDITION_PUSH,
                         CoreRules.JOIN_PUSH_EXPRESSIONS,
-                        // CoreRules.JOIN_PUSH_TRANSITIVE_PREDICATES,
-                        CoreRules.FILTER_INTO_JOIN,
+                        // CoreRules.JOIN_PUSH_TRANSITIVE_PREDICATES, // I think this is broken
+                        new FilterJoinRule.JoinConditionPushRule(),
+                        new FilterJoinRule.FilterIntoJoinRule(),
+                        // CoreRules.JOIN_CONDITION_PUSH,
+                        // CoreRules.FILTER_INTO_JOIN,
                         // Sometimes this sequence generates extra filters which can be merged
                         CoreRules.FILTER_MERGE
                 );
@@ -404,12 +408,14 @@ public class CalciteOptimizer implements IWritesLogs {
             HepProgram getProgram(RelNode node, int level) {
                 this.builder.addMatchOrder(HepMatchOrder.BOTTOM_UP);
                 this.addRules(level,
-                        CoreRules.JOIN_CONDITION_PUSH,
+                        new FilterJoinRule.JoinConditionPushRule(),
+                        new FilterJoinRule.FilterIntoJoinRule(),
+                        // CoreRules.JOIN_CONDITION_PUSH,
+                        // CoreRules.FILTER_INTO_JOIN,
                         CoreRules.JOIN_PUSH_EXPRESSIONS,
                         CoreRules.JOIN_EXPAND_OR_TO_UNION_RULE,
                         CoreRules.EXPAND_FILTER_DISJUNCTION_GLOBAL,
-                        CoreRules.EXPAND_JOIN_DISJUNCTION_GLOBAL,
-                        CoreRules.FILTER_INTO_JOIN
+                        CoreRules.EXPAND_JOIN_DISJUNCTION_GLOBAL
                 );
                 return this.builder.build();
             }
