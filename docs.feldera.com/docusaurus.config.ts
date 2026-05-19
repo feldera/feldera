@@ -323,7 +323,7 @@ const config: Config = {
           items: [
             {
               label: "Slack",
-              href: "https://join.slack.com/t/felderacommunity/shared_invite/zt-222bq930h-dgsu5IEzAihHg8nQt~dHzA",
+              href: "https://join.slack.com/t/felderacommunity/shared_invite/zt-3vf3n5dj5-HJuC1DFFY2wE1_AZUyNxqw",
             },
             {
               label: "Discord",
@@ -362,7 +362,7 @@ const config: Config = {
           items: [
             {
               label: "Slack",
-              href: "https://join.slack.com/t/felderacommunity/shared_invite/zt-222bq930h-dgsu5IEzAihHg8nQt~dHzA",
+              href: "https://join.slack.com/t/felderacommunity/shared_invite/zt-3vf3n5dj5-HJuC1DFFY2wE1_AZUyNxqw",
             },
             {
               label: "Discord",
