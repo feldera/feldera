@@ -1,17 +1,17 @@
 import unittest
 from feldera import PipelineBuilder, Pipeline
 from feldera.testutils import (
-    unique_pipeline_name,
     FELDERA_TEST_NUM_WORKERS,
     FELDERA_TEST_NUM_HOSTS,
 )
 from tests import TEST_CLIENT
+from tests.platform.helper import PipelineTestCase
 from feldera.runtime_config import RuntimeConfig
 
 
-class NegativeCompilationTests(unittest.TestCase):
+class NegativeCompilationTests(PipelineTestCase):
     def test_sql_error(self):
-        pipeline_name = unique_pipeline_name("sql_error")
+        pipeline_name = self.register_for_cleanup("sql_error")
         sql = """
 CREATE TABLE student(
     id INT,
@@ -43,7 +43,7 @@ Code snippet:
         pipeline.clear_storage()
 
     def test_rust_error(self):
-        pipeline_name = unique_pipeline_name("rust_error")
+        pipeline_name = self.register_for_cleanup("rust_error")
         sql = ""
 
         with self.assertRaises(Exception) as err:
@@ -62,7 +62,7 @@ Code snippet:
 
     def test_program_error0(self):
         sql = "create taabl;"
-        name = unique_pipeline_name("test_program_error0")
+        name = self.register_for_cleanup("test_program_error0")
         try:
             _ = PipelineBuilder(
                 TEST_CLIENT,
@@ -83,7 +83,7 @@ Code snippet:
 
     def test_program_error1(self):
         sql = ""
-        name = unique_pipeline_name("test_program_error1")
+        name = self.register_for_cleanup("test_program_error1")
         _ = PipelineBuilder(
             TEST_CLIENT,
             name,
@@ -102,7 +102,7 @@ Code snippet:
 
     def test_errors0(self):
         sql = "SELECT invalid"
-        name = unique_pipeline_name("test_errors0")
+        name = self.register_for_cleanup("test_errors0")
         try:
             _ = PipelineBuilder(
                 TEST_CLIENT,
@@ -139,7 +139,7 @@ Code snippet:
         """
         pipeline = PipelineBuilder(
             TEST_CLIENT,
-            name=unique_pipeline_name("test_initialization_error"),
+            name=self.register_for_cleanup("test_initialization_error"),
             sql=sql,
             runtime_config=RuntimeConfig(
                 workers=FELDERA_TEST_NUM_WORKERS,

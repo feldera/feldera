@@ -2,13 +2,14 @@ import unittest
 
 import math
 from feldera import PipelineBuilder
-from tests import TEST_CLIENT, unique_pipeline_name
+from tests import TEST_CLIENT
+from tests.platform.helper import PipelineTestCase
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 
 # Test serialization of doubles
-class TestDouble(unittest.TestCase):
+class TestDouble(PipelineTestCase):
     def test_local(self):
         sql = """
 CREATE TABLE t (
@@ -35,7 +36,7 @@ SELECT 1/d as one, 0/d as zero FROM t;
 
         pipeline = PipelineBuilder(
             TEST_CLIENT,
-            name=unique_pipeline_name("test_doubles"),
+            name=self.register_for_cleanup("test_doubles"),
             sql=sql,
             runtime_config=RuntimeConfig(
                 workers=FELDERA_TEST_NUM_WORKERS,

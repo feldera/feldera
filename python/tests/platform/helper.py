@@ -14,15 +14,16 @@ from __future__ import annotations
 
 import json
 import os
+import unittest
 from http import HTTPStatus
 from typing import Any, Dict, Iterable
 from urllib.parse import quote, quote_plus
 
 import pytest
 import requests
-
 from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
 from feldera.testutils_oidc import get_oidc_test_helper
+
 from tests import (
     API_KEY,
     BASE_URL,
@@ -270,6 +271,25 @@ def gen_pipeline_name(func):
     return pytest.mark.usefixtures("pipeline_name")(func)
 
 
+class PipelineTestCase(unittest.TestCase):
+    """Base class for unittest tests that own pipelines on a shared instance.
+
+    Subclasses call ``self.register_for_cleanup(base)`` to get a unique
+    pipeline name. Each call cleans any leftover named pipeline and
+    registers an ``addCleanup`` that stops the pipeline and clears its
+    storage when the test finishes, regardless of pass or fail.
+
+    This mirrors the ``pipeline_name`` pytest fixture in ``conftest.py``
+    for code that still uses ``unittest.TestCase``.
+    """
+
+    def register_for_cleanup(self, base: str) -> str:
+        name = unique_pipeline_name(base)
+        cleanup_pipeline(name)
+        self.addCleanup(reset_pipeline, name)
+        return name
+
+
 __all__ = [
     "API_PREFIX",
     "HTTPStatus",
@@ -285,4 +305,5 @@ __all__ = [
     "extract_object_by_name",
     "gen_pipeline_name",
     "connector_action",
+    "PipelineTestCase",
 ]

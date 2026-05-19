@@ -4,11 +4,11 @@ import time
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import (
-    unique_pipeline_name,
     FELDERA_TEST_NUM_WORKERS,
     FELDERA_TEST_NUM_HOSTS,
 )
 from tests import TEST_CLIENT
+from tests.platform.helper import PipelineTestCase
 from feldera.enums import PipelineStatus
 
 
@@ -18,14 +18,14 @@ def get_result(pipeline) -> str:
     return result[0]["x"]
 
 
-class TestNowStream(unittest.TestCase):
+class TestNowStream(PipelineTestCase):
     def test_nowstream(self):
         """
         Test the now() function:
         pipeline should produce outputs even if no new inputs are supplied.
         """
 
-        pipeline_name = unique_pipeline_name("test_now")
+        pipeline_name = self.register_for_cleanup("test_now")
 
         sql = """
         CREATE MATERIALIZED VIEW v AS SELECT NOW() as X;
