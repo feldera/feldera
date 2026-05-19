@@ -26,6 +26,7 @@ const testOptimizeDepsInclude = [
   '@monaco-editor/loader',
   '@skeletonlabs/skeleton-svelte',
   '@streamparser/json',
+  'apache-arrow',
   '@svelte-bin/clipboard',
   '@square/svelte-store',
   'bignumber.js',

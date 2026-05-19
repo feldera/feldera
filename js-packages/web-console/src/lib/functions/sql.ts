@@ -1,30 +1,83 @@
 import { BigNumber } from 'bignumber.js'
 import { Dayjs, isDayjs } from 'dayjs'
 import JSONbig from 'true-json-bigint'
+import { match, P } from 'ts-pattern'
 import type { QueryResult } from '$lib/components/adhoc/Query.svelte'
 import { nonNull } from '$lib/functions/common/function'
-import type { ColumnType } from '$lib/services/manager'
+import type { ColumnType, SqlType } from '$lib/services/manager'
 import type { SQLValueJS } from '$lib/types/sql'
+
+const sqlTypeToIsoSql = (type: SqlType): string =>
+  match(type)
+    .returnType<string>()
+    .with(
+      { Interval: P.select() },
+      (unit) => 'INTERVAL ' + unit.replace('To', ' TO ').toUpperCase()
+    )
+    .with('Boolean', () => 'BOOLEAN')
+    .with('TinyInt', () => 'TINYINT')
+    .with('SmallInt', () => 'SMALLINT')
+    .with('Int', () => 'INTEGER')
+    .with('BigInt', () => 'BIGINT')
+    .with('UTinyInt', () => 'TINYINT UNSIGNED')
+    .with('USmallInt', () => 'SMALLINT UNSIGNED')
+    .with('UInt', () => 'INTEGER UNSIGNED')
+    .with('UBigInt', () => 'BIGINT UNSIGNED')
+    .with('Real', () => 'REAL')
+    .with('Double', () => 'DOUBLE PRECISION')
+    .with('Decimal', () => 'DECIMAL')
+    .with('Char', () => 'CHAR')
+    .with('Varchar', () => 'VARCHAR')
+    .with('Binary', () => 'BINARY')
+    .with('Varbinary', () => 'VARBINARY')
+    .with('Time', () => 'TIME')
+    .with('Date', () => 'DATE')
+    .with('Timestamp', () => 'TIMESTAMP')
+    .with('Array', () => 'ARRAY')
+    .with('Struct', () => 'ROW')
+    .with('Map', () => 'MAP')
+    .with('Null', () => 'NULL')
+    .with('Uuid', () => 'UUID')
+    .with('Variant', () => 'VARIANT')
+    .exhaustive()
 
 const displaySQLType = (columntype: ColumnType): string =>
   (columntype.component ? displaySQLType(columntype.component) + ' ' : '') +
-  columntype.type +
+  (columntype.type ? sqlTypeToIsoSql(columntype.type) : '') +
   ((p, s) => (p && p > 0 ? '(' + (nonNull(s) ? [p, s] : [p]).join(', ') + ')' : ''))(
     columntype.precision,
     columntype.scale
   )
 
-export const displaySQLColumnType = ({ columntype }: { columntype: ColumnType }) =>
-  columntype.type ? displaySQLType(columntype) + (columntype.nullable ? '' : ' NOT NULL') : ''
+export const displaySQLColumnType = ({ columntype }: { columntype: ColumnType }) => {
+  return columntype.type
+    ? displaySQLType(columntype) + (columntype.nullable ? '' : ' NOT NULL')
+    : ''
+}
+
+/**
+ * Render binary (`VARBINARY`/`BINARY`) bytes as a lowercase hex string, e.g.
+ * the bytes `de ad be ef` become `deadbeef`. This mirrors how SQL renders
+ * binary literals (`x'deadbeef'`).
+ */
+export const bytesToHex = (bytes: Uint8Array): string => {
+  let hex = ''
+  for (const byte of bytes) {
+    hex += byte.toString(16).padStart(2, '0')
+  }
+  return hex
+}
 
 export const displaySQLValue = (value: SQLValueJS) => {
   return value === null
     ? 'NULL'
     : typeof value === 'string'
       ? value
-      : BigNumber.isBigNumber(value)
-        ? value.toFixed()
-        : JSONbig.stringify(value, undefined, 1)
+      : value instanceof Uint8Array
+        ? bytesToHex(value)
+        : BigNumber.isBigNumber(value)
+          ? value.toFixed()
+          : JSONbig.stringify(value, undefined, 1)
 }
 
 /**

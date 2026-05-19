@@ -14,8 +14,8 @@
   import { type ExtendedPipeline } from '$lib/services/pipelineManager'
   import Query, { type Row, type QueryData } from '$lib/components/adhoc/Query.svelte'
   import { isPipelineInteractive } from '$lib/functions/pipelines/status'
-  import type { SQLValueJS } from '$lib/types/sql'
-  import { createBigNumberStreamParser, parseStream } from '$lib/functions/pipelines/changeStream'
+  import { arrowIpcBatchToJS, arrowSchemaToFelderaFields } from '$lib/functions/apacheArrow'
+  import { type AsyncRecordBatchStreamReader, RecordBatchReader } from 'apache-arrow'
   import invariant from 'tiny-invariant'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
   import { enclosure, reclosureKey } from '$lib/functions/common/function'
@@ -42,8 +42,8 @@
     adhocQueries[tenantName][pipelineName] ??= { queries: [{ query: '' }] }
   })
   const api = usePipelineManager()
-  const isDataRow = (record: Record<string, SQLValueJS>) =>
-    !(Object.keys(record).length === 1 && ('error' in record || 'warning' in record))
+
+  const isDataRow = (row: Row): row is { cells: unknown[] } & Row => 'cells' in row
 
   const onSubmitQuery =
     (tenantName: string, pipelineName: string, i: number) => async (query: string) => {
@@ -67,92 +67,79 @@
         return
       }
       const bufferSize = 1000
-      const pushChanges = (
-        input: (Record<string, SQLValueJS> | { error: string } | { warning: string })[]
-      ) => {
+      const appendRows = (rows: Row[]) => {
         if (!adhocQueries[tenantName][pipelineName].queries[i]?.result) {
           return
         }
-        if (
-          adhocQueries[tenantName][pipelineName].queries[i].result.columns.length === 0 &&
-          isDataRow(input[0])
-        ) {
-          adhocQueries[tenantName][pipelineName].queries[i].result.columns.push(
-            ...Object.keys(input[0]).map((name) => ({
-              name,
-              case_sensitive: false,
-              columntype: { nullable: true },
-              unused: false
-            }))
-          )
-        }
-        {
-          // Limit result size behavior - ignore all but first bufferSize rows
-          const previousLength =
-            adhocQueries[tenantName][pipelineName].queries[i].result.rows().length
-          adhocQueries[tenantName][pipelineName].queries[i].result
-            .rows()
-            .push(
-              ...input
-                .slice(0, bufferSize - previousLength)
-                .map((v) => (isDataRow(v) ? { cells: Object.values(v) } : v) as Row)
-            )
-          reclosureKey(adhocQueries[tenantName][pipelineName].queries[i].result, 'rows')
-          if (input.length > bufferSize - previousLength) {
-            queueMicrotask(() => {
-              if (!adhocQueries[tenantName][pipelineName].queries[i]) {
-                return
-              }
-              if (adhocQueries[tenantName][pipelineName].queries[i].result?.rows) {
-                adhocQueries[tenantName][pipelineName].queries[i].result.rows().push({
-                  warning: `The result contains more rows, but only the first ${bufferSize} are shown`
-                })
-                reclosureKey(adhocQueries[tenantName][pipelineName].queries[i].result, 'rows')
-              }
-              adhocQueries[tenantName][pipelineName].queries[i].result?.endResultStream()
-            })
-          }
-        }
-      }
-      const { cancel } = parseStream(
-        result,
-        createBigNumberStreamParser<Record<string, SQLValueJS>>({
-          paths: ['$'],
-          separator: ''
-        }),
-        {
-          pushChanges,
-          onBytesSkipped: (skippedBytes) => {
-            if (!adhocQueries[tenantName][pipelineName].queries[i]?.result) {
-              return
-            }
-            adhocQueries[tenantName][pipelineName].queries[i].result.totalSkippedBytes +=
-              skippedBytes
-          },
-          onParseEnded: () => {
+        // Limit result size - ignore all but first bufferSize rows
+        const previousLength =
+          adhocQueries[tenantName][pipelineName].queries[i].result.rows().length
+        adhocQueries[tenantName][pipelineName].queries[i].result
+          .rows()
+          .push(...rows.slice(0, bufferSize - previousLength))
+        reclosureKey(adhocQueries[tenantName][pipelineName].queries[i].result, 'rows')
+        if (rows.length > bufferSize - previousLength) {
+          queueMicrotask(() => {
             if (!adhocQueries[tenantName][pipelineName].queries[i]) {
               return
             }
-            // Add field for the next query if the last query did not yield an error right away
-            if (
-              adhocQueries[tenantName][pipelineName].queries.length === i + 1 &&
-              ((row) => !row || isDataRow(row))(
-                adhocQueries[tenantName][pipelineName].queries[i].result?.rows().at(0)
-              )
-            ) {
-              adhocQueries[tenantName][pipelineName].queries.push({ query: '' })
+            if (adhocQueries[tenantName][pipelineName].queries[i].result?.rows) {
+              adhocQueries[tenantName][pipelineName].queries[i].result.rows().push({
+                warning: `The result contains more rows, but only the first ${bufferSize} are shown`
+              })
+              reclosureKey(adhocQueries[tenantName][pipelineName].queries[i].result, 'rows')
             }
-            adhocQueries[tenantName][pipelineName].queries[i].progress = false
-          },
-          onNetworkError(e, injectValue) {
-            injectValue({ error: e.message })
-          }
-        },
-        {
-          bufferSize: 8 * 1024 * 1024
+            adhocQueries[tenantName][pipelineName].queries[i].result?.endResultStream()
+          })
         }
-      )
+      }
+      // Adhoc results are capped at `bufferSize` rows on the consumer side, so the
+      // generic `parseStream` orchestrator (flush cadence + shedding budget) is
+      // unnecessary here — drive the arrow reader directly.
+      let cancelled = false
+      let arrowReader: AsyncRecordBatchStreamReader | null = null
+      const cancel = () => {
+        cancelled = true
+        arrowReader?.cancel().catch(() => {})
+        result.cancel()
+      }
       adhocQueries[tenantName][pipelineName].queries[i].result.endResultStream = cancel
+      try {
+        arrowReader = (await RecordBatchReader.from(
+          result.stream
+        )) as unknown as AsyncRecordBatchStreamReader
+        // `RecordBatchReader.from` returns before the stream header has been parsed
+        // for the async variant — `schema` is only populated after `open()`.
+        await arrowReader.open()
+        if (cancelled) return
+        if (adhocQueries[tenantName][pipelineName].queries[i]?.result) {
+          adhocQueries[tenantName][pipelineName].queries[i].result.columns.push(
+            ...arrowSchemaToFelderaFields(arrowReader.schema)
+          )
+        }
+        for await (const batch of arrowReader) {
+          if (cancelled) return
+          const rows: Row[] = arrowIpcBatchToJS(batch).map(({ row }) => ({ cells: row }) as Row)
+          appendRows(rows)
+        }
+      } catch (e) {
+        if (!cancelled) {
+          appendRows([{ error: e instanceof Error ? e.message : String(e) }])
+        }
+      } finally {
+        if (adhocQueries[tenantName][pipelineName]?.queries[i]) {
+          // Add field for the next query if the last query did not yield an error right away
+          if (
+            adhocQueries[tenantName][pipelineName].queries.length === i + 1 &&
+            ((row) => !row || isDataRow(row))(
+              adhocQueries[tenantName][pipelineName].queries[i].result?.rows().at(0)
+            )
+          ) {
+            adhocQueries[tenantName][pipelineName].queries.push({ query: '' })
+          }
+          adhocQueries[tenantName][pipelineName].queries[i].progress = false
+        }
+      }
     }
 </script>
 

@@ -176,7 +176,7 @@
                 }
               }}
               <div
-                class="relative scrollbar h-full max-h-64 w-fit max-w-full overflow-auto rounded"
+                class="relative scrollbar h-full max-h-64 w-fit max-w-full overflow-auto rounded pb-3"
                 use:reverseScroll.action
                 {onscroll}
                 bind:clientHeight={_.clientHeight}
@@ -185,6 +185,7 @@
                   {#if result.columns.length}
                     <thead>
                       <tr>
+                        <th class="bg-white-dark sticky top-0 z-10 font-light {itemHeight}">#</th>
                         {#each result.columns as column}
                           <SqlColumnHeader
                             {column}
@@ -204,6 +205,7 @@
               {@const row = rows[index]}
               {#if !row}{:else if 'cells' in row}
                 <tr {style} class="{itemHeight} whitespace-nowrap odd:bg-white odd:dark:bg-black">
+                  <td class="text-right font-mono select-none">{index}</td>
                   {#each row.cells as value}
                     <SQLValue
                       {value}
