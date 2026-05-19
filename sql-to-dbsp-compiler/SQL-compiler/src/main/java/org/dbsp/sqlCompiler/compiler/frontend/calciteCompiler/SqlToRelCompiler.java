@@ -2265,6 +2265,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 if (node.statement() instanceof SqlRemove)
                     return this.compileRemove(node);
                 break;
+            case WITH:
             case ORDER_BY:
             case SELECT:
                 throw new UnsupportedException(
