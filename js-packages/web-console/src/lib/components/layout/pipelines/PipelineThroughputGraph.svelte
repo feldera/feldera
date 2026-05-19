@@ -39,7 +39,10 @@
     ref.setOption({
       series: [
         {
-          data: throughput.series
+          data: throughput.series.map((p) => ({
+            id: p.value[0],
+            value: p.value
+          }))
         }
       ],
       xAxis: {
@@ -116,7 +119,10 @@
           opacity: 0
         },
         // svelte-ignore state_referenced_locally
-        data: throughput.series
+        data: throughput.series.map((p) => ({
+          id: p.value[0],
+          value: p.value
+        }))
       }
     ]
   }

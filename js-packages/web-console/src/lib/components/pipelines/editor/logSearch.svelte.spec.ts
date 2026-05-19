@@ -5,7 +5,6 @@
  * touches `window` — so the pure functions ride along here rather than in a node project.
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
 import {
   advanceSearch,
   applySearchHighlight,
@@ -13,9 +12,10 @@ import {
   emptySearchState,
   findMatchOffsets,
   findOccurrence,
-  searchPatternsEqual,
-  type SearchPattern
+  type SearchPattern,
+  searchPatternsEqual
 } from 'common-ui'
+import { afterEach, describe, expect, it } from 'vitest'
 
 const substr = (query: string, caseSensitive = false): SearchPattern => ({
   kind: 'substring',
@@ -151,7 +151,9 @@ const mount = (html: string) => {
 
 const highlightedText = () => {
   const hl = CSS.highlights.get(NAME)
-  if (!hl) return []
+  if (!hl) {
+    return []
+  }
   return [...hl].map((range) => range.toString())
 }
 

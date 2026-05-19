@@ -49,9 +49,9 @@ import { getExtendedPipeline, putPipeline } from '$lib/services/pipelineManager'
 import {
   cleanupPipeline,
   configureTestClient,
+  type ExtendedPipeline,
   startPipelineAndWaitForRunning,
-  waitForCompilation,
-  type ExtendedPipeline
+  waitForCompilation
 } from '$lib/services/testPipelineHelpers'
 import TabAdHocQuery from './TabAdHocQuery.svelte'
 

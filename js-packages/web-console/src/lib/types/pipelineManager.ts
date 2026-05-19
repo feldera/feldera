@@ -10,19 +10,19 @@ export type TimeSeriesEntry = {
   /**
    * Timestamp ms
    */
-  t: BigNumber
+  t: number
   /**
    * Processed records
    */
-  r: BigNumber
+  r: number
   /**
    * Used memory bytes
    */
-  m: BigNumber
+  m: number
   /**
    * Used storage bytes
    */
-  s: BigNumber
+  s: number
 }
 
 export type PipelineDiff = {

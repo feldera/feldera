@@ -40,7 +40,7 @@
 
   const pipelineName = $derived(pipeline.current.name)
 
-  const valueMax = $derived(metrics.length ? Math.max(...metrics.map((v) => v.m.toNumber())) : 0)
+  const valueMax = $derived(metrics.length ? Math.max(...metrics.map((v) => v.m)) : 0)
   const yMaxStep = $derived(2 ** Math.ceil(Math.log2(valueMax * 1.25)))
   const yMax = $derived(valueMax !== 0 ? yMaxStep : 1024 * 2048)
   const yMin = 0
@@ -61,8 +61,8 @@
       series: [
         {
           data: metrics.map((m) => ({
-            name: m.t.toString(),
-            value: tuple(m.t.toNumber(), m.m.toNumber() ?? 0)
+            id: m.t,
+            value: tuple(m.t, m.m ?? 0)
           }))
         }
       ],
@@ -159,8 +159,8 @@
           opacity: 0
         },
         data: metrics.map((m) => ({
-          name: m.t.toString(),
-          value: tuple(m.t.toNumber(), m.m.toNumber() ?? 0)
+          id: m.t,
+          value: tuple(m.t, m.m ?? 0)
         })),
         markLine: {
           animation: false,
@@ -201,7 +201,7 @@
 
 <div class="absolute h-full w-full py-4">
   <div class="px-4 pb-2">
-    Used memory: {humanSize(metrics.at(-1)?.m.toNumber() ?? 0)}
+    Used memory: {humanSize(metrics.at(-1)?.m ?? 0)}
   </div>
   {#key pipelineName}
     <Chart init={(dom, theme, opts) => (ref = init(dom, theme, opts))} {options} />
