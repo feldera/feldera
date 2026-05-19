@@ -834,33 +834,37 @@ where
                     }
                 }
 
-                updates_cursor.fast_forward_vals();
-                debug_assert!(updates_cursor.val_valid());
-                let update = updates_cursor.val().snd();
+                while updates_cursor.val_valid() {
+                    let update_weight = **updates_cursor.weight();
+                    debug_assert_eq!(update_weight, ZWeight::one());
+                    let update = updates_cursor.val().snd();
 
-                match update.get() {
-                    UpdateRef::Delete => {}
-                    UpdateRef::Insert(val) => {
-                        key_updates.push_with(&mut |item| {
-                            let (v, w) = item.split_mut();
-
-                            val.clone_to(v);
-                            **w = HasOne::one();
-                        });
-                    }
-                    UpdateRef::Update(upd) => {
-                        if let Some(val) = cur_val.get_mut() {
-                            (self.patch_func)(val, upd);
-                            key_updates.push_with(&mut |item| {
-                                let (v, w) = item.split_mut();
-
-                                val.move_to(v);
-                                **w = HasOne::one();
-                            });
-                        } else {
-                            // TODO: report missing key.
+                    match update.get() {
+                        UpdateRef::Delete => {
+                            cur_val.set_none();
+                        }
+                        UpdateRef::Insert(val) => {
+                            cur_val.from_ref(val);
+                        }
+                        UpdateRef::Update(upd) => {
+                            if let Some(val) = cur_val.get_mut() {
+                                (self.patch_func)(val, upd);
+                            } else {
+                                // TODO: report missing key.
+                            }
                         }
                     }
+
+                    updates_cursor.step_val();
+                }
+
+                if let Some(val) = cur_val.get_mut() {
+                    key_updates.push_with(&mut |item| {
+                        let (v, w) = item.split_mut();
+
+                        val.move_to(v);
+                        **w = HasOne::one();
+                    });
                 }
 
                 key_updates.consolidate();
