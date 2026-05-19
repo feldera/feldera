@@ -3223,15 +3223,40 @@ impl CircuitThread {
         }
     }
 
-    // Update `trace_snapshot` to the latest traces.
-    //
-    // This updates what ad hoc snapshots query.
+    /// Update `trace_snapshot` with the latest traces so ad hoc queries pick
+    /// up the freshest data.
+    ///
+    /// Tables refresh every step so an INSERT inside a transaction is visible
+    /// to a subsequent SELECT in the same request.  Views compute their
+    /// integral via `accumulate_integrate_trace`, which only advances on a
+    /// transaction boundary. We use the the previous snapshot instead.
     fn update_snapshot(&mut self) {
+        let bootstrapping = self.controller.status.bootstrap_in_progress();
+        let in_transaction =
+            !bootstrapping && self.controller.get_transaction_state() != TransactionState::None;
+
+        let previous_views: Option<ConsistentSnapshot> = if in_transaction {
+            let snapshots = self.controller.trace_snapshots.blocking_lock();
+            snapshots.iter().next_back().map(|(_, snap)| snap.clone())
+        } else {
+            None
+        };
+
         // Assemble a new snapshot.
         let mut snapshot = BTreeMap::new();
         for (name, clh) in self.controller.catalog.output_iter() {
             if let Some(ih) = &clh.integrate_handle {
-                let batches = ih.take_from_all();
+                let is_table = self
+                    .controller
+                    .catalog
+                    .input_collection_handle(name)
+                    .is_some();
+
+                let batches = match previous_views.as_ref().and_then(|s| s.get(name)) {
+                    Some(prev) if !is_table && in_transaction => prev.clone(),
+                    _ => ih.take_from_all(),
+                };
+
                 // The first index of a materialized view registers its
                 // integral under the view name with `alias_as_index =
                 // Some(index)` (see
