@@ -3,22 +3,31 @@ use crate::{
     algebra::{
         IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet, OrdZSetFactories, ZSet,
     },
-    circuit::{RootCircuit, checkpointer::Checkpoint},
+    circuit::{
+        OwnershipPreference, RootCircuit, checkpointer::Checkpoint,
+        circuit_builder::register_replay_stream,
+    },
     dynamic::{
         ClonableTrait, DataTrait, DynBool, DynData, DynOpt, DynPair, DynPairs, DynUnit,
         DynWeightedPairs, Erase, Factory, LeanVec, WithFactory,
     },
     operator::{
         Input, InputHandle, Update,
+        async_stream_operators::StreamingBinaryWrapper,
         dynamic::{
+            accumulate_trace::{AccumulateTraceAppend, AccumulateTraceId, AccumulateZ1Trace},
             input_upsert::{
-                DynUpdate, InputUpsertFactories, InputUpsertWithWaterlineFactories, PatchFunc,
+                BulkInputUpsert, DynUpdate, InputUpsertFactories,
+                InputUpsertWithWaterlineFactories, PatchFunc,
             },
             time_series::LeastUpperBoundFunc,
+            trace::{BoundsId, DelayedTraceId, TraceBounds},
             upsert::UpdateSetFactories,
         },
     },
-    trace::{Batch, BatchFactories, BatchReaderFactories, Batcher, Builder, FallbackWSet, Rkyv},
+    trace::{
+        Batch, BatchFactories, BatchReaderFactories, Batcher, Builder, FallbackWSet, Rkyv, Spine,
+    },
     utils::Tup2,
 };
 use std::{
@@ -200,6 +209,59 @@ where
             input_pair_factory: self.input_pair_factory,
             input_pairs_factory: self.input_pairs_factory,
             upsert_pair_factory: self.upsert_pair_factory,
+        }
+    }
+}
+
+pub struct AddInputMapFactories2<B, U>
+where
+    B: IndexedZSet,
+    U: DataTrait + ?Sized,
+{
+    input_pair_factory: &'static dyn Factory<DynPair<B::Key, DynUpdate<B::Val, U>>>,
+    input_pairs_factory: &'static dyn Factory<DynPairs<B::Key, DynUpdate<B::Val, U>>>,
+    upsert_factories: OrdIndexedZSetFactories<B::Key, DynPair<DynData, DynUpdate<B::Val, U>>>,
+    output_factories: B::Factories,
+    opt_val_factory: &'static dyn Factory<DynOpt<B::Val>>,
+}
+
+impl<B, U> AddInputMapFactories2<B, U>
+where
+    B: IndexedZSet,
+    U: DataTrait + ?Sized,
+{
+    pub fn new<KType, VType, UType>() -> Self
+    where
+        KType: DBData + Erase<B::Key>,
+        VType: DBData + Erase<B::Val>,
+        UType: DBData + Erase<U>,
+    {
+        Self {
+            input_pair_factory: WithFactory::<Tup2<KType, Update<VType, UType>>>::FACTORY,
+            input_pairs_factory: WithFactory::<LeanVec<Tup2<KType, Update<VType, UType>>>>::FACTORY,
+            upsert_factories: BatchReaderFactories::new::<
+                KType,
+                Tup2<u32, Update<VType, UType>>,
+                ZWeight,
+            >(),
+            output_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
+            opt_val_factory: WithFactory::<Option<VType>>::FACTORY,
+        }
+    }
+}
+
+impl<B, U> Clone for AddInputMapFactories2<B, U>
+where
+    B: IndexedZSet,
+    U: DataTrait + ?Sized,
+{
+    fn clone(&self) -> Self {
+        Self {
+            input_pair_factory: self.input_pair_factory,
+            input_pairs_factory: self.input_pairs_factory,
+            upsert_factories: self.upsert_factories.clone(),
+            output_factories: self.output_factories.clone(),
+            opt_val_factory: self.opt_val_factory,
         }
     }
 }
@@ -394,13 +456,13 @@ impl RootCircuit {
     pub fn dyn_add_input_map_mono(
         &self,
         persistent_id: Option<&str>,
-        factories: &AddInputMapFactories<OrdIndexedZSet<DynData, DynData>, DynData>,
+        factories: &AddInputMapFactories2<OrdIndexedZSet<DynData, DynData>, DynData>,
         patch_func: PatchFunc<DynData, DynData>,
     ) -> (
         IndexedZSetStream<DynData, DynData>,
         UpsertHandle<DynData, DynUpdate<DynData, DynData>>,
     ) {
-        self.dyn_add_input_map(persistent_id, factories, patch_func)
+        self.dyn_add_input_map2(persistent_id, factories, patch_func)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -692,6 +754,89 @@ impl RootCircuit {
         sorted.input_upsert::<B>(persistent_id, &factories.upsert_factories, patch_func)
     }
 
+    #[track_caller]
+    fn add_upsert_indexed2<K, V, U, B>(
+        &self,
+        persistent_id: Option<&str>,
+        factories: &AddInputMapFactories2<B, U>,
+        input_stream: Stream<Self, Vec<Box<DynPairs<K, DynUpdate<V, U>>>>>,
+        patch_func: PatchFunc<V, U>,
+    ) -> Stream<Self, B>
+    where
+        B: IndexedZSet<Key = K, Val = V>,
+        K: DataTrait + ?Sized,
+        V: DataTrait + ?Sized,
+        U: DataTrait + ?Sized,
+    {
+        let upsert_factories = factories.upsert_factories.clone();
+        let mut time = 0u32;
+        let upsert_batches = input_stream.apply_mut_owned(move |upserts| {
+            let batch = pairs_to_upsert_batch(&upsert_factories, upserts, time);
+            time = time
+                .checked_add(1)
+                .expect("input upsert step counter overflow");
+            batch
+        });
+
+        if Runtime::runtime().is_none_or(|rt| rt.layout().is_solo()) {
+            // UpsertHandle shards its inputs across workers on the current host only.
+            upsert_batches.mark_sharded();
+        }
+
+        let accumulated = upsert_batches.dyn_shard_accumulate(&factories.upsert_factories);
+
+        let bounds = <TraceBounds<K, V>>::unbounded();
+        
+        let (delayed_trace, z1feedback) = self.add_feedback_persistent(
+            persistent_id
+                .map(|name| format!("{name}.input_upsert"))
+                .as_deref(),
+            AccumulateZ1Trace::new(
+                &factories.output_factories,
+                &factories.output_factories,
+                false,
+                0,
+                bounds.clone(),
+            ),
+        );
+        delayed_trace.mark_sharded();
+
+        let delta = self.add_binary_operator(
+            StreamingBinaryWrapper::new(BulkInputUpsert::<_, _, B>::new(
+                factories.output_factories.clone(),
+                factories.opt_val_factory,
+                patch_func,
+            )),
+            &delayed_trace,
+            &accumulated,
+        );
+        delta.mark_sharded();
+        let replay_stream = z1feedback.operator_mut().prepare_replay_stream(&delta);
+
+        let trace = self.add_binary_operator_with_preference(
+            <AccumulateTraceAppend<Spine<B>, B, RootCircuit>>::new(
+                &factories.output_factories,
+                self.clone(),
+            ),
+            (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
+            (
+                &delta.dyn_accumulate(&factories.output_factories),
+                OwnershipPreference::PREFER_OWNED,
+            ),
+        );
+        trace.mark_sharded();
+
+        z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
+
+        register_replay_stream(self, &delta, &replay_stream);
+
+        self.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
+        self.cache_insert(AccumulateTraceId::new(delta.stream_id()), trace);
+        self.cache_insert(BoundsId::<B>::new(delta.stream_id()), bounds);
+
+        delta
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[track_caller]
     fn add_upsert_indexed_with_waterline<K, V, U, B, W, E>(
@@ -910,6 +1055,38 @@ impl RootCircuit {
 
             let upsert =
                 self.add_upsert_indexed(persistent_id, factories, input_stream, patch_func);
+
+            (upsert, zset_handle)
+        })
+    }
+
+    #[track_caller]
+    pub fn dyn_add_input_map2<K, V, U>(
+        &self,
+        persistent_id: Option<&str>,
+        factories: &AddInputMapFactories2<OrdIndexedZSet<K, V>, U>,
+        patch_func: PatchFunc<V, U>,
+    ) -> (IndexedZSetStream<K, V>, UpsertHandle<K, DynUpdate<V, U>>)
+    where
+        K: DataTrait + ?Sized,
+        V: DataTrait + ?Sized,
+        U: DataTrait + ?Sized,
+    {
+        self.region("input_map", || {
+            let (input, input_handle) = Input::new(
+                Location::caller(),
+                |tuples: Vec<Box<DynPairs<K, DynUpdate<V, U>>>>| tuples,
+                Arc::new(|| vec![factories.input_pairs_factory.default_box()]),
+            );
+            let input_stream = self.add_source(input);
+            let zset_handle = <UpsertHandle<K, DynUpdate<V, U>>>::new(
+                factories.input_pair_factory,
+                factories.input_pairs_factory,
+                input_handle,
+            );
+
+            let upsert =
+                self.add_upsert_indexed2(persistent_id, factories, input_stream, patch_func);
 
             (upsert, zset_handle)
         })

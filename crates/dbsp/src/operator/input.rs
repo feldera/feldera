@@ -8,8 +8,7 @@ use crate::{
     dynamic::{DowncastTrait, DynBool, DynData, DynPair, DynPairs, DynUnit, Erase, LeanVec},
     operator::dynamic::{
         input::{
-            AddInputIndexedZSetFactories, AddInputMapFactories, AddInputMapWithWaterlineFactories,
-            AddInputSetFactories, AddInputZSetFactories, CollectionHandle, UpsertHandle,
+            AddInputIndexedZSetFactories, AddInputMapFactories, AddInputMapFactories2, AddInputMapWithWaterlineFactories, AddInputSetFactories, AddInputZSetFactories, CollectionHandle, UpsertHandle
         },
         input_upsert::DynUpdate,
     },
@@ -629,7 +628,7 @@ impl RootCircuit {
         U: DBData + Erase<DynData>,
         PF: Fn(&mut V, &U) + 'static,
     {
-        let factories = AddInputMapFactories::new::<K, V, U>();
+        let factories = AddInputMapFactories2::new::<K, V, U>();
         let (stream, handle) = self.dyn_add_input_map_mono(
             persistent_id,
             &factories,
