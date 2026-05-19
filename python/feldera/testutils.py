@@ -160,7 +160,9 @@ _ROW_DIFF_LOG_LIMIT = 20
 def _log_row_diff(label: str, rows: list) -> None:
     if not rows:
         return
-    log(f"{label} ({len(rows)} rows; showing first {min(len(rows), _ROW_DIFF_LOG_LIMIT)}):")
+    log(
+        f"{label} ({len(rows)} rows; showing first {min(len(rows), _ROW_DIFF_LOG_LIMIT)}):"
+    )
     for row in rows[:_ROW_DIFF_LOG_LIMIT]:
         log(json.dumps(row, default=str))
 
