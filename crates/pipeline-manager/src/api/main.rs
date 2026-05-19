@@ -1023,10 +1023,6 @@ mod tests {
     use actix_web::http::Method;
     use actix_web::test;
 
-    async fn ok_handler() -> HttpResponse {
-        HttpResponse::Ok().body("ok")
-    }
-
     /// Content-hashed bundle paths get year-long immutable caching plus
     /// `ACAO: *` so SvelteKit's `crossorigin` script loads can be reused
     /// from cache.

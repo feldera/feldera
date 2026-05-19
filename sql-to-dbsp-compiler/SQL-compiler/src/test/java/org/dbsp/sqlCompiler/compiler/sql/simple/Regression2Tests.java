@@ -1623,4 +1623,52 @@ public class Regression2Tests extends SqlIoTest {
         this.statementsFailingInCompilation(program, """
                 OVER currently cannot sort on columns with type UUID NULL""");
     }
+
+    @Test
+    public void issue6255() {
+        this.getCCS("""
+                CREATE TABLE collection_events (
+                  row_id     BIGINT,
+                  grp        VARCHAR,
+                  nums       INT ARRAY,
+                  nums2      INT ARRAY,
+                  prices     DECIMAL(10,2) ARRAY,
+                  taxes      DECIMAL(10,2) ARRAY,
+                  tags       VARCHAR ARRAY,
+                  tags2      VARCHAR ARRAY,
+                  attrs      MAP<VARCHAR, VARCHAR>,
+                  attrs2     MAP<VARCHAR, VARCHAR>,
+                  raw_json   VARCHAR,
+                  start_date DATE,
+                  end_date   DATE
+                );
+                
+                CREATE VIEW v AS
+                SELECT j.row_id, e.sku, e.qty
+                FROM (
+                  SELECT row_id,
+                         CAST(PARSE_JSON(raw_json) AS ROW(sku VARCHAR, qty INT) ARRAY) AS items
+                  FROM collection_events
+                ) j
+                , UNNEST(j.items) AS e(sku, qty);""");
+    }
+
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-7536")
+    public void issue6256() {
+        this.getCC("""
+                CREATE VIEW V AS SELECT col1
+                FROM (VALUES (1)) t1(col1)
+                GROUP BY col1
+                HAVING (
+                    SELECT MAX(t2.col1) != 0
+                    FROM (VALUES (1)) t2(col1)
+                    WHERE t2.col1 = t1.col1
+                    GROUP BY t2.col1
+                    HAVING (
+                        SELECT t3.col1 != 0
+                        FROM (VALUES (1)) t3(col1)
+                        WHERE t3.col1 = MAX(t2.col1)
+                    )
+                );""");
+    }
 }

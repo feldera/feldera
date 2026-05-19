@@ -16,7 +16,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFailExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
@@ -35,7 +34,6 @@ import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -179,9 +177,8 @@ public class ExpandSafeCasts extends ExpressionTranslator {
     }
 
     // Can occur e.g., when converting a VARIANT to a ROW or user-defined type
-    DBSPExpression convertToStructOrTuple(
-            CalciteObject node, DBSPExpression source, DBSPTypeTuple type) {
-        List<DBSPExpression> fields = new ArrayList<>();
+    DBSPExpression convertToStructOrTuple(CalciteObject node, DBSPExpression source, DBSPTypeTuple type) {
+        DBSPExpression[] fields = new DBSPExpression[type.size()];
         DBSPTypeStruct struct = type.originalStruct;
         List<ProgramIdentifier> names = null;
         if (struct != null)
@@ -213,23 +210,25 @@ public class ExpandSafeCasts extends ExpressionTranslator {
             } else {
                 throw new InternalCompilerError("Unexpected source type " + sourceType);
             }
-            DBSPExpression expression = field.applyCloneIfNeeded().cast(node, fieldType, SAFE);
-            // Convert recursively
-            expression = this.analyze(expression).to(DBSPExpression.class);
-            fields.add(expression);
+
+            DBSPClosureExpression convertFunction = this.converterFunction(node, field.getType(), fieldType);
+            DBSPExpression expression = convertFunction.call(field.borrow()).reduce(this.compiler);
+            fields[i] = expression;
         }
 
-        DBSPExpression result = new DBSPTupleExpression(source.getNode(), type, fields);
+        DBSPType resultType = new DBSPTypeSqlResult(type);
+        DBSPExpression result = new DBSPApplyExpression("Tup" + type.size() + "::from_results", resultType, fields);
+        result = result.cast(node, type, UNWRAP);
         if (source.getType().mayBeNull) {
             if (type.mayBeNull) {
                 result = new DBSPIfExpression(node, source.is_null(), type.none(), result);
             } else {
                 result = new DBSPIfExpression(node, source.is_null(),
-                        new DBSPFailExpression(source.getNode(), type, "Cast to non-nullable value applied to NULL"),
+                        new DBSPFailExpression(source.getNode(), type,
+                                "Cast to non-nullable ROW applied to NULL"),
                         result);
             }
         }
-
         return result;
     }
 

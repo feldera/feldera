@@ -85,6 +85,14 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         pub fn new(#(#fields: #generics),*) -> Self {
             Self(#(#fields),*)
         }
+
+        #[allow(clippy::too_many_arguments)]
+        pub fn from_results<E>(#(#fields: Result<#generics, E>),*) -> Result<Option<Self>, E>
+        where
+            #(#generics: ::dbsp::utils::IsNone,)*
+        {
+            Ok(Some(Self(#(<#generics as ::dbsp::utils::IsNone>::result_to_field(#fields)?,)*)))
+        }
     }
     };
 
@@ -1033,5 +1041,18 @@ mod tests {
         let formatted = prettyplease::unparse(&parsed_file);
         println!("{formatted}");
         assert!(formatted.contains("pub struct Tup8"));
+    }
+
+    #[test]
+    fn from_results_method() {
+        // Verify from_results is generated and has the right shape.
+        let tuple: TupleDef = syn::parse2(quote!(Tup2<T0, T1>)).expect("Failed to parse TupleDef");
+        let expanded = declare_tuple_impl(tuple);
+        let parsed_file: syn::File = syn::parse2(expanded).expect("Failed to parse output");
+        let formatted = prettyplease::unparse(&parsed_file);
+        assert!(formatted.contains("from_results"));
+        assert!(formatted.contains("-> Result<Option<Self>, E>"));
+        // Option fields absorb errors; non-Option fields propagate them.
+        assert!(formatted.contains("result_to_field"));
     }
 }

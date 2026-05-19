@@ -191,3 +191,38 @@ impl core::fmt::Debug for Tup0 {
 }
 
 impl Copy for Tup0 {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_results_both_ok() {
+        let result = Tup2::<i32, Option<i32>>::from_results(
+            Ok::<i32, &str>(1),
+            Ok::<Option<i32>, &str>(Some(2)),
+        );
+        assert_eq!(result, Ok(Some(Tup2(1, Some(2)))));
+    }
+
+    #[test]
+    fn from_results_option_err_becomes_none() {
+        // The second field is Option<i32>: an Err should become None, not
+        // propagate.
+        let result = Tup2::<i32, Option<i32>>::from_results(
+            Ok::<i32, &str>(1),
+            Err::<Option<i32>, &str>("bad"),
+        );
+        assert_eq!(result, Ok(Some(Tup2(1, None))));
+    }
+
+    #[test]
+    fn from_results_non_option_err_propagates() {
+        // The first field is i32 (non-Option): an Err must propagate.
+        let result = Tup2::<i32, Option<i32>>::from_results(
+            Err::<i32, &str>("bad"),
+            Ok::<Option<i32>, &str>(Some(2)),
+        );
+        assert_eq!(result, Err("bad"));
+    }
+}
