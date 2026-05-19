@@ -8,7 +8,8 @@ use crate::{
     dynamic::{DowncastTrait, DynBool, DynData, DynPair, DynPairs, DynUnit, Erase, LeanVec},
     operator::dynamic::{
         input::{
-            AddInputIndexedZSetFactories, AddInputMapFactories, AddInputMapFactories2, AddInputMapWithWaterlineFactories, AddInputSetFactories, AddInputZSetFactories, CollectionHandle, UpsertHandle
+            AddInputIndexedZSetFactories, AddInputMapFactories2, AddInputMapWithWaterlineFactories,
+            AddInputSetFactories, AddInputZSetFactories, CollectionHandle, UpsertHandle,
         },
         input_upsert::DynUpdate,
     },

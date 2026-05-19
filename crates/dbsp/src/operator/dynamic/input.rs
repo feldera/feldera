@@ -786,7 +786,7 @@ impl RootCircuit {
         let accumulated = upsert_batches.dyn_shard_accumulate(&factories.upsert_factories);
 
         let bounds = <TraceBounds<K, V>>::unbounded();
-        
+
         let (delayed_trace, z1feedback) = self.add_feedback_persistent(
             persistent_id
                 .map(|name| format!("{name}.input_upsert"))
@@ -2411,21 +2411,16 @@ mod test {
     }
 
     fn map_test_circuit(
-        circuit: &RootCircuit,
-        expected_outputs: fn() -> Vec<OrdIndexedZSet<u64, u64>>,
-    ) -> AnyResult<MapHandle<u64, u64, i64>> {
+        circuit: &mut RootCircuit,
+    ) -> AnyResult<(
+        MapHandle<u64, u64, i64>,
+        OutputHandle<OrdIndexedZSet<u64, u64>>,
+    )> {
         let (stream, handle) =
             circuit.add_input_map::<u64, u64, i64, _>(|v, u| *v = ((*v as i64) + u) as u64);
+        let output_handle = stream.output();
 
-        let mut expected_batches = expected_outputs().into_iter();
-
-        stream.gather(0).inspect(move |batch| {
-            if Runtime::worker_index() == 0 {
-                assert_eq!(batch, &expected_batches.next().unwrap())
-            }
-        });
-
-        Ok(handle)
+        Ok((handle, output_handle))
     }
 
     // FIXME: the inputs to these tests are meant to exercise the logic that filters inputs based
@@ -2434,26 +2429,26 @@ mod test {
     // without filtering.
     #[test]
     fn map_test_st() {
-        let (mut circuit, mut input_handle) = Runtime::init_circuit(1, move |circuit| {
-            map_test_circuit(circuit, output_map_updates1)
-        })
-        .unwrap();
+        let expected_outputs = output_map_updates1();
+        let (mut circuit, (mut input_handle, output_handle)) =
+            Runtime::init_circuit(1, map_test_circuit).unwrap();
 
-        for mut vec in input_map_updates1().into_iter() {
+        for (step, mut vec) in input_map_updates1().into_iter().enumerate() {
             input_handle.append(&mut vec);
             circuit.transaction().unwrap();
+            assert_eq!(output_handle.consolidate(), expected_outputs[step]);
         }
 
-        let (mut circuit, input_handle) = Runtime::init_circuit(1, move |circuit| {
-            map_test_circuit(circuit, output_map_updates1)
-        })
-        .unwrap();
+        let expected_outputs = output_map_updates1();
+        let (mut circuit, (input_handle, output_handle)) =
+            Runtime::init_circuit(1, map_test_circuit).unwrap();
 
-        for vec in input_map_updates1().into_iter() {
+        for (step, vec) in input_map_updates1().into_iter().enumerate() {
             for Tup2(k, v) in vec.into_iter() {
                 input_handle.push(k, v);
             }
             circuit.transaction().unwrap();
+            assert_eq!(output_handle.consolidate(), expected_outputs[step]);
         }
     }
 
@@ -2462,30 +2457,29 @@ mod test {
         inputs: fn() -> Vec<Vec<Tup2<u64, Update<u64, i64>>>>,
         expected_outputs: fn() -> Vec<OrdIndexedZSet<u64, u64>>,
     ) {
-        let expected_outputs_clone = expected_outputs;
+        let expected_output_batches = expected_outputs();
 
-        let (mut dbsp, mut input_handle) = Runtime::init_circuit(workers, move |circuit| {
-            map_test_circuit(circuit, expected_outputs_clone)
-        })
-        .unwrap();
+        let (mut dbsp, (mut input_handle, output_handle)) =
+            Runtime::init_circuit(workers, map_test_circuit).unwrap();
 
-        for mut vec in inputs().into_iter() {
+        for (step, mut vec) in inputs().into_iter().enumerate() {
             input_handle.append(&mut vec);
             dbsp.transaction().unwrap();
+            assert_eq!(output_handle.consolidate(), expected_output_batches[step]);
         }
 
         dbsp.kill().unwrap();
 
-        let (mut dbsp, input_handle) = Runtime::init_circuit(workers, move |circuit| {
-            map_test_circuit(circuit, expected_outputs)
-        })
-        .unwrap();
+        let expected_output_batches = expected_outputs();
+        let (mut dbsp, (input_handle, output_handle)) =
+            Runtime::init_circuit(workers, map_test_circuit).unwrap();
 
-        for vec in inputs().into_iter() {
+        for (step, vec) in inputs().into_iter().enumerate() {
             for Tup2(k, v) in vec.into_iter() {
                 input_handle.push(k, v);
             }
             dbsp.transaction().unwrap();
+            assert_eq!(output_handle.consolidate(), expected_output_batches[step]);
         }
 
         dbsp.kill().unwrap();
