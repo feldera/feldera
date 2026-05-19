@@ -344,7 +344,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 // It is really an annotation attached to a rel node remembering the original AS alias
                 .hintStrategy(HINT_ALIAS, HintStrategy.builder(HintPredicates.JOIN).build())
                 .build();
-        this.cluster = RelOptCluster.create(planner, new RexBuilder(typeFactory));
+        this.cluster = RelOptCluster.create(planner, new RexBuilder(this.typeFactory));
         this.cluster.setHintStrategies(hints);
         var metadataProvider = ChainedRelMetadataProvider.of(List.of(RelMdRowCount.SOURCE,
                 DefaultRelMetadataProvider.INSTANCE));

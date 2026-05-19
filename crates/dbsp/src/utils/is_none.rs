@@ -16,6 +16,15 @@ pub trait IsNone {
     fn unwrap_or_self(&self) -> &Self::Inner;
 
     fn from_inner(inner: Self::Inner) -> Self;
+
+    /// If Self is `Option<T>` an `Err` is converted as `Ok(None)`.
+    /// For all other types the error is propagated unchanged.
+    fn result_to_field<E>(r: Result<Self, E>) -> Result<Self, E>
+    where
+        Self: Sized,
+    {
+        r
+    }
 }
 
 impl<T> IsNone for Option<T> {
@@ -32,6 +41,10 @@ impl<T> IsNone for Option<T> {
 
     fn from_inner(inner: Self::Inner) -> Self {
         Some(inner)
+    }
+
+    fn result_to_field<E>(r: Result<Self, E>) -> Result<Self, E> {
+        Ok(r.unwrap_or(None))
     }
 }
 

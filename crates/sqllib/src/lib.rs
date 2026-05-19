@@ -1522,7 +1522,7 @@ impl<T> Deref for StaticLazy<T> {
 }
 
 #[doc(hidden)]
-// If the data is Ok(None), convert it to Err, other leave it unchanged
+// If the data is Ok(None), convert it to Err, otherwise leave it unchanged
 pub fn unwrap_sql_result<T>(data: SqlResult<Option<T>>) -> SqlResult<T> {
     match data {
         Err(e) => Err(e),
