@@ -817,8 +817,8 @@ where
                 key_updates.clear();
                 cur_val.set_none();
 
-                if trace_cursor.seek_key_exact(updates_cursor.key(), None) {
-                    if trace_cursor.val_valid() {
+                if trace_cursor.seek_key_exact(updates_cursor.key(), None)
+                    && trace_cursor.val_valid() {
                         let weight = **trace_cursor.weight();
                         debug_assert_eq!(weight, ZWeight::one());
 
@@ -832,7 +832,6 @@ where
                         });
                         cur_val.from_ref(val);
                     }
-                }
 
                 while updates_cursor.val_valid() {
                     let update_weight = **updates_cursor.weight();

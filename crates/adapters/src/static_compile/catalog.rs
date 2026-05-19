@@ -743,7 +743,7 @@ impl Catalog {
                 // This is an integral of an input table with a primary key. We don't support sending a snapshot
                 // of table to a connector, so we don't need to use the gathered stream.
                 // `integrate_trace` should return the existing integral created by the InputUpsert operator.
-                stream.shard().integrate_trace()
+                stream.shard().accumulate_integrate_trace()
             }
             .apply(|s| TypedBatch::<K, V, ZWeight, _>::new(s.inner().ro_snapshot()))
             .output_persistent_with_gid(
