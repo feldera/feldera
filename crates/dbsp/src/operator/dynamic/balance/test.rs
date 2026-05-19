@@ -1062,6 +1062,91 @@ fn test_accumulate_trace_with_balancer_round_robin_big_step() {
     test_accumulate_trace_with_balancer(4, true, round_robin_integrate_workload());
 }
 
+#[test]
+fn test_accumulate_trace_with_balancer_policy_returns_to_trace_policy() {
+    // The integral is rebalanced at commit using the policy captured on the first
+    // policy change in the transaction. A long transaction can still see later
+    // policy changes before commit; if the policy changes Shard -> Broadcast -> Shard,
+    // the final policy matches the original trace policy. This used to panic when
+    // the sender assumed that the saved trace policy and current policy must differ.
+    let workers = 4;
+    let (mut circuit, (input_handle, input_node_id, output_delta, output_trace)) =
+        Runtime::init_circuit(
+            CircuitConfig::from(workers)
+                .with_splitter_chunk_size_records(2)
+                .with_balancer_min_absolute_improvement_threshold(0)
+                .with_mode(Mode::Persistent),
+            accumulate_trace_with_balancer_test_circuit,
+        )
+        .unwrap();
+
+    circuit
+        .set_balancer_hint(
+            &input_node_id,
+            BalancerHint::Policy(Some(PartitioningPolicy::Shard)),
+        )
+        .unwrap();
+    input_handle.push(0, (0, 1));
+    circuit.transaction().unwrap();
+    for worker in 0..workers {
+        output_delta.take_from_worker(worker).unwrap();
+        output_trace.take_from_worker(worker).unwrap();
+    }
+
+    circuit.start_transaction().unwrap();
+
+    circuit
+        .set_balancer_hint(
+            &input_node_id,
+            BalancerHint::Policy(Some(PartitioningPolicy::Broadcast)),
+        )
+        .unwrap();
+    input_handle.push(1, (0, 1));
+    circuit.step().unwrap();
+
+    circuit
+        .set_balancer_hint(
+            &input_node_id,
+            BalancerHint::Policy(Some(PartitioningPolicy::Shard)),
+        )
+        .unwrap();
+    input_handle.push(2, (0, 1));
+    circuit.step().unwrap();
+
+    circuit.commit_transaction().unwrap();
+
+    let expected_output_delta = balance_batch(
+        &OrdIndexedZSet::from_tuples((), vec![Tup2(Tup2(1, 0), 1), Tup2(Tup2(2, 0), 1)]),
+        PartitioningPolicy::Shard,
+        workers,
+    );
+    let expected_output_trace = balance_batch(
+        &OrdIndexedZSet::from_tuples(
+            (),
+            vec![
+                Tup2(Tup2(0, 0), 1),
+                Tup2(Tup2(1, 0), 1),
+                Tup2(Tup2(2, 0), 1),
+            ],
+        ),
+        PartitioningPolicy::Shard,
+        workers,
+    );
+    let output_delta: Vec<_> = (0..workers)
+        .map(|worker| output_delta.take_from_worker(worker).unwrap().consolidate())
+        .collect();
+    let output_trace: Vec<_> = (0..workers)
+        .map(|worker| output_trace.take_from_worker(worker).unwrap())
+        .collect();
+
+    assert_eq!(
+        circuit.get_current_balancer_policy(&input_node_id).unwrap(),
+        PartitioningPolicy::Shard
+    );
+    assert_eq!(output_delta, expected_output_delta);
+    assert_eq!(output_trace, expected_output_trace);
+}
+
 /// Join a large left collection with a small right collection. Both are skewed.
 /// The balancer should balance the left collection using Policy::Balance and the
 /// right collection using Policy::Broadcast.
