@@ -658,8 +658,8 @@ where
                 })
                 .collect::<Vec<_>>();
 
-            // Delayed traces
-            let delayed_traces = traces
+            // Delayed traces; only n-1 are needed
+            let delayed_traces = &traces[..traces.len() - 1]
                 .iter()
                 .map(|(trace, batch_factories)| (trace.accumulate_delay_trace(), batch_factories))
                 .collect::<Vec<_>>();
