@@ -117,3 +117,69 @@ pub fn process_rss_bytes() -> Option<u64> {
 
     memory_stats().map(|usage| usage.physical_mem as u64)
 }
+
+/// Results of capturing [tracing] output.
+#[cfg(test)]
+pub(crate) struct LogCapture<T> {
+    /// Return value of the closure passed to [LogCapture::new].
+    pub retval: T,
+
+    /// Log output during [LogCapture::new].
+    pub log: String,
+}
+
+#[cfg(test)]
+impl<T> LogCapture<T> {
+    /// Calls `f`, capturing [tracing] output to the log.
+    pub fn new<F>(f: F) -> Self
+    where
+        F: FnOnce() -> T,
+    {
+        use std::{
+            io::Write,
+            sync::{Arc, Mutex},
+        };
+
+        use tracing::subscriber::with_default;
+
+        #[derive(Debug, Default)]
+        struct CaptureBuf(Mutex<Vec<u8>>);
+        impl<'a> Write for &'a CaptureBuf {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(buf);
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        impl CaptureBuf {
+            fn take(&self) -> String {
+                String::from_utf8(std::mem::take(&mut *self.0.lock().unwrap())).unwrap()
+            }
+        }
+
+        // Without the following line, capture occasionally fails to capture
+        // anything at all.  There might be some kind of race between
+        // initializing the global and per-thread subscribers.
+        let _ = tracing_subscriber::fmt::try_init();
+
+        let tracing_capture = Arc::new(CaptureBuf::default());
+        let retval = with_default(
+            tracing_subscriber::FmtSubscriber::builder()
+                .with_ansi(false)
+                .without_time()
+                .with_writer(tracing_capture.clone())
+                .finish(),
+            f,
+        );
+        Self {
+            log: tracing_capture.take(),
+            retval,
+        }
+    }
+
+    pub fn into_parts(self) -> (T, String) {
+        (self.retval, self.log)
+    }
+}
