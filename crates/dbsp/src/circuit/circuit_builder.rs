@@ -58,6 +58,7 @@ use dyn_clone::{DynClone, clone_box};
 use feldera_ir::{LirCircuit, LirNodeId};
 use feldera_samply::Span;
 use feldera_storage::{FileCommitter, StoragePath};
+use itertools::Itertools;
 use pin_project_lite::pin_project;
 use serde::{Deserialize, Serialize, Serializer, de::DeserializeOwned};
 use std::{
@@ -1224,7 +1225,7 @@ impl Serialize for GlobalNodeId {
     where
         S: Serializer,
     {
-        let s = self.node_identifier();
+        let s = self.node_identifier().to_string();
         serializer.serialize_str(&s)
     }
 }
@@ -1279,16 +1280,14 @@ impl GlobalNodeId {
     }
 
     /// Generate unique name to use as a node label in a visual graph.
-    pub fn node_identifier(&self) -> String {
-        let mut node_ident = "n".to_string();
-
-        for i in 0..self.path().len() {
-            node_ident.push_str(&self.path()[i].to_string());
-            if i < self.path().len() - 1 {
-                node_ident.push('_');
+    pub fn node_identifier(&self) -> impl Display {
+        struct NodeIdentifier<'a>(&'a GlobalNodeId);
+        impl<'a> Display for NodeIdentifier<'a> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "n{}", self.0.path().into_iter().format("_"))
             }
         }
-        node_ident
+        NodeIdentifier(self)
     }
 
     /// Returns local node id of `self` or `None` if `self` is the root node.
