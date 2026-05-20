@@ -7,6 +7,7 @@ use crate::{
 use std::{
     borrow::Cow,
     collections::{HashMap, hash_map::Entry},
+    fmt::Display,
     slice,
 };
 
@@ -308,7 +309,7 @@ impl Node {
 
     /// Generate unique name for the node to use as a node label in a visual
     /// graph.
-    pub(super) fn node_identifier(node_id: &GlobalNodeId) -> String {
+    pub(super) fn node_identifier(node_id: &GlobalNodeId) -> impl Display {
         node_id.node_identifier()
     }
 
@@ -318,7 +319,7 @@ impl Node {
 
         match &self.kind {
             NodeKind::Operator => Some(VisNode::Simple(SimpleNode::new(
-                Self::node_identifier(&self.id),
+                Self::node_identifier(&self.id).to_string(),
                 format!(
                     "{}{}{}",
                     label(&self.name, self.location),
@@ -335,7 +336,7 @@ impl Node {
             ))),
 
             NodeKind::StrictInput { output } => Some(VisNode::Simple(SimpleNode::new(
-                Self::node_identifier(&self.id.parent_id().unwrap().child(*output)),
+                Self::node_identifier(&self.id.parent_id().unwrap().child(*output)).to_string(),
                 format!(
                     "{}{}{}",
                     label(&self.name, self.location),
@@ -352,7 +353,7 @@ impl Node {
     fn get_graph(&self) -> Option<VisNode> {
         match &self.kind {
             NodeKind::Operator => Some(VisNode::Simple(SimpleNode::new(
-                Self::node_identifier(&self.id),
+                Self::node_identifier(&self.id).to_string(),
                 label(&self.name, self.location),
                 0f64,
             ))),
@@ -360,12 +361,12 @@ impl Node {
             NodeKind::Circuit { region, .. } => Some(VisNode::Cluster(region.get_graph(self))),
 
             NodeKind::StrictInput { .. } => Some(VisNode::Simple(SimpleNode::new(
-                Self::node_identifier(&self.id),
+                Self::node_identifier(&self.id).to_string(),
                 label(&self.name, self.location),
                 0f64,
             ))),
             NodeKind::StrictOutput => Some(VisNode::Simple(SimpleNode::new(
-                Self::node_identifier(&self.id),
+                Self::node_identifier(&self.id).to_string(),
                 format!("{}{}", label(&self.name, self.location), " (output)"),
                 0f64,
             ))),
@@ -440,9 +441,9 @@ impl CircuitGraph {
                 // Don't draw self-loops on strict operators.
                 if from_id != &to_id {
                     edges.push(VisEdge::new(
-                        Node::node_identifier(from_id),
+                        Node::node_identifier(from_id).to_string(),
                         from_node.is_circuit(),
-                        Node::node_identifier(&to_id),
+                        Node::node_identifier(&to_id).to_string(),
                         to_node.is_circuit(),
                     ));
                 }
@@ -464,9 +465,9 @@ impl CircuitGraph {
             for (to_id, _kind) in to.iter() {
                 let to_node = self.node_ref(to_id).unwrap();
                 edges.push(VisEdge::new(
-                    Node::node_identifier(from_id),
+                    Node::node_identifier(from_id).to_string(),
                     from_node.is_circuit(),
-                    Node::node_identifier(to_id),
+                    Node::node_identifier(to_id).to_string(),
                     to_node.is_circuit(),
                 ));
             }

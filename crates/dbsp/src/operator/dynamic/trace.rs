@@ -1670,7 +1670,7 @@ mod test {
                 (node_id != root).then(|| match value {
                     MetaItem::Count(count) => {
                         let operator_name = operator_names
-                            .get(&node_id.node_identifier())
+                            .get(&node_id.node_identifier().to_string())
                             .cloned()
                             .unwrap_or_else(|| node_id.to_string());
                         (operator_name, count)
