@@ -3721,7 +3721,7 @@ where
             .with_tooltip(|| {
                 let nodes = circuit.nodes.borrow();
                 let node = nodes[id.0].borrow();
-                format!("{} {}", node.name(), node.global_id())
+                format!("{} {}", node.name(), node.global_id().node_identifier())
             });
         let (result, duration) = Timed::new(circuit.nodes.borrow()[id.0].borrow_mut().eval()).await;
         let progress = result?;
