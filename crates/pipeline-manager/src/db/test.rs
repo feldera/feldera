@@ -361,10 +361,11 @@ fn map_val_to_limited_program_info(val: ProgramInfoPropVal) -> serde_json::Value
         json!({ "schema": 222 }) // An invalid program information
     } else {
         serde_json::to_value(ProgramInfo {
-            schema: ProgramSchema {
+            schema: serde_json::to_value(ProgramSchema {
                 inputs: vec![],
                 outputs: vec![],
-            },
+            })
+            .unwrap(),
             main_rust: format!("main-rust-{}", val.1),
             udf_stubs: format!("udf-stubs-{}", val.2),
             input_connectors: BTreeMap::new(),
@@ -1386,10 +1387,11 @@ async fn pipeline_program_compilation() {
                 messages: vec![],
             },
             &serde_json::to_value(ProgramInfo {
-                schema: ProgramSchema {
+                schema: serde_json::to_value(ProgramSchema {
                     inputs: vec![],
                     outputs: vec![],
-                },
+                })
+                .unwrap(),
                 main_rust: "".to_string(),
                 udf_stubs: "".to_string(),
                 input_connectors: BTreeMap::new(),
@@ -1549,10 +1551,11 @@ async fn pipeline_transition_after_quick_stop() {
                 messages: vec![],
             },
             &serde_json::to_value(ProgramInfo {
-                schema: ProgramSchema {
+                schema: serde_json::to_value(ProgramSchema {
                     inputs: vec![],
                     outputs: vec![],
-                },
+                })
+                .unwrap(),
                 main_rust: "".to_string(),
                 udf_stubs: "".to_string(),
                 input_connectors: BTreeMap::new(),
@@ -1769,10 +1772,11 @@ async fn pipeline_deployment() {
                 messages: vec![],
             },
             &serde_json::to_value(ProgramInfo {
-                schema: ProgramSchema {
+                schema: serde_json::to_value(ProgramSchema {
                     inputs: vec![],
                     outputs: vec![],
-                },
+                })
+                .unwrap(),
                 main_rust: "".to_string(),
                 udf_stubs: "".to_string(),
                 input_connectors: BTreeMap::new(),
@@ -2409,10 +2413,11 @@ async fn pipeline_provision_version_guard() {
                 messages: vec![],
             },
             &serde_json::to_value(ProgramInfo {
-                schema: ProgramSchema {
+                schema: serde_json::to_value(ProgramSchema {
                     inputs: vec![],
                     outputs: vec![],
-                },
+                })
+                .unwrap(),
                 main_rust: "".to_string(),
                 udf_stubs: "".to_string(),
                 input_connectors: BTreeMap::new(),

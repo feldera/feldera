@@ -10502,7 +10502,7 @@
             }
           },
           "schema": {
-            "$ref": "#/components/schemas/ProgramSchema"
+            "description": "Schema of the compiled SQL."
           },
           "udf_stubs": {
             "type": "string",
@@ -11918,7 +11918,7 @@
             }
           },
           "schema": {
-            "$ref": "#/components/schemas/ProgramSchema"
+            "description": "Schema of the compiled SQL."
           },
           "udf_stubs": {
             "type": "string",
@@ -11942,7 +11942,7 @@
             }
           },
           "program_schema": {
-            "$ref": "#/components/schemas/ProgramSchema"
+            "description": "Program schema."
           }
         }
       },

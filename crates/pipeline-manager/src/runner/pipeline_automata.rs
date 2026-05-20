@@ -2022,10 +2022,11 @@ mod test {
                     messages: vec![],
                 },
                 &serde_json::to_value(ProgramInfo {
-                    schema: ProgramSchema {
+                    schema: serde_json::to_value(ProgramSchema {
                         inputs: vec![],
                         outputs: vec![],
-                    },
+                    })
+                    .unwrap(),
                     main_rust: "".to_string(),
                     udf_stubs: "".to_string(),
                     input_connectors: Default::default(),

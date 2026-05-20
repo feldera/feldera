@@ -2,6 +2,7 @@ use feldera_adapterlib::errors::journal::ControllerError;
 use feldera_types::{
     config::PipelineConfig,
     pipeline_diff::{PipelineDiff, ProgramDiff, program_diff},
+    program_schema::ProgramSchema,
 };
 use std::collections::BTreeMap;
 use std::fmt::Display;
@@ -53,17 +54,24 @@ fn compute_program_diff(
         return Err("Unable to compute the diff between the checkpointed and new pipeline configurations: the new configuration does not contain program information. It was likely created by an old version of Feldera.".to_owned());
     };
 
-    let new_relations_with_lateness = new_dataflow
-        .program_schema
+    // TODO: consider parsing only the necessary subset of schema fields to avoid compatibility issues
+    // with older runtime versions.
+    let new_program_schema: ProgramSchema =
+        serde_json::from_value(new_dataflow.program_schema.clone())
+            .map_err(|e| format!("Error parsing new program schema: {}", e))?;
+    let old_program_schema: ProgramSchema =
+        serde_json::from_value(old_dataflow.program_schema.clone())
+            .map_err(|e| format!("Error parsing old program schema: {}", e))?;
+
+    let new_relations_with_lateness = new_program_schema
         .relations_with_lateness()
         .into_iter()
-        .map(|s| s.name())
+        .map(|s| s.name().to_string())
         .collect::<Vec<_>>();
-    let old_relations_with_lateness = old_dataflow
-        .program_schema
+    let old_relations_with_lateness = old_program_schema
         .relations_with_lateness()
         .into_iter()
-        .map(|s| s.name())
+        .map(|s| s.name().to_string())
         .collect::<Vec<_>>();
 
     let blockers = BootstrapBlockers {

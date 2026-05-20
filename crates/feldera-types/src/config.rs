@@ -6,7 +6,6 @@
 //! that the entire configuration tree can be deserialized from a JSON file.
 
 use crate::preprocess::PreprocessorConfig;
-use crate::program_schema::ProgramSchema;
 use crate::secret_resolver::default_secrets_directory;
 use crate::transport::adhoc::AdHocInputConfig;
 use crate::transport::clock::ClockConfig;
@@ -59,7 +58,7 @@ pub struct ProgramIr {
     /// The MIR of the program.
     pub mir: HashMap<MirNodeId, MirNode>,
     /// Program schema.
-    pub program_schema: ProgramSchema,
+    pub program_schema: serde_json::Value,
 }
 
 /// Pipeline deployment configuration.

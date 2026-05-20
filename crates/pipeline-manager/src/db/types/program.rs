@@ -9,7 +9,7 @@ use feldera_types::config::{
     ConnectorConfig, InputEndpointConfig, MultihostConfig, OutputEndpointConfig, PipelineConfig,
     PipelineConfigProgramInfo, ProgramIr, RuntimeConfig, TransportConfig,
 };
-use feldera_types::program_schema::{ProgramSchema, PropertyValue, SourcePosition, SqlIdentifier};
+use feldera_types::program_schema::{PropertyValue, SourcePosition, SqlIdentifier};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -132,6 +132,12 @@ impl SqlCompilerMessage {
             ConnectorGenerationError::ExpectedInputConnector { position, .. } => position,
             ConnectorGenerationError::ExpectedOutputConnector { position, .. } => position,
             ConnectorGenerationError::RelationConnectorNameCollision { position, .. } => position,
+            ConnectorGenerationError::InvalidProgramSchema { .. } => SourcePosition {
+                start_line_number: 0,
+                start_column: 0,
+                end_line_number: 0,
+                end_column: 0,
+            },
         };
         SqlCompilerMessage {
             start_line_number: position.start_line_number,
@@ -521,6 +527,8 @@ pub enum ConnectorGenerationError {
         relation: String,
         connector_name: String,
     },
+    #[error("error parsing program schema: {error}")]
+    InvalidProgramSchema { error: String },
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -621,10 +629,10 @@ fn determine_connector_endpoint_names(
 ///
 /// It includes information needed for Rust compilation (e.g., generated Rust code)
 /// as well as only for runtime (e.g., schema, input/output connectors).
-#[derive(Default, Deserialize, Serialize, Eq, PartialEq, Debug, Clone, ToSchema)]
+#[derive(Deserialize, Serialize, Eq, PartialEq, Debug, Clone, ToSchema)]
 pub struct ProgramInfo {
     /// Schema of the compiled SQL.
-    pub schema: ProgramSchema,
+    pub schema: serde_json::Value,
 
     /// Generated main program Rust code: main.rs
     #[serde(default)] // TODO: when a breaking migration can happen, remove this default
@@ -661,17 +669,41 @@ impl ProgramInfo {
     }
 }
 
+/// A version of `Relation` that only contains the name and properties.
+/// This is used to avoid parsing the entire `Relation` object, including
+/// SQL schema, which can change across runtime versions.
+#[derive(Debug, Deserialize)]
+struct RelationPropertiesOnly {
+    #[serde(flatten)]
+    name: SqlIdentifier,
+    #[serde(default)]
+    properties: BTreeMap<String, PropertyValue>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProgramSchemaPropertiesOnly {
+    #[serde(default)]
+    inputs: Vec<RelationPropertiesOnly>,
+    #[serde(default)]
+    outputs: Vec<RelationPropertiesOnly>,
+}
+
 /// Generates the program info using the program schema.
 /// The info includes the schema and the input/output connectors derived from it.
 pub fn generate_program_info(
-    program_schema: ProgramSchema,
+    program_schema: serde_json::Value,
     main_rust: String,
     udf_stubs: String,
     dataflow: Option<Dataflow>,
 ) -> Result<ProgramInfo, ConnectorGenerationError> {
+    let program_schema_properties_only = ProgramSchemaPropertiesOnly::deserialize(&program_schema)
+        .map_err(|e| ConnectorGenerationError::InvalidProgramSchema {
+            error: e.to_string(),
+        })?;
+
     // Input connectors
     let mut input_connectors = vec![];
-    for input_relation in &program_schema.inputs {
+    for input_relation in program_schema_properties_only.inputs {
         let (connectors, origin_value) =
             parse_named_connectors(input_relation.name.clone(), &input_relation.properties)?;
         for connector in connectors {
@@ -724,7 +756,7 @@ pub fn generate_program_info(
 
     // Output connectors
     let mut output_connectors = vec![];
-    for output_relation in &program_schema.outputs {
+    for output_relation in &program_schema_properties_only.outputs {
         let (connectors, origin_value) =
             parse_named_connectors(output_relation.name.clone(), &output_relation.properties)?;
         for connector in connectors {
@@ -781,10 +813,8 @@ pub fn generate_program_info(
 
 /// Generates the pipeline configuration derived from the runtime configuration.
 ///
-/// The returned pipeline config has the three fields populated from ProgramInfo empty:
-/// - inputs
-/// - outputs
-/// - program_ir
+/// The returned pipeline config leaves three fields empty (they will be populated later from
+/// `ProgramInfo`): `inputs`, `outputs`, `program_ir`.
 ///
 /// These fields are populated when starting the pipeline: the local runner pulls program
 /// info from the compiler server and generates a config file itself. The k8s runner
