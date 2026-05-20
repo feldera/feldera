@@ -640,78 +640,80 @@ where
         assert_eq!(factories.input_factories.len(), others.len() + 1);
         assert_eq!(join_funcs.len(), others.len() + 1);
 
-        // Shard the input streams.
-        let streams = std::iter::once(self)
-            .chain(others.iter())
-            .zip(factories.input_factories.iter())
-            .collect::<Vec<_>>();
+        self.circuit().region("star_join", || {
+            // Shard the input streams.
+            let streams = std::iter::once(self)
+                .chain(others.iter())
+                .zip(factories.input_factories.iter())
+                .collect::<Vec<_>>();
 
-        // Traces
-        let traces = streams
-            .iter()
-            .map(|(stream, (batch_factories, trace_factories))| {
-                (
-                    stream.dyn_shard_accumulate_trace(trace_factories, batch_factories),
-                    batch_factories,
+            // Traces
+            let traces = streams
+                .iter()
+                .map(|(stream, (batch_factories, trace_factories))| {
+                    (
+                        stream.dyn_shard_accumulate_trace(trace_factories, batch_factories),
+                        batch_factories,
+                    )
+                })
+                .collect::<Vec<_>>();
+
+            // Delayed traces
+            let delayed_traces = traces
+                .iter()
+                .map(|(trace, batch_factories)| (trace.accumulate_delay_trace(), batch_factories))
+                .collect::<Vec<_>>();
+
+            let mut output_streams = Vec::new();
+
+            for (i, (stream, (batch_factories, _trace_factories))) in streams.iter().enumerate() {
+                let delayed = &delayed_traces[..i];
+                let current = &traces[i + 1..];
+                let join_func = join_funcs[i].clone();
+
+                let match_factories = MatchFactories {
+                    prefix_factories: factories.input_factories[i].0.clone(),
+                    output_factories: factories.output_factories.clone(),
+                    timed_item_factory: factories.timed_item_factory,
+                    timed_items_factory: factories.timed_items_factory,
+                };
+
+                let output: Stream<C, O> = self.circuit().add_custom_node(
+                    format!("InnerStarJoin_{i}").into(),
+                    move |node_id| {
+                        let mut builder = MatchBuilder::new(
+                            &match_factories,
+                            self.circuit().global_node_id().child(node_id),
+                            self.circuit().clone(),
+                            stream.dyn_shard_accumulate(batch_factories),
+                            StarJoinMatchFunc::new(join_func, others.len()),
+                        );
+                        delayed.iter().for_each(|(trace, batch_factories)| {
+                            builder.add_input(trace.clone(), batch_factories.val_factory(), false);
+                        });
+                        current.iter().for_each(|(trace, batch_factories)| {
+                            builder.add_input(trace.clone(), batch_factories.val_factory(), false);
+                        });
+                        let join = builder.build();
+                        let output_stream = join.output_stream();
+
+                        (join, output_stream)
+                    },
+                );
+                output_streams.push(output);
+            }
+
+            // Merge outputs.
+            let output_factories = factories.output_factories.clone();
+
+            apply_n(self.circuit(), output_streams.iter(), move |batches| {
+                merge_batches_by_reference(
+                    &output_factories,
+                    batches.collect::<Vec<_>>().iter().map(|b| b.as_ref()),
+                    &None,
+                    &None,
                 )
             })
-            .collect::<Vec<_>>();
-
-        // Delayed traces
-        let delayed_traces = traces
-            .iter()
-            .map(|(trace, batch_factories)| (trace.accumulate_delay_trace(), batch_factories))
-            .collect::<Vec<_>>();
-
-        let mut output_streams = Vec::new();
-
-        for (i, (stream, (batch_factories, _trace_factories))) in streams.iter().enumerate() {
-            let delayed = &delayed_traces[..i];
-            let current = &traces[i + 1..];
-            let join_func = join_funcs[i].clone();
-
-            let match_factories = MatchFactories {
-                prefix_factories: factories.input_factories[i].0.clone(),
-                output_factories: factories.output_factories.clone(),
-                timed_item_factory: factories.timed_item_factory,
-                timed_items_factory: factories.timed_items_factory,
-            };
-
-            let output: Stream<C, O> = self.circuit().add_custom_node(
-                format!("InnerStarJoin_{i}").into(),
-                move |node_id| {
-                    let mut builder = MatchBuilder::new(
-                        &match_factories,
-                        self.circuit().global_node_id().child(node_id),
-                        self.circuit().clone(),
-                        stream.dyn_shard_accumulate(batch_factories),
-                        StarJoinMatchFunc::new(join_func, others.len()),
-                    );
-                    delayed.iter().for_each(|(trace, batch_factories)| {
-                        builder.add_input(trace.clone(), batch_factories.val_factory(), false);
-                    });
-                    current.iter().for_each(|(trace, batch_factories)| {
-                        builder.add_input(trace.clone(), batch_factories.val_factory(), false);
-                    });
-                    let join = builder.build();
-                    let output_stream = join.output_stream();
-
-                    (join, output_stream)
-                },
-            );
-            output_streams.push(output);
-        }
-
-        // Merge outputs.
-        let output_factories = factories.output_factories.clone();
-
-        apply_n(self.circuit(), output_streams.iter(), move |batches| {
-            merge_batches_by_reference(
-                &output_factories,
-                batches.collect::<Vec<_>>().iter().map(|b| b.as_ref()),
-                &None,
-                &None,
-            )
         })
     }
 }
