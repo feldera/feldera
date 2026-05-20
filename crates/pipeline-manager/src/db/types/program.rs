@@ -779,66 +779,23 @@ pub fn generate_program_info(
     })
 }
 
-/// Generates the pipeline configuration derived from the runtime configuration and the
-/// input/output connectors derived from the program schema.
+/// Generates the pipeline configuration derived from the runtime configuration.
 ///
-/// `program_info` is specified if the program was compiled by an older version of
-/// the runtime and its program info hasn't been uploaded to the compiler server.
-/// Such programs require the pipeline manager to provide program info via PipelineConfig.
-// TODO: remove the program_info parameter once we're allowed to stop supporting
-// platform versions <=0.199.0.
+/// The returned pipeline config has the three fields populated from ProgramInfo empty:
+/// - inputs
+/// - outputs
+/// - program_ir
+///
+/// These fields are populated when starting the pipeline: the local runner pulls program
+/// info from the compiler server and generates a config file itself. The k8s runner
+/// only distributes the subset of the pipeline config generated here via ConfigMap;
+/// the pipeline pulls the rest from the compiler server and merges the two in the startup
+/// shell script.
 pub fn generate_pipeline_config(
     pipeline_id: PipelineId,
     pipeline_name: &str,
     runtime_config: &RuntimeConfig,
-    program_info: Option<&ProgramInfo>,
 ) -> PipelineConfig {
-    let (inputs, outputs, program_ir) = if let Some(program_info) = program_info {
-        // Only keep tables and views, ignoring intermediate nodes.
-        // These are currently the only nodes used by the pipeline
-        // (to compute pipeline diffs). Including all nodes can cause the IR
-        // to exceed the maximum ConfigMap size supported by k8s (1MB).
-        let mir = program_info
-            .dataflow
-            .as_ref()
-            .map(|d| {
-                d.mir
-                    .iter()
-                    .filter_map(|(k, v)| {
-                        if v.is_relation() {
-                            Some((k.clone(), v.clone()))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        // Remove inputs and outputs that do not have lateness.
-        // This field is currently only used for backfill avoidance, which only cares about
-        // relations with lateness. Including the entire schema would cause the IR to exceed the
-        // maximum ConfigMap size supported by k8s (1MB).
-        let mut program_schema = program_info.schema.clone();
-        program_schema.inputs.retain(|input| input.has_lateness());
-        program_schema
-            .outputs
-            .retain(|output| output.has_lateness());
-
-        let program_ir = ProgramIr {
-            mir,
-            program_schema,
-        };
-
-        (
-            program_info.input_connectors.clone(),
-            program_info.output_connectors.clone(),
-            Some(program_ir),
-        )
-    } else {
-        Default::default()
-    };
-
     PipelineConfig {
         name: Some(format!("pipeline-{pipeline_id}")),
         given_name: Some(pipeline_name.to_string()),
@@ -852,9 +809,9 @@ pub fn generate_pipeline_config(
         } else {
             None
         },
-        inputs,
-        outputs,
-        program_ir,
+        inputs: BTreeMap::new(),
+        outputs: BTreeMap::new(),
+        program_ir: None,
     }
 }
 

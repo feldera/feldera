@@ -1664,7 +1664,6 @@ async fn pipeline_transition_after_quick_stop() {
                     pipeline1.id,
                     &pipeline1.name,
                     &serde_json::from_value(pipeline1.runtime_config.clone()).unwrap(),
-                    None,
                 ))
                 .unwrap(),
             )
@@ -1857,7 +1856,6 @@ async fn pipeline_deployment() {
                 pipeline1.id,
                 &pipeline1.name,
                 &serde_json::from_value(pipeline1.runtime_config.clone()).unwrap(),
-                None,
             ))
             .unwrap(),
         )
@@ -2071,7 +2069,6 @@ async fn pipeline_deployment() {
                 pipeline1.id,
                 &pipeline1.name,
                 &serde_json::from_value(pipeline1.runtime_config.clone()).unwrap(),
-                Some(&ProgramInfo::default()),
             ))
             .unwrap(),
         )
@@ -2204,7 +2201,6 @@ async fn pipeline_deployment() {
                 pipeline1.id,
                 &pipeline1.name,
                 &serde_json::from_value(pipeline1.runtime_config).unwrap(),
-                Some(&ProgramInfo::default()),
             ))
             .unwrap(),
         )
@@ -2541,7 +2537,6 @@ async fn pipeline_provision_version_guard() {
                       pipeline.id,
                       &pipeline.name,
                       &serde_json::from_value(pipeline.runtime_config.clone()).unwrap(),
-                      None,
                   )).unwrap(),
               )
               .await.unwrap_err(),
@@ -2612,7 +2607,6 @@ async fn pipeline_provision_version_guard() {
                 pipeline.id,
                 &pipeline.name,
                 &serde_json::from_value(pipeline.runtime_config.clone()).unwrap(),
-                Some(&ProgramInfo::default()),
             ))
             .unwrap(),
         )

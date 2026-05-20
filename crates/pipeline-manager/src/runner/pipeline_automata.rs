@@ -936,7 +936,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         };
 
         // Input and output connectors from required program_info
-        let program_info = match &pipeline.program_info {
+        let _program_info = match &pipeline.program_info {
             None => {
                 return Action::TransitionToStopping {
                     error: Some(RunnerError::AutomatonMissingProgramInfo.into()),
@@ -964,16 +964,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         let deployment_id = Uuid::now_v7();
 
         // Deployment configuration
-        let mut deployment_config = generate_pipeline_config(
-            pipeline.id,
-            &pipeline.name,
-            &runtime_config,
-            if pipeline.program_info_integrity_checksum.is_none() {
-                Some(&program_info)
-            } else {
-                None
-            },
-        );
+        let mut deployment_config =
+            generate_pipeline_config(pipeline.id, &pipeline.name, &runtime_config);
         deployment_config.storage_config =
             Some(self.pipeline_handle.generate_storage_config().await);
         let deployment_config = match serde_json::to_value(&deployment_config) {
