@@ -36,6 +36,7 @@ class TPCHTestConfig:
         s3_prefix: Optional[str] = None,
         s3_path: Optional[str] = None,
         s3_region: Optional[str] = None,
+        s3_skip_signature: Optional[bool] = False,
         input_dir: Optional[str] = None,
         segment_size: Optional[int] = None,
         num_segments: Optional[int] = None,
@@ -133,6 +134,12 @@ def run_cli():
     )
 
     parser.add_argument(
+        "--s3-skip-signature",
+        action=argparse.BooleanOptionalAction,
+        help="Sometimes 'aws_skip_signature: true' is needed, but sometimes it isn't."
+    )
+
+    parser.add_argument(
         "--num-segments",
         type=int,
         nargs="?",
@@ -150,6 +157,21 @@ def run_cli():
 
     parser.add_argument(
         "--memory-mb", type=int, nargs="?", default=None, help="Memory size in MB"
+    )
+
+    parser.add_argument(
+        "--storage-mb",
+        type=int,
+        nargs="?",
+        default=None,
+        help="Storage size in MB"
+    )
+
+    parser.add_argument(
+        "--storage-class",
+        nargs="?",
+        default=None,
+        help="storage class name"
     )
 
     args = parser.parse_args()
@@ -178,10 +200,18 @@ def run_cli():
 
     mode = args.mode
 
-    resources = Resources(memory_mb_max=args.memory_mb, memory_mb_min=args.memory_mb)
+    resources = Resources(
+        memory_mb_max=args.memory_mb,
+        memory_mb_min=args.memory_mb,
+        storage_mb_max=args.storage_mb,
+        storage_class=args.storage_class,
+    )
 
     log(f"Test mode: {mode}")
     log(f"Input mode: {input_mode}")
+
+    global s3_skip_signature
+    s3_skip_signature = args.s3_skip_signature
 
     config = TPCHTestConfig(
         mode,
@@ -203,13 +233,18 @@ def aws_access() -> str:
     if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
         aws_access = f"""\
                 "aws_access_key_id": "{os.environ.get("AWS_ACCESS_KEY_ID")}",
-                "aws_secret_access_key": "{os.environ.get("AWS_SECRET_ACCESS_KEY")}","""
+                "aws_secret_access_key": "{os.environ.get("AWS_SECRET_ACCESS_KEY")}",
+"""
         if os.environ.get("AWS_SESSION_TOKEN"):
             aws_access += f"""
-                "aws_session_token": "{os.environ.get("AWS_SESSION_TOKEN")}","""
-    else:
+                "aws_session_token": "{os.environ.get("AWS_SESSION_TOKEN")}",
+"""
+    elif s3_skip_signature:
         aws_access = """\
-                "aws_skip_signature": "true","""
+                "aws_skip_signature": "true",
+"""
+    else:
+        aws_access = ""
     return aws_access
 
 
@@ -219,7 +254,7 @@ def delta_input_connector(s3_path: str, region: str, table: str) -> str:
             "name": "delta_table_input",
             "config": {{
                 "uri": "{s3_path}/{table}",
-{aws_access()}
+{aws_access()}\
                 "aws_region": "{region}",
                 "mode": "snapshot"
             }}
@@ -251,7 +286,7 @@ def s3_input_connector(bucket: str, prefix: str, region: str, table: str) -> str
             "config": {{
                 "bucket_name": "{bucket}",
                 "key": "{prefix}/{table}.csv",
-                {aws_access()}
+                {aws_access()}\
                 "region": "{region}"
             }}
         }},
