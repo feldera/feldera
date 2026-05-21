@@ -1284,7 +1284,7 @@ impl GlobalNodeId {
         struct NodeIdentifier<'a>(&'a GlobalNodeId);
         impl<'a> Display for NodeIdentifier<'a> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "n{}", self.0.path().into_iter().format("_"))
+                write!(f, "n{}", self.0.path().iter().format("_"))
             }
         }
         NodeIdentifier(self)

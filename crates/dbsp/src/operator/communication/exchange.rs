@@ -1027,7 +1027,7 @@ where
     T: Clone + Debug + Send + 'static,
 {
     fn name(&self) -> &str {
-        &***self.receiver_global_node_id.get().unwrap()
+        self.receiver_global_node_id.get().unwrap()
     }
 
     fn received<'a>(
