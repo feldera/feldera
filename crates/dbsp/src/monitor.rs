@@ -6,7 +6,7 @@ mod circuit_graph;
 pub mod visual_graph;
 
 use crate::circuit::{
-    GlobalNodeId, NodeId, RootCircuit,
+    GlobalNodeId, NodeId, RegionName, RootCircuit,
     metadata::OperatorLocation,
     trace::{CircuitEvent, SchedulerEvent},
 };
@@ -80,6 +80,8 @@ pub enum TraceError {
     UnexpectedNodeId,
     /// PopRegion event without matching PushRegion.
     NoRegion,
+    /// CloseRegion event without matching OpenRegion.
+    NoOpenRegion,
     /// Invalid event in the current state of the circuit automaton.
     InvalidEvent(Cow<'static, str>),
 }
@@ -99,6 +101,7 @@ impl Display for TraceError {
                 f.write_str("node id is not valid for this event type in the current state")
             }
             Self::NoRegion => f.write_str("PopRegion event without matching PushRegion"),
+            Self::NoOpenRegion => f.write_str("CloseRegion event without matching OpenRegion"),
             Self::InvalidEvent(descr) => f.write_str(descr),
         }
     }
@@ -180,6 +183,26 @@ impl TraceMonitor {
     {
         self.0.borrow().circuit.visualize(&annotate)
     }
+
+    /// Returns the number of operator nodes in the region identified by
+    /// `region`, or `None` if the region was never opened in the root circuit
+    /// scope.
+    pub fn count_nodes_in_region(&self, region: &RegionName) -> Option<usize> {
+        let internal_id = self
+            .0
+            .borrow()
+            .named_regions
+            .first()?
+            .get(region)
+            .cloned()?;
+        self.0.borrow().circuit.node_count_in_region(&internal_id)
+    }
+
+    /// Returns the number of distinct region nodes named `name` within the
+    /// root circuit scope.
+    pub fn count_regions_with_name(&self, name: &str) -> usize {
+        self.0.borrow().circuit.count_regions_with_name(name)
+    }
 }
 
 pub struct TraceMonitorInternal {
@@ -188,6 +211,13 @@ pub struct TraceMonitorInternal {
     /// Subcircuit that is currently being populated.
     current_scope: GlobalNodeId,
     region_stack: Vec<RegionId>,
+    /// Per-scope map from external region names
+    /// to internal region-tree paths.  Allows re-entering the same region node
+    /// across multiple `OpenRegion`/`CloseRegion` pairs.
+    named_regions: Vec<HashMap<RegionName, RegionId>>,
+    /// Per-scope stack of saved regions.  Each `OpenRegion` pushes the region
+    /// that was current before the call; each `CloseRegion` pops and restores.
+    region_open_stack: Vec<Vec<RegionId>>,
     /// The stack of circuit automata states.  We start with a single
     /// element for the root circuit.  Evaluating a nested circuit
     /// pushes a new state on the stack. The stack becomes empty
@@ -239,6 +269,8 @@ impl TraceMonitorInternal {
             circuit: CircuitGraph::new(),
             current_scope: GlobalNodeId::from_path(&[]),
             region_stack: vec![RegionId::root()],
+            named_regions: vec![HashMap::new()],
+            region_open_stack: vec![Vec::new()],
             state: vec![CircuitState::new()],
             circuit_error_handler: Box::new(circuit_error_handler),
             scheduler_error_handler: Box::new(scheduler_error_handler),
@@ -272,6 +304,39 @@ impl TraceMonitorInternal {
             current_region.pop();
             self.set_current_region(current_region);
             Ok(())
+        }
+    }
+
+    fn open_named_region(&mut self, name: &RegionName, location: OperatorLocation) {
+        let saved = self.current_region();
+        self.region_open_stack.last_mut().unwrap().push(saved);
+
+        let scope_regions = self.named_regions.last_mut().unwrap();
+        if let Some(existing) = scope_regions.get(name).cloned() {
+            self.set_current_region(existing);
+        } else {
+            let current = self.current_region();
+            let circuit_node = self.circuit.node_mut(&self.current_scope).unwrap();
+            let new_id = circuit_node.region_mut().unwrap().add_region(
+                &current,
+                name.name.clone(),
+                location,
+            );
+            self.named_regions
+                .last_mut()
+                .unwrap()
+                .insert(name.clone(), new_id.clone());
+            self.set_current_region(new_id);
+        }
+    }
+
+    fn close_named_region(&mut self) -> Result<(), TraceError> {
+        match self.region_open_stack.last_mut().unwrap().pop() {
+            None => Err(TraceError::NoOpenRegion),
+            Some(saved) => {
+                self.set_current_region(saved);
+                Ok(())
+            }
         }
     }
 
@@ -348,6 +413,8 @@ impl TraceMonitorInternal {
                         } else {
                             self.current_scope = node_id.clone();
                             self.region_stack.push(RegionId::root());
+                            self.named_regions.push(HashMap::new());
+                            self.region_open_stack.push(Vec::new());
                             Node::new(
                                 node_id.clone(),
                                 Cow::Borrowed(""),
@@ -373,6 +440,8 @@ impl TraceMonitorInternal {
                 }
                 self.current_scope = parent_id;
                 self.region_stack.pop();
+                self.named_regions.pop();
+                self.region_open_stack.pop();
                 Ok(())
             }
         } else if event.is_edge_event() {
@@ -395,6 +464,14 @@ impl TraceMonitorInternal {
                 }
 
                 CircuitEvent::PopRegion => self.pop_region(),
+
+                CircuitEvent::OpenRegion { name, location } => {
+                    self.open_named_region(name, *location);
+                    Ok(())
+                }
+
+                CircuitEvent::CloseRegion { name: _ } => self.close_named_region(),
+
                 _ => panic!("unknown event"),
             }
         }
