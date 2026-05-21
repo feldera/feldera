@@ -36,7 +36,7 @@ class TPCHTestConfig:
         s3_prefix: Optional[str] = None,
         s3_path: Optional[str] = None,
         s3_region: Optional[str] = None,
-        s3_skip_signature: Optional[bool] = False,
+        s3_skip_signature: bool = False,
         input_dir: Optional[str] = None,
         segment_size: Optional[int] = None,
         num_segments: Optional[int] = None,
@@ -84,6 +84,7 @@ class TPCHTestConfig:
                 raise ValueError("s3_region must be specified if input_mode is 'delta'")
         else:
             raise ValueError(f"Unknown input mode: {self.input_mode}")
+        self.s3_skip_signature = s3_skip_signature
 
     def __repr__(self):
         return f"IndexSpec(name={self.name!r},columns={self.columns!r})"
@@ -203,9 +204,6 @@ def run_cli():
     log(f"Test mode: {mode}")
     log(f"Input mode: {input_mode}")
 
-    global s3_skip_signature
-    s3_skip_signature = args.s3_skip_signature
-
     config = TPCHTestConfig(
         mode,
         input_mode,
@@ -213,6 +211,7 @@ def run_cli():
         s3_prefix=args.s3_prefix,
         s3_region=s3_region,
         s3_path=s3_path,
+        s3_skip_signature=args.s3_skip_signature,
         input_dir=args.input_dir,
         segment_size=args.segment_size,
         num_segments=args.num_segments,
@@ -222,7 +221,7 @@ def run_cli():
     tpch_test(config)
 
 
-def aws_access() -> str:
+def aws_access(s3_skip_signature: bool) -> str:
     if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
         aws_access = f"""\
                 "aws_access_key_id": "{os.environ.get("AWS_ACCESS_KEY_ID")}",
@@ -241,13 +240,13 @@ def aws_access() -> str:
     return aws_access
 
 
-def delta_input_connector(s3_path: str, region: str, table: str) -> str:
+def delta_input_connector(s3_path: str, region: str, table: str, s3_skip_signature: bool) -> str:
     return f"""{{
         "transport": {{
             "name": "delta_table_input",
             "config": {{
                 "uri": "{s3_path}/{table}",
-{aws_access()}\
+{aws_access(s3_skip_signature)}\
                 "aws_region": "{region}",
                 "mode": "snapshot"
             }}
@@ -272,14 +271,14 @@ def file_input_connector(path: str, table: str) -> str:
     }}"""
 
 
-def s3_input_connector(bucket: str, prefix: str, region: str, table: str) -> str:
+def s3_input_connector(bucket: str, prefix: str, region: str, table: str, s3_skip_signature: bool) -> str:
     return f"""{{
         "transport": {{
             "name": "s3_input",
             "config": {{
                 "bucket_name": "{bucket}",
                 "key": "{prefix}/{table}.csv",
-                {aws_access()}\
+                {aws_access(s3_skip_signature)}\
                 "region": "{region}"
             }}
         }},
@@ -294,10 +293,10 @@ def s3_input_connector(bucket: str, prefix: str, region: str, table: str) -> str
 
 def input_connector(config: TPCHTestConfig, table: str) -> str:
     if config.input_mode == "delta":
-        return delta_input_connector(config.s3_path, config.s3_region, table)
+        return delta_input_connector(config.s3_path, config.s3_region, table, config.s3_skip_signature)
     elif config.input_mode == "s3":
         return s3_input_connector(
-            config.s3_bucket, config.s3_prefix, config.s3_region, table
+            config.s3_bucket, config.s3_prefix, config.s3_region, table, config.s3_skip_signature
         )
     elif config.input_mode == "file":
         return file_input_connector(config.input_dir, table)
