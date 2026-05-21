@@ -1277,6 +1277,7 @@ where
         .service(checkpoint)
         .service(checkpoint_status)
         .service(checkpoints)
+        .service(remote_checkpoints)
         .service(checkpoint_sync)
         .service(sync_checkpoint_status)
         .service(suspend)
@@ -2075,6 +2076,28 @@ async fn checkpoint_status(state: WebData<ServerState>) -> impl Responder {
 #[get("/checkpoints")]
 async fn checkpoints(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     Ok(HttpResponse::Ok().json(get_checkpoints(&state)?))
+}
+
+/// List checkpoints available in the configured remote object storage.
+#[get("/checkpoints/remote")]
+async fn remote_checkpoints(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    let sync = state
+        .sync_config
+        .clone()
+        .ok_or_else(|| PipelineError::ControllerError {
+            error: Arc::new(ControllerError::checkpoint_fetch_error(
+                "listing remote checkpoints requires sync to be configured".to_string(),
+            )),
+        })?;
+
+    let result = spawn_blocking(move || crate::controller::sync::list_remote_checkpoints(&sync))
+        .await
+        .map_err(|e| PipelineError::ControllerError {
+            error: Arc::new(ControllerError::checkpoint_fetch_error(format!("{e}"))),
+        })?
+        .map_err(|e| PipelineError::ControllerError { error: Arc::new(e) })?;
+
+    Ok(HttpResponse::Ok().json(result))
 }
 
 #[get("/checkpoint/sync_status")]

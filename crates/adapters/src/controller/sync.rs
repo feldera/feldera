@@ -174,6 +174,22 @@ pub fn pull_once_with_backend(
 }
 
 #[cfg(feature = "feldera-enterprise")]
+pub fn list_remote_checkpoints(
+    sync: &SyncConfig,
+) -> Result<Vec<feldera_types::checkpoint::RemoteCheckpoint>, ControllerError> {
+    SYNCHRONIZER
+        .list_remote(sync.to_owned())
+        .map_err(|e| ControllerError::checkpoint_fetch_error(format!("{e:?}")))
+}
+
+#[cfg(not(feature = "feldera-enterprise"))]
+pub fn list_remote_checkpoints(
+    _sync: &SyncConfig,
+) -> Result<Vec<feldera_types::checkpoint::RemoteCheckpoint>, ControllerError> {
+    Err(ControllerError::EnterpriseFeature("list S3 checkpoints"))
+}
+
+#[cfg(feature = "feldera-enterprise")]
 pub fn continuous_pull<F>(
     storage: &CircuitStorageConfig,
     is_activated: F,
