@@ -939,6 +939,18 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         return uuid
 
+    def remote_checkpoints(self) -> list[dict]:
+        """
+        Lists checkpoints available in the configured remote object storage.
+
+        :return: A list of remote checkpoint descriptors, each containing at
+            minimum a ``uuid`` field.
+
+        :raises FelderaAPIError: If sync storage is not configured or
+            enterprise features are not enabled.
+        """
+        return self.client.get_remote_checkpoints(self.name)
+
     def sync_checkpoint_status(self, uuid: str) -> CheckpointStatus:
         """
         Checks the status of the given checkpoint sync operation.

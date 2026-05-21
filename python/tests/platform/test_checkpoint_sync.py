@@ -1,6 +1,7 @@
 import random
 import sys
 import time
+import warnings
 from typing import Optional
 from uuid import UUID, uuid4
 
@@ -36,6 +37,14 @@ def storage_cfg(
     retention_min_age: int = 0,
     read_bucket: Optional[str] = None,
 ) -> dict:
+    if standby:
+        warnings.warn(
+            "The 'standby' storage config field is deprecated. "
+            "Use pipeline.start_standby() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
     # MinIO credentials are read here (not at import time) so collection
     # does not blow up in environments where they are unset.
     access_key = required_env("CI_K8S_MINIO_ACCESS_KEY_ID")
@@ -50,7 +59,6 @@ def storage_cfg(
         "region": MINIO_REGION,
         "start_from_checkpoint": start_from_checkpoint,
         "fail_if_no_checkpoint": strict,
-        "standby": standby,
         "pull_interval": pull_interval,
         "push_interval": push_interval,
         "retention_min_count": retention_min_count,
@@ -108,6 +116,8 @@ class TestCheckpointSync(SharedTestPipeline):
 
         Returns (processed, got_before) where got_before is the view snapshot.
         """
+        before = self.pipeline.stats().global_metrics.total_processed_records
+
         random.seed(time.time())
         total = random.randint(10, 20)
         data = [{"c0": i, "c1": str(i)} for i in range(1, total)]
@@ -118,7 +128,7 @@ class TestCheckpointSync(SharedTestPipeline):
         timeout = 5
         while True:
             processed = self.pipeline.stats().global_metrics.total_processed_records
-            if processed == total:
+            if processed == before + total:
                 break
             if time.monotonic() - start > timeout:
                 raise TimeoutError(
@@ -244,7 +254,6 @@ class TestCheckpointSync(SharedTestPipeline):
             start_from_checkpoint=start_from,
             auth_err=auth_err,
             strict=strict,
-            standby=standby,
         )
         self.pipeline.set_runtime_config(
             RuntimeConfig(
@@ -575,7 +584,6 @@ class TestCheckpointSync(SharedTestPipeline):
                     config=storage_cfg(
                         self.pipeline.name,
                         start_from_checkpoint=uuid if from_uuid else "latest",
-                        standby=True,
                         pull_interval=pull_interval,
                     )
                 ),
@@ -755,7 +763,6 @@ class TestCheckpointSync(SharedTestPipeline):
             start_from_checkpoint=uuid if from_uuid else "latest",
             read_bucket=source_bucket,
             strict=True,
-            standby=standby,
             pull_interval=2,
         )
         self.pipeline.set_runtime_config(
@@ -937,7 +944,6 @@ class TestCheckpointSync(SharedTestPipeline):
                     config=storage_cfg(
                         self.pipeline.name,
                         start_from_checkpoint="latest",
-                        standby=True,
                         pull_interval=pull_interval,
                         read_bucket=source_bucket,
                     )
@@ -1241,6 +1247,52 @@ class TestCheckpointSync(SharedTestPipeline):
         self.assertCountEqual(expected, got)
         self.pipeline.clear_storage()
         source.clear_storage()
+
+    @enterprise_only
+    def test_remote_checkpoints(self):
+        """
+        CREATE TABLE t0 (c0 INT, c1 VARCHAR);
+        CREATE MATERIALIZED VIEW v0 AS SELECT * FROM t0;
+        """
+        # retention_min_count=2 keeps both checkpoints on remote.
+        storage_config = storage_cfg(
+            self.pipeline.name,
+            retention_min_count=2,
+        )
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
+                storage=Storage(config=storage_config),
+                checkpoint_interval_secs=60,
+            )
+        )
+        self.pipeline.start()
+
+        # Snapshot any UUIDs already present in remote before this test pushed
+        # anything, so we can filter them out of assertions.
+        pre_existing = {str(c["uuid"]) for c in self.pipeline.remote_checkpoints()}
+
+        self._insert_data_and_wait()
+        self.pipeline.checkpoint(wait=True)
+        time.sleep(1)
+        uuid1 = self._sync_and_verify()
+
+        self._insert_data_and_wait()
+        self.pipeline.checkpoint(wait=True)
+        time.sleep(1)
+        uuid2 = self._sync_and_verify()
+
+        remote = self.pipeline.remote_checkpoints()
+        print(f"remote checkpoints: {remote}", file=sys.stderr)
+
+        pushed = {str(c["uuid"]) for c in remote} - pre_existing
+        self.assertIn(str(uuid1), pushed)
+        self.assertIn(str(uuid2), pushed)
+
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
 
     @enterprise_only
     def test_read_bucket_strict_fail(self):
