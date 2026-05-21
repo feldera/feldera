@@ -1360,7 +1360,10 @@ impl Consensus {
 /// a value to all other workers.
 pub(crate) enum Broadcast<T> {
     SingleThreaded,
-    MultiThreaded { exchange: Arc<Exchange<T>> },
+    MultiThreaded {
+        exchange: Arc<Exchange<T>>,
+        identifier: Arc<String>,
+    },
 }
 
 impl<T> Broadcast<T>
@@ -1372,8 +1375,12 @@ where
             Some(runtime) if Runtime::num_workers() > 1 => {
                 let exchange_id = runtime.sequence_next().try_into().unwrap();
                 let exchange = Exchange::with_runtime(&runtime, exchange_id);
+                let identifier = Arc::new(format!("broadcast {exchange_id}"));
 
-                Self::MultiThreaded { exchange }
+                Self::MultiThreaded {
+                    exchange,
+                    identifier,
+                }
             }
             _ => Self::SingleThreaded,
         }
@@ -1387,12 +1394,15 @@ where
     pub async fn collect(&self, local: T) -> Result<Vec<T>, SchedulerError> {
         match self {
             Self::SingleThreaded => Ok(vec![local]),
-            Self::MultiThreaded { exchange } => Runtime::runtime()
+            Self::MultiThreaded {
+                exchange,
+                identifier,
+            } => Runtime::runtime()
                 .unwrap()
                 .cancellation_token()
                 .run_until_cancelled_owned(async {
                     exchange
-                        .send_all_with_serializer(repeat(local.clone()), |local| {
+                        .send_all_with_serializer(identifier, repeat(local.clone()), |local| {
                             let mut fbuf = FBuf::new();
                             rmp_serde::encode::write(&mut fbuf, &local).unwrap();
                             fbuf

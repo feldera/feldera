@@ -369,6 +369,7 @@ where
     batch_factories: B::Factories,
 
     global_id: GlobalNodeId,
+    global_id_string: Arc<String>,
 
     /// Origin node of the input to this operator.
     input_node_id: NodeId,
@@ -450,6 +451,10 @@ where
         Self {
             batch_factories: batch_factories.clone(),
             global_id: GlobalNodeId::root(),
+            global_id_string: Arc::new(format!(
+                "RebalancingExchangeSender {}",
+                exchange.exchange_id()
+            )),
             input_node_id,
             worker_index,
             location,
@@ -1030,6 +1035,7 @@ where
     ) {
         self.exchange
             .send_all_with_serializer(
+                &self.global_id_string,
                 batches.into_iter().map(|batch| (batch, flush_complete)),
                 |(batch, flush)| {
                     let mut fbuf =
@@ -1137,6 +1143,10 @@ where
 
     fn init(&mut self, global_id: &GlobalNodeId) {
         self.global_id = global_id.clone();
+        self.global_id_string = Arc::new(format!(
+            "RebalancingExchangeSender {}",
+            global_id.node_identifier()
+        ));
     }
 
     fn register_ready_callback<F>(&mut self, cb: F)
