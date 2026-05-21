@@ -21,7 +21,7 @@ use crate::{
         metadata::{
             ALLOCATED_MEMORY_BYTES, BatchSizeStats, INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT,
             MetaItem, OUTPUT_BATCHES_STATS, OperatorLocation, OperatorMeta, SHARED_MEMORY_BYTES,
-            STATE_RECORDS_COUNT, USED_MEMORY_BYTES,
+            SPINE_COUNT, STATE_RECORDS_COUNT, USED_MEMORY_BYTES,
         },
         operator_traits::{Operator, SinkOperator, SourceOperator},
     },
@@ -618,17 +618,20 @@ where
     fn metadata(&self, meta: &mut OperatorMeta) {
         let rxq = self.exchange.rxq(Runtime::worker_index());
 
-        // This loop could produce confusing results if there's more than one
-        // spine, but we don't expect to see that in practice.
         let mut total_size = 0;
         let mut bytes = TotalSize::zero();
-        for spine in rxq.spines.iter().map(|entry| &entry.spine) {
-            spine.metadata(meta);
+        let mut n_spines = 0;
+        for (index, spine) in rxq.spines.iter().map(|entry| &entry.spine).enumerate() {
+            if index == 0 {
+                spine.metadata(meta);
+            }
+            n_spines += 1;
             total_size += spine.num_entries_deep();
             bytes += spine.size_of();
         }
 
         meta.extend(metadata! {
+            SPINE_COUNT =>  MetaItem::Count(n_spines),
             STATE_RECORDS_COUNT => MetaItem::Count(total_size),
             ALLOCATED_MEMORY_BYTES => MetaItem::bytes(bytes.total_bytes()),
             USED_MEMORY_BYTES => MetaItem::bytes(bytes.used_bytes()),

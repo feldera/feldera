@@ -151,6 +151,7 @@ pub const RANGE_FILTER_MISSES_COUNT: MetricId =
 pub const RANGE_FILTER_HIT_RATE_PERCENT: MetricId =
     MetricId(Cow::Borrowed("range_filter_hit_rate_percent"));
 pub const RANGE_FILTER_SIZE_BYTES: MetricId = MetricId(Cow::Borrowed("range_filter_size_bytes"));
+pub const SPINE_COUNT: MetricId = MetricId(Cow::Borrowed("spine_count"));
 pub const SPINE_BATCHES_COUNT: MetricId = MetricId(Cow::Borrowed("spine_batches_count"));
 pub const SPINE_STORAGE_SIZE_BYTES: MetricId = MetricId(Cow::Borrowed("spine_storage_size_bytes"));
 pub const MERGING_SIZE_BYTES: MetricId = MetricId(Cow::Borrowed("merging_size_bytes"));
