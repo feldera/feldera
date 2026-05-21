@@ -136,7 +136,7 @@ def run_cli():
     parser.add_argument(
         "--s3-skip-signature",
         action=argparse.BooleanOptionalAction,
-        help="Sometimes 'aws_skip_signature: true' is needed, but sometimes it isn't."
+        help="Sometimes 'aws_skip_signature: true' is needed, but sometimes it isn't.",
     )
 
     parser.add_argument(
@@ -160,18 +160,11 @@ def run_cli():
     )
 
     parser.add_argument(
-        "--storage-mb",
-        type=int,
-        nargs="?",
-        default=None,
-        help="Storage size in MB"
+        "--storage-mb", type=int, nargs="?", default=None, help="Storage size in MB"
     )
 
     parser.add_argument(
-        "--storage-class",
-        nargs="?",
-        default=None,
-        help="storage class name"
+        "--storage-class", nargs="?", default=None, help="storage class name"
     )
 
     args = parser.parse_args()
