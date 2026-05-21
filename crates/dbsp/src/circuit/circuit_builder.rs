@@ -1208,6 +1208,41 @@ impl Display for NodeId {
     }
 }
 
+/// Identifies a circuit region by name and a numeric ID; each pair is supposed to be unique.
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
+pub struct RegionName {
+    /// ID for a region used to distinguish multiple regions with the same name.
+    id: u64,
+    pub name: Cow<'static, str>,
+}
+
+impl RegionName {
+    fn new(name: &str, id: u64) -> Self {
+        Self {
+            id,
+            name: Cow::Owned(name.to_string()),
+        }
+    }
+
+    /// Returns the identifier for this region.
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    /// Returns the name of this region.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl Display for RegionName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name.as_ref())?;
+        f.write_char(':')?;
+        write!(f, "{}", self.id)
+    }
+}
+
 /// Globally unique id of a node (operator or subcircuit).
 ///
 /// The identifier consists of a path from the top-level circuit to the node.
@@ -2000,6 +2035,39 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     fn region<F, T>(&self, name: &str, f: F) -> T
     where
         F: FnOnce() -> T;
+
+    /// Create a named region identifier for incremental region construction.
+    /// 'name' is the name displayed for the region.
+    /// 'id' is an identifier which distinguishes between regions with the same name.
+    ///
+    /// Returns a [`RegionName`] that can be passed to [`Circuit::open_region`]
+    /// and [`Circuit::close_region`] to associate operators with the region
+    /// from multiple call sites.
+    fn create_region_name(&self, name: &str, id: u64) -> RegionName {
+        RegionName::new(name, id)
+    }
+
+    /// Open the circuit region identified by `name`.
+    ///
+    /// Emits an `OpenRegion` event.  Every operator or subcircuit created after
+    /// this call (in the same thread) will be inserted in the named region until
+    /// [`Circuit::close_region`] is called with the same `name`.  Saves the previously
+    /// active region.
+    ///
+    /// # Panics
+    ///
+    /// The caller is responsible for pairing every `open_region` with a
+    /// matching `close_region`; failing to do so will leave the region stack
+    /// in an inconsistent state.
+    #[track_caller]
+    fn open_region(&self, name: RegionName);
+
+    /// Close the circuit region identified by `name`.  Restores the previously
+    /// active region saved by [`Circuit::open_region`].
+    ///
+    /// Emits a `CloseRegion` event which should use the same name as the most recent
+    /// [`Circuit::open_region`] call.
+    fn close_region(&self, name: RegionName);
 
     /// Add a dependency from `preprocessor_node_id` to all input operators in the
     /// circuit, making sure that this node and all its predecessors
@@ -3773,6 +3841,15 @@ where
         let res = f();
         self.log_circuit_event(&CircuitEvent::pop_region());
         res
+    }
+
+    #[track_caller]
+    fn open_region(&self, name: RegionName) {
+        self.log_circuit_event(&CircuitEvent::open_region(name, Some(Location::caller())));
+    }
+
+    fn close_region(&self, name: RegionName) {
+        self.log_circuit_event(&CircuitEvent::close_region(name));
     }
 
     fn add_preprocessor(&self, preprocessor_node_id: NodeId) {
@@ -7966,6 +8043,98 @@ mod tests {
 
     fn my_factorial(n: usize) -> usize {
         if n == 1 { 1 } else { n * my_factorial(n - 1) }
+    }
+
+    /// Verify that operators added across multiple `open_region`/`close_region`
+    /// calls on the same [`RegionName`] all land in the same region tree node.
+    #[test]
+    fn open_close_region() {
+        const REGION: &str = "my_region";
+
+        let monitor = TraceMonitor::new_panic_on_error();
+        let region: Rc<RefCell<Option<super::RegionName>>> = Rc::new(RefCell::new(None));
+
+        let _circuit = RootCircuit::build({
+            let monitor = monitor.clone();
+            let region = region.clone();
+            move |circuit| {
+                monitor.attach(circuit, "monitor");
+
+                let r = circuit.create_region_name(REGION, 0);
+
+                circuit.open_region(r.clone());
+                let source1 = circuit.add_source(Generator::new(|| 1_i32));
+                circuit.close_region(r.clone());
+
+                circuit.open_region(r.clone());
+                let source2 = circuit.add_source(Generator::new(|| 2_i32));
+                circuit.close_region(r.clone());
+
+                circuit.open_region(r.clone());
+                source1
+                    .apply2(&source2, |a: &i32, b: &i32| a + b)
+                    .inspect(|_| {});
+                circuit.close_region(r.clone());
+
+                *region.borrow_mut() = Some(r);
+                Ok(())
+            }
+        })
+        .unwrap()
+        .0;
+
+        // source1, source2, apply2, inspect — all in the single "my_region" node.
+        let region = region.borrow();
+        assert_eq!(
+            monitor.count_nodes_in_region(region.as_ref().unwrap()),
+            Some(4)
+        );
+    }
+
+    /// Verify that two separate `create_region` calls with the same name
+    /// produce independent region nodes: operators added via each handle
+    /// land in different nodes, not the same one.
+    #[test]
+    fn separate_create_region_same_name() {
+        const REGION: &str = "my_region";
+
+        let monitor = TraceMonitor::new_panic_on_error();
+        // RegionNames are created inside the build closure; smuggle them out via Rc<RefCell>.
+        let r1: Rc<RefCell<Option<super::RegionName>>> = Rc::new(RefCell::new(None));
+        let r2: Rc<RefCell<Option<super::RegionName>>> = Rc::new(RefCell::new(None));
+
+        let _circuit = RootCircuit::build({
+            let monitor = monitor.clone();
+            let r1 = r1.clone();
+            let r2 = r2.clone();
+            move |circuit| {
+                monitor.attach(circuit, "monitor");
+
+                let region1 = circuit.create_region_name(REGION, 0);
+                let region2 = circuit.create_region_name(REGION, 1);
+
+                circuit.open_region(region1.clone());
+                circuit.add_source(Generator::new(|| 1_i32));
+                circuit.close_region(region1.clone());
+
+                circuit.open_region(region2.clone());
+                circuit.add_source(Generator::new(|| 2_i32));
+                circuit.close_region(region2.clone());
+
+                *r1.borrow_mut() = Some(region1);
+                *r2.borrow_mut() = Some(region2);
+                Ok(())
+            }
+        })
+        .unwrap()
+        .0;
+
+        let r1 = r1.borrow();
+        let r2 = r2.borrow();
+        // Two distinct region nodes, each containing one operator.
+        assert_eq!(monitor.count_regions_with_name(REGION), 2);
+        assert_eq!(monitor.count_nodes_in_region(r1.as_ref().unwrap()), Some(1));
+        assert_eq!(monitor.count_nodes_in_region(r2.as_ref().unwrap()), Some(1));
     }
 
     #[test]

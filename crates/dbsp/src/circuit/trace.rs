@@ -17,7 +17,7 @@
 //! quickly, with any expensive processing completed asynchronously.
 
 use super::{GlobalNodeId, NodeId, OwnershipPreference, circuit_builder::Node};
-use crate::circuit::metadata::OperatorLocation;
+use crate::circuit::{RegionName, metadata::OperatorLocation};
 use std::{
     borrow::Cow,
     fmt::{self, Display},
@@ -57,6 +57,29 @@ pub enum CircuitEvent {
 
     /// Subregion complete.
     PopRegion,
+
+    /// Open or re-enter a named region by external ID.
+    ///
+    /// If a region with this `name` has already been opened in the current
+    /// circuit scope, subsequent operators will be placed into the same region
+    /// node until the matching [`CircuitEvent::CloseRegion`] is received.
+    /// If this is the first time the name is seen in the current scope, a new
+    /// child region of the current region is created.
+    OpenRegion {
+        /// Region name
+        name: RegionName,
+        /// Source location of the [`CircuitEvent::OpenRegion`] call.
+        location: OperatorLocation,
+    },
+
+    /// Close a region previously opened with [`CircuitEvent::OpenRegion`].
+    ///
+    /// Restores the region that was current before the matching
+    /// [`CircuitEvent::OpenRegion`].
+    CloseRegion {
+        /// Must match the `name` of the corresponding [`CircuitEvent::OpenRegion`].
+        name: RegionName,
+    },
 
     /// A new regular
     /// (non-[strict](`crate::circuit::operator_traits::StrictOperator`))
@@ -145,6 +168,16 @@ impl CircuitEvent {
     /// Create a [`CircuitEvent::PopRegion`] event.
     pub fn pop_region() -> Self {
         Self::PopRegion
+    }
+
+    /// Create a [`CircuitEvent::OpenRegion`] event instance.
+    pub fn open_region(name: RegionName, location: OperatorLocation) -> Self {
+        Self::OpenRegion { name, location }
+    }
+
+    /// Create a [`CircuitEvent::CloseRegion`] event instance.
+    pub fn close_region(name: RegionName) -> Self {
+        Self::CloseRegion { name }
     }
 
     /// Create a [`CircuitEvent::Operator`] event instance.
@@ -302,6 +335,7 @@ impl CircuitEvent {
     pub fn location(&self) -> OperatorLocation {
         match *self {
             Self::PushRegion { location, .. }
+            | Self::OpenRegion { location, .. }
             | Self::Operator { location, .. }
             | Self::StrictOperatorOutput { location, .. } => location,
             _ => None,
@@ -439,6 +473,22 @@ impl Display for CircuitEvent {
             } => {
                 write!(f, "Dependency({from} -> {to})")
             }
+
+            Self::OpenRegion { name, location } => {
+                write!(f, "OpenRegion(\"{name}\"")?;
+                if let Some(location) = location {
+                    write!(
+                        f,
+                        " @ {}:{}:{}",
+                        location.file(),
+                        location.line(),
+                        location.column()
+                    )?;
+                }
+                write!(f, ")")
+            }
+
+            Self::CloseRegion { name } => write!(f, "CloseRegion({name})"),
         }
     }
 }

@@ -35,7 +35,7 @@ mod replay_tests;
 
 pub use circuit_builder::{
     ChildCircuit, Circuit, CircuitHandle, ExportId, ExportStream, FeedbackConnector, GlobalNodeId,
-    NestedCircuit, NodeId, OwnershipPreference, RootCircuit, Scope, Stream, WithClock,
+    NestedCircuit, NodeId, OwnershipPreference, RegionName, RootCircuit, Scope, Stream, WithClock,
 };
 pub use dbsp_handle::{
     CheckpointCommitter, CircuitConfig, CircuitStorageConfig, DBSPHandle, Host, Layout,

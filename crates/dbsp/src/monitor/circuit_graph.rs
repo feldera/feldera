@@ -189,6 +189,30 @@ impl Region {
 
         self.do_get_region(region_id.0.as_slice())
     }
+
+    fn do_get_region_ref(&self, path: &[usize]) -> &Region {
+        match path.split_first() {
+            None => self,
+            Some((id, ids)) => self.children[*id].do_get_region_ref(ids),
+        }
+    }
+
+    /// Return the number of operator nodes in the region at `region_id`.
+    ///
+    /// * `self` - must be a root region.
+    pub(super) fn node_count(&self, region_id: &RegionId) -> usize {
+        debug_assert_eq!(self.id, RegionId::root());
+        self.do_get_region_ref(region_id.0.as_slice()).nodes.len()
+    }
+
+    /// Count the number of distinct region nodes in the subtree whose name
+    /// equals `name`.
+    pub(super) fn count_regions_with_name(&self, name: &str) -> usize {
+        let own = usize::from(self.name == name);
+        self.children
+            .iter()
+            .fold(own, |acc, child| acc + child.count_regions_with_name(name))
+    }
 }
 
 pub(super) enum NodeKind {
@@ -409,6 +433,25 @@ impl CircuitGraph {
     /// Locate node by its global id.
     pub(super) fn node_mut(&mut self, id: &GlobalNodeId) -> Option<&mut Node> {
         self.nodes.node_mut(id.path().iter())
+    }
+
+    /// Returns the number of operator nodes in the region identified by
+    /// `region_id` within the root circuit scope, or `None` if the region
+    /// does not exist.
+    pub(super) fn node_count_in_region(&self, region_id: &RegionId) -> Option<usize> {
+        match &self.nodes.kind {
+            NodeKind::Circuit { region, .. } => Some(region.node_count(region_id)),
+            _ => None,
+        }
+    }
+
+    /// Returns the number of distinct region nodes named `name` within the
+    /// root circuit scope.
+    pub(super) fn count_regions_with_name(&self, name: &str) -> usize {
+        match &self.nodes.kind {
+            NodeKind::Circuit { region, .. } => region.count_regions_with_name(name),
+            _ => 0,
+        }
     }
 
     pub(super) fn add_edge(&mut self, from: &GlobalNodeId, to: &GlobalNodeId, kind: &EdgeKind) {
