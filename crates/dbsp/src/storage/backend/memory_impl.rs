@@ -5,7 +5,7 @@
 use super::{BlockLocation, FileId, FileReader, FileRw, FileWriter, StorageBackend, StorageError};
 use crate::circuit::metrics::FILES_CREATED;
 use crate::storage::buffer_cache::FBuf;
-use feldera_storage::{FileCommitter, StorageFileType, StoragePath};
+use feldera_storage::{DirEntry, FileCommitter, StorageFileType, StoragePath};
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::{
@@ -237,11 +237,7 @@ impl StorageBackend for MemoryBackend {
         }
     }
 
-    fn list(
-        &self,
-        parent: &StoragePath,
-        cb: &mut dyn FnMut(&StoragePath, StorageFileType),
-    ) -> Result<(), StorageError> {
+    fn list(&self, parent: &StoragePath, cb: &mut dyn FnMut(DirEntry)) -> Result<(), StorageError> {
         let entries = self
             .0
             .files
@@ -251,8 +247,11 @@ impl StorageBackend for MemoryBackend {
             .filter(|&(name, _file)| name.prefix_matches(parent))
             .map(|(name, file)| (name.clone(), file.size))
             .collect::<Vec<_>>();
-        for (path, size) in entries {
-            cb(&path, StorageFileType::File { size });
+        for (name, size) in entries {
+            cb(DirEntry {
+                name,
+                file_type: Ok(StorageFileType::File { size }),
+            });
         }
         Ok(())
     }
