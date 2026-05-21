@@ -5,7 +5,7 @@ use std::{
     ops::Range,
     panic::Location,
     pin::Pin,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard, OnceLock},
 };
 
 use feldera_samply::Span;
@@ -16,7 +16,7 @@ use size_of::{HumanBytes, SizeOf, TotalSize};
 use crate::{
     Circuit, NumEntries, Runtime, Scope, Stream,
     circuit::{
-        OwnershipPreference, StepSize, WorkerLocation, WorkerLocations,
+        GlobalNodeId, OwnershipPreference, StepSize, WorkerLocation, WorkerLocations,
         circuit_builder::StreamId,
         metadata::{
             ALLOCATED_MEMORY_BYTES, BatchSizeStats, INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT,
@@ -95,6 +95,7 @@ struct ShardedAccumulator<B>
 where
     B: Batch,
 {
+    receiver_global_node_id: OnceLock<Arc<String>>,
     exchange_id: ExchangeId,
 
     /// The number of communicating peers.
@@ -158,6 +159,7 @@ where
 
         let exchange = Arc::new(Self {
             exchange_id,
+            receiver_global_node_id: Default::default(),
             npeers,
             local_workers: layout.local_workers(),
             factories: factories.clone(),
@@ -200,7 +202,7 @@ where
         }
     }
 
-    async fn send(self: &Arc<Self>, batch: B, flush: bool) {
+    async fn send(self: &Arc<Self>, global_node_id: &Arc<String>, batch: B, flush: bool) {
         let sender = Runtime::worker_index();
 
         let runtime = Runtime::runtime().unwrap();
@@ -260,6 +262,7 @@ where
                         .collect_vec();
                     let this = self.clone();
                     if let Some(waiter) = this.clients.connect(receivers.start).await.send(
+                        global_node_id.clone(),
                         this.exchange_id,
                         sender,
                         items,
@@ -275,8 +278,7 @@ where
                 .with_category("Exchange")
                 .with_tooltip(|| {
                     format!(
-                        "exchange {} wait for batches to merge in {} receive queues (for workers {})",
-                        self.exchange_id,
+                        "{global_node_id} wait for batches to merge in {} receive queues (for workers {})",
                         local_waiters.len(),
                         local_waiters
                             .iter()
@@ -293,8 +295,7 @@ where
                 .with_category("Exchange")
                 .with_tooltip(|| {
                     format!(
-                        "exchange {} wait for {} to drain from {} tx buffers",
-                        self.exchange_id,
+                        "{global_node_id} wait for {} to drain from {} tx buffers",
                         HumanBytes::from(serialized_bytes),
                         remote_waiters.len()
                     )
@@ -315,6 +316,10 @@ impl<B> ExchangeDelivery for ShardedAccumulator<B>
 where
     B: Batch<Time = ()>,
 {
+    fn name(&self) -> &str {
+        &***self.receiver_global_node_id.get().unwrap()
+    }
+
     fn received<'a>(
         &'a self,
         sender: usize,
@@ -455,6 +460,7 @@ where
     B: Batch,
 {
     location: OperatorLocation,
+    global_node_id: Arc<String>,
     exchange: Arc<ShardedAccumulator<B>>,
 
     // Input batch sizes.
@@ -470,6 +476,7 @@ where
     fn new(location: OperatorLocation, exchange: Arc<ShardedAccumulator<B>>) -> Self {
         Self {
             location,
+            global_node_id: Arc::new(format!("ShardedAccumulatorSender {}", exchange.exchange_id)),
             exchange,
             input_batch_stats: BatchSizeStats::new(),
             flushed: false,
@@ -483,6 +490,13 @@ where
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("ShardedAccumulatorSender")
+    }
+
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.global_node_id = Arc::new(format!(
+            "ShardedAccumulatorSender {}",
+            global_id.node_identifier()
+        ));
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
@@ -517,7 +531,9 @@ where
 
     async fn eval_owned(&mut self, batch: B) {
         self.input_batch_stats.add_batch(batch.num_entries_deep());
-        self.exchange.send(batch, self.flushed).await;
+        self.exchange
+            .send(&self.global_node_id, batch, self.flushed)
+            .await;
         self.flushed = false;
     }
 
@@ -556,6 +572,13 @@ where
 {
     fn name(&self) -> std::borrow::Cow<'static, str> {
         Cow::Borrowed("ShardedAccumulatorReceiver")
+    }
+
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        let _ = self
+            .exchange
+            .receiver_global_node_id
+            .set(Arc::new(global_id.node_identifier().to_string()));
     }
 
     fn location(&self) -> OperatorLocation {
