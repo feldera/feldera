@@ -113,6 +113,462 @@ fn register_delta_table_object_stores(datafusion: &SessionContext, table: &Delta
     runtime_env.register_object_store(log_store.root_url(), log_store.root_object_store(None));
 }
 
+const DELTA_TEST_INPUT_ENDPOINT: &str = "test_input1";
+
+/// Completed Delta table version reported by the input connector waterline.
+fn pipeline_completed_version(pipeline: &Controller) -> Option<i64> {
+    pipeline
+        .status()
+        .input_status()
+        .values()
+        .next()
+        .and_then(|s| s.completed_frontier.completed_watermark())
+        .and_then(|w| w.metadata["version"].as_i64())
+}
+
+/// One deterministic test row (even `bigint` so `bigint % 2 = 0` filters pass).
+fn delta_test_record(bigint: i64) -> DeltaTestStruct {
+    let mut runner = TestRunner::default();
+    let mut record = DeltaTestStruct::arbitrary()
+        .new_tree(&mut runner)
+        .unwrap()
+        .current();
+    record.bigint = bigint;
+    record
+}
+
+/// Append a single row, producing exactly one new Delta table version.
+async fn append_table_version(
+    table: DeltaTable,
+    arrow_schema: &ArrowSchema,
+    record: &DeltaTestStruct,
+) -> DeltaTable {
+    write_data_to_table(table, arrow_schema, std::slice::from_ref(record)).await
+}
+
+fn delta_connector_counter(pipeline: &Controller, metric_name: &str) -> u64 {
+    let endpoint_id = pipeline
+        .input_endpoint_id_by_name(DELTA_TEST_INPUT_ENDPOINT)
+        .expect("delta input endpoint must exist");
+    let custom_metrics = pipeline
+        .status()
+        .input_status()
+        .get(&endpoint_id)
+        .and_then(|status| status.custom_metrics.clone())
+        .expect("delta input connector must expose custom metrics");
+    custom_metrics
+        .metrics()
+        .iter()
+        .find(|(name, ..)| *name == metric_name)
+        .map(|(_, _, _, value)| *value as u64)
+        .unwrap_or(0)
+}
+
+/// Number of Feldera follow transactions the Delta input connector started.
+fn delta_follow_transaction_starts(pipeline: &Controller) -> u64 {
+    delta_connector_counter(pipeline, "input_connector_delta_follow_transaction_starts")
+}
+
+/// Number of Feldera snapshot transactions the Delta input connector started.
+fn delta_snapshot_transaction_starts(pipeline: &Controller) -> u64 {
+    delta_connector_counter(
+        pipeline,
+        "input_connector_delta_snapshot_transaction_starts",
+    )
+}
+
+/// Connector phase (`0` = loading snapshot, `1` = follow, `2` = completed).
+fn delta_connector_phase(pipeline: &Controller) -> u64 {
+    delta_connector_counter(pipeline, "input_connector_delta_phase")
+}
+
+async fn wait_for_delta_connector_phase(pipeline: &Controller, phase: u64, timeout_ms: u64) {
+    let start = Instant::now();
+    loop {
+        if delta_connector_phase(pipeline) == phase {
+            return;
+        }
+        assert!(
+            start.elapsed() < Duration::from_millis(timeout_ms),
+            "timeout waiting for connector phase {phase} (current: {})",
+            delta_connector_phase(pipeline),
+        );
+        sleep(Duration::from_millis(10)).await;
+    }
+}
+
+/// Outcome of [`run_catchup_lag_experiment`].
+struct CatchupLagExperimentResult {
+    /// Total `input_connector_delta_snapshot_transaction_starts` when the experiment finishes.
+    snapshot_transaction_starts: u64,
+    /// Feldera follow transactions started in each pause/write/resume round.
+    follow_transactions_per_round: Vec<u64>,
+    /// Last input waterline Delta version observed (if any).
+    completed_version: Option<i64>,
+    /// Whether the input endpoint was unhealthy when the experiment ended.
+    ended_unhealthy: bool,
+}
+
+/// Configuration for [`run_catchup_lag_experiment`].
+struct CatchupLagExperimentOptions<'a> {
+    transaction_mode: DeltaTableTransactionMode,
+    versions_per_round: &'a [i64],
+    end_version: Option<i64>,
+    snapshot_rows: Option<i64>,
+    max_retries: Option<u32>,
+    /// Strip read permission on the input table root before resuming this round (Unix only).
+    inject_read_failure_before_resume_round: Option<usize>,
+    /// After injection, wait for unhealthy health and restore permissions before continuing.
+    clear_read_failure_after_unhealthy: bool,
+    /// When true, ingestion must not reach the round's target version; skips output validation.
+    expect_ingest_failure: bool,
+}
+
+fn catchup_lag_options<'a>(
+    transaction_mode: DeltaTableTransactionMode,
+    versions_per_round: &'a [i64],
+    end_version: Option<i64>,
+    snapshot_rows: Option<i64>,
+) -> CatchupLagExperimentOptions<'a> {
+    CatchupLagExperimentOptions {
+        transaction_mode,
+        versions_per_round,
+        end_version,
+        snapshot_rows,
+        max_retries: None,
+        inject_read_failure_before_resume_round: None,
+        clear_read_failure_after_unhealthy: false,
+        expect_ingest_failure: false,
+    }
+}
+
+fn input_endpoint_is_unhealthy(pipeline: &Controller) -> bool {
+    pipeline
+        .input_endpoint_status(DELTA_TEST_INPUT_ENDPOINT)
+        .ok()
+        .and_then(|s| s.health)
+        .is_some_and(|h| {
+            matches!(
+                h.status,
+                feldera_types::adapter_stats::ConnectorHealthStatus::Unhealthy
+            )
+        })
+}
+
+fn wait_input_endpoint_unhealthy(pipeline: &Controller, timeout_ms: u128) {
+    wait(|| input_endpoint_is_unhealthy(pipeline), timeout_ms)
+        .unwrap_or_else(|_| panic!("timeout waiting for input connector to become unhealthy"));
+}
+
+fn wait_input_endpoint_healthy(pipeline: &Controller, timeout_ms: u128) {
+    wait(
+        || {
+            pipeline
+                .input_endpoint_status(DELTA_TEST_INPUT_ENDPOINT)
+                .ok()
+                .and_then(|s| s.health)
+                .is_some_and(|h| {
+                    matches!(
+                        h.status,
+                        feldera_types::adapter_stats::ConnectorHealthStatus::Healthy
+                    )
+                })
+        },
+        timeout_ms,
+    )
+    .unwrap_or_else(|_| panic!("timeout waiting for input connector to become healthy"));
+}
+
+/// Build a Delta input pipeline and, for each entry in `versions_per_round`, pause the connector
+/// (when needed), append that many Delta commits, resume, and wait for ingestion to catch up.
+///
+/// With `snapshot_rows`, uses `snapshot_and_follow`: writes that many rows before starting the
+/// pipeline (unpaused), waits for the follow phase, and checks that the snapshot used exactly one
+/// Feldera transaction before running follow rounds.
+async fn run_catchup_lag_experiment(
+    opts: CatchupLagExperimentOptions<'_>,
+) -> CatchupLagExperimentResult {
+    const DELTA_PHASE_FOLLOW: u64 = 1;
+    init_logging();
+
+    let CatchupLagExperimentOptions {
+        transaction_mode,
+        versions_per_round,
+        end_version,
+        snapshot_rows,
+        max_retries,
+        inject_read_failure_before_resume_round,
+        clear_read_failure_after_unhealthy,
+        expect_ingest_failure,
+    } = opts;
+
+    let relation_schema = DeltaTestStruct::schema();
+    let arrow_fields = relation_to_arrow_fields(&relation_schema, true);
+    let arrow_schema = ArrowSchema::new(arrow_fields);
+
+    let input_table_dir = TempDir::new().unwrap();
+    let input_table_uri = input_table_dir.path().display().to_string();
+    let output_table_dir = TempDir::new().unwrap();
+    let output_table_uri = output_table_dir.path().display().to_string();
+    let storage_dir = TempDir::new().unwrap();
+
+    let mut table = create_table(&input_table_uri, &HashMap::new(), &{
+        let mut struct_fields = Vec::new();
+        for f in arrow_schema.fields.iter() {
+            let data_type = DataType::try_from_arrow(f.data_type()).unwrap();
+            struct_fields.push(StructField::new(f.name(), data_type, f.is_nullable()));
+        }
+        struct_fields
+    })
+    .await;
+
+    let snapshot_and_follow = snapshot_rows.is_some();
+    let mut expected_output = Vec::new();
+    let mut record_index: i64 = 0;
+
+    if let Some(snapshot_rows) = snapshot_rows {
+        let mut snapshot_records = Vec::with_capacity(snapshot_rows as usize);
+        for i in 0..snapshot_rows {
+            let mut record = delta_test_record(i * 2);
+            record.unused = None;
+            snapshot_records.push(record);
+        }
+        table = write_data_to_table(table, &arrow_schema, &snapshot_records).await;
+        expected_output.extend(snapshot_records);
+        record_index = snapshot_rows;
+    }
+
+    let mut input_config: HashMap<String, Value> = HashMap::new();
+    input_config.insert(
+        "mode".into(),
+        if snapshot_and_follow {
+            "snapshot_and_follow"
+        } else {
+            "follow"
+        }
+        .into(),
+    );
+    input_config.insert(
+        "transaction_mode".into(),
+        serde_json::to_value(transaction_mode).unwrap(),
+    );
+    input_config.insert("filter".into(), "bigint % 2 = 0".into());
+    if let Some(end_version) = end_version {
+        input_config.insert("end_version".into(), end_version.into());
+    }
+    if let Some(max_retries) = max_retries {
+        input_config.insert("max_retries".into(), max_retries.into());
+    }
+
+    let input_table_root = input_table_dir.path().to_path_buf();
+
+    // Follow-only: start paused so the first round can build lag. Snapshot-and-follow: start
+    // running so the connector ingests the initial snapshot immediately.
+    let start_paused = !snapshot_and_follow;
+
+    let storage_dir_path = storage_dir.path().to_path_buf();
+    let input_table_uri_clone = input_table_uri.clone();
+    let output_table_uri_clone = output_table_uri.clone();
+    let input_config_clone = input_config.clone();
+    let pipeline = tokio::task::spawn_blocking(move || {
+        delta_to_delta_pipeline::<DeltaTestStruct>(
+            &input_table_uri_clone,
+            true,
+            &input_config_clone,
+            &output_table_uri_clone,
+            &HashMap::new(),
+            1000,
+            100,
+            &storage_dir_path,
+            start_paused,
+        )
+    })
+    .await
+    .unwrap();
+
+    pipeline.start();
+
+    if snapshot_and_follow {
+        wait_for_delta_connector_phase(&pipeline, DELTA_PHASE_FOLLOW, 120_000).await;
+        assert_eq!(
+            delta_snapshot_transaction_starts(&pipeline),
+            1,
+            "catchup must ingest the initial snapshot in one Feldera transaction"
+        );
+        assert_eq!(
+            delta_follow_transaction_starts(&pipeline),
+            0,
+            "follow transactions must not start until the follow phase ingests log commits"
+        );
+    } else {
+        // `connect_input` during controller construction blocks until the Delta worker finishes
+        // `open_table` and sends init `Ok`, then parks on `wait_running` while still paused.
+        assert!(
+            pipeline
+                .is_input_endpoint_paused(DELTA_TEST_INPUT_ENDPOINT)
+                .unwrap(),
+            "connector must start paused so we can build an exact log lag"
+        );
+    }
+
+    let mut transactions_per_round = Vec::with_capacity(versions_per_round.len());
+    let mut ingest_failed_as_expected = false;
+
+    'rounds: for (round, &num_versions) in versions_per_round.iter().enumerate() {
+        if snapshot_and_follow || round > 0 {
+            pipeline
+                .pause_input_endpoint(DELTA_TEST_INPUT_ENDPOINT)
+                .unwrap();
+            wait(
+                || {
+                    pipeline
+                        .is_input_endpoint_paused(DELTA_TEST_INPUT_ENDPOINT)
+                        .unwrap_or(false)
+                },
+                60_000,
+            )
+            .expect("timeout waiting for input endpoint to pause");
+        }
+
+        let metric_at_round_start = delta_follow_transaction_starts(&pipeline);
+        let version_before_burst = table.version().unwrap();
+
+        for _ in 0..num_versions {
+            let record = delta_test_record(record_index * 2);
+            record_index += 1;
+            table = append_table_version(table, &arrow_schema, &record).await;
+            let new_version = table.version().unwrap();
+            if end_version.is_none() || new_version <= end_version.unwrap() {
+                let mut record = record;
+                record.unused = None;
+                expected_output.push(record);
+            }
+        }
+
+        let version_after_burst = table.version().unwrap();
+        assert_eq!(
+            version_after_burst,
+            version_before_burst + num_versions,
+            "round {round}: each append must add exactly one Delta commit"
+        );
+
+        assert!(
+            pipeline_completed_version(&pipeline).is_none_or(|v| v < version_after_burst),
+            "round {round}: connector must not ingest commits written while paused \
+             (completed version: {:?}, table version: {version_after_burst})",
+            pipeline_completed_version(&pipeline),
+        );
+
+        let inject_read_failure = inject_read_failure_before_resume_round == Some(round);
+        #[cfg(unix)]
+        let mut permission_restore: Option<Vec<(PathBuf, u32)>> = None;
+        #[cfg(unix)]
+        if inject_read_failure {
+            let mut saved = Vec::new();
+            strip_delta_input_table_read_permission(&input_table_root, &mut saved).unwrap_or_else(
+                |e| panic!("round {round}: inject read failure on delta input table: {e}"),
+            );
+            permission_restore = Some(saved);
+        }
+        #[cfg(not(unix))]
+        if inject_read_failure {
+            panic!("read-failure injection requires a Unix platform");
+        }
+
+        pipeline
+            .start_input_endpoint(DELTA_TEST_INPUT_ENDPOINT)
+            .unwrap();
+
+        let target_version = end_version
+            .map(|end| min(version_after_burst, end))
+            .unwrap_or(version_after_burst);
+
+        if inject_read_failure && clear_read_failure_after_unhealthy {
+            wait_input_endpoint_unhealthy(&pipeline, 60_000);
+            #[cfg(unix)]
+            if let Some(saved) = permission_restore.take() {
+                restore_delta_input_table_read_permission(saved).unwrap_or_else(|e| {
+                    panic!("round {round}: restore read permission on delta input table: {e}")
+                });
+            }
+            wait_input_endpoint_healthy(&pipeline, 60_000);
+        }
+
+        let round_timeout = if expect_ingest_failure {
+            Duration::from_secs(30)
+        } else {
+            Duration::from_secs(120)
+        };
+
+        let start = Instant::now();
+        loop {
+            if pipeline_completed_version(&pipeline) == Some(target_version) {
+                if expect_ingest_failure {
+                    panic!(
+                        "round {round}: connector reached version {target_version} but ingest failure was expected"
+                    );
+                }
+                break;
+            }
+            if start.elapsed() >= round_timeout {
+                if expect_ingest_failure {
+                    assert!(
+                        pipeline_completed_version(&pipeline).is_none_or(|v| v < target_version),
+                        "round {round}: connector must not ingest version {target_version} after fatal error \
+                         (completed: {:?})",
+                        pipeline_completed_version(&pipeline),
+                    );
+                    ingest_failed_as_expected = true;
+                    break 'rounds;
+                }
+                panic!(
+                    "round {round}: timeout waiting for connector to reach version {target_version} \
+                     (completed: {:?})",
+                    pipeline_completed_version(&pipeline),
+                );
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+
+        let metric_at_round_end = delta_follow_transaction_starts(&pipeline);
+        transactions_per_round.push(metric_at_round_end - metric_at_round_start);
+    }
+
+    if expect_ingest_failure && !ingest_failed_as_expected {
+        panic!("expected ingest to fail but all rounds reached their target versions");
+    }
+
+    if !expect_ingest_failure {
+        let datafusion = SessionContext::new();
+        let mut output_table = Arc::new(
+            DeltaTableBuilder::from_url(ensure_table_uri(&output_table_uri).unwrap())
+                .unwrap()
+                .load()
+                .await
+                .unwrap(),
+        );
+        wait_for_output_records::<DeltaTestStruct>(
+            &mut output_table,
+            &expected_output,
+            &datafusion,
+            60_000,
+            false,
+        )
+        .await;
+    }
+
+    let snapshot_transaction_starts = delta_snapshot_transaction_starts(&pipeline);
+    let completed_version = pipeline_completed_version(&pipeline);
+    let ended_unhealthy = input_endpoint_is_unhealthy(&pipeline);
+    pipeline.stop().unwrap();
+    CatchupLagExperimentResult {
+        snapshot_transaction_starts,
+        follow_transactions_per_round: transactions_per_round,
+        completed_version,
+        ended_unhealthy,
+    }
+}
+
 /// Wait until `table` contains exactly `expected_count` records.
 async fn wait_for_output_records<T>(
     table: &mut Arc<DeltaTable>,
@@ -1190,6 +1646,7 @@ async fn test_cdc(
     data: Vec<DeltaTestStruct>,
     suspend: bool,
     index: bool,
+    transaction_mode: DeltaTableTransactionMode,
 ) {
     init_logging();
 
@@ -1228,6 +1685,14 @@ async fn test_cdc(
         "__feldera_op = 'd'".to_string(),
     );
     input_config.insert("cdc_order_by".to_string(), "__feldera_ts".to_string());
+    input_config.insert(
+        "transaction_mode".to_string(),
+        serde_json::to_value(transaction_mode)
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string(),
+    );
 
     let table_uri_clone = table_uri.to_string();
 
@@ -1539,6 +2004,48 @@ async fn delta_table_cdc_file_test() {
         data,
         false,
         false,
+        DeltaTableTransactionMode::None,
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_cdc_file_catchup_test() {
+    let mut runner = TestRunner::default();
+    let data = delta_data(20_000).new_tree(&mut runner).unwrap().current();
+
+    let relation_schema = DeltaTestStruct::schema();
+
+    let input_table_dir = TempDir::new().unwrap();
+    let input_table_uri = input_table_dir.path().display().to_string();
+
+    test_cdc(
+        &relation_schema,
+        &input_table_uri,
+        &HashMap::new(),
+        data,
+        false,
+        false,
+        DeltaTableTransactionMode::Catchup,
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_cdc_file_catchup_suspend_test() {
+    let mut runner = TestRunner::default();
+    let data = delta_data(20_000).new_tree(&mut runner).unwrap().current();
+    let relation_schema = DeltaTestStruct::schema();
+    let input_table_dir = TempDir::new().unwrap();
+    let input_table_uri = input_table_dir.path().display().to_string();
+    test_cdc(
+        &relation_schema,
+        &input_table_uri,
+        &HashMap::new(),
+        data,
+        true,
+        false,
+        DeltaTableTransactionMode::Catchup,
     )
     .await;
 }
@@ -1562,6 +2069,7 @@ async fn delta_table_cdc_file_indexed_test() {
         data,
         false,
         true,
+        DeltaTableTransactionMode::None,
     )
     .await;
 }
@@ -1586,6 +2094,7 @@ async fn delta_table_cdc_file_suspend_test() {
         data,
         true,
         false,
+        DeltaTableTransactionMode::None,
     )
     .await;
 }
@@ -2190,6 +2699,7 @@ async fn delta_table_cdc_s3_test_suspend() {
         data,
         false,
         true,
+        DeltaTableTransactionMode::None,
     )
     .await;
 }
@@ -2208,6 +2718,198 @@ async fn delta_table_transactional_snapshot_and_follow_file_test() {
 #[tokio::test]
 async fn delta_table_transactional_always_snapshot_and_follow_file_test() {
     delta_table_follow_file_test_common(true, DeltaTableTransactionMode::Always, false, false).await
+}
+
+/// With the input endpoint paused between rounds, verify catchup batches each round's Delta
+/// commits into a single Feldera transaction.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_catchup_batches_multiple_versions_test() {
+    let result = run_catchup_lag_experiment(catchup_lag_options(
+        DeltaTableTransactionMode::Catchup,
+        &[3, 2],
+        None,
+        None,
+    ))
+    .await;
+    assert_eq!(
+        result.follow_transactions_per_round,
+        vec![1, 1],
+        "catchup must use one Feldera transaction per pause/write/resume round"
+    );
+}
+
+/// Control for [`delta_table_catchup_batches_multiple_versions_test`]: `always` mode commits once
+/// per Delta log version in each round.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_always_one_transaction_per_version_test() {
+    let result = run_catchup_lag_experiment(catchup_lag_options(
+        DeltaTableTransactionMode::Always,
+        &[2, 2],
+        None,
+        None,
+    ))
+    .await;
+    assert_eq!(
+        result.follow_transactions_per_round,
+        vec![2, 2],
+        "always mode must commit each Delta version in its own Feldera transaction"
+    );
+}
+
+/// `end_version` caps the catchup window target at startup of the window.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_catchup_end_version_caps_window_test() {
+    const NUM_VERSIONS: i64 = 8;
+    const END_VERSION: i64 = 5;
+    let result = run_catchup_lag_experiment(catchup_lag_options(
+        DeltaTableTransactionMode::Catchup,
+        &[NUM_VERSIONS],
+        Some(END_VERSION),
+        None,
+    ))
+    .await;
+    assert_eq!(
+        result.follow_transactions_per_round,
+        vec![1],
+        "catchup with end_version must still batch versions 1..=end_version in one transaction"
+    );
+}
+
+/// Large bursts across two rounds: each round still uses one Feldera transaction.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_catchup_rapid_versions_test() {
+    let result = run_catchup_lag_experiment(catchup_lag_options(
+        DeltaTableTransactionMode::Catchup,
+        &[6, 6],
+        None,
+        None,
+    ))
+    .await;
+    assert_eq!(
+        result.follow_transactions_per_round,
+        vec![1, 1],
+        "catchup must batch a large pre-existing commit backlog in one transaction per round"
+    );
+}
+
+/// Catchup survives a transient unreadable table (chmod on input root): unhealthy, then healthy,
+/// one Feldera transaction per catch-up round.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_catchup_transient_read_failure_test() {
+    let result = run_catchup_lag_experiment(CatchupLagExperimentOptions {
+        transaction_mode: DeltaTableTransactionMode::Catchup,
+        versions_per_round: &[2, 2],
+        end_version: None,
+        snapshot_rows: None,
+        max_retries: None,
+        inject_read_failure_before_resume_round: Some(0),
+        clear_read_failure_after_unhealthy: true,
+        expect_ingest_failure: false,
+    })
+    .await;
+    assert_eq!(
+        result.follow_transactions_per_round,
+        vec![1, 1],
+        "catchup must still batch each round in one Feldera transaction after recovery"
+    );
+    assert!(
+        !result.ended_unhealthy,
+        "connector must be healthy after permissions are restored"
+    );
+    assert_eq!(
+        result.completed_version,
+        Some(4),
+        "all four follow commits (two per round) must be ingested"
+    );
+}
+
+/// With `max_retries = 0`, a read failure is fatal: connector stays unhealthy and does not advance.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_catchup_max_retries_fatal_test() {
+    let result = run_catchup_lag_experiment(CatchupLagExperimentOptions {
+        transaction_mode: DeltaTableTransactionMode::Catchup,
+        versions_per_round: &[1],
+        end_version: None,
+        snapshot_rows: None,
+        max_retries: Some(0),
+        inject_read_failure_before_resume_round: Some(0),
+        clear_read_failure_after_unhealthy: false,
+        expect_ingest_failure: true,
+    })
+    .await;
+    assert!(
+        result.ended_unhealthy,
+        "connector must remain unhealthy after retries are exhausted"
+    );
+    assert!(
+        result.completed_version.is_none_or(|v| v < 1),
+        "connector must not ingest the commit written while paused (completed: {:?})",
+        result.completed_version
+    );
+    assert!(
+        result.follow_transactions_per_round.iter().all(|&n| n == 0),
+        "no follow transaction should complete when ingestion fails immediately: {:?}",
+        result.follow_transactions_per_round
+    );
+}
+
+#[tokio::test]
+async fn delta_table_follow_file_catchup_test() {
+    delta_table_follow_file_test_common(false, DeltaTableTransactionMode::Catchup, false, false)
+        .await
+}
+
+/// In `snapshot_and_follow` + `catchup`, the initial snapshot uses one Feldera transaction; each
+/// follow catch-up window still uses one transaction.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_snapshot_and_follow_catchup_snapshot_transaction_test() {
+    const SNAPSHOT_ROWS: i64 = 10;
+    let result = run_catchup_lag_experiment(catchup_lag_options(
+        DeltaTableTransactionMode::Catchup,
+        &[2],
+        None,
+        Some(SNAPSHOT_ROWS),
+    ))
+    .await;
+    assert_eq!(
+        result.snapshot_transaction_starts, 1,
+        "catchup must ingest the initial snapshot in one Feldera transaction"
+    );
+    assert_eq!(
+        result.follow_transactions_per_round,
+        vec![1],
+        "catchup must batch follow commits in one Feldera transaction per round"
+    );
+}
+
+#[tokio::test]
+async fn delta_table_snapshot_and_follow_file_catchup_test() {
+    delta_table_follow_file_test_common(true, DeltaTableTransactionMode::Catchup, false, false)
+        .await
+}
+
+#[tokio::test]
+async fn delta_table_follow_file_catchup_end_version_test() {
+    delta_table_follow_file_test_common(false, DeltaTableTransactionMode::Catchup, false, true)
+        .await
+}
+
+#[tokio::test]
+async fn delta_table_follow_file_catchup_suspend_test() {
+    delta_table_follow_file_test_common(false, DeltaTableTransactionMode::Catchup, true, false)
+        .await
+}
+
+#[tokio::test]
+async fn delta_table_snapshot_and_follow_file_catchup_suspend_test() {
+    delta_table_follow_file_test_common(true, DeltaTableTransactionMode::Catchup, true, false).await
+}
+
+#[tokio::test]
+async fn delta_table_snapshot_and_follow_file_catchup_end_version_test() {
+    delta_table_follow_file_test_common(true, DeltaTableTransactionMode::Catchup, false, true).await
 }
 
 #[tokio::test]

@@ -614,6 +614,10 @@ struct DeltaTableMetrics {
     snapshot_completed_ts: AtomicU64,
     /// Total records loaded during snapshot phase.
     snapshot_records_total: AtomicU64,
+    /// Number of Feldera follow transactions started (`follow-*` labels allocated).
+    follow_transaction_starts: AtomicU64,
+    /// Number of Feldera snapshot transactions started (`snapshot-*` labels allocated).
+    snapshot_transaction_starts: AtomicU64,
 }
 
 impl DeltaTableMetrics {
@@ -622,6 +626,8 @@ impl DeltaTableMetrics {
             phase: AtomicU64::new(DeltaPhase::LoadingSnapshot as u64),
             snapshot_completed_ts: AtomicU64::new(0),
             snapshot_records_total: AtomicU64::new(0),
+            follow_transaction_starts: AtomicU64::new(0),
+            snapshot_transaction_starts: AtomicU64::new(0),
         }
     }
 }
@@ -647,6 +653,18 @@ impl ConnectorMetrics for DeltaTableMetrics {
                 ValueType::Counter,
                 self.snapshot_records_total.load(Ordering::Relaxed) as f64,
             ),
+            (
+                "input_connector_delta_follow_transaction_starts",
+                "Number of Feldera follow transactions started by this connector.",
+                ValueType::Counter,
+                self.follow_transaction_starts.load(Ordering::Relaxed) as f64,
+            ),
+            (
+                "input_connector_delta_snapshot_transaction_starts",
+                "Number of Feldera snapshot transactions started by this connector.",
+                ValueType::Counter,
+                self.snapshot_transaction_starts.load(Ordering::Relaxed) as f64,
+            ),
         ]
     }
 }
@@ -656,6 +674,15 @@ fn now_unix_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+/// In-flight catchup transaction state for follow/CDC modes.
+#[derive(Debug, Default)]
+struct CatchupFollowState {
+    /// Latest Delta version to include in the current Feldera transaction.
+    target: Option<i64>,
+    /// Label for the current Feldera transaction, if one has been started.
+    transaction: Option<Option<String>>,
 }
 
 struct DeltaTableInputEndpointInner {
@@ -682,6 +709,9 @@ struct DeltaTableInputEndpointInner {
 
     queue: Arc<InputQueue<QueueEntry, StagedInputBuffer>>,
     metrics: Arc<DeltaTableMetrics>,
+
+    /// Active catchup Feldera transaction, shared between the follow loop and `execute_df`.
+    catchup_follow_state: Mutex<CatchupFollowState>,
 }
 
 #[derive(Debug, Clone)]
@@ -778,6 +808,65 @@ impl DeltaTableInputEndpointInner {
             last_checkpointable_status: Mutex::new(resume_status),
             queue,
             metrics,
+            catchup_follow_state: Mutex::new(CatchupFollowState::default()),
+        }
+    }
+
+    fn catchup_target(&self) -> Option<i64> {
+        self.catchup_follow_state.lock().unwrap().target
+    }
+
+    fn begin_catchup_window(&self, target: i64) {
+        let mut state = self.catchup_follow_state.lock().unwrap();
+        if state.target.is_none() {
+            state.target = Some(target);
+            state.transaction = self.new_follow_transaction_label();
+        }
+    }
+
+    /// Return the label for the current catchup Feldera transaction, allocating a new one if
+    /// the previous transaction was committed (for example after a `Rollback` queue entry).
+    fn catchup_follow_start_transaction(&self) -> Option<Option<String>> {
+        let mut state = self.catchup_follow_state.lock().unwrap();
+        if state.transaction.is_none() {
+            state.transaction = self.new_follow_transaction_label();
+        }
+        state.transaction.clone()
+    }
+
+    fn reset_catchup_follow_state(&self) {
+        *self.catchup_follow_state.lock().unwrap() = CatchupFollowState::default();
+    }
+
+    /// The current catchup Feldera transaction was committed after a partial failure; drop its
+    /// label so the next ingest attempt starts a new transaction for the same catchup window.
+    fn abandon_catchup_follow_transaction(&self) {
+        self.catchup_follow_state.lock().unwrap().transaction = None;
+    }
+
+    fn is_snapshot_transaction_label(label: &Option<Option<String>>) -> bool {
+        label
+            .as_ref()
+            .and_then(|l| l.as_ref())
+            .is_some_and(|l| l.starts_with("snapshot-"))
+    }
+
+    fn follow_start_transaction(
+        &self,
+        fallback: &Option<Option<String>>,
+    ) -> Option<Option<String>> {
+        match self.config.transaction_mode {
+            // Snapshot ingest passes a `snapshot-*` label via `fallback`; follow/CDC use catchup
+            // state to batch Delta log versions.
+            DeltaTableTransactionMode::Catchup => {
+                if Self::is_snapshot_transaction_label(fallback) {
+                    fallback.clone()
+                } else {
+                    self.catchup_follow_start_transaction()
+                }
+            }
+            DeltaTableTransactionMode::Always => fallback.clone(),
+            _ => None,
         }
     }
 
@@ -788,8 +877,14 @@ impl DeltaTableInputEndpointInner {
             || self.schema.get_property("skip_unused_columns") == Some("true")
     }
 
-    fn allocate_follow_transaction_label(&self) -> Option<Option<String>> {
-        if self.config.transaction_mode == DeltaTableTransactionMode::Always {
+    fn new_follow_transaction_label(&self) -> Option<Option<String>> {
+        if matches!(
+            self.config.transaction_mode,
+            DeltaTableTransactionMode::Always | DeltaTableTransactionMode::Catchup
+        ) {
+            self.metrics
+                .follow_transaction_starts
+                .fetch_add(1, Ordering::Relaxed);
             Some(Some(format!(
                 "follow-{}",
                 self.transaction_index.fetch_add(1, Ordering::Release)
@@ -799,11 +894,35 @@ impl DeltaTableInputEndpointInner {
         }
     }
 
+    /// Latest Delta table version to ingest in the current catchup Feldera transaction,
+    /// capped by `end_version` when configured.
+    async fn catchup_target_version(&self, table: Arc<DeltaTable>) -> Result<i64, AnyError> {
+        let latest = self
+            .retry(
+                "error reading the latest table version for catchup transaction",
+                Some("delta-latest-version"),
+                move || {
+                    let table = Arc::clone(&table);
+                    async move { table.get_latest_version().await }
+                },
+            )
+            .await?;
+        Ok(match self.config.end_version {
+            Some(end_version) => min(latest, end_version),
+            None => latest,
+        })
+    }
+
     fn allocate_snapshot_transaction_label(&self) -> Option<Option<String>> {
         if matches!(
             self.config.transaction_mode,
-            DeltaTableTransactionMode::Always | DeltaTableTransactionMode::Snapshot
+            DeltaTableTransactionMode::Always
+                | DeltaTableTransactionMode::Snapshot
+                | DeltaTableTransactionMode::Catchup
         ) {
+            self.metrics
+                .snapshot_transaction_starts
+                .fetch_add(1, Ordering::Relaxed);
             Some(Some(format!(
                 "snapshot-{}",
                 self.transaction_index.fetch_add(1, Ordering::Release),
@@ -1393,7 +1512,38 @@ impl DeltaTableInputEndpointInner {
                             }
                         };
 
+                        let (start_transaction, commit_transaction) = match self
+                            .config
+                            .transaction_mode
+                        {
+                            DeltaTableTransactionMode::Always => {
+                                (self.new_follow_transaction_label(), true)
+                            }
+                            DeltaTableTransactionMode::Catchup => {
+                                if self.catchup_target().is_none() {
+                                    let target =
+                                        match self.catchup_target_version(Arc::clone(&table)).await
+                                        {
+                                            Ok(target) => target,
+                                            Err(_) => break,
+                                        };
+                                    debug!(
+                                        "delta_table {}: starting catchup transaction (current version: {version}, target version: {target})",
+                                        &self.endpoint_name,
+                                    );
+                                    self.begin_catchup_window(target);
+                                }
+                                let target = self.catchup_target().unwrap();
+                                (
+                                    self.catchup_follow_start_transaction(),
+                                    new_version >= target,
+                                )
+                            }
+                            _ => (None, false),
+                        };
+
                         version = new_version;
+
                         if let Err(e) = self
                             .process_log_entry(
                                 new_version,
@@ -1402,12 +1552,23 @@ impl DeltaTableInputEndpointInner {
                                 cdc_delete_filter.clone(),
                                 input_stream.as_mut(),
                                 &mut receiver,
+                                start_transaction,
+                                commit_transaction,
                             )
                             .await
                         {
+                            if self.config.transaction_mode == DeltaTableTransactionMode::Catchup {
+                                self.reset_catchup_follow_state();
+                            }
                             self.consumer.error(true, e, None);
                             break;
                         };
+
+                        if self.config.transaction_mode == DeltaTableTransactionMode::Catchup
+                            && commit_transaction
+                        {
+                            self.reset_catchup_follow_state();
+                        }
 
                         if let Some(end_version) = self.config.end_version
                             && end_version <= new_version
@@ -2018,7 +2179,7 @@ impl DeltaTableInputEndpointInner {
         transaction: &Option<Option<String>>,
     ) -> Result<usize, String> {
         wait_running(receiver).await;
-        let transaction = transaction.clone();
+        let transaction = self.follow_start_transaction(transaction);
 
         // Limit the number of connectors simultaneously reading from Delta Lake.
         let _token = DELTA_READER_SEMAPHORE.acquire().await.unwrap();
@@ -2096,6 +2257,14 @@ impl DeltaTableInputEndpointInner {
                     // We don't have a way to rollback the transaction at this point. The best
                     // we can do is commit the transaction so it doesn't block the pipeline.
                     // This means that the connector will generate duplicate inputs on a retry.
+                    //
+                    // In catchup mode the committed transaction may cover only part of the
+                    // current catchup window. Drop the transaction label so the next retry (or
+                    // the next loop iteration for the same Delta version) starts a new Feldera
+                    // transaction while the catchup target stays unchanged.
+                    if self.config.transaction_mode == DeltaTableTransactionMode::Catchup {
+                        self.abandon_catchup_follow_transaction();
+                    }
                     self.queue.push_entry(
                         InputQueueEntry::new_with_aux(timestamp, QueueEntry::Rollback)
                             // If we started a transaction while processing the log entry, commit it now.
@@ -2176,6 +2345,7 @@ impl DeltaTableInputEndpointInner {
     ///
     /// If `self.config.max_retries` is >0, the function can push duplicate inputs to the circuit as part of the
     /// retry loop.
+    #[allow(clippy::too_many_arguments)]
     async fn process_log_entry(
         &self,
         new_version: i64,
@@ -2184,6 +2354,8 @@ impl DeltaTableInputEndpointInner {
         cdc_delete_filter: Option<Arc<dyn PhysicalExpr>>,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
+        start_transaction: Option<Option<String>>,
+        commit_transaction: bool,
     ) -> AnyResult<()> {
         if self.config.verbose > 0 {
             // Don't log actions we ignore to limit spurious logging. E.g., delta lake
@@ -2214,12 +2386,17 @@ impl DeltaTableInputEndpointInner {
         let timestamp = Utc::now();
 
         if self.config.is_cdc() {
-            self.process_cdc_transaction(actions, table, cdc_delete_filter, input_stream, receiver)
-                .await?;
+            self.process_cdc_transaction(
+                actions,
+                table,
+                cdc_delete_filter,
+                input_stream,
+                receiver,
+                start_transaction,
+            )
+            .await?;
         } else {
             let used_columns = self.used_columns(table);
-
-            let start_transaction = self.allocate_follow_transaction_label();
 
             // TODO: consider processing all Add actions and all Remove actions in one
             // go using `ListingTable`, which understands partitioning and can probably
@@ -2268,7 +2445,7 @@ impl DeltaTableInputEndpointInner {
                 ))),
             )
             // If we started a transaction while processing the log entry, commit it now.
-            .with_commit_transaction(true),
+            .with_commit_transaction(commit_transaction),
             Vec::new(),
         );
 
@@ -2290,9 +2467,17 @@ impl DeltaTableInputEndpointInner {
         cdc_delete_filter: Option<Arc<dyn PhysicalExpr>>,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
+        start_transaction: Option<Option<String>>,
     ) -> AnyResult<()> {
         let result = self
-            .do_process_cdc_transaction(actions, table, cdc_delete_filter, input_stream, receiver)
+            .do_process_cdc_transaction(
+                actions,
+                table,
+                cdc_delete_filter,
+                input_stream,
+                receiver,
+                start_transaction,
+            )
             .await;
 
         // Deregister the tables registered by `do_process_cdc_transaction`.
@@ -2310,6 +2495,7 @@ impl DeltaTableInputEndpointInner {
         cdc_delete_filter: Option<Arc<dyn PhysicalExpr>>,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
+        start_transaction: Option<Option<String>>,
     ) -> AnyResult<()> {
         // Collect Add and Remove file paths separately. The query below
         // subtracts Removes from Adds via `EXCEPT ALL` to cancel rewrites
@@ -2392,7 +2578,7 @@ impl DeltaTableInputEndpointInner {
                 &description,
                 input_stream,
                 receiver,
-                self.allocate_follow_transaction_label(),
+                start_transaction,
                 self.config.max_retries(),
                 table.version(),
             )
