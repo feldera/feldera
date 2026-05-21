@@ -240,7 +240,9 @@ def aws_access(s3_skip_signature: bool) -> str:
     return aws_access
 
 
-def delta_input_connector(s3_path: str, region: str, table: str, s3_skip_signature: bool) -> str:
+def delta_input_connector(
+    s3_path: str, region: str, table: str, s3_skip_signature: bool
+) -> str:
     return f"""{{
         "transport": {{
             "name": "delta_table_input",
@@ -271,7 +273,9 @@ def file_input_connector(path: str, table: str) -> str:
     }}"""
 
 
-def s3_input_connector(bucket: str, prefix: str, region: str, table: str, s3_skip_signature: bool) -> str:
+def s3_input_connector(
+    bucket: str, prefix: str, region: str, table: str, s3_skip_signature: bool
+) -> str:
     return f"""{{
         "transport": {{
             "name": "s3_input",
@@ -293,10 +297,16 @@ def s3_input_connector(bucket: str, prefix: str, region: str, table: str, s3_ski
 
 def input_connector(config: TPCHTestConfig, table: str) -> str:
     if config.input_mode == "delta":
-        return delta_input_connector(config.s3_path, config.s3_region, table, config.s3_skip_signature)
+        return delta_input_connector(
+            config.s3_path, config.s3_region, table, config.s3_skip_signature
+        )
     elif config.input_mode == "s3":
         return s3_input_connector(
-            config.s3_bucket, config.s3_prefix, config.s3_region, table, config.s3_skip_signature
+            config.s3_bucket,
+            config.s3_prefix,
+            config.s3_region,
+            table,
+            config.s3_skip_signature,
         )
     elif config.input_mode == "file":
         return file_input_connector(config.input_dir, table)
