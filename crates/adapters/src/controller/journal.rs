@@ -89,8 +89,8 @@ impl Journal {
         } else {
             let mut result = Ok(());
             self.backend
-                .list(&self.path, &mut |path, _kind| {
-                    let Some(file_name) = path.filename() else {
+                .list(&self.path, &mut |entry| {
+                    let Some(file_name) = entry.name.filename() else {
                         return;
                     };
                     let Some(number) = file_name.strip_suffix(".bin") else {
@@ -102,8 +102,8 @@ impl Journal {
                     if !steps.contains(&step) {
                         return;
                     }
-                    if let Err(error) = self.backend.delete(path) {
-                        result = Err(StepError::storage_error(path, error));
+                    if let Err(error) = self.backend.delete(&entry.name) {
+                        result = Err(StepError::storage_error(&entry.name, error));
                     }
                 })
                 .map_err(|error| self.storage_error(error))?;
