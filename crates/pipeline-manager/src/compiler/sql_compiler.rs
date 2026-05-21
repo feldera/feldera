@@ -911,7 +911,7 @@ mod test {
     use crate::auth::TenantRecord;
     use crate::compiler::test::{list_content_as_sorted_names, CompilerTest};
     use crate::compiler::util::{create_new_file, recreate_dir};
-    use crate::db::types::program::ProgramStatus;
+    use crate::db::types::program::{ProgramSchemaPropertiesOnly, ProgramStatus};
     use crate::db::types::utils::validate_program_info;
     use crate::db::types::version::Version;
     use feldera_types::config::TransportConfig;
@@ -1138,6 +1138,20 @@ mod test {
             assert!(subfields[1].columntype.nullable);
         }
 
+        // Program schema only with properties
+        let program_schema_properties_only: ProgramSchemaPropertiesOnly =
+            serde_json::from_value(program_info.schema.clone()).unwrap();
+
+        // Table
+        let table_properties_only = program_schema_properties_only.inputs.first().unwrap();
+        assert_eq!(table_properties_only.name, table.name);
+        assert_eq!(table_properties_only.properties, table.properties);
+
+        // View
+        let view_properties_only = program_schema_properties_only.outputs.get(1).unwrap();
+        assert_eq!(view_properties_only.name, view.name);
+        assert_eq!(view_properties_only.properties, view.properties);
+
         // Clean up
         test.delete_pipeline(tenant_id, pipeline_id, "p1").await;
         test.sql_compiler_tick().await;
@@ -1232,7 +1246,7 @@ mod test {
         let pipeline_descr = test
             .check_outcome_sql_compiled(tenant_id, pipeline_id, program_code)
             .await;
-        let input_connectors = validate_program_info(&pipeline_descr.program_info.unwrap())
+        let input_connectors = validate_program_info(&pipeline_descr.program_info.clone().unwrap())
             .unwrap()
             .clone()
             .input_connectors;
@@ -1246,6 +1260,17 @@ mod test {
             connector_config.transport,
             TransportConfig::Datagen(_)
         ));
+
+        // Program schema only with properties: check properties
+        let program_schema_properties_only: ProgramSchemaPropertiesOnly =
+            serde_json::from_value(pipeline_descr.program_info.unwrap()["schema"].clone()).unwrap();
+        let table_properties_only = program_schema_properties_only.inputs.first().unwrap();
+        assert_eq!(table_properties_only.name, "t1");
+        assert_eq!(table_properties_only.properties.len(), 1);
+        assert!(table_properties_only.properties.contains_key("connectors"));
+        assert!(table_properties_only.properties["connectors"]
+            .value
+            .contains("\"name\": \"c1\""));
     }
 
     /// Tests that SQL compiler recovers from an incorrect platform version.

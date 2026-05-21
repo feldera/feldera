@@ -429,7 +429,7 @@ impl PipelineExecutor for LocalRunner {
         deployment_config: &PipelineConfig,
         _program_info: &serde_json::Value,
         program_binary_url: &str,
-        program_info_url: Option<&str>,
+        program_info_url: &str,
         program_version: Version,
     ) -> Result<(), ManagerError> {
         // Local runner does not support multihost.
@@ -474,47 +474,46 @@ impl PipelineExecutor for LocalRunner {
         // Going forward, we should be able to pass program info and deployment config files
         // as separate arguments to the pipeline instead of merging them into one JSON file.
         let mut deployment_config = deployment_config.clone();
-        if let Some(program_info_url) = program_info_url {
-            // Retrieve and store executable in pipeline working directory
-            let program_info_file_path = self.config.program_info_file_path(self.pipeline_id);
 
-            self.retrieve_pipeline_file(
-                program_info_url,
-                "program info",
-                &program_info_file_path,
-                0o660, // User: rw, Group: rw, Others: /
-            )
-            .await?;
+        // Retrieve and store program info in pipeline working directory
+        let program_info_file_path = self.config.program_info_file_path(self.pipeline_id);
 
-            // Read and parse the program info file
-            let program_info_contents =
-                fs::read_to_string(&program_info_file_path)
-                    .await
-                    .map_err(|e| {
-                        ManagerError::from(CommonError::io_error(
-                            format!(
-                                "read program info file '{}'",
-                                program_info_file_path.display()
-                            ),
-                            e,
-                        ))
-                    })?;
+        self.retrieve_pipeline_file(
+            program_info_url,
+            "program info",
+            &program_info_file_path,
+            0o660, // User: rw, Group: rw, Others: /
+        )
+        .await?;
 
-            let program_info: PipelineConfigProgramInfo =
-                serde_json::from_str(&program_info_contents).map_err(|e| {
-                    ManagerError::from(RunnerError::RunnerProvisionError {
-                        error: format!(
-                            "failed to parse program info file '{}': {e}",
+        // Read and parse the program info file
+        let program_info_contents =
+            fs::read_to_string(&program_info_file_path)
+                .await
+                .map_err(|e| {
+                    ManagerError::from(CommonError::io_error(
+                        format!(
+                            "read program info file '{}'",
                             program_info_file_path.display()
                         ),
-                    })
+                        e,
+                    ))
                 })?;
 
-            // Merge program info into deployment_config
-            deployment_config.inputs = program_info.inputs;
-            deployment_config.outputs = program_info.outputs;
-            deployment_config.program_ir = program_info.program_ir;
-        }
+        let program_info: PipelineConfigProgramInfo = serde_json::from_str(&program_info_contents)
+            .map_err(|e| {
+                ManagerError::from(RunnerError::RunnerProvisionError {
+                    error: format!(
+                        "failed to parse program info file '{}': {e}",
+                        program_info_file_path.display()
+                    ),
+                })
+            })?;
+
+        // Merge program info into deployment_config
+        deployment_config.inputs = program_info.inputs;
+        deployment_config.outputs = program_info.outputs;
+        deployment_config.program_ir = program_info.program_ir;
 
         // Write config as YAML and JSON
         //

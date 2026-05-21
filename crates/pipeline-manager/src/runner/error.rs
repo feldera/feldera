@@ -19,6 +19,9 @@ pub enum RunnerError {
     AutomatonCannotConstructProgramBinaryUrl {
         error: String,
     },
+    AutomatonCannotConstructProgramInfoUrl {
+        error: String,
+    },
     AutomatonMissingDeploymentId,
     AutomatonMissingDeploymentConfig,
     AutomatonMissingDeploymentLocation,
@@ -116,6 +119,9 @@ impl DetailedError for RunnerError {
             RunnerError::AutomatonCannotConstructProgramBinaryUrl { .. } => {
                 Cow::from("AutomatonCannotConstructProgramBinaryUrl")
             }
+            RunnerError::AutomatonCannotConstructProgramInfoUrl { .. } => {
+                Cow::from("AutomatonCannotConstructProgramInfoUrl")
+            }
             RunnerError::AutomatonMissingDeploymentId => Cow::from("AutomatonMissingDeploymentId"),
             RunnerError::AutomatonMissingDeploymentConfig => {
                 Cow::from("AutomatonMissingDeploymentConfig")
@@ -195,6 +201,9 @@ impl Display for RunnerError {
             }
             Self::AutomatonCannotConstructProgramBinaryUrl { error } => {
                 write!(f, "Cannot construct program binary URL due to: {error}")
+            }
+            Self::AutomatonCannotConstructProgramInfoUrl { error } => {
+                write!(f, "Cannot construct program info URL due to: {error}")
             }
             Self::AutomatonMissingDeploymentId => {
                 write!(
@@ -400,6 +409,9 @@ impl ResponseError for RunnerError {
         match self {
             Self::AutomatonMissingProgramInfo => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonCannotConstructProgramBinaryUrl { .. } => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+            Self::AutomatonCannotConstructProgramInfoUrl { .. } => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             Self::AutomatonMissingDeploymentId => StatusCode::INTERNAL_SERVER_ERROR,

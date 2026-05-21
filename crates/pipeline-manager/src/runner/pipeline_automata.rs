@@ -935,7 +935,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             }
         };
 
-        // Input and output connectors from required program_info
+        // Validate the required program_info which includes input and output connectors
         let _program_info = match &pipeline.program_info {
             None => {
                 return Action::TransitionToStopping {
@@ -1268,26 +1268,35 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             },
         );
 
-        let program_info_url = if let Some(program_info_integrity_checksum) =
+        let Some(program_info_integrity_checksum) =
             pipeline.program_info_integrity_checksum.as_ref()
-        {
-            Some(format!(
-                "{}://{}:{}/program_info/{}/{}/{}/{}",
-                if self.common_config.enable_https {
-                    "https"
-                } else {
-                    "http"
-                },
-                self.common_config.compiler_host,
-                self.common_config.compiler_port,
-                self.pipeline_id,
-                pipeline.program_version,
-                source_checksum,
-                program_info_integrity_checksum,
-            ))
-        } else {
-            None
+        else {
+            return Action::TransitionToStopping {
+                error: Some(
+                    RunnerError::AutomatonCannotConstructProgramInfoUrl {
+                        error: "integrity checksum is missing".to_string(),
+                    }
+                    .into(),
+                ),
+                storage_status_details: None,
+            };
         };
+
+        // URL where the program info can be downloaded from
+        let program_info_url = format!(
+            "{}://{}:{}/program_info/{}/{}/{}/{}",
+            if self.common_config.enable_https {
+                "https"
+            } else {
+                "http"
+            },
+            self.common_config.compiler_host,
+            self.common_config.compiler_port,
+            self.pipeline_id,
+            pipeline.program_version,
+            source_checksum,
+            program_info_integrity_checksum,
+        );
 
         let bootstrap_policy =
             if Self::platform_version_requires_bootstrap_policy(&pipeline.platform_version) {
@@ -1315,7 +1324,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 &deployment_config,
                 program_info,
                 &program_binary_url,
-                program_info_url.as_deref(),
+                &program_info_url,
                 pipeline.program_version,
             )
             .await
@@ -1864,7 +1873,7 @@ mod test {
             _: &PipelineConfig,
             _: &serde_json::Value,
             _: &str,
-            _: Option<&str>,
+            _: &str,
             _: Version,
         ) -> Result<(), ManagerError> {
             Ok(())

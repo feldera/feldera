@@ -673,19 +673,19 @@ impl ProgramInfo {
 /// This is used to avoid parsing the entire `Relation` object, including
 /// SQL schema, which can change across runtime versions.
 #[derive(Debug, Deserialize)]
-struct RelationPropertiesOnly {
+pub struct RelationPropertiesOnly {
     #[serde(flatten)]
-    name: SqlIdentifier,
+    pub name: SqlIdentifier,
     #[serde(default)]
-    properties: BTreeMap<String, PropertyValue>,
+    pub properties: BTreeMap<String, PropertyValue>,
 }
 
 #[derive(Debug, Deserialize)]
-struct ProgramSchemaPropertiesOnly {
+pub struct ProgramSchemaPropertiesOnly {
     #[serde(default)]
-    inputs: Vec<RelationPropertiesOnly>,
+    pub inputs: Vec<RelationPropertiesOnly>,
     #[serde(default)]
-    outputs: Vec<RelationPropertiesOnly>,
+    pub outputs: Vec<RelationPropertiesOnly>,
 }
 
 /// Generates the program info using the program schema.
