@@ -575,10 +575,10 @@ where
     }
 
     fn init(&mut self, global_id: &GlobalNodeId) {
-        let _ = self
-            .exchange
-            .receiver_global_node_id
-            .set(Arc::new(global_id.node_identifier().to_string()));
+        let _ = self.exchange.receiver_global_node_id.set(Arc::new(format!(
+            "ShardedAccumulatorReceiver {}",
+            global_id.node_identifier()
+        )));
     }
 
     fn location(&self) -> OperatorLocation {
