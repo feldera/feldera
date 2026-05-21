@@ -102,6 +102,17 @@ where
     json_file
 }
 
+/// Register the object stores required by delta-rs 0.31.x `TableProvider` scans.
+fn register_delta_table_object_stores(datafusion: &SessionContext, table: &DeltaTable) {
+    let log_store = table.log_store();
+    let runtime_env = datafusion.runtime_env();
+    runtime_env.register_object_store(
+        log_store.object_store_url().as_ref(),
+        log_store.object_store(None),
+    );
+    runtime_env.register_object_store(log_store.root_url(), log_store.root_object_store(None));
+}
+
 /// Wait until `table` contains exactly `expected_count` records.
 async fn wait_for_output_records<T>(
     table: &mut Arc<DeltaTable>,
@@ -113,6 +124,7 @@ async fn wait_for_output_records<T>(
     T: for<'a> DeserializeWithContext<'a, SqlSerdeConfig, Variant> + DBData,
 {
     let start = Instant::now();
+    register_delta_table_object_stores(datafusion, table);
     loop {
         // select count() output_table == len().
         Arc::get_mut(table)
@@ -2499,7 +2511,7 @@ proptest! {
 
         let table_uri = format!("s3://feldera-delta-table-test/{uuid}/");
         // TODO: enable verification when it's supported for S3.
-        delta_table_output_test(data.clone(), &table_uri, &object_store_config, false, None);
+        delta_table_output_test(data.clone(), &table_uri, &object_store_config, false, None, false);
         //delta_table_output_test(data.clone(), &table_uri, &object_store_config, false, None);
 
         let mut json_file = delta_table_snapshot_to_json::<DeltaTestStruct>(
