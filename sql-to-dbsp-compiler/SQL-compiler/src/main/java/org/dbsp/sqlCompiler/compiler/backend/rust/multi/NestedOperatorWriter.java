@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust.multi;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
+import org.dbsp.sqlCompiler.circuit.annotation.RegionAnnotation;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -13,7 +14,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.util.HashString;
@@ -24,10 +25,10 @@ import org.dbsp.util.Utilities;
 public final class NestedOperatorWriter extends BaseRustCodeGenerator {
     final DBSPNestedOperator operator;
     final DBSPCircuit circuit;
-    final LateMaterializations materializations;
+    final CircuitPostfix materializations;
 
     public NestedOperatorWriter(DBSPNestedOperator operator, DBSPCircuit circuit,
-                                LateMaterializations materializations) {
+                                CircuitPostfix materializations) {
         this.circuit = circuit;
         this.operator = operator;
         this.materializations = materializations;
@@ -38,6 +39,21 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         String name = op.getNodeName(false);
         String hash = op.getNodeName(true);
         HashString merkle = OperatorHash.getHash(node, true);
+        RegionAnnotation region = node.annotations.first(RegionAnnotation.class);
+        if (region != null) {
+            boolean exists = this.materializations.recordRegion(region);
+            if (!exists) {
+                this.builder().append("let ")
+                        .append(region.asVarName())
+                        .append(": Option<RegionName> = Some(circuit.create_region_name(")
+                        .append(Utilities.doubleQuote(region.getTag(), true))
+                        .append(", ")
+                        .append(region.getId())
+                        .append("));")
+                        .newline();
+            }
+        }
+
         if (!node.is(DBSPViewBaseOperator.class)) {
             this.builder().append("let ");
             if (node.is(DBSPSimpleOperator.class)) {
@@ -62,6 +78,15 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         } else {
             this.builder().append("None, ");
         }
+
+        if (region != null) {
+            this.builder().append("&")
+                    .append(region.asVarName())
+                    .append(", ");
+        } else {
+            this.builder().append("&None, ");
+        }
+
         this.builder().append(CircuitWriter.SOURCE_MAP_VARIABLE_NAME)
                 .append(", ");
         for (var input: op.inputs) {
@@ -106,7 +131,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
                 .append(hash)
                 .append("(circuit: &")
                 .append(this.dbspCircuit(true))
-                .append(", ")
+                .append(", region: &Option<RegionName>, ")
                 .append(CircuitWriter.SOURCE_MAP_VARIABLE_NAME)
                 .append(": &'static SourceMap, ");
         if (!useHandles)
@@ -135,6 +160,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         this.builder().append(")");
         this.builder().append("{").increase();
 
+        this.builder().append("if let Some(region) = region { circuit.open_region(region.clone()) };").newline();
         this.builder().append("let (");
         for (int i = 0; i < operator.outputCount(); i++) {
             OutputPort port = operator.internalOutputs.get(i);
@@ -202,6 +228,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
             }
         }
 
+        this.builder().append("if let Some(region) = region { circuit.close_region(region.clone()) };").newline();
         this.builder().append("return (");
         for (int i = 0; i < this.operator.outputCount(); i++) {
             OutputPort port = this.operator.internalOutputs.get(i);

@@ -7,7 +7,7 @@ import org.dbsp.util.Utilities;
 
 /** Annotation used on operators that are produced for implementing the zero of
  * a global aggregate {@link DBSPAggregateZeroOperator}. */
-public class GlobalAggregate extends Annotation {
+public class GlobalAggregate extends RegionAnnotation {
     /** All nodes in the same region use the same id */
     public final int id;
 
@@ -21,6 +21,17 @@ public class GlobalAggregate extends Annotation {
     }
 
     @Override
+    public final boolean equals(Object o) {
+        if (!(o instanceof GlobalAggregate that)) return false;
+        return this.id == that.id;
+    }
+
+    @Override
+    public int hashCode() {
+        return this.id;
+    }
+
+    @Override
     public void asJson(JsonStream stream) {
         stream.beginObject().appendClass(this);
         stream.label("id");
@@ -31,5 +42,15 @@ public class GlobalAggregate extends Annotation {
     @Override
     public String toString() {
         return "GlobalAggregate: " + this.id;
+    }
+
+    @Override
+    public String getTag() {
+        return "agg_zero";
+    }
+
+    @Override
+    public int getId() {
+        return this.id;
     }
 }

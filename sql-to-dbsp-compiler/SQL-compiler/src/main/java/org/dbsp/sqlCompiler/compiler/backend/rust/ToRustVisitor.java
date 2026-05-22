@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.annotation.RegionAnnotation;
 import org.dbsp.sqlCompiler.circuit.annotation.JoinStrategy;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
@@ -50,7 +51,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CollectSourcePositions;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.DeclareComparators;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
@@ -110,7 +111,7 @@ public class ToRustVisitor extends CircuitVisitor {
     /** Declarations inside a circuit */
     final Set<String> perCircuitDeclarations;
     final SourcePositionResource sourcePositionResource;
-    final LateMaterializations materializations;
+    final CircuitPostfix postfix;
 
     /* Example output generated when 'useHandles' is false:
      * pub fn circuit0(workers: usize) -> (DBSPHandle, Catalog) {
@@ -134,10 +135,10 @@ public class ToRustVisitor extends CircuitVisitor {
      * @param builder   Emit the output here.
      * @param metadata  Program metadata for the program compiled.
      * @param projectDeclarations Information about global per-circuit structures.
-     * @param materializations Data structures materialized at the end.
+     * @param postfix   Data structures that generate code after the circuit scanning is done.
      */
     public ToRustVisitor(DBSPCompiler compiler, IIndentStream builder, ProgramMetadata metadata,
-                         ProjectDeclarations projectDeclarations, LateMaterializations materializations) {
+                         ProjectDeclarations projectDeclarations, CircuitPostfix postfix) {
         super(compiler);
         this.options = compiler.options;
         this.builder = builder;
@@ -147,7 +148,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.perCircuitDeclarations = new HashSet<>();
         this.innerVisitor = this.createInnerVisitor(builder);
         this.sourcePositionResource = new SourcePositionResource();
-        this.materializations = materializations;
+        this.postfix = postfix;
     }
 
     ToRustInnerVisitor createInnerVisitor(IIndentStream builder) {
@@ -175,6 +176,40 @@ public class ToRustVisitor extends CircuitVisitor {
         }
     }
 
+    @Nullable
+    RegionAnnotation emitOpenRegion(DBSPOperator operator) {
+        if (compiler.options.ioOptions.multiCrates())
+            return null;
+        RegionAnnotation region = operator.annotations.first(RegionAnnotation.class);
+        if (region != null) {
+            boolean exists = this.postfix.recordRegion(region);
+            if (!exists) {
+                this.builder.append("let ")
+                        .append(region.asVarName())
+                        .append(": RegionName = circuit.create_region_name(")
+                        .append(region.getTagQuoted())
+                        .append(", ")
+                        .append(region.getId())
+                        .append(");")
+                        .newline();
+            }
+            this.builder.append("circuit.open_region(")
+                    .append(region.asVarName())
+                    .append(".clone());")
+                    .newline();
+        }
+        return region;
+    }
+
+    void emitCloseRegion(@Nullable RegionAnnotation region) {
+        if (region != null) {
+            this.builder.newline()
+                    .append("circuit.close_region(")
+                    .append(region.asVarName())
+                    .append(".clone());");
+        }
+    }
+
     public void generateOperator(DBSPOperator operator) {
         if (this.compiler.options.ioOptions.verbosity > 1) {
             String str = operator.getNode().toInternalString();
@@ -196,7 +231,9 @@ public class ToRustVisitor extends CircuitVisitor {
             // No output produced for view declarations
             return;
 
+        RegionAnnotation region = this.emitOpenRegion(operator);
         operator.accept(this);
+        this.emitCloseRegion(region);
         this.builder.newline();
         if (operator.is(DBSPSimpleOperator.class) &&
                 !operator.is(DBSPSinkOperator.class) &&
@@ -253,7 +290,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     void emitBalancerHints() {
-        for (var hint: this.materializations.balancerHints)
+        for (var hint: this.postfix.balancerHints)
             hint.emit(this.builder);
     }
 
@@ -618,7 +655,7 @@ public class ToRustVisitor extends CircuitVisitor {
         }
         this.tagStream(operator);
         if (!this.useHandles) {
-            if (!this.materializations.has(operator)) {
+            if (!this.postfix.has(operator)) {
                 this.registerTable(operator, operator);
             }
         }
@@ -838,7 +875,6 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPDistinctOperator operator) {
-        this.computeHash(operator);
         DBSPType streamType = this.streamType(operator);
         this.writeComments(operator)
                 .append("let ")
@@ -889,9 +925,9 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.getOutput(0).getName(this.preferHash))
                 .append(".set_persistent_id(hash);");
         if (!this.useHandles) {
-            if (this.materializations.hasRight(operator)) {
+            if (this.postfix.hasRight(operator)) {
                 // Materialize now; otherwise, materialize at the ControlledFilter operator
-                DBSPSourceMultisetOperator table = this.materializations.getLeft(operator);
+                DBSPSourceMultisetOperator table = this.postfix.getLeft(operator);
                 this.registerTable(table, operator);
             }
         }
@@ -1054,7 +1090,6 @@ public class ToRustVisitor extends CircuitVisitor {
 
             final DBSPType type = operator.originalRowType;
             this.generateNestedStructs(type, false);
-            this.computeHash(operator);
             if (operator.isIndex()) {
                 ViewAndIndexes indexes = this.indexes.get(operator.query);
                 Utilities.enforce(indexes != null);
@@ -1145,7 +1180,6 @@ public class ToRustVisitor extends CircuitVisitor {
             }
         } else {
             // no handles
-            this.computeHash(operator);
             this.builder.append("let ")
                     .append(this.handleName(operator))
                     .append(" = ")
@@ -1247,7 +1281,6 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPIndexedTopKOperator operator) {
-        this.computeHash(operator);
         this.innerVisitor.setOperatorContext(operator);
         DBSPExpression comparator = operator.getFunction();
         String streamOperation = switch (operator.numbering) {
@@ -1760,7 +1793,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 case Shard:
                 case Balance:
                 case Broadcast: {
-                    this.materializations.recordHint(operator, strategy);
+                    this.postfix.recordHint(operator, strategy);
                     break;
                 }
                 default:

@@ -369,4 +369,18 @@ public class Regression3Tests extends SqlIoTest {
                   customer_id,
                   SUM(amount) OVER (PARTITION BY customer_id ORDER BY seq) AS previous FROM T;""");
     }
+
+    @Test
+    public void issue6397() {
+        // Validated on Postgres
+        var ccs = this.getCCS("""
+                CREATE TABLE T(d DOUBLE);
+                CREATE VIEW V AS SELECT d, LAG(d) OVER(ORDER BY d) FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES (CAST('-Infinity' AS DOUBLE)), (0), (CAST('Infinity' AS DOUBLE));", """
+                 d | lag
+                ---------
+                 -Infinity | NULL
+                 0         | -Infinity
+                 Infinity  | 0""");
+    }
 }

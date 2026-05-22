@@ -136,6 +136,15 @@ public class MultiCrateTests extends BaseSQLTests {
     }
 
     @Test
+    public void testAggregates() throws IOException, SQLException, InterruptedException {
+        // Test designed to exercise Region annotations, which are used for global aggregates
+        String sql = """
+                 CREATE TABLE T (C0 INT);
+                 CREATE VIEW V0 AS SELECT SUM(C0) FROM T;""";
+        compileProgramToMultiCrate(sql, true);
+    }
+
+    @Test
     public void testInterned() throws IOException, SQLException, InterruptedException {
         String sql = """
                  CREATE TABLE T (C0 VARCHAR INTERNED, C1 INT);

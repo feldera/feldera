@@ -39,7 +39,7 @@ import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Logger;
@@ -255,7 +255,7 @@ public class CompilerMain {
         try {
             if (!compiler.options.ioOptions.multiCrates()) {
                 PrintStream stream = this.getOutputStream();
-                LateMaterializations materializations = new LateMaterializations(compiler);
+                CircuitPostfix materializations = new CircuitPostfix(compiler);
                 materializations.apply(circuit);
                 RustFileWriter writer = new RustFileWriter(materializations);
                 IIndentStream indent = new IndentStream(stream);

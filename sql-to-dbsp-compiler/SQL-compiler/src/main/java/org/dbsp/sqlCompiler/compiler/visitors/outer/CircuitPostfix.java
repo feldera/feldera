@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.annotation.JoinStrategy;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
+import org.dbsp.sqlCompiler.circuit.annotation.RegionAnnotation;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -68,15 +69,19 @@ public class CircuitPostfix extends CircuitVisitor {
     }
 
     /** Record a region; return 'true' if the region already existed */
-    public boolean recordRegion(String region) {
-        if (this.regionsCreated.contains(region))
+    public boolean recordRegion(RegionAnnotation annotation) {
+        if (this.regionsCreated.contains(annotation.asVarName()))
             return true;
-        this.regionsCreated.add(region);
+        this.regionsCreated.add(annotation.asVarName());
         return false;
     }
 
     public void recordHint(DBSPBinaryOperator operator, JoinStrategy strategy) {
         BalancerHint hint = new BalancerHint(operator, strategy);
         this.balancerHints.add(hint);
+    }
+
+    public void clearRegions() {
+        this.regionsCreated.clear();
     }
 }

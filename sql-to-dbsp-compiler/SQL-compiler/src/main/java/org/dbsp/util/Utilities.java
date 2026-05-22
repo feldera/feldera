@@ -456,7 +456,7 @@ public class Utilities {
         args.add("test");
         if (!Utilities.inCI()) {
             args.add("--jobs");
-            args.add("6");
+            args.add("20");
         }
         args.addAll(Arrays.asList(extraArgs));
         if (quiet) {

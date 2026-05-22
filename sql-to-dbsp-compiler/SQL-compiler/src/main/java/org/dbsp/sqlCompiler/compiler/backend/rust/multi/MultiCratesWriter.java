@@ -17,7 +17,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
@@ -138,7 +138,7 @@ public final class MultiCratesWriter extends RustWriter {
     @Override
     public void write(DBSPCompiler compiler) throws IOException {
         StructuresUsed used = this.analyze(compiler);
-        LateMaterializations materializations = new LateMaterializations(compiler);
+        CircuitPostfix materializations = new CircuitPostfix(compiler);
         for (var node: this.toWrite) {
             if (node.is(DBSPCircuit.class))
                 materializations.apply(node.to(DBSPCircuit.class));

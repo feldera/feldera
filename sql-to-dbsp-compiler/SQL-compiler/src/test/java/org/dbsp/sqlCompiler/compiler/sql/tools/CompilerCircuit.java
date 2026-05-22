@@ -6,7 +6,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.ProjectDeclarations;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
 import org.dbsp.util.IndentStreamBuilder;
 
 /**
@@ -43,7 +43,7 @@ public class CompilerCircuit {
         IndentStreamBuilder builder = new IndentStreamBuilder();
         ToRustVisitor visitor = new ToRustVisitor(
                 this.compiler, builder, this.getCircuit().getMetadata(),
-                new ProjectDeclarations(), new LateMaterializations(this.compiler));
+                new ProjectDeclarations(), new CircuitPostfix(this.compiler));
         visitor.apply(this.getCircuit());
         return builder.toString();
     }

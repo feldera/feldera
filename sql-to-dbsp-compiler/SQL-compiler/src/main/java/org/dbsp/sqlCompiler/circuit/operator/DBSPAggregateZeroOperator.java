@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.ExpandAggregateZero;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -16,7 +17,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import java.util.List;
 import java.util.Objects;
 
-/** This operator represents a computation that is used aftr a global
+/** This operator represents a computation that is used after a global
  * aggregation (no group-by) to replace empty results with the expected zero.
  * This operator only used in the front-end, and is later expanded into the 
  * following subgraph:
@@ -25,7 +26,7 @@ import java.util.Objects;
  * The input is a zset like {}/{c->1}: either the empty set (for an empty input)
  * or the correct count with a weight of 1.
  * We need to produce {z->1}/{c->1}, where z is the actual zero of the fold above.
- * For this we synthesize the following graph:
+ * For this we synthesize the following graph (this is done by {@link ExpandAggregateZero}).
  *     |
  * {}/{c->1}------------------------
  *    | map (|x| x -> z)           |
