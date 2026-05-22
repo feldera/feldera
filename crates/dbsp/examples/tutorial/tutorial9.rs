@@ -27,6 +27,7 @@ use size_of::SizeOf;
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 struct Record {
     location: String,
     date: i32,
@@ -50,7 +51,7 @@ struct Record {
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 struct VaxMonthly {
     count: u64,
     year: i32,

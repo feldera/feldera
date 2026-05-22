@@ -22,7 +22,7 @@ fn main() -> Result<()> {
             let mut edges_data = ([
                 // The first step adds a graph of four nodes:
                 // |0| -1-> |1| -1-> |2| -2-> |3| -2-> |4|
-                zset_set! { Tup3(0_usize, 1_usize, 1_usize), Tup3(1, 2, 1), Tup3(2, 3, 2), Tup3(3, 4, 2) },
+                zset_set! { Tup3(0_u64, 1_u64, 1_u64), Tup3(1, 2, 1), Tup3(2, 3, 2), Tup3(3, 4, 2) },
                 // The second step removes the edge |1| -1-> |2|.
                 zset! { Tup3(1, 2, 1) => -1 },
                 // The third step would introduce a cycle but that would
@@ -43,7 +43,7 @@ fn main() -> Result<()> {
             let len_1 = edges.map(|Tup3(from, to, weight)| Tup4(*from, *to, *weight, 1));
 
             let closure = root_circuit.recursive(
-                |child_circuit, len_n_minus_1: Stream<_, OrdZSet<Tup4<usize, usize, usize, usize>>>| {
+                |child_circuit, len_n_minus_1: Stream<_, OrdZSet<Tup4<u64, u64, u64, u64>>>| {
                     // Import the `edges` and `len_1` stream from the parent circuit.
                     let edges = edges.delta0(child_circuit);
                     let len_1 = len_1.delta0(child_circuit);

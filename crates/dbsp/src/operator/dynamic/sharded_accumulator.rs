@@ -750,14 +750,14 @@ mod tests {
             for_each_host(&mut dbsp_handles, |h| h.start_transaction().unwrap());
 
             for i in 0..=round {
-                input_handles[i % hosts].push(i, 1);
+                input_handles[i % hosts].push(i as u64, 1);
                 for_each_host(&mut dbsp_handles, |h| {
                     h.step().unwrap();
                 });
             }
             for_each_host(&mut dbsp_handles, |h| h.commit_transaction().unwrap());
 
-            let mut results = BTreeMap::<usize, ZWeight>::new();
+            let mut results = BTreeMap::<u64, ZWeight>::new();
             for spine in output_handles
                 .iter()
                 .flat_map(|handle| handle.take_from_all())
@@ -771,7 +771,7 @@ mod tests {
                 }
             }
             let results = results.into_iter().collect_vec();
-            let expected = (0..=round).map(|i| (i, 1)).collect_vec();
+            let expected = (0..=round).map(|i| (i as u64, 1)).collect_vec();
             assert_eq!(&results, &expected);
         }
     }
@@ -779,17 +779,17 @@ mod tests {
     fn circuit(
         circuit: &mut RootCircuit,
     ) -> anyhow::Result<(
-        ZSetHandle<usize>,
+        ZSetHandle<u64>,
         OutputHandle<
             TypedBatch<
-                usize,
+                u64,
                 (),
                 i64,
                 Spine<FallbackWSet<dyn Data + 'static, DynWeightTyped<i64>>>,
             >,
         >,
     )> {
-        let (input, input_handle) = circuit.add_input_zset::<usize>();
+        let (input, input_handle) = circuit.add_input_zset::<u64>();
         let output_handle = input.shard_accumulate().latest_output();
         Ok((input_handle, output_handle))
     }

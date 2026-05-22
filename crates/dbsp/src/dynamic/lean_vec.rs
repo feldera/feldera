@@ -1167,6 +1167,37 @@ where
     }
 }
 
+impl<T, U> PartialEq<LeanVec<U>> for ArchivedLeanVec<T>
+where
+    T: PartialEq<U>,
+{
+    fn eq(&self, other: &LeanVec<U>) -> bool {
+        let lhs = self.as_slice();
+        let rhs = other.as_slice();
+        if lhs.len() != rhs.len() {
+            return false;
+        }
+        lhs.iter().zip(rhs.iter()).all(|(a, b)| a.eq(b))
+    }
+}
+
+impl<T, U> PartialOrd<LeanVec<U>> for ArchivedLeanVec<T>
+where
+    T: PartialOrd<U>,
+{
+    fn partial_cmp(&self, other: &LeanVec<U>) -> Option<std::cmp::Ordering> {
+        let lhs = self.as_slice();
+        let rhs = other.as_slice();
+        for (a, b) in lhs.iter().zip(rhs.iter()) {
+            match a.partial_cmp(b)? {
+                std::cmp::Ordering::Equal => continue,
+                non_eq => return Some(non_eq),
+            }
+        }
+        Some(lhs.len().cmp(&rhs.len()))
+    }
+}
+
 impl<T> LeanVec<T> {
     pub fn new() -> Self {
         Self {

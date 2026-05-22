@@ -2019,6 +2019,7 @@ mod test {
         IsNone,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    #[archive(compare(PartialEq))]
     struct TestStruct {
         id: i64,
         s: String,

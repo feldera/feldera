@@ -61,6 +61,18 @@ impl SizeOf for ByteArray {
     }
 }
 
+impl PartialEq<ByteArray> for ArchivedByteArray {
+    fn eq(&self, other: &ByteArray) -> bool {
+        self.data.as_slice() == other.data.as_slice()
+    }
+}
+
+impl PartialOrd<ByteArray> for ArchivedByteArray {
+    fn partial_cmp(&self, other: &ByteArray) -> Option<std::cmp::Ordering> {
+        Some(self.data.as_slice().cmp(other.data.as_slice()))
+    }
+}
+
 impl SerializeWithContext<SqlSerdeConfig> for ByteArray {
     fn serialize_with_context<S>(
         &self,

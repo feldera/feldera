@@ -29,7 +29,7 @@ use time::{OffsetDateTime, format_description::well_known::Iso8601};
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct Person {
     pub id: u64,
     pub name: String,
@@ -63,7 +63,7 @@ pub struct Person {
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct Auction {
     pub id: u64,
     pub item_name: String,
@@ -100,7 +100,7 @@ pub struct Auction {
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct Bid {
     /// Id of auction this bid is for.
     pub auction: u64,
@@ -137,7 +137,7 @@ pub struct Bid {
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub enum Event {
     Person(Person),
     Auction(Auction),

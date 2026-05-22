@@ -75,7 +75,7 @@ type Tup8Ty = Tup8<
 >;
 type Tup9Ty = Tup9<i8, i16, i32, i64, i128, u8, u16, u32, u128>;
 type Tup10Ty =
-    Tup10<isize, usize, F32, F64, char, String, Option<bool>, Option<i8>, Option<i16>, Option<i32>>;
+    Tup10<i64, u64, F32, F64, char, String, Option<bool>, Option<i8>, Option<i16>, Option<i32>>;
 type Tup11Ty = Tup11<
     Option<i64>,
     Option<i128>,
@@ -84,8 +84,8 @@ type Tup11Ty = Tup11<
     Option<u32>,
     Option<u64>,
     Option<u128>,
-    Option<isize>,
-    Option<usize>,
+    Option<i64>,
+    Option<u64>,
     Option<F32>,
     Option<F64>,
 >;
@@ -140,8 +140,8 @@ type Tup15Ty = Tup15<
     u16,
     u32,
     u128,
-    isize,
-    usize,
+    i64,
+    u64,
     F32,
     F64,
     char,
@@ -159,8 +159,8 @@ type Tup16Ty = Tup16<
     Option<u32>,
     Option<u64>,
     Option<u128>,
-    Option<isize>,
-    Option<usize>,
+    Option<i64>,
+    Option<u64>,
     Option<F32>,
     Option<F64>,
     Option<char>,
@@ -400,10 +400,6 @@ fn i128_val() -> BoxedStrategy<i128> {
     prop_oneof![Just(i128::MIN), Just(i128::MAX), any::<i128>()].boxed()
 }
 
-fn isize_val() -> BoxedStrategy<isize> {
-    prop_oneof![Just(isize::MIN), Just(isize::MAX), any::<isize>()].boxed()
-}
-
 fn u8_val() -> BoxedStrategy<u8> {
     prop_oneof![Just(u8::MIN), Just(u8::MAX), any::<u8>()].boxed()
 }
@@ -422,10 +418,6 @@ fn u64_val() -> BoxedStrategy<u64> {
 
 fn u128_val() -> BoxedStrategy<u128> {
     prop_oneof![Just(u128::MIN), Just(u128::MAX), any::<u128>()].boxed()
-}
-
-fn usize_val() -> BoxedStrategy<usize> {
-    prop_oneof![Just(usize::MIN), Just(usize::MAX), any::<usize>()].boxed()
 }
 
 fn opt<T>(inner: T) -> impl Strategy<Value = Option<T::Value>>
@@ -731,8 +723,8 @@ fn tup9_strategy() -> BoxedStrategy<Tup9Ty> {
 
 fn tup10_strategy() -> BoxedStrategy<Tup10Ty> {
     (
-        isize_val(),
-        usize_val(),
+        i64_val(),
+        u64_val(),
         f32_wrap(),
         f64_wrap(),
         char_val(),
@@ -755,8 +747,8 @@ fn tup11_strategy() -> BoxedStrategy<Tup11Ty> {
         opt(u32_val()),
         opt(u64_val()),
         opt(u128_val()),
-        opt(isize_val()),
-        opt(usize_val()),
+        opt(i64_val()),
+        opt(u64_val()),
         opt(f32_wrap()),
         opt(f64_wrap()),
     )
@@ -838,8 +830,8 @@ fn tup15_strategy() -> BoxedStrategy<Tup15Ty> {
         u16_val(),
         u32_val(),
         u128_val(),
-        isize_val(),
-        usize_val(),
+        i64_val(),
+        u64_val(),
         f32_wrap(),
         f64_wrap(),
         char_val(),
@@ -863,8 +855,8 @@ fn tup16_strategy() -> BoxedStrategy<Tup16Ty> {
         opt(u32_val()),
         opt(u64_val()),
         opt(u128_val()),
-        opt(isize_val()),
-        opt(usize_val()),
+        opt(i64_val()),
+        opt(u64_val()),
         opt(f32_wrap()),
         opt(f64_wrap()),
         opt(char_val()),
@@ -1187,8 +1179,8 @@ fn edge_values_tup9() -> Vec<Tup9Ty> {
 fn edge_values_tup10() -> Vec<Tup10Ty> {
     vec![
         Tup10::new(
-            isize::MIN,
-            usize::MIN,
+            i64::MIN,
+            u64::MIN,
             min_f32(),
             min_f64(),
             char::MIN,
@@ -1199,8 +1191,8 @@ fn edge_values_tup10() -> Vec<Tup10Ty> {
             None,
         ),
         Tup10::new(
-            isize::MAX,
-            usize::MAX,
+            i64::MAX,
+            u64::MAX,
             max_f32(),
             max_f64(),
             char::MAX,
@@ -1238,8 +1230,8 @@ fn edge_values_tup11() -> Vec<Tup11Ty> {
             Some(u32::MAX),
             Some(u64::MAX),
             Some(u128::MAX),
-            Some(isize::MAX),
-            Some(usize::MAX),
+            Some(i64::MAX),
+            Some(u64::MAX),
             Some(max_f32()),
             Some(max_f64()),
         ),
@@ -1372,8 +1364,8 @@ fn edge_values_tup15() -> Vec<Tup15Ty> {
             u16::MIN,
             u32::MIN,
             u128::MIN,
-            isize::MIN,
-            usize::MIN,
+            i64::MIN,
+            u64::MIN,
             min_f32(),
             min_f64(),
             char::MIN,
@@ -1389,8 +1381,8 @@ fn edge_values_tup15() -> Vec<Tup15Ty> {
             u16::MAX,
             u32::MAX,
             u128::MAX,
-            isize::MAX,
-            usize::MAX,
+            i64::MAX,
+            u64::MAX,
             max_f32(),
             max_f64(),
             char::MAX,
@@ -1448,8 +1440,8 @@ fn edge_values_tup16() -> Vec<Tup16Ty> {
             Some(u32::MAX),
             Some(u64::MAX),
             Some(u128::MAX),
-            Some(isize::MAX),
-            Some(usize::MAX),
+            Some(i64::MAX),
+            Some(u64::MAX),
             Some(max_f32()),
             Some(max_f64()),
             Some(char::MAX),

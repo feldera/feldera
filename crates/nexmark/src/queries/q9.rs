@@ -23,7 +23,7 @@ use size_of::SizeOf;
     Deserialize,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct Q9Output(
     u64,
     String,

@@ -352,6 +352,64 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         }
     });
 
+    let cross_eq_checks = fields
+        .iter()
+        .enumerate()
+        .zip(self_indexes.iter())
+        .map(|((idx, _), self_idx)| {
+            let get_name = format_ident!("get_t{}", idx);
+            quote! {
+                {
+                    let self_archived = self.#get_name();
+                    let other_field = &other.#self_idx;
+                    if ::dbsp::utils::IsNone::is_none(other_field) {
+                        self_archived.is_none()
+                    } else if let ::core::option::Option::Some(archived) = self_archived {
+                        ::core::cmp::PartialEq::eq(
+                            archived,
+                            ::dbsp::utils::IsNone::unwrap_or_self(other_field),
+                        )
+                    } else {
+                        false
+                    }
+                }
+            }
+        });
+
+    let cross_cmp_checks = fields
+        .iter()
+        .enumerate()
+        .zip(self_indexes.iter())
+        .map(|((idx, _), self_idx)| {
+            let get_name = format_ident!("get_t{}", idx);
+            quote! {
+                {
+                    let self_archived = self.#get_name();
+                    let other_field = &other.#self_idx;
+                    let other_is_none = ::dbsp::utils::IsNone::is_none(other_field);
+                    let cmp = match (self_archived, other_is_none) {
+                        (::core::option::Option::None, true) => ::core::cmp::Ordering::Equal,
+                        (::core::option::Option::None, false) => ::core::cmp::Ordering::Less,
+                        (::core::option::Option::Some(_), true) => ::core::cmp::Ordering::Greater,
+                        (::core::option::Option::Some(archived), false) => {
+                            match ::core::cmp::PartialOrd::partial_cmp(
+                                archived,
+                                ::dbsp::utils::IsNone::unwrap_or_self(other_field),
+                            ) {
+                                ::core::option::Option::Some(ord) => ord,
+                                ::core::option::Option::None => {
+                                    return ::core::option::Option::None;
+                                }
+                            }
+                        }
+                    };
+                    if cmp != ::core::cmp::Ordering::Equal {
+                        return ::core::option::Option::Some(cmp);
+                    }
+                }
+            }
+        });
+
     let legacy_eq_checks = self_indexes
         .iter()
         .map(|idx| quote!(self.#idx == other.#idx));
@@ -361,6 +419,19 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
             let cmp = self.#idx.cmp(&other.#idx);
             if cmp != core::cmp::Ordering::Equal {
                 return cmp;
+            }
+        }
+    });
+
+    let legacy_cross_eq_checks = self_indexes
+        .iter()
+        .map(|idx| quote!(self.#idx.eq(&other.#idx)));
+
+    let legacy_cross_cmp_checks = self_indexes.iter().map(|idx| {
+        quote! {
+            match self.#idx.partial_cmp(&other.#idx) {
+                ::core::option::Option::Some(::core::cmp::Ordering::Equal) => {}
+                non_eq => return non_eq,
             }
         }
     });
@@ -403,6 +474,29 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
                 #(#legacy_cmp_checks)*
                 core::cmp::Ordering::Equal
+            }
+        }
+
+        impl<#(#generics),*> core::cmp::PartialEq<#name<#(#generics),*>> for #archived_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive,)*
+            #(::rkyv::Archived<#generics>: core::cmp::PartialEq<#generics>,)*
+        {
+            #[inline]
+            fn eq(&self, other: &#name<#(#generics),*>) -> bool {
+                true #(&& #legacy_cross_eq_checks)*
+            }
+        }
+
+        impl<#(#generics),*> core::cmp::PartialOrd<#name<#(#generics),*>> for #archived_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive,)*
+            #(::rkyv::Archived<#generics>: core::cmp::PartialEq<#generics> + core::cmp::PartialOrd<#generics>,)*
+        {
+            #[inline]
+            fn partial_cmp(&self, other: &#name<#(#generics),*>) -> Option<core::cmp::Ordering> {
+                #(#legacy_cross_cmp_checks)*
+                ::core::option::Option::Some(::core::cmp::Ordering::Equal)
             }
         }
     };
@@ -729,6 +823,34 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
                 #(#cmp_checks)*
                 core::cmp::Ordering::Equal
+            }
+        }
+
+        impl<#(#generics),*> core::cmp::PartialEq<#name<#(#generics),*>> for #archived_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+            #(::rkyv::Archived<<#generics as ::dbsp::utils::IsNone>::Inner>:
+                core::cmp::PartialEq<<#generics as ::dbsp::utils::IsNone>::Inner>,)*
+        {
+            #[inline]
+            fn eq(&self, other: &#name<#(#generics),*>) -> bool {
+                true #(&& #cross_eq_checks)*
+            }
+        }
+
+        impl<#(#generics),*> core::cmp::PartialOrd<#name<#(#generics),*>> for #archived_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+            #(::rkyv::Archived<<#generics as ::dbsp::utils::IsNone>::Inner>:
+                core::cmp::PartialEq<<#generics as ::dbsp::utils::IsNone>::Inner>
+                + core::cmp::PartialOrd<<#generics as ::dbsp::utils::IsNone>::Inner>,)*
+        {
+            #[inline]
+            fn partial_cmp(&self, other: &#name<#(#generics),*>) -> ::core::option::Option<core::cmp::Ordering> {
+                #(#cross_cmp_checks)*
+                ::core::option::Option::Some(::core::cmp::Ordering::Equal)
             }
         }
 

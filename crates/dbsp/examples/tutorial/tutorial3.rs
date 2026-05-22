@@ -23,6 +23,7 @@ use size_of::SizeOf;
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 struct Record {
     location: String,
     date: i32,

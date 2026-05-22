@@ -3,8 +3,54 @@ use crate::{
     derive_comparison_traits,
     storage::file::{DbspSerializer, Deserializer},
 };
-use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, archived_value};
+use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, archived_value, option::ArchivedOption};
 use std::{cmp::Ordering, marker::PhantomData, mem::transmute};
+
+/// Cross-type ordered comparison between an archived value and the original.
+///
+/// Mirrors [`PartialOrd<T>`] but is a local trait so we can implement it for
+/// types where `PartialOrd<T>` would be blocked by Rust's orphan rules
+/// (e.g., `rkyv::ArchivedOption<U>` vs `Option<T>`).
+pub trait OrdRepr<T: ?Sized> {
+    fn ord_cmp(&self, other: &T) -> Ordering;
+}
+
+impl<T, U> OrdRepr<Option<T>> for ArchivedOption<U>
+where
+    U: PartialOrd<T>,
+{
+    fn ord_cmp(&self, other: &Option<T>) -> Ordering {
+        match (self, other) {
+            (ArchivedOption::None, None) => Ordering::Equal,
+            (ArchivedOption::None, Some(_)) => Ordering::Less,
+            (ArchivedOption::Some(_), None) => Ordering::Greater,
+            (ArchivedOption::Some(a), Some(b)) => a.partial_cmp(b).unwrap_or(Ordering::Equal),
+        }
+    }
+}
+
+/// Forwards `OrdRepr<T>` to `PartialOrd<T>` for the named types.
+///
+/// We cannot blanket-impl `OrdRepr<T> for U where U: PartialOrd<T>` because
+/// that would conflict with the manual impl for `ArchivedOption<U>` (Rust's
+/// coherence checker treats them as potentially overlapping even though
+/// `ArchivedOption<U>: PartialOrd<Option<T>>` is blocked by orphan rules).
+#[macro_export]
+macro_rules! impl_ord_repr_via_partial_ord {
+    ($([$($generics:tt)*] $archived:ty as Repr<$orig:ty> $(where $($wh:tt)*)?),* $(,)?) => {$(
+        impl<$($generics)*> $crate::dynamic::OrdRepr<$orig> for $archived
+        where
+            $archived: ::core::cmp::PartialOrd<$orig>,
+            $($($wh)*)?
+        {
+            #[inline]
+            fn ord_cmp(&self, other: &$orig) -> ::core::cmp::Ordering {
+                <$archived as ::core::cmp::PartialOrd<$orig>>::partial_cmp(self, other)
+                    .unwrap_or(::core::cmp::Ordering::Equal)
+            }
+        }
+    )*};
+}
 
 /// Trait for DBData that can be deserialized with [`rkyv`].
 ///
@@ -14,14 +60,14 @@ use std::{cmp::Ordering, marker::PhantomData, mem::transmute};
 pub trait ArchivedDBData:
     for<'a> Serialize<DbspSerializer<'a>> + Archive<Archived = Self::Repr> + Sized
 {
-    type Repr: Deserialize<Self, Deserializer> + Ord;
+    type Repr: Deserialize<Self, Deserializer> + Ord + PartialEq<Self>;
 }
 
 /// We also automatically implement this bound for everything that satisfies it.
 impl<T> ArchivedDBData for T
 where
     T: Archive + for<'a> Serialize<DbspSerializer<'a>>,
-    Archived<T>: Deserialize<T, Deserializer> + Ord,
+    Archived<T>: Deserialize<T, Deserializer> + Ord + PartialEq<T>,
 {
     type Repr = Archived<T>;
 }

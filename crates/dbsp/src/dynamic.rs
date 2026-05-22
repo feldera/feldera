@@ -144,7 +144,8 @@ pub use option::{DynOpt, Opt};
 pub use pair::{DynPair, Pair};
 pub use pairs::{DynPairs, Pairs, PairsTrait};
 pub use rkyv::{
-    ArchiveTrait, ArchivedDBData, DeserializableDyn, DeserializeDyn, DeserializeImpl, SerializeDyn,
+    ArchiveTrait, ArchivedDBData, DeserializableDyn, DeserializeDyn, DeserializeImpl, OrdRepr,
+    SerializeDyn,
 };
 pub use set::{BSet, DynSet, Set, SetTrait};
 pub use vec::{DynVec, VecTrait, Vector};

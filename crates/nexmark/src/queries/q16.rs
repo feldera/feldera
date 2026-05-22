@@ -86,7 +86,7 @@ use time::{
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct Q16Output {
     channel: String,
     day: String,
@@ -123,6 +123,7 @@ type Q16Stream = Stream<RootCircuit, OrdZSet<Q16Output>>;
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct Q16Intermediate1(
     ZWeight,
     Tup2<u8, u8>,
@@ -153,6 +154,7 @@ pub struct Q16Intermediate1(
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct Q16Intermediate2(
     ZWeight,
     Tup2<u8, u8>,

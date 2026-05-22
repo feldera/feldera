@@ -33,6 +33,7 @@ use std::{env, fmt::Debug, thread};
     rkyv::Deserialize,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 struct ByteStruct {
     #[serde(rename = "bs")]
     field: ByteArray,
@@ -68,6 +69,7 @@ deserialize_table_record!(ByteStruct["ByteStruct", Variant, 1] {
     rkyv::Deserialize,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 struct RealStruct {
     #[serde(rename = "double")]
     field: F64,
@@ -1116,6 +1118,7 @@ fn test_byte_array_with_value() {
     rkyv::Deserialize,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 struct TimeStuff {
     #[serde(rename = "ts")]
     pub field: Timestamp,

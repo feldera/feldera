@@ -1785,7 +1785,7 @@ mod tests {
         S: Scheduler + 'static,
     {
         let circuit = RootCircuit::build_with_scheduler::<_, _, S>(move |circuit| {
-            let mut n: usize = 0;
+            let mut n: u64 = 0;
             let source = circuit.add_source(Generator::new(move || {
                 let result = n;
                 n += 1;
@@ -1806,11 +1806,11 @@ mod tests {
                     }
                 },
                 |data| aligned_deserialize(&data[..]),
-                |v: &mut Vec<usize>, n| v.push(n),
+                |v: &mut Vec<u64>, n| v.push(n),
             )
             .unwrap();
 
-            let mut round = 0;
+            let mut round: u64 = 0;
             circuit
                 .add_exchange(sender, receiver, &source)
                 .inspect(move |v| {

@@ -74,7 +74,7 @@ use time::{
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct Q15Output {
     day: String,
     total_bids: u64,

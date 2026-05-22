@@ -46,6 +46,7 @@ use std::{fmt::Debug, hash::Hash};
     deserialize = "__D: rkyv::de::SharedDeserializeRegistry"
 ))]
 #[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub enum Variant {
     /// A Variant with a `NULL` SQL value.
     #[default]

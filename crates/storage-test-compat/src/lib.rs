@@ -27,6 +27,8 @@ type Opt<T> = Option<T>;
 type Dec12_2 = SqlDecimal<12, 2>;
 type Dec10_0 = SqlDecimal<10, 0>;
 type Dec18_4 = SqlDecimal<18, 4>;
+type Dec5_2 = SqlDecimal<5, 2>;
+type Dec28_10 = SqlDecimal<28, 10>;
 
 feldera_macros::declare_tuple! {
     Tup65<
@@ -52,8 +54,8 @@ pub type GoldenRow = Tup65<
     u16,
     u32,
     u128,
-    isize,
-    usize,
+    Dec5_2,
+    Dec28_10,
     F32,
     F64,
     char,
@@ -69,8 +71,8 @@ pub type GoldenRow = Tup65<
     Opt<u32>,
     Opt<u64>,
     Opt<u128>,
-    Opt<isize>,
-    Opt<usize>,
+    Opt<Dec5_2>,
+    Opt<Dec28_10>,
     Opt<F32>,
     Opt<F64>,
     Opt<char>,
@@ -274,8 +276,8 @@ pub fn golden_row(row: usize) -> GoldenRow {
     let u16_v = 0x7777u16.wrapping_add(row as u16);
     let u32_v = 0x8888_8888u32.wrapping_add(row as u32);
     let u128_v = 0x9999_9999_9999_9999_9999_9999_9999_0000u128.wrapping_add(row as u128);
-    let isize_v = (0x1357_9BDFisize).wrapping_add(row as isize);
-    let usize_v = (0x2468_ACE0usize).wrapping_add(row);
+    let dec5_2_v = Dec5_2::for_i32(123i32.wrapping_add(row as i32));
+    let dec28_10_v = Dec28_10::for_i32(98_765i32.wrapping_add(row as i32));
     let f32_v = F32::from(1234.25 + row as f32);
     let f64_v = F64::from(5678.75 + row as f64);
     let char_v = chr(0x41, row);
@@ -298,8 +300,8 @@ pub fn golden_row(row: usize) -> GoldenRow {
         row,
         0xB999_9999_9999_9999_9999_9999_9999_0000u128.wrapping_add(row as u128),
     );
-    let opt_isize_v = maybe(row, (0x3579_BDF1isize).wrapping_add(row as isize));
-    let opt_usize_v = maybe(row, (0x468A_CE01usize).wrapping_add(row));
+    let opt_dec5_2_v = maybe(row, Dec5_2::for_i32(223i32.wrapping_add(row as i32)));
+    let opt_dec28_10_v = maybe(row, Dec28_10::for_i32(198_765i32.wrapping_add(row as i32)));
     let opt_f32_v = maybe(row, F32::from(2234.75 + row as f32));
     let opt_f64_v = maybe(row, F64::from(7678.875 + row as f64));
     let opt_char_v = maybe(row, chr(0x61, row));
@@ -414,8 +416,8 @@ pub fn golden_row(row: usize) -> GoldenRow {
         u16_v,
         u32_v,
         u128_v,
-        isize_v,
-        usize_v,
+        dec5_2_v,
+        dec28_10_v,
         f32_v,
         f64_v,
         char_v,
@@ -431,8 +433,8 @@ pub fn golden_row(row: usize) -> GoldenRow {
         opt_u32_v,
         opt_u64_v,
         opt_u128_v,
-        opt_isize_v,
-        opt_usize_v,
+        opt_dec5_2_v,
+        opt_dec28_10_v,
         opt_f32_v,
         opt_f64_v,
         opt_char_v,

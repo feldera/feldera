@@ -1308,6 +1308,7 @@ mod tests {
             IsNone,
         )]
         #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+        #[archive(compare(PartialEq))]
         struct TestRecord {
             id: i32,
             b: bool,
@@ -1342,6 +1343,7 @@ mod tests {
             IsNone,
         )]
         #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+        #[archive(compare(PartialEq))]
         struct TestKey {
             id: i32,
         }

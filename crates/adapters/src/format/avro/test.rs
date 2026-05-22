@@ -629,6 +629,7 @@ fn test_nullable_to_non_nullable() {
     rkyv::Deserialize,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 struct TestBinary {
     binary32: ByteArray,
     varbinary: ByteArray,
@@ -721,6 +722,7 @@ fn test_parse_binary() {
     rkyv::Deserialize,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 struct TestUuid {
     uuid1: Uuid,
     uuid2: Uuid,
@@ -821,6 +823,7 @@ fn test_issue4722_issue4837() {
     rkyv::Deserialize,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 struct TestEnum {
     enum_val: String,
 }
@@ -912,6 +915,7 @@ fn test_enums() {
     rkyv::Deserialize,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 struct TestMetadata {
     id: i64,
     schema_id: Option<u32>,
@@ -1080,6 +1084,7 @@ fn test_ms_time() {
     rkyv::Deserialize,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 struct TestIntConversionsSrc {
     uint: i32,
     ulong: i32,
@@ -1153,6 +1158,7 @@ deserialize_table_record!(TestIntConversionsSrc["TestIntConversions", Variant, 4
     rkyv::Deserialize,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 struct TestIntConversionsDst {
     uint: u32,
     ulong: u64,

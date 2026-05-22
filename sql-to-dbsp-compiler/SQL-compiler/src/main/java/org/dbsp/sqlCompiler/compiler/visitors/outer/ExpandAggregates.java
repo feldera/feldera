@@ -170,6 +170,25 @@ public class ExpandAggregates extends Passes {
                         // If the compared value is nullable, we cannot use Min, we need to use ArgMinSome, which
                         // ignores nulls in the first component
                         aggregation = DBSPMinMax.Aggregation.ArgMinSome;
+                        // ArgMinSome operates on Tup2<Option<K>, V>, not Tup1<(Option<K>, V)>.
+                        // Reshape the value: Tup1<(K, V)> -> Tup2<K, V>.
+                        DBSPTypeTuple reshapedValueType =
+                                new DBSPTypeTuple(fields.tupFields[0], fields.tupFields[1]);
+                        DBSPVariablePath kvRef =
+                                input.getOutputIndexedZSetType().getKVRefType().var();
+                        DBSPExpression keyExpr = DBSPTupleExpression.flatten(kvRef.field(0).deref());
+                        DBSPExpression valExpr = kvRef.field(1).deref();
+                        DBSPExpression reshapedVal = new DBSPTupleExpression(
+                                valExpr.field(0).field(0).applyCloneIfNeeded(),
+                                valExpr.field(0).field(1).applyCloneIfNeeded());
+                        DBSPClosureExpression reshape =
+                                new DBSPRawTupleExpression(keyExpr, reshapedVal).closure(kvRef);
+                        DBSPMapIndexOperator reshapeOp =
+                                new DBSPMapIndexOperator(node, reshape, input);
+                        this.addOperator(reshapeOp);
+                        input = reshapeOp.outputPort();
+                        aggregatedValueType = reshapedValueType;
+
                         DBSPTypeTuple resultType = aggregationType.to(DBSPTypeTuple.class);
                         Utilities.enforce(resultType.size() == 1);
                         if (resultType.tupFields[0].mayBeNull) {

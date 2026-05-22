@@ -202,6 +202,20 @@ where
     }
 }
 
+impl PartialEq<SqlString> for ArchivedString {
+    #[inline]
+    fn eq(&self, other: &SqlString) -> bool {
+        self.as_str() == other.str()
+    }
+}
+
+impl PartialOrd<SqlString> for ArchivedString {
+    #[inline]
+    fn partial_cmp(&self, other: &SqlString) -> Option<std::cmp::Ordering> {
+        Some(self.as_str().cmp(other.str()))
+    }
+}
+
 #[doc(hidden)]
 pub fn concat_s_s(left: SqlString, right: SqlString) -> SqlString {
     SqlString::from_concat(&[left.str(), right.str()])

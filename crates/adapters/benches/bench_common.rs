@@ -34,6 +34,7 @@ use std::sync::{Arc, Mutex};
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct BenchTestStruct {
     pub id: u32,
     pub b: bool,
@@ -85,6 +86,7 @@ impl BenchTestStruct {
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct BenchKeyStruct {
     pub id: u32,
 }

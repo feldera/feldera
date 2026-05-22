@@ -4,7 +4,7 @@ use crate::{
     dynamic::{DataTrait, DynUnit, Erase, WeightTrait},
     operator::Aggregator,
     trace::Cursor,
-    utils::Tup1,
+    utils::{Tup1, Tup2},
 };
 use std::{cmp::min, marker::PhantomData};
 
@@ -141,8 +141,8 @@ where
     }
 }
 
-/// Given a tuple `Tup1<(Option<K>, V)>`, this aggregator that returns
-/// the smallest V for the smallest value K that is not None.  This is
+/// Given a tuple `Tup2<Option<K>, V>`, this aggregator returns the
+/// smallest V for the smallest value K that is not None.  This is
 /// useful for implementing the SQL ARG_MIN operator.  Notice that the
 /// ARG_MIN(a, b) function returns the smallest a for the smallest b
 /// in the collection (it compares first on b); however, the compiler
@@ -156,13 +156,13 @@ pub struct ArgMinSome;
 #[derive(Clone)]
 pub struct ArgMinSomeSemigroup<K, V>(PhantomData<(K, V)>);
 
-impl<K, V> Semigroup<Tup1<(Option<K>, V)>> for ArgMinSomeSemigroup<K, V>
+impl<K, V> Semigroup<Tup2<Option<K>, V>> for ArgMinSomeSemigroup<K, V>
 where
     K: DBData,
     V: DBData,
 {
-    fn combine(left: &Tup1<(Option<K>, V)>, right: &Tup1<(Option<K>, V)>) -> Tup1<(Option<K>, V)> {
-        match (&left.0.0, &right.0.0) {
+    fn combine(left: &Tup2<Option<K>, V>, right: &Tup2<Option<K>, V>) -> Tup2<Option<K>, V> {
+        match (&left.0, &right.0) {
             (None, None) => min(left, right).clone(),
             (Some(_), None) => left.clone(),
             (None, Some(_)) => right.clone(),
@@ -171,14 +171,14 @@ where
     }
 }
 
-impl<V, K, T, R> Aggregator<Tup1<(Option<K>, V)>, T, R> for ArgMinSome
+impl<V, K, T, R> Aggregator<Tup2<Option<K>, V>, T, R> for ArgMinSome
 where
     K: DBData,
     V: DBData,
     T: Timestamp,
     R: DBWeight + MonoidValue,
 {
-    type Accumulator = Tup1<(Option<K>, V)>;
+    type Accumulator = Tup2<Option<K>, V>;
     type Output = Tup1<V>;
     type Semigroup = ArgMinSomeSemigroup<K, V>;
 
@@ -189,7 +189,7 @@ where
     where
         VTrait: DataTrait + ?Sized,
         RTrait: WeightTrait + ?Sized,
-        Tup1<(Option<K>, V)>: Erase<VTrait>,
+        Tup2<Option<K>, V>: Erase<VTrait>,
         R: Erase<RTrait>,
     {
         // Result will be None if the cursor points to an empty collection
@@ -203,18 +203,18 @@ where
                 weight.add_assign_by_ref(unsafe { w.downcast() });
             });
             if !weight.is_zero() {
-                let current = unsafe { cursor.key().downcast::<Tup1<(Option<K>, V)>>() };
-                match current.0 {
-                    (Some(_), _) => return Some(current.clone()),
-                    (None, _) => {
+                let current = unsafe { cursor.key().downcast::<Tup2<Option<K>, V>>() };
+                match &current.0 {
+                    Some(_) => return Some(current.clone()),
+                    None => {
                         if result.is_none() {
                             // remember first value, this may be the final result if
                             // all tuples have None in the first field
                             result = Some(current.clone());
                             // skip to first non-None in the first field, if it exists
                             cursor.seek_key_with(&|key| {
-                                let typed = unsafe { key.downcast::<Tup1<(Option<K>, V)>>() };
-                                typed.0.0.is_some()
+                                let typed = unsafe { key.downcast::<Tup2<Option<K>, V>>() };
+                                typed.0.is_some()
                             });
                         }
                     }
@@ -226,6 +226,6 @@ where
     }
 
     fn finalize(&self, accumulator: Self::Accumulator) -> Self::Output {
-        Tup1::new(accumulator.0.1)
+        Tup1::new(accumulator.1)
     }
 }

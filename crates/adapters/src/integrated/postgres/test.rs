@@ -114,6 +114,7 @@ mod pg {
         IsNone,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    #[archive(compare(PartialEq))]
     pub(super) struct PostgresTestStruct {
         pub boolean_: bool,
         pub tinyint_: i8,
@@ -2401,6 +2402,7 @@ mod cdc_tests {
         feldera_macros::IsNone,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    #[archive(compare(PartialEq))]
     struct CdcAllTypesStruct {
         id: i32,
         col_text: Option<String>,

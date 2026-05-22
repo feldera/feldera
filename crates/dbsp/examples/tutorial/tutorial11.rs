@@ -8,7 +8,7 @@ use dbsp::{
 };
 
 type Accumulator =
-    Stream<NestedCircuit, OrdIndexedZSet<Tup2<usize, usize>, Tup4<usize, usize, usize, usize>>>;
+    Stream<NestedCircuit, OrdIndexedZSet<Tup2<u64, u64>, Tup4<u64, u64, u64, u64>>>;
 
 fn main() -> Result<()> {
     const STEPS: usize = 2;
@@ -23,7 +23,7 @@ fn main() -> Result<()> {
             let mut edges_data = ([
                 // The first step adds a graph of four nodes, just like before:
                 // |0| -1-> |1| -1-> |2| -2-> |3| -2-> |4|
-                zset_set! { Tup3(0_usize, 1_usize, 1_usize), Tup3(1, 2, 1), Tup3(2, 3, 2), Tup3(3, 4, 2) },
+                zset_set! { Tup3(0_u64, 1_u64, 1_u64), Tup3(1, 2, 1), Tup3(2, 3, 2), Tup3(3, 4, 2) },
                 // The second step introduces a cycle. Due to the code changes below,
                 // the query does terminate though. In total, the graph now looks
                 // like this:
@@ -80,7 +80,7 @@ fn main() -> Result<()> {
     let mut expected_outputs = ([
         // The transitive closure in the first step remains the same as in
         // `tutorial10.rs`.
-        indexed_zset! { Tup2<usize, usize> => Tup4<usize, usize, usize, usize>:
+        indexed_zset! { Tup2<u64, u64> => Tup4<u64, u64, u64, u64>:
             Tup2(0, 1) => { Tup4(0, 1, 1, 1) => 1 },
             Tup2(0, 2) => { Tup4(0, 2, 2, 2) => 1 },
             Tup2(0, 3) => { Tup4(0, 3, 4, 3) => 1 },
@@ -93,7 +93,7 @@ fn main() -> Result<()> {
             Tup2(3, 4) => { Tup4(3, 4, 2, 1) => 1 },
         },
         // The second step's introduction of a cycle yields these new paths.
-        indexed_zset! { Tup2<usize, usize> => Tup4<usize, usize, usize, usize>:
+        indexed_zset! { Tup2<u64, u64> => Tup4<u64, u64, u64, u64>:
             Tup2(0, 0) => { Tup4(0, 0, 9, 5) => 1 },
             Tup2(1, 0) => { Tup4(1, 0, 8, 4) => 1 },
             Tup2(1, 1) => { Tup4(1, 1, 9, 5) => 1 },

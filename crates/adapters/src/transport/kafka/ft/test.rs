@@ -2607,6 +2607,7 @@ fn test_kafka_metadata_json() {
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct TestRawStructMetadata {
     pub data: SqlString,
     pub kafka_headers: Variant,

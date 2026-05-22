@@ -123,6 +123,41 @@ where
     }
 }
 
+impl<T> PartialEq<BSet<T>> for ArchivedBSet<T>
+where
+    T: Archive + Clone + Ord,
+    <T as Archive>::Archived: Ord + PartialEq<T>,
+{
+    fn eq(&self, other: &BSet<T>) -> bool {
+        if self.0.len() != other.0.len() {
+            return false;
+        }
+        self.0.iter().zip(other.0.iter()).all(|(a, b)| a.eq(b))
+    }
+}
+
+impl<T> PartialOrd<BSet<T>> for ArchivedBSet<T>
+where
+    T: Archive + Clone + Ord,
+    <T as Archive>::Archived: Ord + PartialOrd<T>,
+{
+    fn partial_cmp(&self, other: &BSet<T>) -> Option<std::cmp::Ordering> {
+        let mut rhs_iter = other.0.iter();
+        let mut count = 0usize;
+        for a in self.0.iter() {
+            count += 1;
+            let Some(b) = rhs_iter.next() else {
+                return Some(std::cmp::Ordering::Greater);
+            };
+            match a.partial_cmp(b)? {
+                std::cmp::Ordering::Equal => continue,
+                non_eq => return Some(non_eq),
+            }
+        }
+        Some(count.cmp(&(count + rhs_iter.count())))
+    }
+}
+
 impl<T, Trait> Set<Trait> for BSet<T>
 where
     Trait: DataTrait + ?Sized,

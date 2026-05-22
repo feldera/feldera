@@ -41,6 +41,7 @@ use std::sync::Arc;
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct TestStruct {
     pub id: u32,
     pub b: bool,
@@ -137,6 +138,7 @@ serialize_struct!(TestStruct()[4]{
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct KeyStruct {
     pub id: u32,
 }
@@ -280,6 +282,7 @@ pub fn generate_test_batches_with_weights(
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct TestStructMetadata {
     pub i: i32,
     pub kafka_headers: Variant,
@@ -371,6 +374,7 @@ deserialize_table_record!(EmbeddedStruct["EmbeddedStruct", Variant, 1] {
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct TestStruct2 {
     #[serde(rename = "id")]
     pub field: i64,
@@ -704,6 +708,7 @@ deserialize_table_record!(TestStruct2["TestStruct2", Variant, 8] {
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct DatabricksPeople {
     pub id: i32,
     pub first_name: Option<String>,
@@ -770,6 +775,7 @@ deserialize_table_record!(DatabricksPeople["DatabricksPeople", Variant, 8] {
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct IcebergTestStruct {
     pub b: bool,
     pub i: i32,
@@ -971,6 +977,7 @@ deserialize_table_record!(IcebergTestStruct["IcebergTestStruct", Variant, 12] {
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct DeltaTestStruct {
     pub bigint: i64,
     pub binary: ByteArray,
@@ -1324,6 +1331,7 @@ deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", Variant, 20] {
     IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq))]
 pub struct DeltaTestKey {
     pub bigint: i64,
 }
