@@ -43,7 +43,7 @@ use std::cmp::min;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::Display;
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -92,9 +92,10 @@ static DELTA_READER_SEMAPHORE: std::sync::LazyLock<Semaphore> =
 /// `DELTA_DF_TARGET_PARTITIONS` nor `max_concurrent_readers` is set.
 const DEFAULT_MAX_CONCURRENT_READERS: usize = 6;
 
-/// True if the `max_concurrent_readers` attribute was set by one of the connectors.
-/// Used to detect conflicting values of `max_concurrent_readers`.
-static MAX_CONCURRENT_READERS_SET: AtomicBool = AtomicBool::new(false);
+/// Configured `max_concurrent_readers` value (0 = not set by any connector).
+/// Used to detect conflicting values of `max_concurrent_readers` during parallel
+/// connector initialization.
+static MAX_CONCURRENT_READERS: AtomicUsize = AtomicUsize::new(0);
 
 /// Takes a column name from a DeltaLake schema and returns a quoted string
 /// that can be used in datafusion queries like `select "foo""bar" from my_table`.
@@ -309,11 +310,11 @@ impl DeltaTableInputReader {
             bail!("'end_version' must be greater than 'version'")
         }
 
-        // If the config specifies max_concurrent_connectors, adjust the number of tokens
-        // in the semaphore.
+        // If the config specifies max_concurrent_readers, adjust the number of tokens
+        // in the semaphore. Connectors are initialized in parallel, so we atomically
+        // record the configured value and only adjust the semaphore once.
         if let Some(max_concurrent_readers) = config.max_concurrent_readers {
             let max_concurrent_readers = max_concurrent_readers as usize;
-            let available_permits = DELTA_READER_SEMAPHORE.available_permits();
 
             if max_concurrent_readers == 0 {
                 bail!(
@@ -321,27 +322,36 @@ impl DeltaTableInputReader {
                 );
             }
 
-            if MAX_CONCURRENT_READERS_SET.load(Ordering::Acquire)
-                && max_concurrent_readers != available_permits
-            {
-                bail!(
-                    "found conflicting values of the `max_concurrent_readers` attribute: this is a global setting that affects all Delta Lake connectors, and not just the connector where it is specified; if multiple connectors specify `max_concurrent_readers`, they must all use the same value."
+            let first_setter = match MAX_CONCURRENT_READERS.compare_exchange(
+                0,
+                max_concurrent_readers,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => true,
+                Err(current) if current == max_concurrent_readers => false,
+                Err(_) => {
+                    bail!(
+                        "found conflicting values of the `max_concurrent_readers` attribute: this is a global setting that affects all Delta Lake connectors, and not just the connector where it is specified; if multiple connectors specify `max_concurrent_readers`, they must all use the same value."
+                    );
+                }
+            };
+
+            if first_setter {
+                info!(
+                    "delta_table {endpoint_name}: adjusting the number of concurrent readers to {max_concurrent_readers}"
                 );
-            }
 
-            MAX_CONCURRENT_READERS_SET.store(true, Ordering::Release);
-
-            info!(
-                "delta_table {endpoint_name}: adjusting the number of concurrent readers to {max_concurrent_readers}"
-            );
-
-            // The semaphore doesn't allow changing the total token count directly, but at this point,
-            // while initializing connectors, none of the tokens have been acquired, so we can adjust
-            // the total number of tokens by adjusting currently available tokens.
-            if max_concurrent_readers > available_permits {
-                DELTA_READER_SEMAPHORE.add_permits(max_concurrent_readers - available_permits);
-            } else {
-                DELTA_READER_SEMAPHORE.forget_permits(available_permits - max_concurrent_readers);
+                // The semaphore doesn't allow changing the total token count directly, but at this point,
+                // while initializing connectors, none of the tokens have been acquired, so we can adjust
+                // the total number of tokens by adjusting currently available tokens.
+                let available_permits = DELTA_READER_SEMAPHORE.available_permits();
+                if max_concurrent_readers > available_permits {
+                    DELTA_READER_SEMAPHORE.add_permits(max_concurrent_readers - available_permits);
+                } else if max_concurrent_readers < available_permits {
+                    DELTA_READER_SEMAPHORE
+                        .forget_permits(available_permits - max_concurrent_readers);
+                }
             }
         };
 
