@@ -292,7 +292,7 @@ pub(crate) async fn execute_sql(
             .await
             .ok_or_else(|| PipelineError::Initializing)?,
     );
-    execute_sql_with_state(state, sql, Some(controller)).await
+    execute_sql_with_state(state, sql).await
 }
 
 /// Plan and translate `sql` against `state`, applying `PREPARE`/`EXECUTE`
@@ -300,17 +300,10 @@ pub(crate) async fn execute_sql(
 ///
 /// Only the final statement returns rows. Earlier statements may be
 /// `PREPARE`s or any non-result-producing statement (e.g. `INSERT`),
-/// executed for their side effect. After such an intermediate write
-/// runs, the per-request snapshot is refreshed so the trailing SELECT
-/// sees the just-written rows.
-///
-/// `controller` is optional so unit tests can drive this function
-/// without a running pipeline; in that case the post-write snapshot
-/// refresh is skipped.
+/// executed for their side effect.
 async fn execute_sql_with_state(
-    mut state: SessionState,
+    state: SessionState,
     sql: &str,
-    controller: Option<&Controller>,
 ) -> Result<DataFrame, PipelineError> {
     let mut statements = parse_sql_statements(&state, sql)?;
     if statements.is_empty() {
@@ -326,13 +319,6 @@ async fn execute_sql_with_state(
     let mut prepared: HashMap<String, LogicalPlan> = HashMap::new();
     let sql_options = SQLOptions::new().with_allow_ddl(false);
 
-    // Subscribe to `step_watcher` *before* any intermediate writes so the
-    // steps that drain those writes accumulate as unseen changes; calling
-    // `changed()` after the writes return then completes immediately
-    // instead of blocking on a step that may never be triggered.
-    let mut step_watcher = controller.map(|c| c.step_watcher());
-
-    let mut intermediate_wrote_data = false;
     while statements.len() > 1 {
         let stmt = statements.pop_front().unwrap();
         let plan = state.statement_to_plan(stmt).await?;
@@ -356,7 +342,6 @@ async fn execute_sql_with_state(
                 let values = execute_parameters_to_scalars(&parameters)?;
                 let bound = prepared_plan.replace_params_with_values(&ParamValues::List(values))?;
                 sql_options.verify_plan(&bound)?;
-                intermediate_wrote_data |= plan_writes_data(&bound);
                 drain_intermediate_plan(&state, bound).await?;
             }
             other if is_result_producing_plan(&other) => {
@@ -374,20 +359,9 @@ async fn execute_sql_with_state(
                 // UPDATE, DELETE, EXPLAIN, ...). Execute it for its side
                 // effects and discard the per-statement count row.
                 sql_options.verify_plan(&other)?;
-                intermediate_wrote_data |= plan_writes_data(&other);
                 drain_intermediate_plan(&state, other).await?;
             }
         }
-    }
-
-    // The snapshot pinned in `state` was captured at request start, before
-    // any intermediate INSERT ran. Refresh it so the trailing SELECT sees
-    // the just-written rows.
-    if intermediate_wrote_data
-        && let Some(controller) = controller
-        && let Some(watcher) = step_watcher.as_mut()
-    {
-        refresh_snapshot_after_writes(controller, watcher, &mut state).await?;
     }
 
     let stmt = statements.pop_front().unwrap();
@@ -444,43 +418,6 @@ async fn drain_intermediate_plan(
 ) -> Result<(), PipelineError> {
     let df = DataFrame::new(state.clone(), plan);
     let _ = df.collect().await?;
-    Ok(())
-}
-
-/// True if executing this plan mutates a table (and therefore needs the
-/// post-write snapshot refresh below). Today the only mutating plan our
-/// SQL options allow is a `LogicalPlan::Dml`.
-fn plan_writes_data(plan: &LogicalPlan) -> bool {
-    matches!(plan, LogicalPlan::Dml(_))
-}
-
-/// Wait for the controller to drain the intermediate writes, then pin the
-/// resulting snapshot in `state`. Relies on two controller invariants:
-/// `update_snapshot()` runs before each `Idle` notification (so any `Idle`
-/// observed after subscribing already reflects our writes), and `watcher`
-/// must be subscribed before the writes are submitted or we may sleep
-/// forever on an otherwise idle pipeline.
-async fn refresh_snapshot_after_writes(
-    controller: &Controller,
-    watcher: &mut tokio::sync::watch::Receiver<feldera_types::coordination::StepStatus>,
-    state: &mut SessionState,
-) -> Result<(), PipelineError> {
-    use feldera_types::coordination::StepAction;
-
-    loop {
-        let status = *watcher.borrow_and_update();
-        if matches!(status.action, StepAction::Idle) {
-            break;
-        }
-        if watcher.changed().await.is_err() {
-            break;
-        }
-    }
-    let snapshot = controller
-        .latest_consistent_snapshot()
-        .await
-        .ok_or(PipelineError::Initializing)?;
-    set_snapshot(state, snapshot);
     Ok(())
 }
 
@@ -682,7 +619,7 @@ mod tests {
 
     /// A helper that executes a query and returns results.
     async fn collect_rows(state: SessionState, sql: &str) -> Vec<RecordBatch> {
-        execute_sql_with_state(state, sql, None)
+        execute_sql_with_state(state, sql)
             .await
             .unwrap()
             .collect()
@@ -707,7 +644,7 @@ mod tests {
     #[tokio::test]
     async fn execute_without_prepare_errors() {
         let state = test_state();
-        let err = execute_sql_with_state(state, "EXECUTE missing(1)", None)
+        let err = execute_sql_with_state(state, "EXECUTE missing(1)")
             .await
             .unwrap_err();
         assert!(
@@ -730,7 +667,7 @@ mod tests {
     #[tokio::test]
     async fn intermediate_select_is_rejected() {
         let state = test_state();
-        let err = execute_sql_with_state(state, "SELECT 1; SELECT 2", None)
+        let err = execute_sql_with_state(state, "SELECT 1; SELECT 2")
             .await
             .unwrap_err();
         let msg = format!("{err}");

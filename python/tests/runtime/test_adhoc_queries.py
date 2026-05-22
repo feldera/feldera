@@ -530,13 +530,20 @@ class TestAdhocQueriesArrow(SharedTestPipeline):
 
 
 class TestAdhocReadAfterWrite(SharedTestPipeline):
-    """Regression tests for
-    https://github.com/feldera/feldera/issues/6243 .
+    """
+    The read-after-write behavior of ad-hoc queries differs depending on whether they are running inside a user transaction.
 
-    A multi-statement adhoc request must see its own intermediate
-    INSERTs in the trailing SELECT. The earlier bug was that the SELECT
-    ran against the snapshot captured before the request started, so
-    inserts in the same request stayed invisible.
+    When running inside a user transaction, the request must observe the state before the transaction started.
+    When not running inside a user transaction, the request must observe the state before the multi-statement request started.
+
+    In all cases, a SELECT following an INSERT in the same request must not observe the INSERT.
+
+    FIXME: This may not be the most user-friendly behavior. We have considered exposing changes to tables
+    immediately after each statement, while exposing view changes after the transaction is committed,
+    but that change introduced backward incompatibilities. For now this test validates the current expected 
+    behavior.
+
+    See https://github.com/feldera/feldera/issues/6243.
     """
 
     @property
@@ -548,7 +555,7 @@ class TestAdhocReadAfterWrite(SharedTestPipeline):
           id INT NOT NULL PRIMARY KEY
         ) WITH ('materialized' = 'true');"""
     )
-    def test_insert_then_select_in_same_request_sees_inserts(self):
+    def test_multi_statement_query_no_transaction(self):
         self.pipeline.start()
 
         rows = list(
@@ -559,8 +566,8 @@ class TestAdhocReadAfterWrite(SharedTestPipeline):
             )
         )
         assert rows, "trailing SELECT must return a row"
-        assert rows[0].get("c") == 2, (
-            f"trailing SELECT should see both intermediate inserts, got {rows!r}"
+        assert rows[0].get("c") == 0, (
+            f"trailing SELECT should see previous state, got {rows!r}"
         )
 
     @sql(
@@ -569,10 +576,7 @@ class TestAdhocReadAfterWrite(SharedTestPipeline):
         ) WITH ('materialized' = 'true');"""
     )
     def test_multi_statement_query_during_open_transaction_pk(self):
-        """An ad-hoc request running inside a user transaction must
-        still see its own intermediate INSERTs in the trailing SELECT.
-        Adhoc reads pull from `trace_snapshots`, which updates on every
-        step regardless of transaction state.
+        """An ad-hoc request running inside a user transaction must observe the state before the transaction started.
         """
         self.pipeline.start()
 
@@ -591,12 +595,11 @@ class TestAdhocReadAfterWrite(SharedTestPipeline):
 
         assert rows_during, "trailing SELECT must return a row"
         count_during = rows_during[0].get("c")
-        assert count_during == 3, (
-            f"trailing SELECT inside the transaction must observe all "
-            f"three rows (baseline + two intermediate inserts), got {count_during}"
+        assert count_during == 1, (
+            f"trailing SELECT inside the transaction should see pre-transaction state, got {count_during}"
         )
 
-        # After commit, a fresh adhoc query still sees the same three rows.
+        # After commit, a fresh adhoc query sees all three rows.
         rows_after = list(self.pipeline.query("SELECT COUNT(*) AS c FROM example2"))
         assert rows_after and rows_after[0].get("c") == 3, (
             f"after commit, all three inserts must be visible, got {rows_after!r}"
@@ -626,12 +629,11 @@ class TestAdhocReadAfterWrite(SharedTestPipeline):
 
         assert rows_during, "trailing SELECT must return a row"
         count_during = rows_during[0].get("c")
-        assert count_during == 3, (
-            f"trailing SELECT inside the transaction must observe all "
-            f"three rows (baseline + two intermediate inserts), got {count_during}"
+        assert count_during == 1, (
+            f"trailing SELECT inside the transaction should see pre-transaction state, got {count_during}"
         )
 
-        # After commit, a fresh adhoc query still sees the same three rows.
+        # After commit, a fresh adhoc query sees all three rows.
         rows_after = list(self.pipeline.query("SELECT COUNT(*) AS c FROM example3"))
         assert rows_after and rows_after[0].get("c") == 3, (
             f"after commit, all three inserts must be visible, got {rows_after!r}"

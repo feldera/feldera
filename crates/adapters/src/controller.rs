@@ -3023,27 +3023,24 @@ impl CircuitThread {
 
         let transaction_state = self.controller.get_transaction_state();
 
-        // Update `trace_snapshot` to the latest traces *before* signaling
-        // `Idle` on the step watcher, so subscribers can rely on
-        // `latest_consistent_snapshot()` being current the moment they
-        // observe Idle.
-        //
-        // We also keep this before updating `total_processed_records` so
-        // that ad hoc query results always reflect all data that we have
-        // reported processing.
-        // Keep `trace_snapshots` current on every step regardless of
-        // bootstrap or transaction state, so ad-hoc queries can read
-        // the freshest data including read-your-own-writes within one
-        // request. Connectors with `send_snapshot=true` still defer
-        // until bootstrap completes; that gate now lives in
-        // `enqueue_latest_snapshot`.
-        Span::new("update")
-            .with_category("Step")
-            .with_tooltip(|| format!("update ad-hoc tables after step {}", self.step))
-            .in_scope(|| self.update_snapshot());
-
         if transaction_state == TransactionState::None {
             let bootstrapping = self.circuit.bootstrap_in_progress();
+
+            // Don't update the snapshot until bootstrapping is complete (including the additional post-bootstrap transaction).
+            // This guarantees that:
+            // 1. Ad hoc queries observe a consistent view of the data.
+            // 2. Ad hoc snapshots are up-to-date before the pipeline is marked as running.
+            if !bootstrapping && !self.bootstrapping {
+                // Update `trace_snapshot` to the latest traces.
+                //
+                // We do this before updating `total_processed_records` so
+                // that ad hoc query results always reflect all data that we have
+                // reported processing.
+                Span::new("update")
+                    .with_category("Step")
+                    .with_tooltip(|| format!("update ad-hoc tables after step {}", self.step))
+                    .in_scope(|| self.update_snapshot());
+            }
 
             // If bootstrapping has completed, clear self.bootstrapping, but don't update the status flag
             // until the circuit performs an extra transaction to initialize output snapshots
@@ -3225,37 +3222,18 @@ impl CircuitThread {
 
     /// Update `trace_snapshot` with the latest traces so ad hoc queries pick
     /// up the freshest data.
-    ///
-    /// Tables refresh every step so an INSERT inside a transaction is visible
-    /// to a subsequent SELECT in the same request.  Views compute their
-    /// integral via `accumulate_integrate_trace`, which only advances on a
-    /// transaction boundary. We use the the previous snapshot instead.
     fn update_snapshot(&mut self) {
-        let bootstrapping = self.controller.status.bootstrap_in_progress();
-        let in_transaction =
-            !bootstrapping && self.controller.get_transaction_state() != TransactionState::None;
-
-        let previous_views: Option<ConsistentSnapshot> = if in_transaction {
-            let snapshots = self.controller.trace_snapshots.blocking_lock();
-            snapshots.iter().next_back().map(|(_, snap)| snap.clone())
-        } else {
-            None
-        };
+        assert_eq!(
+            self.controller.get_transaction_state(),
+            TransactionState::None,
+            "update_snapshot must be called when no transaction is in progress"
+        );
 
         // Assemble a new snapshot.
         let mut snapshot = BTreeMap::new();
         for (name, clh) in self.controller.catalog.output_iter() {
             if let Some(ih) = &clh.integrate_handle {
-                let is_table = self
-                    .controller
-                    .catalog
-                    .input_collection_handle(name)
-                    .is_some();
-
-                let batches = match previous_views.as_ref().and_then(|s| s.get(name)) {
-                    Some(prev) if !is_table && in_transaction => prev.clone(),
-                    _ => ih.take_from_all(),
-                };
+                let batches = ih.take_from_all();
 
                 // The first index of a materialized view registers its
                 // integral under the view name with `alias_as_index =
@@ -6746,17 +6724,6 @@ impl ControllerInner {
         processed_records: Option<ProcessedRecords>,
         step: Option<Step>,
     ) -> bool {
-        // Defer the initial snapshot delivery until bootstrap completes
-        // and no transaction is in flight; this is the gate that
-        // guarantees `send_snapshot=true` connectors receive a
-        // consistent, fully-formed view. Adhoc queries hit
-        // `trace_snapshots` directly and are not subject to this gate.
-        if self.status.bootstrap_in_progress()
-            || self.get_transaction_state() != TransactionState::None
-        {
-            return false;
-        }
-
         // Look up the most recent cached snapshot for this stream. Return early
         // if no snapshot has been produced yet (pipeline hasn't completed a step).
         // This method is only called from the circuit thread (via `push_output`),
@@ -6769,7 +6736,7 @@ impl ControllerInner {
         };
 
         let Some(snapshot_batches) = snapshot_batches else {
-            // No cached snapshot yet (pipeline hasn't completed a step).
+            // No cached snapshot yet (pipeline hasn't completed a step or bootstrapping is in progress).
             // Leave the state as `Pending` and let the next step retry.
             return false;
         };

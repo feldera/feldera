@@ -2277,11 +2277,6 @@ fn lir() {
       "to": "4"
     },
     {
-      "from": "3",
-      "stream_id": 3,
-      "to": "7"
-    },
-    {
       "from": "4",
       "stream_id": 4,
       "to": "5"
@@ -2289,12 +2284,12 @@ fn lir() {
     {
       "from": "4",
       "stream_id": 4,
-      "to": "11"
+      "to": "7"
     },
     {
       "from": "4",
       "stream_id": 4,
-      "to": "13"
+      "to": "11"
     },
     {
       "from": "6",
@@ -2317,6 +2312,11 @@ fn lir() {
       "to": "9"
     },
     {
+      "from": "7",
+      "stream_id": 8,
+      "to": "12"
+    },
+    {
       "from": "9",
       "stream_id": 9,
       "to": "10"
@@ -2325,26 +2325,6 @@ fn lir() {
       "from": "12",
       "stream_id": 10,
       "to": "13"
-    },
-    {
-      "from": "12",
-      "stream_id": null,
-      "to": "14"
-    },
-    {
-      "from": "13",
-      "stream_id": 13,
-      "to": "14"
-    },
-    {
-      "from": "13",
-      "stream_id": 13,
-      "to": "15"
-    },
-    {
-      "from": "15",
-      "stream_id": 14,
-      "to": "16"
     }
   ],
   "nodes": [
@@ -2394,21 +2374,24 @@ fn lir() {
     {
       "id": "6",
       "implements": [
-        "input.output"
+        "input.output",
+        "output"
       ],
       "operation": "Z1 (trace)"
     },
     {
       "id": "7",
       "implements": [
-        "input.output"
+        "input.output",
+        "output"
       ],
-      "operation": "UntimedTraceAppend"
+      "operation": "AccumulateUntimedTraceAppend"
     },
     {
       "id": "8",
       "implements": [
-        "input.output"
+        "input.output",
+        "output"
       ],
       "operation": "Z1 (trace)"
     },
@@ -2438,31 +2421,10 @@ fn lir() {
       "implements": [
         "output"
       ],
-      "operation": "Z1 (trace)"
-    },
-    {
-      "id": "13",
-      "implements": [
-        "output"
-      ],
-      "operation": "AccumulateUntimedTraceAppend"
-    },
-    {
-      "id": "14",
-      "implements": [
-        "output"
-      ],
-      "operation": "Z1 (trace)"
-    },
-    {
-      "id": "15",
-      "implements": [
-        "output"
-      ],
       "operation": "Apply"
     },
     {
-      "id": "16",
+      "id": "13",
       "implements": [
         "output"
       ],

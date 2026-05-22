@@ -560,11 +560,7 @@ impl Catalog {
         let integral_stream = if gather_integral {
             gathered_stream.accumulate_integrate_trace()
         } else {
-            // Our transaction semantics currently promises to update table snapshots after every step,
-            // not just on commit, so that ad hoc queries that modify (INSERT) and instantly read (SELECT)
-            // the table see their own changes even when there is a transaction in progress.  Therefore,
-            // we use `integrate_trace` instead of `accumulate_integrate_trace` here.
-            stream.integrate_trace()
+            stream.accumulate_integrate_trace()
         };
 
         let (integrate_handle, integrate_gid) = integral_stream
