@@ -626,3 +626,160 @@ def test_runtime_upgrade_round_trip(pipeline_name: str) -> None:
     finally:
         current_pipeline.stop(force=True)
         current_pipeline.clear_storage()
+
+
+@enterprise_only
+@single_host_only
+@gen_pipeline_name
+def test_upgrade_from_local_checkpoint(pipeline_name: str) -> None:
+    """Resume from a local-disk checkpoint after upgrading the runtime version.
+
+    Companion to :func:`test_runtime_upgrade_round_trip`, but covers a
+    **different recovery path**.  That test specifically calls
+    ``clear_storage()`` before phase 2, which forces recovery from a
+    MinIO-synced checkpoint (the S3 pull path).  This test deliberately
+    skips ``clear_storage()``, so phase 2 must recover from the checkpoint
+    that lives on the Feldera server's **local disk** — a completely
+    different code path in the manager.  A regression in local-disk
+    checkpoint detection after a runtime upgrade would be caught here but
+    missed by the MinIO-centric test.
+
+    Both this test and :func:`test_runtime_upgrade_round_trip` now run on
+    AMD64 and ARM64 CI runners.  The Delta Lake wheel that previously required
+    skipping the companion test on ARM64 has been fixed upstream.
+
+    The SQL exercises the same operator families as :func:`_build_sql`
+    (DISTINCT, GROUP BY, binary and three-way JOIN, recursive view) so a
+    regression in any operator's checkpoint serialization is caught here too.
+    A Delta connector is intentionally absent: data is injected via INSERT so
+    the test has no native binary dependencies.
+
+    Phase 1 — legacy runtime: insert rows that exercise every
+    checkpoint-bearing operator, take a local checkpoint, stop without
+    clearing storage.
+
+    Phase 2 — upgrade to the current runtime via ``update_runtime()``, which
+    recompiles the pipeline without touching the storage directory, then start
+    with ``BootstrapPolicy.ALLOW`` and assert the per-view counts survived the
+    upgrade.
+    """
+
+    # Same operator families as _build_sql (DISTINCT, GROUP BY, JOIN,
+    # recursion) but without a Delta connector so the test runs on ARM64 too.
+    sql = """\
+CREATE TABLE t(
+    id     INT NOT NULL PRIMARY KEY,
+    bucket INT NOT NULL
+) WITH ('materialized' = 'true');
+
+CREATE MATERIALIZED VIEW v_passthrough AS
+  SELECT * FROM t;
+
+CREATE MATERIALIZED VIEW v_filtered AS
+  SELECT COUNT(*) AS n FROM t WHERE id < 10;
+
+CREATE MATERIALIZED VIEW v_distinct_buckets AS
+  SELECT COUNT(*) AS n FROM (SELECT DISTINCT bucket FROM t);
+
+CREATE MATERIALIZED VIEW v_grouped AS
+  SELECT bucket, COUNT(*) AS n FROM t GROUP BY bucket;
+
+CREATE MATERIALIZED VIEW v_joined AS
+  SELECT COUNT(*) AS n FROM t a JOIN t b ON a.id = b.id WHERE a.id < 10;
+
+CREATE MATERIALIZED VIEW v_three_way AS
+  SELECT COUNT(*) AS n
+    FROM t a JOIN t b ON a.id = b.id JOIN t c ON a.id = c.id
+   WHERE a.id < 5;
+
+CREATE LOCAL VIEW pair_seed AS
+  SELECT id AS a, (id + 1) AS b FROM t WHERE id < 10;
+
+DECLARE RECURSIVE VIEW closure(a INT NOT NULL, b INT NOT NULL);
+
+CREATE LOCAL VIEW closure_step AS
+  SELECT s.a, c.b FROM pair_seed s JOIN closure c ON s.b = c.a;
+
+CREATE MATERIALIZED VIEW closure AS
+  (SELECT a, b FROM pair_seed) UNION (SELECT a, b FROM closure_step);
+"""
+
+    # Enable adaptive joins so the balanced trace path emits a
+    # ``RebalancingExchangeSender`` (which has its own Checkpoint impl),
+    # matching the coverage of the companion test.
+    dev_tweaks = {"adaptive_joins": True}
+
+    legacy_version = _legacy_runtime_version()
+
+    # Phase 1: legacy runtime — insert data, checkpoint, stop.
+    # ``PipelineBuilder.__init__`` reads ``FELDERA_RUNTIME_VERSION`` from the
+    # environment and lets it win over the constructor ``runtime_version``
+    # argument (see pipeline_builder.py: ``os.environ.get(
+    # "FELDERA_RUNTIME_VERSION", runtime_version)``).  In CI that env-var
+    # points to the current SHA, which would make both phases compile at the
+    # same version and leave the upgrade unexercised.  Stomping the field
+    # after construction is the minimal safe override; temporarily unsetting
+    # the env-var would be non-thread-safe.
+    legacy_builder = PipelineBuilder(
+        TEST_CLIENT,
+        name=pipeline_name,
+        sql=sql,
+        runtime_config=RuntimeConfig(
+            workers=FELDERA_TEST_NUM_WORKERS,
+            hosts=FELDERA_TEST_NUM_HOSTS,
+            fault_tolerance_model=None,  # Manual checkpoint below.
+            dev_tweaks=dev_tweaks,
+        ),
+        runtime_version=legacy_version,
+    )
+    legacy_builder.runtime_version = legacy_version
+    legacy_pipeline = legacy_builder.create_or_replace()
+
+    print(
+        f"phase 1: starting pipeline at legacy runtime {legacy_version}",
+        file=sys.stderr,
+    )
+    legacy_pipeline.start(timeout_s=600)
+
+    # Insert 20 rows across 4 buckets (id 0..19, bucket = id % 4).
+    values = ", ".join(f"({i}, {i % 4})" for i in range(20))
+    legacy_pipeline.execute(f"INSERT INTO t VALUES {values};")
+    legacy_pipeline.wait_for_idle()
+
+    result_before = list(legacy_pipeline.query("SELECT COUNT(*) AS n FROM t;"))
+    assert result_before == [{"n": 20}], (
+        f"unexpected row count before upgrade: {result_before}"
+    )
+
+    legacy_pipeline.checkpoint(wait=True)
+    legacy_pipeline.stop(force=True)
+    # Do NOT call clear_storage(): the local checkpoint must survive phase 2.
+
+    # Phase 2: upgrade to the current runtime without clearing storage.
+    # ``update_runtime()`` recompiles the pipeline with the platform's current
+    # runtime version and does NOT call clear_storage(), so the on-disk
+    # checkpoint from phase 1 survives.
+    #
+    # ``create_or_replace()`` must NOT be used here: when the pipeline already
+    # exists it calls clear_storage() before updating the definition, which
+    # would destroy the local checkpoint before the upgraded runtime can load it.
+    print(
+        f"phase 2: updating pipeline to current runtime (was {legacy_version})",
+        file=sys.stderr,
+    )
+    try:
+        legacy_pipeline.update_runtime()
+        legacy_pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW, timeout_s=600)
+        legacy_pipeline.wait_for_idle()
+
+        # Phase 2 injects no new input.  Without loading the on-disk
+        # checkpoint written in phase 1, every view would be empty and this
+        # assertion would fail.  A passing count proves the manager found and
+        # applied the local checkpoint across the runtime version boundary.
+        result_after = list(legacy_pipeline.query("SELECT COUNT(*) AS n FROM t;"))
+        assert result_after == [{"n": 20}], (
+            f"row count changed after runtime upgrade: {result_after}"
+        )
+    finally:
+        legacy_pipeline.stop(force=True)
+        legacy_pipeline.clear_storage()
