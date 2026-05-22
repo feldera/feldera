@@ -147,6 +147,10 @@ async fn append_table_version(
 }
 
 fn delta_connector_counter(pipeline: &Controller, metric_name: &str) -> u64 {
+    delta_connector_gauge(pipeline, metric_name) as u64
+}
+
+fn delta_connector_gauge(pipeline: &Controller, metric_name: &str) -> f64 {
     let endpoint_id = pipeline
         .input_endpoint_id_by_name(DELTA_TEST_INPUT_ENDPOINT)
         .expect("delta input endpoint must exist");
@@ -160,8 +164,27 @@ fn delta_connector_counter(pipeline: &Controller, metric_name: &str) -> u64 {
         .metrics()
         .iter()
         .find(|(name, ..)| *name == metric_name)
-        .map(|(_, _, _, value)| *value as u64)
-        .unwrap_or(0)
+        .map(|(_, _, _, value)| *value)
+        .unwrap_or(0.0)
+}
+
+fn delta_version_gauge(pipeline: &Controller, metric_name: &str) -> Option<i64> {
+    let version = delta_connector_gauge(pipeline, metric_name);
+    if version < 0.0 {
+        None
+    } else {
+        Some(version as i64)
+    }
+}
+
+/// Last Delta table version ingested by the connector (`None` if none yet).
+fn delta_last_ingested_version(pipeline: &Controller) -> Option<i64> {
+    delta_version_gauge(pipeline, "input_connector_delta_last_ingested_version")
+}
+
+/// Target Delta table version for the in-flight catchup window (`None` if none).
+fn delta_catchup_target_version(pipeline: &Controller) -> Option<i64> {
+    delta_version_gauge(pipeline, "input_connector_delta_catchup_target_version")
 }
 
 /// Number of Feldera follow transactions the Delta input connector started.
@@ -400,6 +423,16 @@ async fn run_catchup_lag_experiment(
             0,
             "follow transactions must not start until the follow phase ingests log commits"
         );
+        assert_eq!(
+            delta_last_ingested_version(&pipeline),
+            Some(table.version().unwrap()),
+            "last_ingested_version must reflect the snapshot version"
+        );
+        assert_eq!(
+            delta_catchup_target_version(&pipeline),
+            None,
+            "catchup_target_version must be unset before the first catchup window"
+        );
     } else {
         // `connect_input` during controller construction blocks until the Delta worker finishes
         // `open_table` and sends init `Ok`, then parks on `wait_running` while still paused.
@@ -502,6 +535,12 @@ async fn run_catchup_lag_experiment(
 
         let start = Instant::now();
         loop {
+            if let Some(catchup_target) = delta_catchup_target_version(&pipeline) {
+                assert_eq!(
+                    catchup_target, target_version,
+                    "round {round}: catchup_target_version metric must match the active window"
+                );
+            }
             if pipeline_completed_version(&pipeline) == Some(target_version) {
                 if expect_ingest_failure {
                     panic!(
@@ -529,6 +568,17 @@ async fn run_catchup_lag_experiment(
             }
             sleep(Duration::from_millis(10)).await;
         }
+
+        assert_eq!(
+            delta_last_ingested_version(&pipeline),
+            Some(target_version),
+            "last_ingested_version metric must track the completed waterline"
+        );
+        assert_eq!(
+            delta_catchup_target_version(&pipeline),
+            None,
+            "catchup_target_version metric must be cleared after the window closes"
+        );
 
         let metric_at_round_end = delta_follow_transaction_starts(&pipeline);
         transactions_per_round.push(metric_at_round_end - metric_at_round_start);
