@@ -1617,12 +1617,17 @@ class TestTPCH(unittest.TestCase):
             "delta",
             s3_path="s3://batchtofeldera",
             s3_region="ap-southeast-2",
+            s3_skip_signature=True,
         )
         tpch_test(config)
 
     def test_tpch_stream(self):
         config = TPCHTestConfig(
-            "stream", "delta", s3_path="s3://batchtofeldera", s3_region="ap-southeast-2"
+            "stream",
+            "delta",
+            s3_path="s3://batchtofeldera",
+            s3_region="ap-southeast-2",
+            s3_skip_signature=True,
         )
         tpch_test(config)
 
