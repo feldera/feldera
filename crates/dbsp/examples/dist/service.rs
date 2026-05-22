@@ -29,6 +29,11 @@ pub struct Record {
     pub daily_vaccinations: Option<u64>,
 }
 
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedRecord as Repr<Record>,
+    [location, date, daily_vaccinations]
+}
+
 #[derive(
     Clone,
     Default,
@@ -52,6 +57,11 @@ pub struct VaxMonthly {
     pub count: u64,
     pub year: i32,
     pub month: u8,
+}
+
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedVaxMonthly as Repr<VaxMonthly>,
+    [count, year, month]
 }
 
 #[tarpc::service]

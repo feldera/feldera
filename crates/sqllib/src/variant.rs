@@ -47,6 +47,7 @@ use std::{fmt::Debug, hash::Hash};
 ))]
 #[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq))]
+#[allow(clippy::enum_variant_names)]
 pub enum Variant {
     /// A Variant with a `NULL` SQL value.
     #[default]
@@ -79,6 +80,18 @@ pub enum Variant {
     Array(#[omit_bounds] Array<Variant>),
     #[size_of(skip, skip_bounds)]
     Map(#[omit_bounds] Map<Variant, Variant>),
+}
+
+impl dbsp::dynamic::OrdRepr<Variant> for ArchivedVariant {
+    fn ord_cmp(&self, other: &Variant) -> std::cmp::Ordering {
+        // Variant cross-comparison: deserialize and use PartialOrd<Self>.
+        // Variant isn't on the storage hot path; correctness over speed.
+        use rkyv::Deserialize as _;
+        let deserialized: Variant = self
+            .deserialize(&mut dbsp::storage::file::Deserializer::default())
+            .expect("Variant deserialize");
+        deserialized.cmp(other)
+    }
 }
 
 /////////////// Variant index

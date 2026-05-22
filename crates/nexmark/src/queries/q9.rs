@@ -45,6 +45,11 @@ pub struct Q9Output(
 dbsp::never_none!(Q9Output);
 dbsp::never_roaring_filter!(Q9Output);
 
+dbsp::impl_ord_repr_for_tuple_struct! {
+    [] ArchivedQ9Output as Repr<Q9Output>,
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+}
+
 type Q9Stream = Stream<RootCircuit, OrdZSet<Q9Output>>;
 
 /// Query 9: Winning Bids (Not in original suite)

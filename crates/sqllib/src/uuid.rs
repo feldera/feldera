@@ -31,6 +31,11 @@ pub struct Uuid {
     value: uuid::Uuid,
 }
 
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedUuid as Repr<Uuid>,
+    [value]
+}
+
 impl From<uuid::Uuid> for Uuid {
     fn from(uuid: uuid::Uuid) -> Self {
         Uuid { value: uuid }

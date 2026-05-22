@@ -91,6 +91,12 @@ pub struct Q15Output {
     rank3_auctions: u64,
 }
 
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedQ15Output as Repr<Q15Output>,
+    [day, total_bids, rank1_bids, rank2_bids, rank3_bids, total_bidders, rank1_bidders,
+     rank2_bidders, rank3_bidders, total_auctions, rank1_auctions, rank2_auctions, rank3_auctions]
+}
+
 type Q15Stream = Stream<RootCircuit, OrdZSet<Q15Output>>;
 
 pub fn q15(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q15Stream {

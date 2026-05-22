@@ -4,6 +4,7 @@ use dbsp::{OrdZSet, RootCircuit, Stream};
 use feldera_macros::IsNone;
 use rkyv::{Archive, Deserialize, Serialize};
 use rust_decimal::Decimal;
+
 use size_of::SizeOf;
 use std::hash::Hash;
 
@@ -87,6 +88,22 @@ pub enum BidTimeType {
     Day,
     Night,
     Other,
+}
+
+impl dbsp::dynamic::OrdRepr<BidTimeType> for ArchivedBidTimeType {
+    fn ord_cmp(&self, other: &BidTimeType) -> std::cmp::Ordering {
+        let self_idx = match self {
+            ArchivedBidTimeType::Day => 0u8,
+            ArchivedBidTimeType::Night => 1,
+            ArchivedBidTimeType::Other => 2,
+        };
+        let other_idx = match other {
+            BidTimeType::Day => 0u8,
+            BidTimeType::Night => 1,
+            BidTimeType::Other => 2,
+        };
+        self_idx.cmp(&other_idx)
+    }
 }
 
 // This is used because we can't currently use chrono.Utc, which would simply

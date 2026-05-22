@@ -105,6 +105,13 @@ pub struct Q16Output {
     rank3_auctions: u64,
 }
 
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedQ16Output as Repr<Q16Output>,
+    [channel, day, minute, total_bids, rank1_bids, rank2_bids, rank3_bids, total_bidders,
+     rank1_bidders, rank2_bidders, rank3_bidders, total_auctions, rank1_auctions,
+     rank2_auctions, rank3_auctions]
+}
+
 type Q16Stream = Stream<RootCircuit, OrdZSet<Q16Output>>;
 
 #[derive(
@@ -138,6 +145,11 @@ pub struct Q16Intermediate1(
     ZWeight,
 );
 
+dbsp::impl_ord_repr_for_tuple_struct! {
+    [] ArchivedQ16Intermediate1 as Repr<Q16Intermediate1>,
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+}
+
 #[derive(
     Clone,
     Debug,
@@ -168,6 +180,11 @@ pub struct Q16Intermediate2(
     ZWeight,
     ZWeight,
 );
+
+dbsp::impl_ord_repr_for_tuple_struct! {
+    [] ArchivedQ16Intermediate2 as Repr<Q16Intermediate2>,
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+}
 
 pub fn q16(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q16Stream {
     // Dug for a long time to figure out how to use the const generics

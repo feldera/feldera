@@ -35,6 +35,12 @@ struct Record {
     daily_vaccinations: Option<u64>,
 }
 
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedRecord as Repr<Record>,
+    [location, date, daily_vaccinations]
+}
+
+
 #[allow(clippy::type_complexity)]
 fn build_circuit(
     circuit: &mut RootCircuit,

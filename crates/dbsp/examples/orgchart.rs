@@ -41,6 +41,11 @@ struct Manages {
     employee: EmployeeID,
 }
 
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedManages as Repr<Manages>,
+    [manager, employee]
+}
+
 /// Indicates that `manager` is the immediate manager of `employee` and that
 /// `grandmanager` is the immedate manager of `manager`.
 #[derive(
@@ -64,6 +69,11 @@ struct SkipLevel {
     grandmanager: EmployeeID,
     manager: EmployeeID,
     employee: EmployeeID,
+}
+
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedSkipLevel as Repr<SkipLevel>,
+    [grandmanager, manager, employee]
 }
 
 type SkipLevels = OrdZSet<SkipLevel>;

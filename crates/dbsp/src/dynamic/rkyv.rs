@@ -118,6 +118,52 @@ impl OrdRepr<String> for rkyv::string::ArchivedString {
     }
 }
 
+/// Generates a field-by-field `OrdRepr` impl for an archived struct.
+///
+/// Use when the original struct has fields that we want to compare in order,
+/// for example when `#[archive(compare(PartialOrd))]` can't compose through
+/// `Option<T>` fields.
+///
+/// Example: `impl_ord_repr_for_struct!([] ArchivedFoo as Repr<Foo>, [a, b, c]);`
+#[macro_export]
+macro_rules! impl_ord_repr_for_struct {
+    ([$($g:tt)*] $archived:ty as Repr<$orig:ty> $(where $($wh:tt)*)?, [$($field:ident),+ $(,)?]) => {
+        impl<$($g)*> $crate::dynamic::OrdRepr<$orig> for $archived
+        $(where $($wh)*)?
+        {
+            fn ord_cmp(&self, other: &$orig) -> ::core::cmp::Ordering {
+                $(
+                    match $crate::dynamic::OrdRepr::ord_cmp(&self.$field, &other.$field) {
+                        ::core::cmp::Ordering::Equal => {}
+                        non_eq => return non_eq,
+                    }
+                )+
+                ::core::cmp::Ordering::Equal
+            }
+        }
+    };
+}
+
+/// Like `impl_ord_repr_for_struct!` but for tuple structs (numeric field indices).
+#[macro_export]
+macro_rules! impl_ord_repr_for_tuple_struct {
+    ([$($g:tt)*] $archived:ty as Repr<$orig:ty> $(where $($wh:tt)*)?, [$($idx:tt),+ $(,)?]) => {
+        impl<$($g)*> $crate::dynamic::OrdRepr<$orig> for $archived
+        $(where $($wh)*)?
+        {
+            fn ord_cmp(&self, other: &$orig) -> ::core::cmp::Ordering {
+                $(
+                    match $crate::dynamic::OrdRepr::ord_cmp(&self.$idx, &other.$idx) {
+                        ::core::cmp::Ordering::Equal => {}
+                        non_eq => return non_eq,
+                    }
+                )+
+                ::core::cmp::Ordering::Equal
+            }
+        }
+    };
+}
+
 impl<T, U> OrdRepr<Vec<U>> for rkyv::vec::ArchivedVec<T>
 where
     T: OrdRepr<U>,
@@ -135,6 +181,23 @@ where
     }
 }
 
+impl<T, U, F> OrdRepr<std::sync::Arc<U>> for rkyv::rc::ArchivedRc<T, F>
+where
+    T: OrdRepr<U>,
+{
+    fn ord_cmp(&self, other: &std::sync::Arc<U>) -> Ordering {
+        (**self).ord_cmp(&**other)
+    }
+}
+
+// `uuid::Uuid` is `Pod` and rkyv archives it to itself.
+impl OrdRepr<uuid::Uuid> for uuid::Uuid {
+    #[inline]
+    fn ord_cmp(&self, other: &uuid::Uuid) -> Ordering {
+        self.cmp(other)
+    }
+}
+
 /// Trait for DBData that can be deserialized with [`rkyv`].
 ///
 /// The associated type `Repr` with the bound + connecting it to Archived
@@ -143,14 +206,14 @@ where
 pub trait ArchivedDBData:
     for<'a> Serialize<DbspSerializer<'a>> + Archive<Archived = Self::Repr> + Sized
 {
-    type Repr: Deserialize<Self, Deserializer> + Ord + PartialEq<Self> + OrdRepr<Self>;
+    type Repr: Deserialize<Self, Deserializer> + Ord + PartialEq<Self>;
 }
 
 /// We also automatically implement this bound for everything that satisfies it.
 impl<T> ArchivedDBData for T
 where
     T: Archive + for<'a> Serialize<DbspSerializer<'a>>,
-    Archived<T>: Deserialize<T, Deserializer> + Ord + PartialEq<T> + OrdRepr<T>,
+    Archived<T>: Deserialize<T, Deserializer> + Ord + PartialEq<T>,
 {
     type Repr = Archived<T>;
 }

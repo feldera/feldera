@@ -36,3 +36,11 @@ impl<C: Fallible, const P: usize, const S: usize> rkyv::CheckBytes<C> for Fixed<
         unsafe { Ok(&*value) }
     }
 }
+
+#[cfg(feature = "dbsp")]
+impl<const P: usize, const S: usize> dbsp::dynamic::OrdRepr<Fixed<P, S>> for Fixed<P, S> {
+    #[inline]
+    fn ord_cmp(&self, other: &Fixed<P, S>) -> core::cmp::Ordering {
+        self.cmp(other)
+    }
+}

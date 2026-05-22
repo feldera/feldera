@@ -42,27 +42,9 @@ pub struct Person {
     pub extra: String,
 }
 
-impl dbsp::dynamic::OrdRepr<Person> for ArchivedPerson {
-    fn ord_cmp(&self, other: &Person) -> std::cmp::Ordering {
-        use std::cmp::Ordering;
-        macro_rules! cmp_field {
-            ($f:ident) => {
-                match self.$f.ord_cmp(&other.$f) {
-                    Ordering::Equal => {}
-                    non_eq => return non_eq,
-                }
-            };
-        }
-        cmp_field!(id);
-        cmp_field!(name);
-        cmp_field!(email_address);
-        cmp_field!(credit_card);
-        cmp_field!(city);
-        cmp_field!(state);
-        cmp_field!(date_time);
-        cmp_field!(extra);
-        Ordering::Equal
-    }
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedPerson as Repr<Person>,
+    [id, name, email_address, credit_card, city, state, date_time, extra]
 }
 
 /// The Nexmark Auction model based on the [Nexmark Java Auction class](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model/Auction.java).
@@ -100,6 +82,11 @@ pub struct Auction {
     pub seller: u64,
     pub category: u64,
     pub extra: String,
+}
+
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedAuction as Repr<Auction>,
+    [id, item_name, description, initial_bid, reserve, date_time, expires, seller, category, extra]
 }
 
 /// The Nexmark Bid model based on the [Nexmark Java Bid class](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model/Bid.java).
@@ -143,6 +130,11 @@ pub struct Bid {
     pub extra: String,
 }
 
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedBid as Repr<Bid>,
+    [auction, bidder, price, channel, url, date_time, extra]
+}
+
 /// An event in the auction system, either a (new) `Person`, a (new) `Auction`,
 /// or a `Bid`.
 #[derive(
@@ -165,6 +157,21 @@ pub enum Event {
     Person(Person),
     Auction(Auction),
     Bid(Bid),
+}
+
+impl dbsp::dynamic::OrdRepr<Event> for ArchivedEvent {
+    fn ord_cmp(&self, other: &Event) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+        match (self, other) {
+            (ArchivedEvent::Person(a), Event::Person(b)) => a.ord_cmp(b),
+            (ArchivedEvent::Auction(a), Event::Auction(b)) => a.ord_cmp(b),
+            (ArchivedEvent::Bid(a), Event::Bid(b)) => a.ord_cmp(b),
+            (ArchivedEvent::Person(_), _) => Ordering::Less,
+            (_, Event::Person(_)) => Ordering::Greater,
+            (ArchivedEvent::Auction(_), _) => Ordering::Less,
+            (_, Event::Auction(_)) => Ordering::Greater,
+        }
+    }
 }
 
 impl Default for Event {

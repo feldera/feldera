@@ -154,6 +154,19 @@ mod test {
         y: T2,
     }
 
+    impl<T1: DBData, T2: DBData> crate::dynamic::OrdRepr<Foo<T1, T2>> for ArchivedFoo<T1, T2>
+    where
+        <T1 as rkyv::Archive>::Archived: crate::dynamic::OrdRepr<T1>,
+        <T2 as rkyv::Archive>::Archived: crate::dynamic::OrdRepr<T2>,
+    {
+        fn ord_cmp(&self, other: &Foo<T1, T2>) -> std::cmp::Ordering {
+            match self.x.ord_cmp(&other.x) {
+                std::cmp::Ordering::Equal => self.y.ord_cmp(&other.y),
+                non_eq => non_eq,
+            }
+        }
+    }
+
     pub trait Bar<T1: DataTrait + ?Sized, T2: WeightTrait + ?Sized>: Data {
         fn f1(&self) -> &T1;
         fn f2(&self) -> &T2;
