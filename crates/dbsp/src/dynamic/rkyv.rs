@@ -396,11 +396,11 @@ where
     }
 
     fn cmp_target(&self, other: &Trait) -> Option<Ordering> {
-        let mut deserializer = Deserializer::default();
-        self.archived
-            .deserialize(&mut deserializer)
-            .unwrap()
-            .partial_cmp(unsafe { other.downcast::<T>() })
+        // Direct cross-comparison against the archived form: no deserialize.
+        // Guaranteed total via `T::Repr: OrdRepr<T>` from `ArchivedDBData`.
+        Some(OrdRepr::ord_cmp(&self.archived, unsafe {
+            other.downcast::<T>()
+        }))
     }
 }
 

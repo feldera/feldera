@@ -141,7 +141,117 @@ fn bench(storage: bool) {
 }
 
 fn main() {
-    println!("seek_key_exact micro-benchmark");
+    println!("seek_key_exact micro-benchmark (u64 keys)");
     bench(false);
     bench(true);
+    println!("seek_key_exact micro-benchmark (String keys)");
+    bench_string(false);
+    bench_string(true);
+}
+
+fn build_string_zset() -> OrdZSet<String> {
+    let mut rng = Xoshiro256StarStar::from_seed(SEED_KEYS);
+    let mut pairs: Vec<(String, ZWeight)> = (0..NUM_KEYS)
+        .map(|_| {
+            let n = rng.r#gen::<u64>() & ((1u64 << 40) - 1);
+            (format!("key-{n:020}"), 1)
+        })
+        .collect();
+    pairs.sort_by(|a, b| a.0.cmp(&b.0));
+    pairs.dedup_by(|a, b| a.0 == b.0);
+    let tuples: Vec<Tup2<Tup2<String, ()>, ZWeight>> = pairs
+        .into_iter()
+        .map(|(k, w)| Tup2(Tup2(k, ()), w))
+        .collect();
+    OrdZSet::from_tuples((), tuples)
+}
+
+fn extract_string_keys(zset: &OrdZSet<String>) -> Vec<String> {
+    let mut cursor = zset.inner().cursor();
+    let mut acc = Vec::with_capacity(zset.key_count());
+    while cursor.key_valid() {
+        acc.push(unsafe { cursor.key().downcast::<String>() }.clone());
+        cursor.step_key();
+    }
+    acc
+}
+
+fn build_string_lookups(present: &[String]) -> Vec<String> {
+    let mut rng = Xoshiro256StarStar::from_seed(SEED_LOOKUPS);
+    let hits = (NUM_LOOKUPS as f64 * HIT_RATIO) as usize;
+    let mut result = Vec::with_capacity(NUM_LOOKUPS);
+    for _ in 0..hits {
+        let idx = rng.gen_range(0..present.len());
+        result.push(present[idx].clone());
+    }
+    for _ in hits..NUM_LOOKUPS {
+        let n = rng.r#gen::<u64>() & ((1u64 << 40) - 1);
+        result.push(format!("miss-{n:020}"));
+    }
+    for i in (1..result.len()).rev() {
+        let j = rng.gen_range(0..=i);
+        result.swap(i, j);
+    }
+    result
+}
+
+fn time_string_lookups(zset: &OrdZSet<String>, lookups: &[String]) -> (u64, u64) {
+    let mut cursor = zset.inner().cursor();
+    let start = Instant::now();
+    let mut hit_count = 0u64;
+    for key in lookups {
+        cursor.rewind_keys();
+        let key_dyn: &DynData = key.erase();
+        if cursor.seek_key_exact(key_dyn, None) {
+            hit_count += 1;
+        }
+        black_box(&cursor);
+    }
+    let elapsed_ns = start.elapsed().as_nanos() as u64;
+    (hit_count, elapsed_ns)
+}
+
+fn bench_string(storage: bool) {
+    let temp = tempdir().expect("failed to create temp dir for storage");
+    let config = CircuitConfig::with_workers(1).with_storage(Some(
+        CircuitStorageConfig::for_config(
+            StorageConfig {
+                path: temp.path().to_string_lossy().into_owned(),
+                cache: StorageCacheConfig::default(),
+            },
+            StorageOptions {
+                min_storage_bytes: Some(0),
+                min_step_storage_bytes: if storage { Some(0) } else { None },
+                ..StorageOptions::default()
+            },
+        )
+        .expect("failed to configure POSIX storage"),
+    ));
+
+    let result_ns: Arc<Mutex<Option<(u64, u64, usize)>>> = Arc::new(Mutex::new(None));
+    let result_clone = Arc::clone(&result_ns);
+
+    let handle = Runtime::run(config, move |_parker| {
+        let zset = build_string_zset();
+        let present = extract_string_keys(&zset);
+        let lookups = build_string_lookups(&present);
+        let key_count = zset.key_count();
+        let (hits, elapsed_ns) = time_string_lookups(&zset, &lookups);
+        *result_clone.lock().unwrap() = Some((hits, elapsed_ns, key_count));
+    })
+    .expect("failed to start DBSP runtime");
+    handle.kill().expect("failed to kill runtime");
+
+    let (hits, elapsed_ns, keys) = result_ns
+        .lock()
+        .unwrap()
+        .expect("bench did not produce a result");
+    let storage_label = if storage { "file-backed" } else { "in-memory " };
+    let per_lookup_ns = elapsed_ns as f64 / NUM_LOOKUPS as f64;
+    println!(
+        "{storage_label}: {NUM_LOOKUPS} lookups against {keys} keys in {:.2} ms = {:.1} ns/lookup, {} hits",
+        elapsed_ns as f64 / 1e6,
+        per_lookup_ns,
+        hits
+    );
 }

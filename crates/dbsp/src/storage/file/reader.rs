@@ -721,7 +721,7 @@ where
         key: &mut K,
     ) -> Option<usize>
     where
-        C: Fn(&K) -> Ordering,
+        C: Fn(&K::Archived) -> Ordering,
     {
         unsafe {
             let block_rows = self.rows();
@@ -731,29 +731,25 @@ where
             let mut best = None;
             let mut start = (max(block_rows.start, target_rows.start) - self.first_row) as usize;
             let mut end = (min(block_rows.end, target_rows.end) - self.first_row) as usize;
-            let mut mid = 0;
             while start < end {
-                mid = start.midpoint(end);
-                self.key(factories, mid, key);
-                let cmp = compare(key);
+                let mid = start.midpoint(end);
+                let archived_key = self.archived_item(factories, mid).fst();
+                let cmp = compare(archived_key);
 
                 match cmp {
                     Less => end = mid,
-                    Equal => return Some(mid),
+                    Equal => {
+                        // Caller expects `key` populated for the matched row.
+                        self.key(factories, mid, key);
+                        return Some(mid);
+                    }
                     Greater => start = mid + 1,
                 };
                 if cmp == bias {
                     best = Some(mid);
                 }
             }
-            if let Some(best) = best
-                && best != mid
-            {
-                // We kept searching beyond the key that was ultimately best, so
-                // we have to re-deserialize the best one.  With some additional
-                // complication, we could avoid this if we had two different
-                // slots to deserialize keys and we could indicate to the caller
-                // which one was the right one.
+            if let Some(best) = best {
                 self.key(factories, best, key);
             }
             best
@@ -780,15 +776,21 @@ where
             let mut i = 0;
             while start < end {
                 let mid = start.midpoint(end);
-                if index_stack.get(i) != Some(&mid) {
-                    index_stack.truncate(i);
-                    index_stack.push(mid);
-                    key_stack.truncate(i);
-                    key_stack.push_with(&mut |key| self.key(factories, mid, key));
-                };
-                match target.cmp(&key_stack[i]) {
+                // Compare against the archived key directly; only materialise
+                // into key_stack on a cache miss for the result path.
+                let archived_key = self.archived_item(factories, mid).fst();
+                let cmp = DeserializeDyn::cmp_target(archived_key, target)
+                    .unwrap_or(Ordering::Equal)
+                    .reverse();
+                match cmp {
                     Less => end = mid,
                     Equal => {
+                        if index_stack.get(i) != Some(&mid) {
+                            index_stack.truncate(i);
+                            index_stack.push(mid);
+                            key_stack.truncate(i);
+                            key_stack.push_with(&mut |key| self.key(factories, mid, key));
+                        }
                         index_stack.truncate(i + 1);
                         key_stack.truncate(i + 1);
                         return true;
@@ -1167,6 +1169,17 @@ where
         }
     }
 
+    unsafe fn archived_bound<'a>(
+        &'a self,
+        key_factory: &dyn Factory<K>,
+        index: usize,
+    ) -> &'a K::Archived {
+        unsafe {
+            let offset = self.bounds.get(&self.raw, index) as usize;
+            key_factory.archived_value(&self.raw, offset)
+        }
+    }
+
     unsafe fn key_range(&self, min: &mut K, max: &mut K) {
         unsafe {
             self.get_bound(0, min);
@@ -1187,13 +1200,13 @@ where
     /// function might change it.
     unsafe fn find_best_match<C>(
         &self,
+        key_factory: &dyn Factory<K>,
         target_rows: &Range<u64>,
         compare: &C,
         bias: Ordering,
-        bound: &mut K,
     ) -> Option<usize>
     where
-        C: Fn(&K) -> Ordering,
+        C: Fn(&K::Archived) -> Ordering,
     {
         unsafe {
             let mut start = 0;
@@ -1204,8 +1217,8 @@ where
                 let row = self.get_row_bound(mid) + self.first_row;
                 let cmp = match range_compare(target_rows, row) {
                     Equal => {
-                        self.get_bound(mid, bound);
-                        let cmp = compare(bound);
+                        let archived = self.archived_bound(key_factory, mid);
+                        let cmp = compare(archived);
                         if cmp == Equal {
                             return Some(mid / 2);
                         }
@@ -1278,15 +1291,11 @@ where
     /// Returns the comparison of the largest bound key using `compare`.
     unsafe fn compare_max<C>(&self, key_factory: &dyn Factory<K>, compare: &C) -> Ordering
     where
-        C: Fn(&K) -> Ordering,
+        C: Fn(&K::Archived) -> Ordering,
     {
         unsafe {
-            let mut ordering = Equal;
-            key_factory.with(&mut |key| {
-                self.max_bound(key);
-                ordering = compare(key);
-            });
-            ordering
+            let archived = self.archived_bound(key_factory, self.last_bound_index());
+            compare(archived)
         }
     }
 }
@@ -2454,8 +2463,17 @@ where
         P: Fn(&K) -> bool + Clone,
     {
         unsafe {
-            self.advance_to_first_ge(&|key| {
-                if predicate(key) { Less } else { Greater }
+            // User predicate needs a deserialized `K`. Use cmp_target on the
+            // archived form to materialise the key into a scratch buffer,
+            // then invoke the predicate.
+            let key_factory = self.row_group.factories.key_factory;
+            self.advance_to_first_ge(&|archived: &K::Archived| {
+                let mut ord = Less;
+                key_factory.with(&mut |scratch| {
+                    DeserializeDyn::deserialize(archived, scratch);
+                    ord = if predicate(&*scratch) { Less } else { Greater };
+                });
+                ord
             })
         }
     }
@@ -2468,7 +2486,16 @@ where
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn advance_to_value_or_larger(&mut self, target: &K) -> Result<(), Error> {
-        unsafe { self.advance_to_first_ge(&|key| target.cmp(key)) }
+        // Compare archived key directly with `target`, no deserialization.
+        // `cmp_target(archived, target)` returns archived.cmp(target); reverse
+        // gives target.cmp(archived) which matches the original closure.
+        unsafe {
+            self.advance_to_first_ge(&|archived: &K::Archived| {
+                DeserializeDyn::cmp_target(archived, target)
+                    .unwrap_or(Ordering::Equal)
+                    .reverse()
+            })
+        }
     }
 
     /// Moves the cursor forward past rows for which `compare` returns [`Less`],
@@ -2488,7 +2515,7 @@ where
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn advance_to_first_ge<C>(&mut self, compare: &C) -> Result<(), Error>
     where
-        C: Fn(&K) -> Ordering,
+        C: Fn(&K::Archived) -> Ordering,
     {
         unsafe {
             self.position
@@ -2511,8 +2538,14 @@ where
         P: Fn(&K) -> bool + Clone,
     {
         unsafe {
-            self.rewind_to_last_le(&|key| {
-                if !predicate(key) { Less } else { Greater }
+            let key_factory = self.row_group.factories.key_factory;
+            self.rewind_to_last_le(&|archived: &K::Archived| {
+                let mut ord = Greater;
+                key_factory.with(&mut |scratch| {
+                    DeserializeDyn::deserialize(archived, scratch);
+                    ord = if !predicate(&*scratch) { Less } else { Greater };
+                });
+                ord
             })
         }
     }
@@ -2528,7 +2561,13 @@ where
     where
         K: Ord,
     {
-        unsafe { self.rewind_to_last_le(&|key| target.cmp(key)) }
+        unsafe {
+            self.rewind_to_last_le(&|archived: &K::Archived| {
+                DeserializeDyn::cmp_target(archived, target)
+                    .unwrap_or(Ordering::Equal)
+                    .reverse()
+            })
+        }
     }
 
     /// Moves the cursor backward past rows for which `compare` returns
@@ -2544,7 +2583,7 @@ where
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn rewind_to_last_le<C>(&mut self, compare: &C) -> Result<(), Error>
     where
-        C: Fn(&K) -> Ordering,
+        C: Fn(&K::Archived) -> Ordering,
     {
         let position = unsafe {
             Position::best_match::<N, T, _>(&self.row_group, compare, Greater, &mut *self.key)
@@ -2761,7 +2800,7 @@ where
     ) -> Result<Option<Self>, Error>
     where
         T: ColumnSpec,
-        C: Fn(&K) -> Ordering,
+        C: Fn(&K::Archived) -> Ordering,
     {
         unsafe {
             let mut indexes = Vec::new();
@@ -2771,9 +2810,12 @@ where
             loop {
                 match node.read(&row_group.reader.file)? {
                     TreeBlock::Index(index_block) => {
-                        let Some(child_idx) =
-                            index_block.find_best_match(&row_group.rows, compare, bias, key)
-                        else {
+                        let Some(child_idx) = index_block.find_best_match(
+                            row_group.factories.key_factory,
+                            &row_group.rows,
+                            compare,
+                            bias,
+                        ) else {
                             return Ok(None);
                         };
                         node = index_block.get_child(child_idx)?;
@@ -2834,24 +2876,32 @@ where
     ) -> Result<bool, Error>
     where
         T: ColumnSpec,
-        C: Fn(&K) -> Ordering,
+        C: Fn(&K::Archived) -> Ordering,
     {
         unsafe {
             // Check the current position first. We might already be done.
-            if compare(key) != Greater {
+            let current_archived = self
+                .data
+                .archived_item(&row_group.factories, (self.row - self.data.first_row) as usize)
+                .fst();
+            if compare(current_archived) != Greater {
                 return Ok(true);
             }
 
             // If the last item in `rows` in the current data block is greater than
             // or equal to the target, then the position must be in the current data
             // block.
-            self.data.key_for_row(
-                &row_group.factories,
-                min(self.data.rows().end, row_group.rows.end) - 1,
-                key,
-            );
+            let last_in_block = min(self.data.rows().end, row_group.rows.end) - 1;
+            let last_archived = self
+                .data
+                .archived_item(
+                    &row_group.factories,
+                    (last_in_block - self.data.first_row) as usize,
+                )
+                .fst();
+            let last_cmp = compare(last_archived);
             let mut rows = self.row + 1..row_group.rows.end;
-            if compare(key) != Greater {
+            if last_cmp != Greater {
                 let child_idx = self
                     .data
                     .find_best_match(&row_group.factories, &rows, compare, Less, key)
@@ -2873,7 +2923,9 @@ where
                 }
 
                 // Otherwise, our target (if any) must be below `index_block`.
-                let Some(child_idx) = index_block.find_best_match(&rows, compare, Less, key) else {
+                let Some(child_idx) =
+                    index_block.find_best_match(row_group.factories.key_factory, &rows, compare, Less)
+                else {
                     // `rows.end` is inside `index_block` but the largest key is
                     // less than the target.
                     return Ok(false);
@@ -2884,9 +2936,12 @@ where
                 loop {
                     match node.read::<K, A>(&row_group.reader.file)? {
                         TreeBlock::Index(index_block) => {
-                            let Some(child_idx) =
-                                index_block.find_best_match(&rows, compare, Less, key)
-                            else {
+                            let Some(child_idx) = index_block.find_best_match(
+                                row_group.factories.key_factory,
+                                &rows,
+                                compare,
+                                Less,
+                            ) else {
                                 return Ok(false);
                             };
                             node = index_block.get_child(child_idx)?;
@@ -3169,7 +3224,7 @@ where
     ) -> Result<Self, Error>
     where
         T: ColumnSpec,
-        C: Fn(&K) -> Ordering,
+        C: Fn(&K::Archived) -> Ordering,
     {
         unsafe {
             match Path::best_match(row_group, compare, bias, key)? {
@@ -3224,7 +3279,7 @@ where
     ) -> Result<(), Error>
     where
         T: ColumnSpec,
-        C: Fn(&K) -> Ordering,
+        C: Fn(&K::Archived) -> Ordering,
     {
         unsafe {
             match self {
