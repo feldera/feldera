@@ -3,7 +3,11 @@ use crate::model::Event;
 use dbsp::{OrdZSet, RootCircuit, Stream};
 use feldera_macros::IsNone;
 use rkyv::{Archive, Deserialize, Serialize};
-use rust_decimal::Decimal;
+use feldera_fxp::Fixed;
+
+/// Fixed-point alias used for Q14 bid prices. Scale 5 keeps enough digits
+/// after multiplying a price by 0.908 (a 3-digit fraction).
+pub type Q14Price = Fixed<20, 5>;
 
 use size_of::SizeOf;
 use std::hash::Hash;
@@ -62,7 +66,7 @@ use std::hash::Hash;
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq))]
-pub struct Q14Output(u64, u64, Decimal, BidTimeType, u64, String, u64);
+pub struct Q14Output(u64, u64, Q14Price, BidTimeType, u64, String, u64);
 
 type Q14Stream = Stream<RootCircuit, OrdZSet<Q14Output>>;
 
@@ -117,8 +121,13 @@ fn hour_for_millis(millis: u64) -> usize {
 pub fn q14(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q14Stream {
     input.flat_map(|event| match event {
         Event::Bid(b) => {
-            let new_price = Decimal::new((b.price * 100) as i64, 2) * Decimal::new(908, 3);
-            if new_price > Decimal::new(1_000_000, 0) && new_price < Decimal::new(50_000_000, 0) {
+            // Equivalent to price * 0.908. Scale: (1, 3) -> 4 -> rounded to 5.
+            let price_q14 = Q14Price::new(b.price as i128, 0).unwrap();
+            let factor = Q14Price::new(908, 3).unwrap();
+            let new_price = price_q14 * factor;
+            if new_price > Q14Price::new(1_000_000, 0).unwrap()
+                && new_price < Q14Price::new(50_000_000, 0).unwrap()
+            {
                 Some(Q14Output(
                     b.auction,
                     b.bidder,
@@ -148,14 +157,14 @@ mod tests {
     use rstest::rstest;
 
     #[rstest]
-    #[case::decimal_price_converted(2_000_000, 0, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Night, 0, String::new(), 0) => 1])]
+    #[case::decimal_price_converted(2_000_000, 0, "", zset![Q14Output(1, 1, Q14Price::new(1_816_000_000, 3).unwrap(), BidTimeType::Night, 0, String::new(), 0) => 1])]
     #[case::decimal_price_converted_outside_range(1_000_000, 0, "", zset![])]
     #[case::decimal_price_converted_on_exclusive_boundary(1_000_000, 0, "", zset![])]
-    #[case::date_time_is_nighttime(2_000_000, 20*60*60*1000 + 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Night, 20*60*60*1000 + 1, String::new(), 0) => 1])]
-    #[case::date_time_is_daytime(2_000_000, 8*60*60*1000 + 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Day, 8*60*60*1000 + 1, String::new(), 0) => 1])]
-    #[case::date_time_is_daytime_2022(2_000_000, 52*366*24*60*60*1000 + 8*60*60*1000 + 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Day, 52*366*24*60*60*1000 + 8*60*60*1000 + 1, String::new(), 0) => 1])]
-    #[case::date_time_is_othertime(2_000_000, 8*60*60*1000 - 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Other, 8*60*60*1000 - 1, String::new(), 0) => 1])]
-    #[case::counts_cs_in_extra(2_000_000, 0, "cause I can't calculate has four of them.", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Night, 0, String::from("cause I can't calculate has four of them."), 4) => 1])]
+    #[case::date_time_is_nighttime(2_000_000, 20*60*60*1000 + 1, "", zset![Q14Output(1, 1, Q14Price::new(1_816_000_000, 3).unwrap(), BidTimeType::Night, 20*60*60*1000 + 1, String::new(), 0) => 1])]
+    #[case::date_time_is_daytime(2_000_000, 8*60*60*1000 + 1, "", zset![Q14Output(1, 1, Q14Price::new(1_816_000_000, 3).unwrap(), BidTimeType::Day, 8*60*60*1000 + 1, String::new(), 0) => 1])]
+    #[case::date_time_is_daytime_2022(2_000_000, 52*366*24*60*60*1000 + 8*60*60*1000 + 1, "", zset![Q14Output(1, 1, Q14Price::new(1_816_000_000, 3).unwrap(), BidTimeType::Day, 52*366*24*60*60*1000 + 8*60*60*1000 + 1, String::new(), 0) => 1])]
+    #[case::date_time_is_othertime(2_000_000, 8*60*60*1000 - 1, "", zset![Q14Output(1, 1, Q14Price::new(1_816_000_000, 3).unwrap(), BidTimeType::Other, 8*60*60*1000 - 1, String::new(), 0) => 1])]
+    #[case::counts_cs_in_extra(2_000_000, 0, "cause I can't calculate has four of them.", zset![Q14Output(1, 1, Q14Price::new(1_816_000_000, 3).unwrap(), BidTimeType::Night, 0, String::from("cause I can't calculate has four of them."), 4) => 1])]
     fn test_q14(
         #[case] price: u64,
         #[case] date_time: u64,

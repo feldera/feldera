@@ -30,7 +30,7 @@ csv = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tracing-log = { workspace = true }
-rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1", features = ["rkyv", "rkyv-64"] }
+feldera-fxp = { workspace = true, features = ["dbsp"] }
 regex = { workspace = true }
 time = { workspace = true, features = ["formatting"] }
 paste = { workspace = true }
@@ -40,7 +40,7 @@ clap = { workspace = true }
 cached = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 rkyv = { workspace = true, features = ["std", "size_64"] }
-size-of = { workspace = true, features = ["hashbrown", "xxhash-xxh3", "rust_decimal"] }
+size-of = { workspace = true, features = ["hashbrown", "xxhash-xxh3"] }
 feldera-macros = { workspace = true }
 
 [dev-dependencies]
