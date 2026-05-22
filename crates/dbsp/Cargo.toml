@@ -172,6 +172,10 @@ harness = false
 name = "filter_predictor"
 harness = false
 
+[[bench]]
+name = "seek_key_exact"
+harness = false
+
 [[example]]
 name = "orgchart"
 

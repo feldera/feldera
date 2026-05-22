@@ -218,11 +218,9 @@ where
     }
 
     fn eq_target(&self, other: &Trait) -> bool {
-        let mut deserializer = Deserializer::default();
-        self.archived
-            .deserialize(&mut deserializer)
-            .unwrap()
-            .eq(unsafe { other.downcast::<T>() })
+        // Compare archived against target without deserializing.
+        // `Self::Repr: PartialEq<Self>` is part of ArchivedDBData.
+        self.archived.eq(unsafe { other.downcast::<T>() })
     }
 
     fn cmp_target(&self, other: &Trait) -> Option<Ordering> {
@@ -255,4 +253,135 @@ impl<Trait: ?Sized + 'static> DowncastTrait for DynDeserialize<Trait> {}
 /// Trait for trait objects that can be serialized and deserialized with `rkyv`.
 pub trait ArchiveTrait: SerializeDyn {
     type Archived: DeserializeTrait<Self> + ?Sized;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ArchivedDBData, ArchivedOption, OrdRepr};
+    use crate::storage::file::to_bytes;
+    use crate::utils::{Tup1, Tup10};
+    use rkyv::archived_root;
+    use std::cmp::Ordering;
+
+    fn archived_of<T: ArchivedDBData>(value: &T) -> rkyv::util::AlignedVec {
+        let buf = to_bytes(value).unwrap();
+        let mut aligned = rkyv::util::AlignedVec::new();
+        aligned.extend_from_slice(&buf);
+        aligned
+    }
+
+    fn with_archived<T: ArchivedDBData, F: FnOnce(&T::Repr)>(value: &T, f: F) {
+        let bytes = archived_of(value);
+        let archived = unsafe { archived_root::<T>(&bytes[..]) };
+        f(archived);
+    }
+
+    #[test]
+    fn cross_eq_primitives() {
+        with_archived(&42i64, |arch| {
+            assert!(arch.eq(&42i64));
+            assert!(!arch.eq(&41i64));
+        });
+        with_archived(&7u32, |arch| {
+            assert!(arch.eq(&7u32));
+            assert!(!arch.eq(&8u32));
+        });
+        let s = String::from("hello");
+        with_archived(&s, |arch| {
+            assert!(arch.eq(s.as_str()));
+            assert!(!arch.eq("world"));
+        });
+    }
+
+    #[test]
+    fn cross_ord_primitives() {
+        with_archived(&42i64, |arch| {
+            assert_eq!(arch.partial_cmp(&42i64), Some(Ordering::Equal));
+            assert_eq!(arch.partial_cmp(&100i64), Some(Ordering::Less));
+            assert_eq!(arch.partial_cmp(&0i64), Some(Ordering::Greater));
+        });
+        with_archived(&7u32, |arch| {
+            assert_eq!(arch.partial_cmp(&7u32), Some(Ordering::Equal));
+            assert_eq!(arch.partial_cmp(&8u32), Some(Ordering::Less));
+        });
+    }
+
+    #[test]
+    fn cross_eq_option_via_rkyv() {
+        let some: Option<i64> = Some(5);
+        with_archived(&some, |arch| {
+            assert!(arch.eq(&Some(5i64)));
+            assert!(!arch.eq(&Some(6i64)));
+            assert!(!arch.eq(&Option::<i64>::None));
+        });
+        let none: Option<i64> = None;
+        with_archived(&none, |arch| {
+            assert!(arch.eq(&Option::<i64>::None));
+            assert!(!arch.eq(&Some(0i64)));
+        });
+    }
+
+    #[test]
+    fn ord_repr_option_fills_rkyv_gap() {
+        let some: Option<i64> = Some(5);
+        with_archived(&some, |arch| {
+            assert_eq!(OrdRepr::ord_cmp(arch, &Some(5i64)), Ordering::Equal);
+            assert_eq!(OrdRepr::ord_cmp(arch, &Some(10i64)), Ordering::Less);
+            assert_eq!(OrdRepr::ord_cmp(arch, &Some(1i64)), Ordering::Greater);
+            assert_eq!(OrdRepr::ord_cmp(arch, &Option::<i64>::None), Ordering::Greater);
+        });
+        let none: Option<i64> = None;
+        with_archived(&none, |arch| {
+            assert_eq!(OrdRepr::ord_cmp(arch, &Option::<i64>::None), Ordering::Equal);
+            assert_eq!(OrdRepr::ord_cmp(arch, &Some(0i64)), Ordering::Less);
+        });
+    }
+
+    #[test]
+    fn ord_repr_only_for_archived_option() {
+        // Sanity check that the OrdRepr impl applies to the rkyv ArchivedOption,
+        // not to bare ArchivedOption-shaped values. Uses a fresh archive.
+        let some: Option<u32> = Some(99);
+        let bytes = archived_of(&some);
+        let arch: &ArchivedOption<rkyv::Archived<u32>> =
+            unsafe { archived_root::<Option<u32>>(&bytes[..]) };
+        assert_eq!(OrdRepr::ord_cmp(arch, &Some(100u32)), Ordering::Less);
+    }
+
+    #[test]
+    fn cross_eq_ord_tup1_legacy_layout() {
+        // Tup1 uses the legacy macro layout (size <= 8).
+        let value = Tup1::new(123i64);
+        with_archived(&value, |arch| {
+            assert!(arch.eq(&Tup1::new(123i64)));
+            assert!(!arch.eq(&Tup1::new(124i64)));
+            assert_eq!(arch.partial_cmp(&Tup1::new(123i64)), Some(Ordering::Equal));
+            assert_eq!(arch.partial_cmp(&Tup1::new(200i64)), Some(Ordering::Less));
+            assert_eq!(arch.partial_cmp(&Tup1::new(0i64)), Some(Ordering::Greater));
+        });
+    }
+
+    #[test]
+    fn cross_eq_ord_tup10_v4_layout() {
+        // Tup10 uses the v4 macro layout (size > 8); fields go through IsNone semantics.
+        let base = Tup10::new(
+            1i64, 2u32, 3i16, 4u8, 5i8, 6u16, 7i32, 8u64, 9i128, 10u128,
+        );
+        with_archived(&base, |arch| {
+            let same = Tup10::new(
+                1i64, 2u32, 3i16, 4u8, 5i8, 6u16, 7i32, 8u64, 9i128, 10u128,
+            );
+            let bigger_last = Tup10::new(
+                1i64, 2u32, 3i16, 4u8, 5i8, 6u16, 7i32, 8u64, 9i128, 11u128,
+            );
+            let smaller_first = Tup10::new(
+                0i64, 2u32, 3i16, 4u8, 5i8, 6u16, 7i32, 8u64, 9i128, 10u128,
+            );
+            assert!(arch.eq(&same));
+            assert!(!arch.eq(&bigger_last));
+            assert_eq!(arch.partial_cmp(&same), Some(Ordering::Equal));
+            assert_eq!(arch.partial_cmp(&bigger_last), Some(Ordering::Less));
+            assert_eq!(arch.partial_cmp(&smaller_first), Some(Ordering::Greater));
+        });
+    }
 }

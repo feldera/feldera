@@ -873,6 +873,35 @@ mod tests {
     }
 
     #[test]
+    fn cross_eq_ord_archived_sqlstring() {
+        use rkyv::archived_root;
+        use std::cmp::Ordering;
+
+        let s = SqlString::from_ref("kilo");
+        let raw = to_bytes(&s).unwrap();
+        let mut aligned = rkyv::util::AlignedVec::new();
+        aligned.extend_from_slice(&raw);
+        let arch: &rkyv::string::ArchivedString =
+            unsafe { archived_root::<SqlString>(&aligned[..]) };
+
+        assert!(arch.eq(&SqlString::from_ref("kilo")));
+        assert!(!arch.eq(&SqlString::from_ref("kilogram")));
+
+        assert_eq!(
+            arch.partial_cmp(&SqlString::from_ref("kilo")),
+            Some(Ordering::Equal)
+        );
+        assert_eq!(
+            arch.partial_cmp(&SqlString::from_ref("lima")),
+            Some(Ordering::Less)
+        );
+        assert_eq!(
+            arch.partial_cmp(&SqlString::from_ref("alpha")),
+            Some(Ordering::Greater)
+        );
+    }
+
+    #[test]
     fn sizeof_sqlstring() {
         let s = SqlString::from_ref("abcdefghijklmnopqrstuvwxyz");
         let total_size = SizeOf::size_of(&s);
