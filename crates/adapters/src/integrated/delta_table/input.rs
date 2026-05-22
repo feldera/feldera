@@ -618,7 +618,16 @@ struct DeltaTableMetrics {
     follow_transaction_starts: AtomicU64,
     /// Number of Feldera snapshot transactions started (`snapshot-*` labels allocated).
     snapshot_transaction_starts: AtomicU64,
+    /// Last ingested Delta table version; [`VERSION_METRIC_UNSET`] until the
+    /// first successful ingest.
+    last_ingested_version: AtomicU64,
+    /// Target Delta table version for the in-flight catchup window;
+    /// [`VERSION_METRIC_UNSET`] when no catchup window is active.
+    catchup_target_version: AtomicU64,
 }
+
+/// Sentinel stored in version gauges before a value is available.
+const VERSION_METRIC_UNSET: u64 = u64::MAX;
 
 impl DeltaTableMetrics {
     fn new() -> Self {
@@ -628,7 +637,41 @@ impl DeltaTableMetrics {
             snapshot_records_total: AtomicU64::new(0),
             follow_transaction_starts: AtomicU64::new(0),
             snapshot_transaction_starts: AtomicU64::new(0),
+            last_ingested_version: AtomicU64::new(VERSION_METRIC_UNSET),
+            catchup_target_version: AtomicU64::new(VERSION_METRIC_UNSET),
         }
+    }
+
+    fn version_metric(value: u64) -> f64 {
+        match value {
+            VERSION_METRIC_UNSET => -1.0,
+            version => version as f64,
+        }
+    }
+
+    fn set_last_ingested_version(&self, version: i64) {
+        debug_assert!(version >= 0, "Delta table version must be non-negative");
+        self.last_ingested_version
+            .store(version as u64, Ordering::Relaxed);
+    }
+
+    fn set_catchup_target_version(&self, version: i64) {
+        debug_assert!(version >= 0, "Delta table version must be non-negative");
+        self.catchup_target_version
+            .store(version as u64, Ordering::Relaxed);
+    }
+
+    fn clear_catchup_target_version(&self) {
+        self.catchup_target_version
+            .store(VERSION_METRIC_UNSET, Ordering::Relaxed);
+    }
+
+    fn last_ingested_version_metric(&self) -> f64 {
+        Self::version_metric(self.last_ingested_version.load(Ordering::Relaxed))
+    }
+
+    fn catchup_target_version_metric(&self) -> f64 {
+        Self::version_metric(self.catchup_target_version.load(Ordering::Relaxed))
     }
 }
 
@@ -664,6 +707,18 @@ impl ConnectorMetrics for DeltaTableMetrics {
                 "Number of Feldera snapshot transactions started by this connector.",
                 ValueType::Counter,
                 self.snapshot_transaction_starts.load(Ordering::Relaxed) as f64,
+            ),
+            (
+                "input_connector_delta_last_ingested_version",
+                "Last Delta table version processed by this connector (-1 if none yet).",
+                ValueType::Gauge,
+                self.last_ingested_version_metric(),
+            ),
+            (
+                "input_connector_delta_catchup_target_version",
+                "Target Delta table version for the in-flight catchup window (-1 if none).",
+                ValueType::Gauge,
+                self.catchup_target_version_metric(),
             ),
         ]
     }
@@ -821,6 +876,7 @@ impl DeltaTableInputEndpointInner {
         if state.target.is_none() {
             state.target = Some(target);
             state.transaction = self.new_follow_transaction_label();
+            self.metrics.set_catchup_target_version(target);
         }
     }
 
@@ -836,6 +892,7 @@ impl DeltaTableInputEndpointInner {
 
     fn reset_catchup_follow_state(&self) {
         *self.catchup_follow_state.lock().unwrap() = CatchupFollowState::default();
+        self.metrics.clear_catchup_target_version();
     }
 
     /// The current catchup Feldera transaction was committed after a partial failure; drop its
@@ -1086,6 +1143,8 @@ impl DeltaTableInputEndpointInner {
         self.metrics
             .snapshot_records_total
             .fetch_add(record_count as u64, Ordering::Relaxed);
+        self.metrics
+            .set_last_ingested_version(table.version().unwrap());
 
         // Empty buffer to indicate checkpointable state.
         self.queue.push_entry(
@@ -1130,6 +1189,8 @@ impl DeltaTableInputEndpointInner {
         let total_records = self
             .read_ordered_snapshot_inner(table, input_stream, receiver)
             .await?;
+        self.metrics
+            .set_last_ingested_version(table.version().unwrap());
 
         // Empty buffer to indicate checkpointable state.
         self.queue.push_entry(
@@ -1299,6 +1360,8 @@ impl DeltaTableInputEndpointInner {
                 .with_commit_transaction(true),
                 Vec::new(),
             );
+            self.metrics
+                .set_last_ingested_version(table.version().unwrap());
         }
 
         Ok(total_records)
@@ -1391,6 +1454,14 @@ impl DeltaTableInputEndpointInner {
         wait_running(&mut receiver).await;
 
         let last_resume_status = self.last_resume_status.lock().unwrap().clone();
+
+        if let Some(DeltaResumeInfo {
+            version: Some(version),
+            ..
+        }) = &last_resume_status
+        {
+            self.metrics.set_last_ingested_version(*version);
+        }
 
         // We verified that the table version is not None in the open_table method.
         let mut version = table.version().unwrap();
@@ -2448,6 +2519,8 @@ impl DeltaTableInputEndpointInner {
             .with_commit_transaction(commit_transaction),
             Vec::new(),
         );
+
+        self.metrics.set_last_ingested_version(new_version);
 
         Ok(())
     }
