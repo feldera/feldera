@@ -334,7 +334,7 @@ export class Cytograph {
                 visibleParents.has(nodeId)) {
                 let positions = complex.sourcePositions;
                 let src = sources.toString(positions);
-                let node = new GraphNode(nodeId, complex.persistentId, "region", true, true, parent, src);
+                let node = new GraphNode(nodeId, complex.persistentId, complex.operation, true, true, parent, src);
                 result.addNode(node);
             }
         }
