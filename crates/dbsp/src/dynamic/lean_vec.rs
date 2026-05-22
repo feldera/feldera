@@ -1198,6 +1198,23 @@ where
     }
 }
 
+impl<T, U> crate::dynamic::OrdRepr<LeanVec<U>> for ArchivedLeanVec<T>
+where
+    T: crate::dynamic::OrdRepr<U>,
+{
+    fn ord_cmp(&self, other: &LeanVec<U>) -> std::cmp::Ordering {
+        let lhs = self.as_slice();
+        let rhs = other.as_slice();
+        for (a, b) in lhs.iter().zip(rhs.iter()) {
+            match a.ord_cmp(b) {
+                std::cmp::Ordering::Equal => continue,
+                non_eq => return non_eq,
+            }
+        }
+        lhs.len().cmp(&rhs.len())
+    }
+}
+
 impl<T> LeanVec<T> {
     pub fn new() -> Self {
         Self {

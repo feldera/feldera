@@ -158,6 +158,28 @@ where
     }
 }
 
+impl<T> crate::dynamic::OrdRepr<BSet<T>> for ArchivedBSet<T>
+where
+    T: Archive + Clone + Ord,
+    <T as Archive>::Archived: Ord + crate::dynamic::OrdRepr<T>,
+{
+    fn ord_cmp(&self, other: &BSet<T>) -> std::cmp::Ordering {
+        let mut rhs_iter = other.0.iter();
+        let mut count = 0usize;
+        for a in self.0.iter() {
+            count += 1;
+            let Some(b) = rhs_iter.next() else {
+                return std::cmp::Ordering::Greater;
+            };
+            match a.ord_cmp(b) {
+                std::cmp::Ordering::Equal => continue,
+                non_eq => return non_eq,
+            }
+        }
+        count.cmp(&(count + rhs_iter.count()))
+    }
+}
+
 impl<T, Trait> Set<Trait> for BSet<T>
 where
     Trait: DataTrait + ?Sized,

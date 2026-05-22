@@ -17,14 +17,14 @@ pub trait OrdRepr<T: ?Sized> {
 
 impl<T, U> OrdRepr<Option<T>> for ArchivedOption<U>
 where
-    U: PartialOrd<T>,
+    U: OrdRepr<T>,
 {
     fn ord_cmp(&self, other: &Option<T>) -> Ordering {
         match (self, other) {
             (ArchivedOption::None, None) => Ordering::Equal,
             (ArchivedOption::None, Some(_)) => Ordering::Less,
             (ArchivedOption::Some(_), None) => Ordering::Greater,
-            (ArchivedOption::Some(a), Some(b)) => a.partial_cmp(b).unwrap_or(Ordering::Equal),
+            (ArchivedOption::Some(a), Some(b)) => a.ord_cmp(b),
         }
     }
 }
@@ -50,6 +50,30 @@ macro_rules! impl_ord_repr_via_partial_ord {
             }
         }
     )*};
+}
+
+// Forward `OrdRepr<T>` to `PartialOrd<T>` for the rkyv primitives.
+//
+// rkyv's default (no `archive_le` / `archive_be` feature) keeps the archived
+// form of every primitive equal to the primitive itself, so a single set of
+// `OrdRepr<T> for T` impls covers them. We don't use a blanket impl because
+// that would conflict with the manual `ArchivedOption<U>: OrdRepr<Option<T>>`
+// impl above (Rust's coherence checker considers them potentially overlapping).
+impl_ord_repr_via_partial_ord! {
+    [] () as Repr<()>,
+    [] bool as Repr<bool>,
+    [] i8 as Repr<i8>,
+    [] u8 as Repr<u8>,
+    [] i16 as Repr<i16>,
+    [] i32 as Repr<i32>,
+    [] i64 as Repr<i64>,
+    [] i128 as Repr<i128>,
+    [] u16 as Repr<u16>,
+    [] u32 as Repr<u32>,
+    [] u64 as Repr<u64>,
+    [] u128 as Repr<u128>,
+    [] f32 as Repr<f32>,
+    [] f64 as Repr<f64>,
 }
 
 /// Trait for DBData that can be deserialized with [`rkyv`].

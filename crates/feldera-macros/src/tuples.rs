@@ -436,6 +436,15 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         }
     });
 
+    let legacy_cross_ord_repr_checks = self_indexes.iter().map(|idx| {
+        quote! {
+            match ::dbsp::dynamic::OrdRepr::ord_cmp(&self.#idx, &other.#idx) {
+                ::core::cmp::Ordering::Equal => {}
+                non_eq => return non_eq,
+            }
+        }
+    });
+
     let legacy_archived_ord_impls = quote! {
         impl<#(#generics),*> core::cmp::PartialEq for #archived_name<#(#generics),*>
         where
@@ -497,6 +506,18 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
             fn partial_cmp(&self, other: &#name<#(#generics),*>) -> Option<core::cmp::Ordering> {
                 #(#legacy_cross_cmp_checks)*
                 ::core::option::Option::Some(::core::cmp::Ordering::Equal)
+            }
+        }
+
+        impl<#(#generics),*> ::dbsp::dynamic::OrdRepr<#name<#(#generics),*>> for #archived_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive,)*
+            #(::rkyv::Archived<#generics>: ::dbsp::dynamic::OrdRepr<#generics> + core::cmp::PartialEq<#generics>,)*
+        {
+            #[inline]
+            fn ord_cmp(&self, other: &#name<#(#generics),*>) -> ::core::cmp::Ordering {
+                #(#legacy_cross_ord_repr_checks)*
+                ::core::cmp::Ordering::Equal
             }
         }
     };
