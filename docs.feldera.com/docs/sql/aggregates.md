@@ -391,8 +391,7 @@ value of the aggregate.  Linear aggregation functions comprise:
 - `SUM` for all integer, unsigned, and `DECIMAL` data types
 - `AVG` for all integer, unsigned, and `DECIMAL` data types
 - `STDDEV`, `STDDEV_SAMP`, `STDDEV_POP` for all integer, unsigned, and
-   `DECIMAL` data types (note: our current implementation of `STDDEV`
-   is not as efficient as possible)
+   `DECIMAL` data types
 
 The space overhead for linear functions is O(G).  The work performed
 for each change is O(D).
