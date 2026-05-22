@@ -79,9 +79,11 @@ public class IncrementalizeVisitor extends CircuitCloneVisitor {
     public void postorder(DBSPConstantOperator operator) {
         DBSPSimpleOperator replacement;
         this.addOperator(operator);
-        replacement = new DBSPDifferentiateOperator(operator.getRelNode(), operator.outputPort());
+        replacement = new DBSPDifferentiateOperator(operator.getRelNode(), operator.outputPort())
+                .copyAnnotations(operator);
         this.addOperator(replacement);
-        DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getRelNode(), replacement.outputPort());
+        DBSPSimpleOperator integral = new DBSPIntegrateOperator(operator.getRelNode(), replacement.outputPort())
+                .copyAnnotations(operator);
         this.map(operator, integral);
     }
 }

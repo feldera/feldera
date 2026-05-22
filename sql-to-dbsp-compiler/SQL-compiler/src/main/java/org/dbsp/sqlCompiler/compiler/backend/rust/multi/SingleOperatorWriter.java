@@ -24,7 +24,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -41,7 +41,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
     final DBSPCircuit circuit;
     final ICircuit parent;
     final boolean topLevel;
-    final LateMaterializations materializations;
+    final CircuitPostfix materializations;
 
     /* Example output:
      * ... preamble ...
@@ -55,7 +55,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
      *    return xxx;
      * } */
     public SingleOperatorWriter(DBSPOperator operator, DBSPCircuit circuit,
-                                ICircuit parent, LateMaterializations materializations) {
+                                ICircuit parent, CircuitPostfix materializations) {
         this.circuit = circuit;
         this.parent = parent;
         this.operator = operator;
@@ -139,7 +139,8 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
                 .append(name)
                 .append("(circuit: &")
                 .append(this.dbspCircuit(this.topLevel))
-                .append(", hash: Option<&'static str>, ")
+                .append(", hash: Option<&'static str>")
+                .append(", region: &Option<RegionName>, ")
                 .append(CircuitWriter.SOURCE_MAP_VARIABLE_NAME)
                 .append(": &'static SourceMap, ");
         if (this.topLevel && !useHandles)
@@ -220,6 +221,10 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
         visitor.push(this.circuit);
         if (this.parent != this.circuit)
             visitor.push(this.parent);
+        // Generate code even if the region does not exist (which is known statically)
+        // because regions are not part of the operator hash code.
+        // Without this we may have operators with different code but the same hash.
+        this.builder().append("if let Some(region) = region { circuit.open_region(region.clone()) };").newline();
         if (this.operator.is(DBSPSumOperator.class)) {
             // Special case for sum, which normally takes references.
            this.builder()
@@ -255,6 +260,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
         } else {
             visitor.generateOperator(this.operator);
         }
+        this.builder().append("if let Some(region) = region { circuit.close_region(region.clone()) };").newline();
         if (this.parent != this.circuit)
             visitor.pop(this.parent);
         visitor.pop(circuit);

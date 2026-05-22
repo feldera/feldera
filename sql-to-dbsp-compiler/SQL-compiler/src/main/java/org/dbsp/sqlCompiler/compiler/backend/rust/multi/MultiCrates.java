@@ -17,7 +17,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
@@ -44,12 +44,12 @@ public class MultiCrates {
     final CrateGenerator main;
     final CrateGenerator globals;
     final DBSPCompiler compiler;
-    final List<CrateGenerator> operators;
+    final List<CrateGenerator> generators;
     final Map<Integer, CrateGenerator> tupleCrates;
     final Map<Integer, CrateGenerator> semiCrates;
     @Nullable
     Map<String, DBSPDeclaration> declarationMap = null;
-    final LateMaterializations materializations;
+    final CircuitPostfix materializations;
 
     final RustWriter.StructuresUsed used;
     final String pipelineName;
@@ -69,11 +69,11 @@ public class MultiCrates {
     }
 
     MultiCrates(File rootDirectory, String pipelineName, DBSPCompiler compiler, RustWriter.StructuresUsed used,
-                LateMaterializations materializations) {
+                CircuitPostfix materializations) {
         this.pipelineName = pipelineName;
         this.compiler = compiler;
         this.used = used;
-        this.operators = new ArrayList<>();
+        this.generators = new ArrayList<>();
         this.tupleCrates = new HashMap<>();
         this.semiCrates = new HashMap<>();
         this.rootDirectory = rootDirectory;
@@ -255,7 +255,7 @@ public class MultiCrates {
                                     circuit, inside.to(DBSPSimpleOperator.class), nested, this.enterprise());
                             this.addDependencies(insideOp, inside);
                             op.addDependency(insideOp);
-                            this.operators.add(insideOp);
+                            this.generators.add(insideOp);
                         }
                     } else {
                         op = this.createOperatorCrate(circuit, operator, circuit, this.enterprise());
@@ -267,7 +267,7 @@ public class MultiCrates {
                     }
 
                     this.addDependencies(op, operator);
-                    this.operators.add(op);
+                    this.generators.add(op);
                 }
             }
 
@@ -301,7 +301,7 @@ public class MultiCrates {
         for (CrateGenerator gen: this.tupleCrates.values())
             gen.write(this.compiler);
         Map<CrateGenerator, CrateGenerator> written = new HashMap<>();
-        for (CrateGenerator op: this.operators) {
+        for (CrateGenerator op: this.generators) {
             if (written.containsKey(op)) {
                 String current = op.dump(this.compiler);
                 CrateGenerator prev = written.get(op);

@@ -48,6 +48,16 @@ public class SelectTests extends ScottBaseTests {
                 +------------+---------+------+--------+---------+--------+
                 | 1980-12-17 | 800.00  |      |     20 |      20 | DALLAS|
                 +------------+---------+------+--------+---------+--------+
+                (1 row)
+                
+                -- same with "except" instead of "exclude"
+                select e.* except(e.empno, e.ename, e.job, e.mgr), d.* exclude(d.dname)
+                from emp e join dept d on e.deptno = d.deptno order by hiredate limit 1;
+                +------------+---------+------+--------+---------+--------+
+                | HIREDATE   | SAL     | COMM | DEPTNO | DEPTNO0 | LOC    |
+                +------------+---------+------+--------+---------+--------+
+                | 1980-12-17 | 800.00  |      |     20 |      20 | DALLAS|
+                +------------+---------+------+--------+---------+--------+
                 (1 row)""");
     }
 }

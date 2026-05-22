@@ -4,7 +4,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.ProjectDeclarations;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
@@ -20,9 +20,9 @@ public class RustFileWriter extends RustWriter {
     StructuresUsed used = new StructuresUsed();
     boolean findUsed = true;
     boolean slt = false;
-    final LateMaterializations materializations;
+    final CircuitPostfix materializations;
 
-    public RustFileWriter(LateMaterializations materializations) {
+    public RustFileWriter(CircuitPostfix materializations) {
         this.materializations = materializations;
     }
 

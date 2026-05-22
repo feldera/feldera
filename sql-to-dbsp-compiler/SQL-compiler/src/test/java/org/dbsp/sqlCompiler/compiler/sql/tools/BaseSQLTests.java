@@ -33,7 +33,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCrates;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCratesWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.MultiCrateTests;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
@@ -327,7 +327,7 @@ public class BaseSQLTests {
         if (!multiCrates) {
             outputStream = new PrintStream(Files.newOutputStream(getTestFilePath()));
             // We do not need to run the LateMaterializations
-            writer = new RustFileWriter(new LateMaterializations(compiler));
+            writer = new RustFileWriter(new CircuitPostfix(compiler));
             writer.setOutputBuilder(new IndentStream(outputStream));
             directory = RUST_DIRECTORY;
             executionDirectory = ".";

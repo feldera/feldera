@@ -6,6 +6,7 @@ import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.function.Predicate;
 
@@ -14,6 +15,10 @@ public class Annotations {
 
     public Annotations() {
         this.annotations = new ArrayList<>();
+    }
+
+    public Annotations(List<Annotation> annotations) {
+        this.annotations = new ArrayList<>(annotations);
     }
 
     public static Annotations fromJson(JsonNode annotations) {
@@ -37,6 +42,8 @@ public class Annotations {
         if (!annotations.isEmpty())
             this.annotations.addAll(annotations.annotations);
     }
+
+    public int size() { return this.annotations.size(); }
 
     public boolean isEmpty() {
         return this.annotations.isEmpty();

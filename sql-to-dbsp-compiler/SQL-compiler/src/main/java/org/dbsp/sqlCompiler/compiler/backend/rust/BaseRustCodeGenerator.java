@@ -108,6 +108,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
                     circuit_builder::CircuitBase,
                     Circuit, CircuitConfig,
                     NestedCircuit,
+                    RegionName,
                     RootCircuit,
                     Stream,
                     StepSize
