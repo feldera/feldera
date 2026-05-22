@@ -540,7 +540,7 @@ class TestAdhocReadAfterWrite(SharedTestPipeline):
 
     FIXME: This may not be the most user-friendly behavior. We have considered exposing changes to tables
     immediately after each statement, while exposing view changes after the transaction is committed,
-    but that change introduced backward incompatibilities. For now this test validates the current expected 
+    but that change introduced backward incompatibilities. For now this test validates the current expected
     behavior.
 
     See https://github.com/feldera/feldera/issues/6243.
@@ -576,8 +576,7 @@ class TestAdhocReadAfterWrite(SharedTestPipeline):
         ) WITH ('materialized' = 'true');"""
     )
     def test_multi_statement_query_during_open_transaction_pk(self):
-        """An ad-hoc request running inside a user transaction must observe the state before the transaction started.
-        """
+        """An ad-hoc request running inside a user transaction must observe the state before the transaction started."""
         self.pipeline.start()
 
         # Seed one row outside the transaction as the baseline.
