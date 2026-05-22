@@ -32,6 +32,16 @@ macro_rules! float {
             pub struct $outer(OrderedFloat<$inner>);
             }
 
+            paste!{
+                impl $crate::dynamic::OrdRepr<$outer> for [<Archived $outer>] {
+                    #[inline]
+                    fn ord_cmp(&self, other: &$outer) -> ::core::cmp::Ordering {
+                        ::core::cmp::PartialOrd::partial_cmp(self, other)
+                            .unwrap_or(::core::cmp::Ordering::Equal)
+                    }
+                }
+            }
+
             impl $outer {
                 pub const EPSILON: Self = Self::new($inner::EPSILON);
 

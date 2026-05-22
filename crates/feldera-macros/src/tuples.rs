@@ -410,6 +410,35 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
             }
         });
 
+    let cross_ord_repr_checks = fields
+        .iter()
+        .enumerate()
+        .zip(self_indexes.iter())
+        .map(|((idx, _), self_idx)| {
+            let get_name = format_ident!("get_t{}", idx);
+            quote! {
+                {
+                    let self_archived = self.#get_name();
+                    let other_field = &other.#self_idx;
+                    let other_is_none = ::dbsp::utils::IsNone::is_none(other_field);
+                    let cmp = match (self_archived, other_is_none) {
+                        (::core::option::Option::None, true) => ::core::cmp::Ordering::Equal,
+                        (::core::option::Option::None, false) => ::core::cmp::Ordering::Less,
+                        (::core::option::Option::Some(_), true) => ::core::cmp::Ordering::Greater,
+                        (::core::option::Option::Some(archived), false) => {
+                            ::dbsp::dynamic::OrdRepr::ord_cmp(
+                                archived,
+                                ::dbsp::utils::IsNone::unwrap_or_self(other_field),
+                            )
+                        }
+                    };
+                    if cmp != ::core::cmp::Ordering::Equal {
+                        return cmp;
+                    }
+                }
+            }
+        });
+
     let legacy_eq_checks = self_indexes
         .iter()
         .map(|idx| quote!(self.#idx == other.#idx));
@@ -872,6 +901,20 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
             fn partial_cmp(&self, other: &#name<#(#generics),*>) -> ::core::option::Option<core::cmp::Ordering> {
                 #(#cross_cmp_checks)*
                 ::core::option::Option::Some(::core::cmp::Ordering::Equal)
+            }
+        }
+
+        impl<#(#generics),*> ::dbsp::dynamic::OrdRepr<#name<#(#generics),*>> for #archived_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+            #(::rkyv::Archived<<#generics as ::dbsp::utils::IsNone>::Inner>:
+                ::dbsp::dynamic::OrdRepr<<#generics as ::dbsp::utils::IsNone>::Inner>,)*
+        {
+            #[inline]
+            fn ord_cmp(&self, other: &#name<#(#generics),*>) -> ::core::cmp::Ordering {
+                #(#cross_ord_repr_checks)*
+                ::core::cmp::Ordering::Equal
             }
         }
 

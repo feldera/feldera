@@ -37,6 +37,22 @@ pub struct Product<TOuter, TInner> {
     pub inner: TInner,
 }
 
+impl<TOuter, TInner> crate::dynamic::OrdRepr<Product<TOuter, TInner>>
+    for ArchivedProduct<TOuter, TInner>
+where
+    TOuter: rkyv::Archive,
+    TInner: rkyv::Archive,
+    <TOuter as rkyv::Archive>::Archived: Ord + crate::dynamic::OrdRepr<TOuter>,
+    <TInner as rkyv::Archive>::Archived: Ord + crate::dynamic::OrdRepr<TInner>,
+{
+    fn ord_cmp(&self, other: &Product<TOuter, TInner>) -> std::cmp::Ordering {
+        match self.outer.ord_cmp(&other.outer) {
+            std::cmp::Ordering::Equal => self.inner.ord_cmp(&other.inner),
+            non_eq => non_eq,
+        }
+    }
+}
+
 impl<TOuter, TInner> Product<TOuter, TInner> {
     /// Creates a new product from outer and inner coordinates.
     pub fn new(outer: TOuter, inner: TInner) -> Product<TOuter, TInner> {

@@ -89,6 +89,21 @@ pub struct Avg<T, R> {
     count: R,
 }
 
+impl<T, R> crate::dynamic::OrdRepr<Avg<T, R>> for ArchivedAvg<T, R>
+where
+    T: rkyv::Archive,
+    R: rkyv::Archive,
+    <T as rkyv::Archive>::Archived: Ord + crate::dynamic::OrdRepr<T>,
+    <R as rkyv::Archive>::Archived: Ord + crate::dynamic::OrdRepr<R>,
+{
+    fn ord_cmp(&self, other: &Avg<T, R>) -> std::cmp::Ordering {
+        match self.sum.ord_cmp(&other.sum) {
+            std::cmp::Ordering::Equal => self.count.ord_cmp(&other.count),
+            non_eq => non_eq,
+        }
+    }
+}
+
 impl<T, R> Avg<T, R> {
     /// Create a new `Avg` object with the given `sum` and `count`.
     pub const fn new(sum: T, count: R) -> Self {

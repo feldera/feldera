@@ -45,6 +45,21 @@ pub struct ChildPtr<TS: DBData, A: DBData> {
     child_agg: A,
 }
 
+impl<TS, A> crate::dynamic::OrdRepr<ChildPtr<TS, A>> for ArchivedChildPtr<TS, A>
+where
+    TS: DBData,
+    A: DBData,
+    <Prefix<TS> as rkyv::Archive>::Archived: crate::dynamic::OrdRepr<Prefix<TS>>,
+    <A as rkyv::Archive>::Archived: crate::dynamic::OrdRepr<A>,
+{
+    fn ord_cmp(&self, other: &ChildPtr<TS, A>) -> std::cmp::Ordering {
+        match self.child_prefix.ord_cmp(&other.child_prefix) {
+            std::cmp::Ordering::Equal => self.child_agg.ord_cmp(&other.child_agg),
+            non_eq => non_eq,
+        }
+    }
+}
+
 impl<TS: DBData, A: DBData> ChildPtr<TS, A> {
     #[cfg(test)]
     fn new(child_prefix: Prefix<TS>, child_agg: A) -> Self {
@@ -166,6 +181,16 @@ where
     //[Option<ChildPtr<TS, A>>; RADIX]: DBData,
 {
     fn partial_cmp(&self, _other: &TreeNode<TS, A>) -> Option<std::cmp::Ordering> {
+        unimplemented!()
+    }
+}
+
+impl<TS, A> crate::dynamic::OrdRepr<TreeNode<TS, A>> for ArchivedTreeNode<TS, A>
+where
+    TS: DBData,
+    A: DBData,
+{
+    fn ord_cmp(&self, _other: &TreeNode<TS, A>) -> std::cmp::Ordering {
         unimplemented!()
     }
 }
@@ -344,6 +369,25 @@ pub struct TreeNodeUpdate<TS: DBData, A: DBData> {
     pub old: Option<TreeNode<TS, A>>,
     /// New value of the node or `None` if we are deleting an existing node.
     pub new: Option<TreeNode<TS, A>>,
+}
+
+impl<TS, A> crate::dynamic::OrdRepr<TreeNodeUpdate<TS, A>> for ArchivedTreeNodeUpdate<TS, A>
+where
+    TS: DBData,
+    A: DBData,
+    <Prefix<TS> as rkyv::Archive>::Archived: crate::dynamic::OrdRepr<Prefix<TS>>,
+    <Option<TreeNode<TS, A>> as rkyv::Archive>::Archived:
+        crate::dynamic::OrdRepr<Option<TreeNode<TS, A>>>,
+{
+    fn ord_cmp(&self, other: &TreeNodeUpdate<TS, A>) -> std::cmp::Ordering {
+        match self.prefix.ord_cmp(&other.prefix) {
+            std::cmp::Ordering::Equal => match self.old.ord_cmp(&other.old) {
+                std::cmp::Ordering::Equal => self.new.ord_cmp(&other.new),
+                non_eq => non_eq,
+            },
+            non_eq => non_eq,
+        }
+    }
 }
 
 pub trait TreeNodeUpdateTrait<TS, A>: Data

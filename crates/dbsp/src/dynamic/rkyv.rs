@@ -74,6 +74,65 @@ impl_ord_repr_via_partial_ord! {
     [] u128 as Repr<u128>,
     [] f32 as Repr<f32>,
     [] f64 as Repr<f64>,
+    [] char as Repr<char>,
+}
+
+// stdlib tuple cross-comparison: archived form of (T1, T2, ...) is
+// (Archived<T1>, Archived<T2>, ...), and `OrdRepr` is a local trait, so we
+// can implement cross-comparison for these foreign types.
+macro_rules! impl_ord_repr_for_stdlib_tuples {
+    ($(($($idx:tt: $t:ident),+))+) => {$(
+        impl<$($t),+> OrdRepr<($($t,)+)> for ($(::rkyv::Archived<$t>,)+)
+        where
+            $($t: ::rkyv::Archive,)+
+            $(::rkyv::Archived<$t>: OrdRepr<$t>,)+
+        {
+            fn ord_cmp(&self, other: &($($t,)+)) -> Ordering {
+                $(
+                    match self.$idx.ord_cmp(&other.$idx) {
+                        Ordering::Equal => {}
+                        non_eq => return non_eq,
+                    }
+                )+
+                Ordering::Equal
+            }
+        }
+    )+};
+}
+
+impl_ord_repr_for_stdlib_tuples! {
+    (0: T1)
+    (0: T1, 1: T2)
+    (0: T1, 1: T2, 2: T3)
+    (0: T1, 1: T2, 2: T3, 3: T4)
+    (0: T1, 1: T2, 2: T3, 3: T4, 4: T5)
+    (0: T1, 1: T2, 2: T3, 3: T4, 4: T5, 5: T6)
+    (0: T1, 1: T2, 2: T3, 3: T4, 4: T5, 5: T6, 6: T7)
+    (0: T1, 1: T2, 2: T3, 3: T4, 4: T5, 5: T6, 6: T7, 7: T8)
+}
+
+impl OrdRepr<String> for rkyv::string::ArchivedString {
+    #[inline]
+    fn ord_cmp(&self, other: &String) -> Ordering {
+        self.as_str().cmp(other.as_str())
+    }
+}
+
+impl<T, U> OrdRepr<Vec<U>> for rkyv::vec::ArchivedVec<T>
+where
+    T: OrdRepr<U>,
+{
+    fn ord_cmp(&self, other: &Vec<U>) -> Ordering {
+        let lhs = self.as_slice();
+        let rhs = other.as_slice();
+        for (a, b) in lhs.iter().zip(rhs.iter()) {
+            match a.ord_cmp(b) {
+                Ordering::Equal => continue,
+                non_eq => return non_eq,
+            }
+        }
+        lhs.len().cmp(&rhs.len())
+    }
 }
 
 /// Trait for DBData that can be deserialized with [`rkyv`].
@@ -84,14 +143,14 @@ impl_ord_repr_via_partial_ord! {
 pub trait ArchivedDBData:
     for<'a> Serialize<DbspSerializer<'a>> + Archive<Archived = Self::Repr> + Sized
 {
-    type Repr: Deserialize<Self, Deserializer> + Ord + PartialEq<Self>;
+    type Repr: Deserialize<Self, Deserializer> + Ord + PartialEq<Self> + OrdRepr<Self>;
 }
 
 /// We also automatically implement this bound for everything that satisfies it.
 impl<T> ArchivedDBData for T
 where
     T: Archive + for<'a> Serialize<DbspSerializer<'a>>,
-    Archived<T>: Deserialize<T, Deserializer> + Ord + PartialEq<T>,
+    Archived<T>: Deserialize<T, Deserializer> + Ord + PartialEq<T> + OrdRepr<T>,
 {
     type Repr = Archived<T>;
 }

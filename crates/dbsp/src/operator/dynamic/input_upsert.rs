@@ -61,6 +61,28 @@ pub enum Update<V: DBData, U: DBData> {
     Update(U),
 }
 
+impl<V, U> crate::dynamic::OrdRepr<Update<V, U>> for ArchivedUpdate<V, U>
+where
+    V: DBData,
+    U: DBData,
+    <V as rkyv::Archive>::Archived: crate::dynamic::OrdRepr<V>,
+    <U as rkyv::Archive>::Archived: crate::dynamic::OrdRepr<U>,
+{
+    fn ord_cmp(&self, other: &Update<V, U>) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+        match (self, other) {
+            (ArchivedUpdate::Insert(a), Update::Insert(b)) => a.ord_cmp(b),
+            (ArchivedUpdate::Delete, Update::Delete) => Ordering::Equal,
+            (ArchivedUpdate::Update(a), Update::Update(b)) => a.ord_cmp(b),
+            // Variant ordering: Insert < Delete < Update.
+            (ArchivedUpdate::Insert(_), _) => Ordering::Less,
+            (_, Update::Insert(_)) => Ordering::Greater,
+            (ArchivedUpdate::Delete, _) => Ordering::Less,
+            (_, Update::Delete) => Ordering::Greater,
+        }
+    }
+}
+
 pub enum UpdateRef<'a, V: DataTrait + ?Sized, U: DataTrait + ?Sized> {
     Insert(&'a V),
     Delete,

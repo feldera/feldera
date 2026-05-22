@@ -108,6 +108,27 @@ pub struct NeighborhoodDescr<K: DBData, V: DBData> {
     pub after: u64,
 }
 
+impl<K, V> crate::dynamic::OrdRepr<NeighborhoodDescr<K, V>> for ArchivedNeighborhoodDescr<K, V>
+where
+    K: DBData,
+    V: DBData,
+    <Option<K> as rkyv::Archive>::Archived: crate::dynamic::OrdRepr<Option<K>>,
+    <V as rkyv::Archive>::Archived: crate::dynamic::OrdRepr<V>,
+{
+    fn ord_cmp(&self, other: &NeighborhoodDescr<K, V>) -> std::cmp::Ordering {
+        match self.anchor.ord_cmp(&other.anchor) {
+            std::cmp::Ordering::Equal => match self.anchor_val.ord_cmp(&other.anchor_val) {
+                std::cmp::Ordering::Equal => match self.before.ord_cmp(&other.before) {
+                    std::cmp::Ordering::Equal => self.after.ord_cmp(&other.after),
+                    non_eq => non_eq,
+                },
+                non_eq => non_eq,
+            },
+            non_eq => non_eq,
+        }
+    }
+}
+
 impl<K: DBData, V: DBData> NeighborhoodDescr<K, V> {
     pub fn new(anchor: Option<K>, anchor_val: V, before: u64, after: u64) -> Self {
         Self {

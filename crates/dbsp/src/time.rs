@@ -151,6 +151,13 @@ pub trait Timestamp: DBData + PartialOrder + Lattice {
 #[archive_attr(doc(hidden))]
 pub struct UnitTimestamp;
 
+impl crate::dynamic::OrdRepr<UnitTimestamp> for ArchivedUnitTimestamp {
+    #[inline]
+    fn ord_cmp(&self, _other: &UnitTimestamp) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+
 impl Default for UnitTimestamp {
     fn default() -> Self {
         UnitTimestamp

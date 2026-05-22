@@ -42,6 +42,29 @@ pub struct Person {
     pub extra: String,
 }
 
+impl dbsp::dynamic::OrdRepr<Person> for ArchivedPerson {
+    fn ord_cmp(&self, other: &Person) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+        macro_rules! cmp_field {
+            ($f:ident) => {
+                match self.$f.ord_cmp(&other.$f) {
+                    Ordering::Equal => {}
+                    non_eq => return non_eq,
+                }
+            };
+        }
+        cmp_field!(id);
+        cmp_field!(name);
+        cmp_field!(email_address);
+        cmp_field!(credit_card);
+        cmp_field!(city);
+        cmp_field!(state);
+        cmp_field!(date_time);
+        cmp_field!(extra);
+        Ordering::Equal
+    }
+}
+
 /// The Nexmark Auction model based on the [Nexmark Java Auction class](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model/Auction.java).
 ///
 /// Note that Rust can simply derive the equivalent methods on the Java

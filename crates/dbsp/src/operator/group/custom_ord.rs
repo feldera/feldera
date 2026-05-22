@@ -23,6 +23,16 @@ pub struct WithCustomOrd<T, F> {
     phantom: PhantomData<F>,
 }
 
+impl<T, F> crate::dynamic::OrdRepr<WithCustomOrd<T, F>> for ArchivedWithCustomOrd<T, F>
+where
+    T: rkyv::Archive,
+    <T as rkyv::Archive>::Archived: crate::dynamic::OrdRepr<T>,
+{
+    fn ord_cmp(&self, other: &WithCustomOrd<T, F>) -> std::cmp::Ordering {
+        self.val.ord_cmp(&other.val)
+    }
+}
+
 impl<T: Default, F> Default for WithCustomOrd<T, F> {
     fn default() -> Self {
         Self {

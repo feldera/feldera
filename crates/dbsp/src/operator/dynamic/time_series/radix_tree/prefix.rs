@@ -38,6 +38,19 @@ pub struct Prefix<TS: DBData> {
     pub prefix_len: u32,
 }
 
+impl<TS> crate::dynamic::OrdRepr<Prefix<TS>> for ArchivedPrefix<TS>
+where
+    TS: DBData,
+    <TS as rkyv::Archive>::Archived: crate::dynamic::OrdRepr<TS>,
+{
+    fn ord_cmp(&self, other: &Prefix<TS>) -> std::cmp::Ordering {
+        match self.key.ord_cmp(&other.key) {
+            std::cmp::Ordering::Equal => self.prefix_len.ord_cmp(&other.prefix_len),
+            non_eq => non_eq,
+        }
+    }
+}
+
 impl<TS> Display for Prefix<TS>
 where
     TS: DBData + PrimInt,
