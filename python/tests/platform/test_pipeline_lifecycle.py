@@ -184,17 +184,22 @@ def test_pipeline_stop_force_after_start(pipeline_name):
     """
     Start and then force stop after varying short delays.
     """
-    create_pipeline(pipeline_name, "CREATE TABLE t1(c1 INTEGER);")
+    pipeline = PipelineBuilder(
+        TEST_CLIENT, pipeline_name, "CREATE TABLE t1(c1 INTEGER);"
+    ).create_or_replace()
 
     for delay_sec in [0, 0.1, 0.5, 1, 3, 10, 20]:
         print(f"Testing with {delay_sec} second delay")
+
         # Issue non-blocking start
-        start_pipeline(pipeline_name, wait=False)
+        pipeline.start(wait=False)
+
         # Shortly wait for the pipeline to transition to next state(s)
         time.sleep(delay_sec)
+
         # Stop force and clear the pipeline
-        stop_pipeline(pipeline_name, force=True)
-        clear_pipeline(pipeline_name)
+        pipeline.stop(force=True)
+        pipeline.clear_storage()
 
 
 @gen_pipeline_name
