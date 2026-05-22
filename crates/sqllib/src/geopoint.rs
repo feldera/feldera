@@ -33,6 +33,11 @@ use size_of::*;
 #[archive(compare(PartialEq, PartialOrd))]
 pub struct GeoPoint(F64, F64);
 
+dbsp::impl_ord_repr_for_tuple_struct! {
+    [] ArchivedGeoPoint as Repr<GeoPoint>,
+    [0, 1]
+}
+
 #[doc(hidden)]
 impl<C> SerializeWithContext<C> for GeoPoint {
     fn serialize_with_context<S>(&self, _serializer: S, _context: &C) -> Result<S::Ok, S::Error>

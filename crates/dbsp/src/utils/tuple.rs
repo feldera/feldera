@@ -121,6 +121,13 @@ deserialize_without_context!(Tup10, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
 /// A unit tuple type on which `dbsp` controls trait implementations.
 pub struct Tup0();
 
+impl crate::dynamic::OrdRepr<Tup0> for ArchivedTup0 {
+    #[inline]
+    fn ord_cmp(&self, _other: &Tup0) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+
 impl Tup0 {
     pub fn new() -> Self {
         Self()

@@ -73,6 +73,13 @@ impl PartialOrd<ByteArray> for ArchivedByteArray {
     }
 }
 
+impl dbsp::dynamic::OrdRepr<ByteArray> for ArchivedByteArray {
+    #[inline]
+    fn ord_cmp(&self, other: &ByteArray) -> std::cmp::Ordering {
+        self.data.as_slice().cmp(other.data.as_slice())
+    }
+}
+
 impl SerializeWithContext<SqlSerdeConfig> for ByteArray {
     fn serialize_with_context<S>(
         &self,

@@ -60,6 +60,11 @@ pub struct Timestamp {
     microseconds: i64,
 }
 
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedTimestamp as Repr<Timestamp>,
+    [microseconds]
+}
+
 #[doc(hidden)]
 impl<D> ::rkyv::Deserialize<Timestamp, D> for ArchivedTimestamp
 where
@@ -1465,6 +1470,11 @@ pub struct Date {
     days: i32,
 }
 
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedDate as Repr<Date>,
+    [days]
+}
+
 impl Date {
     /// Create a [Date] from a number of days since the Unix epoch
     /// (January 1st, 1970).
@@ -2370,6 +2380,11 @@ some_polymorphic_function1!(date_trunc_day, Date, Date, Date);
 #[serde(transparent)]
 pub struct Time {
     nanoseconds: u64,
+}
+
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedTime as Repr<Time>,
+    [nanoseconds]
 }
 
 impl fmt::Display for Time {

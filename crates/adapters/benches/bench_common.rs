@@ -42,6 +42,11 @@ pub struct BenchTestStruct {
     pub s: String,
 }
 
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedBenchTestStruct as Repr<BenchTestStruct>,
+    [id, b, i, s]
+}
+
 deserialize_without_context!(BenchTestStruct);
 
 serialize_struct!(BenchTestStruct()[4]{
@@ -89,6 +94,11 @@ impl BenchTestStruct {
 #[archive(compare(PartialEq))]
 pub struct BenchKeyStruct {
     pub id: u32,
+}
+
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedBenchKeyStruct as Repr<BenchKeyStruct>,
+    [id]
 }
 
 deserialize_without_context!(BenchKeyStruct);

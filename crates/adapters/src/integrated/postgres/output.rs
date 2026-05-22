@@ -1316,6 +1316,11 @@ mod tests {
             s: String,
         }
 
+        dbsp::impl_ord_repr_for_struct! {
+            [] ArchivedTestRecord as Repr<TestRecord>,
+            [id, b, i, s]
+        }
+
         deserialize_without_context!(TestRecord);
 
         serialize_struct!(TestRecord()[4]{
@@ -1346,6 +1351,11 @@ mod tests {
         #[archive(compare(PartialEq))]
         struct TestKey {
             id: i32,
+        }
+
+        dbsp::impl_ord_repr_for_struct! {
+            [] ArchivedTestKey as Repr<TestKey>,
+            [id]
         }
 
         deserialize_without_context!(TestKey);

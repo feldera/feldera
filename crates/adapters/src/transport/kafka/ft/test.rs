@@ -2617,6 +2617,11 @@ pub struct TestRawStructMetadata {
     pub kafka_offset: i64,
 }
 
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedTestRawStructMetadata as Repr<TestRawStructMetadata>,
+    [data, kafka_headers, kafka_topic, kafka_timestamp, kafka_partition, kafka_offset]
+}
+
 deserialize_table_record!(TestRawStructMetadata["TestRawStructMetadata", Variant, 6] {
     (data, "data", false, SqlString, |_| None),
     (kafka_headers, "kafka_headers", false, Variant, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().map(|metadata| metadata.index_string("kafka_headers"))),

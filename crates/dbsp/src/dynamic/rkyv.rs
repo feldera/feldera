@@ -190,6 +190,32 @@ where
     }
 }
 
+impl<AK, AV, K, V> OrdRepr<std::collections::BTreeMap<K, V>>
+    for rkyv::collections::ArchivedBTreeMap<AK, AV>
+where
+    AK: OrdRepr<K>,
+    AV: OrdRepr<V>,
+{
+    fn ord_cmp(&self, other: &std::collections::BTreeMap<K, V>) -> Ordering {
+        let mut other_iter = other.iter();
+        let mut count = 0usize;
+        for (ak, av) in self.iter() {
+            count += 1;
+            let Some((k, v)) = other_iter.next() else {
+                return Ordering::Greater;
+            };
+            match ak.ord_cmp(k) {
+                Ordering::Equal => match av.ord_cmp(v) {
+                    Ordering::Equal => continue,
+                    non_eq => return non_eq,
+                },
+                non_eq => return non_eq,
+            }
+        }
+        count.cmp(&(count + other_iter.count()))
+    }
+}
+
 // `uuid::Uuid` is `Pod` and rkyv archives it to itself.
 impl OrdRepr<uuid::Uuid> for uuid::Uuid {
     #[inline]
@@ -206,14 +232,14 @@ impl OrdRepr<uuid::Uuid> for uuid::Uuid {
 pub trait ArchivedDBData:
     for<'a> Serialize<DbspSerializer<'a>> + Archive<Archived = Self::Repr> + Sized
 {
-    type Repr: Deserialize<Self, Deserializer> + Ord + PartialEq<Self>;
+    type Repr: Deserialize<Self, Deserializer> + Ord + PartialEq<Self> + OrdRepr<Self>;
 }
 
 /// We also automatically implement this bound for everything that satisfies it.
 impl<T> ArchivedDBData for T
 where
     T: Archive + for<'a> Serialize<DbspSerializer<'a>>,
-    Archived<T>: Deserialize<T, Deserializer> + Ord + PartialEq<T>,
+    Archived<T>: Deserialize<T, Deserializer> + Ord + PartialEq<T> + OrdRepr<T>,
 {
     type Repr = Archived<T>;
 }

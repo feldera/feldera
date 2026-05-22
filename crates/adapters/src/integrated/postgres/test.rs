@@ -137,6 +137,13 @@ mod pg {
         pub map_: BTreeMap<feldera_sqllib::SqlString, TestStruct>,
     }
 
+    dbsp::impl_ord_repr_for_struct! {
+        [] ArchivedPostgresTestStruct as Repr<PostgresTestStruct>,
+        [boolean_, tinyint_, smallint_, int_, bigint_, decimal_, float_, double_, varchar_,
+         time_, date_, timestamp_, variant_, uuid_, varbinary_, struct_, string_array_,
+         struct_array_, map_]
+    }
+
     #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
     pub(super) struct PostgresTestStructCdc {
         pub boolean_: bool,
@@ -2421,6 +2428,13 @@ mod cdc_tests {
         col_numeric: Option<String>,
         col_smallint: Option<i16>,
         col_int_array: Option<Vec<Option<i32>>>,
+    }
+
+    dbsp::impl_ord_repr_for_struct! {
+        [] ArchivedCdcAllTypesStruct as Repr<CdcAllTypesStruct>,
+        [id, col_text, col_integer, col_bigint, col_boolean, col_real, col_double,
+         col_date, col_time, col_timestamp, col_timestamptz, col_uuid, col_jsonb,
+         col_bytea, col_numeric, col_smallint, col_int_array]
     }
 
     feldera_types::deserialize_table_record!(CdcAllTypesStruct["CdcAllTypesStruct", Variant, 17] {

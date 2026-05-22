@@ -49,6 +49,11 @@ pub struct TestStruct {
     pub s: String,
 }
 
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedTestStruct as Repr<TestStruct>,
+    [id, b, i, s]
+}
+
 impl TestStruct {
     pub fn for_id(id: u32) -> Self {
         Self {
@@ -141,6 +146,11 @@ serialize_struct!(TestStruct()[4]{
 #[archive(compare(PartialEq))]
 pub struct KeyStruct {
     pub id: u32,
+}
+
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedKeyStruct as Repr<KeyStruct>,
+    [id]
 }
 
 impl KeyStruct {
@@ -292,6 +302,11 @@ pub struct TestStructMetadata {
     pub kafka_offset: i64,
 }
 
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedTestStructMetadata as Repr<TestStructMetadata>,
+    [i, kafka_headers, kafka_topic, kafka_timestamp, kafka_partition, kafka_offset]
+}
+
 deserialize_table_record!(TestStructMetadata["TestStructMetadata", Variant, 6] {
     (i, "i", false, i32, |_| None),
     (kafka_headers, "kafka_headers", false, Variant, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().map(|metadata| metadata.index_string("kafka_headers"))),
@@ -347,6 +362,11 @@ pub struct EmbeddedStruct {
     pub field: bool,
 }
 
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedEmbeddedStruct as Repr<EmbeddedStruct>,
+    [field]
+}
+
 serialize_table_record!(EmbeddedStruct[1]{
     r#field["a"]: bool
 });
@@ -394,6 +414,11 @@ pub struct TestStruct2 {
     #[serde(rename = "m")]
     pub field_6: Option<BTreeMap<String, i64>>,
     pub field_7: SqlDecimal<10, 3>,
+}
+
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedTestStruct2 as Repr<TestStruct2>,
+    [field, field_0, field_1, field_2, field_3, field_5, field_6, field_7]
 }
 
 impl Arbitrary for TestStruct2 {
@@ -1001,6 +1026,13 @@ pub struct DeltaTestStruct {
     pub uuid: Uuid,
 }
 
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedDeltaTestStruct as Repr<DeltaTestStruct>,
+    [bigint, binary, boolean, date, decimal_10_3, double, float, int, smallint, string,
+     unused, timestamp_ntz, tinyint, string_array, struct1, struct_array,
+     string_string_map, string_struct_map, variant, uuid]
+}
+
 // TODO: INTERVAL, VOID, TIMESTAMP (with tz), Object, map with non-string keys
 
 impl Arbitrary for DeltaTestStruct {
@@ -1334,6 +1366,11 @@ deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", Variant, 20] {
 #[archive(compare(PartialEq))]
 pub struct DeltaTestKey {
     pub bigint: i64,
+}
+
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedDeltaTestKey as Repr<DeltaTestKey>,
+    [bigint]
 }
 
 serialize_table_record!(DeltaTestKey[1]{

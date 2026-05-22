@@ -68,6 +68,11 @@ use std::hash::Hash;
 #[archive(compare(PartialEq))]
 pub struct Q14Output(u64, u64, Q14Price, BidTimeType, u64, String, u64);
 
+dbsp::impl_ord_repr_for_tuple_struct! {
+    [] ArchivedQ14Output as Repr<Q14Output>,
+    [0, 1, 2, 3, 4, 5, 6]
+}
+
 type Q14Stream = Stream<RootCircuit, OrdZSet<Q14Output>>;
 
 #[derive(

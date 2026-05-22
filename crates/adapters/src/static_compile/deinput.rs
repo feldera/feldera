@@ -2027,6 +2027,11 @@ mod test {
         o: Option<F32>,
     }
 
+    dbsp::impl_ord_repr_for_struct! {
+        [] ArchivedTestStruct as Repr<TestStruct>,
+        [id, s, b, o]
+    }
+
     deserialize_without_context!(TestStruct);
 
     type InputHandles = (

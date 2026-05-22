@@ -51,6 +51,11 @@ pub struct ShortInterval {
     microseconds: i64,
 }
 
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedShortInterval as Repr<ShortInterval>,
+    [microseconds]
+}
+
 #[doc(hidden)]
 pub fn reinterpret_ShortInterval(value: ShortInterval) -> i64 {
     value.milliseconds()
@@ -631,6 +636,11 @@ some_function2!(
 #[serde(transparent)]
 pub struct LongInterval {
     months: i32,
+}
+
+dbsp::impl_ord_repr_for_struct! {
+    [] ArchivedLongInterval as Repr<LongInterval>,
+    [months]
 }
 
 impl LongInterval {
