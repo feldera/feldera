@@ -71,7 +71,9 @@ def _seed_delta_table(loc: DeltaTestLocation, num_versions: int) -> None:
         _append_version(loc, version * 2)
 
 
-def _connector_config(loc: DeltaTestLocation, *, mode: str, paused: bool = False) -> str:
+def _connector_config(
+    loc: DeltaTestLocation, *, mode: str, paused: bool = False
+) -> str:
     config = dict(loc.connector_config)
     config.update(
         {
@@ -109,13 +111,9 @@ def _build_sql(loc: DeltaTestLocation, *, mode: str, paused: bool = False) -> st
 
 
 def _delta_metric(pipeline_name: str, metric_name: str) -> float:
-    response = get(
-        api_url(f"/pipelines/{pipeline_name}/metrics?format=prometheus")
-    )
+    response = get(api_url(f"/pipelines/{pipeline_name}/metrics?format=prometheus"))
     assert response.status_code == HTTPStatus.OK, response.text
-    pattern = (
-        rf'^{re.escape(metric_name)}\{{[^}}]*endpoint="{re.escape(ENDPOINT)}"[^}}]*\}}\s+(\S+)'
-    )
+    pattern = rf'^{re.escape(metric_name)}\{{[^}}]*endpoint="{re.escape(ENDPOINT)}"[^}}]*\}}\s+(\S+)'
     for line in response.text.splitlines():
         match = re.match(pattern, line)
         if match:
@@ -140,7 +138,9 @@ def _completed_version(pipeline) -> int | None:
     return None
 
 
-def _wait_for_connector_paused(pipeline, *, paused: bool, timeout_s: float = 60.0) -> None:
+def _wait_for_connector_paused(
+    pipeline, *, paused: bool, timeout_s: float = 60.0
+) -> None:
     wait_for_condition(
         f"connector {ENDPOINT} paused={paused}",
         lambda: pipeline.input_connector_stats(TABLE, CONNECTOR).paused is paused,
@@ -149,7 +149,9 @@ def _wait_for_connector_paused(pipeline, *, paused: bool, timeout_s: float = 60.
     )
 
 
-def _wait_for_completed_version(pipeline, target: int, timeout_s: float = 120.0) -> None:
+def _wait_for_completed_version(
+    pipeline, target: int, timeout_s: float = 120.0
+) -> None:
     wait_for_condition(
         f"delta waterline version {target}",
         lambda: _completed_version(pipeline) == target,
@@ -235,11 +237,10 @@ def _run_catchup_rounds(
             table_version = _delta_version(loc)
 
         assert table_version == version_before_burst + num_versions
-        assert _completed_version(pipeline) is None or _completed_version(
-            pipeline
-        ) < table_version, (
-            f"round {round_idx}: connector must not ingest commits written while paused"
-        )
+        assert (
+            _completed_version(pipeline) is None
+            or _completed_version(pipeline) < table_version
+        ), f"round {round_idx}: connector must not ingest commits written while paused"
 
         pipeline.resume_connector(TABLE, CONNECTOR)
         _wait_for_connector_paused(pipeline, paused=False)
@@ -252,9 +253,10 @@ def _run_catchup_rounds(
             f"round {round_idx}: catchup must batch {num_versions} Delta commits "
             "into one Feldera transaction"
         )
-        assert _delta_metric(
-            pipeline_name, "input_connector_delta_catchup_target_version"
-        ) < 0, (
+        assert (
+            _delta_metric(pipeline_name, "input_connector_delta_catchup_target_version")
+            < 0
+        ), (
             f"round {round_idx}: catchup target metric must clear after the window closes"
         )
 
@@ -288,12 +290,18 @@ def test_delta_input_catchup_snapshot_and_follow(pipeline_name):
 
         _wait_for_completed_version(pipeline, INITIAL_VERSIONS - 1)
         assert _materialized_row_count(pipeline) == INITIAL_VERSIONS
-        assert _delta_counter(
-            pipeline_name, "input_connector_delta_snapshot_transaction_starts"
-        ) == 1, "initial snapshot must run in a single Feldera transaction"
-        assert _delta_counter(
-            pipeline_name, "input_connector_delta_follow_transaction_starts"
-        ) == 0, "follow transactions must not start until new commits are ingested"
+        assert (
+            _delta_counter(
+                pipeline_name, "input_connector_delta_snapshot_transaction_starts"
+            )
+            == 1
+        ), "initial snapshot must run in a single Feldera transaction"
+        assert (
+            _delta_counter(
+                pipeline_name, "input_connector_delta_follow_transaction_starts"
+            )
+            == 0
+        ), "follow transactions must not start until new commits are ingested"
 
         table_version, next_row_id, _ = _run_catchup_rounds(
             pipeline,
@@ -344,12 +352,18 @@ def test_delta_input_catchup_cdc(pipeline_name):
         assert _materialized_row_count(pipeline) == 0, (
             "CDC mode must not ingest pre-existing commits as a snapshot"
         )
-        assert _delta_counter(
-            pipeline_name, "input_connector_delta_snapshot_transaction_starts"
-        ) == 0, "CDC mode must not start a snapshot transaction"
-        assert _delta_counter(
-            pipeline_name, "input_connector_delta_follow_transaction_starts"
-        ) == 0, "follow transactions must not start until new commits are ingested"
+        assert (
+            _delta_counter(
+                pipeline_name, "input_connector_delta_snapshot_transaction_starts"
+            )
+            == 0
+        ), "CDC mode must not start a snapshot transaction"
+        assert (
+            _delta_counter(
+                pipeline_name, "input_connector_delta_follow_transaction_starts"
+            )
+            == 0
+        ), "follow transactions must not start until new commits are ingested"
 
         table_version, next_row_id, _ = _run_catchup_rounds(
             pipeline,
