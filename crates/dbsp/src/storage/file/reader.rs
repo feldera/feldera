@@ -2463,23 +2463,33 @@ where
         P: Fn(&K) -> bool + Clone,
     {
         unsafe {
-            // User predicate needs a deserialised `K`. Allocate one scratch
-            // buffer per call and reuse it across every binary-search
-            // compare; the previous `key_factory.with(...)` pattern
-            // allocated on every step.
+            // The binary-search path deserialises into a single scratch buffer
+            // (allocated once and reused across every compare); the cursor
+            // early-return uses the already-deserialised cursor key directly,
+            // skipping a fetch-and-deserialise.
             let key_factory = self.row_group.factories.key_factory;
             let scratch = std::cell::UnsafeCell::new(key_factory.default_box());
-            self.advance_to_first_ge(&|archived: &K::Archived| {
-                // SAFETY: the closure is invoked sequentially by the binary
-                // search on this thread; `scratch` is never aliased.
-                let scratch_box: &mut Box<K> = &mut *scratch.get();
-                DeserializeDyn::deserialize(archived, &mut **scratch_box);
-                if predicate(&**scratch_box) {
-                    Less
-                } else {
-                    Greater
-                }
-            })
+            let predicate_for_key = predicate.clone();
+            self.advance_to_first_ge_inner(
+                &|archived: &K::Archived| {
+                    // SAFETY: the closure is invoked sequentially by the
+                    // binary search on this thread; `scratch` is never aliased.
+                    let scratch_box: &mut Box<K> = &mut *scratch.get();
+                    DeserializeDyn::deserialize(archived, &mut **scratch_box);
+                    if predicate(&**scratch_box) {
+                        Less
+                    } else {
+                        Greater
+                    }
+                },
+                &|key: &K| {
+                    if predicate_for_key(key) {
+                        Less
+                    } else {
+                        Greater
+                    }
+                },
+            )
         }
     }
 
@@ -2491,15 +2501,18 @@ where
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn advance_to_value_or_larger(&mut self, target: &K) -> Result<(), Error> {
-        // Compare archived key directly with `target`, no deserialization.
-        // `cmp_target(archived, target)` returns archived.cmp(target); reverse
-        // gives target.cmp(archived) which matches the original closure.
+        // Compare archived keys directly with `target`, no deserialise. The
+        // cached cursor key is compared with `target.cmp(key)` for the
+        // early-return check.
         unsafe {
-            self.advance_to_first_ge(&|archived: &K::Archived| {
-                DeserializeDyn::cmp_target(archived, target)
-                    .unwrap_or(Ordering::Equal)
-                    .reverse()
-            })
+            self.advance_to_first_ge_inner(
+                &|archived: &K::Archived| {
+                    DeserializeDyn::cmp_target(archived, target)
+                        .unwrap_or(Ordering::Equal)
+                        .reverse()
+                },
+                &|key: &K| target.cmp(key),
+            )
         }
     }
 
@@ -2522,9 +2535,32 @@ where
     where
         C: Fn(&K::Archived) -> Ordering,
     {
+        // No deserialised-form comparator: fall back to fetching the current
+        // row's archive for the early-return check. Callers that hold a
+        // `target: &K` should prefer `advance_to_value_or_larger`, which
+        // supplies both forms.
         unsafe {
             self.position
-                .advance_to_first_ge(&self.row_group, compare, &mut *self.key)
+                .advance_to_first_ge_archived(&self.row_group, compare, &mut *self.key)
+        }
+    }
+
+    unsafe fn advance_to_first_ge_inner<C, CK>(
+        &mut self,
+        compare: &C,
+        compare_key: &CK,
+    ) -> Result<(), Error>
+    where
+        C: Fn(&K::Archived) -> Ordering,
+        CK: Fn(&K) -> Ordering,
+    {
+        unsafe {
+            self.position.advance_to_first_ge(
+                &self.row_group,
+                compare,
+                compare_key,
+                &mut *self.key,
+            )
         }
     }
 
@@ -2876,10 +2912,38 @@ where
     /// and index blocks already in the path, instead of starting from the root
     /// node.  The same optimization would apply to backward seeks, but they
     /// haven't been important in practice yet.
-    unsafe fn advance_to_first_ge<N, T, C>(
+    unsafe fn advance_to_first_ge<N, T, C, CK>(
         &mut self,
         row_group: &RowGroup<'_, K, A, N, T>,
         compare: &C,
+        compare_key: &CK,
+        key: &mut K,
+    ) -> Result<bool, Error>
+    where
+        T: ColumnSpec,
+        C: Fn(&K::Archived) -> Ordering,
+        CK: Fn(&K) -> Ordering,
+    {
+        unsafe {
+            self.advance_to_first_ge_with_current_cmp(
+                row_group,
+                compare,
+                compare_key(&*key),
+                key,
+            )
+        }
+    }
+
+    /// Variant of `advance_to_first_ge` that takes the precomputed comparison
+    /// of the current cursor row, so callers that don't have a `Fn(&K)`
+    /// comparator (i.e. callers driven by `Fn(&K::Archived)` alone) can
+    /// supply `compare(archived)` directly without paying for a second
+    /// archive fetch.
+    unsafe fn advance_to_first_ge_with_current_cmp<N, T, C>(
+        &mut self,
+        row_group: &RowGroup<'_, K, A, N, T>,
+        compare: &C,
+        current_cmp: Ordering,
         key: &mut K,
     ) -> Result<bool, Error>
     where
@@ -2888,14 +2952,7 @@ where
     {
         unsafe {
             // Check the current position first. We might already be done.
-            let current_archived = self
-                .data
-                .archived_item(
-                    &row_group.factories,
-                    (self.row - self.data.first_row) as usize,
-                )
-                .fst();
-            if compare(current_archived) != Greater {
+            if current_cmp != Greater {
                 return Ok(true);
             }
 
@@ -3285,7 +3342,50 @@ where
     ///
     /// Returns an error only if I/O fails or the file is corrupt.  If this an
     /// error, then the position might be lost (and set to `Position::After`).
-    unsafe fn advance_to_first_ge<N, T, C>(
+    unsafe fn advance_to_first_ge<N, T, C, CK>(
+        &mut self,
+        row_group: &RowGroup<'_, K, A, N, T>,
+        compare: &C,
+        compare_key: &CK,
+        key: &mut K,
+    ) -> Result<(), Error>
+    where
+        T: ColumnSpec,
+        C: Fn(&K::Archived) -> Ordering,
+        CK: Fn(&K) -> Ordering,
+    {
+        unsafe {
+            match self {
+                Position::Before => {
+                    *self = Self::best_match::<N, T, _>(row_group, compare, Less, key)?;
+                }
+                Position::After { .. } => (),
+                Position::Row(path) => {
+                    match path.advance_to_first_ge(row_group, compare, compare_key, key) {
+                        Ok(false) => {
+                            // Discard `path`, which might now violate its internal
+                            // invariants (so don't even try to use it as a hint).
+                            *self = Position::After { hint: None };
+                        }
+                        Ok(true) => (),
+                        Err(error) => {
+                            // Discard `path`, which might now violate its internal
+                            // invariants (so don't even try to use it as a hint).
+                            *self = Position::After { hint: None };
+                            return Err(error);
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+
+    /// Variant of `advance_to_first_ge` for callers that don't have a
+    /// `Fn(&K) -> Ordering`. Fetches the archive of the current row to
+    /// compute the early-return comparison, preserving the prior behaviour
+    /// of `advance_to_first_ge` for archived-only callers.
+    unsafe fn advance_to_first_ge_archived<N, T, C>(
         &mut self,
         row_group: &RowGroup<'_, K, A, N, T>,
         compare: &C,
@@ -3302,16 +3402,23 @@ where
                 }
                 Position::After { .. } => (),
                 Position::Row(path) => {
-                    match path.advance_to_first_ge(row_group, compare, key) {
-                        Ok(false) => {
-                            // Discard `path`, which might now violate its internal
-                            // invariants (so don't even try to use it as a hint).
-                            *self = Position::After { hint: None };
-                        }
+                    let current_archived = path
+                        .data
+                        .archived_item(
+                            &row_group.factories,
+                            (path.row - path.data.first_row) as usize,
+                        )
+                        .fst();
+                    let current_cmp = compare(current_archived);
+                    match path.advance_to_first_ge_with_current_cmp(
+                        row_group,
+                        compare,
+                        current_cmp,
+                        key,
+                    ) {
+                        Ok(false) => *self = Position::After { hint: None },
                         Ok(true) => (),
                         Err(error) => {
-                            // Discard `path`, which might now violate its internal
-                            // invariants (so don't even try to use it as a hint).
                             *self = Position::After { hint: None };
                             return Err(error);
                         }
