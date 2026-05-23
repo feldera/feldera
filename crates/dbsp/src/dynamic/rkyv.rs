@@ -3,7 +3,9 @@ use crate::{
     derive_comparison_traits,
     storage::file::{DbspSerializer, Deserializer},
 };
-use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, archived_value, option::ArchivedOption};
+use rkyv::{
+    Archive, Archived, Deserialize, Fallible, Serialize, archived_value, option::ArchivedOption,
+};
 use std::{cmp::Ordering, marker::PhantomData, mem::transmute};
 
 /// Cross-type ordered comparison between an archived value and the original.
@@ -500,11 +502,17 @@ mod tests {
             assert_eq!(OrdRepr::ord_cmp(arch, &Some(5i64)), Ordering::Equal);
             assert_eq!(OrdRepr::ord_cmp(arch, &Some(10i64)), Ordering::Less);
             assert_eq!(OrdRepr::ord_cmp(arch, &Some(1i64)), Ordering::Greater);
-            assert_eq!(OrdRepr::ord_cmp(arch, &Option::<i64>::None), Ordering::Greater);
+            assert_eq!(
+                OrdRepr::ord_cmp(arch, &Option::<i64>::None),
+                Ordering::Greater
+            );
         });
         let none: Option<i64> = None;
         with_archived(&none, |arch| {
-            assert_eq!(OrdRepr::ord_cmp(arch, &Option::<i64>::None), Ordering::Equal);
+            assert_eq!(
+                OrdRepr::ord_cmp(arch, &Option::<i64>::None),
+                Ordering::Equal
+            );
             assert_eq!(OrdRepr::ord_cmp(arch, &Some(0i64)), Ordering::Less);
         });
     }
@@ -536,19 +544,13 @@ mod tests {
     #[test]
     fn cross_eq_ord_tup10_v4_layout() {
         // Tup10 uses the v4 macro layout (size > 8); fields go through IsNone semantics.
-        let base = Tup10::new(
-            1i64, 2u32, 3i16, 4u8, 5i8, 6u16, 7i32, 8u64, 9i128, 10u128,
-        );
+        let base = Tup10::new(1i64, 2u32, 3i16, 4u8, 5i8, 6u16, 7i32, 8u64, 9i128, 10u128);
         with_archived(&base, |arch| {
-            let same = Tup10::new(
-                1i64, 2u32, 3i16, 4u8, 5i8, 6u16, 7i32, 8u64, 9i128, 10u128,
-            );
-            let bigger_last = Tup10::new(
-                1i64, 2u32, 3i16, 4u8, 5i8, 6u16, 7i32, 8u64, 9i128, 11u128,
-            );
-            let smaller_first = Tup10::new(
-                0i64, 2u32, 3i16, 4u8, 5i8, 6u16, 7i32, 8u64, 9i128, 10u128,
-            );
+            let same = Tup10::new(1i64, 2u32, 3i16, 4u8, 5i8, 6u16, 7i32, 8u64, 9i128, 10u128);
+            let bigger_last =
+                Tup10::new(1i64, 2u32, 3i16, 4u8, 5i8, 6u16, 7i32, 8u64, 9i128, 11u128);
+            let smaller_first =
+                Tup10::new(0i64, 2u32, 3i16, 4u8, 5i8, 6u16, 7i32, 8u64, 9i128, 10u128);
             assert!(arch.eq(&same));
             assert!(!arch.eq(&bigger_last));
             assert_eq!(arch.partial_cmp(&same), Some(Ordering::Equal));

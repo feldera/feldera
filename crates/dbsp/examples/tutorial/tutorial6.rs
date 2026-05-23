@@ -40,7 +40,6 @@ dbsp::impl_ord_repr_for_struct! {
     [location, date, daily_vaccinations]
 }
 
-
 #[allow(clippy::type_complexity)]
 fn build_circuit(
     circuit: &mut RootCircuit,

@@ -7,8 +7,7 @@ use dbsp::{
     zset_set,
 };
 
-type Accumulator =
-    Stream<NestedCircuit, OrdIndexedZSet<Tup2<u64, u64>, Tup4<u64, u64, u64, u64>>>;
+type Accumulator = Stream<NestedCircuit, OrdIndexedZSet<Tup2<u64, u64>, Tup4<u64, u64, u64, u64>>>;
 
 fn main() -> Result<()> {
     const STEPS: usize = 2;

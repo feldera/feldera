@@ -352,35 +352,33 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         }
     });
 
-    let cross_eq_checks = fields
-        .iter()
-        .enumerate()
-        .zip(self_indexes.iter())
-        .map(|((idx, _), self_idx)| {
-            let get_name = format_ident!("get_t{}", idx);
-            quote! {
-                {
-                    let self_archived = self.#get_name();
-                    let other_field = &other.#self_idx;
-                    if ::dbsp::utils::IsNone::is_none(other_field) {
-                        self_archived.is_none()
-                    } else if let ::core::option::Option::Some(archived) = self_archived {
-                        ::core::cmp::PartialEq::eq(
-                            archived,
-                            ::dbsp::utils::IsNone::unwrap_or_self(other_field),
-                        )
-                    } else {
-                        false
+    let cross_eq_checks =
+        fields
+            .iter()
+            .enumerate()
+            .zip(self_indexes.iter())
+            .map(|((idx, _), self_idx)| {
+                let get_name = format_ident!("get_t{}", idx);
+                quote! {
+                    {
+                        let self_archived = self.#get_name();
+                        let other_field = &other.#self_idx;
+                        if ::dbsp::utils::IsNone::is_none(other_field) {
+                            self_archived.is_none()
+                        } else if let ::core::option::Option::Some(archived) = self_archived {
+                            ::core::cmp::PartialEq::eq(
+                                archived,
+                                ::dbsp::utils::IsNone::unwrap_or_self(other_field),
+                            )
+                        } else {
+                            false
+                        }
                     }
                 }
-            }
-        });
+            });
 
-    let cross_cmp_checks = fields
-        .iter()
-        .enumerate()
-        .zip(self_indexes.iter())
-        .map(|((idx, _), self_idx)| {
+    let cross_cmp_checks = fields.iter().enumerate().zip(self_indexes.iter()).map(
+        |((idx, _), self_idx)| {
             let get_name = format_ident!("get_t{}", idx);
             quote! {
                 {
@@ -408,13 +406,11 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
                     }
                 }
             }
-        });
+        },
+    );
 
-    let cross_ord_repr_checks = fields
-        .iter()
-        .enumerate()
-        .zip(self_indexes.iter())
-        .map(|((idx, _), self_idx)| {
+    let cross_ord_repr_checks = fields.iter().enumerate().zip(self_indexes.iter()).map(
+        |((idx, _), self_idx)| {
             let get_name = format_ident!("get_t{}", idx);
             quote! {
                 {
@@ -437,7 +433,8 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
                     }
                 }
             }
-        });
+        },
+    );
 
     let legacy_eq_checks = self_indexes
         .iter()

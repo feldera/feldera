@@ -2882,7 +2882,10 @@ where
             // Check the current position first. We might already be done.
             let current_archived = self
                 .data
-                .archived_item(&row_group.factories, (self.row - self.data.first_row) as usize)
+                .archived_item(
+                    &row_group.factories,
+                    (self.row - self.data.first_row) as usize,
+                )
                 .fst();
             if compare(current_archived) != Greater {
                 return Ok(true);
@@ -2923,9 +2926,12 @@ where
                 }
 
                 // Otherwise, our target (if any) must be below `index_block`.
-                let Some(child_idx) =
-                    index_block.find_best_match(row_group.factories.key_factory, &rows, compare, Less)
-                else {
+                let Some(child_idx) = index_block.find_best_match(
+                    row_group.factories.key_factory,
+                    &rows,
+                    compare,
+                    Less,
+                ) else {
                     // `rows.end` is inside `index_block` but the largest key is
                     // less than the target.
                     return Ok(false);

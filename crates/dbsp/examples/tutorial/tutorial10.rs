@@ -55,11 +55,12 @@ fn main() -> Result<()> {
                             (*end, Tup4(*start, *end, *cum_weight, *hopcnt))
                         })
                         .join(
-                            &edges
-                                .map_index(|Tup3(from, to, weight)| (*from, Tup3(*from, *to, *weight))),
+                            &edges.map_index(|Tup3(from, to, weight)| {
+                                (*from, Tup3(*from, *to, *weight))
+                            }),
                             |_end_from,
-                            Tup4(start, _end, cum_weight, hopcnt),
-                            Tup3(_from, to, weight)| {
+                             Tup4(start, _end, cum_weight, hopcnt),
+                             Tup3(_from, to, weight)| {
                                 Tup4(*start, *to, cum_weight + weight, hopcnt + 1)
                             },
                         )

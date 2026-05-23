@@ -39,7 +39,6 @@ dbsp::impl_ord_repr_for_struct! {
     [location, date, daily_vaccinations]
 }
 
-
 #[derive(
     Clone,
     Default,
@@ -68,7 +67,6 @@ dbsp::impl_ord_repr_for_struct! {
     [] ArchivedVaxMonthly as Repr<VaxMonthly>,
     [count, year, month]
 }
-
 
 #[allow(clippy::type_complexity)]
 fn build_circuit(

@@ -781,12 +781,7 @@ mod tests {
     ) -> anyhow::Result<(
         ZSetHandle<u64>,
         OutputHandle<
-            TypedBatch<
-                u64,
-                (),
-                i64,
-                Spine<FallbackWSet<dyn Data + 'static, DynWeightTyped<i64>>>,
-            >,
+            TypedBatch<u64, (), i64, Spine<FallbackWSet<dyn Data + 'static, DynWeightTyped<i64>>>>,
         >,
     )> {
         let (input, input_handle) = circuit.add_input_zset::<u64>();
