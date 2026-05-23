@@ -2463,17 +2463,22 @@ where
         P: Fn(&K) -> bool + Clone,
     {
         unsafe {
-            // User predicate needs a deserialized `K`. Use cmp_target on the
-            // archived form to materialise the key into a scratch buffer,
-            // then invoke the predicate.
+            // User predicate needs a deserialised `K`. Allocate one scratch
+            // buffer per call and reuse it across every binary-search
+            // compare; the previous `key_factory.with(...)` pattern
+            // allocated on every step.
             let key_factory = self.row_group.factories.key_factory;
+            let scratch = std::cell::UnsafeCell::new(key_factory.default_box());
             self.advance_to_first_ge(&|archived: &K::Archived| {
-                let mut ord = Less;
-                key_factory.with(&mut |scratch| {
-                    DeserializeDyn::deserialize(archived, scratch);
-                    ord = if predicate(&*scratch) { Less } else { Greater };
-                });
-                ord
+                // SAFETY: the closure is invoked sequentially by the binary
+                // search on this thread; `scratch` is never aliased.
+                let scratch_box: &mut Box<K> = &mut *scratch.get();
+                DeserializeDyn::deserialize(archived, &mut **scratch_box);
+                if predicate(&**scratch_box) {
+                    Less
+                } else {
+                    Greater
+                }
             })
         }
     }
@@ -2538,14 +2543,17 @@ where
         P: Fn(&K) -> bool + Clone,
     {
         unsafe {
+            // See `seek_forward_until` for the scratch-buffer pattern.
             let key_factory = self.row_group.factories.key_factory;
+            let scratch = std::cell::UnsafeCell::new(key_factory.default_box());
             self.rewind_to_last_le(&|archived: &K::Archived| {
-                let mut ord = Greater;
-                key_factory.with(&mut |scratch| {
-                    DeserializeDyn::deserialize(archived, scratch);
-                    ord = if !predicate(&*scratch) { Less } else { Greater };
-                });
-                ord
+                let scratch_box: &mut Box<K> = &mut *scratch.get();
+                DeserializeDyn::deserialize(archived, &mut **scratch_box);
+                if !predicate(&**scratch_box) {
+                    Less
+                } else {
+                    Greater
+                }
             })
         }
     }
