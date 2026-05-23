@@ -552,10 +552,32 @@ impl Varint {
             Self::B64 => dst.extend_from_slice(&(value as u64).to_le_bytes()),
         }
     }
+    #[inline]
     pub(crate) fn get(&self, src: &FBuf, offset: usize) -> u64 {
-        let mut raw = [0u8; 8];
-        raw[..self.len()].copy_from_slice(&src[offset..offset + self.len()]);
-        u64::from_le_bytes(raw)
+        let len = self.len();
+        // SAFETY: a single bounds check; each branch then issues one unaligned
+        // load of the right width. This avoids the bound-checked byte loads
+        // the compiler emits for `[bytes[0], bytes[1], ...]` patterns.
+        assert!(offset + len <= src.len(), "varint read out of bounds");
+        let ptr = unsafe { src.as_ptr().add(offset) };
+        unsafe {
+            match *self {
+                Self::B8 => *ptr as u64,
+                Self::B16 => (ptr.cast::<u16>()).read_unaligned() as u64,
+                Self::B24 => {
+                    let lo = (ptr.cast::<u16>()).read_unaligned() as u64;
+                    let hi = (*ptr.add(2) as u64) << 16;
+                    lo | hi
+                }
+                Self::B32 => (ptr.cast::<u32>()).read_unaligned() as u64,
+                Self::B48 => {
+                    let lo = (ptr.cast::<u32>()).read_unaligned() as u64;
+                    let hi = (ptr.add(4).cast::<u16>()).read_unaligned() as u64;
+                    lo | (hi << 32)
+                }
+                Self::B64 => (ptr.cast::<u64>()).read_unaligned(),
+            }
+        }
     }
     #[binrw::parser(reader, endian)]
     pub(crate) fn parse_opt() -> BinResult<Option<Varint>> {

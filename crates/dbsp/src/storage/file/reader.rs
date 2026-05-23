@@ -391,6 +391,7 @@ impl VarintReader {
             .map(|varint| VarintReader::new(buf, varint, start, count))
             .transpose()
     }
+    #[inline]
     fn get(&self, src: &FBuf, index: usize) -> u64 {
         debug_assert!(index < self.count);
         self.varint.get(src, self.start + self.varint.len() * index)
