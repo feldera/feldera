@@ -569,15 +569,15 @@ where
     }
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
-        let start = Instant::now();
         let cache = file.cache();
         #[allow(clippy::borrow_deref_ref)]
-        let (access, entry) = match cache.get(&*file.file_handle, node.location) {
-            Some(entry) => (
-                CacheAccess::Hit,
-                Self::from_cache_entry(entry, node.location)?,
-            ),
+        let entry = match cache.get(&*file.file_handle, node.location) {
+            Some(entry) => {
+                file.stats.record_hit(node.location);
+                Self::from_cache_entry(entry, node.location)?
+            }
             None => {
+                let start = Instant::now();
                 let block = file.read_block(node.location)?;
                 let entry = Self::from_raw_with_cache(
                     block,
@@ -586,10 +586,10 @@ where
                     file.file_handle.file_id(),
                     file.version,
                 )?;
-                (CacheAccess::Miss, entry)
+                file.stats.record_miss(start.elapsed(), node.location);
+                entry
             }
         };
-        file.stats.record(access, start.elapsed(), node.location);
 
         if entry.rows() != node.rows {
             return Err(CorruptionError::DataBlockWrongRows {
@@ -1054,21 +1054,22 @@ where
     }
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
-        let start = Instant::now();
         let cache = file.cache();
         let first_row = node.rows.start;
         #[allow(clippy::borrow_deref_ref)]
-        let (access, entry) = match cache.get(&*file.file_handle, node.location) {
+        let entry = match cache.get(&*file.file_handle, node.location) {
             Some(entry) => {
+                file.stats.record_hit(node.location);
                 let entry = Self::from_cache_entry(entry, node.location)?;
                 if entry.first_row != first_row {
                     return Err(Error::Corruption(CorruptionError::MultiplePaths(
                         node.location,
                     )));
                 }
-                (CacheAccess::Hit, entry)
+                entry
             }
             None => {
+                let start = Instant::now();
                 let block = file.read_block(node.location)?;
                 let entry = Self::from_raw_with_cache(
                     block,
@@ -1077,10 +1078,10 @@ where
                     file.file_handle.file_id(),
                     file.version,
                 )?;
-                (CacheAccess::Miss, entry)
+                file.stats.record_miss(start.elapsed(), node.location);
+                entry
             }
         };
-        file.stats.record(access, start.elapsed(), node.location);
 
         let expected_rows = node.rows.end - node.rows.start;
         let n_rows = entry.row_totals.get(&entry.raw, entry.row_totals.count - 1);
