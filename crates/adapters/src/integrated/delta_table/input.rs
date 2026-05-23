@@ -48,7 +48,7 @@ use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::select;
 use tokio::sync::watch::{Receiver, Sender, channel};
 use tokio::sync::{Semaphore, mpsc};
@@ -1263,6 +1263,7 @@ impl DeltaTableInputEndpointInner {
                 let new_version = version + 1;
 
                 let table_for_retry = Arc::clone(&table);
+                let read_log_start = Instant::now();
                 let entry = match self
                     .retry(
                         &format!(
@@ -1286,6 +1287,8 @@ impl DeltaTableInputEndpointInner {
                         if self.config.end_version.is_none()
                             || self.config.end_version.unwrap() >= new_version =>
                     {
+                        let read_log_elapsed = read_log_start.elapsed();
+                        let parse_actions_start = Instant::now();
                         let actions = match logstore::get_actions(new_version, &bytes) {
                             Ok(actions) => actions,
                             Err(e) => {
@@ -1299,8 +1302,10 @@ impl DeltaTableInputEndpointInner {
                                 break;
                             }
                         };
+                        let parse_actions_elapsed = parse_actions_start.elapsed();
 
                         version = new_version;
+                        let process_log_start = Instant::now();
                         if let Err(e) = self
                             .process_log_entry(
                                 new_version,
@@ -1315,6 +1320,11 @@ impl DeltaTableInputEndpointInner {
                             self.consumer.error(true, e, None);
                             break;
                         };
+                        info!(
+                            "delta_table {}: follow mode version {new_version}: read_log={read_log_elapsed:?}, parse_actions={parse_actions_elapsed:?}, process_log_entry={:?}",
+                            &self.endpoint_name,
+                            process_log_start.elapsed(),
+                        );
 
                         if let Some(end_version) = self.config.end_version
                             && end_version <= new_version
@@ -1927,18 +1937,25 @@ impl DeltaTableInputEndpointInner {
         receiver: &mut Receiver<PipelineState>,
         transaction: &Option<Option<String>>,
     ) -> Result<usize, String> {
+        let execute_start = Instant::now();
+        let wait_running_start = Instant::now();
         wait_running(receiver).await;
+        let wait_running_elapsed = wait_running_start.elapsed();
         let transaction = transaction.clone();
 
         // Limit the number of connectors simultaneously reading from Delta Lake.
+        let semaphore_start = Instant::now();
         let _token = DELTA_READER_SEMAPHORE.acquire().await.unwrap();
+        let semaphore_elapsed = semaphore_start.elapsed();
 
+        let stream_start = Instant::now();
         let mut stream = match dataframe.execute_stream().await {
             Err(e) => {
                 return Err(format!("{e:?}"));
             }
             Ok(stream) => stream,
         };
+        let stream_elapsed = stream_start.elapsed();
 
         // We declare the connector healthy at this point.
         self.consumer
@@ -1946,6 +1963,9 @@ impl DeltaTableInputEndpointInner {
 
         let mut num_batches = 0;
         let mut total_records = 0usize;
+        let mut fetch_batches_elapsed = Duration::ZERO;
+        let mut enqueue_batches_elapsed = Duration::ZERO;
+        let mut wait_running_in_loop_elapsed = Duration::ZERO;
 
         let queue = self.queue.clone();
 
@@ -1998,7 +2018,10 @@ impl DeltaTableInputEndpointInner {
         let mut timestamp = Utc::now();
 
         while let Some(batch) = stream.next().await {
+            let wait_start = Instant::now();
             wait_running(receiver).await;
+            wait_running_in_loop_elapsed += wait_start.elapsed();
+            let fetch_start = Instant::now();
             let batch = match batch {
                 Ok(batch) => batch,
                 Err(e) => {
@@ -2016,16 +2039,28 @@ impl DeltaTableInputEndpointInner {
                     return Err(format!("error retrieving batch {num_batches}: {e:?}"));
                 }
             };
+            fetch_batches_elapsed += fetch_start.elapsed();
             // info!("schema: {}", batch.schema());
             num_batches += 1;
             total_records += batch.num_rows();
 
             // Use the timestamp when the batch was retrieved as the ingestion timestamp.
+            let enqueue_start = Instant::now();
             job_queue.push_job((batch, timestamp)).await;
+            enqueue_batches_elapsed += enqueue_start.elapsed();
             timestamp = Utc::now();
         }
 
+        let flush_start = Instant::now();
         job_queue.flush().await;
+        let flush_elapsed = flush_start.elapsed();
+        info!(
+            "delta_table {}: execute_df_inner: wait_running={wait_running_elapsed:?}, semaphore={semaphore_elapsed:?}, execute_stream={stream_elapsed:?}, fetch_batches={fetch_batches_elapsed:?} ({} batches, {} records), enqueue_batches={enqueue_batches_elapsed:?}, wait_running_in_loop={wait_running_in_loop_elapsed:?}, flush={flush_elapsed:?}; total={:?}",
+            &self.endpoint_name,
+            num_batches,
+            total_records,
+            execute_start.elapsed(),
+        );
         Ok(total_records)
     }
 
@@ -2095,6 +2130,26 @@ impl DeltaTableInputEndpointInner {
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) -> AnyResult<()> {
+        let entry_start = Instant::now();
+        let num_adds = actions
+            .iter()
+            .filter(|action| matches!(action, Action::Add(add) if add.data_change))
+            .count();
+        let num_removes = actions
+            .iter()
+            .filter(|action| matches!(action, Action::Remove(remove) if remove.data_change))
+            .count();
+        let num_other = actions.len().saturating_sub(num_adds + num_removes);
+        info!(
+            "delta_table {}: processing log entry version {new_version}: {} actions ({} adds, {} removes, {} other), cdc={}",
+            &self.endpoint_name,
+            actions.len(),
+            num_adds,
+            num_removes,
+            num_other,
+            self.config.is_cdc(),
+        );
+
         if self.config.verbose > 0 {
             // Don't log actions we ignore to limit spurious logging. E.g., delta lake
             // optimization passes can generate thousand of noop actions.
@@ -2124,10 +2179,18 @@ impl DeltaTableInputEndpointInner {
         let timestamp = Utc::now();
 
         if self.config.is_cdc() {
+            let cdc_start = Instant::now();
             self.process_cdc_transaction(actions, table, cdc_delete_filter, input_stream, receiver)
                 .await?;
+            info!(
+                "delta_table {}: log entry version {new_version}: process_cdc_transaction took {:?}",
+                &self.endpoint_name,
+                cdc_start.elapsed(),
+            );
         } else {
+            let column_names_start = Instant::now();
             let column_names = self.used_column_list(table);
+            let column_names_elapsed = column_names_start.elapsed();
 
             let start_transaction = self.allocate_follow_transaction_label();
 
@@ -2139,6 +2202,8 @@ impl DeltaTableInputEndpointInner {
             // are applied before insert actions; however the delta standard doesn't
             // guarantee that actions occur in any particular order in the transaction log
             // entry.
+            let removes_start = Instant::now();
+            let mut remove_actions_processed = 0usize;
             for action in actions {
                 if matches!(action, Action::Remove(_)) {
                     self.process_action(
@@ -2150,9 +2215,13 @@ impl DeltaTableInputEndpointInner {
                         start_transaction.clone(),
                     )
                     .await?;
+                    remove_actions_processed += 1;
                 }
             }
+            let removes_elapsed = removes_start.elapsed();
 
+            let adds_start = Instant::now();
+            let mut add_actions_processed = 0usize;
             for action in actions {
                 if matches!(action, Action::Add(_)) {
                     self.process_action(
@@ -2164,11 +2233,18 @@ impl DeltaTableInputEndpointInner {
                         start_transaction.clone(),
                     )
                     .await?;
+                    add_actions_processed += 1;
                 }
             }
+            let adds_elapsed = adds_start.elapsed();
+            info!(
+                "delta_table {}: log entry version {new_version}: used_column_list={column_names_elapsed:?}, remove_actions={remove_actions_processed} in {removes_elapsed:?}, add_actions={add_actions_processed} in {adds_elapsed:?}",
+                &self.endpoint_name,
+            );
         }
 
         // Empty buffer to indicate checkpointable state.
+        let checkpoint_start = Instant::now();
         self.queue.push_entry(
             InputQueueEntry::new_with_aux(
                 timestamp,
@@ -2180,6 +2256,13 @@ impl DeltaTableInputEndpointInner {
             // If we started a transaction while processing the log entry, commit it now.
             .with_commit_transaction(true),
             Vec::new(),
+        );
+        let checkpoint_elapsed = checkpoint_start.elapsed();
+
+        info!(
+            "delta_table {}: log entry version {new_version}: checkpoint push took {checkpoint_elapsed:?}; total process_log_entry took {:?}",
+            &self.endpoint_name,
+            entry_start.elapsed(),
         );
 
         Ok(())
@@ -2221,6 +2304,7 @@ impl DeltaTableInputEndpointInner {
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) -> AnyResult<()> {
+        let cdc_start = Instant::now();
         // Collect Add and Remove file paths separately. The query below
         // subtracts Removes from Adds via `EXCEPT ALL` to cancel rewrites
         // that don't change logical data.
@@ -2244,6 +2328,11 @@ impl DeltaTableInputEndpointInner {
         // No Adds means no new rows to ingest (e.g. OPTIMIZE with
         // `data_change=false` on every action), so there is nothing to do.
         if adds.is_empty() {
+            info!(
+                "delta_table {}: CDC transaction has no add actions; skipping in {:?}",
+                &self.endpoint_name,
+                cdc_start.elapsed(),
+            );
             return Ok(());
         }
 
@@ -2259,7 +2348,9 @@ impl DeltaTableInputEndpointInner {
         // `process_cdc_transaction` is invoked serially from the single
         // dedicated `worker_task` loop, so the fixed table names
         // `cdc_adds`/`cdc_removes` cannot collide across calls.
+        let create_adds_start = Instant::now();
         let adds_table = Arc::new(self.create_parquet_table(table, adds, &description).await?);
+        let create_adds_elapsed = create_adds_start.elapsed();
         self.datafusion.register_table("cdc_adds", adds_table).map_err(|e| {
             anyhow!("internal error processing {description}; {REPORT_ERROR}; error registering 'cdc_adds' table: {e}")
         })?;
@@ -2288,16 +2379,27 @@ impl DeltaTableInputEndpointInner {
             "".to_string()
         };
 
-        let from_clause = if removes.is_empty() {
+        let has_removes = !removes.is_empty();
+        let from_clause = if !has_removes {
+            info!(
+                "delta_table {}: CDC {description}: create_adds_table={create_adds_elapsed:?}",
+                &self.endpoint_name,
+            );
             format!("cdc_adds {where_clause}")
         } else {
+            let create_removes_start = Instant::now();
             let removes_table = Arc::new(
                 self.create_parquet_table(table, removes, &description)
                     .await?,
             );
+            let create_removes_elapsed = create_removes_start.elapsed();
             self.datafusion.register_table("cdc_removes", removes_table).map_err(|e| {
                 anyhow!("internal error processing {description}; {REPORT_ERROR}; error registering 'cdc_removes' table: {e}")
             })?;
+            info!(
+                "delta_table {}: CDC {description}: create_adds_table={create_adds_elapsed:?}, create_removes_table={create_removes_elapsed:?}",
+                &self.endpoint_name,
+            );
             format!(
                 "(SELECT * FROM cdc_adds {where_clause} \
                   EXCEPT ALL \
@@ -2311,11 +2413,14 @@ impl DeltaTableInputEndpointInner {
         let order_by = self.config.cdc_order_by.as_ref().unwrap();
         let query = format!("SELECT * FROM {from_clause} ORDER BY {order_by}");
 
+        let compile_start = Instant::now();
         let df = self.datafusion.sql(&query).await.map_err(|e| {
             anyhow!("failed to compile the CDC query '{query}': {e}. This typically indicates one of: (1) `cdc_order_by` or `filter` is not a valid SQL expression for a query of the form `SELECT * FROM <table> WHERE <filter> ORDER BY <cdc_order_by>`; or (2) the Delta table contains a `Map` column, which the CDC deduplication step (`EXCEPT ALL`) does not yet support.")
         })?;
+        let compile_elapsed = compile_start.elapsed();
 
-        let _record_count = self
+        let execute_start = Instant::now();
+        let record_count = self
             .execute_df(
                 df,
                 true,
@@ -2328,6 +2433,12 @@ impl DeltaTableInputEndpointInner {
                 table.version(),
             )
             .await?;
+        let execute_elapsed = execute_start.elapsed();
+        info!(
+            "delta_table {}: CDC {description}: compile_query={compile_elapsed:?}, execute_df={execute_elapsed:?} (records={record_count}); total do_process_cdc_transaction={:?}",
+            &self.endpoint_name,
+            cdc_start.elapsed(),
+        );
 
         Ok(())
     }
@@ -2367,6 +2478,17 @@ impl DeltaTableInputEndpointInner {
         receiver: &mut Receiver<PipelineState>,
         start_transaction: Option<Option<String>>,
     ) -> AnyResult<()> {
+        let action_start = Instant::now();
+        let (action_kind, path) = match action {
+            Action::Add(add) if add.data_change => ("add", add.path.as_str()),
+            Action::Remove(remove)
+                if remove.data_change && self.config.cdc_delete_filter.is_none() =>
+            {
+                ("remove", remove.path.as_str())
+            }
+            _ => return Ok(()),
+        };
+
         let result = match action {
             Action::Add(add) if add.data_change => {
                 self.add_with_polarity(
@@ -2401,7 +2523,14 @@ impl DeltaTableInputEndpointInner {
         // If the table does not exist, there's no harm.
         let _ = self.datafusion.deregister_table("tmp_table");
 
-        result
+        result?;
+
+        info!(
+            "delta_table {}: processed {action_kind} action for file '{path}' in {:?}",
+            &self.endpoint_name,
+            action_start.elapsed(),
+        );
+        Ok(())
     }
 
     // TODO: here, as well as in `process_cdc_transaction`, we can get some potential speedup by only reading a subset
@@ -2419,21 +2548,25 @@ impl DeltaTableInputEndpointInner {
         receiver: &mut Receiver<PipelineState>,
         start_transaction: Option<Option<String>>,
     ) -> AnyResult<()> {
+        let add_start = Instant::now();
         let description = format!("file '{path}'");
 
         // See comment about `object_store_url` above.
         let full_path = format!("{}{}", table.log_store().object_store_url().as_str(), path);
 
         // Create a datafusion table backed by these files.
+        let create_table_start = Instant::now();
         let parquet_table = Arc::new(
             self.create_parquet_table(table, vec![full_path.clone()], &description)
                 .await?,
         );
+        let create_table_elapsed = create_table_start.elapsed();
 
         self.datafusion.register_table("tmp_table", parquet_table).map_err(|e| {
             anyhow!("internal error processing file {full_path}; {REPORT_ERROR}; error registering Parquet table: {e}")
         })?;
 
+        let compile_start = Instant::now();
         let df = if let Some(filter) = &self.config.filter {
             let query = format!("SELECT {column_names} FROM tmp_table where {filter}");
             self.datafusion.sql(&query).await.map_err(|e| {
@@ -2445,8 +2578,10 @@ impl DeltaTableInputEndpointInner {
                 anyhow!("internal error processing file {full_path}'; {REPORT_ERROR}; error compiling query '{query}': {e}")
             })?
         };
+        let compile_elapsed = compile_start.elapsed();
 
-        let _record_count = self
+        let execute_start = Instant::now();
+        let record_count = self
             .execute_df(
                 df,
                 polarity,
@@ -2459,6 +2594,12 @@ impl DeltaTableInputEndpointInner {
                 table.version(),
             )
             .await?;
+        let execute_elapsed = execute_start.elapsed();
+        info!(
+            "delta_table {}: {description}: create_parquet_table={create_table_elapsed:?}, compile_query={compile_elapsed:?}, execute_df={execute_elapsed:?} (records={record_count}, polarity={polarity}); total add_with_polarity={:?}",
+            &self.endpoint_name,
+            add_start.elapsed(),
+        );
 
         Ok(())
     }
