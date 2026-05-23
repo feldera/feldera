@@ -1207,8 +1207,13 @@ impl Runtime {
             .unwrap()
             .options
             .compression;
+        // Default to LZ4 on this branch: standalone bench shows +20-44%
+        // decompress speedup vs Snappy with unsafe features enabled. The
+        // expected production payoff is on the multi-threaded commit path
+        // where many mergers + workers compete for CPU; see BRANCH.md.
         let compression = match compression {
-            StorageCompression::Default | StorageCompression::Snappy => Some(Compression::Snappy),
+            StorageCompression::Default | StorageCompression::Lz4 => Some(Compression::Lz4),
+            StorageCompression::Snappy => Some(Compression::Snappy),
             StorageCompression::None => None,
         };
         Parameters::default().with_compression(compression)

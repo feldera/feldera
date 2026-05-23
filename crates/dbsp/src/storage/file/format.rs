@@ -616,6 +616,12 @@ fn next_multiple_of_pow2(offset: usize, alignment: usize) -> usize {
 pub enum Compression {
     /// [Snappy](https://en.wikipedia.org/wiki/Snappy_(compression)).
     Snappy = 1,
+
+    /// [LZ4](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) block
+    /// format. Typically 2-3x faster than Snappy to compress and decompress
+    /// at similar ratios. Useful when commit-phase merger CPU is the
+    /// bottleneck.
+    Lz4 = 2,
 }
 
 impl Compression {

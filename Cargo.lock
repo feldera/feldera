@@ -3865,6 +3865,7 @@ dependencies = [
  "inventory",
  "itertools 0.14.0",
  "libc",
+ "lz4_flex",
  "memory-stats",
  "metrics 0.23.1",
  "mimalloc-rust-sys",

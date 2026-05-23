@@ -362,6 +362,11 @@ pub enum StorageCompression {
 
     /// Use [Snappy](https://en.wikipedia.org/wiki/Snappy_(compression)) compression.
     Snappy,
+
+    /// Use [LZ4](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm))
+    /// block compression. Typically 2-3x faster than Snappy at similar
+    /// ratios.
+    Lz4,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

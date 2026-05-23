@@ -264,6 +264,7 @@ sltsqlvalue = { path = "sql-to-dbsp-compiler/lib/sltsqlvalue" }
 smallvec = { version = "1.15.0", features = ["serde", "write"] }
 smallstr = "0.3.0"
 snap = "1.1.1"
+lz4_flex = { version = "0.12", default-features = false, features = ["std"] }
 static-files = "0.2.3"
 static_assertions = "1.1.0"
 syn = "2.0.77"

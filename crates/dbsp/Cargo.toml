@@ -82,6 +82,7 @@ zip = { workspace = true }
 ouroboros = { workspace = true }
 tracing = { workspace = true }
 snap = { workspace = true }
+lz4_flex = { workspace = true }
 enum-map = { workspace = true }
 fastbloom = { workspace = true }
 roaring = { workspace = true }

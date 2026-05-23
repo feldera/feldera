@@ -322,6 +322,15 @@ pub enum CorruptionError {
         error: snap::Error,
     },
 
+    /// LZ4 decompression failed.
+    #[error("Compressed block ({location}) failed LZ4 decompression: {error}.")]
+    Lz4 {
+        /// Block location.
+        location: BlockLocation,
+        /// LZ4 error description.
+        error: String,
+    },
+
     /// Multiple paths to block.
     #[error("Multiple paths to block ({0}).")]
     MultiplePaths(BlockLocation),
@@ -1510,6 +1519,18 @@ fn decompress(
                     Err(error) => return Err(CorruptionError::Snappy { location, error }.into()),
                 }
                 Arc::new(decompressed)
+            }
+            Compression::Lz4 => {
+                let decompressed = lz4_flex::block::decompress_size_prepended(compressed)
+                    .map_err(|e| {
+                        Error::Corruption(CorruptionError::Lz4 {
+                            location,
+                            error: e.to_string(),
+                        })
+                    })?;
+                let mut buf = FBuf::with_capacity(decompressed.len());
+                buf.extend_from_slice(&decompressed);
+                Arc::new(buf)
             }
         }
     } else {

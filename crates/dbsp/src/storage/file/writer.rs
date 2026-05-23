@@ -173,7 +173,8 @@ impl Default for Parameters {
             min_branch: 32,
             #[cfg(test)]
             max_branch: usize::MAX,
-            compression: Some(Compression::Snappy),
+            // LZ4 is the branch default; see runtime::file_writer_parameters.
+            compression: Some(Compression::Lz4),
         }
     }
 }
@@ -1081,6 +1082,24 @@ impl BlockWriter {
                         self.encoder
                             .compress(block.as_slice(), bounce.as_mut_slice())
                             .unwrap()
+                    }
+                    Compression::Lz4 => {
+                        // lz4_flex block format doesn't carry the
+                        // decompressed length, so we write a 4-byte
+                        // little-endian length prefix ourselves and
+                        // compress directly into the bounce buffer.
+                        let max_len =
+                            lz4_flex::block::get_maximum_output_size(block.len()) + 4;
+                        if max_len > bounce.len() {
+                            bounce.resize(max_len, 0);
+                        }
+                        bounce[..4].copy_from_slice(&(block.len() as u32).to_le_bytes());
+                        let written = lz4_flex::block::compress_into(
+                            block.as_slice(),
+                            &mut bounce[4..],
+                        )
+                        .expect("lz4 compress");
+                        written + 4
                     }
                 };
 
