@@ -172,6 +172,24 @@ impl AtomicCacheStats {
         self.0[thread_type][access].record(duration, location);
     }
 
+    /// Fast path for cache hits: skips the timestamp call. Hits are nearly
+    /// instantaneous (the latency that matters lives on the miss path), so we
+    /// record only count and bytes.
+    pub fn record_hit(&self, location: BlockLocation) {
+        let Some(thread_type) = current_thread_type() else {
+            return;
+        };
+        self.0[thread_type][CacheAccess::Hit].record_untimed(location);
+    }
+
+    /// Records a cache miss with its elapsed time (covers the actual I/O).
+    pub fn record_miss(&self, duration: Duration, location: BlockLocation) {
+        let Some(thread_type) = current_thread_type() else {
+            return;
+        };
+        self.0[thread_type][CacheAccess::Miss].record(duration, location);
+    }
+
     /// Reads out the statistics for processing.
     pub fn read(&self) -> CacheStats {
         CacheStats(EnumMap::from_fn(|thread_type| {
@@ -235,6 +253,15 @@ impl AtomicCacheCounts {
             .fetch_add(location.size as u64, Ordering::Relaxed);
         self.elapsed_ns
             .fetch_add(duration.as_nanos() as u64, Ordering::Relaxed);
+    }
+
+    /// Records an access without timing. Used on the cache-hit fast path,
+    /// where `Instant::now()` + `elapsed()` would dominate the work; hits
+    /// are nanoseconds anyway so the timing has no useful meaning.
+    pub fn record_untimed(&self, location: BlockLocation) {
+        self.count.fetch_add(1, Ordering::Relaxed);
+        self.bytes
+            .fetch_add(location.size as u64, Ordering::Relaxed);
     }
 
     /// Reads out the counts for processing.
