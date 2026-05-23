@@ -176,6 +176,14 @@ harness = false
 name = "seek_key_exact"
 harness = false
 
+[[bench]]
+name = "seek_key_with"
+harness = false
+
+[[bench]]
+name = "seek_key_exact_profile"
+harness = false
+
 [[example]]
 name = "orgchart"
 
