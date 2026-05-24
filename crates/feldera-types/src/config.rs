@@ -528,19 +528,8 @@ pub struct SyncConfig {
     /// Default: 10
     pub upload_concurrency: Option<u8>,
 
-    /// When `true`, the pipeline starts in **standby** mode; processing doesn't
-    /// start until activation (`POST /activate`).
-    /// If this pipeline was previously activated and the storage has not been
-    /// cleared, the pipeline will auto activate, no newer checkpoints will be
-    /// fetched.
-    ///
-    /// Standby behavior depends on `start_from_checkpoint`:
-    /// - If `latest`, pipeline continuously fetches the latest available
-    ///   checkpoint until activated.
-    /// - If checkpoint UUID, pipeline fetches this checkpoint once and waits
-    ///   in standby until activated.
-    ///
-    /// Default: `false`
+    /// **Deprecated.** Use `initial=standby` when starting the pipeline instead.
+    #[deprecated(note = "Use `initial=standby` when starting the pipeline instead.")]
     #[schema(default = std::primitive::bool::default)]
     #[serde(default)]
     pub standby: bool,
@@ -615,10 +604,11 @@ fn default_retention_min_age() -> u32 {
 
 impl SyncConfig {
     pub fn validate(&self) -> Result<(), String> {
-        if self.standby && self.start_from_checkpoint.is_none() {
-            return Err(r#"invalid sync config: `standby` set to `true` but `start_from_checkpoint` not set.
-Standby mode requires `start_from_checkpoint` to be set.
-Consider setting `start_from_checkpoint` to `"latest"`."#.to_owned());
+        #[allow(deprecated)]
+        if self.standby {
+            return Err(
+                "The `standby` config field has been deprecated. Use `initial=standby` when starting the pipeline instead.".to_owned()
+            );
         }
 
         if let Some(ref rb) = self.read_bucket

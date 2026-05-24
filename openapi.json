@@ -2540,7 +2540,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Get the checkpoints for a pipeline",
-        "description": "Retrieve the current checkpoints made by a pipeline.",
+        "description": "Retrieve the current checkpoints made by a pipeline.\n\n**Stability note**: for multihost pipelines, this endpoint returns the\ncombined checkpoint list from all hosts.  The shape of this response may\nchange in a future release.",
         "operationId": "get_checkpoints",
         "parameters": [
           {
@@ -2555,11 +2555,135 @@
         ],
         "responses": {
           "200": {
-            "description": "Checkpoints retrieved successfully",
+            "description": "Checkpoints retrieved successfully. For multihost pipelines the list contains entries from all hosts; the shape of this response may change in a future release.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CheckpointMetadata"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "status": "Stopped",
+                        "desired_status": "Provisioned"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/checkpoints/remote": {
+      "get": {
+        "tags": [
+          "Pipeline Lifecycle"
+        ],
+        "summary": "List checkpoints in remote object storage",
+        "description": "Retrieve the list of checkpoints available in the configured remote object\nstorage (e.g., S3).  Requires the pipeline to be running with a sync\nstorage configuration.",
+        "operationId": "get_remote_checkpoints",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Remote checkpoints retrieved successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RemoteCheckpoint"
+                  }
                 }
               }
             }
@@ -12237,6 +12361,20 @@
         ],
         "description": "A SQL table or view. It has a name and a list of fields.\n\nMatches the Calcite JSON format."
       },
+      "RemoteCheckpoint": {
+        "type": "object",
+        "description": "A checkpoint that exists in remote object storage.",
+        "required": [
+          "uuid"
+        ],
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the checkpoint."
+          }
+        }
+      },
       "ReplayPolicy": {
         "type": "string",
         "enum": [
@@ -13468,8 +13606,9 @@
           },
           "standby": {
             "type": "boolean",
-            "description": "When `true`, the pipeline starts in **standby** mode; processing doesn't\nstart until activation (`POST /activate`).\nIf this pipeline was previously activated and the storage has not been\ncleared, the pipeline will auto activate, no newer checkpoints will be\nfetched.\n\nStandby behavior depends on `start_from_checkpoint`:\n- If `latest`, pipeline continuously fetches the latest available\ncheckpoint until activated.\n- If checkpoint UUID, pipeline fetches this checkpoint once and waits\nin standby until activated.\n\nDefault: `false`",
-            "default": false
+            "description": "**Deprecated.** Use `initial=standby` when starting the pipeline instead.",
+            "default": false,
+            "deprecated": true
           },
           "start_from_checkpoint": {
             "allOf": [

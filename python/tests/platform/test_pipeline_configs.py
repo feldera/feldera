@@ -45,10 +45,12 @@ def test_pipeline_runtime_config(pipeline_name):
                     "storage_class": "normal",
                 },
             },
-            lambda rc: rc.get("workers") == 100
-            and rc.get("resources", {}).get("cpu_cores_min") == 5
-            and rc.get("resources", {}).get("storage_mb_max") == 2000
-            and rc.get("resources", {}).get("storage_class") == "normal",
+            lambda rc: (
+                rc.get("workers") == 100
+                and rc.get("resources", {}).get("cpu_cores_min") == 5
+                and rc.get("resources", {}).get("storage_mb_max") == 2000
+                and rc.get("resources", {}).get("storage_class") == "normal"
+            ),
         ),
         (
             {"env": {"TEST_ENV": "value"}},

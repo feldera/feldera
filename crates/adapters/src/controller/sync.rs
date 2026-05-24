@@ -1,23 +1,25 @@
-#![allow(unused_imports)]
+#[cfg(feature = "feldera-enterprise")]
 use anyhow::Context;
-use std::sync::{
-    Arc, LazyLock, Mutex, Weak,
-    atomic::{AtomicU64, Ordering},
-};
+#[cfg(feature = "feldera-enterprise")]
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, LazyLock, atomic::AtomicU64};
 
+#[cfg(feature = "feldera-enterprise")]
 use dbsp::circuit::{CircuitStorageConfig, checkpointer::Checkpointer};
 use feldera_adapterlib::errors::journal::ControllerError;
+#[cfg(feature = "feldera-enterprise")]
+use feldera_storage::StoragePath;
 use feldera_storage::{
-    StorageBackend, StoragePath, checkpoint_synchronizer::CheckpointSynchronizer,
+    StorageBackend, checkpoint_synchronizer::CheckpointSynchronizer,
     histogram::ExponentialHistogram,
 };
+#[cfg(feature = "feldera-enterprise")]
 use feldera_types::{
     checkpoint::CheckpointMetadata,
-    config::{FileBackendConfig, StorageBackendConfig, SyncConfig},
+    config::{FileBackendConfig, StorageBackendConfig},
     constants::ACTIVATION_MARKER_FILE,
 };
-
-use crate::server::ServerState;
+use feldera_types::{checkpoint::HostInfo, config::SyncConfig};
 
 // Pull metrics
 /// Bytes transferred when pulling a checkpoint.
@@ -78,9 +80,11 @@ fn pull_and_gc(
     storage: Arc<dyn StorageBackend>,
     sync: &SyncConfig,
     prev: &mut uuid::Uuid,
+    host_info: Option<HostInfo>,
+    standby: bool,
 ) -> Result<CheckpointMetadata, ControllerError> {
     match SYNCHRONIZER
-        .pull(storage.clone(), sync.to_owned())
+        .pull(storage.clone(), sync.to_owned(), host_info, standby)
         .map_err(|e| ControllerError::checkpoint_fetch_error(format!("{e:?}")))
     {
         Err(err) => {
@@ -127,16 +131,69 @@ pub fn is_pull_necessary(storage: &CircuitStorageConfig) -> Option<&SyncConfig> 
 }
 
 #[cfg(feature = "feldera-enterprise")]
-pub fn pull_once(storage: &CircuitStorageConfig, sync: &SyncConfig) -> Result<(), ControllerError> {
-    pull_and_gc(storage.backend.clone(), sync, &mut uuid::Uuid::nil())?;
+pub fn pull_once(
+    storage: &CircuitStorageConfig,
+    sync: &SyncConfig,
+    host_info: Option<HostInfo>,
+) -> Result<(), ControllerError> {
+    pull_and_gc(
+        storage.backend.clone(),
+        sync,
+        &mut uuid::Uuid::nil(),
+        host_info,
+        false,
+    )?;
 
     Ok(())
+}
+
+/// Pulls the latest checkpoint from object storage directly using a storage
+/// backend, without a full `CircuitStorageConfig`.
+///
+/// Used by the multihost coordinator's pull endpoint, which has access to the
+/// storage backend but not the full circuit storage config.
+#[cfg(feature = "feldera-enterprise")]
+pub fn pull_once_with_backend(
+    storage: Arc<dyn StorageBackend>,
+    sync: &SyncConfig,
+    host_info: Option<HostInfo>,
+    standby: bool,
+) -> Result<(), ControllerError> {
+    pull_and_gc(storage, sync, &mut uuid::Uuid::nil(), host_info, standby)?;
+    Ok(())
+}
+
+#[cfg(not(feature = "feldera-enterprise"))]
+pub fn pull_once_with_backend(
+    _storage: Arc<dyn StorageBackend>,
+    _sync: &SyncConfig,
+    _host_info: Option<HostInfo>,
+    _standby: bool,
+) -> Result<(), ControllerError> {
+    Err(ControllerError::EnterpriseFeature("checkpoint pull"))
+}
+
+#[cfg(feature = "feldera-enterprise")]
+pub fn list_remote_checkpoints(
+    sync: &SyncConfig,
+) -> Result<Vec<feldera_types::checkpoint::RemoteCheckpoint>, ControllerError> {
+    SYNCHRONIZER
+        .list_remote(sync.to_owned())
+        .map_err(|e| ControllerError::checkpoint_fetch_error(format!("{e:?}")))
+}
+
+#[cfg(not(feature = "feldera-enterprise"))]
+pub fn list_remote_checkpoints(
+    _sync: &SyncConfig,
+) -> Result<Vec<feldera_types::checkpoint::RemoteCheckpoint>, ControllerError> {
+    Err(ControllerError::EnterpriseFeature("list S3 checkpoints"))
 }
 
 #[cfg(feature = "feldera-enterprise")]
 pub fn continuous_pull<F>(
     storage: &CircuitStorageConfig,
     is_activated: F,
+    host_info: Option<HostInfo>,
 ) -> Result<(), ControllerError>
 where
     F: Fn() -> bool,
@@ -194,7 +251,7 @@ where
     // Also, if we receive an activation signal, we run one more iteration to
     // ensure that we have the latest checkpoint before activating.
     loop {
-        match pull_and_gc(storage.backend.clone(), sync, &mut prev) {
+        match pull_and_gc(storage.backend.clone(), sync, &mut prev, host_info, true) {
             Err(err) => {
                 // On our final attempt to pull the checkpoint after activation, if we fail, we should error out and not activate with a potentially stale or missing checkpoint.
                 if pull_once_again_after_activation {
@@ -205,10 +262,6 @@ where
                 cpm = Some(c);
             }
         };
-
-        if !sync.standby {
-            return Ok(());
-        }
 
         if is_activated() {
             if pull_once_again_after_activation {

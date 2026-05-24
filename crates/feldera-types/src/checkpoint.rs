@@ -128,6 +128,33 @@ pub struct CheckpointMetadata {
     pub processed_records: Option<u64>,
 }
 
+/// Identifies a host within a multihost pipeline.
+///
+/// Used to scope checkpoint sync operations (push/pull) to the correct
+/// remote subdirectory.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct HostInfo {
+    /// Zero-based index of this host in the pipeline layout.
+    pub host_idx: usize,
+    /// Total number of hosts in the pipeline layout.
+    pub n_hosts: usize,
+}
+
+impl HostInfo {
+    /// Returns the remote storage subdirectory prefix for this host,
+    /// e.g. `"host0"` for index 0.
+    pub fn prefix(&self) -> String {
+        if self.host_idx >= self.n_hosts {
+            log::warn!(
+                "HostInfo::prefix: host_idx {} >= n_hosts {}",
+                self.host_idx,
+                self.n_hosts
+            );
+        }
+        format!("host{}", self.host_idx)
+    }
+}
+
 /// Format of `pspine-batches-*.dat` in storage.
 ///
 /// These files exist to be a simple format for higher-level code and outside
@@ -191,6 +218,13 @@ pub struct CheckpointDependenciesWrite<'a> {
     pub state_files: &'a [String],
 }
 
+/// A checkpoint that exists in remote object storage.
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct RemoteCheckpoint {
+    /// UUID of the checkpoint.
+    pub uuid: Uuid,
+}
+
 #[derive(Debug)]
 pub struct CheckpointSyncMetrics {
     pub duration: Duration,
@@ -198,9 +232,26 @@ pub struct CheckpointSyncMetrics {
     pub bytes: u64,
 }
 
+/// Status of a `POST /coordination/checkpoint/pull` operation.
+///
+/// Returned by `GET /coordination/checkpoint/pull_status`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum CheckpointPullStatus {
+    /// No pull has been requested yet.
+    #[default]
+    NotRequested,
+    /// A pull is currently in progress.
+    InProgress,
+    /// The pull completed successfully.
+    Ok,
+    /// The pull failed.
+    Error { error: String },
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{CheckpointDependencies, CheckpointDependenciesWrite};
+    use super::*;
 
     /// Legacy bare-array dependencies.json from older checkpoints must still
     /// parse, yielding an empty state-file list (no manifest verification).
@@ -247,5 +298,33 @@ mod tests {
         let deps: CheckpointDependencies = serde_json::from_str(&json).unwrap();
         assert_eq!(deps.state_files(), state_files.as_slice());
         assert_eq!(deps.batches(), batches.as_slice());
+    }
+
+    #[test]
+    fn host_info_prefix_formats_index() {
+        assert_eq!(
+            HostInfo {
+                host_idx: 0,
+                n_hosts: 2
+            }
+            .prefix(),
+            "host0"
+        );
+        assert_eq!(
+            HostInfo {
+                host_idx: 1,
+                n_hosts: 2
+            }
+            .prefix(),
+            "host1"
+        );
+        assert_eq!(
+            HostInfo {
+                host_idx: 42,
+                n_hosts: 100
+            }
+            .prefix(),
+            "host42"
+        );
     }
 }

@@ -15,6 +15,8 @@ use actix_web::{
     web::{self, Data as WebData, ReqData},
     HttpRequest, HttpResponse,
 };
+#[allow(unused_imports)]
+use feldera_types::checkpoint::RemoteCheckpoint;
 use feldera_types::query_params::{MetricsParameters, SamplyProfileGetParams, SamplyProfileParams};
 use feldera_types::{program_schema::SqlIdentifier, query_params::ActivateParams};
 use std::time::Duration;
@@ -1310,6 +1312,10 @@ pub(crate) async fn get_checkpoint_sync_status(
 /// Get the checkpoints for a pipeline
 ///
 /// Retrieve the current checkpoints made by a pipeline.
+///
+/// **Stability note**: for multihost pipelines, this endpoint returns the
+/// combined checkpoint list from all hosts.  The shape of this response may
+/// change in a future release.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -1318,7 +1324,10 @@ pub(crate) async fn get_checkpoint_sync_status(
     ),
     responses(
         (status = OK
-         , description = "Checkpoints retrieved successfully"
+         , description = "Checkpoints retrieved successfully. \
+                          For multihost pipelines the list contains entries \
+                          from all hosts; the shape of this response may \
+                          change in a future release."
          , content_type = "application/json"
          , body = CheckpointMetadata),
         (status = NOT_FOUND
@@ -1367,6 +1376,63 @@ pub(crate) async fn get_checkpoints(
         .increment_notify_counter(*tenant_id, &pipeline_name)
         .await?;
     result
+}
+
+/// List checkpoints in remote object storage
+///
+/// Retrieve the list of checkpoints available in the configured remote object
+/// storage (e.g., S3).  Requires the pipeline to be running with a sync
+/// storage configuration.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+         , description = "Remote checkpoints retrieved successfully."
+         , content_type = "application/json"
+         , body = Vec<RemoteCheckpoint>),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline Lifecycle"
+)]
+#[get("/pipelines/{pipeline_name}/checkpoints/remote")]
+pub(crate) async fn get_remote_checkpoints(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::GET,
+            "checkpoints/remote",
+            request.query_string(),
+            None,
+            None,
+        )
+        .await
 }
 
 /// Start a Samply profile

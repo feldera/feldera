@@ -197,8 +197,10 @@ def test_http_connector_status_across_restart_and_sql_changes(pipeline_name):
 
     wait_for_condition(
         "after table modification no http connectors remain",
-        lambda: len(_http_connector_names(pipeline)[0]) == 0
-        and len(_http_connector_names(pipeline)[1]) == 0,
+        lambda: (
+            len(_http_connector_names(pipeline)[0]) == 0
+            and len(_http_connector_names(pipeline)[1]) == 0
+        ),
         timeout_s=60.0,
         poll_interval_s=1.0,
     )

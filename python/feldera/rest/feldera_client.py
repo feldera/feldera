@@ -1584,6 +1584,10 @@ Reason: The pipeline is in a STOPPED state due to the following error:
     def get_checkpoints(self, pipeline_name: str):
         return self.http.get(path=f"/pipelines/{pipeline_name}/checkpoints")
 
+    def get_remote_checkpoints(self, pipeline_name: str) -> list[dict]:
+        """List checkpoints available in the configured remote object storage."""
+        return self.http.get(path=f"/pipelines/{pipeline_name}/checkpoints/remote")
+
     def get_pipeline_events(
         self, pipeline_name: str, *, selector: str = "status"
     ) -> list[dict]:

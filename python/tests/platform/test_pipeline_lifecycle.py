@@ -138,8 +138,10 @@ def test_pipeline_start_without_compiling(pipeline_name):
     pipeline = Pipeline.get(pipeline_name, TEST_CLIENT)
     wait_for_condition(
         "program status moves past Pending/CompilingSql",
-        lambda: pipeline.program_status()
-        not in (ProgramStatus.Pending, ProgramStatus.CompilingSql),
+        lambda: (
+            pipeline.program_status()
+            not in (ProgramStatus.Pending, ProgramStatus.CompilingSql)
+        ),
         timeout_s=1800.0,
         poll_interval_s=1.0,
     )

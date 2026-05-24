@@ -56,12 +56,13 @@ use feldera_types::adapter_stats::{
     PipelineStatsErrorsResponse,
 };
 use feldera_types::checkpoint::{
-    CheckpointFailure, CheckpointResponse, CheckpointStatus, CheckpointSyncFailure,
-    CheckpointSyncResponse, CheckpointSyncStatus,
+    CheckpointFailure, CheckpointPullStatus, CheckpointResponse, CheckpointStatus,
+    CheckpointSyncFailure, CheckpointSyncResponse, CheckpointSyncStatus, HostInfo,
 };
 use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
+use feldera_types::config::SyncConfig;
 use feldera_types::constants::STATUS_FILE;
 use feldera_types::coordination::{
     AdHocScan, CoordinationActivate, CoordinationStatus, Labels, RestartArgs, Step, StepRequest,
@@ -292,6 +293,20 @@ pub(crate) struct ServerState {
 
     storage: Option<Arc<dyn StorageBackend>>,
 
+    /// Sync configuration, extracted from the storage backend at startup.
+    ///
+    /// Used by the `/coordination/checkpoint/pull` endpoint to pull checkpoints
+    /// from object storage on behalf of the multihost coordinator.
+    sync_config: Option<SyncConfig>,
+
+    /// Host identity of this pod within a multihost pipeline, derived from
+    /// `--host-id` and `config.global.hosts` at startup.  `None` for solo
+    /// pipelines.
+    host_info: Option<HostInfo>,
+
+    /// Status of the most recent background checkpoint pull.
+    pull_state: Mutex<CheckpointPullStatus>,
+
     // rate limiter based on tags
     // NOTE: we assume that there are a finite small number
     // of tags, so using String is fine.
@@ -316,6 +331,7 @@ struct Lease {
 }
 
 impl ServerState {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         phase: PipelinePhase,
         md: String,
@@ -323,6 +339,8 @@ impl ServerState {
         bootstrap_policy: BootstrapPolicy,
         deployment_id: Uuid,
         storage: Option<Arc<dyn StorageBackend>>,
+        sync_config: Option<SyncConfig>,
+        host_info: Option<HostInfo>,
     ) -> Self {
         // Max 10 errors per minute
         let rate_limiter = TokenBucketRateLimiter::new(10, Duration::from_secs(60));
@@ -337,6 +355,9 @@ impl ServerState {
             bootstrap_policy: Atomic::new(bootstrap_policy),
             deployment_id,
             storage,
+            sync_config,
+            host_info,
+            pull_state: Default::default(),
             rate_limiter,
             samply_state: Default::default(),
             coordination_activate: Default::default(),
@@ -352,6 +373,8 @@ impl ServerState {
             RuntimeDesiredStatus::Paused,
             BootstrapPolicy::Allow,
             deployment_id,
+            None,
+            None,
             None,
         )
     }
@@ -732,6 +755,10 @@ pub fn run_server(
             return Err(ControllerError::InvalidInitialStatus(initial_status));
         }
 
+        let host_info = args.host_id.map(|host_idx| HostInfo {
+            host_idx,
+            n_hosts: config.global.hosts,
+        });
         let state = WebData::new(ServerState::new(
             PipelinePhase::Initializing(InitializationState::Starting),
             md,
@@ -739,6 +766,8 @@ pub fn run_server(
             bootstrap_policy,
             args.deployment_id,
             builder.storage().clone(),
+            builder.sync_config(),
+            host_info,
         ));
 
         // Initialize the pipeline in a separate thread.  On success, this thread
@@ -1225,6 +1254,7 @@ where
         .service(checkpoint)
         .service(checkpoint_status)
         .service(checkpoints)
+        .service(remote_checkpoints)
         .service(checkpoint_sync)
         .service(sync_checkpoint_status)
         .service(suspend)
@@ -1244,6 +1274,9 @@ where
         .service(coordination_checkpoint_status)
         .service(coordination_checkpoint_prepare)
         .service(coordination_checkpoint_release)
+        .service(coordination_checkpoint_pull)
+        .service(coordination_checkpoint_pull_status)
+        .service(coordination_checkpoint_push)
         .service(coordination_transaction_status)
         .service(coordination_completion_status)
         .service(coordination_adhoc_catalog)
@@ -1917,12 +1950,23 @@ fn get_checkpoints(state: &ServerState) -> Result<VecDeque<CheckpointMetadata>, 
 async fn checkpoint_sync(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     let controller = state.controller()?;
 
+    if controller.layout().is_multihost() {
+        return Ok(HttpResponse::BadRequest().json(ErrorResponse {
+            message: "checkpoint sync is not supported directly on multihost pipelines; \
+                      sync requests must go through the coordinator via \
+                      `/coordination/checkpoint/push`"
+                .to_string(),
+            error_code: "400".into(),
+            details: serde_json::Value::Null,
+        }));
+    }
+
     let Some(last_checkpoint) = get_checkpoints(&state)?.back().map(|c| c.uuid) else {
         return Ok(HttpResponse::BadRequest().json(ErrorResponse {
-                    message: "no checkpoints found; make a POST request to `/checkpoint` to make a new checkpoint".to_string(),
-                    error_code: "400".into(),
-                    details: serde_json::Value::Null,
-                }));
+            message: "no checkpoints found; make a POST request to `/checkpoint` to make a new checkpoint".to_string(),
+            error_code: "400".into(),
+            details: serde_json::Value::Null,
+        }));
     };
 
     spawn(async move {
@@ -1935,6 +1979,47 @@ async fn checkpoint_sync(state: WebData<ServerState>) -> Result<HttpResponse, Pi
     });
 
     Ok(HttpResponse::Accepted().json(CheckpointSyncResponse::new(last_checkpoint)))
+}
+
+/// Request body for `POST /coordination/checkpoint/push`.
+#[derive(Deserialize)]
+struct CoordinationPushBody {
+    /// UUID of the local checkpoint to push to object storage.
+    uuid: Uuid,
+}
+
+/// Triggers a push of a specific checkpoint to object storage.
+///
+/// Called by the multihost coordinator to direct each pod to sync a particular
+/// checkpoint UUID.  The coordinator selects the same logical step for all pods
+/// before calling this endpoint, ensuring all pods' remote catalogs converge
+/// on a consistent snapshot.
+#[post("/coordination/checkpoint/push")]
+async fn coordination_checkpoint_push(
+    state: WebData<ServerState>,
+    body: web::Json<CoordinationPushBody>,
+) -> Result<HttpResponse, PipelineError> {
+    let uuid = body.into_inner().uuid;
+    let controller = state.controller()?;
+
+    if get_checkpoints(&state)?.iter().all(|c| c.uuid != uuid) {
+        return Ok(HttpResponse::BadRequest().json(ErrorResponse {
+            message: format!("checkpoint '{uuid}' not found in local storage"),
+            error_code: "400".into(),
+            details: serde_json::Value::Null,
+        }));
+    }
+
+    spawn(async move {
+        let result = controller.async_sync_checkpoint(uuid).await;
+        state
+            .sync_checkpoint_state
+            .lock()
+            .unwrap()
+            .completed(uuid, result);
+    });
+
+    Ok(HttpResponse::Accepted().json(CheckpointSyncResponse::new(uuid)))
 }
 
 /// Initiates a checkpoint and returns its sequence number.  The caller may poll
@@ -1963,6 +2048,28 @@ async fn checkpoint_status(state: WebData<ServerState>) -> impl Responder {
 #[get("/checkpoints")]
 async fn checkpoints(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     Ok(HttpResponse::Ok().json(get_checkpoints(&state)?))
+}
+
+/// List checkpoints available in the configured remote object storage.
+#[get("/checkpoints/remote")]
+async fn remote_checkpoints(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    let sync = state
+        .sync_config
+        .clone()
+        .ok_or_else(|| PipelineError::ControllerError {
+            error: Arc::new(ControllerError::checkpoint_fetch_error(
+                "listing remote checkpoints requires sync to be configured".to_string(),
+            )),
+        })?;
+
+    let result = spawn_blocking(move || crate::controller::sync::list_remote_checkpoints(&sync))
+        .await
+        .map_err(|e| PipelineError::ControllerError {
+            error: Arc::new(ControllerError::checkpoint_fetch_error(format!("{e}"))),
+        })?
+        .map_err(|e| PipelineError::ControllerError { error: Arc::new(e) })?;
+
+    Ok(HttpResponse::Ok().json(result))
 }
 
 #[get("/checkpoint/sync_status")]
@@ -2590,6 +2697,99 @@ async fn coordination_checkpoint_release(
     Ok(HttpResponse::Ok().finish())
 }
 
+/// Request body for `POST /coordination/checkpoint/pull`.
+#[derive(Deserialize)]
+struct CoordinationPullBody {
+    #[serde(default)]
+    standby: bool,
+}
+
+/// Pulls the latest checkpoint from object storage into local storage.
+///
+/// Returns 202 Accepted and starts a background pull.  If a pull is already in
+/// progress, returns 200 OK without starting a new one.  Poll
+/// `GET /coordination/checkpoint/pull_status` for the result.  Fails
+/// synchronously only if the pipeline is already running or storage/sync config
+/// is absent.
+#[post("/coordination/checkpoint/pull")]
+async fn coordination_checkpoint_pull(
+    state: WebData<ServerState>,
+    body: web::Json<CoordinationPullBody>,
+) -> Result<HttpResponse, PipelineError> {
+    if matches!(state.phase(), PipelinePhase::InitializationComplete) {
+        return Err(PipelineError::ControllerError {
+            error: Arc::new(ControllerError::checkpoint_fetch_error(
+                "checkpoint pull is not allowed while the pipeline is already running".to_string(),
+            )),
+        });
+    }
+
+    let storage = state
+        .storage
+        .clone()
+        .ok_or_else(|| PipelineError::ControllerError {
+            error: Arc::new(ControllerError::checkpoint_fetch_error(
+                "checkpoint pull requires storage to be configured".to_string(),
+            )),
+        })?;
+    let sync = state
+        .sync_config
+        .clone()
+        .ok_or_else(|| PipelineError::ControllerError {
+            error: Arc::new(ControllerError::checkpoint_fetch_error(
+                "checkpoint pull requires sync to be configured".to_string(),
+            )),
+        })?;
+
+    let host_info = state.host_info;
+    let standby = body.into_inner().standby;
+
+    {
+        let mut pull_state = state.pull_state.lock().unwrap();
+        if matches!(*pull_state, CheckpointPullStatus::InProgress) {
+            return Ok(HttpResponse::Ok().finish());
+        }
+        *pull_state = CheckpointPullStatus::InProgress;
+    }
+    info!("coordination checkpoint pull: host_info={host_info:?} standby={standby}");
+
+    spawn(async move {
+        let result = spawn_blocking(move || {
+            crate::controller::sync::pull_once_with_backend(storage, &sync, host_info, standby)
+        })
+        .await
+        .unwrap();
+
+        let new_status = match result {
+            Ok(()) => {
+                info!("coordination checkpoint pull: done");
+                CheckpointPullStatus::Ok
+            }
+            Err(e) => {
+                error!("coordination checkpoint pull failed: {e:?}");
+                CheckpointPullStatus::Error {
+                    error: e.to_string(),
+                }
+            }
+        };
+        *state.pull_state.lock().unwrap() = new_status;
+    });
+
+    Ok(HttpResponse::Accepted().finish())
+}
+
+/// Returns the status of the most recent `POST /coordination/checkpoint/pull`.
+///
+/// Returns one of:
+/// - `{"status": "not_requested"}` — no pull has been requested yet.
+/// - `{"status": "in_progress"}` — a pull is currently running.
+/// - `{"status": "ok"}` — the pull completed successfully.
+/// - `{"status": "error", "error": "..."}` — the pull failed.
+#[get("/coordination/checkpoint/pull_status")]
+async fn coordination_checkpoint_pull_status(state: WebData<ServerState>) -> HttpResponse {
+    HttpResponse::Ok().json(state.pull_state.lock().unwrap().clone())
+}
+
 #[get("/coordination/transaction/status")]
 async fn coordination_transaction_status(
     state: WebData<ServerState>,
@@ -2895,6 +3095,8 @@ mod test_http_helpers {
             RuntimeDesiredStatus::Paused,
             BootstrapPolicy::Allow,
             deployment_id,
+            None,
+            None,
             None,
         ));
         let state_clone = state.clone();

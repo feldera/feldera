@@ -1,6 +1,7 @@
 import random
 import sys
 import time
+import warnings
 from typing import Optional
 from uuid import UUID, uuid4
 
@@ -36,6 +37,14 @@ def storage_cfg(
     retention_min_age: int = 0,
     read_bucket: Optional[str] = None,
 ) -> dict:
+    if standby:
+        warnings.warn(
+            "The 'standby' storage config field is deprecated. "
+            "Use pipeline.start_standby() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
     # MinIO credentials are read here (not at import time) so collection
     # does not blow up in environments where they are unset.
     access_key = required_env("CI_K8S_MINIO_ACCESS_KEY_ID")
@@ -50,7 +59,6 @@ def storage_cfg(
         "region": MINIO_REGION,
         "start_from_checkpoint": start_from_checkpoint,
         "fail_if_no_checkpoint": strict,
-        "standby": standby,
         "pull_interval": pull_interval,
         "push_interval": push_interval,
         "retention_min_count": retention_min_count,
@@ -69,44 +77,46 @@ def storage_cfg(
 
 
 class TestCheckpointSync(SharedTestPipeline):
-    @enterprise_only
-    @single_host_only
-    def test_checkpoint_sync(
-        self,
-        from_uuid: bool = False,
-        random_uuid: bool = False,
-        clear_storage: bool = True,
-        auth_err: bool = False,
-        strict: bool = False,
-        expect_empty: bool = False,
-        standby: bool = False,
-        ft_interval: int = 60,
-        automated_checkpoint: bool = False,
-        automated_sync_interval: Optional[int] = None,
-    ):
-        """
-        CREATE TABLE t0 (c0 INT, c1 VARCHAR);
-        CREATE MATERIALIZED VIEW v0 AS SELECT * FROM t0;
-        """
+    def _wait_for_standby_checkpoint_pull(self, pipeline, timeout_s: float = 120):
+        end = time.monotonic() + timeout_s
+        for log in pipeline.logs():
+            if "checkpoint pulled successfully" in log:
+                return
+            if time.monotonic() > end:
+                raise TimeoutError(
+                    f"{pipeline.name} timed out waiting to pull checkpoint"
+                )
 
+    def _configure_and_start(
+        self,
+        ft_interval: int = 60,
+        push_interval: Optional[int] = None,
+        retention_min_age: int = 0,
+    ):
+        """Configure the pipeline with AtLeastOnce FT and start it."""
         storage_config = storage_cfg(
             self.pipeline.name,
-            push_interval=automated_sync_interval,
+            push_interval=push_interval,
             retention_min_count=1,
-            retention_min_age=5 if from_uuid else 0,
+            retention_min_age=retention_min_age,
         )
-        ft = FaultToleranceModel.AtLeastOnce
-
         self.pipeline.set_runtime_config(
             RuntimeConfig(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
-                fault_tolerance_model=ft,
+                fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
                 storage=Storage(config=storage_config),
                 checkpoint_interval_secs=ft_interval,
             )
         )
         self.pipeline.start()
+
+    def _insert_data_and_wait(self):
+        """Insert random rows and block until the pipeline processes them all.
+
+        Returns (processed, got_before) where got_before is the view snapshot.
+        """
+        before = self.pipeline.stats().global_metrics.total_processed_records
 
         random.seed(time.time())
         total = random.randint(10, 20)
@@ -116,17 +126,14 @@ class TestCheckpointSync(SharedTestPipeline):
 
         start = time.monotonic()
         timeout = 5
-
         while True:
             processed = self.pipeline.stats().global_metrics.total_processed_records
-            if processed == total:
+            if processed == before + total:
                 break
-
             if time.monotonic() - start > timeout:
                 raise TimeoutError(
                     f"timed out while waiting for pipeline to process {total} records"
                 )
-
             time.sleep(0.1)
 
         got_before = list(self.pipeline.query("SELECT * FROM v0"))
@@ -134,87 +141,125 @@ class TestCheckpointSync(SharedTestPipeline):
 
         if len(got_before) != processed:
             raise RuntimeError(
-                f"adhoc query returned {len(got_before)} but {processed} records were processed: {got_before}"
+                f"adhoc query returned {len(got_before)} but {processed} records were "
+                f"processed: {got_before}"
             )
 
+        return processed, got_before
+
+    def _wait_for_automated_checkpoint(self, processed):
+        """Poll until an automated checkpoint covers all *processed* records.
+
+        In multihost pipelines UUIDs are generated independently per pod and
+        cannot be compared across pods, so we track steps instead.
+
+        Returns (chk_uuid, chk_steps).
+        """
         chk_uuid = None
+        chk_steps = None
 
-        if not automated_checkpoint:
-            self.pipeline.checkpoint(wait=True)
-        else:
-            # Wait for at least one automated checkpoint to be created with current data.
-            chk_uuid_holder = {"value": None}
+        def checkpoint_created() -> bool:
+            nonlocal chk_uuid, chk_steps
+            chks = self.pipeline.checkpoints()
+            # Group by steps so that multihost totals are summed correctly.
+            by_steps: dict = {}
+            for c in chks:
+                by_steps.setdefault(c.steps, []).append(c)
+            for steps_val, step_chks in by_steps.items():
+                step_total = sum(c.processed_records for c in step_chks)
+                print(
+                    f"Total: {step_total}, chks: {[chk.to_dict() for chk in step_chks]}",
+                    file=sys.stderr,
+                )
+                # processed_records is partitioned across pods (not replicated),
+                # so summing per-pod values gives the global total.
+                if step_total == processed:
+                    chk_uuid = step_chks[0].uuid
+                    chk_steps = steps_val
+                    return True
+            return False
 
-            def checkpoint_created() -> bool:
-                chks = self.pipeline.checkpoints()
-                chk = next((x for x in chks if x.processed_records == processed), None)
-                if chk is None:
+        wait_for_condition(
+            "automated checkpoint is created for current processed records",
+            checkpoint_created,
+            timeout_s=30.0,
+            poll_interval_s=0.5,
+        )
+        return chk_uuid, chk_steps
+
+    def _checkpoint_steps(self, synced_uuid) -> Optional[int]:
+        """Return the step count for *synced_uuid*, or None if not found."""
+        return next(
+            (
+                c.steps
+                for c in self.pipeline.checkpoints()
+                if str(c.uuid) == str(synced_uuid)
+            ),
+            None,
+        )
+
+    def _wait_for_automated_sync(self, chk_uuid=None, chk_steps=None):
+        """Poll until the periodic sync has uploaded a checkpoint at least as recent as *chk_uuid*."""
+
+        def checkpoint_sync_completed() -> bool:
+            try:
+                synced = self.pipeline.last_successful_checkpoint_sync()
+                print("Automatically synced checkpoint UUID:", synced, file=sys.stderr)
+                if synced is None:
                     return False
-                chk_uuid_holder["value"] = chk.uuid
-                return True
+                if chk_uuid is None:
+                    return True
+                s_steps = self._checkpoint_steps(synced)
+                if chk_steps is not None and s_steps is not None:
+                    return s_steps >= chk_steps
+                return UUID(str(synced)) >= UUID(str(chk_uuid))
+            except RuntimeError:
+                return False
 
-            wait_for_condition(
-                "automated checkpoint is created for current processed records",
-                checkpoint_created,
-                timeout_s=30.0,
-                poll_interval_s=0.5,
-            )
-            chk_uuid = chk_uuid_holder["value"]
+        wait_for_condition(
+            "automated checkpoint sync completes",
+            checkpoint_sync_completed,
+            timeout_s=30.0,
+            poll_interval_s=0.5,
+        )
 
-        print("Checkpoint UUID:", chk_uuid, file=sys.stderr)
-        time.sleep(1)
+    def _sync_and_verify(self, chk_uuid=None, chk_steps=None):
+        """Trigger a manual sync and assert it covers *chk_uuid*. Returns the synced UUID."""
+        uuid = self.pipeline.sync_checkpoint(wait=True)
+        print("Synced Checkpoint UUID:", uuid, file=sys.stderr)
+        if chk_uuid is not None:
+            s_steps = self._checkpoint_steps(uuid)
+            if chk_steps is not None and s_steps is not None:
+                assert s_steps >= chk_steps
+            else:
+                assert UUID(str(uuid)) >= UUID(str(chk_uuid))
+        return uuid
 
-        if automated_sync_interval is not None:
-
-            def checkpoint_sync_completed() -> bool:
-                try:
-                    synced = self.pipeline.last_successful_checkpoint_sync()
-                    print(
-                        "Automatically synced checkpoint UUID:", synced, file=sys.stderr
-                    )
-                    if synced is not None and chk_uuid is not None:
-                        if synced >= UUID(chk_uuid):
-                            return True
-                        return False
-                    if synced is not None:
-                        return True
-                    return False
-                except RuntimeError:
-                    return False
-
-            wait_for_condition(
-                "automated checkpoint sync completes",
-                checkpoint_sync_completed,
-                timeout_s=30.0,
-                poll_interval_s=0.5,
-            )
-        else:
-            uuid = self.pipeline.sync_checkpoint(wait=True)
-            print("Synced Checkpoint UUID:", uuid, file=sys.stderr)
-            if chk_uuid is not None:
-                assert UUID(uuid) >= UUID(chk_uuid)
-
+    def _restart_from_checkpoint(
+        self,
+        start_from,
+        ft_interval: int = 60,
+        auth_err: bool = False,
+        strict: bool = False,
+        standby: bool = False,
+        clear_storage: bool = True,
+    ):
+        """Stop the running pipeline and restart it from *start_from*."""
         self.pipeline.stop(force=True)
-
         if clear_storage:
             self.pipeline.clear_storage()
 
-        if random_uuid:
-            uuid = uuid4()
-
-        # Restart pipeline from checkpoint
         storage_config = storage_cfg(
             pipeline_name=self.pipeline.name,
-            start_from_checkpoint=uuid if from_uuid else "latest",
+            start_from_checkpoint=start_from,
             auth_err=auth_err,
             strict=strict,
-            standby=standby,
         )
         self.pipeline.set_runtime_config(
             RuntimeConfig(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
-                fault_tolerance_model=ft,
+                fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
                 storage=Storage(config=storage_config),
                 checkpoint_interval_secs=ft_interval,
             )
@@ -224,72 +269,225 @@ class TestCheckpointSync(SharedTestPipeline):
             self.pipeline.start()
         else:
             self.pipeline.start_standby()
+            self._wait_for_standby_checkpoint_pull(self.pipeline, timeout_s=120)
+            assert self.pipeline.status() == PipelineStatus.STANDBY
+            self.pipeline.activate()
 
-            # wait for the pipeline to initialize
-            start = time.monotonic()
-            # wait for a maximum of 120 seconds for the pipeline to provison
-            end = start + 120
+    # =========================================================================
+    # Tests
+    # =========================================================================
 
-            # wait for the pipeline to finish provisoning
-            for log in self.pipeline.logs():
-                if "checkpoint pulled successfully" in log:
-                    break
+    @enterprise_only
+    def test_checkpoint_sync(self):
+        """
+        CREATE TABLE t0 (c0 INT, c1 VARCHAR);
+        CREATE MATERIALIZED VIEW v0 AS SELECT * FROM t0;
+        """
+        self._configure_and_start()
+        _, got_before = self._insert_data_and_wait()
+        self.pipeline.checkpoint(wait=True)
+        time.sleep(1)
+        self._sync_and_verify()
 
-                if time.monotonic() > end:
-                    raise TimeoutError(
-                        f"{self.pipeline.name} timed out waiting to pull checkpoint"
-                    )
-
-            if standby:
-                assert self.pipeline.status() == PipelineStatus.STANDBY
-                self.pipeline.activate()
+        self._restart_from_checkpoint("latest")
 
         got_after = list(self.pipeline.query("SELECT * FROM v0"))
-
         print(
             f"{self.pipeline.name}: after: {len(got_after)}, {got_after}",
             file=sys.stderr,
         )
-
-        if expect_empty:
-            got_before = []
-
         self.assertCountEqual(got_before, got_after)
-
         self.pipeline.stop(force=True)
-
-        if clear_storage:
-            self.pipeline.clear_storage()
+        self.pipeline.clear_storage()
 
     @enterprise_only
     @single_host_only
     def test_from_uuid(self):
-        self.test_checkpoint_sync(from_uuid=True)
+        # retention_min_age prevents the checkpoint from being garbage-collected
+        # before the pipeline restarts from it.
+        self._configure_and_start(retention_min_age=5)
+        _, got_before = self._insert_data_and_wait()
+        self.pipeline.checkpoint(wait=True)
+        time.sleep(1)
+        uuid = self._sync_and_verify()
 
-    @enterprise_only
-    @single_host_only
-    def test_without_clearing_storage(self):
-        self.test_checkpoint_sync(clear_storage=False)
+        self._restart_from_checkpoint(uuid)
 
-    @enterprise_only
-    @single_host_only
-    def test_automated_checkpoint(self):
-        self.test_checkpoint_sync(ft_interval=5, automated_checkpoint=True)
-
-    @enterprise_only
-    @single_host_only
-    def test_automated_checkpoint_sync(self):
-        self.test_checkpoint_sync(
-            ft_interval=5, automated_checkpoint=True, automated_sync_interval=10
+        got_after = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: after: {len(got_after)}, {got_after}",
+            file=sys.stderr,
         )
+        self.assertCountEqual(got_before, got_after)
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
 
     @enterprise_only
-    @single_host_only
+    def test_without_clearing_storage(self):
+        self._configure_and_start()
+        _, got_before = self._insert_data_and_wait()
+        self.pipeline.checkpoint(wait=True)
+        time.sleep(1)
+        self._sync_and_verify()
+
+        self._restart_from_checkpoint("latest", clear_storage=False)
+
+        got_after = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: after: {len(got_after)}, {got_after}",
+            file=sys.stderr,
+        )
+        self.assertCountEqual(got_before, got_after)
+        self.pipeline.stop(force=True)
+
+    @enterprise_only
+    def test_automated_checkpoint(self):
+        self._configure_and_start(ft_interval=5)
+        processed, got_before = self._insert_data_and_wait()
+        chk_uuid, chk_steps = self._wait_for_automated_checkpoint(processed)
+        time.sleep(1)
+        self._sync_and_verify(chk_uuid, chk_steps)
+
+        self._restart_from_checkpoint("latest")
+
+        got_after = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: after: {len(got_after)}, {got_after}",
+            file=sys.stderr,
+        )
+        self.assertCountEqual(got_before, got_after)
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
+
+    @enterprise_only
+    def test_automated_checkpoint_sync(self):
+        self._configure_and_start(ft_interval=5, push_interval=10)
+        processed, got_before = self._insert_data_and_wait()
+        chk_uuid, chk_steps = self._wait_for_automated_checkpoint(processed)
+        time.sleep(1)
+        self._wait_for_automated_sync(chk_uuid, chk_steps)
+
+        self._restart_from_checkpoint("latest")
+
+        got_after = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: after: {len(got_after)}, {got_after}",
+            file=sys.stderr,
+        )
+        self.assertCountEqual(got_before, got_after)
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
+
+    @enterprise_only
     def test_automated_checkpoint_sync1(self):
-        self.test_checkpoint_sync(ft_interval=5, automated_sync_interval=10)
+        # Manual checkpoint, automated sync.
+        self._configure_and_start(ft_interval=5, push_interval=10)
+        _, got_before = self._insert_data_and_wait()
+        self.pipeline.checkpoint(wait=True)
+        time.sleep(1)
+        self._wait_for_automated_sync()
+
+        self._restart_from_checkpoint("latest")
+
+        got_after = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: after: {len(got_after)}, {got_after}",
+            file=sys.stderr,
+        )
+        self.assertCountEqual(got_before, got_after)
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
+
+    @enterprise_only
+    def test_autherr_fail(self):
+        self._configure_and_start()
+        self._insert_data_and_wait()
+        self.pipeline.checkpoint(wait=True)
+        time.sleep(1)
+        self._sync_and_verify()
+
+        with self.assertRaisesRegex(RuntimeError, "SignatureDoesNotMatch|Forbidden"):
+            self._restart_from_checkpoint("latest", auth_err=True, strict=True)
+
+    @enterprise_only
+    def test_autherr(self):
+        self._configure_and_start()
+        self._insert_data_and_wait()
+        self.pipeline.checkpoint(wait=True)
+        time.sleep(1)
+        self._sync_and_verify()
+
+        with self.assertRaisesRegex(RuntimeError, "SignatureDoesNotMatch|Forbidden"):
+            self._restart_from_checkpoint("latest", auth_err=True, strict=False)
 
     @enterprise_only
     @single_host_only
+    def test_nonexistent_checkpoint_fail(self):
+        self._configure_and_start()
+        self._insert_data_and_wait()
+        self.pipeline.checkpoint(wait=True)
+        time.sleep(1)
+        self._sync_and_verify()
+
+        with self.assertRaisesRegex(RuntimeError, "were not found in source"):
+            self._restart_from_checkpoint(uuid4(), strict=True)
+
+    @enterprise_only
+    @single_host_only
+    def test_nonexistent_checkpoint(self):
+        self._configure_and_start()
+        self._insert_data_and_wait()
+        self.pipeline.checkpoint(wait=True)
+        time.sleep(1)
+        self._sync_and_verify()
+
+        self._restart_from_checkpoint(uuid4(), strict=False)
+
+        got_after = list(self.pipeline.query("SELECT * FROM v0"))
+        self.assertEqual(got_after, [])  # pipeline started fresh: no data
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
+
+    @enterprise_only
+    def test_standby_activation(self):
+        self._configure_and_start()
+        _, got_before = self._insert_data_and_wait()
+        self.pipeline.checkpoint(wait=True)
+        time.sleep(1)
+        self._sync_and_verify()
+
+        self._restart_from_checkpoint("latest", standby=True)
+
+        got_after = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: after: {len(got_after)}, {got_after}",
+            file=sys.stderr,
+        )
+        self.assertCountEqual(got_before, got_after)
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
+
+    @enterprise_only
+    @single_host_only
+    def test_standby_activation_from_uuid(self):
+        self._configure_and_start(retention_min_age=5)
+        _, got_before = self._insert_data_and_wait()
+        self.pipeline.checkpoint(wait=True)
+        time.sleep(1)
+        uuid = self._sync_and_verify()
+
+        self._restart_from_checkpoint(uuid, standby=True)
+
+        got_after = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: after: {len(got_after)}, {got_after}",
+            file=sys.stderr,
+        )
+        self.assertCountEqual(got_before, got_after)
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
+
+    @enterprise_only
     def test_automated_sync_auth_error(self):
         """
         CREATE TABLE t0 (c0 INT, c1 VARCHAR);
@@ -346,42 +544,6 @@ class TestCheckpointSync(SharedTestPipeline):
         self.pipeline.clear_storage()
 
     @enterprise_only
-    @single_host_only
-    def test_autherr_fail(self):
-        with self.assertRaisesRegex(RuntimeError, "SignatureDoesNotMatch|Forbidden"):
-            self.test_checkpoint_sync(auth_err=True, strict=True)
-
-    @enterprise_only
-    @single_host_only
-    def test_autherr(self):
-        with self.assertRaisesRegex(RuntimeError, "SignatureDoesNotMatch|Forbidden"):
-            self.test_checkpoint_sync(auth_err=True, strict=False)
-
-    @enterprise_only
-    @single_host_only
-    def test_nonexistent_checkpoint_fail(self):
-        with self.assertRaisesRegex(RuntimeError, "were not found in source"):
-            self.test_checkpoint_sync(random_uuid=True, from_uuid=True, strict=True)
-
-    @enterprise_only
-    @single_host_only
-    def test_nonexistent_checkpoint(self):
-        self.test_checkpoint_sync(
-            random_uuid=True, from_uuid=True, strict=False, expect_empty=True
-        )
-
-    @enterprise_only
-    @single_host_only
-    def test_standby_activation(self):
-        self.test_checkpoint_sync(standby=True)
-
-    @enterprise_only
-    @single_host_only
-    def test_standby_activation_from_uuid(self):
-        self.test_checkpoint_sync(standby=True, from_uuid=True)
-
-    @enterprise_only
-    @single_host_only
     def test_standby_fallback(self, from_uuid: bool = False):
         # Step 1: Start main pipeline
         storage_config = storage_cfg(self.pipeline.name, retention_min_age=1)
@@ -422,7 +584,6 @@ class TestCheckpointSync(SharedTestPipeline):
                     config=storage_cfg(
                         self.pipeline.name,
                         start_from_checkpoint=uuid if from_uuid else "latest",
-                        standby=True,
                         pull_interval=pull_interval,
                     )
                 ),
@@ -430,16 +591,7 @@ class TestCheckpointSync(SharedTestPipeline):
         )
         standby.start_standby()
 
-        # Wait until standby pulls the first checkpoint
-        start = time.monotonic()
-        end = start + 120
-        for log in standby.logs():
-            if "checkpoint pulled successfully" in log:
-                break
-            if time.monotonic() > end:
-                raise TimeoutError(
-                    "Timed out waiting for standby pipeline to pull checkpoint"
-                )
+        self._wait_for_standby_checkpoint_pull(standby, timeout_s=120)
 
         # Step 4: Add more data and make 3-10 checkpoints
         extra_ckpts = random.randint(3, 10)
@@ -468,12 +620,6 @@ class TestCheckpointSync(SharedTestPipeline):
 
         assert standby.status() == PipelineStatus.STANDBY
         standby.activate(timeout_s=(pull_interval * extra_ckpts) + 60)
-
-        for log in standby.logs():
-            if "activated" in log:
-                break
-            if time.monotonic() > end:
-                raise TimeoutError("Timed out waiting for standby pipeline to activate")
 
         got_after = list(standby.query("SELECT * FROM v0"))
 
@@ -505,7 +651,6 @@ class TestCheckpointSync(SharedTestPipeline):
     # -------------------------------------------------------------------------
 
     @enterprise_only
-    @single_host_only
     def test_local_checkpoint_priority(self):
         # After syncing checkpoint A to S3, taking a local-only checkpoint B
         # (without syncing), and restarting without clearing storage,
@@ -577,7 +722,6 @@ class TestCheckpointSync(SharedTestPipeline):
     # -------------------------------------------------------------------------
 
     @enterprise_only
-    @single_host_only
     def test_read_bucket(
         self,
         standby: bool = False,
@@ -619,7 +763,6 @@ class TestCheckpointSync(SharedTestPipeline):
             start_from_checkpoint=uuid if from_uuid else "latest",
             read_bucket=source_bucket,
             strict=True,
-            standby=standby,
             pull_interval=2,
         )
         self.pipeline.set_runtime_config(
@@ -637,15 +780,7 @@ class TestCheckpointSync(SharedTestPipeline):
             self.pipeline.start_standby()
 
             try:
-                start = time.monotonic()
-                end = start + 120
-                for log in self.pipeline.logs():
-                    if "checkpoint pulled successfully" in log:
-                        break
-                    if time.monotonic() > end:
-                        raise TimeoutError(
-                            "Timed out waiting for standby pipeline to pull from read_bucket"
-                        )
+                self._wait_for_standby_checkpoint_pull(self.pipeline, timeout_s=120)
 
                 assert self.pipeline.status() == PipelineStatus.STANDBY
                 self.pipeline.activate()
@@ -673,7 +808,6 @@ class TestCheckpointSync(SharedTestPipeline):
         self.test_read_bucket(from_uuid=True)
 
     @enterprise_only
-    @single_host_only
     def test_read_bucket_standby(self):
         # Standby pipeline seeds from read_bucket when bucket is empty.
         self.test_read_bucket(standby=True)
@@ -685,7 +819,6 @@ class TestCheckpointSync(SharedTestPipeline):
         self.test_read_bucket(standby=True, from_uuid=True)
 
     @enterprise_only
-    @single_host_only
     def test_bucket_preferred_over_read_bucket(self):
         # When both bucket and read_bucket hold checkpoints, the pipeline uses
         # bucket (its own checkpoint), not read_bucket.
@@ -760,7 +893,6 @@ class TestCheckpointSync(SharedTestPipeline):
         source.clear_storage()
 
     @enterprise_only
-    @single_host_only
     def test_standby_bucket_takes_over_from_read_bucket(self):
         # In standby mode, when bucket is initially empty the pipeline falls back
         # to read_bucket. Once the main pipeline pushes a newer checkpoint to
@@ -812,7 +944,6 @@ class TestCheckpointSync(SharedTestPipeline):
                     config=storage_cfg(
                         self.pipeline.name,
                         start_from_checkpoint="latest",
-                        standby=True,
                         pull_interval=pull_interval,
                         read_bucket=source_bucket,
                     )
@@ -822,15 +953,7 @@ class TestCheckpointSync(SharedTestPipeline):
         standby.start_standby()
 
         # Wait for standby to pull at least one checkpoint (from read_bucket).
-        start = time.monotonic()
-        end = start + 120
-        for log in standby.logs():
-            if "checkpoint pulled successfully" in log:
-                break
-            if time.monotonic() > end:
-                raise TimeoutError(
-                    "Timed out waiting for standby to pull from read_bucket"
-                )
+        self._wait_for_standby_checkpoint_pull(standby, timeout_s=120)
 
         # Step 4: main pipeline inserts data and pushes multiple checkpoints
         # to its own bucket.
@@ -956,7 +1079,6 @@ class TestCheckpointSync(SharedTestPipeline):
         self.pipeline.clear_storage()
 
     @enterprise_only
-    @single_host_only
     def test_local_priority_over_read_bucket(self):
         # Local checkpoint wins over read_bucket even when the primary S3 bucket
         # is empty.  Priority order: local > bucket > read_bucket.
@@ -1127,7 +1249,52 @@ class TestCheckpointSync(SharedTestPipeline):
         source.clear_storage()
 
     @enterprise_only
-    @single_host_only
+    def test_remote_checkpoints(self):
+        """
+        CREATE TABLE t0 (c0 INT, c1 VARCHAR);
+        CREATE MATERIALIZED VIEW v0 AS SELECT * FROM t0;
+        """
+        # retention_min_count=2 keeps both checkpoints on remote.
+        storage_config = storage_cfg(
+            self.pipeline.name,
+            retention_min_count=2,
+        )
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
+                storage=Storage(config=storage_config),
+                checkpoint_interval_secs=60,
+            )
+        )
+        self.pipeline.start()
+
+        # Snapshot any UUIDs already present in remote before this test pushed
+        # anything, so we can filter them out of assertions.
+        pre_existing = {str(c["uuid"]) for c in self.pipeline.remote_checkpoints()}
+
+        self._insert_data_and_wait()
+        self.pipeline.checkpoint(wait=True)
+        time.sleep(1)
+        uuid1 = self._sync_and_verify()
+
+        self._insert_data_and_wait()
+        self.pipeline.checkpoint(wait=True)
+        time.sleep(1)
+        uuid2 = self._sync_and_verify()
+
+        remote = self.pipeline.remote_checkpoints()
+        print(f"remote checkpoints: {remote}", file=sys.stderr)
+
+        pushed = {str(c["uuid"]) for c in remote} - pre_existing
+        self.assertIn(str(uuid1), pushed)
+        self.assertIn(str(uuid2), pushed)
+
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
+
+    @enterprise_only
     def test_read_bucket_strict_fail(self):
         # When fail_if_no_checkpoint=True and both the primary bucket and
         # read_bucket are empty, the pipeline must fail to start.
