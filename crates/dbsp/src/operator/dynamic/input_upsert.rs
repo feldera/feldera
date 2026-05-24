@@ -595,7 +595,9 @@ where
 
         let mut key_updates = self.batch_factories.weighted_vals_factory().default_box();
 
-        let mut trace_cursor = trace.cursor();
+        // Only used via `seek_key_exact` — skip the initial per-batch
+        // root-to-leaf positioning. See `BatchReader::cursor_for_seek`.
+        let mut trace_cursor = trace.cursor_for_seek();
 
         let mut builder =
             B::Builder::with_capacity(&self.batch_factories, n_updates * 2, n_updates * 2);
@@ -852,7 +854,7 @@ where
             .weighted_vals_factory()
             .default_box();
 
-        let mut trace_cursor = trace.deref().cursor();
+        let mut trace_cursor = trace.deref().cursor_for_seek();
 
         let mut builder = B::Builder::with_capacity(
             &self.factories.batch_factories,

@@ -84,7 +84,7 @@ use tokio::{
 };
 mod index_set;
 mod list_merger;
-mod push_merger;
+pub mod push_merger;
 mod snapshot;
 pub use snapshot::{BatchReaderWithSnapshot, SpineSnapshot, WithSnapshot};
 
@@ -1616,6 +1616,10 @@ where
         SpineCursor::new_cursor(&self.factories, self.merger.get_batches())
     }
 
+    fn cursor_for_seek(&self) -> Self::Cursor<'_> {
+        SpineCursor::new_cursor_for_seek(&self.factories, self.merger.get_batches())
+    }
+
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
         RG: Rng,
@@ -1710,6 +1714,23 @@ impl<B: Batch> SpineCursor<B> {
                 CursorList::new(
                     factories.weight_factory(),
                     batches.iter().map(|batch| batch.cursor()).collect(),
+                )
+            },
+        }
+        .build()
+    }
+
+    /// Like [`Self::new_cursor`] but constructs each batch's cursor via
+    /// `BatchReader::cursor_for_seek`, skipping the per-batch
+    /// positioning-to-row-0 work. The resulting `SpineCursor` is not
+    /// valid until the caller's first seek positions it.
+    pub fn new_cursor_for_seek(factories: &B::Factories, batches: Vec<Arc<B>>) -> Self {
+        SpineCursorBuilder {
+            batches,
+            cursor_builder: |batches| {
+                CursorList::new(
+                    factories.weight_factory(),
+                    batches.iter().map(|batch| batch.cursor_for_seek()).collect(),
                 )
             },
         }

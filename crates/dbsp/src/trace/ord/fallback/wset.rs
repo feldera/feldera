@@ -218,6 +218,16 @@ where
         })
     }
 
+    #[inline]
+    fn cursor_for_seek(&self) -> Self::Cursor<'_> {
+        DelegatingCursor(match &self.inner {
+            // Vec-backed cursor has nothing to skip; same as cursor().
+            Inner::Vec(vec) => Box::new(vec.cursor()),
+            // File-backed cursor saves a root-to-leaf walk + decompress.
+            Inner::File(file) => Box::new(file.cursor_for_seek()),
+        })
+    }
+
     fn push_cursor(
         &self,
     ) -> Box<dyn PushCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {

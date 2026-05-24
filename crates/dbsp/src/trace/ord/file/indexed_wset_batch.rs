@@ -385,6 +385,11 @@ where
     }
 
     #[inline]
+    fn cursor_for_seek(&self) -> Self::Cursor<'_> {
+        FileIndexedWSetCursor::new_unpositioned(self)
+    }
+
+    #[inline]
     fn key_count(&self) -> usize {
         self.file.n_rows(0) as usize
     }
@@ -702,6 +707,45 @@ where
     pub fn new(wset: &'s FileIndexedWSet<K, V, R>) -> Self {
         let key_cursor = unsafe { wset.file.rows().first().unwrap_storage() };
 
+        let val_cursor = unsafe {
+            key_cursor
+                .next_column()
+                .unwrap_storage()
+                .first()
+                .unwrap_storage()
+        };
+        Self {
+            wset,
+            key_cursor,
+            val_cursor,
+            diff: wset.factories.weight_factory().default_box(),
+        }
+    }
+
+    /// Constructs a cursor positioned *before* the first row, without
+    /// walking the column root → leaf to materialise the first row.
+    ///
+    /// Intended for callers like `Upsert::eval` that immediately
+    /// `seek_key_exact` on every key and never iterate from the start.
+    /// Skipping the initial `RowGroup::first()` saves one per-batch
+    /// tree-walk + decompress (~24% of worker CPU in the commit-phase
+    /// procore profile).
+    ///
+    /// The returned cursor reports `key_valid() == false` until the
+    /// first seek positions it. Callers that iterate from the start
+    /// (`while cursor.key_valid() { ... step_key() }`) must use
+    /// [`Self::new`] instead, or call `rewind_keys` / `seek_key` first.
+    pub fn new_unpositioned(wset: &'s FileIndexedWSet<K, V, R>) -> Self {
+        // `rows().before()` does no I/O: it constructs a cursor at
+        // `Position::Before` without walking the tree.
+        let key_cursor = unsafe { wset.file.rows().before() };
+
+        // For the val cursor we still need *something* — but
+        // `next_column()` returns an empty row group (`0..0`) when the
+        // key cursor isn't on a row, so `first()` on it is cheap
+        // (creates a `Position::After` cursor without any tree walk).
+        // The val cursor will be properly positioned on the first
+        // `move_key` call via `first_with_hint`.
         let val_cursor = unsafe {
             key_cursor
                 .next_column()

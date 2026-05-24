@@ -383,6 +383,23 @@ where
     /// Acquires a cursor to the batch's contents.
     fn cursor(&self) -> Self::Cursor<'_>;
 
+    /// Acquires a cursor that is *not* positioned at the first row.
+    ///
+    /// Intended for callers (e.g. `Upsert::eval`) that immediately
+    /// `seek_key_exact` on every key and never iterate from the start.
+    /// File-backed batches override this to skip the per-batch
+    /// root-to-leaf tree walk + LZ4 decompress that `cursor()` would
+    /// otherwise do just to position at row 0.
+    ///
+    /// The returned cursor's `key_valid()` is `false` until the
+    /// caller's first seek. Callers that iterate from the start must
+    /// use [`Self::cursor`] instead.
+    ///
+    /// Default implementation delegates to [`Self::cursor`].
+    fn cursor_for_seek(&self) -> Self::Cursor<'_> {
+        self.cursor()
+    }
+
     /// Acquires a [PushCursor] for the batch's contents.
     fn push_cursor(
         &self,

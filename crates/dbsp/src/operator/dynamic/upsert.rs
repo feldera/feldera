@@ -380,7 +380,11 @@ where
         let mut key_updates = self.batch_factories.weighted_items_factory().default_box();
         let mut item = self.batch_factories.weighted_item_factory().default_box();
 
-        let mut trace_cursor = trace.cursor();
+        // We only ever `seek_key_exact` on this cursor, never iterate
+        // from the start. Use the seek-only cursor constructor to skip
+        // the per-batch root-to-leaf walk + decompress that `cursor()`
+        // does to position at row 0.
+        let mut trace_cursor = trace.cursor_for_seek();
 
         let builder =
             B::Builder::with_capacity(&self.batch_factories, updates.len(), updates.len() * 2);

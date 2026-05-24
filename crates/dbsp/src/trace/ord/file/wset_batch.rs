@@ -374,6 +374,11 @@ where
     }
 
     #[inline]
+    fn cursor_for_seek(&self) -> Self::Cursor<'_> {
+        FileWSetCursor::new_unpositioned(self)
+    }
+
+    #[inline]
     fn key_count(&self) -> usize {
         self.file.n_rows(0) as usize
     }
@@ -646,6 +651,20 @@ where
             cursor,
             diff,
             val_valid: valid,
+        }
+    }
+
+    /// Constructs a cursor positioned *before* the first row, without
+    /// walking the column root to materialise the first row. See
+    /// `FileIndexedWSetCursor::new_unpositioned` for the rationale.
+    fn new_unpositioned(wset: &'s FileWSet<K, R>) -> Self {
+        let cursor = unsafe { wset.file.rows().before() };
+        let diff = wset.factories.weight_factory().default_box();
+        Self {
+            wset,
+            cursor,
+            diff,
+            val_valid: false,
         }
     }
 
