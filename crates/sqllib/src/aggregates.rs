@@ -114,7 +114,6 @@ impl UnsignedWrappers {
     }
 
     // Conversion from U to O
-    // functions is the same.
     #[doc(hidden)]
     pub fn to_signed<O, S, I, U>(value: U, ascending: bool, _nullsLast: bool) -> O
     where

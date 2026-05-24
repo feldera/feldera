@@ -173,11 +173,11 @@ impl Display for Uuid {
 }
 
 #[doc(hidden)]
-pub fn uuid_to_u128(u: Uuid) -> u128 {
+pub fn uuid_to_u128_(u: Uuid) -> u128 {
     u128::from_be_bytes(*u.to_bytes())
 }
 
 #[doc(hidden)]
-pub fn u128_to_uuid(n: u128) -> Uuid {
+pub fn u128_to_uuid_(n: u128) -> Uuid {
     Uuid::from_bytes(n.to_be_bytes())
 }

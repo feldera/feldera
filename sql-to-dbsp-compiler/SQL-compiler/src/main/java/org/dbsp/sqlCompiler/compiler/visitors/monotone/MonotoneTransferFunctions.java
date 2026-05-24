@@ -744,7 +744,9 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             DBSPOpcode.UNARY_PLUS, DBSPOpcode.TYPEDBOX,
             DBSPOpcode.DECIMAL_TO_INTEGER, DBSPOpcode.INTEGER_TO_DECIMAL,
             DBSPOpcode.SHORT_INTERVAL_TO_INTEGER, DBSPOpcode.INTEGER_TO_SHORT_INTERVAL,
-            DBSPOpcode.UUID_TO_INTEGER, DBSPOpcode.INTEGER_TO_UUID
+            DBSPOpcode.LONG_INTERVAL_TO_INTEGER, DBSPOpcode.INTEGER_TO_LONG_INTERVAL,
+            DBSPOpcode.UUID_TO_INTEGER, DBSPOpcode.INTEGER_TO_UUID,
+            DBSPOpcode.BOOL_TO_INTEGER, DBSPOpcode.INTEGER_TO_BOOL
     );
 
     @Override

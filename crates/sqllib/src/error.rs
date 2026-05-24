@@ -41,3 +41,18 @@ where
         Err(e) => Err(SqlRuntimeError::from_string(e.to_string())),
     }
 }
+
+#[doc(hidden)]
+// If the data is Ok(None), convert it to Err, otherwise leave it unchanged
+pub fn unwrap_sql_result<T>(data: SqlResult<Option<T>>) -> SqlResult<T> {
+    match data {
+        Err(e) => Err(e),
+        Ok(None) => Err(SqlRuntimeError::from_strng("NULL result produced")),
+        Ok(Some(data)) => Ok(data),
+    }
+}
+
+#[doc(hidden)]
+pub fn wrap_sql_result<T>(data: T) -> SqlResult<T> {
+    Ok(data)
+}
